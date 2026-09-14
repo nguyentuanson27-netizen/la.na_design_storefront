@@ -1,9 +1,12 @@
 import type { Metadata } from "next";
-import { connection } from "next/server";
 
-import { getConfiguredStorefrontProductBySlug } from "@/commerce/storefront-catalog-runtime";
-import { buildStorefrontProductMetadata } from "@/seo/product-metadata";
-import { readSearchExposure } from "@/seo/search-exposure";
+import { buildProductMetadata } from "@/routes/metadata/product";
+
+/**
+ * The PDP keeps its metadata here because it needs the product before it can build a title -- the
+ * one route in the manifest whose metadata is not on the page. The work itself lives in the
+ * canonical builder; this segment only declares where it is declared.
+ */
 
 type ProductLayoutProps = Readonly<{
   children: React.ReactNode;
@@ -13,25 +16,7 @@ type ProductLayoutProps = Readonly<{
 export async function generateMetadata({
   params,
 }: Omit<ProductLayoutProps, "children">): Promise<Metadata> {
-  await connection();
-  const { slug } = await params;
-
-  let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
-  try {
-    product = await getConfiguredStorefrontProductBySlug(slug);
-  } catch (error) {
-    if (error instanceof RangeError) return {};
-    throw error;
-  }
-
-  if (!product) return {};
-
-  const exposure = readSearchExposure();
-  return buildStorefrontProductMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    product,
-  });
+  return buildProductMetadata({ params });
 }
 
 export default function ProductLayout({ children }: ProductLayoutProps) {

@@ -194,6 +194,10 @@ model ProductContent {
   productId            String               @unique
   status               ProductContentStatus @default(DRAFT)
   editorialDescription String?
+  /** Fabric composition as one editorial sentence, e.g. "100% cotton dệt kim". */
+  material             String?
+  /** Construction notes, one per entry, rendered as a list rather than a paragraph. */
+  craftDetails         String[]             @default([])
   careInstructions     String?
   sizeGuide             String?
   seoTitle              String?

@@ -113,14 +113,18 @@ test("unselected composite PDP sale presentation is owned by the parent set, not
 });
 
 test("PDP wires product-level options into its unselected price presentation", async () => {
-  // The page half is still checked as source, because a route module cannot be imported here.
+  // The wiring half is still checked as source, because a route module cannot be imported here. It
+  // moved with the migration: the PDP's loader now selects the product-level options and seals them
+  // onto the view model, and the page hands that straight to the purchase panel.
+  const loaderSource = await readFile(new URL("../../src/routes/product.ts", import.meta.url), "utf8");
   const pageSource = await readFile(
     new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(pageSource, /selectStorefrontProductLevelOptions/);
-  assert.match(pageSource, /productLevelOptions=\{productLevelOptions\}/);
+  assert.match(loaderSource, /selectStorefrontProductLevelOptions/);
+  assert.match(loaderSource, /productLevelOptions: selectStorefrontProductLevelOptions\(/);
+  assert.match(pageSource, /productLevelOptions: data\.productLevelOptions/);
 
   // The panel half used to be checked the same way, by matching
   // `resolveStorefrontDiscountPresentation(productLevelOptions)` in the panel's source. That call
@@ -176,9 +180,9 @@ test("every promotion-aware storefront surface mounts the shared server-relative
 
   const surfaces = [
     { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
+    { page: "../../src/app/shop/[slug]/page.tsx", loader: "../../src/routes/product.ts" },
     { page: "../../src/app/collections/[slug]/page.tsx", loader: null },
     { page: "../../src/app/lookbook/page.tsx", loader: null },
-    { page: "../../src/app/shop/[slug]/page.tsx", loader: null },
   ] as const;
 
   for (const surface of surfaces) {
