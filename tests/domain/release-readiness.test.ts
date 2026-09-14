@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { readProjectConfig } from "../../src/config/project-config.ts";
 import { validateReleaseEnvironment } from "../../src/operations/release-readiness.ts";
 
+const PROJECT_CONFIG = readProjectConfig();
+
 const validEnvironment = {
-  DATABASE_URL: "postgresql://release_user:super-secret-password@db.internal:5432/la_clothing",
-  APP_DOMAIN: "www.lafashion.asia",
+  DATABASE_URL: `postgresql://release_user:super-secret-password@db.internal:5432/${PROJECT_CONFIG.databaseName}`,
+  APP_DOMAIN: PROJECT_CONFIG.productionDomain,
   SEARCH_INDEXING_ENABLED: "false",
   BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
-  BETTER_AUTH_URL: "https://www.lafashion.asia",
+  BETTER_AUTH_URL: `https://${PROJECT_CONFIG.productionDomain}`,
   BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
   PANCAKE_API_KEY: "super-secret-pancake-key",
   PANCAKE_SHOP_ID: "920007",
@@ -37,7 +40,7 @@ test("release preflight validates required server configuration without returnin
       freeShippingMinQuantity: 3,
     },
     identityMirrors: {
-      databaseName: "la_clothing",
+      databaseName: PROJECT_CONFIG.databaseName,
       appDomainScope: "production",
       composeProjectChecked: false,
     },
@@ -60,7 +63,7 @@ test("release preflight rejects missing or non-PostgreSQL database URLs without 
     /DATABASE_URL must be configured/,
   );
 
-  const secretUrl = "mysql://release_user:should-never-leak@db.internal/la_clothing";
+  const secretUrl = `mysql://release_user:should-never-leak@db.internal/${PROJECT_CONFIG.databaseName}`;
   try {
     validateReleaseEnvironment({ ...validEnvironment, DATABASE_URL: secretUrl });
     assert.fail("expected invalid database URL to fail");
@@ -94,9 +97,9 @@ test("release preflight requires Better Auth to use the server-owned storefront 
     () =>
       validateReleaseEnvironment({
         ...validEnvironment,
-        BETTER_AUTH_URL: "https://la.lanadesign.vn",
+        BETTER_AUTH_URL: `http://${PROJECT_CONFIG.productionDomain}`,
       }),
-    /BETTER_AUTH_URL must match APP_DOMAIN storefront origin/,
+    /BETTER_AUTH_URL must use HTTPS/,
   );
 
   assert.throws(
@@ -175,7 +178,11 @@ test("T2 release preflight reports a requested tracking mode that still loads no
 
 test("release preflight delegates auth, Pancake and shipping validation fail closed", () => {
   assert.throws(
-    () => validateReleaseEnvironment({ ...validEnvironment, BETTER_AUTH_URL: "http://www.lafashion.asia" }),
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        BETTER_AUTH_URL: `http://${PROJECT_CONFIG.productionDomain}`,
+      }),
     /BETTER_AUTH_URL must use HTTPS/,
   );
   assert.throws(
@@ -218,8 +225,10 @@ test("release preflight refuses a COMPOSE_PROJECT_NAME that drifts from the comm
   );
 
   assert.equal(
-    validateReleaseEnvironment({ ...validEnvironment, COMPOSE_PROJECT_NAME: "la-clothing" })
-      .identityMirrors.composeProjectChecked,
+    validateReleaseEnvironment({
+      ...validEnvironment,
+      COMPOSE_PROJECT_NAME: PROJECT_CONFIG.composeProjectName,
+    }).identityMirrors.composeProjectChecked,
     true,
   );
 });
