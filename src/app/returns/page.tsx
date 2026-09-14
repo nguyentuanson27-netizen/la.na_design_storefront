@@ -8,7 +8,7 @@ import {
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
 import { BRAND } from "@/brand";
-import { PUBLIC_RETURN_LOGISTICS_FACTS } from "@/content/public-fulfillment-facts";
+import { FULFILLMENT } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -32,7 +32,7 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  * W13/U33b + U41/M5 — public returns policy from owner-approved authorities only.
  *
  * `PUBLIC_RETURNS_POLICY` keeps the existing window, eligibility, fee and refund facts;
- * `PUBLIC_RETURN_LOGISTICS_FACTS` carries the later owner-approved return methods, restocking
+ * `FULFILLMENT.returnLogistics` carries the later owner-approved return methods, restocking
  * decision and the exchange-only rule for correct/non-defective customer-change cases. Page prose
  * only labels sections: every normative return statement below comes from one of those reviewed
  * content authorities.
@@ -48,7 +48,7 @@ export default function ReturnsPage() {
     refundChannelNote,
   } = PUBLIC_RETURNS_POLICY;
   const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } =
-    PUBLIC_RETURN_LOGISTICS_FACTS;
+    FULFILLMENT.returnLogistics;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">

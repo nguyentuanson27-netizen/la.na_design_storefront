@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { BRAND, NAVIGATION, SIZE_GUIDE } from "../../src/brand/index.ts";
+import { BRAND, FULFILLMENT, NAVIGATION, SIZE_GUIDE } from "../../src/brand/index.ts";
 import { MERCHANT_BRAND } from "../../src/commerce/merchant-offer-mapper.ts";
 import { MERCHANT_SHOP_APPAREL_DEFAULTS } from "../../src/commerce/merchant-apparel-facts.ts";
 import { SOCIAL_FALLBACK_ALT, SOCIAL_FALLBACK_PATH, SITE_NAME } from "../../src/seo/social-identity.ts";
@@ -53,19 +53,23 @@ function deaccent(value: string): string {
 }
 
 /**
- * Brand facts, recursively, plus the brand-bearing part of navigation.
+ * Every string leaf of BRAND, SIZE_GUIDE and FULFILLMENT, plus the brand-bearing part of NAVIGATION.
  *
- * Navigation link hrefs and labels are deliberately not needles. An href is route identity, not
- * brand identity — it belongs to the route manifest, and treating `/shop` as a brand string would
- * flag every link on every page. The labels are generic Vietnamese UI nouns ("Giỏ hàng", "Liên hệ")
- * that legitimately appear as page headings. Navigation duplication is prevented structurally
- * instead: the header and footer render NAVIGATION, which the test below pins.
+ * NAVIGATION contributes `brandHomeLabel` only, and that narrowing is a plan decision rather than an
+ * implementation shortcut — see `tasks/plan.md` §0.2 in the spec repo. Measured on this tree, making
+ * NAVIGATION fully recursive turns 23 of its 39 string leaves into needles that fire on up to 34
+ * files: route paths ("/shop", "/search") and generic Vietnamese UI nouns ("Giỏ hàng", "Cửa hàng")
+ * that pages legitimately contain. Route paths become centralizable only with the Phase C route
+ * manifest (T11), and the generic labels stop appearing in scanned files only once Phase E moves
+ * presentation into `src/components/brand/**`. The plan therefore defers full NAVIGATION scanning to
+ * T32B; until then navigation duplication is prevented structurally, by the test below.
  */
 function brandNeedles(): readonly string[] {
   const needles = new Set<string>();
   for (const value of [
     ...collectBrandStrings(BRAND),
     ...collectBrandStrings(SIZE_GUIDE),
+    ...collectBrandStrings(FULFILLMENT),
     ...collectBrandStrings(NAVIGATION.brandHomeLabel),
     ...BRAND.identity.additionalNeedles,
   ]) {
@@ -130,6 +134,11 @@ test("the gate catches a hardcoded brand fact rather than passing vacuously", ()
   assert.ok(needles.includes(BRAND.identity.legalName));
   assert.ok(needles.includes(SIZE_GUIDE.charts[0]!.title));
   assert.ok(needles.includes(NAVIGATION.brandHomeLabel));
+  // Fulfillment policy is brand truth too: a page must not restate a returns or delivery clause.
+  assert.ok(needles.includes(FULFILLMENT.returns.refundChannelNote));
+  assert.ok(needles.includes(FULFILLMENT.delivery.estimateCaveat));
+  assert.ok(needles.includes(FULFILLMENT.deliveryScopeLabels.innerCity));
+  assert.ok(needles.includes(FULFILLMENT.returnLogistics.nonDefectiveRefundNote));
 });
 
 test("a new brand fact is protected without editing this test", () => {

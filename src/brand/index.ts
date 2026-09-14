@@ -3,11 +3,13 @@ import {
   MERCHANT_GENDERS,
 } from "../commerce/merchant-apparel-facts.ts";
 import { BRAND as RAW_BRAND } from "./brand.config.ts";
+import { FULFILLMENT as RAW_FULFILLMENT } from "./fulfillment.config.ts";
 import { NAVIGATION as RAW_NAVIGATION } from "./navigation.config.ts";
 import {
   MARKET_VN,
   VIETNAM_CALLING_CODE,
   type BrandConfig,
+  type FulfillmentConfig,
   type NavigationConfig,
   type SizeGuideConfig,
 } from "./schema.ts";
@@ -41,6 +43,11 @@ function requireText(value: string, label: string): string {
 }
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+/**
+ * One leading slash, then a path that cannot start a new authority. Rejects "//host", "/\\host"
+ * (which several browsers normalize to "//host"), and anything carrying a scheme.
+ */
+const SITE_RELATIVE_HREF = /^\/(?![/\\])[^\s]*$/;
 /** One sentence: no internal sentence break, and a single terminator at most, at the end. */
 const SENTENCE_BREAK_PATTERN = /[.!?]\s+\S/;
 
@@ -185,6 +192,81 @@ function validateSizeGuide(sizeGuide: SizeGuideConfig): void {
   }
 }
 
+function validateFulfillment(fulfillment: FulfillmentConfig): void {
+  const { returns, delivery, deliveryScopeLabels, returnLogistics } = fulfillment;
+
+  for (const [label, value] of Object.entries({
+    customerInitiatedShippingNote: returns.customerInitiatedShippingNote,
+    shopFaultShippingNote: returns.shopFaultShippingNote,
+    nonReturnableCategoriesNote: returns.nonReturnableCategoriesNote,
+    refundChannelNote: returns.refundChannelNote,
+  })) {
+    requireText(value, `fulfillment.returns.${label}`);
+  }
+  if (!Number.isInteger(returns.windowDays) || returns.windowDays < 1) {
+    fail("fulfillment.returns.windowDays must be a positive whole number of days");
+  }
+  if (returns.productConditions.length === 0) {
+    fail("fulfillment.returns.productConditions must list the approved conditions");
+  }
+  if (returns.supportedCases.length === 0) {
+    fail("fulfillment.returns.supportedCases must list the approved cases");
+  }
+  for (const condition of returns.productConditions) {
+    requireText(condition, "fulfillment.returns.productConditions entry");
+  }
+  for (const supported of returns.supportedCases) {
+    requireText(supported, "fulfillment.returns.supportedCases entry");
+  }
+  if (!Number.isInteger(returns.customerInitiatedExchangeFeeVnd) || returns.customerInitiatedExchangeFeeVnd < 0) {
+    fail("fulfillment.returns.customerInitiatedExchangeFeeVnd must be a non-negative whole VND amount");
+  }
+  assertDayRange(returns.refundWorkingDays, "fulfillment.returns.refundWorkingDays");
+
+  for (const [label, value] of Object.entries({
+    coverage: delivery.coverage,
+    estimateCaveat: delivery.estimateCaveat,
+    carrierTrackingNote: delivery.carrierTrackingNote,
+    phoneConfirmationWording: delivery.phoneConfirmationWording,
+  })) {
+    requireText(value, `fulfillment.delivery.${label}`);
+  }
+  if (delivery.carriers.length === 0) fail("fulfillment.delivery.carriers must name a carrier");
+  for (const carrier of delivery.carriers) {
+    requireText(carrier, "fulfillment.delivery.carriers entry");
+  }
+  assertDayRange(delivery.estimateDays.innerCity, "fulfillment.delivery.estimateDays.innerCity");
+  assertDayRange(
+    delivery.estimateDays.otherProvince,
+    "fulfillment.delivery.estimateDays.otherProvince",
+  );
+
+  requireText(deliveryScopeLabels.innerCity, "fulfillment.deliveryScopeLabels.innerCity");
+  requireText(deliveryScopeLabels.otherProvince, "fulfillment.deliveryScopeLabels.otherProvince");
+
+  for (const [label, value] of Object.entries(returnLogistics.returnMethods)) {
+    requireText(value, `fulfillment.returnLogistics.returnMethods.${label}`);
+  }
+  requireText(returnLogistics.restockingFeeNote, "fulfillment.returnLogistics.restockingFeeNote");
+  requireText(
+    returnLogistics.nonDefectiveRefundNote,
+    "fulfillment.returnLogistics.nonDefectiveRefundNote",
+  );
+  if (!Number.isInteger(returnLogistics.restockingFeeVnd) || returnLogistics.restockingFeeVnd < 0) {
+    fail("fulfillment.returnLogistics.restockingFeeVnd must be a non-negative whole VND amount");
+  }
+}
+
+/** A published window is only meaningful if it is whole days and does not run backwards. */
+function assertDayRange(range: { minimum: number; maximum: number }, label: string): void {
+  if (!Number.isInteger(range.minimum) || range.minimum < 1) {
+    fail(`${label}.minimum must be a positive whole number of days`);
+  }
+  if (!Number.isInteger(range.maximum) || range.maximum < range.minimum) {
+    fail(`${label}.maximum must be a whole number of days not smaller than the minimum`);
+  }
+}
+
 function validateNavigation(navigation: NavigationConfig): void {
   requireText(navigation.brandHomeLabel, "navigation.brandHomeLabel");
   for (const [group, links] of Object.entries({
@@ -197,8 +279,13 @@ function validateNavigation(navigation: NavigationConfig): void {
     const seen = new Set<string>();
     for (const link of links) {
       requireText(link.label, `navigation.${group} link label`);
-      if (!link.href.startsWith("/")) {
-        fail(`navigation.${group} link "${link.label}" must be a site-relative path`);
+      // A single leading slash is not enough: "//evil.example/path" is protocol-relative, which the
+      // browser resolves as an absolute URL on another origin. A menu entry is always same-origin,
+      // so anything that can leave the site is rejected here rather than trusted to the renderer.
+      if (!SITE_RELATIVE_HREF.test(link.href)) {
+        fail(
+          `navigation.${group} link "${link.label}" must be a site-relative path starting with a single "/"`,
+        );
       }
       if (seen.has(link.href)) fail(`navigation.${group} repeats "${link.href}"`);
       seen.add(link.href);
@@ -220,17 +307,25 @@ export function loadBrandConfig(
   brand: BrandConfig = RAW_BRAND,
   sizeGuide: SizeGuideConfig = RAW_SIZE_GUIDE,
   navigation: NavigationConfig = RAW_NAVIGATION,
-): Readonly<{ brand: BrandConfig; sizeGuide: SizeGuideConfig; navigation: NavigationConfig }> {
+  fulfillment: FulfillmentConfig = RAW_FULFILLMENT,
+): Readonly<{
+  brand: BrandConfig;
+  sizeGuide: SizeGuideConfig;
+  navigation: NavigationConfig;
+  fulfillment: FulfillmentConfig;
+}> {
   validateIdentity(brand);
   validateContact(brand);
   validateMerchant(brand);
   validateMarket(brand);
   validateSizeGuide(sizeGuide);
   validateNavigation(navigation);
+  validateFulfillment(fulfillment);
   return Object.freeze({
     brand: deepFreeze(brand),
     sizeGuide: deepFreeze(sizeGuide),
     navigation: deepFreeze(navigation),
+    fulfillment: deepFreeze(fulfillment),
   });
 }
 
@@ -239,3 +334,4 @@ const loaded = loadBrandConfig();
 export const BRAND = loaded.brand;
 export const SIZE_GUIDE = loaded.sizeGuide;
 export const NAVIGATION = loaded.navigation;
+export const FULFILLMENT = loaded.fulfillment;

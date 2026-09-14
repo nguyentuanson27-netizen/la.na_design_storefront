@@ -257,13 +257,33 @@ test("each chart may declare its own size scale", () => {
 });
 
 test("navigation links must be site-relative, labelled and unique", () => {
-  assert.throws(
-    withNavigation((draft) => ({
-      ...draft,
-      primary: [...draft.primary, { href: "https://example.com", label: "Ngoài" }],
-    })),
-    /site-relative/,
-  );
+  // Every spelling that can leave the origin. "//evil.example/path" is the one that matters: it
+  // starts with a slash, so a naive startsWith("/") check lets it through, and the browser then
+  // resolves it as an absolute URL on the attacker's host.
+  for (const href of [
+    "https://example.com",
+    "//evil.example/path",
+    "//evil.example",
+    "/\\evil.example/path",
+    "http://evil.example",
+    "javascript:alert(1)",
+    "mailto:a@b.test",
+    "shop",
+  ]) {
+    assert.throws(
+      withNavigation((draft) => ({ ...draft, primary: [...draft.primary, { href, label: "Ngoài" }] })),
+      /site-relative/,
+      `${href} must be rejected as a navigation target`,
+    );
+  }
+
+  // Ordinary same-origin paths still pass.
+  for (const href of ["/shop", "/shop/ao-thun", "/shop?page=2"]) {
+    assert.doesNotThrow(
+      withNavigation((draft) => ({ ...draft, primary: [{ href, label: "Mục" }] })),
+      `${href} must be accepted`,
+    );
+  }
   assert.throws(
     withNavigation((draft) => ({ ...draft, primary: [...draft.primary, draft.primary[0]!] })),
     /repeats/,

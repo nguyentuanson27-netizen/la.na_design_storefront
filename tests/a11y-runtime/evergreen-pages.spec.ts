@@ -23,10 +23,7 @@ import {
   PUBLIC_RETURNS_POLICY,
   PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
-import {
-  PUBLIC_DELIVERY_SCOPE_LABELS,
-  PUBLIC_RETURN_LOGISTICS_FACTS,
-} from "../../src/content/public-fulfillment-facts.ts";
+import { FULFILLMENT } from "../../src/brand/index.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3229;
@@ -200,10 +197,10 @@ test("U33b the Returns page renders every approved clause and adds none", async 
   await expect(main).toContainText(PUBLIC_RETURNS_POLICY.nonReturnableCategoriesNote);
   await expect(main).toContainText(describePublicRefundWindow());
   await expect(main).toContainText(PUBLIC_RETURNS_POLICY.refundChannelNote);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.inStore);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.byMail);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.byMailResponsibility);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.restockingFeeNote);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.inStore);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.byMail);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.byMailResponsibility);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.restockingFeeNote);
 
   // No category exclusion or separate storage fee was approved. "Restocking" itself is no longer a
   // forbidden word because the owner explicitly approved the truthful zero-fee disclosure above.
@@ -226,8 +223,8 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   for (const carrier of PUBLIC_DELIVERY_FACTS.carriers) {
     await expect(main).toContainText(carrier);
   }
-  await expect(main).toContainText(PUBLIC_DELIVERY_SCOPE_LABELS.innerCity);
-  await expect(main).toContainText(PUBLIC_DELIVERY_SCOPE_LABELS.otherProvince);
+  await expect(main).toContainText(FULFILLMENT.deliveryScopeLabels.innerCity);
+  await expect(main).toContainText(FULFILLMENT.deliveryScopeLabels.otherProvince);
   await expect(main).toContainText(
     describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.innerCity),
   );

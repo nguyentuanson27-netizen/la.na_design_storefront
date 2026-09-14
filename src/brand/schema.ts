@@ -106,6 +106,42 @@ export type SizeGuideConfig = Readonly<{
   charts: readonly SizeChart[];
 }>;
 
+export type DayRange = Readonly<{ minimum: number; maximum: number }>;
+
+export type FulfillmentConfig = Readonly<{
+  returns: Readonly<{
+    windowDays: number;
+    productConditions: readonly string[];
+    supportedCases: readonly string[];
+    customerInitiatedExchangeFeeVnd: number;
+    customerInitiatedShippingNote: string;
+    shopFaultShippingNote: string;
+    nonReturnableCategories: readonly string[];
+    nonReturnableCategoriesNote: string;
+    refundWorkingDays: DayRange;
+    refundChannelNote: string;
+  }>;
+  delivery: Readonly<{
+    coverage: string;
+    carriers: readonly string[];
+    estimateDays: Readonly<{ innerCity: DayRange; otherProvince: DayRange }>;
+    estimateCaveat: string;
+    carrierTrackingNote: string;
+    phoneConfirmationWording: string;
+  }>;
+  deliveryScopeLabels: Readonly<{ innerCity: string; otherProvince: string }>;
+  returnLogistics: Readonly<{
+    returnMethods: Readonly<{
+      inStore: string;
+      byMail: string;
+      byMailResponsibility: string;
+    }>;
+    restockingFeeVnd: number;
+    restockingFeeNote: string;
+    nonDefectiveRefundNote: string;
+  }>;
+}>;
+
 export type NavigationLink = Readonly<{ href: string; label: string }>;
 
 export type NavigationConfig = Readonly<{
