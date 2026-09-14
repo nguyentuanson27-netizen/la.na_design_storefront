@@ -12,14 +12,27 @@ import { SOCIAL_FALLBACK_ALT, SOCIAL_FALLBACK_PATH, SITE_NAME } from "../../src/
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * Scanned: the storefront presentation. Ignored: `src/brand` because it is the source, and admin
- * because the admin surface does not change per brand.
+ * Scanned: all application source. A narrower scope is what let a hardcoded brand name survive in
+ * `src/content`, `src/seo` and `src/commerce` while this gate reported clean — the leak does not
+ * care which directory it is in, so neither does the scan.
  */
-const SCANNED_ROOTS = ["src/app", "src/components"] as const;
+const SCANNED_ROOTS = ["src"] as const;
+
+/**
+ * Ignored, each for a stated reason rather than convenience:
+ * - `src/brand` is the source these needles come from.
+ * - the admin surface is explicitly out of the brand contract: it does not change per brand.
+ * - `src/generated` is Prisma output, not authored code.
+ * - the Merchant apparel vocabulary defines Google's controlled values ("male", "adult"). Those are
+ *   the vocabulary a brand *picks from*, not brand strings, and the module that declares the list is
+ *   their source in the same way `src/brand` is the source of brand truth.
+ */
 const IGNORED = [
   "src/brand",
   "src/app/admin",
   "src/components/admin",
+  "src/generated",
+  "src/commerce/merchant-apparel-facts.ts",
 ] as const;
 
 /** Short enough to appear legitimately in unrelated words; declared needles cover the rest. */
@@ -55,15 +68,18 @@ function deaccent(value: string): string {
 /**
  * Every string leaf of BRAND, SIZE_GUIDE and FULFILLMENT, plus the brand-bearing part of NAVIGATION.
  *
- * NAVIGATION contributes `brandHomeLabel` only, and that narrowing is a plan decision rather than an
- * implementation shortcut — see Task 9 §9.1 in the spec repo's `tasks/plan.md`. Measured on this
- * tree, making
- * NAVIGATION fully recursive turns 23 of its 39 string leaves into needles that fire on up to 34
- * files: route paths ("/shop", "/search") and generic Vietnamese UI nouns ("Giỏ hàng", "Cửa hàng")
- * that pages legitimately contain. Route paths become centralizable only with the Phase C route
- * manifest (T11), and the generic labels stop appearing in scanned files only once Phase E moves
- * presentation into `src/components/brand/**`. The plan therefore defers full NAVIGATION scanning to
- * T32B; until then navigation duplication is prevented structurally, by the test below.
+ * KNOWN DEVIATION, not yet ratified. Task 9 in the approved plan
+ * (`nguyentuanson27-netizen/webtemplate@main`) asks for recursive scanning of NAVIGATION as well.
+ * This takes `brandHomeLabel` only. `webtemplate` PR #6 proposes amending Task 9 to record the
+ * narrowing; until that merges, this gate does not meet Task 9 as written, and that is a reviewer
+ * decision rather than something this file may settle.
+ *
+ * The measurement behind the proposal, at this scan scope: NAVIGATION has 39 string leaves of four
+ * or more characters and 23 of them fire on 65 files -- route paths ("/shop" in 54 files, "/search"
+ * in 44) and generic Vietnamese UI nouns ("Cửa hàng" in 10). Route paths are route identity and
+ * become centralizable only with the Phase C route manifest (T11); the generic labels leave the
+ * scanned scope only once Phase E moves presentation under `src/components/brand/**`. Until then
+ * navigation duplication is prevented structurally, by the test below.
  */
 function brandNeedles(): readonly string[] {
   const needles = new Set<string>();

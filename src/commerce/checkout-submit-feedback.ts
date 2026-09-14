@@ -1,4 +1,5 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
+import { BRAND } from "../brand/index.ts";
 
 const vnd = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -20,7 +21,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "success",
       title: "Đặt hàng thành công",
-      message: `Mã đơn ${result.orderCode}. LA Clothing sẽ liên hệ để xác nhận đơn COD.`,
+      message: `Mã đơn ${result.orderCode}. ${BRAND.identity.name} sẽ liên hệ để xác nhận đơn COD.`,
       mayRetry: false,
     };
   }
@@ -50,7 +51,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Chưa xác định trạng thái đồng bộ",
-      message: `Mã đơn ${result.orderCode} đã được tiếp nhận nhưng chưa xác định trạng thái tại Pancake. Vui lòng không gửi lại đơn; LA Clothing sẽ kiểm tra và liên hệ xác nhận.`,
+      message: `Mã đơn ${result.orderCode} đã được tiếp nhận nhưng chưa xác định trạng thái tại Pancake. Vui lòng không gửi lại đơn; ${BRAND.identity.name} sẽ kiểm tra và liên hệ xác nhận.`,
       mayRetry: false,
     };
   }

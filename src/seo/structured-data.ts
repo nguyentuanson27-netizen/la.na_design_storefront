@@ -2,8 +2,10 @@ import {
   PUBLIC_CONTACT_FACTS,
   supportHoursSchemaTime,
 } from "../content/public-brand-facts.ts";
+import { BRAND } from "../brand/index.ts";
 
-const SITE_NAME = "LA Clothing";
+// One site name for the whole site: the same binding the social card and root metadata read.
+const SITE_NAME = BRAND.identity.name;
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
 const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;

@@ -1,5 +1,6 @@
 import type { MerchantMarketPolicy, MerchantOffer } from "./merchant-offer-mapper.ts";
 import { MAX_MERCHANT_FEED_BYTES, MAX_MERCHANT_OFFERS } from "./merchant-feed-limits.ts";
+import { BRAND } from "../brand/index.ts";
 
 const encoder = new TextEncoder();
 
@@ -121,9 +122,9 @@ export function serializeMerchantFeed({
   const writer = new BoundedXmlWriter(maxBytes);
   writer.append('<?xml version="1.0" encoding="UTF-8"?>\n');
   writer.append('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>\n');
-  writer.append("<title>LA Clothing Google Merchant Feed</title>\n");
+  writer.append(`<title>${xml(BRAND.merchant.feedBrand)} Google Merchant Feed</title>\n`);
   writer.append(`<link>${xml(origin)}</link>\n`);
-  writer.append("<description>LA Clothing product data</description>\n");
+  writer.append(`<description>${xml(BRAND.merchant.feedBrand)} product data</description>\n`);
 
   for (const offer of ordered) {
     const nextItem = itemXml(offer, market);

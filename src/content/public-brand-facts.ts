@@ -150,7 +150,7 @@ export function describePublicReturnWindow(): string {
  */
 export function describePublicRefundWindow(): string {
   const { minimum, maximum } = PUBLIC_RETURNS_POLICY.refundWorkingDays;
-  return `${minimum}–${maximum} ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
+  return `${minimum}–${maximum} ngày làm việc kể từ khi ${BRAND.identity.name} nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
 }
 
 /**
