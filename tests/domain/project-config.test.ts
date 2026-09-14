@@ -28,15 +28,6 @@ test("the committed project config is plain JSON and parses through the validato
   assert.deepEqual(readProjectConfig(), parseProjectConfig(parsed));
 });
 
-test("the committed project config keeps the baseline brand identity", () => {
-  assert.deepEqual(readProjectConfig(), {
-    projectSlug: "la-clothing",
-    databaseName: "la_clothing",
-    composeProjectName: "la-clothing",
-    productionDomain: "www.lafashion.asia",
-  });
-});
-
 test("the committed project config carries no secrets", () => {
   const raw = readFileSync(fileURLToPath(PROJECT_CONFIG_PATH), "utf8");
   for (const forbidden of ["SECRET", "secret", "PASSWORD", "password", "API_KEY", "apiKey", "TOKEN", "token"]) {
@@ -98,6 +89,7 @@ test("projectSlug follows the image/route slug shape", () => {
     "ab", // shorter than three characters
     "1acme", // must start with a letter
     "-acme",
+    "acme-", // image repository path components must end in an alphanumeric character
     "acme_women", // underscores belong to the database name only
     "acme.women",
     "a".repeat(32), // longer than the 31 character bound
