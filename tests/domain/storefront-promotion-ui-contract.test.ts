@@ -182,7 +182,7 @@ test("every promotion-aware storefront surface mounts the shared server-relative
     { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
     { page: "../../src/app/shop/[slug]/page.tsx", loader: "../../src/routes/product.ts" },
     { page: "../../src/app/collections/[slug]/page.tsx", loader: "../../src/routes/collection.ts" },
-    { page: "../../src/app/lookbook/page.tsx", loader: null },
+    { page: "../../src/app/lookbook/page.tsx", loader: "../../src/routes/lookbook.ts" },
   ] as const;
 
   for (const surface of surfaces) {

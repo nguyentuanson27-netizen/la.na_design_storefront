@@ -202,10 +202,23 @@ test("U1 inventory catches embedded buyer labels without matching technical iden
 });
 
 test("U1b collections listing uses Vietnamese functional copy", async () => {
-  const source = await readFile(join(REPO_ROOT, "src/app/collections/page.tsx"), "utf8");
+  // The listing's title and description are metadata copy and are checked where the canonical
+  // metadata builder lives; everything a shopper reads is still checked on the page.
+  const [source, metadataSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/collections/page.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/routes/metadata/collections.ts"), "utf8"),
+  ]);
   for (const expected of [
     'title: "Bộ sưu tập"',
     `description: \`Khám phá các bộ sưu tập từ ${BRAND_NAME_IN_TEMPLATE}.\``,
+  ]) {
+    assert.equal(
+      metadataSource.includes(expected),
+      true,
+      `collections metadata missing Vietnamese copy: ${expected}`,
+    );
+  }
+  for (const expected of [
     "BỘ SƯU TẬP",
     "Khám phá bộ sưu tập ↗",
     "Bộ sưu tập hiện tại",

@@ -1,4 +1,4 @@
-import type { StorefrontProductMedia, TrustedProductImage } from "../commerce/product-media.ts";
+import type { StorefrontProductMedia } from "../commerce/product-media.ts";
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
@@ -8,6 +8,7 @@ import {
   type ProductCardModel,
 } from "../components/headless/build-product-card-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
+import { selectEditorialPanels, type EditorialPanel } from "./editorial-panels.ts";
 
 /**
  * Everything the home route decides, as one pure function.
@@ -32,15 +33,8 @@ export type HomeProduct = Readonly<{
 
 export type HomeCollectionLink = Readonly<{ slug: string; title: string }>;
 
-/**
- * One editorial panel: the photo and the product it came from, so markup can fall back to the
- * product's name when the image carries no alt text of its own. `null` when no product on the page
- * has trusted photography.
- */
-export type HomeEditorialPanel = Readonly<{
-  image: TrustedProductImage;
-  productName: string;
-}> | null;
+/** One editorial panel. See `selectEditorialPanels` for the fallback rule it follows. */
+export type HomeEditorialPanel = EditorialPanel;
 
 export type HomeCard = Readonly<{ id: string; model: ProductCardModel }>;
 
@@ -60,20 +54,14 @@ export type HomeViewModelInput = Readonly<{
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
 }>;
 
-function panel(product: HomeProduct | undefined): HomeEditorialPanel {
-  const image = product?.media?.primary;
-  return image ? Object.freeze({ image, productName: product!.name }) : null;
-}
-
 export function buildHomeViewModel({
   products,
   pricingRule,
   collections,
   selectEventBySlug,
 }: HomeViewModelInput): HomeViewModel {
-  // Only products with trusted photography can fill an editorial panel. The rest still get cards:
-  // a card without a photo has its own fallback, but a full-bleed panel without one is a blank wall.
-  const photographed = products.filter((product) => product.media?.primary);
+  // Three panels: hero, then the two lookbook slots.
+  const [hero, lookbookLarge, lookbookSmall] = selectEditorialPanels(products, 3);
 
   return Object.freeze({
     cards: Object.freeze(
@@ -91,11 +79,9 @@ export function buildHomeViewModel({
         }),
       ),
     ),
-    // Each panel falls back to the one above it, so a page with a single photographed product shows
-    // that photo in all three rather than leaving two panels empty.
-    hero: panel(photographed[0]),
-    lookbookLarge: panel(photographed[1] ?? photographed[0]),
-    lookbookSmall: panel(photographed[2] ?? photographed[1] ?? photographed[0]),
+    hero: hero ?? null,
+    lookbookLarge: lookbookLarge ?? null,
+    lookbookSmall: lookbookSmall ?? null,
     collections: Object.freeze([...collections]),
   });
 }

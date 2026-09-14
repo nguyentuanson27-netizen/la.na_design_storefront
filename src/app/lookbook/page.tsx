@@ -1,72 +1,42 @@
 import Image from "next/image";
-import type { Metadata } from "next";
 import Link from "next/link";
-import { connection } from "next/server";
 
-import {
-  listConfiguredStorefrontProducts,
-  resolveStorefrontPromotionForProducts,
-} from "@/commerce/storefront-catalog-runtime";
 import { BRAND } from "@/brand";
-import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
-import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
-import { PancakeConfigError } from "@/integrations/pancake/config";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
+import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import type { EditorialPanel } from "@/routes/editorial-panels";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadLookbookRoute, type LookbookRouteData, type LookbookRouteProps } from "@/routes/lookbook";
+import { buildLookbookMetadata } from "@/routes/metadata/lookbook";
 
-type LookbookPageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
+/** Markup only. The edit and its two chapter photographs live in `@/routes/lookbook`. */
 
-export async function generateMetadata({
-  searchParams,
-}: LookbookPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/lookbook",
-    searchParams: await searchParams,
-    title: "Lookbook",
-    description: `${BRAND.identity.name} editorial and styling stories for the city uniform.`,
-  });
-}
+const tones: readonly ProductCardTone[] = ["stone", "ink", "olive", "sand"];
 
-const tones = ["stone", "ink", "olive", "sand"] as const;
-
-async function loadLookbookProducts(now: Date) {
-  try {
-    const products = await listConfiguredStorefrontProducts(4);
-    const promotion = await resolveStorefrontPromotionForProducts({ products, now });
-    return { products, ...promotion };
-  } catch (error) {
-    if (error instanceof PancakeConfigError) {
-      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
-    }
-    throw error;
-  }
-}
-
-export default async function LookbookPage() {
-  await connection();
-  const requestNow = new Date();
-  const { products: featuredProducts, pricingRule, refreshAfterMs } = await loadLookbookProducts(requestNow);
-  const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
-  const listTracking = buildProductListTracking({
-    products: featuredProducts,
-    list: { listId: "lookbook-edit", listName: "Lookbook edit" },
-    pricingRule,
-  });
-  const chapter1Product = productsWithMedia[0];
-  const chapter1Image = chapter1Product?.media?.primary ?? null;
-  const chapter2Product = productsWithMedia[1] ?? productsWithMedia[0];
-  const chapter2Image = chapter2Product?.media?.primary ?? null;
+function ChapterPanel({
+  panel,
+  className,
+  fallbackAlt,
+}: Readonly<{ panel: EditorialPanel; className: string; fallbackAlt: string }>) {
+  // A chapter with no trusted photography keeps its shape and is hidden from assistive technology,
+  // rather than announcing an image that is not there.
+  if (!panel) return <div className={className} aria-hidden="true" />;
 
   return (
+    <div className={className}>
+      <Image
+        src={panel.image.url}
+        alt={panel.image.alt || panel.productName || fallbackAlt}
+        fill
+        sizes="(min-width: 768px) 65vw, 100vw"
+        className="object-cover"
+      />
+    </div>
+  );
+}
+
+function render(data: LookbookRouteData) {
+  return (
     <div className="mx-auto max-w-[1600px] px-6 py-16 md:py-24">
-      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <header className="border-b border-black/20 pb-12 md:pb-16">
         <p className="eyebrow">Editorial / 02 · Permanent Edition</p>
         <h1 className="mt-4 max-w-6xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
@@ -83,22 +53,11 @@ export default async function LookbookPage() {
       </header>
 
       <section className="grid border-b border-black/20 md:grid-cols-[1.35fr_0.65fr]" aria-labelledby="morning-transit-title">
-        {chapter1Image ? (
-          <div className="lookbook-panel relative min-h-[62vh] overflow-hidden md:min-h-[760px]">
-            <Image
-              src={chapter1Image.url}
-              alt={chapter1Image.alt || chapter1Product?.name || `${BRAND.identity.name} Lookbook Chapter 1`}
-              fill
-              sizes="(min-width: 768px) 65vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div
-            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--stone)] md:min-h-[760px]"
-            aria-hidden="true"
-          />
-        )}
+        <ChapterPanel
+          panel={data.chapterOne}
+          className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--stone)] md:min-h-[760px]"
+          fallbackAlt={`${BRAND.identity.name} Lookbook Chapter 1`}
+        />
         <div className="flex flex-col justify-end py-12 md:px-10 md:py-16">
           <p className="eyebrow">Chapter / 01 · 07:40</p>
           <h2 id="morning-transit-title" className="mt-4 font-serif text-[clamp(2.8rem,6vw,6rem)] leading-[0.9] tracking-[-0.045em]">
@@ -120,25 +79,14 @@ export default async function LookbookPage() {
             The uniform transitions into evening: relaxed silhouettes and deliberate structure.
           </p>
         </div>
-        {chapter2Image ? (
-          <div className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]">
-            <Image
-              src={chapter2Image.url}
-              alt={chapter2Image.alt || chapter2Product?.name || `${BRAND.identity.name} Lookbook Chapter 2`}
-              fill
-              sizes="(min-width: 768px) 65vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div
-            className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]"
-            aria-hidden="true"
-          />
-        )}
+        <ChapterPanel
+          panel={data.chapterTwo}
+          className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]"
+          fallbackAlt={`${BRAND.identity.name} Lookbook Chapter 2`}
+        />
       </section>
 
-      {featuredProducts.length > 0 ? (
+      {data.cards.length > 0 ? (
         <section className="border-b border-black/20 py-16 md:py-24" aria-labelledby="featured-pieces-title">
           <div className="section-heading-row mb-10">
             <div>
@@ -151,19 +99,9 @@ export default async function LookbookPage() {
               Shop collection ↗
             </Link>
           </div>
-          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
-            {featuredProducts.map((product, index) => (
-              <StorefrontProductCard
-                key={product.id}
-                slug={product.slug}
-                name={product.name}
-                media={product.media}
-                variants={product.variants}
-                pricingRule={pricingRule}
-                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
-                tone={tones[index % tones.length]!}
-              />
+            {data.cards.map((card, index) => (
+              <ProductCard key={card.id} model={card.model} tone={tones[index % tones.length]!} />
             ))}
           </div>
         </section>
@@ -183,3 +121,13 @@ export default async function LookbookPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<LookbookRouteProps, LookbookRouteData>({
+  load: loadLookbookRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildLookbookMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;
