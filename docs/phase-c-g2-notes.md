@@ -1,0 +1,142 @@
+# Phase C — G2 source verification notes
+
+Gate G2 requires checking current official documentation / authoritative sources for
+version-sensitive APIs before implementation, instead of relying on memory.
+
+`nextjs.org` is blocked by this environment's network egress proxy, so for the two Next.js APIs the
+**installed package's own type declarations and doc comments** were used as the authoritative source.
+They ship with the exact version this repo runs, which is a stronger guarantee than a docs site that
+describes whatever version is current at read time. Where a behavioural rule is not expressible in
+types, it was corroborated by web search.
+
+Versions verified in place: `next@16.2.11`, `react@19.2.0`, `typescript@5.9.3`, Node `v22.22.2`.
+
+## 1. Next.js Metadata API
+
+Checked:
+
+- `node_modules/next/dist/lib/metadata/types/metadata-interface.d.ts` — `Metadata`,
+  `ResolvedMetadata`, `ResolvingMetadata` (`= Promise<ResolvedMetadata>`) are exported from `next`.
+- Baseline usage in this repo: `src/app/page.tsx`, `src/app/shop/[slug]/layout.tsx`.
+- Web search (nextjs.org unreachable) for the one rule that is not in the type system: a route
+  segment may **not** export both `metadata` and `generateMetadata`; Next fails the build.
+
+Facts relied on:
+
+| Fact | Consequence for this PR |
+|---|---|
+| A segment cannot export both `metadata` and `generateMetadata` | This is what makes the factory's two overloads a real contract rather than a style choice. `page` mode yields `generateMetadata`; `static` mode uses `export const metadata`; they can never coexist in one file, so the manifest's three modes are mutually exclusive by construction. |
+| `generateMetadata` may be `async` and return `Promise<Metadata>` | The verifier must unwrap `await` before deciding whether the returned expression is a direct builder call. |
+| Metadata may be exported from `layout.tsx` | `layout` mode is legitimate; PDP keeps metadata in `layout.tsx` and its `page.tsx` exports none. Not normalized. |
+| `params` / `searchParams` are `Promise`-typed in this major | Route props stay `Promise`-shaped; the factory is generic over props and does not unwrap them. |
+
+## 2. `connection()`
+
+Checked `node_modules/next/dist/server/request/connection.d.ts` and `node_modules/next/server.d.ts`:
+
+```ts
+// next/dist/server/request/connection.d.ts
+/**
+ * This function allows you to indicate that you require an actual user Request before continuing.
+ *
+ * During prerendering it will never resolve and during rendering it resolves immediately.
+ */
+export declare function connection(): Promise<void>;
+
+// next/server.d.ts
+export { connection } from 'next/dist/server/request/connection'
+```
+
+Facts relied on:
+
+- `connection()` is exported from **`next/server`**, and `next/server` is on the boundary verifier's
+  deny list by design (spec 04 §6.3). So after route migration a page may not call it directly; the
+  dynamic-rendering requirement belongs to the route layer.
+- **Assumption affecting this PR:** baseline pages (`src/app/page.tsx`,
+  `src/app/shop/[slug]/layout.tsx`, cart/checkout) still import `connection` from `next/server`
+  today. That is precisely why Task 12 stays fixture-only: switching on a live repository-wide scan
+  in this PR would fail on unmigrated pages. Migration is Phase D/E work, gated live at T32B.
+
+## 3. TypeScript `ts.resolveModuleName`
+
+Checked `node_modules/typescript/lib/typescript.d.ts`:
+
+```ts
+// line 9330
+function resolveModuleName(
+  moduleName: string,
+  containingFile: string,
+  compilerOptions: CompilerOptions,
+  host: ModuleResolutionHost,
+  cache?: ModuleResolutionCache,
+  redirectedReference?: ResolvedProjectReference,
+  resolutionMode?: ResolutionMode,
+): ResolvedModuleWithFailedLookupLocations;
+
+// line 7336
+interface ResolvedModuleWithFailedLookupLocations {
+  readonly resolvedModule: ResolvedModuleFull | undefined;
+}
+```
+
+Facts relied on:
+
+- The signature matches spec §6.2 exactly; `ts.sys` satisfies `ModuleResolutionHost`.
+- Compiler options come from `ts.readConfigFile` + `ts.parseJsonConfigFileContent` on the real
+  `tsconfig.json`, so `paths` (`@/*` → `./src/*`), `moduleResolution: "bundler"` and
+  `allowImportingTsExtensions` are the project's own, not guessed.
+- **Assumption affecting this PR:** `moduleResolution: "bundler"` resolves the `@/*` alias through
+  `paths`. A resolution cache is not used; the fixture matrix is small and correctness beats speed.
+
+## 4. Node cannot import `.tsx` — verified, not assumed
+
+`node --experimental-strip-types` erases types but does **not** transform JSX, and refuses the
+extension outright:
+
+```
+$ node --experimental-strip-types run.ts   # importing a .tsx
+ERR_UNKNOWN_FILE_EXTENSION
+```
+
+A `.tsx` with no JSX in it fails the same way; the extension itself is rejected.
+
+This repo's entire test suite runs on that loader (`pnpm test:domain` →
+`node --experimental-strip-types --test tests/domain/*.test.ts`), so **a `.tsx` module cannot be
+imported by any test here.**
+
+Consequence: the shell must mount two `.tsx` client components, so **no test in this repo can import
+it whatever extension the shell itself uses.** An earlier draft of this note proposed writing
+`src/routes/core.ts` with `React.createElement` to dodge the extension; that was abandoned once the
+constraint was understood properly, because it would not have helped — the module's own imports are
+`.tsx` and the import fails either way. The file is `src/routes/core.tsx` with JSX, exactly as spec
+§4 names it.
+
+What that costs is the ability to execute the shell in a test, and it is paid as follows:
+
+| Task 10 criterion | How it is verified |
+|---|---|
+| Shell mounts refresher, reporter and JSON-LD; reporter is not behind a conditional | `tests/domain/route-handle-contract.test.ts` parses `core.tsx` with the TypeScript compiler and asserts the shape of the returned element tree, including that no conditional sits between those elements and the function body. Stronger than the string matching it replaces, and honest about not being a render. |
+| JSON-LD escapes a script breakout | `tests/domain/route-shell-jsonld.test.ts` **executes** `serializeJsonLd`, the same function the AST test proves the shell calls and does not reimplement. |
+| A page cannot read the payload | `tests/domain/route-handle-types.test.ts` **compiles** negative fixtures with `tsc` and asserts the diagnostics; a positive fixture compiles clean, so the negative one cannot pass by rejecting everything. Spread and `Object.values` are covered. |
+| `unsealRoute` and `PAYLOAD` never leave the module | AST check for export modifiers and export lists, not a grep for the word `export`. |
+
+Rendering the shell would additionally need a bundler and a Next request context, since
+`StorefrontPromotionRefresher` calls `useRouter`.
+
+`src/routes/factory.tsx` is likewise `.tsx` rather than the `factory.ts` the spec lists: it renders
+the shell with a render-prop child, and the `createElement` equivalent passes children as a prop,
+which `react/no-children-prop` rejects and which types worse.
+
+---
+
+# Phase C — carry-forward findings
+
+Found while building the verifiers. None is fixed here: each belongs to a later phase, and Phase C is
+scoped to the engines.
+
+| # | Finding | Belongs to |
+|---|---|---|
+| 1 | `src/app/shop/[slug]/layout.tsx` builds metadata with **three** early returns (`{}` for a `RangeError`, `{}` for a missing product, then the builder call). The metadata verifier rejects that as `indirect-return` by design -- spec 04 §5.2 puts normalisation in `src/routes/metadata/*`, not in the route module. Migrating PDP therefore means moving those two fallbacks into `buildProductMetadata`, not relaxing the verifier. | Phase D/E |
+| 2 | `src/components/brand/**` and `src/components/headless/**` do not exist yet, so the boundary verifier's positive fixtures cannot resolve into them. Both roots are already in the shipped policy, and the policy is asserted directly for them instead. Fixtures follow once Phase D splits `CartLineControls` and `AccountAuthPanel`. | Phase D |
+| 3 | Baseline storefront pages import `connection` from `next/server` at the page layer, which the boundary policy denies. This is why Task 12 stays fixture-only: the live gate would fail today, and the only way to make it pass is migrating pages. `tests/domain/route-boundary.test.ts` asserts that `src/app/page.tsx` *still violates* the policy, so if that assertion ever fails on its own, the migration is complete and T32B is unblocked. | Phase D/E, gated live at T32B |
+| 4 | G1 (La.na Design) carry-forwards -- product `material` / `craftDetails`, product-card colour-swatch-to-image mapping, PDP colour-driven gallery, collection `heroImage` / editorial gallery / optional video / ordered featured products -- are untouched here, as instructed. G1 concluded Phase C needs no architectural change to support them. | Phase D/E |
