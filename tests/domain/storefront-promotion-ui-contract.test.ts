@@ -165,16 +165,41 @@ test("PDP wires product-level options into its unselected price presentation", a
 });
 
 test("every promotion-aware storefront surface mounts the shared server-relative refresher", async () => {
+  // Two ways to satisfy one contract, because the routes cross over one slice at a time.
+  //
+  // A migrated route renders through `createStorefrontRoute`, and the shell mounts the refresher
+  // from the duration its loader sealed -- so the guarantee is structural and the page cannot drop
+  // it. A route still waiting for its slice mounts the refresher in its own source, which is what
+  // this test checked for all of them before the migration started.
+  const shell = await readFile(new URL("../../src/routes/core.tsx", import.meta.url), "utf8");
+  assert.match(shell, /<StorefrontPromotionRefresher refreshAfterMs=\{payload\.refreshAfterMs\}/);
+
   const surfaces = [
-    "../../src/app/page.tsx",
-    "../../src/app/collections/[slug]/page.tsx",
-    "../../src/app/lookbook/page.tsx",
-    "../../src/app/shop/[slug]/page.tsx",
+    { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
+    { page: "../../src/app/collections/[slug]/page.tsx", loader: null },
+    { page: "../../src/app/lookbook/page.tsx", loader: null },
+    { page: "../../src/app/shop/[slug]/page.tsx", loader: null },
   ] as const;
 
-  for (const path of surfaces) {
-    const source = await readFile(new URL(path, import.meta.url), "utf8");
-    assert.match(source, /StorefrontPromotionRefresher/, `${path} must mount the shared refresher`);
-    assert.match(source, /refreshAfterMs/, `${path} must use a server-relative refresh duration`);
+  for (const surface of surfaces) {
+    const source = await readFile(new URL(surface.page, import.meta.url), "utf8");
+
+    if (surface.loader === null) {
+      assert.match(source, /StorefrontPromotionRefresher/, `${surface.page} must mount the shared refresher`);
+      assert.match(source, /refreshAfterMs/, `${surface.page} must use a server-relative refresh duration`);
+      continue;
+    }
+
+    assert.match(
+      source,
+      /createStorefrontRoute/,
+      `${surface.page} is migrated, so it must render through the shell`,
+    );
+    const loader = await readFile(new URL(surface.loader, import.meta.url), "utf8");
+    assert.match(
+      loader,
+      /refreshAfterMs/,
+      `${surface.loader} must seal a server-relative refresh duration for the shell to mount`,
+    );
   }
 });

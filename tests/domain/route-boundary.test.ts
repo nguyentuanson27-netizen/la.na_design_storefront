@@ -15,6 +15,7 @@ import {
   storefrontPagePolicy,
   type BoundaryPolicy,
 } from "../support/boundary-verifier.ts";
+import { STOREFRONT_ROUTES } from "../../src/routes/manifest.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const FIXTURES = path.join(REPO_ROOT, "tests/fixtures/route-boundary");
@@ -240,29 +241,48 @@ test("the fixture-backed checker is not vacuous: the same engine accepts and rej
 
 /* ---------------------------------------------- scope: engine only, no live scan */
 
-test("the live scan is off because the tree is not migrated yet, not because it would pass", () => {
-  // This records why Phase C stops at the engine. The gate goes live at T32B, after the route
-  // migrations; turning it on now would fail, and the only way to make it pass would be mass-editing
-  // storefront pages, which is explicitly not this PR's job.
+test("a migrated route holds the boundary, and the gate stays off until every route does", () => {
+  // Phase C built the engine and deliberately left the scan off, recording that the unmigrated tree
+  // would fail it. Phase E migrates the routes one vertical slice at a time, so this now tracks the
+  // crossing directly, deriving which side each route is on from the module itself: importing
+  // `createStorefrontRoute` is exactly what makes the boundary apply.
   //
-  // Asserting that the unmigrated tree *does* violate the policy is worth more than asserting the
-  // scan is absent: if this ever goes green on its own, the migration is done and T32B is unblocked.
-  const page = path.join(REPO_ROOT, "src/app/page.tsx");
-  const violations = checkModuleBoundary({
-    fileName: page,
-    source: readFileSync(page, "utf8"),
-    compilerOptions: COMPILER_OPTIONS,
-    policy: storefrontPagePolicy(REPO_ROOT),
-  });
+  // Asserting the unmigrated ones still violate is worth more than asserting the scan is absent: the
+  // day that list is empty, the migration is done and the live gate (T32B) is unblocked.
+  const violationsFor = (relative: string) => {
+    const file = path.join(REPO_ROOT, relative);
+    return checkModuleBoundary({
+      fileName: file,
+      source: readFileSync(file, "utf8"),
+      compilerOptions: COMPILER_OPTIONS,
+      policy: storefrontPagePolicy(REPO_ROOT),
+    });
+  };
 
+  const migrated: string[] = [];
+  const pending: string[] = [];
+  for (const route of STOREFRONT_ROUTES) {
+    const source = readFileSync(path.join(REPO_ROOT, route.path), "utf8");
+    (/from "@\/routes\/factory"/.test(source) ? migrated : pending).push(route.path);
+  }
+
+  assert.ok(migrated.length > 0, "at least one route has been migrated by now");
+
+  for (const relative of migrated) {
+    assert.deepEqual(
+      violationsFor(relative).map((violation) => violation.message),
+      [],
+      `${relative} is migrated and must hold the boundary`,
+    );
+  }
+
+  // Not every unmigrated route violates the policy -- a page simple enough to import only allowed
+  // modules is already clean by accident. What keeps the live gate off is that *some* route still
+  // does, so that is what is asserted; the day this list is empty the migration is done and T32B is
+  // unblocked, and this assertion is the thing that says so.
+  const stillViolating = pending.filter((relative) => violationsFor(relative).length > 0);
   assert.ok(
-    violations.length > 0,
-    "src/app/page.tsx is expected to still violate the boundary before migration",
-  );
-  assert.ok(
-    violations.some((v) => v.specifier === "next/server"),
-    `the known baseline case: connection() imported from next/server at the page layer. Got: ${violations
-      .map((v) => v.specifier)
-      .join(", ")}`,
+    stillViolating.length > 0,
+    `every route now holds the boundary, so the live gate (T32B) is unblocked. Migrated: ${migrated.length}, pending: ${pending.length}`,
   );
 });
