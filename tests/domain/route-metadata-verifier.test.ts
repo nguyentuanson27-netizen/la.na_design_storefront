@@ -69,6 +69,47 @@ test("static: exporting both metadata and generateMetadata is rejected", () => {
   );
 });
 
+test("static: a type-only builder import is not a canonical builder", () => {
+  // `import type` introduces no runtime binding, so TypeScript's separate type and value namespaces
+  // let a module-scope value legally reuse the name. Counting the type import as canonical made the
+  // verifier believe the call went through the import while it resolved to the local function --
+  // and module scope is outside the inner-scope shadow guard.
+  assert.deepEqual(
+    codes(
+      `import type { buildCartMetadata } from "@/routes/metadata/cart";
+       const buildCartMetadata: typeof import("@/routes/metadata/cart").buildCartMetadata =
+         async () => ({ title: "Handwritten" });
+       export const metadata = buildCartMetadata();`,
+      "static",
+    ),
+    ["no-builder-import", "not-direct-call"],
+  );
+});
+
+test("static: an inline `type` specifier is not a canonical builder either", () => {
+  assert.deepEqual(
+    codes(
+      `import { type buildCartMetadata } from "@/routes/metadata/cart";
+       const buildCartMetadata = async () => ({ title: "Handwritten" });
+       export const metadata = buildCartMetadata();`,
+      "static",
+    ),
+    ["no-builder-import", "not-direct-call"],
+  );
+});
+
+test("static: a value import alongside a type specifier still works", () => {
+  // The rule must not punish the ordinary case of importing a builder and its input type together.
+  assert.deepEqual(
+    codes(
+      `import { buildCartMetadata, type CartInput } from "@/routes/metadata/cart";
+       export const metadata = buildCartMetadata();`,
+      "static",
+    ),
+    [],
+  );
+});
+
 /* ------------------------------------------------------------------ page mode */
 
 /**
@@ -320,6 +361,25 @@ test("page: a default import fails even when the call is direct", () => {
   );
   assert.ok(found.includes("default-import"));
   assert.ok(found.includes("not-direct-call"));
+});
+
+test("page: a type-only import plus a module-scope value of the same name is rejected", () => {
+  // The variant that slips past the inner-scope guard: the shadowing declaration is at module scope,
+  // which `shadowedBuilderName` never walks. Excluding type-only imports is what closes it.
+  assert.deepEqual(
+    codes(
+      `import type { buildHomeMetadata } from "@/routes/metadata/home";
+       import { createStorefrontRoute } from "@/routes/factory";
+       const buildHomeMetadata = async () => ({ title: "Handwritten" });
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["no-builder-import", "not-direct-call"],
+  );
 });
 
 test("page: re-declaring the builder name inside the metadata function is rejected", () => {

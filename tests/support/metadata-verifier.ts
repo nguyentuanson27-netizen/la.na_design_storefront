@@ -50,6 +50,12 @@ function namedMetadataBuilders(sf: ts.SourceFile, violations: MetadataViolation[
     const clause = st.importClause;
     if (!clause) continue;
 
+    // `import type { … }` introduces no runtime binding at all, so it cannot be the thing the
+    // metadata call reaches. Counting it as canonical is worse than useless: TypeScript's separate
+    // type and value namespaces then let a module-scope value reuse the name legally, and the call
+    // resolves to that value while the verifier believes it went through the import.
+    if (clause.isTypeOnly) continue;
+
     if (clause.name) {
       violations.push({
         code: "default-import",
@@ -64,7 +70,10 @@ function namedMetadataBuilders(sf: ts.SourceFile, violations: MetadataViolation[
       });
     }
     if (bindings && ts.isNamedImports(bindings)) {
-      for (const element of bindings.elements) names.add(element.name.text);
+      // `import { type buildX }` is the same story one specifier down.
+      for (const element of bindings.elements) {
+        if (!element.isTypeOnly) names.add(element.name.text);
+      }
     }
   }
 
