@@ -14,6 +14,15 @@ const NON_BUYER_PREFIXES = [
   "tests/a11y-runtime/admin-",
 ] as const;
 
+/**
+ * Buyer copy takes the brand name from Brand Config, so these page sources carry an interpolation
+ * where they used to carry the literal. The assertions below are about the Vietnamese half of the
+ * copy; spelling the brand half this way keeps them pinned to the config rather than to page prose,
+ * and keeps them true for any brand this template is forked for.
+ */
+const BRAND_NAME_IN_JSX = "{BRAND.identity.name}";
+const BRAND_NAME_IN_TEMPLATE = "${BRAND.identity.name}";
+
 const PHRASE_TERMS = [
   "Shop the collection",
   "View collections",
@@ -196,7 +205,7 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
   const source = await readFile(join(REPO_ROOT, "src/app/collections/page.tsx"), "utf8");
   for (const expected of [
     'title: "Bộ sưu tập"',
-    'description: "Khám phá các bộ sưu tập từ LA Clothing."',
+    `description: \`Khám phá các bộ sưu tập từ ${BRAND_NAME_IN_TEMPLATE}.\``,
     "BỘ SƯU TẬP",
     "Khám phá bộ sưu tập ↗",
     "Bộ sưu tập hiện tại",
@@ -215,7 +224,7 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
 
   for (const expected of [
     'const SHOP_TITLE = "Cửa hàng";',
-    "LA Clothing / Cửa hàng",
+    `${BRAND_NAME_IN_JSX} / Cửa hàng`,
     "CỬA HÀNG",
     "Khám phá sản phẩm",
     ">Bộ sưu tập<",
@@ -239,7 +248,7 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
     assert.equal(pageSource.includes(oldCopy), false, `shop listing retained old/technical copy: ${oldCopy}`);
   }
 
-  for (const expected of ["LA Clothing / Cửa hàng", "CỬA HÀNG", "Đang tải cửa hàng."]) {
+  for (const expected of [`${BRAND_NAME_IN_JSX} / Cửa hàng`, "CỬA HÀNG", "Đang tải cửa hàng."]) {
     assert.equal(loadingSource.includes(expected), true, `shop loading missing Vietnamese copy: ${expected}`);
   }
   for (const oldCopy of ["LA Clothing / Store", "SHOP", "catalog cửa hàng"]) {
@@ -252,7 +261,7 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
 
   for (const expected of [
     "Bộ sưu tập",
-    "LA Clothing / Bộ sưu tập",
+    `${BRAND_NAME_IN_JSX} / Bộ sưu tập`,
     "Bộ sưu tập hiện tại",
     "Bộ sưu tập này chưa có sản phẩm.",
     "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
@@ -307,7 +316,7 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
 
   for (const expected of [
     "Cửa hàng",
-    "LA Clothing / Sản phẩm",
+    `${BRAND_NAME_IN_JSX} / Sản phẩm`,
     "Hướng dẫn chọn kích cỡ",
     "Bảo quản",
     "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
