@@ -217,13 +217,21 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
 });
 
 test("U1b shop listing and loading use Vietnamese buyer-functional copy", async () => {
-  const [pageSource, loadingSource] = await Promise.all([
+  const [pageSource, loadingSource, metadataSource] = await Promise.all([
     readFile(join(REPO_ROOT, "src/app/shop/page.tsx"), "utf8"),
     readFile(join(REPO_ROOT, "src/app/shop/loading.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/routes/metadata/shop.ts"), "utf8"),
   ]);
 
+  // The listing's title is metadata copy, so it is checked where the canonical metadata builder
+  // lives. Everything a shopper reads on the page is still checked on the page.
+  assert.equal(
+    metadataSource.includes('export const SHOP_TITLE = "Cửa hàng";'),
+    true,
+    "the shop metadata builder must carry the Vietnamese listing title",
+  );
+
   for (const expected of [
-    'const SHOP_TITLE = "Cửa hàng";',
     `${BRAND_NAME_IN_JSX} / Cửa hàng`,
     "CỬA HÀNG",
     "Khám phá sản phẩm",

@@ -1,103 +1,30 @@
-import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { connection } from "next/server";
 
-import {
-  listConfiguredStorefrontDiscoveryFacets,
-  listConfiguredStorefrontDiscoveryPage,
-} from "@/commerce/storefront-catalog-runtime";
-import {
-  buildStorefrontDiscoveryHref,
-  parseStorefrontDiscoverySearchParams,
-  STOREFRONT_DISCOVERY_LIMITS,
-  type StorefrontDiscoverySearchParams,
-} from "@/commerce/storefront-discovery";
 import { BRAND } from "@/brand";
-import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
-import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
-import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
-import { readSearchExposure } from "@/seo/search-exposure";
+import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { createStorefrontRoute } from "@/routes/factory";
+import { buildShopMetadata } from "@/routes/metadata/shop";
+import { loadShopRoute, type ShopRouteProps } from "@/routes/shop";
+import type { ShopViewModel } from "@/routes/shop-model";
 
-const SHOP_TITLE = "Cửa hàng";
-const SHOP_DESCRIPTION = `Khám phá thời trang nam ${BRAND.identity.name} đang có sẵn tại cửa hàng.`;
-const PAGE_SIZE = 24;
-const tones = ["stone", "olive", "ink", "sand"] as const;
+/**
+ * Markup only. The query parsing, the catalog page, the facets, the tracking and the refresh window
+ * all live in `@/routes/shop`; the shell mounts what the loader sealed.
+ */
+
+const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
+
 const controlClassName =
   "min-h-11 w-full border-b border-black/30 bg-transparent px-0 py-2 text-sm outline-none focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 
-type ShopPageProps = {
-  searchParams: Promise<StorefrontDiscoverySearchParams>;
-};
+const linkClassName =
+  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4";
 
-export async function generateMetadata({ searchParams }: ShopPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildCatalogListingMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/shop",
-    searchParams: await searchParams,
-    title: SHOP_TITLE,
-    description: SHOP_DESCRIPTION,
-  });
-}
-
-function hasActiveDiscovery(discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>) {
-  return (
-    discovery.query !== null ||
-    discovery.color !== null ||
-    discovery.size !== null ||
-    discovery.availability !== null ||
-    discovery.minPriceVnd !== null ||
-    discovery.maxPriceVnd !== null ||
-    discovery.collection !== null ||
-    discovery.sort !== "name-asc"
-  );
-}
-
-function collectionLabel(slug: string): string {
-  return slug
-    .split("-")
-    .map((part) => (part.length > 0 ? `${part[0]!.toUpperCase()}${part.slice(1)}` : part))
-    .join(" ");
-}
-
-export default async function ShopPage({ searchParams }: ShopPageProps) {
-  await connection();
-
-  // One instant for the whole request: the count, the ordering, the SQL projection, transition
-  // aggregation and the card prices all agree.
-  const requestNow = new Date();
-
-  let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
-  let catalogPage: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;
-  let facets: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryFacets>>;
-  try {
-    discovery = parseStorefrontDiscoverySearchParams(await searchParams);
-    [catalogPage, facets] = await Promise.all([
-      listConfiguredStorefrontDiscoveryPage({ discovery, pageSize: PAGE_SIZE, now: requestNow }),
-      listConfiguredStorefrontDiscoveryFacets(),
-    ]);
-  } catch (error) {
-    if (error instanceof RangeError) notFound();
-    throw error;
-  }
-
-  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
-  // One impression per rendered card, priced by the rule that ordered and rendered the grid.
-  const listTracking = buildProductListTracking({
-    products,
-    list: { listId: "shop", listName: SHOP_TITLE },
-    pricingRule,
-  });
-  if (page > Math.max(totalPages, 1)) notFound();
-  const filtered = hasActiveDiscovery(discovery);
+function render(data: ShopViewModel) {
+  const { discovery } = data;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <p className="eyebrow">{BRAND.identity.name} / Cửa hàng</p>
       <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
         CỬA HÀNG
@@ -119,11 +46,8 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               Khám phá sản phẩm
             </h2>
           </div>
-          {filtered ? (
-            <Link
-              className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-              href="/shop"
-            >
+          {data.filtered ? (
+            <Link className={linkClassName} href="/shop">
               Xóa bộ lọc
             </Link>
           ) : null}
@@ -135,7 +59,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             <input
               className={controlClassName}
               defaultValue={discovery.query ?? ""}
-              maxLength={STOREFRONT_DISCOVERY_LIMITS.query}
+              maxLength={data.limits.query}
               name="q"
               placeholder="Tên sản phẩm"
               type="search"
@@ -146,9 +70,9 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             <span className="text-xs font-semibold uppercase tracking-[0.13em]">Bộ sưu tập</span>
             <select className={controlClassName} defaultValue={discovery.collection ?? ""} name="collection">
               <option value="">Tất cả</option>
-              {facets.collections.map((collection) => (
-                <option key={collection} value={collection}>
-                  {collectionLabel(collection)}
+              {data.collectionFacets.map((collection) => (
+                <option key={collection.value} value={collection.value}>
+                  {collection.label}
                 </option>
               ))}
             </select>
@@ -168,7 +92,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             <span className="text-xs font-semibold uppercase tracking-[0.13em]">Màu</span>
             <select className={controlClassName} defaultValue={discovery.color ?? ""} name="color">
               <option value="">Tất cả</option>
-              {facets.colors.map((color) => (
+              {data.colorFacets.map((color) => (
                 <option key={color} value={color}>
                   {color}
                 </option>
@@ -180,7 +104,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
             <span className="text-xs font-semibold uppercase tracking-[0.13em]">Kích cỡ</span>
             <select className={controlClassName} defaultValue={discovery.size ?? ""} name="size">
               <option value="">Tất cả</option>
-              {facets.sizes.map((size) => (
+              {data.sizeFacets.map((size) => (
                 <option key={size} value={size}>
                   {size}
                 </option>
@@ -194,7 +118,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               className={controlClassName}
               defaultValue={discovery.minPriceVnd ?? ""}
               inputMode="numeric"
-              max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+              max={data.limits.priceVnd}
               min={0}
               name="minPrice"
               placeholder="VND"
@@ -209,7 +133,7 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               className={controlClassName}
               defaultValue={discovery.maxPriceVnd ?? ""}
               inputMode="numeric"
-              max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+              max={data.limits.priceVnd}
               min={0}
               name="maxPrice"
               placeholder="VND"
@@ -239,22 +163,19 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
         </form>
       </section>
 
-      {totalCount === 0 ? (
+      {data.totalCount === 0 ? (
         <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="shop-empty-title">
-          <p className="eyebrow">{filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}</p>
+          <p className="eyebrow">{data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}</p>
           <h2 id="shop-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
-            {filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
+            {data.filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
           </h2>
           <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
-            {filtered
+            {data.filtered
               ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm."
               : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."}
           </p>
-          {filtered ? (
-            <Link
-              className="mt-6 inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
-              href="/shop"
-            >
+          {data.filtered ? (
+            <Link className={`mt-6 ${linkClassName}`} href="/shop">
               Xem tất cả sản phẩm →
             </Link>
           ) : null}
@@ -264,34 +185,28 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
           <div className="section-heading-row border-t border-black/20 pt-5">
             <h2 id="shop-products-title">Sản phẩm hiện tại</h2>
             <p className="eyebrow">
-              {totalCount} sản phẩm · Trang {page}/{totalPages}
+              {data.totalCount} sản phẩm · Trang {data.page}/{data.totalPages}
             </p>
           </div>
-          <CommerceEventReporter event={listTracking.listEvent} />
           <div className="product-grid">
-            {products.map((product, index) => (
-              <StorefrontProductCard
-                key={product.id}
-                slug={product.slug}
-                name={product.name}
-                media={product.media}
-                variants={product.variants}
-                pricingRule={pricingRule}
-                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
-                tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
+            {data.cards.map((card, index) => (
+              <ProductCard
+                key={card.id}
+                model={card.model}
+                tone={tones[(data.toneOffset + index) % tones.length]!}
               />
             ))}
           </div>
 
-          {totalPages > 1 ? (
+          {data.totalPages > 1 ? (
             <nav
               className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
               aria-label="Phân trang sản phẩm"
             >
-              {catalogPage.hasPrevious ? (
+              {data.previousHref ? (
                 <Link
-                  className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-                  href={buildStorefrontDiscoveryHref(discovery, page - 1)}
+                  className={`${linkClassName} focus-visible:outline focus-visible:outline-black`}
+                  href={data.previousHref}
                   rel="prev"
                 >
                   ← Trang trước
@@ -299,10 +214,10 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
               ) : (
                 <span aria-hidden="true" />
               )}
-              {catalogPage.hasNext ? (
+              {data.nextHref ? (
                 <Link
-                  className="inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-                  href={buildStorefrontDiscoveryHref(discovery, page + 1)}
+                  className={`${linkClassName} focus-visible:outline focus-visible:outline-black`}
+                  href={data.nextHref}
                   rel="next"
                 >
                   Trang sau →
@@ -315,3 +230,13 @@ export default async function ShopPage({ searchParams }: ShopPageProps) {
     </div>
   );
 }
+
+const route = createStorefrontRoute<ShopRouteProps, ShopViewModel>({
+  load: loadShopRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildShopMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;
