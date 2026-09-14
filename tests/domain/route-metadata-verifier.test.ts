@@ -30,7 +30,7 @@ test("static: a named import with hand-written metadata fails", () => {
   assert.deepEqual(
     codes(
       `import { buildCartMetadata } from "@/routes/metadata/cart";
-       export const metadata = { title: "Cart" };`,
+       export const metadata = { title: "Handwritten" };`,
       "static",
     ),
     ["not-direct-call"],
