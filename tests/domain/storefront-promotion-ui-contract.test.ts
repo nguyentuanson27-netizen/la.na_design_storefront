@@ -7,11 +7,19 @@ import {
   buildStorefrontProductProjection,
   deriveStorefrontProjectionSelection,
   selectStorefrontProductLevelOptions,
+  type StorefrontProjectionOption,
 } from "../../src/commerce/storefront-projection.ts";
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
 } from "../../src/commerce/storefront-product.ts";
+import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
+
+const currency = new Intl.NumberFormat("vi-VN", {
+  style: "currency",
+  currency: "VND",
+  maximumFractionDigits: 0,
+});
 
 function variant(id: string, size: string): StorefrontVariantFacts {
   return {
@@ -105,21 +113,55 @@ test("unselected composite PDP sale presentation is owned by the parent set, not
 });
 
 test("PDP wires product-level options into its unselected price presentation", async () => {
+  // The page half is still checked as source, because a route module cannot be imported here.
   const pageSource = await readFile(
     new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url),
-    "utf8",
-  );
-  const panelSource = await readFile(
-    new URL("../../src/components/commerce/product-purchase-panel.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(pageSource, /selectStorefrontProductLevelOptions/);
   assert.match(pageSource, /productLevelOptions=\{productLevelOptions\}/);
-  assert.match(
-    panelSource,
-    /resolveStorefrontDiscountPresentation\(productLevelOptions\)/,
-  );
+
+  // The panel half used to be checked the same way, by matching
+  // `resolveStorefrontDiscountPresentation(productLevelOptions)` in the panel's source. That call
+  // now lives in the headless selection model the panel renders, so the text match would only
+  // prove where the code sits. The contract itself -- an unselected PDP prices from the parent's
+  // own options, never from a cheaper component -- is asserted directly instead.
+  const parentOnly = [
+    {
+      id: "set-m",
+      pancakeVariationId: "pancake-set-m",
+      kindKey: null,
+      kindLabel: null,
+      color: null,
+      size: "M",
+      price: 180_000,
+      basePriceVnd: 200_000,
+      isDiscounted: true,
+      purchasable: true,
+      unavailableReason: null,
+    },
+  ] as unknown as StorefrontProjectionOption[];
+  const withComponent = [
+    ...parentOnly,
+    {
+      ...parentOnly[0]!,
+      id: "shirt-m",
+      pancakeVariationId: "pancake-shirt-m",
+      price: 50_000,
+      basePriceVnd: 100_000,
+    },
+  ] as unknown as StorefrontProjectionOption[];
+
+  const view = resolveVariantSelectionView({
+    options: withComponent,
+    productLevelOptions: parentOnly,
+    selection: { kindKey: null, color: null, size: null },
+  });
+
+  assert.equal(view.initialDiscount?.representativeVariantId, "set-m");
+  assert.equal(view.priceDisplay.compareAtText, currency.format(200_000));
+  assert.equal(view.priceDisplay.displayText, currency.format(180_000));
 });
 
 test("every promotion-aware storefront surface mounts the shared server-relative refresher", async () => {
