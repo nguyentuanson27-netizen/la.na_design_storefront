@@ -14,7 +14,7 @@ import {
   resolveSpecifier,
   storefrontPagePolicy,
   type BoundaryPolicy,
-} from "../../src/routes/boundary-verifier.ts";
+} from "../support/boundary-verifier.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const FIXTURES = path.join(REPO_ROOT, "tests/fixtures/route-boundary");

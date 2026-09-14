@@ -1,6 +1,6 @@
 import ts from "typescript";
 
-import type { MetadataMode } from "./manifest.ts";
+import type { MetadataMode } from "../../src/routes/manifest.ts";
 
 /**
  * Proves that the metadata a route module exports is the value a canonical builder returned.
@@ -167,6 +167,87 @@ function findExportedConstInitializer(sf: ts.SourceFile, name: string): ts.Expre
   return null;
 }
 
+export const ROUTE_FACTORY_NAME = "createStorefrontRoute";
+
+/**
+ * The `metadata` property of the object literal passed to `createStorefrontRoute`.
+ *
+ * Reports rather than returns when the route is not built through the factory, or when the factory
+ * call carries no metadata: in page mode both mean the page is not getting its metadata from where
+ * the manifest says it is.
+ */
+function metadataPropertyOfRouteDefinition(
+  sf: ts.SourceFile,
+  violations: MetadataViolation[],
+  label: string,
+): ts.Expression | ts.FunctionLikeDeclaration | null {
+  let call: ts.CallExpression | null = null;
+  const walk = (node: ts.Node): void => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === ROUTE_FACTORY_NAME
+    ) {
+      call = node;
+    }
+    node.forEachChild(walk);
+  };
+  walk(sf);
+
+  if (call === null) {
+    violations.push({
+      code: "missing-route-factory",
+      message: `${label}: page mode must build its route with ${ROUTE_FACTORY_NAME}`,
+    });
+    return null;
+  }
+
+  const definition = (call as ts.CallExpression).arguments[0];
+  if (!definition || !ts.isObjectLiteralExpression(definition)) {
+    violations.push({
+      code: "missing-metadata",
+      message: `${label}: ${ROUTE_FACTORY_NAME} must receive a route definition object literal`,
+    });
+    return null;
+  }
+
+  for (const property of definition.properties) {
+    if (ts.isPropertyAssignment(property) && property.name.getText(sf) === "metadata") {
+      return property.initializer;
+    }
+    if (ts.isMethodDeclaration(property) && property.name.getText(sf) === "metadata") {
+      return property;
+    }
+  }
+
+  violations.push({
+    code: "missing-metadata",
+    message: `${label}: page mode requires a \`metadata\` property on the route definition`,
+  });
+  return null;
+}
+
+/** Whether the module re-exports the factory's `generateMetadata`, e.g. `route.generateMetadata`. */
+function exportsFactoryGenerateMetadata(sf: ts.SourceFile): boolean {
+  const initializer = findExportedConstInitializer(sf, "generateMetadata");
+  if (initializer) {
+    return (
+      ts.isPropertyAccessExpression(initializer) &&
+      initializer.name.text === "generateMetadata"
+    );
+  }
+
+  for (const st of sf.statements) {
+    if (!ts.isExportDeclaration(st) || !st.exportClause || !ts.isNamedExports(st.exportClause)) {
+      continue;
+    }
+    for (const element of st.exportClause.elements) {
+      if (element.name.text === "generateMetadata") return true;
+    }
+  }
+  return false;
+}
+
 /** Whether a module exports a metadata value at all, in either shape. */
 export function exportsAnyMetadata(source: string, fileName = "module.tsx"): boolean {
   const sf = parse({ source, fileName, mode: "page" });
@@ -213,8 +294,43 @@ export function checkMetadataContract(input: MetadataCheckInput): readonly Metad
     return violations;
   }
 
-  // `page` and `layout` differ in which file is inspected, not in what is required of it: the
-  // caller passes the metadata-owning module, and both must return a builder call directly.
+  if (input.mode === "page") {
+    // Page mode inspects the `metadata` property handed to `createStorefrontRoute`, not an exported
+    // function: after migration the page does not write `generateMetadata` itself, it re-exports the
+    // one the factory built. Checking that export alone would say nothing about where the value came
+    // from, which is the entire question.
+    const property = metadataPropertyOfRouteDefinition(sf, violations, label);
+    if (property) {
+      const expression = ts.isFunctionLike(property)
+        ? returnedExpression(property, violations, label)
+        : property;
+      if (expression && !isDirectBuilderCall(expression, builders)) {
+        violations.push({
+          code: "not-direct-call",
+          message: `${label}: the route's \`metadata\` must be a direct call to a canonical builder`,
+        });
+      }
+    }
+
+    if (!exportsFactoryGenerateMetadata(sf)) {
+      violations.push({
+        code: "missing-generate-metadata",
+        message: `${label}: page mode must export the factory's \`generateMetadata\``,
+      });
+    }
+
+    if (findExportedConstInitializer(sf, "metadata")) {
+      violations.push({
+        code: "both-metadata-exports",
+        message: `${label}: a segment cannot export both \`metadata\` and \`generateMetadata\``,
+      });
+    }
+
+    return violations;
+  }
+
+  // `layout`: the metadata-owning module is the layout, which writes `generateMetadata` by hand and
+  // must return the builder call directly.
   const fn = findExportedFunction(sf, "generateMetadata");
   if (!fn) {
     violations.push({

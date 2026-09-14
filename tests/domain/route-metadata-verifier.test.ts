@@ -5,7 +5,7 @@ import {
   checkMetadataContract,
   exportsAnyMetadata,
   type MetadataCheckInput,
-} from "../../src/routes/metadata-verifier.ts";
+} from "../support/metadata-verifier.ts";
 
 function codes(source: string, mode: MetadataCheckInput["mode"], fileName = "fixture.tsx"): string[] {
   return checkMetadataContract({ source, mode, fileName }).map((v) => v.code).sort();
@@ -71,28 +71,29 @@ test("static: exporting both metadata and generateMetadata is rejected", () => {
 
 /* ------------------------------------------------------------------ page mode */
 
-test("page: returning a direct builder call passes", () => {
+/**
+ * Page mode is checked against the post-migration shape from spec 04 §5.2: the page does not write
+ * `generateMetadata` itself, it hands a `metadata` function to `createStorefrontRoute` and re-exports
+ * what the factory returns. Checking the export alone would prove nothing about where the value came
+ * from, which is the only question worth asking.
+ */
+function pageModule(body: string): string {
+  return `import { createStorefrontRoute } from "@/routes/factory";
+    import { buildHomeMetadata } from "@/routes/metadata/home";
+    ${body}
+    export const generateMetadata = route.generateMetadata;
+    export default route.Page;`;
+}
+
+test("page: a metadata property returning a direct builder call passes", () => {
   assert.deepEqual(
     codes(
-      `import { buildHomeMetadata } from "@/routes/metadata/home";
-       export async function generateMetadata(props) { return buildHomeMetadata(props); }`,
+      pageModule(`const route = createStorefrontRoute({
+        load, render, metadata: (props) => buildHomeMetadata(props),
+      });`),
       "page",
     ),
     [],
-  );
-});
-
-test("page: calling the builder then returning hand-written metadata fails", () => {
-  assert.deepEqual(
-    codes(
-      `import { buildCartMetadata } from "@/routes/metadata/cart";
-       export async function generateMetadata() {
-         buildCartMetadata();
-         return { title: "Cart" };
-       }`,
-      "page",
-    ),
-    ["not-direct-call"],
   );
 });
 
@@ -108,8 +109,9 @@ test("page: harmless wrappers around the call are accepted", () => {
   ]) {
     assert.deepEqual(
       codes(
-        `import { buildHomeMetadata } from "@/routes/metadata/home";
-         export async function generateMetadata(props) { return ${expression}; }`,
+        pageModule(`const route = createStorefrontRoute({
+          load, render, metadata: async (props) => ${expression},
+        });`),
         "page",
       ),
       [],
@@ -118,52 +120,106 @@ test("page: harmless wrappers around the call are accepted", () => {
   }
 });
 
-test("page: an arrow function with an expression body passes", () => {
+test("page: a block body with a single return of the builder call passes", () => {
   assert.deepEqual(
     codes(
-      `import { buildHomeMetadata } from "@/routes/metadata/home";
-       export const generateMetadata = (props) => buildHomeMetadata(props);`,
+      pageModule(`const route = createStorefrontRoute({
+        load, render,
+        metadata: async (props) => { return buildHomeMetadata(props); },
+      });`),
       "page",
     ),
     [],
   );
 });
 
+test("page: calling the builder then returning hand-written metadata fails", () => {
+  assert.deepEqual(
+    codes(
+      pageModule(`const route = createStorefrontRoute({
+        load, render,
+        metadata: async (props) => { buildHomeMetadata(props); return { title: "Home" }; },
+      });`),
+      "page",
+    ),
+    ["not-direct-call"],
+  );
+});
+
+test("page: hand-written metadata with the builder merely imported fails", () => {
+  assert.deepEqual(
+    codes(
+      pageModule(`const route = createStorefrontRoute({
+        load, render, metadata: async () => ({ title: "Home" }),
+      });`),
+      "page",
+    ),
+    ["not-direct-call"],
+  );
+});
+
 test("page: branching in the route module is rejected rather than guessed at", () => {
   assert.deepEqual(
     codes(
-      `import { buildHomeMetadata } from "@/routes/metadata/home";
-       export async function generateMetadata(props) {
-         if (props.x) return buildHomeMetadata(props);
-         return { title: "other" };
-       }`,
+      pageModule(`const route = createStorefrontRoute({
+        load, render,
+        metadata: async (props) => {
+          if (props.x) return buildHomeMetadata(props);
+          return { title: "other" };
+        },
+      });`),
       "page",
     ),
     ["indirect-return"],
   );
 });
 
-test("page: a nested callback's return does not count as the module's return", () => {
+test("page: a route not built through the factory is rejected", () => {
+  // The pre-migration shape. It has to fail, or migrating a page would be optional in practice.
   assert.ok(
     codes(
       `import { buildHomeMetadata } from "@/routes/metadata/home";
-       export async function generateMetadata(props) {
-         const f = () => buildHomeMetadata(props);
-         return { title: "hand-written" };
-       }`,
+       export async function generateMetadata(props) { return buildHomeMetadata(props); }`,
       "page",
-    ).includes("not-direct-call"),
+    ).includes("missing-route-factory"),
   );
 });
 
-test("page: a missing generateMetadata is reported", () => {
+test("page: a factory call with no metadata property is rejected", () => {
   assert.ok(
     codes(
-      `import { buildHomeMetadata } from "@/routes/metadata/home";
-       export const metadata = buildHomeMetadata();`,
+      pageModule(`const route = createStorefrontRoute({ load, render });`),
+      "page",
+    ).includes("missing-metadata"),
+  );
+});
+
+test("page: failing to re-export the factory's generateMetadata is rejected", () => {
+  assert.ok(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export default route.Page;`,
       "page",
     ).includes("missing-generate-metadata"),
   );
+});
+
+test("page: a default import fails even when the call is direct", () => {
+  const found = codes(
+    `import { createStorefrontRoute } from "@/routes/factory";
+     import buildHomeMetadata from "@/routes/metadata/home";
+     const route = createStorefrontRoute({
+       load, render, metadata: (props) => buildHomeMetadata(props),
+     });
+     export const generateMetadata = route.generateMetadata;`,
+    "page",
+  );
+  assert.ok(found.includes("default-import"));
+  assert.ok(found.includes("not-direct-call"));
 });
 
 /* ---------------------------------------------------------------- layout mode */

@@ -117,3 +117,17 @@ tests: every Task 10 criterion is verified by calling real code.
 
 Renaming to `.tsx` is a one-line change if the reviewer prefers the spec's letter, but the shell's
 tests would then have to become source-text assertions.
+
+---
+
+# Phase C — carry-forward findings
+
+Found while building the verifiers. None is fixed here: each belongs to a later phase, and Phase C is
+scoped to the engines.
+
+| # | Finding | Belongs to |
+|---|---|---|
+| 1 | `src/app/shop/[slug]/layout.tsx` builds metadata with **three** early returns (`{}` for a `RangeError`, `{}` for a missing product, then the builder call). The metadata verifier rejects that as `indirect-return` by design -- spec 04 §5.2 puts normalisation in `src/routes/metadata/*`, not in the route module. Migrating PDP therefore means moving those two fallbacks into `buildProductMetadata`, not relaxing the verifier. | Phase D/E |
+| 2 | `src/components/brand/**` and `src/components/headless/**` do not exist yet, so the boundary verifier's positive fixtures cannot resolve into them. Both roots are already in the shipped policy, and the policy is asserted directly for them instead. Fixtures follow once Phase D splits `CartLineControls` and `AccountAuthPanel`. | Phase D |
+| 3 | Baseline storefront pages import `connection` from `next/server` at the page layer, which the boundary policy denies. This is why Task 12 stays fixture-only: the live gate would fail today, and the only way to make it pass is migrating pages. `tests/domain/route-boundary.test.ts` asserts that `src/app/page.tsx` *still violates* the policy, so if that assertion ever fails on its own, the migration is complete and T32B is unblocked. | Phase D/E, gated live at T32B |
+| 4 | G1 (La.na Design) carry-forwards -- product `material` / `craftDetails`, product-card colour-swatch-to-image mapping, PDP colour-driven gallery, collection `heroImage` / editorial gallery / optional video / ordered featured products -- are untouched here, as instructed. G1 concluded Phase C needs no architectural change to support them. | Phase D/E |

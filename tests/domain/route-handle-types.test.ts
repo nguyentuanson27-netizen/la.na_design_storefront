@@ -55,6 +55,21 @@ test("a page cannot read the payload off the handle through any public typed API
   );
 });
 
+test("spreading the handle or enumerating its values does not defeat the seal", () => {
+  const messages = messagesFor("spread-probe.tsx");
+
+  // Symbol-keyed privacy would be worth little if the two obvious workarounds returned the payload.
+  // Spread carries the symbol across but still exposes no `data`; Object.values widens to unknown.
+  assert.ok(
+    messages.some((m) => m.includes("Property 'data' does not exist")),
+    `spread must not expose the payload; got:\n${messages.join("\n")}`,
+  );
+  assert.ok(
+    messages.some((m) => m.includes("'unknown' is not assignable")),
+    `Object.values must not yield the typed payload; got:\n${messages.join("\n")}`,
+  );
+});
+
 test("the supported seal/shell/render-prop shape compiles cleanly", () => {
   const diagnostics = compile("valid-usage.tsx");
 

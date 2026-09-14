@@ -11,7 +11,7 @@ import {
   routeUrlFromPath,
   storefrontRouteUrls,
 } from "../../src/routes/manifest.ts";
-import { exportsAnyMetadata } from "../../src/routes/metadata-verifier.ts";
+import { exportsAnyMetadata } from "../support/metadata-verifier.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
