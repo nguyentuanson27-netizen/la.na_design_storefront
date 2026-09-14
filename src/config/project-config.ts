@@ -26,9 +26,9 @@ type FieldRule = Readonly<{
 const FIELD_RULES: readonly FieldRule[] = [
   {
     key: "projectSlug",
-    pattern: /^[a-z][a-z0-9-]{2,30}$/,
+    pattern: /^[a-z][a-z0-9-]{1,29}[a-z0-9]$/,
     requirement:
-      "3-31 characters, starting with a lowercase letter, then lowercase letters, digits or hyphens",
+      "3-31 characters, starting with a lowercase letter, ending with a lowercase letter or digit, and containing only lowercase letters, digits or hyphens",
   },
   {
     key: "databaseName",
