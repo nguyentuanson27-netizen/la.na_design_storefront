@@ -1,9 +1,12 @@
 import { readAuthServerConfig } from "../auth/config.ts";
 import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 import { resolveMerchantMarketFromEnvironment } from "../commerce/merchant-offer-mapper.ts";
+import { LEGACY_TEMPORARY_STOREFRONT_HOST } from "../commerce/storefront-origin.ts";
+import { readProjectConfig } from "../config/project-config.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 import { validateSearchExposureForRelease } from "../seo/search-exposure.ts";
 import { readTrackingConfig, resolveTrackingRuntime, type TrackingMode } from "../tracking/config.ts";
+import { assertIdentityMirrors, type IdentityMirrorSummary } from "./identity-mirrors.ts";
 
 type ReleaseEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -23,6 +26,7 @@ export type ReleaseReadinessSummary = Readonly<{
     freeShippingSubtotalVnd: number;
     freeShippingMinQuantity: number;
   }>;
+  identityMirrors: IdentityMirrorSummary;
 }>;
 
 function validateDatabaseUrl(value: string | undefined): void {
@@ -58,6 +62,16 @@ export function validateReleaseEnvironment(
   }
   const pancake = readPancakeConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
+  // Last, so every existing preflight failure still reports its own reason first. This is the gate
+  // that stops a release pointed at another project's database or domain before deploy.sh reaches
+  // the backup and migrate steps.
+  const identityMirrors = assertIdentityMirrors({
+    config: readProjectConfig(),
+    databaseUrl: env.DATABASE_URL,
+    appDomain: env.APP_DOMAIN,
+    composeProject: env.COMPOSE_PROJECT_NAME,
+    approvedLegacyDomains: [LEGACY_TEMPORARY_STOREFRONT_HOST],
+  });
 
   return {
     databaseConfigured: true,
@@ -71,5 +85,6 @@ export function validateReleaseEnvironment(
     pancakeConfigured: true,
     pancakeShopId: pancake.shopId,
     shippingPolicy,
+    identityMirrors,
   };
 }

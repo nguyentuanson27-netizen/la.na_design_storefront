@@ -12,6 +12,11 @@ import {
   createCatalogIdSnapshot,
   type RawCorrelatedRunObservation,
 } from "../../src/commerce/merchant-identity-durability.ts";
+import { readProjectConfig } from "../../src/config/project-config.ts";
+
+// The guard now derives the audit database from the committed project identity, so the fixtures
+// that stand for "the real project database" derive from it too.
+const PROJECT_DATABASE_NAME = readProjectConfig().databaseName;
 
 test("creates well-formed snapshot with sorted hashed identifiers", () => {
   const snapshot = createCatalogIdSnapshot({
@@ -213,10 +218,13 @@ test("trusted durability evidence script refuses CI before reading credentials",
 test("durability evidence refuses production database name", () => {
   assert.throws(
     () =>
-      assertAuditDatabaseUrl("postgresql://user:pass@localhost:5432/la_clothing"),
+      assertAuditDatabaseUrl(`postgresql://user:pass@localhost:5432/${PROJECT_DATABASE_NAME}`),
     (err: unknown) => {
       assert(err instanceof Error);
-      assert.match(err.message, new RegExp(`expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got 'la_clothing'`, "i"));
+      assert.match(
+        err.message,
+        new RegExp(`expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got '${PROJECT_DATABASE_NAME}'`, "i"),
+      );
       return true;
     },
   );
@@ -244,7 +252,7 @@ test("durability evidence refuses missing, empty, or malformed DATABASE_URL", ()
   );
   assert.throws(
     () => assertAuditDatabaseUrl("postgresql:///"),
-    /expected database 'la_clothing_durability_audit', got ''/i,
+    new RegExp(`expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got ''`, "i"),
   );
 });
 
@@ -270,7 +278,7 @@ test("durability evidence environment validator refuses CI before database valid
 
 test("durability evidence error messages never leak passwords, hosts, or full URL secrets", () => {
   const sensitiveUrl =
-    "postgresql://secret_user:super_secret_password_xyz987@prod-internal-db.example.com:5432/la_clothing?sslmode=require";
+    `postgresql://secret_user:super_secret_password_xyz987@prod-internal-db.example.com:5432/${PROJECT_DATABASE_NAME}?sslmode=require`;
 
   try {
     assertAuditDatabaseUrl(sensitiveUrl);
@@ -281,7 +289,7 @@ test("durability evidence error messages never leak passwords, hosts, or full UR
     assert.doesNotMatch(error.message, /super_secret_password_xyz987/);
     assert.doesNotMatch(error.message, /prod-internal-db\.example\.com/);
     assert.doesNotMatch(error.message, /sslmode/);
-    assert.match(error.message, /la_clothing/);
+    assert.match(error.message, new RegExp(PROJECT_DATABASE_NAME));
   }
 
   // Also verify CLI stderr does not leak secrets when rejecting a production database
@@ -300,7 +308,10 @@ test("durability evidence error messages never leak passwords, hosts, or full UR
     },
   );
   assert.notEqual(cliResult.status, 0);
-  assert.match(cliResult.stderr, /expected database 'la_clothing_durability_audit', got 'la_clothing'/);
+  assert.match(
+    cliResult.stderr,
+    new RegExp(`expected database '${ALLOWED_AUDIT_DATABASE_NAME}', got '${PROJECT_DATABASE_NAME}'`),
+  );
   assert.doesNotMatch(cliResult.stderr, /secret_user/);
   assert.doesNotMatch(cliResult.stderr, /super_secret_password_xyz987/);
   assert.doesNotMatch(cliResult.stderr, /prod-internal-db\.example\.com/);
@@ -329,7 +340,7 @@ test("a refused durability run constructs no Prisma client", async () => {
     CI: process.env.CI,
     GITHUB_ACTIONS: process.env.GITHUB_ACTIONS,
   };
-  process.env.DATABASE_URL = "postgresql://postgres@127.0.0.1:5432/la_clothing";
+  process.env.DATABASE_URL = `postgresql://postgres@127.0.0.1:5432/${PROJECT_DATABASE_NAME}`;
   delete process.env.CI;
   delete process.env.GITHUB_ACTIONS;
 

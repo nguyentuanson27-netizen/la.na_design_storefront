@@ -9,6 +9,9 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=deploy/vps/project-identity.sh
+source "deploy/vps/project-identity.sh"
+
 ENV_FILE="deploy/vps/.env.production"
 COMPOSE_FILE="deploy/vps/compose.yml"
 PREVIOUS_SHA="$1"
@@ -18,8 +21,8 @@ if ! [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   exit 1
 fi
 
-if ! docker image inspect "la-clothing:$PREVIOUS_SHA" >/dev/null 2>&1; then
-  echo "Required rollback image la-clothing:$PREVIOUS_SHA is not available locally" >&2
+if ! docker image inspect "$PROJECT_SLUG:$PREVIOUS_SHA" >/dev/null 2>&1; then
+  echo "Required rollback image $PROJECT_SLUG:$PREVIOUS_SHA is not available locally" >&2
   exit 1
 fi
 

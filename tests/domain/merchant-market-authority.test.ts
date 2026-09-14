@@ -14,6 +14,7 @@ import {
 import { getMerchantFeed } from "../../src/commerce/merchant-feed-service.ts";
 import { serializeMerchantFeed } from "../../src/commerce/merchant-feed-serializer.ts";
 import { readSearchExposure } from "../../src/seo/search-exposure.ts";
+import { readProjectConfig } from "../../src/config/project-config.ts";
 import { validateReleaseEnvironment } from "../../src/operations/release-readiness.ts";
 import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
 import type { StorefrontProductProjection } from "../../src/commerce/storefront-projection.ts";
@@ -190,12 +191,16 @@ describe("U41 / M5a: trusted server-owned Merchant market authority", () => {
     assert.equal(resolveMerchantMarketFromEnvironment(env).status, "APPROVED");
     assert.equal(readSearchExposure(env).indexingEnabled, false);
 
+    // The release preflight now also checks that the deployment identity mirrors
+    // project.config.json, so this fixture states the project's own identity. What it is exercising
+    // is unchanged: Merchant market approval does not depend on search indexing.
+    const projectConfig = readProjectConfig();
     const releaseSummary = validateReleaseEnvironment({
-      DATABASE_URL: "postgresql://user:pass@localhost:5432/db",
-      APP_DOMAIN: "shop.example.test",
+      DATABASE_URL: `postgresql://user:pass@localhost:5432/${projectConfig.databaseName}`,
+      APP_DOMAIN: projectConfig.productionDomain,
       SEARCH_INDEXING_ENABLED: "false",
       BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
-      BETTER_AUTH_URL: "https://shop.example.test",
+      BETTER_AUTH_URL: `https://${projectConfig.productionDomain}`,
       BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
       PANCAKE_API_KEY: "secret-key",
       PANCAKE_SHOP_ID: "920007",

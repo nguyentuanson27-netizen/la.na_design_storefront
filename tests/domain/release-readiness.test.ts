@@ -36,6 +36,11 @@ test("release preflight validates required server configuration without returnin
       freeShippingSubtotalVnd: 1_000_000,
       freeShippingMinQuantity: 3,
     },
+    identityMirrors: {
+      databaseName: "la_clothing",
+      appDomainScope: "production",
+      composeProjectChecked: false,
+    },
   });
 
   const serialized = JSON.stringify(result);
@@ -192,4 +197,41 @@ test("release preflight reports approved Merchant market status when configured 
   });
 
   assert.equal(summary.merchantMarketStatus, "APPROVED");
+});
+
+test("release preflight refuses a DATABASE_URL that points at another project's database", () => {
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        DATABASE_URL: "postgresql://release_user:super-secret-password@db.internal:5432/other_brand",
+      }),
+    /refusing to deploy against another project's database/,
+  );
+});
+
+test("release preflight refuses a COMPOSE_PROJECT_NAME that drifts from the committed identity", () => {
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({ ...validEnvironment, COMPOSE_PROJECT_NAME: "other-brand" }),
+    /COMPOSE_PROJECT_NAME/,
+  );
+
+  assert.equal(
+    validateReleaseEnvironment({ ...validEnvironment, COMPOSE_PROJECT_NAME: "la-clothing" })
+      .identityMirrors.composeProjectChecked,
+    true,
+  );
+});
+
+test("release preflight refuses an APP_DOMAIN that is neither the production nor an approved host", () => {
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        APP_DOMAIN: "shop.example.test",
+        BETTER_AUTH_URL: "https://shop.example.test",
+      }),
+    /APP_DOMAIN/,
+  );
 });

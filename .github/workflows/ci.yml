@@ -155,8 +155,8 @@ jobs:
 
       - name: Release environment preflight
         env:
-          APP_DOMAIN: shop.example.test
-          BETTER_AUTH_URL: https://shop.example.test
+          APP_DOMAIN: ${{ needs.identity.outputs.production-domain }}
+          BETTER_AUTH_URL: https://${{ needs.identity.outputs.production-domain }}
           SEARCH_INDEXING_ENABLED: "false"
           PANCAKE_API_KEY: ci-only-pancake-placeholder
           PANCAKE_SHOP_ID: "920007"

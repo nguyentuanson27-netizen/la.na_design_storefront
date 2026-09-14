@@ -20,7 +20,14 @@
 
 import { createHash } from "node:crypto";
 
-export const ALLOWED_AUDIT_DATABASE_NAME = "la_clothing_durability_audit";
+import { readProjectConfig } from "../config/project-config.ts";
+
+/**
+ * The audit database is derived from the committed project identity rather than written out, so a
+ * fork protects its own database instead of inheriting this one's name. The guard itself is
+ * unchanged: write-capable evidence still refuses to run anywhere but the audit database.
+ */
+export const ALLOWED_AUDIT_DATABASE_NAME = `${readProjectConfig().databaseName}_durability_audit`;
 export const CI_REFUSAL_MESSAGE = "Trusted Pancake durability evidence script refuses CI execution";
 
 function isEnvironmentFlagEnabled(value: string | undefined): boolean {
