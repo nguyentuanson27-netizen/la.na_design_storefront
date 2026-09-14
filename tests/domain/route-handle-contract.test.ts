@@ -126,10 +126,14 @@ test("the shell renders JSON-LD through the canonical serializer and defines non
 
   const html = attribute(script[0]!.node, "dangerouslySetInnerHTML");
   assert.ok(html, "the script is filled through dangerouslySetInnerHTML");
+  // One script element in the source, rendered once per document. Serializing the whole array in a
+  // single script would turn a route that publishes one graph into `[{…}]`, changing the JSON-LD
+  // search engines already read on the PDP; what matters here is that whatever goes in a script goes
+  // through the canonical serializer untouched.
   assert.match(
     html.initializer!.getText(core),
-    /serializeJsonLd\(\s*payload\.structuredData\s*\)/,
-    "the payload goes straight to the canonical serializer",
+    /serializeJsonLd\(\s*document\s*\)/,
+    "each document goes straight to the canonical serializer",
   );
 
   const imports = core.statements.filter(ts.isImportDeclaration);

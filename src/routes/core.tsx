@@ -77,12 +77,18 @@ export function StorefrontRoute<D>({
     <>
       <StorefrontPromotionRefresher refreshAfterMs={payload.refreshAfterMs} />
       <CommerceEventReporter event={payload.trackingEvent} />
-      {payload.structuredData.length > 0 ? (
+      {/*
+        One script per document, not one script holding an array. A route that publishes a single
+        graph must emit exactly the document search engines already read there; wrapping it in an
+        array would change every migrated page's JSON-LD into `[{…}]` for no gain.
+      */}
+      {payload.structuredData.map((document, index) => (
         <script
+          key={index}
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: serializeJsonLd(payload.structuredData) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(document) }}
         />
-      ) : null}
+      ))}
       {children(payload.data)}
     </>
   );

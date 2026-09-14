@@ -1,106 +1,64 @@
-import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { connection } from "next/server";
 
 import { BRAND } from "@/brand";
-import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
-import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
-import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
-import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
-import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
-import { buildPublicBrandFacts } from "@/content/public-brand-facts";
-import { prisma } from "@/db/prisma";
-import { PancakeConfigError } from "@/integrations/pancake/config";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
+import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadHomeRoute, type HomeRouteData, type HomeRouteProps } from "@/routes/home";
+import { buildHomeMetadata } from "@/routes/metadata/home";
+import type { HomeEditorialPanel } from "@/routes/home-model";
 
-const tones = ["stone", "ink", "olive", "sand"] as const;
-const collectionRepository = createCollectionDefinitionRepository(prisma);
+/**
+ * Markup only. Every fetch, the tracking event, the refresh window and the metadata live in
+ * `@/routes/home`; the shell mounts the first three, so this file cannot forget one.
+ */
 
-type HomePageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
+const tones: readonly ProductCardTone[] = ["stone", "ink", "olive", "sand"];
 
-// The homepage declares no title or description of its own; both stay inherited from the root
-// metadata. This adds the self-canonical and nothing else.
-export async function generateMetadata({ searchParams }: HomePageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/",
-    searchParams: await searchParams,
-  });
+function EditorialPanel({
+  panel,
+  className,
+  fallbackAlt,
+  sizes,
+  preload = false,
+}: Readonly<{
+  panel: HomeEditorialPanel;
+  className: string;
+  fallbackAlt: string;
+  sizes: string;
+  preload?: boolean;
+}>) {
+  // A panel with no trusted photography is decorative, not broken: it keeps its shape and is hidden
+  // from assistive technology rather than announcing an image that is not there.
+  if (!panel) return <div className={className} aria-hidden="true" />;
+
+  return (
+    <div className={className}>
+      <Image
+        src={panel.image.url}
+        alt={panel.image.alt || panel.productName || fallbackAlt}
+        fill
+        preload={preload}
+        sizes={sizes}
+        className="object-cover"
+      />
+    </div>
+  );
 }
 
-async function loadHomepageProductEdit(now: Date) {
-  try {
-    const discovery = parseStorefrontDiscoverySearchParams({});
-    const page = await listConfiguredStorefrontDiscoveryPage({
-      discovery,
-      pageSize: 20,
-      now,
-    });
-    return {
-      products: page.products,
-      pricingRule: page.pricingRule,
-      refreshAfterMs: page.refreshAfterMs,
-    };
-  } catch (error) {
-    if (error instanceof PancakeConfigError) {
-      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
-    }
-    throw error;
-  }
-}
-
-export default async function HomePage() {
-  await connection();
-  const requestNow = new Date();
-  const [{ products: featuredProducts, pricingRule, refreshAfterMs }, publishedCollections] = await Promise.all([
-    loadHomepageProductEdit(requestNow),
-    collectionRepository.listHomepageMerchandising(),
-  ]);
-  const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
-  const productsWithMedia = featuredProducts.filter((p) => p.media?.primary);
-  const listTracking = buildProductListTracking({
-    products: featuredProducts,
-    list: { listId: "homepage-edit", listName: "Tuyển chọn" },
-    pricingRule,
-  });
-  const heroProduct = productsWithMedia[0];
-  const heroImage = heroProduct?.media?.primary ?? null;
-  const lookbookLargeProduct = productsWithMedia[1] ?? productsWithMedia[0];
-  const lookbookLargeImage = lookbookLargeProduct?.media?.primary ?? null;
-  const lookbookSmallProduct =
-    productsWithMedia[2] ?? productsWithMedia[1] ?? productsWithMedia[0];
-  const lookbookSmallImage = lookbookSmallProduct?.media?.primary ?? null;
+function render(data: HomeRouteData) {
+  const { brandFacts } = data;
 
   return (
     <>
-      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
       <section className="campaign-hero" aria-labelledby="campaign-title">
-        {heroImage ? (
-          <div className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]">
-            <Image
-              src={heroImage.url}
-              alt={heroImage.alt || heroProduct?.name || `${BRAND.identity.name} Campaign`}
-              fill
-              preload
-              sizes="(min-width: 900px) 60vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div
-            className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]"
-            aria-hidden="true"
-          />
-        )}
+        <EditorialPanel
+          panel={data.hero}
+          className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]"
+          fallbackAlt={`${BRAND.identity.name} Campaign`}
+          sizes="(min-width: 900px) 60vw, 100vw"
+          preload
+        />
         <div className="campaign-copy">
           <p className="eyebrow">{BRAND.identity.name} / Campaign</p>
           <h1 id="campaign-title">QUIET FORM.</h1>
@@ -132,24 +90,12 @@ export default async function HomePage() {
           <h2 id="shop-edit-title">Tuyển chọn</h2>
           <Link className="text-link" href="/shop">Xem tất cả</Link>
         </div>
-        {featuredProducts.length > 0 ? (
-          <>
-          <CommerceEventReporter event={listTracking.listEvent} />
+        {data.cards.length > 0 ? (
           <div className="product-grid">
-            {featuredProducts.map((product, index) => (
-              <StorefrontProductCard
-                key={product.id}
-                slug={product.slug}
-                name={product.name}
-                media={product.media}
-                variants={product.variants}
-                pricingRule={pricingRule}
-                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
-                tone={tones[index % tones.length]!}
-              />
+            {data.cards.map((card, index) => (
+              <ProductCard key={card.id} model={card.model} tone={tones[index % tones.length]!} />
             ))}
           </div>
-          </>
         ) : (
           <section
             aria-labelledby="homepage-empty-title"
@@ -168,47 +114,27 @@ export default async function HomePage() {
       </section>
 
       <section className="lookbook-grid" aria-labelledby="lookbook-title">
-        {lookbookLargeImage ? (
-          <div className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]">
-            <Image
-              src={lookbookLargeImage.url}
-              alt={lookbookLargeImage.alt || lookbookLargeProduct?.name || `${BRAND.identity.name} Lookbook`}
-              fill
-              sizes="(min-width: 900px) 50vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div
-            className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]"
-            aria-hidden="true"
-          />
-        )}
+        <EditorialPanel
+          panel={data.lookbookLarge}
+          className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]"
+          fallbackAlt={`${BRAND.identity.name} Lookbook`}
+          sizes="(min-width: 900px) 50vw, 100vw"
+        />
         <div className="lookbook-copy">
           <p className="eyebrow">Editorial / 02</p>
           <h2 id="lookbook-title">CITY UNIFORM</h2>
           <p>Measured proportions and functional utility for moving through the everyday.</p>
           <Link className="text-link" href="/lookbook">Xem lookbook ↗</Link>
         </div>
-        {lookbookSmallImage ? (
-          <div className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]">
-            <Image
-              src={lookbookSmallImage.url}
-              alt={lookbookSmallImage.alt || lookbookSmallProduct?.name || `${BRAND.identity.name} Detail`}
-              fill
-              sizes="(min-width: 900px) 25vw, 100vw"
-              className="object-cover"
-            />
-          </div>
-        ) : (
-          <div
-            className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]"
-            aria-hidden="true"
-          />
-        )}
+        <EditorialPanel
+          panel={data.lookbookSmall}
+          className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]"
+          fallbackAlt={`${BRAND.identity.name} Detail`}
+          sizes="(min-width: 900px) 25vw, 100vw"
+        />
       </section>
 
-      {publishedCollections.length > 0 ? (
+      {data.collections.length > 0 ? (
         <section
           className="category-strip"
           aria-labelledby="homepage-collections-title"
@@ -216,7 +142,7 @@ export default async function HomePage() {
         >
           <p className="eyebrow" id="homepage-collections-title">Mua theo bộ sưu tập</p>
           <nav className="category-links" aria-label="Bộ sưu tập nổi bật">
-            {publishedCollections.map((collection) => (
+            {data.collections.map((collection) => (
               <Link key={collection.slug} href={`/collections/${collection.slug}`}>
                 {collection.title}
               </Link>
@@ -262,3 +188,13 @@ export default async function HomePage() {
     </>
   );
 }
+
+const route = createStorefrontRoute<HomeRouteProps, HomeRouteData>({
+  load: loadHomeRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildHomeMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;

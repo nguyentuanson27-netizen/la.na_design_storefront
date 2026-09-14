@@ -27,6 +27,7 @@ const contentSecurityPolicy = `
   script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${facebookScriptSrc};
   style-src 'self' 'unsafe-inline';
   img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc};
+  media-src 'self' https://content.pancake.vn;
   font-src 'self';
   connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${facebookConnectSrc};
   object-src 'none';

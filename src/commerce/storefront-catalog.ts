@@ -80,6 +80,8 @@ const productSelection = {
     select: {
       status: true,
       editorialDescription: true,
+      material: true,
+      craftDetails: true,
       careInstructions: true,
       sizeGuide: true,
       seoTitle: true,
@@ -175,6 +177,9 @@ function toStorefrontProduct(
     name: product.name,
     media,
     editorialDescription: publishedContent?.editorialDescription ?? null,
+    material: publishedContent?.material ?? null,
+    // Blank entries are dropped rather than rendered as empty bullets.
+    craftDetails: (publishedContent?.craftDetails ?? []).filter((detail) => detail.trim().length > 0),
     careInstructions: publishedContent?.careInstructions ?? null,
     sizeGuide: publishedContent?.sizeGuide ?? null,
     seoTitle: publishedContent?.seoTitle ?? null,

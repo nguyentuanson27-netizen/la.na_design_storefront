@@ -11,7 +11,7 @@ import {
   routeUrlFromPath,
   storefrontRouteUrls,
 } from "../../src/routes/manifest.ts";
-import { exportsAnyMetadata } from "../support/metadata-verifier.ts";
+import { checkMetadataContract, exportsAnyMetadata } from "../support/metadata-verifier.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -59,11 +59,51 @@ test("every manifest entry points at a file that exists", () => {
   }
 });
 
+/**
+ * Whether a route has been migrated onto the route shell.
+ *
+ * Derived from the module rather than listed, so the split below cannot drift out of date as Phase E
+ * lands one vertical slice at a time: importing `createStorefrontRoute` is exactly what makes the
+ * full contract apply.
+ */
+function isMigrated(pagePath: string): boolean {
+  return /from "@\/routes\/factory"/.test(readFileSync(path.join(REPO_ROOT, pagePath), "utf8"));
+}
+
 test("the declared metadata mode matches what each module actually exports today", () => {
+  // A migrated route is held to the shipped verifier -- the thing the route contract is actually
+  // defined by. It knows that such a page does not write `generateMetadata` itself but re-exports
+  // the value `createStorefrontRoute` returned, which a regex reads as missing metadata.
+  //
+  // A route still waiting for its slice is held to the weaker shape it has today: metadata declared
+  // where the manifest says, and only there. Each crosses to the verifier when its slice lands.
   for (const route of STOREFRONT_ROUTES) {
-    const source = readFileSync(path.join(REPO_ROOT, route.path), "utf8");
-    const hasStatic = /export const metadata\b/.test(source);
-    const hasGenerate = /export (async )?function generateMetadata\b/.test(source);
+    const declaringFile = route.metadata === "layout" ? route.metadataFile! : route.path;
+    const declaringSource = readFileSync(path.join(REPO_ROOT, declaringFile), "utf8");
+
+    if (isMigrated(route.path)) {
+      assert.deepEqual(
+        checkMetadataContract({
+          source: declaringSource,
+          fileName: declaringFile,
+          mode: route.metadata,
+        }).map((violation) => violation.message),
+        [],
+        `${route.path} is migrated and declared ${route.metadata} mode`,
+      );
+
+      if (route.metadata === "layout") {
+        assert.equal(
+          exportsAnyMetadata(readFileSync(path.join(REPO_ROOT, route.path), "utf8"), route.path),
+          false,
+          `${route.path} is layout mode so its page must export no metadata`,
+        );
+      }
+      continue;
+    }
+
+    const hasStatic = /export const metadata\b/.test(declaringSource);
+    const hasGenerate = /export (async )?function generateMetadata\b/.test(declaringSource);
 
     if (route.metadata === "static") {
       assert.ok(hasStatic, `${route.path} is declared static so it must export a metadata const`);
@@ -74,12 +114,11 @@ test("the declared metadata mode matches what each module actually exports today
     } else {
       // PDP: the page must own no metadata at all, or Next would have two sources for one segment.
       assert.equal(
-        exportsAnyMetadata(source, route.path),
+        exportsAnyMetadata(readFileSync(path.join(REPO_ROOT, route.path), "utf8"), route.path),
         false,
         `${route.path} is declared layout mode so its page must export no metadata`,
       );
-      const layout = readFileSync(path.join(REPO_ROOT, route.metadataFile!), "utf8");
-      assert.match(layout, /export (async )?function generateMetadata\b/);
+      assert.match(declaringSource, /export (async )?function generateMetadata\b/);
     }
   }
 });

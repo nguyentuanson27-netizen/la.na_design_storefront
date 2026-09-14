@@ -164,12 +164,22 @@ test("P7 public repository reads expose only published allowlisted definition fi
   );
 
   assert.equal(await repository.findPublishedBySlug("p7-repo-draft"), null);
+
+  // An exact shape, not a superset: adding a column to `CollectionDefinition` must not make it
+  // public by accident. The editorial media below is public deliberately -- the collection page
+  // renders it -- and the values are the defaults a definition that has not been art-directed yet
+  // carries, which is what a storefront must handle without a hero, a gallery or a video.
   assert.deepEqual(await repository.findPublishedBySlug("p7-repo-public-a"), {
     slug: "p7-repo-public-a",
     title: "Public A",
     description: "Public A copy.",
     seoTitle: null,
     seoDescription: null,
+    heroImageUrl: null,
+    galleryImageUrls: [],
+    videoSrcUrl: null,
+    videoPosterUrl: null,
+    featuredProductSlugs: [],
   });
 });
 

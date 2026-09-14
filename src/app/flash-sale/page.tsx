@@ -1,80 +1,23 @@
-import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { connection } from "next/server";
 
-import {
-  listConfiguredFlashSalePage,
-  readConfiguredNextFlashSaleBoundary,
-} from "@/commerce/storefront-catalog-runtime";
-import {
-  parseStorefrontDiscoverySearchParams,
-  type StorefrontDiscoverySearchParams,
-} from "@/commerce/storefront-discovery";
 import { BRAND } from "@/brand";
-import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
-import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
-import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
-import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
-import { readSearchExposure } from "@/seo/search-exposure";
+import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadFlashSaleRoute, type FlashSaleRouteProps } from "@/routes/flash-sale";
+import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
+import {
+  buildFlashSaleMetadata,
+  FLASH_DESCRIPTION,
+  FLASH_TITLE,
+} from "@/routes/metadata/flash-sale";
 
-const FLASH_TITLE = "Flash Sale";
-const FLASH_DESCRIPTION = `Các sản phẩm đang giảm giá trong khung giờ Flash Sale của ${BRAND.identity.name}.`;
-const PAGE_SIZE = 24;
-const tones = ["stone", "olive", "ink", "sand"] as const;
+/** Markup only. The window, its products and the refresh boundary live in `@/routes/flash-sale`. */
 
-type FlashSalePageProps = {
-  searchParams: Promise<StorefrontDiscoverySearchParams>;
-};
+const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-export async function generateMetadata({ searchParams }: FlashSalePageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildCatalogListingMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/flash-sale",
-    searchParams: await searchParams,
-    title: FLASH_TITLE,
-    description: FLASH_DESCRIPTION,
-  });
-}
-
-export default async function FlashSalePage({ searchParams }: FlashSalePageProps) {
-  await connection();
-
-  // One server instant for membership, pricing, representative selection and refresh alike.
-  const requestNow = new Date();
-
-  let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
-  let flashPage: Awaited<ReturnType<typeof listConfiguredFlashSalePage>>;
-  let nextBoundaryAt: Awaited<ReturnType<typeof readConfiguredNextFlashSaleBoundary>>;
-  try {
-    discovery = parseStorefrontDiscoverySearchParams(await searchParams);
-    [flashPage, nextBoundaryAt] = await Promise.all([
-      listConfiguredFlashSalePage({ discovery, pageSize: PAGE_SIZE, now: requestNow }),
-      readConfiguredNextFlashSaleBoundary(requestNow),
-    ]);
-  } catch (error) {
-    if (error instanceof RangeError) notFound();
-    throw error;
-  }
-
-  const { page, products, totalCount, totalPages } = flashPage;
-  const listTracking = buildProductListTracking({
-    products,
-    list: { listId: "flash-sale", listName: FLASH_TITLE },
-  });
-  const { refreshAfterMs } = resolveStorefrontPromotionRefresh({
-    now: requestNow,
-    nextBoundaryAt,
-  });
-
+function render(data: FlashSaleViewModel) {
   return (
     <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
-      <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
-
       <header>
         <p className="eyebrow">{BRAND.identity.name} / Khuyến mãi</p>
         <h1 className="mt-5 text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
@@ -89,29 +32,21 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
         </h2>
 
         <p aria-live="polite" className="text-xs uppercase tracking-[0.14em] text-black/55">
-          {totalCount === 0
+          {data.totalCount === 0
             ? "Hiện chưa có sản phẩm nào trong khung giờ Flash Sale."
-            : `${totalCount} sản phẩm đang giảm giá`}
+            : `${data.totalCount} sản phẩm đang giảm giá`}
         </p>
 
-        {products.length > 0 ? (
-          <>
-          <CommerceEventReporter event={listTracking.listEvent} />
+        {data.cards.length > 0 ? (
           <div className="product-grid mt-8">
-            {products.map((product, index) => (
-              <StorefrontProductCard
-                key={product.id}
-                slug={product.slug}
-                name={product.name}
-                media={product.media}
-                variants={product.variants}
-                flashSale={product.flashSale}
-                selectEvent={listTracking.selectEventBySlug.get(product.slug) ?? null}
-                tone={tones[((page - 1) * PAGE_SIZE + index) % tones.length]!}
+            {data.cards.map((card, index) => (
+              <ProductCard
+                key={card.id}
+                model={card.model}
+                tone={tones[(data.toneOffset + index) % tones.length]!}
               />
             ))}
           </div>
-          </>
         ) : (
           <p className="mt-8 max-w-xl text-sm leading-6 text-black/70">
             Hãy quay lại sau — trang này tự cập nhật khi khung giờ Flash Sale bắt đầu.{" "}
@@ -122,23 +57,23 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
           </p>
         )}
 
-        {totalPages > 1 ? (
+        {data.totalPages > 1 ? (
           <nav
             aria-label="Phân trang Flash Sale"
             className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
           >
-            {page > 1 ? (
-              <Link className="underline" href={`/flash-sale?page=${page - 1}`}>
+            {data.previousHref ? (
+              <Link className="underline" href={data.previousHref}>
                 Trang trước
               </Link>
             ) : (
               <span aria-hidden="true" />
             )}
             <p className="text-xs uppercase tracking-[0.14em] text-black/55">
-              Trang {page} / {totalPages}
+              Trang {data.page} / {data.totalPages}
             </p>
-            {page < totalPages ? (
-              <Link className="underline" href={`/flash-sale?page=${page + 1}`}>
+            {data.nextHref ? (
+              <Link className="underline" href={data.nextHref}>
                 Trang sau
               </Link>
             ) : (
@@ -150,3 +85,13 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
     </div>
   );
 }
+
+const route = createStorefrontRoute<FlashSaleRouteProps, FlashSaleViewModel>({
+  load: loadFlashSaleRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildFlashSaleMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;

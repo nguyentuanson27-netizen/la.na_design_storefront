@@ -113,14 +113,18 @@ test("unselected composite PDP sale presentation is owned by the parent set, not
 });
 
 test("PDP wires product-level options into its unselected price presentation", async () => {
-  // The page half is still checked as source, because a route module cannot be imported here.
+  // The wiring half is still checked as source, because a route module cannot be imported here. It
+  // moved with the migration: the PDP's loader now selects the product-level options and seals them
+  // onto the view model, and the page hands that straight to the purchase panel.
+  const loaderSource = await readFile(new URL("../../src/routes/product.ts", import.meta.url), "utf8");
   const pageSource = await readFile(
     new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(pageSource, /selectStorefrontProductLevelOptions/);
-  assert.match(pageSource, /productLevelOptions=\{productLevelOptions\}/);
+  assert.match(loaderSource, /selectStorefrontProductLevelOptions/);
+  assert.match(loaderSource, /productLevelOptions: selectStorefrontProductLevelOptions\(/);
+  assert.match(pageSource, /productLevelOptions: data\.productLevelOptions/);
 
   // The panel half used to be checked the same way, by matching
   // `resolveStorefrontDiscountPresentation(productLevelOptions)` in the panel's source. That call
@@ -165,16 +169,36 @@ test("PDP wires product-level options into its unselected price presentation", a
 });
 
 test("every promotion-aware storefront surface mounts the shared server-relative refresher", async () => {
+  // All four promotion-aware surfaces have now crossed onto the shell, so the guarantee is
+  // structural rather than per-page: the shell mounts the refresher from the duration each loader
+  // sealed, and a page cannot drop it. A surface that has not migrated would instead have to mount
+  // the refresher in its own source -- there are none left in this list, so that path is gone
+  // rather than kept as an unreachable branch.
+  const shell = await readFile(new URL("../../src/routes/core.tsx", import.meta.url), "utf8");
+  assert.match(shell, /<StorefrontPromotionRefresher refreshAfterMs=\{payload\.refreshAfterMs\}/);
+
   const surfaces = [
-    "../../src/app/page.tsx",
-    "../../src/app/collections/[slug]/page.tsx",
-    "../../src/app/lookbook/page.tsx",
-    "../../src/app/shop/[slug]/page.tsx",
+    { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
+    { page: "../../src/app/shop/[slug]/page.tsx", loader: "../../src/routes/product.ts" },
+    { page: "../../src/app/collections/[slug]/page.tsx", loader: "../../src/routes/collection.ts" },
+    { page: "../../src/app/lookbook/page.tsx", loader: "../../src/routes/lookbook.ts" },
   ] as const;
 
-  for (const path of surfaces) {
-    const source = await readFile(new URL(path, import.meta.url), "utf8");
-    assert.match(source, /StorefrontPromotionRefresher/, `${path} must mount the shared refresher`);
-    assert.match(source, /refreshAfterMs/, `${path} must use a server-relative refresh duration`);
+  for (const surface of surfaces) {
+    const [source, loader] = await Promise.all([
+      readFile(new URL(surface.page, import.meta.url), "utf8"),
+      readFile(new URL(surface.loader, import.meta.url), "utf8"),
+    ]);
+
+    assert.match(
+      source,
+      /createStorefrontRoute/,
+      `${surface.page} is migrated, so it must render through the shell`,
+    );
+    assert.match(
+      loader,
+      /refreshAfterMs/,
+      `${surface.loader} must seal a server-relative refresh duration for the shell to mount`,
+    );
   }
 });

@@ -2,6 +2,14 @@ const TRUSTED_IMAGE_HOSTNAME = "content.pancake.vn";
 const MAX_IMAGE_URL_LENGTH = 4096;
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png"]);
+/**
+ * Editorial video, held to exactly the image rules with one extension set swapped.
+ *
+ * The host is the same reviewed Pancake CDN: this adds a media type, not a place media may come
+ * from. Anything else -- another host, a custom port, credentials, a path outside the reviewed
+ * shape -- is refused here for the same reasons it is for an image.
+ */
+const ALLOWED_VIDEO_EXTENSIONS = new Set([".mp4"]);
 
 export type TrustedProductImage = {
   url: string;
@@ -27,6 +35,13 @@ export type StorefrontProductMedia = {
  * - Length must be bounded (<= 4096 chars)
  */
 export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
+  return parseTrustedMediaUrl(rawUrl, ALLOWED_IMAGE_EXTENSIONS);
+}
+
+function parseTrustedMediaUrl(
+  rawUrl: unknown,
+  allowedExtensions: ReadonlySet<string>,
+): string | null {
   if (typeof rawUrl !== "string") {
     return null;
   }
@@ -71,19 +86,34 @@ export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
     return null;
   }
 
-  // Enforce reviewed Pancake CDN path shape: /:segment/:id/:id/:id/:file.(jpg|png)
+  // Enforce reviewed Pancake CDN path shape: /:segment/:id/:id/:id/:file.(jpg|png|mp4)
   const pathname = parsed.pathname;
-  if (!isValidReviewedMediaPath(pathname)) {
+  if (!isValidReviewedMediaPath(pathname, allowedExtensions)) {
     return null;
   }
 
   return parsed.toString();
 }
 
-const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png)$/;
+/**
+ * The same contract as {@link parseTrustedProductImageUrl}, for editorial video.
+ *
+ * Shares every rule -- HTTPS, the one reviewed host, no port, no credentials, no traversal, the
+ * reviewed path shape -- and differs only in which extension it accepts. Written as a separate
+ * entry point rather than by widening the image parser, so nothing that asks for an image can be
+ * handed an `.mp4`.
+ */
+export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
+  return parseTrustedMediaUrl(rawUrl, ALLOWED_VIDEO_EXTENSIONS);
+}
 
-function isValidReviewedMediaPath(pathname: string): boolean {
+const PANCAKE_MEDIA_PATH_REGEX =
+  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|mp4)$/;
+
+function isValidReviewedMediaPath(
+  pathname: string,
+  allowedExtensions: ReadonlySet<string>,
+): boolean {
   if (!PANCAKE_MEDIA_PATH_REGEX.test(pathname) || pathname.includes("..")) {
     return false;
   }
@@ -101,7 +131,7 @@ function isValidReviewedMediaPath(pathname: string): boolean {
   }
 
   const extension = filename.slice(lastDotIndex);
-  return ALLOWED_IMAGE_EXTENSIONS.has(extension);
+  return allowedExtensions.has(extension);
 }
 
 export const MAX_MEDIA_CANDIDATES_SCANNED = 100;

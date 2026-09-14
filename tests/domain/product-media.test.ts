@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   parseTrustedProductImageUrl,
+  parseTrustedProductVideoUrl,
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
   type TrustedProductImage,
@@ -382,4 +383,40 @@ test("resolveVariantGalleryIndexes skips untrusted candidates and takes the firs
   });
 
   assert.equal(indexes.get("v-mixed"), 1);
+});
+
+/* ------------------------------------------------------- editorial video (Phase E) */
+
+test("an mp4 is video, never an image", () => {
+  // Widening the image parser instead of adding an entry point would have let anything asking for a
+  // photograph be handed a video file.
+  const mp4 = "https://content.pancake.vn/1/2/3/4/film.mp4";
+
+  assert.equal(parseTrustedProductImageUrl(mp4), null);
+  assert.equal(parseTrustedProductVideoUrl(mp4), mp4);
+});
+
+test("an image is not video either: the two extension sets do not overlap", () => {
+  assert.equal(parseTrustedProductVideoUrl("https://content.pancake.vn/1/2/3/4/photo.jpg"), null);
+  assert.equal(parseTrustedProductVideoUrl("https://content.pancake.vn/1/2/3/4/photo.png"), null);
+});
+
+test("video is held to every rule an image is held to", () => {
+  // The same reviewed host and the same reviewed path shape. This adds a media type, not a place
+  // media may come from.
+  for (const rejected of [
+    "http://content.pancake.vn/1/2/3/4/film.mp4",
+    "https://evil.example.com/1/2/3/4/film.mp4",
+    "https://content.pancake.vn:8443/1/2/3/4/film.mp4",
+    "https://user:pass@content.pancake.vn/1/2/3/4/film.mp4",
+    "https://content.pancake.vn/1/2/3/../4/film.mp4",
+    "https://content.pancake.vn/film.mp4",
+    "https://content.pancake.vn/1/2/3/4/film.mp4.exe",
+    "",
+    null,
+    undefined,
+    42,
+  ]) {
+    assert.equal(parseTrustedProductVideoUrl(rejected), null, `must reject ${String(rejected)}`);
+  }
 });
