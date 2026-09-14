@@ -14,6 +14,7 @@ export const BRAND: BrandConfig = {
     displayNameUpper: "LA CLOTHING",
     headline: "LA Clothing — Modern Menswear",
     tagline: "Minimal, modern menswear by LA Clothing.",
+    strapline: "Modern menswear for everyday movement.",
     // §1 legal identity, approved for publication by B6/§7.
     legalName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxId: "0111242251",

@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { BRAND, NAVIGATION } from "@/brand";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import {
   buildPublicBrandFacts,
@@ -14,8 +15,8 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div>
-        <p className="footer-kicker">LA CLOTHING</p>
-        <p className="footer-copy">Modern menswear for everyday movement.</p>
+        <p className="footer-kicker">{BRAND.identity.displayNameUpper}</p>
+        <p className="footer-copy">{BRAND.identity.strapline}</p>
 
         <dl className="mt-8 grid max-w-2xl gap-5 text-sm leading-6">
           <div>
@@ -69,7 +70,7 @@ export function SiteFooter() {
                 rel="noreferrer"
                 target="_blank"
               >
-                Fanpage LA Clothing
+                Fanpage {BRAND.identity.name}
               </a>
             </dd>
           </div>
@@ -77,19 +78,14 @@ export function SiteFooter() {
       </div>
 
       <nav className="footer-links" aria-label="Liên kết cuối trang">
-        <Link href="/shop">Cửa hàng</Link>
-        <Link href="/new-arrivals">Hàng mới</Link>
-        <Link href="/lookbook">Lookbook</Link>
-        <Link href="/track-order">Tra cứu đơn</Link>
-        <Link href="/about">Về LA Clothing</Link>
-        <Link href="/shipping">Vận chuyển</Link>
-        <Link href="/returns">Đổi trả</Link>
-        <Link href="/size-guide">Bảng size</Link>
-        <Link href="/contact">Liên hệ</Link>
-        <Link href="/account">Tài khoản</Link>
+        {NAVIGATION.footer.map((item) => (
+          <Link key={item.href} href={item.href}>
+            {item.label}
+          </Link>
+        ))}
       </nav>
 
-      <p className="footer-meta">© 2026 LA Clothing</p>
+      <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
     </footer>
   );
 }

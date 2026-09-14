@@ -1,8 +1,9 @@
-import {
-  MERCHANT_AGE_GROUPS,
-  MERCHANT_GENDERS,
-  type MerchantAgeGroup,
-  type MerchantGender,
+// Types only. A value import here would make src/brand depend on the commerce layer at runtime,
+// and the commerce layer reads the brand's merchant defaults -- the cycle would decide which of the
+// two initializes first.
+import type {
+  MerchantAgeGroup,
+  MerchantGender,
 } from "../commerce/merchant-apparel-facts.ts";
 
 /**
@@ -24,6 +25,13 @@ export const MARKET_VN = Object.freeze({
 
 export type Market = typeof MARKET_VN;
 
+/**
+ * Part of the same Vietnam lock: the calling code the approved national phone number is published
+ * under internationally. A test pins the derivation against the repository's reviewed
+ * `normalizeVietnamesePhone`, so this constant cannot drift from how checkout normalizes a number.
+ */
+export const VIETNAM_CALLING_CODE = "84";
+
 export type SupportHours = Readonly<{
   days: readonly string[];
   opens: string;
@@ -39,6 +47,8 @@ export type BrandIdentity = Readonly<{
   headline: string;
   /** One-line description used as the default meta description and the footer brand summary. */
   tagline: string;
+  /** The short brand line the site footer shows under the wordmark. */
+  strapline: string;
   legalName: string;
   taxId: string;
   /** Exactly one owner-approved sentence. Freehand brand prose is how invented history ships. */
@@ -106,5 +116,4 @@ export type NavigationConfig = Readonly<{
   footer: readonly NavigationLink[];
 }>;
 
-export { MERCHANT_AGE_GROUPS, MERCHANT_GENDERS };
 export type { MerchantAgeGroup, MerchantGender };

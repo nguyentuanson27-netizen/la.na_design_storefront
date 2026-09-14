@@ -1,10 +1,12 @@
-import { normalizeVietnamesePhone } from "../integrations/meta/conversions-api.ts";
+import {
+  MERCHANT_AGE_GROUPS,
+  MERCHANT_GENDERS,
+} from "../commerce/merchant-apparel-facts.ts";
 import { BRAND as RAW_BRAND } from "./brand.config.ts";
 import { NAVIGATION as RAW_NAVIGATION } from "./navigation.config.ts";
 import {
   MARKET_VN,
-  MERCHANT_AGE_GROUPS,
-  MERCHANT_GENDERS,
+  VIETNAM_CALLING_CODE,
   type BrandConfig,
   type NavigationConfig,
   type SizeGuideConfig,
@@ -47,6 +49,9 @@ function validateIdentity(brand: BrandConfig): void {
   for (const [label, value] of Object.entries({
     name: identity.name,
     displayNameUpper: identity.displayNameUpper,
+    headline: identity.headline,
+    tagline: identity.tagline,
+    strapline: identity.strapline,
     legalName: identity.legalName,
     taxId: identity.taxId,
     positioning: identity.positioning,
@@ -80,13 +85,15 @@ function validateContact(brand: BrandConfig): void {
     requireText(value, `contact.${label}`);
   }
 
-  // The two spellings are one approved number. The repository already owns the normalization, so
-  // the derivation is pinned against it rather than restated here.
-  const normalized = normalizeVietnamesePhone(contact.telephone);
-  if (normalized === null || `+${normalized}` !== contact.telephoneInternational) {
-    fail(
-      "contact.telephoneInternational must be contact.telephone in its international spelling",
-    );
+  // The two spellings are one approved number: the trunk zero is replaced by the market's calling
+  // code and no subscriber digit changes. The check is self-contained so src/brand stays free of
+  // runtime dependencies on the integration layer; a domain test pins it against the repository's
+  // reviewed normalizeVietnamesePhone so the two definitions cannot drift.
+  if (!/^0\d{8,10}$/.test(contact.telephone)) {
+    fail("contact.telephone must be a Vietnamese national number starting with a trunk zero");
+  }
+  if (contact.telephoneInternational !== `+${VIETNAM_CALLING_CODE}${contact.telephone.slice(1)}`) {
+    fail("contact.telephoneInternational must be contact.telephone in its international spelling");
   }
 
   if (!EMAIL_PATTERN.test(contact.email)) fail("contact.email must be a valid email address");
