@@ -1,5 +1,6 @@
 {
   "projectSlug": "la-clothing",
   "databaseName": "la_clothing",
-  "composeProjectName": "la-clothing"
+  "composeProjectName": "la-clothing",
+  "productionDomain": "www.lafashion.asia"
 }
