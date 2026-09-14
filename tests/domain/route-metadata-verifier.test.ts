@@ -269,6 +269,59 @@ test("page: exporting generateMetadata from a different object is rejected", () 
   );
 });
 
+test("page: a type-only factory import plus a local value of the same name is rejected", () => {
+  // The same root cause as the type-only builder import, one import down: `import type` binds
+  // nothing at runtime, so a module-scope value may legally reuse the name and the call reaches
+  // that instead of the canonical factory.
+  assert.deepEqual(
+    codes(
+      `import type { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const createStorefrontRoute = (def) => ({ Page: null, generateMetadata: def.metadata });
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["missing-route-factory"],
+  );
+});
+
+test("page: an inline `type` factory specifier is not the canonical factory either", () => {
+  assert.deepEqual(
+    codes(
+      `import { type createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const createStorefrontRoute = (def) => ({ Page: null, generateMetadata: def.metadata });
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["missing-route-factory"],
+  );
+});
+
+test("page: importing the factory alongside one of its types still works", () => {
+  assert.deepEqual(
+    codes(
+      `import { createStorefrontRoute, type RouteDefinition } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    [],
+  );
+});
+
 test("page: a locally declared createStorefrontRoute does not count as the factory", () => {
   // Matching the callee's text alone let a module declare its own factory and return whatever it
   // liked. The binding has to resolve to the named import from the canonical module.

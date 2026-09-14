@@ -246,10 +246,15 @@ function factoryBindingName(sf: ts.SourceFile): string | null {
     if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
     if (st.moduleSpecifier.text !== ROUTE_FACTORY_MODULE) continue;
 
+    // Same rule as the metadata builders, and for the same reason: `import type` binds nothing at
+    // runtime, so a module-scope value may legally reuse the name and the call reaches that instead.
+    if (st.importClause?.isTypeOnly) continue;
+
     const bindings = st.importClause?.namedBindings;
     if (!bindings || !ts.isNamedImports(bindings)) continue;
 
     for (const element of bindings.elements) {
+      if (element.isTypeOnly) continue;
       const imported = element.propertyName?.text ?? element.name.text;
       if (imported === ROUTE_FACTORY_NAME) return element.name.text;
     }
