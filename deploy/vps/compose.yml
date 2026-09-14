@@ -1,4 +1,4 @@
-name: la-clothing
+name: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}
 
 services:
   postgres:
@@ -20,7 +20,7 @@ services:
       - backend
 
   app:
-    image: la-clothing:${RELEASE_SHA:?set RELEASE_SHA}
+    image: ${PROJECT_SLUG:?set PROJECT_SLUG}:${RELEASE_SHA:?set RELEASE_SHA}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -37,6 +37,10 @@ services:
       NODE_ENV: production
       HOSTNAME: 0.0.0.0
       PORT: "3000"
+      # Project identity reaches the container from project.config.json through deploy.sh, not from
+      # .env.production: only secrets live in that file now.
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -68,6 +72,11 @@ services:
       - ops
     env_file:
       - .env.production
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+      # release:check compares this against project.config.json before any migration runs.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}
     depends_on:
       postgres:
         condition: service_healthy
@@ -96,7 +105,7 @@ services:
       backend:
       edge:
         aliases:
-          - la-clothing-caddy
+          - ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}-caddy
 
 networks:
   backend:
@@ -105,7 +114,7 @@ networks:
   # deliberately non-production; deployment fails unless that network exists.
   edge:
     external: true
-    name: ${EDGE_NETWORK_NAME:-la-clothing-edge-unconfigured}
+    name: ${EDGE_NETWORK_NAME:-edge-network-unconfigured}
 
 volumes:
   postgres_data:

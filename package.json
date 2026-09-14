@@ -11,6 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
+    "bootstrap:brand": "node --experimental-strip-types scripts/bootstrap-brand.ts",
     "typecheck": "tsc --noEmit",
     "test:domain": "node --experimental-strip-types --test tests/domain/*.test.ts",
     "test": "node --experimental-strip-types --test tests/domain/*.test.ts tests/integrations/*.test.ts",

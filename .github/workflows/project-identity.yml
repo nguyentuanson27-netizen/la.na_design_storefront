@@ -1,0 +1,56 @@
+name: Project identity
+
+# Single source for non-secret project identity in CI. Every workflow that needs the project slug,
+# database name, Compose project name or production domain calls this instead of repeating the
+# values, so a fork changes them in project.config.json and nowhere else.
+#
+# `jq -e` exits non-zero when a key is missing or null, and the assignment makes `set -e` stop the
+# job there. A missing key fails the run instead of silently becoming an empty string.
+
+on:
+  workflow_call:
+    outputs:
+      project-slug:
+        description: Image and social card route slug.
+        value: ${{ jobs.load.outputs.project-slug }}
+      database-name:
+        description: PostgreSQL database name.
+        value: ${{ jobs.load.outputs.database-name }}
+      compose-project-name:
+        description: Docker Compose project name.
+        value: ${{ jobs.load.outputs.compose-project-name }}
+      production-domain:
+        description: Bare production hostname.
+        value: ${{ jobs.load.outputs.production-domain }}
+
+permissions:
+  contents: read
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      project-slug: ${{ steps.identity.outputs.project-slug }}
+      database-name: ${{ steps.identity.outputs.database-name }}
+      compose-project-name: ${{ steps.identity.outputs.compose-project-name }}
+      production-domain: ${{ steps.identity.outputs.production-domain }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Load project identity
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          project_slug="$(jq -er '.projectSlug' project.config.json)"
+          database_name="$(jq -er '.databaseName' project.config.json)"
+          compose_project_name="$(jq -er '.composeProjectName' project.config.json)"
+          production_domain="$(jq -er '.productionDomain' project.config.json)"
+          {
+            echo "project-slug=${project_slug}"
+            echo "database-name=${database_name}"
+            echo "compose-project-name=${compose_project_name}"
+            echo "production-domain=${production_domain}"
+          } >> "$GITHUB_OUTPUT"

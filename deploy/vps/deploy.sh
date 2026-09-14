@@ -4,9 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
+# shellcheck source=deploy/vps/project-identity.sh
+source "deploy/vps/project-identity.sh"
+
 ENV_FILE="deploy/vps/.env.production"
 COMPOSE_FILE="deploy/vps/compose.yml"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/la-clothing}"
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE" >&2
@@ -64,7 +67,7 @@ fi
 
 mkdir -p "$BACKUP_DIR"
 chmod 700 "$BACKUP_DIR"
-BACKUP_FILE="$BACKUP_DIR/la-clothing-predeploy-${RELEASE_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ).dump"
+BACKUP_FILE="$BACKUP_DIR/$PROJECT_SLUG-predeploy-${RELEASE_SHA:0:12}-$(date -u +%Y%m%dT%H%M%SZ).dump"
 
 # This is the pre-migration logical recovery artifact. Off-site replication and
 # restore drills remain mandatory host operations before declaring production ready.
