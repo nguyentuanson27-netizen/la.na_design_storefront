@@ -13,7 +13,11 @@ import { buildProductListTracking } from "@/components/analytics/product-list-tr
 import { buildCollectionBreadcrumbStructuredData } from "@/seo/collection-breadcrumb-structured-data";
 import { readSearchExposure } from "@/seo/search-exposure";
 
-import { buildCollectionViewModel, type CollectionViewModel } from "./collection-model.ts";
+import {
+  buildCollectionViewModel,
+  orderByFeaturedSlugs,
+  type CollectionViewModel,
+} from "./collection-model.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { readPublishedCollection } from "./metadata/collection.ts";
 
@@ -67,8 +71,11 @@ export async function loadCollectionRoute({
   const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
   if (page > Math.max(totalPages, 1)) notFound();
 
+  // Ordered once, here, before tracking is built. The impression and select indices must describe
+  // the order the shopper sees, so the same array feeds the tracking and the view model.
+  const ordered = orderByFeaturedSlugs(products, collection.featuredProductSlugs);
   const listTracking = buildProductListTracking({
-    products,
+    products: ordered,
     list: { listId: `collection:${collection.slug}`, listName: collection.title },
     pricingRule,
   });
@@ -82,8 +89,7 @@ export async function loadCollectionRoute({
       galleryImageUrls: collection.galleryImageUrls,
       videoSrcUrl: collection.videoSrcUrl,
       videoPosterUrl: collection.videoPosterUrl,
-      featuredProductSlugs: collection.featuredProductSlugs,
-      products,
+      products: ordered,
       sizes: facets.sizes,
       discovery: { size: discovery.size, sort: discovery.sort },
       sortChoices: SORT_CHOICES,

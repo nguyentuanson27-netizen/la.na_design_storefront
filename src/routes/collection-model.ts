@@ -85,7 +85,11 @@ export type CollectionViewModelInput = Readonly<{
   galleryImageUrls: readonly string[];
   videoSrcUrl: string | null;
   videoPosterUrl: string | null;
-  featuredProductSlugs: readonly string[];
+  /**
+   * Already in render order. The loader applies `orderByFeaturedSlugs` once, before it builds the
+   * grid's tracking, so the impression and select indices describe the order a shopper actually
+   * sees. Reordering again here would put the cards and the analytics out of step.
+   */
   products: readonly CollectionProduct[];
   sizes: readonly string[];
   discovery: CollectionDiscoveryState;
@@ -108,6 +112,11 @@ export type CollectionViewModelInput = Readonly<{
  * Pinning reorders what this page already returned; it never reaches for a product the query did not
  * match, because that would put an item in front of someone who filtered it out. A pinned slug that
  * is absent from the page is simply not on it.
+ *
+ * Applied once, by the loader, before the grid's tracking is built. Both the rendered cards and the
+ * `view_item_list`/`select_item` indices come from this one ordered array: building tracking from
+ * the repository order and then reordering the cards would report a pinned product at the index it
+ * would have had, not the position it is shown in.
  */
 export function orderByFeaturedSlugs<T extends Readonly<{ slug: string }>>(
   products: readonly T[],
@@ -158,14 +167,12 @@ export function resolveCollectionEditorial(
 }
 
 export function buildCollectionViewModel(input: CollectionViewModelInput): CollectionViewModel {
-  const ordered = orderByFeaturedSlugs(input.products, input.featuredProductSlugs);
-
   return Object.freeze({
     slug: input.slug,
     title: input.title,
     editorial: resolveCollectionEditorial(input),
     cards: Object.freeze(
-      ordered.map((product) =>
+      input.products.map((product) =>
         Object.freeze({
           id: product.id,
           model: buildProductCardModel({

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { buildStorefrontProductImpressions } from "../../src/commerce/storefront-impressions.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import {
   buildCollectionViewModel,
@@ -31,10 +32,12 @@ function variant(n: number): StorefrontVariantFacts {
   };
 }
 
-function product(slug: string): CollectionProduct {
+function product(slug: string): CollectionProduct & Readonly<{ pancakeProductId: string }> {
   return {
     id: `id-${slug}`,
     slug,
+    // Impressions are keyed by the product's external identity, so the fixture carries one.
+    pancakeProductId: `pancake-${slug}`,
     name: slug,
     media: { primary: { url: photo(1), alt: "" }, gallery: [{ url: photo(1), alt: "" }] },
     variants: [variant(1)],
@@ -50,7 +53,6 @@ function input(overrides: Partial<CollectionViewModelInput> = {}): CollectionVie
     galleryImageUrls: [],
     videoSrcUrl: null,
     videoPosterUrl: null,
-    featuredProductSlugs: [],
     products: [],
     sizes: [],
     discovery: { size: null, sort: "name-asc" },
@@ -167,12 +169,36 @@ test("a slug pinned twice keeps its first position rather than being ranked twic
   assert.deepEqual(ordered.map((p) => p.slug), ["b", "a"]);
 });
 
-test("the grid renders in pinned order", () => {
-  const model = buildCollectionViewModel(
-    input({ products: [product("a"), product("b")], featuredProductSlugs: ["b"], totalCount: 2 }),
-  );
+test("the grid renders exactly the order it was handed, without reordering again", () => {
+  // The loader applies `orderByFeaturedSlugs` once, before building the grid's tracking. Reordering
+  // a second time here is what would put the cards and the analytics indices out of step.
+  const ordered = orderByFeaturedSlugs([product("a"), product("b")], ["b"]);
+  const model = buildCollectionViewModel(input({ products: ordered, totalCount: 2 }));
 
   assert.deepEqual(model.cards.map((card) => card.id), ["id-b", "id-a"]);
+});
+
+test("the rendered cards and the tracking impressions agree on every index", () => {
+  // The regression this guards: tracking built from the repository order while the cards were
+  // reordered afterwards, so a pinned product reported the index it would have had rather than the
+  // position it is shown in. One ordered array feeds both, so position i means the same thing.
+  const products = [product("a"), product("b"), product("c")];
+  const ordered = orderByFeaturedSlugs(products, ["c", "b"]);
+
+  const model = buildCollectionViewModel(input({ products: ordered, totalCount: ordered.length }));
+  const impressions = buildStorefrontProductImpressions({ products: ordered });
+
+  assert.deepEqual(model.cards.map((card) => card.id), ["id-c", "id-b", "id-a"]);
+  assert.deepEqual(
+    impressions.map((impression) => impression.index),
+    [0, 1, 2],
+    "impressions are indexed by the order they were given",
+  );
+  assert.deepEqual(
+    impressions.map((impression) => impression.productExternalId),
+    ordered.map((entry) => entry.pancakeProductId),
+    "impression i describes the product rendered at card i",
+  );
 });
 
 /* ----------------------------------------------------------------- filter links */
