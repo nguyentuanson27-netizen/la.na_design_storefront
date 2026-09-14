@@ -13,6 +13,18 @@ import { SIZE_GUIDE as RAW_SIZE_GUIDE } from "./size-guide.config.ts";
 
 export * from "./schema.ts";
 
+/**
+ * Brand facts are read all over the storefront and written nowhere. Freezing the whole tree after
+ * validation keeps the loader's guarantees true for the process's lifetime instead of only at the
+ * moment it ran.
+ */
+function deepFreeze<T>(value: T): T {
+  if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;
+  Object.freeze(value);
+  for (const child of Object.values(value as Record<string, unknown>)) deepFreeze(child);
+  return value;
+}
+
 function fail(message: string): never {
   throw new Error(`Invalid brand configuration: ${message}`);
 }
@@ -208,7 +220,11 @@ export function loadBrandConfig(
   validateMarket(brand);
   validateSizeGuide(sizeGuide);
   validateNavigation(navigation);
-  return Object.freeze({ brand, sizeGuide, navigation });
+  return Object.freeze({
+    brand: deepFreeze(brand),
+    sizeGuide: deepFreeze(sizeGuide),
+    navigation: deepFreeze(navigation),
+  });
 }
 
 const loaded = loadBrandConfig();

@@ -35,6 +35,10 @@ export type SupportHours = Readonly<{
 export type BrandIdentity = Readonly<{
   name: string;
   displayNameUpper: string;
+  /** The site's default page title and the brand line a share card carries. */
+  headline: string;
+  /** One-line description used as the default meta description and the footer brand summary. */
+  tagline: string;
   legalName: string;
   taxId: string;
   /** Exactly one owner-approved sentence. Freehand brand prose is how invented history ships. */

@@ -12,6 +12,8 @@ export const BRAND: BrandConfig = {
   identity: {
     name: "LA Clothing",
     displayNameUpper: "LA CLOTHING",
+    headline: "LA Clothing — Modern Menswear",
+    tagline: "Minimal, modern menswear by LA Clothing.",
     // §1 legal identity, approved for publication by B6/§7.
     legalName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxId: "0111242251",
@@ -20,8 +22,9 @@ export const BRAND: BrandConfig = {
     positioning: "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.",
     socialCardSlug: "la-clothing-modern-menswear-social-card",
     socialCardAlt: "LA Clothing — Modern Menswear",
-    // "LA" on its own is below the leak scanner's four-character floor but still carries identity.
-    additionalNeedles: ["LA"],
+    // Empty because "LA Clothing" clears the leak scanner's four-character floor on its own. A
+    // brand with a two or three character name declares it here so the scanner still protects it.
+    additionalNeedles: [],
   },
   // B2 §2 contact facts. `telephone` and `telephoneInternational` are the same approved number
   // written two ways; the loader pins the derivation against normalizeVietnamesePhone.
