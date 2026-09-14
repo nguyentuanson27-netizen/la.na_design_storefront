@@ -169,13 +169,52 @@ test("a new brand fact is protected without editing this test", () => {
 
 /* The three values that do not live under src/app, so the scan above cannot see them. */
 
-test("the header and footer render NAVIGATION rather than their own link lists", () => {
-  for (const component of [
-    "src/components/layout/site-header.tsx",
-    "src/components/layout/site-footer.tsx",
-  ]) {
+/** The files whose whole job is to render NAVIGATION. */
+const NAVIGATION_CONSUMERS = [
+  "src/components/layout/site-header.tsx",
+  "src/components/layout/site-footer.tsx",
+] as const;
+
+/** Every configured destination and label, the wordmark label included. */
+function navigationStrings(): readonly string[] {
+  const entries = [
+    ...NAVIGATION.primary,
+    ...NAVIGATION.mobileUtility,
+    ...NAVIGATION.utility,
+    ...NAVIGATION.footer,
+  ];
+  return [...entries.map((e) => e.href), ...entries.map((e) => e.label), NAVIGATION.brandHomeLabel];
+}
+
+/**
+ * The text a link element renders, for every link in the source.
+ *
+ * Scoping to link elements is the whole point. A first version of this check rejected any
+ * configured label appearing anywhere in these files, and it immediately failed on the footer's
+ * `<dt>Vận chuyển</dt>` -- an info-block heading that collides with the `/shipping` menu label by
+ * coincidence. That is a legitimate duplicate, not a hardcoded menu. The duplication that matters
+ * is a *link* that carries its own label instead of the configured one.
+ */
+function linkTexts(source: string): readonly string[] {
+  return [...source.matchAll(/<(?:Link|a)\b[^>]*>([\s\S]*?)<\/(?:Link|a)>/g)].map((m) => m[1]!);
+}
+
+/**
+ * The structural constraint that stands in for scanning NAVIGATION recursively.
+ *
+ * Destinations and labels are both checked, and the label half is the half that matters: labels are
+ * permanently exempt from the repo-wide gate above, so this is the only thing standing between a
+ * configured menu and a duplicated one. Checking destinations alone would let
+ * `NAVIGATION.primary.map(item => <Link href={item.href}>Cửa hàng</Link>)` pass while hardcoding
+ * the label it just read.
+ *
+ * Scope is these two files, not all of `src` -- which is why it does not contradict the exemption.
+ */
+test("the header and footer take both destinations and labels from NAVIGATION", () => {
+  for (const component of NAVIGATION_CONSUMERS) {
     const source = stripComments(readFileSync(path.join(REPO_ROOT, component), "utf8"));
     assert.match(source, /NAVIGATION\./, `${component} must read NAVIGATION`);
+
     // A hardcoded menu shows up as a literal destination in the markup. The home link is not a
     // menu entry -- it is the wordmark, which every brand has and no brand configures away.
     assert.doesNotMatch(
@@ -183,7 +222,29 @@ test("the header and footer render NAVIGATION rather than their own link lists",
       /href="\/[^"]+"/,
       `${component} must not hardcode a navigation target`,
     );
+
+    for (const text of linkTexts(source)) {
+      for (const configured of navigationStrings()) {
+        assert.ok(
+          !text.includes(configured),
+          `${component} renders a link whose text hardcodes the configured ${configured}`,
+        );
+      }
+    }
   }
+});
+
+test("the navigation structural gate catches a hardcoded label, not just a hardcoded href", () => {
+  const label = NAVIGATION.primary[0]!.label;
+  const hardcodedLabel = `NAVIGATION.primary.map((item) => <Link href={item.href}>${label}</Link>)`;
+  const fromConfig = `NAVIGATION.primary.map((item) => <Link href={item.href}>{item.label}</Link>)`;
+
+  // The destination is read from NAVIGATION in both, so the href check cannot tell them apart --
+  // this is exactly the shape that passed before link text was covered.
+  assert.doesNotMatch(hardcodedLabel, /href="\/[^"]+"/);
+
+  assert.ok(linkTexts(hardcodedLabel).some((t) => t.includes(label)), "must reject the hardcoded label");
+  assert.ok(linkTexts(fromConfig).every((t) => !t.includes(label)), "must accept the configured label");
 });
 
 test("the Merchant feed brand is the configured feed brand", () => {
