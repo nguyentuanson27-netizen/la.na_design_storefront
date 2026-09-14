@@ -168,81 +168,146 @@ function findExportedConstInitializer(sf: ts.SourceFile, name: string): ts.Expre
 }
 
 export const ROUTE_FACTORY_NAME = "createStorefrontRoute";
+export const ROUTE_FACTORY_MODULE = "@/routes/factory";
 
 /**
- * The `metadata` property of the object literal passed to `createStorefrontRoute`.
+ * The local name `createStorefrontRoute` is bound to, if it is a named import from the canonical
+ * factory module.
  *
- * Reports rather than returns when the route is not built through the factory, or when the factory
- * call carries no metadata: in page mode both mean the page is not getting its metadata from where
- * the manifest says it is.
+ * Matching on the callee's text alone was not enough: a module could declare its own
+ * `createStorefrontRoute` and satisfy the check with a function that returns whatever it likes.
+ * Resolving the binding to the real import is what makes "built through the factory" mean something.
+ * An alias (`createStorefrontRoute as make`) is honoured, since that is still the canonical function.
  */
-function metadataPropertyOfRouteDefinition(
+function factoryBindingName(sf: ts.SourceFile): string | null {
+  for (const st of sf.statements) {
+    if (!ts.isImportDeclaration(st) || !ts.isStringLiteral(st.moduleSpecifier)) continue;
+    if (st.moduleSpecifier.text !== ROUTE_FACTORY_MODULE) continue;
+
+    const bindings = st.importClause?.namedBindings;
+    if (!bindings || !ts.isNamedImports(bindings)) continue;
+
+    for (const element of bindings.elements) {
+      const imported = element.propertyName?.text ?? element.name.text;
+      if (imported === ROUTE_FACTORY_NAME) return element.name.text;
+    }
+  }
+  return null;
+}
+
+type RouteDefinitionSite = Readonly<{
+  /** The variable the factory result is assigned to, so the export can be tied back to it. */
+  routeBinding: string;
+  metadata: ts.Expression | ts.FunctionLikeDeclaration | null;
+}>;
+
+/**
+ * Locates `const route = createStorefrontRoute({ … })` and returns both the binding and the
+ * `metadata` property, so page mode can require the exported value to come from *this* call rather
+ * than from anything that happens to have a `generateMetadata` property.
+ */
+function routeDefinitionSite(
   sf: ts.SourceFile,
   violations: MetadataViolation[],
   label: string,
-): ts.Expression | ts.FunctionLikeDeclaration | null {
-  let call: ts.CallExpression | null = null;
-  const walk = (node: ts.Node): void => {
-    if (
-      ts.isCallExpression(node) &&
-      ts.isIdentifier(node.expression) &&
-      node.expression.text === ROUTE_FACTORY_NAME
-    ) {
-      call = node;
-    }
-    node.forEachChild(walk);
-  };
-  walk(sf);
-
-  if (call === null) {
+): RouteDefinitionSite | null {
+  const factory = factoryBindingName(sf);
+  if (factory === null) {
     violations.push({
       code: "missing-route-factory",
-      message: `${label}: page mode must build its route with ${ROUTE_FACTORY_NAME}`,
+      message: `${label}: page mode must import ${ROUTE_FACTORY_NAME} from ${ROUTE_FACTORY_MODULE}`,
     });
     return null;
   }
 
-  const definition = (call as ts.CallExpression).arguments[0];
-  if (!definition || !ts.isObjectLiteralExpression(definition)) {
-    violations.push({
-      code: "missing-metadata",
-      message: `${label}: ${ROUTE_FACTORY_NAME} must receive a route definition object literal`,
-    });
-    return null;
-  }
+  for (const st of sf.statements) {
+    if (!ts.isVariableStatement(st)) continue;
+    for (const decl of st.declarationList.declarations) {
+      const initializer = decl.initializer;
+      if (
+        !initializer ||
+        !ts.isCallExpression(initializer) ||
+        !ts.isIdentifier(initializer.expression) ||
+        initializer.expression.text !== factory ||
+        !ts.isIdentifier(decl.name)
+      ) {
+        continue;
+      }
 
-  for (const property of definition.properties) {
-    if (ts.isPropertyAssignment(property) && property.name.getText(sf) === "metadata") {
-      return property.initializer;
-    }
-    if (ts.isMethodDeclaration(property) && property.name.getText(sf) === "metadata") {
-      return property;
+      const definition = initializer.arguments[0];
+      if (!definition || !ts.isObjectLiteralExpression(definition)) {
+        violations.push({
+          code: "missing-metadata",
+          message: `${label}: ${ROUTE_FACTORY_NAME} must receive a route definition object literal`,
+        });
+        return { routeBinding: decl.name.text, metadata: null };
+      }
+
+      for (const property of definition.properties) {
+        if (ts.isPropertyAssignment(property) && property.name.getText(sf) === "metadata") {
+          return { routeBinding: decl.name.text, metadata: property.initializer };
+        }
+        if (ts.isMethodDeclaration(property) && property.name.getText(sf) === "metadata") {
+          return { routeBinding: decl.name.text, metadata: property };
+        }
+      }
+
+      violations.push({
+        code: "missing-metadata",
+        message: `${label}: page mode requires a \`metadata\` property on the route definition`,
+      });
+      return { routeBinding: decl.name.text, metadata: null };
     }
   }
 
   violations.push({
-    code: "missing-metadata",
-    message: `${label}: page mode requires a \`metadata\` property on the route definition`,
+    code: "missing-route-factory",
+    message: `${label}: page mode must assign the ${ROUTE_FACTORY_NAME} result to a binding it exports from`,
   });
   return null;
 }
 
-/** Whether the module re-exports the factory's `generateMetadata`, e.g. `route.generateMetadata`. */
-function exportsFactoryGenerateMetadata(sf: ts.SourceFile): boolean {
+/**
+ * Whether the module exports `generateMetadata` taken from the factory result named `routeBinding`.
+ *
+ * The object matters as much as the property name. Accepting any `<something>.generateMetadata` let
+ * a module build a real route, then export a hand-written `fake.generateMetadata` beside it -- the
+ * verifier saw the right names and Next shipped the wrong metadata.
+ */
+function exportsFactoryGenerateMetadata(sf: ts.SourceFile, routeBinding: string): boolean {
   const initializer = findExportedConstInitializer(sf, "generateMetadata");
   if (initializer) {
     return (
       ts.isPropertyAccessExpression(initializer) &&
-      initializer.name.text === "generateMetadata"
+      initializer.name.text === "generateMetadata" &&
+      ts.isIdentifier(initializer.expression) &&
+      initializer.expression.text === routeBinding
     );
   }
 
+  // `const generateMetadata = route.generateMetadata; export { generateMetadata };` is the same
+  // thing written in two statements, so follow the local declaration rather than trusting the name.
   for (const st of sf.statements) {
     if (!ts.isExportDeclaration(st) || !st.exportClause || !ts.isNamedExports(st.exportClause)) {
       continue;
     }
     for (const element of st.exportClause.elements) {
-      if (element.name.text === "generateMetadata") return true;
+      if (element.name.text !== "generateMetadata") continue;
+      const local = element.propertyName?.text ?? element.name.text;
+      for (const candidate of sf.statements) {
+        if (!ts.isVariableStatement(candidate)) continue;
+        for (const decl of candidate.declarationList.declarations) {
+          if (decl.name.getText(sf) !== local || !decl.initializer) continue;
+          if (
+            ts.isPropertyAccessExpression(decl.initializer) &&
+            decl.initializer.name.text === "generateMetadata" &&
+            ts.isIdentifier(decl.initializer.expression) &&
+            decl.initializer.expression.text === routeBinding
+          ) {
+            return true;
+          }
+        }
+      }
     }
   }
   return false;
@@ -299,11 +364,11 @@ export function checkMetadataContract(input: MetadataCheckInput): readonly Metad
     // function: after migration the page does not write `generateMetadata` itself, it re-exports the
     // one the factory built. Checking that export alone would say nothing about where the value came
     // from, which is the entire question.
-    const property = metadataPropertyOfRouteDefinition(sf, violations, label);
-    if (property) {
-      const expression = ts.isFunctionLike(property)
-        ? returnedExpression(property, violations, label)
-        : property;
+    const site = routeDefinitionSite(sf, violations, label);
+    if (site?.metadata) {
+      const expression = ts.isFunctionLike(site.metadata)
+        ? returnedExpression(site.metadata, violations, label)
+        : site.metadata;
       if (expression && !isDirectBuilderCall(expression, builders)) {
         violations.push({
           code: "not-direct-call",
@@ -312,10 +377,10 @@ export function checkMetadataContract(input: MetadataCheckInput): readonly Metad
       }
     }
 
-    if (!exportsFactoryGenerateMetadata(sf)) {
+    if (site && !exportsFactoryGenerateMetadata(sf, site.routeBinding)) {
       violations.push({
         code: "missing-generate-metadata",
-        message: `${label}: page mode must export the factory's \`generateMetadata\``,
+        message: `${label}: page mode must export \`${site.routeBinding}.generateMetadata\`, the value this factory call returned`,
       });
     }
 

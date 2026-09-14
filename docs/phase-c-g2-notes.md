@@ -104,19 +104,28 @@ This repo's entire test suite runs on that loader (`pnpm test:domain` →
 `node --experimental-strip-types --test tests/domain/*.test.ts`), so **a `.tsx` module cannot be
 imported by any test here.**
 
-Consequence, and the one place this PR departs from the spec's letter: spec §4 names the file
-`src/routes/core.tsx`. This PR implements `src/routes/core.ts`, building elements with
-`React.createElement` instead of JSX.
+Consequence: the shell must mount two `.tsx` client components, so **no test in this repo can import
+it whatever extension the shell itself uses.** An earlier draft of this note proposed writing
+`src/routes/core.ts` with `React.createElement` to dodge the extension; that was abandoned once the
+constraint was understood properly, because it would not have helped — the module's own imports are
+`.tsx` and the import fails either way. The file is `src/routes/core.tsx` with JSX, exactly as spec
+§4 names it.
 
-What the spec actually requires is that `sealRoute`, `unsealRoute` and `StorefrontRoute` live in
-**one module**, so `unsealRoute` is genuinely module-private. That requirement is met in full — and
-splitting the file to get a JSX-free importable half would have broken it, since `unsealRoute` would
-have to be exported across the seam. The choice is therefore between the spec's file extension and
-Task 10's acceptance criteria being executed rather than grepped. This PR keeps the executable
-tests: every Task 10 criterion is verified by calling real code.
+What that costs is the ability to execute the shell in a test, and it is paid as follows:
 
-Renaming to `.tsx` is a one-line change if the reviewer prefers the spec's letter, but the shell's
-tests would then have to become source-text assertions.
+| Task 10 criterion | How it is verified |
+|---|---|
+| Shell mounts refresher, reporter and JSON-LD; reporter is not behind a conditional | `tests/domain/route-handle-contract.test.ts` parses `core.tsx` with the TypeScript compiler and asserts the shape of the returned element tree, including that no conditional sits between those elements and the function body. Stronger than the string matching it replaces, and honest about not being a render. |
+| JSON-LD escapes a script breakout | `tests/domain/route-shell-jsonld.test.ts` **executes** `serializeJsonLd`, the same function the AST test proves the shell calls and does not reimplement. |
+| A page cannot read the payload | `tests/domain/route-handle-types.test.ts` **compiles** negative fixtures with `tsc` and asserts the diagnostics; a positive fixture compiles clean, so the negative one cannot pass by rejecting everything. Spread and `Object.values` are covered. |
+| `unsealRoute` and `PAYLOAD` never leave the module | AST check for export modifiers and export lists, not a grep for the word `export`. |
+
+Rendering the shell would additionally need a bundler and a Next request context, since
+`StorefrontPromotionRefresher` calls `useRouter`.
+
+`src/routes/factory.tsx` is likewise `.tsx` rather than the `factory.ts` the spec lists: it renders
+the shell with a render-prop child, and the `createElement` equivalent passes children as a prop,
+which `react/no-children-prop` rejects and which types worse.
 
 ---
 

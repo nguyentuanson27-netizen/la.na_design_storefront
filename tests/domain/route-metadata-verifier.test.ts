@@ -208,6 +208,106 @@ test("page: failing to re-export the factory's generateMetadata is rejected", ()
   );
 });
 
+test("page: exporting generateMetadata from a different object is rejected", () => {
+  // The route is built correctly and the builder is called correctly; the module then exports a
+  // hand-written `generateMetadata` from a *different* object beside it. Matching on the property
+  // name alone saw the right names and let Next ship the wrong metadata.
+  assert.deepEqual(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       const fake = { generateMetadata: async () => ({ title: "handwritten" }) };
+       export const generateMetadata = fake.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["missing-generate-metadata"],
+  );
+});
+
+test("page: a locally declared createStorefrontRoute does not count as the factory", () => {
+  // Matching the callee's text alone let a module declare its own factory and return whatever it
+  // liked. The binding has to resolve to the named import from the canonical module.
+  assert.deepEqual(
+    codes(
+      `import { buildHomeMetadata } from "@/routes/metadata/home";
+       function createStorefrontRoute(d) {
+         return { Page: null, generateMetadata: async () => ({ title: "fake" }) };
+       }
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["missing-route-factory"],
+  );
+});
+
+test("page: importing the factory from somewhere else is rejected", () => {
+  assert.ok(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/not-the-factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       export const generateMetadata = route.generateMetadata;`,
+      "page",
+    ).includes("missing-route-factory"),
+  );
+});
+
+test("page: an aliased factory import is still the canonical factory", () => {
+  // `createStorefrontRoute as make` is the same function under another local name; rejecting it
+  // would be pedantry rather than a guarantee.
+  assert.deepEqual(
+    codes(
+      `import { createStorefrontRoute as make } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = make({ load, render, metadata: (props) => buildHomeMetadata(props) });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    [],
+  );
+});
+
+test("page: the same export written as a separate statement plus an export list passes", () => {
+  assert.deepEqual(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       });
+       const generateMetadata = route.generateMetadata;
+       export { generateMetadata };
+       export default route.Page;`,
+      "page",
+    ),
+    [],
+  );
+});
+
+test("page: a factory result that is never bound cannot be exported from", () => {
+  assert.ok(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       export default createStorefrontRoute({
+         load, render, metadata: (props) => buildHomeMetadata(props),
+       }).Page;`,
+      "page",
+    ).includes("missing-route-factory"),
+  );
+});
+
 test("page: a default import fails even when the call is direct", () => {
   const found = codes(
     `import { createStorefrontRoute } from "@/routes/factory";
