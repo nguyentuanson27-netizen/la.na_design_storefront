@@ -266,7 +266,7 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U33c the Size Guide page renders both approved charts with circumference and tolerance semantics", async ({
+test("U33c the Size Guide page renders every approved chart with circumference and tolerance semantics", async ({
   page,
 }) => {
   const response = await page.goto(`${BASE_URL}/size-guide`, { waitUntil: "networkidle" });
@@ -282,21 +282,15 @@ test("U33c the Size Guide page renders both approved charts with circumference a
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.guidanceNote);
   await expect(main).toContainText(describePublicSizeTolerance());
 
-  // Chart A: heading and all rows/cells
-  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartA.title })).toBeVisible();
-  for (const row of PUBLIC_SIZE_GUIDE.chartA.rows) {
-    await expect(main).toContainText(row.parameter);
-    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
-      await expect(main).toContainText(row.values[size]);
-    }
-  }
-
-  // Chart B: heading and all rows/cells
-  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartB.title })).toBeVisible();
-  for (const row of PUBLIC_SIZE_GUIDE.chartB.rows) {
-    await expect(main).toContainText(row.parameter);
-    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
-      await expect(main).toContainText(row.values[size]);
+  // Every approved chart: its heading, every row parameter and every cell, checked against that
+  // chart's own size scale rather than one shared list.
+  for (const chart of PUBLIC_SIZE_GUIDE.charts) {
+    await expect(page.getByRole("heading", { level: 2, name: chart.title })).toBeVisible();
+    for (const row of chart.rows) {
+      await expect(main).toContainText(row.parameter);
+      for (const size of chart.sizes) {
+        await expect(main).toContainText(row.values[size]);
+      }
     }
   }
 
