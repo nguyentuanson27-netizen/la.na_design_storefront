@@ -68,18 +68,17 @@ function deaccent(value: string): string {
 /**
  * Every string leaf of BRAND, SIZE_GUIDE and FULFILLMENT, plus the brand-bearing part of NAVIGATION.
  *
- * KNOWN DEVIATION, not yet ratified. Spec section 5 and Task 9 as they currently stand in
- * `nguyentuanson27-netizen/webtemplate@main` ask for recursive scanning of NAVIGATION as well; this
- * takes `brandHomeLabel` only. `webtemplate` PR #6 proposes amending both to a permanent semantic
- * subset. Until that merges this gate does not meet Task 9 as written, and that is a reviewer
- * decision rather than something this file may settle.
+ * This is the ratified contract, not a deviation: spec section 5.1 and Task 9 in
+ * `nguyentuanson27-netizen/webtemplate@main` (v1.6, merged as a85f863) define the needle set as
+ * BRAND + SIZE_GUIDE + FULFILLMENT plus `NAVIGATION.brandHomeLabel` only.
  *
- * The measurement behind the proposal, at this scan scope: NAVIGATION has 39 string leaves of four
+ * The measurement behind that decision, at this scan scope: NAVIGATION has 39 string leaves of four
  * or more characters and 23 of them fire on 65 files -- route paths ("/shop" in 54 files, "/search"
  * in 44) and generic Vietnamese UI nouns ("Cửa hàng" in 10). That is three kinds of string with
  * three different owners: `brandHomeLabel` is brand identity and belongs here; a `href` is route
- * identity, owned by the route manifest (T11), since changing brand does not change "/cart"; a
- * `label` is UI vocabulary, prevented from duplicating structurally by the test below.
+ * identity and belongs to no gate at this layer by design -- changing brand does not change
+ * "/cart" -- with the href-to-route check assigned to T11 (spec section 5.2); a `label` is UI
+ * vocabulary, prevented from duplicating structurally by the test below (spec section 5.3).
  *
  * The exemption is permanent, not a deferral. The scan scope includes `src/components/brand/**`,
  * which is where Phase E puts presentation, so an `<h1>Cửa hàng</h1>` stays in scope afterwards
