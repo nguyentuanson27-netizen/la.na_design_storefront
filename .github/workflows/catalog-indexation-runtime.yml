@@ -15,7 +15,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  identity:
+    uses: ./.github/workflows/project-identity.yml
+
   catalog-indexation-http:
+    needs: identity
     runs-on: ubuntu-latest
     timeout-minutes: 10
     services:
@@ -24,16 +28,16 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: la_clothing
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d la_clothing"
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/la_clothing
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
     steps:
