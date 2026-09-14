@@ -49,6 +49,15 @@ and `galleryIndexByVariantId` to the brand gallery gets a frame that follows the
 thumbnail the shopper clicks is tagged with the variant it was clicked for, so it wins while that
 variant is selected and retires when the selection moves.
 
+Review caught that this was described but not yet *wireable*: `BrandPurchasePanel` owned
+`useVariantSelection()` internally, so a page had no way to hand the same selection to both
+components without duplicating the state. The panel now has two entry points —
+`PurchasePanelView`, which renders a controller someone else owns, and `BrandPurchasePanel`, which
+owns one itself and keeps the existing route unchanged. Phase E calls the hook once in a client
+coordinator and feeds both. `tests/domain/selection-gallery-seam.test.ts` holds the chain end to
+end (the variant the panel resolves is the photo the gallery shows) as well as the two component
+surfaces that make it possible.
+
 **Not done, deliberately.** `material`, `craftDetails` and collection editorial storage are Phase E.
 Lightbox and sticky add-to-cart are presentation and need no seam.
 

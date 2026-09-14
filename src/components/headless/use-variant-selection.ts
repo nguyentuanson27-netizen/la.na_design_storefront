@@ -36,6 +36,15 @@ export type UseVariantSelectionInput = Readonly<{
   commerceTrackingEnabled?: boolean;
 }>;
 
+/**
+ * Everything the hook hands back: the resolved view, the raw selection, and the four callbacks.
+ *
+ * Exported so a panel can render this surface without owning the hook. A PDP that must keep one
+ * selection state -- the panel and the gallery showing the same colour -- calls `useVariantSelection`
+ * once and passes the result to both, which is only possible if the shape has a name.
+ */
+export type VariantSelectionController = ReturnType<typeof useVariantSelection>;
+
 export function useVariantSelection({
   slug,
   productName,

@@ -1,30 +1,31 @@
 "use client";
 
-import type { StorefrontProjectionOption } from "@/commerce/storefront-projection";
-import type { DeepLinkedVariantSelection } from "@/commerce/storefront-variant-deep-link";
-import { useVariantSelection } from "@/components/headless/use-variant-selection";
+import {
+  useVariantSelection,
+  type UseVariantSelectionInput,
+  type VariantSelectionController,
+} from "@/components/headless/use-variant-selection";
 
 /**
  * Markup only. Every brand throws this file away and writes its own.
  *
  * No price is computed here and no purchasability is decided here: both come from
- * `useVariantSelection`, which is where they must stay. The two type-only imports are the option
- * and deep-link shapes this panel is handed; they carry no behaviour.
+ * `useVariantSelection`, which is where they must stay. Nothing is imported from `@/commerce`
+ * either -- the panel speaks only the hook's public input and result types.
+ *
+ * Two entry points, because a PDP needs the selection in two places at once:
+ *
+ *   - `PurchasePanelView` renders a controller someone else owns. A page that must keep the panel
+ *     and the gallery on the same colour calls `useVariantSelection` once in a client coordinator,
+ *     passes the result here, and passes `controller.view.selectedVariantId` plus the product's
+ *     `galleryIndexByVariantId` to `BrandProductGallery`. One selection state, two components.
+ *   - `BrandPurchasePanel` owns the hook itself, for the ordinary case of a panel standing alone.
+ *     It is the surface the commerce shim renders, so today's product route is unchanged.
  */
 
-type BrandPurchasePanelProps = {
-  slug: string;
-  productName: string;
-  options: StorefrontProjectionOption[];
-  /** Product-level options only: composite components must not speak for the parent before selection. */
-  productLevelOptions: StorefrontProjectionOption[];
-  initialSelection?: DeepLinkedVariantSelection | null;
-  commerceTrackingEnabled?: boolean;
-};
-
-export function BrandPurchasePanel(props: BrandPurchasePanelProps) {
+export function PurchasePanelView({ controller }: Readonly<{ controller: VariantSelectionController }>) {
   const { view, selection, isPending, message, chooseKind, chooseColor, chooseSize, addToBag } =
-    useVariantSelection(props);
+    controller;
   const { priceDisplay } = view;
 
   const kindFieldset = view.hasKindOptions ? (
@@ -114,4 +115,9 @@ export function BrandPurchasePanel(props: BrandPurchasePanelProps) {
       </p>
     </div>
   );
+}
+
+/** The panel standing alone: owns its own selection state. */
+export function BrandPurchasePanel(props: UseVariantSelectionInput) {
+  return <PurchasePanelView controller={useVariantSelection(props)} />;
 }
