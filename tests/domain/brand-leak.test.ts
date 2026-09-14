@@ -68,18 +68,22 @@ function deaccent(value: string): string {
 /**
  * Every string leaf of BRAND, SIZE_GUIDE and FULFILLMENT, plus the brand-bearing part of NAVIGATION.
  *
- * KNOWN DEVIATION, not yet ratified. Task 9 in the approved plan
- * (`nguyentuanson27-netizen/webtemplate@main`) asks for recursive scanning of NAVIGATION as well.
- * This takes `brandHomeLabel` only. `webtemplate` PR #6 proposes amending Task 9 to record the
- * narrowing; until that merges, this gate does not meet Task 9 as written, and that is a reviewer
+ * KNOWN DEVIATION, not yet ratified. Spec section 5 and Task 9 as they currently stand in
+ * `nguyentuanson27-netizen/webtemplate@main` ask for recursive scanning of NAVIGATION as well; this
+ * takes `brandHomeLabel` only. `webtemplate` PR #6 proposes amending both to a permanent semantic
+ * subset. Until that merges this gate does not meet Task 9 as written, and that is a reviewer
  * decision rather than something this file may settle.
  *
  * The measurement behind the proposal, at this scan scope: NAVIGATION has 39 string leaves of four
  * or more characters and 23 of them fire on 65 files -- route paths ("/shop" in 54 files, "/search"
- * in 44) and generic Vietnamese UI nouns ("Cửa hàng" in 10). Route paths are route identity and
- * become centralizable only with the Phase C route manifest (T11); the generic labels leave the
- * scanned scope only once Phase E moves presentation under `src/components/brand/**`. Until then
- * navigation duplication is prevented structurally, by the test below.
+ * in 44) and generic Vietnamese UI nouns ("Cửa hàng" in 10). That is three kinds of string with
+ * three different owners: `brandHomeLabel` is brand identity and belongs here; a `href` is route
+ * identity, owned by the route manifest (T11), since changing brand does not change "/cart"; a
+ * `label` is UI vocabulary, prevented from duplicating structurally by the test below.
+ *
+ * The exemption is permanent, not a deferral. The scan scope includes `src/components/brand/**`,
+ * which is where Phase E puts presentation, so an `<h1>Cửa hàng</h1>` stays in scope afterwards
+ * exactly as it is now. No later phase makes these legitimate duplications disappear.
  */
 function brandNeedles(): readonly string[] {
   const needles = new Set<string>();
