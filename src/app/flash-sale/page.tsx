@@ -11,6 +11,7 @@ import {
   parseStorefrontDiscoverySearchParams,
   type StorefrontDiscoverySearchParams,
 } from "@/commerce/storefront-discovery";
+import { BRAND } from "@/brand";
 import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promotion-freshness";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
@@ -20,7 +21,7 @@ import { buildCatalogListingMetadata } from "@/seo/catalog-listing-metadata";
 import { readSearchExposure } from "@/seo/search-exposure";
 
 const FLASH_TITLE = "Flash Sale";
-const FLASH_DESCRIPTION = "Các sản phẩm đang giảm giá trong khung giờ Flash Sale của LA Clothing.";
+const FLASH_DESCRIPTION = `Các sản phẩm đang giảm giá trong khung giờ Flash Sale của ${BRAND.identity.name}.`;
 const PAGE_SIZE = 24;
 const tones = ["stone", "olive", "ink", "sand"] as const;
 
@@ -75,7 +76,7 @@ export default async function FlashSalePage({ searchParams }: FlashSalePageProps
       <StorefrontPromotionRefresher refreshAfterMs={refreshAfterMs} />
 
       <header>
-        <p className="eyebrow">LA Clothing / Khuyến mãi</p>
+        <p className="eyebrow">{BRAND.identity.name} / Khuyến mãi</p>
         <h1 className="mt-5 text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
           {FLASH_TITLE}
         </h1>

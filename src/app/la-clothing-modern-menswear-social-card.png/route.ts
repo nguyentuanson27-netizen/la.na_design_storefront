@@ -1,5 +1,6 @@
 import { ImageResponse } from "next/og";
 import { createElement } from "react";
+import { BRAND } from "@/brand";
 
 export const dynamic = "force-static";
 
@@ -31,7 +32,7 @@ export function GET() {
             textTransform: "uppercase",
           },
         },
-        "LA Clothing",
+        BRAND.identity.name,
       ),
       createElement(
         "div",

@@ -11,6 +11,7 @@ import {
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { PUBLIC_DELIVERY_SCOPE_LABELS } from "@/content/public-fulfillment-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
@@ -28,7 +29,7 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
     searchParams: await searchParams,
     title: "Chính sách vận chuyển và thanh toán",
     description:
-      "Phạm vi giao hàng, đơn vị vận chuyển, thời gian dự kiến và phương thức thanh toán của LA Clothing.",
+      `Phạm vi giao hàng, đơn vị vận chuyển, thời gian dự kiến và phương thức thanh toán của ${BRAND.identity.name}.`,
   });
 }
 

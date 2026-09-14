@@ -1,7 +1,9 @@
+import { BRAND } from "@/brand";
+
 export default function ShopLoading() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24" aria-busy="true" aria-live="polite">
-      <p className="eyebrow">LA Clothing / Cửa hàng</p>
+      <p className="eyebrow">{BRAND.identity.name} / Cửa hàng</p>
       <p className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em] text-black/15" aria-hidden="true">
         CỬA HÀNG
       </p>

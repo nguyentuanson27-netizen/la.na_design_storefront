@@ -9,6 +9,7 @@ import {
   loadCheckoutDistrictsAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
+import { BRAND } from "@/brand";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
 import type {
@@ -286,7 +287,7 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-black/60">
-          Không cần đăng ký tài khoản. LA Clothing sẽ liên hệ qua số điện thoại để xác nhận đơn trước khi giao.
+          Không cần đăng ký tài khoản. {BRAND.identity.name} sẽ liên hệ qua số điện thoại để xác nhận đơn trước khi giao.
         </p>
       </div>
 

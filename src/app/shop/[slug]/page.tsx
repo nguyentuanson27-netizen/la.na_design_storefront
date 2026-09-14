@@ -7,6 +7,7 @@ import {
   listConfiguredRelatedStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { BRAND } from "@/brand";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { ProductGallery } from "@/components/commerce/product-gallery";
 import { ProductPurchasePanel } from "@/components/commerce/product-purchase-panel";
@@ -106,7 +107,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
         />
 
         <article className="min-w-0 pb-10 lg:pt-4">
-          <p className="eyebrow">LA Clothing / Sản phẩm</p>
+          <p className="eyebrow">{BRAND.identity.name} / Sản phẩm</p>
           <h1 className="mt-5 break-words text-[clamp(2.8rem,6vw,6.5rem)] font-semibold leading-[0.9] tracking-[-0.045em]">
             {product.name}
           </h1>

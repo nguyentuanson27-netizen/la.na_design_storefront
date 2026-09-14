@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { BRAND } from "@/brand";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { prisma } from "@/db/prisma";
 import { readSearchExposure } from "@/seo/search-exposure";
@@ -21,7 +22,7 @@ export async function generateMetadata({
     pathname: "/collections",
     searchParams: await searchParams,
     title: "Bộ sưu tập",
-    description: "Khám phá các bộ sưu tập từ LA Clothing.",
+    description: `Khám phá các bộ sưu tập từ ${BRAND.identity.name}.`,
   });
 }
 
@@ -33,7 +34,7 @@ export default async function CollectionsPage() {
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">LA Clothing / Bộ sưu tập</p>
+      <p className="eyebrow">{BRAND.identity.name} / Bộ sưu tập</p>
       <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         BỘ SƯU TẬP
       </h1>

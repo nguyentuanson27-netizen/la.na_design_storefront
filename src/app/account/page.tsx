@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 
+import { BRAND } from "@/brand";
 import { AccountAuthPanel } from "@/components/account/account-auth-panel";
 
 export const metadata: Metadata = {
   title: "Tài khoản",
-  description: "Đăng nhập hoặc tạo tài khoản LA Clothing để theo dõi đơn hàng thuận tiện hơn.",
+  description: `Đăng nhập hoặc tạo tài khoản ${BRAND.identity.name} để theo dõi đơn hàng thuận tiện hơn.`,
 };
 
 export default function AccountPage() {

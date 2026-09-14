@@ -7,6 +7,7 @@ import {
   describePublicReturnWindow,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { PUBLIC_RETURN_LOGISTICS_FACTS } from "@/content/public-fulfillment-facts";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
@@ -23,7 +24,7 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
     pathname: "/returns",
     searchParams: await searchParams,
     title: "Chính sách đổi trả và hoàn tiền",
-    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của LA Clothing.`,
+    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của ${BRAND.identity.name}.`,
   });
 }
 
@@ -56,7 +57,7 @@ export default function ReturnsPage() {
         Đổi trả &amp; hoàn tiền
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">
-        LA Clothing hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
+        {BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
       </p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
@@ -154,7 +155,7 @@ export default function ReturnsPage() {
           className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/contact"
         >
-          Liên hệ LA Clothing
+          Liên hệ {BRAND.identity.name}
         </Link>{" "}
         để được hướng dẫn gửi lại sản phẩm.
       </p>

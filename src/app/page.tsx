@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { BRAND } from "@/brand";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
@@ -87,7 +88,7 @@ export default async function HomePage() {
           <div className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]">
             <Image
               src={heroImage.url}
-              alt={heroImage.alt || heroProduct?.name || "LA Clothing Campaign"}
+              alt={heroImage.alt || heroProduct?.name || `${BRAND.identity.name} Campaign`}
               fill
               preload
               sizes="(min-width: 900px) 60vw, 100vw"
@@ -101,7 +102,7 @@ export default async function HomePage() {
           />
         )}
         <div className="campaign-copy">
-          <p className="eyebrow">LA Clothing / Campaign</p>
+          <p className="eyebrow">{BRAND.identity.name} / Campaign</p>
           <h1 id="campaign-title">QUIET FORM.</h1>
           <p className="campaign-intro">
             Clean lines, relaxed proportions and a muted palette designed for everyday movement.
@@ -171,7 +172,7 @@ export default async function HomePage() {
           <div className="lookbook-panel lookbook-panel--large relative min-h-[68vh] overflow-hidden bg-[#b9b2a4] md:min-h-[780px]">
             <Image
               src={lookbookLargeImage.url}
-              alt={lookbookLargeImage.alt || lookbookLargeProduct?.name || "LA Clothing Lookbook"}
+              alt={lookbookLargeImage.alt || lookbookLargeProduct?.name || `${BRAND.identity.name} Lookbook`}
               fill
               sizes="(min-width: 900px) 50vw, 100vw"
               className="object-cover"
@@ -193,7 +194,7 @@ export default async function HomePage() {
           <div className="lookbook-panel lookbook-panel--small relative min-h-[55vh] overflow-hidden bg-[var(--olive)]">
             <Image
               src={lookbookSmallImage.url}
-              alt={lookbookSmallImage.alt || lookbookSmallProduct?.name || "LA Clothing Detail"}
+              alt={lookbookSmallImage.alt || lookbookSmallProduct?.name || `${BRAND.identity.name} Detail`}
               fill
               sizes="(min-width: 900px) 25vw, 100vw"
               className="object-cover"
@@ -229,7 +230,7 @@ export default async function HomePage() {
         aria-labelledby="brand-facts-title"
         data-homepage-region="trust-support"
       >
-        <p className="eyebrow">LA Clothing / About</p>
+        <p className="eyebrow">{BRAND.identity.name} / About</p>
         <h2 id="brand-facts-title">{brandFacts.brandName}</h2>
         <div>
           <p className="font-serif text-2xl leading-snug md:text-3xl">{brandFacts.brandSummary}</p>

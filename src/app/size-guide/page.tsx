@@ -5,6 +5,7 @@ import {
   describePublicSizeTolerance,
   PUBLIC_SIZE_GUIDE,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ searchParams }: SizeGuidePageProps): Pr
     pathname: "/size-guide",
     searchParams: await searchParams,
     title: "Hướng dẫn chọn size",
-    description: `Bảng thông số chọn size quần áo LA Clothing, số đo vòng sản phẩm (${PUBLIC_SIZE_GUIDE.unit}), dung sai ${describePublicSizeTolerance()} và khoảng chiều cao, cân nặng tham khảo.`,
+    description: `Bảng thông số chọn size quần áo ${BRAND.identity.name}, số đo vòng sản phẩm (${PUBLIC_SIZE_GUIDE.unit}), dung sai ${describePublicSizeTolerance()} và khoảng chiều cao, cân nặng tham khảo.`,
   });
 }
 
@@ -46,7 +47,7 @@ export default function SizeGuidePage() {
 
       <div className="mt-6 max-w-3xl space-y-3 text-base leading-7 text-black/75">
         <p>
-          Tất cả thông số kích thước quần áo tại LA Clothing được tính theo đơn vị{" "}
+          Tất cả thông số kích thước quần áo tại {BRAND.identity.name} được tính theo đơn vị{" "}
           <strong className="font-semibold text-black">{unit}</strong>.
         </p>
         <p>
@@ -109,7 +110,7 @@ export default function SizeGuidePage() {
           className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/contact"
         >
-          Liên hệ LA Clothing
+          Liên hệ {BRAND.identity.name}
         </Link>{" "}
         để được đội ngũ chăm sóc khách hàng hỗ trợ.
       </p>

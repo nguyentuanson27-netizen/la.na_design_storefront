@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { BRAND } from "@/brand";
 import { readAuthServerConfig } from "@/auth/config";
 import { buildRenderedCheckoutQuoteFacts } from "@/commerce/checkout-quote";
 import { issueRenderedQuoteProof } from "@/commerce/checkout-quote-proof";
@@ -14,7 +15,7 @@ import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 
 export const metadata: Metadata = {
   title: "Thanh toán",
-  description: "Thanh toán COD không cần tài khoản tại LA Clothing.",
+  description: `Thanh toán COD không cần tài khoản tại ${BRAND.identity.name}.`,
 };
 
 const currency = new Intl.NumberFormat("vi-VN", {

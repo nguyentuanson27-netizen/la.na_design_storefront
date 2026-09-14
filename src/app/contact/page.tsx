@@ -6,6 +6,7 @@ import {
   describePublicSupportHours,
   PUBLIC_CONTACT_FACTS,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -22,7 +23,7 @@ export async function generateMetadata({ searchParams }: ContactPageProps): Prom
     searchParams: await searchParams,
     title: "Liên hệ",
     description:
-      "Hotline, Zalo, email, địa chỉ và giờ hỗ trợ của LA Clothing — các kênh liên hệ chính thức.",
+      `Hotline, Zalo, email, địa chỉ và giờ hỗ trợ của ${BRAND.identity.name} — các kênh liên hệ chính thức.`,
   });
 }
 
@@ -45,7 +46,7 @@ export default function ContactPage() {
         Liên hệ
       </h1>
       <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-        Các kênh liên hệ chính thức của LA Clothing. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên
+        Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên
         dưới.
       </p>
 
