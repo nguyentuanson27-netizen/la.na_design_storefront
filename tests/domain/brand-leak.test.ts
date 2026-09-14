@@ -56,7 +56,8 @@ function deaccent(value: string): string {
  * Every string leaf of BRAND, SIZE_GUIDE and FULFILLMENT, plus the brand-bearing part of NAVIGATION.
  *
  * NAVIGATION contributes `brandHomeLabel` only, and that narrowing is a plan decision rather than an
- * implementation shortcut — see `tasks/plan.md` §0.2 in the spec repo. Measured on this tree, making
+ * implementation shortcut — see Task 9 §9.1 in the spec repo's `tasks/plan.md`. Measured on this
+ * tree, making
  * NAVIGATION fully recursive turns 23 of its 39 string leaves into needles that fire on up to 34
  * files: route paths ("/shop", "/search") and generic Vietnamese UI nouns ("Giỏ hàng", "Cửa hàng")
  * that pages legitimately contain. Route paths become centralizable only with the Phase C route
