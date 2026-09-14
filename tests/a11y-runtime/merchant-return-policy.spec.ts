@@ -5,7 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
 
-import { PUBLIC_RETURN_LOGISTICS_FACTS } from "../../src/content/public-fulfillment-facts.ts";
+import { FULFILLMENT } from "../../src/brand/index.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3231;
@@ -74,6 +74,6 @@ test("M5 /returns states that correct non-defective customer-change cases are ex
   expect(response?.status()).toBe(200);
 
   await expect(page.locator("main")).toContainText(
-    PUBLIC_RETURN_LOGISTICS_FACTS.nonDefectiveRefundNote,
+    FULFILLMENT.returnLogistics.nonDefectiveRefundNote,
   );
 });

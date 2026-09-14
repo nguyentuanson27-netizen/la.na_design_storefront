@@ -17,6 +17,8 @@
  * writes; this check is the layer that stays correct if it ever becomes reachable anyway.
  */
 
+import { BRAND } from "../brand/brand.config.ts";
+
 /** Google Merchant controlled values, quoted in ADR 0007 from the Merchant Center specification. */
 export const MERCHANT_GENDERS = ["male", "female", "unisex"] as const;
 export const MERCHANT_AGE_GROUPS = [
@@ -38,10 +40,19 @@ export const USE_SHOP_DEFAULT = "USE_SHOP_DEFAULT";
 export const APPAREL_FACT_UNRESOLVED = "APPAREL_FACT_UNRESOLVED";
 export const INVALID_APPAREL_OVERRIDE = "INVALID_APPAREL_OVERRIDE";
 
-/** ADR 0007 section 1 — owner-approved LA Clothing defaults for Merchant v1. */
+/**
+ * ADR 0007 section 1 — the owner-approved shop defaults for Merchant v1.
+ *
+ * Gender and age group are brand facts: a menswear shop defaults to male where a womenswear shop
+ * defaults to female, so they come from Brand Config. Condition is not a brand fact — every offer
+ * in this catalog is new goods — so it stays here.
+ *
+ * Imported from `brand.config.ts` rather than the brand loader: that module holds data only, which
+ * keeps this file free of a runtime cycle back through `src/brand/index.ts`.
+ */
 export const MERCHANT_SHOP_APPAREL_DEFAULTS = Object.freeze({
-  gender: "male",
-  ageGroup: "adult",
+  gender: BRAND.merchant.defaultGender,
+  ageGroup: BRAND.merchant.defaultAgeGroup,
   condition: "new",
 }) satisfies MerchantApparelFacts;
 

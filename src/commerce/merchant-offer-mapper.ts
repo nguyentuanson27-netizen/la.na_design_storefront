@@ -57,6 +57,7 @@ import {
   type PersistedMerchantApparelOverrides,
 } from "./merchant-apparel-facts.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
+import { BRAND } from "../brand/index.ts";
 import type {
   StorefrontProductProjection,
   StorefrontProjectionOption,
@@ -66,8 +67,8 @@ import {
   resolveDeepLinkedVariantSelection,
 } from "./storefront-variant-deep-link.ts";
 
-/** LA Clothing is the brand owner; there is no per-product brand fact to resolve. */
-export const MERCHANT_BRAND = "LA Clothing";
+/** The brand owner is the only brand in the feed; there is no per-product brand fact to resolve. */
+export const MERCHANT_BRAND = BRAND.merchant.feedBrand;
 
 /** Google Merchant accepts at most ten `additional_image_link` values per offer. */
 export const MAX_MERCHANT_ADDITIONAL_IMAGES = 10;

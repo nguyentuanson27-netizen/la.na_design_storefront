@@ -11,7 +11,8 @@ import {
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
-import { PUBLIC_DELIVERY_SCOPE_LABELS } from "@/content/public-fulfillment-facts";
+import { BRAND } from "@/brand";
+import { FULFILLMENT } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -28,7 +29,7 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
     searchParams: await searchParams,
     title: "Chính sách vận chuyển và thanh toán",
     description:
-      "Phạm vi giao hàng, đơn vị vận chuyển, thời gian dự kiến và phương thức thanh toán của LA Clothing.",
+      `Phạm vi giao hàng, đơn vị vận chuyển, thời gian dự kiến và phương thức thanh toán của ${BRAND.identity.name}.`,
   });
 }
 
@@ -36,7 +37,7 @@ export async function generateMetadata({ searchParams }: ShippingPageProps): Pro
  * W13/U33b + U41/M5 — Shipping & Payment page from reviewed public authorities.
  *
  * Shipping price remains server-owned in `readGuestShippingPolicy`. Delivery windows stay in
- * `PUBLIC_DELIVERY_FACTS`, while `PUBLIC_DELIVERY_SCOPE_LABELS` names the owner-approved Hanoi
+ * `PUBLIC_DELIVERY_FACTS`, while `FULFILLMENT.deliveryScopeLabels` names the owner-approved Hanoi
  * scopes explicitly so the public page does not publish the ambiguous historical labels “Nội thành”
  * and “Ngoại tỉnh”. No Merchant-only fallback changes the customer-facing delivery policy.
  */
@@ -75,7 +76,7 @@ export default function ShippingPage() {
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {PUBLIC_DELIVERY_SCOPE_LABELS.innerCity}
+                {FULFILLMENT.deliveryScopeLabels.innerCity}
               </dt>
               <dd className="mt-2 text-black/70">
                 {describePublicDeliveryEstimate(estimateDays.innerCity)} (dự kiến)
@@ -83,7 +84,7 @@ export default function ShippingPage() {
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {PUBLIC_DELIVERY_SCOPE_LABELS.otherProvince}
+                {FULFILLMENT.deliveryScopeLabels.otherProvince}
               </dt>
               <dd className="mt-2 text-black/70">
                 {describePublicDeliveryEstimate(estimateDays.otherProvince)} (dự kiến)

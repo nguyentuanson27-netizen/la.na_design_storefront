@@ -6,6 +6,7 @@ import {
   SOCIAL_FALLBACK_ALT,
   SOCIAL_FALLBACK_PATH,
 } from "./social-identity.ts";
+import { BRAND } from "../brand/index.ts";
 
 /**
  * Kept as a named export because the product metadata HTTP smoke imports it from here. The value
@@ -40,7 +41,7 @@ function buildProductDescription(product: ProductMetadataInput["product"]): stri
     return `${product.seoDescription} — /shop/${product.slug}.`;
   }
 
-  return `Thông tin sản phẩm ${product.name} tại LA Clothing — /shop/${product.slug}.`;
+  return `Thông tin sản phẩm ${product.name} tại ${BRAND.identity.name} — /shop/${product.slug}.`;
 }
 
 export function buildStorefrontProductMetadata({

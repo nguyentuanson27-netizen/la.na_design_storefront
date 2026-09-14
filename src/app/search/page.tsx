@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { BRAND } from "@/brand";
 
 export const metadata: Metadata = {
   title: "Tìm kiếm",
-  description: "Tìm sản phẩm và bộ sưu tập LA Clothing.",
+  description: `Tìm sản phẩm và bộ sưu tập ${BRAND.identity.name}.`,
 };
 
 export default function SearchPage() {

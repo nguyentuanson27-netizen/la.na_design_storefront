@@ -6,6 +6,7 @@ import {
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_LEGAL_FACTS,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ searchParams }: AboutPageProps): Promis
     indexingEnabled: exposure.indexingEnabled,
     pathname: "/about",
     searchParams: await searchParams,
-    title: "Về LA Clothing",
+    title: `Về ${BRAND.identity.name}`,
     description: PUBLIC_BRAND_POSITIONING,
   });
 }
@@ -42,7 +43,7 @@ export default function AboutPage() {
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Thương hiệu</p>
       <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
-        Về LA Clothing
+        Về {BRAND.identity.name}
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">{PUBLIC_BRAND_POSITIONING}</p>
 
@@ -72,7 +73,7 @@ export default function AboutPage() {
           className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/contact"
         >
-          Liên hệ LA Clothing
+          Liên hệ {BRAND.identity.name}
         </Link>
         .
       </p>

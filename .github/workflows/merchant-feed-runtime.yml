@@ -73,6 +73,13 @@ jobs:
       - name: Deploy database migrations
         run: pnpm prisma:migrate:deploy
 
+      # Checkpoint B requires this exact command for T8A: it proves the Merchant identity the feed
+      # would emit still resolves after the brand/default-gender facts moved into Brand Config. It
+      # is read-only, never calls Pancake, and needs only the database and shop id already in this
+      # job's environment. Runs before the build so an identity regression fails fast.
+      - name: Merchant identity audit
+        run: pnpm merchant:identity:audit
+
       - name: Build
         run: pnpm build
 

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { BRAND } from "@/brand";
 import { readCanonicalPurchaseSnapshotSafely } from "@/commerce/canonical-purchase-snapshot";
 import { buildMetaPurchasePixelParameters } from "@/commerce/meta-pixel-parameters";
 import { readMetaPurchaseSnapshot } from "@/commerce/meta-purchase-snapshot";
@@ -10,7 +11,7 @@ import { prisma } from "@/db/prisma";
 
 export const metadata: Metadata = {
   title: "Đặt hàng thành công",
-  description: "Xác nhận đơn hàng COD của LA Clothing.",
+  description: `Xác nhận đơn hàng COD của ${BRAND.identity.name}.`,
 };
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
@@ -88,7 +89,7 @@ export default async function CheckoutSuccessPage({
           <div role="status">
             <p className="font-serif text-2xl md:text-3xl">Cảm ơn bạn đã đặt hàng.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Mã đơn <strong className="font-semibold text-black">{orderCode}</strong>. LA Clothing sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
+              Mã đơn <strong className="font-semibold text-black">{orderCode}</strong>. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
             </p>
           </div>
         ) : (

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 
+import { BRAND } from "../brand/index.ts";
 import {
   SITE_LOCALE,
   SITE_NAME,
@@ -12,8 +13,8 @@ type RootMetadataInput = Readonly<{
   indexingEnabled: boolean;
 }>;
 
-const DEFAULT_TITLE = "LA Clothing — Modern Menswear";
-const DEFAULT_DESCRIPTION = "Minimal, modern menswear by LA Clothing.";
+const DEFAULT_TITLE = BRAND.identity.headline;
+const DEFAULT_DESCRIPTION = BRAND.identity.tagline;
 
 export const GOOGLE_SITE_VERIFICATION = "N2OZE83tu6EA4bc-oP1u2uhDYBrDwLKJJCZstMm5lhs";
 
@@ -38,7 +39,7 @@ export function buildRootMetadata({ origin, indexingEnabled }: RootMetadataInput
   return {
     title: {
       default: DEFAULT_TITLE,
-      template: "%s — LA Clothing",
+      template: `%s — ${BRAND.identity.name}`,
     },
     description: DEFAULT_DESCRIPTION,
     metadataBase: new URL(origin),

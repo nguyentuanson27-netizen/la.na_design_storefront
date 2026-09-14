@@ -7,7 +7,8 @@ import {
   describePublicReturnWindow,
   PUBLIC_RETURNS_POLICY,
 } from "@/content/public-brand-facts";
-import { PUBLIC_RETURN_LOGISTICS_FACTS } from "@/content/public-fulfillment-facts";
+import { BRAND } from "@/brand";
+import { FULFILLMENT } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -23,7 +24,7 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
     pathname: "/returns",
     searchParams: await searchParams,
     title: "Chính sách đổi trả và hoàn tiền",
-    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của LA Clothing.`,
+    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của ${BRAND.identity.name}.`,
   });
 }
 
@@ -31,7 +32,7 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  * W13/U33b + U41/M5 — public returns policy from owner-approved authorities only.
  *
  * `PUBLIC_RETURNS_POLICY` keeps the existing window, eligibility, fee and refund facts;
- * `PUBLIC_RETURN_LOGISTICS_FACTS` carries the later owner-approved return methods, restocking
+ * `FULFILLMENT.returnLogistics` carries the later owner-approved return methods, restocking
  * decision and the exchange-only rule for correct/non-defective customer-change cases. Page prose
  * only labels sections: every normative return statement below comes from one of those reviewed
  * content authorities.
@@ -47,7 +48,7 @@ export default function ReturnsPage() {
     refundChannelNote,
   } = PUBLIC_RETURNS_POLICY;
   const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } =
-    PUBLIC_RETURN_LOGISTICS_FACTS;
+    FULFILLMENT.returnLogistics;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -56,7 +57,7 @@ export default function ReturnsPage() {
         Đổi trả &amp; hoàn tiền
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">
-        LA Clothing hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
+        {BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
       </p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
@@ -154,7 +155,7 @@ export default function ReturnsPage() {
           className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/contact"
         >
-          Liên hệ LA Clothing
+          Liên hệ {BRAND.identity.name}
         </Link>{" "}
         để được hướng dẫn gửi lại sản phẩm.
       </p>

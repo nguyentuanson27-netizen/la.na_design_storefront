@@ -1,3 +1,4 @@
+import { BRAND } from "../brand/index.ts";
 /**
  * W2a: the metadata uniqueness replacement contract.
  *
@@ -116,7 +117,7 @@ export function buildSlugFreeProductCopy(
   return {
     title: product.seoTitle ?? product.name,
     description:
-      product.seoDescription ?? `Thông tin sản phẩm ${product.name} tại LA Clothing.`,
+      product.seoDescription ?? `Thông tin sản phẩm ${product.name} tại ${BRAND.identity.name}.`,
   };
 }
 

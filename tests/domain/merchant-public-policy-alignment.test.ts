@@ -2,13 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PUBLIC_DELIVERY_FACTS, PUBLIC_RETURNS_POLICY } from "../../src/content/public-brand-facts.ts";
-import {
-  PUBLIC_DELIVERY_SCOPE_LABELS,
-  PUBLIC_RETURN_LOGISTICS_FACTS,
-} from "../../src/content/public-fulfillment-facts.ts";
+import { FULFILLMENT } from "../../src/brand/index.ts";
 
 test("M5 public return authority exposes the owner-approved Merchant-compatible facts", () => {
-  assert.deepEqual(PUBLIC_RETURN_LOGISTICS_FACTS, {
+  assert.deepEqual(FULFILLMENT.returnLogistics, {
     returnMethods: {
       inStore: "Trả trực tiếp tại cửa hàng / địa điểm kinh doanh.",
       byMail: "Gửi trả qua đường vận chuyển / bưu gửi.",
@@ -25,7 +22,7 @@ test("M5 public return authority exposes the owner-approved Merchant-compatible 
 });
 
 test("M5 public delivery authority names the owner-approved Hanoi scopes explicitly", () => {
-  assert.deepEqual(PUBLIC_DELIVERY_SCOPE_LABELS, {
+  assert.deepEqual(FULFILLMENT.deliveryScopeLabels, {
     innerCity: "Nội thành Hà Nội",
     otherProvince: "Ngoài nội thành Hà Nội / các tỉnh, thành khác",
   });

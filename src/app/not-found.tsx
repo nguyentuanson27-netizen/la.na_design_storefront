@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BRAND } from "@/brand";
 
 // U30 / W14a. Next answers 404 for an unmatched route on its own; what it answers *with* is an
 // unbranded default page with no way back. This is the route-level recovery surface: it keeps the
@@ -16,7 +17,7 @@ export default function NotFound() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <section aria-labelledby="not-found-title" className="ui-state">
-        <p className="eyebrow">LA Clothing / 404</p>
+        <p className="eyebrow">{BRAND.identity.name} / 404</p>
         <h1 id="not-found-title" className="ui-state__title">
           Không tìm thấy trang
         </h1>

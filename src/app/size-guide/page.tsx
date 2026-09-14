@@ -5,6 +5,7 @@ import {
   describePublicSizeTolerance,
   PUBLIC_SIZE_GUIDE,
 } from "@/content/public-brand-facts";
+import { BRAND } from "@/brand";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
 
@@ -20,7 +21,7 @@ export async function generateMetadata({ searchParams }: SizeGuidePageProps): Pr
     pathname: "/size-guide",
     searchParams: await searchParams,
     title: "Hướng dẫn chọn size",
-    description: `Bảng thông số chọn size quần áo LA Clothing, số đo vòng sản phẩm (${PUBLIC_SIZE_GUIDE.unit}), dung sai ${describePublicSizeTolerance()} và khoảng chiều cao, cân nặng tham khảo.`,
+    description: `Bảng thông số chọn size quần áo ${BRAND.identity.name}, số đo vòng sản phẩm (${PUBLIC_SIZE_GUIDE.unit}), dung sai ${describePublicSizeTolerance()} và khoảng chiều cao, cân nặng tham khảo.`,
   });
 }
 
@@ -28,19 +29,14 @@ export async function generateMetadata({ searchParams }: SizeGuidePageProps): Pr
  * W13/U33c — the Size Guide page, rendered entirely from `PUBLIC_SIZE_GUIDE`.
  *
  * Measurements, units, tolerance, circumference semantics, and height/weight guidance are all read
- * directly from that single authority. No size calculator, recommendation engine, fit vocabulary, or
- * per-product mapping beyond B3 approved facts is authored here.
+ * directly from that single authority. Every chart it declares is rendered, each with its own size
+ * scale, so a brand adding a third table gets a third table here and nothing else changes. No size
+ * calculator, recommendation engine, fit vocabulary, or per-product mapping beyond B3 approved
+ * facts is authored here.
  */
 export default function SizeGuidePage() {
-  const {
-    unit,
-    toleranceNote,
-    circumferenceSemanticsNote,
-    guidanceNote,
-    sizes,
-    chartA,
-    chartB,
-  } = PUBLIC_SIZE_GUIDE;
+  const { unit, toleranceNote, circumferenceSemanticsNote, guidanceNote, charts } =
+    PUBLIC_SIZE_GUIDE;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
@@ -51,7 +47,7 @@ export default function SizeGuidePage() {
 
       <div className="mt-6 max-w-3xl space-y-3 text-base leading-7 text-black/75">
         <p>
-          Tất cả thông số kích thước quần áo tại LA Clothing được tính theo đơn vị{" "}
+          Tất cả thông số kích thước quần áo tại {BRAND.identity.name} được tính theo đơn vị{" "}
           <strong className="font-semibold text-black">{unit}</strong>.
         </p>
         <p>
@@ -66,83 +62,46 @@ export default function SizeGuidePage() {
       </div>
 
       <div className="mt-16 grid max-w-5xl gap-16">
-        <section aria-labelledby="chart-a-heading">
-          <h2 id="chart-a-heading" className="font-serif text-3xl tracking-[-0.03em]">
-            {chartA.title}
-          </h2>
-          <p className="mt-2 text-sm text-black/60">Đơn vị đo: {unit}. Dung sai: {describePublicSizeTolerance()}.</p>
+        {charts.map((chart) => (
+          <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`}>
+            <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
+              {chart.title}
+            </h2>
+            <p className="mt-2 text-sm text-black/60">Đơn vị đo: {unit}. Dung sai: {describePublicSizeTolerance()}.</p>
 
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-              <caption className="sr-only">{chartA.title}</caption>
-              <thead>
-                <tr className="border-b border-black/15 bg-black/[0.03]">
-                  <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold text-black">
-                    Thông số
-                  </th>
-                  {sizes.map((size) => (
-                    <th key={size} scope="col" className="px-4 py-3.5 text-right font-semibold text-black">
-                      {size}
+            <div className="mt-6 overflow-x-auto">
+              <table className="w-full min-w-[560px] border-collapse text-left text-sm">
+                <caption className="sr-only">{chart.title}</caption>
+                <thead>
+                  <tr className="border-b border-black/15 bg-black/[0.03]">
+                    <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold text-black">
+                      Thông số
                     </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {chartA.rows.map((row) => (
-                  <tr key={row.parameter} className="hover:bg-black/[0.01]">
-                    <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
-                      {row.parameter}
-                    </th>
-                    {sizes.map((size) => (
-                      <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">
-                        {row.values[size]}
-                      </td>
+                    {chart.sizes.map((size) => (
+                      <th key={size} scope="col" className="px-4 py-3.5 text-right font-semibold text-black">
+                        {size}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <section aria-labelledby="chart-b-heading">
-          <h2 id="chart-b-heading" className="font-serif text-3xl tracking-[-0.03em]">
-            {chartB.title}
-          </h2>
-          <p className="mt-2 text-sm text-black/60">Đơn vị đo: {unit}. Dung sai: {describePublicSizeTolerance()}.</p>
-
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[560px] border-collapse text-left text-sm">
-              <caption className="sr-only">{chartB.title}</caption>
-              <thead>
-                <tr className="border-b border-black/15 bg-black/[0.03]">
-                  <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold text-black">
-                    Thông số
-                  </th>
-                  {sizes.map((size) => (
-                    <th key={size} scope="col" className="px-4 py-3.5 text-right font-semibold text-black">
-                      {size}
-                    </th>
+                </thead>
+                <tbody className="divide-y divide-black/10">
+                  {chart.rows.map((row) => (
+                    <tr key={row.parameter} className="hover:bg-black/[0.01]">
+                      <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
+                        {row.parameter}
+                      </th>
+                      {chart.sizes.map((size) => (
+                        <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">
+                          {row.values[size]}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/10">
-                {chartB.rows.map((row) => (
-                  <tr key={row.parameter} className="hover:bg-black/[0.01]">
-                    <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
-                      {row.parameter}
-                    </th>
-                    {sizes.map((size) => (
-                      <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">
-                        {row.values[size]}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        ))}
       </div>
 
       <p className="mt-16 max-w-2xl text-sm leading-6 text-black/65">
@@ -151,7 +110,7 @@ export default function SizeGuidePage() {
           className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
           href="/contact"
         >
-          Liên hệ LA Clothing
+          Liên hệ {BRAND.identity.name}
         </Link>{" "}
         để được đội ngũ chăm sóc khách hàng hỗ trợ.
       </p>

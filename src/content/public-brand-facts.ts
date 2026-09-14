@@ -1,3 +1,4 @@
+import { BRAND, FULFILLMENT, SIZE_GUIDE } from "../brand/index.ts";
 import {
   describeGuestShippingPromotion,
   type GuestShippingPolicy,
@@ -5,8 +6,8 @@ import {
 
 export function buildPublicBrandFacts(policy: GuestShippingPolicy) {
   return Object.freeze({
-    brandName: "LA Clothing",
-    brandSummary: "Minimal, modern menswear by LA Clothing.",
+    brandName: BRAND.identity.name,
+    brandSummary: BRAND.identity.tagline,
     paymentMethod: "Thanh toán khi nhận hàng (COD).",
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
@@ -20,29 +21,14 @@ export function buildPublicBrandFacts(policy: GuestShippingPolicy) {
 }
 
 /**
- * "Hằng ngày" from the approved support hours: every day carries the same window.
- *
- * Part of the fact, not a presentation detail — it lives here with the times so a consumer reading
- * `PUBLIC_CONTACT_FACTS` gets the whole approved statement rather than two thirds of it.
- */
-const PUBLIC_SUPPORT_DAYS = Object.freeze([
-  "Monday",
-  "Tuesday",
-  "Wednesday",
-  "Thursday",
-  "Friday",
-  "Saturday",
-  "Sunday",
-]);
-
-/**
  * B2 — the contact facts the repository owner approved for publication, transcribed from
  * `docs/specs/la-clothing-owner-approved-facts-and-decisions.md` §2 and nothing else.
  *
- * This is the single authority for them. The site footer renders them and the `Organization` entity
- * in the site JSON-LD marks the same values up, both reading this constant; the evergreen Contact
- * page will read it too. Nothing copies a literal, so the visible text and the structured data
- * cannot end up publishing two different phone numbers.
+ * The facts themselves now live in `BRAND.contact`; this stays as the name existing consumers read
+ * them by. The authority moved, the approval discipline did not: no page may state a contact fact
+ * that is not in Brand Config. The site footer renders these and the `Organization` entity in the
+ * site JSON-LD marks the same values up, both through this binding, so the visible text and the
+ * structured data cannot end up publishing two different phone numbers.
  *
  * Support hours are stored as their parts — the seven days, the local open/close times and the
  * approved `UTC+7` offset — because two consumers need two shapes of the same fact: schema.org
@@ -69,21 +55,7 @@ const PUBLIC_SUPPORT_DAYS = Object.freeze([
  *   MST — this is not an owner block. They are simply **outside the B2 contact contract** this
  *   constant owns; they belong to the About/legal surface U33 builds.
  */
-export const PUBLIC_CONTACT_FACTS = Object.freeze({
-  telephone: "0923159666",
-  telephoneInternational: "+84923159666",
-  email: "laclothing2025@gmail.com",
-  fanpageUrl: "https://www.facebook.com/LAclothing.vn",
-  streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
-  addressLocality: "Hà Nội",
-  supportHours: Object.freeze({
-    days: PUBLIC_SUPPORT_DAYS,
-    opens: "08:00",
-    closes: "22:00",
-    utcOffset: "+07:00",
-    utcOffsetLabel: "UTC+7",
-  }),
-});
+export const PUBLIC_CONTACT_FACTS = BRAND.contact;
 
 /** The full postal address as the owner wrote it, for surfaces that show one line. */
 export function describePublicAddress(): string {
@@ -113,8 +85,7 @@ export function describePublicSupportHours(): string {
  * freehand is how an invented history reaches the storefront, and a test pins this against §7 word
  * for word.
  */
-export const PUBLIC_BRAND_POSITIONING =
-  "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.";
+export const PUBLIC_BRAND_POSITIONING = BRAND.identity.positioning;
 
 /**
  * §1 legal identity, approved for publication on a minimal About page by B6/§7.
@@ -128,8 +99,8 @@ export const PUBLIC_BRAND_POSITIONING =
  * later `legalName`/`taxID` mapping would read them from.
  */
 export const PUBLIC_LEGAL_FACTS = Object.freeze({
-  legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
-  taxCode: "0111242251",
+  legalEntityName: BRAND.identity.legalName,
+  taxCode: BRAND.identity.taxId,
 });
 
 const vnd = new Intl.NumberFormat("vi-VN", {
@@ -139,88 +110,17 @@ const vnd = new Intl.NumberFormat("vi-VN", {
 });
 
 /**
- * B1/§4 — the returns, exchange and refund policy the owner approved, transcribed.
+ * B1/§4 returns policy and B4/§5 delivery facts, now owned by `FULFILLMENT` in Brand Config and
+ * bound here under the names existing consumers read them by.
  *
- * Policy is the one kind of content a coding agent must never author, so every clause a page shows
- * is a member of this constant. A page that renders `productConditions` cannot quietly grow a
- * condition the owner never wrote, and a reviewer comparing this file to §4 is comparing like with
- * like rather than reading prose for omissions.
- *
- * `nonReturnableCategories` is deliberately an empty array rather than an absent key: §4 states
- * there is **no** separate excluded-category list, which is a decision, not a gap.
+ * The approval discipline is unchanged: policy is the one kind of content a coding agent must never
+ * author, so every clause a page shows is still a member of the config rather than page prose. What
+ * changed is that the shop's own name is interpolated from `BRAND.identity` instead of written into
+ * the sentences, so a fork restates its policy in one place.
  */
-export const PUBLIC_RETURNS_POLICY = Object.freeze({
-  windowDays: 15,
-  productConditions: Object.freeze([
-    "còn mới",
-    "chưa qua sử dụng",
-    "còn đầy đủ tem/mác",
-    "không rách, bẩn, hư hỏng",
-    "không có mùi lạ",
-    "không có dấu hiệu đã qua sử dụng",
-    "đúng sản phẩm được mua từ LA Clothing",
-    "gửi lại theo hướng dẫn của bộ phận hỗ trợ",
-  ]),
-  supportedCases: Object.freeze([
-    "Sản phẩm lỗi hoặc có vết bẩn từ phía sản xuất.",
-    "LA Clothing giao sai mẫu.",
-    "Giao sai màu.",
-    "Giao sai size.",
-    "Khách hàng chủ động đổi sang mẫu khác.",
-    "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
-  ]),
-  customerInitiatedExchangeFeeVnd: 50_000,
-  // Who bears the shipping in each case is a normative B1 commitment, not presentation copy. Left
-  // as page prose it could drift from §4 while a test still called the constant faithful.
-  customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
-  shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
-  nonReturnableCategories: Object.freeze([]),
-  /**
-   * What an empty `nonReturnableCategories` *means*, so the page can render the state rather than
-   * assert it. §4 says there is no separate excluded-category list and only the stated rejection
-   * conditions apply — a claim strong enough that it must not live in page prose.
-   */
-  nonReturnableCategoriesNote:
-    "Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
-  refundWorkingDays: Object.freeze({ minimum: 7, maximum: 10 }),
-  /**
-   * §3 states the refund channel for a COD order. It lives with the refund policy rather than in a
-   * payment constant: a way to receive money back is not a way to pay for an order, and both the
-   * Returns and the Shipping page read this one string.
-   */
-  refundChannelNote:
-    "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
-});
+export const PUBLIC_RETURNS_POLICY = FULFILLMENT.returns;
 
-/**
- * B4/§5 — the delivery facts the owner approved. **Not** the shipping price: that stays with
- * `readGuestShippingPolicy`, which B4 keeps as the pricing authority because production may
- * legitimately override it. Duplicating a fee here is how a page starts contradicting checkout.
- *
- * The estimates are estimates. §5 says so outright — "không phải guaranteed SLA tuyệt đối" — and the
- * page has to read that way, because a delivery window presented as a promise is a policy the owner
- * did not make.
- */
-export const PUBLIC_DELIVERY_FACTS = Object.freeze({
-  coverage: "Giao hàng toàn quốc",
-  carriers: Object.freeze(["GHN", "GHTK"]),
-  estimateDays: Object.freeze({
-    innerCity: Object.freeze({ minimum: 1, maximum: 3 }),
-    otherProvince: Object.freeze({ minimum: 3, maximum: 15 }),
-  }),
-  estimateCaveat: "Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.",
-  /**
-   * §5: no carrier tracking number or link is provided by default, and a verification call is
-   * possible but not required.
-   *
-   * Both are stored as the sentence the page renders rather than as a boolean beside hard-coded
-   * copy. A flag that no rendering reads is how a fact changes here while the page keeps saying the
-   * old thing.
-   */
-  carrierTrackingNote:
-    "LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
-  phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
-});
+export const PUBLIC_DELIVERY_FACTS = FULFILLMENT.delivery;
 
 /** The approved customer-initiated exchange fee, formatted for a reader. */
 export function describePublicExchangeFee(): string {
@@ -250,93 +150,18 @@ export function describePublicReturnWindow(): string {
  */
 export function describePublicRefundWindow(): string {
   const { minimum, maximum } = PUBLIC_RETURNS_POLICY.refundWorkingDays;
-  return `${minimum}–${maximum} ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
+  return `${minimum}–${maximum} ngày làm việc kể từ khi ${BRAND.identity.name} nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền`;
 }
 
 /**
- * B3/§6 — the size guide facts the owner approved.
+ * B3/§6 — the size guide facts the owner approved, now held by `SIZE_GUIDE` in Brand Config and
+ * bound here under the name existing consumers read it by.
  *
- * The semantics travel with the numbers:
- * - All measurements are in centimetres (cm).
- * - Chest, waist and hip widths are circumferences around the garment, not flat measurements.
- * - Manufacturing tolerance is ±3 cm.
- * - Height and weight are guidance for size selection only, not a fit guarantee.
- *
- * No size recommendation, size calculator, fit vocabulary or per-product measurement mapping
- * outside these approved tables may be authored or inferred.
+ * The semantics travel with the numbers; see `src/brand/size-guide.config.ts` for the full
+ * statement. No size recommendation, size calculator, fit vocabulary or per-product measurement
+ * mapping outside the approved tables may be authored or inferred.
  */
-export const PUBLIC_SIZE_GUIDE = Object.freeze({
-  unit: "cm",
-  toleranceCm: 3,
-  circumferenceSemanticsNote:
-    "Rộng ngực, Rộng eo, Rộng mông là số đo vòng quanh sản phẩm, không phải chiều ngang khi trải phẳng.",
-  toleranceNote: "Dung sai sai số may mặc: ±3 cm.",
-  guidanceNote:
-    "Thông số chiều cao và cân nặng mang tính chất tham khảo chọn size, không bảo đảm vừa vặn tuyệt đối cho mọi vóc dáng.",
-  sizes: Object.freeze(["M", "L", "XL", "2XL"] as const),
-  chartA: Object.freeze({
-    title: "Sản phẩm dáng rộng / quần lưng chun",
-    rows: Object.freeze([
-      Object.freeze({
-        parameter: "Rộng ngực (vòng, cm)",
-        values: Object.freeze({ M: "106", L: "110", XL: "114", "2XL": "118" }),
-      }),
-      Object.freeze({
-        parameter: "Dài tay (cm)",
-        values: Object.freeze({ M: "55", L: "56", XL: "57", "2XL": "58" }),
-      }),
-      Object.freeze({
-        parameter: "Dài áo (cm)",
-        values: Object.freeze({ M: "63.5", L: "65.5", XL: "67.5", "2XL": "69.5" }),
-      }),
-      Object.freeze({
-        parameter: "Dài quần (cm)",
-        values: Object.freeze({ M: "105", L: "106", XL: "107", "2XL": "108" }),
-      }),
-      Object.freeze({
-        parameter: "Rộng eo — chun (vòng, cm)",
-        values: Object.freeze({ M: "70–80", L: "74–84", XL: "78–88", "2XL": "82–92" }),
-      }),
-      Object.freeze({
-        parameter: "Rộng mông (vòng, cm)",
-        values: Object.freeze({ M: "108", L: "112", XL: "116", "2XL": "120" }),
-      }),
-      Object.freeze({
-        parameter: "Chiều cao tham khảo",
-        values: Object.freeze({ M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" }),
-      }),
-      Object.freeze({
-        parameter: "Cân nặng tham khảo (kg)",
-        values: Object.freeze({ M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" }),
-      }),
-    ]),
-  }),
-  chartB: Object.freeze({
-    title: "Áo ngắn tay",
-    rows: Object.freeze([
-      Object.freeze({
-        parameter: "Rộng ngực (vòng, cm)",
-        values: Object.freeze({ M: "120", L: "124", XL: "128", "2XL": "132" }),
-      }),
-      Object.freeze({
-        parameter: "Dài áo (cm)",
-        values: Object.freeze({ M: "63", L: "65", XL: "67", "2XL": "69" }),
-      }),
-      Object.freeze({
-        parameter: "Dài tay (cm)",
-        values: Object.freeze({ M: "27", L: "28", XL: "29", "2XL": "30" }),
-      }),
-      Object.freeze({
-        parameter: "Chiều cao tham khảo",
-        values: Object.freeze({ M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" }),
-      }),
-      Object.freeze({
-        parameter: "Cân nặng tham khảo (kg)",
-        values: Object.freeze({ M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" }),
-      }),
-    ]),
-  }),
-});
+export const PUBLIC_SIZE_GUIDE = SIZE_GUIDE;
 
 /** The approved apparel manufacturing tolerance, formatted for a reader. */
 export function describePublicSizeTolerance(): string {

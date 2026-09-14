@@ -3,6 +3,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { connection } from "next/server";
 
+import { BRAND } from "@/brand";
 import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
 import type { StorefrontCartLine } from "@/commerce/storefront-cart";
 import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
@@ -14,7 +15,7 @@ import { CartLineControls } from "@/components/commerce/cart-line-controls";
 
 export const metadata: Metadata = {
   title: "Giỏ hàng",
-  description: "Giỏ hàng mua sắm tại LA Clothing.",
+  description: `Giỏ hàng mua sắm tại ${BRAND.identity.name}.`,
 };
 
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -151,7 +152,7 @@ export default async function CartPage() {
                     className="flex h-full w-full items-center justify-center p-4 text-center text-xs font-semibold uppercase tracking-[0.1em] text-black/75"
                     aria-hidden="true"
                   >
-                    LA Clothing
+                    {BRAND.identity.name}
                   </div>
                 )}
               </div>

@@ -7,6 +7,7 @@ import {
   buildCollectionDiscoveryHref,
   parseCollectionDiscoverySearchParams,
 } from "@/commerce/collection-discovery-url";
+import { BRAND } from "@/brand";
 import { CollectionDefinitionError } from "@/commerce/collection-definition";
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import {
@@ -143,7 +144,7 @@ export default async function CollectionPage({ params, searchParams }: Collectio
           </li>
         </ol>
       </nav>
-      <p className="eyebrow mt-6">LA Clothing / Bộ sưu tập</p>
+      <p className="eyebrow mt-6">{BRAND.identity.name} / Bộ sưu tập</p>
       <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         {collection.title}
       </h1>

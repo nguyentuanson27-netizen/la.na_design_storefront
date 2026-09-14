@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { BRAND } from "@/brand";
 
 export const metadata: Metadata = {
   title: "Hàng mới",
-  description: "Những sản phẩm mới nhất từ LA Clothing.",
+  description: `Những sản phẩm mới nhất từ ${BRAND.identity.name}.`,
 };
 
 export default function NewArrivalsPage() {

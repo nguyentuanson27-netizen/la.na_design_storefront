@@ -7,6 +7,7 @@ import {
   listConfiguredStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { BRAND } from "@/brand";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { StorefrontProductCard } from "@/components/commerce/storefront-product-card";
@@ -29,7 +30,7 @@ export async function generateMetadata({
     pathname: "/lookbook",
     searchParams: await searchParams,
     title: "Lookbook",
-    description: "LA Clothing editorial and styling stories for the city uniform.",
+    description: `${BRAND.identity.name} editorial and styling stories for the city uniform.`,
   });
 }
 
@@ -86,7 +87,7 @@ export default async function LookbookPage() {
           <div className="lookbook-panel relative min-h-[62vh] overflow-hidden md:min-h-[760px]">
             <Image
               src={chapter1Image.url}
-              alt={chapter1Image.alt || chapter1Product?.name || "LA Clothing Lookbook Chapter 1"}
+              alt={chapter1Image.alt || chapter1Product?.name || `${BRAND.identity.name} Lookbook Chapter 1`}
               fill
               sizes="(min-width: 768px) 65vw, 100vw"
               className="object-cover"
@@ -123,7 +124,7 @@ export default async function LookbookPage() {
           <div className="lookbook-panel relative min-h-[62vh] overflow-hidden bg-[var(--olive)] md:min-h-[760px]">
             <Image
               src={chapter2Image.url}
-              alt={chapter2Image.alt || chapter2Product?.name || "LA Clothing Lookbook Chapter 2"}
+              alt={chapter2Image.alt || chapter2Product?.name || `${BRAND.identity.name} Lookbook Chapter 2`}
               fill
               sizes="(min-width: 768px) 65vw, 100vw"
               className="object-cover"

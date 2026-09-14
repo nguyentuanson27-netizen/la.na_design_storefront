@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 
+import { BRAND } from "@/brand";
 import { GuestOrderTrackingForm } from "@/components/commerce/guest-order-tracking-form";
 
 export const metadata: Metadata = {
   title: "Tra cứu đơn hàng",
-  description: "Tra cứu trạng thái đơn hàng COD của LA Clothing bằng mã đơn và số điện thoại.",
+  description: `Tra cứu trạng thái đơn hàng COD của ${BRAND.identity.name} bằng mã đơn và số điện thoại.`,
 };
 
 export default function TrackOrderPage() {
@@ -37,7 +38,7 @@ export default function TrackOrderPage() {
             Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
           </p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn COD. LA Clothing không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
+            Kết quả chỉ hiển thị trạng thái xử lý cơ bản của đơn COD. {BRAND.identity.name} không hiển thị địa chỉ, ghi chú hoặc thông tin nội bộ của hệ thống bán hàng tại đây.
           </p>
         </div>
 

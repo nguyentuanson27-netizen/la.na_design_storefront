@@ -23,10 +23,7 @@ import {
   PUBLIC_RETURNS_POLICY,
   PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
-import {
-  PUBLIC_DELIVERY_SCOPE_LABELS,
-  PUBLIC_RETURN_LOGISTICS_FACTS,
-} from "../../src/content/public-fulfillment-facts.ts";
+import { FULFILLMENT } from "../../src/brand/index.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3229;
@@ -200,10 +197,10 @@ test("U33b the Returns page renders every approved clause and adds none", async 
   await expect(main).toContainText(PUBLIC_RETURNS_POLICY.nonReturnableCategoriesNote);
   await expect(main).toContainText(describePublicRefundWindow());
   await expect(main).toContainText(PUBLIC_RETURNS_POLICY.refundChannelNote);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.inStore);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.byMail);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.returnMethods.byMailResponsibility);
-  await expect(main).toContainText(PUBLIC_RETURN_LOGISTICS_FACTS.restockingFeeNote);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.inStore);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.byMail);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.returnMethods.byMailResponsibility);
+  await expect(main).toContainText(FULFILLMENT.returnLogistics.restockingFeeNote);
 
   // No category exclusion or separate storage fee was approved. "Restocking" itself is no longer a
   // forbidden word because the owner explicitly approved the truthful zero-fee disclosure above.
@@ -226,8 +223,8 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   for (const carrier of PUBLIC_DELIVERY_FACTS.carriers) {
     await expect(main).toContainText(carrier);
   }
-  await expect(main).toContainText(PUBLIC_DELIVERY_SCOPE_LABELS.innerCity);
-  await expect(main).toContainText(PUBLIC_DELIVERY_SCOPE_LABELS.otherProvince);
+  await expect(main).toContainText(FULFILLMENT.deliveryScopeLabels.innerCity);
+  await expect(main).toContainText(FULFILLMENT.deliveryScopeLabels.otherProvince);
   await expect(main).toContainText(
     describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.innerCity),
   );
@@ -266,7 +263,7 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U33c the Size Guide page renders both approved charts with circumference and tolerance semantics", async ({
+test("U33c the Size Guide page renders every approved chart with circumference and tolerance semantics", async ({
   page,
 }) => {
   const response = await page.goto(`${BASE_URL}/size-guide`, { waitUntil: "networkidle" });
@@ -282,21 +279,15 @@ test("U33c the Size Guide page renders both approved charts with circumference a
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.guidanceNote);
   await expect(main).toContainText(describePublicSizeTolerance());
 
-  // Chart A: heading and all rows/cells
-  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartA.title })).toBeVisible();
-  for (const row of PUBLIC_SIZE_GUIDE.chartA.rows) {
-    await expect(main).toContainText(row.parameter);
-    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
-      await expect(main).toContainText(row.values[size]);
-    }
-  }
-
-  // Chart B: heading and all rows/cells
-  await expect(page.getByRole("heading", { level: 2, name: PUBLIC_SIZE_GUIDE.chartB.title })).toBeVisible();
-  for (const row of PUBLIC_SIZE_GUIDE.chartB.rows) {
-    await expect(main).toContainText(row.parameter);
-    for (const size of PUBLIC_SIZE_GUIDE.sizes) {
-      await expect(main).toContainText(row.values[size]);
+  // Every approved chart: its heading, every row parameter and every cell, checked against that
+  // chart's own size scale rather than one shared list.
+  for (const chart of PUBLIC_SIZE_GUIDE.charts) {
+    await expect(page.getByRole("heading", { level: 2, name: chart.title })).toBeVisible();
+    for (const row of chart.rows) {
+      await expect(main).toContainText(row.parameter);
+      for (const size of chart.sizes) {
+        await expect(main).toContainText(row.values[size]);
+      }
     }
   }
 
