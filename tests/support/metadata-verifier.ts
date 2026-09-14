@@ -90,6 +90,59 @@ function unwrapMetadataExpression(expr: ts.Expression): ts.Expression {
   }
 }
 
+/** Every name a binding pattern introduces, including destructured and renamed ones. */
+function bindingNames(name: ts.BindingName, out: string[]): void {
+  if (ts.isIdentifier(name)) {
+    out.push(name.text);
+    return;
+  }
+  for (const element of name.elements) {
+    if (ts.isBindingElement(element)) bindingNames(element.name, out);
+  }
+}
+
+/**
+ * A builder name re-declared inside the function whose result becomes the metadata.
+ *
+ * `isDirectBuilderCall` can only see that the callee is an identifier with a builder's name. A named
+ * import may legally be shadowed in an inner scope, so a local function with the same name satisfies
+ * that check while the metadata never touches the canonical import:
+ *
+ *     metadata: async (props) => {
+ *       const buildHomeMetadata = async () => ({ title: "handwritten" });
+ *       return buildHomeMetadata(props);
+ *     }
+ *
+ * Resolving bindings properly would mean a scope analyser. Refusing to shadow a builder name at all
+ * is the narrow alternative and costs nothing real: no route module has a reason to reuse the name.
+ */
+function shadowedBuilderName(
+  fn: ts.FunctionLikeDeclaration,
+  builders: ReadonlySet<string>,
+): string | null {
+  const declared: string[] = [];
+
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) || ts.isParameter(node) || ts.isBindingElement(node)) {
+      bindingNames(node.name, declared);
+    }
+    if (
+      (ts.isFunctionDeclaration(node) || ts.isClassDeclaration(node)) &&
+      node.name &&
+      ts.isIdentifier(node.name)
+    ) {
+      declared.push(node.name.text);
+    }
+    if (ts.isImportSpecifier(node)) declared.push(node.name.text);
+    node.forEachChild(collect);
+  };
+
+  for (const parameter of fn.parameters) bindingNames(parameter.name, declared);
+  if (fn.body) fn.body.forEachChild(collect);
+
+  return declared.find((name) => builders.has(name)) ?? null;
+}
+
 function isDirectBuilderCall(expr: ts.Expression, names: ReadonlySet<string>): boolean {
   const unwrapped = unwrapMetadataExpression(expr);
   return (
@@ -366,6 +419,15 @@ export function checkMetadataContract(input: MetadataCheckInput): readonly Metad
     // from, which is the entire question.
     const site = routeDefinitionSite(sf, violations, label);
     if (site?.metadata) {
+      if (ts.isFunctionLike(site.metadata)) {
+        const shadowed = shadowedBuilderName(site.metadata, builders);
+        if (shadowed !== null) {
+          violations.push({
+            code: "shadowed-builder",
+            message: `${label}: \`${shadowed}\` is re-declared inside the metadata function, so the call does not reach the imported builder`,
+          });
+        }
+      }
       const expression = ts.isFunctionLike(site.metadata)
         ? returnedExpression(site.metadata, violations, label)
         : site.metadata;
@@ -409,6 +471,14 @@ export function checkMetadataContract(input: MetadataCheckInput): readonly Metad
     violations.push({
       code: "both-metadata-exports",
       message: `${label}: a segment cannot export both \`metadata\` and \`generateMetadata\``,
+    });
+  }
+
+  const shadowed = shadowedBuilderName(fn, builders);
+  if (shadowed !== null) {
+    violations.push({
+      code: "shadowed-builder",
+      message: `${label}: \`${shadowed}\` is re-declared inside \`generateMetadata\`, so the call does not reach the imported builder`,
     });
   }
 

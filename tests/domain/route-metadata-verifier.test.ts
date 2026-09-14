@@ -322,6 +322,64 @@ test("page: a default import fails even when the call is direct", () => {
   assert.ok(found.includes("not-direct-call"));
 });
 
+test("page: re-declaring the builder name inside the metadata function is rejected", () => {
+  // A named import can legally be shadowed in an inner scope, so a local function with the same name
+  // satisfies an identifier-text check while the metadata never reaches the canonical import. The
+  // `typeof` alias keeps the real import genuinely referenced, so "is it imported?" stays true.
+  assert.deepEqual(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       type Builder = typeof buildHomeMetadata;
+       const route = createStorefrontRoute({
+         load, render,
+         metadata: async (props) => {
+           const buildHomeMetadata: Builder = async () => ({ title: "handwritten" });
+           return buildHomeMetadata(props);
+         },
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ),
+    ["shadowed-builder"],
+  );
+});
+
+test("page: a parameter that shadows the builder name is rejected too", () => {
+  assert.ok(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render, metadata: async (buildHomeMetadata) => buildHomeMetadata(),
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ).includes("shadowed-builder"),
+  );
+});
+
+test("page: a destructured binding that shadows the builder name is rejected", () => {
+  assert.ok(
+    codes(
+      `import { createStorefrontRoute } from "@/routes/factory";
+       import { buildHomeMetadata } from "@/routes/metadata/home";
+       const route = createStorefrontRoute({
+         load, render,
+         metadata: async (props) => {
+           const { buildHomeMetadata } = props;
+           return buildHomeMetadata(props);
+         },
+       });
+       export const generateMetadata = route.generateMetadata;
+       export default route.Page;`,
+      "page",
+    ).includes("shadowed-builder"),
+  );
+});
+
 /* ---------------------------------------------------------------- layout mode */
 
 test("layout: the layout module must return a direct builder call", () => {
@@ -332,6 +390,33 @@ test("layout: the layout module must return a direct builder call", () => {
       "layout",
     ),
     [],
+  );
+});
+
+test("layout: re-declaring the builder name inside generateMetadata is rejected", () => {
+  assert.deepEqual(
+    codes(
+      `import { buildProductMetadata } from "@/routes/metadata/product";
+       export async function generateMetadata({ params }) {
+         const buildProductMetadata = async () => ({ title: "handwritten" });
+         return buildProductMetadata(params);
+       }`,
+      "layout",
+    ),
+    ["shadowed-builder"],
+  );
+});
+
+test("layout: a nested function declaration shadowing the builder is rejected", () => {
+  assert.ok(
+    codes(
+      `import { buildProductMetadata } from "@/routes/metadata/product";
+       export async function generateMetadata({ params }) {
+         function buildProductMetadata() { return { title: "handwritten" }; }
+         return buildProductMetadata(params);
+       }`,
+      "layout",
+    ).includes("shadowed-builder"),
   );
 });
 
