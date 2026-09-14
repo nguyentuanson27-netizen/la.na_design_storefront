@@ -237,6 +237,13 @@ model CollectionDefinition {
   description        String?
   seoTitle           String?
   seoDescription     String?
+  /** Editorial media. `description` is the collection's story; there is no separate story field. */
+  heroImageUrl       String?
+  galleryImageUrls   String[] @default([])
+  videoSrcUrl        String?
+  videoPosterUrl     String?
+  /** Slugs the merchandiser pinned to the top of the grid, in the order they should appear. */
+  featuredProductSlugs String[] @default([])
   isPublished        Boolean  @default(false)
   homepagePosition   Int?     @unique
   pancakeCategoryIds Int[]    @default([])

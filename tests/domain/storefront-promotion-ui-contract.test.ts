@@ -181,7 +181,7 @@ test("every promotion-aware storefront surface mounts the shared server-relative
   const surfaces = [
     { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
     { page: "../../src/app/shop/[slug]/page.tsx", loader: "../../src/routes/product.ts" },
-    { page: "../../src/app/collections/[slug]/page.tsx", loader: null },
+    { page: "../../src/app/collections/[slug]/page.tsx", loader: "../../src/routes/collection.ts" },
     { page: "../../src/app/lookbook/page.tsx", loader: null },
   ] as const;
 

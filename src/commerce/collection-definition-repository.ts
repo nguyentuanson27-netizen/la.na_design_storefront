@@ -26,6 +26,11 @@ const publicCollectionSelect = {
   description: true,
   seoTitle: true,
   seoDescription: true,
+  heroImageUrl: true,
+  galleryImageUrls: true,
+  videoSrcUrl: true,
+  videoPosterUrl: true,
+  featuredProductSlugs: true,
 } as const;
 
 function parseCollectionListLimit(limit: number): number {
