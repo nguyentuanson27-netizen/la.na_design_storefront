@@ -169,12 +169,11 @@ test("PDP wires product-level options into its unselected price presentation", a
 });
 
 test("every promotion-aware storefront surface mounts the shared server-relative refresher", async () => {
-  // Two ways to satisfy one contract, because the routes cross over one slice at a time.
-  //
-  // A migrated route renders through `createStorefrontRoute`, and the shell mounts the refresher
-  // from the duration its loader sealed -- so the guarantee is structural and the page cannot drop
-  // it. A route still waiting for its slice mounts the refresher in its own source, which is what
-  // this test checked for all of them before the migration started.
+  // All four promotion-aware surfaces have now crossed onto the shell, so the guarantee is
+  // structural rather than per-page: the shell mounts the refresher from the duration each loader
+  // sealed, and a page cannot drop it. A surface that has not migrated would instead have to mount
+  // the refresher in its own source -- there are none left in this list, so that path is gone
+  // rather than kept as an unreachable branch.
   const shell = await readFile(new URL("../../src/routes/core.tsx", import.meta.url), "utf8");
   assert.match(shell, /<StorefrontPromotionRefresher refreshAfterMs=\{payload\.refreshAfterMs\}/);
 
@@ -186,20 +185,16 @@ test("every promotion-aware storefront surface mounts the shared server-relative
   ] as const;
 
   for (const surface of surfaces) {
-    const source = await readFile(new URL(surface.page, import.meta.url), "utf8");
-
-    if (surface.loader === null) {
-      assert.match(source, /StorefrontPromotionRefresher/, `${surface.page} must mount the shared refresher`);
-      assert.match(source, /refreshAfterMs/, `${surface.page} must use a server-relative refresh duration`);
-      continue;
-    }
+    const [source, loader] = await Promise.all([
+      readFile(new URL(surface.page, import.meta.url), "utf8"),
+      readFile(new URL(surface.loader, import.meta.url), "utf8"),
+    ]);
 
     assert.match(
       source,
       /createStorefrontRoute/,
       `${surface.page} is migrated, so it must render through the shell`,
     );
-    const loader = await readFile(new URL(surface.loader, import.meta.url), "utf8");
     assert.match(
       loader,
       /refreshAfterMs/,
