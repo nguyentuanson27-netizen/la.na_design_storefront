@@ -1,12 +1,16 @@
-import type { Metadata } from "next";
-import { BRAND } from "@/brand";
+import { createStorefrontRoute } from "@/routes/factory";
+import {
+  loadNewArrivalsRoute,
+  type NewArrivalsRouteProps,
+  type NewArrivalsViewModel,
+} from "@/routes/new-arrivals";
+import { buildNewArrivalsMetadata } from "@/routes/metadata/new-arrivals";
 
-export const metadata: Metadata = {
-  title: "Hàng mới",
-  description: `Những sản phẩm mới nhất từ ${BRAND.identity.name}.`,
-};
+/** The drop announcement. No product listing: `/shop` owns filtering and ordering. */
 
-export default function NewArrivalsPage() {
+// The view model is empty, so the render prop takes nothing: naming an argument it never reads
+// would only invite someone to start reading one.
+function render() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Drop / 01</p>
@@ -21,3 +25,11 @@ export default function NewArrivalsPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<NewArrivalsRouteProps, NewArrivalsViewModel>({
+  load: loadNewArrivalsRoute,
+  render,
+});
+
+export const metadata = buildNewArrivalsMetadata();
+export default route.Page;
