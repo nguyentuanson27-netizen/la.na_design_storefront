@@ -1,6 +1,9 @@
 # La.na Design — owner-approved facts and decisions
 
-Status: **EMPTY — awaiting owner approval.** Nothing below is approved yet.
+Status: **Project identity settled; the brand fact set is still empty.** Section 1 is decided and
+committed, and the one field it forces in section 2 (`socialCardSlug`) with it. Everything else —
+identity copy, contact, merchant defaults, navigation, size guide, fulfillment — is still awaiting
+owner approval and still blocks Phase 3 and Phase 5.
 
 This is Brand #2's fact authority, the counterpart of
 `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`. Runbook
@@ -9,8 +12,9 @@ blocks every later phase on it: `src/brand/*.config.ts` may hold no value that d
 line in this file, and no storefront page may state a brand fact that is not in `src/brand`.
 
 A coding agent may not author a brand's legal identity, contact details, policy terms or body
-measurements. Each row below is therefore left blank for the owner to fill and approve, with the
-exact config field it feeds and what goes wrong if it is guessed.
+measurements. Every row still marked `—` is therefore left blank for the owner to fill and approve,
+with the exact config field it feeds and what goes wrong if it is guessed. Rows carrying a value
+record a decision the owner has actually made.
 
 ---
 
@@ -18,13 +22,15 @@ exact config field it feeds and what goes wrong if it is guessed.
 
 | Field | Value | Constraint | Consequence if wrong |
 |---|---|---|---|
-| `projectSlug` | `la-na-design` *(proposed — derived from the brand name, not an owner fact)* | 3–31 chars, `^[a-z][a-z0-9-]*[a-z0-9]$` | Renames the social-card route; must match `BRAND.identity.socialCardSlug` or the OG image 404s |
-| `databaseName` | `la_na_design` *(proposed)* | `^[a-z][a-z0-9_]{2,30}$`, no hyphens | `release:check` and `deploy.sh` stop if `DATABASE_URL` does not point here |
-| `composeProjectName` | `la-na-design` *(proposed)* | 2–63 chars | Docker Compose project isolation |
-| **`productionDomain`** | **— REQUIRED —** | bare lowercase hostname, no scheme/path/port | **Blocks `pnpm bootstrap:brand`.** Feeds canonical URLs, JSON-LD, sitemap, robots |
+| `projectSlug` | `la-na-design` ✅ committed | 3–31 chars, `^[a-z][a-z0-9-]*[a-z0-9]$` | Renames the social-card route; must match `BRAND.identity.socialCardSlug` or the OG image 404s |
+| `databaseName` | `la_na_design` ✅ committed | `^[a-z][a-z0-9_]{2,30}$`, no hyphens | `release:check` and `deploy.sh` stop if `DATABASE_URL` does not point here |
+| `composeProjectName` | `la-na-design` ✅ committed | 2–63 chars | Docker Compose project isolation |
+| `productionDomain` | `www.lanadesign.vn` ✅ **owner-approved**, [ADR 0010](../decisions/0010-la-na-design-permanent-domain.md) | bare lowercase hostname, no scheme/path/port | Feeds canonical URLs, JSON-LD, sitemap, robots. `OFFICIAL_PRODUCTION_STOREFRONT_HOST` must mirror it, and the apex `lanadesign.vn` is deliberately **not** canonical |
 
-The three proposals are mechanical transforms of the brand name "La.na Design" and are offered for
-confirmation, not asserted. `productionDomain` cannot be derived and must be supplied.
+All four are decided and committed in `project.config.json`. The first three are mechanical
+transforms of the brand name "La.na Design"; `productionDomain` was supplied by the owner, who
+selected the `www` form over the bare apex. `pnpm bootstrap:brand` has been run against this
+identity: it renamed the social-card route and set the package name.
 
 ## 2. Brand identity → `src/brand/brand.config.ts` › `identity`
 
@@ -38,7 +44,7 @@ confirmation, not asserted. `productionDomain` cannot be derived and must be sup
 | `legalName` | — | Registered entity name, published on `/about` |
 | `taxId` | — | MST, published on `/about` |
 | `positioning` | — | **Exactly one approved sentence.** Freehand brand prose is how invented history ships |
-| `socialCardSlug` | — | Must equal the social-card route directory minus `.png` |
+| `socialCardSlug` | `la-na-design-social-card` ✅ set | Not an owner fact: it is derived from `projectSlug` and moved when `bootstrap:brand` renamed the route. `brand-leak.test.ts` asserts it names that directory |
 | `socialCardAlt` | — | Alt text for the share card |
 | `additionalNeedles` | — | Identity strings under 4 characters, so the brand-leak scanner still protects them. `"La.na"` is 5 characters and clears the floor on its own; confirm whether a shorter form (e.g. `"Lana"`) is also in use |
 
@@ -112,10 +118,10 @@ merchant must honour.
 
 | Secret | Needed for |
 |---|---|
-| `PANCAKE_API_KEY` | Catalog sync, order submission |
-| `PANCAKE_SHOP_ID` | **Blocks `release:check`, `money:audit`, `merchant:identity:audit`, `sitemap:capacity:audit`** |
+| `PANCAKE_API_KEY` | ✅ supplied out of band for local verification. Catalog sync, order submission. Rotate before production use, and configure it as a deployment secret — never in the repo |
+| `PANCAKE_SHOP_ID` | ✅ supplied. `pnpm release:check` now reports `ok: true`. The three mirror audits run, but the catalog mirror is empty, so their output is not yet evidence of anything |
 | `BETTER_AUTH_SECRET` | ≥32 random characters, generated by a human, never by this repo |
-| `DATABASE_URL` | Must point at `databaseName` above or the identity preflight stops |
+| `DATABASE_URL` | Must point at `databaseName` above or the identity preflight stops. A local development value is in use; the production one is still required |
 | `NEXT_PUBLIC_FACEBOOK_PIXEL_ID` | Optional. **Baked into the CSP at build time** — changing it requires a rebuild |
 | `FACEBOOK_CAPI_ACCESS_TOKEN` | Optional, paired with the Pixel |
 
@@ -140,9 +146,16 @@ drafted for approval, but it must be approved before it ships.
 
 ---
 
+## Settled decisions
+
+- **Permanent production domain** — `www.lanadesign.vn`. The bare apex is not canonical.
+  Recorded in [ADR 0010](../decisions/0010-la-na-design-permanent-domain.md).
+- **Legacy temporary host** — `LEGACY_TEMPORARY_STOREFRONT_HOST` stays `la.lanadesign.vn`. The
+  owner reviewed removing it and decided against it; see ADR 0010 §4.
+
 ## Open decisions
 
-1. `productionDomain` — blocks bootstrap.
+1. The brand fact set in sections 2, 3, 4, 6 and 7 — the blocker for Phase 3 and Phase 5.
 2. Product category and `defaultGender` — decides navigation and how many size charts are needed.
 3. Whether the baseline route set (`/lookbook`, `/flash-sale`, `/collections`, …) stays as-is.
 4. Whether Meta Pixel/CAPI is in scope for launch — it must be decided before the production build.
