@@ -17,6 +17,16 @@ import {
 const TEMPORARY_PRODUCTION_DOMAIN = LEGACY_TEMPORARY_STOREFRONT_HOST;
 const OFFICIAL_PRODUCTION_DOMAIN = OFFICIAL_PRODUCTION_STOREFRONT_HOST;
 
+/**
+ * The official host's nearest sibling: the apex when the official host is a `www` name, and the
+ * `www` name when it is an apex. Derived rather than written out so the "one host only" assertion
+ * keeps testing a plausible near miss after a brand fork changes the domain.
+ */
+const NEAR_MISS_DOMAIN = OFFICIAL_PRODUCTION_DOMAIN.startsWith("www.")
+  ? OFFICIAL_PRODUCTION_DOMAIN.slice("www.".length)
+  : `www.${OFFICIAL_PRODUCTION_DOMAIN}`;
+
+
 const publicEnvironment = {
   APP_DOMAIN: OFFICIAL_PRODUCTION_DOMAIN,
   SEARCH_INDEXING_ENABLED: "true",
@@ -231,7 +241,7 @@ test("permanent-domain selection fails closed for every other public hostname", 
   for (const appDomain of [
     "laclothing.example",
     "www.laclothing.example",
-    `www.${OFFICIAL_PRODUCTION_DOMAIN}`,
+    NEAR_MISS_DOMAIN,
     `www.${TEMPORARY_PRODUCTION_DOMAIN}`,
     `${TEMPORARY_PRODUCTION_DOMAIN}.attacker.example`,
     `${OFFICIAL_PRODUCTION_DOMAIN}.attacker.example`,

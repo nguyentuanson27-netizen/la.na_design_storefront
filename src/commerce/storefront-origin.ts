@@ -1,6 +1,6 @@
 type StorefrontOriginEnvironment = Readonly<Record<string, string | undefined>>;
 
-export const OFFICIAL_PRODUCTION_STOREFRONT_HOST = "lanadesign.vn";
+export const OFFICIAL_PRODUCTION_STOREFRONT_HOST = "www.lanadesign.vn";
 export const LEGACY_TEMPORARY_STOREFRONT_HOST = "la.lanadesign.vn";
 
 const MAX_APP_DOMAIN_LENGTH = 255;
