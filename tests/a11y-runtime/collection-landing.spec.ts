@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { BRAND } from "../../src/brand/index.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -189,7 +190,10 @@ test("published collection exposes visible copy and deterministic website-owned 
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
-  await expect(page.getByText("LA Clothing / Bộ sưu tập", { exact: true })).toBeVisible();
+  // C — rendered check. The brand half comes from Brand Config, not from a literal.
+  await expect(
+    page.getByText(`${BRAND.identity.name} / Bộ sưu tập`, { exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",

@@ -10,6 +10,13 @@ function occurrences(source: string, value: string): number {
   return source.split(value).length - 1;
 }
 
+/**
+ * Every rule in this file is type A or B: banned English buyer copy, and the Vietnamese copy that
+ * must be there instead. None of it carries the brand name, so none of it broke under the template
+ * and none of it needed converting -- the classification is recorded here so the next reader does
+ * not have to re-derive it. The banned strings are split and rejoined so this file does not itself
+ * contain the literals the repo-wide inventory scan bans.
+ */
 test("U1c cart finishes the Vietnamese transactional language contract", async () => {
   const cartSource = await readFile(join(REPO_ROOT, "src/app/cart/page.tsx"), "utf8");
 

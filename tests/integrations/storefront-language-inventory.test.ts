@@ -4,6 +4,8 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
+import { BRAND } from "../../src/brand/index.ts";
+
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 const INVENTORY_FILE = "tests/integrations/storefront-language-inventory.test.ts";
 const SOURCE_ROOTS = ["src", "tests"] as const;
@@ -15,14 +17,43 @@ const NON_BUYER_PREFIXES = [
 ] as const;
 
 /**
- * Buyer copy takes the brand name from Brand Config, so these page sources carry an interpolation
- * where they used to carry the literal. The assertions below are about the Vietnamese half of the
- * copy; spelling the brand half this way keeps them pinned to the config rather than to page prose,
- * and keeps them true for any brand this template is forked for.
+ * Three kinds of rule live in this file, and they are not maintained the same way.
+ *
+ *   A — banned English buyer phrases (`PHRASE_TERMS`, `HEADING_TERMS`, `EXACT_LABELS`, and the
+ *       inline `oldCopy` loops). Nothing about them is brand-specific, so they stay as plain source
+ *       greps and their sets only ever grow.
+ *   B — banned technical vocabulary leaking into the shopfront ("catalog mirror", "phía máy chủ",
+ *       "client"). Also brand-independent; also plain greps.
+ *   C — required Vietnamese copy that carries the brand name. These are the only ones the template
+ *       breaks, because the page now interpolates the name instead of spelling it. They are checked
+ *       as patterns here and as rendered text in Playwright, and both halves derive the name from
+ *       `BRAND` rather than repeating a literal.
+ *
+ * Most of the value is in A and B, and A and B needed no change.
+ */
+
+/**
+ * How buyer copy spells the brand half, in source. Pages interpolate the name, so a C rule matches
+ * the interpolation rather than a baked-in literal -- that is what makes it true for any brand this
+ * template is forked for.
  */
 const BRAND_NAME_IN_JSX = "{BRAND.identity.name}";
 const BRAND_NAME_IN_TEMPLATE = "${BRAND.identity.name}";
 
+/**
+ * The brand-coupled copy shapes this storefront must never render, built from the configured name.
+ *
+ * `LA Clothing / Store` is banned as a literal below and stays banned: it is the template's own
+ * origin copy and must not come back. But a fork renames the brand, and on that fork the literal
+ * can never match again -- the protection would quietly evaporate exactly when the redesign that
+ * needs it happens. Deriving the same shapes from `BRAND.identity.name` keeps the ban alive for
+ * whatever the brand is called, so these are additions to the A/B sets, never replacements.
+ */
+function brandEyebrow(suffix: string, brandName: string = BRAND.identity.name): string {
+  return `${brandName} / ${suffix}`;
+}
+
+/** A — banned English buyer phrases. Brand-independent; this set only grows. */
 const PHRASE_TERMS = [
   "Shop the collection",
   "View collections",
@@ -55,6 +86,7 @@ const PHRASE_TERMS = [
   "Customer / Account",
 ] as const;
 
+/** A — banned English headings. Brand-independent. */
 const HEADING_TERMS = [
   "YOUR BAG",
   "TÚI HÀNG",
@@ -66,6 +98,7 @@ const HEADING_TERMS = [
   "SHOP",
 ] as const;
 
+/** A — banned standalone English labels. Brand-independent. */
 const EXACT_LABELS = [
   "Shop",
   "Collections",
@@ -201,6 +234,33 @@ test("U1 inventory catches embedded buyer labels without matching technical iden
   assert.deepEqual(findHits("fixture.ts", 'const query = "FROM \\"Cart\\"";'), []);
 });
 
+test("C rules follow the configured brand name, so a fork inherits them", () => {
+  // The rename proof. A C rule has to keep meaning the same thing after `BRAND.identity.name`
+  // changes -- that is the whole reason these stopped being literals. `brandEyebrow` takes the name
+  // as a parameter so the rename can be exercised here rather than only by editing brand config and
+  // re-running, though that was done too and is recorded in the Phase F notes.
+  assert.equal(brandEyebrow("Store", "Nguyễn Atelier"), "Nguyễn Atelier / Store");
+  assert.equal(brandEyebrow("Product", "Xưởng May 1975"), "Xưởng May 1975 / Product");
+  assert.equal(brandEyebrow("Store"), `${BRAND.identity.name} / Store`);
+
+  // The source patterns match the interpolation a page actually writes, so they must not contain a
+  // brand name at all. If they ever did, they would pass for this brand and silently stop checking
+  // anything for the next one.
+  for (const pattern of [BRAND_NAME_IN_JSX, BRAND_NAME_IN_TEMPLATE]) {
+    assert.equal(
+      pattern.includes(BRAND.identity.name),
+      false,
+      `C source pattern must not bake in a brand name: ${pattern}`,
+    );
+    assert.match(pattern, /BRAND\.identity\.name/);
+  }
+
+  // The origin brand's own copy stays banned as a literal regardless of who forks the template, so
+  // converting C rules to derived ones never shrank the A sets.
+  assert.equal(PHRASE_TERMS.includes("LA Clothing / Collection"), true);
+  assert.equal(PHRASE_TERMS.includes("Published collections from LA Clothing."), true);
+});
+
 test("U1b collections listing uses Vietnamese functional copy", async () => {
   // The listing's title and description are metadata copy and are checked where the canonical
   // metadata builder lives; everything a shopper reads is still checked on the page.
@@ -256,15 +316,19 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
   }
 
   for (const oldCopy of [
+    // A — the template's own origin copy, banned as a literal so it cannot come back.
     "LA Clothing / Store",
-    "Tìm trong catalog",
     ">Discovery<",
     ">Collection<",
     "No match",
     "Current drop",
     "Current collection",
+    // B — technical vocabulary that must not reach a shopper.
+    "Tìm trong catalog",
     "catalog mirror",
     "phía máy chủ",
+    // C — the same eyebrow shape, derived, so the ban survives a rename.
+    brandEyebrow("Store"),
   ]) {
     assert.equal(pageSource.includes(oldCopy), false, `shop listing retained old/technical copy: ${oldCopy}`);
   }
@@ -272,7 +336,12 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
   for (const expected of [`${BRAND_NAME_IN_JSX} / Cửa hàng`, "CỬA HÀNG", "Đang tải cửa hàng."]) {
     assert.equal(loadingSource.includes(expected), true, `shop loading missing Vietnamese copy: ${expected}`);
   }
-  for (const oldCopy of ["LA Clothing / Store", "SHOP", "catalog cửa hàng"]) {
+  for (const oldCopy of [
+    "LA Clothing / Store", // A
+    "SHOP", // A
+    "catalog cửa hàng", // B
+    brandEyebrow("Store"), // C
+  ]) {
     assert.equal(loadingSource.includes(oldCopy), false, `shop loading retained old copy: ${oldCopy}`);
   }
 });
@@ -293,13 +362,17 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
   }
 
   for (const oldCopy of [
+    // A
     "Collections",
     "LA Clothing / Collection",
     "Current collection",
     "Collection này chưa có sản phẩm.",
+    'aria-label="Phân trang collection"',
+    // B
     "Membership của collection",
     "catalog mirror",
-    'aria-label="Phân trang collection"',
+    // C
+    brandEyebrow("Collection"),
   ]) {
     assert.equal(source.includes(oldCopy), false, `collection detail retained old/technical copy: ${oldCopy}`);
   }
@@ -355,12 +428,16 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   }
 
   for (const oldCopy of [
+    // A
     "LA Clothing / Product",
     ">Size guide<",
     ">Care<",
     "Add to Bag",
+    // B
     "phía máy chủ",
     "client",
+    // C
+    brandEyebrow("Product"),
   ]) {
     assert.equal(source.includes(oldCopy), false, `PDP retained old/technical copy: ${oldCopy}`);
   }

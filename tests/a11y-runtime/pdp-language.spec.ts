@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { BRAND } from "../../src/brand/index.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -163,7 +164,11 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
     "href",
     "/shop",
   );
-  await expect(page.getByText("LA Clothing / Sản phẩm", { exact: true })).toBeVisible();
+  // C — rendered check, and the highest-value one: this is the text a shopper actually sees. The
+  // brand half comes from Brand Config so a fork inherits the rule instead of silently losing it.
+  await expect(
+    page.getByText(`${BRAND.identity.name} / Sản phẩm`, { exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Hướng dẫn chọn kích cỡ" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Bảo quản" })).toBeVisible();
