@@ -21,7 +21,7 @@ export const BRAND: BrandConfig = {
     // B6/§7, word for word. The owner withheld the founding year, the founder and any brand story
     // beyond this sentence.
     positioning: "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.",
-    // Phase 2 project identity, not an owner brand fact: `bootstrap:brand` renames the social
+    // Project identity, not an owner brand fact: `bootstrap:brand` renames the social
     // card route to `<projectSlug>-social-card.png`, and brand-leak.test.ts asserts this value
     // still names that directory. It therefore moves with project.config.json, not with the
     // owner-approved fact set that the rest of this file is still waiting on.

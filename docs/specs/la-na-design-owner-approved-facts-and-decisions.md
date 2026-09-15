@@ -1,9 +1,13 @@
 # La.na Design — owner-approved facts and decisions
 
-Status: **Project identity settled; the brand fact set is still empty.** Section 1 is decided and
-committed, and the one field it forces in section 2 (`socialCardSlug`) with it. Everything else —
-identity copy, contact, merchant defaults, navigation, size guide, fulfillment — is still awaiting
-owner approval and still blocks Phase 3 and Phase 5.
+Status: **PARTIAL.** Project identity is accepted and committed; the brand fact set is still empty.
+Section 1 is decided, and the one field it forces in section 2 (`socialCardSlug`) with it.
+Everything else — identity copy, contact, merchant defaults, navigation, size guide, fulfillment —
+is still awaiting owner approval and still blocks runbook Giai đoạn 2 (Brand Config and the static
+pages) and Giai đoạn 3 (design and interface rewrite).
+
+Phase numbers in this document are the runbook's own: Giai đoạn 0 preparation, 1 initialization,
+2 Brand Config, 3 design, 4 product content, 5 testing, 6 release.
 
 This is Brand #2's fact authority, the counterpart of
 `docs/specs/la-clothing-owner-approved-facts-and-decisions.md`. Runbook
@@ -125,7 +129,7 @@ merchant must honour.
 | `NEXT_PUBLIC_FACEBOOK_PIXEL_ID` | Optional. **Baked into the CSP at build time** — changing it requires a rebuild |
 | `FACEBOOK_CAPI_ACCESS_TOKEN` | Optional, paired with the Pixel |
 
-`SEARCH_INDEXING_ENABLED` stays `"false"` until the Phase 6 release gate and an explicit human
+`SEARCH_INDEXING_ENABLED` stays `"false"` until the Giai đoạn 6 release gate and an explicit human
 indexing approval.
 
 ## 9. Product catalog
@@ -137,7 +141,7 @@ indexing approval.
 
 ## 10. Design direction
 
-Required before the Phase 4 redraw: typography, colour, imagery treatment, layout density, and any
+Required before the Giai đoạn 3 redraw: typography, colour, imagery treatment, layout density, and any
 reference material or existing brand assets. The baseline is a serif/minimal monochrome menswear
 system; "La.na Design" states a name but no visual direction.
 
@@ -155,7 +159,7 @@ drafted for approval, but it must be approved before it ships.
 
 ## Open decisions
 
-1. The brand fact set in sections 2, 3, 4, 6 and 7 — the blocker for Phase 3 and Phase 5.
+1. The brand fact set in sections 2, 3, 4, 6 and 7 — the blocker for Giai đoạn 2 and Giai đoạn 3.
 2. Product category and `defaultGender` — decides navigation and how many size charts are needed.
 3. Whether the baseline route set (`/lookbook`, `/flash-sale`, `/collections`, …) stays as-is.
 4. Whether Meta Pixel/CAPI is in scope for launch — it must be decided before the production build.
