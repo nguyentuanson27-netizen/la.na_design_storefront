@@ -18,12 +18,13 @@ import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { prisma } from "../src/db/prisma.ts";
+import { OFFICIAL_PRODUCTION_STOREFRONT_HOST } from "../src/commerce/storefront-origin.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3219;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_012;
-const PUBLIC_ORIGIN = "https://www.lafashion.asia";
+const PUBLIC_ORIGIN = `https://${OFFICIAL_PRODUCTION_STOREFRONT_HOST}`;
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
 const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
@@ -235,7 +236,7 @@ try {
   await seedVariant(product.id, INACTIVE_VARIATION, "S", MEDIUM_PRICE, { stock: 6, isActive: false });
   await seedVariant(otherProduct.id, OTHER_PRODUCT_VARIATION, "M", MEDIUM_PRICE, { stock: 3 });
 
-  await startServer({ APP_DOMAIN: "www.lafashion.asia", SEARCH_INDEXING_ENABLED: "true" });
+  await startServer({ APP_DOMAIN: OFFICIAL_PRODUCTION_STOREFRONT_HOST, SEARCH_INDEXING_ENABLED: "true" });
 
   // Baseline: no query means no preselection, which is what every fail-closed case must degrade to.
   const basePage = await requestPath(`/shop/${slug}`);

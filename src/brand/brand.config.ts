@@ -21,7 +21,11 @@ export const BRAND: BrandConfig = {
     // B6/§7, word for word. The owner withheld the founding year, the founder and any brand story
     // beyond this sentence.
     positioning: "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.",
-    socialCardSlug: "la-clothing-modern-menswear-social-card",
+    // Project identity, not an owner brand fact: `bootstrap:brand` renames the social
+    // card route to `<projectSlug>-social-card.png`, and brand-leak.test.ts asserts this value
+    // still names that directory. It therefore moves with project.config.json, not with the
+    // owner-approved fact set that the rest of this file is still waiting on.
+    socialCardSlug: "la-na-design-social-card",
     socialCardAlt: "LA Clothing — Modern Menswear",
     // Empty because "LA Clothing" clears the leak scanner's four-character floor on its own. A
     // brand with a two or three character name declares it here so the scanner still protects it.

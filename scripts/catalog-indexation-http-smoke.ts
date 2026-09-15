@@ -7,12 +7,16 @@ import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { prisma } from "../src/db/prisma.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../src/commerce/storefront-origin.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3220;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_015;
-const PUBLIC_ORIGIN = "https://www.lafashion.asia";
+const PUBLIC_ORIGIN = `https://${OFFICIAL_PRODUCTION_STOREFRONT_HOST}`;
 const PRODUCT_COUNT = 25;
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
@@ -213,7 +217,7 @@ try {
   await seedCatalog();
 
   await startServer({
-    APP_DOMAIN: "www.lafashion.asia",
+    APP_DOMAIN: OFFICIAL_PRODUCTION_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "true",
   });
 
@@ -276,7 +280,7 @@ try {
   assertNoIndexWithoutCanonical(mixedDiscoveryState, "mixed paginated discovery state");
 
   await restartServer({
-    APP_DOMAIN: "la.lanadesign.vn",
+    APP_DOMAIN: LEGACY_TEMPORARY_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "false",
   });
 

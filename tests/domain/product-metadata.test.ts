@@ -2,6 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildStorefrontProductMetadata } from "../../src/seo/product-metadata.ts";
+import { SOCIAL_FALLBACK_ALT, SOCIAL_FALLBACK_PATH } from "../../src/seo/social-identity.ts";
+
+// Derived from the brand's own social identity: the fallback card is renamed per fork by
+// `bootstrap:brand`, so pinning the template's filename here would fail every brand but the first.
+const SOCIAL_FALLBACK_IMAGE = {
+  url: `https://shop.example.com${SOCIAL_FALLBACK_PATH}`,
+  alt: SOCIAL_FALLBACK_ALT,
+};
 
 const trustedPrimary = {
   url: "https://content.pancake.vn/1/2/3/4/ao-oxford.jpg",
@@ -139,18 +147,8 @@ test("P13 fallback metadata stays factual and unique for distinct slugs sharing 
   assert.deepEqual(second.alternates, {
     canonical: "https://shop.example.com/shop/ao-oxford-relaxed-trang",
   });
-  assert.deepEqual(first.openGraph?.images, [
-    {
-      url: "https://shop.example.com/la-clothing-modern-menswear-social-card.png",
-      alt: "LA Clothing — Modern Menswear",
-    },
-  ]);
-  assert.deepEqual(first.twitter?.images, [
-    {
-      url: "https://shop.example.com/la-clothing-modern-menswear-social-card.png",
-      alt: "LA Clothing — Modern Menswear",
-    },
-  ]);
+  assert.deepEqual(first.openGraph?.images, [SOCIAL_FALLBACK_IMAGE]);
+  assert.deepEqual(first.twitter?.images, [SOCIAL_FALLBACK_IMAGE]);
 });
 
 test("P13 never rewrites trusted remote Pancake media through a website proxy or storage path", () => {

@@ -6,8 +6,23 @@ import {
   validateSearchExposureForRelease,
 } from "../../src/seo/search-exposure.ts";
 
-const OFFICIAL_PRODUCTION_DOMAIN = "www.lafashion.asia";
-const LEGACY_TEMPORARY_DOMAIN = "la.lanadesign.vn";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../../src/commerce/storefront-origin.ts";
+
+const OFFICIAL_PRODUCTION_DOMAIN = OFFICIAL_PRODUCTION_STOREFRONT_HOST;
+const LEGACY_TEMPORARY_DOMAIN = LEGACY_TEMPORARY_STOREFRONT_HOST;
+
+/**
+ * The official host's nearest sibling: the apex when the official host is a `www` name, and the
+ * `www` name when it is an apex. Derived rather than written out so the "one host only" assertion
+ * keeps testing a plausible near miss after a brand fork changes the domain.
+ */
+const NEAR_MISS_DOMAIN = OFFICIAL_PRODUCTION_DOMAIN.startsWith("www.")
+  ? OFFICIAL_PRODUCTION_DOMAIN.slice("www.".length)
+  : `www.${OFFICIAL_PRODUCTION_DOMAIN}`;
+
 
 test("official permanent domain remains fail-closed until indexing is explicitly requested", () => {
   assert.deepEqual(
@@ -35,7 +50,7 @@ test("official permanent domain is the only public production host eligible for 
   );
 
   for (const appDomain of [
-    "lafashion.asia",
+    NEAR_MISS_DOMAIN,
     "shop.example.com",
     "www.laclothing.example",
     `${OFFICIAL_PRODUCTION_DOMAIN}.attacker.example`,
