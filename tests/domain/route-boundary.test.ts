@@ -267,39 +267,62 @@ function appModulesOnDisk(): string[] {
 }
 
 /**
- * The App Router filenames that are server endpoints rather than markup.
+ * The App Router conventions that are server endpoints rather than markup, split by where Next
+ * actually recognises each one.
  *
- * `route.ts` is a request handler; `robots.ts` and `sitemap.ts` are generators Next calls for those
- * two documents. All three exist to read the catalog and the SEO configuration and serialise it, so
- * a policy forbidding `@/db` and `@/seo` would forbid them from the only thing they are for.
+ * These exist to read the catalog and the SEO configuration and serialise it, so a policy forbidding
+ * `@/db` and `@/seo` would forbid them from the only thing they are for. They also reach external
+ * specifiers off the allowlist (`next/og`, `better-auth/next-js`), and wrapping those only to get
+ * past the gate is indirection that buys nothing.
  *
- * Classified by filename rather than by path, because the path is not stable: `bootstrap:brand`
- * renames `src/app/<slug>-social-card.png/` to match the fork's project slug (see
+ * The split matters because these conventions are not all shaped the same, and a single
+ * "any file with this basename" rule would exempt modules Next would never treat as endpoints:
+ *
+ * - **Route handlers nest.** `route.ts` and `route.tsx` are handlers at any depth. Next resolves
+ *   the `route` convention against `pageExtensions`, which defaults to `['tsx','ts','jsx','js']`,
+ *   so `.tsx` is a handler too -- verified by building `src/app/probe-route-tsx/route.tsx` against
+ *   Next 16.2.11, which listed it as `ƒ /probe-route-tsx`.
+ * - **`sitemap` nests.** Next's own matcher is unanchored (`[\\/]sitemap…$`), so a sitemap may sit
+ *   in any segment -- that is how `generateSitemaps` produces more than one.
+ * - **`robots` does not.** Next's matcher is anchored (`^[\\/]robots…$`), so only `src/app/robots.ts`
+ *   is the convention. A nested `robots.ts` is an ordinary module, and exempting one by basename
+ *   would hand anything that name as a way past the gate.
+ *
+ * Route handlers are matched by filename rather than by path because the path is not stable:
+ * `bootstrap:brand` renames `src/app/<slug>-social-card.png/` to match the fork's project slug (see
  * `src/operations/bootstrap-brand.ts`), so a listed path would name a directory that no longer
- * exists the moment someone forks this template — failing the gate on a route handler that is
- * perfectly valid. The filename is an App Router convention and survives the rename.
+ * exists the moment someone forks this template -- failing the gate on a handler that is perfectly
+ * valid. The filename is the convention and survives the rename.
  *
  * Approved in spec 04 §8.1, which is where the gate's scope is settled. This comment describes that
  * decision; it does not make it.
  */
-const HANDLER_FILENAMES: ReadonlySet<string> = new Set(["route.ts", "route.tsx", "robots.ts", "sitemap.ts"]);
+const NESTED_ENDPOINT_FILENAMES: ReadonlySet<string> = new Set([
+  "route.ts",
+  "route.tsx",
+  "sitemap.ts",
+]);
 
 /**
- * The one page-layer exemption that is a path, because it is one specific file rather than a kind.
+ * Conventions Next recognises only at the app root, plus the root layout, as exact paths.
  *
- * The root layout is the chrome every route renders inside, not a brand-redrawn page: it mounts the
- * tracking bootstrap, the site header and footer, and the site-level JSON-LD. It is not a storefront
- * route and appears in no manifest entry.
+ * `robots.ts` is here rather than among the filenames above because Next anchors it. The root layout
+ * is here because it is one specific file rather than a kind: it is the chrome every route renders
+ * inside, mounting the tracking bootstrap, the site header and footer, and the site-level JSON-LD.
+ * It is not a storefront route and appears in no manifest entry.
  *
- * Approved in spec 04 §8.1, and scoped rather than permanent: plan Task 36 brings the chrome through
- * a loader and brand components like every other route, and removes this entry.
+ * Approved in spec 04 §8.1, and the layout's entry is scoped rather than permanent: plan Task 36
+ * brings the chrome through a loader and brand components like every other route, and removes it.
  */
-const ROOT_LAYOUT = "src/app/layout.tsx";
+const ROOT_ONLY_EXEMPT_PATHS: ReadonlySet<string> = new Set([
+  "src/app/robots.ts",
+  "src/app/layout.tsx",
+]);
 
 /** Whether the live boundary scan holds this module to the page-layer policy. */
 export function isPageLayerModule(relative: string): boolean {
-  if (relative === ROOT_LAYOUT) return false;
-  return !HANDLER_FILENAMES.has(path.basename(relative));
+  if (ROOT_ONLY_EXEMPT_PATHS.has(relative)) return false;
+  return !NESTED_ENDPOINT_FILENAMES.has(path.basename(relative));
 }
 
 function liveViolations(relative: string) {
@@ -329,17 +352,17 @@ test("every page-layer module under src/app holds the boundary", () => {
   );
 });
 
-test("only route handlers and the root layout are exempt from the scan", () => {
+test("only server endpoints and the root layout are exempt from the scan", () => {
   // Without this, the classifier is a hole: a predicate that quietly widened would send the scan
-  // green over a page it stopped looking at. Every file the scan skips must be one of the two kinds.
+  // green over a page it stopped looking at. Every file the scan skips must be one of the kinds.
   const skipped = appModulesOnDisk().filter((relative) => !isPageLayerModule(relative));
 
   for (const relative of skipped) {
-    const basename = path.basename(relative);
-    const isHandler = ["route.ts", "route.tsx", "robots.ts", "sitemap.ts"].includes(basename);
+    const nested = ["route.ts", "route.tsx", "sitemap.ts"].includes(path.basename(relative));
+    const rootOnly = ["src/app/robots.ts", "src/app/layout.tsx"].includes(relative);
     assert.ok(
-      isHandler || relative === "src/app/layout.tsx",
-      `${relative} is neither a route handler nor the root layout, so it must hold the boundary`,
+      nested || rootOnly,
+      `${relative} is neither a server endpoint nor the root layout, so it must hold the boundary`,
     );
   }
 
@@ -372,6 +395,34 @@ test("a fork's renamed social-card route is still classified as a handler", () =
   // The rule stays narrow: renaming a page into that directory does not exempt it.
   assert.equal(isPageLayerModule("src/app/acme-storefront-social-card.png/page.tsx"), true);
   assert.equal(isPageLayerModule("src/app/shop/layout.tsx"), true, "only the root layout is exempt");
+});
+
+test("each endpoint convention is exempt exactly where Next recognises it", () => {
+  // Next does not shape these conventions the same way, and a single basename rule would hand a
+  // nested module a name to hide behind. What is pinned here is the asymmetry itself.
+
+  // `route` nests, and `.tsx` is a handler: Next resolves the convention against `pageExtensions`,
+  // which defaults to ['tsx','ts','jsx','js']. Verified by building src/app/probe-route-tsx/route.tsx
+  // against Next 16.2.11, which listed it as `ƒ /probe-route-tsx`.
+  assert.equal(isPageLayerModule("src/app/deeply/nested/route.ts"), false);
+  assert.equal(isPageLayerModule("src/app/deeply/nested/route.tsx"), false);
+
+  // `sitemap` nests -- Next's matcher is unanchored, which is how `generateSitemaps` yields several.
+  assert.equal(isPageLayerModule("src/app/sitemap.ts"), false);
+  assert.equal(isPageLayerModule("src/app/products/sitemap.ts"), false);
+
+  // `robots` does not nest -- Next anchors it to the app root. A nested `robots.ts` is an ordinary
+  // module, and exempting it by basename would make that filename a way past the gate.
+  assert.equal(isPageLayerModule("src/app/robots.ts"), false, "the convention Next recognises");
+  assert.equal(
+    isPageLayerModule("src/app/marketing/robots.ts"),
+    true,
+    "a nested robots.ts is not a metadata route and must hold the boundary",
+  );
+
+  // The root layout is exempt by path, so no other layout inherits it.
+  assert.equal(isPageLayerModule("src/app/layout.tsx"), false);
+  assert.equal(isPageLayerModule("src/app/checkout/layout.tsx"), true);
 });
 
 test("no storefront page reaches request state through next/server or next/navigation", () => {
