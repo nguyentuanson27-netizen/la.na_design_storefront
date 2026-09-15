@@ -278,6 +278,9 @@ function appModulesOnDisk(): string[] {
  * `src/operations/bootstrap-brand.ts`), so a listed path would name a directory that no longer
  * exists the moment someone forks this template — failing the gate on a route handler that is
  * perfectly valid. The filename is an App Router convention and survives the rename.
+ *
+ * Approved in spec 04 §8.1, which is where the gate's scope is settled. This comment describes that
+ * decision; it does not make it.
  */
 const HANDLER_FILENAMES: ReadonlySet<string> = new Set(["route.ts", "route.tsx", "robots.ts", "sitemap.ts"]);
 
@@ -286,8 +289,10 @@ const HANDLER_FILENAMES: ReadonlySet<string> = new Set(["route.ts", "route.tsx",
  *
  * The root layout is the chrome every route renders inside, not a brand-redrawn page: it mounts the
  * tracking bootstrap, the site header and footer, and the site-level JSON-LD. It is not a storefront
- * route and appears in no manifest entry. Bringing it under the boundary is real work and belongs to
- * its own slice; until then it is named here, where the name is a visible diff.
+ * route and appears in no manifest entry.
+ *
+ * Approved in spec 04 §8.1, and scoped rather than permanent: plan Task 36 brings the chrome through
+ * a loader and brand components like every other route, and removes this entry.
  */
 const ROOT_LAYOUT = "src/app/layout.tsx";
 

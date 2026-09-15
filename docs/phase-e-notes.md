@@ -124,6 +124,14 @@ than the field being optional.
   **by filename, not by path**: `bootstrap:brand` renames `src/app/<slug>-social-card.png/` per fork,
   so a listed path would break the gate on a valid handler the first time someone forks this
   template. A regression test pins the renamed case.
+
+  The scope is settled in spec 04 §8.1 and plan T32B, not in a test comment. The plan originally read
+  "all `.ts/.tsx` under `src/app` except admin", which is broader than anything spec 04 described —
+  its route table lists the nineteen pages, and §10 asks that cart and checkout drop `next/server`
+  *from page*. Satisfying the literal wording would mean an internal module per off-allowlist
+  specifier (`next/og`, `better-auth/next-js`, `next/font/google`) whose only job is to launder an
+  import past the gate, and would forbid the handlers from reading `@/db` and `@/seo`, which is the
+  only reason they exist.
 - Metadata: every route goes to the shipped verifier, plus a provenance check that the default export
   is the `Page` of a binding `createStorefrontRoute` returned. A text match for the factory import
   and for `something.Page` is satisfiable without the shell — an unused import next to a hand-rolled
@@ -138,8 +146,9 @@ brand layer would have failed through files nothing renders.
 ## 10. Still open after the recovery pass
 
 - **The root layout is outside the boundary.** It mounts the tracking bootstrap, the site header and
-  footer, and the site-level JSON-LD. The scan enumerates it and exempts it by name. Bringing it
-  under the boundary is real work and wants its own slice.
+  footer, and the site-level JSON-LD. The scan enumerates it and exempts it by name. The exemption is
+  approved in spec 04 §8.1 and scoped rather than permanent: plan Task 36 brings the chrome through a
+  loader and brand components like every other route and removes the entry.
 - **Checkout's buyer copy has no targeted language test.** It had none before the migration either;
   the repo-wide English/technical inventory still covers it, but no test pins its required
   Vietnamese copy the way the cart's and the PDP's are pinned.
