@@ -1,11 +1,18 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
+
+import ts from "typescript";
 
 import type { StorefrontProductMedia, TrustedProductImage } from "../../src/commerce/product-media.ts";
 import type { StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
 import { resolveGalleryModel } from "../../src/components/headless/resolve-gallery-model.ts";
 import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
+import { collectModuleEdges } from "../support/boundary-verifier.ts";
+
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
  * The seam that lets one selection state drive both the purchase panel and the gallery.
@@ -109,56 +116,80 @@ test("an incomplete selection leaves the gallery where the server opened it", ()
 
 /* ------------------------------------------------- the surfaces that make it wireable */
 
-test("the panel can render a controller it does not own, and still owns one when alone", async () => {
+/**
+ * These are checked by compiling fixtures, not by reading the components' source.
+ *
+ * `src/components/brand/**` is per-brand throwaway: the architecture promises a fork rewrites it
+ * freely. A regex over that source turns formatting into a test failure — Phase G's discardability
+ * exercise redrew both components correctly and still failed here, once on where a destructure was
+ * broken across lines and once on the spelling of a type expression. The obligations themselves are
+ * real, so they moved to where a redraw satisfies them by compiling.
+ *
+ * The fixtures live outside `tsconfig.json`'s include: the negative one is meant to fail, and would
+ * otherwise break `pnpm typecheck`.
+ */
+function diagnose(fixture: string): string[] {
+  const configFile = ts.readConfigFile(path.join(REPO_ROOT, "tsconfig.json"), ts.sys.readFile);
+  const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, REPO_ROOT);
+  const entry = path.join(REPO_ROOT, "tests/fixtures/brand-seam", fixture);
+  const program = ts.createProgram([entry], { ...parsed.options, noEmit: true, incremental: false });
+
+  const file = program.getSourceFile(entry);
+  assert.ok(file, `${fixture} was loaded`);
+  return program
+    .getSemanticDiagnostics(file)
+    .map((d) => ts.flattenDiagnosticMessageText(d.messageText, " "));
+}
+
+test("the panel renders a controller it does not own, and still accepts the hook's input alone", () => {
   // Without the first of these, a page cannot drive the panel and the gallery from one selection:
   // it would have to duplicate the state or reimplement the hook.
-  const source = await readFile(
-    new URL("../../src/components/brand/purchase-panel.tsx", import.meta.url),
-    "utf8",
-  );
+  assert.deepEqual(diagnose("panel-contract.tsx"), []);
+});
 
-  assert.match(
-    source,
-    /export function PurchasePanelView\(\{ controller \}/,
-    "the view must take a controller as a prop",
-  );
-  assert.match(
-    source,
-    /export function BrandPurchasePanel\(props: UseVariantSelectionInput\)/,
-    "the standalone panel must remain, so the existing route is unchanged",
-  );
+test("a panel that owns its own selection does not satisfy the seam", () => {
+  // Guards the guard. If the assignment above accepted anything, the contract would be decoration:
+  // the shape it exists to forbid has to be rejected by the same check.
+  const messages = diagnose("panel-owns-hook.tsx");
 
-  const viewBody = source.slice(
-    source.indexOf("export function PurchasePanelView"),
-    source.indexOf("export function BrandPurchasePanel"),
+  assert.ok(
+    messages.length > 0,
+    "a panel insisting on making its own selection must not typecheck as the view",
   );
-  assert.equal(
-    viewBody.includes("useVariantSelection("),
-    false,
-    "the view must not call the hook: owning it is what made the seam unwireable",
-  );
+});
+
+test("the gallery accepts the selection the panel resolves, and owns its own manual pick", () => {
+  // It takes the model's whole input minus the state it owns itself, which is what carries
+  // `selectedVariantId` and `galleryIndexByVariantId` through to the model.
+  assert.deepEqual(diagnose("gallery-contract.tsx"), []);
 });
 
 test("the brand panel speaks the hook's types, not commerce's", async () => {
-  const source = await readFile(
-    new URL("../../src/components/brand/purchase-panel.tsx", import.meta.url),
-    "utf8",
+  // Checked on the module graph, not on the file's text.
+  //
+  // A raw `source.includes("@/commerce/")` is wrong in both directions on a file a brand rewrites
+  // freely: it fails a redraw that merely mentions the path in a comment or a string, and it misses
+  // an exact `@/commerce` specifier with no trailing slash. `collectModuleEdges` is the same AST
+  // machinery the boundary gate uses, and it sees specifiers rather than characters.
+  const file = new URL("../../src/components/brand/purchase-panel.tsx", import.meta.url);
+  const sourceFile = ts.createSourceFile(
+    fileURLToPath(file),
+    await readFile(file, "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TSX,
   );
 
-  assert.equal(
-    source.includes("@/commerce/"),
-    false,
+  const commerceEdges = collectModuleEdges(sourceFile)
+    .map((edge) => edge.specifier)
+    .filter(
+      (specifier): specifier is string =>
+        specifier === "@/commerce" || (specifier?.startsWith("@/commerce/") ?? false),
+    );
+
+  assert.deepEqual(
+    commerceEdges,
+    [],
     "brand markup reaches commerce only through the headless hook's public surface",
   );
-});
-
-test("the gallery accepts the selection the panel resolves", async () => {
-  const source = await readFile(
-    new URL("../../src/components/brand/product-gallery.tsx", import.meta.url),
-    "utf8",
-  );
-
-  // It takes the model's whole input minus the state it owns itself, which is what carries
-  // `selectedVariantId` and `galleryIndexByVariantId` through to the model.
-  assert.match(source, /Omit<GalleryModelInput, "manualSelection">/);
 });
