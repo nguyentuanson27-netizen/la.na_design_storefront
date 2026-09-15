@@ -1,12 +1,12 @@
-import type { Metadata } from "next";
-import { BRAND } from "@/brand";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadSearchRoute, type SearchRouteProps, type SearchViewModel } from "@/routes/search";
+import { buildSearchMetadata } from "@/routes/metadata/search";
 
-export const metadata: Metadata = {
-  title: "Tìm kiếm",
-  description: `Tìm sản phẩm và bộ sưu tập ${BRAND.identity.name}.`,
-};
+/** The search entry form. `/shop` owns the query and the results it submits to. */
 
-export default function SearchPage() {
+// The view model is empty, so the render prop takes nothing: naming an argument it never reads
+// would only invite someone to start reading one.
+function render() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Tìm / Khám phá</p>
@@ -29,3 +29,11 @@ export default function SearchPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<SearchRouteProps, SearchViewModel>({
+  load: loadSearchRoute,
+  render,
+});
+
+export const metadata = buildSearchMetadata();
+export default route.Page;
