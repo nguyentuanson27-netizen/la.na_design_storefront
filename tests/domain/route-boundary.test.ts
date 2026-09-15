@@ -239,50 +239,173 @@ test("the fixture-backed checker is not vacuous: the same engine accepts and rej
   assert.equal(check("positive", "allowed-internal.ts").length, 0);
 });
 
-/* ---------------------------------------------- scope: engine only, no live scan */
+/* ------------------------------------------------------ the live gate (T32B) */
 
-test("a migrated route holds the boundary, and the gate stays off until every route does", () => {
-  // Phase C built the engine and deliberately left the scan off, recording that the unmigrated tree
-  // would fail it. Phase E migrates the routes one vertical slice at a time, so this now tracks the
-  // crossing directly, deriving which side each route is on from the module itself: importing
-  // `createStorefrontRoute` is exactly what makes the boundary apply.
-  //
-  // Asserting the unmigrated ones still violate is worth more than asserting the scan is absent: the
-  // day that list is empty, the migration is done and the live gate (T32B) is unblocked.
-  const violationsFor = (relative: string) => {
-    const file = path.join(REPO_ROOT, relative);
-    return checkModuleBoundary({
-      fileName: file,
-      source: readFileSync(file, "utf8"),
-      compilerOptions: COMPILER_OPTIONS,
-      policy: storefrontPagePolicy(REPO_ROOT),
-    });
+/**
+ * Every `.ts` and `.tsx` under `src/app`, admin excluded.
+ *
+ * The whole tree is enumerated rather than the manifest's pages alone, so a new file cannot reach
+ * the app directory without this test seeing it. What each file is held to is decided below.
+ */
+function appModulesOnDisk(): string[] {
+  const found: string[] = [];
+  const walk = (relative: string): void => {
+    for (const entry of readdirSync(path.join(REPO_ROOT, relative), { withFileTypes: true })) {
+      const child = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) {
+        // Admin does not change per brand, so it is outside the redraw and outside this contract
+        // (spec 04 §8).
+        if (entry.name === "admin") continue;
+        walk(child);
+      } else if (/\.tsx?$/.test(entry.name)) {
+        found.push(child);
+      }
+    }
   };
+  walk("src/app");
+  return found.sort();
+}
 
-  const migrated: string[] = [];
-  const pending: string[] = [];
-  for (const route of STOREFRONT_ROUTES) {
-    const source = readFileSync(path.join(REPO_ROOT, route.path), "utf8");
-    (/from "@\/routes\/factory"/.test(source) ? migrated : pending).push(route.path);
-  }
+/**
+ * The files under `src/app` that are not page-layer UI, named one by one.
+ *
+ * A closed list rather than a pattern, so adding to it is a visible diff someone has to justify
+ * rather than a filename that quietly opts itself out. Two kinds qualify and nothing else does:
+ *
+ * - **Route handlers and metadata files.** `route.ts`, `robots.ts` and `sitemap.ts` are server
+ *   endpoints, not markup. They exist to read the catalog and the SEO configuration and serialise
+ *   it; holding them to a policy that forbids `@/db` and `@/seo` would forbid them from doing the
+ *   only thing they are for.
+ * - **The root layout.** It is the app chrome every route renders inside, not one brand-redrawn
+ *   page: it mounts the tracking bootstrap, the site header and footer, and the site-level JSON-LD.
+ *   It is not a storefront route, appears in no manifest entry, and giving it a loader is not what
+ *   the route migration was. Bringing it under the boundary is real work and belongs to its own
+ *   slice.
+ *
+ * Each entry is checked below to be one of those two kinds, so this list cannot become a place to
+ * park a page that failed.
+ */
+const NOT_PAGE_LAYER: readonly string[] = [
+  "src/app/api/auth/[...all]/route.ts",
+  "src/app/feeds/google-merchant/route.ts",
+  "src/app/la-clothing-modern-menswear-social-card.png/route.ts",
+  "src/app/layout.tsx",
+  "src/app/robots.ts",
+  "src/app/sitemap.ts",
+];
 
-  assert.ok(migrated.length > 0, "at least one route has been migrated by now");
+function liveViolations(relative: string) {
+  const file = path.join(REPO_ROOT, relative);
+  return checkModuleBoundary({
+    fileName: file,
+    source: readFileSync(file, "utf8"),
+    compilerOptions: COMPILER_OPTIONS,
+    policy: storefrontPagePolicy(REPO_ROOT),
+  });
+}
 
-  for (const relative of migrated) {
-    assert.deepEqual(
-      violationsFor(relative).map((violation) => violation.message),
-      [],
-      `${relative} is migrated and must hold the boundary`,
+test("every page-layer module under src/app holds the boundary", () => {
+  // Phase C built this engine and deliberately left the scan off, recording that the unmigrated tree
+  // would fail it. Every storefront route is migrated now, so this is the live gate: it runs against
+  // the repository, not fixtures, and a page reaching past the allowed roots fails here.
+  const scanned = appModulesOnDisk().filter((relative) => !NOT_PAGE_LAYER.includes(relative));
+  assert.ok(scanned.length >= STOREFRONT_ROUTES.length, "every declared route is in the scan");
+
+  const offenders = scanned
+    .map((relative) => ({ relative, violations: liveViolations(relative) }))
+    .filter((entry) => entry.violations.length > 0);
+
+  assert.deepEqual(
+    offenders.map((entry) => `${entry.relative}: ${entry.violations.map((v) => v.message).join("; ")}`),
+    [],
+  );
+});
+
+test("the exemption list names only route handlers and the root layout, and all of them exist", () => {
+  // Without this, the list above is a hole: anything failing the gate could be added to it and the
+  // scan would go green. Every entry must be a file that exists and be one of the two kinds the
+  // list is for.
+  const onDisk = new Set(appModulesOnDisk());
+
+  for (const relative of NOT_PAGE_LAYER) {
+    assert.ok(onDisk.has(relative), `${relative} is exempted but does not exist`);
+
+    const basename = path.basename(relative);
+    const isHandler = basename === "route.ts" || basename === "robots.ts" || basename === "sitemap.ts";
+    const isRootLayout = relative === "src/app/layout.tsx";
+    assert.ok(
+      isHandler || isRootLayout,
+      `${relative} is neither a route handler nor the root layout, so it must hold the boundary`,
     );
   }
+});
 
-  // Not every unmigrated route violates the policy -- a page simple enough to import only allowed
-  // modules is already clean by accident. What keeps the live gate off is that *some* route still
-  // does, so that is what is asserted; the day this list is empty the migration is done and T32B is
-  // unblocked, and this assertion is the thing that says so.
-  const stillViolating = pending.filter((relative) => violationsFor(relative).length > 0);
+test("no storefront page reaches request state through next/server or next/navigation", () => {
+  // Named rather than left to the allowlist because this is the specific thing the migration was
+  // for: `connection()` and `notFound()` are loader decisions, and a page calling them is a page
+  // that has started loading its own data again. Cart and checkout are why -- both imported
+  // `next/server` before Phase E.
+  for (const route of STOREFRONT_ROUTES) {
+    const file = path.join(REPO_ROOT, route.path);
+    const sourceFile = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const reached = collectModuleEdges(sourceFile)
+      .map((edge) => edge.specifier)
+      .filter((specifier): specifier is string =>
+        specifier === "next/server" ||
+        specifier === "next/navigation" ||
+        specifier === "next/headers" ||
+        specifier === "next/cache",
+      );
+
+    assert.deepEqual(reached, [], `${route.path} must not reach request state directly`);
+  }
+});
+
+test("no storefront page imports a transitional commerce or account component", () => {
+  // The redraw's point: a brand rewrites `src/components/brand` and gets a working storefront. A
+  // page reaching into `@/components/commerce` or `@/components/account` is a page that would not
+  // survive that, and those are exactly the imports the checkout, tracking and account pages held.
+  for (const route of STOREFRONT_ROUTES) {
+    const file = path.join(REPO_ROOT, route.path);
+    const sourceFile = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const reached = collectModuleEdges(sourceFile)
+      .map((edge) => edge.specifier)
+      .filter(
+        (specifier): specifier is string =>
+          typeof specifier === "string" &&
+          (specifier.startsWith("@/components/commerce") ||
+            specifier.startsWith("@/components/account") ||
+            specifier.startsWith("@/components/analytics") ||
+            specifier.startsWith("@/components/layout")),
+      );
+
+    assert.deepEqual(reached, [], `${route.path} must render through the brand layer`);
+  }
+});
+
+test("the live gate is not vacuous: the same scan rejects a page that breaches the boundary", () => {
+  // Guards the gate. If `liveViolations` returned nothing for everything -- a policy that resolved
+  // to no roots, a checker that stopped walking -- the scan above would be green and worthless.
+  const breach = path.join(FIXTURES, "negative/alias-db.ts");
   assert.ok(
-    stillViolating.length > 0,
-    `every route now holds the boundary, so the live gate (T32B) is unblocked. Migrated: ${migrated.length}, pending: ${pending.length}`,
+    checkModuleBoundary({
+      fileName: path.join(REPO_ROOT, "src/app/cart/page.tsx"),
+      source: readFileSync(breach, "utf8"),
+      compilerOptions: COMPILER_OPTIONS,
+      policy: storefrontPagePolicy(REPO_ROOT),
+    }).length > 0,
+    "a page importing @/db must fail the live policy",
   );
 });
