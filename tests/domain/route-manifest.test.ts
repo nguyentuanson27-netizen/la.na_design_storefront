@@ -12,6 +12,7 @@ import {
   storefrontRouteUrls,
 } from "../../src/routes/manifest.ts";
 import { checkMetadataContract, exportsAnyMetadata } from "../support/metadata-verifier.ts";
+import { checkRouteShellProvenance } from "../support/route-shell-verifier.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -59,68 +60,136 @@ test("every manifest entry points at a file that exists", () => {
   }
 });
 
-/**
- * Whether a route has been migrated onto the route shell.
- *
- * Derived from the module rather than listed, so the split below cannot drift out of date as Phase E
- * lands one vertical slice at a time: importing `createStorefrontRoute` is exactly what makes the
- * full contract apply.
- */
-function isMigrated(pagePath: string): boolean {
-  return /from "@\/routes\/factory"/.test(readFileSync(path.join(REPO_ROOT, pagePath), "utf8"));
-}
-
-test("the declared metadata mode matches what each module actually exports today", () => {
-  // A migrated route is held to the shipped verifier -- the thing the route contract is actually
-  // defined by. It knows that such a page does not write `generateMetadata` itself but re-exports
-  // the value `createStorefrontRoute` returned, which a regex reads as missing metadata.
-  //
-  // A route still waiting for its slice is held to the weaker shape it has today: metadata declared
-  // where the manifest says, and only there. Each crosses to the verifier when its slice lands.
+test("every route's metadata matches the mode the manifest declares", () => {
+  // The live metadata gate (T32B). Every storefront route is migrated now, so every one is held to
+  // the shipped verifier -- the thing the route contract is actually defined by -- rather than to
+  // the weaker regex shape that stood in while the slices landed.
   for (const route of STOREFRONT_ROUTES) {
     const declaringFile = route.metadata === "layout" ? route.metadataFile! : route.path;
     const declaringSource = readFileSync(path.join(REPO_ROOT, declaringFile), "utf8");
 
-    if (isMigrated(route.path)) {
-      assert.deepEqual(
-        checkMetadataContract({
-          source: declaringSource,
-          fileName: declaringFile,
-          mode: route.metadata,
-        }).map((violation) => violation.message),
-        [],
-        `${route.path} is migrated and declared ${route.metadata} mode`,
-      );
+    assert.deepEqual(
+      checkMetadataContract({
+        source: declaringSource,
+        fileName: declaringFile,
+        mode: route.metadata,
+      }).map((violation) => violation.message),
+      [],
+      `${route.path} is declared ${route.metadata} mode`,
+    );
 
-      if (route.metadata === "layout") {
-        assert.equal(
-          exportsAnyMetadata(readFileSync(path.join(REPO_ROOT, route.path), "utf8"), route.path),
-          false,
-          `${route.path} is layout mode so its page must export no metadata`,
-        );
-      }
-      continue;
-    }
-
-    const hasStatic = /export const metadata\b/.test(declaringSource);
-    const hasGenerate = /export (async )?function generateMetadata\b/.test(declaringSource);
-
-    if (route.metadata === "static") {
-      assert.ok(hasStatic, `${route.path} is declared static so it must export a metadata const`);
-      assert.equal(hasGenerate, false, `${route.path} must not also export generateMetadata`);
-    } else if (route.metadata === "page") {
-      assert.ok(hasGenerate, `${route.path} is declared page so it must export generateMetadata`);
-      assert.equal(hasStatic, false, `${route.path} must not also export a metadata const`);
-    } else {
-      // PDP: the page must own no metadata at all, or Next would have two sources for one segment.
+    if (route.metadata === "layout") {
+      // The page must own no metadata at all, or Next would have two sources for one segment.
       assert.equal(
         exportsAnyMetadata(readFileSync(path.join(REPO_ROOT, route.path), "utf8"), route.path),
         false,
-        `${route.path} is declared layout mode so its page must export no metadata`,
+        `${route.path} is layout mode so its page must export no metadata`,
       );
-      assert.match(declaringSource, /export (async )?function generateMetadata\b/);
     }
   }
+});
+
+test("every storefront route renders through the shell", () => {
+  // The other half of the live gate, and checked by provenance rather than by spelling. A page can
+  // hold the boundary and still not be a route: it would pass the boundary scan while silently
+  // dropping the promotion refresh, the commerce event and the JSON-LD the shell mounts. What is
+  // asserted is that the default export is the `Page` of a binding the factory produced -- an
+  // unused import next to a hand-rolled `{ Page }` satisfies a text match and fails this.
+  for (const route of STOREFRONT_ROUTES.filter((entry) => entry.shell)) {
+    assert.deepEqual(
+      checkRouteShellProvenance({
+        source: readFileSync(path.join(REPO_ROOT, route.path), "utf8"),
+        fileName: route.path,
+      }).map((violation) => violation.message),
+      [],
+      `${route.path} declares shell: true so it must be built by createStorefrontRoute`,
+    );
+  }
+});
+
+test("the shell check rejects a page that fakes the factory's result", () => {
+  // The fixture the regex check could not tell from a real route: the factory is imported, the
+  // default export reads `route.Page`, and the shell never renders.
+  const fixture = "tests/fixtures/route-shell/fake-page-object.tsx";
+  const violations = checkRouteShellProvenance({
+    source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+    fileName: fixture,
+  });
+
+  assert.deepEqual(
+    violations.map((violation) => violation.code),
+    ["binding-not-factory-call"],
+  );
+});
+
+test("the shell check follows the factory and the binding under any local name", () => {
+  // Provenance, not spelling: a module may import the factory aliased and name the binding whatever
+  // it likes. A check that insisted on the literal names would be a style rule wearing a gate's
+  // clothes, and would reject a correct page.
+  const fixture = "tests/fixtures/route-shell/aliased-factory.tsx";
+
+  assert.deepEqual(
+    checkRouteShellProvenance({
+      source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+      fileName: fixture,
+    }),
+    [],
+  );
+});
+
+test("the shell check requires the direct shape, so an indirection cannot shelter a fake", () => {
+  // This fixture does reach the shell, and is rejected anyway: an object literal is the fake's own
+  // shape, and separating the two needs type resolution this check does not do. Every route in the
+  // repo already writes the direct form, so the strictness costs nothing.
+  const fixture = "tests/fixtures/route-shell/reassigned-binding.tsx";
+
+  assert.deepEqual(
+    checkRouteShellProvenance({
+      source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+      fileName: fixture,
+    }).map((violation) => violation.code),
+    ["binding-not-factory-call"],
+  );
+});
+
+test("the shell check names each way a page can miss the shell", () => {
+  // Guards the guard: a checker that returned one violation for everything would make the negative
+  // fixtures above pass while distinguishing nothing.
+  const cases: readonly [string, string][] = [
+    ["export default function Page() { return null; }\n", "no-factory-import"],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nexport const a = createStorefrontRoute;\n',
+      "no-default-export",
+    ],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nconst r = createStorefrontRoute({} as never);\nexport default r;\n',
+      "default-not-page",
+    ],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nexport default missing.Page;\n',
+      "unknown-binding",
+    ],
+  ];
+
+  for (const [source, expected] of cases) {
+    assert.deepEqual(
+      checkRouteShellProvenance({ source, fileName: "src/app/example/page.tsx" }).map((v) => v.code),
+      [expected],
+    );
+  }
+});
+
+test("the metadata gate is not vacuous: the same verifier rejects a contract breach", () => {
+  // Guards the gate above. A verifier that returned no violations for anything would leave every
+  // route green while checking nothing.
+  assert.ok(
+    checkMetadataContract({
+      source: 'export const metadata = { title: "hand-written" };\n',
+      fileName: "src/app/example/page.tsx",
+      mode: "static",
+    }).length > 0,
+    "metadata not built by a canonical builder must fail",
+  );
 });
 
 test("exactly one route keeps its metadata in a layout, and it is the PDP", () => {

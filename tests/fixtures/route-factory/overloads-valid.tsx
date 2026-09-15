@@ -13,6 +13,7 @@ const load = async (_props: Props) =>
     refreshAfterMs: 0,
     trackingEvent: null,
     structuredData: [],
+    pixelEvents: [],
   });
 
 // Page-owned metadata: both exports exist.

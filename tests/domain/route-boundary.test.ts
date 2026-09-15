@@ -62,7 +62,7 @@ const NEGATIVE_EXPECTATIONS: Record<string, string> = {
   "next-cache.ts": "external-specifier",
   "direct-commerce-component.ts": "source-root",
   "direct-commerce-checkout.ts": "source-root",
-  "direct-account-component.ts": "source-root",
+  "direct-analytics-component.ts": "source-root",
   "dynamic-template-interpolated.ts": "dynamic-specifier",
   "dynamic-expression.ts": "dynamic-specifier",
   "side-effect-import.ts": "source-root",
@@ -239,50 +239,258 @@ test("the fixture-backed checker is not vacuous: the same engine accepts and rej
   assert.equal(check("positive", "allowed-internal.ts").length, 0);
 });
 
-/* ---------------------------------------------- scope: engine only, no live scan */
+/* ------------------------------------------------------ the live gate (T32B) */
 
-test("a migrated route holds the boundary, and the gate stays off until every route does", () => {
-  // Phase C built the engine and deliberately left the scan off, recording that the unmigrated tree
-  // would fail it. Phase E migrates the routes one vertical slice at a time, so this now tracks the
-  // crossing directly, deriving which side each route is on from the module itself: importing
-  // `createStorefrontRoute` is exactly what makes the boundary apply.
-  //
-  // Asserting the unmigrated ones still violate is worth more than asserting the scan is absent: the
-  // day that list is empty, the migration is done and the live gate (T32B) is unblocked.
-  const violationsFor = (relative: string) => {
-    const file = path.join(REPO_ROOT, relative);
-    return checkModuleBoundary({
-      fileName: file,
-      source: readFileSync(file, "utf8"),
-      compilerOptions: COMPILER_OPTIONS,
-      policy: storefrontPagePolicy(REPO_ROOT),
-    });
+/**
+ * Every `.ts` and `.tsx` under `src/app`, admin excluded.
+ *
+ * The whole tree is enumerated rather than the manifest's pages alone, so a new file cannot reach
+ * the app directory without this test seeing it. What each file is held to is decided below.
+ */
+function appModulesOnDisk(): string[] {
+  const found: string[] = [];
+  const walk = (relative: string): void => {
+    for (const entry of readdirSync(path.join(REPO_ROOT, relative), { withFileTypes: true })) {
+      const child = `${relative}/${entry.name}`;
+      if (entry.isDirectory()) {
+        // Admin does not change per brand, so it is outside the redraw and outside this contract
+        // (spec 04 §8).
+        if (entry.name === "admin") continue;
+        walk(child);
+      } else if (/\.tsx?$/.test(entry.name)) {
+        found.push(child);
+      }
+    }
   };
+  walk("src/app");
+  return found.sort();
+}
 
-  const migrated: string[] = [];
-  const pending: string[] = [];
-  for (const route of STOREFRONT_ROUTES) {
-    const source = readFileSync(path.join(REPO_ROOT, route.path), "utf8");
-    (/from "@\/routes\/factory"/.test(source) ? migrated : pending).push(route.path);
-  }
+/**
+ * The App Router conventions that are server endpoints rather than markup, split by where Next
+ * actually recognises each one.
+ *
+ * These exist to read the catalog and the SEO configuration and serialise it, so a policy forbidding
+ * `@/db` and `@/seo` would forbid them from the only thing they are for. They also reach external
+ * specifiers off the allowlist (`next/og`, `better-auth/next-js`), and wrapping those only to get
+ * past the gate is indirection that buys nothing.
+ *
+ * The split matters because these conventions are not all shaped the same, and a single
+ * "any file with this basename" rule would exempt modules Next would never treat as endpoints:
+ *
+ * - **Route handlers nest.** `route.ts` and `route.tsx` are handlers at any depth. Next resolves
+ *   the `route` convention against `pageExtensions`, which defaults to `['tsx','ts','jsx','js']`,
+ *   so `.tsx` is a handler too -- verified by building `src/app/probe-route-tsx/route.tsx` against
+ *   Next 16.2.11, which listed it as `ƒ /probe-route-tsx`.
+ * - **`sitemap` nests.** Next's own matcher is unanchored (`[\\/]sitemap…$`), so a sitemap may sit
+ *   in any segment -- that is how `generateSitemaps` produces more than one.
+ * - **`robots` does not.** Next's matcher is anchored (`^[\\/]robots…$`), so only `src/app/robots.ts`
+ *   is the convention. A nested `robots.ts` is an ordinary module, and exempting one by basename
+ *   would hand anything that name as a way past the gate.
+ *
+ * Route handlers are matched by filename rather than by path because the path is not stable:
+ * `bootstrap:brand` renames `src/app/<slug>-social-card.png/` to match the fork's project slug (see
+ * `src/operations/bootstrap-brand.ts`), so a listed path would name a directory that no longer
+ * exists the moment someone forks this template -- failing the gate on a handler that is perfectly
+ * valid. The filename is the convention and survives the rename.
+ *
+ * Approved in spec 04 §8.1, which is where the gate's scope is settled. This comment describes that
+ * decision; it does not make it.
+ */
+const NESTED_ENDPOINT_FILENAMES: ReadonlySet<string> = new Set([
+  "route.ts",
+  "route.tsx",
+  "sitemap.ts",
+]);
 
-  assert.ok(migrated.length > 0, "at least one route has been migrated by now");
+/**
+ * Conventions Next recognises only at the app root, plus the root layout, as exact paths.
+ *
+ * `robots.ts` is here rather than among the filenames above because Next anchors it. The root layout
+ * is here because it is one specific file rather than a kind: it is the chrome every route renders
+ * inside, mounting the tracking bootstrap, the site header and footer, and the site-level JSON-LD.
+ * It is not a storefront route and appears in no manifest entry.
+ *
+ * Approved in spec 04 §8.1, and the layout's entry is scoped rather than permanent: plan Task 36
+ * brings the chrome through a loader and brand components like every other route, and removes it.
+ */
+const ROOT_ONLY_EXEMPT_PATHS: ReadonlySet<string> = new Set([
+  "src/app/robots.ts",
+  "src/app/layout.tsx",
+]);
 
-  for (const relative of migrated) {
-    assert.deepEqual(
-      violationsFor(relative).map((violation) => violation.message),
-      [],
-      `${relative} is migrated and must hold the boundary`,
+/** Whether the live boundary scan holds this module to the page-layer policy. */
+export function isPageLayerModule(relative: string): boolean {
+  if (ROOT_ONLY_EXEMPT_PATHS.has(relative)) return false;
+  return !NESTED_ENDPOINT_FILENAMES.has(path.basename(relative));
+}
+
+function liveViolations(relative: string) {
+  const file = path.join(REPO_ROOT, relative);
+  return checkModuleBoundary({
+    fileName: file,
+    source: readFileSync(file, "utf8"),
+    compilerOptions: COMPILER_OPTIONS,
+    policy: storefrontPagePolicy(REPO_ROOT),
+  });
+}
+
+test("every page-layer module under src/app holds the boundary", () => {
+  // Phase C built this engine and deliberately left the scan off, recording that the unmigrated tree
+  // would fail it. Every storefront route is migrated now, so this is the live gate: it runs against
+  // the repository, not fixtures, and a page reaching past the allowed roots fails here.
+  const scanned = appModulesOnDisk().filter(isPageLayerModule);
+  assert.ok(scanned.length >= STOREFRONT_ROUTES.length, "every declared route is in the scan");
+
+  const offenders = scanned
+    .map((relative) => ({ relative, violations: liveViolations(relative) }))
+    .filter((entry) => entry.violations.length > 0);
+
+  assert.deepEqual(
+    offenders.map((entry) => `${entry.relative}: ${entry.violations.map((v) => v.message).join("; ")}`),
+    [],
+  );
+});
+
+test("only server endpoints and the root layout are exempt from the scan", () => {
+  // Without this, the classifier is a hole: a predicate that quietly widened would send the scan
+  // green over a page it stopped looking at. Every file the scan skips must be one of the kinds.
+  const skipped = appModulesOnDisk().filter((relative) => !isPageLayerModule(relative));
+
+  for (const relative of skipped) {
+    const nested = ["route.ts", "route.tsx", "sitemap.ts"].includes(path.basename(relative));
+    const rootOnly = ["src/app/robots.ts", "src/app/layout.tsx"].includes(relative);
+    assert.ok(
+      nested || rootOnly,
+      `${relative} is neither a server endpoint nor the root layout, so it must hold the boundary`,
     );
   }
 
-  // Not every unmigrated route violates the policy -- a page simple enough to import only allowed
-  // modules is already clean by accident. What keeps the live gate off is that *some* route still
-  // does, so that is what is asserted; the day this list is empty the migration is done and T32B is
-  // unblocked, and this assertion is the thing that says so.
-  const stillViolating = pending.filter((relative) => violationsFor(relative).length > 0);
+  // Every page module is in the scan, so an exemption cannot be smuggled in as one.
+  for (const route of STOREFRONT_ROUTES) {
+    assert.equal(isPageLayerModule(route.path), true, `${route.path} must be scanned`);
+  }
+});
+
+test("a fork's renamed social-card route is still classified as a handler", () => {
+  // `bootstrap:brand` renames `src/app/<slug>-social-card.png/` to match the fork's project slug.
+  // A path-based exemption would name a directory that no longer exists, failing the gate on a
+  // route handler that is perfectly valid. This is the regression that pins the structural rule.
+  assert.equal(
+    isPageLayerModule("src/app/la-clothing-modern-menswear-social-card.png/route.ts"),
+    false,
+    "the route handler this template ships with",
+  );
+  assert.equal(
+    isPageLayerModule("src/app/acme-storefront-social-card.png/route.ts"),
+    false,
+    "the same handler after a fork renames it",
+  );
+  assert.equal(
+    isPageLayerModule("src/app/anything/else/route.ts"),
+    false,
+    "any route handler, at any depth",
+  );
+
+  // The rule stays narrow: renaming a page into that directory does not exempt it.
+  assert.equal(isPageLayerModule("src/app/acme-storefront-social-card.png/page.tsx"), true);
+  assert.equal(isPageLayerModule("src/app/shop/layout.tsx"), true, "only the root layout is exempt");
+});
+
+test("each endpoint convention is exempt exactly where Next recognises it", () => {
+  // Next does not shape these conventions the same way, and a single basename rule would hand a
+  // nested module a name to hide behind. What is pinned here is the asymmetry itself.
+
+  // `route` nests, and `.tsx` is a handler: Next resolves the convention against `pageExtensions`,
+  // which defaults to ['tsx','ts','jsx','js']. Verified by building src/app/probe-route-tsx/route.tsx
+  // against Next 16.2.11, which listed it as `ƒ /probe-route-tsx`.
+  assert.equal(isPageLayerModule("src/app/deeply/nested/route.ts"), false);
+  assert.equal(isPageLayerModule("src/app/deeply/nested/route.tsx"), false);
+
+  // `sitemap` nests -- Next's matcher is unanchored, which is how `generateSitemaps` yields several.
+  assert.equal(isPageLayerModule("src/app/sitemap.ts"), false);
+  assert.equal(isPageLayerModule("src/app/products/sitemap.ts"), false);
+
+  // `robots` does not nest -- Next anchors it to the app root. A nested `robots.ts` is an ordinary
+  // module, and exempting it by basename would make that filename a way past the gate.
+  assert.equal(isPageLayerModule("src/app/robots.ts"), false, "the convention Next recognises");
+  assert.equal(
+    isPageLayerModule("src/app/marketing/robots.ts"),
+    true,
+    "a nested robots.ts is not a metadata route and must hold the boundary",
+  );
+
+  // The root layout is exempt by path, so no other layout inherits it.
+  assert.equal(isPageLayerModule("src/app/layout.tsx"), false);
+  assert.equal(isPageLayerModule("src/app/checkout/layout.tsx"), true);
+});
+
+test("no storefront page reaches request state through next/server or next/navigation", () => {
+  // Named rather than left to the allowlist because this is the specific thing the migration was
+  // for: `connection()` and `notFound()` are loader decisions, and a page calling them is a page
+  // that has started loading its own data again. Cart and checkout are why -- both imported
+  // `next/server` before Phase E.
+  for (const route of STOREFRONT_ROUTES) {
+    const file = path.join(REPO_ROOT, route.path);
+    const sourceFile = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const reached = collectModuleEdges(sourceFile)
+      .map((edge) => edge.specifier)
+      .filter((specifier): specifier is string =>
+        specifier === "next/server" ||
+        specifier === "next/navigation" ||
+        specifier === "next/headers" ||
+        specifier === "next/cache",
+      );
+
+    assert.deepEqual(reached, [], `${route.path} must not reach request state directly`);
+  }
+});
+
+test("no storefront page imports a transitional commerce or account component", () => {
+  // The redraw's point: a brand rewrites `src/components/brand` and gets a working storefront. A
+  // page reaching into `@/components/commerce` or `@/components/account` is a page that would not
+  // survive that, and those are exactly the imports the checkout, tracking and account pages held.
+  for (const route of STOREFRONT_ROUTES) {
+    const file = path.join(REPO_ROOT, route.path);
+    const sourceFile = ts.createSourceFile(
+      file,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const reached = collectModuleEdges(sourceFile)
+      .map((edge) => edge.specifier)
+      .filter(
+        (specifier): specifier is string =>
+          typeof specifier === "string" &&
+          (specifier.startsWith("@/components/commerce") ||
+            specifier.startsWith("@/components/account") ||
+            specifier.startsWith("@/components/analytics") ||
+            specifier.startsWith("@/components/layout")),
+      );
+
+    assert.deepEqual(reached, [], `${route.path} must render through the brand layer`);
+  }
+});
+
+test("the live gate is not vacuous: the same scan rejects a page that breaches the boundary", () => {
+  // Guards the gate. If `liveViolations` returned nothing for everything -- a policy that resolved
+  // to no roots, a checker that stopped walking -- the scan above would be green and worthless.
+  const breach = path.join(FIXTURES, "negative/alias-db.ts");
   assert.ok(
-    stillViolating.length > 0,
-    `every route now holds the boundary, so the live gate (T32B) is unblocked. Migrated: ${migrated.length}, pending: ${pending.length}`,
+    checkModuleBoundary({
+      fileName: path.join(REPO_ROOT, "src/app/cart/page.tsx"),
+      source: readFileSync(breach, "utf8"),
+      compilerOptions: COMPILER_OPTIONS,
+      policy: storefrontPagePolicy(REPO_ROOT),
+    }).length > 0,
+    "a page importing @/db must fail the live policy",
   );
 });

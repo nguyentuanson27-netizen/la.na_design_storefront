@@ -64,5 +64,6 @@ export async function loadFlashSaleRoute({
     refreshAfterMs: resolveStorefrontPromotionRefresh({ now: requestNow, nextBoundaryAt }).refreshAfterMs,
     trackingEvent: listTracking.listEvent,
     structuredData: [],
+    pixelEvents: [],
   });
 }

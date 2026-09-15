@@ -26,8 +26,9 @@ export type StorefrontRouteEntry = Readonly<{
   /**
    * Whether the route is required to render through `createStorefrontRoute`.
    *
-   * This is the target contract, not a description of today's tree: the pages are migrated in Phase
-   * D/E and the live check is switched on at T32B. Nothing in Phase C asserts it against disk.
+   * Asserted against the repository since T32B: `route-manifest.test.ts` fails a declared route
+   * that does not go through the factory, and `route-boundary.test.ts` runs the live boundary scan
+   * over `src/app`. It was the target contract while the slices landed; it now describes the tree.
    */
   shell: boolean;
   metadata: MetadataMode;

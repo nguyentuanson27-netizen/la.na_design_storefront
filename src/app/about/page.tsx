@@ -1,30 +1,10 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
-import {
-  describePublicAddress,
-  PUBLIC_BRAND_POSITIONING,
-  PUBLIC_LEGAL_FACTS,
-} from "@/content/public-brand-facts";
 import { BRAND } from "@/brand";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
-
-type AboutPageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export async function generateMetadata({ searchParams }: AboutPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/about",
-    searchParams: await searchParams,
-    title: `Về ${BRAND.identity.name}`,
-    description: PUBLIC_BRAND_POSITIONING,
-  });
-}
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadAboutRoute, type AboutRouteProps } from "@/routes/about";
+import type { AboutViewModel } from "@/routes/evergreen-model";
+import { buildAboutMetadata } from "@/routes/metadata/about";
 
 /**
  * W13/U33a — the minimal About page B6 approves, and deliberately no more than that.
@@ -35,17 +15,18 @@ export async function generateMetadata({ searchParams }: AboutPageProps): Promis
  * because they would not read well, but because no approved source states them and a coding agent
  * may not author a brand's history.
  *
- * The positioning sentence and the legal facts are read from the fact authority rather than written
- * here, so the one place they can change is the place the owner's decision is transcribed.
+ * Every fact it shows arrives through the view model, which reads the fact authority. Nothing is
+ * transcribed here, so the one place any of it can change stays the place the owner's decision is.
  */
-export default function AboutPage() {
+
+function render(data: AboutViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Thương hiệu</p>
       <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Về {BRAND.identity.name}
       </h1>
-      <p className="mt-6 max-w-2xl text-lg leading-8">{PUBLIC_BRAND_POSITIONING}</p>
+      <p className="mt-6 max-w-2xl text-lg leading-8">{data.positioning}</p>
 
       <section aria-labelledby="legal-heading" className="mt-16 border-t border-black/20 pt-10">
         <h2 id="legal-heading" className="font-serif text-3xl tracking-[-0.03em]">
@@ -54,15 +35,15 @@ export default function AboutPage() {
         <dl className="mt-8 grid max-w-2xl gap-6 text-base leading-7">
           <div>
             <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Đơn vị chủ quản</dt>
-            <dd className="mt-2 text-black/70">{PUBLIC_LEGAL_FACTS.legalEntityName}</dd>
+            <dd className="mt-2 text-black/70">{data.legalEntityName}</dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Mã số thuế</dt>
-            <dd className="mt-2 text-black/70">{PUBLIC_LEGAL_FACTS.taxCode}</dd>
+            <dd className="mt-2 text-black/70">{data.taxCode}</dd>
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Địa chỉ</dt>
-            <dd className="mt-2 text-black/70">{describePublicAddress()}</dd>
+            <dd className="mt-2 text-black/70">{data.address}</dd>
           </div>
         </dl>
       </section>
@@ -80,3 +61,13 @@ export default function AboutPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<AboutRouteProps, AboutViewModel>({
+  load: loadAboutRoute,
+  render,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildAboutMetadata(props),
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;

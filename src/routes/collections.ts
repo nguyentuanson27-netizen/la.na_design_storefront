@@ -39,5 +39,6 @@ export async function loadCollectionsRoute(): Promise<RouteHandle<CollectionsRou
     refreshAfterMs: 60_000,
     trackingEvent: null,
     structuredData: [],
+    pixelEvents: [],
   });
 }

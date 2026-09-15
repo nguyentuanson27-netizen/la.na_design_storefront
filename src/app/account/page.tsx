@@ -1,14 +1,13 @@
-import type { Metadata } from "next";
+import { BrandAccountAuthPanel } from "@/components/brand/account-auth-panel";
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadAccountRoute, type AccountRouteProps, type AccountViewModel } from "@/routes/account";
+import { buildAccountMetadata } from "@/routes/metadata/account";
 
-import { BRAND } from "@/brand";
-import { AccountAuthPanel } from "@/components/account/account-auth-panel";
+/** The account page. Session state belongs to the panel, which reads it on the client. */
 
-export const metadata: Metadata = {
-  title: "Tài khoản",
-  description: `Đăng nhập hoặc tạo tài khoản ${BRAND.identity.name} để theo dõi đơn hàng thuận tiện hơn.`,
-};
-
-export default function AccountPage() {
+// The view model is empty, so the render prop takes nothing: naming an argument it never reads
+// would only invite someone to start reading one.
+function render() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Khách hàng / Tài khoản</p>
@@ -24,7 +23,15 @@ export default function AccountPage() {
         </p>
       </div>
 
-      <AccountAuthPanel />
+      <BrandAccountAuthPanel />
     </div>
   );
 }
+
+const route = createStorefrontRoute<AccountRouteProps, AccountViewModel>({
+  load: loadAccountRoute,
+  render,
+});
+
+export const metadata = buildAccountMetadata();
+export default route.Page;

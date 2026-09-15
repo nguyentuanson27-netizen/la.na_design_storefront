@@ -380,14 +380,11 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
 
 test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
   // The panel's markup moved to the brand layer, so the copy is checked where it now lives. The
-  // commerce module that kept the panel's public surface is checked too, so a shim that starts
-  // carrying shopper-facing copy again does not slip past this inventory.
+  // commerce shim that used to keep the panel's public surface is gone: every route renders the
+  // brand panel directly, so there is no second file left to carry this copy. A shim coming back
+  // with shopper-facing copy is caught by the repo-wide inventory below rather than here.
   const source = await readFile(
     join(REPO_ROOT, "src/components/brand/purchase-panel.tsx"),
-    "utf8",
-  );
-  const shimSource = await readFile(
-    join(REPO_ROOT, "src/components/commerce/product-purchase-panel.tsx"),
     "utf8",
   );
 
@@ -409,7 +406,6 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
     "Chọn Size",
   ]) {
     assert.equal(source.includes(oldCopy), false, `purchase panel retained old copy: ${oldCopy}`);
-    assert.equal(shimSource.includes(oldCopy), false, `purchase panel shim retained old copy: ${oldCopy}`);
   }
 });
 

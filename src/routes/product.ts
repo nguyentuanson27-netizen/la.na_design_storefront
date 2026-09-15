@@ -105,5 +105,6 @@ export async function loadProductRoute({
     structuredData: [
       buildStorefrontProductStructuredData({ origin: readSearchExposure().origin, product }),
     ],
+    pixelEvents: [],
   });
 }

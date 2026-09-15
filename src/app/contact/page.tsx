@@ -1,44 +1,28 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
-import {
-  describePublicAddress,
-  describePublicSupportHours,
-  PUBLIC_CONTACT_FACTS,
-} from "@/content/public-brand-facts";
 import { BRAND } from "@/brand";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
-
-type ContactPageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export async function generateMetadata({ searchParams }: ContactPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/contact",
-    searchParams: await searchParams,
-    title: "Liên hệ",
-    description:
-      `Hotline, Zalo, email, địa chỉ và giờ hỗ trợ của ${BRAND.identity.name} — các kênh liên hệ chính thức.`,
-  });
-}
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadContactRoute, type ContactRouteProps } from "@/routes/contact";
+import type { ContactViewModel } from "@/routes/evergreen-model";
+import { buildContactMetadata } from "@/routes/metadata/contact";
 
 /**
  * W13/U33a — the evergreen Contact page.
  *
- * Every fact here is read from `PUBLIC_CONTACT_FACTS`, the same authority the site footer renders
- * and the `Organization` structured data marks up. Nothing is transcribed a second time: a phone
- * number that appears in three places and is owned by one constant cannot go stale in two of them.
+ * Every fact here arrives through the view model, which reads `PUBLIC_CONTACT_FACTS` — the same
+ * authority the site footer renders and the `Organization` structured data marks up. Nothing is
+ * transcribed a second time: a phone number that appears in three places and is owned by one
+ * constant cannot go stale in two of them.
  *
  * The page claims no support channel the owner did not approve. There is no contact form, no live
  * chat and no response-time promise, because none of those exist as an owner-approved fact and a
  * page that implies them would be a policy this repository invented.
  */
-export default function ContactPage() {
+
+const CONTACT_LINK =
+  "underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
+
+function render(data: ContactViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Hỗ trợ</p>
@@ -54,43 +38,32 @@ export default function ContactPage() {
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Hotline &amp; Zalo</dt>
           <dd className="mt-2">
-            <a
-              className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-              href={`tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}`}
-            >
-              {PUBLIC_CONTACT_FACTS.telephone}
+            <a className={CONTACT_LINK} href={`tel:${data.telephoneInternational}`}>
+              {data.telephone}
             </a>
           </dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Email</dt>
           <dd className="mt-2">
-            <a
-              className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-              href={`mailto:${PUBLIC_CONTACT_FACTS.email}`}
-            >
-              {PUBLIC_CONTACT_FACTS.email}
+            <a className={CONTACT_LINK} href={`mailto:${data.email}`}>
+              {data.email}
             </a>
           </dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Địa chỉ</dt>
-          <dd className="mt-2 text-black/70">{describePublicAddress()}</dd>
+          <dd className="mt-2 text-black/70">{data.address}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Giờ hỗ trợ</dt>
-          <dd className="mt-2 text-black/70">{describePublicSupportHours()}</dd>
+          <dd className="mt-2 text-black/70">{data.supportHours}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Fanpage</dt>
           <dd className="mt-2">
-            <a
-              className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-              href={PUBLIC_CONTACT_FACTS.fanpageUrl}
-              rel="noreferrer"
-              target="_blank"
-            >
-              facebook.com/LAclothing.vn
+            <a className={CONTACT_LINK} href={data.fanpageUrl} rel="noreferrer" target="_blank">
+              {data.fanpageLabel}
             </a>
           </dd>
         </div>
@@ -98,10 +71,7 @@ export default function ContactPage() {
 
       <p className="mt-12 max-w-2xl text-sm leading-6 text-black/65">
         Cần tra cứu một đơn hàng đã đặt?{" "}
-        <Link
-          className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-          href="/track-order"
-        >
+        <Link className={CONTACT_LINK} href="/track-order">
           Tra cứu đơn hàng
         </Link>{" "}
         bằng mã đơn và số điện thoại đã dùng khi đặt.
@@ -109,3 +79,13 @@ export default function ContactPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<ContactRouteProps, ContactViewModel>({
+  load: loadContactRoute,
+  render,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildContactMetadata(props),
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;
