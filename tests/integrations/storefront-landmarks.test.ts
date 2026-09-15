@@ -4,8 +4,11 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const ROOT_LAYOUT = new URL("../../src/app/layout.tsx", import.meta.url);
+// Task 36: the site chrome the root layout renders through owns the landmark now. The layout is
+// wiring, so the assertions below read the file the markup actually lives in.
+const SITE_CHROME = new URL("../../src/routes/site-chrome.tsx", import.meta.url);
 const SITE_HEADER = new URL(
-  "../../src/components/layout/site-header.tsx",
+  "../../src/components/brand/site-header.tsx",
   import.meta.url,
 );
 const ROUTE_GROUP_1 = [
@@ -44,22 +47,31 @@ async function collectLandmarkOffenders(
   return offenders;
 }
 
-test("root layout solely owns the main-content page landmark", async () => {
-  const source = await readFile(ROOT_LAYOUT, "utf8");
+test("the site chrome solely owns the main-content page landmark", async () => {
+  const source = await readFile(SITE_CHROME, "utf8");
 
   assert.equal(countMatches(source, MAIN_OPENING_TAG), 1);
   assert.equal(countMatches(source, MAIN_CONTENT_ID), 1);
 });
 
-test("U0a route group 1 leaves the page-level main landmark to root layout", async () => {
+test("the root layout renders the landmark through the chrome rather than declaring its own", async () => {
+  // The site-wide landmark is a single one or it is not a landmark. Asserting the layout declares
+  // none keeps "exactly one" true across the two files the chrome now spans.
+  const source = await readFile(ROOT_LAYOUT, "utf8");
+
+  assert.equal(countMatches(source, MAIN_OPENING_TAG), 0);
+  assert.equal(countMatches(source, MAIN_CONTENT_ID), 0);
+});
+
+test("U0a route group 1 leaves the page-level main landmark to the site chrome", async () => {
   assert.deepEqual(await collectLandmarkOffenders(ROUTE_GROUP_1), {});
 });
 
-test("U0a route group 2 leaves the page-level main landmark to root layout", async () => {
+test("U0a route group 2 leaves the page-level main landmark to the site chrome", async () => {
   assert.deepEqual(await collectLandmarkOffenders(ROUTE_GROUP_2), {});
 });
 
-test("shared skip link points once to the root-owned main-content target", async () => {
+test("shared skip link points once to the chrome-owned main-content target", async () => {
   const source = await readFile(SITE_HEADER, "utf8");
 
   assert.equal(countMatches(source, SKIP_TARGET), 1);

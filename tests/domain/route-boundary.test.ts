@@ -304,20 +304,16 @@ const NESTED_ENDPOINT_FILENAMES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Conventions Next recognises only at the app root, plus the root layout, as exact paths.
+ * Conventions Next recognises only at the app root, as exact paths.
  *
- * `robots.ts` is here rather than among the filenames above because Next anchors it. The root layout
- * is here because it is one specific file rather than a kind: it is the chrome every route renders
- * inside, mounting the tracking bootstrap, the site header and footer, and the site-level JSON-LD.
- * It is not a storefront route and appears in no manifest entry.
+ * `robots.ts` is here rather than among the filenames above because Next anchors it.
  *
- * Approved in spec 04 §8.1, and the layout's entry is scoped rather than permanent: plan Task 36
- * brings the chrome through a loader and brand components like every other route, and removes it.
+ * The root layout used to be here too, as a scoped exemption spec 04 §8.1 approved for as long as
+ * it read the search exposure and mounted the chrome itself. Plan Task 36 moved those into
+ * `@/routes/site-chrome` and the brand layer, so the layout is wiring now and is scanned like every
+ * other page-layer module. Nothing replaced it: this list is one entry long.
  */
-const ROOT_ONLY_EXEMPT_PATHS: ReadonlySet<string> = new Set([
-  "src/app/robots.ts",
-  "src/app/layout.tsx",
-]);
+const ROOT_ONLY_EXEMPT_PATHS: ReadonlySet<string> = new Set(["src/app/robots.ts"]);
 
 /** Whether the live boundary scan holds this module to the page-layer policy. */
 export function isPageLayerModule(relative: string): boolean {
@@ -352,17 +348,17 @@ test("every page-layer module under src/app holds the boundary", () => {
   );
 });
 
-test("only server endpoints and the root layout are exempt from the scan", () => {
+test("only server endpoints are exempt from the scan", () => {
   // Without this, the classifier is a hole: a predicate that quietly widened would send the scan
   // green over a page it stopped looking at. Every file the scan skips must be one of the kinds.
   const skipped = appModulesOnDisk().filter((relative) => !isPageLayerModule(relative));
 
   for (const relative of skipped) {
     const nested = ["route.ts", "route.tsx", "sitemap.ts"].includes(path.basename(relative));
-    const rootOnly = ["src/app/robots.ts", "src/app/layout.tsx"].includes(relative);
+    const rootOnly = ["src/app/robots.ts"].includes(relative);
     assert.ok(
       nested || rootOnly,
-      `${relative} is neither a server endpoint nor the root layout, so it must hold the boundary`,
+      `${relative} is not a server endpoint, so it must hold the boundary`,
     );
   }
 
@@ -394,7 +390,7 @@ test("a fork's renamed social-card route is still classified as a handler", () =
 
   // The rule stays narrow: renaming a page into that directory does not exempt it.
   assert.equal(isPageLayerModule("src/app/acme-storefront-social-card.png/page.tsx"), true);
-  assert.equal(isPageLayerModule("src/app/shop/layout.tsx"), true, "only the root layout is exempt");
+  assert.equal(isPageLayerModule("src/app/shop/layout.tsx"), true, "no layout is exempt");
 });
 
 test("each endpoint convention is exempt exactly where Next recognises it", () => {
@@ -420,8 +416,8 @@ test("each endpoint convention is exempt exactly where Next recognises it", () =
     "a nested robots.ts is not a metadata route and must hold the boundary",
   );
 
-  // The root layout is exempt by path, so no other layout inherits it.
-  assert.equal(isPageLayerModule("src/app/layout.tsx"), false);
+  // Task 36 brought the root layout under the boundary, so no layout is exempt at any depth.
+  assert.equal(isPageLayerModule("src/app/layout.tsx"), true, "the root layout is scanned");
   assert.equal(isPageLayerModule("src/app/checkout/layout.tsx"), true);
 });
 
@@ -456,6 +452,10 @@ test("no storefront page imports a transitional commerce or account component", 
   // The redraw's point: a brand rewrites `src/components/brand` and gets a working storefront. A
   // page reaching into `@/components/commerce` or `@/components/account` is a page that would not
   // survive that, and those are exactly the imports the checkout, tracking and account pages held.
+  //
+  // `@/components/layout` no longer exists -- Task 36 moved the site header and footer into the
+  // brand layer -- and the prefix stays listed on purpose, so recreating that root is a red test
+  // rather than a quiet second home for chrome.
   for (const route of STOREFRONT_ROUTES) {
     const file = path.join(REPO_ROOT, route.path);
     const sourceFile = ts.createSourceFile(

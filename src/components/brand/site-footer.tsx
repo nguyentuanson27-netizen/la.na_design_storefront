@@ -1,16 +1,14 @@
 import Link from "next/link";
 
 import { BRAND, NAVIGATION } from "@/brand";
-import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import {
-  buildPublicBrandFacts,
-  describePublicAddress,
-  describePublicSupportHours,
-  PUBLIC_CONTACT_FACTS,
-} from "@/content/public-brand-facts";
+import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
 
-export function SiteFooter() {
-  const brandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
+/**
+ * Markup over props. The facts arrive already derived from the approved authority, so redrawing
+ * this footer cannot change which facts a brand publishes -- only how they read on the page.
+ */
+export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
+  const brandFacts = model.facts;
 
   return (
     <footer className="site-footer">
@@ -52,21 +50,21 @@ export function SiteFooter() {
               */}
               <a
                 className="underline underline-offset-4"
-                href={`tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}`}
+                href={`tel:${model.contact.telephoneInternational}`}
               >
-                {PUBLIC_CONTACT_FACTS.telephone}
+                {model.contact.telephone}
               </a>{" "}
               (hotline &amp; Zalo) ·{" "}
-              <a className="underline underline-offset-4" href={`mailto:${PUBLIC_CONTACT_FACTS.email}`}>
-                {PUBLIC_CONTACT_FACTS.email}
+              <a className="underline underline-offset-4" href={`mailto:${model.contact.email}`}>
+                {model.contact.email}
               </a>
             </dd>
-            <dd className="mt-1 text-black/70">{describePublicAddress()}</dd>
-            <dd className="mt-1 text-black/70">Hỗ trợ {describePublicSupportHours()}</dd>
+            <dd className="mt-1 text-black/70">{model.address}</dd>
+            <dd className="mt-1 text-black/70">Hỗ trợ {model.supportHours}</dd>
             <dd className="mt-1 text-black/70">
               <a
                 className="underline underline-offset-4"
-                href={PUBLIC_CONTACT_FACTS.fanpageUrl}
+                href={model.contact.fanpageUrl}
                 rel="noreferrer"
                 target="_blank"
               >

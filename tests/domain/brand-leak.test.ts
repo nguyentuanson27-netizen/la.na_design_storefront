@@ -170,8 +170,8 @@ test("a new brand fact is protected without editing this test", () => {
 
 /** The files whose whole job is to render NAVIGATION. */
 const NAVIGATION_CONSUMERS = [
-  "src/components/layout/site-header.tsx",
-  "src/components/layout/site-footer.tsx",
+  "src/components/brand/site-header.tsx",
+  "src/components/brand/site-footer.tsx",
 ] as const;
 
 /** Every configured destination and label, the wordmark label included. */

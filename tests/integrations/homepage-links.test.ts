@@ -22,11 +22,11 @@ const STOREFRONT_SOURCES = [
   },
   {
     name: "header",
-    url: new URL("../../src/components/layout/site-header.tsx", import.meta.url),
+    url: new URL("../../src/components/brand/site-header.tsx", import.meta.url),
   },
   {
     name: "footer",
-    url: new URL("../../src/components/layout/site-footer.tsx", import.meta.url),
+    url: new URL("../../src/components/brand/site-footer.tsx", import.meta.url),
   },
 ] as const;
 const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;

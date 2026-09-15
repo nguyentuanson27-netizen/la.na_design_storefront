@@ -24,6 +24,12 @@ export type ModuleEdge = Readonly<{
   /** `null` when a dynamic import's argument is not a static string: that is a violation, not a gap. */
   specifier: string | null;
   line: number;
+  /**
+   * `import type` / `export type`, which the compiler erases. The boundary policy does not care --
+   * reaching a forbidden module for its shape is still reaching it -- but a rule about runtime
+   * coupling does, so the fact is collected here rather than re-derived by a second AST walk.
+   */
+  typeOnly: boolean;
 }>;
 
 export type BoundaryPolicy = Readonly<{
@@ -87,6 +93,7 @@ export function collectModuleEdges(sourceFile: ts.SourceFile): readonly ModuleEd
         kind: statement.importClause ? "import" : "side-effect-import",
         specifier: statement.moduleSpecifier.text,
         line: lineOf(statement),
+        typeOnly: statement.importClause?.isTypeOnly ?? false,
       });
       continue;
     }
@@ -98,6 +105,7 @@ export function collectModuleEdges(sourceFile: ts.SourceFile): readonly ModuleEd
         kind: statement.exportClause ? "re-export" : "export-star",
         specifier: statement.moduleSpecifier.text,
         line: lineOf(statement),
+        typeOnly: statement.isTypeOnly,
       });
     }
   }
@@ -109,6 +117,8 @@ export function collectModuleEdges(sourceFile: ts.SourceFile): readonly ModuleEd
         kind: "dynamic-import",
         specifier: argument ? staticSpecifier(argument) : null,
         line: lineOf(node),
+        // A dynamic import is evaluated, never erased.
+        typeOnly: false,
       });
     }
     node.forEachChild(walk);

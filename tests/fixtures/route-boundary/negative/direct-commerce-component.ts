@@ -1,2 +1,2 @@
-import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-bar";
-export const a = ShippingPromotionBar;
+import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
+export const a = StorefrontPromotionRefresher;

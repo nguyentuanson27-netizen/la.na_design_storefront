@@ -82,12 +82,14 @@ test("T3 every requested tracking mode resolves to zero GTM load", () => {
   }
 });
 
-test("T3 the root layout mounts the tracking bootstrap before content and keeps one direct Meta mount", async () => {
-  const layout = await readFile(new URL("../../src/app/layout.tsx", import.meta.url), "utf8");
+test("T3 the site chrome mounts the tracking bootstrap before content and keeps one direct Meta mount", async () => {
+  // Task 36 moved these mounts out of the root layout and into the chrome shell, which places them
+  // unconditionally. The file changed; what is asserted about it did not.
+  const chrome = await readFile(new URL("../../src/routes/site-chrome.tsx", import.meta.url), "utf8");
 
-  const bootstrapIndex = layout.indexOf("<TrackingBootstrap");
-  const childrenIndex = layout.indexOf("{children}");
-  const pageViewIndex = layout.indexOf("<TrackingPageView");
+  const bootstrapIndex = chrome.indexOf("<TrackingBootstrap");
+  const childrenIndex = chrome.indexOf("{children}");
+  const pageViewIndex = chrome.indexOf("<TrackingPageView");
 
   assert.notEqual(bootstrapIndex, -1, "the tracking bootstrap must be mounted");
   assert.notEqual(pageViewIndex, -1, "the canonical page-view authority must be mounted");
@@ -97,8 +99,23 @@ test("T3 the root layout mounts the tracking bootstrap before content and keeps 
   );
 
   assert.equal(
-    layout.match(/<FacebookPixel\s*\/>/g)?.length,
+    chrome.match(/<FacebookPixel\s*\/>/g)?.length,
     1,
     "the direct Meta mount must stay exactly once",
+  );
+});
+
+test("T3 the root layout reaches the tracking mounts only through the site chrome", async () => {
+  // The mounts above are site-wide because the layout renders the chrome and nothing else. A layout
+  // that reached past it -- rendering the brand document or the masthead directly -- would ship a
+  // storefront with no dataLayer and no page-view authority, and every assertion above would still
+  // pass. This is what stops that.
+  const layout = await readFile(new URL("../../src/app/layout.tsx", import.meta.url), "utf8");
+
+  assert.match(layout, /<SiteChrome\b/, "the layout must render the chrome shell");
+  assert.doesNotMatch(
+    layout,
+    /@\/components\//,
+    "the layout must not reach a component directly, chrome or otherwise",
   );
 });
