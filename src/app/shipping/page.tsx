@@ -1,66 +1,31 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
-import {
-  describeGuestShippingPromotion,
-  readGuestShippingPolicy,
-} from "@/commerce/guest-shipping-policy";
-import {
-  buildPublicBrandFacts,
-  describePublicDeliveryEstimate,
-  PUBLIC_DELIVERY_FACTS,
-  PUBLIC_RETURNS_POLICY,
-} from "@/content/public-brand-facts";
-import { BRAND } from "@/brand";
-import { FULFILLMENT } from "@/brand";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
-
-type ShippingPageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export async function generateMetadata({ searchParams }: ShippingPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/shipping",
-    searchParams: await searchParams,
-    title: "Chính sách vận chuyển và thanh toán",
-    description:
-      `Phạm vi giao hàng, đơn vị vận chuyển, thời gian dự kiến và phương thức thanh toán của ${BRAND.identity.name}.`,
-  });
-}
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadShippingRoute, type ShippingRouteProps } from "@/routes/shipping";
+import type { ShippingViewModel } from "@/routes/evergreen-model";
+import { buildShippingMetadata } from "@/routes/metadata/shipping";
 
 /**
  * W13/U33b + U41/M5 — Shipping & Payment page from reviewed public authorities.
  *
- * Shipping price remains server-owned in `readGuestShippingPolicy`. Delivery windows stay in
- * `PUBLIC_DELIVERY_FACTS`, while `FULFILLMENT.deliveryScopeLabels` names the owner-approved Hanoi
- * scopes explicitly so the public page does not publish the ambiguous historical labels “Nội thành”
- * and “Ngoại tỉnh”. No Merchant-only fallback changes the customer-facing delivery policy.
+ * Shipping price remains server-owned in `readGuestShippingPolicy`, which the loader reads.
+ * Delivery windows stay in `PUBLIC_DELIVERY_FACTS`, while `FULFILLMENT.deliveryScopeLabels` names
+ * the owner-approved Hanoi scopes explicitly so the public page does not publish the ambiguous
+ * historical labels “Nội thành” and “Ngoại tỉnh”. No Merchant-only fallback changes the
+ * customer-facing delivery policy. Page prose labels sections; every normative statement is a fact.
  */
-export default function ShippingPage() {
-  const policy = readGuestShippingPolicy();
-  const promotion = describeGuestShippingPromotion(policy);
-  const brandFacts = buildPublicBrandFacts(policy);
-  const {
-    coverage,
-    carriers,
-    estimateDays,
-    estimateCaveat,
-    carrierTrackingNote,
-    phoneConfirmationWording,
-  } = PUBLIC_DELIVERY_FACTS;
 
+const POLICY_LINK =
+  "underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4";
+
+function render(data: ShippingViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Chính sách</p>
       <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Vận chuyển &amp; thanh toán
       </h1>
-      <p className="mt-6 max-w-2xl text-lg leading-8">{coverage}.</p>
+      <p className="mt-6 max-w-2xl text-lg leading-8">{data.coverage}.</p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
         <section aria-labelledby="delivery-heading">
@@ -72,26 +37,22 @@ export default function ShippingPage() {
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
                 Đơn vị vận chuyển
               </dt>
-              <dd className="mt-2 text-black/70">{carriers.join(" · ")}</dd>
+              <dd className="mt-2 text-black/70">{data.carriersText}</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {FULFILLMENT.deliveryScopeLabels.innerCity}
+                {data.innerCityLabel}
               </dt>
-              <dd className="mt-2 text-black/70">
-                {describePublicDeliveryEstimate(estimateDays.innerCity)} (dự kiến)
-              </dd>
+              <dd className="mt-2 text-black/70">{data.innerCityEstimate} (dự kiến)</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
-                {FULFILLMENT.deliveryScopeLabels.otherProvince}
+                {data.otherProvinceLabel}
               </dt>
-              <dd className="mt-2 text-black/70">
-                {describePublicDeliveryEstimate(estimateDays.otherProvince)} (dự kiến)
-              </dd>
+              <dd className="mt-2 text-black/70">{data.otherProvinceEstimate} (dự kiến)</dd>
             </div>
           </dl>
-          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">{estimateCaveat}</p>
+          <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">{data.estimateCaveat}</p>
         </section>
 
         <section aria-labelledby="fee-heading">
@@ -99,7 +60,7 @@ export default function ShippingPage() {
             Phí vận chuyển
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {promotion.title}: {promotion.detail} Phí vận chuyển và điều kiện miễn phí được máy chủ
+            {data.shippingPromotionTitle}: {data.shippingPromotionDetail} Phí vận chuyển và điều kiện miễn phí được máy chủ
             áp dụng tại thời điểm đặt hàng.
           </p>
         </section>
@@ -109,14 +70,11 @@ export default function ShippingPage() {
             Theo dõi đơn hàng
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {carrierTrackingNote} {brandFacts.orderTracking.detail}{" "}
-            <Link
-              className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-              href="/track-order"
-            >
-              {brandFacts.orderTracking.title}
+            {data.carrierTrackingNote} {data.orderTrackingDetail}{" "}
+            <Link className={POLICY_LINK} href="/track-order">
+              {data.orderTrackingTitle}
             </Link>
-            . {phoneConfirmationWording}
+            . {data.phoneConfirmationWording}
           </p>
         </section>
 
@@ -124,16 +82,13 @@ export default function ShippingPage() {
           <h2 id="payment-heading" className="font-serif text-3xl tracking-[-0.03em]">
             Thanh toán
           </h2>
-          <p className="mt-6 max-w-2xl text-base leading-7">{brandFacts.paymentMethod}</p>
+          <p className="mt-6 max-w-2xl text-base leading-7">{data.paymentMethod}</p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {brandFacts.checkoutAccount} {brandFacts.serverVerification}
+            {data.checkoutAccount} {data.serverVerification}
           </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
-            {PUBLIC_RETURNS_POLICY.refundChannelNote} Điều kiện và thời gian hoàn tiền được nêu trong{" "}
-            <Link
-              className="underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-              href="/returns"
-            >
+            {data.refundChannelNote} Điều kiện và thời gian hoàn tiền được nêu trong{" "}
+            <Link className={POLICY_LINK} href="/returns">
               chính sách đổi trả
             </Link>
             .
@@ -143,3 +98,13 @@ export default function ShippingPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<ShippingRouteProps, ShippingViewModel>({
+  load: loadShippingRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildShippingMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;

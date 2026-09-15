@@ -1,9 +1,21 @@
+import { FULFILLMENT } from "../brand/index.ts";
 import {
+  describeGuestShippingPromotion,
+  type GuestShippingPolicy,
+} from "../commerce/guest-shipping-policy.ts";
+import {
+  buildPublicBrandFacts,
   describePublicAddress,
+  describePublicDeliveryEstimate,
+  describePublicExchangeFee,
+  describePublicRefundWindow,
+  describePublicReturnWindow,
   describePublicSupportHours,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
+  PUBLIC_RETURNS_POLICY,
 } from "../content/public-brand-facts.ts";
 
 /**
@@ -64,5 +76,112 @@ export function buildContactViewModel(): ContactViewModel {
     supportHours: describePublicSupportHours(),
     fanpageUrl: PUBLIC_CONTACT_FACTS.fanpageUrl,
     fanpageLabel: describeFanpage(PUBLIC_CONTACT_FACTS.fanpageUrl),
+  });
+}
+
+/* --------------------------------------------------------------------------- shipping */
+
+export type ShippingViewModel = Readonly<{
+  coverage: string;
+  carriersText: string;
+  /** Owner-approved Hanoi scope labels, so the page never publishes the ambiguous historical ones. */
+  innerCityLabel: string;
+  innerCityEstimate: string;
+  otherProvinceLabel: string;
+  otherProvinceEstimate: string;
+  estimateCaveat: string;
+  shippingPromotionTitle: string;
+  shippingPromotionDetail: string;
+  carrierTrackingNote: string;
+  orderTrackingTitle: string;
+  orderTrackingDetail: string;
+  phoneConfirmationWording: string;
+  paymentMethod: string;
+  checkoutAccount: string;
+  serverVerification: string;
+  refundChannelNote: string;
+}>;
+
+/**
+ * The Shipping page's facts.
+ *
+ * The policy is passed in rather than read here: `readGuestShippingPolicy` is a server read and
+ * belongs to the loader. Everything derived from it — the promotion wording, the brand facts — is
+ * pure, so it is decided here where it can be tested.
+ */
+export function buildShippingViewModel(
+  input: Readonly<{ policy: GuestShippingPolicy }>,
+): ShippingViewModel {
+  const brandFacts = buildPublicBrandFacts(input.policy);
+  const promotion = describeGuestShippingPromotion(input.policy);
+  const delivery = PUBLIC_DELIVERY_FACTS;
+
+  return Object.freeze({
+    coverage: delivery.coverage,
+    carriersText: delivery.carriers.join(" · "),
+    innerCityLabel: FULFILLMENT.deliveryScopeLabels.innerCity,
+    innerCityEstimate: describePublicDeliveryEstimate(delivery.estimateDays.innerCity),
+    otherProvinceLabel: FULFILLMENT.deliveryScopeLabels.otherProvince,
+    otherProvinceEstimate: describePublicDeliveryEstimate(delivery.estimateDays.otherProvince),
+    estimateCaveat: delivery.estimateCaveat,
+    shippingPromotionTitle: promotion.title,
+    shippingPromotionDetail: promotion.detail,
+    carrierTrackingNote: delivery.carrierTrackingNote,
+    orderTrackingTitle: brandFacts.orderTracking.title,
+    orderTrackingDetail: brandFacts.orderTracking.detail,
+    phoneConfirmationWording: delivery.phoneConfirmationWording,
+    paymentMethod: brandFacts.paymentMethod,
+    checkoutAccount: brandFacts.checkoutAccount,
+    serverVerification: brandFacts.serverVerification,
+    refundChannelNote: PUBLIC_RETURNS_POLICY.refundChannelNote,
+  });
+}
+
+/* ---------------------------------------------------------------------------- returns */
+
+export type ReturnsViewModel = Readonly<{
+  returnWindow: string;
+  productConditions: readonly string[];
+  supportedCases: readonly string[];
+  nonDefectiveRefundNote: string;
+  /** Empty when the owner approved no category exclusions; the note is shown instead. */
+  nonReturnableCategories: readonly string[];
+  nonReturnableCategoriesNote: string;
+  returnInStore: string;
+  returnByMail: string;
+  returnByMailResponsibility: string;
+  exchangeFee: string;
+  customerInitiatedShippingNote: string;
+  shopFaultShippingNote: string;
+  restockingFeeNote: string;
+  refundWindow: string;
+  refundChannelNote: string;
+}>;
+
+/**
+ * The Returns page's facts.
+ *
+ * Every normative statement is a reviewed content fact. Page prose labels sections and nothing
+ * more: policy is the one kind of content a coding agent must never author.
+ */
+export function buildReturnsViewModel(): ReturnsViewModel {
+  const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } = FULFILLMENT.returnLogistics;
+
+  return Object.freeze({
+    returnWindow: describePublicReturnWindow(),
+    productConditions: PUBLIC_RETURNS_POLICY.productConditions,
+    supportedCases: PUBLIC_RETURNS_POLICY.supportedCases,
+    nonDefectiveRefundNote,
+    nonReturnableCategories: PUBLIC_RETURNS_POLICY.nonReturnableCategories,
+    nonReturnableCategoriesNote: PUBLIC_RETURNS_POLICY.nonReturnableCategoriesNote,
+    returnInStore: returnMethods.inStore,
+    returnByMail: returnMethods.byMail,
+    returnByMailResponsibility: returnMethods.byMailResponsibility,
+    exchangeFee: describePublicExchangeFee(),
+    customerInitiatedShippingNote: PUBLIC_RETURNS_POLICY.customerInitiatedShippingNote,
+    shopFaultShippingNote: PUBLIC_RETURNS_POLICY.shopFaultShippingNote,
+    restockingFeeNote,
+    refundWindow: describePublicRefundWindow(),
+    refundChannelNote: PUBLIC_RETURNS_POLICY.refundChannelNote,
   });
 }

@@ -1,32 +1,10 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
-import {
-  describePublicExchangeFee,
-  describePublicRefundWindow,
-  describePublicReturnWindow,
-  PUBLIC_RETURNS_POLICY,
-} from "@/content/public-brand-facts";
 import { BRAND } from "@/brand";
-import { FULFILLMENT } from "@/brand";
-import { readSearchExposure } from "@/seo/search-exposure";
-import { buildStaticPageMetadata } from "@/seo/static-page-metadata";
-
-type ReturnsPageProps = {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-};
-
-export async function generateMetadata({ searchParams }: ReturnsPageProps): Promise<Metadata> {
-  const exposure = readSearchExposure();
-  return buildStaticPageMetadata({
-    origin: exposure.origin,
-    indexingEnabled: exposure.indexingEnabled,
-    pathname: "/returns",
-    searchParams: await searchParams,
-    title: "Chính sách đổi trả và hoàn tiền",
-    description: `Đổi trả trong ${describePublicReturnWindow()}, điều kiện sản phẩm, phí đổi và thời gian hoàn tiền của ${BRAND.identity.name}.`,
-  });
-}
+import { createStorefrontRoute } from "@/routes/factory";
+import { loadReturnsRoute, type ReturnsRouteProps } from "@/routes/returns";
+import type { ReturnsViewModel } from "@/routes/evergreen-model";
+import { buildReturnsMetadata } from "@/routes/metadata/returns";
 
 /**
  * W13/U33b + U41/M5 — public returns policy from owner-approved authorities only.
@@ -34,22 +12,11 @@ export async function generateMetadata({ searchParams }: ReturnsPageProps): Prom
  * `PUBLIC_RETURNS_POLICY` keeps the existing window, eligibility, fee and refund facts;
  * `FULFILLMENT.returnLogistics` carries the later owner-approved return methods, restocking
  * decision and the exchange-only rule for correct/non-defective customer-change cases. Page prose
- * only labels sections: every normative return statement below comes from one of those reviewed
- * content authorities.
+ * only labels sections: every normative return statement below arrives through the view model,
+ * which reads one of those reviewed content authorities.
  */
-export default function ReturnsPage() {
-  const {
-    productConditions,
-    supportedCases,
-    customerInitiatedShippingNote,
-    shopFaultShippingNote,
-    nonReturnableCategories,
-    nonReturnableCategoriesNote,
-    refundChannelNote,
-  } = PUBLIC_RETURNS_POLICY;
-  const { returnMethods, restockingFeeNote, nonDefectiveRefundNote } =
-    FULFILLMENT.returnLogistics;
 
+function render(data: ReturnsViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Chính sách</p>
@@ -57,7 +24,7 @@ export default function ReturnsPage() {
         Đổi trả &amp; hoàn tiền
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">
-        {BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{describePublicReturnWindow()}</strong>.
+        {BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{data.returnWindow}</strong>.
       </p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
@@ -69,7 +36,7 @@ export default function ReturnsPage() {
             Sản phẩm đổi/trả phải đáp ứng đủ các điều kiện sau:
           </p>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
-            {productConditions.map((condition) => (
+            {data.productConditions.map((condition) => (
               <li key={condition}>{condition}</li>
             ))}
           </ul>
@@ -80,20 +47,20 @@ export default function ReturnsPage() {
             Trường hợp được hỗ trợ
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
-            {supportedCases.map((supportedCase) => (
+            {data.supportedCases.map((supportedCase) => (
               <li key={supportedCase}>{supportedCase}</li>
             ))}
           </ul>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {nonDefectiveRefundNote}
+            {data.nonDefectiveRefundNote}
           </p>
-          {nonReturnableCategories.length === 0 ? (
+          {data.nonReturnableCategories.length === 0 ? (
             <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-              {nonReturnableCategoriesNote}
+              {data.nonReturnableCategoriesNote}
             </p>
           ) : (
             <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
-              {nonReturnableCategories.map((category) => (
+              {data.nonReturnableCategories.map((category) => (
                 <li key={category}>{category}</li>
               ))}
             </ul>
@@ -105,11 +72,11 @@ export default function ReturnsPage() {
             Cách trả hàng
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
-            <li>{returnMethods.inStore}</li>
-            <li>{returnMethods.byMail}</li>
+            <li>{data.returnInStore}</li>
+            <li>{data.returnByMail}</li>
           </ul>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            {returnMethods.byMailResponsibility}
+            {data.returnByMailResponsibility}
           </p>
         </section>
 
@@ -123,18 +90,18 @@ export default function ReturnsPage() {
                 Khách hàng chủ động đổi mẫu / size / màu
               </dt>
               <dd className="mt-2 text-black/70">
-                Phí đổi {describePublicExchangeFee()}. {customerInitiatedShippingNote}
+                Phí đổi {data.exchangeFee}. {data.customerInitiatedShippingNote}
               </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
                 Lỗi thuộc shop hoặc nhà sản xuất
               </dt>
-              <dd className="mt-2 text-black/70">{shopFaultShippingNote}</dd>
+              <dd className="mt-2 text-black/70">{data.shopFaultShippingNote}</dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Phí restocking</dt>
-              <dd className="mt-2 text-black/70">{restockingFeeNote}</dd>
+              <dd className="mt-2 text-black/70">{data.restockingFeeNote}</dd>
             </div>
           </dl>
         </section>
@@ -144,7 +111,7 @@ export default function ReturnsPage() {
             Hoàn tiền
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-            Thời gian hoàn tiền dự kiến {describePublicRefundWindow()}. {refundChannelNote}
+            Thời gian hoàn tiền dự kiến {data.refundWindow}. {data.refundChannelNote}
           </p>
         </section>
       </div>
@@ -162,3 +129,13 @@ export default function ReturnsPage() {
     </div>
   );
 }
+
+const route = createStorefrontRoute<ReturnsRouteProps, ReturnsViewModel>({
+  load: loadReturnsRoute,
+  // A direct call to the canonical builder: the route contract accepts no other shape here.
+  metadata: (props) => buildReturnsMetadata(props),
+  render,
+});
+
+export const generateMetadata = route.generateMetadata;
+export default route.Page;
