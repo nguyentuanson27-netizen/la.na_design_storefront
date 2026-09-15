@@ -7,12 +7,16 @@ import { dirname, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { prisma } from "../src/db/prisma.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../src/commerce/storefront-origin.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3214;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_008;
-const PUBLIC_ORIGIN = "https://www.lafashion.asia";
+const PUBLIC_ORIGIN = `https://${OFFICIAL_PRODUCTION_STOREFRONT_HOST}`;
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
 const nextCliPath = resolve(dirname(require.resolve("next/package.json")), "dist/bin/next");
@@ -209,7 +213,7 @@ try {
   });
 
   await startServer({
-    APP_DOMAIN: "la.lanadesign.vn",
+    APP_DOMAIN: LEGACY_TEMPORARY_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "false",
   });
 
@@ -248,7 +252,7 @@ try {
   );
 
   await restartServer({
-    APP_DOMAIN: "www.lafashion.asia",
+    APP_DOMAIN: OFFICIAL_PRODUCTION_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "true",
   });
 
@@ -359,14 +363,14 @@ try {
 
   // W15b signal 2 — the temporary production host with indexing *requested*.
   //
-  // The enabled phase above runs on `www.lafashion.asia`, so it proves the permanent-domain path and
+  // The enabled phase above runs on the official production host, so it proves the permanent-domain path and
   // nothing about the legacy host production may serve during rollback. This phase is the one that
   // matters for a misconfiguration: a deployment sets `SEARCH_INDEXING_ENABLED=true` on
-  // `la.lanadesign.vn`, and the response must still be noindex with no sitemap advertised. Asserting
+  // the legacy temporary host, and the response must still be noindex with no sitemap advertised. Asserting
   // it over HTTP rather than in the domain suite is the point — it proves the refusal survives the
   // whole request path, metadata rendering included, not just the policy function.
   await restartServer({
-    APP_DOMAIN: "la.lanadesign.vn",
+    APP_DOMAIN: LEGACY_TEMPORARY_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "true",
   });
 
@@ -408,7 +412,7 @@ try {
   }
 
   await restartServer({
-    APP_DOMAIN: "la.lanadesign.vn",
+    APP_DOMAIN: LEGACY_TEMPORARY_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "false",
   });
 

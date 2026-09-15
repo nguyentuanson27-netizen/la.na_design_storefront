@@ -7,8 +7,15 @@ import {
   validateSearchExposureForRelease,
 } from "../../src/seo/search-exposure.ts";
 
-const TEMPORARY_PRODUCTION_DOMAIN = "la.lanadesign.vn";
-const OFFICIAL_PRODUCTION_DOMAIN = "www.lafashion.asia";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../../src/commerce/storefront-origin.ts";
+
+// Derived, not transcribed: these are the policy's own constants, so the assertions below
+// follow a brand fork to its domain instead of pinning the template's first brand.
+const TEMPORARY_PRODUCTION_DOMAIN = LEGACY_TEMPORARY_STOREFRONT_HOST;
+const OFFICIAL_PRODUCTION_DOMAIN = OFFICIAL_PRODUCTION_STOREFRONT_HOST;
 
 const publicEnvironment = {
   APP_DOMAIN: OFFICIAL_PRODUCTION_DOMAIN,
@@ -222,10 +229,9 @@ test("G1 keeps the approved temporary production origin serving buyer traffic wi
 
 test("permanent-domain selection fails closed for every other public hostname", () => {
   for (const appDomain of [
-    "lafashion.asia",
     "laclothing.example",
     "www.laclothing.example",
-    "lanadesign.vn",
+    `www.${OFFICIAL_PRODUCTION_DOMAIN}`,
     `www.${TEMPORARY_PRODUCTION_DOMAIN}`,
     `${TEMPORARY_PRODUCTION_DOMAIN}.attacker.example`,
     `${OFFICIAL_PRODUCTION_DOMAIN}.attacker.example`,

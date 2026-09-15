@@ -8,14 +8,21 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
+
+import { readProjectConfig } from "../../src/config/project-config.ts";
 import { fileURLToPath } from "node:url";
 
 const releaseCheckScript = fileURLToPath(
   new URL("../../scripts/release-readiness.ts", import.meta.url),
 );
 
-const TEMPORARY_PRODUCTION_HOST = "la.lanadesign.vn";
-const OFFICIAL_PRODUCTION_HOST = "www.lafashion.asia";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../../src/commerce/storefront-origin.ts";
+
+const TEMPORARY_PRODUCTION_HOST = LEGACY_TEMPORARY_STOREFRONT_HOST;
+const OFFICIAL_PRODUCTION_HOST = OFFICIAL_PRODUCTION_STOREFRONT_HOST;
 const DATABASE_PASSWORD = "super-secret-release-password";
 
 /**
@@ -26,7 +33,7 @@ function releaseEnvironment(overrides: Record<string, string>): NodeJS.ProcessEn
   return {
     NODE_ENV: process.env.NODE_ENV,
     PATH: process.env.PATH ?? "",
-    DATABASE_URL: `postgresql://release_user:${DATABASE_PASSWORD}@db.internal:5432/la_clothing`,
+    DATABASE_URL: `postgresql://release_user:${DATABASE_PASSWORD}@db.internal:5432/${readProjectConfig().databaseName}`,
     BETTER_AUTH_SECRET: "release-only-secret-0123456789abcdef",
     BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
     PANCAKE_API_KEY: "super-secret-pancake-key",

@@ -24,8 +24,9 @@ const BLOCKED_INDEXING_HOSTS = new Set([
   "127.0.0.1",
 ]);
 
-// ADR 0004 remains the historical authority for the legacy temporary production origin. ADR 0009
-// selects `www.lafashion.asia` as the permanent storefront but does not turn indexing on. Keeping
+// ADR 0004 remains the historical authority for the legacy temporary production origin. The
+// permanent storefront is whichever host `OFFICIAL_PRODUCTION_STOREFRONT_HOST` names -- it
+// mirrors project.config.json per brand -- and selecting it does not turn indexing on. Keeping
 // the legacy host here prevents a rollback/cutover mistake from creating a second indexable origin.
 const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 

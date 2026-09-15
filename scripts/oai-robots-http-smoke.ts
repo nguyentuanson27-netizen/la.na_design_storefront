@@ -70,6 +70,7 @@ function userAgentSection(body: string, userAgent: string): string[] {
 }
 
 import { ALL_APPROVED_NAMED_CRAWLERS } from "../src/seo/robots-policy.ts";
+import { OFFICIAL_PRODUCTION_STOREFRONT_HOST } from "../src/commerce/storefront-origin.ts";
 
 try {
   serverOutput = "";
@@ -79,7 +80,7 @@ try {
     {
       env: {
         ...process.env,
-        APP_DOMAIN: "www.lafashion.asia",
+        APP_DOMAIN: OFFICIAL_PRODUCTION_STOREFRONT_HOST,
         SEARCH_INDEXING_ENABLED: "true",
         NEXT_TELEMETRY_DISABLED: "1",
       },
@@ -106,7 +107,7 @@ try {
     assert.equal(crawlerRules.includes("Disallow: /"), false, `${crawler} must not be globally blocked`);
   }
 
-  assert.equal(body.includes("Sitemap: https://www.lafashion.asia/sitemap.xml"), true);
+  assert.equal(body.includes(`Sitemap: https://${OFFICIAL_PRODUCTION_STOREFRONT_HOST}/sitemap.xml`), true);
 
   console.log(`U36 / P16C robots HTTP smoke passed: wildcard and all ${ALL_APPROVED_NAMED_CRAWLERS.length} approved crawlers can crawl public HTML, /api remains blocked, and canonical sitemap is advertised when indexing is enabled.`);
 } finally {

@@ -8,13 +8,17 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { prisma } from "../src/db/prisma.ts";
 import { PRODUCT_SOCIAL_FALLBACK_PATH } from "../src/seo/product-metadata.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../src/commerce/storefront-origin.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3215;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const SHOP_ID = 920_009;
-const PUBLIC_ORIGIN = "https://www.lafashion.asia";
-const STAGING_ORIGIN = "https://la.lanadesign.vn";
+const PUBLIC_ORIGIN = `https://${OFFICIAL_PRODUCTION_STOREFRONT_HOST}`;
+const STAGING_ORIGIN = `https://${LEGACY_TEMPORARY_STOREFRONT_HOST}`;
 const TRUSTED_IMAGE_URL = "https://content.pancake.vn/catalog/11/22/33/p13-trusted.jpg";
 const nextDevDirectory = new URL("../.next/dev/", import.meta.url);
 const require = createRequire(import.meta.url);
@@ -212,7 +216,7 @@ try {
   }
 
   await startServer({
-    APP_DOMAIN: "www.lafashion.asia",
+    APP_DOMAIN: OFFICIAL_PRODUCTION_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "true",
   });
 
@@ -307,7 +311,7 @@ try {
   assertNotContains(unknownPage.body, 'rel="canonical"', "unknown product response");
 
   await restartServer({
-    APP_DOMAIN: "la.lanadesign.vn",
+    APP_DOMAIN: LEGACY_TEMPORARY_STOREFRONT_HOST,
     SEARCH_INDEXING_ENABLED: "false",
   });
 
