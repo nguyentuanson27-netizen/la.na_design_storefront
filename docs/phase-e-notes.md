@@ -1,8 +1,9 @@
 # Phase E — route migration as vertical slices: findings and carry-forward
 
-Seven storefront routes moved onto `createStorefrontRoute`, one vertical slice at a time: loader,
-canonical metadata builder, page wiring and focused tests landing together for each. What follows is
-what the work turned up.
+All nineteen storefront routes moved onto `createStorefrontRoute`, one vertical slice at a time:
+loader, canonical metadata builder, page wiring and focused tests landing together for each. Seven
+landed in the first pass (T19–T25); the remaining twelve and the live gates landed in the recovery
+pass (T26–T32B), which §9 covers. What follows is what the work turned up.
 
 ## 1. What a slice actually consists of
 
@@ -66,18 +67,23 @@ Shipping `video {src, poster}` as a stored field alone would have shipped someth
 
 Anyone adding another media type should follow this shape rather than loosening the existing parser.
 
-## 6. Verifier tests now track the crossing
+## 6. Verifier tests tracked the crossing, then became live gates
 
-Three tests asserted things that were true only before migration. Each now derives which side a
-route is on from whether it imports the factory, so the split cannot rot:
+During the first pass, three tests derived which side a route was on from whether it imported the
+factory, so the split could not rot while slices landed:
 
-- The boundary test holds migrated routes to the policy and keeps the live gate (T32B) off while any
-  route still violates. Note that *not* every unmigrated route does — `search/page.tsx` is already
-  clean by accident — so the assertion is that some still does.
-- The metadata-mode test sends migrated routes to the shipped verifier; unmigrated ones keep the
-  weaker regex shape they have today.
-- The refresher test accepts either the page mounting it (unmigrated) or the shell mounting what the
-  loader sealed (migrated).
+- The boundary test held migrated routes to the policy and kept the live gate (T32B) off while any
+  route still violated. Not every unmigrated route did — `search/page.tsx` was already clean by
+  accident — so the assertion was that *some* still did, which is what made it fail the moment the
+  migration finished.
+- The metadata-mode test sent migrated routes to the shipped verifier; unmigrated ones kept the
+  weaker regex shape.
+- The refresher test accepted either the page mounting it or the shell mounting what the loader
+  sealed.
+
+**T32B replaced the first two with live gates.** The transitional branches are gone: every route is
+held to the shipped metadata verifier, and the boundary scan runs over the repository. §9 has the
+details.
 
 Language-inventory tests followed metadata copy into `@/routes/metadata/*`; shopper-facing copy is
 still checked on the page.
@@ -89,11 +95,54 @@ The shell serialized `structuredData` as a single array in one script. The PDP p
 change for no gain. It now emits one script per document, which is byte-identical for every route
 that publishes one.
 
-## 8. Still open
+## 8. Still open after the first pass
 
-- **12 routes remain**: cart, checkout (+success), about, contact, shipping, returns, size-guide,
-  track-order, search, account, new-arrivals. The live boundary gate (T32B) unblocks when they land.
 - **`colorSwatches` on listing surfaces** still resolve colour-only, because only the PDP carries
   `galleryIndexByVariantId`. Unchanged from Phase D; it needs repository work.
 - **No admin surface** writes the new editorial fields yet. The columns and the read path exist and
   are validated; populating them is a separate piece of work.
+
+## 9. The recovery pass (T26–T32B)
+
+The remaining twelve routes — cart, checkout and its confirmation, about, contact, shipping,
+returns, size-guide, track-order, search, account, new-arrivals — landed in the same slice shape.
+Three things are worth recording.
+
+**The shell gained one field.** `RoutePayload.pixelEvents` carries page-level Meta pixel events,
+mirroring `structuredData`. It was opened because the contract genuinely could not carry checkout's
+`InitiateCheckout` or the confirmation's `Purchase`: a page may not import `@/components/analytics`,
+and mounting them from a brand component would make every redraw responsible for remembering them —
+the forgetting the shell exists to prevent. Every loader states `pixelEvents: []` explicitly rather
+than the field being optional.
+
+**Both verifiers are live gates now.**
+
+- Boundary: the scan enumerates every `.ts`/`.tsx` under `src/app` except admin, so a new file
+  cannot arrive unseen. Route handlers (`route.ts`, `robots.ts`, `sitemap.ts`) and the root layout
+  are exempt — the first three are server endpoints a page policy would forbid from their only
+  purpose, and the root layout is chrome rather than a brand-redrawn page. Handlers are classified
+  **by filename, not by path**: `bootstrap:brand` renames `src/app/<slug>-social-card.png/` per fork,
+  so a listed path would break the gate on a valid handler the first time someone forks this
+  template. A regression test pins the renamed case.
+- Metadata: every route goes to the shipped verifier, plus a provenance check that the default export
+  is the `Page` of a binding `createStorefrontRoute` returned. A text match for the factory import
+  and for `something.Page` is satisfiable without the shell — an unused import next to a hand-rolled
+  `{ Page }` object — and negative fixtures pin that.
+
+**The transitional shims are gone.** `src/components/commerce/{product-purchase-panel, product-gallery,
+storefront-product-card, cart-line-controls}` and `src/components/account/account-auth-panel` kept the
+pre-Phase-D public surfaces alive while routes still imported them. No route does now. They were
+deleted rather than left: `tsconfig` typechecks the whole tree, so a Phase G redraw replacing the
+brand layer would have failed through files nothing renders.
+
+## 10. Still open after the recovery pass
+
+- **The root layout is outside the boundary.** It mounts the tracking bootstrap, the site header and
+  footer, and the site-level JSON-LD. The scan enumerates it and exempts it by name. Bringing it
+  under the boundary is real work and wants its own slice.
+- **Checkout's buyer copy has no targeted language test.** It had none before the migration either;
+  the repo-wide English/technical inventory still covers it, but no test pins its required
+  Vietnamese copy the way the cart's and the PDP's are pinned.
+- **`src/components/commerce/product-card.tsx` is unused** but was left in place: unlike the five
+  shims above it imports no brand module, so it carries none of the redraw risk that motivated
+  removing them.

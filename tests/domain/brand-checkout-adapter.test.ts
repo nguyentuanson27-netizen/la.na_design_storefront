@@ -40,7 +40,7 @@ test("the brand checkout adapter runs none of the checkout workflow itself", asy
 test("exactly one component submits guest checkout", async () => {
   // A fork would show up here first: two components importing the submit action means two
   // implementations of the workflow behind it.
-  const roots = ["commerce", "brand", "account", "analytics"] as const;
+  const roots = ["commerce", "brand", "analytics"] as const;
   const submitters: string[] = [];
 
   for (const root of roots) {
@@ -75,7 +75,7 @@ test("the brand order-lookup adapter renders the shared form rather than reimple
 });
 
 test("exactly one component looks up a guest order", async () => {
-  const roots = ["commerce", "brand", "account", "analytics"] as const;
+  const roots = ["commerce", "brand", "analytics"] as const;
   const lookers: string[] = [];
 
   for (const root of roots) {

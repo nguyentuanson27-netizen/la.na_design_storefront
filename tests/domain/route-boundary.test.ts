@@ -62,7 +62,7 @@ const NEGATIVE_EXPECTATIONS: Record<string, string> = {
   "next-cache.ts": "external-specifier",
   "direct-commerce-component.ts": "source-root",
   "direct-commerce-checkout.ts": "source-root",
-  "direct-account-component.ts": "source-root",
+  "direct-analytics-component.ts": "source-root",
   "dynamic-template-interpolated.ts": "dynamic-specifier",
   "dynamic-expression.ts": "dynamic-specifier",
   "side-effect-import.ts": "source-root",
@@ -267,32 +267,35 @@ function appModulesOnDisk(): string[] {
 }
 
 /**
- * The files under `src/app` that are not page-layer UI, named one by one.
+ * The App Router filenames that are server endpoints rather than markup.
  *
- * A closed list rather than a pattern, so adding to it is a visible diff someone has to justify
- * rather than a filename that quietly opts itself out. Two kinds qualify and nothing else does:
+ * `route.ts` is a request handler; `robots.ts` and `sitemap.ts` are generators Next calls for those
+ * two documents. All three exist to read the catalog and the SEO configuration and serialise it, so
+ * a policy forbidding `@/db` and `@/seo` would forbid them from the only thing they are for.
  *
- * - **Route handlers and metadata files.** `route.ts`, `robots.ts` and `sitemap.ts` are server
- *   endpoints, not markup. They exist to read the catalog and the SEO configuration and serialise
- *   it; holding them to a policy that forbids `@/db` and `@/seo` would forbid them from doing the
- *   only thing they are for.
- * - **The root layout.** It is the app chrome every route renders inside, not one brand-redrawn
- *   page: it mounts the tracking bootstrap, the site header and footer, and the site-level JSON-LD.
- *   It is not a storefront route, appears in no manifest entry, and giving it a loader is not what
- *   the route migration was. Bringing it under the boundary is real work and belongs to its own
- *   slice.
- *
- * Each entry is checked below to be one of those two kinds, so this list cannot become a place to
- * park a page that failed.
+ * Classified by filename rather than by path, because the path is not stable: `bootstrap:brand`
+ * renames `src/app/<slug>-social-card.png/` to match the fork's project slug (see
+ * `src/operations/bootstrap-brand.ts`), so a listed path would name a directory that no longer
+ * exists the moment someone forks this template — failing the gate on a route handler that is
+ * perfectly valid. The filename is an App Router convention and survives the rename.
  */
-const NOT_PAGE_LAYER: readonly string[] = [
-  "src/app/api/auth/[...all]/route.ts",
-  "src/app/feeds/google-merchant/route.ts",
-  "src/app/la-clothing-modern-menswear-social-card.png/route.ts",
-  "src/app/layout.tsx",
-  "src/app/robots.ts",
-  "src/app/sitemap.ts",
-];
+const HANDLER_FILENAMES: ReadonlySet<string> = new Set(["route.ts", "route.tsx", "robots.ts", "sitemap.ts"]);
+
+/**
+ * The one page-layer exemption that is a path, because it is one specific file rather than a kind.
+ *
+ * The root layout is the chrome every route renders inside, not a brand-redrawn page: it mounts the
+ * tracking bootstrap, the site header and footer, and the site-level JSON-LD. It is not a storefront
+ * route and appears in no manifest entry. Bringing it under the boundary is real work and belongs to
+ * its own slice; until then it is named here, where the name is a visible diff.
+ */
+const ROOT_LAYOUT = "src/app/layout.tsx";
+
+/** Whether the live boundary scan holds this module to the page-layer policy. */
+export function isPageLayerModule(relative: string): boolean {
+  if (relative === ROOT_LAYOUT) return false;
+  return !HANDLER_FILENAMES.has(path.basename(relative));
+}
 
 function liveViolations(relative: string) {
   const file = path.join(REPO_ROOT, relative);
@@ -308,7 +311,7 @@ test("every page-layer module under src/app holds the boundary", () => {
   // Phase C built this engine and deliberately left the scan off, recording that the unmigrated tree
   // would fail it. Every storefront route is migrated now, so this is the live gate: it runs against
   // the repository, not fixtures, and a page reaching past the allowed roots fails here.
-  const scanned = appModulesOnDisk().filter((relative) => !NOT_PAGE_LAYER.includes(relative));
+  const scanned = appModulesOnDisk().filter(isPageLayerModule);
   assert.ok(scanned.length >= STOREFRONT_ROUTES.length, "every declared route is in the scan");
 
   const offenders = scanned
@@ -321,23 +324,49 @@ test("every page-layer module under src/app holds the boundary", () => {
   );
 });
 
-test("the exemption list names only route handlers and the root layout, and all of them exist", () => {
-  // Without this, the list above is a hole: anything failing the gate could be added to it and the
-  // scan would go green. Every entry must be a file that exists and be one of the two kinds the
-  // list is for.
-  const onDisk = new Set(appModulesOnDisk());
+test("only route handlers and the root layout are exempt from the scan", () => {
+  // Without this, the classifier is a hole: a predicate that quietly widened would send the scan
+  // green over a page it stopped looking at. Every file the scan skips must be one of the two kinds.
+  const skipped = appModulesOnDisk().filter((relative) => !isPageLayerModule(relative));
 
-  for (const relative of NOT_PAGE_LAYER) {
-    assert.ok(onDisk.has(relative), `${relative} is exempted but does not exist`);
-
+  for (const relative of skipped) {
     const basename = path.basename(relative);
-    const isHandler = basename === "route.ts" || basename === "robots.ts" || basename === "sitemap.ts";
-    const isRootLayout = relative === "src/app/layout.tsx";
+    const isHandler = ["route.ts", "route.tsx", "robots.ts", "sitemap.ts"].includes(basename);
     assert.ok(
-      isHandler || isRootLayout,
+      isHandler || relative === "src/app/layout.tsx",
       `${relative} is neither a route handler nor the root layout, so it must hold the boundary`,
     );
   }
+
+  // Every page module is in the scan, so an exemption cannot be smuggled in as one.
+  for (const route of STOREFRONT_ROUTES) {
+    assert.equal(isPageLayerModule(route.path), true, `${route.path} must be scanned`);
+  }
+});
+
+test("a fork's renamed social-card route is still classified as a handler", () => {
+  // `bootstrap:brand` renames `src/app/<slug>-social-card.png/` to match the fork's project slug.
+  // A path-based exemption would name a directory that no longer exists, failing the gate on a
+  // route handler that is perfectly valid. This is the regression that pins the structural rule.
+  assert.equal(
+    isPageLayerModule("src/app/la-clothing-modern-menswear-social-card.png/route.ts"),
+    false,
+    "the route handler this template ships with",
+  );
+  assert.equal(
+    isPageLayerModule("src/app/acme-storefront-social-card.png/route.ts"),
+    false,
+    "the same handler after a fork renames it",
+  );
+  assert.equal(
+    isPageLayerModule("src/app/anything/else/route.ts"),
+    false,
+    "any route handler, at any depth",
+  );
+
+  // The rule stays narrow: renaming a page into that directory does not exempt it.
+  assert.equal(isPageLayerModule("src/app/acme-storefront-social-card.png/page.tsx"), true);
+  assert.equal(isPageLayerModule("src/app/shop/layout.tsx"), true, "only the root layout is exempt");
 });
 
 test("no storefront page reaches request state through next/server or next/navigation", () => {

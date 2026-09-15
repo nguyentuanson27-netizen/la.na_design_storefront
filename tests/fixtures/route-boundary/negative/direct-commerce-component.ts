@@ -1,2 +1,2 @@
-import { CartLineControls } from "@/components/commerce/cart-line-controls";
-export const a = CartLineControls;
+import { ShippingPromotionBar } from "@/components/commerce/shipping-promotion-bar";
+export const a = ShippingPromotionBar;

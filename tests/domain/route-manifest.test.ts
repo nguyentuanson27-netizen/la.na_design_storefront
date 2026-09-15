@@ -12,6 +12,7 @@ import {
   storefrontRouteUrls,
 } from "../../src/routes/manifest.ts";
 import { checkMetadataContract, exportsAnyMetadata } from "../support/metadata-verifier.ts";
+import { checkRouteShellProvenance } from "../support/route-shell-verifier.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -89,21 +90,91 @@ test("every route's metadata matches the mode the manifest declares", () => {
 });
 
 test("every storefront route renders through the shell", () => {
-  // The other half of the live gate. A page can hold the boundary and still not be a route: a file
-  // that imports only allowed modules and renders markup directly passes the boundary scan while
-  // silently dropping the promotion refresh, the commerce event and the JSON-LD the shell mounts.
+  // The other half of the live gate, and checked by provenance rather than by spelling. A page can
+  // hold the boundary and still not be a route: it would pass the boundary scan while silently
+  // dropping the promotion refresh, the commerce event and the JSON-LD the shell mounts. What is
+  // asserted is that the default export is the `Page` of a binding the factory produced -- an
+  // unused import next to a hand-rolled `{ Page }` satisfies a text match and fails this.
   for (const route of STOREFRONT_ROUTES.filter((entry) => entry.shell)) {
-    const source = readFileSync(path.join(REPO_ROOT, route.path), "utf8");
-
-    assert.match(
-      source,
-      /from "@\/routes\/factory"/,
+    assert.deepEqual(
+      checkRouteShellProvenance({
+        source: readFileSync(path.join(REPO_ROOT, route.path), "utf8"),
+        fileName: route.path,
+      }).map((violation) => violation.message),
+      [],
       `${route.path} declares shell: true so it must be built by createStorefrontRoute`,
     );
-    assert.match(
-      source,
-      /export default \w+\.Page/,
-      `${route.path} must export the factory's Page, not its own component`,
+  }
+});
+
+test("the shell check rejects a page that fakes the factory's result", () => {
+  // The fixture the regex check could not tell from a real route: the factory is imported, the
+  // default export reads `route.Page`, and the shell never renders.
+  const fixture = "tests/fixtures/route-shell/fake-page-object.tsx";
+  const violations = checkRouteShellProvenance({
+    source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+    fileName: fixture,
+  });
+
+  assert.deepEqual(
+    violations.map((violation) => violation.code),
+    ["binding-not-factory-call"],
+  );
+});
+
+test("the shell check follows the factory and the binding under any local name", () => {
+  // Provenance, not spelling: a module may import the factory aliased and name the binding whatever
+  // it likes. A check that insisted on the literal names would be a style rule wearing a gate's
+  // clothes, and would reject a correct page.
+  const fixture = "tests/fixtures/route-shell/aliased-factory.tsx";
+
+  assert.deepEqual(
+    checkRouteShellProvenance({
+      source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+      fileName: fixture,
+    }),
+    [],
+  );
+});
+
+test("the shell check requires the direct shape, so an indirection cannot shelter a fake", () => {
+  // This fixture does reach the shell, and is rejected anyway: an object literal is the fake's own
+  // shape, and separating the two needs type resolution this check does not do. Every route in the
+  // repo already writes the direct form, so the strictness costs nothing.
+  const fixture = "tests/fixtures/route-shell/reassigned-binding.tsx";
+
+  assert.deepEqual(
+    checkRouteShellProvenance({
+      source: readFileSync(path.join(REPO_ROOT, fixture), "utf8"),
+      fileName: fixture,
+    }).map((violation) => violation.code),
+    ["binding-not-factory-call"],
+  );
+});
+
+test("the shell check names each way a page can miss the shell", () => {
+  // Guards the guard: a checker that returned one violation for everything would make the negative
+  // fixtures above pass while distinguishing nothing.
+  const cases: readonly [string, string][] = [
+    ["export default function Page() { return null; }\n", "no-factory-import"],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nexport const a = createStorefrontRoute;\n',
+      "no-default-export",
+    ],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nconst r = createStorefrontRoute({} as never);\nexport default r;\n',
+      "default-not-page",
+    ],
+    [
+      'import { createStorefrontRoute } from "@/routes/factory";\nexport default missing.Page;\n',
+      "unknown-binding",
+    ],
+  ];
+
+  for (const [source, expected] of cases) {
+    assert.deepEqual(
+      checkRouteShellProvenance({ source, fileName: "src/app/example/page.tsx" }).map((v) => v.code),
+      [expected],
     );
   }
 });
