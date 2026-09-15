@@ -18,7 +18,15 @@ function occurrences(source: string, value: string): number {
  * contain the literals the repo-wide inventory scan bans.
  */
 test("U1c cart finishes the Vietnamese transactional language contract", async () => {
-  const cartSource = await readFile(join(REPO_ROOT, "src/app/cart/page.tsx"), "utf8");
+  // The cart migrated onto the route shell, so its unavailable-state wording moved with the
+  // decisions that pick it: the page renders `availabilityLabel` and `optionLabel`, and the model
+  // decides what they say. Both files are read, so the contract still covers every string it did
+  // before and a page that starts re-deciding this copy is still caught.
+  const [pageSource, modelSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/cart/page.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/routes/cart-model.ts"), "utf8"),
+  ]);
+  const cartSource = `${pageSource}\n${modelSource}`;
 
   const oldBagHeading = ["YOUR", " BAG"].join("");
   const oldContinueShopping = ["Continue", " shopping"].join("");
