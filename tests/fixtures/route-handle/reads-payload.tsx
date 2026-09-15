@@ -13,4 +13,5 @@ export const sealedThenRead = sealRoute({
   refreshAfterMs: 0,
   trackingEvent: null,
   structuredData: [],
+  pixelEvents: [],
 }).data;

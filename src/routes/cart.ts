@@ -24,5 +24,6 @@ export async function loadCartRoute(): Promise<RouteHandle<CartViewModel>> {
     // path the shell already handles.
     trackingEvent: buildCartViewEvent(lines),
     structuredData: [],
+    pixelEvents: [],
   });
 }

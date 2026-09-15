@@ -10,6 +10,7 @@ export function load(): RouteHandle<Data> {
     refreshAfterMs: 60_000,
     trackingEvent: null,
     structuredData: [{ "@context": "https://schema.org" }],
+    pixelEvents: [],
   });
 }
 

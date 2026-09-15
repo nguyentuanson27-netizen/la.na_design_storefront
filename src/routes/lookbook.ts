@@ -74,5 +74,6 @@ export async function loadLookbookRoute(): Promise<RouteHandle<LookbookRouteData
     refreshAfterMs,
     trackingEvent: listTracking.listEvent,
     structuredData: [],
+    pixelEvents: [],
   });
 }

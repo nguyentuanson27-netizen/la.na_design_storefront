@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
+import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
+import type { FacebookPixelEventParameters } from "@/components/analytics/facebook-pixel-client";
 import { StorefrontPromotionRefresher } from "@/components/commerce/storefront-promotion-refresher";
 import { serializeJsonLd } from "@/seo/structured-data";
 import type { TrackingEvent } from "@/tracking/commerce-events";
@@ -11,6 +13,24 @@ import type { TrackingEvent } from "@/tracking/commerce-events";
  * only job is to hand the value to the canonical serializer without inspecting it.
  */
 export type JsonLdEntity = Readonly<Record<string, unknown>>;
+
+/**
+ * A page-level Meta pixel event, as the shell carries it.
+ *
+ * Mirrors `FacebookPixelEvent`'s props because the shell's job is to mount them, not to interpret
+ * them. It exists so a loader can declare a pixel event at all: `src/app` may not import
+ * `@/components/analytics/*`, so without a slot on the payload the only way to report one would be
+ * for a page to breach the boundary -- or for a brand component to remember to mount it, which is
+ * the forgetting this shell exists to prevent.
+ */
+export type RoutePixelEvent = Readonly<{
+  name: string;
+  parameters?: FacebookPixelEventParameters;
+  /** Set where a Conversions API twin exists, so Meta counts the pair as one conversion. */
+  eventId?: string;
+  /** Report at most once per browser, keyed by `eventId`. */
+  once?: boolean;
+}>;
 
 /**
  * Module-private. The payload hangs off a symbol nobody outside this file has a name for, which is
@@ -29,6 +49,11 @@ export type RoutePayload<D> = {
    */
   trackingEvent: TrackingEvent | null;
   structuredData: readonly JsonLdEntity[];
+  /**
+   * Page-level Meta pixel events. Empty on every route that reports none, spelled out rather than
+   * optional so a new loader states its answer instead of inheriting silence.
+   */
+  pixelEvents: readonly RoutePixelEvent[];
 };
 
 /**
@@ -87,6 +112,15 @@ export function StorefrontRoute<D>({
           key={index}
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(document) }}
+        />
+      ))}
+      {payload.pixelEvents.map((event, index) => (
+        <FacebookPixelEvent
+          key={event.eventId ?? `${event.name}:${index}`}
+          name={event.name}
+          parameters={event.parameters}
+          eventId={event.eventId}
+          once={event.once}
         />
       ))}
       {children(payload.data)}

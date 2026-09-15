@@ -76,5 +76,6 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
     trackingEvent: listTracking.listEvent,
     // The homepage publishes no JSON-LD of its own; the root layout carries the site graph.
     structuredData: [],
+    pixelEvents: [],
   });
 }

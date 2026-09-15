@@ -14,6 +14,7 @@ const route = createStorefrontRoute<Props, Data>({
       refreshAfterMs: 0,
       trackingEvent: null,
       structuredData: [],
+      pixelEvents: [],
     }),
   render: (data) => <h1>{data.headline}</h1>,
 });

@@ -116,5 +116,6 @@ export async function loadCollectionRoute({
         title: collection.title,
       }),
     ],
+    pixelEvents: [],
   });
 }

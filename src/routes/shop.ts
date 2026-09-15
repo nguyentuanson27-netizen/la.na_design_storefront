@@ -74,5 +74,6 @@ export async function loadShopRoute({
     trackingEvent: listTracking.listEvent,
     // The listing publishes no JSON-LD of its own; the root layout carries the site graph.
     structuredData: [],
+    pixelEvents: [],
   });
 }

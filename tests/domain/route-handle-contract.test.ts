@@ -205,3 +205,25 @@ test("sealRoute is the only exported way to build a handle", () => {
 
   assert.deepEqual(exported.sort(), ["StorefrontRoute", "sealRoute"]);
 });
+
+test("the shell mounts every declared pixel event, and pages get no other way to report one", () => {
+  const pixel = shellJsx.filter((e) => e.tag === "FacebookPixelEvent");
+  assert.equal(pixel.length, 1, "one element in the source, rendered once per declared event");
+
+  // Mapped over the payload rather than branched on it: a route decides what it reports, and the
+  // shell reports exactly that. A conditional here would let a loader declare an event the shell
+  // silently dropped.
+  const mapped = collect(
+    shell,
+    (n) =>
+      ts.isCallExpression(n) &&
+      n.expression.getText(core) === "payload.pixelEvents.map",
+  );
+  assert.equal(mapped.length, 1, "pixelEvents is mapped straight from the payload");
+
+  for (const name of ["name", "parameters", "eventId", "once"]) {
+    const attr = attribute(pixel[0]!.node, name);
+    assert.ok(attr, `the declared ${name} is forwarded`);
+    assert.match(attr.initializer!.getText(core), new RegExp(`event\\.${name}`));
+  }
+});
