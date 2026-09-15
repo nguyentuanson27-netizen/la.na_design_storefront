@@ -1,4 +1,5 @@
 import { FULFILLMENT } from "../brand/index.ts";
+import type { SizeChart } from "../brand/schema.ts";
 import {
   describeGuestShippingPromotion,
   type GuestShippingPolicy,
@@ -10,12 +11,14 @@ import {
   describePublicExchangeFee,
   describePublicRefundWindow,
   describePublicReturnWindow,
+  describePublicSizeTolerance,
   describePublicSupportHours,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_CONTACT_FACTS,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
   PUBLIC_RETURNS_POLICY,
+  PUBLIC_SIZE_GUIDE,
 } from "../content/public-brand-facts.ts";
 
 /**
@@ -183,5 +186,37 @@ export function buildReturnsViewModel(): ReturnsViewModel {
     restockingFeeNote,
     refundWindow: describePublicRefundWindow(),
     refundChannelNote: PUBLIC_RETURNS_POLICY.refundChannelNote,
+  });
+}
+
+/* ------------------------------------------------------------------------- size guide */
+
+export type SizeGuideViewModel = Readonly<{
+  unit: string;
+  toleranceNote: string;
+  /** The tolerance as the per-chart caption states it, so the two cannot word it differently. */
+  toleranceText: string;
+  circumferenceSemanticsNote: string;
+  guidanceNote: string;
+  /** Every declared chart, each with its own size scale. Charts do not have to agree. */
+  charts: readonly SizeChart[];
+}>;
+
+/**
+ * The Size Guide's facts.
+ *
+ * The charts pass through whole rather than being reshaped: a brand adding a third table gets a
+ * third table and nothing else changes. No size calculator, recommendation or fit vocabulary is
+ * derived here — B3 approved the tables, and anything beyond them would be a fit claim this
+ * repository invented.
+ */
+export function buildSizeGuideViewModel(): SizeGuideViewModel {
+  return Object.freeze({
+    unit: PUBLIC_SIZE_GUIDE.unit,
+    toleranceNote: PUBLIC_SIZE_GUIDE.toleranceNote,
+    toleranceText: describePublicSizeTolerance(),
+    circumferenceSemanticsNote: PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote,
+    guidanceNote: PUBLIC_SIZE_GUIDE.guidanceNote,
+    charts: PUBLIC_SIZE_GUIDE.charts,
   });
 }

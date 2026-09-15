@@ -53,3 +53,38 @@ test("exactly one component submits guest checkout", async () => {
 
   assert.deepEqual(submitters, ["commerce/guest-checkout-form.tsx"]);
 });
+
+/**
+ * The order-lookup adapter, guarded on the same grounds.
+ *
+ * The lookup is a server action that decides whether an order-code/phone pair identifies an order
+ * and which of its fields a guest may see. A second implementation is a second set of the bugs that
+ * come with getting that wrong, and the failure mode is showing one customer another's order.
+ */
+
+const BRAND_TRACKING_ADAPTER = new URL(
+  "../../src/components/brand/guest-order-tracking-form.tsx",
+  import.meta.url,
+);
+
+test("the brand order-lookup adapter renders the shared form rather than reimplementing it", async () => {
+  const source = await readFile(BRAND_TRACKING_ADAPTER, "utf8");
+
+  assert.match(source, /from "@\/components\/commerce\/guest-order-tracking-form"/);
+  assert.match(source, /<GuestOrderTrackingForm/);
+});
+
+test("exactly one component looks up a guest order", async () => {
+  const roots = ["commerce", "brand", "account", "analytics"] as const;
+  const lookers: string[] = [];
+
+  for (const root of roots) {
+    const directory = new URL(`../../src/components/${root}/`, import.meta.url);
+    for (const entry of await readdir(directory)) {
+      const source = await readFile(new URL(entry, directory), "utf8");
+      if (source.includes("lookupGuestOrderAction")) lookers.push(`${root}/${entry}`);
+    }
+  }
+
+  assert.deepEqual(lookers, ["commerce/guest-order-tracking-form.tsx"]);
+});

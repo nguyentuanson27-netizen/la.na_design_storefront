@@ -12,17 +12,20 @@ import {
   describePublicExchangeFee,
   describePublicRefundWindow,
   describePublicReturnWindow,
+  describePublicSizeTolerance,
   describePublicSupportHours,
   PUBLIC_BRAND_POSITIONING,
   PUBLIC_DELIVERY_FACTS,
   PUBLIC_LEGAL_FACTS,
   PUBLIC_RETURNS_POLICY,
+  PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
 import {
   buildAboutViewModel,
   buildContactViewModel,
   buildReturnsViewModel,
   buildShippingViewModel,
+  buildSizeGuideViewModel,
 } from "../../src/routes/evergreen-model.ts";
 
 /**
@@ -163,4 +166,43 @@ test("Returns carries the later owner-approved return logistics", () => {
   assert.equal(model.returnByMailResponsibility, returnMethods.byMailResponsibility);
   assert.equal(model.restockingFeeNote, restockingFeeNote);
   assert.equal(model.nonDefectiveRefundNote, nonDefectiveRefundNote);
+});
+
+/* ------------------------------------------------------------------------- size guide */
+
+test("the Size Guide passes every approved chart through whole", () => {
+  const model = buildSizeGuideViewModel();
+
+  // Whole rather than reshaped: a brand adding a third table gets a third table and nothing else
+  // has to change. Reshaping here is where a dropped row or a reordered size scale would come from.
+  assert.deepEqual(model.charts, PUBLIC_SIZE_GUIDE.charts);
+  assert.equal(model.charts.length > 0, true, "the guide is not vacuously empty");
+});
+
+test("the Size Guide states the approved unit, tolerance and notes and derives no fit advice", () => {
+  const model = buildSizeGuideViewModel();
+
+  assert.equal(model.unit, PUBLIC_SIZE_GUIDE.unit);
+  assert.equal(model.toleranceNote, PUBLIC_SIZE_GUIDE.toleranceNote);
+  assert.equal(model.toleranceText, describePublicSizeTolerance());
+  assert.equal(model.circumferenceSemanticsNote, PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
+  assert.equal(model.guidanceNote, PUBLIC_SIZE_GUIDE.guidanceNote);
+
+  // B3 approved the tables and nothing else. A recommended size, a fit vocabulary or a
+  // measurement-to-size mapping appearing here would be a fit claim this repository invented.
+  assert.deepEqual(Object.keys(model).sort(), [
+    "charts",
+    "circumferenceSemanticsNote",
+    "guidanceNote",
+    "toleranceNote",
+    "toleranceText",
+    "unit",
+  ]);
+});
+
+test("each chart's caption tolerance is the same one the intro states", () => {
+  // Two wordings of one tolerance is how a page ends up publishing two tolerances.
+  const model = buildSizeGuideViewModel();
+
+  assert.equal(model.toleranceText.includes(String(PUBLIC_SIZE_GUIDE.toleranceCm)), true);
 });

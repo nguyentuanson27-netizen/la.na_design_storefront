@@ -1,15 +1,20 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
-import { GuestOrderTrackingForm } from "@/components/commerce/guest-order-tracking-form";
+import { BrandGuestOrderTrackingForm } from "@/components/brand/guest-order-tracking-form";
+import { createStorefrontRoute } from "@/routes/factory";
+import {
+  loadTrackOrderRoute,
+  type TrackOrderRouteProps,
+  type TrackOrderViewModel,
+} from "@/routes/track-order";
+import { buildTrackOrderMetadata } from "@/routes/metadata/track-order";
 
-export const metadata: Metadata = {
-  title: "Tra cứu đơn hàng",
-  description: `Tra cứu trạng thái đơn hàng COD của ${BRAND.identity.name} bằng mã đơn và số điện thoại.`,
-};
+/** The order-lookup page's markup. The lookup itself is the form's server action. */
 
-export default function TrackOrderPage() {
+// The view model is empty, so the render prop takes nothing: naming an argument it never reads
+// would only invite someone to start reading one.
+function render() {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
@@ -42,8 +47,16 @@ export default function TrackOrderPage() {
           </p>
         </div>
 
-        <GuestOrderTrackingForm />
+        <BrandGuestOrderTrackingForm />
       </div>
     </div>
   );
 }
+
+const route = createStorefrontRoute<TrackOrderRouteProps, TrackOrderViewModel>({
+  load: loadTrackOrderRoute,
+  render,
+});
+
+export const metadata = buildTrackOrderMetadata();
+export default route.Page;
