@@ -1,24 +1,29 @@
-import type { NavigationConfig } from "./schema.ts";
+import { CATEGORY_NAVIGATION } from "./category.config.ts";
+import type { NavigationConfig, NavigationLink } from "./schema.ts";
+
+type PrimaryNavigationLink = NavigationLink & Readonly<{
+  children?: readonly PrimaryNavigationLink[];
+}>;
+
+type NavigationWithPrimaryHierarchy = Omit<NavigationConfig, "primary"> & Readonly<{
+  primary: readonly PrimaryNavigationLink[];
+}>;
 
 /**
- * The storefront menus. Configuration rather than markup because the category set is the part that
- * changes per brand: one shop needs shirts and trousers where another needs áo dài, váy and sets.
- *
- * Link order is the rendered order.
- *
- * A3 replaced the two entries that state the brand's name -- the wordmark link's accessible name
- * and the About label -- because those are brand identity, not route identity, which is also why
- * `brandHomeLabel` is in the brand-leak needle set. The menu hierarchy, order and destinations are
- * still the inherited Brand #1 ones and stay that way until every new destination exists; A6 cuts
- * them over atomically then.
+ * Brand #2 navigation cutover. The hierarchy is presentation/config state only: these route links do
+ * not establish product membership or turn editorial collections into the canonical category
+ * authority. G4 owns that later category-membership decision.
  */
-export const NAVIGATION: NavigationConfig = {
+export const NAVIGATION: NavigationWithPrimaryHierarchy = {
   brandHomeLabel: "La.na Design — Trang chủ",
   primary: [
-    { href: "/shop", label: "Cửa hàng" },
-    { href: "/new-arrivals", label: "Hàng mới" },
+    // The category block is `CATEGORY_NAVIGATION` verbatim, in its declared order. Restating the
+    // slugs and labels here is what `brand-leak.test.ts` fails on, and it is also how the navigation
+    // and the routes that serve it drift apart.
+    ...CATEGORY_NAVIGATION,
+    { href: "/new-arrivals", label: "Hàng mới về" },
     { href: "/collections", label: "Bộ sưu tập" },
-    { href: "/lookbook", label: "Lookbook" },
+    { href: "/sale", label: "Sale" },
   ],
   mobileUtility: [
     { href: "/search", label: "Tìm kiếm" },
@@ -32,7 +37,6 @@ export const NAVIGATION: NavigationConfig = {
   footer: [
     { href: "/shop", label: "Cửa hàng" },
     { href: "/new-arrivals", label: "Hàng mới" },
-    { href: "/lookbook", label: "Lookbook" },
     { href: "/track-order", label: "Tra cứu đơn" },
     { href: "/about", label: "Về La.na Design" },
     { href: "/shipping", label: "Vận chuyển" },

@@ -25,7 +25,8 @@ type StaticPageMetadataInput = Readonly<{
 const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/collections",
-  "/lookbook",
+  // F3a keeps `/new-arrivals` as one editorial URL with no legitimate query-state variant.
+  "/new-arrivals",
   // U33a evergreen pages. They are exactly the shape this builder was written for: one static path
   // each, no paginated form, and nothing a query string could legitimately vary.
   "/about",

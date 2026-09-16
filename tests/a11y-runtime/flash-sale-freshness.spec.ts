@@ -1,4 +1,4 @@
-/** U17 / P7b — real-browser Flash representative UI, refresh loop, resume hooks and Axe. */
+/** U17 / P7b — real-browser Sale representative UI, refresh loop, resume hooks and Axe. */
 
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
@@ -35,17 +35,17 @@ function captureServerOutput(chunk: Buffer) {
 async function waitForServer() {
   for (let attempt = 0; attempt < 80; attempt += 1) {
     if (server?.exitCode !== null && server?.exitCode !== undefined) {
-      throw new Error(`Next.js Flash Sale server exited with ${server.exitCode}\n${serverOutput}`);
+      throw new Error(`Next.js Sale server exited with ${server.exitCode}\n${serverOutput}`);
     }
     try {
-      const response = await fetch(`${BASE_URL}/flash-sale`, { redirect: "manual" });
-      if (response.status === 200 && (await response.text()).includes("Flash Sale")) return;
+      const response = await fetch(`${BASE_URL}/sale`, { redirect: "manual" });
+      if (response.status === 200 && (await response.text()).includes("Sale")) return;
     } catch {
       // Next dev may still be compiling.
     }
     await delay(500);
   }
-  throw new Error(`Timed out waiting for Flash Sale server\n${serverOutput}`);
+  throw new Error(`Timed out waiting for Sale server\n${serverOutput}`);
 }
 
 async function stopServer() {
@@ -169,22 +169,19 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("U17 renders the Flash representative and self-rearms/resumes without browser time authority", async ({ page }) => {
+test("U17 renders the Sale representative and self-rearms/resumes without browser time authority", async ({ page }) => {
   await page.clock.install();
 
   let refreshRequests = 0;
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (
-      url.pathname === "/flash-sale"
-      && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1")
-    ) {
+    if (url.pathname === "/sale" && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1")) {
       refreshRequests += 1;
     }
   });
 
-  await page.goto(`${BASE_URL}/flash-sale`, { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { level: 1, name: "Flash Sale" })).toBeVisible();
+  await page.goto(`${BASE_URL}/sale`, { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { level: 1, name: "Sale" })).toBeVisible();
   await expect(page.getByRole("link", { name: `Xem ${productName}` })).toBeVisible();
   await expect(page.getByText("FLASH SALE", { exact: true })).toBeVisible();
   await expect(page.getByText(/500\.000/)).toBeVisible();
@@ -192,7 +189,6 @@ test("U17 renders the Flash representative and self-rearms/resumes without brows
   await expect(page.getByText(/Còn .*giờ/)).toBeVisible();
   await expect(page.getByText(/300\.000/)).toHaveCount(0);
 
-  // Let React hydrate and arm the server-supplied capped 60s refresh.
   await delay(500);
 
   const beforeFirstTimer = refreshRequests;

@@ -70,19 +70,21 @@ async function requestPathWithHost(path: string, hostHeader: string): Promise<Ht
  *
  * This is deliberately NOT every route the smoke asserts on: `/collections`, collection detail,
  * `/cart`, robots/sitemap and the query/pagination states are asserted elsewhere and are not
- * warmed here. Waiting on all three of these rather than `/lookbook` alone means readiness covers
- * the paths that group requests, and nothing wider - `waitForServer` is not a guarantee that every
- * asserted route has been compiled.
+ * warmed here. Waiting on all three of these rather than the static page alone means readiness
+ * covers the paths that group requests, and nothing wider - `waitForServer` is not a guarantee
+ * that every asserted route has been compiled.
  *
  * This is defensive stabilization, not a verified root-cause fix. The CI failure it responds to was
  * a 500 on `/` in this group immediately after a restart. The obvious mechanism - the old readiness
  * rule returning while `/` was still mid-compile - was measured directly and did NOT reproduce: in
- * six cold-start trials (`.next/dev` removed, this phase's env) `/lookbook` passed the old <500 bar
- * after ~0.1-12s and `/` answered 200 at that same instant every time. So the exact cause of the CI
- * 500 remains unreproduced; widening readiness removes a way this group could observe a route it
- * never waited for, and is not evidence about what actually failed that run.
+ * six cold-start trials (`.next/dev` removed, this phase's env) the static page then held in this
+ * list passed the old <500 bar after ~0.1-12s and `/` answered 200 at that same instant every time.
+ * So the exact cause of the CI 500 remains unreproduced; widening readiness removes a way this
+ * group could observe a route it never waited for, and is not evidence about what actually failed
+ * that run. Those trials measured the editorial page A8 later retired, not the one named below, so
+ * the timings above describe the shape of that phase rather than this exact path.
  */
-const TEMPORARY_HOST_BROWSEABILITY_PATHS = ["/lookbook", "/shop", "/"] as const;
+const TEMPORARY_HOST_BROWSEABILITY_PATHS = ["/new-arrivals", "/shop", "/"] as const;
 
 async function waitForServer(): Promise<void> {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -228,7 +230,7 @@ try {
   assert.equal(disabledSitemap.status, 200, "disabled sitemap.xml must return 200");
   assert.equal(disabledSitemap.body.includes("<loc>"), false, "disabled sitemap must expose no canonical URLs");
 
-  const disabledPage = await requestPath("/lookbook");
+  const disabledPage = await requestPath("/new-arrivals");
   assert.equal(disabledPage.status, 200, "disabled public page must remain browseable");
   assertNoIndexHeader(disabledPage, "disabled public page");
   // U30b / W10: a canonical nominates a URL to index, so the static pages withhold it under
@@ -236,7 +238,7 @@ try {
   for (const [path, page] of [
     ["/", await requestPath("/")],
     ["/collections", await requestPath("/collections")],
-    ["/lookbook", disabledPage],
+    ["/new-arrivals", disabledPage],
     ["/size-guide", await requestPath("/size-guide")],
   ] as const) {
     assertNoIndexHeader(page, `disabled ${path}`);
@@ -279,7 +281,7 @@ try {
     `${PUBLIC_ORIGIN}/`,
     `${PUBLIC_ORIGIN}/shop`,
     `${PUBLIC_ORIGIN}/collections`,
-    `${PUBLIC_ORIGIN}/lookbook`,
+    `${PUBLIC_ORIGIN}/new-arrivals`,
     `${PUBLIC_ORIGIN}/shop/${currentSlug}`,
     `${PUBLIC_ORIGIN}/collections/${publishedCollectionSlug}`,
   ]) {
@@ -289,7 +291,7 @@ try {
     assert.equal(enabledSitemap.body.includes(excludedValue), false, `enabled sitemap must exclude ${excludedValue}`);
   }
 
-  const indexablePage = await requestPath("/lookbook");
+  const indexablePage = await requestPath("/new-arrivals");
   assert.equal(indexablePage.status, 200, "enabled indexable page must remain 200");
   assert.equal(indexablePage.xRobotsTag, null, "enabled canonical public page must not emit X-Robots-Tag noindex");
   assert.equal(
@@ -301,7 +303,7 @@ try {
   // U30b / W10, extended by U33a/b/c: each static indexable page names itself, on the server-owned
   // origin. The evergreen pages join the list because they joined the canonical set — a path that
   // is self-canonical in the builder but never checked over HTTP is a contract nothing enforces.
-  for (const path of ["/", "/collections", "/lookbook", "/about", "/contact", "/returns", "/shipping", "/size-guide"] as const) {
+  for (const path of ["/", "/collections", "/new-arrivals", "/about", "/contact", "/returns", "/shipping", "/size-guide"] as const) {
     const page = await requestPath(path);
     assert.equal(page.status, 200, `enabled ${path} must remain 200`);
     assert.equal(
@@ -335,7 +337,7 @@ try {
     "a forged request Host must never be reflected into the page",
   );
 
-  const queryPage = await requestPath("/lookbook?utm_source=smoke");
+  const queryPage = await requestPath("/new-arrivals?utm_source=smoke");
   assert.equal(queryPage.status, 200, "query-state public page must remain browseable");
   assertNoIndexHeader(queryPage, "query-state public page");
   assert.equal(
@@ -353,9 +355,12 @@ try {
     "a query-state size guide page is noindex, so it must not also nominate a canonical",
   );
 
-  const utilityPage = await requestPath("/new-arrivals");
-  assert.equal(utilityPage.status, 200, "non-launch editorial utility page must remain browseable");
-  assertNoIndexHeader(utilityPage, "non-launch editorial utility page");
+  // F3a moved `/new-arrivals` into the indexable set, so it is asserted above with the other
+  // self-canonical static pages. `/track-order` is the utility surface that still holds this
+  // contract: public HTML, outside `INDEXABLE_PATH_PATTERNS`, and noindex even with indexing on.
+  const utilityPage = await requestPath("/track-order");
+  assert.equal(utilityPage.status, 200, "public utility page must remain browseable");
+  assertNoIndexHeader(utilityPage, "public utility page");
 
   const cartPage = await requestPath("/cart");
   assert.equal(cartPage.status, 200, "cart must remain browseable while excluded from indexing");
@@ -422,7 +427,7 @@ try {
   assertRobotsRule(rollbackRobots.body, "Disallow: /api", true, "rollback may continue crawl-blocking API surfaces");
   assert.equal(rollbackRobots.body.includes("Sitemap:"), false, "rollback robots.txt must stop advertising the sitemap");
 
-  const rollbackPage = await requestPath("/lookbook");
+  const rollbackPage = await requestPath("/new-arrivals");
   assert.equal(rollbackPage.status, 200, "rollback public page must remain crawlable");
   assertNoIndexHeader(rollbackPage, "rollback public page");
   assert.ok(

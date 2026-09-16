@@ -1,3 +1,4 @@
+import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -16,7 +17,10 @@ export const STATIC_CANONICAL_PATHS = [
   "/",
   "/shop",
   "/collections",
-  "/lookbook",
+  "/new-arrivals",
+  // The F3a categories, in their declared order, from the one place they are declared.
+  ...CATEGORY_ROUTE_PATHS,
+  "/sale",
   // U33a. The evergreen pages are permanent, self-canonical and indexable on the same terms as the
   // rest of this list, so they belong in the document rather than being reachable only by crawl.
   "/about",
@@ -30,7 +34,7 @@ export const STATIC_CANONICAL_PATHS = [
 ] as const;
 
 /**
- * What is left of the per-document limit once the static paths have taken their share — 49,990.
+ * What is left of the per-document limit once the static paths have taken their share — 49,978.
  *
  * Derived rather than written down: adding a static path must shrink the dynamic bound, and a
  * hand-maintained constant is exactly where that would silently fail to happen.

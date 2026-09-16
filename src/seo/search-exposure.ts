@@ -1,3 +1,4 @@
+import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
 import {
   LEGACY_TEMPORARY_STOREFRONT_HOST,
   OFFICIAL_PRODUCTION_STOREFRONT_HOST,
@@ -17,20 +18,22 @@ type SearchRequestPolicyInput = Readonly<{
   search: string;
 }>;
 
-// Origins that may never serve as a public indexable storefront at all.
 const BLOCKED_INDEXING_HOSTS = new Set([
   "staging.lanadesign.vn",
   "localhost",
   "127.0.0.1",
 ]);
 
-// ADR 0004 remains the historical authority for the legacy temporary production origin. The
-// permanent storefront is whichever host `OFFICIAL_PRODUCTION_STOREFRONT_HOST` names -- it
-// mirrors project.config.json per brand -- and selecting it does not turn indexing on. Keeping
-// the legacy host here prevents a rollback/cutover mistake from creating a second indexable origin.
 const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 
 export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
+
+// One exact-match pattern per declared category route. Built from the category declaration rather
+// than hand-written alternations: a hand-written one has to be edited in step with the route list,
+// and the failure mode when it is not is a category that silently stops being indexable.
+export const INDEXABLE_CATEGORY_PATH_PATTERNS: readonly RegExp[] = CATEGORY_ROUTE_PATHS.map(
+  (href) => new RegExp(`^${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+);
 
 const INDEXABLE_PATH_PATTERNS = [
   /^\/$/,
@@ -38,8 +41,9 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/shop\/[^/]+$/,
   /^\/collections$/,
   /^\/collections\/[^/]+$/,
-  /^\/lookbook$/,
-  // U33 evergreen pages with approved first-party content
+  /^\/new-arrivals$/,
+  ...INDEXABLE_CATEGORY_PATH_PATTERNS,
+  /^\/sale$/,
   /^\/about$/,
   /^\/contact$/,
   /^\/returns$/,
@@ -47,9 +51,13 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/size-guide$/,
 ] as const;
 
+// F3a category destinations are crawlable route shells only. Until G4 approves canonical product
+// membership they have no paginated listing semantics, so query state remains noindex. `/sale`
+// already has a truthful paginated projection and keeps the existing catalog pagination contract.
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/]+$/,
+  /^\/sale$/,
 ] as const;
 
 const MAX_INDEXABLE_CATALOG_PAGE = 10_000;

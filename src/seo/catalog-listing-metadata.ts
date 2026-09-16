@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 
-import { isCanonicalCatalogPaginationRequest } from "./search-exposure.ts";
+import {
+  INDEXABLE_CATEGORY_PATH_PATTERNS,
+  isCanonicalCatalogPaginationRequest,
+} from "./search-exposure.ts";
 
 type CatalogListingMetadataInput = Readonly<{
   origin: string;
@@ -14,6 +17,8 @@ type CatalogListingMetadataInput = Readonly<{
 const CATALOG_LISTING_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/?#]+$/,
+  ...INDEXABLE_CATEGORY_PATH_PATTERNS,
+  /^\/sale$/,
 ] as const;
 
 function isCatalogListingPath(pathname: string): boolean {

@@ -72,19 +72,7 @@ async function cleanup() {
 }
 
 async function expectRuntimePageClean(page: import("@playwright/test").Page) {
-  // Callers reach this helper through client-side navigations, where the App Router applies the
-  // route's <title> asynchronously once the RSC payload resolves. Waiting for a URL and an h1 does
-  // not cover that, so Axe could observe the document after the old title was cleared and before
-  // the new one landed, and fail `document-title` on a page that does declare one.
   await page.waitForFunction(() => document.title.trim().length > 0);
-
-  // Scan from the top of the page. The masthead is pinned, so it overlays whatever is beneath it,
-  // and axe reports an element it covers as failing contrast against the masthead's own
-  // background. Which element that is depends on the scroll offset the page carries into the scan
-  // — a client-side navigation keeps the previous page's — and on font metrics, which differ per
-  // platform: this scan runs at ~640px with the nearest element clearing the masthead by 39px on
-  // Linux and landing under it on macOS. Normalizing the offset makes the result depend on the
-  // page rather than on either. Nothing is skipped; axe still scans the whole document.
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await page.waitForFunction(() => window.scrollY === 0);
 
@@ -93,7 +81,13 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
     const innerWidth = window.innerWidth;
     if (scrollWidth <= innerWidth) return null;
 
-    const overflowingElements: Array<{ tag: string; className: string; text: string; right: number; width: number }> = [];
+    const overflowingElements: Array<{
+      tag: string;
+      className: string;
+      text: string;
+      right: number;
+      width: number;
+    }> = [];
     document.querySelectorAll("*").forEach((el) => {
       const rect = el.getBoundingClientRect();
       if (rect.right > innerWidth + 1 || rect.left < -1) {
@@ -113,9 +107,7 @@ async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   expect(overflow).toBeNull();
   await page.keyboard.press("Tab");
   expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
-  const accessibilityScan = await new AxeBuilder({ page })
-    .withTags(BUYER_AXE_TAGS)
-    .analyze();
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
 }
 
@@ -135,7 +127,6 @@ async function expectVisualFoundationTokens(page: import("@playwright/test").Pag
     expect(value).not.toBe("");
   }
 
-  // Assert shared control, badge, and skeleton loading primitives resolve with non-empty styles
   const primitives = await page.evaluate(() => {
     const fixture = document.createElement("div");
     fixture.innerHTML = `
@@ -296,17 +287,11 @@ test.afterAll(async () => {
 
 test.beforeEach(async ({ page }) => {
   await page.route("**/_next/image**", (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: "image/jpeg",
-      body: TINY_JPEG_BUFFER,
-    });
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
   });
 });
 
-test("P8 storefront shell exposes responsive navigation, shared tokens, focus treatment and semantic footer", async ({
-  page,
-}) => {
+test("P8 storefront shell exposes cutover navigation, shared tokens, focus treatment and semantic footer", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
   page.on("console", (message) => {
@@ -321,15 +306,9 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
   await expect(shippingPromotion).toBeVisible();
   await expect(shippingPromotion).toHaveClass(/promotion-shell/);
-  // Still derived from the configured policy (750.000 / 4), now as the one-line headline the
-  // pinned bar has room for; 750.000 is a whole thousand, so it shortens exactly.
   await expect(shippingPromotion).toContainText("Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn");
-  // The promotion and the nav are pinned: both stay at the top of the viewport once the page
-  // scrolls under them.
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
-  await expect
-    .poll(() => page.evaluate(() => Math.round(window.scrollY)))
-    .toBeGreaterThan(400);
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(400);
   expect(
     await page.evaluate(() => {
       const masthead = document.querySelector(".site-masthead");
@@ -342,11 +321,12 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
+
   const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
   await expect(footerNavigation).toBeVisible();
   await expect(footerNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
   await expect(footerNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
-  await expect(footerNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   await expect(footerNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
   await expectVisualFoundationTokens(page);
 
@@ -354,10 +334,11 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   await expect(mobileMenu).toBeVisible();
   await mobileMenu.click();
   const mobileNavigation = page.getByRole("navigation", { name: "Điều hướng chính trên di động" });
-  await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
-  await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
+    await expect(mobileNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
+  }
+  await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
+  await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
 
@@ -378,10 +359,11 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   await page.reload({ waitUntil: "networkidle" });
   const desktopNavigation = page.getByRole("navigation", { name: "Điều hướng chính" });
   await expect(desktopNavigation).toBeVisible();
-  await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
-  await expect(desktopNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
-  await expect(desktopNavigation.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
-  await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toBeVisible();
+  for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
+    await expect(desktopNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
+  }
+  await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
+  await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
   await expect(utilityNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
@@ -431,9 +413,7 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
   await expectRuntimePageClean(page);
 });
 
-test("homepage uses the configured local catalog and lookbook renders a complete mobile editorial story", async ({
-  page,
-}) => {
+test("homepage uses the configured local catalog while retired Lookbook is absent", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
@@ -443,29 +423,20 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Mua bộ sưu tập", exact: true })).toHaveAttribute("href", "/shop");
-  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute(
-    "href",
-    "/collections",
-  );
+  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
-  await expect(page.getByRole("link", { name: "Xem lookbook ↗" })).toHaveAttribute("href", "/lookbook");
+  await expect(page.getByRole("link", { name: "Xem bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
+  await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
+
   const brandFactsNavigation = page.getByRole("navigation", { name: "Hỗ trợ và khám phá" });
-  await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute(
-    "href",
-    "/shop",
-  );
-  await expect(brandFactsNavigation.getByRole("link", { name: "Bộ sưu tập ↗" })).toHaveAttribute(
-    "href",
-    "/collections",
-  );
-  await expect(brandFactsNavigation.getByRole("link", { name: "Tra cứu đơn ↗" })).toHaveAttribute(
-    "href",
-    "/track-order",
-  );
+  await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute("href", "/shop");
+  await expect(brandFactsNavigation.getByRole("link", { name: "Bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
+  await expect(brandFactsNavigation.getByRole("link", { name: "Tra cứu đơn ↗" })).toHaveAttribute("href", "/track-order");
   await expect(page.getByText("Mua theo danh mục", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Danh mục sản phẩm" })).toHaveCount(0);
   await expect(page.getByText("Mua theo bộ sưu tập", { exact: true })).toBeVisible();
+
   const collectionNavigation = page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" });
   await expect(collectionNavigation).toBeVisible();
   await expect(collectionNavigation.getByRole("link", { name: "Essential Outerwear", exact: true })).toHaveAttribute(
@@ -475,12 +446,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByText("Draft Capsule", { exact: true })).toHaveCount(0);
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
-    "href",
-    `/shop/${productSlug}`,
-  );
-  // The catalog card shows price only. Editorial copy and stock state belong to the product
-  // page, and the name stays in the document as a visually hidden heading.
+  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute("href", `/shop/${productSlug}`);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toHaveCount(0);
   await expect(page.getByText("Có sẵn", { exact: true })).toHaveCount(0);
   await expect(page.getByText("1.290.000")).toBeVisible();
@@ -488,28 +454,8 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
   await expectRuntimePageClean(page);
 
-  await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
-  const metaDescription = page.locator('meta[name="description"]');
-  await expect(metaDescription).toHaveAttribute("content", /city uniform/);
-  await expect(metaDescription).not.toHaveAttribute("content", /seasonal/i);
-  await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
-  await expect(page.locator(".lookbook-panel img").first()).toBeVisible();
-  await expect(page.locator(".lookbook-panel img").nth(1)).toBeVisible();
-  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expect(page.getByRole("heading", { level: 2, name: "MORNING / TRANSIT" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "LATE / RETURN" })).toBeVisible();
-  await expect(page.getByText("A study in quiet utility.")).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Featured pieces" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute(
-    "href",
-    `/shop/${productSlug}`,
-  );
-  await expect(page.getByRole("link", { name: "Shop collection ↗" })).toHaveAttribute(
-    "href",
-    "/shop",
-  );
-  await expectRuntimePageClean(page);
+  const lookbookResponse = await page.request.get(`${BASE_URL}/lookbook`);
+  expect(lookbookResponse.status()).toBe(404);
 
   await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "BỘ SƯU TẬP" })).toBeVisible();
@@ -530,17 +476,13 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveAttribute(
-    "href",
-    "/collections/essential-outerwear",
-  );
+  await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveAttribute("href", "/collections/essential-outerwear");
   await expect(page.getByRole("link", { name: /draft capsule/i })).toHaveCount(0);
   await expect(page.getByText("Draft Capsule")).toHaveCount(0);
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
-
   await page.getByText("Ink", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Ink" })).toBeChecked();
@@ -555,9 +497,7 @@ test("homepage uses the configured local catalog and lookbook renders a complete
   await expectRuntimePageClean(page);
 });
 
-test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({
-  page,
-}) => {
+test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({ page }) => {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 
   await page.setViewportSize({ width: 390, height: 844 });
@@ -568,19 +508,12 @@ test("P8 homepage empty state uses the shared semantic state pattern and degrade
     emptyState.getByRole("heading", { level: 2, name: "Tuyển chọn hiện tại đang được chuẩn bị." }),
   ).toBeVisible();
   await expect(
-    emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", {
-      exact: true,
-    }),
+    emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", { exact: true }),
   ).toBeVisible();
   await expect(page.locator(".campaign-visual img")).toHaveCount(0);
   await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
   await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expectRuntimePageClean(page);
-
-  await page.goto(`${BASE_URL}/lookbook`, { waitUntil: "networkidle" });
-  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
-  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expect(page.getByRole("heading", { level: 1, name: "CITY UNIFORM" })).toBeVisible();
+  await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
   await expectRuntimePageClean(page);
 });

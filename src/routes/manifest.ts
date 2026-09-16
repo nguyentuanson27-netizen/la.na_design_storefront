@@ -1,3 +1,5 @@
+import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
+
 /**
  * Where every storefront route lives, and where its metadata is declared.
  *
@@ -49,8 +51,17 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
   },
   { path: "src/app/collections/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/collections/[slug]/page.tsx", shell: true, metadata: "page" },
-  { path: "src/app/flash-sale/page.tsx", shell: true, metadata: "page" },
-  { path: "src/app/lookbook/page.tsx", shell: true, metadata: "page" },
+  // The F3a category pages. Every one is the same shape, so the entries are derived from the one
+  // category declaration instead of repeating its slugs here -- a second copy of them is exactly
+  // what would let the manifest and the navigation disagree about which categories exist. This is
+  // still a declaration and not a scan of disk: it says which pages must be there, and
+  // `route-manifest.test.ts` fails if disk does not match.
+  ...CATEGORY_ROUTE_PATHS.map((href): StorefrontRouteEntry => ({
+    path: `src/app${href}/page.tsx`,
+    shell: true,
+    metadata: "page",
+  })),
+  { path: "src/app/sale/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/cart/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/success/page.tsx", shell: true, metadata: "static" },
@@ -64,7 +75,7 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
   { path: "src/app/track-order/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/search/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/account/page.tsx", shell: true, metadata: "static" },
-  { path: "src/app/new-arrivals/page.tsx", shell: true, metadata: "static" },
+  { path: "src/app/new-arrivals/page.tsx", shell: true, metadata: "page" },
 ];
 
 /**
