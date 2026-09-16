@@ -25,7 +25,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Brand leak/current-truth checks pass.
 
 ## High-risk gates — run early
-- [ ] **G1** Verify current official Google Merchant backorder/preorder + `availability_date`; decide and approve a compliant `availability_date` strategy.
+- [ ] **G1** Verify current official Google Merchant + structured-data availability/date semantics; decide and approve a compliant `availability_date` strategy.
 - [ ] **G2** Run an explicitly authorized Pancake zero/negative-stock + composite write probe in a safe/non-production test context with cleanup/reconciliation; otherwise remain BLOCKED/UNKNOWN.
 - [ ] **G3** Inspect existing outbound-email capability; approve minimal contact-form transport if new provider/credential is required.
 - [ ] **G4** Map admin merchandising requirements to existing storage; approve smallest additive persistence only for real gaps.
