@@ -5,6 +5,8 @@ export type PolicyContentSection = Readonly<{
   heading: string;
   paragraphs: readonly string[];
   items: readonly string[];
+  /** Paragraphs that follow a list when the approved source places concluding text after it. */
+  closingParagraphs?: readonly string[];
 }>;
 
 export type PolicyOwnedContent = Readonly<{
@@ -18,8 +20,8 @@ const BUSINESS_ADDRESS = `${BRAND.contact.streetAddress}, ${BRAND.contact.addres
 const SUPPORT_HOURS = `${BRAND.contact.supportHours.opens} - ${BRAND.contact.supportHours.closes} hằng ngày (${BRAND.contact.supportHours.utcOffsetLabel})`;
 
 /**
- * A7b — owner-approved policy text that does not already belong to the dedicated shipping/returns
- * pages or to the existing fulfillment authority.
+ * A7b — owner-approved policy text normalized in
+ * `docs/specs/la-na-design-policy-authority.md`.
  *
  * Two explicit owner overrides are applied while transcribing the supplied terms:
  * - website payment is COD only; wording that offered bank transfer as a payment method is replaced
@@ -119,10 +121,7 @@ export const POLICY_CONTENT = {
       },
       {
         heading: "Quy trình đặt hàng và xác nhận đơn hàng",
-        paragraphs: [
-          "Khách hàng có thể đặt hàng trên website theo các bước cơ bản sau:",
-          "Đơn hàng chỉ được xem là hợp lệ sau khi La.na Design xác nhận thành công. Trong trường hợp thông tin đơn hàng chưa rõ ràng, La.na Design có thể liên hệ lại để xác minh trước khi xử lý.",
-        ],
+        paragraphs: ["Khách hàng có thể đặt hàng trên website theo các bước cơ bản sau:"],
         items: [
           "Bước 1: Lựa chọn sản phẩm, màu sắc, kích cỡ và số lượng.",
           "Bước 2: Thêm sản phẩm vào giỏ hàng hoặc chọn mua ngay.",
@@ -130,6 +129,9 @@ export const POLICY_CONTENT = {
           "Bước 4: Lựa chọn phương thức thanh toán và phương thức giao hàng phù hợp.",
           "Bước 5: Kiểm tra lại thông tin đơn hàng và xác nhận đặt hàng.",
           "Bước 6: La.na Design tiếp nhận, kiểm tra và xác nhận đơn hàng qua hệ thống, điện thoại, tin nhắn hoặc email.",
+        ],
+        closingParagraphs: [
+          "Đơn hàng chỉ được xem là hợp lệ sau khi La.na Design xác nhận thành công. Trong trường hợp thông tin đơn hàng chưa rõ ràng, La.na Design có thể liên hệ lại để xác minh trước khi xử lý.",
         ],
       },
       {
