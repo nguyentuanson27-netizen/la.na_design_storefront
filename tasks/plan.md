@@ -38,6 +38,7 @@ Hard boundaries:
 - Merchant offer mapping currently supports only `in_stock | out_of_stock`.
 - Admin writes use `requireAdminSession`; all new admin mutations must preserve that boundary.
 - Public routes still include `/lookbook` and `/flash-sale`; Brand #2 requires `/sale` and no public lookbook/flash-sale.
+- Baseline `NAVIGATION.footer` still links `/lookbook`, and `SiteFooter` renders `NAVIGATION.footer` directly; obsolete route deletion therefore requires an active-navigation cutover, not only a primary-nav change.
 
 ## 3. Dependency map
 
@@ -48,7 +49,9 @@ merged master spec
   |      +--> A2 legal/contact schema -> A3 identity/contact/merchant/SEO
   |      +--> A4 size guides -> M1 size-guide mapping
   |      +--> A5 fulfillment/payment
-  |      +--> F3a minimal category route targets -> A6 active nested navigation -> A8
+  |      +--> F3a all new nav destinations (categories + /sale)
+  |             -> A6 active nav cutover (primary + footer)
+  |             -> A8 obsolete-route cleanup/sitemap-canonical policy
   |      +--> A7a/A7b
   |      +--> F3a + A1..A8 -> Checkpoint A
   |
@@ -162,16 +165,16 @@ F2a/F2b/F2c/F2d/F3a/F3b/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F
 
 **Verification:** focused policy tests + stale-text search.
 
-## A6 — Activate approved nested navigation after route targets exist
+## A6 — Atomically cut over active navigation after every new destination exists
 **Estimated scope:** M (2–4 files)  
 **Files likely touched:** `src/brand/schema.ts`, `src/brand/navigation.config.ts`, navigation config/presentation-boundary tests  
 **Depends on:** A1, F3a
 
-**Work:** evolve flat nav only enough for clickable parent + child links, then switch active `NAVIGATION.primary` to the exact approved top-level order and Áo dài/Set đồ children only after F3a has created and verified every target route; `/shop` stays out of primary nav; no `Trang chủ`.
+**Work:** evolve flat nav only enough for clickable parent + child links. After F3a has created and verified every new destination, including `/sale`, switch `NAVIGATION.primary` to the exact approved top-level order and Áo dài/Set đồ children, and remove obsolete `/lookbook`/`/flash-sale` hrefs from active navigation surfaces that would otherwise survive route deletion, at minimum `NAVIGATION.primary` and `NAVIGATION.footer`. Do not perform the final footer visual/grouping redesign here; that remains F9a. `/shop` stays out of primary nav; no `Trang chủ`.
 
-**Acceptance:** exact approved hierarchy/order; no lookbook primary link; every active parent/child href resolves to a non-404 public route at the same merge boundary.
+**Acceptance:** exact approved primary hierarchy/order including Sale; active primary/footer navigation has no `/lookbook` or `/flash-sale` href; every active primary/footer href resolves to a non-404 public route at the same merge boundary.
 
-**Verification:** config/order tests + focused link-resolution test covering every active `NAVIGATION.primary` parent/child destination.
+**Verification:** config/order tests + focused link-resolution regression covering all active `NAVIGATION.primary` and `NAVIGATION.footer` destinations, plus explicit assertions that obsolete hrefs are absent before A8 deletes their routes.
 
 ## A7a — Update About/contact legal/support surfaces
 **Estimated scope:** M (2–5 files)  
@@ -195,19 +198,19 @@ F2a/F2b/F2c/F2d/F3a/F3b/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F
 
 **Verification:** route/render tests + destination-link resolution + stale-text search.
 
-## A8 — Align public route policy without deleting promotion-engine semantics
+## A8 — Retire obsolete public routes and finalize route policy
 **Estimated scope:** M (3–5 files)  
 **Files likely touched:** `/sale`, `/lookbook`, `/flash-sale` route modules, sitemap/canonical policy, route tests  
 **Depends on:** A6
 
-**Work:** make `/sale` the only public discounted-products route; remove Brand #2 public lookbook/flash-sale surfaces after A6 has moved primary navigation away from them; keep lower-level promotion data model; keep `/collections`, `/new-arrivals`, `/shop`, `/contact`.
+**Work:** keep the F3a-created `/sale` route as the only public discounted-products route and preserve its truthful discounted/promotional-product semantics; only after A6 has removed obsolete hrefs from active primary/footer navigation, remove Brand #2 public `/lookbook` and `/flash-sale` routes/surfaces and align sitemap/canonical policy. Keep the lower-level promotion data model and `/collections`, `/new-arrivals`, `/shop`, `/contact`.
 
-**Acceptance:** route/sitemap/canonical contract matches master spec; removed routes are not advertised/indexable; promotion engine remains intact; active navigation has no link to a removed route.
+**Acceptance:** `/sale` exists and remains the only public discounted-products route; `/lookbook` and `/flash-sale` are not advertised/indexable after deletion; no active primary/footer link points to a removed route; promotion engine remains intact; route/sitemap/canonical contract matches the master spec.
 
-**Verification:** route + sitemap tests + build route output + active-nav link resolution.
+**Verification:** route + sitemap/canonical tests + build route output + active primary/footer link-resolution regression.
 
 ### Checkpoint A — Brand Config/static truth
-Do not claim Giai đoạn 2 complete until F3a and A1–A8 have 0 Critical/0 Required findings and the combined head passes `pnpm lint`, `pnpm typecheck`, `pnpm test:domain`, `pnpm test`, `pnpm build`, plus brand-leak/current-truth and active-navigation link-resolution checks.
+Do not claim Giai đoạn 2 complete until F3a and A1–A8 have 0 Critical/0 Required findings and the combined head passes `pnpm lint`, `pnpm typecheck`, `pnpm test:domain`, `pnpm test`, `pnpm build`, plus brand-leak/current-truth checks and active primary/footer link-resolution with no obsolete route hrefs.
 
 ---
 
@@ -440,16 +443,16 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 # WORKSTREAM F — GIAI ĐOẠN 3: STOREFRONT FE
 
-## F3a — Minimal crawlable category route targets before nav activation
+## F3a — Minimal crawlable navigation destinations before cutover
 **Estimated scope:** M (3–5 files)  
-**Files likely touched:** minimal category parent/child route modules, existing catalog/listing projection reuse, focused route/link-resolution tests  
+**Files likely touched:** minimal category parent/child route modules, `src/app/sale/page.tsx` or the repository's equivalent `/sale` route owner, existing catalog/promotion listing projection reuse, focused route/link-resolution tests  
 **Depends on:** A1
 
-**Work:** create the minimal server-rendered public route targets required by the approved parent/child taxonomy before those hrefs are exposed in `NAVIGATION.primary`. Reuse the existing storefront shell/listing behavior; do not redesign, invent category copy, or activate the new navigation in this task.
+**Work:** create every new public destination required before A6 exposes the approved navigation: the minimal server-rendered parent/child category routes and `/sale`. `/sale` must reuse existing truthful discounted/promotional-product projection semantics rather than become an empty placeholder. Reuse the existing storefront shell/listing behavior; do not redesign, invent category copy, or switch active navigation in this task.
 
-**Acceptance:** every intended A6 parent/child href returns a non-404 public response and handles empty/real catalog state truthfully; current active navigation is unchanged until A6.
+**Acceptance:** every intended A6 category href and `/sale` returns a non-404 public response; `/sale` uses truthful discounted/promotional product state; category routes handle empty/real catalog state truthfully; current active navigation remains unchanged until A6.
 
-**Verification:** focused route tests + link-resolution manifest/test covering every intended A6 target.
+**Verification:** focused route tests + a pre-cutover link-resolution manifest/test covering every intended A6 destination, including `/sale`.
 
 ## F1 — Approved assets and visual tokens
 **Estimated scope:** M (2–5 files)  
@@ -515,9 +518,9 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 **Work:** refine the already-resolving F3a category routes with breadcrumb/canonical/internal-link hierarchy; keep `/collections` for real editorial collections; natural La.na/Lana handling without doorway pages; draft exact category SEO copy for owner approval where pending.
 
-**Acceptance:** route existence remains green; canonical/breadcrumb/internal links agree for parent → child → product hierarchy; no active primary-nav destination regresses to 404.
+**Acceptance:** route existence remains green; canonical/breadcrumb/internal links agree for parent → child → product hierarchy; no active primary/footer navigation destination regresses to 404.
 
-**Verification:** route/metadata tests + crawlable-link inspection + active-navigation link-resolution regression check.
+**Verification:** route/metadata tests + crawlable-link inspection + active primary/footer link-resolution regression check.
 
 ## F4a — Server PLP filter/order/pagination contract
 **Estimated scope:** M (3–5 files)  
@@ -667,11 +670,11 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 **Files likely touched:** site footer, legal/support projection, policy-link render tests  
 **Depends on:** A7a, A7b, F1
 
-**Work:** four conceptual groups, non-accordion mobile, master logo/strapline/support links, all required policy destinations, exact legal bottom block, no representative/newsletter.
+**Work:** four conceptual groups, non-accordion mobile, master logo/strapline/support links, all required policy destinations, exact legal bottom block, no representative/newsletter. Preserve the route-safe active link set established by A6/A8 while replacing the temporary flat footer structure.
 
-**Acceptance:** every footer link resolves; legal/support roles are correct; mobile remains readable without accordion.
+**Acceptance:** every footer link resolves; no obsolete `/lookbook`/`/flash-sale` link returns; legal/support roles are correct; mobile remains readable without accordion.
 
-**Verification:** render/link tests + desktop/mobile keyboard/Axe walkthrough.
+**Verification:** render/link tests + active footer link-resolution + desktop/mobile keyboard/Axe walkthrough.
 
 ## F9b — Real contact-form delivery
 **Estimated scope:** M (3–5 files)  
@@ -731,7 +734,7 @@ Run mirror/Merchant audits only after a real catalog sync makes them meaningful.
 
 Safe after plan approval:
 - G1/G2/G3/G4 can run concurrently with Workstream A.
-- After A1, A2/A3/A4/A5 and F3a may proceed in parallel, coordinating shared route/schema owners; **A6 must wait for F3a route/link verification before activating the new primary navigation**.
+- After A1, A2/A3/A4/A5 and F3a may proceed in parallel, coordinating shared route/schema owners; **A6 must wait for F3a route/link verification, including `/sale`, before changing any active navigation surface**.
 - **M1 may start immediately after A4**; it does not wait for Checkpoint A/G4 because it reuses the existing `ProductContent.sizeGuide` owner.
 - **M2/M3a/M3b wait for Checkpoint A + approved G4.** If the approved G4 design requires a schema migration, that migration/DB slice additionally waits for Checkpoint B; no-migration reuse may proceed before Checkpoint B.
 - After Checkpoint A, F1 can proceed while inventory architecture is resolved.
@@ -739,7 +742,7 @@ Safe after plan approval:
 - F6a can be built before campaign content because it supports truthful 0/1/2–3 states.
 
 Must remain sequential:
-- F3a route targets/link-resolution → A6 active navigation → A8 removal of obsolete public routes.
+- F3a create all new destinations including `/sale` → A6 switch approved primary navigation and remove obsolete links from active primary/footer surfaces → A8 delete obsolete public routes and align sitemap/canonical state.
 - G2 → G5 → Checkpoint B → I1 → I6a → I6b → I7/I8.
 - Two tasks touching the same Prisma persistence/migration owner.
 - F8a → F8b → F8c for consistent buyer/history projection.
@@ -750,13 +753,13 @@ Prefer one PR/branch per task or approved sub-slice; if actual task scope exceed
 ## 5. Human checkpoints
 
 1. Plan approval — required before `/build`.
-2. Checkpoint A — Brand Config/static truth review, including F3a route-target safety and active-navigation link resolution.
+2. Checkpoint A — Brand Config/static truth review, including F3a destination safety, `/sale` existence, and active primary/footer link resolution after the route cutover.
 3. Checkpoint B — approve merchandising migration if needed, capacity/reservation architecture, Merchant/structured-data mapping, Pancake evidence and mail provider where applicable.
 4. Visual checkpoint — representative desktop/mobile homepage + PLP + PDP with real assets/media.
 5. Final implementation review — V2 before `/ship`.
 
 ## 6. Definition of Done overlay
 
-Every behavior-changing task must satisfy the project DoD: acceptance criteria met with runtime evidence where relevant; new behavior has tests that fail without the change; existing tests pass; no unrelated refactor/dead/debug code; integration/migration/backward compatibility considered; docs describe current truth; security reviewed for admin/user/external input; observability/rollback/human approval exist for risky production paths.
+Every behavior-changing task must satisfy the project DoD: acceptance criteria met with runtime evidence where relevant; new behavior has tests that would fail without the change; existing tests pass; no unrelated refactor/dead/debug code; integration/migration/backward compatibility considered; docs describe current truth; security reviewed for admin/user/external input; observability/rollback/human approval exist for risky production paths.
 
 This plan is implementation-free. It does not authorize migrations, new dependencies/providers, deployment or public indexing until the named checkpoints approve them.
