@@ -11,6 +11,7 @@ import {
   categoryByKey,
   categoryByPath,
   categoryListingKeys,
+  buildCategoryTaxonomy,
   descendantCategoryKeys,
   findCategoryMembershipViolations,
   parseCategoryMembership,
@@ -290,6 +291,63 @@ test("G4 the integrity check reports stale keys a taxonomy edit left behind", ()
 
   assert.deepEqual(violations, [
     { productId: "P", reason: "unknown-category", categoryKeys: ["removedCategory"] },
+  ]);
+});
+
+test("G4 an unknown key never hides a split the known keys already prove", () => {
+  // Review 5229272917 (optional): the known rows prove a cross-tree violation on their own, so
+  // reporting only the unknown key would bury it behind a repair-then-re-audit cycle.
+  const violations = findCategoryMembershipViolations([
+    { productId: "P", categoryKey: "removedCategory" },
+    { productId: "P", categoryKey: "aoDaiTet" },
+    { productId: "P", categoryKey: "setVay" },
+  ]);
+
+  assert.deepEqual(violations, [
+    { productId: "P", reason: "unknown-category", categoryKeys: ["removedCategory"] },
+    { productId: "P", reason: "multiple-top-level", categoryKeys: ["aoDaiTet", "setVay"] },
+  ]);
+});
+
+test("G4 a re-parenting deploy can be audited against existing rows before it activates", () => {
+  // Review 5229272917 (required). Re-parenting rewrites no row, but it can turn valid rows into a
+  // split product — and it bypasses the admin write boundary entirely, because no membership write
+  // runs. The audit therefore has to be able to judge a *proposed* taxonomy, not just the live one.
+  const rows = [
+    { productId: "P", categoryKey: "aoDaiTet" },
+    { productId: "P", categoryKey: "aoDai4Ta" },
+  ];
+
+  // Valid before: both derive to `aoDai`.
+  assert.deepEqual(findCategoryMembershipViolations(rows), []);
+
+  // Proposed deploy: `Áo dài Tết` moves under `Set đồ`.
+  const proposed = buildCategoryTaxonomy([
+    {
+      key: "aoDai",
+      href: "/ao-dai",
+      label: "Áo dài",
+      children: [{ key: "aoDai4Ta", href: "/ao-dai/4-ta", label: "Áo dài 4 tà" }],
+    },
+    {
+      key: "setDo",
+      href: "/set-do",
+      label: "Set đồ",
+      children: [{ key: "aoDaiTet", href: "/set-do/tet", label: "Áo dài Tết" }],
+    },
+  ]);
+
+  // Invalid after, detected before activation rather than discovered in production.
+  assert.deepEqual(findCategoryMembershipViolations(rows, proposed), [
+    { productId: "P", reason: "multiple-top-level", categoryKeys: ["aoDaiTet", "aoDai4Ta"] },
+  ]);
+
+  // A category dropped from the proposed taxonomy is reported by the same gate.
+  const dropped = buildCategoryTaxonomy([
+    { key: "aoDai", href: "/ao-dai", label: "Áo dài", children: [] },
+  ]);
+  assert.deepEqual(findCategoryMembershipViolations(rows, dropped), [
+    { productId: "P", reason: "unknown-category", categoryKeys: ["aoDaiTet", "aoDai4Ta"] },
   ]);
 });
 

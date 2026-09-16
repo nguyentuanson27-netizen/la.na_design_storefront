@@ -116,7 +116,7 @@ membership bound from the taxonomy, and validates admin membership submissions f
 
 | Concern | Identity | Why |
 |---|---|---|
-| Category | `CategoryNode.key` (`aoDaiTet`) | The master spec still expects category SEO copy to be drafted for approval, so a slug may yet be renamed. Keying rows to the route path would turn an SEO edit into a data migration; keying them to the stable code identity makes it a config-only change. |
+| Category | `CategoryNode.key` (`aoDaiTet`) | The master spec still expects category SEO copy to be drafted for approval, so a slug may yet be renamed. Keying rows to the route path would turn an SEO edit into a data migration; keying them to the stable code identity means a slug rename touches no row at all. |
 | Product | `ProductMirror.id` (cuid) | Slugs are mutable — `ProductSlugHistory` exists precisely because they change. Referential integrity must not depend on a mutable field. |
 
 ### 4.3 Owner-approved membership rules
@@ -132,7 +132,11 @@ membership bound from the taxonomy, and validates admin membership submissions f
 
 Rule 3 is satisfied by query widening, not by writing derived rows: a listing for category `X`
 matches `categoryListingKeys(X)` — `X` plus every descendant. Only the assigned node is persisted,
-which keeps membership single-valued and makes re-parenting a config change rather than a backfill.
+which keeps membership single-valued and keeps every taxonomy change **free of schema migration**.
+
+That is not the same as free of data work. Re-parenting a category can turn rows that were valid
+under the old tree into a split product under the new one, without any membership write happening —
+so a taxonomy change is itself a way around the §4.6 boundary. §4.8 is the gate for that.
 
 ### 4.4 The one rule the owner has not settled
 
@@ -198,8 +202,8 @@ nothing. It also broke the re-parenting property below, by persisting `topLevelK
 `categoryKey → topLevelKey` pair, or a mirrored `CategoryNode`/closure table as an FK target, would
 genuinely enforce the invariant. Both put a second copy of the taxonomy in SQL, which §4.1 rejects
 for the same reason it rejects a `CategoryDefinition` table — and worse, both make adding or
-re-parenting a category require a **migration**, destroying the config-only property that §4.1 and
-§4.3 depend on. The invariant is not worth paying that price to enforce in two places.
+re-parenting a category require a **migration**, destroying the migration-free property that §4.1,
+§4.3 and §4.8 depend on. The invariant is not worth paying that price to enforce in two places.
 
 **Accepted instead — detect what the schema cannot prevent.** Alongside the admin validation,
 `findCategoryMembershipViolations()` reports any product whose memberships span more than one
@@ -214,11 +218,14 @@ check.
 
 #### Why nothing derived is persisted
 
-Storing only `categoryKey` is what makes the §4.3 re-parenting guarantee true. Moving a category to
-a different root changes one line of `category.config.ts`; every listing and every derived
-`topLevelKey` follows immediately, with **no row rewritten**. The rejected tree-row shape would have
-left a stale persisted `topLevelKey` on every affected product, turning a config edit into a
-backfill — the exact outcome §4.3 promises to avoid.
+Storing only `categoryKey` is what keeps a taxonomy edit out of the schema. Moving a category to a
+different root changes one line of `category.config.ts`; every listing and every derived
+`topLevelKey` follows immediately, and **no column and no migration is involved**. The rejected
+tree-row shape would additionally have left a stale persisted `topLevelKey` on every affected
+product, so it needed a data rewrite *and* carried a value that could disagree with the taxonomy.
+
+This is deliberately not a promise that no row ever needs attention. A re-parenting can invalidate
+rows it does not touch, and §4.8 says what to do about that.
 
 ### 4.6 Admin write contract
 
@@ -238,6 +245,34 @@ backfill — the exact outcome §4.3 promises to avoid.
   availability truth. This is the single place parent projection happens.
 - **PDP** reads the product's own membership set for breadcrumbs and for the related-products seed.
 - Membership never overrides availability, publication or promotion truth; it only selects.
+
+### 4.8 Taxonomy changes are gated, not free
+
+A taxonomy edit writes no membership row, which is exactly why it is dangerous: the §4.6 validation
+boundary never runs, so it is the one operation that can break the one-top-level invariant without
+anybody writing membership data.
+
+Worked example. Product `P` holds `aoDaiTet` + `aoDai4Ta`, valid because both derive to `aoDai`. A
+deploy re-parents `aoDaiTet` under `setDo`. No row changes, no admin write happens, and `P` now
+derives to two roots — under §4.7 it can surface in both top-level trees.
+
+**Operational contract.** Re-parenting, renaming a key, and removing a category stay
+migration-free, but before a taxonomy change is activated:
+
+1. Build the **proposed** taxonomy with `buildCategoryTaxonomy()`.
+2. Run `findCategoryMembershipViolations(rows, proposedTaxonomy)` over existing membership rows.
+3. Reconcile every product it reports — cross-tree or now-unknown key — through the normal admin
+   write boundary.
+4. **Do not activate while violations remain.**
+
+Passing the proposed taxonomy is what makes this a gate rather than a post-mortem: the same function
+answers "what is broken now?" with the current taxonomy and "what would this deploy break?" with the
+proposed one. `tests/domain/category-taxonomy.test.ts` covers the valid-before → invalid-after case
+above, so the seam cannot quietly disappear.
+
+Until membership rows exist, steps 1–4 are vacuous — which is the situation on this branch, and the
+reason this is an operational contract rather than something to automate now. Wiring it into a
+release script belongs with the Checkpoint B migration that first creates those rows.
 
 ## 5. Category PLP default ordering — B: additive migration, pending Checkpoint B
 

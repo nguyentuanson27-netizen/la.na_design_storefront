@@ -40,10 +40,19 @@ export type CategoryNode = Readonly<{
   childKeys: readonly CategoryKey[];
 }>;
 
-function indexTaxonomy(): {
-  byKey: Map<CategoryKey, CategoryNode>;
-  byPath: Map<string, CategoryNode>;
-} {
+/**
+ * An indexed taxonomy. Usually the current one, but `buildCategoryTaxonomy` can index a *proposed*
+ * one so a taxonomy change can be audited against existing membership rows before it is activated
+ * (§4.8). Without that seam the gate could only run after the deploy that breaks the invariant.
+ */
+export type CategoryTaxonomy = Readonly<{
+  byKey: ReadonlyMap<CategoryKey, CategoryNode>;
+  byPath: ReadonlyMap<string, CategoryNode>;
+}>;
+
+export function buildCategoryTaxonomy(
+  roots: readonly CategoryDefinition[],
+): CategoryTaxonomy {
   const byKey = new Map<CategoryKey, CategoryNode>();
   const byPath = new Map<string, CategoryNode>();
 
@@ -76,11 +85,16 @@ function indexTaxonomy(): {
     for (const child of children) visit(child, node.key, topLevelKey);
   };
 
-  for (const root of CATEGORY_NAVIGATION) visit(root, null, root.key);
-  return { byKey, byPath };
+  for (const root of roots) visit(root, null, root.key);
+  return Object.freeze({ byKey, byPath });
 }
 
-const { byKey: NODES_BY_KEY, byPath: NODES_BY_PATH } = indexTaxonomy();
+/** The taxonomy the running application serves. */
+export const CURRENT_CATEGORY_TAXONOMY: CategoryTaxonomy =
+  buildCategoryTaxonomy(CATEGORY_NAVIGATION);
+
+const NODES_BY_KEY = CURRENT_CATEGORY_TAXONOMY.byKey;
+const NODES_BY_PATH = CURRENT_CATEGORY_TAXONOMY.byPath;
 
 /** Every approved category key, parent before its own children, in declared order. */
 export const CATEGORY_KEYS: readonly CategoryKey[] = Object.freeze([...NODES_BY_KEY.keys()]);
@@ -275,13 +289,18 @@ export type CategoryMembershipViolation = Readonly<{
  * migration script — can therefore split a product across two trees, and a category removed from
  * the taxonomy leaves rows pointing at nothing.
  *
+ * A **taxonomy change is itself such a bypass**: re-parenting a category rewrites no row, but it can
+ * turn rows that were valid under the old tree into a split product under the new one. That is why
+ * `taxonomy` is a parameter — passing a proposed taxonomy answers "what would this deploy break?"
+ * *before* it ships, which is the §4.8 activation gate. It defaults to the current taxonomy, which
+ * answers "what is broken now?".
+ *
  * This is the detection half of that trade, in the shape the repository already uses for facts it
- * cannot constrain in the schema (`mirrored-money-audit`, `merchant-identity-audit`). It is
- * read-only and derives every judgement from the current taxonomy, so it also answers "what did the
- * last taxonomy edit invalidate?" without a migration.
+ * cannot constrain in the schema (`mirrored-money-audit`, `merchant-identity-audit`).
  */
 export function findCategoryMembershipViolations(
   rows: readonly CategoryMembershipRow[],
+  taxonomy: CategoryTaxonomy = CURRENT_CATEGORY_TAXONOMY,
 ): readonly CategoryMembershipViolation[] {
   const byProduct = new Map<string, CategoryKey[]>();
   for (const row of rows) {
@@ -292,9 +311,10 @@ export function findCategoryMembershipViolations(
 
   const violations: CategoryMembershipViolation[] = [];
   for (const [productId, categoryKeys] of byProduct) {
-    // Unknown keys are reported on their own: their tree is unknowable, so folding them into the
-    // cross-tree check would report a second, speculative violation for the same rows.
-    const unknown = categoryKeys.filter((key) => categoryByKey(key) === null);
+    // The two reasons are judged independently. An unknown key has no knowable tree, but the *known*
+    // keys can still prove a split on their own, and reporting only the unknown one would hide a
+    // real violation behind a repair-then-re-audit cycle.
+    const unknown = categoryKeys.filter((key) => !taxonomy.byKey.has(key));
     if (unknown.length > 0) {
       violations.push(
         Object.freeze({
@@ -303,18 +323,16 @@ export function findCategoryMembershipViolations(
           categoryKeys: Object.freeze(unknown),
         }),
       );
-      continue;
     }
 
-    const topLevelKeys = new Set(
-      categoryKeys.map((key) => categoryByKey(key)?.topLevelKey).filter((key) => key !== undefined),
-    );
+    const known = categoryKeys.filter((key) => taxonomy.byKey.has(key));
+    const topLevelKeys = new Set(known.map((key) => taxonomy.byKey.get(key)?.topLevelKey));
     if (topLevelKeys.size > 1) {
       violations.push(
         Object.freeze({
           productId,
           reason: "multiple-top-level" as const,
-          categoryKeys: Object.freeze([...categoryKeys]),
+          categoryKeys: Object.freeze(known),
         }),
       );
     }
