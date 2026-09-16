@@ -11,6 +11,9 @@ import {
   type VariationStockInfo,
 } from "./capability-probe-core.ts";
 
+const VARIATION_DISCOVERY_PAGE_SIZE = 50;
+const MAX_VARIATION_DISCOVERY_PAGES = 10;
+
 function readVariationWarehouseIds(variation: JsonRecord): string[] {
   if (!Array.isArray(variation.variations_warehouses)) return [];
   return variation.variations_warehouses
@@ -32,17 +35,60 @@ function readWarehouseStock(variation: JsonRecord, warehouseId: string): number 
 async function listAllVariations(client: ProbeApiClient, shopId: number): Promise<JsonRecord[]> {
   const result: JsonRecord[] = [];
   let page = 1;
+  let paginationMode: "unknown" | "declared" | "implicit" = "unknown";
+  let declaredTotalPages: number | null = null;
+
   while (true) {
     const raw = await client.getJson(`/shops/${shopId}/products/variations`, {
       page_number: page,
-      page_size: 50,
+      page_size: VARIATION_DISCOVERY_PAGE_SIZE,
     });
     if (!isRecord(raw) || !Array.isArray(raw.data)) {
       throw new CapabilityProbeGuardError("Pancake variation discovery returned an invalid payload");
     }
     for (const item of raw.data) if (isRecord(item)) result.push(item);
-    const totalPages = typeof raw.total_pages === "number" ? raw.total_pages : 1;
-    if (page >= totalPages) break;
+
+    if (raw.total_pages === undefined) {
+      if (paginationMode === "declared") {
+        throw new CapabilityProbeGuardError(
+          "Pancake variation discovery pagination metadata disappeared across pages",
+        );
+      }
+      paginationMode = "implicit";
+      if (raw.data.length < VARIATION_DISCOVERY_PAGE_SIZE) break;
+      if (page >= MAX_VARIATION_DISCOVERY_PAGES) {
+        throw new CapabilityProbeGuardError(
+          `Pancake variation discovery reached the ${MAX_VARIATION_DISCOVERY_PAGES}-page cap without complete pagination metadata`,
+        );
+      }
+    } else {
+      const totalPages = raw.total_pages;
+      if (
+        typeof totalPages !== "number" ||
+        !Number.isSafeInteger(totalPages) ||
+        totalPages < 1 ||
+        totalPages > MAX_VARIATION_DISCOVERY_PAGES ||
+        totalPages < page
+      ) {
+        throw new CapabilityProbeGuardError(
+          `Pancake variation discovery returned invalid pagination metadata on page ${page}`,
+        );
+      }
+      if (paginationMode === "implicit") {
+        throw new CapabilityProbeGuardError(
+          "Pancake variation discovery pagination metadata appeared after being absent",
+        );
+      }
+      if (declaredTotalPages !== null && declaredTotalPages !== totalPages) {
+        throw new CapabilityProbeGuardError(
+          "Pancake variation discovery returned contradictory pagination metadata across pages",
+        );
+      }
+      paginationMode = "declared";
+      declaredTotalPages = totalPages;
+      if (page >= totalPages) break;
+    }
+
     page += 1;
   }
   return result;
