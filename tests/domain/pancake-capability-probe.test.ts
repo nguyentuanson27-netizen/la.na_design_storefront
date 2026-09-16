@@ -321,7 +321,12 @@ test("deterministic 422 order rejection is classified as a definite non-write", 
   const result = await submitProbeOrder(client, new MutationTracker(), targets, IDS.ordinary, 1, 599_000, "runx", "S0");
   assert.equal(result.ambiguous, false);
   assert.equal(result.orderId, null);
-  assert.equal(result.rawOutcome, "HTTP_REJECTED_422");
+  assert.equal(result.rawOutcome, "HTTP_NON_CAPABILITY_REJECTION_422");
+  // The point of the split: a deterministic HTTP rejection is certain about the *write* and says
+  // nothing about the *capability*. Pinning both fields here is what stops a future change from
+  // quietly reading a generic 422 back as evidence that zero/negative stock is unsupported.
+  assert.equal(result.writeCertainty, "DEFINITE_NO_WRITE");
+  assert.equal(result.capabilityEvidence, "NONE");
 });
 
 test("marker search follows total_pages even when page 1 is short", async () => {
