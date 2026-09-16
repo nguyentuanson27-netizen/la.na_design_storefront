@@ -26,9 +26,9 @@ import {
 } from "./capability-probe-writes.ts";
 
 function classificationForSubmission(submission: ProbeOrderSubmission): ProbeClassification {
-  if (submission.ambiguous) return "AMBIGUOUS";
-  if (submission.orderId) return "SUPPORTED";
-  if (submission.rawOutcome.startsWith("HTTP_REJECTED_")) return "UNSUPPORTED";
+  if (submission.ambiguous || submission.writeCertainty === "AMBIGUOUS") return "AMBIGUOUS";
+  if (submission.capabilityEvidence === "SUPPORTED") return "SUPPORTED";
+  if (submission.capabilityEvidence === "UNSUPPORTED") return "UNSUPPORTED";
   return "NOT PROBED";
 }
 
@@ -121,17 +121,28 @@ export class PancakeCapabilityProbeHarness {
   }
 
   private async reconcileAttemptedMarkers(): Promise<void> {
+    const failures: string[] = [];
     for (const marker of this.attemptedMarkers) {
-      const found = await searchOrderByMarker(this.client, AUTHORIZED_SHOP_ID, marker);
-      if (found.kind === "AMBIGUOUS") {
-        throw new CleanupFailureError(
-          `Marker ${marker} could not be reconciled during cleanup: ${found.reason}`,
-        );
+      try {
+        const found = await searchOrderByMarker(this.client, AUTHORIZED_SHOP_ID, marker);
+        if (found.kind === "AMBIGUOUS") {
+          failures.push(`Marker ${marker} could not be reconciled during cleanup: ${found.reason}`);
+          continue;
+        }
+        if (found.kind === "FOUND") {
+          this.trackedOrders.add(found.orderId);
+          try {
+            await this.cancelTrackedOrder(found.orderId);
+          } catch (error) {
+            failures.push(error instanceof Error ? error.message : String(error));
+          }
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
-      if (found.kind === "FOUND") {
-        this.trackedOrders.add(found.orderId);
-        await this.cancelTrackedOrder(found.orderId);
-      }
+    }
+    if (failures.length > 0) {
+      throw new CleanupFailureError(failures.map(sanitizeSecrets).join(" | "));
     }
   }
 
@@ -201,80 +212,105 @@ export class PancakeCapabilityProbeHarness {
   async verifyFinalReconciliation(): Promise<void> {
     if (this.isDryRun) return;
     const targets = await this.getTargets();
+    const failures: string[] = [];
 
     for (const variationId of targets.allowedVariationIds) {
-      const expected = this.baselines.get(variationId);
-      const current = (await fetchVariationStock(this.client, targets, variationId)).remainQuantity;
-      if (expected === undefined || current !== expected) {
-        throw new CleanupFailureError(
-          `Final stock mismatch for ${variationId}: expected ${String(expected)}, observed ${current}`,
-        );
+      try {
+        const expected = this.baselines.get(variationId);
+        const current = (await fetchVariationStock(this.client, targets, variationId)).remainQuantity;
+        if (expected === undefined || current !== expected) {
+          failures.push(
+            `Final stock mismatch for ${variationId}: expected ${String(expected)}, observed ${current}`,
+          );
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
     }
 
-    await this.reconcileAttemptedMarkers();
+    try {
+      await this.reconcileAttemptedMarkers();
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
+    }
 
     for (const orderId of this.trackedOrders) {
-      const raw = await this.client.getJson(`/shops/${targets.shopId}/orders/${orderId}`);
-      const record = isRecord(raw) && isRecord(raw.data) ? raw.data : isRecord(raw) ? raw : null;
-      if (record?.status !== 7) {
-        throw new CleanupFailureError(`Tracked probe order ${orderId} is not in terminal status 7`);
+      try {
+        const raw = await this.client.getJson(`/shops/${targets.shopId}/orders/${orderId}`);
+        const record = isRecord(raw) && isRecord(raw.data) ? raw.data : isRecord(raw) ? raw : null;
+        if (record?.status !== 7) {
+          failures.push(`Tracked probe order ${orderId} is not in terminal status 7`);
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
     }
 
     const lateActiveOrders = new Set<string>();
-    for (let page = 1; page <= MAX_RECONCILIATION_PAGES; page += 1) {
-      const raw = await this.client.getJson(`/shops/${targets.shopId}/orders`, {
-        page_number: page,
-        page_size: RECONCILIATION_PAGE_SIZE,
-      });
-      if (!isRecord(raw) || !Array.isArray(raw.data)) {
-        throw new CleanupFailureError("Final marker sweep returned an invalid order-list payload");
-      }
-      for (const item of raw.data) {
-        if (!isRecord(item)) continue;
-        const note = typeof item.note === "string" ? item.note : "";
-        if (!note.includes(`G2-PROBE-${this.runId}`) || item.status === 7) continue;
-        if (item.id === undefined || item.id === null) {
-          throw new CleanupFailureError("Final marker sweep found an active probe order without an id");
+    try {
+      for (let page = 1; page <= MAX_RECONCILIATION_PAGES; page += 1) {
+        const raw = await this.client.getJson(`/shops/${targets.shopId}/orders`, {
+          page_number: page,
+          page_size: RECONCILIATION_PAGE_SIZE,
+        });
+        if (!isRecord(raw) || !Array.isArray(raw.data)) {
+          throw new CleanupFailureError("Final marker sweep returned an invalid order-list payload");
         }
-        lateActiveOrders.add(String(item.id));
-      }
+        for (const item of raw.data) {
+          if (!isRecord(item)) continue;
+          const note = typeof item.note === "string" ? item.note : "";
+          if (!note.includes(`G2-PROBE-${this.runId}`) || item.status === 7) continue;
+          if (item.id === undefined || item.id === null) {
+            throw new CleanupFailureError("Final marker sweep found an active probe order without an id");
+          }
+          lateActiveOrders.add(String(item.id));
+        }
 
-      const totalPages = raw.total_pages;
-      if (totalPages !== undefined && totalPages !== null) {
-        if (!Number.isInteger(totalPages) || (totalPages as number) < page) {
-          throw new CleanupFailureError(
-            "Final marker sweep received invalid or contradictory pagination metadata",
-          );
+        const totalPages = raw.total_pages;
+        if (totalPages !== undefined && totalPages !== null) {
+          if (!Number.isInteger(totalPages) || (totalPages as number) < page) {
+            throw new CleanupFailureError(
+              "Final marker sweep received invalid or contradictory pagination metadata",
+            );
+          }
+          if (page >= (totalPages as number)) break;
+          if (page === MAX_RECONCILIATION_PAGES) {
+            throw new CleanupFailureError(
+              "Final marker sweep exceeded the bounded reconciliation window; cleanup cannot be proven complete",
+            );
+          }
+          continue;
         }
-        if (page >= (totalPages as number)) break;
+
+        if (raw.data.length < RECONCILIATION_PAGE_SIZE) break;
         if (page === MAX_RECONCILIATION_PAGES) {
           throw new CleanupFailureError(
-            "Final marker sweep exceeded the bounded reconciliation window; cleanup cannot be proven complete",
+            "Final marker sweep reached its bounded limit without authoritative pagination metadata",
           );
         }
-        continue;
       }
-
-      if (raw.data.length < RECONCILIATION_PAGE_SIZE) break;
-      if (page === MAX_RECONCILIATION_PAGES) {
-        throw new CleanupFailureError(
-          "Final marker sweep reached its bounded limit without authoritative pagination metadata",
-        );
-      }
+    } catch (error) {
+      failures.push(error instanceof Error ? error.message : String(error));
     }
 
     for (const orderId of lateActiveOrders) {
       this.trackedOrders.add(orderId);
-      await this.cancelTrackedOrder(orderId);
-      const raw = await this.client.getJson(`/shops/${targets.shopId}/orders/${orderId}`);
-      const record = isRecord(raw) && isRecord(raw.data) ? raw.data : isRecord(raw) ? raw : null;
-      if (record?.status !== 7) {
-        throw new CleanupFailureError(
-          `Late-discovered probe order ${orderId} is not in terminal status 7 after cleanup`,
-        );
+      try {
+        await this.cancelTrackedOrder(orderId);
+        const raw = await this.client.getJson(`/shops/${targets.shopId}/orders/${orderId}`);
+        const record = isRecord(raw) && isRecord(raw.data) ? raw.data : isRecord(raw) ? raw : null;
+        if (record?.status !== 7) {
+          failures.push(
+            `Late-discovered probe order ${orderId} is not in terminal status 7 after cleanup`,
+          );
+        }
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : String(error));
       }
+    }
+
+    if (failures.length > 0) {
+      throw new CleanupFailureError(failures.map(sanitizeSecrets).join(" | "));
     }
   }
 
@@ -570,6 +606,16 @@ export class PancakeCapabilityProbeHarness {
     if (b.orderId) await this.cancelTrackedOrder(b.orderId);
     await this.restoreVariation(target.variationId);
     const accepted = Number(Boolean(a.orderId)) + Number(Boolean(b.orderId));
+    const aClassification = classificationForSubmission(a);
+    const bClassification = classificationForSubmission(b);
+    const classification: ProbeClassification =
+      aClassification === "SUPPORTED" && bClassification === "SUPPORTED"
+        ? "SUPPORTED"
+        : aClassification === "UNSUPPORTED" && bClassification === "UNSUPPORTED"
+          ? "UNSUPPORTED"
+          : aClassification === "NOT PROBED" && bClassification === "NOT PROBED"
+            ? "NOT PROBED"
+            : "AMBIGUOUS";
 
     return {
       scenario: "Scenario 3 — Boundary Concurrency",
@@ -580,7 +626,7 @@ export class PancakeCapabilityProbeHarness {
       remoteOrderCreated: accepted > 0 ? "yes" : "no",
       finalStock,
       stockDelta: finalStock,
-      classification: accepted === 2 ? "SUPPORTED" : accepted === 0 ? "UNSUPPORTED" : "AMBIGUOUS",
+      classification,
       cleanup: "restored",
       notes: `Bounded concurrency test used exactly two submissions; ${accepted}/2 produced tracked orders.`,
     };
@@ -767,19 +813,24 @@ export class PancakeCapabilityProbeHarness {
     let cleanupError: unknown;
     try {
       await this.cleanupAll();
-      await this.verifyFinalReconciliation();
     } catch (error) {
       cleanupError = error;
     }
 
-    if (primaryError && cleanupError) {
-      throw new AggregateError(
-        [primaryError, cleanupError],
-        "Probe failed and cleanup/reconciliation also failed",
-      );
+    let finalReconciliationError: unknown;
+    try {
+      await this.verifyFinalReconciliation();
+    } catch (error) {
+      finalReconciliationError = error;
     }
-    if (cleanupError) throw cleanupError;
-    if (primaryError) throw primaryError;
+
+    const failures = [primaryError, cleanupError, finalReconciliationError].filter(
+      (error): error is NonNullable<typeof error> => error !== undefined && error !== null,
+    );
+    if (failures.length > 1) {
+      throw new AggregateError(failures, "Probe execution and cleanup/reconciliation reported failures");
+    }
+    if (failures.length === 1) throw failures[0];
     return results;
   }
 }
