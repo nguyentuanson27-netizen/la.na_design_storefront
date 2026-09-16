@@ -63,6 +63,14 @@ function render(data: PolicyHubViewModel) {
                         ))}
                       </ul>
                     )}
+                    {(section.closingParagraphs ?? []).map((paragraph) => (
+                      <p
+                        key={paragraph}
+                        className="mt-3 max-w-2xl text-base leading-7 text-black/70"
+                      >
+                        {paragraph}
+                      </p>
+                    ))}
                   </div>
                 ))}
               </div>
