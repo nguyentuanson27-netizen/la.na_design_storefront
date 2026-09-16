@@ -105,6 +105,15 @@ test("sale projection includes ordinary Promotion and Flash Sale while excluding
     ["sale-flash-product", "sale-promotion-product"],
   );
   assert.equal(result.totalCount, 2);
-  assert.equal(result.products.find((product) => product.slug === "sale-promotion-product")?.flashSale, undefined);
-  assert.ok(result.products.find((product) => product.slug === "sale-flash-product")?.flashSale);
+
+  const promotionResult = result.products.find(
+    (product) => product.slug === "sale-promotion-product",
+  );
+  const flashResult = result.products.find(
+    (product) => product.slug === "sale-flash-product",
+  );
+  assert.ok(promotionResult);
+  assert.ok(flashResult);
+  assert.equal("flashSale" in promotionResult, false);
+  assert.equal("flashSale" in flashResult, true);
 });
