@@ -287,6 +287,37 @@ Master spec §47. These are content gaps, not architecture blockers:
 The `set-vay-form-nho` hip values are deliberately **not** on this list: §6 records them as absent
 from the approved table, not as an owner fact still to come.
 
+## 11. Policy surfaces with no approved content
+
+Master spec §33 requires eleven policy items to be publicly reachable. Six are built and truthful,
+projected from Brand Config by A7a/A7b:
+
+| Topic | Destination |
+|---|---|
+| Chính sách vận chuyển | `/shipping`, and `/policies#van-chuyen` |
+| Chính sách thanh toán | `/shipping#thanh-toan`, and `/policies#thanh-toan` |
+| Chính sách đổi trả và hoàn tiền | `/returns`, and `/policies#doi-tra-hoan-tien` |
+| Thông tin liên hệ | `/contact`, and `/policies#lien-he` |
+| Các hình thức hỗ trợ trực tuyến | `/contact`, and `/policies#ho-tro-truc-tuyen` |
+| Chính sách tiếp nhận và giải quyết phản ánh, khiếu nại | `/contact`, and `/policies#khieu-nai` |
+
+The remaining five are **blocked on owner content**, not on implementation:
+
+1. Điều khoản chung
+2. Chính sách giá
+3. Chính sách bảo mật
+4. Các điều kiện và hạn chế trong việc cung cấp hàng hóa
+5. Quyền và nghĩa vụ của các bên trên nền tảng
+
+No approved source states any of them — not the master spec, not the normalized PART D policy
+authority, not this intake. The supplied terms document that PART D normalizes covers delivery,
+returns, payment and complaints only. Legal prose is the one kind of content a coding agent must
+never author, so these five stay unbuilt: no page, no heading, no placeholder. `first-party-content-facts-w13a.md`
+has recorded the same gap since Brand #1, and a test asserts it stays recorded.
+
+**To unblock:** supply the text for each, and it will be transcribed into the policy authority and
+published as additional anchored sections on the existing `/policies` hub. No new page per item.
+
 ## Open technical questions
 
 Master spec §48 — implementation-plan gates, not licence to invent behaviour now: Merchant

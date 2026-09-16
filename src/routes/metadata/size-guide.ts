@@ -1,14 +1,16 @@
 import type { Metadata } from "next";
 
 import { BRAND } from "@/brand";
-import {
-  describePublicSizeTolerance,
-  PUBLIC_SIZE_GUIDE,
-} from "@/content/public-brand-facts";
+import { PUBLIC_SIZE_GUIDE } from "@/content/public-brand-facts";
 
 import { buildEvergreenPageMetadata, type StaticPageMetadataProps } from "./static-page.ts";
 
-/** The Size Guide's metadata. Unit and tolerance are read from the tables, not restated. */
+/**
+ * The Size Guide's metadata. The unit is read from the tables rather than restated.
+ *
+ * It states no tolerance: La.na Design publishes none, and it describes body measurements rather
+ * than product dimensions, which is the same distinction the page's own note draws.
+ */
 
 export type SizeGuideMetadataProps = StaticPageMetadataProps;
 
@@ -17,6 +19,6 @@ export async function buildSizeGuideMetadata(props: SizeGuideMetadataProps): Pro
     props,
     pathname: "/size-guide",
     title: "Hướng dẫn chọn size",
-    description: `Bảng thông số chọn size quần áo ${BRAND.identity.name}, số đo vòng sản phẩm (${PUBLIC_SIZE_GUIDE.unit}), dung sai ${describePublicSizeTolerance()} và khoảng chiều cao, cân nặng tham khảo.`,
+    description: `Bảng thông số chọn size ${BRAND.identity.name}, số đo vòng cơ thể (${PUBLIC_SIZE_GUIDE.unit}) và khoảng chiều cao, cân nặng tham khảo.`,
   });
 }

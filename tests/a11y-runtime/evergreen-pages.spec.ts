@@ -24,6 +24,7 @@ import {
   PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
 import { FULFILLMENT } from "../../src/brand/index.ts";
+import { buildPolicyHubViewModel } from "../../src/routes/evergreen-model.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3229;
@@ -135,7 +136,21 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
   await expect(main).toContainText(PUBLIC_BRAND_POSITIONING);
   await expect(main).toContainText(PUBLIC_LEGAL_FACTS.legalEntityName);
   await expect(main).toContainText(PUBLIC_LEGAL_FACTS.taxCode);
+
+  // A7a: the registered legal identity, each fact under its own heading. The two addresses are the
+  // pair that matters -- a customer reading the registered office as the return address posts a
+  // parcel somewhere that does not receive one.
+  await expect(main).toContainText(PUBLIC_LEGAL_FACTS.taxIdIssueDate);
+  await expect(main).toContainText(PUBLIC_LEGAL_FACTS.registeredAddress);
+  await expect(main).toContainText(PUBLIC_LEGAL_FACTS.legalEmail);
   await expect(main).toContainText(describePublicAddress());
+  await expect(main).toContainText("Địa chỉ đăng ký kinh doanh");
+  await expect(main).toContainText("Địa chỉ kinh doanh & nhận hàng đổi trả");
+
+  // The owner withheld the legal representative from public display.
+  for (const withheld of [/người đại diện/i, /đại diện pháp luật/i]) {
+    await expect(main).not.toContainText(withheld);
+  }
 
   // B6 withholds the founding year, the founder and any brand story or values. This is the
   // assertion that fails if a later edit writes an origin story into the page.
@@ -146,9 +161,15 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
     /sứ mệnh/i,
     /giá trị cốt lõi/i,
     /câu chuyện thương hiệu/i,
-    /\b(?:19|20)\d{2}\b/,
   ]) {
     await expect(main).not.toContainText(withheld);
+  }
+
+  // A year on this page may only be the approved tax issue date. Anything else is a founding year,
+  // which is the fact B6 withheld -- so the check is "no other year", not "no year at all".
+  const years = ((await main.innerText()).match(/\b(?:19|20)\d{2}\b/g) ?? []);
+  for (const year of years) {
+    expect(PUBLIC_LEGAL_FACTS.taxIdIssueDate).toContain(year);
   }
 
   const overflow = await page.evaluate(
@@ -170,6 +191,28 @@ test("U33a/U33b each evergreen page is reachable from the site footer", async ({
     await page.locator("footer").locator(`a[href="${path}"]`).click();
     await page.waitForURL((url) => url.pathname === path);
   }
+});
+
+test("A7b every policy topic resolves to a live destination at a stable anchor", async ({ page }) => {
+  const response = await page.goto(`${BASE_URL}/policies`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+
+  const main = page.locator("main");
+  await expect(page.getByRole("heading", { level: 1, name: "Thông tin & chính sách" })).toBeVisible();
+
+  for (const topic of buildPolicyHubViewModel().topics) {
+    // The anchor is the published contract: a footer link to `/policies#<id>` has to land.
+    await expect(page.locator(`#${topic.id}`)).toHaveCount(1);
+    await expect(main).toContainText(topic.title);
+    await expect(main).toContainText(topic.detail);
+
+    const [path] = topic.href.split("#");
+    const destination = await page.request.get(`${BASE_URL}${path}`);
+    expect(destination.status(), `${topic.id} points at ${path}`).toBe(200);
+  }
+
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
 
 test("U33b the Returns page renders every approved clause and adds none", async ({ page }) => {
@@ -263,7 +306,7 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U33c the Size Guide page renders every approved chart with circumference and tolerance semantics", async ({
+test("U33c the Size Guide page renders every approved chart with its body-measurement semantics", async ({
   page,
 }) => {
   const response = await page.goto(`${BASE_URL}/size-guide`, { waitUntil: "networkidle" });
@@ -273,11 +316,29 @@ test("U33c the Size Guide page renders every approved chart with circumference a
   await expect(page.getByRole("heading", { level: 1, name: "Hướng dẫn chọn size" })).toBeVisible();
 
   // Unit cm, circumference semantics, tolerance and guidance visible
-  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.unit);
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
-  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.toleranceNote);
+
+  // §11 splits the units: body measurements and height in cm, weight in kg. Every chart mixes
+  // both, so the page must not announce one unit for all of them -- it did, and every table under
+  // that heading contradicted it. Units are stated per row and nowhere else.
+  await expect(main).not.toContainText(/đơn vị/i);
+  for (const chart of PUBLIC_SIZE_GUIDE.charts) {
+    const units = new Set(chart.rows.map((row) => row.parameter.match(/\(([^)]+)\)$/)?.[1]));
+    expect(units.size, `${chart.id} must state more than one unit`).toBeGreaterThan(1);
+    for (const row of chart.rows) {
+      await expect(main).toContainText(row.parameter);
+    }
+  }
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.guidanceNote);
-  await expect(main).toContainText(describePublicSizeTolerance());
+
+  // A4: no fixed tolerance applies, so the statement is absent rather than blank or `±0 cm`. A
+  // brand that does publish one still has to show it, which is why this follows the config.
+  if (PUBLIC_SIZE_GUIDE.tolerance === null) {
+    await expect(main).not.toContainText("Dung sai");
+  } else {
+    await expect(main).toContainText(PUBLIC_SIZE_GUIDE.tolerance.note);
+    await expect(main).toContainText(describePublicSizeTolerance() as string);
+  }
 
   // Every approved chart: its heading, every row parameter and every cell, checked against that
   // chart's own size scale rather than one shared list.

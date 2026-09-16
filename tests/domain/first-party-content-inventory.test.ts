@@ -13,6 +13,7 @@ const INVENTORY = new URL("../../docs/audits/first-party-content-facts-w13a.md",
 const MASTER_TODO = new URL("../../tasks/growth-commerce-master-todo.md", import.meta.url);
 
 const AUTHORITATIVE_FACT_KEYS = [
+  "bankTransferUnavailable",
   "brandName",
   "brandSummary",
   "checkoutAccount",

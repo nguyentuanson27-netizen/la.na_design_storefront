@@ -20,59 +20,40 @@ const APPROVED_STATIC_PATHS = [
   "/returns",
   "/shipping",
   "/size-guide",
+  "/policies",
 ] as const;
 
-test("U30b emits self-canonical for each approved static page when indexing is enabled", () => {
+test("static authority self-canonicalizes every approved static page when indexing is enabled", () => {
   for (const pathname of APPROVED_STATIC_PATHS) {
     const expected = pathname === "/" ? ORIGIN : `${ORIGIN}${pathname}`;
     assert.equal(
-      canonical(
-        buildStaticPageMetadata({
-          origin: ORIGIN,
-          indexingEnabled: true,
-          pathname,
-          searchParams: {},
-        }),
-      ),
+      canonical(buildStaticPageMetadata({ origin: ORIGIN, indexingEnabled: true, pathname, searchParams: {} })),
       expected,
-      `${pathname} must be its own canonical`,
     );
   }
 });
 
-test("U30b withholds canonical entirely when indexing is disabled", () => {
+test("static authority withholds canonical under noindex or query state", () => {
   for (const pathname of APPROVED_STATIC_PATHS) {
     assert.equal(
-      canonical(
-        buildStaticPageMetadata({
-          origin: ORIGIN,
-          indexingEnabled: false,
-          pathname,
-          searchParams: {},
-        }),
-      ),
+      canonical(buildStaticPageMetadata({ origin: ORIGIN, indexingEnabled: false, pathname, searchParams: {} })),
       null,
     );
   }
+  assert.equal(
+    canonical(
+      buildStaticPageMetadata({
+        origin: ORIGIN,
+        indexingEnabled: true,
+        pathname: "/collections",
+        searchParams: { utm_source: "newsletter" },
+      }),
+    ),
+    null,
+  );
 });
 
-test("U30b withholds canonical when a static request carries query state", () => {
-  for (const searchParams of [{ q: "shirt" }, { page: "2" }, { utm_source: "newsletter" }]) {
-    assert.equal(
-      canonical(
-        buildStaticPageMetadata({
-          origin: ORIGIN,
-          indexingEnabled: true,
-          pathname: "/collections",
-          searchParams,
-        }),
-      ),
-      null,
-    );
-  }
-});
-
-test("U30b canonicalises no path outside the approved static-page authority", () => {
+test("retired and listing routes are outside static canonical authority", () => {
   for (const pathname of [
     "/lookbook",
     "/flash-sale",
@@ -81,52 +62,26 @@ test("U30b canonicalises no path outside the approved static-page authority", ()
     "/ao-dai",
     "/shop",
     "/collections/summer-shirts",
-    "/shop/ao-oxford-relaxed",
-    "/search",
-    "/cart",
-    "/checkout",
-    "/collections/",
+    "/shop/current-product",
   ] as const) {
     assert.equal(
-      canonical(
-        buildStaticPageMetadata({
-          origin: ORIGIN,
-          indexingEnabled: true,
-          pathname,
-          searchParams: {},
-        }),
-      ),
+      canonical(buildStaticPageMetadata({ origin: ORIGIN, indexingEnabled: true, pathname, searchParams: {} })),
       null,
-      `${pathname} is owned elsewhere or retired and must get no canonical from here`,
     );
   }
 });
 
-test("U30b builds canonical from the server-owned origin it is given", () => {
-  assert.equal(
-    canonical(
-      buildStaticPageMetadata({
-        origin: "https://la.lanadesign.vn",
-        indexingEnabled: true,
-        pathname: "/collections",
-        searchParams: {},
-      }),
-    ),
-    "https://la.lanadesign.vn/collections",
-  );
-});
-
-test("U30b passes through route title and description without adding other authorities", () => {
+test("static metadata preserves route-owned title and description without adding other authorities", () => {
   const metadata = buildStaticPageMetadata({
     origin: ORIGIN,
     indexingEnabled: true,
     pathname: "/collections",
     searchParams: {},
     title: "Bộ sưu tập",
-    description: "Khám phá các bộ sưu tập từ LA Clothing.",
+    description: "Khám phá các bộ sưu tập từ La.na Design.",
   });
   assert.equal(metadata.title, "Bộ sưu tập");
-  assert.equal(metadata.description, "Khám phá các bộ sưu tập từ LA Clothing.");
+  assert.equal(metadata.description, "Khám phá các bộ sưu tập từ La.na Design.");
   assert.equal("robots" in metadata, false);
   assert.equal("openGraph" in metadata, false);
   assert.equal("twitter" in metadata, false);

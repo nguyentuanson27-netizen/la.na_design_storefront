@@ -1,83 +1,74 @@
+import { BRAND } from "./brand.config.ts";
 import type { SizeGuideConfig } from "./schema.ts";
 
-const SHARED_SIZES = ["M", "L", "XL", "2XL"] as const;
+const NAME = BRAND.identity.name;
 
 /**
- * B3/§6 — the size guide facts the owner approved, transcribed.
+ * Master spec §11 — the three approved La.na Design size guides, transcribed.
  *
  * The semantics travel with the numbers:
- * - All measurements are in centimetres (cm).
- * - Chest, waist and hip widths are circumferences around the garment, not flat measurements.
- * - Manufacturing tolerance is ±3 cm.
- * - Height and weight are guidance for size selection only, not a fit guarantee.
+ * - `Ngực`, `Eo` and `Mông` are circumferences **of the body**, not of the garment. A shopper
+ *   measures themselves against these tables; they are not product dimensions.
+ * - Body measurements and height are in centimetres; weight is in kilograms. Each row states its
+ *   own unit, because one chart carries both.
+ * - **No fixed manufacturing tolerance applies**, so `tolerance` is `null`. Brand #1's `±3 cm` was
+ *   its own fact, and `0` would be a promise of exact measurements rather than the absence of one.
+ * - `set-vay-form-nho` has **no hip row**. The source chart does not provide hip values; §11.3 says
+ *   not to invent them, so the chart is four rows and that is its approved shape.
+ *
+ * A product is mapped to a guide **manually**. Category must not select one, because Set/Váy
+ * products may use either the wide-form or the small-form chart; M1 owns that mapping.
  *
  * No size recommendation, size calculator, fit vocabulary or per-product measurement mapping
- * outside these approved tables may be authored or inferred.
- *
- * `charts` is a list rather than the previous fixed `chartA`/`chartB` pair: a brand needs as many
- * tables as it has garment families, and each table carries its own size scale.
+ * outside these tables may be authored or inferred.
  */
 export const SIZE_GUIDE: SizeGuideConfig = {
   unit: "cm",
-  toleranceCm: 3,
+  tolerance: null,
   circumferenceSemanticsNote:
-    "Rộng ngực, Rộng eo, Rộng mông là số đo vòng quanh sản phẩm, không phải chiều ngang khi trải phẳng.",
-  toleranceNote: "Dung sai sai số may mặc: ±3 cm.",
-  guidanceNote:
-    "Thông số chiều cao và cân nặng mang tính chất tham khảo chọn size, không bảo đảm vừa vặn tuyệt đối cho mọi vóc dáng.",
+    "Ngực, eo và mông là số đo vòng cơ thể, không phải số đo trên sản phẩm.",
+  guidanceNote: `Bảng size chỉ mang tính tham khảo và có thể thay đổi tùy form dáng của từng sản phẩm; vui lòng liên hệ ${NAME} để được tư vấn chọn size.`,
   charts: [
     {
-      id: "relaxed-and-elastic-waist",
-      title: "Sản phẩm dáng rộng / quần lưng chun",
-      sizes: SHARED_SIZES,
+      id: "ao-dai",
+      title: "Áo dài",
+      sizes: ["S", "M", "L"],
       rows: [
-        {
-          parameter: "Rộng ngực (vòng, cm)",
-          values: { M: "106", L: "110", XL: "114", "2XL": "118" },
-        },
-        { parameter: "Dài tay (cm)", values: { M: "55", L: "56", XL: "57", "2XL": "58" } },
-        {
-          parameter: "Dài áo (cm)",
-          values: { M: "63.5", L: "65.5", XL: "67.5", "2XL": "69.5" },
-        },
-        { parameter: "Dài quần (cm)", values: { M: "105", L: "106", XL: "107", "2XL": "108" } },
-        {
-          parameter: "Rộng eo — chun (vòng, cm)",
-          values: { M: "70–80", L: "74–84", XL: "78–88", "2XL": "82–92" },
-        },
-        {
-          parameter: "Rộng mông (vòng, cm)",
-          values: { M: "108", L: "112", XL: "116", "2XL": "120" },
-        },
-        {
-          parameter: "Chiều cao tham khảo",
-          values: { M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" },
-        },
-        {
-          parameter: "Cân nặng tham khảo (kg)",
-          values: { M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" },
-        },
+        { parameter: "Ngực (cm)", values: { S: "86", M: "92", L: "98" } },
+        { parameter: "Eo (cm)", values: { S: "62–78", M: "66–82", L: "70–86" } },
+        { parameter: "Mông (cm)", values: { S: "96", M: "102", L: "108" } },
+        { parameter: "Chiều cao (cm)", values: { S: "153–160", M: "158–165", L: "160–170" } },
+        { parameter: "Cân nặng (kg)", values: { S: "43–52", M: "52–62", L: "62–72" } },
       ],
     },
     {
-      id: "short-sleeve-tops",
-      title: "Áo ngắn tay",
-      sizes: SHARED_SIZES,
+      id: "set-vay-form-rong",
+      title: "Set/Váy form rộng",
+      sizes: ["S", "M", "L", "XL"],
       rows: [
+        { parameter: "Ngực (cm)", values: { S: "86", M: "90", L: "94", XL: "98" } },
+        { parameter: "Eo (cm)", values: { S: "62–74", M: "66–78", L: "70–82", XL: "74–88" } },
+        { parameter: "Mông (cm)", values: { S: "98", M: "102", L: "106", XL: "110" } },
         {
-          parameter: "Rộng ngực (vòng, cm)",
-          values: { M: "120", L: "124", XL: "128", "2XL": "132" },
+          parameter: "Chiều cao (cm)",
+          values: { S: "155–168", M: "155–168", L: "155–168", XL: "155–168" },
         },
-        { parameter: "Dài áo (cm)", values: { M: "63", L: "65", XL: "67", "2XL": "69" } },
-        { parameter: "Dài tay (cm)", values: { M: "27", L: "28", XL: "29", "2XL": "30" } },
+        { parameter: "Cân nặng (kg)", values: { S: "43–51", M: "51–57", L: "57–65", XL: "65–75" } },
+      ],
+    },
+    {
+      id: "set-vay-form-nho",
+      title: "Set/Váy form nhỏ",
+      sizes: ["S", "M", "L", "XL"],
+      rows: [
+        { parameter: "Ngực (cm)", values: { S: "84", M: "88", L: "92", XL: "96" } },
+        { parameter: "Eo (cm)", values: { S: "62–66", M: "66–72", L: "72–76", XL: "76–80" } },
+        // No hip row: §11.3 states the source chart does not provide hip values.
         {
-          parameter: "Chiều cao tham khảo",
-          values: { M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" },
+          parameter: "Chiều cao (cm)",
+          values: { S: "155–168", M: "155–168", L: "155–168", XL: "155–168" },
         },
-        {
-          parameter: "Cân nặng tham khảo (kg)",
-          values: { M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" },
-        },
+        { parameter: "Cân nặng (kg)", values: { S: "43–50", M: "50–57", L: "57–64", XL: "64–72" } },
       ],
     },
   ],

@@ -1,8 +1,14 @@
 import Link from "next/link";
 
-import { BRAND, NAVIGATION } from "@/brand";
+import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
+
+type HierarchicalNavigationLink = NavigationLink & Readonly<{
+  children?: readonly HierarchicalNavigationLink[];
+}>;
 
 export function SiteHeader() {
+  const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
+
   return (
     <header className="site-header">
       <a className="skip-link" href="#main-content">
@@ -15,7 +21,7 @@ export function SiteHeader() {
         </Link>
 
         <nav className="desktop-nav" aria-label="Điều hướng chính">
-          {NAVIGATION.primary.map((item) => (
+          {primary.map((item) => (
             <div key={item.href}>
               <Link href={item.href}>{item.label}</Link>
               {item.children?.length ? (
@@ -33,7 +39,7 @@ export function SiteHeader() {
           <details>
             <summary>Menu</summary>
             <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
-              {NAVIGATION.primary.map((item) => (
+              {primary.map((item) => (
                 <div key={item.href}>
                   <Link href={item.href}>{item.label}</Link>
                   {item.children?.map((child) => (

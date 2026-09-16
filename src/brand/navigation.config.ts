@@ -1,13 +1,19 @@
-import type { NavigationConfig } from "./schema.ts";
+import type { NavigationConfig, NavigationLink } from "./schema.ts";
+
+type PrimaryNavigationLink = NavigationLink & Readonly<{
+  children?: readonly PrimaryNavigationLink[];
+}>;
+
+type NavigationWithPrimaryHierarchy = Omit<NavigationConfig, "primary"> & Readonly<{
+  primary: readonly PrimaryNavigationLink[];
+}>;
 
 /**
- * The storefront menus. Configuration rather than markup because the category set is the part that
- * changes per brand: one shop needs shirts and trousers where another needs áo dài, váy and sets.
- *
- * Link order is the rendered order. A6 cuts the active primary navigation to the approved Brand #2
- * hierarchy only after F3a has made every destination crawlable.
+ * Brand #2 navigation cutover. The hierarchy is presentation/config state only: these route links do
+ * not establish product membership or turn editorial collections into the canonical category
+ * authority. G4 owns that later category-membership decision.
  */
-export const NAVIGATION: NavigationConfig = {
+export const NAVIGATION: NavigationWithPrimaryHierarchy = {
   brandHomeLabel: "La.na Design — Trang chủ",
   primary: [
     {

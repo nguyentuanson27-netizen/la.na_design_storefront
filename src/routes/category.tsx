@@ -1,20 +1,59 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
-import { connection } from "next/server";
-import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
-import { parseStorefrontDiscoverySearchParams, type StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
-import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
-import { buildProductCardModel, type ProductCardModel } from "@/components/headless/build-product-card-model";
+
+import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
-export type CategoryDestination=Readonly<{href:string;label:string;collectionSlug:string}>;
-export const CATEGORY_DESTINATIONS=Object.freeze({
- aoDai:{href:"/ao-dai",label:"Áo dài",collectionSlug:"ao-dai"},aoDaiCachTan:{href:"/ao-dai/cach-tan",label:"Áo dài cách tân",collectionSlug:"ao-dai-cach-tan"},aoDaiTet:{href:"/ao-dai/tet",label:"Áo dài Tết",collectionSlug:"ao-dai-tet"},aoDaiCuoi:{href:"/ao-dai/cuoi",label:"Áo dài cưới",collectionSlug:"ao-dai-cuoi"},aoDai4Ta:{href:"/ao-dai/4-ta",label:"Áo dài 4 tà",collectionSlug:"ao-dai-4-ta"},aoDai6Ta:{href:"/ao-dai/6-ta",label:"Áo dài 6 tà",collectionSlug:"ao-dai-6-ta"},setDo:{href:"/set-do",label:"Set đồ",collectionSlug:"set-do"},setVay:{href:"/set-do/set-vay",label:"Set váy",collectionSlug:"set-vay"},setQuanAo:{href:"/set-do/set-quan-ao",label:"Set quần áo",collectionSlug:"set-quan-ao"},vayDam:{href:"/vay-dam",label:"Váy, đầm",collectionSlug:"vay-dam"},phuKien:{href:"/phu-kien",label:"Phụ kiện",collectionSlug:"phu-kien"}
-} satisfies Record<string,CategoryDestination>);
-const PAGE_SIZE=24; const tones:readonly ProductCardTone[]=["stone","olive","ink","sand"];
-export type CategoryRouteProps=Readonly<{searchParams:Promise<StorefrontDiscoverySearchParams>}>;
-export type CategoryViewModel=Readonly<{destination:CategoryDestination;cards:readonly Readonly<{id:string;model:ProductCardModel}>[];toneOffset:number;totalCount:number;page:number;totalPages:number;previousHref:string|null;nextHref:string|null}>;
-const pageHref=(base:string,page:number)=>page===1?base:`${base}?page=${page}`;
-export async function loadCategoryRoute(destination:CategoryDestination,{searchParams}:CategoryRouteProps):Promise<RouteHandle<CategoryViewModel>>{await connection();const now=new Date();let catalogPage:Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;try{const raw=await searchParams;const discovery=parseStorefrontDiscoverySearchParams({page:raw.page,collection:destination.collectionSlug});catalogPage=await listConfiguredStorefrontDiscoveryPage({discovery,pageSize:PAGE_SIZE,now});}catch(error){if(error instanceof RangeError)notFound();throw error;}if(catalogPage.page>Math.max(catalogPage.totalPages,1))notFound();const tracking=buildProductListTracking({products:catalogPage.products,list:{listId:destination.collectionSlug,listName:destination.label},pricingRule:catalogPage.pricingRule});const data:CategoryViewModel=Object.freeze({destination,cards:Object.freeze(catalogPage.products.map((product)=>Object.freeze({id:product.id,model:buildProductCardModel({slug:product.slug,name:product.name,media:product.media,variants:product.variants,pricingRule:catalogPage.pricingRule,selectEvent:tracking.selectEventBySlug.get(product.slug)??null})}))),toneOffset:(catalogPage.page-1)*PAGE_SIZE,totalCount:catalogPage.totalCount,page:catalogPage.page,totalPages:catalogPage.totalPages,previousHref:catalogPage.hasPrevious?pageHref(destination.href,catalogPage.page-1):null,nextHref:catalogPage.hasNext?pageHref(destination.href,catalogPage.page+1):null});return sealRoute({data,refreshAfterMs:catalogPage.refreshAfterMs,trackingEvent:tracking.listEvent,structuredData:[],pixelEvents:[]});}
-export function renderCategoryRoute(data:CategoryViewModel){return <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24"><p className="eyebrow">Danh mục</p><h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">{data.destination.label}</h1><section className="mt-16 border-t border-black/20 pt-8" aria-labelledby="category-products-title"><h2 id="category-products-title" className="sr-only">Sản phẩm</h2>{data.cards.length===0?<p className="max-w-xl text-sm leading-6 text-black/65">Chưa có sản phẩm đang mở bán trong danh mục này.</p>:<div className="product-grid">{data.cards.map((card,index)=><ProductCard key={card.id} model={card.model} tone={tones[(data.toneOffset+index)%tones.length]!}/>)}</div>}{data.totalPages>1?<nav className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6" aria-label={`Phân trang ${data.destination.label}`}>{data.previousHref?<Link className="underline" href={data.previousHref}>← Trang trước</Link>:<span aria-hidden="true"/>}<p className="text-xs uppercase tracking-[0.14em] text-black/55">Trang {data.page} / {data.totalPages}</p>{data.nextHref?<Link className="underline" href={data.nextHref}>Trang sau →</Link>:<span aria-hidden="true"/>}</nav>:null}</section></div>}
+export type CategoryDestination = Readonly<{ href: string; label: string }>;
+
+/**
+ * F3a owns crawlable route identity only. Product membership deliberately stays absent here until
+ * G4 approves one canonical Brand #2 category authority; collection slugs are editorial collection
+ * state and must not become category truth by naming convention.
+ */
+export const CATEGORY_DESTINATIONS = Object.freeze({
+  aoDai: { href: "/ao-dai", label: "Áo dài" },
+  aoDaiCachTan: { href: "/ao-dai/cach-tan", label: "Áo dài cách tân" },
+  aoDaiTet: { href: "/ao-dai/tet", label: "Áo dài Tết" },
+  aoDaiCuoi: { href: "/ao-dai/cuoi", label: "Áo dài cưới" },
+  aoDai4Ta: { href: "/ao-dai/4-ta", label: "Áo dài 4 tà" },
+  aoDai6Ta: { href: "/ao-dai/6-ta", label: "Áo dài 6 tà" },
+  setDo: { href: "/set-do", label: "Set đồ" },
+  setVay: { href: "/set-do/set-vay", label: "Set váy" },
+  setQuanAo: { href: "/set-do/set-quan-ao", label: "Set quần áo" },
+  vayDam: { href: "/vay-dam", label: "Váy, đầm" },
+  phuKien: { href: "/phu-kien", label: "Phụ kiện" },
+} satisfies Record<string, CategoryDestination>);
+
+export type CategoryRouteProps = Readonly<{
+  searchParams: Promise<StorefrontDiscoverySearchParams>;
+}>;
+
+export type CategoryViewModel = Readonly<{ destination: CategoryDestination }>;
+
+export async function loadCategoryRoute(
+  destination: CategoryDestination,
+  props: CategoryRouteProps,
+): Promise<RouteHandle<CategoryViewModel>> {
+  void props;
+  return sealRoute({
+    data: Object.freeze({ destination }),
+    refreshAfterMs: 60_000,
+    trackingEvent: null,
+    structuredData: [],
+    pixelEvents: [],
+  });
+}
+
+export function renderCategoryRoute(data: CategoryViewModel) {
+  return (
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
+      <p className="eyebrow">Danh mục</p>
+      <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
+        {data.destination.label}
+      </h1>
+      <Link className="mt-8 inline-block underline" href="/shop">
+        Xem toàn bộ sản phẩm
+      </Link>
+    </div>
+  );
+}

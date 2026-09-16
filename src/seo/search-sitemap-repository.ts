@@ -37,10 +37,12 @@ export const STATIC_CANONICAL_PATHS = [
   "/shipping",
   // U33c size guide page.
   "/size-guide",
+  // A7b policy hub.
+  "/policies",
 ] as const;
 
 /**
- * What is left of the per-document limit once the static paths have taken their share — 49,979.
+ * What is left of the per-document limit once the static paths have taken their share — 49,978.
  *
  * Derived rather than written down: adding a static path must shrink the dynamic bound, and a
  * hand-maintained constant is exactly where that would silently fail to happen.

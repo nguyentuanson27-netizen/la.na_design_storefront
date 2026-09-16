@@ -9,11 +9,20 @@ import { buildSizeGuideMetadata } from "@/routes/metadata/size-guide";
 /**
  * W13/U33c — the Size Guide page, rendered entirely from `PUBLIC_SIZE_GUIDE`.
  *
- * Measurements, units, tolerance, circumference semantics, and height/weight guidance all arrive
- * through the view model, which reads that single authority. Every chart it declares is rendered,
- * each with its own size scale, so a brand adding a third table gets a third table here and nothing
- * else changes. No size calculator, recommendation engine, fit vocabulary, or per-product mapping
- * beyond B3 approved facts is authored here.
+ * Measurements, units, circumference semantics, and height/weight guidance all arrive through the
+ * view model, which reads that single authority. Every chart it declares is rendered, each with its
+ * own size scale, so a brand adding a table gets a table here and nothing else changes. No size
+ * calculator, recommendation engine, fit vocabulary, or per-product mapping beyond the approved
+ * facts is authored here.
+ *
+ * Tolerance is rendered only when the brand publishes one. La.na Design has no fixed manufacturing
+ * tolerance, so both the intro statement and the per-chart caption clause are omitted rather than
+ * printed empty or filled with a `±0 cm` nobody approved.
+ *
+ * **Units are stated per row, never once for the page.** §11 splits them — body measurements and
+ * height in centimetres, weight in kilograms — so every chart here mixes two units, and a heading
+ * that announced a single one would be false for every table under it. Each row parameter carries
+ * its own `(cm)` or `(kg)`, which is the only place a unit is claimed.
  */
 
 function render(data: SizeGuideViewModel) {
@@ -26,15 +35,13 @@ function render(data: SizeGuideViewModel) {
 
       <div className="mt-6 max-w-3xl space-y-3 text-base leading-7 text-black/75">
         <p>
-          Tất cả thông số kích thước quần áo tại {BRAND.identity.name} được tính theo đơn vị{" "}
-          <strong className="font-semibold text-black">{data.unit}</strong>.
-        </p>
-        <p>
           <strong>Lưu ý về số đo:</strong> {data.circumferenceSemanticsNote}
         </p>
-        <p>
-          <strong>Dung sai:</strong> {data.toleranceNote}
-        </p>
+        {data.tolerance === null ? null : (
+          <p>
+            <strong>Dung sai:</strong> {data.tolerance.note}
+          </p>
+        )}
         <p className="rounded-sm border border-black/10 bg-black/[0.02] p-4 text-sm leading-6 text-black/70">
           <strong>Lưu ý tham khảo:</strong> {data.guidanceNote}
         </p>
@@ -46,9 +53,9 @@ function render(data: SizeGuideViewModel) {
             <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
               {chart.title}
             </h2>
-            <p className="mt-2 text-sm text-black/60">
-              Đơn vị đo: {data.unit}. Dung sai: {data.toleranceText}.
-            </p>
+            {data.tolerance === null ? null : (
+              <p className="mt-2 text-sm text-black/60">Dung sai: {data.tolerance.text}.</p>
+            )}
 
             <div className="mt-6 overflow-x-auto">
               <table className="w-full min-w-[560px] border-collapse text-left text-sm">

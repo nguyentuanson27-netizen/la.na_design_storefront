@@ -50,10 +50,12 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/size-guide$/,
 ] as const;
 
+// F3a category destinations are crawlable route shells only. Until G4 approves canonical product
+// membership they have no paginated listing semantics, so query state remains noindex. `/sale`
+// already has a truthful paginated projection and keeps the existing catalog pagination contract.
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/]+$/,
-  ...INDEXABLE_CATEGORY_PATH_PATTERNS,
   /^\/sale$/,
 ] as const;
 

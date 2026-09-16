@@ -5,8 +5,6 @@ import { buildCatalogListingMetadata } from "../../src/seo/catalog-listing-metad
 
 const ORIGIN = "https://shop.example.com";
 
-// This file is the behavior contract for the F3a/A8 SEO boundary: new listing routes gain
-// canonical exposure while the retired public routes stay outside every listing authority.
 function canonical(metadata: ReturnType<typeof buildCatalogListingMetadata>): string | null {
   const value = metadata.alternates?.canonical;
   if (typeof value === "string") return value;
@@ -14,14 +12,13 @@ function canonical(metadata: ReturnType<typeof buildCatalogListingMetadata>): st
   return null;
 }
 
-test("F3a category and sale listings self-canonicalize clean and paginated URLs", () => {
-  for (const [pathname, searchParams, expected] of [
-    ["/ao-dai", {}, `${ORIGIN}/ao-dai`],
-    ["/ao-dai/tet", { page: "3" }, `${ORIGIN}/ao-dai/tet?page=3`],
-    ["/set-do/set-vay", {}, `${ORIGIN}/set-do/set-vay`],
-    ["/vay-dam", { page: "2" }, `${ORIGIN}/vay-dam?page=2`],
-    ["/sale", {}, `${ORIGIN}/sale`],
-    ["/sale", { page: "2" }, `${ORIGIN}/sale?page=2`],
+test("F3a category shells self-canonicalize only their clean route URL", () => {
+  for (const pathname of [
+    "/ao-dai",
+    "/ao-dai/tet",
+    "/set-do/set-vay",
+    "/vay-dam",
+    "/phu-kien",
   ] as const) {
     assert.equal(
       canonical(
@@ -29,8 +26,41 @@ test("F3a category and sale listings self-canonicalize clean and paginated URLs"
           origin: ORIGIN,
           indexingEnabled: true,
           pathname,
+          searchParams: {},
+          title: "Danh mục",
+        }),
+      ),
+      `${ORIGIN}${pathname}`,
+    );
+    assert.equal(
+      canonical(
+        buildCatalogListingMetadata({
+          origin: ORIGIN,
+          indexingEnabled: true,
+          pathname,
+          searchParams: { page: "2" },
+          title: "Danh mục",
+        }),
+      ),
+      null,
+      `${pathname} has no paginated product-membership authority before G4`,
+    );
+  }
+});
+
+test("sale keeps truthful listing pagination canonical semantics", () => {
+  for (const [searchParams, expected] of [
+    [{}, `${ORIGIN}/sale`],
+    [{ page: "2" }, `${ORIGIN}/sale?page=2`],
+  ] as const) {
+    assert.equal(
+      canonical(
+        buildCatalogListingMetadata({
+          origin: ORIGIN,
+          indexingEnabled: true,
+          pathname: "/sale",
           searchParams,
-          title: "Listing",
+          title: "Sale",
         }),
       ),
       expected,
@@ -55,7 +85,7 @@ test("A8 retired routes never gain listing canonical metadata", () => {
   }
 });
 
-test("F3a category and sale listings withhold canonical for noncanonical query states", () => {
+test("sale and category routes with noncanonical query states withhold canonical", () => {
   for (const [pathname, searchParams] of [
     ["/ao-dai", { page: "1" }],
     ["/ao-dai/cach-tan", { sort: "name-asc" }],

@@ -163,15 +163,17 @@ test("enabled noindex policy allows approved cutover routes and retires obsolete
   }
 });
 
-test("cutover category and sale pagination accepts only canonical page query state", () => {
-  for (const pathname of ["/ao-dai", "/ao-dai/tet", "/set-do/set-vay", "/vay-dam", "/sale"]) {
-    assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=2" }), false);
+test("category shells keep query state noindex while sale keeps canonical pagination", () => {
+  for (const pathname of CUTOVER_CATEGORY_PATHS) {
+    assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=2" }), true);
     assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=1" }), true);
-    assert.equal(
-      shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=2&sort=name-asc" }),
-      true,
-    );
   }
+  assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname: "/sale", search: "?page=2" }), false);
+  assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname: "/sale", search: "?page=1" }), true);
+  assert.equal(
+    shouldNoIndexRequest({ indexingEnabled: true, pathname: "/sale", search: "?page=2&sort=name-asc" }),
+    true,
+  );
 });
 
 test("query state outside canonical pagination remains noindex", () => {
