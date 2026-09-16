@@ -25,8 +25,8 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Brand leak/current-truth checks pass.
 
 ## High-risk gates — run early
-- [ ] **G1** Verify current official Google Merchant backorder/preorder + `availability_date`; approve rolling-15-day feed strategy.
-- [ ] **G2** Run controlled Pancake zero/negative stock + composite capability probe in a network-capable environment.
+- [ ] **G1** Verify current official Google Merchant backorder/preorder + `availability_date`; decide and approve a compliant `availability_date` strategy.
+- [ ] **G2** Run an explicitly authorized Pancake zero/negative-stock + composite write probe in a safe/non-production test context with cleanup/reconciliation; otherwise remain BLOCKED/UNKNOWN.
 - [ ] **G3** Inspect existing outbound-email capability; approve minimal contact-form transport if new provider/credential is required.
 - [ ] **G4** Map admin merchandising requirements to existing storage; approve smallest additive persistence only for real gaps.
 - [ ] **G5** Design and review atomic capacity/reservation state machine using G2 evidence; cover retries/ambiguous writes/composites.
@@ -53,14 +53,14 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **I6b** Integrate reservation boundary into checkout without breaking quote/order-state protections.
 - [ ] **I7** Snapshot preorder line state; 15 calendar days from successful confirmation; mixed order ships together.
 - [ ] **I8** Integrate Pancake submission/reconciliation only for G2-supported cases; preserve ambiguous-write safety.
-- [ ] **I9** Extend Merchant projection: oversell available, internal preorder maps to approved Google backorder/date contract, hard limit out-of-stock.
+- [ ] **I9** Extend Merchant + structured-data availability projection: oversell available, internal preorder maps to G1-approved backorder/date semantics, hard limit out-of-stock; keep both projections in parity.
 
 ### Checkpoint C
 - [ ] Inventory boundary-table tests green.
 - [ ] DB concurrency tests green.
 - [ ] Admin auth/input tests green.
 - [ ] Pancake controlled acceptance satisfied or feature remains non-production/disabled.
-- [ ] Merchant exact-state tests/parity green.
+- [ ] Merchant + structured-data exact-state/parity tests green.
 - [ ] Inventory review: 0 Critical / 0 Required.
 
 ## Giai đoạn 3 — FE
