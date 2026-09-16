@@ -16,9 +16,16 @@ export function SiteHeader() {
 
         <nav className="desktop-nav" aria-label="Điều hướng chính">
           {NAVIGATION.primary.map((item) => (
-            <Link key={item.href} href={item.href}>
-              {item.label}
-            </Link>
+            <div key={item.href}>
+              <Link href={item.href}>{item.label}</Link>
+              {item.children?.length ? (
+                <div>
+                  {item.children.map((child) => (
+                    <Link key={child.href} href={child.href}>{child.label}</Link>
+                  ))}
+                </div>
+              ) : null}
+            </div>
           ))}
         </nav>
 
@@ -26,10 +33,16 @@ export function SiteHeader() {
           <details>
             <summary>Menu</summary>
             <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
-              {[...NAVIGATION.primary, ...NAVIGATION.mobileUtility].map((item) => (
-                <Link key={item.href} href={item.href}>
-                  {item.label}
-                </Link>
+              {NAVIGATION.primary.map((item) => (
+                <div key={item.href}>
+                  <Link href={item.href}>{item.label}</Link>
+                  {item.children?.map((child) => (
+                    <Link key={child.href} href={child.href}>{child.label}</Link>
+                  ))}
+                </div>
+              ))}
+              {NAVIGATION.mobileUtility.map((item) => (
+                <Link key={item.href} href={item.href}>{item.label}</Link>
               ))}
             </nav>
           </details>
@@ -37,9 +50,7 @@ export function SiteHeader() {
 
         <nav className="utility-nav" aria-label="Tiện ích">
           {NAVIGATION.utility.map((item) => (
-            <Link key={item.href} href={item.href}>
-              {item.label}
-            </Link>
+            <Link key={item.href} href={item.href}>{item.label}</Link>
           ))}
         </nav>
       </div>

@@ -192,7 +192,11 @@ export type FulfillmentConfig = Readonly<{
   }>;
 }>;
 
-export type NavigationLink = Readonly<{ href: string; label: string }>;
+export type NavigationLink = Readonly<{
+  href: string;
+  label: string;
+  children?: readonly NavigationLink[];
+}>;
 
 export type NavigationConfig = Readonly<{
   brandHomeLabel: string;
