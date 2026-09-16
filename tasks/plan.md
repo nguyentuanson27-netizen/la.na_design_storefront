@@ -77,7 +77,7 @@ Checkpoint B
               +--> I6a atomic reservation -> I6b checkout integration
                      +--> I7 preorder snapshot/ETA
                      +--> I8 Pancake submission/reconciliation
-       +--> I9 Merchant mapping (also G1)
+       +--> I9 Merchant + structured-data mapping (also G1)
               -> Checkpoint C
 
 Checkpoint A
@@ -202,25 +202,25 @@ Do not claim Giai đoạn 2 complete until A1–A8 have 0 Critical/0 Required fi
 
 These gates should run early in parallel with Workstream A. They produce evidence/approved designs, not speculative implementation.
 
-## G1 — Lock Google Merchant availability semantics
+## G1 — Lock Google Merchant and structured-data availability semantics
 **Depends on:** merged master spec  
 **Likely files:** focused ADR/integration note.
 
-**Work:** re-check current official Merchant contract used by this project; decide valid public feed mapping for `standard`, `oversell`, internal `preorder`, and a compliant `availability_date` authority. The per-shopper “15 days after confirmation” date cannot silently become a static feed date.
+**Work:** re-check the current official Merchant and structured-data availability contracts used by this project; decide valid public mappings for `standard`, `oversell`, internal `preorder`, and a compliant `availability_date` authority. The per-shopper “15 days after confirmation” date cannot silently become a static or continuously moving public date.
 
-**Acceptance:** one documented externally valid mapping; no unsupported Google value.
+**Acceptance:** one documented externally valid mapping for Merchant and structured data; no unsupported value/date semantics.
 
-**Verification:** official-source links/date recorded + review.
+**Verification:** current official-source links/date recorded + review.
 
 ## G2 — Controlled Pancake zero/negative-stock and composite capability probe
 **Depends on:** merged master spec  
 **Likely files:** bounded probe under `scripts/`, focused integration test, evidence note.
 
-**Work:** in a network-capable environment determine whether Pancake accepts zero/negative-stock order submission, whether upstream stock mutation/locking changes local capacity design, and how composite parent/components behave. Emit only bounded safe evidence.
+**Work:** in a network-capable, explicitly authorized safe/non-production test context, perform the smallest controlled write probe needed to determine whether Pancake accepts zero/negative-stock order submission, whether upstream stock mutation/locking changes local capacity design, and how composite parent/components behave. Use test data only, emit bounded evidence, and clean up/reconcile any created state.
 
-**Acceptance:** zero/negative/composite cases are classified supported/unsupported/ambiguous from real evidence.
+**Acceptance:** zero/negative/composite write cases are classified supported/unsupported/ambiguous from actual write evidence. If a safe authorized write probe cannot be run, keep the capability BLOCKED/UNKNOWN; read-only evidence alone cannot mark submission supported.
 
-**Verification:** controlled/read-only evidence. If network is unavailable, remain BLOCKED rather than guessing.
+**Verification:** controlled authorized write probe + cleanup/reconciliation record with no customer data, secrets or raw credentials in output. If network/safe write access is unavailable, remain BLOCKED/UNKNOWN rather than guessing.
 
 ## G3 — Decide outbound contact-form transport
 **Depends on:** merged master spec  
@@ -383,18 +383,18 @@ Required: approve G4 and G5; accept G1 and G2 evidence; decide G3 if contact del
 
 **Verification:** mocked contract tests + controlled live acceptance where available.
 
-## I9 — Merchant availability for oversell/backorder
+## I9 — Merchant + structured-data availability for oversell/backorder
 **Depends on:** I4, G1  
-**Likely files:** merchant offer mapper/feed schema + tests.
+**Likely files:** merchant offer mapper/feed schema, `src/seo/storefront-product-structured-data.ts`, `src/seo/structured-data.ts`, focused tests.
 
-**Work:** standard sold-out → out of stock; oversell above hard limit → in stock; internal preorder on released sold-out product → exact G1-approved Google `backorder`/date contract; hard limit → out of stock.
+**Work:** standard sold-out → out of stock; oversell above hard limit → in stock; internal preorder on released sold-out product → exact G1-approved Merchant backorder/date contract and matching structured-data availability/date semantics; hard limit → out of stock. Do not invent external value/date behavior before G1 resolves it from current official docs.
 
-**Acceptance:** feed reflects actual buyer ability and valid external vocabulary while storefront still says `Đặt trước`.
+**Acceptance:** Merchant feed and structured data both reflect actual buyer ability using valid external vocabulary/date semantics and remain in parity while storefront still says `Đặt trước`.
 
-**Verification:** mapper/feed tests + existing Merchant parity/audits.
+**Verification:** mapper/feed + structured-data tests + Merchant/structured-data parity audits.
 
 ### Checkpoint C — inventory modes
-Required: boundary-table tests green; DB concurrency proof green; admin auth/input green; Pancake controlled acceptance satisfied or feature remains non-production/disabled; Merchant exact-state tests green; 0 Critical/0 Required review findings.
+Required: boundary-table tests green; DB concurrency proof green; admin auth/input green; Pancake controlled acceptance satisfied or feature remains non-production/disabled; Merchant + structured-data exact-state/parity tests green; 0 Critical/0 Required review findings.
 
 ---
 
