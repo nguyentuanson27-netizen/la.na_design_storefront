@@ -80,6 +80,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F7b** PDP buy panel + required-size flow + mobile sticky purchase controls.
 - [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.
 - [ ] **F7d** PDP related products: manual order first, same-category fallback.
+- [ ] **F7e** Render PDP detail blocks in exact approved order; omit missing product-specific facts without inference; shipping/returns use approved policy projections.
 - [ ] **F8a** Show preorder/oversell/hard-limit truth on product card + PDP from canonical sellability projection.
 - [ ] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
 - [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
