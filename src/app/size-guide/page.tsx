@@ -18,6 +18,11 @@ import { buildSizeGuideMetadata } from "@/routes/metadata/size-guide";
  * Tolerance is rendered only when the brand publishes one. La.na Design has no fixed manufacturing
  * tolerance, so both the intro statement and the per-chart caption clause are omitted rather than
  * printed empty or filled with a `±0 cm` nobody approved.
+ *
+ * **Units are stated per row, never once for the page.** §11 splits them — body measurements and
+ * height in centimetres, weight in kilograms — so every chart here mixes two units, and a heading
+ * that announced a single one would be false for every table under it. Each row parameter carries
+ * its own `(cm)` or `(kg)`, which is the only place a unit is claimed.
  */
 
 function render(data: SizeGuideViewModel) {
@@ -29,10 +34,6 @@ function render(data: SizeGuideViewModel) {
       </h1>
 
       <div className="mt-6 max-w-3xl space-y-3 text-base leading-7 text-black/75">
-        <p>
-          Tất cả số đo tại {BRAND.identity.name} được tính theo đơn vị{" "}
-          <strong className="font-semibold text-black">{data.unit}</strong>.
-        </p>
         <p>
           <strong>Lưu ý về số đo:</strong> {data.circumferenceSemanticsNote}
         </p>
@@ -52,10 +53,9 @@ function render(data: SizeGuideViewModel) {
             <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
               {chart.title}
             </h2>
-            <p className="mt-2 text-sm text-black/60">
-              Đơn vị đo: {data.unit}
-              {data.tolerance === null ? "." : `. Dung sai: ${data.tolerance.text}.`}
-            </p>
+            {data.tolerance === null ? null : (
+              <p className="mt-2 text-sm text-black/60">Dung sai: {data.tolerance.text}.</p>
+            )}
 
             <div className="mt-6 overflow-x-auto">
               <table className="w-full min-w-[560px] border-collapse text-left text-sm">

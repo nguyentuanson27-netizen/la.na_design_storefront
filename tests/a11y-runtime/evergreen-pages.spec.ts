@@ -316,8 +316,19 @@ test("U33c the Size Guide page renders every approved chart with its body-measur
   await expect(page.getByRole("heading", { level: 1, name: "Hướng dẫn chọn size" })).toBeVisible();
 
   // Unit cm, circumference semantics, tolerance and guidance visible
-  await expect(main).toContainText(PUBLIC_SIZE_GUIDE.unit);
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
+
+  // §11 splits the units: body measurements and height in cm, weight in kg. Every chart mixes
+  // both, so the page must not announce one unit for all of them -- it did, and every table under
+  // that heading contradicted it. Units are stated per row and nowhere else.
+  await expect(main).not.toContainText(/đơn vị/i);
+  for (const chart of PUBLIC_SIZE_GUIDE.charts) {
+    const units = new Set(chart.rows.map((row) => row.parameter.match(/\(([^)]+)\)$/)?.[1]));
+    expect(units.size, `${chart.id} must state more than one unit`).toBeGreaterThan(1);
+    for (const row of chart.rows) {
+      await expect(main).toContainText(row.parameter);
+    }
+  }
   await expect(main).toContainText(PUBLIC_SIZE_GUIDE.guidanceNote);
 
   // A4: no fixed tolerance applies, so the statement is absent rather than blank or `±0 cm`. A

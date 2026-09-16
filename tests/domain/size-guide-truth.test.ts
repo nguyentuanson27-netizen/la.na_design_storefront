@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { SIZE_GUIDE, loadBrandConfig, type SizeGuideConfig } from "../../src/brand/index.ts";
@@ -7,6 +9,8 @@ import {
   PUBLIC_SIZE_GUIDE,
 } from "../../src/content/public-brand-facts.ts";
 import { buildSizeGuideViewModel } from "../../src/routes/evergreen-model.ts";
+
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
  * A4 — the three approved La.na Design size guides, transcribed from master spec §11.
@@ -185,4 +189,24 @@ test("A4 the view model omits tolerance entirely rather than rendering an empty 
     "unit",
   ]);
   assert.deepEqual(model.charts, PUBLIC_SIZE_GUIDE.charts);
+});
+
+test("A4 no surface claims one unit for charts that carry more than one", () => {
+  // Review finding on PR #6: the page said "đơn vị cm" and each chart caption repeated
+  // "Đơn vị đo: cm", while every chart has a `Cân nặng (kg)` row. §11 splits the units -- body
+  // measurements and height in cm, weight in kg -- so a single-unit claim is false for every one
+  // of these tables. The rows carry their own unit; nothing above them may override it.
+  const page = readFileSync(`${REPO_ROOT}src/app/size-guide/page.tsx`, "utf8");
+
+  assert.doesNotMatch(page, /đơn vị/i, "the page must not claim a blanket unit");
+  assert.doesNotMatch(page, /Đơn vị đo/i, "a chart caption must not claim a blanket unit");
+
+  // Every chart really does mix units, which is what makes the claim above wrong rather than
+  // merely redundant. Derived from the data so it stays true if a table changes.
+  for (const chart of SIZE_GUIDE.charts) {
+    const units = new Set(chart.rows.map((row) => row.parameter.match(/\(([^)]+)\)$/)?.[1]));
+    assert.equal(units.has("cm"), true, chart.id);
+    assert.equal(units.has("kg"), true, chart.id);
+    assert.equal(units.size > 1, true, `${chart.id} mixes units, so no single-unit claim holds`);
+  }
 });
