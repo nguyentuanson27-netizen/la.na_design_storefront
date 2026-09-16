@@ -14,12 +14,20 @@ Use **Resend's HTTPS Email API via server-side `fetch`**, subject to Checkpoint 
 
 ### Official provider evidence — reviewed 2026-09-16
 
-- Resend Email API: https://resend.com/features/email-api — HTTPS API with API-key authentication.
-- Resend Idempotency Keys: https://resend.com/docs/dashboard/emails/idempotency-keys — `POST /emails` supports bounded idempotency keys retained for a retry window.
-- Resend API Rate Limit: https://resend.com/changelog/api-rate-limit — provider rate-limit responses/headers exist; storefront abuse limits remain independent.
-- Resend Domains: https://resend.com/docs/dashboard/domains/introduction — production sending identity requires provider domain/DNS verification.
+- Resend API Reference — **Introduction**: https://resend.com/docs/api-reference/introduction  
+  REST API is HTTPS-only; authentication is `Authorization: Bearer <API key>`; standard response classes are `2xx` success, `4xx` caller/auth/rate failures, and `5xx` provider infrastructure failures. The current documented default team rate is 5 requests/second; `429` represents provider throttling.
+- Resend — **Send Email**: https://resend.com/docs/api-reference/emails/send-email  
+  `POST /emails` is the send boundary and returns an email `id` on documented success; it accepts an `Idempotency-Key` header.
+- Resend — **Errors**: https://resend.com/docs/api-reference/errors  
+  Provider failures have typed/status-coded responses including validation/auth/domain/rate-limit failures; F9b must classify them rather than return raw payloads to shoppers.
+- Resend — **Idempotency Keys**: https://resend.com/docs/dashboard/emails/idempotency-keys  
+  Send requests support keys up to 256 characters; the documented retention window is 24 hours and retries must use the same payload.
+- Resend — **Managing Domains**: https://resend.com/docs/dashboard/domains/introduction  
+  Production sending requires a domain the sender owns and provider DNS verification; Resend documents SPF and DKIM as the required verification records and recommends a sending subdomain to isolate reputation.
+- Resend — **Send emails with Next.js**: https://resend.com/nextjs  
+  Resend documents Next.js App Router / server-side integration, so the repository's Next.js server runtime is a supported integration shape.
 
-Provider responses are untrusted input; F9b may rely only on validated response fields/statuses.
+The storefront's proposed rate limits below are intentionally much lower than the provider ceiling and exist for abuse control, not provider-capacity management. Provider responses are untrusted input; F9b may rely only on validated response fields/statuses.
 
 ## Transport contract
 
@@ -55,11 +63,12 @@ Reuse the existing DB-backed atomic rate-limit pattern. Initial F9b shape:
 
 - Provider credential stays server-only.
 - Proposed secret name (name only): `RESEND_API_KEY`.
+- Use a sending-only/domain-restricted provider key if the approved Resend account configuration supports it; least privilege is preferred over full account access.
 - No secret in Brand Config, DB, browser bundle, form payload, logs, or shopper errors.
 - Do not log message body, customer email/name, authorization headers, or raw provider errors.
-- Success is returned only after the provider accepts the send with a validated documented success response.
+- Success is returned only after the provider accepts the send with a validated documented success response and email id.
 - Validation, rate-limit, network, or provider failures return bounded shopper-safe errors and never a fake sent state.
-- F9b should use one idempotency identifier per logical submission; any automatic retry must reuse that identifier with the same payload. This ADR adds no queue/retry storage.
+- F9b should use one idempotency identifier per logical submission; any automatic retry must reuse that identifier with the same payload within the documented 24-hour provider window. This ADR adds no queue/retry storage.
 
 ## Observability
 
@@ -69,7 +78,7 @@ Later emit a bounded `contact_form_delivery` event with outcome, correlation/req
 
 - New npm package: **none**.
 - Future server secret after approval: `RESEND_API_KEY`.
-- DNS: verify the Checkpoint-B-approved La.na sender domain/identity before production use.
+- DNS: verify the Checkpoint-B-approved La.na sender domain/identity before production use; SPF/DKIM changes are deployment-side work, not this PR.
 - Destination remains the existing repository-owned Brand Config fact.
 
 ## Checkpoint B / F9b boundary
