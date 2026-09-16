@@ -8,11 +8,6 @@ import { loadHomeRoute, type HomeRouteData, type HomeRouteProps } from "@/routes
 import { buildHomeMetadata } from "@/routes/metadata/home";
 import type { HomeEditorialPanel } from "@/routes/home-model";
 
-/**
- * Markup only. Every fetch, the tracking event, the refresh window and the metadata live in
- * `@/routes/home`; the shell mounts the first three, so this file cannot forget one.
- */
-
 const tones: readonly ProductCardTone[] = ["stone", "ink", "olive", "sand"];
 
 function EditorialPanel({
@@ -28,8 +23,6 @@ function EditorialPanel({
   sizes: string;
   preload?: boolean;
 }>) {
-  // A panel with no trusted photography is decorative, not broken: it keeps its shape and is hidden
-  // from assistive technology rather than announcing an image that is not there.
   if (!panel) return <div className={className} aria-hidden="true" />;
 
   return (
@@ -124,7 +117,7 @@ function render(data: HomeRouteData) {
           <p className="eyebrow">Editorial / 02</p>
           <h2 id="lookbook-title">CITY UNIFORM</h2>
           <p>Measured proportions and functional utility for moving through the everyday.</p>
-          <Link className="text-link" href="/lookbook">Xem lookbook ↗</Link>
+          <Link className="text-link" href="/collections">Xem bộ sưu tập ↗</Link>
         </div>
         <EditorialPanel
           panel={data.lookbookSmall}
@@ -191,7 +184,6 @@ function render(data: HomeRouteData) {
 
 const route = createStorefrontRoute<HomeRouteProps, HomeRouteData>({
   load: loadHomeRoute,
-  // A direct call to the canonical builder: the route contract accepts no other shape here.
   metadata: (props) => buildHomeMetadata(props),
   render,
 });

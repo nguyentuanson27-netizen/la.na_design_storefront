@@ -17,20 +17,22 @@ type SearchRequestPolicyInput = Readonly<{
   search: string;
 }>;
 
-// Origins that may never serve as a public indexable storefront at all.
 const BLOCKED_INDEXING_HOSTS = new Set([
   "staging.lanadesign.vn",
   "localhost",
   "127.0.0.1",
 ]);
 
-// ADR 0004 remains the historical authority for the legacy temporary production origin. The
-// permanent storefront is whichever host `OFFICIAL_PRODUCTION_STOREFRONT_HOST` names -- it
-// mirrors project.config.json per brand -- and selecting it does not turn indexing on. Keeping
-// the legacy host here prevents a rollback/cutover mistake from creating a second indexable origin.
 const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 
 export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
+
+export const INDEXABLE_CATEGORY_PATH_PATTERNS = [
+  /^\/ao-dai(?:\/(?:cach-tan|tet|cuoi|4-ta|6-ta))?$/,
+  /^\/set-do(?:\/(?:set-vay|set-quan-ao))?$/,
+  /^\/vay-dam$/,
+  /^\/phu-kien$/,
+] as const;
 
 const INDEXABLE_PATH_PATTERNS = [
   /^\/$/,
@@ -38,8 +40,9 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/shop\/[^/]+$/,
   /^\/collections$/,
   /^\/collections\/[^/]+$/,
-  /^\/lookbook$/,
-  // U33 evergreen pages with approved first-party content
+  /^\/new-arrivals$/,
+  ...INDEXABLE_CATEGORY_PATH_PATTERNS,
+  /^\/sale$/,
   /^\/about$/,
   /^\/contact$/,
   /^\/returns$/,
@@ -50,6 +53,8 @@ const INDEXABLE_PATH_PATTERNS = [
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/]+$/,
+  ...INDEXABLE_CATEGORY_PATH_PATTERNS,
+  /^\/sale$/,
 ] as const;
 
 const MAX_INDEXABLE_CATALOG_PAGE = 10_000;
