@@ -95,7 +95,7 @@ Before any category-owned G4 schema is accepted, **G4 must record** one canonica
 5. `/collections` remains a separate namespace/semantic and does not become category truth by accident;
 6. category membership is queryable by PDP/PLP consumers so “same-category” has one exact meaning.
 
-This ADR does not invent a `CategoryDefinition` schema or Pancake-category derivation without evidence. Until that prerequisite is approved, category-dependent rows below remain C/PENDING rather than encoding the wrong taxonomy. F3a may implement category routes only after the approved category contract gives those routes a canonical identity/membership source; F3a is not reassigned ownership of this architecture gate.
+This ADR does not invent a `CategoryDefinition` schema or Pancake-category derivation without evidence. Until that prerequisite is approved, category-dependent G4 concerns below remain C/PENDING rather than encoding the wrong taxonomy. **F3a remains governed solely by its existing dependency in `tasks/plan.md` and is not blocked by this G4 decision.** Route creation by F3a does not establish or approve the category merchandising authority used later by M2/M3/F4/F7 consumers.
 
 ## 5. Category PLP default ordering — C: deferred/pending
 
