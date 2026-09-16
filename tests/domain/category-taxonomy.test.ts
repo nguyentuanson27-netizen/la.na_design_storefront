@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { CATEGORY_NAVIGATION } from "../../src/brand/category.config.ts";
 import {
+  APPROVED_CATEGORY_MEMBERSHIP_POLICY,
   CATEGORY_KEYS,
   CategoryMembershipError,
   MAX_CATEGORY_MEMBERSHIPS,
@@ -213,10 +214,21 @@ test("G4 an empty selection is valid and means no category", () => {
   assert.deepEqual(result.categoryKeys, []);
 });
 
-test("G4 the parent-only rule is a policy flag, not a structural choice", () => {
-  // OWNER DECISION PENDING: may a product sit directly on `Áo dài` with no subcategory?
-  // Both answers are expressible against the same taxonomy and the same persisted shape, so this
-  // test pins that neutrality rather than pretending a decision was made.
+test("G4 the approved policy permits parent-only membership", () => {
+  // Owner-approved 2026-09-16 (ADR 0013 §4.4): yes, a product may sit directly on `Áo dài`.
+  const result = parseCategoryMembership(["aoDai"], APPROVED_CATEGORY_MEMBERSHIP_POLICY);
+
+  assert.equal(APPROVED_CATEGORY_MEMBERSHIP_POLICY.requireLeafMembership, false);
+  assert.equal(result.topLevelKey, "aoDai");
+  assert.deepEqual(result.categoryKeys, ["aoDai"]);
+
+  // It lists on the parent page and on no subcategory page — the truthful outcome, since nobody
+  // has said which subcategory it belongs to.
+  assert.equal(categoryListingKeys("aoDai").includes("aoDai"), true);
+  assert.equal(categoryListingKeys("aoDaiTet").includes("aoDai"), false);
+});
+
+test("G4 the rejecting policy stays covered so the flag cannot rot into a no-op", () => {
   const parentOnly = ["aoDai"];
 
   assert.deepEqual(

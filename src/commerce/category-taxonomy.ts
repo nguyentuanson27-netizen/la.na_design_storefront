@@ -193,12 +193,25 @@ export class CategoryMembershipError extends Error {
  * and a data review of rows already written.
  *
  * `requireLeafMembership: true` rejects parent-only assignment; `false` permits it. Callers must
- * pass the owner-approved value explicitly; there is deliberately no default, so no admin path can
- * silently adopt a rule nobody approved.
+ * pass the policy explicitly; there is deliberately no default, so no admin path can silently adopt
+ * a rule nobody approved — it has to name the one it is applying.
  */
 export type CategoryMembershipPolicy = Readonly<{
   requireLeafMembership: boolean;
 }>;
+
+/**
+ * The owner's decision, approved 2026-09-16 (ADR 0013 §4.4): a product may be assigned directly to
+ * a parent category with no subcategory.
+ *
+ * Such a product lists on the parent page and on no subcategory page, which is the truthful
+ * outcome — nobody has said which subcategory it belongs to, so nothing may guess one. Admin write
+ * paths pass this constant; changing the decision is this one value plus a review of existing rows,
+ * and no migration.
+ */
+export const APPROVED_CATEGORY_MEMBERSHIP_POLICY: CategoryMembershipPolicy = Object.freeze({
+  requireLeafMembership: false,
+});
 
 export type ValidatedCategoryMembership = Readonly<{
   /** `null` only when the product is assigned to no category at all. */

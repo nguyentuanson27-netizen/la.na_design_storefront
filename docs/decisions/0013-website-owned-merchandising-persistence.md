@@ -138,17 +138,22 @@ That is not the same as free of data work. Re-parenting a category can turn rows
 under the old tree into a split product under the new one, without any membership write happening —
 so a taxonomy change is itself a way around the §4.6 boundary. §4.8 is the gate for that.
 
-### 4.4 The one rule the owner has not settled
+### 4.4 Parent-only membership — SETTLED, owner-approved 2026-09-16
 
 For a parent that has children (`Áo dài`, `Set đồ`), may a product be assigned **directly to the
-parent and to no child**?
+parent and to no child**? **Yes.** The owner approved it on 2026-09-16.
 
-This is **OWNER DECISION PENDING**. It does not change the schema, the queries or any consumer
-contract: both answers are expressible against the shape below, so it is carried as an explicit
-validation policy flag (`CategoryMembershipPolicy.requireLeafMembership`) with no default, and
-`tests/domain/category-taxonomy.test.ts` pins both behaviours. Settling it later requires a policy
-value and a review of rows already written — **no migration**. Childless top-level categories
-(`Váy, đầm`, `Phụ kiện`) are unaffected: they have no leaf to require.
+So a product may sit on `Áo dài` alone. It appears on `/ao-dai` — the listing matches the category
+itself, not only its descendants (§4.7) — and on no subcategory page, which is the truthful outcome:
+nobody has said which subcategory it belongs to, and the architecture must not guess one.
+
+The rule is carried as `APPROVED_CATEGORY_MEMBERSHIP_POLICY` (`requireLeafMembership: false`) rather
+than hard-coded into the validator. `CategoryMembershipPolicy` stays a required parameter with no
+default, so every admin path names the policy it is applying and a future change to this decision is
+one constant plus a data review — still **no migration**.
+`tests/domain/category-taxonomy.test.ts` pins the approved behaviour and keeps the rejecting
+behaviour covered, so the flag cannot rot into a no-op. Childless top-level categories
+(`Váy, đầm`, `Phụ kiện`) were never affected: they have no leaf to require.
 
 ### 4.5 Proposed persistence — B: additive migration, pending Checkpoint B
 
