@@ -79,7 +79,7 @@ export const POLICY_CONTENT = {
         items: [
           "Bước 1: Khách hàng gửi phản ánh/khiếu nại kèm thông tin đơn hàng, nội dung vấn đề và hình ảnh/video chứng minh nếu có.",
           "Bước 2: La.na Design tiếp nhận và xác minh thông tin.",
-          "Bước 3: La.na Design phản hồi hướng xử lý trong thời gian hợp lý, thông thường từ 24 đến 48 giờ làm việc kể từ khi nhận đủ thông tin.",
+          `Bước 3: La.na Design phản hồi hướng xử lý trong thời gian hợp lý, thông thường ${FULFILLMENT.support.complaintResponseNote}`,
           "Bước 4: Hai bên phối hợp thực hiện phương án xử lý đã thống nhất.",
           "Bước 5: Trường hợp phát sinh tranh chấp không thể giải quyết bằng thương lượng, hai bên có thể đưa vụ việc đến cơ quan có thẩm quyền theo quy định pháp luật Việt Nam.",
         ],
