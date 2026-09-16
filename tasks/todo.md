@@ -41,7 +41,8 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 ## Admin merchandising
 - [ ] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
 - [ ] **M2** After Checkpoint A + approved G4, implement minimal Featured/editorial-image storage; if migration is required, wait for Checkpoint B before migration/DB work.
-- [ ] **M3** After M2, add related-products + default PLP order controls; inherit the same conditional Checkpoint B migration gate.
+- [ ] **M3a** After M2, add manual related-product controls; inherit the same conditional Checkpoint B migration gate.
+- [ ] **M3b** After M2, add default PLP merchandising order; inherit the same conditional Checkpoint B migration gate.
 
 ## Inventory selling modes
 - [ ] **I1** Add approved website-owned selling-policy/order-snapshot/reservation persistence; existing products default `STANDARD`.
@@ -76,7 +77,9 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe.
 - [ ] **F6b** Homepage lower sections in exact approved order; no fake content.
 - [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
-- [ ] **F7b** PDP buy panel + required size + mapped size modal + mobile sticky + related fallback.
+- [ ] **F7b** PDP buy panel + required-size flow + mobile sticky purchase controls.
+- [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.
+- [ ] **F7d** PDP related products: manual order first, same-category fallback.
 - [ ] **F8a** Show preorder/oversell/hard-limit truth on product card + PDP from canonical sellability projection.
 - [ ] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
 - [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
