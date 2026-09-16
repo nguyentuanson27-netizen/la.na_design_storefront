@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+import { BRAND } from "@/brand";
+
 export default function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <section className="admin-shell min-h-[70vh] px-6 py-10 md:px-10 md:py-14">
       <header className="mb-12 flex flex-col gap-6 border-b border-black/20 pb-6 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="eyebrow">LA Clothing / Admin</p>
+          <p className="eyebrow">{BRAND.identity.name} / Admin</p>
           <p className="mt-2 max-w-2xl font-serif text-xl leading-relaxed">
             Quản lý phần nội dung biên tập do website sở hữu, tách biệt khỏi dữ liệu vận hành của Pancake POS.
           </p>
