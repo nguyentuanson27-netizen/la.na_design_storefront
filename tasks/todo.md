@@ -10,7 +10,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **A3** Replace Brand #1 identity/contact/merchant/default SEO truth; preserve `Lana Design` as search alias only.
 - [x] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
 - [x] **A5** Align carriers/delivery/returns/refund/COD-only payment; Hà Nội 1–3, other provinces 3–10.
-- [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet. F3a/G4 must also settle the canonical category identity + product-membership authority; `/collections` remains a separate semantic.
+- [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
 - [ ] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
 - [x] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
 - [ ] **A7b** **PARTIAL.** `/policies` hub built with stable anchors; shipping, payment, returns/refund,
@@ -34,11 +34,11 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **G1** Verify current official Merchant + structured-data availability/date contracts; decide and approve a compliant `availability_date` strategy. Evidence complete in ADR 0011; I9 backorder publication remains blocked until a reviewed product-level public date authority exists.
 - [ ] **G2** Run explicitly authorized Pancake zero/negative-stock + composite write probe in safe/non-production context with cleanup/reconciliation; otherwise remain BLOCKED/UNKNOWN.
 - [x] **G3** Inspect existing outbound-email capability and decide transport; if a new provider/dependency/credential is required, only propose it until Checkpoint B approves that boundary. ADR 0012 proposes Resend via server `fetch`; provider/sender/DNS/secret boundary still requires Checkpoint B. Direct HTTP must supply Resend's required static `User-Agent`.
-- [ ] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required. **PARTIAL:** ADR 0013 settles size-guide reuse, preserves collection-only semantics, and identifies a dedicated homepage Featured persistence gap. Category identity/membership is not yet canonical, so category PLP order, category/mega-menu media and same-category related fallback remain pending F3a/G4.
+- [ ] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required. **PARTIAL:** ADR 0013 settles size-guide reuse, preserves collection-only semantics, and identifies a dedicated homepage Featured persistence gap. G4 is not approved until one canonical Brand #2 category identity/product-membership authority is documented for category PLP order, category/mega-menu media and same-category related fallback.
 - [ ] **G5** Design/review atomic capacity state machine using G2 evidence; cover retries/ambiguous writes/composites.
 
 ### Checkpoint B — before migrations/dependencies
-- [ ] Human approves G4 merchandising **migration path if required**; no merchandising schema migration before this checkpoint. Homepage Featured needs a dedicated additive owner; category-dependent shapes wait until category authority is settled.
+- [ ] Human approves G4 merchandising **migration path if required**; no merchandising schema migration before this checkpoint. Homepage Featured needs a dedicated additive owner; category-dependent shapes remain blocked until G4 settles the canonical category authority.
 - [ ] Human approves G5 selling-policy/capacity architecture.
 - [ ] G1 Merchant + structured-data mapping accepted.
 - [ ] G2 Pancake/composite evidence accepted.
@@ -46,9 +46,9 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 
 ## Admin merchandising
 - [ ] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
-- [ ] **M2** After Checkpoint A + approved G4/Checkpoint B, implement the dedicated standalone Homepage Featured ordered-product owner; do **not** reuse `CollectionDefinition.featuredProductSlugs`. Category/mega-menu editorial image storage stays blocked until the canonical category authority is settled.
-- [ ] **M3a** After category authority is settled, add manual related-product controls with `manual override first -> same-category fallback`; do not preserve same-collection fallback unless a later approved contract formally equates the two.
-- [ ] **M3b** After category authority is settled and Checkpoint B approves the resulting persistence shape, add default category-PLP merchandising order keyed to that authority.
+- [ ] **M2** After Checkpoint A + approved G4, implement minimal Featured/editorial-image storage; if migration is required, wait for Checkpoint B before migration/DB work. Current blocker: G4 must first settle the canonical category authority; standalone Homepage Featured must use its dedicated owner and must not reuse `CollectionDefinition.featuredProductSlugs`.
+- [ ] **M3a** After M2, add manual related-product controls; inherit the same conditional Checkpoint B migration gate. Current blocker: approved G4 must define the same-category authority so the target remains `manual override first -> same-category fallback`.
+- [ ] **M3b** After M2, add default PLP merchandising order; inherit the same conditional Checkpoint B migration gate. Current blocker: approved G4 must define the canonical category authority that owns category-specific order.
 
 ## Inventory selling modes
 - [ ] **I1** Add approved website-owned selling-policy/order-snapshot/reservation persistence; existing products default `STANDARD`.
@@ -111,7 +111,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Final review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required.
 
 ## Explicitly still pending / do not invent
-- [ ] Canonical Brand #2 category identity/product-membership authority for category/subcategory routes and same-category consumers.
+- [ ] Canonical Brand #2 category identity/product-membership authority for category/subcategory routes and same-category consumers. This is a G4 blocker, not a reassignment of F3a/M2/M3 ownership or approved dependency gates.
 - [ ] Real hero campaign assets/destinations.
 - [ ] Child collection names/content.
 - [ ] Real source for `Bán chạy` before badge/sort use.
