@@ -147,10 +147,20 @@ export type SizeChart = Readonly<{
   }>[];
 }>;
 
+/**
+ * A published manufacturing tolerance, when the brand has one.
+ *
+ * The number and the sentence travel together so a brand cannot end up with a note that states no
+ * figure, or a figure no page explains. `null` on {@link SizeGuideConfig.tolerance} is the whole
+ * representation of "no fixed tolerance applies": there is no number to render, so there is nothing
+ * for a page to round down to `0` and publish as one.
+ */
+export type SizeTolerance = Readonly<{ cm: number; note: string }>;
+
 export type SizeGuideConfig = Readonly<{
   unit: string;
-  toleranceCm: number;
-  toleranceNote: string;
+  /** `null` when no fixed tolerance applies. Never `0`, which would be a tolerance of zero. */
+  tolerance: SizeTolerance | null;
   circumferenceSemanticsNote: string;
   guidanceNote: string;
   charts: readonly SizeChart[];
@@ -174,12 +184,28 @@ export type FulfillmentConfig = Readonly<{
   delivery: Readonly<{
     coverage: string;
     carriers: readonly string[];
+    /** Which of the carriers handles an order is the shop's choice, not the shopper's. */
+    carrierSelectionNote: string;
     estimateDays: Readonly<{ innerCity: DayRange; otherProvince: DayRange }>;
     estimateCaveat: string;
     carrierTrackingNote: string;
     phoneConfirmationWording: string;
   }>;
   deliveryScopeLabels: Readonly<{ innerCity: string; otherProvince: string }>;
+  /**
+   * What the website can currently take, and what it cannot.
+   *
+   * Payment availability is a policy commitment, not presentation: "bank transfer is temporarily
+   * unavailable" is a sentence the owner approved word for word, and a page that reworded it would
+   * be making a different statement about the same fact. It lives beside delivery and returns
+   * because those are the other two halves of what a buyer is promised at checkout.
+   *
+   * No account detail belongs here. Bank transfer is off, and a stored account number is how a
+   * disabled method starts being usable again by accident.
+   */
+  payment: Readonly<{ codNote: string; bankTransferUnavailableNote: string }>;
+  /** Post-sale support commitments that are neither a delivery nor a return term. */
+  support: Readonly<{ complaintResponseNote: string }>;
   returnLogistics: Readonly<{
     returnMethods: Readonly<{
       inStore: string;

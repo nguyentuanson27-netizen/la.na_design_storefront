@@ -47,17 +47,22 @@ test("About reads the legal facts and the shared address helper", () => {
   assert.equal(model.legalEntityName, PUBLIC_LEGAL_FACTS.legalEntityName);
   assert.equal(model.taxCode, PUBLIC_LEGAL_FACTS.taxCode);
   // The same call the footer and the Organization node use, not a second address format.
-  assert.equal(model.address, describePublicAddress());
+  assert.equal(model.businessAddress, describePublicAddress());
 });
 
 test("About states only what B6 approved", () => {
   // A founding year, founder or brand story arriving here is the regression this pins: the owner
   // withheld them, and no approved source states them.
+  // A7a added the registered legal identity; a founding year, founder, brand story or legal
+  // representative arriving here is still the regression this pins.
   assert.deepEqual(Object.keys(buildAboutViewModel()).sort(), [
-    "address",
+    "businessAddress",
+    "legalEmail",
     "legalEntityName",
     "positioning",
+    "registeredAddress",
     "taxCode",
+    "taxIdIssueDate",
   ]);
 });
 
@@ -68,7 +73,7 @@ test("Contact reads every channel from the contact facts", () => {
   assert.equal(model.telephoneInternational, BRAND.contact.telephoneInternational);
   assert.equal(model.email, BRAND.contact.email);
   assert.equal(model.fanpageUrl, BRAND.contact.fanpageUrl);
-  assert.equal(model.address, describePublicAddress());
+  assert.equal(model.businessAddress, describePublicAddress());
   assert.equal(model.supportHours, describePublicSupportHours());
 });
 
@@ -87,18 +92,21 @@ test("the fanpage label follows the configured URL instead of naming a fixed pag
 
 const shipping = () => buildShippingViewModel({ policy: readGuestShippingPolicy() });
 
-test("Shipping names the owner-approved Hanoi scopes, not the ambiguous historical labels", () => {
+test("Shipping names the owner-approved delivery scopes, not the ambiguous historical labels", () => {
   const model = shipping();
 
   assert.equal(model.innerCityLabel, FULFILLMENT.deliveryScopeLabels.innerCity);
   assert.equal(model.otherProvinceLabel, FULFILLMENT.deliveryScopeLabels.otherProvince);
-  // The historical labels were the bare "Nội thành" and "Ngoại tỉnh", which name no city and so
-  // mean whatever the reader assumes. The approved ones say Hanoi; what is pinned is that the page
-  // never falls back to the bare pair.
-  assert.notEqual(model.innerCityLabel, "Nội thành");
-  assert.notEqual(model.otherProvinceLabel, "Ngoại tỉnh");
-  assert.equal(model.innerCityLabel.includes("Hà Nội"), true);
-  assert.equal(model.otherProvinceLabel.includes("Hà Nội"), true);
+
+  // A5 §12 splits the country in two: Hà Nội, and everywhere else. What is pinned is that neither
+  // label narrows that split -- "Nội thành" would confine the 1-3 day window to the city's inner
+  // districts, and the bare "Ngoại tỉnh" names no city at all and means whatever a reader assumes.
+  assert.equal(model.innerCityLabel, "Hà Nội");
+  assert.equal(model.otherProvinceLabel, "Tỉnh, thành khác");
+  for (const label of [model.innerCityLabel, model.otherProvinceLabel]) {
+    assert.equal(label.includes("Nội thành"), false, label);
+    assert.equal(label.includes("Ngoại tỉnh"), false, label);
+  }
 });
 
 test("Shipping's delivery estimates come from the delivery facts through the shared helper", () => {
@@ -179,30 +187,36 @@ test("the Size Guide passes every approved chart through whole", () => {
   assert.equal(model.charts.length > 0, true, "the guide is not vacuously empty");
 });
 
-test("the Size Guide states the approved unit, tolerance and notes and derives no fit advice", () => {
+test("the Size Guide states the approved unit and notes and derives no fit advice", () => {
   const model = buildSizeGuideViewModel();
 
   assert.equal(model.unit, PUBLIC_SIZE_GUIDE.unit);
-  assert.equal(model.toleranceNote, PUBLIC_SIZE_GUIDE.toleranceNote);
-  assert.equal(model.toleranceText, describePublicSizeTolerance());
   assert.equal(model.circumferenceSemanticsNote, PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
   assert.equal(model.guidanceNote, PUBLIC_SIZE_GUIDE.guidanceNote);
 
-  // B3 approved the tables and nothing else. A recommended size, a fit vocabulary or a
+  // The tables are approved and nothing else. A recommended size, a fit vocabulary or a
   // measurement-to-size mapping appearing here would be a fit claim this repository invented.
   assert.deepEqual(Object.keys(model).sort(), [
     "charts",
     "circumferenceSemanticsNote",
     "guidanceNote",
-    "toleranceNote",
-    "toleranceText",
+    "tolerance",
     "unit",
   ]);
 });
 
-test("each chart's caption tolerance is the same one the intro states", () => {
-  // Two wordings of one tolerance is how a page ends up publishing two tolerances.
+test("the intro statement and each chart caption carry one tolerance, or none at all", () => {
+  // Two wordings of one tolerance is how a page ends up publishing two tolerances -- so they are
+  // one field. A4: this brand publishes none, and the whole statement is absent rather than blank.
   const model = buildSizeGuideViewModel();
 
-  assert.equal(model.toleranceText.includes(String(PUBLIC_SIZE_GUIDE.toleranceCm)), true);
+  if (PUBLIC_SIZE_GUIDE.tolerance === null) {
+    assert.equal(model.tolerance, null);
+    assert.equal(describePublicSizeTolerance(), null);
+    return;
+  }
+
+  assert.equal(model.tolerance?.note, PUBLIC_SIZE_GUIDE.tolerance.note);
+  assert.equal(model.tolerance?.text, describePublicSizeTolerance());
+  assert.equal(model.tolerance?.text.includes(String(PUBLIC_SIZE_GUIDE.tolerance.cm)), true);
 });

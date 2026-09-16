@@ -186,14 +186,20 @@ function validateMarket(brand: BrandConfig): void {
 function validateSizeGuide(sizeGuide: SizeGuideConfig): void {
   requireText(sizeGuide.unit, "sizeGuide.unit");
   for (const [label, value] of Object.entries({
-    toleranceNote: sizeGuide.toleranceNote,
     circumferenceSemanticsNote: sizeGuide.circumferenceSemanticsNote,
     guidanceNote: sizeGuide.guidanceNote,
   })) {
     requireText(value, `sizeGuide.${label}`);
   }
-  if (!Number.isFinite(sizeGuide.toleranceCm) || sizeGuide.toleranceCm < 0) {
-    fail("sizeGuide.toleranceCm must be a non-negative number");
+  // `null` is a fact -- no fixed tolerance applies -- and is left alone. A tolerance that is
+  // present is still checked as strictly as before, so absence is a decision rather than a gap the
+  // loader stopped looking at. Zero is rejected: a brand with no tolerance says so with `null`, and
+  // `0` would publish a promise of exact measurements.
+  if (sizeGuide.tolerance !== null) {
+    requireText(sizeGuide.tolerance.note, "sizeGuide.tolerance.note");
+    if (!Number.isFinite(sizeGuide.tolerance.cm) || sizeGuide.tolerance.cm <= 0) {
+      fail("sizeGuide.tolerance.cm must be a positive number; use null when none applies");
+    }
   }
   if (sizeGuide.charts.length < 1) fail("sizeGuide.charts must contain at least one chart");
 
@@ -261,6 +267,7 @@ function validateFulfillment(fulfillment: FulfillmentConfig): void {
 
   for (const [label, value] of Object.entries({
     coverage: delivery.coverage,
+    carrierSelectionNote: delivery.carrierSelectionNote,
     estimateCaveat: delivery.estimateCaveat,
     carrierTrackingNote: delivery.carrierTrackingNote,
     phoneConfirmationWording: delivery.phoneConfirmationWording,
@@ -291,6 +298,11 @@ function validateFulfillment(fulfillment: FulfillmentConfig): void {
   if (!Number.isInteger(returnLogistics.restockingFeeVnd) || returnLogistics.restockingFeeVnd < 0) {
     fail("fulfillment.returnLogistics.restockingFeeVnd must be a non-negative whole VND amount");
   }
+
+  for (const [label, value] of Object.entries(fulfillment.payment)) {
+    requireText(value, `fulfillment.payment.${label}`);
+  }
+  requireText(fulfillment.support.complaintResponseNote, "fulfillment.support.complaintResponseNote");
 }
 
 /** A published window is only meaningful if it is whole days and does not run backwards. */

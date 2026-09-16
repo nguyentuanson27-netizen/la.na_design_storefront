@@ -35,6 +35,8 @@ const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   "/shipping",
   // U33c size guide page.
   "/size-guide",
+  // A7b policy hub, same shape: one static path, no paginated form, nothing a query could vary.
+  "/policies",
 ]);
 
 /**

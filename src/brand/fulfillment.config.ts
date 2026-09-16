@@ -4,7 +4,11 @@ import type { FulfillmentConfig } from "./schema.ts";
 const NAME = BRAND.identity.name;
 
 /**
- * Returns, delivery and return-logistics facts, as the owner approved them.
+ * Returns, delivery, payment and support facts, as the owner approved them.
+ *
+ * Master spec PART D is the normalized, override-applied form of the supplied terms document, and
+ * this file transcribes it. There is deliberately no second policy document: a competing authority
+ * is a copy that drifts.
  *
  * Policy is the one kind of content a coding agent must never author, so every clause a page shows
  * is a member of this config. A page that renders `returns.productConditions` cannot quietly grow a
@@ -35,7 +39,9 @@ export const FULFILLMENT: FulfillmentConfig = {
       "Giao sai màu.",
       "Giao sai size.",
       "Khách hàng chủ động đổi sang mẫu khác.",
-      "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
+      // §13 lists exactly these five. Brand #1 also promised an exchange of size or colour on an
+      // order the shop fulfilled correctly; the approved source does not support it, so it is
+      // dropped rather than carried over because it was already here.
     ],
     customerInitiatedExchangeFeeVnd: 50_000,
     // Who bears the shipping in each case is a normative B1 commitment, not presentation copy. Left
@@ -50,7 +56,7 @@ export const FULFILLMENT: FulfillmentConfig = {
     // §3 refund channel for a COD order. It lives with the refund policy rather than in a payment
     // constant: a way to receive money back is not a way to pay for an order.
     refundChannelNote:
-      "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
+      "Hoàn tiền ưu tiên thực hiện qua phương thức thanh toán ban đầu khi có thể; nếu không, qua chuyển khoản ngân hàng hoặc phương thức khác được thống nhất với khách hàng.",
   },
 
   // B4/§5 — delivery. NOT the shipping price: that stays with readGuestShippingPolicy, which B4
@@ -58,10 +64,12 @@ export const FULFILLMENT: FulfillmentConfig = {
   // fee here is how a page starts contradicting checkout.
   delivery: {
     coverage: "Giao hàng toàn quốc",
-    carriers: ["GHN", "GHTK"],
+    carriers: ["GHN", "GHTK", "Viettel Post", "J&T"],
+    carrierSelectionNote:
+      "Đơn vị vận chuyển có thể thay đổi tùy theo đơn hàng và khu vực giao.",
     estimateDays: {
       innerCity: { minimum: 1, maximum: 3 },
-      otherProvince: { minimum: 3, maximum: 15 },
+      otherProvince: { minimum: 3, maximum: 10 },
     },
     // The estimates are estimates. §5 says so outright, and the page has to read that way: a
     // delivery window presented as a promise is a policy the owner did not make.
@@ -70,13 +78,13 @@ export const FULFILLMENT: FulfillmentConfig = {
     phoneConfirmationWording: `${NAME} có thể liên hệ để xác minh đơn hàng khi cần.`,
   },
 
-  // Human-facing labels for the delivery windows above. The detailed ward-level operational mapping
-  // stays in the owner-decision document; the public policy only needs to tell a buyer which of the
-  // two approved scopes applies. These stop /shipping collapsing the facts into the ambiguous
-  // historical labels "Nội thành" and "Ngoại tỉnh".
+  // Human-facing labels for the delivery windows above. §12 splits the country in two: Hà Nội, and
+  // everywhere else. The inherited labels narrowed the 1-3 day window to the city's inner districts
+  // and framed the rest as "outside inner-city Hanoi", which is a different and smaller promise
+  // than the one the owner approved.
   deliveryScopeLabels: {
-    innerCity: "Nội thành Hà Nội",
-    otherProvince: "Ngoài nội thành Hà Nội / các tỉnh, thành khác",
+    innerCity: "Hà Nội",
+    otherProvince: "Tỉnh, thành khác",
   },
 
   returnLogistics: {
@@ -88,6 +96,19 @@ export const FULFILLMENT: FulfillmentConfig = {
     restockingFeeVnd: 0,
     restockingFeeNote: "Không thu phí restocking.",
     nonDefectiveRefundNote:
-      "Sản phẩm đúng, không lỗi không được trả hàng để hoàn tiền; khách hàng chỉ được đổi hàng theo chính sách đổi mẫu / size / màu hiện hành.",
+      "Sản phẩm đúng và không lỗi không được trả lại để hoàn tiền vì khách hàng đổi ý; khách hàng có thể đổi sang mẫu khác theo điều kiện đổi hàng hiện hành.",
+  },
+
+  // §14 — what the website can take today. The bank-transfer sentence is approved word for word.
+  payment: {
+    codNote: "Thanh toán khi nhận hàng (COD).",
+    bankTransferUnavailableNote:
+      "Chuyển khoản ngân hàng hiện tạm thời chưa khả dụng trên website.",
+  },
+
+  // §15 — the complaint-handling commitment. A response target is a promise, so it is a fact here
+  // rather than a sentence a support page could soften.
+  support: {
+    complaintResponseNote: "24–48 giờ làm việc kể từ khi tiếp nhận đủ thông tin.",
   },
 };
