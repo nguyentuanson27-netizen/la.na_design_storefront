@@ -48,8 +48,9 @@ merged master spec
   |      +--> A2 legal/contact schema -> A3 identity/contact/merchant/SEO
   |      +--> A4 size guides -> M1 size-guide mapping
   |      +--> A5 fulfillment/payment
-  |      +--> A6 nested navigation -> A7a/A7b/A8
-  |                                  -> Checkpoint A
+  |      +--> F3a minimal category route targets -> A6 active nested navigation -> A8
+  |      +--> A7a/A7b
+  |      +--> F3a + A1..A8 -> Checkpoint A
   |
   +--> G1 Merchant + structured-data availability decision
   +--> G2 Pancake controlled write probe -> G5 atomic capacity design
@@ -75,11 +76,11 @@ Checkpoint B
 
 Checkpoint A -> F1 assets/tokens
 F1 + A6 + M2 -> F2a header/nav
-F2a + F3 -> F2b search
+F2a + F3b -> F2b search
 F2a -> F2c account
 F2a -> F2d cart drawer
-F1 + A6 + A8 -> F3 taxonomy routes
-F3 + M3b -> F4a PLP server -> F4b PLP UI (also F5)
+F1 + A6 + A8 + F3a -> F3b breadcrumbs/canonical/SEO hierarchy
+F3b + M3b -> F4a PLP server -> F4b PLP UI (also F5)
 F1 -> F5 product card
 F1 -> F6a hero
 F1 + F5 + M2 + F6a -> F6b homepage
@@ -97,7 +98,7 @@ Checkpoint C + F5 + F7b
 A7a + A7b + F1 -> F9a footer
 A7a + approved G3 -> F9b contact delivery
 
-F2a/F2b/F2c/F2d/F3/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F9b
+F2a/F2b/F2c/F2d/F3a/F3b/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F9b
   +--> V1 browser/a11y/performance
        +--> V2 full regression/security/release-readiness with indexing off
 ```
@@ -161,16 +162,16 @@ F2a/F2b/F2c/F2d/F3/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F9b
 
 **Verification:** focused policy tests + stale-text search.
 
-## A6 — Add approved nested navigation taxonomy
+## A6 — Activate approved nested navigation after route targets exist
 **Estimated scope:** M (2–4 files)  
 **Files likely touched:** `src/brand/schema.ts`, `src/brand/navigation.config.ts`, navigation config/presentation-boundary tests  
-**Depends on:** A1
+**Depends on:** A1, F3a
 
-**Work:** evolve flat nav only enough for clickable parent + child links; encode exact approved top-level order and Áo dài/Set đồ children; `/shop` stays out of primary nav; no `Trang chủ`.
+**Work:** evolve flat nav only enough for clickable parent + child links, then switch active `NAVIGATION.primary` to the exact approved top-level order and Áo dài/Set đồ children only after F3a has created and verified every target route; `/shop` stays out of primary nav; no `Trang chủ`.
 
-**Acceptance:** exact approved hierarchy/order and href contract; no lookbook primary link. Route existence/crawlability is completed in F3.
+**Acceptance:** exact approved hierarchy/order; no lookbook primary link; every active parent/child href resolves to a non-404 public route at the same merge boundary.
 
-**Verification:** config/order/href contract tests + presentation boundary tests.
+**Verification:** config/order tests + focused link-resolution test covering every active `NAVIGATION.primary` parent/child destination.
 
 ## A7a — Update About/contact legal/support surfaces
 **Estimated scope:** M (2–5 files)  
@@ -199,14 +200,14 @@ F2a/F2b/F2c/F2d/F3/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F9b
 **Files likely touched:** `/sale`, `/lookbook`, `/flash-sale` route modules, sitemap/canonical policy, route tests  
 **Depends on:** A6
 
-**Work:** make `/sale` the only public discounted-products route; remove Brand #2 public lookbook/flash-sale surfaces; keep lower-level promotion data model; keep `/collections`, `/new-arrivals`, `/shop`, `/contact`.
+**Work:** make `/sale` the only public discounted-products route; remove Brand #2 public lookbook/flash-sale surfaces after A6 has moved primary navigation away from them; keep lower-level promotion data model; keep `/collections`, `/new-arrivals`, `/shop`, `/contact`.
 
-**Acceptance:** route/sitemap/canonical contract matches master spec; removed routes are not advertised/indexable; promotion engine remains intact.
+**Acceptance:** route/sitemap/canonical contract matches master spec; removed routes are not advertised/indexable; promotion engine remains intact; active navigation has no link to a removed route.
 
-**Verification:** route + sitemap tests + build route output.
+**Verification:** route + sitemap tests + build route output + active-nav link resolution.
 
 ### Checkpoint A — Brand Config/static truth
-Do not claim Giai đoạn 2 complete until A1–A8 have 0 Critical/0 Required findings and the combined head passes `pnpm lint`, `pnpm typecheck`, `pnpm test:domain`, `pnpm test`, `pnpm build`, plus brand-leak/current-truth checks.
+Do not claim Giai đoạn 2 complete until F3a and A1–A8 have 0 Critical/0 Required findings and the combined head passes `pnpm lint`, `pnpm typecheck`, `pnpm test:domain`, `pnpm test`, `pnpm build`, plus brand-leak/current-truth and active-navigation link-resolution checks.
 
 ---
 
@@ -439,6 +440,17 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 # WORKSTREAM F — GIAI ĐOẠN 3: STOREFRONT FE
 
+## F3a — Minimal crawlable category route targets before nav activation
+**Estimated scope:** M (3–5 files)  
+**Files likely touched:** minimal category parent/child route modules, existing catalog/listing projection reuse, focused route/link-resolution tests  
+**Depends on:** A1
+
+**Work:** create the minimal server-rendered public route targets required by the approved parent/child taxonomy before those hrefs are exposed in `NAVIGATION.primary`. Reuse the existing storefront shell/listing behavior; do not redesign, invent category copy, or activate the new navigation in this task.
+
+**Acceptance:** every intended A6 parent/child href returns a non-404 public response and handles empty/real catalog state truthfully; current active navigation is unchanged until A6.
+
+**Verification:** focused route tests + link-resolution manifest/test covering every intended A6 target.
+
 ## F1 — Approved assets and visual tokens
 **Estimated scope:** M (2–5 files)  
 **Files likely touched:** existing public/app asset locations, social/favicon assets, `globals.css`/visual tokens, shell/render tests  
@@ -466,11 +478,11 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 ## F2b — Full-screen search overlay
 **Estimated scope:** M (2–4 files)  
 **Files likely touched:** search overlay, existing search adapter/query projection, focused component/domain tests  
-**Depends on:** F2a, F3
+**Depends on:** F2a, F3b
 
 **Work:** build full-screen search using real product + category suggestions; accessible focus trap/restore, Escape, loading/empty/error and polite result announcements.
 
-**Acceptance:** real data only; category suggestions link to F3 routes; keyboard/mobile flow works.
+**Acceptance:** real data only; category suggestions link to F3a/F3b routes; keyboard/mobile flow works.
 
 **Verification:** search domain/component tests + desktop/mobile keyboard/Axe walkthrough.
 
@@ -496,21 +508,21 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 **Verification:** cart regression/component tests + desktop/mobile keyboard/Axe walkthrough.
 
-## F3 — Crawlable category routes, breadcrumbs and SEO hierarchy
-**Estimated scope:** M (3–5 files)  
-**Files likely touched:** category route modules, breadcrumb/SEO helper, metadata/route tests  
-**Depends on:** A6, A8, F1
+## F3b — Breadcrumbs, canonical metadata and category SEO hierarchy
+**Estimated scope:** M (2–5 files)  
+**Files likely touched:** F3a category route modules, breadcrumb/SEO helper, metadata/route tests  
+**Depends on:** F3a, A6, A8, F1
 
-**Work:** build clickable parent categories + crawlable child URLs; keep `/collections` for real editorial collections; natural La.na/Lana handling without doorway pages; draft exact category SEO copy for owner approval where pending.
+**Work:** refine the already-resolving F3a category routes with breadcrumb/canonical/internal-link hierarchy; keep `/collections` for real editorial collections; natural La.na/Lana handling without doorway pages; draft exact category SEO copy for owner approval where pending.
 
-**Acceptance:** route existence, canonical/breadcrumb/internal links agree for parent → child → product hierarchy.
+**Acceptance:** route existence remains green; canonical/breadcrumb/internal links agree for parent → child → product hierarchy; no active primary-nav destination regresses to 404.
 
-**Verification:** route/metadata tests + crawlable-link inspection.
+**Verification:** route/metadata tests + crawlable-link inspection + active-navigation link-resolution regression check.
 
 ## F4a — Server PLP filter/order/pagination contract
 **Estimated scope:** M (3–5 files)  
 **Files likely touched:** catalog query/repository, PLP server view-model/route adapter, query/canonical tests  
-**Depends on:** F3, M3b
+**Depends on:** F3b, M3b
 
 **Work:** validate size/price/color/sale filters; manual default order; stable page/cursor URLs capable of server rendering/crawlable discovery; no bestseller sort.
 
@@ -679,7 +691,7 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 ## V1 — Full Brand #2 browser, accessibility and performance acceptance
 **Estimated scope:** verification-only  
 **Files likely touched:** browser/E2E acceptance harness, Axe/accessibility checks, performance measurement harness; no production-source edits planned  
-**Depends on:** F2a, F2b, F2c, F2d, F3, F4a, F4b, F5, F6a, F6b, F7a, F7b, F7c, F7d, F7e, F8a, F8b, F8c, F9a, F9b, Checkpoint C
+**Depends on:** F2a, F2b, F2c, F2d, F3a, F3b, F4a, F4b, F5, F6a, F6b, F7a, F7b, F7c, F7d, F7e, F8a, F8b, F8c, F9a, F9b, Checkpoint C
 
 **Scenarios:** desktop/mobile header/nav/search/cart; homepage order/motion/reduced-motion; Áo dài/Set/Váy PLP filters/infinite loading; PDP gallery/size modal/required size plus exact detail-content order/truth; standard OOS/oversell/preorder/hard limit; mixed preorder checkout/confirmation/tracking; About/policy/contact/footer truth.
 
@@ -719,7 +731,7 @@ Run mirror/Merchant audits only after a real catalog sync makes them meaningful.
 
 Safe after plan approval:
 - G1/G2/G3/G4 can run concurrently with Workstream A.
-- A2/A3/A4/A5/A6 may split after A1, coordinating shared `schema.ts` edits.
+- After A1, A2/A3/A4/A5 and F3a may proceed in parallel, coordinating shared route/schema owners; **A6 must wait for F3a route/link verification before activating the new primary navigation**.
 - **M1 may start immediately after A4**; it does not wait for Checkpoint A/G4 because it reuses the existing `ProductContent.sizeGuide` owner.
 - **M2/M3a/M3b wait for Checkpoint A + approved G4.** If the approved G4 design requires a schema migration, that migration/DB slice additionally waits for Checkpoint B; no-migration reuse may proceed before Checkpoint B.
 - After Checkpoint A, F1 can proceed while inventory architecture is resolved.
@@ -727,6 +739,7 @@ Safe after plan approval:
 - F6a can be built before campaign content because it supports truthful 0/1/2–3 states.
 
 Must remain sequential:
+- F3a route targets/link-resolution → A6 active navigation → A8 removal of obsolete public routes.
 - G2 → G5 → Checkpoint B → I1 → I6a → I6b → I7/I8.
 - Two tasks touching the same Prisma persistence/migration owner.
 - F8a → F8b → F8c for consistent buyer/history projection.
@@ -737,7 +750,7 @@ Prefer one PR/branch per task or approved sub-slice; if actual task scope exceed
 ## 5. Human checkpoints
 
 1. Plan approval — required before `/build`.
-2. Checkpoint A — Brand Config/static truth review.
+2. Checkpoint A — Brand Config/static truth review, including F3a route-target safety and active-navigation link resolution.
 3. Checkpoint B — approve merchandising migration if needed, capacity/reservation architecture, Merchant/structured-data mapping, Pancake evidence and mail provider where applicable.
 4. Visual checkpoint — representative desktop/mobile homepage + PLP + PDP with real assets/media.
 5. Final implementation review — V2 before `/ship`.
