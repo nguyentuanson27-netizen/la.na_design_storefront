@@ -164,6 +164,25 @@ test("A7b approved contact placeholders are resolved and no unsent contact form 
   }
 });
 
+test("A7b complaint response target is sourced from the PART D fulfillment authority", () => {
+  const complaint = buildPolicyHubViewModel().topics.find(
+    (topic) => topic.id === ("khieu-nai" as PolicyTopicId),
+  ) as TopicWithSections | undefined;
+  assert.ok(complaint);
+  assert.equal(complaint.note, FULFILLMENT.support.complaintResponseNote);
+
+  const workflow = complaint.sections?.find(
+    (section) => section.heading === "Quy trình xử lý khiếu nại",
+  );
+  assert.ok(workflow);
+  const responseStep = workflow.items.find((item) => item.startsWith("Bước 3:"));
+  assert.ok(responseStep);
+  assert.ok(
+    responseStep.includes(FULFILLMENT.support.complaintResponseNote),
+    "Bước 3 must compose the response target from FULFILLMENT.support instead of restating the SLA",
+  );
+});
+
 test("A7b all five formerly blocked legal topics now contain owner-approved sections", () => {
   const byId = new Map(buildPolicyHubViewModel().topics.map((topic) => [topic.id, topic]));
   for (const id of [
