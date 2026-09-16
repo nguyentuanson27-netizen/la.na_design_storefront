@@ -24,7 +24,7 @@ The approved Brand #2 category/subcategory routes from master-spec §10 are not 
 | Product size-guide selection | `ProductContent.sizeGuide` exists but is generic text | reuse `ProductContent.sizeGuide` as validated logical guide ID | **A — NO MIGRATION** | extend existing product-content admin path, still behind `requireAdminSession` | PDP resolves ID against approved Brand Config guides |
 | Existing collection-grid pinned order | `CollectionDefinition.featuredProductSlugs` | keep its current collection-grid pinning semantic only | **A — NO MIGRATION** | existing/extended collection admin | `/collections/[slug]` only |
 | Standalone homepage Featured products | no manual durable owner; current homepage uses generic discovery | dedicated global ordered product relation | **B — ADDITIVE MIGRATION REQUIRED** | homepage merchandising admin transaction | homepage Featured section only |
-| Canonical category identity + membership | **none settled on current main** | must be designed before category-owned merchandising is approved | **C — DEFERRED/PENDING** | pending F3a/G4 category-authority decision | category/subcategory routes + all category consumers |
+| Canonical category identity + membership | **none settled on current main** | must be designed before category-owned merchandising is approved | **C — DEFERRED/PENDING** | pending G4 category-authority decision | category/subcategory routes + all category consumers |
 | Category PLP default ordering | no category authority to key an order to | key to the future canonical category authority | **C — DEFERRED/PENDING** | after category authority + Checkpoint B | category PLP only |
 | Mega-menu/category editorial image | no canonical category owner; `CollectionDefinition.heroImageUrl` is collection media | key to the future canonical category authority | **C — DEFERRED/PENDING** | after category authority + Checkpoint B if persistence changes | category landing/mega-menu |
 | Related-product manual override + fallback | current code has no override and falls back by shared **collection** | future contract is manual override first, then **same-category** fallback | **C — DEFERRED/PENDING** until category authority exists | after category authority + Checkpoint B | PDP related-products reader |
@@ -86,7 +86,7 @@ Current main does **not** provide a canonical Brand #2 category identity/members
 - the approved category/subcategory route hierarchy is not active yet;
 - there is no persisted relation that lets a consumer answer “which approved category owns this product?” independently of collections.
 
-Before any category-owned G4 schema is accepted, F3a/G4 must record one canonical category contract with all of these invariants:
+Before any category-owned G4 schema is accepted, **G4 must record** one canonical category contract with all of these invariants:
 
 1. a stable key/slug for every approved category and subcategory;
 2. explicit parent/child hierarchy for category → subcategory routes;
@@ -95,7 +95,7 @@ Before any category-owned G4 schema is accepted, F3a/G4 must record one canonica
 5. `/collections` remains a separate namespace/semantic and does not become category truth by accident;
 6. category membership is queryable by PDP/PLP consumers so “same-category” has one exact meaning.
 
-This ADR does not invent a `CategoryDefinition` schema or Pancake-category derivation without evidence. Until that prerequisite is approved, category-dependent rows below remain C/PENDING rather than encoding the wrong taxonomy.
+This ADR does not invent a `CategoryDefinition` schema or Pancake-category derivation without evidence. Until that prerequisite is approved, category-dependent rows below remain C/PENDING rather than encoding the wrong taxonomy. F3a may implement category routes only after the approved category contract gives those routes a canonical identity/membership source; F3a is not reassigned ownership of this architecture gate.
 
 ## 5. Category PLP default ordering — C: deferred/pending
 
@@ -155,4 +155,4 @@ None of these facts, by themselves, establish Brand #2 category identity. None b
 
 **C — DEFERRED/PENDING:** canonical category identity/membership authority; category PLP manual order; category/mega-menu editorial image ownership; related-product manual/fallback contract that depends on exact same-category semantics.
 
-G4 therefore remains **not complete**. The next architecture step is to settle the category identity/membership authority as part of F3a/G4 before approving M3a/M3b or category-media persistence. No migration is created by this ADR.
+G4 therefore remains **not complete**. The next architecture step is for **G4** to settle the category identity/membership authority before G4 can be approved; F3a/M2/M3 remain behind their existing approved plan dependencies and do not absorb this gate. No migration is created by this ADR.
