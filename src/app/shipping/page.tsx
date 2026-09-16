@@ -37,7 +37,10 @@ function render(data: ShippingViewModel) {
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
                 Đơn vị vận chuyển
               </dt>
-              <dd className="mt-2 text-black/70">{data.carriersText}</dd>
+              <dd className="mt-2 text-black/70">
+                {data.carriersText}
+                <span className="mt-1 block text-sm text-black/60">{data.carrierSelectionNote}</span>
+              </dd>
             </div>
             <div>
               <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
@@ -83,6 +86,9 @@ function render(data: ShippingViewModel) {
             Thanh toán
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7">{data.paymentMethod}</p>
+          <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
+            {data.bankTransferUnavailable}
+          </p>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
             {data.checkoutAccount} {data.serverVerification}
           </p>

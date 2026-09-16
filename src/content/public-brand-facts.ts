@@ -8,7 +8,10 @@ export function buildPublicBrandFacts(policy: GuestShippingPolicy) {
   return Object.freeze({
     brandName: BRAND.identity.name,
     brandSummary: BRAND.identity.tagline,
-    paymentMethod: "Thanh toán khi nhận hàng (COD).",
+    paymentMethod: FULFILLMENT.payment.codNote,
+    // §14: the site takes COD only, and the unavailability of bank transfer is a sentence the owner
+    // approved word for word rather than something a surface phrases for itself.
+    bankTransferUnavailable: FULFILLMENT.payment.bankTransferUnavailableNote,
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
     orderTracking: Object.freeze({

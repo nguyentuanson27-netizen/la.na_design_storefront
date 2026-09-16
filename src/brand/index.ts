@@ -267,6 +267,7 @@ function validateFulfillment(fulfillment: FulfillmentConfig): void {
 
   for (const [label, value] of Object.entries({
     coverage: delivery.coverage,
+    carrierSelectionNote: delivery.carrierSelectionNote,
     estimateCaveat: delivery.estimateCaveat,
     carrierTrackingNote: delivery.carrierTrackingNote,
     phoneConfirmationWording: delivery.phoneConfirmationWording,
@@ -297,6 +298,11 @@ function validateFulfillment(fulfillment: FulfillmentConfig): void {
   if (!Number.isInteger(returnLogistics.restockingFeeVnd) || returnLogistics.restockingFeeVnd < 0) {
     fail("fulfillment.returnLogistics.restockingFeeVnd must be a non-negative whole VND amount");
   }
+
+  for (const [label, value] of Object.entries(fulfillment.payment)) {
+    requireText(value, `fulfillment.payment.${label}`);
+  }
+  requireText(fulfillment.support.complaintResponseNote, "fulfillment.support.complaintResponseNote");
 }
 
 /** A published window is only meaningful if it is whole days and does not run backwards. */

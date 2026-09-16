@@ -74,6 +74,7 @@ The U6-time table below is the `buildPublicBrandFacts` shape, which still holds:
 | `brandName` | Constant `"LA Clothing"` | **A** |
 | `brandSummary` | Constant, one sentence | **A** |
 | `paymentMethod` | Constant: cash on delivery | **A** |
+| `bankTransferUnavailable` | Constant: bank transfer is temporarily unavailable on the website (added by A5, master spec §14) | **A** |
 | `checkoutAccount` | Constant: no account required | **A** |
 | `shipping` | Derived from the server-owned `GuestShippingPolicy` (`LA_SHIPPING_FEE_VND`, `LA_FREE_SHIPPING_SUBTOTAL_VND`, `LA_FREE_SHIPPING_MIN_QUANTITY`) | **A** |
 | `orderTracking` | Constant describing the `/track-order` capability that exists | **A** |
@@ -199,6 +200,7 @@ The policy was supplied by the owner, not derived.
 | Fact needed | Current state | Class |
 |---|---|---|
 | Payment method (COD) | `paymentMethod` | **A** |
+| Bank transfer temporarily unavailable | `bankTransferUnavailable` | **A** |
 | No account required to order | `checkoutAccount` | **A** |
 | Shipping fee, free-shipping threshold and minimum quantity | `shipping`, from the server-owned policy | **A** |
 | Phone confirmation before delivery | Stated at checkout and on the success page (`src/components/commerce/guest-checkout-form.tsx`, `src/app/checkout/success/page.tsx`) but not in the fact source | **B** |

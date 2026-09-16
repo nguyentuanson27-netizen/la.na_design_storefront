@@ -87,18 +87,21 @@ test("the fanpage label follows the configured URL instead of naming a fixed pag
 
 const shipping = () => buildShippingViewModel({ policy: readGuestShippingPolicy() });
 
-test("Shipping names the owner-approved Hanoi scopes, not the ambiguous historical labels", () => {
+test("Shipping names the owner-approved delivery scopes, not the ambiguous historical labels", () => {
   const model = shipping();
 
   assert.equal(model.innerCityLabel, FULFILLMENT.deliveryScopeLabels.innerCity);
   assert.equal(model.otherProvinceLabel, FULFILLMENT.deliveryScopeLabels.otherProvince);
-  // The historical labels were the bare "Nội thành" and "Ngoại tỉnh", which name no city and so
-  // mean whatever the reader assumes. The approved ones say Hanoi; what is pinned is that the page
-  // never falls back to the bare pair.
-  assert.notEqual(model.innerCityLabel, "Nội thành");
-  assert.notEqual(model.otherProvinceLabel, "Ngoại tỉnh");
-  assert.equal(model.innerCityLabel.includes("Hà Nội"), true);
-  assert.equal(model.otherProvinceLabel.includes("Hà Nội"), true);
+
+  // A5 §12 splits the country in two: Hà Nội, and everywhere else. What is pinned is that neither
+  // label narrows that split -- "Nội thành" would confine the 1-3 day window to the city's inner
+  // districts, and the bare "Ngoại tỉnh" names no city at all and means whatever a reader assumes.
+  assert.equal(model.innerCityLabel, "Hà Nội");
+  assert.equal(model.otherProvinceLabel, "Tỉnh, thành khác");
+  for (const label of [model.innerCityLabel, model.otherProvinceLabel]) {
+    assert.equal(label.includes("Nội thành"), false, label);
+    assert.equal(label.includes("Ngoại tỉnh"), false, label);
+  }
 });
 
 test("Shipping's delivery estimates come from the delivery facts through the shared helper", () => {

@@ -184,12 +184,28 @@ export type FulfillmentConfig = Readonly<{
   delivery: Readonly<{
     coverage: string;
     carriers: readonly string[];
+    /** Which of the carriers handles an order is the shop's choice, not the shopper's. */
+    carrierSelectionNote: string;
     estimateDays: Readonly<{ innerCity: DayRange; otherProvince: DayRange }>;
     estimateCaveat: string;
     carrierTrackingNote: string;
     phoneConfirmationWording: string;
   }>;
   deliveryScopeLabels: Readonly<{ innerCity: string; otherProvince: string }>;
+  /**
+   * What the website can currently take, and what it cannot.
+   *
+   * Payment availability is a policy commitment, not presentation: "bank transfer is temporarily
+   * unavailable" is a sentence the owner approved word for word, and a page that reworded it would
+   * be making a different statement about the same fact. It lives beside delivery and returns
+   * because those are the other two halves of what a buyer is promised at checkout.
+   *
+   * No account detail belongs here. Bank transfer is off, and a stored account number is how a
+   * disabled method starts being usable again by accident.
+   */
+  payment: Readonly<{ codNote: string; bankTransferUnavailableNote: string }>;
+  /** Post-sale support commitments that are neither a delivery nor a return term. */
+  support: Readonly<{ complaintResponseNote: string }>;
   returnLogistics: Readonly<{
     returnMethods: Readonly<{
       inStore: string;

@@ -87,6 +87,8 @@ export function buildContactViewModel(): ContactViewModel {
 export type ShippingViewModel = Readonly<{
   coverage: string;
   carriersText: string;
+  /** Which carrier handles an order is the shop's choice; §12 says so and the page must too. */
+  carrierSelectionNote: string;
   /** Owner-approved Hanoi scope labels, so the page never publishes the ambiguous historical ones. */
   innerCityLabel: string;
   innerCityEstimate: string;
@@ -100,6 +102,8 @@ export type ShippingViewModel = Readonly<{
   orderTrackingDetail: string;
   phoneConfirmationWording: string;
   paymentMethod: string;
+  /** §14 — stated in the approved words, so the page cannot soften or omit it. */
+  bankTransferUnavailable: string;
   checkoutAccount: string;
   serverVerification: string;
   refundChannelNote: string;
@@ -122,6 +126,7 @@ export function buildShippingViewModel(
   return Object.freeze({
     coverage: delivery.coverage,
     carriersText: delivery.carriers.join(" · "),
+    carrierSelectionNote: delivery.carrierSelectionNote,
     innerCityLabel: FULFILLMENT.deliveryScopeLabels.innerCity,
     innerCityEstimate: describePublicDeliveryEstimate(delivery.estimateDays.innerCity),
     otherProvinceLabel: FULFILLMENT.deliveryScopeLabels.otherProvince,
@@ -134,6 +139,7 @@ export function buildShippingViewModel(
     orderTrackingDetail: brandFacts.orderTracking.detail,
     phoneConfirmationWording: delivery.phoneConfirmationWording,
     paymentMethod: brandFacts.paymentMethod,
+    bankTransferUnavailable: brandFacts.bankTransferUnavailable,
     checkoutAccount: brandFacts.checkoutAccount,
     serverVerification: brandFacts.serverVerification,
     refundChannelNote: PUBLIC_RETURNS_POLICY.refundChannelNote,

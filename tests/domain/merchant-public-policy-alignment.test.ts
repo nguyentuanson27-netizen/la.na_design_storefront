@@ -14,7 +14,7 @@ test("M5 public return authority exposes the owner-approved Merchant-compatible 
     restockingFeeVnd: 0,
     restockingFeeNote: "Không thu phí restocking.",
     nonDefectiveRefundNote:
-      "Sản phẩm đúng, không lỗi không được trả hàng để hoàn tiền; khách hàng chỉ được đổi hàng theo chính sách đổi mẫu / size / màu hiện hành.",
+      "Sản phẩm đúng và không lỗi không được trả lại để hoàn tiền vì khách hàng đổi ý; khách hàng có thể đổi sang mẫu khác theo điều kiện đổi hàng hiện hành.",
   });
 
   // The existing customer-initiated exchange fee remains a different business fact.
@@ -23,12 +23,12 @@ test("M5 public return authority exposes the owner-approved Merchant-compatible 
 
 test("M5 public delivery authority names the owner-approved Hanoi scopes explicitly", () => {
   assert.deepEqual(FULFILLMENT.deliveryScopeLabels, {
-    innerCity: "Nội thành Hà Nội",
-    otherProvince: "Ngoài nội thành Hà Nội / các tỉnh, thành khác",
+    innerCity: "Hà Nội",
+    otherProvince: "Tỉnh, thành khác",
   });
 
   assert.deepEqual(PUBLIC_DELIVERY_FACTS.estimateDays, {
     innerCity: { minimum: 1, maximum: 3 },
-    otherProvince: { minimum: 3, maximum: 15 },
+    otherProvince: { minimum: 3, maximum: 10 },
   });
 });

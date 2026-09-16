@@ -35,6 +35,8 @@ test("P16A public brand facts expose only approved identity and commerce facts",
     brandName: "La.na Design",
     brandSummary: "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ",
     paymentMethod: "Thanh toán khi nhận hàng (COD).",
+    // A5/§14: the site takes COD only, and says so about bank transfer in the approved words.
+    bankTransferUnavailable: "Chuyển khoản ngân hàng hiện tạm thời chưa khả dụng trên website.",
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
     orderTracking: {
@@ -241,7 +243,8 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
       "Giao sai màu.",
       "Giao sai size.",
       "Khách hàng chủ động đổi sang mẫu khác.",
-      "Khách hàng mua đúng hàng nhưng muốn đổi size hoặc đổi màu.",
+      // A5: the sixth case -- an exchange of size or colour on a correctly fulfilled order -- is not
+      // supported by the approved source and was retired rather than carried over.
     ],
     customerInitiatedExchangeFeeVnd: 50_000,
     // Who bears the shipping in each case is a normative B1 commitment. Held here rather than in
@@ -255,7 +258,7 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
       "Không có danh mục sản phẩm loại trừ riêng. La.na Design chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
     refundWorkingDays: { minimum: 7, maximum: 10 },
     refundChannelNote:
-      "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
+      "Hoàn tiền ưu tiên thực hiện qua phương thức thanh toán ban đầu khi có thể; nếu không, qua chuyển khoản ngân hàng hoặc phương thức khác được thống nhất với khách hàng.",
   });
 
   // Intl's vi-VN currency form puts a non-breaking space before the symbol; pinned explicitly so
@@ -275,10 +278,11 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
 test("U33b the delivery facts transcribe §5 and hold no shipping price", () => {
   assert.deepEqual(PUBLIC_DELIVERY_FACTS, {
     coverage: "Giao hàng toàn quốc",
-    carriers: ["GHN", "GHTK"],
+    carriers: ["GHN", "GHTK", "Viettel Post", "J&T"],
+    carrierSelectionNote: "Đơn vị vận chuyển có thể thay đổi tùy theo đơn hàng và khu vực giao.",
     estimateDays: {
       innerCity: { minimum: 1, maximum: 3 },
-      otherProvince: { minimum: 3, maximum: 15 },
+      otherProvince: { minimum: 3, maximum: 10 },
     },
     estimateCaveat: "Đây là thời gian dự kiến, không phải cam kết thời hạn tuyệt đối.",
     // Stored as the sentence the page renders, not as a boolean beside hard-coded copy: a flag no
@@ -303,7 +307,7 @@ test("U33b the delivery facts transcribe §5 and hold no shipping price", () => 
   assert.equal(describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.innerCity), "1–3 ngày");
   assert.equal(
     describePublicDeliveryEstimate(PUBLIC_DELIVERY_FACTS.estimateDays.otherProvince),
-    "3–15 ngày",
+    "3–10 ngày",
   );
 });
 
