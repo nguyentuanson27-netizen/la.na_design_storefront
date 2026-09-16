@@ -8,12 +8,16 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **A1** Sync owner-facts + normalized policy authority with interview overrides; no future legal prose depends on chat memory.
 - [x] **A2** Add distinct registered legal address/email/tax issue date; do not expose legal representative.
 - [x] **A3** Replace Brand #1 identity/contact/merchant/default SEO truth; preserve `Lana Design` as search alias only.
-- [ ] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
-- [ ] **A5** Align carriers/delivery/returns/refund/COD-only payment; Hà Nội 1–3, other provinces 3–10.
+- [x] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
+- [x] **A5** Align carriers/delivery/returns/refund/COD-only payment; Hà Nội 1–3, other provinces 3–10.
 - [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
 - [ ] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
-- [ ] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
-- [ ] **A7b** Make all required policy items reachable via existing pages + one non-duplicative policy hub/anchors.
+- [x] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
+- [ ] **A7b** **PARTIAL.** `/policies` hub built with stable anchors; shipping, payment, returns/refund,
+  contact, online support and complaint handling all resolve from approved facts. The remaining five
+  §33 items — general terms, pricing, privacy, supply conditions, platform rights/obligations — have
+  **no approved source text anywhere in the repository** and stay unbuilt rather than authored.
+  Blocked on owner content; see owner-facts §11.
 - [ ] **A8** After A6, remove Brand #2 public `/lookbook` + `/flash-sale` routes and align sitemap/canonical policy; `/sale` already exists from F3a and remains the only public discounted-products route.
 
 ### Checkpoint A

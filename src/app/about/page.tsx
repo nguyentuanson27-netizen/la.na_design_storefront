@@ -9,11 +9,16 @@ import { buildAboutMetadata } from "@/routes/metadata/about";
 /**
  * W13/U33a — the minimal About page B6 approves, and deliberately no more than that.
  *
- * B6 resolved "for a minimal About page": the brand positioning, the legal entity, the address and
- * the confirmed MST may be public; the founding year, the founder and any brand story or values are
- * withheld. This page therefore has no origin story, no mission statement and no team section — not
- * because they would not read well, but because no approved source states them and a coding agent
- * may not author a brand's history.
+ * Approved for publication: the brand positioning, the legal entity, its registered address, the
+ * confirmed MST with its issue date, and the corporate email. The founding year, the founder and any
+ * brand story or values are withheld, so this page has no origin story, no mission statement and no
+ * team section — not because they would not read well, but because no approved source states them
+ * and a coding agent may not author a brand's history. **The legal representative is withheld too**
+ * and has no field to render.
+ *
+ * A7a: the registered address and the business address are shown under different headings because
+ * they are different places. A customer sending a return needs the second one, and a page that
+ * offered only "Địa chỉ" would leave them guessing which they were looking at.
  *
  * Every fact it shows arrives through the view model, which reads the fact authority. Nothing is
  * transcribed here, so the one place any of it can change stays the place the owner's decision is.
@@ -39,11 +44,25 @@ function render(data: AboutViewModel) {
           </div>
           <div>
             <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Mã số thuế</dt>
-            <dd className="mt-2 text-black/70">{data.taxCode}</dd>
+            <dd className="mt-2 text-black/70">
+              {data.taxCode} — ngày cấp: {data.taxIdIssueDate}
+            </dd>
           </div>
           <div>
-            <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Địa chỉ</dt>
-            <dd className="mt-2 text-black/70">{data.address}</dd>
+            <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+              Địa chỉ đăng ký kinh doanh
+            </dt>
+            <dd className="mt-2 text-black/70">{data.registeredAddress}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Email công ty</dt>
+            <dd className="mt-2 text-black/70">{data.legalEmail}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+              Địa chỉ kinh doanh &amp; nhận hàng đổi trả
+            </dt>
+            <dd className="mt-2 text-black/70">{data.businessAddress}</dd>
           </div>
         </dl>
       </section>

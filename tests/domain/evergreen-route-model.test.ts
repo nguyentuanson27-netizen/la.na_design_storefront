@@ -47,17 +47,22 @@ test("About reads the legal facts and the shared address helper", () => {
   assert.equal(model.legalEntityName, PUBLIC_LEGAL_FACTS.legalEntityName);
   assert.equal(model.taxCode, PUBLIC_LEGAL_FACTS.taxCode);
   // The same call the footer and the Organization node use, not a second address format.
-  assert.equal(model.address, describePublicAddress());
+  assert.equal(model.businessAddress, describePublicAddress());
 });
 
 test("About states only what B6 approved", () => {
   // A founding year, founder or brand story arriving here is the regression this pins: the owner
   // withheld them, and no approved source states them.
+  // A7a added the registered legal identity; a founding year, founder, brand story or legal
+  // representative arriving here is still the regression this pins.
   assert.deepEqual(Object.keys(buildAboutViewModel()).sort(), [
-    "address",
+    "businessAddress",
+    "legalEmail",
     "legalEntityName",
     "positioning",
+    "registeredAddress",
     "taxCode",
+    "taxIdIssueDate",
   ]);
 });
 
@@ -68,7 +73,7 @@ test("Contact reads every channel from the contact facts", () => {
   assert.equal(model.telephoneInternational, BRAND.contact.telephoneInternational);
   assert.equal(model.email, BRAND.contact.email);
   assert.equal(model.fanpageUrl, BRAND.contact.fanpageUrl);
-  assert.equal(model.address, describePublicAddress());
+  assert.equal(model.businessAddress, describePublicAddress());
   assert.equal(model.supportHours, describePublicSupportHours());
 });
 

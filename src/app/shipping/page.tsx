@@ -9,10 +9,14 @@ import { buildShippingMetadata } from "@/routes/metadata/shipping";
  * W13/U33b + U41/M5 — Shipping & Payment page from reviewed public authorities.
  *
  * Shipping price remains server-owned in `readGuestShippingPolicy`, which the loader reads.
- * Delivery windows stay in `PUBLIC_DELIVERY_FACTS`, while `FULFILLMENT.deliveryScopeLabels` names
- * the owner-approved Hanoi scopes explicitly so the public page does not publish the ambiguous
- * historical labels “Nội thành” and “Ngoại tỉnh”. No Merchant-only fallback changes the
- * customer-facing delivery policy. Page prose labels sections; every normative statement is a fact.
+ * Delivery windows stay in `PUBLIC_DELIVERY_FACTS`, and `FULFILLMENT.deliveryScopeLabels` names the
+ * approved split — Hà Nội, and everywhere else — so the page publishes neither the ambiguous bare
+ * “Ngoại tỉnh” nor an inner-city framing that would narrow the 1–3 day window to part of the city.
+ * No Merchant-only fallback changes the customer-facing delivery policy. Page prose labels
+ * sections; every normative statement is a fact.
+ *
+ * A5 added the payment section's second sentence: bank transfer is temporarily unavailable, in the
+ * approved words. Its `thanh-toan` anchor is the destination the policy hub links to.
  */
 
 const POLICY_LINK =
@@ -81,7 +85,8 @@ function render(data: ShippingViewModel) {
           </p>
         </section>
 
-        <section aria-labelledby="payment-heading">
+        {/* `thanh-toan` is the anchor the policy hub links to; it is part of the published surface. */}
+        <section id="thanh-toan" aria-labelledby="payment-heading">
           <h2 id="payment-heading" className="font-serif text-3xl tracking-[-0.03em]">
             Thanh toán
           </h2>

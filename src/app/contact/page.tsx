@@ -14,9 +14,16 @@ import { buildContactMetadata } from "@/routes/metadata/contact";
  * transcribed a second time: a phone number that appears in three places and is owned by one
  * constant cannot go stale in two of them.
  *
- * The page claims no support channel the owner did not approve. There is no contact form, no live
- * chat and no response-time promise, because none of those exist as an owner-approved fact and a
- * page that implies them would be a policy this repository invented.
+ * The page claims no support channel the owner did not approve. There is no live chat, and the
+ * complaint response target is the approved one from the policy authority rather than a promise
+ * phrased here.
+ *
+ * The address shown is the **business and return** address, labelled as such. The registered office
+ * is a different place and belongs to About; a page offering a bare "Địa chỉ" is how a customer
+ * posts a return to a registered office that does not receive post.
+ *
+ * Outbound delivery for a contact form is G3/F9b work and is deliberately absent: no provider, no
+ * form, and nothing that could tell a visitor a message was sent when nothing sent it.
  */
 
 const CONTACT_LINK =
@@ -52,12 +59,20 @@ function render(data: ContactViewModel) {
           </dd>
         </div>
         <div>
-          <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Địa chỉ</dt>
-          <dd className="mt-2 text-black/70">{data.address}</dd>
+          <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+            Địa chỉ kinh doanh &amp; nhận hàng đổi trả
+          </dt>
+          <dd className="mt-2 text-black/70">{data.businessAddress}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Giờ hỗ trợ</dt>
           <dd className="mt-2 text-black/70">{data.supportHours}</dd>
+        </div>
+        <div>
+          <dt className="text-xs font-semibold uppercase tracking-[0.13em]">
+            Tiếp nhận và giải quyết khiếu nại
+          </dt>
+          <dd className="mt-2 text-black/70">{data.complaintResponse}</dd>
         </div>
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Fanpage</dt>
