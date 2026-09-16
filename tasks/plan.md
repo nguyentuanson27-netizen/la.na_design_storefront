@@ -100,6 +100,7 @@ Checkpoint C + F5 + F7b
 
 A7a + A7b + F1 -> F9a footer
 A7a + approved G3 -> F9b contact delivery
+  NOTE: if G3 requires a new provider/dependency/credential, F9b's provider/adapter implementation also waits for Checkpoint B.
 
 F2a/F2b/F2c/F2d/F3a/F3b/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F7e/F8a/F8b/F8c/F9a/F9b
   +--> V1 browser/a11y/performance
@@ -245,7 +246,7 @@ Do not claim Giai đoạn 2 complete until F3a and A1–A8 have 0 Critical/0 Req
 
 **Work:** inspect deployment capability first; if none can deliver to the approved support inbox, propose the smallest provider/dependency/credential boundary including validation, abuse protection, sender identity and secret storage.
 
-**Acceptance:** existing transport is identified or one explicit provider choice is approved; no fake “sent” flow.
+**Acceptance:** existing transport is identified or one explicit provider choice is documented for Checkpoint B approval; no fake “sent” flow.
 
 **Verification:** configuration/provider evidence; no secret in repo.
 
@@ -272,7 +273,7 @@ Do not claim Giai đoạn 2 complete until F3a and A1–A8 have 0 Critical/0 Req
 **Verification:** adversarial concurrency walkthrough + security/data-integrity review.
 
 ### Checkpoint B — human architecture approval before migrations/new provider
-Required: approve G4 and G5; accept G1 and G2 evidence; decide G3 if contact delivery is in this build wave. No selling-mode migration, new provider, or merchandising schema migration is authorized before this checkpoint.
+Required: approve G4 and G5; accept G1 and G2 evidence; accept G3 transport decision and explicitly approve any new provider/dependency/credential boundary it requires. No selling-mode migration, new provider, or merchandising schema migration is authorized before this checkpoint.
 
 ---
 
@@ -593,11 +594,11 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 **Files likely touched:** PDP purchase panel/detail composition, size selection/add-to-cart controls, focused domain/browser tests  
 **Depends on:** F1, F7a
 
-**Work:** sticky right buy panel; Add + Mua ngay; no auto-selected size; missing-size message; standard OOS visible+disabled; mobile sticky price + selected size + Add; preserve server authority.
+**Work:** sticky right buy panel; CTAs exactly `Thêm vào giỏ` + `Mua ngay`; no auto-selected size. An add-to-cart attempt without size highlights the selector and shows exact `Vui lòng chọn size`. Standard OOS remains visible, disabled and shows `Hết hàng`. Mobile sticky bar shows price + selected size + `Thêm vào giỏ`; preserve server authority.
 
-**Acceptance:** required-size flow and purchase controls are accessible and server-authoritative.
+**Acceptance:** exact CTA/error/OOS presentation is preserved; required-size flow and purchase controls are accessible and server-authoritative.
 
-**Verification:** component/domain + browser purchase/mobile-sticky flow.
+**Verification:** component/domain assertions for exact CTA/error/OOS states + browser purchase/mobile-sticky flow.
 
 ## F7c — PDP mapped size-guide modal
 **Estimated scope:** S (1–3 files)  
@@ -637,11 +638,11 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 **Files likely touched:** product-card/PDP availability projections and presentation, focused boundary/component tests  
 **Depends on:** Checkpoint C, F5, F7b
 
-**Work:** consume canonical sellability projection. Preorder at `stock <=0 && >limit` says `Đặt trước` on card/PDP/CTA; oversell looks normal; hard-limit/standard OOS remains unavailable.
+**Work:** consume canonical sellability projection. Preorder at `stock <=0 && >limit` says `Đặt trước` on card/PDP/CTA; oversell looks normal; standard OOS and hard-limit variants remain visible, disabled and show exact `Hết hàng`.
 
-**Acceptance:** buyer cannot mistake preorder for ready stock on discovery/detail surfaces; no duplicated threshold logic in UI.
+**Acceptance:** buyer cannot mistake preorder for ready stock; standard OOS/hard-limit states render `Hết hàng` while remaining visible+disabled; no duplicated threshold logic in UI.
 
-**Verification:** projection/component boundary tests + desktop/mobile PDP/card walkthrough.
+**Verification:** projection/component boundary assertions for `Đặt trước`/`Hết hàng` + desktop/mobile PDP/card walkthrough.
 
 ## F8b — Cart and checkout preorder presentation
 **Estimated scope:** M (2–5 files)  
@@ -679,11 +680,11 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 ## F9b — Real contact-form delivery
 **Estimated scope:** M (3–5 files)  
 **Files likely touched:** contact page/form action, approved mail adapter/config, validation/abuse/provider tests  
-**Depends on:** A7a, approved G3
+**Depends on:** A7a, approved G3; **if G3 requires a new provider/dependency/credential, the provider/adapter implementation also waits for Checkpoint B**.
 
-**Work:** implement contact form through approved transport with bounded validation, rate/abuse controls, sender identity and secret-safe error handling.
+**Work:** implement contact form through the G3-approved transport with bounded validation, rate/abuse controls, sender identity and secret-safe error handling. Reuse an existing approved transport when available; do not introduce a new provider before Checkpoint B.
 
-**Acceptance:** success means provider accepted the delivery attempt; failure is explicit; no credential exposure or fake success.
+**Acceptance:** success means provider/transport accepted the delivery attempt; failure is explicit; no credential exposure or fake success.
 
 **Verification:** input/abuse/provider tests + browser form/a11y; live delivery claimed only if actually observed.
 
@@ -740,6 +741,7 @@ Safe after plan approval:
 - After Checkpoint A, F1 can proceed while inventory architecture is resolved.
 - F2b/F2c/F2d may parallelize after F2a when they do not touch the same header composition file concurrently.
 - F6a can be built before campaign content because it supports truthful 0/1/2–3 states.
+- **F9b may proceed after A7a + G3 only when G3 identifies an existing approved transport. If G3 requires a new provider/dependency/credential, that provider/adapter slice waits for Checkpoint B.**
 
 Must remain sequential:
 - F3a create all new destinations including `/sale` → A6 switch approved primary navigation and remove obsolete links from active primary/footer surfaces → A8 delete obsolete public routes and align sitemap/canonical state.
@@ -754,7 +756,7 @@ Prefer one PR/branch per task or approved sub-slice; if actual task scope exceed
 
 1. Plan approval — required before `/build`.
 2. Checkpoint A — Brand Config/static truth review, including F3a destination safety, `/sale` existence, and active primary/footer link resolution after the route cutover.
-3. Checkpoint B — approve merchandising migration if needed, capacity/reservation architecture, Merchant/structured-data mapping, Pancake evidence and mail provider where applicable.
+3. Checkpoint B — approve merchandising migration if needed, capacity/reservation architecture, Merchant/structured-data mapping, Pancake evidence and any new mail provider/dependency/credential boundary required by G3.
 4. Visual checkpoint — representative desktop/mobile homepage + PLP + PDP with real assets/media.
 5. Final implementation review — V2 before `/ship`.
 
