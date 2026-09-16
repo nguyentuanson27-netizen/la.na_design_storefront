@@ -14,6 +14,7 @@ import {
   buildCategoryTaxonomy,
   descendantCategoryKeys,
   findCategoryMembershipViolations,
+  findOrphanedCategoryKeys,
   parseCategoryMembership,
   type CategoryKey,
   type CategoryMembershipPolicy,
@@ -373,4 +374,53 @@ test("G4 the integrity check passes valid memberships and scopes findings per pr
   ]);
   assert.equal(mixed.length, 1);
   assert.equal(mixed[0]?.productId, "bad");
+});
+
+test("G4 the orphan audit covers every category-keyed owner, not just membership", () => {
+  // Review 5229297352 (required 2). `CategoryProductOrder` and `CategoryEditorialMedia` store the
+  // same bare key with no FK, so a retired key strands them exactly as it strands membership.
+  const orphans = findOrphanedCategoryKeys([
+    { owner: "ProductCategoryMembership", categoryKey: "aoDaiTet", rowRef: "p1" },
+    { owner: "ProductCategoryMembership", categoryKey: "retiredKey", rowRef: "p2" },
+    { owner: "CategoryProductOrder", categoryKey: "retiredKey", rowRef: "p3" },
+    { owner: "CategoryProductOrder", categoryKey: "retiredKey", rowRef: "p4" },
+    { owner: "CategoryEditorialMedia", categoryKey: "retiredKey" },
+    { owner: "CategoryEditorialMedia", categoryKey: "vayDam" },
+  ]);
+
+  assert.deepEqual(orphans, [
+    { owner: "ProductCategoryMembership", categoryKey: "retiredKey", rowRefs: ["p2"] },
+    { owner: "CategoryProductOrder", categoryKey: "retiredKey", rowRefs: ["p3", "p4"] },
+    { owner: "CategoryEditorialMedia", categoryKey: "retiredKey", rowRefs: [] },
+  ]);
+
+  // Every key valid means nothing to clean.
+  assert.deepEqual(
+    findOrphanedCategoryKeys([
+      { owner: "CategoryProductOrder", categoryKey: "aoDai", rowRef: "p1" },
+      { owner: "CategoryEditorialMedia", categoryKey: "setDo" },
+    ]),
+    [],
+  );
+  assert.deepEqual(findOrphanedCategoryKeys([]), []);
+});
+
+test("G4 the orphan audit judges a proposed taxonomy, so key retirement is gated before activation", () => {
+  const records = [
+    { owner: "CategoryProductOrder", categoryKey: "aoDaiTet", rowRef: "p1" },
+    { owner: "CategoryEditorialMedia", categoryKey: "aoDaiTet" },
+  ];
+
+  // Nothing stranded today.
+  assert.deepEqual(findOrphanedCategoryKeys(records), []);
+
+  // A deploy that retires `aoDaiTet` strands merchandising rows in two different owners, and the
+  // gate sees both before the taxonomy ships rather than after.
+  const proposed = buildCategoryTaxonomy([
+    { key: "aoDai", href: "/ao-dai", label: "Áo dài", children: [] },
+  ]);
+  assert.deepEqual(findOrphanedCategoryKeys(records, proposed), [
+    { owner: "CategoryProductOrder", categoryKey: "aoDaiTet", rowRefs: ["p1"] },
+    { owner: "CategoryEditorialMedia", categoryKey: "aoDaiTet", rowRefs: [] },
+  ]);
 });

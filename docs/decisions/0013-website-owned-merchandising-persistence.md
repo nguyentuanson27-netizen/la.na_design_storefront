@@ -261,18 +261,36 @@ migration-free, but before a taxonomy change is activated:
 
 1. Build the **proposed** taxonomy with `buildCategoryTaxonomy()`.
 2. Run `findCategoryMembershipViolations(rows, proposedTaxonomy)` over existing membership rows.
-3. Reconcile every product it reports — cross-tree or now-unknown key — through the normal admin
-   write boundary.
-4. **Do not activate while violations remain.**
+3. Run `findOrphanedCategoryKeys(records, proposedTaxonomy)` over **every** category-keyed owner —
+   `ProductCategoryMembership`, `CategoryProductOrder` and `CategoryEditorialMedia`. Membership is
+   not the only table storing a raw key, and the others have no invariant of their own to make the
+   staleness visible.
+4. Reconcile everything either audit reports — cross-tree memberships, and orphaned order/media rows
+   — through the normal admin write boundary.
+5. **Do not activate while violations remain.**
 
 Passing the proposed taxonomy is what makes this a gate rather than a post-mortem: the same function
 answers "what is broken now?" with the current taxonomy and "what would this deploy break?" with the
 proposed one. `tests/domain/category-taxonomy.test.ts` covers the valid-before → invalid-after case
 above, so the seam cannot quietly disappear.
 
-Until membership rows exist, steps 1–4 are vacuous — which is the situation on this branch, and the
+Until those rows exist, steps 1–5 are vacuous — which is the situation on this branch, and the
 reason this is an operational contract rather than something to automate now. Wiring it into a
 release script belongs with the Checkpoint B migration that first creates those rows.
+
+### 4.9 Category keys are retired permanently, never reused
+
+A `categoryKey` that has been in production is **retired for good**. A new category always gets a new
+key, even when it occupies the old one's route path or label.
+
+This is a safety rule, not bookkeeping. Every category-keyed table stores the key as a bare string
+with no foreign key to enforce anything. If a retired key were reassigned to a different category,
+any order or media row the §4.8 gate failed to clean would silently reattach itself to the new
+category — stale merchandising going live without a single write. Retirement makes that
+unrepresentable in the only way available here: the key never comes back.
+
+Renaming a category's **label** or **route path** is unrelated and free; neither is persisted in
+merchandising rows (§4.2). Only the key is, and only the key is permanent.
 
 ## 5. Category PLP default ordering — B: additive migration, pending Checkpoint B
 
@@ -335,6 +353,34 @@ In all stages: exclude the source product, de-duplicate by product, drop product
 unpublished or unavailable by existing storefront truth, and preserve manual order ahead of any
 filled candidate.
 
+#### Deterministic order inside stages 2 and 3
+
+Stage order alone is not a contract: PostgreSQL row order is not stable, so two runs over identical
+data could return different related products. M3a requires deterministic related order, so the
+automatic stages are fully specified here rather than left to the database.
+
+**Traversal across categories.** A product may hold several assigned categories. They are visited in
+the taxonomy's **declared order** — the same normalization `parseCategoryMembership()` already
+applies, so the stored set and the traversal agree. Stage 2 visits each assigned category; stage 3
+visits `categoryListingKeys(topLevelKey)`. Because stage 2's candidates are a subset of stage 3's,
+de-duplication alone produces "closest first, then widen" without a separate exclusion rule.
+
+**Order within one category**, applied in full before moving to the next:
+
+1. products the merchandiser ranked for that category, by `CategoryProductOrder.position` ascending;
+2. then everything else, by `name` ascending;
+3. then `ProductMirror.id` ascending as the final tie-break.
+
+Step 1 makes related products agree with the category PLP a visitor just came from, reusing the §5
+owner rather than inventing a second order. Steps 2–3 are the ordering this repository already uses
+for catalog reads (`orderBy: [{ name: "asc" }, { id: "asc" }]` in `storefront-catalog.ts` and
+`catalog-mirror-repository.ts`), so the fallback matches the rest of the catalogue instead of
+introducing a third convention. `id` is unique and never null, which makes the total order complete:
+no tie can reach the database's discretion.
+
+M3a tests must pin this order, including the multi-subcategory traversal and the
+ranked-before-unranked boundary.
+
 The existing shared-collection fallback in `src/commerce/storefront-related-products.ts` is
 **superseded** and must be removed when F7d/M3a implement this contract; it is not preserved merely
 because it exists. Step 1 needs one additive relation:
@@ -378,7 +424,8 @@ None of these facts, by themselves, establish Brand #2 category identity. None b
 - No derived storefront state is persisted when it can be computed. Category top-level membership
   is derived from the taxonomy at read time, never stored.
 - Where an invariant cannot be expressed in the schema, it is enforced at one validated write
-  boundary and **audited** rather than claimed as a database guarantee (§4.5).
+  boundary and **audited** rather than claimed as a database guarantee (§4.5). The audit covers every
+  table that stores a `categoryKey`, not only the one that has an invariant of its own (§4.8).
 - Merchant availability/date authority is not stored in merchandising relations.
 - Provider credentials/config never belong in these tables.
 

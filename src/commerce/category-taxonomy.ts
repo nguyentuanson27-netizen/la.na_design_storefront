@@ -340,3 +340,65 @@ export function findCategoryMembershipViolations(
 
   return Object.freeze(violations);
 }
+
+/**
+ * A persisted row that stores a raw `categoryKey`, whatever table it lives in.
+ *
+ * Membership is not the only owner keyed this way: `CategoryProductOrder` and
+ * `CategoryEditorialMedia` store the same string and carry the same lifecycle risk, because the
+ * taxonomy is in code and no foreign key can point at it (ADR 0013 §4.5). An audit that only knew
+ * about membership would let a retired key strand PLP order or category media indefinitely.
+ */
+export type CategoryKeyedRecord = Readonly<{
+  /** The persistence owner, e.g. `"CategoryProductOrder"`. Reported so remediation knows where to look. */
+  owner: string;
+  categoryKey: CategoryKey;
+  /** Optional row identity within that owner, e.g. a product id. */
+  rowRef?: string;
+}>;
+
+export type OrphanedCategoryKey = Readonly<{
+  owner: string;
+  categoryKey: CategoryKey;
+  /** The `rowRef`s seen for this (owner, key), in the order encountered. */
+  rowRefs: readonly string[];
+}>;
+
+/**
+ * Reports rows whose `categoryKey` is not in the taxonomy, across every category-keyed owner.
+ *
+ * Pass a proposed taxonomy to run this as part of the §4.8 activation gate; it defaults to the
+ * current one to answer "what is stranded now?". This is the generic half of the membership audit:
+ * `findCategoryMembershipViolations` judges the one-top-level invariant, which only membership has,
+ * while this judges key existence, which every owner shares.
+ */
+export function findOrphanedCategoryKeys(
+  records: readonly CategoryKeyedRecord[],
+  taxonomy: CategoryTaxonomy = CURRENT_CATEGORY_TAXONOMY,
+): readonly OrphanedCategoryKey[] {
+  // Grouped owner-then-key rather than by a joined string, so no separator can collide two pairs.
+  const byOwner = new Map<string, Map<CategoryKey, string[]>>();
+
+  for (const record of records) {
+    if (taxonomy.byKey.has(record.categoryKey)) continue;
+    let keys = byOwner.get(record.owner);
+    if (!keys) {
+      keys = new Map<CategoryKey, string[]>();
+      byOwner.set(record.owner, keys);
+    }
+    const rowRefs = keys.get(record.categoryKey);
+    if (rowRefs) {
+      if (record.rowRef !== undefined) rowRefs.push(record.rowRef);
+    } else {
+      keys.set(record.categoryKey, record.rowRef === undefined ? [] : [record.rowRef]);
+    }
+  }
+
+  const orphans: OrphanedCategoryKey[] = [];
+  for (const [owner, keys] of byOwner) {
+    for (const [categoryKey, rowRefs] of keys) {
+      orphans.push(Object.freeze({ owner, categoryKey, rowRefs: Object.freeze(rowRefs) }));
+    }
+  }
+  return Object.freeze(orphans);
+}
