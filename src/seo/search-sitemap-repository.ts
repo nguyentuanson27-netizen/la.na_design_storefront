@@ -1,3 +1,4 @@
+import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -17,17 +18,8 @@ export const STATIC_CANONICAL_PATHS = [
   "/shop",
   "/collections",
   "/new-arrivals",
-  "/ao-dai",
-  "/ao-dai/cach-tan",
-  "/ao-dai/tet",
-  "/ao-dai/cuoi",
-  "/ao-dai/4-ta",
-  "/ao-dai/6-ta",
-  "/set-do",
-  "/set-do/set-vay",
-  "/set-do/set-quan-ao",
-  "/vay-dam",
-  "/phu-kien",
+  // The F3a categories, in their declared order, from the one place they are declared.
+  ...CATEGORY_ROUTE_PATHS,
   "/sale",
   // U33a. The evergreen pages are permanent, self-canonical and indexable on the same terms as the
   // rest of this list, so they belong in the document rather than being reachable only by crawl.

@@ -1,3 +1,4 @@
+import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
 import {
   LEGACY_TEMPORARY_STOREFRONT_HOST,
   OFFICIAL_PRODUCTION_STOREFRONT_HOST,
@@ -27,12 +28,12 @@ const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 
 export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
 
-export const INDEXABLE_CATEGORY_PATH_PATTERNS = [
-  /^\/ao-dai(?:\/(?:cach-tan|tet|cuoi|4-ta|6-ta))?$/,
-  /^\/set-do(?:\/(?:set-vay|set-quan-ao))?$/,
-  /^\/vay-dam$/,
-  /^\/phu-kien$/,
-] as const;
+// One exact-match pattern per declared category route. Built from the category declaration rather
+// than hand-written alternations: a hand-written one has to be edited in step with the route list,
+// and the failure mode when it is not is a category that silently stops being indexable.
+export const INDEXABLE_CATEGORY_PATH_PATTERNS: readonly RegExp[] = CATEGORY_ROUTE_PATHS.map(
+  (href) => new RegExp(`^${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
+);
 
 const INDEXABLE_PATH_PATTERNS = [
   /^\/$/,

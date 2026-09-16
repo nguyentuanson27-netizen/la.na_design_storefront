@@ -174,6 +174,9 @@ test("every promotion-aware storefront surface mounts the shared server-relative
   // sealed, and a page cannot drop it. A surface that has not migrated would instead have to mount
   // the refresher in its own source -- there are none left in this list, so that path is gone
   // rather than kept as an unreachable branch.
+  //
+  // A8 retired `/lookbook`; `/sale` is the discount surface that replaced it here, and it is the
+  // one with the sharpest refresh requirement of the four.
   const shell = await readFile(new URL("../../src/routes/core.tsx", import.meta.url), "utf8");
   assert.match(shell, /<StorefrontPromotionRefresher refreshAfterMs=\{payload\.refreshAfterMs\}/);
 
@@ -181,7 +184,7 @@ test("every promotion-aware storefront surface mounts the shared server-relative
     { page: "../../src/app/page.tsx", loader: "../../src/routes/home.ts" },
     { page: "../../src/app/shop/[slug]/page.tsx", loader: "../../src/routes/product.ts" },
     { page: "../../src/app/collections/[slug]/page.tsx", loader: "../../src/routes/collection.ts" },
-    { page: "../../src/app/lookbook/page.tsx", loader: "../../src/routes/lookbook.ts" },
+    { page: "../../src/app/sale/page.tsx", loader: "../../src/routes/sale.ts" },
   ] as const;
 
   for (const surface of surfaces) {

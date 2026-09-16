@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { NAVIGATION, type NavigationLink } from "../../src/brand/index.ts";
-import { CATEGORY_DESTINATIONS } from "../../src/routes/category.tsx";
+import { CATEGORY_DESTINATIONS } from "../../src/routes/category-destinations.ts";
 import { matchesStorefrontRoute } from "../../src/routes/manifest.ts";
 import { STATIC_CANONICAL_PATHS } from "../../src/seo/search-sitemap-repository.ts";
 

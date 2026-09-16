@@ -1,3 +1,4 @@
+import { CATEGORY_NAVIGATION } from "./category.config.ts";
 import type { NavigationConfig, NavigationLink } from "./schema.ts";
 
 type PrimaryNavigationLink = NavigationLink & Readonly<{
@@ -16,27 +17,10 @@ type NavigationWithPrimaryHierarchy = Omit<NavigationConfig, "primary"> & Readon
 export const NAVIGATION: NavigationWithPrimaryHierarchy = {
   brandHomeLabel: "La.na Design — Trang chủ",
   primary: [
-    {
-      href: "/ao-dai",
-      label: "Áo dài",
-      children: [
-        { href: "/ao-dai/cach-tan", label: "Áo dài cách tân" },
-        { href: "/ao-dai/tet", label: "Áo dài Tết" },
-        { href: "/ao-dai/cuoi", label: "Áo dài cưới" },
-        { href: "/ao-dai/4-ta", label: "Áo dài 4 tà" },
-        { href: "/ao-dai/6-ta", label: "Áo dài 6 tà" },
-      ],
-    },
-    {
-      href: "/set-do",
-      label: "Set đồ",
-      children: [
-        { href: "/set-do/set-vay", label: "Set váy" },
-        { href: "/set-do/set-quan-ao", label: "Set quần áo" },
-      ],
-    },
-    { href: "/vay-dam", label: "Váy, đầm" },
-    { href: "/phu-kien", label: "Phụ kiện" },
+    // The category block is `CATEGORY_NAVIGATION` verbatim, in its declared order. Restating the
+    // slugs and labels here is what `brand-leak.test.ts` fails on, and it is also how the navigation
+    // and the routes that serve it drift apart.
+    ...CATEGORY_NAVIGATION,
     { href: "/new-arrivals", label: "Hàng mới về" },
     { href: "/collections", label: "Bộ sưu tập" },
     { href: "/sale", label: "Sale" },

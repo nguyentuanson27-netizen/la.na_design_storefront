@@ -13,8 +13,8 @@ const STOREFRONT_SOURCES = [
     url: HOMEPAGE_SOURCE,
   },
   {
-    name: "lookbook",
-    url: new URL("../../src/app/lookbook/page.tsx", import.meta.url),
+    name: "sale",
+    url: new URL("../../src/app/sale/page.tsx", import.meta.url),
   },
   {
     name: "collections",
