@@ -201,8 +201,10 @@ export type CategoryMembershipPolicy = Readonly<{
 }>;
 
 /**
- * The owner's decision, approved 2026-09-16 (ADR 0013 §4.4): a product may be assigned directly to
- * a parent category with no subcategory.
+ * The owner's decision, approved 2026-09-16: a product may be assigned directly to a parent
+ * category with no subcategory. Recorded in
+ * `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` (the fact authority, which carries
+ * the provenance) and in ADR 0013 §4.4.
  *
  * Such a product lists on the parent page and on no subcategory page, which is the truthful
  * outcome — nobody has said which subcategory it belongs to, so nothing may guess one. Admin write

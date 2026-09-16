@@ -141,7 +141,9 @@ so a taxonomy change is itself a way around the §4.6 boundary. §4.8 is the gat
 ### 4.4 Parent-only membership — SETTLED, owner-approved 2026-09-16
 
 For a parent that has children (`Áo dài`, `Set đồ`), may a product be assigned **directly to the
-parent and to no child**? **Yes.** The owner approved it on 2026-09-16.
+parent and to no child**? **Yes.** The owner approved it on 2026-09-16, recorded in
+[`la-na-design-owner-approved-facts-and-decisions.md`](../specs/la-na-design-owner-approved-facts-and-decisions.md)
+› Settled decisions, which is this repository's fact authority and carries the provenance.
 
 So a product may sit on `Áo dài` alone. It appears on `/ao-dai` — the listing matches the category
 itself, not only its descendants (§4.7) — and on no subcategory page, which is the truthful outcome:

@@ -281,6 +281,21 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
 - **Product category and `defaultGender`** — women's fashion, `female`; three size charts.
 - **Baseline route set** — decided in §5: `/lookbook` and `/flash-sale` go, `/sale` stays as the one
   promotion landing page.
+- **Parent-only category membership** — **yes**, a product may be assigned directly to a parent
+  category (`Áo dài`, `Set đồ`) without belonging to any of its subcategories. Approved by the
+  repository owner on **2026-09-16**, answering the question G4 had carried as pending; recorded in
+  [ADR 0013 §4.4](../decisions/0013-website-owned-merchandising-persistence.md) and carried in code
+  as `APPROVED_CATEGORY_MEMBERSHIP_POLICY`.
+
+  Consequence, stated so no later surface invents a different one: such a product lists on the
+  parent page and on **no** subcategory page. Nothing may guess a subcategory for it.
+
+  Provenance: given in the Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR) in
+  direct answer to the question posed by the G4 work, not inferred from an existing document. The
+  other owner-approved category rules — several categories per product, one top-level tree only,
+  child membership projecting into the parent listing, website-owned membership as source of truth —
+  were supplied with the same G4 instruction and are recorded in ADR 0013 §4.3.
 
 ## Still pending — do not invent
 
