@@ -57,6 +57,25 @@ export type BrandIdentity = Readonly<{
   socialCardSlug: string;
   socialCardAlt: string;
   /**
+   * The homepage's own approved `<title>`, published absolutely.
+   *
+   * Separate from `headline` because they answer different questions: `headline` is the default
+   * title a route inherits when it declares none, while this is the one the owner approved for the
+   * homepage specifically. It already carries the brand name, so the site title template must not
+   * append it a second time.
+   */
+  homeTitle: string;
+  /** The homepage's own approved meta description, separate from the inherited `tagline`. */
+  homeMetaDescription: string;
+  /**
+   * The brand's approved search/SEO spelling variant.
+   *
+   * Usable in structured data, search matching and natural SEO copy. It is **not** a display name
+   * and the loader refuses it if it is set to one: a brand with two public spellings is a brand a
+   * reader cannot recognise. It is also not a licence to build a doorway page per spelling.
+   */
+  searchAlias: string;
+  /**
    * Identity strings too short for the brand-leak scanner's four-character floor, declared so they
    * are still protected. Empty for a brand whose name is long enough.
    */

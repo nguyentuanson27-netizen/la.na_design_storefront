@@ -64,8 +64,20 @@ function validateIdentity(brand: BrandConfig): void {
     positioning: identity.positioning,
     socialCardSlug: identity.socialCardSlug,
     socialCardAlt: identity.socialCardAlt,
+    homeTitle: identity.homeTitle,
+    homeMetaDescription: identity.homeMetaDescription,
+    searchAlias: identity.searchAlias,
   })) {
     requireText(value, `identity.${label}`);
+  }
+
+  // An alias that equals a display spelling is not an alias -- it is a second public name, which is
+  // exactly what the approved decision forbids.
+  if (
+    identity.searchAlias === identity.name ||
+    identity.searchAlias === identity.displayNameUpper
+  ) {
+    fail("identity.searchAlias must differ from the public display name; it is a search alias only");
   }
 
   if (SENTENCE_BREAK_PATTERN.test(identity.positioning.trim())) {

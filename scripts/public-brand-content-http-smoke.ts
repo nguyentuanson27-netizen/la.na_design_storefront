@@ -112,8 +112,8 @@ try {
 
   const text = visibleText(body);
   for (const fact of [
-    "LA Clothing / About",
-    "Minimal, modern menswear by LA Clothing.",
+    "La.na Design / About",
+    "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ",
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
     "Miễn phí vận chuyển",

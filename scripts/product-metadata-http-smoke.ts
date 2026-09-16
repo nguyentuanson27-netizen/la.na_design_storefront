@@ -224,7 +224,7 @@ try {
   assert.equal(trustedPage.status, 200, `trusted PDP must return 200\n${serverOutput}`);
   const trustedTitle = `${publishedSeoTitle} — ${trustedSlug}`;
   const trustedDescription = `${publishedSeoDescription} — /shop/${trustedSlug}.`;
-  assertContains(trustedPage.body, `<title>${trustedTitle} — LA Clothing</title>`, "trusted PDP head");
+  assertContains(trustedPage.body, `<title>${trustedTitle} — La.na Design</title>`, "trusted PDP head");
   assertContains(trustedPage.body, `name="description" content="${trustedDescription}"`, "trusted PDP head");
   assertContains(trustedPage.body, `rel="canonical" href="${PUBLIC_ORIGIN}/shop/${trustedSlug}"`, "trusted PDP head");
   assertContains(trustedPage.body, `property="og:title" content="${trustedTitle}"`, "trusted PDP Open Graph");
@@ -239,7 +239,7 @@ try {
   const publishedDuplicateDescription = `${publishedSeoDescription} — /shop/${publishedDuplicateSlug}.`;
   assertContains(
     publishedDuplicatePage.body,
-    `<title>${publishedDuplicateTitle} — LA Clothing</title>`,
+    `<title>${publishedDuplicateTitle} — La.na Design</title>`,
     "published duplicate PDP head",
   );
   assertContains(
@@ -266,11 +266,11 @@ try {
 
   const fallbackTitleA = `${duplicateName} — ${fallbackSlugA}`;
   const fallbackTitleB = `${duplicateName} — ${fallbackSlugB}`;
-  const fallbackDescriptionA = `Thông tin sản phẩm ${duplicateName} tại LA Clothing — /shop/${fallbackSlugA}.`;
-  const fallbackDescriptionB = `Thông tin sản phẩm ${duplicateName} tại LA Clothing — /shop/${fallbackSlugB}.`;
+  const fallbackDescriptionA = `Thông tin sản phẩm ${duplicateName} tại La.na Design — /shop/${fallbackSlugA}.`;
+  const fallbackDescriptionB = `Thông tin sản phẩm ${duplicateName} tại La.na Design — /shop/${fallbackSlugB}.`;
 
-  assertContains(fallbackPageA.body, `<title>${fallbackTitleA} — LA Clothing</title>`, "first fallback PDP head");
-  assertContains(fallbackPageB.body, `<title>${fallbackTitleB} — LA Clothing</title>`, "second fallback PDP head");
+  assertContains(fallbackPageA.body, `<title>${fallbackTitleA} — La.na Design</title>`, "first fallback PDP head");
+  assertContains(fallbackPageB.body, `<title>${fallbackTitleB} — La.na Design</title>`, "second fallback PDP head");
   assertContains(fallbackPageA.body, `name="description" content="${fallbackDescriptionA}"`, "first fallback PDP head");
   assertContains(fallbackPageB.body, `name="description" content="${fallbackDescriptionB}"`, "second fallback PDP head");
   assertContains(fallbackPageA.body, `rel="canonical" href="${PUBLIC_ORIGIN}/shop/${fallbackSlugA}"`, "first fallback canonical");
@@ -289,8 +289,8 @@ try {
   // fallback. Proving it here rather than in a second runtime harness keeps one server boot.
   const homePage = await requestPath("/");
   assert.equal(homePage.status, 200, "homepage must remain browseable");
-  assertContains(homePage.body, 'property="og:site_name" content="LA Clothing"', "homepage Open Graph");
-  assertContains(homePage.body, 'property="og:title" content="LA Clothing — Modern Menswear"', "homepage Open Graph");
+  assertContains(homePage.body, 'property="og:site_name" content="La.na Design"', "homepage Open Graph");
+  assertContains(homePage.body, 'property="og:title" content="La.na Design - charismatic in every yard of cloth."', "homepage Open Graph");
   assertContains(
     homePage.body,
     `property="og:image" content="${PUBLIC_ORIGIN}${PRODUCT_SOCIAL_FALLBACK_PATH}"`,

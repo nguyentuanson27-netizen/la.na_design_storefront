@@ -113,7 +113,7 @@ test("M3 a valid standalone variation maps to a complete Merchant offer", () => 
   assert.deepEqual(result.offers[0], {
     id: "pv-m",
     itemGroupId: "pp-1",
-    brand: "LA Clothing",
+    brand: "La.na Design",
     mpn: "A132-M",
     title: "Ao so mi Oxford",
     description: "Ao so mi vai cotton, dang suong.",
@@ -122,7 +122,7 @@ test("M3 a valid standalone variation maps to a complete Merchant offer", () => 
     additionalImageLinks: [TRUSTED_PRIMARY, TRUSTED_VARIANT_L],
     availability: "in_stock",
     priceVnd: 890_000,
-    gender: "male",
+    gender: "female",
     ageGroup: "adult",
     condition: "new",
     color: "Den",
@@ -139,9 +139,9 @@ test("M3 offer identity is the external variation id and grouping is the externa
   assert.notEqual(offer.itemGroupId, "ao-so-mi-oxford");
 });
 
-test("M3 brand is the reviewed LA Clothing constant", () => {
-  assert.equal(MERCHANT_BRAND, "LA Clothing");
-  assert.equal(mapOne().offers[0]!.brand, "LA Clothing");
+test("M3 brand is the reviewed Brand Config constant", () => {
+  assert.equal(MERCHANT_BRAND, "La.na Design");
+  assert.equal(mapOne().offers[0]!.brand, "La.na Design");
 });
 
 test("M3 mpn is the ADR 0008 mirrored Pancake display id, never the website-owned local SKU", () => {
@@ -290,7 +290,7 @@ test("M3 composite projections stay deferred in v1", () => {
 
 test("M3 apparel facts inherit the approved shop defaults when no override exists", () => {
   const offer = mapOne().offers[0]!;
-  assert.equal(offer.gender, "male");
+  assert.equal(offer.gender, "female");
   assert.equal(offer.ageGroup, "adult");
   assert.equal(offer.condition, "new");
 });
@@ -328,8 +328,10 @@ test("M3 a malformed persisted apparel override excludes the offer fail-closed",
 });
 
 test("M3 apparel facts are never inferred from the product title", () => {
-  const offer = mapOne({ name: "Ao so mi nu tre em cu" }).offers[0]!;
-  assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["male", "adult", "new"]);
+  // Every word in the title points somewhere else -- menswear, children, used -- and none of them
+  // reaches the resolver, which reads overrides and the approved shop defaults and nothing else.
+  const offer = mapOne({ name: "Ao so mi nam tre em cu" }).offers[0]!;
+  assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["female", "adult", "new"]);
 });
 
 // --- Price ---------------------------------------------------------------------------------------

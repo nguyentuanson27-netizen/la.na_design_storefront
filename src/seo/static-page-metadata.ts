@@ -5,7 +5,12 @@ type StaticPageMetadataInput = Readonly<{
   indexingEnabled: boolean;
   pathname: string;
   searchParams: object;
-  title?: string;
+  /**
+   * A plain string inherits the root title template, which appends the brand name. `{ absolute }`
+   * is for a title the owner approved whole -- the homepage's, which already names the brand and
+   * would otherwise carry it twice.
+   */
+  title?: string | Readonly<{ absolute: string }>;
   description?: string;
 }>;
 

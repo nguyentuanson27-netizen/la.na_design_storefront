@@ -28,8 +28,8 @@ test("U30a gives every route a branded Open Graph fallback", () => {
   const metadata = buildRootMetadata({ origin: ORIGIN, indexingEnabled: true });
 
   assert.equal(metadata.openGraph?.siteName, SITE_NAME);
-  assert.equal(metadata.openGraph?.title, "LA Clothing — Modern Menswear");
-  assert.equal(metadata.openGraph?.description, "Minimal, modern menswear by LA Clothing.");
+  assert.equal(metadata.openGraph?.title, "La.na Design - charismatic in every yard of cloth.");
+  assert.equal(metadata.openGraph?.description, "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ");
   assert.deepEqual(metadata.openGraph?.images, [
     { url: `${ORIGIN}${SOCIAL_FALLBACK_PATH}`, alt: SOCIAL_FALLBACK_ALT },
   ]);
@@ -39,8 +39,8 @@ test("U30a gives every route a branded Twitter fallback", () => {
   const metadata = buildRootMetadata({ origin: ORIGIN, indexingEnabled: true });
 
   assert.equal(twitterCard(metadata), "summary_large_image");
-  assert.equal(metadata.twitter?.title, "LA Clothing — Modern Menswear");
-  assert.equal(metadata.twitter?.description, "Minimal, modern menswear by LA Clothing.");
+  assert.equal(metadata.twitter?.title, "La.na Design - charismatic in every yard of cloth.");
+  assert.equal(metadata.twitter?.description, "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ");
   assert.deepEqual(metadata.twitter?.images, [
     { url: `${ORIGIN}${SOCIAL_FALLBACK_PATH}`, alt: SOCIAL_FALLBACK_ALT },
   ]);
@@ -63,10 +63,10 @@ test("U30a leaves the existing root title, description and metadataBase exactly 
   const metadata = buildRootMetadata({ origin: ORIGIN, indexingEnabled: true });
 
   assert.deepEqual(metadata.title, {
-    default: "LA Clothing — Modern Menswear",
-    template: "%s — LA Clothing",
+    default: "La.na Design - charismatic in every yard of cloth.",
+    template: "%s — La.na Design",
   });
-  assert.equal(metadata.description, "Minimal, modern menswear by LA Clothing.");
+  assert.equal(metadata.description, "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ");
   assert.equal(String(metadata.metadataBase), `${ORIGIN}/`);
 });
 

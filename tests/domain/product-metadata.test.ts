@@ -20,7 +20,7 @@ const baseProduct = {
   slug: "ao-oxford-relaxed",
   name: "Áo Oxford Relaxed",
   seoTitle: "Áo Oxford Relaxed nam",
-  seoDescription: "Áo Oxford Relaxed của LA Clothing với phom hiện đại và thông tin sản phẩm đã được biên tập.",
+  seoDescription: "Áo Oxford Relaxed của La.na Design với phom hiện đại và thông tin sản phẩm đã được biên tập.",
   media: {
     primary: trustedPrimary,
   },
@@ -43,7 +43,7 @@ test("P13 builds canonical PDP metadata from published website-owned SEO fields 
   assert.deepEqual(metadata.openGraph, {
     type: "website",
     locale: "vi_VN",
-    siteName: "LA Clothing",
+    siteName: "La.na Design",
     title,
     description,
     url: "https://shop.example.com/shop/ao-oxford-relaxed",
@@ -132,12 +132,12 @@ test("P13 fallback metadata stays factual and unique for distinct slugs sharing 
   assert.equal(first.title, "Áo Oxford Relaxed — ao-oxford-relaxed-den");
   assert.equal(
     first.description,
-    "Thông tin sản phẩm Áo Oxford Relaxed tại LA Clothing — /shop/ao-oxford-relaxed-den.",
+    "Thông tin sản phẩm Áo Oxford Relaxed tại La.na Design — /shop/ao-oxford-relaxed-den.",
   );
   assert.equal(second.title, "Áo Oxford Relaxed — ao-oxford-relaxed-trang");
   assert.equal(
     second.description,
-    "Thông tin sản phẩm Áo Oxford Relaxed tại LA Clothing — /shop/ao-oxford-relaxed-trang.",
+    "Thông tin sản phẩm Áo Oxford Relaxed tại La.na Design — /shop/ao-oxford-relaxed-trang.",
   );
   assert.notEqual(first.title, second.title);
   assert.notEqual(first.description, second.description);

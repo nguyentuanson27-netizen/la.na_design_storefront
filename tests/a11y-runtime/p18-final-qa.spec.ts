@@ -273,7 +273,7 @@ test("P18 inspects staging-safe metadata, robots, sitemap, and parent Product sc
   try {
     const response = await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
     expect(response?.status()).toBe(200);
-    await expect(page).toHaveTitle(/LA Clothing/);
+    await expect(page).toHaveTitle(/La\.na Design/);
 
     const robotsMeta = await page.locator('meta[name="robots"]').getAttribute("content");
     expect(robotsMeta?.toLowerCase()).toContain("noindex");

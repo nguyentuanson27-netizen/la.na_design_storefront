@@ -24,14 +24,14 @@ const duplicatePublished: readonly MetadataFixture[] = [
     slug: "ao-oxford-relaxed-den",
     name: "Áo Oxford Relaxed",
     seoTitle: "Áo Oxford Relaxed nam",
-    seoDescription: "Áo Oxford Relaxed của LA Clothing với phom hiện đại.",
+    seoDescription: "Áo Oxford Relaxed của La.na Design với phom hiện đại.",
     media,
   },
   {
     slug: "ao-oxford-relaxed-trang",
     name: "Áo Oxford Relaxed",
     seoTitle: "Áo Oxford Relaxed nam",
-    seoDescription: "Áo Oxford Relaxed của LA Clothing với phom hiện đại.",
+    seoDescription: "Áo Oxford Relaxed của La.na Design với phom hiện đại.",
     media,
   },
 ];
@@ -69,7 +69,7 @@ test("W2a the slug-free replacement candidate is deterministic and carries no te
 
   assert.deepEqual(copy, buildSlugFreeProductCopy(duplicatePublished[0]));
   assert.equal(copy.title, "Áo Oxford Relaxed nam");
-  assert.equal(copy.description, "Áo Oxford Relaxed của LA Clothing với phom hiện đại.");
+  assert.equal(copy.description, "Áo Oxford Relaxed của La.na Design với phom hiện đại.");
   for (const value of [copy.title, copy.description]) {
     assert.equal(value.includes("/shop/"), false);
     assert.equal(value.includes(duplicatePublished[0].slug), false);
@@ -77,7 +77,7 @@ test("W2a the slug-free replacement candidate is deterministic and carries no te
 
   const fallback = buildSlugFreeProductCopy(duplicateFallback[0]);
   assert.equal(fallback.title, "Áo thun Basic");
-  assert.equal(fallback.description, "Thông tin sản phẩm Áo thun Basic tại LA Clothing.");
+  assert.equal(fallback.description, "Thông tin sản phẩm Áo thun Basic tại La.na Design.");
 });
 
 test("W2a collision detection reports the exact groups that would stop being distinguishable", () => {
@@ -86,7 +86,7 @@ test("W2a collision detection reports the exact groups that would stop being dis
   assert.deepEqual(findProductMetadataCollisions(duplicatePublished), [
     {
       title: "Áo Oxford Relaxed nam",
-      description: "Áo Oxford Relaxed của LA Clothing với phom hiện đại.",
+      description: "Áo Oxford Relaxed của La.na Design với phom hiện đại.",
       slugs: ["ao-oxford-relaxed-den", "ao-oxford-relaxed-trang"],
     },
   ]);
@@ -94,7 +94,7 @@ test("W2a collision detection reports the exact groups that would stop being dis
   assert.deepEqual(findProductMetadataCollisions(duplicateFallback), [
     {
       title: "Áo thun Basic",
-      description: "Thông tin sản phẩm Áo thun Basic tại LA Clothing.",
+      description: "Thông tin sản phẩm Áo thun Basic tại La.na Design.",
       slugs: ["ao-thun-basic-den", "ao-thun-basic-trang"],
     },
   ]);
@@ -153,6 +153,6 @@ test("W2a the live PDP metadata contract is unchanged while the replacement stay
   assert.equal(metadata.title, "Áo Oxford Relaxed nam — ao-oxford-relaxed-den");
   assert.equal(
     metadata.description,
-    "Áo Oxford Relaxed của LA Clothing với phom hiện đại. — /shop/ao-oxford-relaxed-den.",
+    "Áo Oxford Relaxed của La.na Design với phom hiện đại. — /shop/ao-oxford-relaxed-den.",
   );
 });
