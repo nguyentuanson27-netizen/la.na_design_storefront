@@ -59,8 +59,9 @@ merged master spec
 
 Checkpoint A + approved G4
   +--> M2 homepage/category merchandising
-       +--> M3 related products + PLP ordering
-  NOTE: if M2/M3 require a schema migration, that migration path also waits for Checkpoint B.
+       +--> M3a related-product merchandising
+       +--> M3b PLP default ordering
+  NOTE: if M2/M3a/M3b require a schema migration, that migration path also waits for Checkpoint B.
 
 Checkpoint B
   +--> I1 persistence
@@ -72,15 +73,20 @@ Checkpoint B
        +--> I9 Merchant + structured-data mapping (also G1)
               -> Checkpoint C
 
-Checkpoint A
-  +--> F1 assets/tokens
-       +--> F2a header/nav -> F2b search
-                           -> F2c account
-                           -> F2d cart drawer
-       +--> F3 taxonomy routes -> F4a PLP server -> F4b PLP UI
-       +--> F5 product card
-       +--> F6a hero -> F6b homepage
-       +--> F7a gallery -> F7b purchase/size/related
+Checkpoint A -> F1 assets/tokens
+F1 + A6 + M2 -> F2a header/nav
+F2a + F3 -> F2b search
+F2a -> F2c account
+F2a -> F2d cart drawer
+F1 + A6 + A8 -> F3 taxonomy routes
+F3 + M3b -> F4a PLP server -> F4b PLP UI (also F5)
+F1 -> F5 product card
+F1 -> F6a hero
+F1 + F5 + M2 + F6a -> F6b homepage
+F1 -> F7a gallery
+F1 + F7a -> F7b purchase panel
+F7b + M1 -> F7c size-guide modal
+F1 + F7a + M3a -> F7d related products
 
 Checkpoint C + F5 + F7b
   +--> F8a card/PDP inventory states
@@ -90,7 +96,7 @@ Checkpoint C + F5 + F7b
 A7a + A7b + F1 -> F9a footer
 A7a + approved G3 -> F9b contact delivery
 
-F2a/F2b/F2c/F2d/F3/F4a/F4b/F5/F6a/F6b/F7a/F7b/F8a/F8b/F8c/F9a/F9b
+F2a/F2b/F2c/F2d/F3/F4a/F4b/F5/F6a/F6b/F7a/F7b/F7c/F7d/F8a/F8b/F8c/F9a/F9b
   +--> V1 browser/a11y/performance
        +--> V2 full regression/security/release-readiness with indexing off
 ```
@@ -273,15 +279,25 @@ Required: approve G4 and G5; accept G1 and G2 evidence; decide G3 if contact del
 
 **Verification:** no-migration path: focused CRUD/order tests. Migration path after Checkpoint B: migrate current DB + fresh DB + CRUD/order tests + rollback note.
 
-## M3 — Add related-product and default PLP merchandising controls
-**Estimated scope:** M (3–5 files)  
+## M3a — Add related-product merchandising controls
+**Estimated scope:** M (2–4 files)  
 **Depends on:** Checkpoint A + approved G4 + M2; inherits M2's conditional Checkpoint B gate when the approved persistence requires migration.
 
-**Work:** admin manually orders related products and default PLP products; referenced products must exist; reject duplicates/self-reference; do not invent a `Bán chạy` truth source.
+**Work:** let admin manually order related products; referenced products must exist; reject duplicates/self-reference.
 
-**Acceptance:** deterministic manual order; related fallback remains same-category when no override; no unauthorized schema mutation.
+**Acceptance:** deterministic related order; same-category fallback remains when no override; no unauthorized schema mutation.
 
 **Verification:** admin auth/input + repository tests.
+
+## M3b — Add default PLP merchandising order
+**Estimated scope:** M (2–4 files)  
+**Depends on:** Checkpoint A + approved G4 + M2; inherits M2's conditional Checkpoint B gate when the approved persistence requires migration.
+
+**Work:** persist and expose admin-defined default PLP order without inventing a `Bán chạy` truth source.
+
+**Acceptance:** deterministic manual PLP order; absence uses existing truthful fallback; no unauthorized schema mutation.
+
+**Verification:** admin auth/input + repository/query tests.
 
 ---
 
@@ -456,7 +472,7 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 ## F4a — Server PLP filter/order/pagination contract
 **Estimated scope:** M (3–5 files)  
-**Depends on:** F3, M3
+**Depends on:** F3, M3b
 
 **Work:** validate size/price/color/sale filters; manual default order; stable page/cursor URLs capable of server rendering/crawlable discovery; no bestseller sort.
 
@@ -514,15 +530,35 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 **Verification:** component tests + responsive browser/image check.
 
-## F7b — PDP purchase panel, mapped size modal and related products
-**Estimated scope:** M (3–5 files)  
-**Depends on:** F1, M1, M3, F7a
+## F7b — PDP purchase panel and required-size flow
+**Estimated scope:** M (2–4 files)  
+**Depends on:** F1, F7a
 
-**Work:** sticky right buy panel; Add + Mua ngay; no auto-selected size; missing size message; standard OOS visible+disabled; mapped guide in accessible modal; mobile sticky bar; details order per spec; manual related fallback same category.
+**Work:** sticky right buy panel; Add + Mua ngay; no auto-selected size; missing-size message; standard OOS visible+disabled; mobile sticky price + selected size + Add; preserve server authority.
 
-**Acceptance:** server authority preserved; modal/purchase controls accessible; related fallback deterministic.
+**Acceptance:** required-size flow and purchase controls are accessible and server-authoritative.
 
-**Verification:** component/domain + browser purchase/modal/mobile sticky flow.
+**Verification:** component/domain + browser purchase/mobile-sticky flow.
+
+## F7c — PDP mapped size-guide modal
+**Estimated scope:** S (1–3 files)  
+**Depends on:** F7b, M1
+
+**Work:** open the exact product-mapped approved size guide in an accessible modal; never infer guide from category.
+
+**Acceptance:** correct guide renders; focus trap/restore and Escape work; unmapped state does not invent a guide.
+
+**Verification:** component mapping tests + keyboard/Axe modal walkthrough.
+
+## F7d — PDP related-products section
+**Estimated scope:** S (1–3 files)  
+**Depends on:** F1, F7a, M3a
+
+**Work:** render manual related products first and same-category fallback when no override; reuse editorial card contract.
+
+**Acceptance:** deterministic manual order/fallback; no self-reference or fake products.
+
+**Verification:** projection/component tests + PDP browser check.
 
 ## F8a — Product-card and PDP inventory presentation
 **Estimated scope:** M (2–4 files)  
@@ -580,7 +616,7 @@ Required: boundary-table tests green; DB concurrency proof green; admin auth/inp
 
 ## V1 — Full Brand #2 browser, accessibility and performance acceptance
 **Estimated scope:** verification-only  
-**Depends on:** F2a, F2b, F2c, F2d, F3, F4a, F4b, F5, F6a, F6b, F7a, F7b, F8a, F8b, F8c, F9a, F9b, Checkpoint C
+**Depends on:** F2a, F2b, F2c, F2d, F3, F4a, F4b, F5, F6a, F6b, F7a, F7b, F7c, F7d, F8a, F8b, F8c, F9a, F9b, Checkpoint C
 
 **Scenarios:** desktop/mobile header/nav/search/cart; homepage order/motion/reduced-motion; Áo dài/Set/Váy PLP filters/infinite loading; PDP gallery/size modal/required size; standard OOS/oversell/preorder/hard limit; mixed preorder checkout/confirmation/tracking; About/policy/contact/footer truth.
 
@@ -621,7 +657,7 @@ Safe after plan approval:
 - G1/G2/G3/G4 can run concurrently with Workstream A.
 - A2/A3/A4/A5/A6 may split after A1, coordinating shared `schema.ts` edits.
 - **M1 may start immediately after A4**; it does not wait for Checkpoint A/G4 because it reuses the existing `ProductContent.sizeGuide` owner.
-- **M2/M3 wait for Checkpoint A + approved G4.** If the approved G4 design requires a schema migration, that migration/DB slice additionally waits for Checkpoint B; no-migration reuse may proceed before Checkpoint B.
+- **M2/M3a/M3b wait for Checkpoint A + approved G4.** If the approved G4 design requires a schema migration, that migration/DB slice additionally waits for Checkpoint B; no-migration reuse may proceed before Checkpoint B.
 - After Checkpoint A, F1 can proceed while inventory architecture is resolved.
 - F2b/F2c/F2d may parallelize after F2a when they do not touch the same header composition file concurrently.
 - F6a can be built before campaign content because it supports truthful 0/1/2–3 states.
