@@ -9,7 +9,9 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
  * page is not the one surface missing promotion refresh.
  */
 
-export type NewArrivalsRouteProps = Readonly<Record<string, never>>;
+export type NewArrivalsRouteProps = Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>;
 
 export type NewArrivalsViewModel = Readonly<Record<string, never>>;
 

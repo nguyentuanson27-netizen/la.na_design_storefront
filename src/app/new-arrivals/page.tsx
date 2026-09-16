@@ -28,8 +28,9 @@ function render() {
 
 const route = createStorefrontRoute<NewArrivalsRouteProps, NewArrivalsViewModel>({
   load: loadNewArrivalsRoute,
+  metadata: (props) => buildNewArrivalsMetadata(props),
   render,
 });
 
-export const metadata = buildNewArrivalsMetadata();
+export const generateMetadata = route.generateMetadata;
 export default route.Page;

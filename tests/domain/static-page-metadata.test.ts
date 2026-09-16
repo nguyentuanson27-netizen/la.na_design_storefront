@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { shouldNoIndexRequest } from "../../src/seo/search-exposure.ts";
 import { buildStaticPageMetadata } from "../../src/seo/static-page-metadata.ts";
 
 const ORIGIN = "https://shop.example.com";
@@ -15,6 +16,7 @@ function canonical(metadata: ReturnType<typeof buildStaticPageMetadata>): string
 const APPROVED_STATIC_PATHS = [
   "/",
   "/collections",
+  "/new-arrivals",
   "/about",
   "/contact",
   "/returns",
@@ -45,11 +47,19 @@ test("static authority withholds canonical under noindex or query state", () => 
       buildStaticPageMetadata({
         origin: ORIGIN,
         indexingEnabled: true,
-        pathname: "/collections",
-        searchParams: { utm_source: "newsletter" },
+        pathname: "/new-arrivals",
+        searchParams: { utm_source: "test" },
       }),
     ),
     null,
+  );
+  assert.equal(
+    shouldNoIndexRequest({
+      indexingEnabled: true,
+      pathname: "/new-arrivals",
+      search: "?utm_source=test",
+    }),
+    true,
   );
 });
 
@@ -58,7 +68,6 @@ test("retired and listing routes are outside static canonical authority", () => 
     "/lookbook",
     "/flash-sale",
     "/sale",
-    "/new-arrivals",
     "/ao-dai",
     "/shop",
     "/collections/summer-shirts",
