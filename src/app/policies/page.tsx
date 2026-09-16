@@ -1,24 +1,19 @@
 import Link from "next/link";
 
 import { createStorefrontRoute } from "@/routes/factory";
-import { loadPoliciesRoute, type PoliciesRouteProps } from "@/routes/policies";
 import type { PolicyHubViewModel } from "@/routes/evergreen-model";
 import { buildPoliciesMetadata } from "@/routes/metadata/policies";
+import { loadPoliciesRoute, type PoliciesRouteProps } from "@/routes/policies";
 
 /**
- * A7b — one hub for the policy topics the footer contract requires.
+ * A7b — one hub for all eleven footer policy topics.
  *
- * An index rather than a second policy. Shipping, returns and contact render their policies in
- * full; this page links to them and states, from the same constants, the three topics that have no
- * page of their own. Nothing here is authored: every line a reader sees is a member of Brand
- * Config, so the hub cannot drift from the pages it points at.
+ * Dedicated shipping, returns and contact pages remain the full authority for those topics; the hub
+ * links to them. Owner-approved legal/static clauses render here from `policy.config.ts`. The page
+ * contains presentation only: no payment, privacy, pricing or legal sentence is authored in JSX.
  *
- * Each section carries its topic id as an element id. Those anchors are a published contract — a
- * footer link to `/policies#khieu-nai` has to keep landing — so they live in the view model and are
- * pinned by a test rather than typed into markup here.
- *
- * This is not the footer redesign: F9a owns the footer's grouping and visuals. What this
- * establishes is that the destinations exist and are truthful.
+ * Each topic keeps a stable element id. The five newly approved policy topics use their hub anchor
+ * as their full destination; dedicated-page topics keep their existing links.
  */
 
 const POLICY_LINK =
@@ -32,7 +27,7 @@ function render(data: PolicyHubViewModel) {
         Thông tin &amp; chính sách
       </h1>
 
-      <div className="mt-16 grid max-w-3xl gap-12">
+      <div className="mt-16 grid max-w-3xl gap-16">
         {data.topics.map((topic) => (
           <section key={topic.id} id={topic.id} aria-labelledby={`${topic.id}-heading`}>
             <h2
@@ -45,11 +40,41 @@ function render(data: PolicyHubViewModel) {
             {topic.note === null ? null : (
               <p className="mt-2 max-w-2xl text-base leading-7 text-black/70">{topic.note}</p>
             )}
-            <p className="mt-4">
-              <Link className={POLICY_LINK} href={topic.href}>
-                {topic.linkLabel}
-              </Link>
-            </p>
+
+            {topic.sections.length === 0 ? null : (
+              <div className="mt-8 grid gap-8">
+                {topic.sections.map((section) => (
+                  <div key={section.heading}>
+                    <h3 className="font-serif text-xl tracking-[-0.02em] md:text-2xl">
+                      {section.heading}
+                    </h3>
+                    {section.paragraphs.map((paragraph) => (
+                      <p
+                        key={paragraph}
+                        className="mt-3 max-w-2xl text-base leading-7 text-black/70"
+                      >
+                        {paragraph}
+                      </p>
+                    ))}
+                    {section.items.length === 0 ? null : (
+                      <ul className="mt-3 max-w-2xl list-disc space-y-2 pl-5 text-base leading-7 text-black/70">
+                        {section.items.map((item) => (
+                          <li key={item}>{item}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {topic.linkLabel === null ? null : (
+              <p className="mt-6">
+                <Link className={POLICY_LINK} href={topic.href}>
+                  {topic.linkLabel}
+                </Link>
+              </p>
+            )}
           </section>
         ))}
       </div>
