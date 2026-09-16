@@ -124,7 +124,7 @@ jobs:
               cat "$RUNNER_TEMP/shipping-runtime.log"
               exit 1
             fi
-            if curl --fail --silent --show-error http://127.0.0.1:3218/lookbook > "$RUNNER_TEMP/lookbook.html"; then
+            if curl --fail --silent --show-error http://127.0.0.1:3218/ > "$RUNNER_TEMP/storefront.html"; then
               ready=1
               break
             fi
@@ -136,8 +136,8 @@ jobs:
             exit 1
           fi
 
-          if grep -Fq "750.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
-            if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+          if grep -Fq "750.000" "$RUNNER_TEMP/storefront.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
+            if grep -Fq "650.000" "$RUNNER_TEMP/storefront.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
               echo "Shipping promotion mixes runtime and build-time policy"
               exit 1
             fi
@@ -145,7 +145,7 @@ jobs:
             exit 0
           fi
 
-          if grep -Fq "650.000" "$RUNNER_TEMP/lookbook.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/lookbook.html"; then
+          if grep -Fq "650.000" "$RUNNER_TEMP/storefront.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
             echo "Shipping promotion rendered the build-time policy instead of the runtime policy"
             exit 1
           fi
@@ -201,8 +201,6 @@ jobs:
             exit 1
           fi
 
-          # Production-runtime verification smoke: crawl with official Google-Site-Verification UA
-          # and assert the verification meta tag is physically rendered within <head>...</head>.
           node --input-type=module -e '
             import assert from "node:assert/strict";
             const response = await fetch("http://127.0.0.1:3219/", {
