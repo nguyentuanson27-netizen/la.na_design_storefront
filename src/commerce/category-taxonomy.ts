@@ -249,3 +249,76 @@ export function parseCategoryMembership(
     ),
   });
 }
+
+export type CategoryMembershipRow = Readonly<{
+  productId: string;
+  categoryKey: CategoryKey;
+}>;
+
+export type CategoryMembershipViolationReason =
+  | "unknown-category"
+  | "multiple-top-level";
+
+export type CategoryMembershipViolation = Readonly<{
+  productId: string;
+  reason: CategoryMembershipViolationReason;
+  /** The product's offending keys, in the order encountered. */
+  categoryKeys: readonly CategoryKey[];
+}>;
+
+/**
+ * Reports persisted memberships the schema cannot refuse.
+ *
+ * Top-level exclusivity is enforced at one validated admin write boundary, not by a database
+ * constraint: the taxonomy lives in code, so no foreign key can prove that `categoryKey` sits under
+ * a given root (ADR 0013 §4.5). A writer that bypasses that boundary — a fixture, a repair query, a
+ * migration script — can therefore split a product across two trees, and a category removed from
+ * the taxonomy leaves rows pointing at nothing.
+ *
+ * This is the detection half of that trade, in the shape the repository already uses for facts it
+ * cannot constrain in the schema (`mirrored-money-audit`, `merchant-identity-audit`). It is
+ * read-only and derives every judgement from the current taxonomy, so it also answers "what did the
+ * last taxonomy edit invalidate?" without a migration.
+ */
+export function findCategoryMembershipViolations(
+  rows: readonly CategoryMembershipRow[],
+): readonly CategoryMembershipViolation[] {
+  const byProduct = new Map<string, CategoryKey[]>();
+  for (const row of rows) {
+    const keys = byProduct.get(row.productId);
+    if (keys) keys.push(row.categoryKey);
+    else byProduct.set(row.productId, [row.categoryKey]);
+  }
+
+  const violations: CategoryMembershipViolation[] = [];
+  for (const [productId, categoryKeys] of byProduct) {
+    // Unknown keys are reported on their own: their tree is unknowable, so folding them into the
+    // cross-tree check would report a second, speculative violation for the same rows.
+    const unknown = categoryKeys.filter((key) => categoryByKey(key) === null);
+    if (unknown.length > 0) {
+      violations.push(
+        Object.freeze({
+          productId,
+          reason: "unknown-category" as const,
+          categoryKeys: Object.freeze(unknown),
+        }),
+      );
+      continue;
+    }
+
+    const topLevelKeys = new Set(
+      categoryKeys.map((key) => categoryByKey(key)?.topLevelKey).filter((key) => key !== undefined),
+    );
+    if (topLevelKeys.size > 1) {
+      violations.push(
+        Object.freeze({
+          productId,
+          reason: "multiple-top-level" as const,
+          categoryKeys: Object.freeze([...categoryKeys]),
+        }),
+      );
+    }
+  }
+
+  return Object.freeze(violations);
+}

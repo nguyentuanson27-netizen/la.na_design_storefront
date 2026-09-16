@@ -28,7 +28,7 @@ What PR #5 deliberately did **not** add is product membership. The category rout
 | Existing collection-grid pinned order | `CollectionDefinition.featuredProductSlugs` | keep its current collection-grid pinning semantic only | **A — NO MIGRATION** | existing/extended collection admin | `/collections/[slug]` only |
 | Standalone homepage Featured products | no manual durable owner; current homepage uses generic discovery | dedicated global ordered product relation | **B — ADDITIVE MIGRATION REQUIRED** | homepage merchandising admin transaction | homepage Featured section only |
 | Canonical category **identity**/hierarchy | `src/brand/category.config.ts` (merged by F3a) | ratify it as the canonical authority; add `category-taxonomy.ts` as its query/invariant boundary | **A — NO MIGRATION** | none: taxonomy is code, changed by deploy | every category consumer |
-| Canonical product ↔ category **membership** | **none on current main** | `ProductCategoryTree` + `ProductCategoryMembership`, keyed by `ProductMirror.id` and category key | **B — ADDITIVE MIGRATION REQUIRED** | category-membership admin transaction | category PLP, PDP, related products |
+| Canonical product ↔ category **membership** | **none on current main** | `ProductCategoryMembership`, keyed by `ProductMirror.id` and category key; top-level tree derived, not stored | **B — ADDITIVE MIGRATION REQUIRED** | category-membership admin transaction, application-enforced invariant | category PLP, PDP, related products |
 | Category PLP default ordering | no owner | `CategoryProductOrder`, keyed by the same category key | **B — ADDITIVE MIGRATION REQUIRED** | category merchandising admin transaction | category PLP only |
 | Mega-menu/category editorial image | no canonical category owner; `CollectionDefinition.heroImageUrl` is collection media | `CategoryEditorialMedia`, keyed by the same category key | **B — ADDITIVE MIGRATION REQUIRED** | category merchandising admin | category landing/mega-menu |
 | Related-product manual override + fallback | current code has no override and falls back by shared **collection** | manual override first, then same-subcategory, then same parent tree; no collection fallback | **B — ADDITIVE MIGRATION REQUIRED** (override relation) | related-products admin transaction | PDP related-products reader |
@@ -149,65 +149,87 @@ value and a review of rows already written — **no migration**. Childless top-l
 ### 4.5 Proposed persistence — B: additive migration, pending Checkpoint B
 
 ```prisma
-/// One row per product that has any category membership. Holds the single top-level tree the
-/// product belongs to, so top-level exclusivity is a database fact and not only a service rule.
-model ProductCategoryTree {
-  productId   String @id
-  topLevelKey String
-
-  product     ProductMirror               @relation(fields: [productId], references: [id], onDelete: Cascade)
-  memberships ProductCategoryMembership[]
-
-  @@unique([productId, topLevelKey])
-}
-
-/// The assigned categories themselves. `topLevelKey` is carried so the composite foreign key below
-/// can bind every membership to the product's one tree.
+/// Website-owned category assignment. One row per (product, assigned category).
+///
+/// Only the assigned node is stored. The product's top-level tree is *derived* through the
+/// taxonomy (`categoryByKey(categoryKey).topLevelKey`) and never persisted — see below.
 model ProductCategoryMembership {
   productId   String
-  topLevelKey String
   categoryKey String
   createdAt   DateTime @default(now())
 
-  tree ProductCategoryTree @relation(fields: [productId, topLevelKey], references: [productId, topLevelKey], onDelete: Cascade)
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@id([productId, categoryKey])
   @@index([categoryKey])
 }
 ```
 
-`ProductCategoryTree.productId` is the primary key, so a product has at most one `topLevelKey`; the
-composite foreign key then forces every membership row to carry that same value. Two memberships in
-different top-level trees are therefore **unrepresentable**, not merely rejected. This follows the
-existing house pattern where a database constraint is defence in depth behind application
-validation, as ADR 0007 states for the Merchant enums.
-
-What the database cannot check is that `categoryKey` actually sits under `topLevelKey`, because the
-taxonomy lives in code. That check is `parseCategoryMembership()` at the admin boundary, which fails
-closed on unknown keys, duplicates, oversized input and cross-tree selections.
-
 `@@index([categoryKey])` serves the PLP query, which filters on the listing key set. The expected
 row count is small — products × at most `MAX_CATEGORY_MEMBERSHIPS` (6 today) — so no further index
 is proposed until a measured need exists.
 
-**Alternative considered — one table, validation only.** A single `ProductCategoryMembership` with
-`@@id([productId, categoryKey])` and no tree row is simpler to read and one table fewer. It was not
-chosen because top-level exclusivity would then rest entirely on application code: any future path
-that inserts a row without going through `parseCategoryMembership()` — a script, a fixture, a
-repair query — could split a product across two trees, and nothing would detect it until a PLP
-showed the product in the wrong place. The two-table shape costs one extra table and makes that
-state impossible to write. Checkpoint B may overrule this trade; if it does, the validation,
-queries and every consumer contract above are unchanged, because only the storage differs.
+#### Top-level exclusivity is application-enforced, and this ADR does not pretend otherwise
+
+`parseCategoryMembership()` rejects a cross-tree selection, and §4.6 requires the admin write to be
+a single transactional full replacement, so no validated path can produce a split product. **The
+database does not enforce it.** Any writer that bypasses the admin boundary — a fixture, a repair
+query, a migration script — can create a split product, and nothing in the schema will refuse it.
+That limitation is stated here rather than engineered around, because the two attempts to engineer
+around it both cost more than they are worth:
+
+**Rejected — a per-product tree row with a composite foreign key.** An earlier revision of this ADR
+proposed `ProductCategoryTree(productId @id, topLevelKey)` with membership carrying `topLevelKey`
+and a composite FK back to it, and claimed that made a cross-tree product *unrepresentable*. **That
+claim was wrong.** The FK only proves that every membership row repeats the same `topLevelKey`
+string; it cannot prove that `categoryKey` sits under it, because the taxonomy is not in the
+database. So this passes the FK:
+
+```text
+ProductCategoryTree(productId = P, topLevelKey = "aoDai")
+ProductCategoryMembership(productId = P, topLevelKey = "aoDai", categoryKey = "setVay")
+```
+
+and under the §4.7 PLP contract that product still surfaces on `/set-do`, because the listing
+matches on `categoryKey`. The shape bought an extra table and a duplicated string, and enforced
+nothing. It also broke the re-parenting property below, by persisting `topLevelKey` in two places.
+
+**Rejected — teaching the database the taxonomy.** A `CHECK` constraint enumerating every
+`categoryKey → topLevelKey` pair, or a mirrored `CategoryNode`/closure table as an FK target, would
+genuinely enforce the invariant. Both put a second copy of the taxonomy in SQL, which §4.1 rejects
+for the same reason it rejects a `CategoryDefinition` table — and worse, both make adding or
+re-parenting a category require a **migration**, destroying the config-only property that §4.1 and
+§4.3 depend on. The invariant is not worth paying that price to enforce in two places.
+
+**Accepted instead — detect what the schema cannot prevent.** Alongside the admin validation,
+`findCategoryMembershipViolations()` reports any product whose memberships span more than one
+top-level tree, or whose `categoryKey` is not in the current taxonomy. It is pure and read-only, so
+it already ships with this ADR and is covered by domain tests — including the exact counterexample
+above — rather than waiting on the migration. This is the pattern the repository already uses for
+facts it cannot constrain in the schema (`scripts/mirrored-money-audit.ts`,
+`scripts/merchant-identity-audit.ts`); wiring it to a script over real rows belongs with the
+Checkpoint B migration. It catches exactly the bypass-the-boundary case the rejected FK only
+appeared to cover, and stale `categoryKey` values after a taxonomy edit surface through the same
+check.
+
+#### Why nothing derived is persisted
+
+Storing only `categoryKey` is what makes the §4.3 re-parenting guarantee true. Moving a category to
+a different root changes one line of `category.config.ts`; every listing and every derived
+`topLevelKey` follows immediately, with **no row rewritten**. The rejected tree-row shape would have
+left a stale persisted `topLevelKey` on every affected product, turning a config edit into a
+backfill — the exact outcome §4.3 promises to avoid.
 
 ### 4.6 Admin write contract
 
 - Behind `requireAdminSession`, like every other merchandising write.
 - Input parsed by `parseCategoryMembership()` before any database access; bounded by
   `MAX_CATEGORY_MEMBERSHIPS`, which is derived from the taxonomy rather than written down.
-- **Full replacement inside one transaction**: delete the product's membership rows, upsert or
-  delete its tree row, insert the new set. No incremental add/remove path, so a product is never
-  observed mid-edit spanning two trees.
-- Clearing all categories deletes the tree row; `topLevelKey` is never left orphaned.
+- **Full replacement inside one transaction**: delete the product's membership rows, insert the
+  validated set. No incremental add/remove path, so a product is never observed mid-edit spanning
+  two trees. This transaction is the *only* place the one-top-level invariant is enforced, which is
+  why it may not be bypassed by any other write path.
+- Clearing all categories deletes every membership row for the product; nothing derived is left behind, because nothing derived is stored.
 
 ### 4.7 Storefront query contract
 
@@ -318,7 +340,10 @@ None of these facts, by themselves, establish Brand #2 category identity. None b
 - All future writes remain behind `requireAdminSession` and server-side boundary validation.
 - Ordered admin inputs must be bounded, unique and transactionally replaced.
 - New relations use stable internal product identity rather than mutable product slugs where referential integrity is required.
-- No derived storefront state is persisted when it can be computed.
+- No derived storefront state is persisted when it can be computed. Category top-level membership
+  is derived from the taxonomy at read time, never stored.
+- Where an invariant cannot be expressed in the schema, it is enforced at one validated write
+  boundary and **audited** rather than claimed as a database guarantee (§4.5).
 - Merchant availability/date authority is not stored in merchandising relations.
 - Provider credentials/config never belong in these tables.
 
@@ -350,7 +375,6 @@ collection placement/media/content; **canonical category identity and hierarchy*
 | Model | Purpose | Section |
 |---|---|---|
 | `HomepageFeaturedProduct` | standalone homepage Featured order | §3 |
-| `ProductCategoryTree` | the product's single top-level tree | §4.5 |
 | `ProductCategoryMembership` | product ↔ category assignment | §4.5 |
 | `CategoryProductOrder` | category PLP manual default order | §5 |
 | `CategoryEditorialMedia` | category hero + mega-menu images | §6 |
@@ -375,9 +399,10 @@ correct behaviour, not a defect.
 ## Status of G4
 
 G4 is **architecture-complete**: one canonical category authority now exists, with stable identity,
-explicit hierarchy, deterministic path resolution, a website-owned membership shape, a
-database-enforced one-top-level invariant, child-to-parent projection without derived rows, and a
-single query contract that PLP order, category media and related products all key to.
+explicit hierarchy, deterministic path resolution, a website-owned membership shape, a one-top-level
+invariant enforced at a single validated write boundary and backed by an integrity check,
+child-to-parent projection without derived rows, and a single query contract that PLP order,
+category media and related products all key to.
 
 M2, M3a, M3b, F4a, F7d and category/mega-menu editorial media are unblocked **at the architecture
 level** and remain behind their existing plan dependencies and Checkpoint B for the migrations

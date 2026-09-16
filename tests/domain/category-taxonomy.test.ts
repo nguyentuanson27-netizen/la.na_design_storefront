@@ -12,6 +12,7 @@ import {
   categoryByPath,
   categoryListingKeys,
   descendantCategoryKeys,
+  findCategoryMembershipViolations,
   parseCategoryMembership,
   type CategoryKey,
   type CategoryMembershipPolicy,
@@ -265,4 +266,53 @@ test("G4 the taxonomy stays in step with the routes and sitemap it already owns"
       `${path} must stay a canonical crawlable path`,
     );
   }
+});
+
+test("G4 the integrity check catches the cross-tree state no schema can refuse", () => {
+  // Review 5229201195's counterexample. The rejected composite-FK shape accepted this row because
+  // the FK only compared a denormalized `topLevelKey` string; the taxonomy, which lives in code, is
+  // the only thing that knows `setVay` is not under `aoDai`. So detection is where it belongs.
+  const violations = findCategoryMembershipViolations([
+    { productId: "P", categoryKey: "aoDaiTet" },
+    { productId: "P", categoryKey: "setVay" },
+  ]);
+
+  assert.deepEqual(violations, [
+    { productId: "P", reason: "multiple-top-level", categoryKeys: ["aoDaiTet", "setVay"] },
+  ]);
+});
+
+test("G4 the integrity check reports stale keys a taxonomy edit left behind", () => {
+  const violations = findCategoryMembershipViolations([
+    { productId: "P", categoryKey: "aoDaiTet" },
+    { productId: "P", categoryKey: "removedCategory" },
+  ]);
+
+  assert.deepEqual(violations, [
+    { productId: "P", reason: "unknown-category", categoryKeys: ["removedCategory"] },
+  ]);
+});
+
+test("G4 the integrity check passes valid memberships and scopes findings per product", () => {
+  // Same tree, several nodes, and a parent alongside its child are all legitimate.
+  assert.deepEqual(
+    findCategoryMembershipViolations([
+      { productId: "ok1", categoryKey: "aoDaiTet" },
+      { productId: "ok1", categoryKey: "aoDai4Ta" },
+      { productId: "ok2", categoryKey: "aoDai" },
+      { productId: "ok2", categoryKey: "aoDaiTet" },
+      { productId: "ok3", categoryKey: "vayDam" },
+    ]),
+    [],
+  );
+  assert.deepEqual(findCategoryMembershipViolations([]), []);
+
+  // One bad product must not implicate its neighbours.
+  const mixed = findCategoryMembershipViolations([
+    { productId: "good", categoryKey: "aoDaiTet" },
+    { productId: "bad", categoryKey: "aoDaiTet" },
+    { productId: "bad", categoryKey: "phuKien" },
+  ]);
+  assert.equal(mixed.length, 1);
+  assert.equal(mixed[0]?.productId, "bad");
 });
