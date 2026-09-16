@@ -171,11 +171,24 @@ test("U33a the approved brand positioning is the owner's sentence, not a paraphr
   );
 });
 
-test("U33a the approved legal facts transcribe §1 exactly, and own no address", () => {
+test("U33a / A2 the approved legal facts transcribe the registered identity, and own no business address", () => {
   assert.deepEqual(PUBLIC_LEGAL_FACTS, {
     legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxCode: "0111242251",
+    taxIdIssueDate: "7/10/2025",
+    registeredAddress:
+      "Số 06 Đường Manor 2str, Sunrise C, KĐT The Manor Central Park, Phường Định Công",
+    legalEmail: "congtytnhh.las@gmail.com",
   });
+
+  // A2 widened this to the whole registered identity, not to the customer-facing contact. The
+  // business/return address and the support inbox stay contact facts, published under their own
+  // labels through PUBLIC_CONTACT_FACTS, so a legal block cannot quietly become a returns address.
+  const legal = PUBLIC_LEGAL_FACTS as Record<string, unknown>;
+  for (const contactOwned of ["streetAddress", "addressLocality", "email", "telephone"]) {
+    assert.equal(contactOwned in legal, false, contactOwned);
+  }
+  assert.notEqual(PUBLIC_LEGAL_FACTS.registeredAddress, describePublicAddress());
 
   assert.equal(Object.isFrozen(PUBLIC_LEGAL_FACTS), true);
 });

@@ -88,19 +88,28 @@ export function describePublicSupportHours(): string {
 export const PUBLIC_BRAND_POSITIONING = BRAND.identity.positioning;
 
 /**
- * §1 legal identity, approved for publication on a minimal About page by B6/§7.
+ * The registered legal identity, approved for publication on the About/legal surface.
  *
- * Only the entity name and the confirmed MST live here. The **address is not duplicated**: it is a
- * §2 contact fact, so `PUBLIC_CONTACT_FACTS` owns it and `/about` renders it through
- * `describePublicAddress()`, the same call the footer and the `Organization` node use.
+ * One projection joining the two halves Brand Config keeps apart: the entity name and MST that
+ * `identity` has always published, and the registered address, corporate email and tax issue date
+ * that `legal` owns. Joining them here rather than in a page is what stops the same registered
+ * address being restated in three places and drifting in two of them.
  *
- * U32b left these out because they are not B2 contact facts and the `Organization` entity it built
- * implements the B2 contract. The About/legal surface is where they belong, and this is where a
- * later `legalName`/`taxID` mapping would read them from.
+ * The **business address is not here**, and neither is the support email. Those are contact facts:
+ * `PUBLIC_CONTACT_FACTS` owns them, `/about` and the footer render them through
+ * `describePublicAddress()`, and the `Organization` node marks up the same values. A registered
+ * office is where the company is registered; it is not where a customer sends a return, so the two
+ * are published side by side under distinct labels and never as one address.
+ *
+ * **No legal representative.** The owner withheld it from public display, so there is no field for
+ * an About page to reach for.
  */
 export const PUBLIC_LEGAL_FACTS = Object.freeze({
   legalEntityName: BRAND.identity.legalName,
   taxCode: BRAND.identity.taxId,
+  taxIdIssueDate: BRAND.legal.taxIdIssueDate,
+  registeredAddress: BRAND.legal.registeredAddress,
+  legalEmail: BRAND.legal.email,
 });
 
 const vnd = new Intl.NumberFormat("vi-VN", {

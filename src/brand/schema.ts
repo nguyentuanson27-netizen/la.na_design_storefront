@@ -73,6 +73,36 @@ export type BrandContact = Readonly<{
   supportHours: SupportHours;
 }>;
 
+/**
+ * The registered legal entity's own contact facts.
+ *
+ * Separate from {@link BrandContact} because they are separate facts about separate places: the
+ * registered address is where the company is registered, the business address is where customers
+ * send returns, and the corporate mailbox is not the support inbox. One shared address/email pair
+ * could only hold one of each, so publishing the registered identity would have meant overwriting
+ * the customer-facing contact or restating it as page prose.
+ *
+ * `legalName` and `taxId` stay on {@link BrandIdentity}: they are already published there and
+ * moving them would churn every consumer for no gain. `src/content/public-brand-facts.ts` joins
+ * both halves into the one projection the About/legal surface reads.
+ *
+ * There is deliberately no legal-representative field. The owner withheld the representative from
+ * public display, and absence is the approved state -- a field left blank is a field a later page
+ * can fill.
+ */
+export type BrandLegal = Readonly<{
+  /** The registered office, as the registration source states it. Never the return address. */
+  registeredAddress: string;
+  /** Corporate/legal correspondence. Customer service uses `BrandContact.email`. */
+  email: string;
+  /**
+   * The date the tax ID was issued, in the Vietnamese day/month/year order the source states it in.
+   * Kept as the approved string rather than an ISO date: reading `7/10/2025` month-first would move
+   * the date by three months, and no consumer needs a machine-readable form yet.
+   */
+  taxIdIssueDate: string;
+}>;
+
 export type BrandMerchant = Readonly<{
   feedBrand: string;
   defaultGender: MerchantGender;
@@ -82,6 +112,7 @@ export type BrandMerchant = Readonly<{
 export type BrandConfig = Readonly<{
   identity: BrandIdentity;
   contact: BrandContact;
+  legal: BrandLegal;
   merchant: BrandMerchant;
   market: Market;
 }>;

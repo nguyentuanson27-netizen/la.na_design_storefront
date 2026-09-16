@@ -48,6 +48,24 @@ export const BRAND: BrandConfig = {
       utcOffsetLabel: "UTC+7",
     },
   },
+  /**
+   * Owner-facts §3b — the registered legal entity's own contact facts, approved for the About/legal
+   * surface.
+   *
+   * Deliberately not merged into `contact`: the registered office is not the return address and the
+   * corporate mailbox is not the support inbox, so one shared pair could only hold one of each. The
+   * entity name and MST stay in `identity`, where they were already published; the public
+   * projection joins the two halves.
+   *
+   * No legal representative. The owner withheld it from public display.
+   */
+  legal: {
+    registeredAddress:
+      "Số 06 Đường Manor 2str, Sunrise C, KĐT The Manor Central Park, Phường Định Công",
+    email: "congtytnhh.las@gmail.com",
+    // As the registration source states it: day/month/year, so this is 7 October 2025.
+    taxIdIssueDate: "7/10/2025",
+  },
   // ADR 0007 section 1 — the owner-approved Merchant shop defaults.
   merchant: {
     feedBrand: "LA Clothing",
