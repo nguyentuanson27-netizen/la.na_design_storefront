@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { SIZE_GUIDE } from "../../src/brand/index.ts";
 import { describeGuestShippingPromotion } from "../../src/commerce/guest-shipping-policy.ts";
 import { normalizeVietnamesePhone } from "../../src/integrations/meta/conversions-api.ts";
 import {
@@ -328,98 +329,21 @@ test("U33b payment facts stay with the builder that already owned them", () => {
 });
 
 /**
- * U33c / B3. The owner approved two size charts, centimetres, circumference semantics, a ±3 cm
- * tolerance, and guidance-only height/weight references. Measurements, size vocabulary, and fit
- * claims beyond these approved facts must never be authored or derived.
+ * U33c / A4. The tables themselves are transcribed cell for cell in `size-guide-truth.test.ts`,
+ * which owns that contract; duplicating them here would give the approved numbers two homes and a
+ * way to disagree. What stays is the part that is about the *authority* rather than the values:
+ * the public projection is the config, and no note may grow a fit guarantee.
  */
-test("U33c the size guide authority transcribes B3 exactly", () => {
-  assert.deepEqual(PUBLIC_SIZE_GUIDE, {
-    unit: "cm",
-    toleranceCm: 3,
-    circumferenceSemanticsNote:
-      "Rộng ngực, Rộng eo, Rộng mông là số đo vòng quanh sản phẩm, không phải chiều ngang khi trải phẳng.",
-    toleranceNote: "Dung sai sai số may mặc: ±3 cm.",
-    guidanceNote:
-      "Thông số chiều cao và cân nặng mang tính chất tham khảo chọn size, không bảo đảm vừa vặn tuyệt đối cho mọi vóc dáng.",
-    // The fixed chartA/chartB pair became a list of charts, each carrying its own size scale. The
-    // approved B3 numbers and titles are unchanged; only the shape holding them is.
-    charts: [
-      {
-        id: "relaxed-and-elastic-waist",
-        title: "Sản phẩm dáng rộng / quần lưng chun",
-        sizes: ["M", "L", "XL", "2XL"],
-        rows: [
-          {
-            parameter: "Rộng ngực (vòng, cm)",
-            values: { M: "106", L: "110", XL: "114", "2XL": "118" },
-          },
-          {
-            parameter: "Dài tay (cm)",
-            values: { M: "55", L: "56", XL: "57", "2XL": "58" },
-          },
-          {
-            parameter: "Dài áo (cm)",
-            values: { M: "63.5", L: "65.5", XL: "67.5", "2XL": "69.5" },
-          },
-          {
-            parameter: "Dài quần (cm)",
-            values: { M: "105", L: "106", XL: "107", "2XL": "108" },
-          },
-          {
-            parameter: "Rộng eo — chun (vòng, cm)",
-            values: { M: "70–80", L: "74–84", XL: "78–88", "2XL": "82–92" },
-          },
-          {
-            parameter: "Rộng mông (vòng, cm)",
-            values: { M: "108", L: "112", XL: "116", "2XL": "120" },
-          },
-          {
-            parameter: "Chiều cao tham khảo",
-            values: { M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" },
-          },
-          {
-            parameter: "Cân nặng tham khảo (kg)",
-            values: { M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" },
-          },
-        ],
-      },
-      {
-        id: "short-sleeve-tops",
-        title: "Áo ngắn tay",
-        sizes: ["M", "L", "XL", "2XL"],
-        rows: [
-          {
-            parameter: "Rộng ngực (vòng, cm)",
-            values: { M: "120", L: "124", XL: "128", "2XL": "132" },
-          },
-          {
-            parameter: "Dài áo (cm)",
-            values: { M: "63", L: "65", XL: "67", "2XL": "69" },
-          },
-          {
-            parameter: "Dài tay (cm)",
-            values: { M: "27", L: "28", XL: "29", "2XL": "30" },
-          },
-          {
-            parameter: "Chiều cao tham khảo",
-            values: { M: "1m60–1m85", L: "1m60–1m85", XL: "1m60–1m85", "2XL": "1m60–1m85" },
-          },
-          {
-            parameter: "Cân nặng tham khảo (kg)",
-            values: { M: "50–59", L: "60–69", XL: "70–79", "2XL": "80–89" },
-          },
-        ],
-      },
-    ],
-  });
+test("U33c the size guide authority is the approved config, and claims no fit guarantee", () => {
+  assert.equal(PUBLIC_SIZE_GUIDE, SIZE_GUIDE);
 
-  assert.equal(describePublicSizeTolerance(), "±3 cm");
+  // A4: no fixed tolerance applies, so there is no tolerance sentence to describe.
+  assert.equal(PUBLIC_SIZE_GUIDE.tolerance, null);
+  assert.equal(describePublicSizeTolerance(), null);
 
-  // Negative assertions on authority notes: no guarantee claims
+  const notes = [PUBLIC_SIZE_GUIDE.guidanceNote, PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote];
   for (const forbidden of [/đảm bảo vừa/i, /fit guaranteed/i, /chắc chắn vừa/i, /cam kết vừa/i]) {
-    assert.equal(forbidden.test(PUBLIC_SIZE_GUIDE.guidanceNote), false);
-    assert.equal(forbidden.test(PUBLIC_SIZE_GUIDE.toleranceNote), false);
-    assert.equal(forbidden.test(PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote), false);
+    for (const note of notes) assert.equal(forbidden.test(note), false, forbidden.source);
   }
 });
 

@@ -147,10 +147,20 @@ export type SizeChart = Readonly<{
   }>[];
 }>;
 
+/**
+ * A published manufacturing tolerance, when the brand has one.
+ *
+ * The number and the sentence travel together so a brand cannot end up with a note that states no
+ * figure, or a figure no page explains. `null` on {@link SizeGuideConfig.tolerance} is the whole
+ * representation of "no fixed tolerance applies": there is no number to render, so there is nothing
+ * for a page to round down to `0` and publish as one.
+ */
+export type SizeTolerance = Readonly<{ cm: number; note: string }>;
+
 export type SizeGuideConfig = Readonly<{
   unit: string;
-  toleranceCm: number;
-  toleranceNote: string;
+  /** `null` when no fixed tolerance applies. Never `0`, which would be a tolerance of zero. */
+  tolerance: SizeTolerance | null;
   circumferenceSemanticsNote: string;
   guidanceNote: string;
   charts: readonly SizeChart[];

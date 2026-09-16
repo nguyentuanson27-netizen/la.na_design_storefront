@@ -179,30 +179,36 @@ test("the Size Guide passes every approved chart through whole", () => {
   assert.equal(model.charts.length > 0, true, "the guide is not vacuously empty");
 });
 
-test("the Size Guide states the approved unit, tolerance and notes and derives no fit advice", () => {
+test("the Size Guide states the approved unit and notes and derives no fit advice", () => {
   const model = buildSizeGuideViewModel();
 
   assert.equal(model.unit, PUBLIC_SIZE_GUIDE.unit);
-  assert.equal(model.toleranceNote, PUBLIC_SIZE_GUIDE.toleranceNote);
-  assert.equal(model.toleranceText, describePublicSizeTolerance());
   assert.equal(model.circumferenceSemanticsNote, PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote);
   assert.equal(model.guidanceNote, PUBLIC_SIZE_GUIDE.guidanceNote);
 
-  // B3 approved the tables and nothing else. A recommended size, a fit vocabulary or a
+  // The tables are approved and nothing else. A recommended size, a fit vocabulary or a
   // measurement-to-size mapping appearing here would be a fit claim this repository invented.
   assert.deepEqual(Object.keys(model).sort(), [
     "charts",
     "circumferenceSemanticsNote",
     "guidanceNote",
-    "toleranceNote",
-    "toleranceText",
+    "tolerance",
     "unit",
   ]);
 });
 
-test("each chart's caption tolerance is the same one the intro states", () => {
-  // Two wordings of one tolerance is how a page ends up publishing two tolerances.
+test("the intro statement and each chart caption carry one tolerance, or none at all", () => {
+  // Two wordings of one tolerance is how a page ends up publishing two tolerances -- so they are
+  // one field. A4: this brand publishes none, and the whole statement is absent rather than blank.
   const model = buildSizeGuideViewModel();
 
-  assert.equal(model.toleranceText.includes(String(PUBLIC_SIZE_GUIDE.toleranceCm)), true);
+  if (PUBLIC_SIZE_GUIDE.tolerance === null) {
+    assert.equal(model.tolerance, null);
+    assert.equal(describePublicSizeTolerance(), null);
+    return;
+  }
+
+  assert.equal(model.tolerance?.note, PUBLIC_SIZE_GUIDE.tolerance.note);
+  assert.equal(model.tolerance?.text, describePublicSizeTolerance());
+  assert.equal(model.tolerance?.text.includes(String(PUBLIC_SIZE_GUIDE.tolerance.cm)), true);
 });

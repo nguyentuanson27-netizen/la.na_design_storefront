@@ -193,9 +193,14 @@ export function buildReturnsViewModel(): ReturnsViewModel {
 
 export type SizeGuideViewModel = Readonly<{
   unit: string;
-  toleranceNote: string;
-  /** The tolerance as the per-chart caption states it, so the two cannot word it differently. */
-  toleranceText: string;
+  /**
+   * The approved tolerance, or `null` when none applies.
+   *
+   * One nullable field rather than a note and a caption that could disagree: the sentence and the
+   * `±N cm` the per-chart caption repeats are the same fact, and a guide with no tolerance has
+   * neither. The page renders the whole statement or omits it.
+   */
+  tolerance: Readonly<{ note: string; text: string }> | null;
   circumferenceSemanticsNote: string;
   guidanceNote: string;
   /** Every declared chart, each with its own size scale. Charts do not have to agree. */
@@ -211,10 +216,14 @@ export type SizeGuideViewModel = Readonly<{
  * repository invented.
  */
 export function buildSizeGuideViewModel(): SizeGuideViewModel {
+  const toleranceText = describePublicSizeTolerance();
+
   return Object.freeze({
     unit: PUBLIC_SIZE_GUIDE.unit,
-    toleranceNote: PUBLIC_SIZE_GUIDE.toleranceNote,
-    toleranceText: describePublicSizeTolerance(),
+    tolerance:
+      PUBLIC_SIZE_GUIDE.tolerance === null || toleranceText === null
+        ? null
+        : Object.freeze({ note: PUBLIC_SIZE_GUIDE.tolerance.note, text: toleranceText }),
     circumferenceSemanticsNote: PUBLIC_SIZE_GUIDE.circumferenceSemanticsNote,
     guidanceNote: PUBLIC_SIZE_GUIDE.guidanceNote,
     charts: PUBLIC_SIZE_GUIDE.charts,

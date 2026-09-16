@@ -186,14 +186,20 @@ function validateMarket(brand: BrandConfig): void {
 function validateSizeGuide(sizeGuide: SizeGuideConfig): void {
   requireText(sizeGuide.unit, "sizeGuide.unit");
   for (const [label, value] of Object.entries({
-    toleranceNote: sizeGuide.toleranceNote,
     circumferenceSemanticsNote: sizeGuide.circumferenceSemanticsNote,
     guidanceNote: sizeGuide.guidanceNote,
   })) {
     requireText(value, `sizeGuide.${label}`);
   }
-  if (!Number.isFinite(sizeGuide.toleranceCm) || sizeGuide.toleranceCm < 0) {
-    fail("sizeGuide.toleranceCm must be a non-negative number");
+  // `null` is a fact -- no fixed tolerance applies -- and is left alone. A tolerance that is
+  // present is still checked as strictly as before, so absence is a decision rather than a gap the
+  // loader stopped looking at. Zero is rejected: a brand with no tolerance says so with `null`, and
+  // `0` would publish a promise of exact measurements.
+  if (sizeGuide.tolerance !== null) {
+    requireText(sizeGuide.tolerance.note, "sizeGuide.tolerance.note");
+    if (!Number.isFinite(sizeGuide.tolerance.cm) || sizeGuide.tolerance.cm <= 0) {
+      fail("sizeGuide.tolerance.cm must be a positive number; use null when none applies");
+    }
   }
   if (sizeGuide.charts.length < 1) fail("sizeGuide.charts must contain at least one chart");
 

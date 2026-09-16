@@ -172,8 +172,16 @@ export function describePublicRefundWindow(): string {
  */
 export const PUBLIC_SIZE_GUIDE = SIZE_GUIDE;
 
-/** The approved apparel manufacturing tolerance, formatted for a reader. */
-export function describePublicSizeTolerance(): string {
-  return `±${PUBLIC_SIZE_GUIDE.toleranceCm} cm`;
+/**
+ * The approved apparel manufacturing tolerance, formatted for a reader, or `null` when the brand
+ * publishes none.
+ *
+ * `null` rather than an empty string or a `±0 cm`: a caller has to decide what to do about a
+ * tolerance that does not exist, and the only truthful answer is to omit the statement. Returning a
+ * blank would let a page render "Dung sai:" with nothing after it.
+ */
+export function describePublicSizeTolerance(): string | null {
+  const { tolerance } = PUBLIC_SIZE_GUIDE;
+  return tolerance === null ? null : `±${tolerance.cm} ${PUBLIC_SIZE_GUIDE.unit}`;
 }
 
