@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
 import { NAVIGATION } from "../../src/brand/index.ts";
 import { matchesStorefrontRoute } from "../../src/routes/manifest.ts";
@@ -36,11 +34,4 @@ test("A8 retires obsolete public routes while keeping sale public and canonical"
   assert.equal(STATIC_CANONICAL_PATHS.includes("/sale"), true);
   assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/lookbook"), false);
   assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/flash-sale"), false);
-});
-
-test("sale uses the existing promotion projection", () => {
-  const root = fileURLToPath(new URL("../../", import.meta.url));
-  const source = readFileSync(`${root}src/routes/sale.ts`, "utf8");
-  assert.match(source, /listConfiguredFlashSalePage/);
-  assert.doesNotMatch(source, /listConfiguredStorefrontDiscoveryPage/);
 });

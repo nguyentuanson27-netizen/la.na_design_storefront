@@ -16,7 +16,6 @@ import { defaultStorefrontPricingRule, type StorefrontPricingRule } from "./stor
 
 type StorefrontPromotionProduct = Readonly<{
   variants: readonly Readonly<{ id: string }>[];
-  /** PDP projections can contain composite-component variants not present in the parent list. */
   projection?: Readonly<{ options: readonly Readonly<{ id: string }>[] }>;
 }>;
 
@@ -79,7 +78,6 @@ export async function listConfiguredStorefrontDiscoveryPage({
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
-  /** The caller's request clock, so counting, ordering and card pricing share one instant. */
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -109,8 +107,30 @@ export async function listConfiguredFlashSalePage({
   });
 }
 
+export async function listConfiguredSalePage({
+  discovery,
+  pageSize,
+  now,
+}: {
+  discovery: StorefrontDiscoveryQuery;
+  pageSize: number;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  return createFlashSaleCatalogRepository(prisma).listSalePage({
+    shopId,
+    discovery,
+    pageSize,
+    now,
+  });
+}
+
 export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
   return createFlashSaleCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
+}
+
+export async function readConfiguredNextSaleBoundary(now?: Date) {
+  return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now });
 }
 
 export async function listConfiguredStorefrontDiscoveryFacets() {
@@ -120,8 +140,6 @@ export async function listConfiguredStorefrontDiscoveryFacets() {
 
 export async function getConfiguredStorefrontProductBySlug(slug: string, now?: Date) {
   const shopId = readPancakeShopId();
-  // `now` is threaded rather than defaulted deeper so a caller that already owns a request clock
-  // can price every surface of one request against the same instant.
   return createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug, now });
 }
 
