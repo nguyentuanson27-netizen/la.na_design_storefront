@@ -29,7 +29,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 ## High-risk gates — run early
 - [ ] **G1** Verify current official Merchant + structured-data availability/date contracts; decide and approve a compliant `availability_date` strategy.
 - [ ] **G2** Run explicitly authorized Pancake zero/negative-stock + composite write probe in safe/non-production context with cleanup/reconciliation; otherwise remain BLOCKED/UNKNOWN.
-- [ ] **G3** Inspect existing outbound-email capability; approve minimal contact-form transport if provider/credential is required.
+- [ ] **G3** Inspect existing outbound-email capability and decide transport; if a new provider/dependency/credential is required, only propose it until Checkpoint B approves that boundary.
 - [ ] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required.
 - [ ] **G5** Design/review atomic capacity state machine using G2 evidence; cover retries/ambiguous writes/composites.
 
@@ -38,7 +38,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Human approves G5 selling-policy/capacity architecture.
 - [ ] G1 Merchant + structured-data mapping accepted.
 - [ ] G2 Pancake/composite evidence accepted.
-- [ ] G3 mail transport accepted if contact submission is in build wave.
+- [ ] G3 transport decision accepted; any new provider/dependency/credential boundary is explicitly approved before F9b provider/adapter work.
 
 ## Admin merchandising
 - [ ] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
@@ -79,15 +79,15 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe.
 - [ ] **F6b** Homepage lower sections in exact approved order; no fake content.
 - [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
-- [ ] **F7b** PDP buy panel + required-size flow + mobile sticky purchase controls.
+- [ ] **F7b** PDP buy panel with exact `Thêm vào giỏ` + `Mua ngay`; without size highlight selector + show `Vui lòng chọn size`; standard OOS stays visible/disabled with `Hết hàng`; mobile sticky purchase controls.
 - [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.
 - [ ] **F7d** PDP related products: manual order first, same-category fallback.
 - [ ] **F7e** Render PDP detail blocks in exact approved order; omit missing product-specific facts without inference; shipping/returns use approved policy projections.
-- [ ] **F8a** Show preorder/oversell/hard-limit truth on product card + PDP from canonical sellability projection.
+- [ ] **F8a** Show preorder/oversell truth on product card + PDP from canonical sellability projection; standard OOS/hard limit remain visible+disabled with exact `Hết hàng`.
 - [ ] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
 - [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
 - [ ] **F9a** Build final footer/legal/policy UX; non-accordion mobile; no newsletter/representative.
-- [ ] **F9b** Implement real contact-form delivery through approved transport with validation/abuse controls.
+- [ ] **F9b** Implement real contact-form delivery through G3-approved transport with validation/abuse controls; if it requires a new provider/dependency/credential, wait for Checkpoint B before provider/adapter work.
 
 ## Final verification
 - [ ] **V1** Mobile+desktop browser walkthrough of header/nav/search/home/PLP/PDP/cart/checkout/preorder/static pages.
