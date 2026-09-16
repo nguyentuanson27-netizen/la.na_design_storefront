@@ -1,6 +1,6 @@
 # ADR 0013 — Website-owned merchandising persistence
 
-- Status: **Accepted for G4 design; additive migrations require Checkpoint B**
+- Status: **PARTIAL — settled owners recorded; category-owned concerns remain pending**
 - Date: 2026-09-16
 - Scope: G4 architecture only. No Prisma/schema migration is included.
 
@@ -10,16 +10,25 @@ Website-owned merchandising must remain separate from Pancake mirror facts and f
 
 PR #6 is merged into current `main`. It added the three approved size-guide definitions but explicitly left manual product-to-guide mapping to M1. The master spec permits reusing `ProductContent.sizeGuide` as the logical `sizeGuideId` when validated, so a duplicate column is unnecessary.
 
+Two ownership boundaries are important for G4:
+
+1. **Collections are not the approved category taxonomy.** `/collections` remains an aggregate/editorial collections surface and the master spec says child collections are currently unapproved. Current collection discovery is driven by `ProductContent.collectionSlugs` + published `CollectionDefinition` rows. `src/routes/collection.ts` resolves `/collections/[slug]` and uses `featuredProductSlugs` to pin products in that collection grid.
+2. **The standalone homepage Featured-products section has no durable manual owner today.** `src/routes/home.ts` currently fills the homepage edit from the generic storefront discovery page. `CollectionDefinition.homepagePosition` controls which collections appear on the homepage; it does not own the separate manually selected/ordered product section required by master-spec §20.
+
+The approved Brand #2 category/subcategory routes from master-spec §10 are not implemented yet. Current `src/brand/navigation.config.ts` still carries inherited destinations pending F3a/A6, and there is no category route/persistence contract that proves product membership for `Áo dài`, its subcategories, `Set đồ`, `Váy, đầm`, or `Phụ kiện`. Therefore this ADR must not silently promote `CollectionDefinition` into a category authority.
+
 ## Ownership matrix
 
-| Concern | Current owner | Proposed owner | Migration? | Admin write | Storefront read |
+| Concern | Current owner | Proposed owner | Classification | Admin write | Storefront read |
 |---|---|---|---|---|---|
-| Product size-guide selection | `ProductContent.sizeGuide` exists but is generic text | reuse `ProductContent.sizeGuide` as validated logical guide ID | **A — NO MIGRATION** | extend existing product-content admin path, still behind `requireAdminSession` | product content/PDP resolves ID against approved Brand Config guides |
-| Featured products ordering | `CollectionDefinition.featuredProductSlugs` ordered array | reuse as the collection/homepage curated featured order | **A — NO MIGRATION** | extend collection admin validation/write | existing public collection/homepage merchandising read |
-| PLP default ordering | no field with full category-specific manual-order semantics | new category/collection product-order relation using stable product identities | **B — ADDITIVE MIGRATION REQUIRED** | collection merchandising admin transaction | collection/PLP repository applies explicit rank, then deterministic fallback |
-| Mega-menu/category editorial image | `CollectionDefinition.heroImageUrl` (+ gallery/video media) | reuse `heroImageUrl` as the single category editorial image unless a future approved UI requires a distinct role | **A — NO MIGRATION** | collection admin media write | navigation/category reader consumes collection definition |
-| Related-product override | no override; `storefront-related-products.ts` falls back through shared collections | new ordered source-product → target-product relation | **B — ADDITIVE MIGRATION REQUIRED** | product merchandising admin transaction | related-products reader uses manual targets first, then current same-collection fallback |
-| Homepage/category merchandising state | `CollectionDefinition` (`homepagePosition`, publication, media, featured order, copy/SEO) | keep in `CollectionDefinition` | **A — NO MIGRATION** | existing/extended collection admin | existing collection/homepage readers |
+| Product size-guide selection | `ProductContent.sizeGuide` exists but is generic text | reuse `ProductContent.sizeGuide` as validated logical guide ID | **A — NO MIGRATION** | extend existing product-content admin path, still behind `requireAdminSession` | PDP resolves ID against approved Brand Config guides |
+| Existing collection-grid pinned order | `CollectionDefinition.featuredProductSlugs` | keep its current collection-grid pinning semantic only | **A — NO MIGRATION** | existing/extended collection admin | `/collections/[slug]` only |
+| Standalone homepage Featured products | no manual durable owner; current homepage uses generic discovery | dedicated global ordered product relation | **B — ADDITIVE MIGRATION REQUIRED** | homepage merchandising admin transaction | homepage Featured section only |
+| Canonical category identity + membership | **none settled on current main** | must be designed before category-owned merchandising is approved | **C — DEFERRED/PENDING** | pending F3a/G4 category-authority decision | category/subcategory routes + all category consumers |
+| Category PLP default ordering | no category authority to key an order to | key to the future canonical category authority | **C — DEFERRED/PENDING** | after category authority + Checkpoint B | category PLP only |
+| Mega-menu/category editorial image | no canonical category owner; `CollectionDefinition.heroImageUrl` is collection media | key to the future canonical category authority | **C — DEFERRED/PENDING** | after category authority + Checkpoint B if persistence changes | category landing/mega-menu |
+| Related-product manual override + fallback | current code has no override and falls back by shared **collection** | future contract is manual override first, then **same-category** fallback | **C — DEFERRED/PENDING** until category authority exists | after category authority + Checkpoint B | PDP related-products reader |
+| Existing collection placement/media/content | `CollectionDefinition` (`homepagePosition`, publication, media, featured pins, copy/SEO) | keep as collection-owned state | **A — NO MIGRATION** | existing/extended collection admin | `/collections` + homepage collection navigation only |
 
 ## 1. Product size-guide selection — A: no migration
 
@@ -39,102 +48,111 @@ PR #6 is merged into current `main`. It added the three approved size-guide defi
 
 **Rejected:** duplicate column; category inference; storing the guide body on each product.
 
-## 2. Featured products ordering — A: no migration
+## 2. Existing collection pinned order stays collection-owned — A: no migration
 
-`CollectionDefinition.featuredProductSlugs String[]` is already documented in Prisma as “slugs the merchandiser pinned to the top of the grid, in the order they should appear.” Reuse it for curated featured order for a collection/homepage section.
+`CollectionDefinition.featuredProductSlugs String[]` already has one concrete contract: products the merchandiser pins to the top of **that collection's grid**, in order. `loadCollectionRoute()` consumes it exactly that way before tracking/view-model construction.
 
-Absence/empty array means no manual featured products. Admin writes must bound length, reject duplicates, resolve all referenced currently known products, and preserve submitted order. Storefront reads filter unavailable/unpublished entries rather than exposing stale references.
+Keep that field scoped to `/collections/[slug]`. It is **not** the owner for master-spec §20 Homepage Featured products, and no special/fake `CollectionDefinition` row may be invented to make it one.
 
-The existing field uses slugs, so this ADR does not pretend it has FK integrity. Converting it to IDs only for architectural preference would be an unrelated migration; leave it until a real stale-slug problem justifies migration.
+Existing collection admin validation should continue to bound length, reject duplicates and preserve submitted order. Storefront reads may skip unavailable/unpublished products rather than expose stale references.
 
-## 3. PLP default ordering — B: additive migration required
+## 3. Standalone homepage Featured products — B: additive migration required
 
-`featuredProductSlugs` means “pinned/featured,” not “complete category default order”; overloading it would merge two user-visible semantics. A product can belong to several collections, so one global `ProductContent.sortOrder` would also be wrong.
+Master-spec §20 requires a dedicated manually selected and admin-ordered homepage product section. No current homepage-level persistence matches that semantic: `homepagePosition` orders collection cards/links, while the homepage product edit currently comes from generic catalog discovery.
 
-Proposed shape for Checkpoint B review:
+Smallest proposed website-owned authority for Checkpoint B review:
 
 ```prisma
-model CollectionProductOrder {
-  collectionId String
-  productId    String
-  position     Int
+model HomepageFeaturedProduct {
+  productId String @id
+  position  Int    @unique
 
-  collection CollectionDefinition @relation(fields: [collectionId], references: [id], onDelete: Cascade)
-  product    ProductMirror         @relation(fields: [productId], references: [id], onDelete: Cascade)
-
-  @@id([collectionId, productId])
-  @@unique([collectionId, position])
-  @@index([productId])
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 ```
 
-This is a category-specific ordered relation using stable internal product identity. No row means “not manually ranked.” Existing rows/products therefore retain the current deterministic fallback order.
+This is deliberately global: the approved homepage has one Featured-products section, so a fake parent collection or generic key/value CMS would add an owner that does not exist in product truth.
 
-Admin replacement/reorder must be bounded, reject duplicate product IDs/positions, require membership in the target collection where applicable, and write the order transactionally. Deleted products cascade out of the order. Products that become unpublished/inactive are skipped at read time; the persisted order can remain for later republication if the ProductMirror row remains.
+Admin replacement/reorder must be bounded, reject duplicate products/positions, use stable internal `ProductMirror.id`, and write transactionally. At read time, inactive/unpublished products are skipped; absence means the Featured section is empty. Per master-spec §20, an empty manual selection must **not** silently fall back to newest/bestseller logic.
 
-## 4. Mega-menu/category editorial image — A: no migration
+The implementation will need the corresponding relation on `ProductMirror`; exact naming and capacity belong to M2/Checkpoint B implementation review.
 
-Reuse `CollectionDefinition.heroImageUrl` as the category's primary editorial image for category/mega-menu presentation. The repository already stores media references as URLs; do not store binary data in the database.
+## 4. Canonical category authority — C: deferred/pending prerequisite
 
-`null` means no editorial image and the UI must use its approved no-image behavior, not invent an asset. If a later design requires **different simultaneous** hero and mega-menu images, that is a new semantic requirement and should trigger a separate additive field review instead of silently overloading `galleryImageUrls`.
+Current main does **not** provide a canonical Brand #2 category identity/membership contract:
 
-## 5. Related-product override — B: additive migration required
+- `CollectionDefinition` + `ProductContent.collectionSlugs` define editorial collection membership and `/collections` discovery;
+- `CollectionDefinition.pancakeCategoryIds` is a collection mapping field, not proof that the collection row is the public category identity;
+- the approved category/subcategory route hierarchy is not active yet;
+- there is no persisted relation that lets a consumer answer “which approved category owns this product?” independently of collections.
 
-Current `storefront-related-products.ts` selects up to four products by shared collection and has no manual override. Manual-first ordering needs durable ordered references with referential integrity.
+Before any category-owned G4 schema is accepted, F3a/G4 must record one canonical category contract with all of these invariants:
 
-Proposed shape for Checkpoint B review:
+1. a stable key/slug for every approved category and subcategory;
+2. explicit parent/child hierarchy for category → subcategory routes;
+3. one authoritative product-membership source or persisted relation;
+4. deterministic mapping from route path to that category identity;
+5. `/collections` remains a separate namespace/semantic and does not become category truth by accident;
+6. category membership is queryable by PDP/PLP consumers so “same-category” has one exact meaning.
 
-```prisma
-model RelatedProductOverride {
-  sourceProductId String
-  targetProductId String
-  position        Int
+This ADR does not invent a `CategoryDefinition` schema or Pancake-category derivation without evidence. Until that prerequisite is approved, category-dependent rows below remain C/PENDING rather than encoding the wrong taxonomy.
 
-  sourceProduct ProductMirror @relation("RelatedSource", fields: [sourceProductId], references: [id], onDelete: Cascade)
-  targetProduct ProductMirror @relation("RelatedTarget", fields: [targetProductId], references: [id], onDelete: Cascade)
+## 5. Category PLP default ordering — C: deferred/pending
 
-  @@id([sourceProductId, targetProductId])
-  @@unique([sourceProductId, position])
-  @@index([targetProductId])
-}
-```
+Do not create `CollectionProductOrder` for Brand #2 category PLPs yet. A collection-scoped relation would answer the wrong identity question if categories and collections remain distinct.
 
-The implementation will need the corresponding two named relation arrays on `ProductMirror`.
+After the canonical category authority exists, the smallest order owner should be an ordered category → product relation keyed by that authority and stable `ProductMirror.id`. Admin replacement/reorder must be bounded, transactional, duplicate-free, membership-validating, and deterministic for unranked products.
 
-No rows means use the current same-collection fallback. With rows, read valid/published manual targets first in `position` order, then fill remaining capacity from the existing fallback while de-duplicating and excluding the source product. Bound overrides to the existing storefront capacity (currently four) unless M2/M3 later changes that approved UI capacity.
+F4a/M3b cannot treat this concern as approved until the category authority is settled and Checkpoint B approves any resulting additive schema.
 
-Admin writes reject self-reference, duplicates, unknown product IDs and out-of-range positions, and replace/reorder transactionally. Hard deletion cascades the reference; inactive/unpublished targets are skipped at read time and fallback fills the slot.
+## 6. Mega-menu/category editorial image — C: deferred/pending
 
-**Rejected:** comma-separated IDs, generic key/value CMS, mutable slugs for a new relation, or copying related product content into `ProductContent`.
+`CollectionDefinition.heroImageUrl` remains valid **collection** media. Reusing it as category/mega-menu media would conflate two public concepts without a proven one-to-one identity.
 
-## 6. Existing CollectionDefinition state stays authoritative
+Once the category authority is approved, attach the category editorial image to that owner (or to a narrow category-merchandising record keyed by it). `null` means no editorial image; the UI must use its approved no-image behavior rather than invent an asset.
 
-Do not duplicate these existing concerns elsewhere:
+A later need for separate category-hero and mega-menu images is a distinct semantic requirement and should be reviewed separately rather than hidden in `galleryImageUrls`.
+
+## 7. Related products — C: deferred/pending until same-category is well-defined
+
+Current `storefront-related-products.ts` falls back through shared **collections**. That is baseline behavior, not the Brand #2 target contract. Master spec requires:
+
+1. manual admin selection first;
+2. if absent/insufficient, fill from **same-category** products.
+
+Do not preserve same-collection fallback merely because it exists today. The manual ordered override can still use stable product IDs in a future additive relation, but the full M3a contract is not architecture-complete until the canonical category membership authority from §4 exists.
+
+When resolved, reads must preserve manual order, skip invalid/unpublished targets, de-duplicate, exclude the source product, and fill remaining capacity from the canonical same-category query. No collection fallback is allowed unless a later approved decision formally makes collection membership equivalent to category membership.
+
+## 8. Existing CollectionDefinition state remains collection-owned
+
+Do not duplicate these existing **collection** concerns elsewhere:
 
 - `isPublished` — collection publication;
-- `homepagePosition` — collection placement on homepage;
+- `homepagePosition` — placement of collection entries on homepage collection navigation/merchandising;
 - `heroImageUrl`, `galleryImageUrls`, `videoSrcUrl`, `videoPosterUrl` — collection editorial media;
-- `featuredProductSlugs` — manually ordered featured/pinned products;
+- `featuredProductSlugs` — manually ordered pins within that collection grid;
 - title/description/SEO fields — collection editorial/SEO content;
-- `pancakeCategoryIds` — mapped category membership authority already owned by collection definition.
+- `pancakeCategoryIds` — existing collection mapping data.
 
-None belong in Pancake mirror columns or `ProductMerchantFacts`.
+None of these facts, by themselves, establish Brand #2 category identity. None belong in Pancake mirror columns or `ProductMerchantFacts`.
 
 ## Compatibility and integrity
 
-- Brand #1/Core Kit compatibility: reused fields retain nullable/empty defaults; both new relation proposals are additive and absence preserves current behavior.
+- Brand #1/Core Kit compatibility: reused fields keep their current semantics; this ADR does not repurpose existing collection data.
 - All future writes remain behind `requireAdminSession` and server-side boundary validation.
-- Bounded arrays/order inputs, uniqueness, nonnegative/contiguous positions and transactional replacement are required implementation invariants.
+- Ordered admin inputs must be bounded, unique and transactionally replaced.
+- New relations use stable internal product identity rather than mutable product slugs where referential integrity is required.
 - No derived storefront state is persisted when it can be computed.
-- Merchant availability/date authority is not stored in these merchandising relations.
+- Merchant availability/date authority is not stored in merchandising relations.
 - Provider credentials/config never belong in these tables.
 
 ## Migration boundary
 
-**A — NO MIGRATION:** product size-guide selection (reuse column), featured order, category editorial image, existing homepage/category state.
+**A — NO MIGRATION:** product size-guide selection; existing collection-grid pinned order; existing collection placement/media/content.
 
-**B — ADDITIVE MIGRATION REQUIRED:** collection-specific PLP default order; ordered related-product overrides.
+**B — ADDITIVE MIGRATION REQUIRED:** dedicated standalone homepage Featured-product order, subject to Checkpoint B.
 
-**C — DEFERRED/PENDING:** none for the six requested ownership questions. A distinct mega-menu image becomes C only if a future approved design requires it to differ from the category hero.
+**C — DEFERRED/PENDING:** canonical category identity/membership authority; category PLP manual order; category/mega-menu editorial image ownership; related-product manual/fallback contract that depends on exact same-category semantics.
 
-Checkpoint B must approve the two B schema shapes before any Prisma migration is created. M1/M2/M3 are not implemented by this ADR.
+G4 therefore remains **not complete**. The next architecture step is to settle the category identity/membership authority as part of F3a/G4 before approving M3a/M3b or category-media persistence. No migration is created by this ADR.
