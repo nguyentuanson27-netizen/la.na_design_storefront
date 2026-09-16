@@ -25,6 +25,7 @@ type TopicWithSections = ReturnType<typeof buildPolicyHubViewModel>["topics"][nu
       heading: string;
       paragraphs: readonly string[];
       items: readonly string[];
+      closingParagraphs?: readonly string[];
     }>[];
   }>;
 
@@ -37,6 +38,7 @@ function topicText(topic: TopicWithSections): string {
       section.heading,
       ...section.paragraphs,
       ...section.items,
+      ...(section.closingParagraphs ?? []),
     ]),
   ].join("\n");
 }
@@ -132,7 +134,9 @@ test("A7b payment remains COD-only while refunds may keep their separate channel
     FULFILLMENT.payment.bankTransferUnavailableNote,
   );
 
-  const generalTerms = byId.get("dieu-khoan-chung" as PolicyTopicId) as TopicWithSections | undefined;
+  const generalTerms = byId.get("dieu-khoan-chung" as PolicyTopicId) as
+    | TopicWithSections
+    | undefined;
   assert.ok(generalTerms);
   assert.doesNotMatch(topicText(generalTerms), /hỗ trợ.*chuyển khoản|chuyển khoản.*thanh toán/i);
   assert.match(topicText(generalTerms), /Thanh toán khi nhận hàng \(COD\)/);
@@ -176,10 +180,44 @@ test("A7b all five formerly blocked legal topics now contain owner-approved sect
   }
 });
 
+test("A7b order-confirmation copy preserves the approved source order around the steps", () => {
+  const generalTerms = buildPolicyHubViewModel().topics.find(
+    (topic) => topic.id === ("dieu-khoan-chung" as PolicyTopicId),
+  ) as TopicWithSections | undefined;
+  assert.ok(generalTerms);
+
+  const ordering = generalTerms.sections?.find(
+    (section) => section.heading === "Quy trình đặt hàng và xác nhận đơn hàng",
+  );
+  assert.ok(ordering);
+  assert.deepEqual(ordering.paragraphs, [
+    "Khách hàng có thể đặt hàng trên website theo các bước cơ bản sau:",
+  ]);
+  assert.equal(ordering.items.length, 6);
+  assert.deepEqual(ordering.closingParagraphs, [
+    "Đơn hàng chỉ được xem là hợp lệ sau khi La.na Design xác nhận thành công. Trong trường hợp thông tin đơn hàng chưa rõ ràng, La.na Design có thể liên hệ lại để xác minh trước khi xử lý.",
+  ]);
+});
+
+test("A7b repository policy authority records the normalized owner decisions", () => {
+  const authority = readFileSync(
+    `${REPO_ROOT}docs/specs/la-na-design-policy-authority.md`,
+    "utf8",
+  );
+  assert.match(authority, /Thanh toán khi nhận hàng \(COD\)\./);
+  assert.match(authority, /www\.lanadesign\.vn/);
+  assert.match(authority, /0923159666/);
+  assert.match(authority, /la\.nadesignsince2022@gmail\.com/);
+  assert.match(authority, /facebook\.com\/la\.nadesign\.vn/);
+  assert.doesNotMatch(authority, /\[Điền/);
+  assert.doesNotMatch(authority, /^\s*-\s*Chuyển khoản ngân hàng\.\s*$/m);
+});
+
 test("A7b the hub page is wired through the route factory like every other evergreen page", () => {
   const source = readFileSync(`${REPO_ROOT}src/app/policies/page.tsx`, "utf8");
   assert.match(source, /createStorefrontRoute/);
   assert.match(source, /buildPoliciesMetadata/);
   assert.match(source, /id=\{topic\.id\}/);
   assert.match(source, /topic\.sections/);
+  assert.match(source, /section\.closingParagraphs/);
 });
