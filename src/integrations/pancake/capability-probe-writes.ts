@@ -168,11 +168,16 @@ export async function searchOrderByMarker(
   return { kind: "ABSENT" };
 }
 
+export type ProbeWriteCertainty = "CREATED" | "DEFINITE_NO_WRITE" | "AMBIGUOUS";
+export type ProbeCapabilityEvidence = "SUPPORTED" | "UNSUPPORTED" | "NONE";
+
 export type ProbeOrderSubmission = Readonly<{
   orderId: string | null;
   marker: string;
   rawOutcome: string;
   ambiguous: boolean;
+  writeCertainty: ProbeWriteCertainty;
+  capabilityEvidence: ProbeCapabilityEvidence;
 }>;
 
 export async function submitProbeOrder(
@@ -212,6 +217,8 @@ export async function submitProbeOrder(
         marker,
         rawOutcome: "ACCEPTED",
         ambiguous: false,
+        writeCertainty: "CREATED",
+        capabilityEvidence: "SUPPORTED",
       };
     } catch {
       const markerSearch = await searchOrderByMarker(client, targets.shopId, marker);
@@ -221,6 +228,8 @@ export async function submitProbeOrder(
           marker,
           rawOutcome: "RECONCILED_ACCEPTED",
           ambiguous: false,
+          writeCertainty: "CREATED",
+          capabilityEvidence: "SUPPORTED",
         };
       }
       return {
@@ -228,11 +237,20 @@ export async function submitProbeOrder(
         marker,
         rawOutcome: `AMBIGUOUS_SUCCESS_RESPONSE_${markerSearch.kind}`,
         ambiguous: true,
+        writeCertainty: "AMBIGUOUS",
+        capabilityEvidence: "NONE",
       };
     }
   } catch (error) {
     if (error instanceof PancakeHttpError && isDefinitelyNoWriteHttpStatus(error.status)) {
-      return { orderId: null, marker, rawOutcome: `HTTP_REJECTED_${error.status}`, ambiguous: false };
+      return {
+        orderId: null,
+        marker,
+        rawOutcome: `HTTP_NON_CAPABILITY_REJECTION_${error.status}`,
+        ambiguous: false,
+        writeCertainty: "DEFINITE_NO_WRITE",
+        capabilityEvidence: "NONE",
+      };
     }
 
     const markerSearch = await searchOrderByMarker(client, targets.shopId, marker);
@@ -242,6 +260,8 @@ export async function submitProbeOrder(
         marker,
         rawOutcome: "RECONCILED_ACCEPTED",
         ambiguous: false,
+        writeCertainty: "CREATED",
+        capabilityEvidence: "SUPPORTED",
       };
     }
     return {
@@ -252,6 +272,8 @@ export async function submitProbeOrder(
           ? `AMBIGUOUS_WRITE_${markerSearch.reason}`
           : "AMBIGUOUS_WRITE_NO_MARKER_FOUND",
       ambiguous: true,
+      writeCertainty: "AMBIGUOUS",
+      capabilityEvidence: "NONE",
     };
   }
 }
