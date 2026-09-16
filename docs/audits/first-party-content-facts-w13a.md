@@ -3,10 +3,7 @@
 Owning source: `docs/audits/seo-geo-audit.md` findings **W13A** / **W13**, planning step **P5**.
 Master-plan unit: **U6**. Consumer: **U33 / W13**.
 
-Status: **CURRENT — B1–B4 and B6 are RESOLVED in the owner-approved facts source; U33 is fully implemented (U33a About/Contact, U33b Returns/Shipping, U33c Size Guide).** The only
-evergreen surfaces still blocked on an owner decision are the §15 policy pages — general terms,
-pricing, privacy, complaint handling, rights and obligations — which have **no approved facts at
-all**.
+Status: **CURRENT — B1–B4 and B6 are RESOLVED in the owner-approved facts source; U33 is fully implemented (U33a About/Contact, U33b Returns/Shipping, U33c Size Guide); A7b publishes all eleven §33 policy topics from owner-approved authority.**
 
 **The per-page inventory further down is the U6-time snapshot.** It records what the repository
 owned *when this audit was written*, before any owner gate was answered. It is kept as historical
@@ -27,11 +24,11 @@ missing.
 | Shipping / Payment | BLOCKED on B4 | **Built (U33b)** — `/shipping`, from `PUBLIC_DELIVERY_FACTS` (§5), `buildPublicBrandFacts`, and the server-owned `readGuestShippingPolicy` for price. |
 | Size Guide | BLOCKED on B3 | **Built (U33c)** — `/size-guide`, from `PUBLIC_SIZE_GUIDE` (§6). |
 | `Organization` structured data | BLOCKED on B2 | **Enriched (U32b)** — address, contact point and social profile are emitted from `PUBLIC_CONTACT_FACTS`, and the footer renders the same facts, so the markup corresponds to visible content. |
-| §15 policy surfaces — general terms, pricing, privacy, complaint handling, rights and obligations | not inventoried | **Still blocked — no approved facts exist.** They stay unbuilt and unlinked rather than authored. |
+| §15 policy surfaces — general terms, pricing, privacy, complaint handling, rights and obligations | not inventoried | **Owner-approved and published (A7b)** — all five formerly missing topics now live on `/policies` from `POLICY_CONTENT` and the normalized owner-approved policy authority. |
 
-An agent picking up **U33c** should work from this table and from
-`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, **not** from the U6-time Size Guide
-section below, which predates B3 and would stop the unit incorrectly.
+An agent picking up adjacent evergreen work should work from this table and from the current
+owner-approved fact/policy authorities, **not** from the U6-time snapshot below. The snapshot records
+what was true before those decisions landed.
 
 ## Classification
 
@@ -50,7 +47,7 @@ and its exact shape is pinned by `tests/domain/public-brand-content.test.ts`. Th
 deliberately unchanged — U32b and U33 added constants beside it rather than fields inside it, because
 changing it would change what the footer and homepage render.
 
-**Current authority set.** The same module now holds several reviewed constants, one per approved
+**Current authority set.** The repository now holds several reviewed authorities, one per approved
 fact group, each with a single consumer contract:
 
 | Authority | Owns | Landed in |
@@ -62,6 +59,7 @@ fact group, each with a single consumer contract:
 | `PUBLIC_RETURNS_POLICY` | §4 returns/exchange/refund clauses, §3 refund channel | U33b |
 | `PUBLIC_DELIVERY_FACTS` | §5 coverage, carriers, estimates, tracking and verification notes | U33b |
 | `PUBLIC_SIZE_GUIDE` | §6 size charts A and B, units (cm), circumference semantics, ±3 cm tolerance, height/weight guidance | U33c |
+| `POLICY_CONTENT` | §33 owner-approved general terms, pricing, privacy, supply conditions, rights/obligations, plus normalized support/complaint content from `src/brand/policy.config.ts` | A7b |
 
 The **shipping price stays outside all of them**, with the server-owned `readGuestShippingPolicy`:
 B4 keeps it as the pricing authority, and a fee copied into a content constant would let a page
@@ -81,8 +79,8 @@ The U6-time table below is the `buildPublicBrandFacts` shape, which still holds:
 | `serverVerification` | Constant describing behaviour the checkout actually implements | **A** |
 
 Everything an evergreen page needs beyond this list was B, C or D **as of when this inventory was
-written**. Every class-D block it names has since been answered by the owner, and all but the Size
-Guide has been implemented — see the current-status table above and the update sections below.
+written**. Every class-D block it names has since been answered by the owner and the focused U32/U33
+slices implemented their named surfaces; A7b later added the owner-approved §33 policy authority.
 
 ### Update: the approved B2 contact facts (U32b)
 
@@ -145,9 +143,10 @@ as estimates because §5 says they are not an SLA, and a test fails on commitmen
 
 The page renders directly from `PUBLIC_SIZE_GUIDE`. No size calculator or recommendation engine is added, and height/weight values are explicitly published as guidance rather than fit guarantees.
 
-With U33c complete, all five named evergreen pages are built. The remaining §15 policy surfaces — general terms, pricing,
-privacy, complaint handling, rights and obligations — have **no approved facts at all** and stay
-unbuilt and unlinked rather than authored.
+With U33c complete, all five named evergreen pages are built. **A7b later superseded the remaining
+§33 policy-content blocker:** the owner approved general terms, pricing, privacy, supply conditions
+and platform rights/obligations, and `/policies` now publishes all eleven required topics from the
+normalized policy authority and `POLICY_CONTENT`.
 
 The registered entity name and tax code are **no longer owner-blocked** — B6 approves publishing the
 legal entity and the confirmed MST — but they are **outside the B2 contact contract** U32b
@@ -238,11 +237,11 @@ centimetres from product names or existing per-product free text would be invent
 which is worse than having no page: a wrong chart drives returns the returns policy did not then
 cover.
 
-**Superseded — read this before starting U33c:** B3 is RESOLVED. The owner supplied two size charts
+**Superseded — read this before modifying U33c:** B3 is RESOLVED. The owner supplied two size charts
 in centimetres, with circumference semantics and a ±3 cm tolerance; height and weight stay guidance
-and never a fit guarantee. **The Size Guide is no longer owner-blocked** — it is unbuilt
-implementation work (U33c). The original prohibition still binds in one respect: no measurement, fit
-vocabulary or tolerance beyond the approved charts may be derived.
+and never a fit guarantee. **The Size Guide is no longer owner-blocked and is built (U33c).** The
+original prohibition still binds in one respect: no measurement, fit vocabulary or tolerance beyond
+the approved charts may be derived.
 
 ### Contact — U6-time
 
@@ -303,14 +302,14 @@ stops and reports; every other unit continues. No page is built from an inferred
 missing fact is reconstructed from UI copy, checkout wording or naming conventions.
 
 **All five gates have since been answered** (B6 for a minimal About only). The rule they encode did
-not lapse with them: it still binds the §15 surfaces, which have no approved facts and therefore stay
-unbuilt.
+not lapse with them: future legal/contact/policy facts still require owner approval before publication.
+A7b now has approved text for all eleven §33 policy topics and publishes those topics from the
+normalized authority rather than inference.
 
 ## What the owner needed to supply — answered
 
-This was the U6-time ask. It has been answered in
-`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`, which is now the authority for every
-item below.
+This was the U6-time ask. It has been answered in the current owner-approved fact authorities; the
+historical request below is retained to explain why U6 stopped rather than authoring content.
 
 For each of About, Returns, Shipping delivery terms, Size Guide and Contact:
 
@@ -319,11 +318,9 @@ For each of About, Returns, Shipping delivery terms, Size Guide and Contact:
 3. whether it is stable enough to live in `buildPublicBrandFacts` as a reviewed constant, or belongs
    in editable website-owned content.
 
-U33 then builds the pages from that single approved source rather than duplicating copy between the
-footer, the pages and structured data.
+U33 then built the named pages from approved sources rather than duplicating copy between the footer,
+the pages and structured data. A7b later applied the same rule to the §33 policy surfaces.
 
-**Where that stands:** the facts were supplied, and U33a, U33b and U32b built About, Contact,
-Returns, Shipping/Payment and the `Organization` markup from them; **U33c (Size Guide) is the
-remaining slice, and its facts already exist.** The closing rule still applies to what has no
-approved source: the §15 policy surfaces get no page, and no thin page is published to chase GEO
-keywords.
+**Where that stands:** U33a, U33b, U33c and U32b are implemented for About, Contact, Returns,
+Shipping/Payment, Size Guide and `Organization`; A7b publishes all eleven §33 policy topics from
+owner-approved authority. Historical blockers remain documented above only as U6-time evidence.

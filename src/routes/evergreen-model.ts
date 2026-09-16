@@ -1,4 +1,5 @@
 import { FULFILLMENT } from "../brand/index.ts";
+import { POLICY_CONTENT, type PolicyContentSection } from "../brand/policy.config.ts";
 import type { SizeChart } from "../brand/schema.ts";
 import {
   describeGuestShippingPromotion,
@@ -263,24 +264,13 @@ export function buildSizeGuideViewModel(): SizeGuideViewModel {
 /* --------------------------------------------------------------------------- policy hub */
 
 /**
- * The policy topics this storefront publishes, each with a stable anchor.
+ * The eleven policy topics the storefront footer contract requires, each with a stable anchor.
  *
- * One hub, not a page per clause. Shipping, returns and contact already have pages that render the
- * policy in full, so the hub links to them rather than restating a word: a clause with two homes is
- * a clause that disagrees with itself in one of them after the next edit. The three topics with no
- * page of their own -- payment, online support and complaint handling -- are stated here, and still
- * from the same config constants, never as prose chosen for this page.
- *
- * The anchors are the contract. A footer link to `/policies#khieu-nai` has to keep landing, so the
- * ids are part of the published surface and a test pins them.
- *
- * **What is deliberately absent.** The footer contract in master spec §33 also requires general
- * terms, a pricing policy, a privacy policy, supply conditions and platform rights/obligations.
- * No approved source states any of them — not the master spec, not the normalized PART D policy
- * authority, not the owner-facts intake. Legal prose is the one thing a coding agent must never
- * author, so those five stay unbuilt rather than filled in, and they remain blocked on owner
- * content. A heading with invented text under it would be worse than an absent page, and a heading
- * with nothing under it is a placeholder.
+ * Shipping, returns and contact keep their dedicated pages and the hub links to those authorities.
+ * The owner-approved legal/static topics live in `policy.config.ts`; the hub renders them here rather
+ * than inventing a second page or a second wording. Current Brand Config still wins where the newly
+ * supplied terms contained older facts: website payment remains COD-only and contact placeholders
+ * are resolved from the approved contact config. No contact-form channel is published before F9b.
  */
 export const POLICY_HUB_TOPICS = [
   {
@@ -319,6 +309,36 @@ export const POLICY_HUB_TOPICS = [
     href: "/contact",
     linkLabel: "Liên hệ bộ phận hỗ trợ",
   },
+  {
+    id: "dieu-khoan-chung",
+    title: "Điều khoản chung",
+    href: "/policies#dieu-khoan-chung",
+    linkLabel: null,
+  },
+  {
+    id: "chinh-sach-gia",
+    title: "Chính sách giá",
+    href: "/policies#chinh-sach-gia",
+    linkLabel: null,
+  },
+  {
+    id: "bao-mat",
+    title: "Chính sách bảo mật",
+    href: "/policies#bao-mat",
+    linkLabel: null,
+  },
+  {
+    id: "dieu-kien-cung-cap",
+    title: "Các điều kiện và hạn chế trong việc cung cấp hàng hóa",
+    href: "/policies#dieu-kien-cung-cap",
+    linkLabel: null,
+  },
+  {
+    id: "quyen-nghia-vu",
+    title: "Quyền và nghĩa vụ của các bên trên nền tảng",
+    href: "/policies#quyen-nghia-vu",
+    linkLabel: null,
+  },
 ] as const;
 
 export type PolicyTopicId = (typeof POLICY_HUB_TOPICS)[number]["id"];
@@ -328,33 +348,47 @@ export type PolicyTopicViewModel = Readonly<{
   title: string;
   /** Where the full policy lives. A route path, optionally with a `#fragment`. */
   href: string;
-  linkLabel: string;
-  /** One approved constant, never a sentence written for this page. */
+  /** Dedicated-page link text, or `null` when this hub section is the full destination. */
+  linkLabel: string | null;
+  /** Approved policy text, never a sentence authored by the page. */
   detail: string;
-  /** A second approved constant where the topic needs one, otherwise `null`. */
+  /** A second approved fact where the topic needs one, otherwise `null`. */
   note: string | null;
+  /** Structured owner-approved clauses rendered below the topic summary. */
+  sections: readonly PolicyContentSection[];
 }>;
 
 export type PolicyHubViewModel = Readonly<{ topics: readonly PolicyTopicViewModel[] }>;
 
-/** Which approved constant each topic shows. Every value is a member of the fact authority. */
-function describePolicyTopic(id: PolicyTopicId): Readonly<{ detail: string; note: string | null }> {
+type PolicyTopicContent = Pick<PolicyTopicViewModel, "detail" | "note" | "sections">;
+
+/** Which approved authority each topic reads. JSX never owns a legal clause. */
+function describePolicyTopic(id: PolicyTopicId): PolicyTopicContent {
   switch (id) {
     case "van-chuyen":
-      return { detail: FULFILLMENT.delivery.coverage, note: null };
+      return { detail: FULFILLMENT.delivery.coverage, note: null, sections: [] };
     case "thanh-toan":
       return {
         detail: FULFILLMENT.payment.codNote,
         note: FULFILLMENT.payment.bankTransferUnavailableNote,
+        sections: [],
       };
     case "doi-tra-hoan-tien":
-      return { detail: FULFILLMENT.returns.refundChannelNote, note: null };
+      return { detail: FULFILLMENT.returns.refundChannelNote, note: null, sections: [] };
     case "lien-he":
-      return { detail: PUBLIC_CONTACT_FACTS.telephone, note: PUBLIC_CONTACT_FACTS.email };
+      return {
+        detail: PUBLIC_CONTACT_FACTS.telephone,
+        note: PUBLIC_CONTACT_FACTS.email,
+        sections: [],
+      };
     case "ho-tro-truc-tuyen":
-      return { detail: PUBLIC_CONTACT_FACTS.fanpageUrl, note: PUBLIC_CONTACT_FACTS.email };
     case "khieu-nai":
-      return { detail: FULFILLMENT.support.complaintResponseNote, note: null };
+    case "dieu-khoan-chung":
+    case "chinh-sach-gia":
+    case "bao-mat":
+    case "dieu-kien-cung-cap":
+    case "quyen-nghia-vu":
+      return POLICY_CONTENT[id];
   }
 }
 

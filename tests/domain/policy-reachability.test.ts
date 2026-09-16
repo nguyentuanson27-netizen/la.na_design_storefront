@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { FULFILLMENT } from "../../src/brand/index.ts";
-import { PUBLIC_CONTACT_FACTS } from "../../src/content/public-brand-facts.ts";
+import {
+  describePublicSupportHours,
+  PUBLIC_CONTACT_FACTS,
+} from "../../src/content/public-brand-facts.ts";
 import { storefrontRouteUrls } from "../../src/routes/manifest.ts";
 import {
   buildPolicyHubViewModel,
@@ -16,14 +19,36 @@ import { STATIC_CANONICAL_PATHS } from "../../src/seo/search-sitemap-repository.
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
+type TopicWithSections = ReturnType<typeof buildPolicyHubViewModel>["topics"][number] &
+  Readonly<{
+    sections?: readonly Readonly<{
+      heading: string;
+      paragraphs: readonly string[];
+      items: readonly string[];
+      closingParagraphs?: readonly string[];
+    }>[];
+  }>;
+
+function topicText(topic: TopicWithSections): string {
+  return [
+    topic.title,
+    topic.detail,
+    topic.note ?? "",
+    ...(topic.sections ?? []).flatMap((section) => [
+      section.heading,
+      ...section.paragraphs,
+      ...section.items,
+      ...(section.closingParagraphs ?? []),
+    ]),
+  ].join("\n");
+}
+
 /**
  * A7b — every policy topic the footer contract requires, reachable at a stable destination.
  *
- * The hub is an index, not a second copy of the policy. Shipping, returns and contact keep their
- * own pages and the hub links to them; the topics with no page of their own -- payment, online
- * support, complaint handling -- are stated here from the same config constants those pages read.
- * What is asserted is that each destination resolves and that no clause is restated as page prose,
- * because a policy with two homes is a policy that disagrees with itself in one of them.
+ * Shipping, returns and contact keep their dedicated pages. The policy hub owns the remaining
+ * approved legal/static content at stable anchors, and every sentence still comes from repository
+ * policy authority rather than from JSX.
  */
 
 /** Every topic the hub publishes must have a destination a visitor can actually reach. */
@@ -31,10 +56,22 @@ function resolvableDestinations(): readonly string[] {
   return [...storefrontRouteUrls()];
 }
 
-test("A7b the hub covers exactly the policy topics that have approved content", () => {
+test("A7b the hub covers all eleven required policy topics", () => {
   assert.deepEqual(
     POLICY_HUB_TOPICS.map((topic) => topic.id),
-    ["van-chuyen", "thanh-toan", "doi-tra-hoan-tien", "lien-he", "ho-tro-truc-tuyen", "khieu-nai"],
+    [
+      "van-chuyen",
+      "thanh-toan",
+      "doi-tra-hoan-tien",
+      "lien-he",
+      "ho-tro-truc-tuyen",
+      "khieu-nai",
+      "dieu-khoan-chung",
+      "chinh-sach-gia",
+      "bao-mat",
+      "dieu-kien-cung-cap",
+      "quyen-nghia-vu",
+    ],
   );
 });
 
@@ -69,8 +106,6 @@ test("A7b the hub itself is a declared, canonical, crawlable route", () => {
   assert.equal(storefrontRouteUrls().includes("/policies"), true);
   assert.equal(STATIC_CANONICAL_PATHS.includes("/policies"), true);
 
-  // Self-canonical on the same terms as the other evergreen pages, and still withheld when the
-  // exposure gate is closed -- a new policy page must not smuggle in an indexable signal.
   const origin = "https://shop.example.com";
   const indexed = buildStaticPageMetadata({
     origin,
@@ -90,53 +125,118 @@ test("A7b the hub itself is a declared, canonical, crawlable route", () => {
   );
 });
 
-test("A7b the hub restates no policy clause of its own", () => {
-  const model = buildPolicyHubViewModel();
-  const byId = new Map(model.topics.map((topic) => [topic.id, topic]));
+test("A7b payment remains COD-only while refunds may keep their separate channel policy", () => {
+  const byId = new Map(buildPolicyHubViewModel().topics.map((topic) => [topic.id, topic]));
 
-  // Payment and complaints have no page of their own, so the hub states them -- from the config
-  // constants, identically, rather than in words it chose.
   assert.equal(byId.get("thanh-toan")?.detail, FULFILLMENT.payment.codNote);
   assert.equal(
     byId.get("thanh-toan")?.note,
     FULFILLMENT.payment.bankTransferUnavailableNote,
   );
-  assert.equal(byId.get("khieu-nai")?.detail, FULFILLMENT.support.complaintResponseNote);
-  assert.equal(byId.get("ho-tro-truc-tuyen")?.detail, PUBLIC_CONTACT_FACTS.fanpageUrl);
 
-  // Nothing on the hub is authored prose: every detail it shows is one of the approved constants.
-  const approved = new Set<string>([
-    FULFILLMENT.payment.codNote,
-    FULFILLMENT.payment.bankTransferUnavailableNote,
-    FULFILLMENT.support.complaintResponseNote,
-    FULFILLMENT.delivery.coverage,
-    FULFILLMENT.returns.refundChannelNote,
-    PUBLIC_CONTACT_FACTS.fanpageUrl,
-    PUBLIC_CONTACT_FACTS.email,
+  const generalTerms = byId.get("dieu-khoan-chung" as PolicyTopicId) as
+    | TopicWithSections
+    | undefined;
+  assert.ok(generalTerms);
+  assert.doesNotMatch(topicText(generalTerms), /hỗ trợ.*chuyển khoản|chuyển khoản.*thanh toán/i);
+  assert.match(topicText(generalTerms), /Thanh toán khi nhận hàng \(COD\)/);
+});
+
+test("A7b approved contact placeholders are resolved and no unsent contact form is advertised", () => {
+  const model = buildPolicyHubViewModel();
+  const published = JSON.stringify(model);
+  assert.equal(published.includes("[Điền"), false);
+  assert.equal(published.includes("Biểu mẫu liên hệ"), false);
+
+  const onlineSupport = model.topics.find(
+    (topic) => topic.id === ("ho-tro-truc-tuyen" as PolicyTopicId),
+  ) as TopicWithSections | undefined;
+  assert.ok(onlineSupport);
+  const supportText = topicText(onlineSupport);
+  for (const approved of [
+    "www.lanadesign.vn",
     PUBLIC_CONTACT_FACTS.telephone,
-  ]);
-  for (const topic of model.topics) {
-    for (const value of [topic.detail, topic.note]) {
-      if (value === null) continue;
-      assert.equal(approved.has(value), true, `${topic.id} states copy no constant owns: ${value}`);
-    }
+    PUBLIC_CONTACT_FACTS.email,
+    PUBLIC_CONTACT_FACTS.fanpageUrl,
+    describePublicSupportHours(),
+  ]) {
+    assert.match(supportText, new RegExp(approved.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   }
+});
+
+test("A7b complaint response target is sourced from the PART D fulfillment authority", () => {
+  const complaint = buildPolicyHubViewModel().topics.find(
+    (topic) => topic.id === ("khieu-nai" as PolicyTopicId),
+  ) as TopicWithSections | undefined;
+  assert.ok(complaint);
+  assert.equal(complaint.note, FULFILLMENT.support.complaintResponseNote);
+
+  const workflow = complaint.sections?.find(
+    (section) => section.heading === "Quy trình xử lý khiếu nại",
+  );
+  assert.ok(workflow);
+  const responseStep = workflow.items.find((item) => item.startsWith("Bước 3:"));
+  assert.ok(responseStep);
+  assert.ok(
+    responseStep.includes(FULFILLMENT.support.complaintResponseNote),
+    "Bước 3 must compose the response target from FULFILLMENT.support instead of restating the SLA",
+  );
+});
+
+test("A7b all five formerly blocked legal topics now contain owner-approved sections", () => {
+  const byId = new Map(buildPolicyHubViewModel().topics.map((topic) => [topic.id, topic]));
+  for (const id of [
+    "dieu-khoan-chung",
+    "chinh-sach-gia",
+    "bao-mat",
+    "dieu-kien-cung-cap",
+    "quyen-nghia-vu",
+  ]) {
+    const topic = byId.get(id as PolicyTopicId) as TopicWithSections | undefined;
+    assert.ok(topic, id);
+    assert.ok((topic.sections?.length ?? 0) > 0, `${id} has no approved sections`);
+    assert.ok(topicText(topic).length > 200, `${id} is unexpectedly empty`);
+  }
+});
+
+test("A7b order-confirmation copy preserves the approved source order around the steps", () => {
+  const generalTerms = buildPolicyHubViewModel().topics.find(
+    (topic) => topic.id === ("dieu-khoan-chung" as PolicyTopicId),
+  ) as TopicWithSections | undefined;
+  assert.ok(generalTerms);
+
+  const ordering = generalTerms.sections?.find(
+    (section) => section.heading === "Quy trình đặt hàng và xác nhận đơn hàng",
+  );
+  assert.ok(ordering);
+  assert.deepEqual(ordering.paragraphs, [
+    "Khách hàng có thể đặt hàng trên website theo các bước cơ bản sau:",
+  ]);
+  assert.equal(ordering.items.length, 6);
+  assert.deepEqual(ordering.closingParagraphs, [
+    "Đơn hàng chỉ được xem là hợp lệ sau khi La.na Design xác nhận thành công. Trong trường hợp thông tin đơn hàng chưa rõ ràng, La.na Design có thể liên hệ lại để xác minh trước khi xử lý.",
+  ]);
+});
+
+test("A7b repository policy authority records the normalized owner decisions", () => {
+  const authority = readFileSync(
+    `${REPO_ROOT}docs/specs/la-na-design-policy-authority.md`,
+    "utf8",
+  );
+  assert.match(authority, /Thanh toán khi nhận hàng \(COD\)\./);
+  assert.match(authority, /www\.lanadesign\.vn/);
+  assert.match(authority, /0923159666/);
+  assert.match(authority, /la\.nadesignsince2022@gmail\.com/);
+  assert.match(authority, /facebook\.com\/la\.nadesign\.vn/);
+  assert.doesNotMatch(authority, /\[Điền/);
+  assert.doesNotMatch(authority, /^\s*-\s*Chuyển khoản ngân hàng\.\s*$/m);
 });
 
 test("A7b the hub page is wired through the route factory like every other evergreen page", () => {
   const source = readFileSync(`${REPO_ROOT}src/app/policies/page.tsx`, "utf8");
   assert.match(source, /createStorefrontRoute/);
   assert.match(source, /buildPoliciesMetadata/);
-  // Anchors are rendered as element ids, which is what makes a footer link to `#khieu-nai` land.
   assert.match(source, /id=\{topic\.id\}/);
-});
-
-test("A7b no policy topic is published without approved content behind it", () => {
-  // The five §33 items with no approved source -- terms, pricing, privacy, supply conditions and
-  // platform rights/obligations -- stay unbuilt rather than authored. A heading with nothing under
-  // it is a placeholder, and a placeholder on a legal surface is worse than an absent page.
-  const ids = POLICY_HUB_TOPICS.map((topic) => topic.id);
-  for (const unapproved of ["dieu-khoan", "chinh-sach-gia", "bao-mat", "dieu-kien-cung-cap", "quyen-nghia-vu"]) {
-    assert.equal(ids.includes(unapproved as PolicyTopicId), false, unapproved);
-  }
+  assert.match(source, /topic\.sections/);
+  assert.match(source, /section\.closingParagraphs/);
 });

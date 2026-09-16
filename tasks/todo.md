@@ -13,11 +13,11 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
 - [ ] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
 - [x] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
-- [ ] **A7b** **PARTIAL.** `/policies` hub built with stable anchors; shipping, payment, returns/refund,
-  contact, online support and complaint handling all resolve from approved facts. The remaining five
-  §33 items — general terms, pricing, privacy, supply conditions, platform rights/obligations — have
-  **no approved source text anywhere in the repository** and stay unbuilt rather than authored.
-  Blocked on owner content; see owner-facts §11.
+- [x] **A7b** Make all 11 required policy items reachable through dedicated pages + stable `/policies`
+  anchors. Owner-approved legal/static content is normalized in
+  `docs/specs/la-na-design-policy-authority.md`; COD-only overrides stale bank-transfer payment
+  wording, approved contact facts replace placeholders, and no contact-form delivery capability is
+  published before F9b.
 - [ ] **A8** After A6, remove Brand #2 public `/lookbook` + `/flash-sale` routes and align sitemap/canonical policy; `/sale` already exists from F3a and remains the only public discounted-products route.
 
 ### Checkpoint A
