@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 
 import { NAVIGATION } from "../../src/brand/index.ts";
 import { matchesStorefrontRoute } from "../../src/routes/manifest.ts";
+import { STATIC_CANONICAL_PATHS } from "../../src/seo/search-sitemap-repository.ts";
 
 const EXPECTED_PRIMARY = ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"];
 const EXPECTED_AO_DAI = ["Áo dài cách tân", "Áo dài Tết", "Áo dài cưới", "Áo dài 4 tà", "Áo dài 6 tà"];
@@ -26,6 +27,15 @@ test("every active primary and footer href resolves and obsolete links are absen
   assert.deepEqual(hrefs.filter((href) => !matchesStorefrontRoute(href)), []);
   assert.equal(hrefs.includes("/lookbook"), false);
   assert.equal(hrefs.includes("/flash-sale"), false);
+});
+
+test("A8 retires obsolete public routes while keeping sale public and canonical", () => {
+  assert.equal(matchesStorefrontRoute("/lookbook"), false);
+  assert.equal(matchesStorefrontRoute("/flash-sale"), false);
+  assert.equal(matchesStorefrontRoute("/sale"), true);
+  assert.equal(STATIC_CANONICAL_PATHS.includes("/sale"), true);
+  assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/lookbook"), false);
+  assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/flash-sale"), false);
 });
 
 test("sale uses the existing promotion projection", () => {

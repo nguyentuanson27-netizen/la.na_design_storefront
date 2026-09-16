@@ -61,8 +61,6 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
   { path: "src/app/vay-dam/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/phu-kien/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/sale/page.tsx", shell: true, metadata: "page" },
-  { path: "src/app/flash-sale/page.tsx", shell: true, metadata: "page" },
-  { path: "src/app/lookbook/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/cart/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/success/page.tsx", shell: true, metadata: "static" },

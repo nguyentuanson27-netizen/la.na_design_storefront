@@ -16,7 +16,19 @@ export const STATIC_CANONICAL_PATHS = [
   "/",
   "/shop",
   "/collections",
-  "/lookbook",
+  "/new-arrivals",
+  "/ao-dai",
+  "/ao-dai/cach-tan",
+  "/ao-dai/tet",
+  "/ao-dai/cuoi",
+  "/ao-dai/4-ta",
+  "/ao-dai/6-ta",
+  "/set-do",
+  "/set-do/set-vay",
+  "/set-do/set-quan-ao",
+  "/vay-dam",
+  "/phu-kien",
+  "/sale",
   // U33a. The evergreen pages are permanent, self-canonical and indexable on the same terms as the
   // rest of this list, so they belong in the document rather than being reachable only by crawl.
   "/about",
@@ -28,10 +40,10 @@ export const STATIC_CANONICAL_PATHS = [
 ] as const;
 
 /**
- * What is left of the per-document limit once the static paths have taken their share — 49,991.
+ * What is left of the per-document limit once the static paths have taken their share — 49,979.
  *
- * Derived rather than written down: adding a fifth static path must shrink the dynamic bound, and
- * a hand-maintained constant is exactly where that would silently fail to happen.
+ * Derived rather than written down: adding a static path must shrink the dynamic bound, and a
+ * hand-maintained constant is exactly where that would silently fail to happen.
  */
 export const MAX_DYNAMIC_SITEMAP_PATHS = MAX_SITEMAP_URLS - STATIC_CANONICAL_PATHS.length;
 
