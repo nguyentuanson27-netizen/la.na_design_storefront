@@ -31,8 +31,9 @@ test("M3 the reviewed Merchant enums are exactly the ADR 0007 controlled values"
 });
 
 test("M3 the approved shop defaults are the ADR 0007 owner decision", () => {
+  // A3 replaced the template's inherited menswear default with La.na Design's approved category.
   assert.deepEqual(MERCHANT_SHOP_APPAREL_DEFAULTS, {
-    gender: "male",
+    gender: "female",
     ageGroup: "adult",
     condition: "new",
   });
@@ -41,7 +42,7 @@ test("M3 the approved shop defaults are the ADR 0007 owner decision", () => {
 test("M3 a product with no override inherits every approved shop default", () => {
   assert.deepEqual(resolveEffectiveApparelFacts(overrides()), {
     ok: true,
-    facts: { gender: "male", ageGroup: "adult", condition: "new" },
+    facts: { gender: "female", ageGroup: "adult", condition: "new" },
     inherited: { gender: true, ageGroup: true, condition: true },
   });
 });
@@ -55,23 +56,23 @@ test("M3 each apparel fact overrides independently and leaves the others inherit
 
   assert.deepEqual(resolveEffectiveApparelFacts(overrides({ ageGroup: "kids" })), {
     ok: true,
-    facts: { gender: "male", ageGroup: "kids", condition: "new" },
+    facts: { gender: "female", ageGroup: "kids", condition: "new" },
     inherited: { gender: true, ageGroup: false, condition: true },
   });
 
   assert.deepEqual(resolveEffectiveApparelFacts(overrides({ condition: "used" })), {
     ok: true,
-    facts: { gender: "male", ageGroup: "adult", condition: "used" },
+    facts: { gender: "female", ageGroup: "adult", condition: "used" },
     inherited: { gender: true, ageGroup: true, condition: false },
   });
 });
 
 test("M3 mixed independent overrides resolve together without touching the third fact", () => {
   assert.deepEqual(
-    resolveEffectiveApparelFacts(overrides({ gender: "female", ageGroup: "kids" })),
+    resolveEffectiveApparelFacts(overrides({ gender: "male", ageGroup: "kids" })),
     {
       ok: true,
-      facts: { gender: "female", ageGroup: "kids", condition: "new" },
+      facts: { gender: "male", ageGroup: "kids", condition: "new" },
       inherited: { gender: false, ageGroup: false, condition: true },
     },
   );
@@ -89,7 +90,7 @@ test("M3 clearing an override returns the product to inheritance rather than a s
   const resolved = resolveEffectiveApparelFacts(overrides());
   assert.equal(resolved.ok, true);
   assert.deepEqual(resolved.ok ? resolved.facts : null, {
-    gender: "male",
+    gender: "female",
     ageGroup: "adult",
     condition: "new",
   });
@@ -187,7 +188,7 @@ test("M3 the resolver cannot infer a fact from product text, category, size or m
     }),
     {
       ok: true,
-      facts: { gender: "male", ageGroup: "adult", condition: "new" },
+      facts: { gender: "female", ageGroup: "adult", condition: "new" },
       inherited: { gender: true, ageGroup: true, condition: true },
     },
   );

@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireCurrentAdmin } from "@/auth/current-admin";
+import { BRAND } from "@/brand";
 import {
   MERCHANT_SHOP_APPAREL_DEFAULTS,
   USE_SHOP_DEFAULT,
@@ -100,7 +101,7 @@ export async function ProductMerchantFactsEditor({
       aria-labelledby="product-merchant-facts-heading"
       className="mt-8 border border-black/20 p-6 md:p-8"
     >
-      <p className="eyebrow">Google Merchant · sở hữu bởi LA Clothing</p>
+      <p className="eyebrow">Google Merchant · sở hữu bởi {BRAND.identity.name}</p>
       <h2 id="product-merchant-facts-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
         Thuộc tính thời trang
       </h2>

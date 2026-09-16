@@ -182,7 +182,7 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   await expect(page.getByRole("link", { name: /size guide/i })).toHaveCount(0);
 
   await expect(page.getByText("Shop", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("LA Clothing / Product", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("La.na Design / Product", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 3, name: "Size guide" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 3, name: "Care" })).toHaveCount(0);
   await expect(page.getByText(/phía máy chủ|client/)).toHaveCount(0);

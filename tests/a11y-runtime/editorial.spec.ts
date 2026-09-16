@@ -340,7 +340,7 @@ test("P8 storefront shell exposes responsive navigation, shared tokens, focus tr
   ).toEqual({ top: 0, pinned: "promotion-shell" });
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "LA Clothing — Trang chủ" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
   const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
   await expect(footerNavigation).toBeVisible();

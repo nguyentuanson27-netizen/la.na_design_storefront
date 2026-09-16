@@ -131,7 +131,7 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
   expect(response?.status()).toBe(200);
 
   const main = page.locator("main");
-  await expect(page.getByRole("heading", { level: 1, name: "Về LA Clothing" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Về La.na Design" })).toBeVisible();
   await expect(main).toContainText(PUBLIC_BRAND_POSITIONING);
   await expect(main).toContainText(PUBLIC_LEGAL_FACTS.legalEntityName);
   await expect(main).toContainText(PUBLIC_LEGAL_FACTS.taxCode);

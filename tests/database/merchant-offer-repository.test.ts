@@ -149,7 +149,7 @@ test("M3 the loader maps the published storefront catalog into Merchant offers",
   assert.ok(medium);
   assert.equal(medium.id, "m3-variation-m");
   assert.equal(medium.itemGroupId, "m3-product-1");
-  assert.equal(medium.brand, "LA Clothing");
+  assert.equal(medium.brand, "La.na Design");
   // ADR 0008: the manufacturer MPN is the mirrored Pancake display_id.
   assert.equal(medium.mpn, "A300-M");
   assert.equal(medium.link, `${ORIGIN}/shop/${product.slug}?variant=m3-variation-m`);
@@ -160,7 +160,7 @@ test("M3 the loader maps the published storefront catalog into Merchant offers",
   assert.equal(medium.availability, "in_stock");
   assert.equal(medium.priceVnd, 500_000);
   assert.equal(medium.color, "Black");
-  assert.deepEqual([medium.gender, medium.ageGroup, medium.condition], ["male", "adult", "new"]);
+  assert.deepEqual([medium.gender, medium.ageGroup, medium.condition], ["female", "adult", "new"]);
   assert.equal(medium.description, "Mo ta bien tap da xuat ban.");
 
   // Merchant identity never leaks an internal handle or a barcode.
@@ -306,22 +306,24 @@ test("M3 apparel overrides are website-owned and a Pancake resync cannot erase t
   const product = await publishStorefront();
 
   const inherited = await read();
-  assert.equal(inherited.offers[0]!.gender, "male");
+  assert.equal(inherited.offers[0]!.gender, "female");
   assert.deepEqual(await merchantFacts.readOverrides(product.id), {
     gender: null,
     ageGroup: null,
     condition: null,
   });
 
+  // Both override values differ from the approved shop defaults (`female` / `adult`), so an
+  // override that silently stopped applying would read as the default rather than as itself.
   await merchantFacts.saveOverrides(product.id, {
-    gender: "female",
+    gender: "male",
     ageGroup: "kids",
     condition: null,
   });
 
   const overridden = await read();
   for (const offer of overridden.offers) {
-    assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["female", "kids", "new"]);
+    assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["male", "kids", "new"]);
   }
 
   // The regression that matters: a full catalog resync rewrites the Pancake mirror and must leave
@@ -333,14 +335,14 @@ test("M3 apparel overrides are website-owned and a Pancake resync cannot erase t
   });
 
   assert.deepEqual(await merchantFacts.readOverrides(product.id), {
-    gender: "female",
+    gender: "male",
     ageGroup: "kids",
     condition: null,
   });
 
   await publishStorefront();
   for (const offer of (await read()).offers) {
-    assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["female", "kids", "new"]);
+    assert.deepEqual([offer.gender, offer.ageGroup, offer.condition], ["male", "kids", "new"]);
   }
 });
 
@@ -369,7 +371,7 @@ test("M3 clearing an override returns the product to inheritance without storing
     0,
     "clearing must remove the override row rather than persist the current shop default",
   );
-  assert.equal((await read()).offers[0]!.gender, "male");
+  assert.equal((await read()).offers[0]!.gender, "female");
 });
 
 test("M3 a persisted apparel value outside the reviewed allowlist fails closed", async () => {

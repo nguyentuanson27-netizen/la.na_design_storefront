@@ -14,7 +14,7 @@ test("confirmed checkout feedback surfaces the order code", () => {
     {
       tone: "success",
       title: "Đặt hàng thành công",
-      message: "Mã đơn LA-123. LA Clothing sẽ liên hệ để xác nhận đơn COD.",
+      message: "Mã đơn LA-123. La.na Design sẽ liên hệ để xác nhận đơn COD.",
       mayRetry: false,
     },
   );

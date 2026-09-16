@@ -46,7 +46,7 @@ export function GET() {
             letterSpacing: "-0.04em",
           },
         },
-        "Modern Menswear",
+        BRAND.identity.strapline,
       ),
       createElement(
         "div",

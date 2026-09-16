@@ -31,8 +31,8 @@ test("P16A public brand facts expose only approved identity and commerce facts",
   const facts = buildPublicBrandFacts(policy);
 
   assert.deepEqual(facts, {
-    brandName: "LA Clothing",
-    brandSummary: "Minimal, modern menswear by LA Clothing.",
+    brandName: "La.na Design",
+    brandSummary: "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ",
     paymentMethod: "Thanh toán khi nhận hàng (COD).",
     checkoutAccount: "Không cần tài khoản để thanh toán.",
     shipping: describeGuestShippingPromotion(policy),
@@ -61,8 +61,8 @@ test("U32b public contact facts transcribe the approved B2 source exactly", () =
   assert.deepEqual(PUBLIC_CONTACT_FACTS, {
     telephone: "0923159666",
     telephoneInternational: "+84923159666",
-    email: "laclothing2025@gmail.com",
-    fanpageUrl: "https://www.facebook.com/LAclothing.vn",
+    email: "la.nadesignsince2022@gmail.com",
+    fanpageUrl: "https://www.facebook.com/la.nadesign.vn",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
     addressLocality: "Hà Nội",
     supportHours: {
@@ -167,15 +167,28 @@ test("U32b carries no fact outside the B2 contact contract", () => {
 test("U33a the approved brand positioning is the owner's sentence, not a paraphrase", () => {
   assert.equal(
     PUBLIC_BRAND_POSITIONING,
-    "LA Clothing là thương hiệu thời trang nam theo định hướng tối giản, hiện đại.",
+    "La.na Design là thương hiệu thời trang nữ thiết kế, tập trung vào áo dài, váy và set đồ với phong cách thanh lịch, nữ tính",
   );
 });
 
-test("U33a the approved legal facts transcribe §1 exactly, and own no address", () => {
+test("U33a / A2 the approved legal facts transcribe the registered identity, and own no business address", () => {
   assert.deepEqual(PUBLIC_LEGAL_FACTS, {
     legalEntityName: "CÔNG TY TNHH QUỐC TẾ THƯƠNG MẠI LAS",
     taxCode: "0111242251",
+    taxIdIssueDate: "7/10/2025",
+    registeredAddress:
+      "Số 06 Đường Manor 2str, Sunrise C, KĐT The Manor Central Park, Phường Định Công",
+    legalEmail: "congtytnhh.las@gmail.com",
   });
+
+  // A2 widened this to the whole registered identity, not to the customer-facing contact. The
+  // business/return address and the support inbox stay contact facts, published under their own
+  // labels through PUBLIC_CONTACT_FACTS, so a legal block cannot quietly become a returns address.
+  const legal = PUBLIC_LEGAL_FACTS as Record<string, unknown>;
+  for (const contactOwned of ["streetAddress", "addressLocality", "email", "telephone"]) {
+    assert.equal(contactOwned in legal, false, contactOwned);
+  }
+  assert.notEqual(PUBLIC_LEGAL_FACTS.registeredAddress, describePublicAddress());
 
   assert.equal(Object.isFrozen(PUBLIC_LEGAL_FACTS), true);
 });
@@ -218,12 +231,12 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
       "không rách, bẩn, hư hỏng",
       "không có mùi lạ",
       "không có dấu hiệu đã qua sử dụng",
-      "đúng sản phẩm được mua từ LA Clothing",
+      "đúng sản phẩm được mua từ La.na Design",
       "gửi lại theo hướng dẫn của bộ phận hỗ trợ",
     ],
     supportedCases: [
       "Sản phẩm lỗi hoặc có vết bẩn từ phía sản xuất.",
-      "LA Clothing giao sai mẫu.",
+      "La.na Design giao sai mẫu.",
       "Giao sai màu.",
       "Giao sai size.",
       "Khách hàng chủ động đổi sang mẫu khác.",
@@ -233,12 +246,12 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
     // Who bears the shipping in each case is a normative B1 commitment. Held here rather than in
     // page prose, so the constant matching §4 and the page saying the same thing are one fact.
     customerInitiatedShippingNote: "Khách hàng chịu phí vận chuyển hai chiều.",
-    shopFaultShippingNote: "LA Clothing chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
+    shopFaultShippingNote: "La.na Design chịu toàn bộ phí vận chuyển hợp lý cho việc đổi/trả.",
     // §4 states there is no separate excluded-category list. Empty is the decision, not a gap, and
     // the note is what that emptiness means — the page renders the state rather than asserting it.
     nonReturnableCategories: [],
     nonReturnableCategoriesNote:
-      "Không có danh mục sản phẩm loại trừ riêng. LA Clothing chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
+      "Không có danh mục sản phẩm loại trừ riêng. La.na Design chỉ áp dụng các điều kiện từ chối đã nêu trong chính sách này.",
     refundWorkingDays: { minimum: 7, maximum: 10 },
     refundChannelNote:
       "Hoàn tiền cho đơn COD có thể thực hiện qua chuyển khoản ngân hàng hoặc phương thức phù hợp được thống nhất với khách hàng.",
@@ -254,7 +267,7 @@ test("U33b the returns policy transcribes §4 clause for clause", () => {
   assert.equal(describePublicReturnWindow(), "15 ngày kể từ ngày khách hàng nhận hàng");
   assert.equal(
     describePublicRefundWindow(),
-    "7–10 ngày làm việc kể từ khi LA Clothing nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền",
+    "7–10 ngày làm việc kể từ khi La.na Design nhận lại sản phẩm, kiểm tra và xác nhận đủ điều kiện hoàn tiền",
   );
 });
 
@@ -270,8 +283,8 @@ test("U33b the delivery facts transcribe §5 and hold no shipping price", () => 
     // Stored as the sentence the page renders, not as a boolean beside hard-coded copy: a flag no
     // rendering reads is how a fact changes here while the page keeps saying the old thing.
     carrierTrackingNote:
-      "LA Clothing không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
-    phoneConfirmationWording: "LA Clothing có thể liên hệ để xác minh đơn hàng khi cần.",
+      "La.na Design không cung cấp mã vận đơn hoặc link theo dõi của đơn vị vận chuyển theo mặc định.",
+    phoneConfirmationWording: "La.na Design có thể liên hệ để xác minh đơn hàng khi cần.",
   });
 
   // B4 keeps the server-owned policy as the pricing authority, because production may legitimately

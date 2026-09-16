@@ -2,6 +2,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireCurrentAdmin } from "@/auth/current-admin";
+import { BRAND } from "@/brand";
 import {
   createProductSlugAdminService,
   createProductSlugRepository,
@@ -61,7 +62,7 @@ export function ProductSlugEditor({
       aria-labelledby="product-slug-heading"
       className="mt-8 border border-black/20 p-6 md:p-8"
     >
-      <p className="eyebrow">Website URL · sở hữu bởi LA Clothing</p>
+      <p className="eyebrow">Website URL · sở hữu bởi {BRAND.identity.name}</p>
       <h2 id="product-slug-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
         Quản lý URL sản phẩm
       </h2>

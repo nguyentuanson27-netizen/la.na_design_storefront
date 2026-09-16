@@ -251,7 +251,7 @@ test("P14 builds factual Organization and WebSite entities from the validated st
       {
         "@type": "Organization",
         "@id": "https://shop.example.com/#organization",
-        name: "LA Clothing",
+        name: "La.na Design",
         url: "https://shop.example.com/",
         // U32b: the approved B2 facts. Written out literally here — this case exists to show the
         // whole emitted document at a glance; the U32b guard below is what ties each value back to
@@ -266,7 +266,7 @@ test("P14 builds factual Organization and WebSite entities from the validated st
           contactType: "customer support",
           // U32b: the country-code form Google asks for; same approved number as the footer shows.
           telephone: "+84923159666",
-          email: "laclothing2025@gmail.com",
+          email: "la.nadesignsince2022@gmail.com",
           hoursAvailable: {
             "@type": "OpeningHoursSpecification",
             dayOfWeek: [
@@ -282,12 +282,12 @@ test("P14 builds factual Organization and WebSite entities from the validated st
             closes: "22:00:00+07:00",
           },
         },
-        sameAs: ["https://www.facebook.com/LAclothing.vn"],
+        sameAs: ["https://www.facebook.com/la.nadesign.vn"],
       },
       {
         "@type": "WebSite",
         "@id": "https://shop.example.com/#website",
-        name: "LA Clothing",
+        name: "La.na Design",
         url: "https://shop.example.com/",
         publisher: {
           "@id": "https://shop.example.com/#organization",

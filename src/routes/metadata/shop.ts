@@ -8,7 +8,7 @@ import { readSearchExposure } from "@/seo/search-exposure";
 /** The shop listing's metadata. Title and description are the route's, not the catalog's. */
 
 export const SHOP_TITLE = "Cửa hàng";
-export const SHOP_DESCRIPTION = `Khám phá thời trang nam ${BRAND.identity.name} đang có sẵn tại cửa hàng.`;
+export const SHOP_DESCRIPTION = `Khám phá sản phẩm ${BRAND.identity.name} đang có sẵn tại cửa hàng.`;
 
 export type ShopMetadataProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;

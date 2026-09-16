@@ -64,8 +64,20 @@ function validateIdentity(brand: BrandConfig): void {
     positioning: identity.positioning,
     socialCardSlug: identity.socialCardSlug,
     socialCardAlt: identity.socialCardAlt,
+    homeTitle: identity.homeTitle,
+    homeMetaDescription: identity.homeMetaDescription,
+    searchAlias: identity.searchAlias,
   })) {
     requireText(value, `identity.${label}`);
+  }
+
+  // An alias that equals a display spelling is not an alias -- it is a second public name, which is
+  // exactly what the approved decision forbids.
+  if (
+    identity.searchAlias === identity.name ||
+    identity.searchAlias === identity.displayNameUpper
+  ) {
+    fail("identity.searchAlias must differ from the public display name; it is a search alias only");
   }
 
   if (SENTENCE_BREAK_PATTERN.test(identity.positioning.trim())) {
@@ -123,6 +135,30 @@ function validateContact(brand: BrandConfig): void {
   }
   if (!/^[+-]\d{2}:\d{2}$/.test(utcOffset)) {
     fail("contact.supportHours.utcOffset must be an ISO 8601 offset");
+  }
+}
+
+/**
+ * The registered legal facts, checked on their own terms rather than the contact block's.
+ *
+ * The date is validated for shape only. `7/10/2025` is the approved transcription of a Vietnamese
+ * registration document, so the check is that it still reads day/month/year with a four-digit year
+ * -- enough to catch an ISO string or a two-digit year pasted in later, without pretending this
+ * module can tell whether the date itself is right.
+ */
+function validateLegal(brand: BrandConfig): void {
+  const { legal } = brand;
+  for (const [label, value] of Object.entries({
+    registeredAddress: legal.registeredAddress,
+    email: legal.email,
+    taxIdIssueDate: legal.taxIdIssueDate,
+  })) {
+    requireText(value, `legal.${label}`);
+  }
+
+  if (!EMAIL_PATTERN.test(legal.email)) fail("legal.email must be a valid email address");
+  if (!/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(legal.taxIdIssueDate)) {
+    fail("legal.taxIdIssueDate must be a day/month/year date, as the registration source states it");
   }
 }
 
@@ -316,6 +352,7 @@ export function loadBrandConfig(
 }> {
   validateIdentity(brand);
   validateContact(brand);
+  validateLegal(brand);
   validateMerchant(brand);
   validateMarket(brand);
   validateSizeGuide(sizeGuide);

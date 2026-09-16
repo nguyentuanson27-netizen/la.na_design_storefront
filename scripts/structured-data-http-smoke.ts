@@ -244,7 +244,7 @@ try {
     {
       "@type": "Organization",
       "@id": `${PUBLIC_ORIGIN}/#organization`,
-      name: "LA Clothing",
+      name: "La.na Design",
       url: `${PUBLIC_ORIGIN}/`,
       address: {
         "@type": "PostalAddress",
@@ -268,7 +268,7 @@ try {
     {
       "@type": "WebSite",
       "@id": `${PUBLIC_ORIGIN}/#website`,
-      name: "LA Clothing",
+      name: "La.na Design",
       url: `${PUBLIC_ORIGIN}/`,
       publisher: {
         "@id": `${PUBLIC_ORIGIN}/#organization`,
@@ -458,7 +458,7 @@ try {
   );
 
   console.log(
-    "P14/P16/U27/U32b structured-data HTTP smoke passed: initial HTML contains one shared LA Clothing Organization carrying the owner-approved B2 address, support contact point and Fanpage and used by WebSite publisher and ProductGroup brand, one ProductGroup carrying factual variant-specific names, unique manufacturer MPNs and exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
+    "P14/P16/U27/U32b structured-data HTTP smoke passed: initial HTML contains one shared La.na Design Organization carrying the owner-approved B2 address, support contact point and Fanpage and used by WebSite publisher and ProductGroup brand, one ProductGroup carrying factual variant-specific names, unique manufacturer MPNs and exact per-variant Product/Offer facts whose published URLs reopen the same variants at the same prices, no AggregateOffer or unsupported merchant claim, no unpriceable or inactive variant, and unknown PDPs emit no product graph.",
   );
 } finally {
   await stopServer();
