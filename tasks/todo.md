@@ -5,7 +5,7 @@ Source: `docs/specs/la-na-design-master-spec.md`
 Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 
 ## Giai đoạn 2 — Brand Config/static truth
-- [ ] **A1** Sync owner-facts + normalized policy authority with interview overrides; no future legal prose depends on chat memory.
+- [x] **A1** Sync owner-facts + normalized policy authority with interview overrides; no future legal prose depends on chat memory.
 - [ ] **A2** Add distinct registered legal address/email/tax issue date; do not expose legal representative.
 - [ ] **A3** Replace Brand #1 identity/contact/merchant/default SEO truth; preserve `Lana Design` as search alias only.
 - [ ] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
