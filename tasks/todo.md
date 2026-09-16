@@ -31,10 +31,10 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Brand leak/current-truth checks pass.
 
 ## High-risk gates — run early
-- [ ] **G1** Verify current official Merchant + structured-data availability/date contracts; decide and approve a compliant `availability_date` strategy.
+- [x] **G1** Verify current official Merchant + structured-data availability/date contracts; decide and approve a compliant `availability_date` strategy. Evidence complete in ADR 0011; I9 backorder publication remains blocked until a reviewed product-level public date authority exists.
 - [ ] **G2** Run explicitly authorized Pancake zero/negative-stock + composite write probe in safe/non-production context with cleanup/reconciliation; otherwise remain BLOCKED/UNKNOWN.
-- [ ] **G3** Inspect existing outbound-email capability and decide transport; if a new provider/dependency/credential is required, only propose it until Checkpoint B approves that boundary.
-- [ ] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required.
+- [x] **G3** Inspect existing outbound-email capability and decide transport; if a new provider/dependency/credential is required, only propose it until Checkpoint B approves that boundary. ADR 0012 proposes Resend via server `fetch`; provider/sender/DNS/secret boundary still requires Checkpoint B.
+- [x] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required. ADR 0013 reuses current owners where semantics match and records additive migration needs for PLP order + related overrides.
 - [ ] **G5** Design/review atomic capacity state machine using G2 evidence; cover retries/ambiguous writes/composites.
 
 ### Checkpoint B — before migrations/dependencies
