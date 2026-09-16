@@ -5,6 +5,8 @@ import { buildCatalogListingMetadata } from "../../src/seo/catalog-listing-metad
 
 const ORIGIN = "https://shop.example.com";
 
+// This file is the behavior contract for the F3a/A8 SEO boundary: new listing routes gain
+// canonical exposure while the retired public routes stay outside every listing authority.
 function canonical(metadata: ReturnType<typeof buildCatalogListingMetadata>): string | null {
   const value = metadata.alternates?.canonical;
   if (typeof value === "string") return value;
