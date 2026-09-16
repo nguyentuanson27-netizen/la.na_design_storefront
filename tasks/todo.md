@@ -10,15 +10,15 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **A3** Replace Brand #1 identity/contact/merchant/default SEO truth; preserve `Lana Design` as search alias only.
 - [ ] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
 - [ ] **A5** Align carriers/delivery/returns/refund/COD-only payment; Hà Nội 1–3, other provinces 3–10.
-- [ ] **F3a** Create minimal crawlable parent/child category route targets first; do not switch active primary navigation yet; verify every intended A6 href resolves non-404.
-- [ ] **A6** After F3a, activate nested primary navigation with approved order/children; no `Trang chủ`; focused active-nav link-resolution check must stay green.
+- [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
+- [ ] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
 - [ ] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
 - [ ] **A7b** Make all required policy items reachable via existing pages + one non-duplicative policy hub/anchors.
-- [ ] **A8** Add `/sale`; remove Brand #2 public `/lookbook` + `/flash-sale` surfaces only after A6 has moved active navigation away from them.
+- [ ] **A8** After A6, remove Brand #2 public `/lookbook` + `/flash-sale` routes and align sitemap/canonical policy; `/sale` already exists from F3a and remains the only public discounted-products route.
 
 ### Checkpoint A
 - [ ] F3a + A1–A8 review: 0 Critical / 0 Required.
-- [ ] Active primary-navigation parent/child destinations all resolve; no build-green/404-nav state.
+- [ ] Active primary + footer destinations all resolve; no active link points to removed `/lookbook`/`/flash-sale`; no build-green/404-nav state.
 - [ ] `pnpm lint`
 - [ ] `pnpm typecheck`
 - [ ] `pnpm test:domain`
@@ -72,7 +72,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F2b** Build accessible full-screen search overlay with real product/category suggestions.
 - [ ] **F2c** Wire Account header action to existing `/login`; no new account scope.
 - [ ] **F2d** Build accessible right-side Cart drawer without changing cart authority.
-- [ ] **F3b** Add breadcrumbs/canonicals/internal-link and approved taxonomy SEO hierarchy on top of F3a routes; keep active-nav link-resolution regression green.
+- [ ] **F3b** Add breadcrumbs/canonicals/internal-link and approved taxonomy SEO hierarchy on top of F3a routes; keep primary + footer link-resolution regression green.
 - [ ] **F4a** PLP server contract: filters, manual default order, stable crawlable page/cursor URLs.
 - [ ] **F4b** PLP UI: accessible filters + infinite loading + loading/error/empty/back-navigation behavior.
 - [ ] **F5** Product card: 4:5, second-image hover, sale display, one marketing badge, availability slot.
