@@ -35,20 +35,30 @@ measurements. Rows marked **pending** are therefore left blank for the owner to 
 
 ### Policy authority
 
-The owner-supplied terms document is **not** the published policy authority on its own. Its
-normalized, override-applied form is master spec **PART D** (§12 delivery, §13 returns/exchange/
-refund, §14 payment, §15 complaints and support), and that is the single source `src/brand/fulfillment.config.ts`
-and the public policy pages answer to. Keeping one normalized copy avoids a second policy document
-that can drift out of agreement with the spec.
+The owner-supplied terms text is **not** published raw. Its normalized, override-applied authority is
+split by ownership rather than duplicated:
 
-Explicit interview overrides already applied to the supplied terms text:
+- master spec **PART D** (§12 delivery, §13 returns/exchange/refund, §14 payment, §15 complaints and
+  support) remains the authority for `src/brand/fulfillment.config.ts` and the dedicated
+  shipping/returns/contact projections;
+- [`la-na-design-policy-authority.md`](./la-na-design-policy-authority.md) is the owner-approved
+  authority for general terms, pricing, privacy, supply conditions, platform rights/obligations and
+  the placeholder-free support/complaint channel wording transcribed by `src/brand/policy.config.ts`.
 
-- **Payment.** The terms document says bank transfer is supported. The current owner decision is
+Keeping those owners explicit prevents a page from maintaining a second wording of an existing
+fulfillment rule while still ensuring the five §33 topics that previously lacked text have a durable
+repository source rather than depending on chat history.
+
+Explicit owner overrides applied to the supplied terms text:
+
+- **Payment.** The supplied text says bank transfer is supported. The current owner decision is
   **COD only on the website**, with bank transfer temporarily unavailable. The public wording is
   fixed: `Chuyển khoản ngân hàng hiện tạm thời chưa khả dụng trên website.` No bank account detail
   and no selectable bank-transfer method may be displayed until the owner re-enables it.
-- **Contact placeholders.** The terms document's support/contact placeholders are superseded by the
-  approved contact facts in §3 below.
+- **Contact placeholders.** Support/contact placeholders are superseded by the approved §3 facts:
+  `www.lanadesign.vn`, `0923159666`, `la.nadesignsince2022@gmail.com`, the approved Facebook URL and
+  `08:00`–`22:00` daily support hours. No contact-form submission channel may be published before
+  G3/F9b implements real outbound delivery.
 - **Return cases.** Legacy clauses the approved source does not support — notably a separate
   customer right to exchange size or colour when the shop fulfilled the order correctly — are not
   carried over.
@@ -105,7 +115,7 @@ identity in §3b, which must not overwrite it.
 |---|---|---|
 | `telephone` | `0923159666` | **approved.** Hotline and Zalo are the same number |
 | `telephoneInternational` | `+84923159666` | **derived**: the trunk zero is replaced by the Vietnam calling code, no subscriber digit changes. A test pins the derivation against `normalizeVietnamesePhone` |
-| `email` | `la.nadesignsince2022@gmail.com` | **approved.** Customer support address; the `/contact` form delivers here |
+| `email` | `la.nadesignsince2022@gmail.com` | **approved.** Customer support address; planned recipient for F9b once real outbound contact delivery exists |
 | `fanpageUrl` | `https://www.facebook.com/la.nadesign.vn` | **approved** |
 | `streetAddress` | `212 Nguyễn Trãi, Đại Mỗ` | **approved.** Business **and** return address |
 | `addressLocality` | `Hà Nội` | **approved.** The locality half of the same approved address line |
@@ -287,36 +297,31 @@ Master spec §47. These are content gaps, not architecture blockers:
 The `set-vay-form-nho` hip values are deliberately **not** on this list: §6 records them as absent
 from the approved table, not as an owner fact still to come.
 
-## 11. Policy surfaces with no approved content
+## 11. Public policy surface — all §33 topics owner-approved
 
-Master spec §33 requires eleven policy items to be publicly reachable. Six are built and truthful,
-projected from Brand Config by A7a/A7b:
+Master spec §33 requires eleven policy items to be publicly reachable. All eleven now have an
+owner-approved repository authority. PART D continues to own delivery, returns/refund, current
+payment state and the complaint response target; the newly approved legal/static text is normalized
+in [`la-na-design-policy-authority.md`](./la-na-design-policy-authority.md) and transcribed into
+`src/brand/policy.config.ts`.
 
-| Topic | Destination |
-|---|---|
-| Chính sách vận chuyển | `/shipping`, and `/policies#van-chuyen` |
-| Chính sách thanh toán | `/shipping#thanh-toan`, and `/policies#thanh-toan` |
-| Chính sách đổi trả và hoàn tiền | `/returns`, and `/policies#doi-tra-hoan-tien` |
-| Thông tin liên hệ | `/contact`, and `/policies#lien-he` |
-| Các hình thức hỗ trợ trực tuyến | `/contact`, and `/policies#ho-tro-truc-tuyen` |
-| Chính sách tiếp nhận và giải quyết phản ánh, khiếu nại | `/contact`, and `/policies#khieu-nai` |
+| Topic | Destination | Authority |
+|---|---|---|
+| Chính sách vận chuyển | `/shipping`, `/policies#van-chuyen` | PART D §12 |
+| Chính sách thanh toán | `/shipping#thanh-toan`, `/policies#thanh-toan` | PART D §14 — COD only; bank transfer unavailable on website |
+| Chính sách đổi trả và hoàn tiền | `/returns`, `/policies#doi-tra-hoan-tien` | PART D §13 |
+| Thông tin liên hệ | `/contact`, `/policies#lien-he` | §3 Brand Config contact facts |
+| Các hình thức hỗ trợ trực tuyến | `/contact`, `/policies#ho-tro-truc-tuyen` | policy authority + §3 contact facts |
+| Chính sách tiếp nhận và giải quyết phản ánh, khiếu nại | `/contact`, `/policies#khieu-nai` | policy authority + PART D §15 |
+| Điều khoản chung | `/policies#dieu-khoan-chung` | policy authority |
+| Chính sách giá | `/policies#chinh-sach-gia` | policy authority |
+| Chính sách bảo mật | `/policies#bao-mat` | policy authority |
+| Các điều kiện và hạn chế trong việc cung cấp hàng hóa | `/policies#dieu-kien-cung-cap` | policy authority |
+| Quyền và nghĩa vụ của các bên trên nền tảng | `/policies#quyen-nghia-vu` | policy authority |
 
-The remaining five are **blocked on owner content**, not on implementation:
-
-1. Điều khoản chung
-2. Chính sách giá
-3. Chính sách bảo mật
-4. Các điều kiện và hạn chế trong việc cung cấp hàng hóa
-5. Quyền và nghĩa vụ của các bên trên nền tảng
-
-No approved source states any of them — not the master spec, not the normalized PART D policy
-authority, not this intake. The supplied terms document that PART D normalizes covers delivery,
-returns, payment and complaints only. Legal prose is the one kind of content a coding agent must
-never author, so these five stay unbuilt: no page, no heading, no placeholder. `first-party-content-facts-w13a.md`
-has recorded the same gap since Brand #1, and a test asserts it stays recorded.
-
-**To unblock:** supply the text for each, and it will be transcribed into the policy authority and
-published as additional anchored sections on the existing `/policies` hub. No new page per item.
+Normalization is explicit rather than inferred: supplied bank-transfer-as-payment wording is
+superseded by current COD-only truth; support/contact placeholders are replaced with approved facts;
+and no contact-form channel is published before F9b implements real outbound delivery.
 
 ## Open technical questions
 
