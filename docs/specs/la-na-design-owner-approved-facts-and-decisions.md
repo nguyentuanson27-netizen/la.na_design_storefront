@@ -191,8 +191,9 @@ Semantics, all **approved**:
   representable in the type rather than encoded as a number.
 - Guidance: the table is indicative and varies with the product's form; the customer should contact
   La.na Design for size advice.
-- `Set/Váy form nhỏ` has **no hip values** in the source chart. They are **pending**, not missing —
-  do not invent them.
+- `Set/Váy form nhỏ` has **no hip row**, and that is the **approved** shape of the table, not a gap
+  in it. The source chart does not provide hip values; do not invent them and do not leave a hip
+  field waiting to be filled. Master spec §11.3.
 
 The exact tables live in master spec §11.1–§11.3 and are transcribed into the config unchanged.
 
@@ -281,8 +282,10 @@ Master spec §47. These are content gaps, not architecture blockers:
 4. Meta Pixel / CAPI — intentionally deferred; must be decided before the production build.
 5. Exact category SEO copy beyond the approved homepage metadata.
 6. A real data source for `Bán chạy`.
-7. Hip values for the `set-vay-form-nho` chart.
-8. Production deployment and search-indexing approval.
+7. Production deployment and search-indexing approval.
+
+The `set-vay-form-nho` hip values are deliberately **not** on this list: §6 records them as absent
+from the approved table, not as an owner fact still to come.
 
 ## Open technical questions
 
