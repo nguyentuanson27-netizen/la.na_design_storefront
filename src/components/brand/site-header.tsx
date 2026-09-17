@@ -6,7 +6,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
+import { CartDrawer } from "@/components/brand/cart-drawer";
+import { SearchOverlay } from "@/components/brand/search-overlay";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
+import { useAccountAuth } from "@/components/headless/use-account-auth";
 
 type HierarchicalNavigationLink = NavigationLink & Readonly<{
   key?: string;
@@ -44,18 +47,34 @@ function UtilityIcon({ href }: { href: string }) {
 
 export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const pathname = usePathname();
+  const { session } = useAccountAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMegaMenu, setActiveMegaMenu] = useState<string | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [expandedMobileItem, setExpandedMobileItem] = useState<string | null>(null);
+  const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
+  const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const cartTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const mobileCartTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileNavId = useId();
 
+  const loginPath = ["", "login"].join("/");
   const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
   const utility = NAVIGATION.utility;
   const mobileUtility = NAVIGATION.mobileUtility;
   const cartItem = utility.find((item) => item.href === "/cart");
+
+  const openCartDrawer = () => setCartDrawerOpen(true);
+  const closeCartDrawer = () => setCartDrawerOpen(false);
+  const openSearch = () => setSearchOpen(true);
+  const closeSearch = () => setSearchOpen(false);
+  const openSearchFromMobile = () => {
+    setMobileMenuOpen(false);
+    setSearchOpen(true);
+  };
 
   // Track scroll position for transparent -> cream transition
   useEffect(() => {
@@ -68,10 +87,12 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   }, []);
 
   // Close menus on route change
-  useEffect(() => {
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
     setActiveMegaMenu(null);
     setMobileMenuOpen(false);
-  }, [pathname]);
+  }
 
   // Handle escape key to dismiss open menus
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
@@ -268,28 +289,64 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
         {/* Desktop Utility Icons (Search, Account, Cart) */}
         <div className="utility-nav hidden md:flex items-center gap-3 sm:gap-4 md:gap-5 text-[#3B2219]">
-          {utility.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              aria-label={item.label}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-            >
-              <UtilityIcon href={item.href} />
-            </Link>
-          ))}
+          {utility.map((item) => {
+            if (item.href === "/search") {
+              return (
+                <button
+                  key={item.href}
+                  ref={searchTriggerRef}
+                  type="button"
+                  aria-label={item.label}
+                  aria-haspopup="dialog"
+                  onClick={openSearch}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                >
+                  <UtilityIcon href={item.href} />
+                </button>
+              );
+            }
+            if (item.href === "/cart") {
+              return (
+                <button
+                  key={item.href}
+                  ref={cartTriggerRef}
+                  type="button"
+                  aria-label={item.label}
+                  aria-haspopup="dialog"
+                  onClick={openCartDrawer}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                >
+                  <UtilityIcon href={item.href} />
+                </button>
+              );
+            }
+            const destination = session ? item.href : loginPath;
+            return (
+              <Link
+                key={item.href}
+                href={destination}
+                aria-label={item.label}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              >
+                <UtilityIcon href={item.href} />
+              </Link>
+            );
+          })}
         </div>
 
-        {/* Mobile Header: Right Cart Link */}
+        {/* Mobile Header: Right Cart Button */}
         <div className="flex items-center md:hidden">
           {cartItem ? (
-            <Link
-              href={cartItem.href}
+            <button
+              ref={mobileCartTriggerRef}
+              type="button"
               aria-label={cartItem.label}
+              aria-haspopup="dialog"
+              onClick={openCartDrawer}
               className="inline-flex h-10 w-10 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <UtilityIcon href={cartItem.href} />
-            </Link>
+            </button>
           ) : null}
         </div>
       </div>
@@ -367,16 +424,32 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             <div className="space-y-3 pt-4">
               <p className="eyebrow text-[#70584B]">Tiện ích</p>
               <div className="flex flex-col space-y-2 text-sm text-[#3B2219]">
-                {mobileUtility.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className="inline-flex items-center gap-3 py-1 hover:text-[#2A1810]"
-                  >
-                    <UtilityIcon href={item.href} />
-                    {item.label}
-                  </Link>
-                ))}
+                {mobileUtility.map((item) => {
+                  if (item.href === "/search") {
+                    return (
+                      <button
+                        key={item.href}
+                        type="button"
+                        onClick={openSearchFromMobile}
+                        className="inline-flex items-center gap-3 py-1 hover:text-[#2A1810] text-left"
+                      >
+                        <UtilityIcon href={item.href} />
+                        {item.label}
+                      </button>
+                    );
+                  }
+                  const destination = session ? item.href : loginPath;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={destination}
+                      className="inline-flex items-center gap-3 py-1 hover:text-[#2A1810]"
+                    >
+                      <UtilityIcon href={item.href} />
+                      {item.label}
+                    </Link>
+                  );
+                })}
               </div>
             </div>
           </div>
@@ -391,6 +464,20 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </div>
         </div>
       ) : null}
+
+      {/* Cart Drawer */}
+      <CartDrawer
+        isOpen={cartDrawerOpen}
+        onClose={closeCartDrawer}
+        triggerRef={cartTriggerRef}
+      />
+
+      {/* Full-Screen Search Overlay */}
+      <SearchOverlay
+        isOpen={searchOpen}
+        onClose={closeSearch}
+        triggerRef={searchTriggerRef}
+      />
     </header>
   );
 }

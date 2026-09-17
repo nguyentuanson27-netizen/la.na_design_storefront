@@ -29,16 +29,18 @@ async function createActionRuntime() {
   const mutations = createAnonymousCartMutationService(prisma, writableCookieStore);
   const resolveLine = createCartLineAuthorityResolver({ shopId, now });
 
-  return createStorefrontCartPublicActions({
-    async getLines() {
-      const cart = await resolveAnonymousCartRequest({
-        client: prisma,
-        store: writableCookieStore,
-        now,
-      });
-      if (!cart || cart.items.length === 0) return [];
-      return repository.getLines({ shopId, items: cart.items, now });
-    },
+  async function getLines() {
+    const cart = await resolveAnonymousCartRequest({
+      client: prisma,
+      store: writableCookieStore,
+      now,
+    });
+    if (!cart || cart.items.length === 0) return [];
+    return repository.getLines({ shopId, items: cart.items, now });
+  }
+
+  const actions = createStorefrontCartPublicActions({
+    getLines,
     async canSetQuantity({ variantId, quantity }) {
       // Advisory only. It gives the shopper a precise message without a write, but the mutation
       // re-resolves the same facts under the cart lock and is the only authority on acceptance.
@@ -56,6 +58,12 @@ async function createActionRuntime() {
       return mutations.removeItem({ variantId, now, resolveLine });
     },
   });
+
+  return { ...actions, getLines };
+}
+
+export async function getStorefrontCartLines() {
+  return (await createActionRuntime()).getLines();
 }
 
 export async function updateStorefrontCartLine(input: unknown) {
@@ -65,3 +73,4 @@ export async function updateStorefrontCartLine(input: unknown) {
 export async function removeStorefrontCartLine(input: unknown) {
   return (await createActionRuntime()).remove(input);
 }
+

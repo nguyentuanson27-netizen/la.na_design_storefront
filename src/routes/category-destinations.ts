@@ -1,6 +1,6 @@
 import { FLATTENED_CATEGORIES } from "../brand/category.config.ts";
 
-export type CategoryDestination = Readonly<{ key: string; href: string; label: string }>;
+export type CategoryDestination = Readonly<{ href: string; label: string }>;
 
 /**
  * Every category route's destination, keyed by the stable code name the brand config declares.
@@ -16,7 +16,7 @@ export const CATEGORY_DESTINATIONS: Readonly<Record<string, CategoryDestination>
   Object.fromEntries(
     FLATTENED_CATEGORIES.map((category) => [
       category.key,
-      Object.freeze({ key: category.key, href: category.href, label: category.label }),
+      Object.freeze({ href: category.href, label: category.label }),
     ]),
   ),
 );

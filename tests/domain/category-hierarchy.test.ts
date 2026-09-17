@@ -3,10 +3,8 @@ import test from "node:test";
 
 import { CATEGORY_ROUTE_PATHS } from "../../src/brand/category.config.ts";
 import {
-  categoryByKey,
   categoryByPath,
   categoryAncestorKeys,
-  CURRENT_CATEGORY_TAXONOMY,
 } from "../../src/commerce/category-taxonomy.ts";
 import {
   buildCategoryBreadcrumbStructuredData,

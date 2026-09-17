@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BRAND, NAVIGATION } from "../../src/brand/index.ts";
+import { NAVIGATION } from "../../src/brand/index.ts";
 import { buildSiteChromeContent } from "../../src/components/headless/site-chrome-model.ts";
 
 test("F2a navigation: primary navigation matches approved order and exclusions", () => {

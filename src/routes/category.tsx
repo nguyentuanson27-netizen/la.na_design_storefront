@@ -1,7 +1,7 @@
 import Link from "next/link";
 
 import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
-import { categoryByKey } from "@/commerce/category-taxonomy";
+import { categoryByKey, categoryByPath } from "@/commerce/category-taxonomy";
 import { buildCategoryBreadcrumbStructuredData } from "@/seo/category-breadcrumb-structured-data";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { CATEGORY_DESTINATIONS, type CategoryDestination } from "./category-destinations.ts";
@@ -27,8 +27,8 @@ export async function loadCategoryRoute(
 ): Promise<RouteHandle<CategoryViewModel>> {
   void props;
   const exposure = readSearchExposure();
-  const breadcrumbs = resolveCategoryBreadcrumbs(destination.key);
-  const node = categoryByKey(destination.key);
+  const node = categoryByPath(destination.href);
+  const breadcrumbs = node ? resolveCategoryBreadcrumbs(node.key) : [];
 
   const subcategories = (node?.childKeys ?? [])
     .map((childKey) => {
