@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 import { SEO_LENGTH_GUIDANCE } from "../../src/commerce/seo-length-guidance.ts";
 
 const HOST = "127.0.0.1";
@@ -16,6 +17,15 @@ const PORT = 3212;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+
+/**
+ * I3 — the shop the spawned server is configured for.
+ *
+ * Pinned in the spawn env rather than inherited, because the selling-policy boundary refuses a
+ * product that is not a visible product of THIS shop (I2). The older fixtures in this file predate
+ * that and sit on the schema default of 0, which is why only the I3 products are seeded here.
+ */
+const SHOP_ID = 920_012;
 
 const runId = `${Date.now()}-${process.pid}`;
 const adminEmail = `admin-a11y-${runId}@example.invalid`;
@@ -32,11 +42,15 @@ const pairRivalExternalId = `admin-a11y-pair-rival-${runId}`;
 const pairSeoTitle = `Áo Oxford Relaxed ${runId}`;
 const pairSeoDescription = `Áo Oxford Relaxed của LA Clothing — ${runId}.`;
 const sourceDescription = "Read-only Pancake source context for editorial decisions.";
+const policyExternalId = `admin-a11y-policy-${runId}`;
+const policyParentExternalId = `admin-a11y-policy-parent-${runId}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let productId = "";
 let parentProductId = "";
+let policyProductId = "";
+let policyParentProductId = "";
 let parentVariantId = "";
 let componentVariantId = "";
 let adminCookies: Array<{ name: string; value: string; url: string }> = [];
@@ -99,7 +113,14 @@ async function cleanupDatabase() {
   await prisma.productMirror.deleteMany({
     where: {
       pancakeProductId: {
-        in: [productExternalId, parentExternalId, pairHolderExternalId, pairRivalExternalId],
+        in: [
+        productExternalId,
+        parentExternalId,
+        pairHolderExternalId,
+        pairRivalExternalId,
+        policyExternalId,
+        policyParentExternalId,
+      ],
       },
     },
   });
@@ -198,9 +219,68 @@ test.beforeAll(async () => {
     data: { role: "ADMIN" },
   });
 
+  // I3 — seeded at SHOP_ID so the selling-policy boundary's shop scope (I2) is satisfied. An
+  // ordinary product and a composite parent, because §11's refusal is half of what the editor has
+  // to surface.
+  const policyProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: policyExternalId,
+      slug: policyExternalId,
+      name: `Admin Policy Product ${runId}`,
+      isPresent: true,
+      isActive: true,
+      syncedAt: new Date(),
+    },
+    select: { id: true },
+  });
+  policyProductId = policyProduct.id;
+
+  const policyParent = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: policyParentExternalId,
+      slug: policyParentExternalId,
+      name: `Admin Policy Set ${runId}`,
+      isPresent: true,
+      isActive: true,
+      syncedAt: new Date(),
+      variants: {
+        create: {
+          pancakeVariationId: `${policyParentExternalId}-parent`,
+          isPresent: true,
+          isActive: true,
+          syncedAt: new Date(),
+        },
+      },
+    },
+    select: { id: true, variants: { select: { id: true } } },
+  });
+  policyParentProductId = policyParent.id;
+
+  const policyComponent = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `${policyExternalId}-component`,
+      productId: policyProductId,
+      isPresent: true,
+      isActive: true,
+      syncedAt: new Date(),
+    },
+    select: { id: true },
+  });
+  // The component edge is what makes the parent a composite for §11's purposes.
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: policyParent.variants[0]!.id,
+      componentVariantId: policyComponent.id,
+      quantity: 1,
+      syncedAt: new Date(),
+    },
+  });
+
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
-    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1" },
+    env: { ...process.env, NEXT_TELEMETRY_DISABLED: "1", PANCAKE_SHOP_ID: String(SHOP_ID) },
     stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", captureServerOutput);
@@ -601,5 +681,89 @@ test("B5 a colliding SEO pair warns on a draft and is refused on publish through
     .toBe("PUBLISHED");
   await expect(page.getByText("Cảnh báo trùng SEO.")).toHaveCount(0);
 
+  expect(browserErrors).toEqual([]);
+});
+
+/**
+ * I3 — the admin surface for ADR 0014 §5's selling mode and negative allowance.
+ *
+ * Driven through the real form rather than the service, because the thing worth proving here is the
+ * one a unit test cannot reach: that an operator's choice actually lands in `ProductSellingPolicy`,
+ * and that the §11 composite refusal reaches them as a readable reason instead of a silent no-op.
+ */
+test("I3 the selling policy editor writes an owner's allowance and refuses it on a set", async ({
+  page,
+  context,
+}) => {
+  const browserErrors: string[] = [];
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
+  await watchDocumentTitle(page);
+  await context.addCookies(adminCookies);
+  const editorPath = `/admin/products/${encodeURIComponent(policyProductId)}`;
+  await page.goto(`${BASE_URL}${editorPath}`, { waitUntil: "networkidle" });
+
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Chế độ bán và hạn mức âm" }),
+  ).toBeVisible();
+
+  // Unconfigured is a distinct state from configured-to-the-default (§5.1), and the operator is
+  // told which one they are looking at.
+  await expect(page.getByText("Trạng thái: chưa cấu hình (đang dùng mặc định).")).toBeVisible();
+
+  // The three modes are one mutually exclusive choice, grouped so a screen reader announces the
+  // question before the options.
+  const modeGroup = page.getByRole("group", { name: "Chế độ bán" });
+  await expect(modeGroup).toBeVisible();
+  await expect(modeGroup.getByRole("radio")).toHaveCount(3);
+  await expect(page.getByRole("radio", { name: /Tiêu chuẩn/ })).toBeChecked();
+
+  const limit = page.getByRole("spinbutton", { name: "Hạn mức âm" });
+  await expect(limit).toHaveValue("-20");
+
+  await page.getByRole("radio", { name: /Cho phép bán âm/ }).check();
+  await limit.fill("-5");
+  await page.getByRole("button", { name: "Lưu chế độ bán" }).click();
+
+  await expect(page.getByRole("status")).toContainText("Đã lưu chế độ bán của sản phẩm.");
+  // The database is the assertion. A form that reported success without writing would pass every
+  // visible check above.
+  expect(
+    await prisma.productSellingPolicy.findUniqueOrThrow({
+      where: { productId: policyProductId },
+    }),
+  ).toMatchObject({ sellingMode: "OVERSELL", negativeStockLimit: -5 });
+  await expect(
+    page.getByText("Trạng thái: đã cấu hình — Cho phép bán âm, hạn mức -5."),
+  ).toBeVisible();
+
+  // Clearing returns the product to unconfigured, which §5.1 keeps distinct from storing the
+  // default values — without this an operator could never undo a review.
+  await page.getByRole("button", { name: "Xóa cấu hình, quay lại mặc định" }).click();
+  // Waiting on the status banner would match the one the SAVE above already left on the page, and
+  // the database check would then run before the clear had landed. The unconfigured line is the
+  // state that only exists after this click, so it is what the wait has to be anchored to.
+  await expect(page.getByText("Trạng thái: chưa cấu hình (đang dùng mặc định).")).toBeVisible();
+  expect(await prisma.productSellingPolicy.count({ where: { productId: policyProductId } })).toBe(0);
+
+  // §11 on the composite parent: the refusal has to arrive as a reason an operator can act on.
+  // Storing intent that silently never takes effect is what I2 refuses, and this is where they see
+  // it happen.
+  const parentEditorPath = `/admin/products/${encodeURIComponent(policyParentProductId)}`;
+  await page.goto(`${BASE_URL}${parentEditorPath}`, { waitUntil: "networkidle" });
+  await page.getByRole("radio", { name: /Đặt trước/ }).check();
+  await page.getByRole("button", { name: "Lưu chế độ bán" }).click();
+
+  // Scoped to this editor's own region: the parent's page carries other alerts, and a page-wide
+  // match would both break on strict mode and stop proving WHICH surface reported the refusal.
+  const policyRegion = page.getByRole("region", { name: "Chế độ bán và hạn mức âm" });
+  await expect(policyRegion.getByRole("alert")).toContainText("Sản phẩm này là set");
+  expect(
+    await prisma.productSellingPolicy.count({ where: { productId: policyParentProductId } }),
+  ).toBe(0);
+
+  await expectSettledDocumentTitle(page);
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
 });
