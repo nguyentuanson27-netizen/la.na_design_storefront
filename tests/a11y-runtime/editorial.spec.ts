@@ -343,7 +343,7 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   }
   await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
-  await expect(mobileNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
 
   // Verify Escape closes mobile nav and restores focus to hamburger trigger

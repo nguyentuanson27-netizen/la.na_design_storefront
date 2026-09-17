@@ -405,7 +405,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </div>
 
           {/* Primary Mobile Navigation Links */}
-          <nav className="mt-6 flex-1" aria-label="Điều hướng di động">
+          <nav className="mobile-menu flex-1 px-6 py-6" aria-label="Điều hướng chính trên di động">
             <div className="space-y-4">
               {primary.map((item) => {
                 const hasChildren = item.children && item.children.length > 0;
