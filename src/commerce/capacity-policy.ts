@@ -23,6 +23,66 @@ export type SellingMode = (typeof SELLING_MODES)[number];
 /** Master spec §27. Product-level, enforced independently per variant. */
 export const DEFAULT_NEGATIVE_STOCK_LIMIT = -20;
 
+/** A product with no stored policy sells as `STANDARD`. See `resolveSellingPolicy`. */
+export const DEFAULT_SELLING_MODE: SellingMode = "STANDARD";
+
+/** The stored shape, as `ProductSellingPolicy` would return it (ADR 0014 §13). */
+export type StoredSellingPolicy = Readonly<{
+  sellingMode: SellingMode;
+  negativeStockLimit: number;
+}>;
+
+export type ResolvedSellingPolicy = Readonly<{
+  sellingMode: SellingMode;
+  negativeStockLimit: number;
+  /** True when no stored row existed and the defaults were applied. */
+  isDefault: boolean;
+}>;
+
+/**
+ * The canonical selling policy for a product.
+ *
+ * **Absence is the common case, and it is not covered by a column default.** A column default only
+ * fires when a row is inserted; a product with no `ProductSellingPolicy` row has no defaults applied
+ * to it at all, because the database never invents the row. So "no backfill" is only safe if exactly
+ * one resolver owns the missing-row answer and every consumer goes through it — otherwise each
+ * call site invents its own, and they will disagree.
+ *
+ * No row means `STANDARD` with `DEFAULT_NEGATIVE_STOCK_LIMIT`, which reproduces today's behaviour
+ * exactly. `isDefault` is reported so an admin surface can distinguish "not configured" from
+ * "configured to the same values as the default" without a second query.
+ *
+ * A stored row is returned **as stored**, including values `evaluateVariantCapacity` will refuse
+ * (a positive or fractional limit). Substituting the default for a bad stored value would silently
+ * replace the limit the owner set with one they never approved; refusing the sale and naming
+ * `invalid-limit` sends the operator to the row that is actually wrong.
+ *
+ * An unrecognized `sellingMode` is the one case that falls back rather than passing through: there
+ * is no owner intent to preserve in a value that names no mode, so it resolves to the most
+ * restrictive one. The stored limit is still preserved, so nothing about it is silently widened.
+ */
+export function resolveSellingPolicy(
+  stored: StoredSellingPolicy | null | undefined,
+): ResolvedSellingPolicy {
+  if (stored === null || stored === undefined) {
+    return Object.freeze({
+      sellingMode: DEFAULT_SELLING_MODE,
+      negativeStockLimit: DEFAULT_NEGATIVE_STOCK_LIMIT,
+      isDefault: true,
+    });
+  }
+
+  const sellingMode = SELLING_MODES.includes(stored.sellingMode)
+    ? stored.sellingMode
+    : DEFAULT_SELLING_MODE;
+
+  return Object.freeze({
+    sellingMode,
+    negativeStockLimit: stored.negativeStockLimit,
+    isDefault: false,
+  });
+}
+
 export type CapacityDecisionReason =
   | "capacity-available"
   | "invalid-quantity"
@@ -136,7 +196,14 @@ export type ReservationState = (typeof RESERVATION_STATES)[number];
 
 /**
  * Allowed transitions. Terminal states have none, which is what makes double-release and
- * double-commit unrepresentable in the state machine rather than merely unlikely.
+ * double-commit unrepresentable *in this state machine* rather than merely unlikely.
+ *
+ * That scope is the whole caveat, and it is worth stating plainly: the database cannot enforce it.
+ * A Prisma enum constrains the *value* of a column, and the ADR 0014 §13 CHECK constraints are all
+ * intra-row, so nothing in SQL prevents an `UPDATE` from moving a row `COMMITTED -> RESERVED`. The
+ * transition rule is only real if every write goes through a guarded update — `UPDATE ... WHERE id
+ * = $1 AND state = $2`, asserting exactly one row was affected — with this predicate choosing `$2`.
+ * An unguarded `UPDATE ... WHERE id = $1` silently bypasses everything here.
  *
  * `UNKNOWN` is reachable only from `SUBMITTING` (the write may or may not have landed) and leaves
  * only by reconciliation proving one way or the other. There is deliberately no `UNKNOWN -> UNKNOWN`

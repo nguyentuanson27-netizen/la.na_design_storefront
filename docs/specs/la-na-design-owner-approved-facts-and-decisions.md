@@ -337,6 +337,22 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   `ProductSellingPolicy` and `VariantCapacityReservation`, which are **not** covered by the
   2026-09-16 five-model Checkpoint B approval and need separate authorization before any migration.
 
+  **Design direction reviewed 2026-09-17.** The owner approved the design direction of
+  `ProductSellingPolicy` — a website-owned policy table, never overwritten by Pancake catalog sync,
+  following the existing `ProductMerchantFacts` pattern of keeping website-owned facts out of the
+  mirror — and required four corrections, all now applied: (1) a canonical resolver owns the
+  missing-row answer (`STANDARD`, `−20`) and is tested, because a column default never fires for a
+  row that does not exist; (2) `onDelete: Restrict` on the order relation, not `Cascade`, so a
+  hard-deleted order cannot silently free a live hold; (3) biconditional CHECK constraints plus
+  mutual exclusion of `committedAt`/`releasedAt`; (4) ADR §6 rewritten to lock an always-present
+  `VariantMirror` row before reading the ledger — the previous rule locked ledger rows keyed by
+  `variantId`, which locks nothing on an empty ledger and let the first two concurrent checkouts
+  both read zero. **This remains a design-direction review only: no migration is authorized.**
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  reviewing the ADR 0014 §13 summary.
+
   Provenance for both: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR).
 - **Checkpoint B — G1 Merchant + structured-data mapping** — **accepted 2026-09-17**. The owner

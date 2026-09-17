@@ -8,12 +8,15 @@ import {
   SELLING_MODES,
   canTransition,
   capacityFloorForMode,
+  DEFAULT_SELLING_MODE,
   evaluateMultiLineReservation,
   evaluateVariantCapacity,
   isTerminalReservationState,
   reservationHoldsCapacity,
+  resolveSellingPolicy,
   type ReservationState,
   type SellingMode,
+  type StoredSellingPolicy,
   type VariantCapacityInput,
 } from "../../src/commerce/capacity-policy.ts";
 
@@ -299,4 +302,95 @@ test("G5 every state's transitions are declared, and no undeclared edge is allow
 
   // An unknown state name must not resolve to a transition.
   assert.equal(canTransition("NOT_A_STATE" as ReservationState, "COMMITTED"), false);
+});
+
+test("G5 a product with no stored policy resolves to STANDARD at the default limit", () => {
+  // The whole point of "no backfill": a product with no `ProductSellingPolicy` row must still have
+  // one canonical answer. A column default does not supply it — the row does not exist, so no
+  // default ever fires.
+  for (const stored of [null, undefined]) {
+    const resolved = resolveSellingPolicy(stored);
+
+    assert.equal(resolved.sellingMode, "STANDARD");
+    assert.equal(resolved.sellingMode, DEFAULT_SELLING_MODE);
+    assert.equal(resolved.negativeStockLimit, DEFAULT_NEGATIVE_STOCK_LIMIT);
+    assert.equal(resolved.isDefault, true);
+  }
+});
+
+test("G5 the resolved default reproduces today's behaviour at the capacity gate", () => {
+  // Not just the right constants: the resolved policy, fed to the gate, must refuse to go below 0
+  // for a product nobody has configured.
+  const resolved = resolveSellingPolicy(null);
+  const base = {
+    mirroredStock: 1,
+    activeReservedQuantity: 0,
+    isComposite: false,
+    sellingMode: resolved.sellingMode,
+    negativeStockLimit: resolved.negativeStockLimit,
+  } as const;
+
+  assert.equal(evaluateVariantCapacity(base, 1).allowed, true);
+
+  const overshoot = evaluateVariantCapacity(base, 2);
+  assert.equal(overshoot.allowed, false);
+  assert.equal(overshoot.reason, "standard-would-go-negative");
+  assert.equal(overshoot.floor, 0);
+});
+
+test("G5 a stored policy is returned as stored", () => {
+  const stored: StoredSellingPolicy = { sellingMode: "PREORDER", negativeStockLimit: -5 };
+  const resolved = resolveSellingPolicy(stored);
+
+  assert.equal(resolved.sellingMode, "PREORDER");
+  assert.equal(resolved.negativeStockLimit, -5);
+  assert.equal(resolved.isDefault, false);
+});
+
+test("G5 a stored policy matching the defaults is still not reported as default", () => {
+  // "Not configured" and "configured to the same values" must stay distinguishable, or an admin
+  // surface cannot show which products an operator has actually reviewed.
+  const resolved = resolveSellingPolicy({
+    sellingMode: "STANDARD",
+    negativeStockLimit: DEFAULT_NEGATIVE_STOCK_LIMIT,
+  });
+
+  assert.equal(resolved.isDefault, false);
+});
+
+test("G5 an invalid stored limit is passed through and refused, never replaced by the default", () => {
+  // Substituting the default here would silently sell a product under a limit the owner never set.
+  for (const negativeStockLimit of [5, -2.5]) {
+    const resolved = resolveSellingPolicy({ sellingMode: "OVERSELL", negativeStockLimit });
+
+    assert.equal(resolved.negativeStockLimit, negativeStockLimit);
+
+    const decision = evaluateVariantCapacity(
+      {
+        mirroredStock: 10,
+        activeReservedQuantity: 0,
+        isComposite: false,
+        sellingMode: resolved.sellingMode,
+        negativeStockLimit: resolved.negativeStockLimit,
+      },
+      1,
+    );
+
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.reason, "invalid-limit");
+  }
+});
+
+test("G5 an unrecognized stored mode falls back to the most restrictive mode", () => {
+  // No owner intent survives in a value that names no mode, so it resolves closed. The stored limit
+  // is still preserved, so nothing about the allowance is silently widened.
+  const resolved = resolveSellingPolicy({
+    sellingMode: "NOT_A_MODE" as SellingMode,
+    negativeStockLimit: -7,
+  });
+
+  assert.equal(resolved.sellingMode, "STANDARD");
+  assert.ok(SELLING_MODES.includes(resolved.sellingMode));
+  assert.equal(resolved.negativeStockLimit, -7);
+  assert.equal(capacityFloorForMode(resolved.sellingMode, resolved.negativeStockLimit), 0);
 });

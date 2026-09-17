@@ -128,6 +128,9 @@ Two properties are structural rather than defensive:
 
 - **`COMMITTED` and `RELEASED` are terminal.** They have no outgoing edges, so double-commit and
   double-release are transitions that *do not exist* — not races to be detected after the fact.
+  This holds *in the state machine*, which is the whole scope of the claim: the database cannot
+  enforce it, so §6.4 requires every transition to be a guarded compare-and-set with this table
+  choosing the expected state.
 - **`UNKNOWN` has no self-loop, no edge back to `SUBMITTING`, and no timeout edge.** Nothing can
   retry or age an ambiguous hold into releasing. It leaves only by reconciliation proving the order
   exists (`COMMITTED`) or proving it absent (`RELEASED`).
@@ -168,31 +171,140 @@ hard limit the owner set. Encoded in `reservationHoldsCapacity()`.
 Turning oversell off while stock is negative **preserves** the negative value; it does not reset to
 zero, and standard rules then block new sales until stock is sellable again (§29).
 
+### 5.1 Resolving the policy when no row exists
+
+Almost every product will have no `ProductSellingPolicy` row, because §14 permits no backfill. That
+makes the missing-row answer part of the contract, not an edge case — and it is **not** supplied by
+the column defaults in §13.
+
+A column default fires when a row is inserted. A product with no row has had no default applied to
+it, because the database never invents the row. Saying "no backfill is needed, the defaults cover
+it" conflates the two and is simply wrong; the earlier draft of §14 said exactly that, and this
+section is the correction.
+
+One resolver owns the answer, and every consumer goes through it:
+
+> **No `ProductSellingPolicy` row ⇒ `STANDARD`, `negativeStockLimit = −20`.**
+
+Shipped as `resolveSellingPolicy()` in `src/commerce/capacity-policy.ts` and pinned by
+`tests/domain/capacity-policy.test.ts`, which asserts the resolved default not only carries the
+right constants but refuses to go below `0` at the gate — today's behaviour exactly. Without a
+single resolver, each call site invents its own missing-row answer and they will disagree.
+
+Three details the tests also pin:
+
+- `isDefault` distinguishes "not configured" from "configured to the same values as the default", so
+  an admin surface can show which products an operator has actually reviewed.
+- A stored row is returned **as stored**, including a limit `evaluateVariantCapacity()` will refuse.
+  Substituting the default for a bad stored value would sell the product under a limit the owner
+  never set; refusing with `invalid-limit` sends the operator to the row that is wrong.
+- An unrecognized `sellingMode` resolves to `STANDARD` — no owner intent survives in a value that
+  names no mode — while the stored limit is preserved, so no allowance is silently widened.
+
+**Why a separate table rather than columns on `ProductMirror`.** This follows the pattern the schema
+already uses: `ProductMerchantFacts` deliberately keeps website-owned merchant facts out of the
+Pancake mirror, keyed `productId @unique` with `onDelete: Cascade`. Selling policy is website-owned
+in the same sense — master spec §27 requires it never be overwritten by catalog sync — so it takes
+the same shape rather than inventing a second convention.
+
 ---
 
 ## 6. Transaction and locking strategy
 
-Not "use a transaction". The concrete rule:
+### 6.1 The empty-ledger race this rule exists to close
 
-1. One `SERIALIZABLE`-or-row-locked transaction per order commit.
-2. Inside it, take `SELECT … FOR UPDATE` on the reservation ledger rows **keyed by `variantId`**,
-   ordered by `variantId` ascending.
-3. Recompute `activeReservedQuantity` *inside* that transaction — never from a value read before it.
-4. Evaluate `evaluateMultiLineReservation()`.
-5. Insert all reservation rows, or none.
+An earlier draft of this section said: lock the reservation ledger rows keyed by `variantId`, then
+sum them. **That is wrong, and wrong in exactly the case that matters most.**
 
-**Why the invariant holds under interleaving.** The quantity `activeReservedQuantity` is derived by
-reading rows that the transaction has locked. A second transaction wanting the same variant blocks
-at step 2 until the first commits or rolls back, so it can never read a pre-insert value. Therefore
-no two transactions can both observe the same free unit. The last-unit and at-the-limit cases are
-pinned by `tests/domain/capacity-policy.test.ts`, which models exactly that: the second caller sees
-the first caller's hold in `activeReservedQuantity`.
+`SELECT … FOR UPDATE` locks the rows it returns. A variant nobody has reserved yet has *no* ledger
+rows, so the statement returns zero rows and locks nothing at all. Two first-ever checkouts for that
+variant therefore both take the lock successfully-but-vacuously, both compute
+`activeReservedQuantity = 0`, both pass the predicate, and both insert. The claim that "a second
+transaction blocks until the first commits" is false whenever the ledger is empty for that variant —
+which is the state of every variant before its first sale.
 
-**Deadlock.** Locks are taken in ascending `variantId` order by every caller, so two multi-line
-orders touching the same variants acquire them in the same sequence and cannot form a cycle. Under
-`SERIALIZABLE`, serialization failures are retried with bounded attempts and jittered backoff; a
+This is the same shape of error review `5229201195` found in ADR 0013: a constraint that reads as
+enforcement but does not constrain the case it is invoked for. A row lock can only serialize
+transactions around a row that **already exists**.
+
+### 6.2 The rule
+
+Lock an identity that always exists, *then* read the ledger:
+
+1. One transaction per order commit. `READ COMMITTED` is sufficient; correctness comes from the
+   explicit lock in step 2, not from the isolation level.
+2. Merge the basket to one entry per variant (§7), then take
+   `SELECT id FROM "VariantMirror" WHERE id = ANY($1) ORDER BY id FOR UPDATE`.
+   `VariantMirror` rows always exist for anything reservable — `VariantCapacityReservation.variantId`
+   references them, and §13 makes that reference `onDelete: Restrict`, so there is no variant that
+   can be reserved but not locked.
+3. Assert the lock statement returned **exactly one row per requested `variantId`**. A missing
+   variant is a fail-closed refusal, never a silently skipped lock.
+4. *Now* read and sum the active reservation rows for those variants, inside the same transaction
+   and after the lock is held. Recompute `activeReservedQuantity` here — never from a value read
+   before the transaction.
+5. Evaluate `evaluateMultiLineReservation()`.
+6. Insert all reservation rows, or none.
+
+**Why the invariant now holds under interleaving.** Every caller must hold the `VariantMirror` row
+lock for a variant before it may read or insert that variant's ledger rows. The lock target exists
+unconditionally, so the second transaction genuinely blocks at step 2 — including, and especially,
+when the ledger is empty. It resumes only after the first has committed or rolled back, and under
+`READ COMMITTED` its step-4 read takes a fresh snapshot, so it observes the first transaction's
+inserted holds. No two transactions can both observe the same free unit. The last-unit and
+at-the-limit arithmetic is pinned by `tests/domain/capacity-policy.test.ts`; what this section adds
+is the guarantee that the second caller's `activeReservedQuantity` actually includes the first
+caller's hold.
+
+A transaction-level advisory lock (`pg_advisory_xact_lock`) would also work and would not contend
+with catalog sync. It is not chosen because `variantId` is a `cuid` string and advisory locks take a
+`bigint`, so it would need a hash — and a hash collision silently serializes two unrelated variants
+or, worse, invites a keyspace scheme nobody maintains. A real row needs no such mapping.
+
+**A higher isolation level is compatible but not load-bearing.** Under `REPEATABLE READ` or
+`SERIALIZABLE` the transaction's snapshot is taken before it blocks, so a transaction that waited on
+the lock may fail with a serialization error rather than read the newer rows. That is safe — it
+aborts instead of overselling — but it means those levels require the retry loop below, whereas
+`READ COMMITTED` does not.
+
+**Deadlock.** The lock statement orders by `id`, and PostgreSQL applies `FOR UPDATE` after the sort,
+so every caller acquires the same variants in the same ascending sequence and no cycle can form.
+Serialization failures and lock timeouts are retried with bounded attempts and jittered backoff; a
 retry re-enters at step 1 and re-reads everything, and because §3 keys reservations to the order it
 cannot double-reserve.
+
+### 6.3 What the lock does *not* cover
+
+Stated plainly rather than left to be assumed:
+
+- **It serializes local capacity decisions against each other. It does not freeze the Pancake
+  mirror.** `WarehouseStock` is a different table, and catalog sync may commit a new `mirroredStock`
+  between step 4 and step 6. The local gate's guarantee is that two *local* checkouts cannot both
+  spend the same unit; it was never that the absolute floor holds against a sale Pancake made
+  elsewhere. G2 established Pancake will not enforce that for us, and §4.1 plus §10 reconciliation
+  are what absorb mirror movement.
+- **It does not enforce the state machine.** See §6.4.
+
+### 6.4 State transitions require a guarded update
+
+The `ReservationState` enum constrains the value of a column. The §13 CHECK constraints are all
+intra-row. Neither prevents an `UPDATE` from moving a row `COMMITTED → RESERVED`, so §4's terminality
+is a property of *this specification and the service that implements it* — not something the schema
+makes unrepresentable.
+
+Every transition must therefore be a compare-and-set:
+
+```sql
+UPDATE "VariantCapacityReservation"
+   SET state = $new, ...
+ WHERE id = $1
+   AND state = $expected;
+```
+
+with the affected-row count asserted to be exactly `1`, and `$expected` drawn from
+`RESERVATION_TRANSITIONS`. An affected count of `0` means another worker moved the row first and is
+a conflict to re-read, never a no-op to ignore. An unguarded `UPDATE … WHERE id = $1` bypasses the
+entire state machine and is prohibited.
 
 ---
 
@@ -288,10 +400,26 @@ A later policy change must not rewrite historical order truth. This mirrors the 
 
 ---
 
-## 13. Proposed persistence for I1 — pending Checkpoint B
+## 13. Proposed persistence for I1 — reviewed 2026-09-17, migration still unauthorized
 
 **Not created or run by this ADR.** The G4 Checkpoint B approval (2026-09-16) covers five
 merchandising models and **does not** cover anything below; these need their own authorization.
+
+**Owner review, 2026-09-17.** The repository owner reviewed this section and approved the *design
+direction* of `ProductSellingPolicy`, with four required corrections, all applied here:
+
+| # | Finding | Where it is fixed |
+|---|---|---|
+| 1 | "No backfill because the column default covers it" is false — a default never fires for a row that does not exist. A canonical resolver must own the missing-row answer and be tested. | §5.1, `resolveSellingPolicy()`, §14 |
+| 2 | `onDelete: Cascade` on the order would let a hard-deleted `OrderMirror` silently free capacity, including a live `UNKNOWN` hold — the very thing §15 prohibits. | `Restrict` on both relations, below |
+| 3 | One-way CHECK implications still admit `RESERVED` with a `committedAt`, or a row that is both committed and released. | Biconditional CHECKs below |
+| 4 | §6 locked ledger rows keyed by `variantId`, which locks nothing when that variant has no reservations yet — so the first two concurrent checkouts could both read `0` and both insert. | §6.1–§6.2, rewritten to lock `VariantMirror` |
+
+Finding 4 was a genuine correctness blocker, not a wording problem: ADR 0014 names this ledger the
+authoritative gate, and the gate did not close on an empty ledger.
+
+**The migration is still not authorized.** Approving the design direction is not approval to write
+or run it; §14 states what that authorization would cover.
 
 ```prisma
 enum SellingMode {
@@ -330,7 +458,7 @@ model VariantCapacityReservation {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  order   OrderMirror   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order   OrderMirror   @relation(fields: [orderId], references: [id], onDelete: Restrict)
   variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Restrict)
 
   @@unique([orderId, variantId])
@@ -345,8 +473,18 @@ Notes on the shape:
   backstop from §7.
 - `@@index([variantId, state])` serves the hot path: summing active holds for one variant under lock.
 - `@@index([state, updatedAt])` serves the reconciliation sweep and the stuck-`UNKNOWN` operator view.
-- `onDelete: Restrict` on the variant is deliberate — a variant with live holds must not vanish and
-  silently free capacity.
+- `onDelete: Restrict` on **both** relations is deliberate, and the order side is the one that is
+  easy to get wrong. An earlier draft had `Cascade` on the order, reasoning from ownership: a
+  reservation belongs to an order, so deleting the order should take its reservations with it. But
+  this table is a capacity ledger and an audit record, not a child collection. A hard-delete of an
+  `OrderMirror` would cascade away holds that are still counting — an `UNKNOWN` hold above all,
+  which by §8 must never be released except by reconciliation — and silently free capacity through
+  a path nobody reviewed. That is the same outcome §15 prohibits when it rules out dropping the
+  ledger as a rollback. `Restrict` makes the deletion fail loudly instead, so an operator must
+  resolve the reservations first.
+- `onDelete: Restrict` on the variant is deliberate for the same reason — a variant with live holds
+  must not vanish and silently free capacity. §6.2 additionally depends on the variant row existing
+  for every reservable variant, because that row is the lock target.
 - `Int`, not `Float`: capacity is a count. `WarehouseStock.quantity` is `Float` today, which is a
   pre-existing mirror shape; the ledger does not inherit it.
 
@@ -356,12 +494,40 @@ would silently reinterpret stock nobody approved — so the variant stops sellin
 the mirror rather than the shopper's request.
 
 Additional `CHECK` constraints proposed, all intra-row so the database genuinely can enforce them
-(unlike the cross-table taxonomy case ADR 0013 §4.5 documents):
+(unlike the cross-table taxonomy case ADR 0013 §4.5 documents).
 
-- `quantity > 0`;
-- `negativeStockLimit <= 0`;
-- `committedAt IS NOT NULL` when `state = 'COMMITTED'`;
-- `releasedAt IS NOT NULL` when `state = 'RELEASED'`.
+The implications must be **biconditionals**, not one-way. An earlier draft wrote only the forward
+direction, which still admits rows that are plainly nonsense: `RESERVED` carrying a `committedAt`,
+or a `COMMITTED` row that also has a `releasedAt` and so claims both outcomes at once. Required
+semantics:
+
+```text
+quantity > 0
+negativeStockLimit <= 0                     -- on ProductSellingPolicy
+
+state = 'COMMITTED'  ⇔  committedAt IS NOT NULL
+state = 'RELEASED'   ⇔  releasedAt  IS NOT NULL
+
+NOT (committedAt IS NOT NULL AND releasedAt IS NOT NULL)
+```
+
+As SQL on `VariantCapacityReservation`:
+
+```sql
+CHECK (quantity > 0),
+CHECK ((state = 'COMMITTED') = (committedAt IS NOT NULL)),
+CHECK ((state = 'RELEASED')  = (releasedAt  IS NOT NULL)),
+CHECK (NOT (committedAt IS NOT NULL AND releasedAt IS NOT NULL))
+```
+
+The biconditional form also does the reverse work: a `RESERVED`, `SUBMITTING` or `UNKNOWN` row is
+now forbidden from carrying either timestamp, so a stale `committedAt` cannot survive into a
+non-terminal state and be read later as evidence of a commit that never happened.
+
+**These constraints still do not make the state machine safe.** They are per-row predicates; they
+say nothing about the transition between two versions of a row, so `COMMITTED → RESERVED` remains
+perfectly representable in SQL as long as the new row satisfies the CHECKs. Enforcement of the
+transition itself is §6.4's guarded compare-and-set, in the service.
 
 **What the database still cannot enforce:** the capacity arithmetic itself. No constraint can express
 "the sum of active holds plus mirrored stock stays above a per-product limit", because it spans
@@ -372,9 +538,14 @@ enforced there — stated plainly here rather than claimed as a schema guarantee
 
 ## 14. Migration requirements
 
-Three additive models (two enums + two tables) and back-relations on `ProductMirror`, `OrderMirror`
-and `VariantMirror`. No existing column changes meaning. No backfill: every existing product is
-`STANDARD` with limit `−20` by column default, which is exactly today's behaviour.
+Two enums and two tables, all additive, plus back-relations on `ProductMirror`, `OrderMirror` and
+`VariantMirror`. No existing column changes meaning.
+
+**No backfill**, and the reason is §5.1's resolver, not the column defaults. A default only applies
+to a row being inserted; a product with no `ProductSellingPolicy` row never has one applied. What
+makes "no backfill" safe is that `resolveSellingPolicy()` owns the missing-row answer — `STANDARD`
+at limit `−20`, which is exactly today's behaviour — and every consumer goes through it.
+`CHECK (negativeStockLimit <= 0)` belongs on `ProductSellingPolicy`.
 
 **These are NOT covered by the 2026-09-16 Checkpoint B approval** and require separate owner
 authorization before any migration is written.
@@ -385,7 +556,8 @@ authorization before any migration is written.
 
 The feature is off by default and reversible without a down-migration:
 
-- with no `ProductSellingPolicy` row, a product is `STANDARD` — today's behaviour exactly;
+- with no `ProductSellingPolicy` row, a product is `STANDARD` — today's behaviour exactly, by §5.1's
+  resolver rather than by any column default;
 - setting every product to `STANDARD` disables oversell and preorder while preserving negative stock
   values and the ledger's history;
 - the reservation gate itself can be disabled by a server-side flag, following the existing
