@@ -18,6 +18,7 @@ import { expect, test } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3221;
@@ -145,6 +146,7 @@ test("U14 the promotion admin lists campaigns and refuses activation with a type
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin/promotions`, { waitUntil: "networkidle" });
 
@@ -154,6 +156,7 @@ test("U14 the promotion admin lists campaigns and refuses activation with a type
   // The gate is off, so the operator is told before they try.
   await expect(page.getByText("Kích hoạt khuyến mãi đang tắt")).toBeVisible();
 
+  await expectSettledDocumentTitle(page);
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);
 
@@ -184,6 +187,7 @@ test("U14 the promotion admin lists campaigns and refuses activation with a type
 });
 
 test("U14 the surface stays usable at a narrow mobile viewport", async ({ page, context }) => {
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/admin/promotions`, { waitUntil: "networkidle" });
@@ -195,6 +199,7 @@ test("U14 the surface stays usable at a narrow mobile viewport", async ({ page, 
   );
   expect(documentOverflows).toBe(false);
 
+  await expectSettledDocumentTitle(page);
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);
 });
@@ -206,18 +211,21 @@ test("U14 P5b create and edit campaign form renders with zero Axe violations", a
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin/promotions?new=1`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("textbox", { name: "Tên chiến dịch" })).toBeVisible();
   await expect(page.getByRole("combobox", { name: "Loại chiến dịch" })).toBeVisible();
 
+  await expectSettledDocumentTitle(page);
   const newFormAxe = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(newFormAxe.violations).toEqual([]);
 
   await page.goto(`${BASE_URL}/admin/promotions?edit=${campaignId}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { name: new RegExp(`Chỉnh sửa: ${campaignName}`), level: 2 })).toBeVisible();
 
+  await expectSettledDocumentTitle(page);
   const editFormAxe = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(editFormAxe.violations).toEqual([]);
 
@@ -231,6 +239,7 @@ test("U14 P5b product admin displays related campaign summary and link with zero
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin/products/${testProductId}`, { waitUntil: "networkidle" });
 
@@ -238,6 +247,7 @@ test("U14 P5b product admin displays related campaign summary and link with zero
   await expect(page.getByText(campaignName)).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả khuyến mãi →" })).toBeVisible();
 
+  await expectSettledDocumentTitle(page);
   const accessibility = await new AxeBuilder({ page })
     .include("section[aria-labelledby='product-promotions-heading']")
     .withTags(BUYER_AXE_TAGS)

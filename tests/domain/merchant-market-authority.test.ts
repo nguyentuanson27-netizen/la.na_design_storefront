@@ -48,6 +48,7 @@ function createCandidateProduct(): MerchantCandidateProduct {
         basePriceVnd: 450_000,
         isDiscounted: false,
         purchasable: true,
+        isPreorderSale: false,
         unavailableReason: null,
         kindKey: null,
         kindLabel: null,

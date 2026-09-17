@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3216;
@@ -274,6 +275,7 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
     if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
   });
 
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin?q=${encodeURIComponent(runId)}`, { waitUntil: "networkidle" });
 
@@ -528,9 +530,10 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   // The bulk action's revalidation re-streams the dynamic head — the root layout's
   // generateMetadata awaits connection() — so the document title is briefly absent afterwards and
-  // Axe can scan that transient state instead of the settled page. Same guard checkout.spec.ts
-  // already applies before its own scan. A title that never arrives still fails here.
-  await expect(page).toHaveTitle(/.+/);
+  // Axe can scan that transient state instead of the settled page. The one-shot toHaveTitle that
+  // used to stand here observed a point in time and let e51d6cd's run land in the gap anyway; this
+  // waits for the title to have been continuously present. A title that never arrives still fails.
+  await expectSettledDocumentTitle(page);
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);

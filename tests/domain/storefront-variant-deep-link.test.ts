@@ -27,6 +27,7 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     basePriceVnd: 890_000,
     isDiscounted: false,
     purchasable: true,
+    isPreorderSale: false,
     unavailableReason: null,
     kindKey: null,
     kindLabel: null,

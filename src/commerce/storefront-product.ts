@@ -1,3 +1,9 @@
+import {
+  DEFAULT_NEGATIVE_STOCK_LIMIT,
+  resolveVariantSellability,
+  type SellingMode,
+} from "./capacity-policy.ts";
+
 export type StorefrontVariantFacts = {
   /** Internal mutation/authorization identity. Never a vendor-facing external id. */
   id: string;
@@ -48,6 +54,12 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
   basePriceVnd: number | null;
   isDiscounted: boolean;
   purchasable: boolean;
+  /**
+   * Master spec §30. True only for a `PREORDER` variant that is purchasable but out of ready stock,
+   * so a surface can render `Đặt trước` without re-deriving the rule — and never for a variant the
+   * shopper cannot buy.
+   */
+  isPreorderSale: boolean;
   unavailableReason: StorefrontVariantUnavailableReason | null;
 };
 
@@ -83,6 +95,7 @@ export type StorefrontSelectableOption = Pick<
   | "basePriceVnd"
   | "isDiscounted"
   | "purchasable"
+  | "isPreorderSale"
   | "unavailableReason"
 >;
 
@@ -173,7 +186,7 @@ export function toStorefrontSelectableOptions(
   return options.map((
     {
       id, pancakeVariationId, color, size, price, basePriceVnd, isDiscounted,
-      purchasable, unavailableReason,
+      purchasable, isPreorderSale, unavailableReason,
     },
   ) => ({
     id,
@@ -184,13 +197,42 @@ export function toStorefrontSelectableOptions(
     basePriceVnd,
     isDiscounted,
     purchasable,
+    isPreorderSale,
     unavailableReason,
   }));
 }
 
+/**
+ * The product-level facts the capacity rule needs and a variant row does not carry: the selling
+ * policy `resolveSellingPolicy()` returns, plus whether this product is a composite parent.
+ *
+ * `isComposite` is here rather than hard-coded at the call site because ADR 0014 refuses `OVERSELL`
+ * and `PREORDER` for a composite parent until component-aware atomic capacity exists. A display that
+ * assumed `false` would offer exactly what the commit boundary is going to refuse — the drift I4
+ * exists to remove — and it would do so silently, the moment I2 lets an operator set a policy.
+ *
+ * Optional, and its default is the approved missing-row answer — `STANDARD` floored at 0, not a
+ * composite — so every caller that has not been switched keeps exactly today's behaviour. The
+ * default cannot be wrong about `isComposite` today, because the restriction only bites for a
+ * non-`STANDARD` mode and the default is `STANDARD`; it is stated rather than omitted so that the
+ * caller which does know has somewhere to say it.
+ */
+export type StorefrontProductCapacity = Readonly<{
+  sellingMode: SellingMode;
+  negativeStockLimit: number;
+  isComposite: boolean;
+}>;
+
+export const STANDARD_STANDALONE_CAPACITY: StorefrontProductCapacity = Object.freeze({
+  sellingMode: "STANDARD",
+  negativeStockLimit: DEFAULT_NEGATIVE_STOCK_LIMIT,
+  isComposite: false,
+});
+
 export function buildStorefrontVariantOptions(
   variants: readonly StorefrontVariantFacts[],
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
+  productCapacity: StorefrontProductCapacity = STANDARD_STANDALONE_CAPACITY,
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -208,6 +250,16 @@ export function buildStorefrontVariantOptions(
 
   return normalized.map((variant) => {
     const { price, basePriceVnd, isDiscounted } = pricingRule(variant);
+    // Advisory: ADR 0014 §2 keeps the authoritative check at the commit boundary, so no reservation
+    // quantity is subtracted here. A page cannot bind a decision made later, and trusting it to is
+    // the oversell master spec §31 forbids.
+    const sellability = resolveVariantSellability({
+      mirroredStock: variant.sellableStock,
+      activeReservedQuantity: 0,
+      sellingMode: productCapacity.sellingMode,
+      negativeStockLimit: productCapacity.negativeStockLimit,
+      isComposite: productCapacity.isComposite,
+    });
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 
     if (!variant.size || (hasColorDimension && !variant.color)) {
@@ -216,7 +268,10 @@ export function buildStorefrontVariantOptions(
       (optionCounts.get(optionKey(variant.color, variant.size, hasColorDimension)) ?? 0) > 1
     ) {
       unavailableReason = "AMBIGUOUS_OPTION";
-    } else if (!Number.isFinite(variant.sellableStock) || variant.sellableStock <= 0) {
+    } else if (!sellability.sellable) {
+      // One authority for "may another unit be sold", shared with the reservation gate rather than
+      // re-derived here. Before I4 this read `sellableStock <= 0`, which silently assumed STANDARD
+      // for every product and would have hidden an OVERSELL variant the owner had allowed to −20.
       unavailableReason = "OUT_OF_STOCK";
     } else if (price === null) {
       unavailableReason = "PRICE_UNRESOLVED";
@@ -230,6 +285,7 @@ export function buildStorefrontVariantOptions(
       // discounted flag tied to a usable price stops an unavailable option rendering sale styling.
       isDiscounted: isDiscounted && unavailableReason === null,
       purchasable: unavailableReason === null,
+      isPreorderSale: unavailableReason === null && sellability.isPreorderSale,
       unavailableReason,
     };
   });

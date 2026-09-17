@@ -9,6 +9,7 @@ import { expect, test } from "@playwright/test";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3214;
@@ -163,6 +164,7 @@ test("admin product directory selects current-page products and bulk-updates sta
     if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
   });
 
+  await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
   await page.goto(`${BASE_URL}/admin?q=${encodeURIComponent(runId)}`, { waitUntil: "networkidle" });
 
@@ -225,9 +227,10 @@ test("admin product directory selects current-page products and bulk-updates sta
 
   // The scan runs just after a Server Action revalidation, while the dynamic head is re-streaming.
   // Axe can catch that window with no <title> yet and report a document-title violation that has
-  // nothing to do with the page's accessibility. Same guard as checkout.spec.ts and
-  // admin-bulk-operations.spec.ts: wait for the head to settle before scanning.
-  await expect(page).toHaveTitle(/.+/);
+  // nothing to do with the page's accessibility. This is the test that failed that way on main at
+  // af90e552 with the old one-shot toHaveTitle in place, which is why the guard now waits for the
+  // title to have been continuously present rather than present at one instant.
+  await expectSettledDocumentTitle(page);
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(BUYER_AXE_TAGS)
     .analyze();

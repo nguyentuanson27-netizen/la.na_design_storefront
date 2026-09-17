@@ -32,6 +32,9 @@ test("storefront client options omit stock and raw integration price fields", ()
       basePriceVnd: null,
       isDiscounted: false,
       purchasable: true,
+      // Master spec §30's `Đặt trước` marker. Same class as `isDiscounted`: a boolean the page needs
+      // to describe the offer truthfully, carrying no stock number and no integration price.
+      isPreorderSale: false,
       unavailableReason: null,
     },
   ]);
