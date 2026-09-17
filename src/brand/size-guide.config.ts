@@ -89,8 +89,14 @@ export function isApprovedSizeGuideId(value: unknown): value is ApprovedSizeGuid
   );
 }
 
-export const APPROVED_SIZE_GUIDES = SIZE_GUIDE.charts.map((chart) => ({
-  id: chart.id as ApprovedSizeGuideId,
-  title: chart.title,
-}));
+export const APPROVED_SIZE_GUIDES = SIZE_GUIDE.charts.map((chart) => {
+  if (!isApprovedSizeGuideId(chart.id)) {
+    throw new Error(`Size guide chart id "${chart.id}" is not in APPROVED_SIZE_GUIDE_IDS`);
+  }
+  return {
+    id: chart.id,
+    title: chart.title,
+  };
+});
+
 

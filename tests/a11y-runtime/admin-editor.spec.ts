@@ -387,7 +387,7 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
   await page.getByLabel("Trạng thái xuất bản").selectOption("PUBLISHED");
   await page.getByLabel("Mô tả biên tập").fill("Editorial content verified in a real browser.");
   await page.getByLabel("Hướng dẫn bảo quản").fill("Cold wash. Dry in shade.");
-  await page.getByLabel("Size guide").fill("Relaxed fit. Choose your normal size.");
+  await page.locator('select[name="sizeGuide"]').selectOption("set-vay-form-rong");
   await page.getByLabel("SEO title").fill("Accessible admin editor");
   await page.getByLabel("SEO description").fill("Browser runtime verification.");
 
@@ -402,13 +402,15 @@ test("admin editor keeps Pancake source read-only and manages unified ordinary/c
 
   const persisted = await prisma.productContent.findUnique({
     where: { productId },
-    select: { status: true, editorialDescription: true, seoTitle: true },
+    select: { status: true, editorialDescription: true, seoTitle: true, sizeGuide: true },
   });
   expect(persisted).toEqual({
     status: "PUBLISHED",
     editorialDescription: "Editorial content verified in a real browser.",
     seoTitle: "Accessible admin editor",
+    sizeGuide: "set-vay-form-rong",
   });
+  await expect(page.locator('select[name="sizeGuide"]')).toHaveValue("set-vay-form-rong");
   const sourceAfterSave = await prisma.productMirror.findUnique({
     where: { id: productId },
     select: { sourceDescription: true, slug: true },
