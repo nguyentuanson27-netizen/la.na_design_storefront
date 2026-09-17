@@ -4,7 +4,9 @@ import { BRAND } from "@/brand";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadContactRoute, type ContactRouteProps } from "@/routes/contact";
 import type { ContactViewModel } from "@/routes/evergreen-model";
-import { buildContactMetadata } from "@/routes/metadata/contact";\n\nimport { ContactForm } from "./contact-form";
+import { buildContactMetadata } from "@/routes/metadata/contact";
+
+import { ContactForm } from "./contact-form";
 
 /**
  * W13/U33a — the evergreen Contact page.
@@ -41,7 +43,9 @@ function render(data: ContactViewModel) {
         dưới.
       </p>
 
-      <ContactForm />\n\n      <dl className="mt-12 grid max-w-2xl gap-8 text-base leading-7">
+      <ContactForm />
+
+      <dl className="mt-12 grid max-w-2xl gap-8 text-base leading-7">
         <div>
           <dt className="text-xs font-semibold uppercase tracking-[0.13em]">Hotline &amp; Zalo</dt>
           <dd className="mt-2">
