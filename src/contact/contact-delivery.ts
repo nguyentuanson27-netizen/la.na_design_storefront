@@ -85,6 +85,7 @@ export async function sendContactEmailViaResend(
     apiKey: string;
     to: string;
     idempotencyKey: string;
+    subject: string;
     fetchImpl?: typeof fetch;
   }>,
 ): Promise<ProviderResult> {
@@ -104,7 +105,7 @@ export async function sendContactEmailViaResend(
         from: FROM_ADDRESS,
         to: [options.to],
         reply_to: payload.email,
-        subject: "Liên hệ website La.na Design",
+        subject: options.subject,
         text: `Tên: ${payload.name}\nEmail: ${payload.email}\n\n${payload.message}`,
       }),
     });
