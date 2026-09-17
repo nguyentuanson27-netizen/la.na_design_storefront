@@ -12,9 +12,17 @@ type ValidationResult =
   | Readonly<{ ok: true; value: ContactPayload }>
   | Readonly<{ ok: false }>;
 
+type ProviderErrorClass = "AUTH" | "RATE_LIMIT" | "CLIENT" | "PROVIDER" | "MALFORMED_RESPONSE";
+
 type ProviderResult =
   | Readonly<{ ok: true; id: string }>
-  | Readonly<{ ok: false; reason: "NETWORK_ERROR" | "PROVIDER_ERROR"; status?: number }>;
+  | Readonly<{ ok: false; reason: "NETWORK_ERROR" }>
+  | Readonly<{
+      ok: false;
+      reason: "PROVIDER_ERROR";
+      status: number;
+      errorClass: ProviderErrorClass;
+    }>;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const HEADER_CONTROL = /[\u0000-\u001f\u007f]/;
@@ -25,6 +33,13 @@ const FROM_ADDRESS = "website@lanadesign.vn";
 
 function codePointLength(value: string): number {
   return [...value].length;
+}
+
+function classifyProviderStatus(status: number): ProviderErrorClass {
+  if (status === 401 || status === 403) return "AUTH";
+  if (status === 429) return "RATE_LIMIT";
+  if (status >= 400 && status < 500) return "CLIENT";
+  return "PROVIDER";
 }
 
 export function validateContactPayload(input: unknown): ValidationResult {
@@ -97,15 +112,25 @@ export async function sendContactEmailViaResend(
     return { ok: false, reason: "NETWORK_ERROR" };
   }
 
-  if (!response.ok) {
-    return { ok: false, reason: "PROVIDER_ERROR", status: response.status };
+  if (response.status !== 200) {
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: classifyProviderStatus(response.status),
+    };
   }
 
   let body: unknown;
   try {
     body = await response.json();
   } catch {
-    return { ok: false, reason: "PROVIDER_ERROR", status: response.status };
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: "MALFORMED_RESPONSE",
+    };
   }
 
   if (
@@ -116,7 +141,12 @@ export async function sendContactEmailViaResend(
     (body as { id: string }).id.length < 1 ||
     (body as { id: string }).id.length > 256
   ) {
-    return { ok: false, reason: "PROVIDER_ERROR", status: response.status };
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: "MALFORMED_RESPONSE",
+    };
   }
 
   return { ok: true, id: (body as { id: string }).id };
