@@ -1,1 +1,110 @@
-"use server";\n\nimport { createHmac, randomUUID } from "node:crypto";\n\nimport { headers } from "next/headers";\n\nimport { BRAND } from "@/brand";\nimport { prisma } from "@/db/prisma";\n\nimport {\n  createContactDelivery,\n  sendContactEmailViaResend,\n  type ContactPayload,\n  type ContactSubmissionResult,\n} from "./contact-delivery";\n\nconst FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;\nconst TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1_000;\n\ntype RateLimitRow = { count: number };\n\nasync function consumeWindow(\n  id: string,\n  key: string,\n  limit: number,\n  windowMs: number,\n  nowMs: number,\n): Promise<boolean> {\n  const cutoff = BigInt(nowMs - windowMs);\n  const now = BigInt(nowMs);\n\n  const rows = await prisma.$queryRaw<RateLimitRow[]>`\n    INSERT INTO "rateLimit" ("id", "key", "count", "lastRequest")\n    VALUES (${id}, ${key}, 1, ${now})\n    ON CONFLICT ("id") DO UPDATE SET\n      "count" = CASE\n        WHEN "rateLimit"."lastRequest" <= ${cutoff} THEN 1\n        ELSE "rateLimit"."count" + 1\n      END,\n      "lastRequest" = CASE\n        WHEN "rateLimit"."lastRequest" <= ${cutoff} THEN ${now}\n        ELSE "rateLimit"."lastRequest"\n      END\n    RETURNING "count"\n  `;\n\n  return rows.length === 1 && rows[0]!.count <= limit;\n}\n\nasync function consumeContactRateLimits(clientBucket: string): Promise<boolean> {\n  const nowMs = Date.now();\n  const [shortWindowAllowed, dailyWindowAllowed] = await Promise.all([\n    consumeWindow(\n      `contact:15m:${clientBucket}`,\n      `contact:15m:${clientBucket}`,\n      3,\n      FIFTEEN_MINUTES_MS,\n      nowMs,\n    ),\n    consumeWindow(\n      `contact:24h:${clientBucket}`,\n      `contact:24h:${clientBucket}`,\n      10,\n      TWENTY_FOUR_HOURS_MS,\n      nowMs,\n    ),\n  ]);\n\n  return shortWindowAllowed && dailyWindowAllowed;\n}\n\nasync function resolveClientBucket(secret: string): Promise<string | null> {\n  const headerName = process.env.BETTER_AUTH_IP_HEADER?.trim().toLowerCase();\n\n  if (!headerName) {\n    if (process.env.NODE_ENV !== "production") {\n      return createHmac("sha256", secret).update("local-development").digest("hex");\n    }\n    return null;\n  }\n\n  const value = (await headers()).get(headerName)?.trim();\n  if (!value || value.includes(",")) return null;\n\n  return createHmac("sha256", secret).update(value).digest("hex");\n}\n\nfunction createResendSender(apiKey: string) {\n  return (payload: ContactPayload, idempotencyKey: string) =>\n    sendContactEmailViaResend(payload, {\n      apiKey,\n      to: BRAND.contact.email,\n      idempotencyKey,\n    });\n}\n\nexport async function submitContactForm(input: unknown): Promise<ContactSubmissionResult> {\n  const apiKey = process.env.RESEND_API_KEY?.trim();\n  if (!apiKey) return { ok: false, reason: "DELIVERY_FAILED" };\n\n  const clientBucket = await resolveClientBucket(apiKey);\n  if (!clientBucket) return { ok: false, reason: "DELIVERY_FAILED" };\n\n  const delivery = createContactDelivery({\n    consumeRateLimits: consumeContactRateLimits,\n    sendEmail: createResendSender(apiKey),\n  });\n\n  return delivery.submit(input, clientBucket, `contact-${randomUUID()}`);\n}
+"use server";
+
+import { createHmac, randomUUID } from "node:crypto";
+
+import { headers } from "next/headers";
+
+import { BRAND } from "@/brand";
+import { prisma } from "@/db/prisma";
+
+import {
+  createContactDelivery,
+  sendContactEmailViaResend,
+  type ContactPayload,
+  type ContactSubmissionResult,
+} from "./contact-delivery";
+
+const FIFTEEN_MINUTES_MS = 15 * 60 * 1_000;
+const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1_000;
+
+type RateLimitRow = { count: number };
+
+async function consumeWindow(
+  id: string,
+  key: string,
+  limit: number,
+  windowMs: number,
+  nowMs: number,
+): Promise<boolean> {
+  const cutoff = BigInt(nowMs - windowMs);
+  const now = BigInt(nowMs);
+
+  const rows = await prisma.$queryRaw<RateLimitRow[]>`
+    INSERT INTO "rateLimit" ("id", "key", "count", "lastRequest")
+    VALUES (${id}, ${key}, 1, ${now})
+    ON CONFLICT ("id") DO UPDATE SET
+      "count" = CASE
+        WHEN "rateLimit"."lastRequest" <= ${cutoff} THEN 1
+        ELSE "rateLimit"."count" + 1
+      END,
+      "lastRequest" = CASE
+        WHEN "rateLimit"."lastRequest" <= ${cutoff} THEN ${now}
+        ELSE "rateLimit"."lastRequest"
+      END
+    RETURNING "count"
+  `;
+
+  return rows.length === 1 && rows[0]!.count <= limit;
+}
+
+async function consumeContactRateLimits(clientBucket: string): Promise<boolean> {
+  const nowMs = Date.now();
+  const [shortWindowAllowed, dailyWindowAllowed] = await Promise.all([
+    consumeWindow(
+      `contact:15m:${clientBucket}`,
+      `contact:15m:${clientBucket}`,
+      3,
+      FIFTEEN_MINUTES_MS,
+      nowMs,
+    ),
+    consumeWindow(
+      `contact:24h:${clientBucket}`,
+      `contact:24h:${clientBucket}`,
+      10,
+      TWENTY_FOUR_HOURS_MS,
+      nowMs,
+    ),
+  ]);
+
+  return shortWindowAllowed && dailyWindowAllowed;
+}
+
+async function resolveClientBucket(secret: string): Promise<string | null> {
+  const headerName = process.env.BETTER_AUTH_IP_HEADER?.trim().toLowerCase();
+
+  if (!headerName) {
+    if (process.env.NODE_ENV !== "production") {
+      return createHmac("sha256", secret).update("local-development").digest("hex");
+    }
+    return null;
+  }
+
+  const value = (await headers()).get(headerName)?.trim();
+  if (!value || value.includes(",")) return null;
+
+  return createHmac("sha256", secret).update(value).digest("hex");
+}
+
+function createResendSender(apiKey: string) {
+  return (payload: ContactPayload, idempotencyKey: string) =>
+    sendContactEmailViaResend(payload, {
+      apiKey,
+      to: BRAND.contact.email,
+      idempotencyKey,
+    });
+}
+
+export async function submitContactForm(input: unknown): Promise<ContactSubmissionResult> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  if (!apiKey) return { ok: false, reason: "DELIVERY_FAILED" };
+
+  const clientBucket = await resolveClientBucket(apiKey);
+  if (!clientBucket) return { ok: false, reason: "DELIVERY_FAILED" };
+
+  const delivery = createContactDelivery({
+    consumeRateLimits: consumeContactRateLimits,
+    sendEmail: createResendSender(apiKey),
+  });
+
+  return delivery.submit(input, clientBucket, `contact-${randomUUID()}`);
+}
