@@ -24,8 +24,8 @@ import { ContactForm } from "./contact-form";
  * is a different place and belongs to About; a page offering a bare "Địa chỉ" is how a customer
  * posts a return to a registered office that does not receive post.
  *
- * Outbound delivery for a contact form is G3/F9b work and is deliberately absent: no provider, no
- * form, and nothing that could tell a visitor a message was sent when nothing sent it.
+ * F9b adds the owner-approved contact form without replacing any of these canonical support channels.
+ * Delivery remains server-authoritative; this page owns presentation only.
  */
 
 const CONTACT_LINK =
