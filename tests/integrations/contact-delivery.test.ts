@@ -104,7 +104,7 @@ test("Resend transport owns fixed headers and accepts success only with an email
   });
 });
 
-test("Resend transport never treats provider errors or malformed success as sent", async () => {
+test("Resend transport classifies provider errors and never treats malformed success as sent", async () => {
   const payload = { name: "Nguyễn An", email: "an@example.com", message: "Xin chào" };
   const base = { apiKey: "test-api-key", to: "support@example.com", idempotencyKey: "submission-1" };
 
@@ -114,7 +114,7 @@ test("Resend transport never treats provider errors or malformed success as sent
       fetchImpl: async () =>
         new Response(JSON.stringify({ name: "rate_limit_exceeded" }), { status: 429 }),
     }),
-    { ok: false, reason: "PROVIDER_ERROR", status: 429 },
+    { ok: false, reason: "PROVIDER_ERROR", status: 429, errorClass: "RATE_LIMIT" },
   );
 
   assert.deepEqual(
@@ -122,6 +122,6 @@ test("Resend transport never treats provider errors or malformed success as sent
       ...base,
       fetchImpl: async () => new Response(JSON.stringify({ ok: true }), { status: 200 }),
     }),
-    { ok: false, reason: "PROVIDER_ERROR", status: 200 },
+    { ok: false, reason: "PROVIDER_ERROR", status: 200, errorClass: "MALFORMED_RESPONSE" },
   );
 });
