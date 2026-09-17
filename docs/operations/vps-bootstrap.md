@@ -66,6 +66,17 @@ ADR 0010 selects the repository hostname but does not prove external DNS/TLS/edg
 
 `deploy.sh` creates a pre-migration custom-format PostgreSQL dump under `/var/backups/$PROJECT_SLUG` by default (currently `/var/backups/la-na-design`). Configure off-site/encrypted retention as appropriate and perform a restore drill before relying on the backup path for production recovery.
 
+On a fresh host, provision the default backup directory once for the non-root deployment operator before the first deploy:
+
+```bash
+sudo install -d -m 700 \
+  -o "$(id -un)" \
+  -g "$(id -gn)" \
+  /var/backups/la-na-design
+```
+
+If production deliberately overrides `BACKUP_DIR`, provision that path with equivalent ownership and permissions instead.
+
 ## 6. Controlled Pancake acceptance
 
 A read-only contract probe is not a substitute for any required write-path launch acceptance. For a controlled create test, verify the returned/remote order and clean it up according to the reviewed Pancake capability. If the write outcome is ambiguous, reconcile it as `SYNC_UNKNOWN`; never issue a blind duplicate create.
