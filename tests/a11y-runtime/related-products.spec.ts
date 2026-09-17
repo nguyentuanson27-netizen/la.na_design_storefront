@@ -23,7 +23,18 @@ const currentName = `Current U4 Jacket ${suffix}`;
 const draftCandidateName = `Alpha Draft Candidate ${suffix}`;
 const publishedCandidateName = `Bravo Published Candidate ${suffix}`;
 const hiddenCandidateName = `Hidden Candidate ${suffix}`;
+const pinnedName = `Zulu Pinned Override ${suffix}`;
+const collectionOnlyName = `Collection Only Candidate ${suffix}`;
 const syncedAt = new Date("2026-08-26T00:00:00.000Z");
+
+/**
+ * The category the candidates share. Related products are selected by website-owned category
+ * membership (ADR 0013 §7), not by collection: this spec previously seeded a shared collection and
+ * asserted the resulting list, which was the contract M3a supersedes.
+ */
+const SHARED_CATEGORY = "aoDaiTet";
+/** A different top-level tree, so the pinned product can only arrive as a manual override. */
+const PINNED_CATEGORY = "vayDam";
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -68,6 +79,7 @@ async function seedProduct({
   slug,
   name,
   collectionSlugs = [],
+  categoryKeys = [],
   status = "PUBLISHED",
   isActive = true,
 }: {
@@ -75,9 +87,10 @@ async function seedProduct({
   slug: string;
   name: string;
   collectionSlugs?: string[];
+  categoryKeys?: string[];
   status?: "DRAFT" | "PUBLISHED";
   isActive?: boolean;
-}) {
+}): Promise<string> {
   const product = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -117,6 +130,12 @@ async function seedProduct({
       syncedAt,
     },
   });
+  if (categoryKeys.length > 0) {
+    await prisma.productCategoryMembership.createMany({
+      data: categoryKeys.map((categoryKey) => ({ productId: product.id, categoryKey })),
+    });
+  }
+  return product.id;
 }
 
 test.beforeAll(async () => {
@@ -129,11 +148,61 @@ test.beforeAll(async () => {
       isPublished: true,
     },
   });
-  await seedProduct({ key: "current", slug: currentSlug, name: currentName, collectionSlugs: [collectionSlug] });
-  await seedProduct({ key: "draft", slug: `u4-draft-${suffix}`, name: draftCandidateName, collectionSlugs: [collectionSlug], status: "DRAFT" });
-  await seedProduct({ key: "published", slug: `u4-published-${suffix}`, name: publishedCandidateName, collectionSlugs: [collectionSlug] });
-  await seedProduct({ key: "hidden", slug: `u4-hidden-${suffix}`, name: hiddenCandidateName, collectionSlugs: [collectionSlug], isActive: false });
+  // The source product shares a category with the candidates AND a collection with the
+  // collection-only product below. Both are seeded on purpose: the collection is what proves the
+  // superseded fallback is gone rather than merely unused.
+  const currentId = await seedProduct({
+    key: "current",
+    slug: currentSlug,
+    name: currentName,
+    collectionSlugs: [collectionSlug],
+    categoryKeys: [SHARED_CATEGORY],
+  });
+  await seedProduct({
+    key: "draft",
+    slug: `u4-draft-${suffix}`,
+    name: draftCandidateName,
+    status: "DRAFT",
+    categoryKeys: [SHARED_CATEGORY],
+  });
+  const publishedId = await seedProduct({
+    key: "published",
+    slug: `u4-published-${suffix}`,
+    name: publishedCandidateName,
+    categoryKeys: [SHARED_CATEGORY],
+  });
+  await seedProduct({
+    key: "hidden",
+    slug: `u4-hidden-${suffix}`,
+    name: hiddenCandidateName,
+    isActive: false,
+    categoryKeys: [SHARED_CATEGORY],
+  });
+  // Shares the source product's collection but no category. Under the superseded contract this
+  // would have been a related product; under ADR 0013 §7 step 4 it must never appear.
+  await seedProduct({
+    key: "collection-only",
+    slug: `u4-collection-only-${suffix}`,
+    name: collectionOnlyName,
+    collectionSlugs: [collectionSlug],
+  });
+  // In a different top-level tree, so it can only reach the list as a manual override (§7 step 1).
+  const pinnedId = await seedProduct({
+    key: "pinned",
+    slug: `u4-pinned-${suffix}`,
+    name: pinnedName,
+    categoryKeys: [PINNED_CATEGORY],
+  });
   await seedProduct({ key: "solo", slug: soloSlug, name: `Solo Product ${suffix}` });
+
+  await prisma.relatedProductOverride.create({
+    data: { productId: currentId, relatedProductId: pinnedId, position: 0 },
+  });
+  // Ranking the published candidate first in this category must beat the unranked draft
+  // candidate's earlier name — rank is a decision, name is only a tie-break (§7).
+  await prisma.categoryProductOrder.create({
+    data: { categoryKey: SHARED_CATEGORY, productId: publishedId, position: 0 },
+  });
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -157,16 +226,21 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("U4 PDP renders deterministic visible related products from projected published membership", async ({ page }) => {
+test("U4 PDP renders deterministic visible related products from website-owned category membership", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/shop/${currentSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
   const related = page.getByRole("region", { name: "Hoàn thiện phối đồ" });
   await expect(related).toBeVisible();
   const names = await related.locator("article h2").allTextContents();
-  expect(names).toEqual([draftCandidateName, publishedCandidateName]);
+  // ADR 0013 §7, end to end: the manual override first even though it sits in another tree, then
+  // the merchandised rank, then the unranked candidate by name.
+  expect(names).toEqual([pinnedName, publishedCandidateName, draftCandidateName]);
   await expect(related.getByText(currentName, { exact: true })).toHaveCount(0);
   await expect(related.getByText(hiddenCandidateName, { exact: true })).toHaveCount(0);
+  // §7 step 4: no collection fallback at any stage. This product shares the source's collection and
+  // nothing else, and the superseded implementation would have listed it.
+  await expect(related.getByText(collectionOnlyName, { exact: true })).toHaveCount(0);
   await expect(related.locator('a[href="/size-guide"]')).toHaveCount(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
@@ -174,7 +248,7 @@ test("U4 PDP renders deterministic visible related products from projected publi
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U4 PDP omits the related-products region when projected membership has no candidates", async ({ page }) => {
+test("U4 PDP omits the related-products region when category membership has no candidates", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/shop/${soloSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("region", { name: "Hoàn thiện phối đồ" })).toHaveCount(0);

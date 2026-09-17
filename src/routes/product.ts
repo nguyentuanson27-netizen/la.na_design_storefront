@@ -53,7 +53,9 @@ export async function loadProductRoute({
   }
   if (!product) notFound();
 
-  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product, requestNow);
+  // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
+  // clock; the promotion pass below is what applies `requestNow` to the products it returns.
+  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
     now: requestNow,

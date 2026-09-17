@@ -60,7 +60,7 @@ Keep that field scoped to `/collections/[slug]`. It is **not** the owner for mas
 
 Existing collection admin validation should continue to bound length, reject duplicates and preserve submitted order. Storefront reads may skip unavailable/unpublished products rather than expose stale references.
 
-## 3. Standalone homepage Featured products — B: additive migration required
+## 3. Standalone homepage Featured products — IMPLEMENTED (M2)
 
 Master-spec §20 requires a dedicated manually selected and admin-ordered homepage product section. No current homepage-level persistence matches that semantic: `homepagePosition` orders collection cards/links, while the homepage product edit currently comes from generic catalog discovery.
 
@@ -157,7 +157,7 @@ one constant plus a data review — still **no migration**.
 behaviour covered, so the flag cannot rot into a no-op. Childless top-level categories
 (`Váy, đầm`, `Phụ kiện`) were never affected: they have no leaf to require.
 
-### 4.5 Proposed persistence — B: additive migration, pending Checkpoint B
+### 4.5 Persistence — IMPLEMENTED
 
 ```prisma
 /// Website-owned category assignment. One row per (product, assigned category).
@@ -304,7 +304,7 @@ rule is the protection; there is no schema guarantee behind it.
 Renaming a category's **label** or **route path** is unrelated and free; neither is persisted in
 merchandising rows (§4.2). Only the key is, and only the key is permanent.
 
-## 5. Category PLP default ordering — B: additive migration, pending Checkpoint B
+## 5. Category PLP default ordering — IMPLEMENTED (M3b)
 
 ```prisma
 model CategoryProductOrder {
@@ -332,7 +332,7 @@ Unranked products follow a deterministic documented tail order rather than datab
 `CollectionProductOrder` is **not** created: a collection-scoped relation would answer the wrong
 identity question.
 
-## 6. Mega-menu/category editorial image — B: additive migration, pending Checkpoint B
+## 6. Mega-menu/category editorial image — IMPLEMENTED (M2)
 
 ```prisma
 model CategoryEditorialMedia {
@@ -351,7 +351,7 @@ hiding a second image inside `galleryImageUrls`; naming both is the honest shape
 assert a one-to-one collection ↔ category identity that does not exist. `null` means no editorial
 image and the UI uses its approved no-image behaviour rather than inventing an asset.
 
-## 7. Related products — contract settled; override relation pending Checkpoint B
+## 7. Related products — IMPLEMENTED (M3a)
 
 The owner-approved resolution order is exactly:
 
@@ -491,6 +491,41 @@ them. Deriving an initial membership from `collectionSlugs`, Pancake category or
 matching would install exactly the conflation this ADR forbids, under the cover of a one-off script.
 Populating the catalogue is admin work, and empty category listings before that work is done are
 correct behaviour, not a defect.
+
+## Implementation status — M2 / M3a / M3b, 2026-09-17
+
+All five approved models exist as of migration
+`20260917050000_add_website_owned_merchandising`. Additive only; **no backfill was run**, so
+category membership starts empty and admin-assigned exactly as the approval requires.
+
+| Concern | Shipped as |
+|---|---|
+| Validation (§3, §5, §6, §7) | `src/commerce/merchandising-input.ts` |
+| Authorization boundary (§4.6) | `src/commerce/merchandising-admin.ts` |
+| Persistence and reads | `src/commerce/merchandising-repository.ts` |
+| Related resolution (§7) | `src/commerce/storefront-related-products.ts` |
+
+Three things are worth stating plainly rather than leaving to inference:
+
+- **The superseded shared-collection fallback is gone**, not kept as a last resort. It answered a
+  different identity question, and keeping it would have preserved the collection ↔ category
+  conflation this ADR exists to separate. A product with no categories and no manual picks now has
+  no related products, which is the truthful answer.
+- **The §7 order is decided in TypeScript, not SQL.** `listCategoryRelatedCandidates()` returns
+  candidates unordered on purpose so the whole contract — traversal across categories and order
+  within one — is pinned by domain tests with no database.
+- **Intra-row CHECK constraints only.** The migration adds `productId <> relatedProductId` and
+  `position >= 0`. It deliberately adds nothing that pretends to cover top-level exclusivity, which
+  §4.5 records as application-enforced and audited.
+
+### Not included, and why
+
+- **Storefront and admin UI.** `listConfiguredCategoryProducts()` and
+  `listConfiguredHomepageFeaturedProducts()` exist as the runtime seam, but no page consumes them
+  yet: the category route is still the F-series placeholder, and rendering those grids is F4a/F7d,
+  not M2/M3b. M3a *is* wired — the PDP now resolves related products through this contract.
+- **A membership admin page.** The §4.6 write boundary ships and is tested; the form that calls it
+  is admin UI work in the same F/M series as the rest.
 
 ## Status of G4
 

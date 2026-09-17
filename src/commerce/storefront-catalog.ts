@@ -493,6 +493,38 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     return products.map((product) => toStorefrontProduct(product, collectionMap));
   }
 
+  /**
+   * Hydrate an explicit, already-ordered set of product ids into full storefront products.
+   *
+   * The caller's order is preserved rather than re-derived: related products (ADR 0013 §7) decide
+   * their order in `storefront-related-products.ts`, where it is pinned by domain tests, so
+   * re-sorting here would silently replace that contract with `name`/`id`. Ids that no longer
+   * resolve to a visible product are dropped, which is the same availability filtering every other
+   * storefront read applies.
+   */
+  async function listProductsByIds({ shopId, ids }: { shopId: number; ids: readonly string[] }) {
+    if (ids.length === 0) return [];
+
+    const products = await client.productMirror.findMany({
+      where: { ...visibleProductWhere(shopId), id: { in: [...ids] } },
+      take: parseListLimit(ids.length),
+      select: productSelection,
+    });
+
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
+    const byId = new Map(
+      products.map((product) => [product.id, toStorefrontProduct(product, collectionMap)]),
+    );
+    return ids.flatMap((id) => {
+      const product = byId.get(id);
+      return product ? [product] : [];
+    });
+  }
+
   async function listProductPage({
     shopId,
     page,
@@ -717,6 +749,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
 
   return {
     listProducts,
+    listProductsByIds,
     listProductPage,
     listDiscoveryPage,
     listDiscoveryFacets,
