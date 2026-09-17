@@ -214,22 +214,40 @@ test("the external allowlist is exact and does not collapse to package roots", (
   }
 });
 
-/* --------------------------------------------------------------------- resolution */
+function normalizePath(filePath: string | null): string | null {
+  if (filePath === null) return null;
+  return filePath.replaceAll("\\", "/");
+}
 
 test("resolution goes through TypeScript, using the project's own alias and extension rules", () => {
   const from = path.join(REPO_ROOT, "src/app/page.tsx");
 
   // `@/*` is not special-cased here; it works because tsconfig `paths` says so.
   assert.equal(
-    resolveSpecifier("@/routes/manifest", from, COMPILER_OPTIONS),
-    path.join(REPO_ROOT, "src/routes/manifest.ts"),
+    normalizePath(resolveSpecifier("@/routes/manifest", from, COMPILER_OPTIONS)),
+    normalizePath(path.join(REPO_ROOT, "src/routes/manifest.ts")),
   );
   assert.equal(
-    resolveSpecifier("@/routes/core", from, COMPILER_OPTIONS),
-    path.join(REPO_ROOT, "src/routes/core.tsx"),
+    normalizePath(resolveSpecifier("@/routes/core", from, COMPILER_OPTIONS)),
+    normalizePath(path.join(REPO_ROOT, "src/routes/core.tsx")),
     "the .tsx extension is resolved without being named",
   );
   assert.equal(resolveSpecifier("@/nope/missing", from, COMPILER_OPTIONS), null);
+});
+
+test("normalizePath handles forward slashes and backslashes portably across platforms", () => {
+  const forward = "src/routes/manifest.ts";
+  const backward = "src\\routes\\manifest.ts";
+  assert.equal(normalizePath(forward), "src/routes/manifest.ts");
+  assert.equal(normalizePath(backward), "src/routes/manifest.ts");
+  assert.equal(normalizePath(forward), normalizePath(backward));
+
+  const windowsPath = "C:\\repo\\src\\routes\\manifest.ts";
+  const posixPath = "C:/repo/src/routes/manifest.ts";
+  assert.equal(normalizePath(windowsPath), posixPath);
+  assert.equal(normalizePath(posixPath), normalizePath(windowsPath));
+
+  assert.equal(normalizePath(null), null);
 });
 
 test("the fixture-backed checker is not vacuous: the same engine accepts and rejects", () => {
