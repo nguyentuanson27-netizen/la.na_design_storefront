@@ -310,6 +310,89 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   Provenance: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR)
   after the five models were listed for review.
+- **G3 contact-form outbound transport** — **approved 2026-09-16**. Provider **Resend**, over its
+  HTTPS Email API via server-side `fetch` (no npm SDK while built-in fetch suffices). `From`
+  **`website@lanadesign.vn`** on sending domain **`lanadesign.vn`**, which the owner authorized
+  verifying with Resend. Destination stays the existing support inbox
+  `la.nadesignsince2022@gmail.com`; `Reply-To` is the validated customer email. Secret
+  **`RESEND_API_KEY`**, server-only. Payload is exactly `name`, `email`, `message`. Rate limit
+  **3 / 15 minutes** and **10 / 24 hours** on a pseudonymous client bucket, never keyed by raw
+  IP or email.
+
+  **Not done and not claimed:** no Resend account, API key or DNS record exists or was observed.
+  The SPF/DKIM/return-path values come from Resend at configuration time and are deliberately absent
+  from this repository. Recorded in
+  [ADR 0012](../decisions/0012-contact-form-outbound-transport.md).
+
+- **G5 atomic capacity architecture** — **principles approved 2026-09-16**. The local PostgreSQL
+  reservation ledger is the authoritative capacity gate; Pancake remains mirrored stock truth but is
+  **not** trusted for negative-limit or concurrency enforcement, because G2 observed two concurrent
+  orders both accepted at stock 0. Enforcement is per variant at the server-side order commit
+  boundary, with `STANDARD` floored at 0 and `OVERSELL`/`PREORDER` floored at `negativeStockLimit`
+  (default `−20`). Ambiguous Pancake writes hold capacity in `UNKNOWN` and are never auto-released.
+  `OVERSELL`/`PREORDER` are disabled for composite products in v1. Recorded in
+  [ADR 0014](../decisions/0014-atomic-capacity-and-reservations.md).
+
+  Scope: this approves the **architecture**, not its persistence. ADR 0014 §13 proposes
+  `ProductSellingPolicy` and `VariantCapacityReservation`, which are **not** covered by the
+  2026-09-16 five-model Checkpoint B approval and need separate authorization before any migration.
+
+  **Design direction reviewed 2026-09-17.** The owner approved the design direction of
+  `ProductSellingPolicy` — a website-owned policy table, never overwritten by Pancake catalog sync,
+  following the existing `ProductMerchantFacts` pattern of keeping website-owned facts out of the
+  mirror — and required four corrections, all now applied: (1) a canonical resolver owns the
+  missing-row answer (`STANDARD`, `−20`) and is tested, because a column default never fires for a
+  row that does not exist; (2) `onDelete: Restrict` on the order relation, not `Cascade`, so a
+  hard-deleted order cannot silently free a live hold; (3) biconditional CHECK constraints plus
+  mutual exclusion of `committedAt`/`releasedAt`; (4) ADR §6 rewritten to lock an always-present
+  `VariantMirror` row before reading the ledger — the previous rule locked ledger rows keyed by
+  `variantId`, which locks nothing on an empty ledger and let the first two concurrent checkouts
+  both read zero. **This remains a design-direction review only: no migration is authorized.**
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  reviewing the ADR 0014 §13 summary.
+
+  Provenance for both: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR).
+- **Checkpoint B — G1 Merchant + structured-data mapping** — **accepted 2026-09-17**. The owner
+  accepted the availability mapping [ADR 0011](../decisions/0011-merchant-structured-data-availability-semantics.md)
+  records: availability is projected from shopper sellability rather than from the internal mode
+  name; internal `preorder` is **not** Google `preorder` (Google reserves that for unreleased
+  products) and maps to `backorder` when a released product is still accepted below ready stock;
+  a genuinely purchasable-and-fulfillable `oversell` state may publish `in_stock`; the exact
+  negative limit publishes `out_of_stock`; and one shared projection must feed both the Merchant
+  output and the product JSON-LD.
+
+  Scope, stated narrowly: this accepts the **mapping and its evidence**, not publication of every
+  row. The internal-preorder/below-ready-stock → `backorder` row stays **blocked**, because
+  `availability_date` is required for it and no website-owned product-level public date authority
+  exists. Accepting G1 does **not** unblock I9 for that row, and nothing may derive a date from
+  `today + 15`, order confirmation, or campaign expiry to work around it (ADR 0011 §`availability_date`
+  authority). I9 must still fail closed there.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  in direct answer to the open Checkpoint B row.
+- **Checkpoint B — G2 Pancake zero/negative-stock + composite evidence** — **accepted 2026-09-17**.
+  The owner accepted the bounded live evidence recorded in
+  [`docs/integrations/pancake-zero-negative-stock-capability-probe.md`](../integrations/pancake-zero-negative-stock-capability-probe.md):
+  on the authorized test shop, Pancake accepted orders at stock 0, accepted orders driving stock
+  below 0, accepted two concurrent orders at stock 0, and drove a 1:1 composite child to −1.
+
+  Scope, stated narrowly so nothing wider is read into it: the acceptance covers the observations
+  **as recorded, with the probe's own stated limits**. It establishes nothing about non-1:1
+  composite multipliers, multi-component atomicity under partial failure or contention, nested
+  BOMs, a composite parent whose component starts negative, unlimited overselling safety, or a
+  safe storefront concurrency model. It is therefore the factual basis for ADR 0014's conclusion
+  that Pancake is **not** the enforcement authority, and for the composite `OVERSELL`/`PREORDER`
+  restriction in v1 — not a licence to lift either. The probe does **not** need re-running, and
+  this acceptance does not authorize a second live run.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  in direct answer to the open Checkpoint B row. The earlier credential-exposure follow-up is
+  recorded separately in the probe document and is unchanged by this acceptance.
 
 ## Still pending — do not invent
 
