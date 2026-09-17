@@ -55,10 +55,12 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
             ok: true as const,
             order: {
               publicCode: "LA-server-owned",
+              id: "order-LA-server-owned",
               state: "DRAFT" as const,
               merchandiseSubtotalVnd: BigInt(500_000),
               shippingFeeVnd: BigInt(30_000),
               totalVnd: BigInt(530_000),
+              lines: [{ variantId: "variant-1", quantity: 1 }],
             },
           };
         },
@@ -78,6 +80,26 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
         },
       };
     },
+    // I6b — a capacity double, so this file keeps testing the runtime's ORDERING (recover, config,
+    // fresh-check, geo, snapshot, submit) without a database. The reservation state machine itself
+    // is pinned in guest-checkout-submit.test.ts.
+    createCapacity: () => ({
+      async reserveOrderCapacity({ lines }) {
+        return {
+          ok: true as const,
+          alreadyHeld: false,
+          reservations: lines.map((line, index) => ({
+            id: `runtime-hold-${index}`,
+            variantId: line.variantId,
+            quantity: line.quantity,
+            state: "RESERVED" as const,
+          })),
+        };
+      },
+      async transitionReservation() {
+        return true;
+      },
+    }),
     generatePublicCode: () => "LA-server-owned",
     readQuoteProofSecret: () => "runtime-test-secret-at-least-32-characters",
     clock: () => now,
@@ -140,10 +162,12 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
             ok: true as const,
             order: {
               publicCode: "LA-confirmed",
+              id: "order-LA-confirmed",
               state: "CONFIRMED" as const,
               merchandiseSubtotalVnd: BigInt(500_000),
               shippingFeeVnd: BigInt(30_000),
               totalVnd: BigInt(530_000),
+              lines: [{ variantId: "variant-1", quantity: 1 }],
             },
           };
         },
@@ -157,6 +181,25 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
           state: "CONFIRMED" as const,
           pancakeOrderId: "700001",
         };
+      },
+    }),
+    // I6b — same capacity double as above: this file pins the runtime's ordering, not the
+    // reservation state machine.
+    createCapacity: () => ({
+      async reserveOrderCapacity({ lines }) {
+        return {
+          ok: true as const,
+          alreadyHeld: false,
+          reservations: lines.map((line, index) => ({
+            id: `runtime-hold-${index}`,
+            variantId: line.variantId,
+            quantity: line.quantity,
+            state: "RESERVED" as const,
+          })),
+        };
+      },
+      async transitionReservation() {
+        return true;
       },
     }),
     clock: () => now,

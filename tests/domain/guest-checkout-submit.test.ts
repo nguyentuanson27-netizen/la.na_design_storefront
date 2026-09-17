@@ -16,15 +16,23 @@ const now = new Date("2026-08-12T05:30:00.000Z");
 const cartId = "11111111-1111-4111-8111-111111111111";
 const shopId = 920_007;
 
-function snapshotOrder(publicCode: string, state = "DRAFT" as const) {
+function snapshotOrder(
+  publicCode: string,
+  state: "DRAFT" | "VALIDATING" | "POS_SUBMITTING" | "CONFIRMED" | "SYNC_UNKNOWN" = "DRAFT",
+) {
   return {
     ok: true as const,
     order: {
+      // I6b — the order is the reservation's idempotency key (§3) and its lines are what gets held,
+      // so the double carries both. Without `capacity` wired the service takes no hold at all, which
+      // is what keeps every pre-I6b assertion in this file describing the same behaviour.
+      id: `order-${publicCode}`,
       publicCode,
       state,
       merchandiseSubtotalVnd: BigInt(500_000),
       shippingFeeVnd: BigInt(30_000),
       totalVnd: BigInt(530_000),
+      lines: [{ variantId: "variant-1", quantity: 1 }],
     },
   };
 }
@@ -288,4 +296,196 @@ test("P9b a DRAFT returned for any other reason still reads as processing", asyn
     status: "PROCESSING",
     orderCode: "LA-busy",
   });
+});
+
+/**
+ * I6b — the ADR 0014 §6.2 reservation boundary at the checkout commit point.
+ *
+ * What these pin is the *order of operations* and the outcome mapping, because those are the whole
+ * safety argument: a hold taken after the external write would be decoration, and a hold released
+ * on an ambiguous write is the oversell G2 showed Pancake will not prevent.
+ */
+type FakeReservation = { id: string; variantId: string; quantity: number; state: string };
+
+function createFakeCapacity(
+  options: Readonly<{ refuse?: boolean; initialState?: string }> = {},
+) {
+  const rows: FakeReservation[] = [];
+  const events: string[] = [];
+
+  const capacity = {
+    async reserveOrderCapacity({
+      orderId,
+      lines,
+    }: {
+      orderId: string;
+      lines: readonly { variantId: string; quantity: number }[];
+    }) {
+      events.push("reserve");
+      if (options.refuse) {
+        return {
+          ok: false as const,
+          reason: "standard-would-go-negative" as const,
+          refusedVariantId: lines[0]?.variantId ?? null,
+        };
+      }
+      rows.length = 0;
+      rows.push(
+        ...lines.map((line, index) => ({
+          id: `${orderId}-r${index}`,
+          variantId: line.variantId,
+          quantity: line.quantity,
+          state: options.initialState ?? "RESERVED",
+        })),
+      );
+      return {
+        ok: true as const,
+        alreadyHeld: false,
+        reservations: rows.map((row) => ({ ...row })),
+      } as never;
+    },
+    async transitionReservation({ id, from, to }: { id: string; from: string; to: string }) {
+      const row = rows.find((candidate) => candidate.id === id);
+      if (!row || row.state !== from) return false;
+      row.state = to;
+      events.push(`${from}->${to}`);
+      return true;
+    },
+  };
+
+  return { capacity: capacity as never, rows, events };
+}
+
+test("I6b holds capacity before the external write and commits it on success", async () => {
+  const { capacity, rows, events } = createFakeCapacity();
+  const service = createGuestCheckoutSubmitService({
+    snapshot: { async create() { return snapshotOrder("LA-ok", "CONFIRMED"); } },
+    orderSubmission: {
+      async submit() {
+        events.push("submit");
+        return { ok: true as const } as never;
+      },
+    },
+    generatePublicCode: () => "LA-ok",
+    capacity,
+  });
+
+  assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+    ok: true,
+    status: "CONFIRMED",
+    orderCode: "LA-ok",
+  });
+
+  // The ordering IS the contract: reserve, then move to SUBMITTING, and only then talk to Pancake.
+  // A hold taken after the write would prove nothing about capacity at the moment it was spent.
+  assert.deepEqual(events, ["reserve", "RESERVED->SUBMITTING", "submit", "SUBMITTING->COMMITTED"]);
+  assert.equal(rows[0]?.state, "COMMITTED");
+});
+
+test("I6b a refused reservation sends nothing to Pancake", async () => {
+  const { capacity, events } = createFakeCapacity({ refuse: true });
+  let submitCalls = 0;
+  const service = createGuestCheckoutSubmitService({
+    snapshot: { async create() { return snapshotOrder("LA-refused"); } },
+    orderSubmission: {
+      async submit() {
+        submitCalls += 1;
+        throw new Error("must not submit without a hold");
+      },
+    },
+    generatePublicCode: () => "LA-refused",
+    capacity,
+  });
+
+  assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+    ok: false,
+    status: "RETRYABLE",
+    reason: "CART_CHANGED",
+    orderCode: "LA-refused",
+  });
+  assert.equal(submitCalls, 0, "an unheld basket must never reach the vendor");
+  assert.deepEqual(events, ["reserve"]);
+});
+
+test("I6b an ambiguous write keeps holding and a rejection releases", async () => {
+  // §8/§10, the asymmetry that matters: SYNC_UNKNOWN must never free capacity on anything but
+  // evidence, while REJECTED is evidence that nothing landed.
+  for (const [submission, expected] of [
+    [{ ok: false, state: "SYNC_UNKNOWN", reason: "TRANSPORT" }, "UNKNOWN"],
+    [{ ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" }, "RELEASED"],
+  ] as const) {
+    const { capacity, rows } = createFakeCapacity();
+    const service = createGuestCheckoutSubmitService({
+      snapshot: { async create() { return snapshotOrder("LA-amb"); } },
+      orderSubmission: { async submit() { return submission as never; } },
+      generatePublicCode: () => "LA-amb",
+      capacity,
+    });
+
+    await service.submit({ cartId, shopId, checkoutInput, now });
+    assert.equal(rows[0]?.state, expected, `${submission.state} must settle to ${expected}`);
+  }
+});
+
+test("I6b an in-flight outcome leaves the hold SUBMITTING rather than guessing", async () => {
+  // VALIDATING, POS_SUBMITTING and a repriced DRAFT are not outcomes. Releasing on any of them
+  // would free units the buyer is mid-way through buying — the P9b reprice is the clearest case,
+  // since the next thing that happens is the buyer reconfirming the very same basket.
+  for (const submission of [
+    { ok: false, state: "VALIDATING", reason: "PENDING" },
+    { ok: false, state: "POS_SUBMITTING", reason: "PENDING" },
+    { ok: false, state: "DRAFT", reason: "VALIDATION_UNAVAILABLE" },
+  ] as const) {
+    const { capacity, rows } = createFakeCapacity();
+    const service = createGuestCheckoutSubmitService({
+      snapshot: { async create() { return snapshotOrder("LA-flight"); } },
+      orderSubmission: { async submit() { return submission as never; } },
+      generatePublicCode: () => "LA-flight",
+      capacity,
+    });
+
+    await service.submit({ cartId, shopId, checkoutInput, now });
+    assert.equal(rows[0]?.state, "SUBMITTING", `${submission.state} is not an outcome yet`);
+  }
+});
+
+test("I6b a hold already decided elsewhere stops the submission closed", async () => {
+  // A COMMITTED, RELEASED or UNKNOWN hold means this order's capacity was already settled — by an
+  // earlier submission or by §10 reconciliation. Submitting again would either double-send or write
+  // over an ambiguous outcome on no evidence.
+  for (const state of ["COMMITTED", "RELEASED", "UNKNOWN"] as const) {
+    const { capacity } = createFakeCapacity({ initialState: state });
+    let submitCalls = 0;
+    const service = createGuestCheckoutSubmitService({
+      snapshot: { async create() { return snapshotOrder("LA-decided"); } },
+      orderSubmission: {
+        async submit() {
+          submitCalls += 1;
+          return { ok: true as const } as never;
+        },
+      },
+      generatePublicCode: () => "LA-decided",
+      capacity,
+    });
+
+    assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+      ok: false,
+      status: "RETRYABLE",
+      reason: "CHECKOUT_UNAVAILABLE",
+      orderCode: "LA-decided",
+    });
+    assert.equal(submitCalls, 0, `a ${state} hold must not be resubmitted against`);
+  }
+
+  // A hold already SUBMITTING is the in-flight retry, and it proceeds: the guarded CAS would refuse
+  // to move it again, so treating it as a blocker would strand every legitimate retry.
+  const { capacity, rows } = createFakeCapacity({ initialState: "SUBMITTING" });
+  const service = createGuestCheckoutSubmitService({
+    snapshot: { async create() { return snapshotOrder("LA-retry", "CONFIRMED"); } },
+    orderSubmission: { async submit() { return { ok: true as const } as never; } },
+    generatePublicCode: () => "LA-retry",
+    capacity,
+  });
+  assert.equal((await service.submit({ cartId, shopId, checkoutInput, now })).ok, true);
+  assert.equal(rows[0]?.state, "COMMITTED");
 });

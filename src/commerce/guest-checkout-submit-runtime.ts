@@ -9,6 +9,7 @@ import {
   loadCheckoutDistricts,
   loadCheckoutProvinces,
 } from "./checkout-geo.ts";
+import { createCapacityReservationRepository } from "./capacity-reservation.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
   verifyRenderedQuoteProof,
@@ -60,6 +61,12 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
    */
   readQuoteProofSecret: () => string;
   clock: () => Date;
+  /**
+   * I6b — the ADR 0014 §6.2 capacity boundary. Injectable like every other dependency here, so a
+   * test can drive the reservation state machine without a database, and so the default stays the
+   * real repository rather than something a test could quietly leave unwired.
+   */
+  createCapacity: () => NonNullable<GuestCheckoutSubmitDependencies["capacity"]>;
 }>;
 
 type GuestCheckoutSubmitRuntimeOptions = Partial<GuestCheckoutSubmitRuntimeDependencies>;
@@ -100,6 +107,8 @@ export function createGuestCheckoutSubmitRuntime(
   const readQuoteProofSecret =
     options.readQuoteProofSecret ?? (() => readAuthServerConfig().secret);
   const clock = options.clock ?? (() => new Date());
+  const createCapacity =
+    options.createCapacity ?? (() => createCapacityReservationRepository(prisma));
   const onQuoteProofRejection =
     options.onQuoteProofRejection ??
     ((reason) => {
@@ -153,6 +162,12 @@ export function createGuestCheckoutSubmitRuntime(
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
       onQuoteProofRejection,
+      // I6b — the production path holds capacity. This wiring is what makes the ADR 0014 §6.2 gate
+      // real for a buyer: the dependency is optional on the service below so unit tests can describe
+      // the pre-I6b path, and defaulting it to the real repository here is what stops that being a
+      // bypass in production.
+      capacity: createCapacity(),
+      clock,
     });
 
     return service.submit({

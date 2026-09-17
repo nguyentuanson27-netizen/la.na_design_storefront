@@ -36,11 +36,15 @@ type CheckoutSnapshotResult =
   | {
       ok: true;
       order: {
+        /** ADR 0014 §3 makes the order the reservation's idempotency key, so I6b needs it. */
+        id: string;
         publicCode: string;
         state: ActiveCheckoutState;
         merchandiseSubtotalVnd: bigint;
         shippingFeeVnd: bigint;
         totalVnd: bigint;
+        /** The committed basket, as persisted. One entry per line; I6b merges by variant (§7). */
+        lines: readonly { variantId: string; quantity: number }[];
       };
     }
   | { ok: false; reason: CheckoutFailureReason }
@@ -79,6 +83,11 @@ const snapshotOrderSelection = {
   merchandiseSubtotalVnd: true,
   shippingFeeVnd: true,
   totalVnd: true,
+  // I6b — what the reservation boundary reserves. Read back from the persisted lines rather than
+  // carried out of the in-memory `snapshots` array, so the recovery path below (which finds an
+  // existing active checkout after a `P2002`) reports the same basket as the create path. A hold
+  // taken against a basket the order does not actually have would be worse than no hold.
+  lines: { select: { variantId: true, quantity: true } },
 } satisfies Prisma.OrderMirrorSelect;
 
 const productSelection = {
@@ -165,11 +174,13 @@ function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult 
   return {
     ok: true,
     order: {
+      id: order.id,
       publicCode: order.publicCode,
       state: order.state,
       merchandiseSubtotalVnd: order.merchandiseSubtotalVnd,
       shippingFeeVnd: order.shippingFeeVnd,
       totalVnd: order.totalVnd,
+      lines: order.lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
     },
   };
 }
