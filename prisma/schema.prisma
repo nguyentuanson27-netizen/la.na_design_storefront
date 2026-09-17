@@ -70,6 +70,23 @@ enum PromotionDiscountType {
   FIXED_PRICE
 }
 
+/// ADR 0014 §5. Website-owned; Pancake catalog sync never writes it (master spec §27).
+enum SellingMode {
+  STANDARD
+  OVERSELL
+  PREORDER
+}
+
+/// ADR 0014 §4. Deliberately parallel to `LocalOrderState` rather than a competing vocabulary:
+/// `SUBMITTING` ↔ `POS_SUBMITTING`, `UNKNOWN` ↔ `SYNC_UNKNOWN`, `COMMITTED` ↔ `CONFIRMED`.
+enum ReservationState {
+  RESERVED
+  SUBMITTING
+  COMMITTED
+  RELEASED
+  UNKNOWN
+}
+
 model User {
   id            String        @id
   name          String
@@ -182,6 +199,7 @@ model ProductMirror {
   categoryOrders       CategoryProductOrder[]
   relatedOverrides     RelatedProductOverride[]    @relation("RelatedSource")
   relatedOverrideOf    RelatedProductOverride[]    @relation("RelatedTarget")
+  sellingPolicy        ProductSellingPolicy?
 
   @@index([pancakeShopId, isPresent])
 }
@@ -344,6 +362,7 @@ model VariantMirror {
   compositeComponents             CompositeComponentMirror[] @relation("CompositeParent")
   compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
   promotionTargets                PromotionTarget[]
+  capacityReservations            VariantCapacityReservation[]
 
   @@index([productId])
   @@index([sku])
@@ -436,6 +455,7 @@ model OrderMirror {
   updatedAt              DateTime            @updatedAt
   user                   User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   lines                  OrderLineSnapshot[]
+  capacityReservations   VariantCapacityReservation[]
 
   @@index([userId, createdAt])
   @@index([sourceCartId])
@@ -570,4 +590,55 @@ model RelatedProductOverride {
   @@id([productId, relatedProductId])
   @@unique([productId, position])
   @@index([relatedProductId])
+}
+
+// ---------------------------------------------------------------------------
+// Atomic capacity (ADR 0014 §13). Owner-authorized 2026-09-17, after the design
+// review that returned four corrections — all of which are in the shapes below.
+// Additive, and NO BACKFILL: a product with no policy row resolves to STANDARD
+// at −20 through `resolveSellingPolicy()`, which is the one producer of that
+// answer. A column default would not supply it, because the row does not exist.
+// ---------------------------------------------------------------------------
+
+/// Website-owned selling policy for one product (ADR 0014 §5, master spec §27).
+///
+/// Separate from `ProductMirror` on purpose, following the `ProductMerchantFacts` pattern: this is
+/// website-owned truth and Pancake catalog sync must never overwrite it. Absence is not "unknown" —
+/// it means the approved default, resolved in exactly one place.
+model ProductSellingPolicy {
+  productId          String      @id
+  sellingMode        SellingMode @default(STANDARD)
+  negativeStockLimit Int         @default(-20)
+  updatedAt          DateTime    @updatedAt
+
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// The capacity ledger — one row per (order, variant) (ADR 0014 §13).
+///
+/// `onDelete: Restrict` on **both** relations is deliberate. This is ledger and audit state, not a
+/// child collection: cascading it away with a hard-deleted order would silently free capacity that
+/// is still counting — an `UNKNOWN` hold above all, which §8 says only reconciliation may release —
+/// through a path nobody reviewed. §15 already prohibits that outcome when it rules out dropping the
+/// ledger as a rollback. `Restrict` makes such a delete fail loudly instead.
+///
+/// §6.2 additionally depends on `VariantMirror` existing for every reservable variant, because that
+/// row is the lock target that closes the empty-ledger race.
+model VariantCapacityReservation {
+  id          String           @id @default(cuid())
+  orderId     String
+  variantId   String
+  quantity    Int
+  state       ReservationState @default(RESERVED)
+  committedAt DateTime?
+  releasedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  order   OrderMirror   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([orderId, variantId])
+  @@index([variantId, state])
+  @@index([state, updatedAt])
 }

@@ -347,7 +347,34 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   mutual exclusion of `committedAt`/`releasedAt`; (4) ADR §6 rewritten to lock an always-present
   `VariantMirror` row before reading the ledger — the previous rule locked ledger rows keyed by
   `variantId`, which locks nothing on an empty ledger and let the first two concurrent checkouts
-  both read zero. **This remains a design-direction review only: no migration is authorized.**
+  both read zero.
+
+  **Migration authorized 2026-09-17.** Following that design review, the owner authorized writing
+  and running the §13 migration for both models. Applied as
+  `prisma/migrations/20260917080000_add_atomic_capacity_persistence`.
+
+  Scope, stated narrowly so nothing wider is read into it: it covers **exactly** `SellingMode`,
+  `ReservationState`, `ProductSellingPolicy` and `VariantCapacityReservation`, plus back-relations
+  on `ProductMirror`, `OrderMirror` and `VariantMirror`. Additive; no existing column changes
+  meaning; **no backfill**. It does **not** extend the 2026-09-16 five-model merchandising approval,
+  and it does **not** cover the §12 order/preorder snapshot, which belongs to I7 and has no
+  authorization.
+
+  Why no backfill is safe is worth stating, because it is easy to get backwards: **not** the column
+  defaults. A default fires when a row is inserted, and a product with no `ProductSellingPolicy` row
+  never has one applied. `resolveSellingPolicy()` is the single producer of the missing-row answer —
+  `STANDARD` at `−20`, today's behaviour exactly — and every consumer goes through it.
+
+  Reservation **writes** are not shipped by this authorization: they require the ADR §6.2 locking
+  transaction and the §6.4 guarded compare-and-set, both of which are I6a.
+
+  The ADR §4.2 stock-observation marker, which the same review left as an unmet precondition, is now
+  **enforced**: `syncPancakeCatalog()` samples a clock itself immediately before the first Pancake
+  read, so a post-fetch marker is unrepresentable rather than merely discouraged.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  answering a direct question about whether "gỡ gate cho I1" authorized the §13 migration.
 
   Provenance: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
