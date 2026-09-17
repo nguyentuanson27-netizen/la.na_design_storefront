@@ -4,7 +4,10 @@
   authorized and applied 2026-09-17 (migration `20260917080000_add_atomic_capacity_persistence`).
   The §4.2 stock-observation marker is enforced. Reservation *writes* remain I6a.
 - Date: 2026-09-17
-- Scope: G5 architecture. No Prisma migration, no reservation implementation, no Pancake live write.
+- Scope: G5 architecture, plus the §13 persistence it specifies. **No reservation implementation and
+  no Pancake live write** — reservation writes need the §6.2 locking transaction and the §6.4
+  guarded compare-and-set, both of which are I6a. The §12 order/preorder snapshot is I7 and is not
+  authorized here.
 - Implements: master spec §27–§31. Feeds I1, I4, I5, I6a, I6b, I7, I8.
 
 ## Context
