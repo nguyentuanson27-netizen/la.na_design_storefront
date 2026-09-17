@@ -16,7 +16,7 @@ function messageForResult(result: Awaited<ReturnType<typeof submitContactForm>>)
   if (result.ok) {
     return {
       kind: "success",
-      message: "Tin nhắn đã được gửi. La.na Design sẽ phản hồi trong giờ hỗ trợ.",
+      message: "Tin nhắn đã được gửi. Đội ngũ hỗ trợ sẽ phản hồi trong giờ hỗ trợ.",
     };
   }
 
