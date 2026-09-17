@@ -12,14 +12,21 @@
  * always-present `VariantMirror` row first, then read the ledger — and the §6.4 guarded
  * compare-and-set for every state change. Both belong to I6a, and shipping a naive write here would
  * be worse than shipping none: it would look like the capacity gate while enforcing nothing.
+ *
+ * I2 adds the *policy* writes, which are a different kind of write entirely: one row per product,
+ * no ledger, no concurrency hazard that a unique key does not already settle. They are here rather
+ * than in a second module so that the resolver, the read and the write cannot disagree about what a
+ * policy is.
  */
 
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import {
   resolveSellingPolicy,
   type ResolvedSellingPolicy,
+  type SellingMode,
   type StoredSellingPolicy,
 } from "./capacity-policy.ts";
+import { SellingPolicyError } from "./capacity-policy-input.ts";
 
 const policySelect = { sellingMode: true, negativeStockLimit: true } as const;
 
@@ -86,5 +93,119 @@ export function createCapacityRepository(client: PrismaClient) {
     return held._sum.quantity ?? 0;
   }
 
-  return { readSellingPolicy, readSellingPolicies, sumUnambiguouslyHeldQuantity };
+  /**
+   * The product must be a visible product of this shop.
+   *
+   * The foreign key already guarantees the product *exists*; what it cannot say is whose it is.
+   * `ProductSellingPolicy` carries no shop of its own — it is keyed by `productId` alone — so
+   * without this check an admin of one shop could set a selling policy on another shop's product
+   * and nothing in the schema would object. Matches `requireVisibleProducts()` in
+   * `merchandising-repository.ts` rather than inventing a second predicate.
+   */
+  async function requireVisibleProduct(
+    tx: Pick<PrismaClient, "productMirror">,
+    shopId: number,
+    productId: string,
+  ): Promise<void> {
+    const found = await tx.productMirror.findFirst({
+      where: { id: productId, pancakeShopId: shopId, isPresent: true, isActive: true },
+      select: { id: true },
+    });
+    if (found === null) throw new SellingPolicyError("selling-policy-invalid-product");
+  }
+
+  /**
+   * ADR 0014 §11 — a composite parent may not be set to `OVERSELL` or `PREORDER`.
+   *
+   * The gate already refuses such a sale (`composite-oversell-unproven`) and I4 already keeps it off
+   * the page, so nothing would oversell if this write were allowed. It is refused anyway, because
+   * *storing* the intent would leave an operator looking at a product configured for preorder that
+   * silently never preorders, with the reason living three modules away. A refusal at the boundary
+   * tells them now.
+   *
+   * A product is a composite parent when any of its variants has components — the same predicate
+   * `countProjectedCompositeParentVariations()` uses.
+   */
+  async function requireCompositeRestrictionSatisfied(
+    tx: Pick<PrismaClient, "variantMirror">,
+    productId: string,
+    sellingMode: SellingMode,
+  ): Promise<void> {
+    if (sellingMode === "STANDARD") return;
+
+    const compositeParent = await tx.variantMirror.findFirst({
+      where: { productId, compositeComponents: { some: {} } },
+      select: { id: true },
+    });
+    if (compositeParent !== null) {
+      throw new SellingPolicyError("selling-policy-composite-restricted");
+    }
+  }
+
+  /**
+   * Set one product's selling policy.
+   *
+   * An upsert, because `productId` is unique: a second submission for the same product is the
+   * operator changing their mind, not a duplicate to reject. Writing the whole row rather than
+   * patching fields means a mode change can never land with the previous mode's limit still on it.
+   *
+   * It touches `ProductSellingPolicy` and nothing else. §5's "turning oversell off while stock is
+   * negative preserves the negative value" is a property of *not writing stock*, so it is kept by
+   * construction here rather than by a rule that could be forgotten.
+   */
+  async function saveSellingPolicy({
+    shopId,
+    productId,
+    sellingMode,
+    negativeStockLimit,
+  }: {
+    shopId: number;
+    productId: string;
+    sellingMode: SellingMode;
+    negativeStockLimit: number;
+  }): Promise<ResolvedSellingPolicy> {
+    return client.$transaction(async (tx) => {
+      await requireVisibleProduct(tx, shopId, productId);
+      await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
+
+      const stored = await tx.productSellingPolicy.upsert({
+        where: { productId },
+        create: { productId, sellingMode, negativeStockLimit },
+        update: { sellingMode, negativeStockLimit },
+        select: policySelect,
+      });
+      return resolveSellingPolicy(stored);
+    });
+  }
+
+  /**
+   * Remove a product's stored policy, returning it to **unconfigured**.
+   *
+   * Not the same as storing `STANDARD` at the default limit, and the difference is the point: §5.1
+   * gives `isDefault` so an admin surface can show which products an operator has actually
+   * reviewed. Without a clear path, a product that was configured once could never go back to
+   * "not reviewed", and that distinction would decay into decoration.
+   */
+  async function clearSellingPolicy({
+    shopId,
+    productId,
+  }: {
+    shopId: number;
+    productId: string;
+  }): Promise<ResolvedSellingPolicy> {
+    return client.$transaction(async (tx) => {
+      await requireVisibleProduct(tx, shopId, productId);
+      await tx.productSellingPolicy.deleteMany({ where: { productId } });
+      // The missing-row answer, from the one resolver that owns it.
+      return resolveSellingPolicy(null);
+    });
+  }
+
+  return {
+    readSellingPolicy,
+    readSellingPolicies,
+    sumUnambiguouslyHeldQuantity,
+    saveSellingPolicy,
+    clearSellingPolicy,
+  };
 }
