@@ -124,6 +124,11 @@ async function cleanupRateLimits() {
 
 async function cleanupDatabase() {
   await prisma.orderLineSnapshot.deleteMany({}).catch(() => {});
+  // I6b — reservations reference their order and variant with `onDelete: Restrict` (ADR 0014 §13),
+  // deliberately: cascading them away would silently free capacity that is still counting. Now that
+  // a real checkout takes a hold, a fixture that deletes orders or products has to clear the ledger
+  // first, or the delete is refused.
+  await prisma.variantCapacityReservation.deleteMany({});
   await prisma.orderMirror.deleteMany({});
   await prisma.cartItem.deleteMany({});
   await prisma.cart.deleteMany({});
@@ -269,6 +274,11 @@ test.afterEach(async () => {
     await prisma.orderLineSnapshot.deleteMany({
       where: { order: { sourceCartId: cartId } },
     }).catch(() => {});
+    // I6b — the ledger holds its order with `onDelete: Restrict`, so it goes first here too. This
+    // per-test cleanup is the one that actually runs after a confirmed checkout.
+    await prisma.variantCapacityReservation.deleteMany({
+      where: { order: { sourceCartId: cartId } },
+    });
     await prisma.orderMirror.deleteMany({ where: { sourceCartId: cartId } });
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
