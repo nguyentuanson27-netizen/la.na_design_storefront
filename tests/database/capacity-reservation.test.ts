@@ -276,6 +276,56 @@ test("I6a a retry that adds a variant is a conflict, not a partial top-up", asyn
   );
 });
 
+test("I6a a retry that DROPS a variant is a conflict, not a confirmed shrink", async () => {
+  // Comment 5717189555, Required. The first fix compared quantity and state correctly but scoped
+  // the query to the REQUESTED variants, so an order holding A + B could retry as A alone: the
+  // query never returned B, the counts lined up, and it reported success. B kept holding capacity
+  // for a basket that no longer contained it — an over-hold that refuses later legitimate sales
+  // against a reservation nobody was going to use.
+  const first = await seedVariant("drop-a", { stock: 10 });
+  const second = await seedVariant("drop-b", { stock: 1 });
+  const orderId = await seedOrder("drop");
+
+  const held = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [
+      { variantId: first, quantity: 1 },
+      { variantId: second, quantity: 1 },
+    ],
+  });
+  assert.equal(held.ok, true);
+
+  const shrunk = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId: first, quantity: 1 }] });
+  assert.equal(shrunk.ok, false, "dropping a held variant is a changed basket, not a repeat");
+  assert.equal(shrunk.ok === false && shrunk.reason, "reservation-conflict");
+  assert.equal(shrunk.ok === false && shrunk.refusedVariantId, second, "the orphaned hold is named");
+
+  // Both rows are still there and still holding, which is the point: the refusal did not quietly
+  // free B, and it did not quietly confirm a basket that ignored it.
+  assert.equal(await prisma.variantCapacityReservation.count({ where: { orderId } }), 2);
+
+  // And the over-hold is observable from the other side: B's single unit is genuinely spent, so a
+  // different order cannot take it. Without this, "conflict" could be reported while B was free.
+  const rival = await seedOrder("drop-rival");
+  const rivalOutcome = await repository.reserveOrderCapacity({
+    orderId: rival,
+    lines: [{ variantId: second, quantity: 1 }],
+  });
+  assert.equal(rivalOutcome.ok, false);
+  assert.equal(rivalOutcome.ok === false && rivalOutcome.reason, "standard-would-go-negative");
+
+  // The unchanged full basket is still idempotent, so this cannot rot into "any retry conflicts".
+  const exact = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [
+      { variantId: first, quantity: 1 },
+      { variantId: second, quantity: 1 },
+    ],
+  });
+  assert.equal(exact.ok, true);
+  assert.equal(exact.ok === true && exact.alreadyHeld, true);
+});
+
 test("I6a a basket fails as a unit and leaves no partial hold", async () => {
   const roomy = await seedVariant("multi-roomy", { stock: 5 });
   const empty = await seedVariant("multi-empty", { stock: 0 });

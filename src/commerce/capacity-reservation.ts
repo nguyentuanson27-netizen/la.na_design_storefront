@@ -160,26 +160,38 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           variants.map((variant) => [variant.id, earliestObservationStart(variant.warehouseStocks)]),
         );
 
-        // §3 idempotency, and it has to be **exact**.
+        // §3 idempotency, and it has to be **exact**, over the **whole order**.
         //
-        // An earlier version returned success whenever this order already had a row per requested
-        // variant, without comparing quantities or states. That let the same order reserve A×1 and
-        // then retry as A×2 and be told it succeeded while the ledger held one unit — and a
-        // `RELEASED` row, which holds nothing at all, satisfied the count just as well. A caller
-        // treating `ok: true` as the capacity gate would have shipped past the owner's hard limit
-        // on a hold that did not exist. Counting rows is not the same as matching the basket.
+        // Two earlier versions got this wrong in opposite directions, and both were capacity bugs
+        // rather than cosmetic ones:
         //
-        // So a retry is a success only when the ledger already holds *this* basket: same variants,
-        // same quantities, and every row still in a capacity-holding state. Anything else is a
+        // 1. Comparing only the row COUNT let the same order reserve A×1, retry as A×2, and be told
+        //    it succeeded while the ledger held one unit — and a `RELEASED` row, which holds nothing
+        //    at all, satisfied the count just as well. A caller treating `ok: true` as the capacity
+        //    gate would have shipped past the owner's hard limit on a hold that did not exist.
+        // 2. Scoping this query to the REQUESTED variants let an order holding A + B retry as A
+        //    alone and be told it succeeded, because the query never returned B. B kept holding
+        //    capacity for a basket that no longer contained it, and later legitimate sales would be
+        //    refused against a hold nobody was going to use.
+        //
+        // Hence `where: { orderId }` with no variant filter: the comparison is the order's ENTIRE
+        // reservation set against the merged basket. A retry succeeds only when they are the same
+        // variants at the same quantities with every row still capacity-holding. Anything else is a
         // conflict the caller must resolve — a changed basket under a reused order id is a new
         // decision, not a repeat of an old one, and `(orderId, variantId)` leaves no room to hold
         // both.
+        //
+        // Rows outside `variantIds` are therefore read without holding their variant's lock. That is
+        // sound because they can only produce a REFUSAL: the success branch requires the held set to
+        // equal the requested set, so every row it accepts is one this transaction has locked.
         const own = await tx.variantCapacityReservation.findMany({
-          where: { orderId, variantId: { in: variantIds } },
+          where: { orderId },
           select: { id: true, variantId: true, quantity: true, state: true, committedAt: true },
         });
         if (own.length > 0) {
           const requestedByVariantId = new Map(merged.map((line) => [line.variantId, line.quantity]));
+          // A row for a variant outside the basket has no requested quantity, so `undefined`
+          // compares unequal and it lands here as a mismatch — which is exactly the A + B -> A case.
           const mismatch = own.find(
             (row) =>
               row.quantity !== requestedByVariantId.get(row.variantId) ||
