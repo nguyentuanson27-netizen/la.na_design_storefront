@@ -177,6 +177,12 @@ model ProductMirror {
   slugHistory       ProductSlugHistory[]
   promotionTargets  PromotionTarget[]
 
+  homepageFeature      HomepageFeaturedProduct?
+  categoryMemberships  ProductCategoryMembership[]
+  categoryOrders       CategoryProductOrder[]
+  relatedOverrides     RelatedProductOverride[]    @relation("RelatedSource")
+  relatedOverrideOf    RelatedProductOverride[]    @relation("RelatedTarget")
+
   @@index([pancakeShopId, isPresent])
 }
 
@@ -479,4 +485,89 @@ model SyncEvent {
 
   @@index([kind, status])
   @@index([externalId])
+}
+
+// ---------------------------------------------------------------------------
+// Website-owned merchandising (ADR 0013). Owner-approved 2026-09-16, five
+// additive models. Category *identity* stays in `src/brand/category.config.ts`
+// — a row cannot create an App Router route, so persisting the taxonomy would
+// only create a second authority free to disagree with the routes. What lives
+// here is membership and ordering, which are data.
+// ---------------------------------------------------------------------------
+
+/// The homepage Featured section (ADR 0013 §3, master spec §20).
+///
+/// Deliberately global: the approved homepage has exactly one Featured section, so a fake parent
+/// collection would add an owner that does not exist in product truth. `position` is unique, so two
+/// products cannot claim the same slot. An empty table means the section is empty — it must never
+/// fall back to newest/bestseller logic.
+model HomepageFeaturedProduct {
+  productId String @id
+  position  Int    @unique
+
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+/// Website-owned category assignment (ADR 0013 §4.5). One row per (product, assigned category).
+///
+/// Only the assigned node is stored. The top-level tree is derived through the taxonomy and never
+/// persisted, which is what keeps a re-parenting out of the schema. Top-level exclusivity is
+/// enforced at the admin write boundary and audited by `findCategoryMembershipViolations()`; the
+/// database cannot enforce it without a second copy of the taxonomy in SQL.
+model ProductCategoryMembership {
+  productId   String
+  categoryKey String
+  createdAt   DateTime @default(now())
+
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([productId, categoryKey])
+  @@index([categoryKey])
+}
+
+/// Merchandised order for one category's PLP (ADR 0013 §5).
+///
+/// Keyed by `categoryKey` rather than by a membership row, so a parent PLP can rank the union it
+/// lists: a product inherited into `/ao-dai` has no membership row for `aoDai` to carry a position.
+/// Separate from membership on purpose — merging them would make an unranked product
+/// indistinguishable from an unassigned one.
+model CategoryProductOrder {
+  categoryKey String
+  productId   String
+  position    Int
+
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([categoryKey, productId])
+  @@unique([categoryKey, position])
+}
+
+/// Category editorial and mega-menu media (ADR 0013 §6, master spec §21 and §24).
+///
+/// Two explicit fields because the two surfaces have distinct crops. `CollectionDefinition`
+/// media is not reused: that would assert a collection ↔ category identity that does not exist.
+/// `null` means no editorial image, and the UI uses its approved no-image behaviour.
+model CategoryEditorialMedia {
+  categoryKey      String   @id
+  heroImageUrl     String?
+  megaMenuImageUrl String?
+  updatedAt        DateTime @updatedAt
+}
+
+/// Manual related-product override — stage 1 of ADR 0013 §7.
+///
+/// Stages 2–4 need no storage: they are queries over `ProductCategoryMembership`. Self-reference is
+/// rejected at the admin boundary *and* by a database CHECK, because it is intra-row and therefore
+/// something the database genuinely can enforce.
+model RelatedProductOverride {
+  productId        String
+  relatedProductId String
+  position         Int
+
+  product ProductMirror @relation("RelatedSource", fields: [productId], references: [id], onDelete: Cascade)
+  related ProductMirror @relation("RelatedTarget", fields: [relatedProductId], references: [id], onDelete: Cascade)
+
+  @@id([productId, relatedProductId])
+  @@unique([productId, position])
+  @@index([relatedProductId])
 }
