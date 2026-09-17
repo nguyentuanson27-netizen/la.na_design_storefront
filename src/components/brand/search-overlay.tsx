@@ -24,15 +24,19 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
   const { query, setQuery, clearQuery, isLoading, result, announcement } =
     useSearchOverlay(isOpen);
 
+  const wasOpenRef = useRef(false);
+
   // Focus management: save active element, auto-focus input, restore focus on close
   useEffect(() => {
     if (isOpen) {
+      wasOpenRef.current = true;
       previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
-    } else {
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
       const target = previouslyFocusedElement.current ?? triggerRef?.current;
       target?.focus?.();
     }

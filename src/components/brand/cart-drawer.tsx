@@ -22,16 +22,20 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
   const { cart, isLoading, isPending, error, loadCart, updateQuantity, removeItem } =
     useCartDrawer(isOpen);
 
+  const wasOpenRef = useRef(false);
+
   // Focus management: save active element on open, focus close button, restore focus on close
   useEffect(() => {
     if (isOpen) {
+      wasOpenRef.current = true;
       previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
       // Focus after DOM render
       const timer = setTimeout(() => {
         closeButtonRef.current?.focus();
       }, 50);
       return () => clearTimeout(timer);
-    } else {
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false;
       const returnFocusTarget = previouslyFocusedElement.current ?? triggerRef?.current;
       returnFocusTarget?.focus?.();
     }
