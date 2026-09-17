@@ -63,6 +63,7 @@ export type ProductCardModel = Readonly<{
     discountPercent: number | null;
   }>;
   flashSale: Readonly<{ remainingMs: number; countdownText: string | null }> | null;
+  marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
   availability: "in-stock" | "out-of-stock" | "partial";
   selectEvent: TrackingEvent | null;
 }>;
@@ -75,6 +76,8 @@ export type ProductCardModelInput = Readonly<{
   pricingRule?: StorefrontPricingRule;
   flashSale?: StorefrontFlashSalePresentation;
   selectEvent?: TrackingEvent | null;
+  isNewArrival?: boolean;
+  isBestseller?: boolean;
   /**
    * Product-level mapping from variant id into this product's gallery, when the caller has one.
    * The PDP resolves it server-side; listing surfaces do not carry it.
@@ -196,6 +199,15 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           discountPercent: null,
         };
 
+  const marketingBadge =
+    discountPercent > 0
+      ? Object.freeze({ type: "sale" as const, label: `-${discountPercent}%` })
+      : input.isNewArrival
+        ? Object.freeze({ type: "new" as const, label: "Hàng mới" })
+        : input.isBestseller
+          ? Object.freeze({ type: "bestseller" as const, label: "Bán chạy" })
+          : null;
+
   return Object.freeze({
     href: `/shop/${encodeURIComponent(input.slug)}`,
     name: input.name,
@@ -209,6 +221,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           countdownText: describeFlashCountdown(flashSale.remainingMs),
         })
       : null,
+    marketingBadge,
     availability: resolveAvailability(input.variants),
     selectEvent: input.selectEvent ?? null,
   });
