@@ -384,3 +384,11 @@ export const BRAND = loaded.brand;
 export const SIZE_GUIDE = loaded.sizeGuide;
 export const NAVIGATION = loaded.navigation;
 export const FULFILLMENT = loaded.fulfillment;
+
+export {
+  APPROVED_SIZE_GUIDE_IDS,
+  type ApprovedSizeGuideId,
+  isApprovedSizeGuideId,
+  APPROVED_SIZE_GUIDES,
+} from "./size-guide.config.ts";
+

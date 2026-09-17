@@ -248,17 +248,58 @@ try {
 
   const editorialDescription = "Authenticated HTTP admin persistence proof.";
   const careInstructions = "Cold wash. Dry in shade.";
-  const sizeGuide = "Relaxed fit. Choose your normal size.";
+  const validSizeGuide = "set-vay-form-rong";
+  const invalidSizeGuide = "Relaxed fit. Choose your normal size.";
   const seoTitle = "Authenticated admin HTTP smoke";
   const seoDescription = "Verified through a real authenticated Next.js Server Action request.";
 
+  // 1. Fail-closed rejection: submitting arbitrary/legacy sizeGuide must be refused before any write
+  const invalidForm = new FormData();
+  for (const [name, value] of actionEntries) {
+    invalidForm.append(name, value);
+  }
+  invalidForm.set("editorialDescription", editorialDescription);
+  invalidForm.set("careInstructions", careInstructions);
+  invalidForm.set("sizeGuide", invalidSizeGuide);
+  invalidForm.set("seoTitle", seoTitle);
+  invalidForm.set("seoDescription", seoDescription);
+
+  const invalidResponse = await fetch(`${BASE_URL}${editorPath}`, {
+    method: "POST",
+    headers: {
+      accept: "text/html",
+      cookie: adminCookie,
+      origin: BASE_URL,
+    },
+    body: invalidForm,
+    redirect: "manual",
+  });
+  if (!(invalidResponse.status >= 300 && invalidResponse.status < 400)) {
+    const responseBody = (await invalidResponse.text()).slice(0, 4_000);
+    assert.fail(
+      `ADMIN Server Action must redirect on rejected size guide, received ${invalidResponse.status}\n` +
+        `Response body:\n${responseBody}\nServer output:\n${serverOutput}`,
+    );
+  }
+  const invalidLocation = invalidResponse.headers.get("location");
+  assert.ok(invalidLocation, "ADMIN Server Action reject redirect must include Location");
+  const invalidUrl = new URL(invalidLocation, BASE_URL);
+  assert.equal(invalidUrl.pathname, editorPath);
+  assert.equal(invalidUrl.searchParams.get("error"), "invalid");
+
+  const unwritten = await prisma.productContent.findUnique({
+    where: { productId: product.id },
+  });
+  assert.equal(unwritten, null, "rejected size guide must not persist any product content write");
+
+  // 2. Positive save: submitting approved size-guide ID must succeed and persist
   const form = new FormData();
   for (const [name, value] of actionEntries) {
     form.append(name, value);
   }
   form.set("editorialDescription", editorialDescription);
   form.set("careInstructions", careInstructions);
-  form.set("sizeGuide", sizeGuide);
+  form.set("sizeGuide", validSizeGuide);
   form.set("seoTitle", seoTitle);
   form.set("seoDescription", seoDescription);
 
@@ -299,7 +340,7 @@ try {
   assert.deepEqual(persisted, {
     editorialDescription,
     careInstructions,
-    sizeGuide,
+    sizeGuide: validSizeGuide,
     seoTitle,
     seoDescription,
   });

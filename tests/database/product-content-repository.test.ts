@@ -75,7 +75,7 @@ test("product content repository reads source context and upserts editorial publ
     status: "PUBLISHED",
     editorialDescription: "Updated editorial copy.",
     careInstructions: null,
-    sizeGuide: "Relaxed fit.",
+    sizeGuide: "set-vay-form-rong",
     seoTitle: "Updated title",
       seoDescription: "Updated description.",
       collectionSlugs: ["city-uniform", "essentials"],
@@ -88,7 +88,7 @@ test("product content repository reads source context and upserts editorial publ
   assert.equal(updated.status, "PUBLISHED");
   assert.equal(updated.editorialDescription, "Updated editorial copy.");
   assert.equal(updated.careInstructions, null);
-  assert.equal(updated.sizeGuide, "Relaxed fit.");
+  assert.equal(updated.sizeGuide, "set-vay-form-rong");
   assert.deepEqual(updated.collectionSlugs, ["city-uniform", "essentials"]);
   assert.equal(await prisma.productContent.count({ where: { productId: product.id } }), 1);
 

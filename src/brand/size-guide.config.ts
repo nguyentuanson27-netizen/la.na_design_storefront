@@ -73,3 +73,30 @@ export const SIZE_GUIDE: SizeGuideConfig = {
     },
   ],
 };
+
+export const APPROVED_SIZE_GUIDE_IDS = [
+  "ao-dai",
+  "set-vay-form-rong",
+  "set-vay-form-nho",
+] as const;
+
+export type ApprovedSizeGuideId = (typeof APPROVED_SIZE_GUIDE_IDS)[number];
+
+export function isApprovedSizeGuideId(value: unknown): value is ApprovedSizeGuideId {
+  return (
+    typeof value === "string" &&
+    (APPROVED_SIZE_GUIDE_IDS as readonly string[]).includes(value)
+  );
+}
+
+export const APPROVED_SIZE_GUIDES = SIZE_GUIDE.charts.map((chart) => {
+  if (!isApprovedSizeGuideId(chart.id)) {
+    throw new Error(`Size guide chart id "${chart.id}" is not in APPROVED_SIZE_GUIDE_IDS`);
+  }
+  return {
+    id: chart.id,
+    title: chart.title,
+  };
+});
+
+

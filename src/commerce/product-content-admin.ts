@@ -1,5 +1,9 @@
 import { requireAdminSession } from "../auth/authorization.ts";
 import {
+  isApprovedSizeGuideId,
+  type ApprovedSizeGuideId,
+} from "../brand/size-guide.config.ts";
+import {
   readPublishMetadataReadiness,
   type PublishMetadataRequirement,
 } from "../seo/product-metadata-uniqueness.ts";
@@ -118,6 +122,30 @@ function parseTextField(value: unknown, maxLength: number): ParsedTextField {
   return { ok: true, value: normalized.length > 0 ? normalized : null };
 }
 
+export type ParsedSizeGuideField =
+  | { ok: true; value: ApprovedSizeGuideId | null }
+  | { ok: false };
+
+export function parseSizeGuideField(value: unknown): ParsedSizeGuideField {
+  if (value === undefined || value === null) {
+    return { ok: true, value: null };
+  }
+  if (typeof value !== "string") {
+    return { ok: false };
+  }
+
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { ok: true, value: null };
+  }
+
+  if (isApprovedSizeGuideId(trimmed)) {
+    return { ok: true, value: trimmed };
+  }
+
+  return { ok: false };
+}
+
 function parseCollectionSlugs(value: unknown): ParsedCollectionSlugs {
   if (value === undefined || value === null || value === "") {
     return { ok: true, value: [] };
@@ -185,7 +213,7 @@ function parseProductContentInput(input: unknown): ProductContentSnapshot | null
     record.careInstructions,
     PRODUCT_CONTENT_LIMITS.editorialField,
   );
-  const sizeGuide = parseTextField(record.sizeGuide, PRODUCT_CONTENT_LIMITS.editorialField);
+  const sizeGuide = parseSizeGuideField(record.sizeGuide);
   const seoTitle = parseTextField(record.seoTitle, PRODUCT_CONTENT_LIMITS.seoTitle);
   const seoDescription = parseTextField(
     record.seoDescription,

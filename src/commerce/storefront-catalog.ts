@@ -146,7 +146,9 @@ async function fetchPublishedCollectionMap(
   return new Map(definitions.map((def) => [def.slug, { slug: def.slug, title: def.title }]));
 }
 
-function toStorefrontProduct(
+export type SelectedStorefrontProductPayload = SelectedProduct;
+
+export function toStorefrontProduct(
   product: SelectedProduct,
   collectionMap?: ReadonlyMap<string, StorefrontProductCollection>,
 ) {
