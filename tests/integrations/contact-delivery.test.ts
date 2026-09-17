@@ -82,6 +82,7 @@ test("Resend transport owns fixed headers and accepts success only with an email
       apiKey: "test-api-key",
       to: "support@example.com",
       idempotencyKey: "submission-1",
+      subject: "Contact website",
       fetchImpl,
     },
   );
@@ -99,14 +100,19 @@ test("Resend transport owns fixed headers and accepts success only with an email
     from: "website@lanadesign.vn",
     to: ["support@example.com"],
     reply_to: "an@example.com",
-    subject: "Liên hệ website La.na Design",
+    subject: "Contact website",
     text: "Tên: Nguyễn An\nEmail: an@example.com\n\nXin chào",
   });
 });
 
 test("Resend transport classifies provider errors and never treats malformed success as sent", async () => {
   const payload = { name: "Nguyễn An", email: "an@example.com", message: "Xin chào" };
-  const base = { apiKey: "test-api-key", to: "support@example.com", idempotencyKey: "submission-1" };
+  const base = {
+    apiKey: "test-api-key",
+    to: "support@example.com",
+    idempotencyKey: "submission-1",
+    subject: "Contact website",
+  };
 
   assert.deepEqual(
     await sendContactEmailViaResend(payload, {
