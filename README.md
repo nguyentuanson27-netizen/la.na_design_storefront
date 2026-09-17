@@ -1,6 +1,6 @@
-# LA Clothing
+# La.na Design Storefront
 
-Editorial men's fashion ecommerce storefront with Pancake POS integration.
+Official B2C storefront for **La.na Design**, a Vietnamese women’s fashion brand, with Pancake POS integration.
 
 ## Stack
 
@@ -11,7 +11,7 @@ Editorial men's fashion ecommerce storefront with Pancake POS integration.
 - Pancake POS adapter under `src/integrations/pancake/`
 - pnpm 11.4.0 on Node.js 22+
 
-## Local commands
+## Local development
 
 ```bash
 corepack enable
@@ -33,104 +33,63 @@ pnpm release:check
 
 `pnpm prisma:migrate:deploy` applies checked-in production migrations.
 
-## Architecture — what a fork rewrites, and what it must not touch
+## Current project identity
 
-This repository is a storefront **core kit**: a brand fork rewrites the presentation and keeps
-everything else. Phase G's discardability exercise measured that claim by redrawing all nineteen
-pages and the brand components from scratch — 26 presentation files changed, **0 shared-layer
-files** (`docs/phase-g-notes.md`).
+Committed deployment identity lives in `project.config.json`:
 
-**Yours to rewrite per brand**
+- project slug: `la-na-design`
+- database: `la_na_design`
+- Compose project: `la-na-design`
+- production domain: `www.lanadesign.vn`
 
-- `src/app/**/page.tsx` — markup over a view model
-- `src/app/globals.css`
-- `src/components/brand/**`
-- `src/brand/*.config.ts` — Brand Config (identity, contact, navigation, fulfillment, size guide)
+Brand, legal, contact, taxonomy, size-guide and fulfillment truth belongs under `src/brand/` and must trace back to the approved repository authorities below. Pancake remains the external commerce integration; inherited LA Clothing copy is not an authority for this storefront.
 
-**Shared: not a fork's presentation surface**
+## Documentation authority
 
-Everything outside the surfaces above stays shared. In particular: `src/routes` (loaders, view
-models, metadata builders, the route shell), `src/components/headless` (decisions without markup),
-`src/components/commerce` (shared checkout/tracking workflows), `src/commerce`, `src/seo`, `src/db`,
-`src/auth`, `src/integrations`, `src/tracking`, `src/content`, `prisma`, `scripts`, `.github`.
+Use these documents for current La.na Design work:
 
-### The page boundary
+- [`docs/specs/la-na-design-master-spec.md`](docs/specs/la-na-design-master-spec.md) — consolidated implementation contract and precedence rules.
+- [`docs/specs/la-na-design-owner-approved-facts-and-decisions.md`](docs/specs/la-na-design-owner-approved-facts-and-decisions.md) — field-level owner-approved brand facts.
+- [`docs/specs/la-na-design-policy-authority.md`](docs/specs/la-na-design-policy-authority.md) — approved policy wording owned by the website.
+- [`tasks/plan.md`](tasks/plan.md) and [`tasks/todo.md`](tasks/todo.md) — current execution plan and checklist.
+- [`docs/decisions/`](docs/decisions/) — ADR history. Newer ADRs supersede older decisions where stated; old ADRs are retained rather than rewritten.
 
-A module under `src/app` may import from exactly **five internal roots**:
+### Legacy LA Clothing material
 
-```
-src/app   src/routes   src/brand   src/components/brand   src/components/headless
-```
+This repository was forked from the storefront Core Kit / Brand #1 history, so older phase notes, audits, task plans and ADRs can still mention LA Clothing, its old domains or its old production environment. Those files are **historical technical evidence only** unless a current La.na Design document explicitly adopts their contract.
 
-and from an **exact external allowlist** — `react`, `react-dom`, `next`, `next/image`, `next/link`.
-Exact means exact: allowing `next` does not also allow `next/server`, `next/headers`, `next/cache` or
-`next/navigation`. Request/server-state APIs belong below the page seam; `next/navigation` is also
-outside the approved page allowlist.
+Former LA Clothing source-of-truth and executable-operation paths are either replaced with current La.na Design instructions or kept as short tombstones so old links fail safely instead of presenting Brand #1 truth as current truth. Git history remains the archive for their original contents.
 
-`tests/domain/route-boundary.test.ts` enforces this against the repository. It enumerates every
-`.ts`/`.tsx` under `src/app` except `admin/**`, and holds every page-layer module to the policy.
-Server endpoints and the root layout are exempt on the terms spec 04 §8.1 sets — route handlers and
-`sitemap.ts` by filename at any depth, `robots.ts` and `layout.tsx` by exact path at the app root.
+## Architecture boundaries
 
-Each route also renders through `createStorefrontRoute`, which mounts promotion refresh, the
-commerce event, JSON-LD and Meta pixel events unconditionally, so a page cannot drop one by
-forgetting. `tests/domain/route-manifest.test.ts` traces the default export back to the factory.
+The storefront keeps the Core Kit separation between brand presentation and shared commerce/integration layers:
 
-### Bootstrap a new brand
+- `src/brand/` — current La.na Design brand and policy configuration.
+- `src/app/` + `src/components/brand/` — storefront presentation.
+- `src/routes/` — route loaders, view models and metadata builders.
+- `src/commerce/` — shared commerce policy and orchestration.
+- `src/integrations/pancake/` — raw Pancake API boundary.
+- `prisma/` — database schema and migrations.
 
-```bash
-pnpm bootstrap:brand
-```
-
-Reads `project.config.json`, writes `.env.local` from `.env.example`, and renames the social-card
-route directory to the project slug. Then edit `src/brand/*.config.ts` and redraw the surfaces above.
-
-### `LA_*` environment variables
-
-The `LA_` prefix is this template's own namespace for storefront policy that is deployment
-configuration rather than code: shipping (`LA_SHIPPING_FEE_VND`,
-`LA_FREE_SHIPPING_SUBTOTAL_VND`, `LA_FREE_SHIPPING_MIN_QUANTITY`), tracking (`LA_TRACKING_MODE`,
-`LA_BUILD_FACEBOOK_PIXEL_ID`, `LA_GTM_CONTAINER_ID`), merchant feed
-(`LA_MERCHANT_TARGET_COUNTRY`, `LA_MERCHANT_CONTENT_LANGUAGE`, `LA_MERCHANT_CURRENCY`) and
-`LA_PROMOTION_ACTIVATION_ENABLED`. A fork keeps the prefix: it is read by name in
-`src/operations` and in the CI workflows, so renaming it is a code change, not a configuration one.
-`deploy/vps/env.example` carries placeholders for six of these — the shipping and merchant-feed
-values. The four tracking/promotion ones (`LA_TRACKING_MODE`, `LA_BUILD_FACEBOOK_PIXEL_ID`,
-`LA_GTM_CONTAINER_ID`, `LA_PROMOTION_ACTIVATION_ENABLED`) are read by the app but absent from the
-template, so an operator deploying from it gets their defaults without being told they exist. See
-`docs/phase-g-notes.md` §3.3.
-
-### Approved spec and runbook
-
-The contracts above are owned by the `webtemplate` spec repository, not by this one. Implementation
-may be narrower than a spec only after the spec says so — never by widening a contract in a code
-comment.
-
-- Route shell and page boundary — [spec 04](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/04-lop-2-route-shell.md) (§6.3 policy, §8.1 gate scope)
-- Brand Config — [spec 05](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/05-lop-3-brand-config.md)
-- Headless UI — [spec 06](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/06-lop-4-headless-ui.md)
-- Buyer-language tests — [spec 07](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/07-lop-5-test-ngon-ngu.md)
-- Out of scope — [spec 10](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/10-ranh-gioi-khong-lam.md)
-- New-shop runbook — [runbook 08](https://github.com/nguyentuanson27-netizen/webtemplate/blob/main/docs/08-runbook-shop-moi.md)
-
-Phase notes in `docs/phase-*-notes.md` record what each phase decided and what it left open.
+`tests/domain/route-boundary.test.ts` and related architecture tests enforce the page/import boundary. Prefer extending the existing owners instead of duplicating brand facts or Pancake behavior in presentation code.
 
 ## Production deployment
 
-The active production architecture is a self-managed VPS using Docker Compose with Next.js, PostgreSQL, and Caddy.
+The checked-in deployment architecture targets a self-managed VPS using Docker Compose with Next.js, PostgreSQL and Caddy. Repository configuration is not evidence that the external VPS/DNS/TLS cutover has been completed.
 
 Repository deployment assets live under `deploy/vps/`:
 
 - `env.example` — placeholder-only production configuration template;
 - `compose.yml` — app/PostgreSQL/Caddy/ops topology;
 - `Caddyfile` — TLS reverse proxy and trusted client-IP boundary;
-- `deploy.sh` — exact-SHA preflight, backup, migration, promotion, and health flow;
+- `deploy.sh` — exact-SHA preflight, backup, migration, promotion and health flow;
 - `rollback.sh` — application-image rollback only.
 
-See:
+Operational references:
 
-- `docs/decisions/0002-vps-production-infrastructure.md`
+- `docs/decisions/0010-la-na-design-permanent-domain.md`
 - `docs/operations/vps-bootstrap.md`
 - `docs/operations/release-and-rollback.md`
+- `docs/operations/p12-search-exposure.md`
 
 Production secrets and VPS credentials must never be committed to this repository.
