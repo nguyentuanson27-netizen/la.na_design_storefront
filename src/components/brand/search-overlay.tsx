@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 
 import { BRAND } from "@/brand";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { STOREFRONT_DISCOVERY_LIMITS } from "@/components/headless/search-overlay-model";
 import { useSearchOverlay } from "@/components/headless/use-search-overlay";
 
 export type SearchOverlayProps = Readonly<{
@@ -37,7 +38,12 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
       return () => clearTimeout(timer);
     } else if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      const target = previouslyFocusedElement.current ?? triggerRef?.current;
+      const fallbackTarget = triggerRef?.current;
+      const candidateTarget = previouslyFocusedElement.current ?? triggerRef?.current;
+      const target =
+        candidateTarget && document.body.contains(candidateTarget)
+          ? candidateTarget
+          : fallbackTarget;
       target?.focus?.();
     }
   }, [isOpen, triggerRef]);
@@ -75,7 +81,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();
     const trimmed = query.trim();
-    if (trimmed.length > 0) {
+    if (trimmed.length > 0 && trimmed.length <= STOREFRONT_DISCOVERY_LIMITS.query) {
       onClose();
       router.push(`/shop?q=${encodeURIComponent(trimmed)}`);
     }
@@ -138,9 +144,10 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
               name="q"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              maxLength={STOREFRONT_DISCOVERY_LIMITS.query}
               placeholder="Tìm kiếm sản phẩm..."
               aria-label="Nhập từ khóa tìm kiếm"
-              className="w-full bg-transparent py-4 text-xl md:text-3xl font-serif text-[#2A1810] outline-none placeholder:text-[#3B2219]/35"
+              className="w-full bg-transparent py-4 text-xl md:text-3xl font-serif text-[#2A1810] outline-none placeholder:text-[#70584B]"
             />
             {query.length > 0 ? (
               <button
@@ -244,7 +251,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           ) : null}
 
           {/* View All CTA */}
-          {query.trim().length > 0 ? (
+          {query.trim().length > 0 && query.trim().length <= STOREFRONT_DISCOVERY_LIMITS.query ? (
             <div className="border-t border-[#3B2219]/15 pt-6 text-center">
               <Link
                 href={`/shop?q=${encodeURIComponent(query.trim())}`}

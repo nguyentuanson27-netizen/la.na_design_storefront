@@ -96,3 +96,5 @@ export function buildSearchAnnouncement(
   }
   return `Tìm thấy ${parts.join(" và ")} cho "${trimmed}".`;
 }
+
+export { STOREFRONT_DISCOVERY_LIMITS } from "../../commerce/storefront-discovery.ts";

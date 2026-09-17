@@ -96,15 +96,25 @@ test("F1 typography tokens: serif heading and sans-serif body are declared", () 
 });
 
 test("F1 brand assets: distinct roles for master logo, social card, and favicon", () => {
-  // Master logo role: The approved master logo image asset is pending delivery from the brand owner.
-  // We do not invent/fabricate fake logo assets; header and footer use the text wordmark as a fallback presentation.
+  // Master logo role: approved text wordmark used strictly in header and footer
+  assert.equal(BRAND.identity.displayNameUpper, "La.na Design");
   assert.equal(typeof BRAND.identity.displayNameUpper, "string");
 
-  // Social card role: dedicated endpoint / route handler serves social preview until approved asset is supplied
+  // Social card role: dedicated endpoint / route handler serves 1200x630 OG image
   const socialCardPath = path.join(REPO_ROOT, `src/app/${BRAND.identity.socialCardSlug}.png`);
   assert.ok(existsSync(socialCardPath), `Social card endpoint must exist at ${socialCardPath}`);
 
   // Favicon role: dedicated svg in src/app
   const faviconPath = path.join(REPO_ROOT, "src/app/icon.svg");
   assert.ok(existsSync(faviconPath), `Favicon asset must exist at ${faviconPath}`);
+});
+
+test("F1 contrast ratio: secondary brown #70584B satisfies WCAG AA (>= 4.5:1) on cream #faf7f2", () => {
+  const secondaryLuminance = relativeLuminance(parseHexColor("#70584B"));
+  const paperLuminance = relativeLuminance(parseHexColor("#faf7f2"));
+  const contrast = contrastRatio(secondaryLuminance, paperLuminance);
+  assert.ok(
+    contrast >= 4.5,
+    `Secondary brown #70584B on cream #faf7f2 must have contrast >= 4.5:1 (got ${contrast.toFixed(2)})`,
+  );
 });

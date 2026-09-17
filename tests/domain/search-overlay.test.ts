@@ -74,8 +74,17 @@ test("F2b search overlay component: enforces accessible dialog contracts and Esc
   // Role alert for error state
   assert.match(source, /role="alert"/);
 
-  // Focus restore prioritizes actual opener over desktop trigger
+  // Focus restore prioritizes actual opener over desktop trigger and checks DOM connection
   assert.match(source, /previouslyFocusedElement\.current \?\? triggerRef\?\.current/);
+  assert.match(source, /document\.body\.contains\(candidateTarget\)/);
+
+  // Input enforces maxLength and placeholder has high contrast
+  assert.match(source, /maxLength=\{STOREFRONT_DISCOVERY_LIMITS\.query\}/);
+  assert.match(source, /placeholder:text-\[#70584B\]/);
+
+  // Submit and View All CTA guard against query > 80 chars
+  assert.match(source, /trimmed\.length\s*<=\s*STOREFRONT_DISCOVERY_LIMITS\.query/);
+  assert.match(source, /query\.trim\(\)\.length\s*<=\s*STOREFRONT_DISCOVERY_LIMITS\.query/);
 });
 
 test("F2b search suggestions: enforces 80-character query limit and handles infrastructure errors", async () => {

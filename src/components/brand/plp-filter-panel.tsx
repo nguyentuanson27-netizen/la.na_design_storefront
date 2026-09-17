@@ -55,6 +55,7 @@ export function PlpFilterPanel({
   const [maxPriceInput, setMaxPriceInput] = useState(
     activeFilters.maxPriceVnd !== null ? String(activeFilters.maxPriceVnd) : "",
   );
+  const [priceError, setPriceError] = useState<string | null>(null);
 
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -73,6 +74,7 @@ export function PlpFilterPanel({
     setPrevActiveFilters(activeFilters);
     setMinPriceInput(activeFilters.minPriceVnd !== null ? String(activeFilters.minPriceVnd) : "");
     setMaxPriceInput(activeFilters.maxPriceVnd !== null ? String(activeFilters.maxPriceVnd) : "");
+    setPriceError(null);
   }
 
   // Manage body scroll, auto-focus, and focus restoration to opener
@@ -134,27 +136,42 @@ export function PlpFilterPanel({
     const trimmedMin = minPriceInput.trim();
     if (trimmedMin !== "") {
       const parsed = Number(trimmedMin);
-      if (Number.isSafeInteger(parsed) && parsed >= 0) {
-        minVal = Math.min(parsed, STOREFRONT_DISCOVERY_LIMITS.priceVnd);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) {
+        setPriceError("Giá tối thiểu không hợp lệ.");
+        return;
       }
+      if (parsed > STOREFRONT_DISCOVERY_LIMITS.priceVnd) {
+        setPriceError(
+          `Giá tối đa cho phép là ${STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN")} ₫.`,
+        );
+        return;
+      }
+      minVal = parsed;
     }
 
     const trimmedMax = maxPriceInput.trim();
     if (trimmedMax !== "") {
       const parsed = Number(trimmedMax);
-      if (Number.isSafeInteger(parsed) && parsed >= 0) {
-        maxVal = Math.min(parsed, STOREFRONT_DISCOVERY_LIMITS.priceVnd);
+      if (!Number.isSafeInteger(parsed) || parsed < 0) {
+        setPriceError("Giá tối đa không hợp lệ.");
+        return;
       }
+      if (parsed > STOREFRONT_DISCOVERY_LIMITS.priceVnd) {
+        setPriceError(
+          `Giá tối đa cho phép là ${STOREFRONT_DISCOVERY_LIMITS.priceVnd.toLocaleString("vi-VN")} ₫.`,
+        );
+        return;
+      }
+      maxVal = parsed;
     }
 
-    // If both are provided and min > max, swap them
+    // Min price must not exceed max price
     if (minVal !== null && maxVal !== null && minVal > maxVal) {
-      const temp = minVal;
-      minVal = maxVal;
-      maxVal = temp;
-      setMinPriceInput(String(minVal));
-      setMaxPriceInput(String(maxVal));
+      setPriceError("Giá tối thiểu không được lớn hơn giá tối đa.");
+      return;
     }
+
+    setPriceError(null);
 
     const href = buildCategoryDiscoveryHref(
       categoryPath,
@@ -179,7 +196,7 @@ export function PlpFilterPanel({
     <div className="border-b border-[#3B2219]/15 pb-6">
       {/* Top action row: Count, mobile drawer button, desktop sort dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="text-xs uppercase tracking-wider text-[#3B2219]/70 font-sans">
+        <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
           <span>{totalCount} sản phẩm</span>
         </div>
 
@@ -264,7 +281,7 @@ export function PlpFilterPanel({
         {/* Sizes */}
         {availableSizes.length > 0 ? (
           <div className="flex items-center gap-1.5">
-            <span className="font-semibold uppercase tracking-wider text-[#3B2219]/60 mr-1">Size:</span>
+            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Size:</span>
             {availableSizes.map((size) => {
               const sizeHref = buildToggleSizeHref(categoryPath, activeFilters, size);
               const isSelected = activeFilters.size?.toLowerCase() === size.toLowerCase();
@@ -288,7 +305,7 @@ export function PlpFilterPanel({
         {/* Colors */}
         {availableColors.length > 0 ? (
           <div className="flex items-center gap-1.5">
-            <span className="font-semibold uppercase tracking-wider text-[#3B2219]/60 mr-1">Màu:</span>
+            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Màu:</span>
             {availableColors.slice(0, 6).map((color) => {
               const colorHref = buildToggleColorHref(categoryPath, activeFilters, color);
               const isSelected = activeFilters.color?.toLowerCase() === color.toLowerCase();
@@ -310,36 +327,49 @@ export function PlpFilterPanel({
         ) : null}
 
         {/* Desktop Price Range Form */}
-        <form onSubmit={handlePriceFilterSubmit} className="flex items-center gap-1.5">
-          <span className="font-semibold uppercase tracking-wider text-[#3B2219]/60 mr-1">Giá:</span>
-          <input
-            type="number"
-            min="0"
-            max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-            placeholder="Từ"
-            aria-label="Giá tối thiểu"
-            value={minPriceInput}
-            onChange={(e) => setMinPriceInput(e.target.value)}
-            className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
-          />
-          <span>-</span>
-          <input
-            type="number"
-            min="0"
-            max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
-            placeholder="Đến"
-            aria-label="Giá tối đa"
-            value={maxPriceInput}
-            onChange={(e) => setMaxPriceInput(e.target.value)}
-            className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
-          />
-          <button
-            type="submit"
-            className="rounded border border-[#3B2219]/30 px-2.5 py-1 font-medium uppercase transition hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-[#FAF7F2]"
-          >
-            Lọc
-          </button>
-        </form>
+        <div>
+          <form onSubmit={handlePriceFilterSubmit} className="flex items-center gap-1.5">
+            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Giá:</span>
+            <input
+              type="number"
+              min="0"
+              max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+              placeholder="Từ"
+              aria-label="Giá tối thiểu"
+              value={minPriceInput}
+              onChange={(e) => {
+                setMinPriceInput(e.target.value);
+                if (priceError) setPriceError(null);
+              }}
+              className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+            />
+            <span>-</span>
+            <input
+              type="number"
+              min="0"
+              max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+              placeholder="Đến"
+              aria-label="Giá tối đa"
+              value={maxPriceInput}
+              onChange={(e) => {
+                setMaxPriceInput(e.target.value);
+                if (priceError) setPriceError(null);
+              }}
+              className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+            />
+            <button
+              type="submit"
+              className="rounded border border-[#3B2219]/30 px-2.5 py-1 font-medium uppercase transition hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-[#FAF7F2]"
+            >
+              Lọc
+            </button>
+          </form>
+          {priceError ? (
+            <p role="alert" aria-live="assertive" className="text-xs text-[#8A3A35] mt-1">
+              {priceError}
+            </p>
+          ) : null}
+        </div>
 
         {/* Clear All */}
         {hasFilters ? (
@@ -484,7 +514,7 @@ export function PlpFilterPanel({
               {/* Sizes */}
               {availableSizes.length > 0 ? (
                 <div>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
                     Kích cỡ
                   </span>
                   <div className="flex flex-wrap gap-2">
@@ -513,7 +543,7 @@ export function PlpFilterPanel({
               {/* Colors */}
               {availableColors.length > 0 ? (
                 <div>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
+                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
                     Màu sắc
                   </span>
                   <div className="flex flex-wrap gap-2">
@@ -541,7 +571,7 @@ export function PlpFilterPanel({
 
               {/* Price range form */}
               <div>
-                <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
+                <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
                   Khoảng giá (₫)
                 </span>
                 <form onSubmit={handlePriceFilterSubmit} className="space-y-3">
@@ -553,7 +583,10 @@ export function PlpFilterPanel({
                       placeholder="Từ"
                       aria-label="Giá tối thiểu"
                       value={minPriceInput}
-                      onChange={(e) => setMinPriceInput(e.target.value)}
+                      onChange={(e) => {
+                        setMinPriceInput(e.target.value);
+                        if (priceError) setPriceError(null);
+                      }}
                       className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                     />
                     <span>-</span>
@@ -564,7 +597,10 @@ export function PlpFilterPanel({
                       placeholder="Đến"
                       aria-label="Giá tối đa"
                       value={maxPriceInput}
-                      onChange={(e) => setMaxPriceInput(e.target.value)}
+                      onChange={(e) => {
+                        setMaxPriceInput(e.target.value);
+                        if (priceError) setPriceError(null);
+                      }}
                       className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                     />
                   </div>
@@ -575,6 +611,11 @@ export function PlpFilterPanel({
                     Áp dụng giá
                   </button>
                 </form>
+                {priceError ? (
+                  <p role="alert" aria-live="assertive" className="text-xs text-[#8A3A35] mt-2">
+                    {priceError}
+                  </p>
+                ) : null}
               </div>
             </div>
 

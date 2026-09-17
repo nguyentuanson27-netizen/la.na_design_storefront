@@ -370,7 +370,7 @@ test("F4b price filter UI contract: desktop price form, price pill clear link, i
     "Price inputs must sync when activeFilters change",
   );
 
-  // D: Client validation clamps to STOREFRONT_DISCOVERY_LIMITS.priceVnd and swaps min > max
+  // D: Client validation enforces limits without silent clamping or silent swapping
   assert.match(
     source,
     /STOREFRONT_DISCOVERY_LIMITS\.priceVnd/,
@@ -378,8 +378,13 @@ test("F4b price filter UI contract: desktop price form, price pill clear link, i
   );
   assert.match(
     source,
-    /if\s*\(minVal !== null && maxVal !== null && minVal > maxVal\)\s*\{\s*const temp = minVal;\s*minVal = maxVal;\s*maxVal = temp;/,
-    "Price filter submission must swap min and max if min > max",
+    /if\s*\(minVal !== null && maxVal !== null && minVal > maxVal\)\s*\{\s*setPriceError\(/,
+    "Price filter submission must reject min > max with error message rather than silently swapping",
+  );
+  assert.match(
+    source,
+    /role="alert"\s*aria-live="assertive"/,
+    "Price filter error must be announced with role alert and aria-live assertive",
   );
 });
 
@@ -422,6 +427,13 @@ test("F4b infinite grid: consumes server nextCursor and announces errors via acc
     hookSource,
     /setAnnouncement\(errorMessage\);/,
     "usePlpInfiniteGrid must set announcement when error occurs",
+  );
+
+  // Observer does not attach when error is present, preventing infinite retry loops
+  assert.match(
+    hookSource,
+    /if\s*\(!sentinel\s*\|\|\s*!hasNextPage\s*\|\|\s*isLoadingMore\s*\|\|\s*error\s*!==\s*null\)\s*return;/,
+    "usePlpInfiniteGrid must not attach observer when error is present to prevent retry loops",
   );
 
   // Grid component has accessible live region and role=alert for errors

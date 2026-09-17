@@ -58,6 +58,7 @@ export function usePlpInfiniteGrid({
 
     setIsLoadingMore(true);
     setError(null);
+    setAnnouncement("");
 
     try {
       const result = await loadCategoryNextPageAction({
@@ -106,10 +107,10 @@ export function usePlpInfiniteGrid({
     totalCount,
   ]);
 
-  // IntersectionObserver for infinite scroll
+  // IntersectionObserver for infinite scroll - guarded against error !== null to prevent retry loops
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel || !hasNextPage || isLoadingMore) return;
+    if (!sentinel || !hasNextPage || isLoadingMore || error !== null) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -122,7 +123,7 @@ export function usePlpInfiniteGrid({
 
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasNextPage, isLoadingMore, loadMore]);
+  }, [error, hasNextPage, isLoadingMore, loadMore]);
 
   return {
     products,

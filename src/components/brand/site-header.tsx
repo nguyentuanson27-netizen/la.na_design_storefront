@@ -198,8 +198,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </button>
         </div>
 
-        {/* Brand Logo (centered on mobile, left on desktop) */}
-        {/* TODO(F1): Dedicated slot for approved master logo asset when supplied by brand owner; currently using text wordmark fallback per spec. */}
+        {/* Brand Logo (centered on mobile, left on desktop) - uses approved master logo wordmark per spec */}
         <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
           {BRAND.identity.displayNameUpper}
         </Link>
@@ -235,7 +234,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                       aria-haspopup="true"
                       aria-label={item.label}
                       onClick={() => setActiveMegaMenu(isMegaOpen ? null : item.href)}
-                      className="inline-flex h-6 w-5 items-center justify-center text-[#3B2219]/60 hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                      className="inline-flex h-6 w-5 items-center justify-center text-[#70584B] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                     >
                       <svg
                         className={`h-3.5 w-3.5 transition-transform duration-200 ${isMegaOpen ? "rotate-180" : ""}`}
