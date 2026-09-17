@@ -5,13 +5,15 @@
 }
 
 :root {
-  --ink: #11110f;
-  --black: #11110f;
-  --paper: #f5f2ea;
-  --white: #fbfaf6;
-  --stone: #d9d3c7;
-  --olive: #60634e;
-  --line: rgba(17, 17, 15, 0.2);
+  --ink: #3b2219;
+  --black: #2a1810;
+  --paper: #faf7f2;
+  --cream: #f5f0e8;
+  --white: #fffdfa;
+  --stone: #d4c7b8;
+  --olive: #70584b;
+  --chocolate: #3b2219;
+  --line: rgba(59, 34, 25, 0.15);
 }
 
 * {
