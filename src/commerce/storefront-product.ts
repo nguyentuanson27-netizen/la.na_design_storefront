@@ -95,6 +95,7 @@ export type StorefrontSelectableOption = Pick<
   | "basePriceVnd"
   | "isDiscounted"
   | "purchasable"
+  | "isPreorderSale"
   | "unavailableReason"
 >;
 
@@ -202,26 +203,36 @@ export function toStorefrontSelectableOptions(
 }
 
 /**
- * The product's selling policy, as `resolveSellingPolicy()` returns it.
+ * The product-level facts the capacity rule needs and a variant row does not carry: the selling
+ * policy `resolveSellingPolicy()` returns, plus whether this product is a composite parent.
  *
- * Optional, and its default is the approved missing-row answer — `STANDARD` floored at 0 — so every
- * caller that has not been switched keeps exactly today's behaviour. That is what makes I1's
- * no-backfill safe here too: a product with no policy row sells precisely as it did before.
+ * `isComposite` is here rather than hard-coded at the call site because ADR 0014 refuses `OVERSELL`
+ * and `PREORDER` for a composite parent until component-aware atomic capacity exists. A display that
+ * assumed `false` would offer exactly what the commit boundary is going to refuse — the drift I4
+ * exists to remove — and it would do so silently, the moment I2 lets an operator set a policy.
+ *
+ * Optional, and its default is the approved missing-row answer — `STANDARD` floored at 0, not a
+ * composite — so every caller that has not been switched keeps exactly today's behaviour. The
+ * default cannot be wrong about `isComposite` today, because the restriction only bites for a
+ * non-`STANDARD` mode and the default is `STANDARD`; it is stated rather than omitted so that the
+ * caller which does know has somewhere to say it.
  */
-export type StorefrontSellingPolicy = Readonly<{
+export type StorefrontProductCapacity = Readonly<{
   sellingMode: SellingMode;
   negativeStockLimit: number;
+  isComposite: boolean;
 }>;
 
-const STANDARD_SELLING_POLICY: StorefrontSellingPolicy = Object.freeze({
+export const STANDARD_STANDALONE_CAPACITY: StorefrontProductCapacity = Object.freeze({
   sellingMode: "STANDARD",
   negativeStockLimit: DEFAULT_NEGATIVE_STOCK_LIMIT,
+  isComposite: false,
 });
 
 export function buildStorefrontVariantOptions(
   variants: readonly StorefrontVariantFacts[],
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
-  sellingPolicy: StorefrontSellingPolicy = STANDARD_SELLING_POLICY,
+  productCapacity: StorefrontProductCapacity = STANDARD_STANDALONE_CAPACITY,
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -245,9 +256,9 @@ export function buildStorefrontVariantOptions(
     const sellability = resolveVariantSellability({
       mirroredStock: variant.sellableStock,
       activeReservedQuantity: 0,
-      sellingMode: sellingPolicy.sellingMode,
-      negativeStockLimit: sellingPolicy.negativeStockLimit,
-      isComposite: false,
+      sellingMode: productCapacity.sellingMode,
+      negativeStockLimit: productCapacity.negativeStockLimit,
+      isComposite: productCapacity.isComposite,
     });
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 

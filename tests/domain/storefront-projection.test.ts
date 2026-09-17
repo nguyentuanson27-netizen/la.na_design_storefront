@@ -175,3 +175,38 @@ test("duplicate component labels fail closed instead of presenting indistinguish
     true,
   );
 });
+
+/**
+ * Review 5233519975, Required, the observable half. Compositeness is this module's fact, so the
+ * restriction has to be enforced where the set is told apart from its parts. Without the flag
+ * flowing, an `OVERSELL` parent would have been offered below zero on the page and refused at the
+ * commit boundary by the same rule — display and gate disagreeing, which is what I4 removes.
+ */
+test("an OVERSELL policy sells a component below zero but never the composite parent", () => {
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { sellableStock: -2 })],
+    componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M", { sellableStock: -2 })] }],
+    hasCompositeGraph: true,
+    sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
+  });
+
+  const parent = projection.options.find((option) => option.kindKey === "parent");
+  const component = projection.options.find((option) => option.kindKey === "component-1");
+
+  // Same stock, same limit, same policy. The only difference is which side of the set it is on.
+  assert.equal(parent?.purchasable, false, "ADR 0014 refuses OVERSELL for a composite parent");
+  assert.equal(parent?.unavailableReason, "OUT_OF_STOCK");
+  assert.equal(component?.purchasable, true, "a component is an ordinary product and is not restricted");
+
+  // Both directions, so this cannot rot into "the parent is never purchasable": under the default
+  // STANDARD policy at positive stock the parent sells exactly as it did before I4.
+  const standard = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M")],
+    componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M")] }],
+    hasCompositeGraph: true,
+  });
+  assert.equal(
+    standard.options.find((option) => option.kindKey === "parent")?.purchasable,
+    true,
+  );
+});

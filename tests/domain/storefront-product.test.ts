@@ -276,3 +276,62 @@ test("U27a mirrored inventory can state an availability only when every row is w
   assert.equal(resolve([Number.NEGATIVE_INFINITY]), false);
   assert.equal(resolve([5, Number.NaN]), false);
 });
+
+/**
+ * Review 5233519975, Required. `buildStorefrontVariantOptions()` passed `isComposite: false` to the
+ * capacity rule unconditionally, so a composite parent would have been offered below zero the moment
+ * I2 let an operator set `OVERSELL` — while the commit boundary, using the same rule with the real
+ * flag, refused it. That is precisely the display/gate drift I4 exists to remove, reintroduced by a
+ * hard-coded argument.
+ */
+test("a composite parent is unsellable under OVERSELL and PREORDER, and unaffected under STANDARD", () => {
+  const parent = [
+    {
+      id: "set-m",
+      pancakeVariationId: "pancake-set-m",
+      color: null,
+      size: "M",
+      sellableStock: -2,
+      retailPrice: 790_000,
+      retailPriceAfterDiscount: 790_000,
+    },
+  ];
+  const optionFor = (sellingMode: "STANDARD" | "OVERSELL" | "PREORDER", isComposite: boolean) =>
+    buildStorefrontVariantOptions(parent, undefined, {
+      sellingMode,
+      negativeStockLimit: -20,
+      isComposite,
+    })[0]!;
+
+  // Standalone: the limit does what I4 shipped it to do — −2 is above the −20 floor, so it sells,
+  // and PREORDER carries the §30 marker because ready stock is gone.
+  assert.equal(optionFor("OVERSELL", false).purchasable, true);
+  assert.equal(optionFor("PREORDER", false).purchasable, true);
+  assert.equal(optionFor("PREORDER", false).isPreorderSale, true);
+
+  // Composite: refused, at exactly the same stock and limit. The difference is the flag alone.
+  assert.equal(optionFor("OVERSELL", true).purchasable, false);
+  assert.equal(optionFor("OVERSELL", true).unavailableReason, "OUT_OF_STOCK");
+  assert.equal(optionFor("PREORDER", true).purchasable, false);
+  assert.equal(
+    optionFor("PREORDER", true).isPreorderSale,
+    false,
+    "a marker on something the shopper cannot add is worse than no marker",
+  );
+
+  // STANDARD is untouched by the restriction, which only bites for a non-STANDARD mode. Both
+  // directions are asserted so this cannot rot into "composites are never sellable": a composite at
+  // positive stock still sells exactly as it did before I4.
+  assert.equal(optionFor("STANDARD", true).purchasable, false, "−2 is below STANDARD's floor of 0");
+  assert.equal(optionFor("STANDARD", false).purchasable, false);
+  const stockedParent = [{ ...parent[0]!, sellableStock: 4 }];
+  for (const isComposite of [true, false]) {
+    const option = buildStorefrontVariantOptions(stockedParent, undefined, {
+      sellingMode: "STANDARD",
+      negativeStockLimit: -20,
+      isComposite,
+    })[0]!;
+    assert.equal(option.purchasable, true);
+    assert.equal(option.isPreorderSale, false);
+  }
+});
