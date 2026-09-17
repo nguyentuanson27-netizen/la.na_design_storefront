@@ -339,6 +339,44 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
 
   Provenance for both: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR).
+- **Checkpoint B — G1 Merchant + structured-data mapping** — **accepted 2026-09-17**. The owner
+  accepted the availability mapping [ADR 0011](../decisions/0011-merchant-structured-data-availability-semantics.md)
+  records: availability is projected from shopper sellability rather than from the internal mode
+  name; internal `preorder` is **not** Google `preorder` (Google reserves that for unreleased
+  products) and maps to `backorder` when a released product is still accepted below ready stock;
+  a genuinely purchasable-and-fulfillable `oversell` state may publish `in_stock`; the exact
+  negative limit publishes `out_of_stock`; and one shared projection must feed both the Merchant
+  output and the product JSON-LD.
+
+  Scope, stated narrowly: this accepts the **mapping and its evidence**, not publication of every
+  row. The internal-preorder/below-ready-stock → `backorder` row stays **blocked**, because
+  `availability_date` is required for it and no website-owned product-level public date authority
+  exists. Accepting G1 does **not** unblock I9 for that row, and nothing may derive a date from
+  `today + 15`, order confirmation, or campaign expiry to work around it (ADR 0011 §`availability_date`
+  authority). I9 must still fail closed there.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  in direct answer to the open Checkpoint B row.
+- **Checkpoint B — G2 Pancake zero/negative-stock + composite evidence** — **accepted 2026-09-17**.
+  The owner accepted the bounded live evidence recorded in
+  [`docs/integrations/pancake-zero-negative-stock-capability-probe.md`](../integrations/pancake-zero-negative-stock-capability-probe.md):
+  on the authorized test shop, Pancake accepted orders at stock 0, accepted orders driving stock
+  below 0, accepted two concurrent orders at stock 0, and drove a 1:1 composite child to −1.
+
+  Scope, stated narrowly so nothing wider is read into it: the acceptance covers the observations
+  **as recorded, with the probe's own stated limits**. It establishes nothing about non-1:1
+  composite multipliers, multi-component atomicity under partial failure or contention, nested
+  BOMs, a composite parent whose component starts negative, unlimited overselling safety, or a
+  safe storefront concurrency model. It is therefore the factual basis for ADR 0014's conclusion
+  that Pancake is **not** the enforcement authority, and for the composite `OVERSELL`/`PREORDER`
+  restriction in v1 — not a licence to lift either. The probe does **not** need re-running, and
+  this acceptance does not authorize a second live run.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  in direct answer to the open Checkpoint B row. The earlier credential-exposure follow-up is
+  recorded separately in the probe document and is unchanged by this acceptance.
 
 ## Still pending — do not invent
 

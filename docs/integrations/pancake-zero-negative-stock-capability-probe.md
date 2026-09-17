@@ -1,6 +1,9 @@
 # Pancake zero/negative-stock & composite capability probe (G2)
 
-Status: **Historical controlled-write evidence complete; credential revocation/rotation owner-confirmed on 2026-09-16.**
+Status: **Historical controlled-write evidence complete and owner-accepted at Checkpoint B on
+2026-09-17; credential revocation/rotation owner-confirmed on 2026-09-16.**
+
+The acceptance covers the observations below **as recorded, with the limits in “What the historical run did not prove” intact** — it does not extend the conclusions and does not authorize a further live run. Recorded with provenance in [`docs/specs/la-na-design-owner-approved-facts-and-decisions.md`](../specs/la-na-design-owner-approved-facts-and-decisions.md) › Settled decisions.
 
 > [!NOTE]
 > A Pancake credential was exposed during early PR #9 development. The repository owner confirmed on **2026-09-16** that the exposed credential was revoked/rotated. The credential value is not recorded here. Repository review cannot independently verify provider-side state, so this document records the owner attestation rather than claiming direct provider verification. The probe script continues to require `PANCAKE_PROBE_CREDENTIAL_ROTATED=true` as an explicit runtime attestation before Pancake network execution; this flag does not itself rotate a credential.

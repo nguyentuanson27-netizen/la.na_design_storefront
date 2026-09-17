@@ -1,6 +1,10 @@
 # ADR 0011 — Merchant + structured-data availability semantics
 
-- Status: **Accepted for G1 evidence; I9 partially blocked by missing product-level date authority**
+- Status: **Accepted.** The owner accepted this mapping as the Checkpoint B G1 gate on
+  2026-09-17 (`docs/specs/la-na-design-owner-approved-facts-and-decisions.md` › Settled
+  decisions). The acceptance covers the mapping, not publication of every row: I9 stays
+  blocked for the internal-preorder → `backorder` row until a reviewed product-level public
+  availability date authority exists.
 - Date: 2026-09-16
 - Scope: G1 only. No Merchant/JSON-LD implementation change is made by this ADR.
 
