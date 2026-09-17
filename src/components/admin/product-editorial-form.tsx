@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { APPROVED_SIZE_GUIDES, isApprovedSizeGuideId } from "@/brand";
 import { PRODUCT_CONTENT_LIMITS } from "@/commerce/product-content-admin";
 import { SEO_LENGTH_GUIDANCE } from "@/commerce/seo-length-guidance";
 import { SeoLengthField } from "./seo-length-field";
@@ -71,14 +72,27 @@ export function ProductEditorialForm({
             </label>
 
             <label className="block">
-              <span className="text-xs font-semibold uppercase tracking-[0.13em]">Size guide</span>
-              <textarea
-                className={textareaClassName}
+              <span className="text-xs font-semibold uppercase tracking-[0.13em]">Bảng size</span>
+              <select
+                className={inputClassName}
                 defaultValue={content?.sizeGuide ?? ""}
-                maxLength={PRODUCT_CONTENT_LIMITS.editorialField}
                 name="sizeGuide"
-                rows={5}
-              />
+              >
+                <option value="">Chưa chọn bảng size</option>
+                {content?.sizeGuide && !isApprovedSizeGuideId(content.sizeGuide) ? (
+                  <option disabled value={content.sizeGuide}>
+                    [Không hợp lệ] {content.sizeGuide} — vui lòng chọn lại
+                  </option>
+                ) : null}
+                {APPROVED_SIZE_GUIDES.map((guide) => (
+                  <option key={guide.id} value={guide.id}>
+                    {guide.title} ({guide.id})
+                  </option>
+                ))}
+              </select>
+              <span className="mt-3 block text-xs leading-5 text-black/55">
+                Chọn bảng size đã được phê duyệt cho sản phẩm. Để trống nếu chưa gán bảng size.
+              </span>
             </label>
           </div>
         </section>

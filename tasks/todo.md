@@ -45,7 +45,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] G3 transport decision accepted; any new provider/dependency/credential boundary is explicitly approved before F9b provider/adapter work.
 
 ## Admin merchandising
-- [ ] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
+- [x] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
 - [ ] **M2** After Checkpoint A, implement minimal Featured/editorial-image storage; wait for Checkpoint B before migration/DB work. G4 is settled: standalone Homepage Featured uses `HomepageFeaturedProduct` and must not reuse `CollectionDefinition.featuredProductSlugs`; category/mega-menu media uses `CategoryEditorialMedia` keyed by category key (ADR 0013 §3, §6).
 - [ ] **M3a** After M2, add manual related-product controls; inherit the same Checkpoint B migration gate. Target is ADR 0013 §7: manual override (`RelatedProductOverride`) → same subcategory → same parent tree → **no** collection fallback, with the deterministic within-stage order §7 specifies (`CategoryProductOrder.position`, then `name`, then `id`) pinned by tests. Remove the superseded shared-collection fallback in `storefront-related-products.ts`.
 - [ ] **M3b** After M2, add default PLP merchandising order; inherit the same Checkpoint B migration gate. Order owner is `CategoryProductOrder`, keyed by the same category key as membership so a parent PLP can rank the union it lists (ADR 0013 §5).
