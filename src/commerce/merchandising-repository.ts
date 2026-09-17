@@ -76,27 +76,7 @@ export type CategoryCandidateRow = Readonly<{
   position: number | null;
 }>;
 
-/**
- * The two complementary bucket reads, as one unit.
- *
- * Exported and taking its own reader so the snapshot boundary is explicit in the code rather than
- * implied: these two statements are only complementary while they observe the same committed
- * ranking state, and the caller is responsible for giving them one. Review `5232098227` found them
- * running as independent statements under `Promise.all`, where a `replaceCategoryProductOrder()`
- * committing in between produces either:
- *
- * - a **duplicate** — the ranked read sees a product as ranked while the unranked read, on a later
- *   snapshot, sees the rank already deleted, so the product lands in both buckets; or
- * - an **omission** — the unranked read excludes it as ranked, and the ranked read, on a later
- *   snapshot, no longer finds the rank, so it lands in neither.
- *
- * De-duplicating the merge would hide the first and do nothing about the second, which is why the
- * fix is the shared snapshot rather than a filter on the way out.
- *
- * The reads are awaited in sequence rather than with `Promise.all`: they share one transaction, so
- * there is nothing to gain from overlapping them, and sequencing makes the single-snapshot intent
- * legible.
- */
+/** The product shape every candidate read projects. */
 const CANDIDATE_PRODUCT_FIELDS = { id: true, slug: true, name: true } as const;
 
 type CategoryBucketArgs = {
