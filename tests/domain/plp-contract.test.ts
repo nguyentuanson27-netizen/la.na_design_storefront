@@ -250,33 +250,34 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
 
   const mockCloseBtn = {
     tagName: "BUTTON",
-    hasAttribute: (attr: string) => false,
-    getAttribute: (attr: string) => null,
+    hasAttribute: () => false,
+    getAttribute: () => null,
     focus: () => { closeBtnFocused = true; },
   } as unknown as HTMLElement;
 
   const mockFilterLink = {
     tagName: "A",
-    hasAttribute: (attr: string) => false,
-    getAttribute: (attr: string) => null,
+    hasAttribute: () => false,
+    getAttribute: () => null,
     focus: () => {},
   } as unknown as HTMLElement;
 
   const mockApplyBtn = {
     tagName: "BUTTON",
-    hasAttribute: (attr: string) => false,
-    getAttribute: (attr: string) => null,
+    hasAttribute: () => false,
+    getAttribute: () => null,
     focus: () => { applyBtnFocused = true; },
   } as unknown as HTMLElement;
 
   const focusables = [mockCloseBtn, mockFilterLink, mockApplyBtn];
 
   const mockContainer = {
-    querySelectorAll: (selector: string) => focusables,
+    querySelectorAll: () => focusables,
   } as unknown as HTMLElement;
 
   const originalDoc = globalThis.document;
-  (globalThis as any).document = { activeElement: mockApplyBtn };
+  const docHolder = globalThis as unknown as { document: { activeElement: HTMLElement | null } };
+  docHolder.document = { activeElement: mockApplyBtn };
 
   try {
     // 1. Tab on last element (Apply button) wraps to close button (first)
@@ -292,7 +293,7 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
     assert.equal(prevented, true, "Tab from last element must prevent default");
 
     // 2. Shift+Tab on first element (close button) wraps to apply button (last)
-    (globalThis as any).document.activeElement = mockCloseBtn;
+    docHolder.document.activeElement = mockCloseBtn;
     let shiftPrevented = false;
     const shiftTabEvent = {
       key: "Tab",
@@ -304,7 +305,7 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
     assert.equal(applyBtnFocused, true, "Shift+Tab from close button must wrap to apply button");
     assert.equal(shiftPrevented, true, "Shift+Tab from close button must prevent default");
   } finally {
-    (globalThis as any).document = originalDoc;
+    docHolder.document = originalDoc;
   }
 });
 
