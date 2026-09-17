@@ -238,18 +238,18 @@ test("G5 a committed reservation holds until the mirror observably includes the 
     reservationHoldsCapacity({
       state: "COMMITTED",
       committedAt,
-      stockSyncedAt: new Date("2026-09-16T23:59:59Z"),
+      stockObservationStartedAt: new Date("2026-09-16T23:59:59Z"),
     }),
     true,
   );
 
-  // Mirror is strictly newer: it necessarily read Pancake after the order landed, so continuing to
+  // The observation began after the commit, so it could not have missed the decrement; continuing to
   // hold would subtract the same units twice.
   assert.equal(
     reservationHoldsCapacity({
       state: "COMMITTED",
       committedAt,
-      stockSyncedAt: new Date("2026-09-17T00:00:01Z"),
+      stockObservationStartedAt: new Date("2026-09-17T00:00:01Z"),
     }),
     false,
   );
@@ -257,19 +257,19 @@ test("G5 a committed reservation holds until the mirror observably includes the 
   // Ties and missing/invalid timestamps resolve to keep holding. The failure modes are not
   // symmetric: over-holding refuses a sale, under-holding breaches the owner's hard limit.
   assert.equal(
-    reservationHoldsCapacity({ state: "COMMITTED", committedAt, stockSyncedAt: committedAt }),
+    reservationHoldsCapacity({ state: "COMMITTED", committedAt, stockObservationStartedAt: committedAt }),
     true,
   );
   assert.equal(reservationHoldsCapacity({ state: "COMMITTED", committedAt }), true);
   assert.equal(
-    reservationHoldsCapacity({ state: "COMMITTED", committedAt, stockSyncedAt: null }),
+    reservationHoldsCapacity({ state: "COMMITTED", committedAt, stockObservationStartedAt: null }),
     true,
   );
   assert.equal(
     reservationHoldsCapacity({
       state: "COMMITTED",
       committedAt,
-      stockSyncedAt: new Date(Number.NaN),
+      stockObservationStartedAt: new Date(Number.NaN),
     }),
     true,
   );
@@ -393,4 +393,32 @@ test("G5 an unrecognized stored mode falls back to the most restrictive mode", (
   assert.ok(SELLING_MODES.includes(resolved.sellingMode));
   assert.equal(resolved.negativeStockLimit, -7);
   assert.equal(capacityFloorForMode(resolved.sellingMode, resolved.negativeStockLimit), 0);
+});
+
+test("G5 a stock read that started before the commit does not retire the hold, however late it lands", () => {
+  // Review 5230768526. A persist-time marker is not evidence that the mirror includes the decrement:
+  //
+  //   1. catalog sync begins a Pancake stock read       (23:59:59)
+  //   2. the checkout commits on Pancake, decrementing  (00:00:00)
+  //   3. the in-flight read returns a PRE-COMMIT snapshot
+  //   4. that snapshot is persisted locally             (00:00:30)
+  //
+  // Comparing the persist instant against `committedAt` would retire the hold at step 4 even though
+  // the stored stock still does not contain the decrement, so the units are counted by neither side
+  // and the next checkout spends them again. Only the observation's start time rules that out.
+  const observationStartedAt = new Date("2026-09-16T23:59:59Z");
+  const committedAt = new Date("2026-09-17T00:00:00Z");
+  const persistedAt = new Date("2026-09-17T00:00:30Z");
+
+  assert.ok(persistedAt.getTime() > committedAt.getTime(), "the fixture must persist after the commit");
+
+  assert.equal(
+    reservationHoldsCapacity({
+      state: "COMMITTED",
+      committedAt,
+      stockObservationStartedAt: observationStartedAt,
+    }),
+    true,
+    "a read that started before the commit may carry pre-commit stock, so the hold must stay",
+  );
 });

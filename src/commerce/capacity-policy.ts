@@ -231,8 +231,15 @@ export type ReservationHoldInput = Readonly<{
   state: ReservationState;
   /** When the reservation reached `COMMITTED`. Required only for that state. */
   committedAt?: Date | null;
-  /** `WarehouseStock.syncedAt` for the variant this reservation holds. */
-  stockSyncedAt?: Date | null;
+  /**
+   * When the mirror's stock observation for this variant **was initiated** — the instant before the
+   * Pancake read began, not the instant its result was written locally.
+   *
+   * The distinction is the whole correctness of the `COMMITTED` rule, so the field is named for the
+   * requirement rather than for whichever column happens to supply it. A persist-time marker is
+   * **not** a valid value here; see `reservationHoldsCapacity`.
+   */
+  stockObservationStartedAt?: Date | null;
 }>;
 
 /**
@@ -247,10 +254,28 @@ export type ReservationHoldInput = Readonly<{
  * checkout can spend them twice. Once the mirror has caught up, continuing to hold would subtract
  * them twice.
  *
- * The test is `stockSyncedAt > committedAt`: a sync strictly newer than the commit necessarily read
- * Pancake after the order landed. Ties and missing timestamps resolve to *keep holding*, because the
- * failure modes are not symmetric — over-holding refuses a sale that could have been made, while
- * under-holding breaches the hard limit the owner set.
+ * **The retirement test needs evidence about when the observation started, not when it landed.**
+ * An earlier version compared a persist-time `WarehouseStock.syncedAt` against `committedAt` and
+ * justified it as "a sync strictly newer than the commit necessarily read Pancake after the order
+ * landed". That does not follow, and this interleaving breaks it:
+ *
+ * 1. catalog sync begins a Pancake stock read;
+ * 2. the checkout commits on Pancake, which decrements;
+ * 3. the in-flight read returns a **pre-commit** snapshot;
+ * 4. that snapshot is persisted locally, stamping a marker later than `committedAt`.
+ *
+ * The mirror now carries stock that does not include the decrement while claiming to be newer than
+ * the commit, so a persist-time test retires the hold early and the units are counted by neither
+ * side — the exact oversell this ledger exists to prevent.
+ *
+ * A read that *starts* after the commit cannot miss it, so the sound test is
+ * `stockObservationStartedAt > committedAt`. Callers must supply a marker captured before the
+ * Pancake request; ADR 0014 §4.1 makes that a binding precondition on the mirror rather than an
+ * assumption about a column name.
+ *
+ * Ties and missing timestamps resolve to *keep holding*, because the failure modes are not
+ * symmetric — over-holding refuses a sale that could have been made, while under-holding breaches
+ * the hard limit the owner set.
  */
 export function reservationHoldsCapacity(input: ReservationHoldInput): boolean {
   switch (input.state) {
@@ -262,10 +287,10 @@ export function reservationHoldsCapacity(input: ReservationHoldInput): boolean {
       return false;
     case "COMMITTED": {
       const committedAt = input.committedAt;
-      const stockSyncedAt = input.stockSyncedAt;
-      if (!(committedAt instanceof Date) || !(stockSyncedAt instanceof Date)) return true;
-      if (Number.isNaN(committedAt.getTime()) || Number.isNaN(stockSyncedAt.getTime())) return true;
-      return !(stockSyncedAt.getTime() > committedAt.getTime());
+      const observedFrom = input.stockObservationStartedAt;
+      if (!(committedAt instanceof Date) || !(observedFrom instanceof Date)) return true;
+      if (Number.isNaN(committedAt.getTime()) || Number.isNaN(observedFrom.getTime())) return true;
+      return !(observedFrom.getTime() > committedAt.getTime());
     }
   }
 }

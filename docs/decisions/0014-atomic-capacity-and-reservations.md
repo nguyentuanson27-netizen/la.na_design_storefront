@@ -149,9 +149,52 @@ the mirror. So:
 - hold forever → once the mirror catches up, the same units are subtracted **twice** and the variant
   is under-sold permanently.
 
-Rule: a `COMMITTED` reservation keeps holding **until the mirror observably includes the decrement**,
-tested as `WarehouseStock.syncedAt > committedAt`. A sync strictly newer than the commit necessarily
-read Pancake after the order landed.
+Rule: a `COMMITTED` reservation keeps holding **until the mirror observably includes the decrement**.
+
+The test must be about **when the stock observation started**, not when its result was stored:
+
+> `stockObservationStartedAt > committedAt`
+
+where `stockObservationStartedAt` is the instant captured **before** the Pancake stock read was
+issued. A read that starts after the commit cannot miss the decrement; a read that starts before it
+can, no matter how late it lands.
+
+**Why the earlier rule was wrong.** This section previously said
+`WarehouseStock.syncedAt > committedAt`, justified as "a sync strictly newer than the commit
+necessarily read Pancake after the order landed". That does not follow, and review `5230768526`
+gave the interleaving that breaks it:
+
+1. catalog sync begins a Pancake stock read;
+2. the checkout commits on Pancake, which decrements;
+3. the in-flight read returns a **pre-commit** snapshot;
+4. that snapshot is persisted locally, stamping a marker later than `committedAt`.
+
+The mirror then holds stock without the decrement while carrying a timestamp newer than the commit.
+A persist-time test retires the hold there, the units are counted by neither side, and the next
+checkout spends them again — breaching the hard limit this ledger exists to enforce. The regression
+case is pinned by `tests/domain/capacity-policy.test.ts` ("a stock read that started before the
+commit does not retire the hold, however late it lands").
+
+### 4.2 Binding precondition on the mirror (I1 / I6a)
+
+`reservationHoldsCapacity()` names its input `stockObservationStartedAt` rather than `syncedAt`
+precisely because the column name is not the contract. Before any caller may feed
+`WarehouseStock.syncedAt` into it, one of these must be true and stated:
+
+- **`syncedAt` is defined and enforced as a read-start marker** — captured before the Pancake
+  request and never recomputed at write time; or
+- **an explicit marker is persisted** — a sync generation or request-start timestamp recorded
+  alongside the stock row, with its own documented contract.
+
+Today neither is established. `syncPancakeCatalog()` accepts `syncedAt` as a caller-supplied
+parameter and imposes no contract on it; `syncConfiguredPancakeCatalog()` happens to capture
+`new Date()` before the fetch, and `scripts/pancake-durability-evidence.ts` supplies its own. So the
+current wiring satisfies the requirement **by accident at one call site**, which is not a guarantee
+anything may be built on — and the name `syncedAt` actively invites the unsound persist-time
+reading. I1 must close this before the `COMMITTED` rule is trusted in a runtime path.
+
+Until then the predicate is still safe to ship: a caller with no valid marker passes nothing, and a
+missing marker resolves to **keep holding**.
 
 Ties, missing and invalid timestamps resolve to **keep holding**, because the failure modes are not
 symmetric: over-holding refuses a sale that could have been made, while under-holding breaches the
@@ -573,7 +616,7 @@ and must not be the rollback path.
 
 | Task | Contract from this ADR |
 |---|---|
-| **I1** | §13 persistence |
+| **I1** | §13 persistence, and §4.2's stock-observation marker before the `COMMITTED` rule is trusted |
 | **I4** | §1 + §5 — one sellability predicate, `capacity-policy.ts` |
 | **I5** | §2 — cart/PDP advisory, commit boundary authoritative |
 | **I6a** | §6 locking + §7 multi-line atomicity |
