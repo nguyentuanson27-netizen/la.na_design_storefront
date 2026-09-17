@@ -215,7 +215,8 @@ test("the external allowlist is exact and does not collapse to package roots", (
 });
 
 function normalizePath(filePath: string | null): string | null {
-  return filePath ? path.resolve(filePath) : null;
+  if (filePath === null) return null;
+  return filePath.replaceAll("\\", "/");
 }
 
 test("resolution goes through TypeScript, using the project's own alias and extension rules", () => {
@@ -237,7 +238,15 @@ test("resolution goes through TypeScript, using the project's own alias and exte
 test("normalizePath handles forward slashes and backslashes portably across platforms", () => {
   const forward = "src/routes/manifest.ts";
   const backward = "src\\routes\\manifest.ts";
+  assert.equal(normalizePath(forward), "src/routes/manifest.ts");
+  assert.equal(normalizePath(backward), "src/routes/manifest.ts");
   assert.equal(normalizePath(forward), normalizePath(backward));
+
+  const windowsPath = "C:\\repo\\src\\routes\\manifest.ts";
+  const posixPath = "C:/repo/src/routes/manifest.ts";
+  assert.equal(normalizePath(windowsPath), posixPath);
+  assert.equal(normalizePath(posixPath), normalizePath(windowsPath));
+
   assert.equal(normalizePath(null), null);
 });
 
