@@ -109,6 +109,11 @@ export function buildStorefrontProductProjection({
   hasCompositeGraph: boolean;
   pricingRule?: StorefrontPricingRule;
   /**
+   * The policy of **this** product — the standalone product, or the composite parent. It is not the
+   * components': `ProductSellingPolicy` is keyed by `productId`, a component is a different product,
+   * and a component with no row of its own resolves to `STANDARD` like any other. Inheriting the
+   * parent's would sell a child below zero on a policy nobody set for it.
+   *
    * Defaults to the approved missing-row answer, so every caller that has not been switched keeps
    * today's behaviour. I2 is what starts supplying a real one; the composite restriction below is
    * wired now so that it is already enforced on the day it stops being inert.
@@ -129,7 +134,7 @@ export function buildStorefrontProductProjection({
   }
 
   const options: StorefrontProjectionOption[] = [
-    // The parent set is the composite; its components are ordinary products and are not restricted.
+    // The parent set is the composite, and the policy passed in is the parent's.
     ...projectOptions(
       parentVariants,
       COMPOSITE_PARENT_KIND_KEY,
@@ -151,7 +156,12 @@ export function buildStorefrontProductProjection({
         label,
         ambiguousLabel ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
-        sellingPolicy,
+        // Deliberately NOT the parent's policy. A component is its own product with its own
+        // `ProductSellingPolicy` row, or none, and none means `STANDARD` — so a component this
+        // projection cannot resolve a policy for stays at the default rather than inheriting a
+        // `PREORDER`/`OVERSELL` the operator set on the set. Reading each component's own policy is
+        // I2's job; until then the default is the correct answer, not a placeholder.
+        STANDARD_STANDALONE_CAPACITY,
       ),
     );
   });
