@@ -281,6 +281,35 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
 - **Product category and `defaultGender`** — women's fashion, `female`; three size charts.
 - **Baseline route set** — decided in §5: `/lookbook` and `/flash-sale` go, `/sale` stays as the one
   promotion landing page.
+- **Parent-only category membership** — **yes**, a product may be assigned directly to a parent
+  category (`Áo dài`, `Set đồ`) without belonging to any of its subcategories. Approved by the
+  repository owner on **2026-09-16**, answering the question G4 had carried as pending; recorded in
+  [ADR 0013 §4.4](../decisions/0013-website-owned-merchandising-persistence.md) and carried in code
+  as `APPROVED_CATEGORY_MEMBERSHIP_POLICY`.
+
+  Consequence, stated so no later surface invents a different one: such a product lists on the
+  parent page and on **no** subcategory page. Nothing may guess a subcategory for it.
+
+  Provenance: given in the Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR) in
+  direct answer to the question posed by the G4 work, not inferred from an existing document. The
+  other owner-approved category rules — several categories per product, one top-level tree only,
+  child membership projecting into the parent listing, website-owned membership as source of truth —
+  were supplied with the same G4 instruction and are recorded in ADR 0013 §4.3.
+- **Checkpoint B — G4 merchandising migration path** — **approved 2026-09-16**, covering all five
+  additive models ADR 0013 specifies: `HomepageFeaturedProduct` (§3),
+  `ProductCategoryMembership` (§4.5), `CategoryProductOrder` (§5), `CategoryEditorialMedia` (§6) and
+  `RelatedProductOverride` (§7). This unblocks M2, M3a and M3b writing those migrations.
+
+  Scope of the approval, stated narrowly so nothing wider is read into it: it covers **only** those
+  five additive models. Every one is additive — new tables plus back-relations on `ProductMirror` —
+  no existing column changes meaning, and **no backfill is permitted**; category membership starts
+  empty and is admin-assigned. It does **not** approve the other Checkpoint B rows (G5
+  selling-policy/capacity, and the G1/G2/G3 acceptances), which remain open.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR)
+  after the five models were listed for review.
 
 ## Still pending — do not invent
 

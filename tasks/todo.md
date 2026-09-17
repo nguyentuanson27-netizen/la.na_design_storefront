@@ -10,15 +10,15 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **A3** Replace Brand #1 identity/contact/merchant/default SEO truth; preserve `Lana Design` as search alias only.
 - [x] **A4** Replace size guide with `ao-dai`, `set-vay-form-rong`, `set-vay-form-nho`; body measurements; cm/kg; no fixed tolerance.
 - [x] **A5** Align carriers/delivery/returns/refund/COD-only payment; Hà Nội 1–3, other provinces 3–10.
-- [ ] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
-- [ ] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
+- [x] **F3a** Create every new navigation destination before cutover: crawlable parent/child category targets **and `/sale`** using existing truthful listing/promotion projections; do not switch active navigation yet.
+- [x] **A6** After F3a, atomically activate the approved primary navigation and remove obsolete `/lookbook`/`/flash-sale` links from active navigation surfaces (at least primary + footer); verify all active links resolve non-404.
 - [x] **A7a** Update About/contact legal/support surfaces; legal/business roles distinct.
 - [x] **A7b** Make all 11 required policy items reachable through dedicated pages + stable `/policies`
   anchors. Owner-approved legal/static content is normalized in
   `docs/specs/la-na-design-policy-authority.md`; COD-only overrides stale bank-transfer payment
   wording, approved contact facts replace placeholders, and no contact-form delivery capability is
   published before F9b.
-- [ ] **A8** After A6, remove Brand #2 public `/lookbook` + `/flash-sale` routes and align sitemap/canonical policy; `/sale` already exists from F3a and remains the only public discounted-products route.
+- [x] **A8** After A6, remove Brand #2 public `/lookbook` + `/flash-sale` routes and align sitemap/canonical policy; `/sale` already exists from F3a and remains the only public discounted-products route.
 
 ### Checkpoint A
 - [ ] F3a + A1–A8 review: 0 Critical / 0 Required.
@@ -34,11 +34,11 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **G1** Verify current official Merchant + structured-data availability/date contracts; decide and approve a compliant `availability_date` strategy. Evidence complete in ADR 0011; I9 backorder publication remains blocked until a reviewed product-level public date authority exists.
 - [x] **G2** Controlled Pancake zero/negative-stock + composite write evidence completed on authorized test shop `1720000650`; bounded observations and post-run hardening are recorded in `docs/integrations/pancake-zero-negative-stock-capability-probe.md`. **Credential incident follow-up:** repository owner confirmed on 2026-09-16 that the previously exposed Pancake credential was revoked/rotated; no credential value is recorded here.
 - [x] **G3** Inspect existing outbound-email capability and decide transport; if a new provider/dependency/credential is required, only propose it until Checkpoint B approves that boundary. ADR 0012 proposes Resend via server `fetch`; provider/sender/DNS/secret boundary still requires Checkpoint B. Direct HTTP must supply Resend's required static `User-Agent`.
-- [ ] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required. **PARTIAL:** ADR 0013 settles size-guide reuse, preserves collection-only semantics, and identifies a dedicated homepage Featured persistence gap. G4 is not approved until one canonical Brand #2 category identity/product-membership authority is documented for category PLP order, category/mega-menu media and same-category related fallback.
+- [x] **G4** Map merchandising requirements to existing storage; record whether any schema migration is actually required. **ARCHITECTURE-COMPLETE:** ADR 0013 ratifies `src/brand/category.config.ts` as the canonical category taxonomy (identity/hierarchy stay code — no migration) and adds `src/commerce/category-taxonomy.ts` as its query/invariant boundary with domain tests. Membership, category PLP order, category media and the related-product override are specified as five additive models pending Checkpoint B; none is created here. Top-level exclusivity is enforced at the validated admin write boundary and audited, not claimed as a database guarantee — review `5229201195` showed the earlier composite-FK proposal did not actually enforce it. Taxonomy changes bypass that boundary, so ADR §4.8 makes a pre-activation audit against the *proposed* taxonomy a release gate across every category-keyed owner, and §4.9 retires category keys permanently so stale merchandising can never reattach (reviews `5229272917`, `5229297352`). The parent-only membership question is **owner-approved on 2026-09-16: yes**, recorded in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` › Settled decisions and carried as `APPROVED_CATEGORY_MEMBERSHIP_POLICY` (ADR §4.4); changing it later is one constant plus a data review, no migration.
 - [ ] **G5** Design/review atomic capacity state machine using G2 evidence; cover retries/ambiguous writes/composites.
 
 ### Checkpoint B — before migrations/dependencies
-- [ ] Human approves G4 merchandising **migration path if required**; no merchandising schema migration before this checkpoint. Homepage Featured needs a dedicated additive owner; category-dependent shapes remain blocked until G4 settles the canonical category authority.
+- [x] Human approves G4 merchandising **migration path** — **approved 2026-09-16, all five additive models**: `HomepageFeaturedProduct`, `ProductCategoryMembership`, `CategoryProductOrder`, `CategoryEditorialMedia`, `RelatedProductOverride` (ADR 0013 §3, §4.5, §5, §6, §7). Recorded in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` › Settled decisions. The approval covers **only** these five additive models: no backfill is permitted, category membership starts empty and admin-assigned, and no existing column changes meaning. The other Checkpoint B rows below are **not** covered by it.
 - [ ] Human approves G5 selling-policy/capacity architecture.
 - [ ] G1 Merchant + structured-data mapping accepted.
 - [ ] G2 Pancake/composite evidence accepted.
@@ -46,9 +46,9 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 
 ## Admin merchandising
 - [ ] **M1** After A4, reuse `ProductContent.sizeGuide` as allowlisted guide ID; admin selects one of 3 guides.
-- [ ] **M2** After Checkpoint A + approved G4, implement minimal Featured/editorial-image storage; if migration is required, wait for Checkpoint B before migration/DB work. Current blocker: G4 must first settle the canonical category authority; standalone Homepage Featured must use its dedicated owner and must not reuse `CollectionDefinition.featuredProductSlugs`.
-- [ ] **M3a** After M2, add manual related-product controls; inherit the same conditional Checkpoint B migration gate. Current blocker: approved G4 must define the same-category authority so the target remains `manual override first -> same-category fallback`.
-- [ ] **M3b** After M2, add default PLP merchandising order; inherit the same conditional Checkpoint B migration gate. Current blocker: approved G4 must define the canonical category authority that owns category-specific order.
+- [ ] **M2** After Checkpoint A, implement minimal Featured/editorial-image storage; wait for Checkpoint B before migration/DB work. G4 is settled: standalone Homepage Featured uses `HomepageFeaturedProduct` and must not reuse `CollectionDefinition.featuredProductSlugs`; category/mega-menu media uses `CategoryEditorialMedia` keyed by category key (ADR 0013 §3, §6).
+- [ ] **M3a** After M2, add manual related-product controls; inherit the same Checkpoint B migration gate. Target is ADR 0013 §7: manual override (`RelatedProductOverride`) → same subcategory → same parent tree → **no** collection fallback, with the deterministic within-stage order §7 specifies (`CategoryProductOrder.position`, then `name`, then `id`) pinned by tests. Remove the superseded shared-collection fallback in `storefront-related-products.ts`.
+- [ ] **M3b** After M2, add default PLP merchandising order; inherit the same Checkpoint B migration gate. Order owner is `CategoryProductOrder`, keyed by the same category key as membership so a parent PLP can rank the union it lists (ADR 0013 §5).
 
 ## Inventory selling modes
 - [ ] **I1** Add approved website-owned selling-policy/order-snapshot/reservation persistence; existing products default `STANDARD`.
@@ -111,7 +111,6 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] Final review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required.
 
 ## Explicitly still pending / do not invent
-- [ ] Canonical Brand #2 category identity/product-membership authority for category/subcategory routes and same-category consumers. This is a G4 blocker, not a reassignment of F3a/M2/M3 ownership or approved dependency gates.
 - [ ] Real hero campaign assets/destinations.
 - [ ] Child collection names/content.
 - [ ] Real source for `Bán chạy` before badge/sort use.
