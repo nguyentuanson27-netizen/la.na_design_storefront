@@ -75,6 +75,7 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
   { path: "src/app/track-order/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/search/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/account/page.tsx", shell: true, metadata: "static" },
+  { path: "src/app/login/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/new-arrivals/page.tsx", shell: true, metadata: "page" },
 ];
 

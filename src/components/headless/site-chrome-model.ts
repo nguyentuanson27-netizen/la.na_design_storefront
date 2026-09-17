@@ -28,6 +28,16 @@ export type SitePromotionModel = Readonly<{
   headline: string;
 }>;
 
+export type CategoryMegaMedia = Readonly<{
+  categoryKey: string;
+  imageUrl: string;
+  altText?: string | null;
+}>;
+
+export type SiteHeaderModel = Readonly<{
+  megaMedia: readonly CategoryMegaMedia[];
+}>;
+
 export type SiteFooterModel = Readonly<{
   facts: ReturnType<typeof buildPublicBrandFacts>;
   contact: typeof PUBLIC_CONTACT_FACTS;
@@ -37,16 +47,22 @@ export type SiteFooterModel = Readonly<{
 
 export type SiteChromeContent = Readonly<{
   promotion: SitePromotionModel;
+  header: SiteHeaderModel;
   footer: SiteFooterModel;
 }>;
 
-export function buildSiteChromeContent(): SiteChromeContent {
+export function buildSiteChromeContent(
+  headerMedia: readonly CategoryMegaMedia[] = [],
+): SiteChromeContent {
   const policy = readGuestShippingPolicy();
 
   return {
     promotion: {
       label: describeGuestShippingPromotion(policy).title,
       headline: describeGuestShippingPromotionHeadline(policy),
+    },
+    header: {
+      megaMedia: headerMedia,
     },
     footer: {
       facts: buildPublicBrandFacts(policy),

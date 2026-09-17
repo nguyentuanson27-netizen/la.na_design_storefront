@@ -21,8 +21,7 @@ export function ProductCard({
   model: ProductCardModel;
   tone: ProductCardTone;
 }) {
-  const { price, primaryImage, hoverImage, flashSale } = model;
-  const discountPercent = price.discountPercent ?? 0;
+  const { price, primaryImage, hoverImage, flashSale, marketingBadge } = model;
 
   return (
     <article className="group">
@@ -33,11 +32,21 @@ export function ProductCard({
         event={model.selectEvent}
       >
         <div
-          className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
+          className={`product-visual product-visual--${tone} relative aspect-[4/5] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
-          {discountPercent > 0 ? (
-            <span className="product-badge product-badge--sale z-10">-{discountPercent}%</span>
+          {marketingBadge ? (
+            <span
+              className={`product-badge product-badge--${marketingBadge.type} absolute top-3 right-3 z-10 px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-wider ${
+                marketingBadge.type === "sale"
+                  ? "bg-[#3B2219] text-[#FAF7F2]"
+                  : marketingBadge.type === "new"
+                    ? "bg-[#70584B] text-[#FAF7F2]"
+                    : "bg-[#2A1810] text-[#FAF7F2]"
+              }`}
+            >
+              {marketingBadge.label}
+            </span>
           ) : null}
           {primaryImage ? (
             <>
@@ -67,37 +76,39 @@ export function ProductCard({
             <span className="garment-silhouette" />
           )}
         </div>
-        {/* The catalog card carries price only: the photo already identifies the garment, and
-            name, editorial copy and stock state are the product page's job. The name stays in
-            the document but out of sight so the heading outline, assistive tech and crawlers
-            still read the card as this product. */}
-        <div className="product-meta">
-          <h2 className="sr-only">{model.name}</h2>
+        <div className="product-meta mt-2.5">
+          <h2 className="product-title font-serif text-sm md:text-base font-normal leading-snug text-[#2A1810] line-clamp-2">
+            {model.name}
+          </h2>
           {flashSale ? (
             <>
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.12em]">
-                <span className="bg-black px-2 py-1 text-white">FLASH SALE</span>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.12em]">
+                <span className="bg-[#2A1810] px-2 py-0.5 text-[#FAF7F2]">FLASH SALE</span>
                 {flashSale.countdownText ? (
-                  <span className="text-black/70">{flashSale.countdownText}</span>
+                  <span className="text-[#70584B]">{flashSale.countdownText}</span>
                 ) : null}
               </div>
-              <p className="product-price mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
                 <span className="sr-only">Giá gốc</span>
-                <del className="text-black/60 line-through">{price.compareAtText}</del>
+                <del className="text-[#70584B] line-through">{price.compareAtText}</del>
                 <span className="sr-only">Giá Flash Sale</span>
-                <strong className="font-semibold text-black">{price.displayText}</strong>
+                <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
               </p>
             </>
           ) : price.compareAtText ? (
-            <p className="product-price flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
               <span className="sr-only">Giá gốc</span>
-              <del className="font-normal text-black/50 line-through">{price.compareAtText}</del>
+              <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
               <span className="sr-only">Giá khuyến mãi</span>
-              <strong className="font-semibold text-black">{price.displayText}</strong>
+              <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
             </p>
           ) : (
-            <p className="product-price">{price.displayText}</p>
+            <p className="product-price font-sans mt-1 text-sm text-[#3B2219] font-medium">
+              {price.displayText}
+            </p>
           )}
+          {/* F8a: Reserved slot for server-authoritative availability presentation when F8a is implemented.
+              Per F5 spec, product card must not deduce out-of-stock label from raw sellableStock. */}
         </div>
       </ProductSelectLink>
     </article>

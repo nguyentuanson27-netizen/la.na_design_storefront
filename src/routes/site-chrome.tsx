@@ -43,17 +43,22 @@ export type SiteChromeModel = Readonly<{
   content: SiteChromeContent;
 }>;
 
+import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
+
 /**
  * The chrome's loader. `connection()` keeps the deployment's origin a request-time read rather than
  * a build-time constant, exactly as it was while this lived in the layout.
  */
 export async function loadSiteChrome(): Promise<SiteChromeModel> {
   await connection();
-  const exposure = readSearchExposure();
+  const [exposure, megaMedia] = await Promise.all([
+    Promise.resolve(readSearchExposure()),
+    readConfiguredCategoryMegaMedia(),
+  ]);
 
   return {
     structuredData: [buildSiteStructuredData({ origin: exposure.origin })],
-    content: buildSiteChromeContent(),
+    content: buildSiteChromeContent(megaMedia),
   };
 }
 
@@ -82,7 +87,7 @@ export function SiteChrome({
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(document) }}
         />
       ))}
-      <SiteMasthead promotion={model.content.promotion} />
+      <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
       <main id="main-content">{children}</main>
       <SiteFooter model={model.content.footer} />
       <TrackingPageView />

@@ -23,6 +23,7 @@ test("U3 collection parser keeps route slug authoritative and accepts only Sort 
       availability: null,
       minPriceVnd: null,
       maxPriceVnd: null,
+      sale: null,
       collection: "city-uniform",
       sort: "price-desc",
       page: 2,

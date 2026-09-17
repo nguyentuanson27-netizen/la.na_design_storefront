@@ -320,7 +320,7 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
 
   const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
   await expect(footerNavigation).toBeVisible();
@@ -330,17 +330,35 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(footerNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
   await expectVisualFoundationTokens(page);
 
-  const mobileMenu = page.locator("summary", { hasText: "Menu" });
+  const mobileMenu = page.getByRole("button", { name: "Menu", exact: true });
   await expect(mobileMenu).toBeVisible();
   await mobileMenu.click();
+
+  const mobileMenuDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+  await expect(mobileMenuDialog).toBeVisible();
+
   const mobileNavigation = page.getByRole("navigation", { name: "Điều hướng chính trên di động" });
   for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
     await expect(mobileNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
   await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
-  await expect(mobileNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
+
+  // Verify Escape closes mobile nav and restores focus to hamburger trigger
+  await page.keyboard.press("Escape");
+  await expect(mobileMenuDialog).toHaveCount(0);
+  await expect(mobileMenu).toBeFocused();
+
+  // Re-open and test close button dismissal and focus restoration
+  await mobileMenu.click();
+  await expect(mobileMenuDialog).toBeVisible();
+  const closeMenuBtn = page.getByRole("button", { name: "Đóng menu", exact: true });
+  await expect(closeMenuBtn).toBeVisible();
+  await closeMenuBtn.click();
+  await expect(mobileMenuDialog).toHaveCount(0);
+  await expect(mobileMenu).toBeFocused();
 
   await page.reload({ waitUntil: "networkidle" });
   await page.keyboard.press("Tab");
@@ -365,9 +383,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
-  await expect(utilityNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
-  await expect(utilityNavigation.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
   await expectRuntimePageClean(page);
 
@@ -393,7 +411,7 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
   await searchInput.fill("Oxford");
   await Promise.all([
     page.waitForURL(`${BASE_URL}/shop?q=Oxford`),
-    page.getByRole("button", { name: "Tìm kiếm", exact: true }).click(),
+    searchForm.getByRole("button", { name: "Tìm kiếm", exact: true }).click(),
   ]);
   expect(page.url()).toBe(`${BASE_URL}/shop?q=Oxford`);
 

@@ -398,6 +398,77 @@ test("variants with no colour contribute no swatches", () => {
   assert.deepEqual(model.colorSwatches, []);
 });
 
+/* ---------------------------------------------------- F5: marketing badge priority */
+
+test("F5 marketing badge priority: Sale > Hàng mới > Bán chạy", () => {
+  const onSaleVariant = variant({ retailPrice: 150_000, retailPriceAfterDiscount: 100_000 });
+  const pricingRule: StorefrontPricingRule = () => ({
+    price: 100_000,
+    basePriceVnd: 150_000,
+    isDiscounted: true,
+  });
+
+  // When all 3 are true, Sale wins
+  const allThree = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [onSaleVariant],
+    pricingRule,
+    isNewArrival: true,
+    isBestseller: true,
+  });
+  assert.deepEqual(allThree.marketingBadge, { type: "sale", label: "-33%" });
+
+  // When not on sale, Hàng mới beats Bán chạy
+  const newAndBestseller = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [variant()],
+    isNewArrival: true,
+    isBestseller: true,
+  });
+  assert.deepEqual(newAndBestseller.marketingBadge, { type: "new", label: "Hàng mới" });
+
+  // When only Bán chạy
+  const onlyBestseller = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [variant()],
+    isBestseller: true,
+  });
+  assert.deepEqual(onlyBestseller.marketingBadge, { type: "bestseller", label: "Bán chạy" });
+
+  // When neither
+  const neither = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [variant()],
+  });
+  assert.equal(neither.marketingBadge, null);
+});
+
+test("F5 availability is independent from marketing badge priority", () => {
+  const oosVariant = variant({ id: "v-oos", size: "S", sellableStock: 0, retailPrice: 150_000 });
+  const inStockVariant = variant({ id: "v-in", size: "M", sellableStock: 5, retailPrice: 150_000 });
+  const pricingRule: StorefrontPricingRule = () => ({
+    price: 100_000,
+    basePriceVnd: 150_000,
+    isDiscounted: true,
+  });
+
+  const model = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [oosVariant, inStockVariant],
+    pricingRule,
+    isNewArrival: true,
+  });
+
+  // Availability says partial, marketingBadge still resolves to sale
+  assert.equal(model.availability, "partial");
+  assert.deepEqual(model.marketingBadge, { type: "sale", label: "-33%" });
+});
+
 /* ------------------------------------------------------------------ immutability */
 
 test("the model is frozen, so a brand component cannot mutate shared state", () => {
@@ -407,3 +478,4 @@ test("the model is frozen, so a brand component cannot mutate shared state", () 
     (model as { name: string }).name = "changed";
   }, TypeError);
 });
+

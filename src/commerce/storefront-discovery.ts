@@ -7,6 +7,7 @@ export const STOREFRONT_DISCOVERY_LIMITS = {
 } as const;
 
 export const STOREFRONT_DISCOVERY_SORTS = [
+  "default",
   "name-asc",
   "name-desc",
   "price-asc",
@@ -22,6 +23,9 @@ export type StorefrontDiscoveryQuery = {
   availability: "in-stock" | null;
   minPriceVnd: number | null;
   maxPriceVnd: number | null;
+  sale?: boolean | null;
+  categoryKey?: string | null;
+  categoryListingKeys?: readonly string[] | null;
   collection: string | null;
   sort: StorefrontDiscoverySort;
   page: number;
@@ -85,6 +89,14 @@ function parseCollection(value: SearchParamValue): string | null {
   return collection;
 }
 
+function parseSale(value: SearchParamValue): boolean | null {
+  const raw = one(value);
+  if (raw === undefined || raw === "") return null;
+  if (raw === "true" || raw === "1") return true;
+  if (raw === "false" || raw === "0") return false;
+  invalid();
+}
+
 function parseSort(value: SearchParamValue): StorefrontDiscoverySort {
   const raw = one(value);
   if (raw === undefined || raw === "") return "name-asc";
@@ -106,6 +118,7 @@ export function parseStorefrontDiscoverySearchParams(
     availability: parseAvailability(searchParams.availability),
     minPriceVnd,
     maxPriceVnd,
+    sale: parseSale(searchParams.sale),
     collection: parseCollection(searchParams.collection),
     sort: parseSort(searchParams.sort),
     page: parsePage(searchParams.page),
@@ -127,6 +140,7 @@ export function buildStorefrontDiscoveryHref(
   if (query.availability) params.set("availability", query.availability);
   if (query.minPriceVnd !== null) params.set("minPrice", String(query.minPriceVnd));
   if (query.maxPriceVnd !== null) params.set("maxPrice", String(query.maxPriceVnd));
+  if (query.sale) params.set("sale", "true");
   if (query.collection) params.set("collection", query.collection);
   if (query.sort !== "name-asc") params.set("sort", query.sort);
   if (page !== 1) params.set("page", String(page));

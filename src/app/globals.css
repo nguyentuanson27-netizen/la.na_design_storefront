@@ -5,13 +5,15 @@
 }
 
 :root {
-  --ink: #11110f;
-  --black: #11110f;
-  --paper: #f5f2ea;
-  --white: #fbfaf6;
-  --stone: #d9d3c7;
-  --olive: #60634e;
-  --line: rgba(17, 17, 15, 0.2);
+  --ink: #3b2219;
+  --black: #2a1810;
+  --paper: #faf7f2;
+  --cream: #f5f0e8;
+  --white: #fffdfa;
+  --stone: #d4c7b8;
+  --olive: #70584b;
+  --chocolate: #3b2219;
+  --line: rgba(59, 34, 25, 0.15);
 }
 
 * {
@@ -104,43 +106,7 @@ summary:focus-visible {
 
 .mobile-nav {
   display: none;
-  justify-self: end;
-}
-
-.mobile-nav details {
-  position: static;
-}
-
-.mobile-nav summary {
-  cursor: pointer;
-  list-style: none;
-  font-size: 0.72rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.mobile-nav summary::-webkit-details-marker {
-  display: none;
-}
-
-.mobile-menu {
-  position: absolute;
-  z-index: 40;
-  top: 100%;
-  left: 0;
-  right: 0;
-  display: grid;
-  padding: 0 1.5rem 1.5rem;
-  background: var(--paper);
-  border-bottom: 1px solid var(--line);
-}
-
-.mobile-menu a {
-  padding: 1rem 0;
-  border-top: 1px solid var(--line);
-  font-size: 0.78rem;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
+  justify-self: start;
 }
 
 .site-footer {
@@ -178,7 +144,7 @@ summary:focus-visible {
 
 @media (max-width: 900px) {
   .nav-shell {
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: 1fr auto 1fr;
     gap: 1rem;
   }
 
@@ -187,10 +153,18 @@ summary:focus-visible {
   }
 
   .mobile-nav {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-self: start;
   }
 
-  .utility-nav a:not(:last-child) {
+  .brand-mark {
+    justify-self: center;
+    text-align: center;
+  }
+
+  .utility-nav a:not(:last-child),
+  .utility-nav button:not(:last-child) {
     display: none;
   }
 
@@ -630,7 +604,6 @@ body:has(.admin-shell) .site-masthead {
 .brand-mark,
 .desktop-nav,
 .utility-nav,
-.mobile-nav summary,
 .footer-kicker,
 .footer-meta,
 .footer-links,
@@ -642,7 +615,7 @@ body:has(.admin-shell) .site-masthead {
 
 .desktop-nav a,
 .utility-nav a,
-.mobile-nav summary,
+.utility-nav button,
 .mobile-menu a,
 .footer-links a {
   min-height: var(--control-height);
@@ -650,12 +623,8 @@ body:has(.admin-shell) .site-masthead {
 
 .desktop-nav a,
 .utility-nav a,
+.utility-nav button,
 .footer-links a {
-  display: inline-flex;
-  align-items: center;
-}
-
-.mobile-nav summary {
   display: inline-flex;
   align-items: center;
 }
@@ -669,14 +638,6 @@ body:has(.admin-shell) .site-masthead {
   display: flex;
   align-items: center;
   padding-block: var(--space-4);
-}
-
-.mobile-nav details:not([open]) .mobile-menu {
-  display: none;
-}
-
-.mobile-nav details[open] .mobile-menu {
-  display: grid;
 }
 
 .site-footer {

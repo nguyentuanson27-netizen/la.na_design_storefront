@@ -4,6 +4,10 @@ import { BRAND } from "@/brand";
 
 export const dynamic = "force-static";
 
+/**
+ * Dynamic social card placeholder generated via ImageResponse (1200x630).
+ * Pending owner-supplied static social card asset per F1 contract.
+ */
 const CARD_SIZE = { width: 1200, height: 630 } as const;
 
 export function GET() {
