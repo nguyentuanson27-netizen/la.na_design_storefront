@@ -276,7 +276,7 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
   } as unknown as HTMLElement;
 
   const originalDoc = globalThis.document;
-  const docHolder = globalThis as unknown as { document: { activeElement: HTMLElement | null } };
+  const docHolder = globalThis as unknown as { document: unknown };
   docHolder.document = { activeElement: mockApplyBtn };
 
   try {
@@ -293,7 +293,7 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
     assert.equal(prevented, true, "Tab from last element must prevent default");
 
     // 2. Shift+Tab on first element (close button) wraps to apply button (last)
-    docHolder.document.activeElement = mockCloseBtn;
+    (docHolder.document as { activeElement: HTMLElement | null }).activeElement = mockCloseBtn;
     let shiftPrevented = false;
     const shiftTabEvent = {
       key: "Tab",

@@ -197,7 +197,7 @@ test("F2a mobile navigation focus trap: traps Tab and Shift+Tab within container
 
   // Setup global document mock without any
   const originalDoc = globalThis.document;
-  const docHolder = globalThis as unknown as { document: { activeElement: HTMLElement | null } };
+  const docHolder = globalThis as unknown as { document: unknown };
   docHolder.document = { activeElement: mockLastLink };
 
   try {
@@ -214,7 +214,7 @@ test("F2a mobile navigation focus trap: traps Tab and Shift+Tab within container
     assert.equal(prevented, true, "Tab from last element must prevent default browser tabbing");
 
     // 2. Shift+Tab on first element wraps to last element
-    docHolder.document.activeElement = mockCloseBtn;
+    (docHolder.document as { activeElement: HTMLElement | null }).activeElement = mockCloseBtn;
     let shiftPrevented = false;
     const shiftTabEvent = {
       key: "Tab",
