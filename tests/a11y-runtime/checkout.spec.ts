@@ -8,6 +8,7 @@ import { expect, test, type BrowserContext, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch";
 
 const HOST = "127.0.0.1";
 const PORT = 3214;
@@ -153,7 +154,14 @@ async function prepareBrowser(context: BrowserContext) {
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE_URL }]);
 }
 
-function captureBrowserFailures(page: Page) {
+/**
+ * Instrument the page before it navigates: the console and response listeners, and the document
+ * title watch `assertCheckoutAccessibility` reads. The watch has to be installed before the first
+ * navigation, so it belongs here rather than at the point the scan wants an answer.
+ */
+async function captureBrowserFailures(page: Page) {
+  await watchDocumentTitle(page);
+
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
   page.on("console", (message) => {
@@ -172,7 +180,10 @@ function captureBrowserFailures(page: Page) {
 }
 
 async function assertCheckoutAccessibility(page: Page) {
-  await expect(page).toHaveTitle(/.+/);
+  // A checkout scan can follow a Server Action, whose revalidation re-streams the dynamic head and
+  // leaves the document briefly untitled. Waiting for the title to have been continuously present
+  // is the guard; asserting it is present once is not, because the swap happens after that passes.
+  await expectSettledDocumentTitle(page);
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
   ).toBe(true);
@@ -277,7 +288,7 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
   await startServer({ apiKey: "", mockPancake: false });
   await createTestCart();
   await prepareBrowser(context);
-  const { browserErrors, failedResponses } = captureBrowserFailures(page);
+  const { browserErrors, failedResponses } = await captureBrowserFailures(page);
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
@@ -319,7 +330,7 @@ for (const { name, viewport } of [
     await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
     await createTestCart();
     await prepareBrowser(context);
-    const { browserErrors, failedResponses } = captureBrowserFailures(page);
+    const { browserErrors, failedResponses } = await captureBrowserFailures(page);
 
     await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
@@ -430,7 +441,7 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
 }) => {
   await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
   await context.setExtraHTTPHeaders({ "x-ci-client-ip": TRUSTED_CLIENT_IP });
-  const { browserErrors, failedResponses } = captureBrowserFailures(page);
+  const { browserErrors, failedResponses } = await captureBrowserFailures(page);
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "GIỎ HÀNG" })).toBeVisible();

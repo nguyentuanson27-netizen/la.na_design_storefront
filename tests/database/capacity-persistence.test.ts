@@ -13,6 +13,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { DEFAULT_NEGATIVE_STOCK_LIMIT } from "../../src/commerce/capacity-policy.ts";
+import { SellingPolicyError } from "../../src/commerce/capacity-policy-input.ts";
 import { createCapacityRepository } from "../../src/commerce/capacity-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -30,9 +31,11 @@ const syncedAt = new Date("2026-09-17T00:00:00.000Z");
 
 async function cleanup() {
   // Reservations restrict deletion of their order and variant, so they go first — which is itself
-  // the ADR §13 `onDelete: Restrict` behaviour under test.
+  // the ADR §13 `onDelete: Restrict` behaviour under test. The prefix, not the shop, is the scope:
+  // I2's shop-scope test deliberately seeds a product into a second shop, and cleaning only
+  // `testShopId` would leave it behind to collide with the next run.
   await prisma.variantCapacityReservation.deleteMany({
-    where: { variant: { product: { pancakeShopId: testShopId } } },
+    where: { variant: { product: { pancakeProductId: { startsWith: externalPrefix } } } },
   });
   await prisma.orderMirror.deleteMany({ where: { publicCode: { startsWith: externalPrefix } } });
   await prisma.productMirror.deleteMany({
@@ -244,4 +247,208 @@ test("I1 the held-quantity read counts the unambiguous holds only", async () => 
   // holds depends on the mirror catching up (§4.1), which is `reservationHoldsCapacity()`'s call,
   // not a SQL filter's. Reporting only the unambiguous holds is honest; rounding would not be.
   assert.equal(await repository.sumUnambiguouslyHeldQuantity(variantId), 9);
+});
+
+/**
+ * I2 — the selling-policy writes.
+ *
+ * Three things a domain test cannot reach: that the shop scope is actually enforced (the table
+ * carries no shop of its own), that the ADR §11 composite restriction is refused at the boundary
+ * rather than only at the gate, and that a policy write leaves mirrored stock alone — §5's
+ * "turning oversell off preserves the negative value" is a property of what is *not* written.
+ */
+
+const otherShopId = 920_081;
+
+async function seedProductForShop(
+  key: string,
+  shopId: number,
+): Promise<{ productId: string; variantId: string }> {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: `${externalPrefix}${key}`,
+      slug: `${externalPrefix}${key}`,
+      name: key.toUpperCase(),
+      syncedAt,
+      isPresent: true,
+      isActive: true,
+    },
+    select: { id: true },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `${externalPrefix}${key}-variant`,
+      productId: product.id,
+      syncedAt,
+    },
+    select: { id: true },
+  });
+  return { productId: product.id, variantId: variant.id };
+}
+
+test("I2 a policy write refuses a product that is not a visible product of this shop", async () => {
+  // The foreign key proves the product exists; only this predicate proves whose it is.
+  const foreign = await seedProductForShop("other-shop", otherShopId);
+  const hidden = await seedProductForShop("withdrawn", testShopId);
+  await prisma.productMirror.update({
+    where: { id: hidden.productId },
+    data: { isActive: false },
+  });
+
+  for (const productId of [foreign.productId, hidden.productId, "does-not-exist"]) {
+    await assert.rejects(
+      () =>
+        repository.saveSellingPolicy({
+          shopId: testShopId,
+          productId,
+          sellingMode: "OVERSELL",
+          negativeStockLimit: -5,
+        }),
+      (error: unknown) =>
+        error instanceof SellingPolicyError && error.reason === "selling-policy-invalid-product",
+    );
+    assert.equal(
+      await prisma.productSellingPolicy.count({ where: { productId } }),
+      0,
+      "a refused write must leave no row behind",
+    );
+  }
+
+  // Clearing is scoped the same way, so it cannot be used to delete another shop's configuration.
+  await prisma.productSellingPolicy.create({
+    data: { productId: foreign.productId, sellingMode: "PREORDER", negativeStockLimit: -3 },
+  });
+  await assert.rejects(() =>
+    repository.clearSellingPolicy({ shopId: testShopId, productId: foreign.productId }),
+  );
+  assert.equal(await prisma.productSellingPolicy.count({ where: { productId: foreign.productId } }), 1);
+});
+
+test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to STANDARD", async () => {
+  const parent = await seedProductForShop("composite-parent", testShopId);
+  const child = await seedProductForShop("composite-child", testShopId);
+  await prisma.compositeComponentMirror.create({
+    data: { parentVariantId: parent.variantId, componentVariantId: child.variantId, quantity: 1, syncedAt },
+  });
+
+  for (const sellingMode of ["OVERSELL", "PREORDER"] as const) {
+    await assert.rejects(
+      () =>
+        repository.saveSellingPolicy({
+          shopId: testShopId,
+          productId: parent.productId,
+          sellingMode,
+          negativeStockLimit: -5,
+        }),
+      (error: unknown) =>
+        error instanceof SellingPolicyError &&
+        error.reason === "selling-policy-composite-restricted",
+      `${sellingMode} must be refused for a composite parent`,
+    );
+  }
+  assert.equal(await prisma.productSellingPolicy.count({ where: { productId: parent.productId } }), 0);
+
+  // §11: composite in STANDARD is unaffected — it never goes below zero, so no component
+  // accounting is needed. Refusing it too would be a restriction the ADR does not impose.
+  const stored = await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId: parent.productId,
+    sellingMode: "STANDARD",
+    negativeStockLimit: -5,
+  });
+  assert.equal(stored.sellingMode, "STANDARD");
+
+  // The child is an ordinary product and carries no restriction of its own.
+  assert.equal(
+    (
+      await repository.saveSellingPolicy({
+        shopId: testShopId,
+        productId: child.productId,
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -5,
+      })
+    ).sellingMode,
+    "OVERSELL",
+  );
+});
+
+test("I2 a second write replaces the whole row rather than patching it", async () => {
+  const { productId } = await seedProductForShop("upsert", testShopId);
+
+  await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId,
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -15,
+  });
+  const changed = await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -3,
+  });
+
+  // The whole row, so a mode change can never land with the previous mode's limit still on it.
+  assert.equal(changed.sellingMode, "PREORDER");
+  assert.equal(changed.negativeStockLimit, -3);
+  assert.equal(changed.isDefault, false);
+  assert.equal(await prisma.productSellingPolicy.count({ where: { productId } }), 1);
+});
+
+test("I2 clearing returns a product to unconfigured, which is not configured-to-the-default", async () => {
+  const { productId } = await seedProductForShop("clear", testShopId);
+
+  await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId,
+    sellingMode: "STANDARD",
+    negativeStockLimit: DEFAULT_NEGATIVE_STOCK_LIMIT,
+  });
+  // Stored with the default values, and still "configured" — that is the distinction §5.1's
+  // `isDefault` exists to carry, so an operator can see what they have actually reviewed.
+  assert.equal((await repository.readSellingPolicy(productId)).isDefault, false);
+
+  const cleared = await repository.clearSellingPolicy({ shopId: testShopId, productId });
+  assert.equal(cleared.isDefault, true);
+  assert.equal(cleared.sellingMode, "STANDARD");
+  assert.equal(cleared.negativeStockLimit, DEFAULT_NEGATIVE_STOCK_LIMIT);
+  assert.equal(await prisma.productSellingPolicy.count({ where: { productId } }), 0);
+
+  // Idempotent: clearing something already unconfigured is not an error.
+  assert.equal(
+    (await repository.clearSellingPolicy({ shopId: testShopId, productId })).isDefault,
+    true,
+  );
+});
+
+test("I2 turning oversell off preserves negative mirrored stock", async () => {
+  // ADR §5: switching a product back to STANDARD must not reset stock to zero. That holds because
+  // this write touches `ProductSellingPolicy` and nothing else — a property of what is not written,
+  // which is exactly the kind that decays silently, so it is asserted rather than assumed.
+  const { productId, variantId } = await seedProductForShop("negative-stock", testShopId);
+  await prisma.warehouseStock.create({
+    data: { variantId, pancakeWarehouseId: `${externalPrefix}wh`, quantity: -7, syncedAt },
+  });
+
+  await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId,
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -20,
+  });
+  await repository.saveSellingPolicy({
+    shopId: testShopId,
+    productId,
+    sellingMode: "STANDARD",
+    negativeStockLimit: -20,
+  });
+  await repository.clearSellingPolicy({ shopId: testShopId, productId });
+
+  const stocks = await prisma.warehouseStock.findMany({ where: { variantId }, select: { quantity: true } });
+  assert.deepEqual(
+    stocks.map((row) => row.quantity),
+    [-7],
+    "the negative value survives; standard rules block new sales until it is sellable again",
+  );
 });

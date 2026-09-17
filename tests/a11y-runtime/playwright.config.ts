@@ -22,6 +22,7 @@ export default defineConfig({
     "collection-landing.spec.ts",
     "commerce-events.spec.ts",
     "discovery.spec.ts",
+    "document-title-watch.spec.ts",
     "editorial.spec.ts",
     "evergreen-pages.spec.ts",
     "facebook-pixel.spec.ts",

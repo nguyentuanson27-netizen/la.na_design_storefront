@@ -13,7 +13,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
     <footer className="site-footer">
       <div>
-        {/* Uses approved master logo wordmark per spec */}
+        {/* Uses text wordmark fallback pending owner-supplied master logo asset */}
         <p className="footer-kicker">{BRAND.identity.displayNameUpper}</p>
         <p className="footer-copy">{BRAND.identity.strapline}</p>
 

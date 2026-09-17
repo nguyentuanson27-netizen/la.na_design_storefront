@@ -42,6 +42,7 @@ test("storefront projection keeps standalone products on the existing size/color
       basePriceVnd: null,
       isDiscounted: false,
       purchasable: true,
+      isPreorderSale: false,
       unavailableReason: null,
       kindKey: null,
       kindLabel: null,
@@ -173,4 +174,64 @@ test("duplicate component labels fail closed instead of presenting indistinguish
     components.every((option) => option.unavailableReason === "AMBIGUOUS_OPTION"),
     true,
   );
+});
+
+/**
+ * Review 5233519975, Required, the observable half, as corrected by comment 5712402734.
+ *
+ * Compositeness is this module's fact, so the ADR 0014 restriction has to be enforced where the set
+ * is told apart from its parts. But the *policy* is per `productId`, and my first version of this
+ * test asserted the opposite: it expected the component to sell below zero under the parent's
+ * `OVERSELL`, which is a child being sold on a policy nobody set for it. The assertion encoded the
+ * bug rather than catching it, which is the failure mode a test like this is most prone to — so
+ * both halves are pinned here, and both directions of each.
+ */
+test("an OVERSELL parent policy restricts the set and is not inherited by its components", () => {
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { sellableStock: -2 })],
+    componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M", { sellableStock: -2 })] }],
+    hasCompositeGraph: true,
+    sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
+  });
+
+  const parent = projection.options.find((option) => option.kindKey === "parent");
+  const component = projection.options.find((option) => option.kindKey === "component-1");
+
+  // The parent: refused because ADR 0014 disables OVERSELL for a composite, not because of stock.
+  assert.equal(parent?.purchasable, false, "ADR 0014 refuses OVERSELL for a composite parent");
+  assert.equal(parent?.unavailableReason, "OUT_OF_STOCK");
+
+  // The component: a different product, with no policy row of its own, so STANDARD floored at 0.
+  // −2 is below that floor. It must not ride the parent's −20 allowance.
+  assert.equal(
+    component?.purchasable,
+    false,
+    "a component resolves its own policy, and absence means STANDARD",
+  );
+  assert.equal(component?.unavailableReason, "OUT_OF_STOCK");
+  assert.equal(component?.isPreorderSale, false);
+
+  // Both directions, so neither half can rot into "nothing is ever purchasable": at positive stock
+  // under the default policy, parent and component both sell exactly as they did before I4.
+  const standard = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M")],
+    componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M")] }],
+    hasCompositeGraph: true,
+  });
+  assert.equal(standard.options.find((option) => option.kindKey === "parent")?.purchasable, true);
+  assert.equal(
+    standard.options.find((option) => option.kindKey === "component-1")?.purchasable,
+    true,
+  );
+
+  // And the parent's OVERSELL is genuinely in play rather than ignored: the same policy on a
+  // standalone product — no composite, no components — does sell at −2. Without this, the two
+  // assertions above would pass even if `sellingPolicy` were dropped on the floor entirely.
+  const standalone = buildStorefrontProductProjection({
+    parentVariants: [variant("solo-m", "M", { sellableStock: -2 })],
+    componentGroups: [],
+    hasCompositeGraph: false,
+    sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
+  });
+  assert.equal(standalone.options[0]?.purchasable, true);
 });

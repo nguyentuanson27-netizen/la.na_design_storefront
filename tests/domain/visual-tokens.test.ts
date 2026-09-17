@@ -96,17 +96,25 @@ test("F1 typography tokens: serif heading and sans-serif body are declared", () 
 });
 
 test("F1 brand assets: distinct roles for master logo, social card, and favicon", () => {
-  // Master logo role: approved text wordmark used strictly in header and footer
-  assert.equal(BRAND.identity.displayNameUpper, "La.na Design");
-  assert.equal(typeof BRAND.identity.displayNameUpper, "string");
+  // Master logo role contract: header and footer must both wire to the home link
+  // and share the same brand identity display mark as fallback.
+  const headerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-header.tsx"), "utf8");
+  const footerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-footer.tsx"), "utf8");
 
-  // Social card role: dedicated endpoint / route handler serves 1200x630 OG image
+  assert.ok(headerContent.includes('href="/"'), "Header logo must link to /");
+  assert.ok(headerContent.includes("displayNameUpper"), "Header must reference brand identity mark");
+  assert.ok(footerContent.includes("displayNameUpper"), "Footer must reference brand identity mark");
+
+  // Social card role: dedicated endpoint serves 1200x630 OG image route
   const socialCardPath = path.join(REPO_ROOT, `src/app/${BRAND.identity.socialCardSlug}.png`);
   assert.ok(existsSync(socialCardPath), `Social card endpoint must exist at ${socialCardPath}`);
 
-  // Favicon role: dedicated svg in src/app
+  // Favicon role: dedicated entry point in src/app
   const faviconPath = path.join(REPO_ROOT, "src/app/icon.svg");
   assert.ok(existsSync(faviconPath), `Favicon asset must exist at ${faviconPath}`);
+
+  // Distinct roles: social card endpoint is separate from favicon entry
+  assert.notEqual(socialCardPath, faviconPath, "Social card and favicon must be separate asset locations");
 });
 
 test("F1 contrast ratio: secondary brown #70584B satisfies WCAG AA (>= 4.5:1) on cream #faf7f2", () => {

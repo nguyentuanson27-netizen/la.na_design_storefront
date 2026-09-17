@@ -37,6 +37,7 @@ function productWithPrice(price: number): MerchantCandidateProduct {
           basePriceVnd: price,
           isDiscounted: false,
           purchasable: true,
+          isPreorderSale: false,
           unavailableReason: null,
           kindKey: null,
           kindLabel: null,

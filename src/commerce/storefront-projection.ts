@@ -3,12 +3,20 @@ import {
   buildStorefrontVariantOptions,
   defaultStorefrontPricingRule,
   toStorefrontSelectableOptions,
+  STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
+  type StorefrontProductCapacity,
   type StorefrontSelectableOption,
   type StorefrontVariantFacts,
   type StorefrontVariantUnavailableReason,
 } from "./storefront-product.ts";
 import { deriveStorefrontSelection } from "./storefront-selection.ts";
+
+/**
+ * The policy half of `StorefrontProductCapacity`: what an operator sets, without `isComposite`,
+ * which is this module's to decide and not a caller's to claim.
+ */
+export type StorefrontSellingPolicy = Omit<StorefrontProductCapacity, "isComposite">;
 
 export type StorefrontCompositeComponentGroup = Readonly<{
   label: string;
@@ -62,8 +70,20 @@ function projectOptions(
   kindLabel: string | null,
   forcedUnavailableReason: StorefrontVariantUnavailableReason | null = null,
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
+  sellingPolicy: StorefrontSellingPolicy = STANDARD_STANDALONE_CAPACITY,
+  isComposite = false,
 ): StorefrontProjectionOption[] {
-  return toStorefrontSelectableOptions(buildStorefrontVariantOptions(variants, pricingRule)).map((option) =>
+  // This module is the only one that can tell a set apart from its parts, so it is the only one
+  // that can tell the capacity rule — the caller supplies the policy, never the composite flag.
+  const productCapacity: StorefrontProductCapacity = {
+    sellingMode: sellingPolicy.sellingMode,
+    negativeStockLimit: sellingPolicy.negativeStockLimit,
+    isComposite,
+  };
+
+  return toStorefrontSelectableOptions(
+    buildStorefrontVariantOptions(variants, pricingRule, productCapacity),
+  ).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
       : {
@@ -82,16 +102,28 @@ export function buildStorefrontProductProjection({
   componentGroups,
   hasCompositeGraph,
   pricingRule = defaultStorefrontPricingRule,
+  sellingPolicy = STANDARD_STANDALONE_CAPACITY,
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
   hasCompositeGraph: boolean;
   pricingRule?: StorefrontPricingRule;
+  /**
+   * The policy of **this** product — the standalone product, or the composite parent. It is not the
+   * components': `ProductSellingPolicy` is keyed by `productId`, a component is a different product,
+   * and a component with no row of its own resolves to `STANDARD` like any other. Inheriting the
+   * parent's would sell a child below zero on a policy nobody set for it.
+   *
+   * Defaults to the approved missing-row answer, so every caller that has not been switched keeps
+   * today's behaviour. I2 is what starts supplying a real one; the composite restriction below is
+   * wired now so that it is already enforced on the day it stops being inert.
+   */
+  sellingPolicy?: StorefrontSellingPolicy;
 }>): StorefrontProductProjection {
   if (!hasCompositeGraph) {
     return {
       mode: "standalone",
-      options: projectOptions(parentVariants, null, null, null, pricingRule),
+      options: projectOptions(parentVariants, null, null, null, pricingRule, sellingPolicy),
     };
   }
 
@@ -102,7 +134,16 @@ export function buildStorefrontProductProjection({
   }
 
   const options: StorefrontProjectionOption[] = [
-    ...projectOptions(parentVariants, COMPOSITE_PARENT_KIND_KEY, "Set", null, pricingRule),
+    // The parent set is the composite, and the policy passed in is the parent's.
+    ...projectOptions(
+      parentVariants,
+      COMPOSITE_PARENT_KIND_KEY,
+      "Set",
+      null,
+      pricingRule,
+      sellingPolicy,
+      true,
+    ),
   ];
 
   componentGroups.forEach((group, index) => {
@@ -115,6 +156,12 @@ export function buildStorefrontProductProjection({
         label,
         ambiguousLabel ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
+        // Deliberately NOT the parent's policy. A component is its own product with its own
+        // `ProductSellingPolicy` row, or none, and none means `STANDARD` — so a component this
+        // projection cannot resolve a policy for stays at the default rather than inheriting a
+        // `PREORDER`/`OVERSELL` the operator set on the set. Reading each component's own policy is
+        // I2's job; until then the default is the correct answer, not a placeholder.
+        STANDARD_STANDALONE_CAPACITY,
       ),
     );
   });

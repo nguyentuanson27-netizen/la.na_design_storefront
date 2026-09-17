@@ -198,7 +198,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </button>
         </div>
 
-        {/* Brand Logo (centered on mobile, left on desktop) - uses approved master logo wordmark per spec */}
+        {/* Brand Logo (centered on mobile, left on desktop) - uses text wordmark fallback pending owner-supplied master logo asset */}
         <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
           {BRAND.identity.displayNameUpper}
         </Link>
