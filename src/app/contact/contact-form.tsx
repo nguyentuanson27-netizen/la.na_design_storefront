@@ -82,7 +82,7 @@ export function ContactForm() {
         Gửi tin nhắn
       </h2>
       <p className="mt-3 text-sm leading-6 text-black/65">
-        Điền họ tên, email và nội dung cần hỗ trợ. Thông tin này chỉ được dùng để tiếp nhận và phản hồi liên hệ của bạn.
+        Điền họ tên, email và nội dung cần hỗ trợ.
       </p>
 
       <form ref={formRef} className="mt-7 grid gap-6" onSubmit={handleSubmit}>
