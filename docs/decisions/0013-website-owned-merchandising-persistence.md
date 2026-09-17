@@ -459,7 +459,9 @@ the canonical website taxonomy.
 collection placement/media/content; **canonical category identity and hierarchy** (code/config plus
 `category-taxonomy.ts`, which this ADR's accompanying change already lands with domain tests).
 
-**B — ADDITIVE MIGRATION REQUIRED — all subject to Checkpoint B, none created or run by this ADR:**
+**B — ADDITIVE MIGRATION REQUIRED — Checkpoint B approved all five on 2026-09-16
+([fact authority](../specs/la-na-design-owner-approved-facts-and-decisions.md) › Settled decisions);
+none is created or run by this ADR, which stays architecture-only:**
 
 | Model | Purpose | Section |
 |---|---|---|

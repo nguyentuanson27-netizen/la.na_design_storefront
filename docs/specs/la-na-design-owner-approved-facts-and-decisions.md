@@ -296,6 +296,20 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   other owner-approved category rules — several categories per product, one top-level tree only,
   child membership projecting into the parent listing, website-owned membership as source of truth —
   were supplied with the same G4 instruction and are recorded in ADR 0013 §4.3.
+- **Checkpoint B — G4 merchandising migration path** — **approved 2026-09-16**, covering all five
+  additive models ADR 0013 specifies: `HomepageFeaturedProduct` (§3),
+  `ProductCategoryMembership` (§4.5), `CategoryProductOrder` (§5), `CategoryEditorialMedia` (§6) and
+  `RelatedProductOverride` (§7). This unblocks M2, M3a and M3b writing those migrations.
+
+  Scope of the approval, stated narrowly so nothing wider is read into it: it covers **only** those
+  five additive models. Every one is additive — new tables plus back-relations on `ProductMirror` —
+  no existing column changes meaning, and **no backfill is permitted**; category membership starts
+  empty and is admin-assigned. It does **not** approve the other Checkpoint B rows (G5
+  selling-policy/capacity, and the G1/G2/G3 acceptances), which remain open.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR)
+  after the five models were listed for review.
 
 ## Still pending — do not invent
 

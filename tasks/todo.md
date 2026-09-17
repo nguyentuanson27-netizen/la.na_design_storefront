@@ -38,7 +38,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **G5** Design/review atomic capacity state machine using G2 evidence; cover retries/ambiguous writes/composites.
 
 ### Checkpoint B — before migrations/dependencies
-- [ ] Human approves G4 merchandising **migration path**; no merchandising schema migration before this checkpoint. ADR 0013 specifies exactly five additive models: `HomepageFeaturedProduct`, `ProductCategoryMembership`, `CategoryProductOrder`, `CategoryEditorialMedia`, `RelatedProductOverride`. No backfill is permitted; category membership starts empty and is admin-assigned.
+- [x] Human approves G4 merchandising **migration path** — **approved 2026-09-16, all five additive models**: `HomepageFeaturedProduct`, `ProductCategoryMembership`, `CategoryProductOrder`, `CategoryEditorialMedia`, `RelatedProductOverride` (ADR 0013 §3, §4.5, §5, §6, §7). Recorded in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` › Settled decisions. The approval covers **only** these five additive models: no backfill is permitted, category membership starts empty and admin-assigned, and no existing column changes meaning. The other Checkpoint B rows below are **not** covered by it.
 - [ ] Human approves G5 selling-policy/capacity architecture.
 - [ ] G1 Merchant + structured-data mapping accepted.
 - [ ] G2 Pancake/composite evidence accepted.
