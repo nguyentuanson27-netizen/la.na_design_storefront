@@ -18,26 +18,40 @@ type CatalogMirrorWriter = {
 };
 
 /**
- * @param syncedAt Stamped onto every mirrored row this run writes.
+ * Mirror the Pancake catalog.
  *
- * Callers must capture it **before** the Pancake reads below are issued, never after they return.
- * ADR 0014 §4.1 retires a committed capacity reservation only once a stock observation that *began*
- * after the commit has landed, so a marker taken at write time would claim freshness a pre-commit
- * snapshot does not have and release the hold early. `syncConfiguredPancakeCatalog()` satisfies this
- * by evaluating its default before calling in; ADR 0014 §4.2 tracks making it a real contract rather
- * than a call-site convention.
+ * `clock` is read **once, here, immediately before the first Pancake request**, and the value it
+ * returns is stamped onto every row this run writes. That ordering is the contract, not a
+ * convention: ADR 0014 §4.1 retires a committed capacity reservation only once a stock observation
+ * that *began* after the commit has landed, so a marker taken at write time would claim freshness a
+ * pre-commit snapshot does not have and release the hold early — the units would then be counted by
+ * neither side.
+ *
+ * The marker used to be a `syncedAt: Date` parameter. That made the guarantee a call-site
+ * convention: `syncConfiguredPancakeCatalog()` happened to evaluate its default before calling in,
+ * but nothing said it had to, and the name invited a caller to pass the instant the write finished.
+ * Taking a clock instead makes a post-fetch reading unrepresentable — a caller can decide *what*
+ * time source is used, never *when* it is sampled.
+ *
+ * Injecting the clock remains possible so tests and evidence scripts can pin a deterministic value.
+ * That is a fixed instant, which is still a read-start marker; it is not a reading taken after the
+ * response came back.
  */
 export async function syncPancakeCatalog({
   client,
   repository,
   shopId,
-  syncedAt,
+  clock = () => new Date(),
 }: {
   client: CatalogClient;
   repository: CatalogMirrorWriter;
   shopId: number;
-  syncedAt: Date;
+  clock?: () => Date;
 }) {
+  // Before the first read, deliberately. Moving this line below either fetch reintroduces exactly
+  // the hazard ADR 0014 §4.2 exists to close.
+  const syncedAt = clock();
+
   const variations = await fetchAllPancakeCatalogVariations({ client, shopId });
   const compositeSnapshot = await fetchPancakeCompositeSnapshot({ client, shopId });
   return repository.syncSnapshot({ shopId, variations, compositeSnapshot, syncedAt });

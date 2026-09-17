@@ -1,6 +1,8 @@
 # ADR 0014 — Atomic capacity, reservations and Pancake reconciliation
 
-- Status: **ACCEPTED — architecture owner-approved 2026-09-16; persistence pending Checkpoint B**
+- Status: **ACCEPTED.** Architecture owner-approved 2026-09-16; §13 persistence separately
+  authorized and applied 2026-09-17 (migration `20260917080000_add_atomic_capacity_persistence`).
+  The §4.2 stock-observation marker is enforced. Reservation *writes* remain I6a.
 - Date: 2026-09-17
 - Scope: G5 architecture. No Prisma migration, no reservation implementation, no Pancake live write.
 - Implements: master spec §27–§31. Feeds I1, I4, I5, I6a, I6b, I7, I8.
@@ -175,26 +177,37 @@ checkout spends them again — breaching the hard limit this ledger exists to en
 case is pinned by `tests/domain/capacity-policy.test.ts` ("a stock read that started before the
 commit does not retire the hold, however late it lands").
 
-### 4.2 Binding precondition on the mirror (I1 / I6a)
+### 4.2 The stock-observation marker — ENFORCED (I1, 2026-09-17)
 
 `reservationHoldsCapacity()` names its input `stockObservationStartedAt` rather than `syncedAt`
-precisely because the column name is not the contract. Before any caller may feed
-`WarehouseStock.syncedAt` into it, one of these must be true and stated:
+precisely because the column name was never the contract. That requirement is now met structurally
+rather than by convention.
 
-- **`syncedAt` is defined and enforced as a read-start marker** — captured before the Pancake
-  request and never recomputed at write time; or
-- **an explicit marker is persisted** — a sync generation or request-start timestamp recorded
-  alongside the stock row, with its own documented contract.
+**Before.** `syncPancakeCatalog()` took `syncedAt: Date` from its caller and imposed nothing on it.
+`syncConfiguredPancakeCatalog()` happened to evaluate `new Date()` as a default parameter before
+calling in, and `scripts/pancake-durability-evidence.ts` supplied its own — so the marker was a
+read-start fact *by accident at one call site*, and the parameter name actively invited a caller to
+pass the instant the write finished.
 
-Today neither is established. `syncPancakeCatalog()` accepts `syncedAt` as a caller-supplied
-parameter and imposes no contract on it; `syncConfiguredPancakeCatalog()` happens to capture
-`new Date()` before the fetch, and `scripts/pancake-durability-evidence.ts` supplies its own. So the
-current wiring satisfies the requirement **by accident at one call site**, which is not a guarantee
-anything may be built on — and the name `syncedAt` actively invites the unsound persist-time
-reading. I1 must close this before the `COMMITTED` rule is trusted in a runtime path.
+**Now.** `syncPancakeCatalog()` takes a `clock: () => Date` and samples it **once, itself,
+immediately before the first Pancake request**. A caller chooses *what* time source is used; it can
+no longer choose *when* the sample is taken, so a post-fetch reading is unrepresentable rather than
+merely discouraged. Injecting a fixed clock stays possible for deterministic tests and evidence
+scripts — a fixed instant is still a read-start marker, not a reading taken after the response came
+back.
 
-Until then the predicate is still safe to ship: a caller with no valid marker passes nothing, and a
-missing marker resolves to **keep holding**.
+`tests/integrations/catalog-sync.test.ts` pins the **ordering**, not the value: one test asserts the
+clock is read before any fetch is issued, and a second asserts that no Pancake request has been made
+at the moment the clock is sampled. A value assertion would still pass if the sampling moved below
+the fetch, which is exactly the regression that matters.
+
+`WarehouseStock.syncedAt` therefore now carries read-start semantics by construction, and no separate
+generation column is needed. The alternative — persisting an explicit marker alongside the stock row
+— was not taken because it would add a column to express a property the call ordering already
+guarantees.
+
+A caller that still has no marker passes nothing, and a missing marker resolves to **keep holding** —
+so the predicate degrades safely rather than guessing.
 
 Ties, missing and invalid timestamps resolve to **keep holding**, because the failure modes are not
 symmetric: over-holding refuses a sale that could have been made, while under-holding breaches the
@@ -443,7 +456,7 @@ A later policy change must not rewrite historical order truth. This mirrors the 
 
 ---
 
-## 13. Proposed persistence for I1 — reviewed 2026-09-17, migration still unauthorized
+## 13. Persistence for I1 — AUTHORIZED and IMPLEMENTED (2026-09-17)
 
 **Not created or run by this ADR.** The G4 Checkpoint B approval (2026-09-16) covers five
 merchandising models and **does not** cover anything below; these need their own authorization.
@@ -461,8 +474,17 @@ direction* of `ProductSellingPolicy`, with four required corrections, all applie
 Finding 4 was a genuine correctness blocker, not a wording problem: ADR 0014 names this ledger the
 authoritative gate, and the gate did not close on an empty ledger.
 
-**The migration is still not authorized.** Approving the design direction is not approval to write
-or run it; §14 states what that authorization would cover.
+**Migration authorized 2026-09-17** and shipped as
+`prisma/migrations/20260917080000_add_atomic_capacity_persistence`, a **separate** authorization from
+the 2026-09-16 five-model merchandising approval, which explicitly did not cover these two tables.
+Recorded with provenance in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` ›
+Settled decisions.
+
+`src/commerce/capacity-repository.ts` reads the policy, and reads it *through*
+`resolveSellingPolicy()` so the missing-row answer keeps exactly one producer. Reservation **writes**
+are deliberately not shipped: they need the §6.2 locking transaction and the §6.4 guarded
+compare-and-set, both of which belong to I6a, and a naive write would look like the capacity gate
+while enforcing nothing.
 
 ```prisma
 enum SellingMode {
@@ -590,8 +612,10 @@ makes "no backfill" safe is that `resolveSellingPolicy()` owns the missing-row a
 at limit `−20`, which is exactly today's behaviour — and every consumer goes through it.
 `CHECK (negativeStockLimit <= 0)` belongs on `ProductSellingPolicy`.
 
-**These are NOT covered by the 2026-09-16 Checkpoint B approval** and require separate owner
-authorization before any migration is written.
+**These were NOT covered by the 2026-09-16 Checkpoint B approval**, which is why they needed their
+own authorization. That was granted on **2026-09-17** and the migration
+(`20260917080000_add_atomic_capacity_persistence`) is applied. Nothing here may be read as extending
+the 2026-09-16 five-model approval, and nothing in either approval authorizes a backfill.
 
 ---
 

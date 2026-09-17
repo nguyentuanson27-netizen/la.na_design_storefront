@@ -53,12 +53,14 @@ async function collectDurabilityEvidence({
   const snapshots: CatalogIdSnapshot[] = [];
 
   for (let runIndex = 0; runIndex < runs; runIndex += 1) {
-    const syncedAt = new Date();
+    // Sampled here and handed in as the clock, so the timestamp this run's evidence is labelled
+    // with is the exact marker stamped onto the mirrored rows.
+    const runStartedAt = new Date();
     await syncPancakeCatalog({
       client: pancake,
       repository,
       shopId: config.shopId,
-      syncedAt,
+      clock: () => runStartedAt,
     });
 
     const products = await prisma.productMirror.findMany({
@@ -83,7 +85,7 @@ async function collectDurabilityEvidence({
 
     const snapshot = createCatalogIdSnapshot({
       runIndex,
-      timestamp: syncedAt.toISOString(),
+      timestamp: runStartedAt.toISOString(),
       shopId: config.shopId,
       productExternalIds: products.map((p) => p.pancakeProductId),
       variationExternalIds: variants.map((v) => v.pancakeVariationId),
