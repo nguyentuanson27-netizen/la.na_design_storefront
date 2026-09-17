@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef, useId, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -50,31 +50,20 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const { session } = useAccountAuth();
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMegaMenu, setActiveMegaMenu] = useState<string | null>(null);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [expandedMobileItem, setExpandedMobileItem] = useState<string | null>(null);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
-  const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const cartTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const mobileCartTriggerRef = useRef<HTMLButtonElement | null>(null);
-  const mobileNavId = useId();
+  const searchTriggerRef = useRef<HTMLAnchorElement | null>(null);
+  const cartTriggerRef = useRef<HTMLAnchorElement | null>(null);
 
   const loginPath = ["", "login"].join("/");
   const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
-  const utility = NAVIGATION.utility;
   const mobileUtility = NAVIGATION.mobileUtility;
-  const cartItem = utility.find((item) => item.href === "/cart");
 
-  const openCartDrawer = () => setCartDrawerOpen(true);
   const closeCartDrawer = () => setCartDrawerOpen(false);
   const openSearch = () => setSearchOpen(true);
   const closeSearch = () => setSearchOpen(false);
-  const openSearchFromMobile = () => {
-    setMobileMenuOpen(false);
-    setSearchOpen(true);
-  };
 
   // Track scroll position for transparent -> cream transition
   useEffect(() => {
@@ -91,14 +80,12 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   if (prevPathname !== pathname) {
     setPrevPathname(pathname);
     setActiveMegaMenu(null);
-    setMobileMenuOpen(false);
   }
 
   // Handle escape key to dismiss open menus
   const handleKeyDown = useCallback((event: KeyboardEvent) => {
     if (event.key === "Escape") {
       setActiveMegaMenu(null);
-      setMobileMenuOpen(false);
     }
   }, []);
 
@@ -106,19 +93,6 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [handleKeyDown]);
-
-  // Lock body scroll when mobile menu is open
-  useEffect(() => {
-    if (mobileMenuOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [mobileMenuOpen]);
-
-  const toggleMobileMenu = () => setMobileMenuOpen(!mobileMenuOpen);
 
   const getMegaMedia = (item: HierarchicalNavigationLink) => {
     if (!model?.megaMedia || !item.key) return null;
@@ -138,49 +112,13 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
         Bỏ qua đến nội dung chính
       </a>
 
-      {/* Desktop & Mobile Main Nav Shell */}
-      <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-3.5 sm:px-6 md:py-4">
-        {/* Mobile Header: Left Hamburger Button */}
-        <div className="flex items-center md:hidden">
-          <button
-            type="button"
-            aria-label={mobileMenuOpen ? "Đóng menu" : "Mở menu"}
-            aria-expanded={mobileMenuOpen}
-            aria-controls={mobileNavId}
-            onClick={toggleMobileMenu}
-            className="inline-flex h-10 w-10 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
-          >
-            {mobileMenuOpen ? (
-              <svg className="h-6 w-6 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            ) : (
-              <svg className="h-6 w-6 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="1.5" aria-hidden="true">
-                <line x1="3" y1="12" x2="21" y2="12" />
-                <line x1="3" y1="6" x2="21" y2="6" />
-                <line x1="3" y1="18" x2="21" y2="18" />
-              </svg>
-            )}
-          </button>
-        </div>
-
-        {/* Brand Mark (Desktop Left, Mobile Center) */}
-        <div className="flex justify-center md:justify-start">
-          <Link
-            className="brand-mark font-serif text-xl sm:text-2xl font-bold tracking-wider text-[#2A1810] transition-opacity hover:opacity-85"
-            href="/"
-            aria-label={NAVIGATION.brandHomeLabel}
-          >
-            {BRAND.identity.displayNameUpper}
-          </Link>
-        </div>
+      <div className="nav-shell">
+        <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
+          {BRAND.identity.displayNameUpper}
+        </Link>
 
         {/* Desktop Primary Navigation */}
-        <nav
-          className="desktop-nav hidden md:flex items-center gap-7 lg:gap-9 text-[0.8rem] font-medium tracking-[0.1em] uppercase text-[#3B2219]"
-          aria-label="Điều hướng chính"
-        >
+        <nav className="desktop-nav" aria-label="Điều hướng chính">
           {primary.map((item, index) => {
             const hasChildren = item.children && item.children.length > 0;
             const isMegaOpen = activeMegaMenu === item.href;
@@ -287,183 +225,59 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           })}
         </nav>
 
-        {/* Desktop Utility Icons (Search, Account, Cart) */}
-        <div className="utility-nav hidden md:flex items-center gap-3 sm:gap-4 md:gap-5 text-[#3B2219]">
-          {utility.map((item) => {
-            if (item.href === "/search") {
-              return (
-                <button
-                  key={item.href}
-                  ref={searchTriggerRef}
-                  type="button"
-                  aria-label={item.label}
-                  aria-haspopup="dialog"
-                  onClick={openSearch}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-                >
-                  <UtilityIcon href={item.href} />
-                </button>
-              );
-            }
-            if (item.href === "/cart") {
-              return (
-                <button
-                  key={item.href}
-                  ref={cartTriggerRef}
-                  type="button"
-                  aria-label={item.label}
-                  aria-haspopup="dialog"
-                  onClick={openCartDrawer}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-                >
-                  <UtilityIcon href={item.href} />
-                </button>
-              );
-            }
-            const destination = session ? item.href : loginPath;
-            return (
-              <Link
-                key={item.href}
-                href={destination}
-                aria-label={item.label}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-              >
-                <UtilityIcon href={item.href} />
-              </Link>
-            );
-          })}
-        </div>
-
-        {/* Mobile Header: Right Cart Button */}
-        <div className="flex items-center md:hidden">
-          {cartItem ? (
-            <button
-              ref={mobileCartTriggerRef}
-              type="button"
-              aria-label={cartItem.label}
-              aria-haspopup="dialog"
-              onClick={openCartDrawer}
-              className="inline-flex h-10 w-10 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-            >
-              <UtilityIcon href={cartItem.href} />
-            </button>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Full-Screen Mobile Navigation Overlay */}
-      {mobileMenuOpen ? (
-        <div
-          id={mobileNavId}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Điều hướng chính trên di động"
-          className="fixed inset-0 top-[57px] z-50 flex flex-col justify-between bg-[#FAF7F2] p-6 overflow-y-auto md:hidden"
-        >
-          <div className="space-y-6">
-            <nav aria-label="Danh mục trên di động" className="space-y-2">
-              {primary.map((item, index) => {
-                const hasChildren = item.children && item.children.length > 0;
-                const isExpanded = expandedMobileItem === item.href;
-                const isSaleItem = index === primary.length - 1;
-
+        {/* Mobile Navigation */}
+        <div className="mobile-nav">
+          <details>
+            <summary>Menu</summary>
+            <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
+              {primary.map((item) => (
+                <div key={item.href}>
+                  <Link href={item.href}>{item.label}</Link>
+                  {item.children?.map((child) => (
+                    <Link key={child.href} href={child.href}>{child.label}</Link>
+                  ))}
+                </div>
+              ))}
+              {mobileUtility.map((item) => {
+                const destination = item.href === "/account" ? (session ? item.href : loginPath) : item.href;
                 return (
-                  <div key={item.href} className="border-b border-[#3B2219]/10 pb-2">
-                    <div className="flex items-center justify-between">
-                      <Link
-                        href={item.href}
-                        className={`font-serif text-xl tracking-tight text-[#2A1810] hover:text-stone-600 ${
-                          isSaleItem ? "text-amber-800" : ""
-                        }`}
-                      >
-                        {item.label}
-                      </Link>
-                      {hasChildren ? (
-                        <button
-                          type="button"
-                          aria-expanded={isExpanded}
-                          aria-label={item.label}
-                          onClick={() => setExpandedMobileItem(isExpanded ? null : item.href)}
-                          className="p-2 text-[#3B2219]/70 hover:text-[#2A1810]"
-                        >
-                          <svg
-                            className={`h-4 w-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            aria-hidden="true"
-                          >
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        </button>
-                      ) : null}
-                    </div>
-
-                    {/* Expandable Subcategories */}
-                    {hasChildren && isExpanded ? (
-                      <ul className="mt-2 pl-4 space-y-2 border-l-2 border-[#3B2219]/20">
-                        {item.children!.map((child) => (
-                          <li key={child.href}>
-                            <Link
-                              href={child.href}
-                              className="block py-1 text-sm text-[#3B2219] hover:text-[#2A1810]"
-                            >
-                              {child.label}
-                            </Link>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : null}
-                  </div>
+                  <Link key={item.href} href={destination}>{item.label}</Link>
                 );
               })}
             </nav>
-
-            {/* Mobile Utility Links */}
-            <div className="space-y-3 pt-4">
-              <p className="eyebrow text-[#70584B]">Tiện ích</p>
-              <div className="flex flex-col space-y-2 text-sm text-[#3B2219]">
-                {mobileUtility.map((item) => {
-                  if (item.href === "/search") {
-                    return (
-                      <button
-                        key={item.href}
-                        type="button"
-                        onClick={openSearchFromMobile}
-                        className="inline-flex items-center gap-3 py-1 hover:text-[#2A1810] text-left"
-                      >
-                        <UtilityIcon href={item.href} />
-                        {item.label}
-                      </button>
-                    );
-                  }
-                  const destination = session ? item.href : loginPath;
-                  return (
-                    <Link
-                      key={item.href}
-                      href={destination}
-                      className="inline-flex items-center gap-3 py-1 hover:text-[#2A1810]"
-                    >
-                      <UtilityIcon href={item.href} />
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Contact footer in mobile drawer */}
-          <div className="mt-8 border-t border-[#3B2219]/15 pt-4 text-xs text-[#3B2219]/70 space-y-1">
-            <p>Hotline: {BRAND.contact.telephone}</p>
-            <p>Email: {BRAND.contact.email}</p>
-            <p className="text-[0.68rem] text-[#3B2219]/50 mt-2">
-              © {BRAND.identity.name}
-            </p>
-          </div>
+          </details>
         </div>
-      ) : null}
+
+        {/* Utility Navigation */}
+        <nav className="utility-nav" aria-label="Tiện ích">
+          {NAVIGATION.utility.map((item, index) => {
+            const isSearch = index === 0;
+            const isAccount = index === 1;
+            const destination = isAccount && !session ? loginPath : item.href;
+            const triggerRef = isSearch ? searchTriggerRef : isAccount ? undefined : cartTriggerRef;
+
+            return (
+              <Link
+                key={item.href}
+                ref={triggerRef}
+                href={destination}
+                aria-label={item.label}
+                onClick={
+                  isSearch
+                    ? (e) => {
+                        e.preventDefault();
+                        openSearch();
+                      }
+                    : undefined
+                }
+              >
+                <UtilityIcon href={item.href} />
+                <span className="sr-only">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+      </div>
 
       {/* Cart Drawer */}
       <CartDrawer

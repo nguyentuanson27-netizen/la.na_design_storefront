@@ -85,12 +85,12 @@ export function ProductCard({
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.12em]">
                 <span className="bg-[#2A1810] px-2 py-0.5 text-[#FAF7F2]">FLASH SALE</span>
                 {flashSale.countdownText ? (
-                  <span className="text-[#3B2219]/70">{flashSale.countdownText}</span>
+                  <span className="text-[#70584B]">{flashSale.countdownText}</span>
                 ) : null}
               </div>
               <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
                 <span className="sr-only">Giá gốc</span>
-                <del className="text-[#3B2219]/50 line-through">{price.compareAtText}</del>
+                <del className="text-[#70584B] line-through">{price.compareAtText}</del>
                 <span className="sr-only">Giá Flash Sale</span>
                 <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
               </p>
@@ -98,7 +98,7 @@ export function ProductCard({
           ) : price.compareAtText ? (
             <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
               <span className="sr-only">Giá gốc</span>
-              <del className="font-normal text-[#3B2219]/50 line-through">{price.compareAtText}</del>
+              <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
               <span className="sr-only">Giá khuyến mãi</span>
               <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
             </p>
@@ -108,7 +108,7 @@ export function ProductCard({
             </p>
           )}
           {availability === "out-of-stock" ? (
-            <span className="product-availability block mt-1 text-xs text-[#3B2219]/60 font-medium">
+            <span className="product-availability block mt-1 text-xs text-[#70584B] font-medium">
               Hết hàng
             </span>
           ) : null}
