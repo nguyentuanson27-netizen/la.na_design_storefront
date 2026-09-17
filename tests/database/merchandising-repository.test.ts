@@ -5,7 +5,12 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { MerchandisingError } from "../../src/commerce/merchandising-input.ts";
 import { CategoryMembershipError } from "../../src/commerce/category-taxonomy.ts";
-import { createMerchandisingRepository } from "../../src/commerce/merchandising-repository.ts";
+import {
+  CATEGORY_READ_ISOLATION_LEVEL,
+  createMerchandisingRepository,
+  readRankedCategoryBucket,
+  readUnrankedCategoryBucket,
+} from "../../src/commerce/merchandising-repository.ts";
 import { listRelatedStorefrontProducts } from "../../src/commerce/storefront-related-products.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -441,5 +446,97 @@ test("M3b a ranked winner outside the name-ordered page still leads the PLP", as
   assert.deepEqual(
     page.slice(1).map((product) => product.name),
     ["Item 00", "Item 01"],
+  );
+});
+
+/**
+ * Runs the two bucket reads with a ranking replacement committed **between** them, from a second
+ * connection, and reports how many times the product came back.
+ *
+ * This is the interleaving review 5232098227 described, and it is *forced* rather than raced: the
+ * write commits while the read transaction is suspended between bucket 1 and bucket 2, so the
+ * outcome is deterministic at each isolation level instead of depending on timing. It drives the
+ * shipped bucket reads rather than copies of them.
+ */
+async function readWithRankingReplacedBetweenBuckets(
+  isolationLevel: "ReadCommitted" | "RepeatableRead",
+  { categoryKey, productId, limit }: { categoryKey: string; productId: string; limit: number },
+) {
+  const other = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+  try {
+    return await prisma.$transaction(
+      async (tx) => {
+        const args = {
+          shopId: testShopId,
+          rankCategoryKey: categoryKey,
+          membershipKeys: [categoryKey],
+          limit,
+        };
+
+        const ranked = await readRankedCategoryBucket(tx, args);
+
+        // A fully transactional ranking replacement commits between the two buckets.
+        await other.categoryProductOrder.deleteMany({ where: { categoryKey } });
+
+        const unranked = await readUnrankedCategoryBucket(tx, args);
+
+        const merged = [...ranked, ...unranked];
+        return {
+          sawRankInBucketOne: ranked.some((row) => row.product.id === productId),
+          occurrences: merged.filter((row) => row.product.id === productId).length,
+        };
+      },
+      { isolationLevel },
+    );
+  } finally {
+    await other.$disconnect();
+  }
+}
+
+test("M3b the two bucket reads share one snapshot across a concurrent ranking replacement", async () => {
+  // Review 5232098227. The buckets are complementary only while both statements observe the same
+  // committed ranking state. Under READ COMMITTED each statement takes a fresh snapshot, so a
+  // replacement landing in between makes one product ranked to bucket 1 and unranked to bucket 2.
+  const product = await seed("snapshot-a", { name: "Snapshot Candidate" });
+  await repository.replaceCategoryMembership({
+    shopId: testShopId,
+    productId: product,
+    categoryKeys: ["aoDaiTet"],
+  });
+
+  const rank = async () =>
+    repository.replaceCategoryProductOrder({
+      shopId: testShopId,
+      input: { categoryKey: "aoDaiTet", productIds: [product] },
+    });
+
+  await rank();
+  const repeatableRead = await readWithRankingReplacedBetweenBuckets(CATEGORY_READ_ISOLATION_LEVEL, {
+    categoryKey: "aoDaiTet",
+    productId: product,
+    limit: 4,
+  });
+
+  assert.equal(repeatableRead.sawRankInBucketOne, true, "the fixture must start with the rank in place");
+  assert.equal(
+    repeatableRead.occurrences,
+    1,
+    "under one snapshot the product appears exactly once — never duplicated, never dropped",
+  );
+
+  // The anomaly this guards against, shown to be real rather than hypothetical: at PostgreSQL's
+  // default level the same forced interleaving double-counts the product.
+  await rank();
+  const readCommitted = await readWithRankingReplacedBetweenBuckets("ReadCommitted", {
+    categoryKey: "aoDaiTet",
+    productId: product,
+    limit: 4,
+  });
+
+  assert.equal(readCommitted.sawRankInBucketOne, true);
+  assert.equal(
+    readCommitted.occurrences,
+    2,
+    "READ COMMITTED must be shown to break the complementary-bucket assumption",
   );
 });

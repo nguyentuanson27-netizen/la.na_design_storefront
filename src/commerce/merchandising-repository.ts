@@ -57,6 +57,131 @@ async function requireVisibleProducts(
   }
 }
 
+/**
+ * The isolation level the two-bucket category read runs at.
+ *
+ * `READ COMMITTED` — PostgreSQL's default — is **not** sufficient here, and a plain transaction does
+ * not help: at that level every *statement* takes a fresh snapshot, which is exactly the hazard.
+ * `RepeatableRead` takes one snapshot for the whole transaction, which is the property the buckets
+ * depend on. The read is read-only, so it cannot hit the serialization failures that make
+ * `RepeatableRead` awkward for writers.
+ */
+export const CATEGORY_READ_ISOLATION_LEVEL = "RepeatableRead" as const;
+
+/** Just enough of a client or transaction handle to run the two bucket reads. */
+export type CategoryCandidateReader = Pick<PrismaClient, "categoryProductOrder" | "productMirror">;
+
+export type CategoryCandidateRow = Readonly<{
+  product: Readonly<{ id: string; slug: string; name: string }>;
+  position: number | null;
+}>;
+
+/**
+ * The two complementary bucket reads, as one unit.
+ *
+ * Exported and taking its own reader so the snapshot boundary is explicit in the code rather than
+ * implied: these two statements are only complementary while they observe the same committed
+ * ranking state, and the caller is responsible for giving them one. Review `5232098227` found them
+ * running as independent statements under `Promise.all`, where a `replaceCategoryProductOrder()`
+ * committing in between produces either:
+ *
+ * - a **duplicate** — the ranked read sees a product as ranked while the unranked read, on a later
+ *   snapshot, sees the rank already deleted, so the product lands in both buckets; or
+ * - an **omission** — the unranked read excludes it as ranked, and the ranked read, on a later
+ *   snapshot, no longer finds the rank, so it lands in neither.
+ *
+ * De-duplicating the merge would hide the first and do nothing about the second, which is why the
+ * fix is the shared snapshot rather than a filter on the way out.
+ *
+ * The reads are awaited in sequence rather than with `Promise.all`: they share one transaction, so
+ * there is nothing to gain from overlapping them, and sequencing makes the single-snapshot intent
+ * legible.
+ */
+const CANDIDATE_PRODUCT_FIELDS = { id: true, slug: true, name: true } as const;
+
+type CategoryBucketArgs = {
+  shopId: number;
+  rankCategoryKey: CategoryKey;
+  membershipKeys: readonly CategoryKey[];
+  limit: number;
+};
+
+/**
+ * Bucket 1 — products the merchandiser ranked in `rankCategoryKey`, `position` ascending.
+ *
+ * Ordered by the same key it truncates on, so the bound cannot drop a row that would have won.
+ */
+export async function readRankedCategoryBucket(
+  reader: CategoryCandidateReader,
+  { shopId, rankCategoryKey, membershipKeys, limit }: CategoryBucketArgs,
+): Promise<CategoryCandidateRow[]> {
+  const rows = await reader.categoryProductOrder.findMany({
+    where: {
+      categoryKey: rankCategoryKey,
+      product: {
+        ...visibleProduct(shopId),
+        categoryMemberships: { some: { categoryKey: { in: [...membershipKeys] } } },
+      },
+    },
+    orderBy: [{ position: "asc" }],
+    take: limit,
+    select: { position: true, product: { select: CANDIDATE_PRODUCT_FIELDS } },
+  });
+  return rows.map((row) => ({ product: row.product, position: row.position as number | null }));
+}
+
+/**
+ * Bucket 2 — candidates with **no** rank in `rankCategoryKey`, `name` then `id`.
+ *
+ * The `none` predicate is what makes this complementary to bucket 1, and is also why the two must
+ * observe one snapshot: it is evaluated against whatever ranking state this statement can see.
+ */
+export async function readUnrankedCategoryBucket(
+  reader: CategoryCandidateReader,
+  { shopId, rankCategoryKey, membershipKeys, limit }: CategoryBucketArgs,
+): Promise<CategoryCandidateRow[]> {
+  const products = await reader.productMirror.findMany({
+    where: {
+      ...visibleProduct(shopId),
+      categoryMemberships: { some: { categoryKey: { in: [...membershipKeys] } } },
+      categoryOrders: { none: { categoryKey: rankCategoryKey } },
+    },
+    orderBy: [{ name: "asc" }, { id: "asc" }],
+    take: limit,
+    select: CANDIDATE_PRODUCT_FIELDS,
+  });
+  return products.map((product) => ({ product, position: null as number | null }));
+}
+
+/**
+ * The two complementary bucket reads, as one unit.
+ *
+ * Exported and taking its own reader so the snapshot boundary is explicit in the code rather than
+ * implied: these two statements are only complementary while they observe the same committed
+ * ranking state, and the caller is responsible for giving them one. Review `5232098227` found them
+ * running as independent statements under `Promise.all`, where a `replaceCategoryProductOrder()`
+ * committing in between produces either:
+ *
+ * - a **duplicate** — bucket 1 sees a product as ranked while bucket 2, on a later snapshot, sees
+ *   the rank already deleted, so the product lands in both; or
+ * - an **omission** — bucket 2 excludes it as ranked, and bucket 1, on a later snapshot, no longer
+ *   finds the rank, so it lands in neither.
+ *
+ * De-duplicating the merge would hide the first and do nothing about the second, which is why the
+ * fix is the shared snapshot rather than a filter on the way out.
+ *
+ * The buckets are awaited in sequence rather than with `Promise.all`: they share one transaction,
+ * so there is nothing to gain from overlapping them, and sequencing makes the intent legible.
+ */
+export async function readCategoryCandidateBuckets(
+  reader: CategoryCandidateReader,
+  args: CategoryBucketArgs,
+): Promise<CategoryCandidateRow[]> {
+  const ranked = await readRankedCategoryBucket(reader, args);
+  const unranked = await readUnrankedCategoryBucket(reader, args);
+  return [...ranked, ...unranked];
+}
+
 export function createMerchandisingRepository(client: PrismaClient) {
   // -------------------------------------------------------------------------
   // §3 Homepage Featured
@@ -231,37 +356,14 @@ export function createMerchandisingRepository(client: PrismaClient) {
     /** The membership keys that make a product a candidate at all. */
     membershipKeys: readonly CategoryKey[];
     limit: number;
-  }) {
+  }): Promise<CategoryCandidateRow[]> {
     if (membershipKeys.length === 0 || limit <= 0) return [];
-    const keys = [...membershipKeys];
-    const productFields = { id: true, slug: true, name: true } as const;
 
-    const [ranked, unranked] = await Promise.all([
-      client.categoryProductOrder.findMany({
-        where: {
-          categoryKey: rankCategoryKey,
-          product: { ...visibleProduct(shopId), categoryMemberships: { some: { categoryKey: { in: keys } } } },
-        },
-        orderBy: [{ position: "asc" }],
-        take: limit,
-        select: { position: true, product: { select: productFields } },
-      }),
-      client.productMirror.findMany({
-        where: {
-          ...visibleProduct(shopId),
-          categoryMemberships: { some: { categoryKey: { in: keys } } },
-          categoryOrders: { none: { categoryKey: rankCategoryKey } },
-        },
-        orderBy: [{ name: "asc" }, { id: "asc" }],
-        take: limit,
-        select: productFields,
-      }),
-    ]);
-
-    return [
-      ...ranked.map((row) => ({ product: row.product, position: row.position })),
-      ...unranked.map((product) => ({ product, position: null as number | null })),
-    ];
+    // One snapshot for both buckets — see `readCategoryCandidateBuckets`.
+    return client.$transaction(
+      (tx) => readCategoryCandidateBuckets(tx, { shopId, rankCategoryKey, membershipKeys, limit }),
+      { isolationLevel: CATEGORY_READ_ISOLATION_LEVEL },
+    );
   }
 
   /**
@@ -288,8 +390,18 @@ export function createMerchandisingRepository(client: PrismaClient) {
       limit,
     });
 
+    // De-duplicate defensively. The buckets are complementary under one snapshot, so this should
+    // never drop anything; it is here so that a future caller assembling candidates from another
+    // source cannot render the same product twice. It is *not* the fix for review `5232098227` —
+    // that anomaly also produced omissions, which no output filter can repair.
+    const seen = new Set<string>();
     return candidates
       .sort(compareCategoryRankedProducts)
+      .filter((entry) => {
+        if (seen.has(entry.product.id)) return false;
+        seen.add(entry.product.id);
+        return true;
+      })
       .slice(0, limit)
       .map((entry) => entry.product);
   }
