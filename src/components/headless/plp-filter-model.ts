@@ -94,3 +94,20 @@ export function buildSortChangeHref(
 export function buildClearAllFiltersHref(basePath: string): string {
   return basePath;
 }
+
+export function buildClearPriceHref(
+  basePath: string,
+  state: PlpFilterState,
+): string {
+  return buildCategoryDiscoveryHref(
+    basePath,
+    {
+      ...state,
+      minPriceVnd: null,
+      maxPriceVnd: null,
+      page: 1,
+    },
+    1,
+  );
+}
+

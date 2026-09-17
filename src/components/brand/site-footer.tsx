@@ -13,6 +13,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
     <footer className="site-footer">
       <div>
+        {/* TODO(F1): Dedicated slot for approved master logo asset when supplied by brand owner; currently using text wordmark fallback per spec. */}
         <p className="footer-kicker">{BRAND.identity.displayNameUpper}</p>
         <p className="footer-copy">{BRAND.identity.strapline}</p>
 

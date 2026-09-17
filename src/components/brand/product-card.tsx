@@ -21,7 +21,7 @@ export function ProductCard({
   model: ProductCardModel;
   tone: ProductCardTone;
 }) {
-  const { price, primaryImage, hoverImage, flashSale, marketingBadge, availability } = model;
+  const { price, primaryImage, hoverImage, flashSale, marketingBadge } = model;
 
   return (
     <article className="group">
@@ -107,11 +107,8 @@ export function ProductCard({
               {price.displayText}
             </p>
           )}
-          {availability === "out-of-stock" ? (
-            <span className="product-availability block mt-1 text-xs text-[#70584B] font-medium">
-              Hết hàng
-            </span>
-          ) : null}
+          {/* F8a: Reserved slot for server-authoritative availability presentation when F8a is implemented.
+              Per F5 spec, product card must not deduce out-of-stock label from raw sellableStock. */}
         </div>
       </ProductSelectLink>
     </article>

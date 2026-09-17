@@ -229,3 +229,39 @@ test("F2a mobile navigation focus trap: traps Tab and Shift+Tab within container
     docHolder.document = originalDoc;
   }
 });
+
+test("F2b mobile search: mobile navigation triggers SearchOverlay instead of navigating to /search", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/site-header.tsx"),
+    "utf8",
+  );
+
+  // In mobile utility section, /search must render a button, not a Link
+  assert.match(
+    source,
+    /if\s*\(\s*item\.href\s*===\s*"\/search"\s*\)\s*\{\s*return\s*\(\s*<button/,
+    "Mobile utility search must render a <button>, not a <Link>",
+  );
+
+  // The button must trigger mobile search opening
+  assert.match(
+    source,
+    /onClick=\{handleOpenMobileSearch\}/,
+    "Mobile search button must call handleOpenMobileSearch",
+  );
+
+  // handleOpenMobileSearch must close mobile nav and open search overlay
+  assert.match(
+    source,
+    /const handleOpenMobileSearch = \(\) => \{\s*closeMobileNav\(\);\s*openSearch\(mobileNavTriggerRef\.current\);\s*\};/,
+    "handleOpenMobileSearch must close mobile nav and open search overlay with mobile trigger ref",
+  );
+
+  // SearchOverlay must receive activeSearchTriggerRef
+  assert.match(
+    source,
+    /<SearchOverlay[^>]*triggerRef=\{activeSearchTriggerRef\}/,
+    "SearchOverlay must receive activeSearchTriggerRef to restore focus on close",
+  );
+});
+

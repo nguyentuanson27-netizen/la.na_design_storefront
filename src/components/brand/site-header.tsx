@@ -57,6 +57,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
   const headerRef = useRef<HTMLElement | null>(null);
   const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const activeSearchTriggerRef = useRef<HTMLButtonElement | null>(null);
   const cartTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileNavTriggerRef = useRef<HTMLButtonElement | null>(null);
   const mobileNavCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -69,7 +70,10 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const mobileUtility = NAVIGATION.mobileUtility;
 
   const closeCartDrawer = () => setCartDrawerOpen(false);
-  const openSearch = () => setSearchOpen(true);
+  const openSearch = (trigger?: HTMLButtonElement | null) => {
+    activeSearchTriggerRef.current = trigger ?? searchTriggerRef.current;
+    setSearchOpen(true);
+  };
   const closeSearch = () => setSearchOpen(false);
 
   const openMobileNav = () => {
@@ -78,6 +82,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   };
   const closeMobileNav = () => {
     setIsMobileNavOpen(false);
+  };
+
+  const handleOpenMobileSearch = () => {
+    closeMobileNav();
+    openSearch(mobileNavTriggerRef.current);
   };
 
   // Manage body scroll and focus restoration for full-screen mobile nav
@@ -95,10 +104,12 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
       };
     } else if (wasMobileNavOpenRef.current) {
       wasMobileNavOpenRef.current = false;
-      const returnTarget = previouslyFocusedBeforeMobileNav.current ?? mobileNavTriggerRef.current;
-      returnTarget?.focus?.();
+      if (!searchOpen) {
+        const returnTarget = previouslyFocusedBeforeMobileNav.current ?? mobileNavTriggerRef.current;
+        returnTarget?.focus?.();
+      }
     }
-  }, [isMobileNavOpen]);
+  }, [isMobileNavOpen, searchOpen]);
 
   // Track scroll position for transparent -> cream transition
   useEffect(() => {
@@ -188,6 +199,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
         </div>
 
         {/* Brand Logo (centered on mobile, left on desktop) */}
+        {/* TODO(F1): Dedicated slot for approved master logo asset when supplied by brand owner; currently using text wordmark fallback per spec. */}
         <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
           {BRAND.identity.displayNameUpper}
         </Link>
@@ -316,7 +328,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   key={item.href}
                   ref={searchTriggerRef}
                   type="button"
-                  onClick={openSearch}
+                  onClick={() => openSearch(searchTriggerRef.current)}
                   aria-label={item.label}
                   aria-haspopup="dialog"
                 >
@@ -364,11 +376,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           role="dialog"
           aria-modal="true"
           aria-label="Menu điều hướng"
-          className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2] text-[#3B2219] overflow-y-auto"
+          className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2] p-6 overflow-y-auto"
         >
-          {/* Header row in mobile nav dialog */}
-          <div className="flex items-center justify-between border-b border-[#3B2219]/15 px-6 py-4 min-h-[58px]">
-            <span className="font-bold text-sm tracking-[0.18em] uppercase text-[#2A1810]">
+          {/* Mobile Header Bar inside full-screen menu: Logo + Close Button */}
+          <div className="flex items-center justify-between border-b border-[#3B2219]/15 pb-4">
+            <span className="font-serif text-xl font-medium tracking-wide text-[#2A1810]">
               {BRAND.identity.displayNameUpper}
             </span>
             <button
@@ -376,10 +388,10 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               type="button"
               onClick={closeMobileNav}
               aria-label="Đóng menu"
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="inline-flex h-9 w-9 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <svg
-                className="h-5 w-5 stroke-current"
+                className="h-6 w-6 stroke-current"
                 fill="none"
                 viewBox="0 0 24 24"
                 strokeWidth="1.8"
@@ -392,22 +404,22 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             </button>
           </div>
 
-          {/* Mobile Navigation List */}
-          <nav className="mobile-menu flex-1 px-6 py-6" aria-label="Điều hướng chính trên di động">
-            <div className="divide-y divide-[#3B2219]/10">
+          {/* Primary Mobile Navigation Links */}
+          <nav className="mt-6 flex-1" aria-label="Điều hướng di động">
+            <div className="space-y-4">
               {primary.map((item) => {
                 const hasChildren = item.children && item.children.length > 0;
                 return (
-                  <div key={item.href} className="py-3 first:pt-0 last:pb-0">
+                  <div key={item.href} className="border-b border-[#3B2219]/10 pb-3">
                     <Link
                       href={item.href}
                       onClick={closeMobileNav}
-                      className="block text-base font-medium text-[#2A1810] uppercase tracking-wider py-1 hover:text-black focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                      className="block text-base font-serif font-medium text-[#2A1810] hover:text-[#70584B] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                     >
                       {item.label}
                     </Link>
                     {hasChildren ? (
-                      <div className="pl-4 mt-2 space-y-2 border-l border-[#3B2219]/15">
+                      <div className="mt-2 pl-4 space-y-2 border-l border-[#3B2219]/15">
                         {item.children!.map((child) => (
                           <Link
                             key={child.href}
@@ -428,6 +440,19 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             {/* Mobile Utility Links */}
             <div className="mt-8 border-t border-[#3B2219]/15 pt-6 space-y-3">
               {mobileUtility.map((item) => {
+                if (item.href === "/search") {
+                  return (
+                    <button
+                      key={item.href}
+                      type="button"
+                      onClick={handleOpenMobileSearch}
+                      aria-haspopup="dialog"
+                      className="block w-full text-left text-sm font-semibold uppercase tracking-wider text-[#3B2219] py-1.5 hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                    >
+                      {item.label}
+                    </button>
+                  );
+                }
                 const destination = item.href === "/account" ? (session ? item.href : loginPath) : item.href;
                 return (
                   <Link
@@ -456,7 +481,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
       <SearchOverlay
         isOpen={searchOpen}
         onClose={closeSearch}
-        triggerRef={searchTriggerRef}
+        triggerRef={activeSearchTriggerRef}
       />
     </header>
   );

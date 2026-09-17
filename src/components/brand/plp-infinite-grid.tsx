@@ -89,7 +89,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
 
       {/* Error state with retry */}
       {error ? (
-        <div className="mt-8 text-center text-xs text-[#70584B]">
+        <div role="alert" aria-live="assertive" className="mt-8 text-center text-xs text-[#70584B]">
           <p>{error}</p>
           <button
             type="button"

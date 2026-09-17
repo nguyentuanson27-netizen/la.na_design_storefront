@@ -15,6 +15,7 @@ export type UsePlpInfiniteGridOptions = {
   activeFilters: PlpFilterState;
   hasNext: boolean;
   nextHref: string | null;
+  nextCursor?: string | null;
 };
 
 export function usePlpInfiniteGrid({
@@ -26,9 +27,11 @@ export function usePlpInfiniteGrid({
   activeFilters,
   hasNext,
   nextHref,
+  nextCursor,
 }: UsePlpInfiniteGridOptions) {
   const [products, setProducts] = useState<ProductCardModel[]>([...initialProducts]);
   const [currentPage, setCurrentPage] = useState(initialPage);
+  const [cursor, setCursor] = useState<string | null>(nextCursor ?? null);
   const [hasNextPage, setHasNextPage] = useState(hasNext);
   const [nextPageHref, setNextPageHref] = useState<string | null>(nextHref);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -43,6 +46,7 @@ export function usePlpInfiniteGrid({
     setPrevInitialProducts(initialProducts);
     setProducts([...initialProducts]);
     setCurrentPage(initialPage);
+    setCursor(nextCursor ?? null);
     setHasNextPage(hasNext);
     setNextPageHref(nextHref);
     setIsLoadingMore(false);
@@ -56,11 +60,11 @@ export function usePlpInfiniteGrid({
     setError(null);
 
     try {
-      const nextPage = currentPage + 1;
       const result = await loadCategoryNextPageAction({
         categoryKey,
         categoryPath,
-        page: nextPage,
+        cursor: cursor,
+        page: cursor ? undefined : currentPage + 1,
         color: activeFilters.color,
         size: activeFilters.size,
         minPriceVnd: activeFilters.minPriceVnd,
@@ -71,6 +75,7 @@ export function usePlpInfiniteGrid({
 
       setProducts((prev) => [...prev, ...result.products]);
       setCurrentPage(result.page);
+      setCursor(result.nextCursor);
       setHasNextPage(result.hasNext);
       setNextPageHref(result.nextHref);
 
@@ -83,7 +88,9 @@ export function usePlpInfiniteGrid({
         window.history.replaceState(null, "", result.currentHref);
       }
     } catch {
-      setError("Không thể tải thêm sản phẩm. Vui lòng thử lại.");
+      const errorMessage = "Không thể tải thêm sản phẩm. Vui lòng thử lại.";
+      setError(errorMessage);
+      setAnnouncement(errorMessage);
     } finally {
       setIsLoadingMore(false);
     }
@@ -92,6 +99,7 @@ export function usePlpInfiniteGrid({
     categoryKey,
     categoryPath,
     currentPage,
+    cursor,
     hasNextPage,
     isLoadingMore,
     products.length,

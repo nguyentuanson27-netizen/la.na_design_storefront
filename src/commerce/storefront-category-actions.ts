@@ -17,7 +17,8 @@ const CATEGORY_PAGE_SIZE = 24;
 export type CategoryNextPageActionInput = {
   categoryKey: string;
   categoryPath: string;
-  page: number;
+  page?: number;
+  cursor?: string | null;
   color?: string | null;
   size?: string | null;
   minPriceVnd?: number | null;
@@ -47,7 +48,8 @@ export async function loadCategoryNextPageAction(
     maxPrice: input.maxPriceVnd !== null && input.maxPriceVnd !== undefined ? String(input.maxPriceVnd) : undefined,
     sale: input.sale ? "true" : undefined,
     sort: input.sort ?? undefined,
-    page: String(input.page),
+    page: input.page !== undefined ? String(input.page) : undefined,
+    cursor: input.cursor ?? undefined,
   });
 
   const now = new Date();

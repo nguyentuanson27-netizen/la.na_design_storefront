@@ -11,6 +11,7 @@ import {
   parseCategoryDiscoverySearchParams,
 } from "../../src/commerce/category-discovery-url.ts";
 import { handleDrawerFocusTrap } from "../../src/components/headless/cart-drawer-model.ts";
+import { buildClearPriceHref } from "../../src/components/headless/plp-filter-model.ts";
 import { buildCatalogListingMetadata } from "../../src/seo/catalog-listing-metadata.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -308,4 +309,165 @@ test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within fi
     docHolder.document = originalDoc;
   }
 });
+
+test("F4b price filter contract: buildClearPriceHref clears only price bounds, preserving other filters", () => {
+  const state = {
+    color: "Trắng",
+    size: "M",
+    minPriceVnd: 200000,
+    maxPriceVnd: 800000,
+    sale: true,
+    sort: "price-asc" as const,
+  };
+
+  const clearedHref = buildClearPriceHref("/danh-muc/ao-dai", state);
+  assert.equal(
+    clearedHref,
+    "/danh-muc/ao-dai?color=Tr%E1%BA%AFng&size=M&sale=true&sort=price-asc",
+    "Cleared price href must keep color, size, sale, sort while stripping minPrice and maxPrice",
+  );
+});
+
+test("F4b price filter UI contract: desktop price form, price pill clear link, input sync, and client validation", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/plp-filter-panel.tsx"),
+    "utf8",
+  );
+
+  // A: Desktop filter bar contains price range form
+  assert.match(
+    source,
+    /Desktop Price Range Form/,
+    "plp-filter-panel.tsx must contain Desktop Price Range Form",
+  );
+  assert.match(
+    source,
+    /aria-label="Giá tối thiểu"/,
+    "Desktop price form must have minimum price input",
+  );
+  assert.match(
+    source,
+    /aria-label="Giá tối đa"/,
+    "Desktop price form must have maximum price input",
+  );
+
+  // B: Price pill clear button links to buildClearPriceHref, not clearHref
+  assert.match(
+    source,
+    /buildClearPriceHref\(categoryPath,\s*activeFilters\)/,
+    "Price filter pill clear button must use buildClearPriceHref to clear only price",
+  );
+
+  // C: Local inputs sync with activeFilters via useEffect
+  assert.match(
+    source,
+    /setMinPriceInput\(activeFilters\.minPriceVnd !== null \? String\(activeFilters\.minPriceVnd\) : ""\)/,
+    "Price inputs must sync when activeFilters change",
+  );
+  assert.match(
+    source,
+    /setMaxPriceInput\(activeFilters\.maxPriceVnd !== null \? String\(activeFilters\.maxPriceVnd\) : ""\)/,
+    "Price inputs must sync when activeFilters change",
+  );
+
+  // D: Client validation clamps to STOREFRONT_DISCOVERY_LIMITS.priceVnd and swaps min > max
+  assert.match(
+    source,
+    /STOREFRONT_DISCOVERY_LIMITS\.priceVnd/,
+    "Price filter submission must reference STOREFRONT_DISCOVERY_LIMITS.priceVnd limit",
+  );
+  assert.match(
+    source,
+    /if\s*\(minVal !== null && maxVal !== null && minVal > maxVal\)\s*\{\s*const temp = minVal;\s*minVal = maxVal;\s*maxVal = temp;/,
+    "Price filter submission must swap min and max if min > max",
+  );
+});
+
+test("F4b infinite grid: consumes server nextCursor and announces errors via accessible live region", () => {
+  const hookSource = readFileSync(
+    path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
+    "utf8",
+  );
+  const gridSource = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/plp-infinite-grid.tsx"),
+    "utf8",
+  );
+
+  // Hook accepts nextCursor in options
+  assert.match(
+    hookSource,
+    /nextCursor\?:\s*string\s*\|\s*null;/,
+    "usePlpInfiniteGrid options must accept nextCursor",
+  );
+
+  // Hook tracks cursor in state and updates from server result
+  assert.match(
+    hookSource,
+    /const \[cursor, setCursor\] = useState<string \| null>\(nextCursor \?\? null\);/,
+    "usePlpInfiniteGrid must track cursor in state initialized from nextCursor",
+  );
+  assert.match(
+    hookSource,
+    /cursor:\s*cursor/,
+    "loadCategoryNextPageAction must be passed the active cursor",
+  );
+  assert.match(
+    hookSource,
+    /setCursor\(result\.nextCursor\);/,
+    "usePlpInfiniteGrid must update cursor with result.nextCursor",
+  );
+
+  // Error announcement updates live region announcement
+  assert.match(
+    hookSource,
+    /setAnnouncement\(errorMessage\);/,
+    "usePlpInfiniteGrid must set announcement when error occurs",
+  );
+
+  // Grid component has accessible live region and role=alert for errors
+  assert.match(
+    gridSource,
+    /aria-live="polite"\s*aria-atomic="true"/,
+    "plp-infinite-grid must render polite live region for announcements",
+  );
+  assert.match(
+    gridSource,
+    /role="alert"\s*aria-live="assertive"/,
+    "plp-infinite-grid must render assertive alert for error states",
+  );
+});
+
+test("F5 editorial product card: does not display out-of-stock label derived from raw stock, reserving slot for F8a", () => {
+  const cardSource = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/product-card.tsx"),
+    "utf8",
+  );
+  const modelSource = readFileSync(
+    path.join(REPO_ROOT, "src/components/headless/build-product-card-model.ts"),
+    "utf8",
+  );
+
+  // Card markup must not contain "Hết hàng"
+  assert.ok(
+    !cardSource.includes("Hết hàng"),
+    "product-card.tsx must not display visible 'Hết hàng' label derived from raw sellableStock",
+  );
+
+  // Card markup must have comment reserving slot for F8a
+  assert.match(
+    cardSource,
+    /F8a:\s*Reserved slot for server-authoritative availability/,
+    "product-card.tsx must contain comment reserving slot for F8a",
+  );
+
+  // Headless model retains availability field definition for F8a
+  assert.match(
+    modelSource,
+    /availability:\s*"in-stock"\s*\|\s*"out-of-stock"\s*\|\s*"partial"/,
+    "build-product-card-model.ts must preserve availability type for future F8a usage",
+  );
+});
+
+
+
 

@@ -4,10 +4,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
-import type { CategoryDiscoverySort } from "../../commerce/category-discovery-url";
+import {
+  buildCategoryDiscoveryHref,
+  type CategoryDiscoverySort,
+} from "../../commerce/category-discovery-url";
+import { STOREFRONT_DISCOVERY_LIMITS } from "../../commerce/storefront-discovery";
 import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
 import {
   buildClearAllFiltersHref,
+  buildClearPriceHref,
   buildSortChangeHref,
   buildToggleColorHref,
   buildToggleSaleHref,
@@ -58,6 +63,17 @@ export function PlpFilterPanel({
 
   const hasFilters = hasActivePlpFilters(activeFilters);
   const activeCount = countActivePlpFilters(activeFilters);
+
+  // Sync price inputs when activeFilters change externally (e.g., URL navigation or clear pill)
+  const [prevActiveFilters, setPrevActiveFilters] = useState(activeFilters);
+  if (
+    activeFilters.minPriceVnd !== prevActiveFilters.minPriceVnd ||
+    activeFilters.maxPriceVnd !== prevActiveFilters.maxPriceVnd
+  ) {
+    setPrevActiveFilters(activeFilters);
+    setMinPriceInput(activeFilters.minPriceVnd !== null ? String(activeFilters.minPriceVnd) : "");
+    setMaxPriceInput(activeFilters.maxPriceVnd !== null ? String(activeFilters.maxPriceVnd) : "");
+  }
 
   // Manage body scroll, auto-focus, and focus restoration to opener
   useEffect(() => {
@@ -111,23 +127,46 @@ export function PlpFilterPanel({
 
   const handlePriceFilterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const params = new URLSearchParams();
-    if (activeFilters.color) params.set("color", activeFilters.color);
-    if (activeFilters.size) params.set("size", activeFilters.size);
-    if (activeFilters.sale) params.set("sale", "true");
-    if (activeFilters.sort !== "default") params.set("sort", activeFilters.sort);
 
-    const minVal = minPriceInput.trim() ? Number(minPriceInput.trim()) : null;
-    const maxVal = maxPriceInput.trim() ? Number(maxPriceInput.trim()) : null;
-    if (minVal !== null && Number.isSafeInteger(minVal) && minVal >= 0) {
-      params.set("minPrice", String(minVal));
-    }
-    if (maxVal !== null && Number.isSafeInteger(maxVal) && maxVal >= 0) {
-      params.set("maxPrice", String(maxVal));
+    let minVal: number | null = null;
+    let maxVal: number | null = null;
+
+    const trimmedMin = minPriceInput.trim();
+    if (trimmedMin !== "") {
+      const parsed = Number(trimmedMin);
+      if (Number.isSafeInteger(parsed) && parsed >= 0) {
+        minVal = Math.min(parsed, STOREFRONT_DISCOVERY_LIMITS.priceVnd);
+      }
     }
 
-    const query = params.toString();
-    const href = query ? `${categoryPath}?${query}` : categoryPath;
+    const trimmedMax = maxPriceInput.trim();
+    if (trimmedMax !== "") {
+      const parsed = Number(trimmedMax);
+      if (Number.isSafeInteger(parsed) && parsed >= 0) {
+        maxVal = Math.min(parsed, STOREFRONT_DISCOVERY_LIMITS.priceVnd);
+      }
+    }
+
+    // If both are provided and min > max, swap them
+    if (minVal !== null && maxVal !== null && minVal > maxVal) {
+      const temp = minVal;
+      minVal = maxVal;
+      maxVal = temp;
+      setMinPriceInput(String(minVal));
+      setMaxPriceInput(String(maxVal));
+    }
+
+    const href = buildCategoryDiscoveryHref(
+      categoryPath,
+      {
+        ...activeFilters,
+        minPriceVnd: minVal,
+        maxPriceVnd: maxVal,
+        page: 1,
+      },
+      1,
+    );
+
     startTransition(() => {
       router.push(href);
       setIsMobileOpen(false);
@@ -270,6 +309,38 @@ export function PlpFilterPanel({
           </div>
         ) : null}
 
+        {/* Desktop Price Range Form */}
+        <form onSubmit={handlePriceFilterSubmit} className="flex items-center gap-1.5">
+          <span className="font-semibold uppercase tracking-wider text-[#3B2219]/60 mr-1">Giá:</span>
+          <input
+            type="number"
+            min="0"
+            max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+            placeholder="Từ"
+            aria-label="Giá tối thiểu"
+            value={minPriceInput}
+            onChange={(e) => setMinPriceInput(e.target.value)}
+            className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+          />
+          <span>-</span>
+          <input
+            type="number"
+            min="0"
+            max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
+            placeholder="Đến"
+            aria-label="Giá tối đa"
+            value={maxPriceInput}
+            onChange={(e) => setMaxPriceInput(e.target.value)}
+            className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+          />
+          <button
+            type="submit"
+            className="rounded border border-[#3B2219]/30 px-2.5 py-1 font-medium uppercase transition hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-[#FAF7F2]"
+          >
+            Lọc
+          </button>
+        </form>
+
         {/* Clear All */}
         {hasFilters ? (
           <Link
@@ -338,7 +409,11 @@ export function PlpFilterPanel({
                   ? formatFilterPriceVnd(activeFilters.maxPriceVnd)
                   : "..."}
               </span>
-              <Link href={clearHref} aria-label="Xóa khoảng giá" className="hover:text-black">
+              <Link
+                href={buildClearPriceHref(categoryPath, activeFilters)}
+                aria-label="Xóa khoảng giá"
+                className="hover:text-black"
+              >
                 ✕
               </Link>
             </span>
@@ -473,7 +548,10 @@ export function PlpFilterPanel({
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
+                      min="0"
+                      max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
                       placeholder="Từ"
+                      aria-label="Giá tối thiểu"
                       value={minPriceInput}
                       onChange={(e) => setMinPriceInput(e.target.value)}
                       className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
@@ -481,7 +559,10 @@ export function PlpFilterPanel({
                     <span>-</span>
                     <input
                       type="number"
+                      min="0"
+                      max={STOREFRONT_DISCOVERY_LIMITS.priceVnd}
                       placeholder="Đến"
+                      aria-label="Giá tối đa"
                       value={maxPriceInput}
                       onChange={(e) => setMaxPriceInput(e.target.value)}
                       className="w-full rounded border border-[#3B2219]/25 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
