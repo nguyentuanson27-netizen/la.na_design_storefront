@@ -310,6 +310,35 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   Provenance: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR)
   after the five models were listed for review.
+- **G3 contact-form outbound transport** — **approved 2026-09-16**. Provider **Resend**, over its
+  HTTPS Email API via server-side `fetch` (no npm SDK while built-in fetch suffices). `From`
+  **`website@lanadesign.vn`** on sending domain **`lanadesign.vn`**, which the owner authorized
+  verifying with Resend. Destination stays the existing support inbox
+  `la.nadesignsince2022@gmail.com`; `Reply-To` is the validated customer email. Secret
+  **`RESEND_API_KEY`**, server-only. Payload is exactly `name`, `email`, `message`. Rate limit
+  **3 / 15 minutes** and **10 / 24 hours** on a pseudonymous client bucket, never keyed by raw
+  IP or email.
+
+  **Not done and not claimed:** no Resend account, API key or DNS record exists or was observed.
+  The SPF/DKIM/return-path values come from Resend at configuration time and are deliberately absent
+  from this repository. Recorded in
+  [ADR 0012](../decisions/0012-contact-form-outbound-transport.md).
+
+- **G5 atomic capacity architecture** — **principles approved 2026-09-16**. The local PostgreSQL
+  reservation ledger is the authoritative capacity gate; Pancake remains mirrored stock truth but is
+  **not** trusted for negative-limit or concurrency enforcement, because G2 observed two concurrent
+  orders both accepted at stock 0. Enforcement is per variant at the server-side order commit
+  boundary, with `STANDARD` floored at 0 and `OVERSELL`/`PREORDER` floored at `negativeStockLimit`
+  (default `−20`). Ambiguous Pancake writes hold capacity in `UNKNOWN` and are never auto-released.
+  `OVERSELL`/`PREORDER` are disabled for composite products in v1. Recorded in
+  [ADR 0014](../decisions/0014-atomic-capacity-and-reservations.md).
+
+  Scope: this approves the **architecture**, not its persistence. ADR 0014 §13 proposes
+  `ProductSellingPolicy` and `VariantCapacityReservation`, which are **not** covered by the
+  2026-09-16 five-model Checkpoint B approval and need separate authorization before any migration.
+
+  Provenance for both: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR).
 
 ## Still pending — do not invent
 

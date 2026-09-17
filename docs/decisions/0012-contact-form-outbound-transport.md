@@ -1,16 +1,45 @@
 # ADR 0012 — Contact-form outbound transport
 
-- Status: **PROPOSE NEW PROVIDER — REQUIRES CHECKPOINT B APPROVAL**
+- Status: **ACCEPTED — provider/sender/domain/secret/data/rate-limit boundary owner-approved 2026-09-16**
 - Date: 2026-09-16
-- Scope: G3 design/evidence only. No provider account, key, dependency, DNS change, form action, or external send is created here.
+- Scope: G3 design/evidence only. **No provider account, API key, npm dependency, DNS record, form
+  action or external send is created by this ADR.** The approval below authorizes F9b to build them;
+  it does not itself create anything, and this repository has observed no provider or DNS state.
+- Recorded in [`la-na-design-owner-approved-facts-and-decisions.md`](../specs/la-na-design-owner-approved-facts-and-decisions.md)
+  › Settled decisions, which carries the provenance.
 
 ## Context
 
 `src/app/contact/page.tsx` explicitly leaves outbound delivery to G3/F9b. `package.json` has no mail/SMTP provider dependency. The repository already has a PostgreSQL `RateLimit` model and atomic server-side rate-limit implementations, so abuse control can reuse that pattern. The owner-approved customer support destination is the support email in Brand Config/master spec: `la.nadesignsince2022@gmail.com`.
 
-## Decision
+## Decision — owner-approved 2026-09-16
 
-Use **Resend's HTTPS Email API via server-side `fetch`**, subject to Checkpoint B approval. No npm package is required; F9b should hide the HTTP call behind one narrow transport function.
+Use **Resend's HTTPS Email API via server-side `fetch`**. No npm package is required; F9b hides the
+HTTP call behind one narrow transport function.
+
+The owner approved this exact boundary:
+
+| Field | Approved value |
+|---|---|
+| Provider | **Resend** |
+| Transport | HTTPS Email API via server-side `fetch`; **no** Resend npm SDK while built-in fetch suffices |
+| `From` | **`website@lanadesign.vn`** |
+| Sending domain | **`lanadesign.vn`**, to be verified with Resend |
+| `To` | **`la.nadesignsince2022@gmail.com`** — the existing Brand Config support inbox, unchanged |
+| `Reply-To` | the **validated** customer email |
+| Secret | **`RESEND_API_KEY`**, server-only |
+| Payload | exactly `name`, `email`, `message` |
+| Rate limit | **3 / 15 minutes** and **10 / 24 hours**, pseudonymous client bucket |
+
+### DNS — authorized, not performed
+
+The owner authorized verifying `lanadesign.vn` with Resend. The concrete SPF/DKIM/return-path record
+values come from Resend at actual configuration time and are **deliberately not written into this
+repository**: inventing record values would put unverifiable DNS truth in version control.
+
+**No DNS state is claimed as verified.** This session created no Resend account, no API key and no
+DNS record, and observed none; it has no credential or registrar access to do so. Whether
+`lanadesign.vn` is verified is a deployment-time fact to be observed, not inferred from this ADR.
 
 ### Official provider evidence — reviewed 2026-09-16
 
@@ -32,7 +61,9 @@ The storefront's proposed rate limits below are intentionally much lower than th
 ## Transport contract
 
 - **To:** existing Brand Config support inbox.
-- **From:** a La.na-controlled sender identity on a verified La.na domain. The exact sender address is a Checkpoint B decision and is deliberately not invented here.
+- **From:** `website@lanadesign.vn` (owner-approved), on the `lanadesign.vn` sending domain once
+  Resend verification is complete. Sending before verification is a provider-side failure, not
+  something to work around.
 - **Reply-To:** validated customer email.
 - **User-Agent:** every direct Resend request must set an explicit static, server-owned application identifier. Keep it bounded (maximum 128 ASCII characters) and never derive it from shopper/request input; do not rely on runtime defaults because Resend rejects requests without this header.
 - Never use the customer-supplied address as `From`.
@@ -80,14 +111,25 @@ Later emit a bounded `contact_form_delivery` event with outcome, correlation/req
 
 - New npm package: **none**.
 - Future server secret after approval: `RESEND_API_KEY`.
-- DNS: verify the Checkpoint-B-approved La.na sender domain/identity before production use; SPF/DKIM changes are deployment-side work, not this PR.
+- DNS: verify `lanadesign.vn` with Resend before production use. The exact SPF/DKIM/return-path values come from Resend at configuration time and are not recorded here; this is deployment-side work, not this PR, and no verification has been observed.
 - Destination remains the existing repository-owned Brand Config fact.
 
 ## Checkpoint B / F9b boundary
 
-Checkpoint B must approve: Resend as a new external provider, exact sender identity/domain, required DNS changes, deployment secret creation/storage, submitted data boundary, and rate-limit shape.
+**Approved 2026-09-16.** The owner approved Resend as the external provider, the sender identity
+`website@lanadesign.vn`, the `lanadesign.vn` sending domain and its verification, `RESEND_API_KEY`
+as a server-only deployment secret, the `name`/`email`/`message` data boundary, and the two-tier
+rate-limit shape.
 
-Only after that may F9b implement the server handler/action, validation, limiter, provider transport, required static `User-Agent`, safe errors, idempotency and sanitized telemetry. Rollback is to disable/remove outbound form delivery while leaving the existing static support channels intact.
+F9b may therefore implement the server handler/action, validation, limiter, provider transport,
+required static `User-Agent`, safe errors, idempotency and sanitized telemetry.
+
+Still deployment-time work, and **not** authorized to be faked or assumed in the repository:
+creating the Resend account, issuing the key, storing it in the production environment, and adding
+the DNS records Resend supplies. None of that has happened.
+
+Rollback is to disable/remove outbound form delivery while leaving the existing static support
+channels intact.
 
 ## Rejected alternatives
 

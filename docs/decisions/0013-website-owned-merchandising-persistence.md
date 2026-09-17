@@ -293,8 +293,13 @@ key, even when it occupies the old one's route path or label.
 This is a safety rule, not bookkeeping. Every category-keyed table stores the key as a bare string
 with no foreign key to enforce anything. If a retired key were reassigned to a different category,
 any order or media row the §4.8 gate failed to clean would silently reattach itself to the new
-category — stale merchandising going live without a single write. Retirement makes that
-unrepresentable in the only way available here: the key never comes back.
+category — stale merchandising going live without a single write. Retirement removes the only way
+that can happen, by policy: the key never comes back.
+
+To be exact about what that is and is not — this is a rule people follow, not a constraint the
+database enforces. Nothing stops a writer from reusing a retired key, and §4.8's audit reports
+unknown keys but cannot recognise a *reused* one, because after reuse the key is valid again. The
+rule is the protection; there is no schema guarantee behind it.
 
 Renaming a category's **label** or **route path** is unrelated and free; neither is persisted in
 merchandising rows (§4.2). Only the key is, and only the key is permanent.

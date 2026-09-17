@@ -1,0 +1,244 @@
+/**
+ * The G5 capacity authority (ADR 0014).
+ *
+ * Two pure decisions live here, both of which the reservation implementation (I6a) and every
+ * sellability consumer (I4/I5) must go through rather than re-deriving:
+ *
+ * 1. **May this quantity be reserved?** — the threshold rule per selling mode.
+ * 2. **Does a reservation still hold capacity?** — the state machine, including the case that makes
+ *    this subtle: an ambiguous Pancake write must keep holding.
+ *
+ * Nothing here touches the database. The transactional mechanics that make the check atomic are
+ * I6a's, and ADR 0014 §6 specifies them; this module is the predicate those mechanics evaluate, so
+ * the arithmetic can be tested exhaustively without a database and cannot drift between callers.
+ *
+ * Pancake is *not* the enforcement authority. G2 proved it accepts orders at stock 0, below 0, and
+ * accepts two concurrent orders at stock 0 — so the local gate is the only thing standing between a
+ * concurrent checkout and an unbounded negative balance.
+ */
+
+export const SELLING_MODES = ["STANDARD", "OVERSELL", "PREORDER"] as const;
+export type SellingMode = (typeof SELLING_MODES)[number];
+
+/** Master spec §27. Product-level, enforced independently per variant. */
+export const DEFAULT_NEGATIVE_STOCK_LIMIT = -20;
+
+export type CapacityDecisionReason =
+  | "capacity-available"
+  | "invalid-quantity"
+  | "invalid-limit"
+  | "invalid-stock"
+  | "standard-would-go-negative"
+  | "negative-limit-reached"
+  | "composite-oversell-unproven";
+
+export type VariantCapacityInput = Readonly<{
+  /** Mirrored Pancake stock for the variant, summed across warehouses. May already be negative. */
+  mirroredStock: number;
+  /**
+   * Quantity held by reservations that still count (see `reservationHoldsCapacity`).
+   *
+   * Never negative. This is what makes two concurrent checkouts serialize: the second one sees the
+   * first one's hold, because I6a computes it inside the same transaction that took the row lock.
+   */
+  activeReservedQuantity: number;
+  sellingMode: SellingMode;
+  /** Product-level limit, applied per variant. `STANDARD` ignores it; its floor is always 0. */
+  negativeStockLimit: number;
+  /** Composite parents are restricted in v1 — see below. */
+  isComposite: boolean;
+}>;
+
+export type CapacityDecision = Readonly<{
+  allowed: boolean;
+  reason: CapacityDecisionReason;
+  /** `mirroredStock - activeReservedQuantity - quantity`. Reported even when refused, for operators. */
+  projectedCapacity: number;
+  /** The value `projectedCapacity` may not go below. */
+  floor: number;
+}>;
+
+/**
+ * The lowest capacity a mode may reach.
+ *
+ * `STANDARD` may never go below 0 no matter what the limit says — the limit is an oversell/preorder
+ * allowance, not a licence for standard products to go negative (master spec §28).
+ */
+export function capacityFloorForMode(mode: SellingMode, negativeStockLimit: number): number {
+  return mode === "STANDARD" ? 0 : negativeStockLimit;
+}
+
+/**
+ * Whether `quantity` more units of this variant may be reserved right now.
+ *
+ * Fail-closed on every malformed input: a non-integer or non-positive quantity, and a positive or
+ * non-integer limit, are refusals rather than coerced values. A limit of `0` is legitimate and means
+ * "oversell enabled but no negative allowance", so it is accepted.
+ */
+export function evaluateVariantCapacity(
+  input: VariantCapacityInput,
+  quantity: number,
+): CapacityDecision {
+  const floor = capacityFloorForMode(input.sellingMode, input.negativeStockLimit);
+  const projectedCapacity = input.mirroredStock - input.activeReservedQuantity - quantity;
+
+  const refuse = (reason: CapacityDecisionReason): CapacityDecision =>
+    Object.freeze({ allowed: false, reason, projectedCapacity, floor });
+
+  if (!Number.isSafeInteger(quantity) || quantity <= 0) return refuse("invalid-quantity");
+  if (!Number.isSafeInteger(input.negativeStockLimit) || input.negativeStockLimit > 0) {
+    return refuse("invalid-limit");
+  }
+  // `WarehouseStock.quantity` is `Float` in the mirror, so a fractional or non-finite sum is
+  // reachable from upstream data. Capacity is a count: rather than floor it — which would silently
+  // reinterpret stock the operator never approved — the variant stops selling and says why. This is
+  // a distinct reason from `invalid-quantity` because the fault is in the mirror, not the request,
+  // and an operator chasing it needs to be sent to the right place.
+  if (!Number.isSafeInteger(input.mirroredStock)) return refuse("invalid-stock");
+  if (!Number.isSafeInteger(input.activeReservedQuantity) || input.activeReservedQuantity < 0) {
+    return refuse("invalid-stock");
+  }
+
+  // Composite v1 restriction. G2 exercised one 1:1 fixture and saw a child driven to -1; it proved
+  // nothing about arbitrary multipliers, a child that starts negative, or multi-component
+  // atomicity. Selling a composite below zero would consume component capacity this predicate does
+  // not model, so it is refused until component-aware accounting exists and is proven by evidence.
+  if (input.isComposite && input.sellingMode !== "STANDARD") {
+    return refuse("composite-oversell-unproven");
+  }
+
+  if (projectedCapacity < floor) {
+    return refuse(
+      input.sellingMode === "STANDARD" ? "standard-would-go-negative" : "negative-limit-reached",
+    );
+  }
+
+  return Object.freeze({ allowed: true, reason: "capacity-available", projectedCapacity, floor });
+}
+
+/**
+ * Reservation lifecycle.
+ *
+ * Deliberately parallel to the existing `LocalOrderState` rather than a second vocabulary:
+ * `SUBMITTING` corresponds to `POS_SUBMITTING`, `UNKNOWN` to `SYNC_UNKNOWN`, and `COMMITTED` to
+ * `CONFIRMED`. The repository already resolves ambiguous Pancake writes through
+ * `SYNC_UNKNOWN`/`CREATE_OUTCOME_UNKNOWN` in `pancake-order-submit.ts`; G5 reuses that outcome
+ * rather than inventing a competing notion of "maybe written".
+ */
+export const RESERVATION_STATES = [
+  "RESERVED",
+  "SUBMITTING",
+  "COMMITTED",
+  "RELEASED",
+  "UNKNOWN",
+] as const;
+export type ReservationState = (typeof RESERVATION_STATES)[number];
+
+/**
+ * Allowed transitions. Terminal states have none, which is what makes double-release and
+ * double-commit unrepresentable in the state machine rather than merely unlikely.
+ *
+ * `UNKNOWN` is reachable only from `SUBMITTING` (the write may or may not have landed) and leaves
+ * only by reconciliation proving one way or the other. There is deliberately no `UNKNOWN -> UNKNOWN`
+ * self-loop and no timeout edge: nothing may release an ambiguous hold on a timer.
+ */
+export const RESERVATION_TRANSITIONS: Readonly<Record<ReservationState, readonly ReservationState[]>> =
+  Object.freeze({
+    RESERVED: Object.freeze(["SUBMITTING", "RELEASED"] as const),
+    SUBMITTING: Object.freeze(["COMMITTED", "RELEASED", "UNKNOWN"] as const),
+    UNKNOWN: Object.freeze(["COMMITTED", "RELEASED"] as const),
+    COMMITTED: Object.freeze([] as const),
+    RELEASED: Object.freeze([] as const),
+  });
+
+export function canTransition(from: ReservationState, to: ReservationState): boolean {
+  return RESERVATION_TRANSITIONS[from]?.includes(to) ?? false;
+}
+
+/** Terminal states accept no further transition, so an at-most-once effect is structural. */
+export function isTerminalReservationState(state: ReservationState): boolean {
+  return RESERVATION_TRANSITIONS[state].length === 0;
+}
+
+export type ReservationHoldInput = Readonly<{
+  state: ReservationState;
+  /** When the reservation reached `COMMITTED`. Required only for that state. */
+  committedAt?: Date | null;
+  /** `WarehouseStock.syncedAt` for the variant this reservation holds. */
+  stockSyncedAt?: Date | null;
+}>;
+
+/**
+ * Whether a reservation still counts against capacity.
+ *
+ * `RESERVED`, `SUBMITTING` and `UNKNOWN` always hold. `RELEASED` never does.
+ *
+ * `COMMITTED` is the subtle one, and getting it wrong is a double-count in one direction or an
+ * oversell in the other. Once Pancake confirms the order, Pancake will decrement its own stock, and
+ * that decrement reaches us through the mirror. Until the mirror observably includes it, the
+ * reservation must keep holding — otherwise the units are counted by neither side and a concurrent
+ * checkout can spend them twice. Once the mirror has caught up, continuing to hold would subtract
+ * them twice.
+ *
+ * The test is `stockSyncedAt > committedAt`: a sync strictly newer than the commit necessarily read
+ * Pancake after the order landed. Ties and missing timestamps resolve to *keep holding*, because the
+ * failure modes are not symmetric — over-holding refuses a sale that could have been made, while
+ * under-holding breaches the hard limit the owner set.
+ */
+export function reservationHoldsCapacity(input: ReservationHoldInput): boolean {
+  switch (input.state) {
+    case "RESERVED":
+    case "SUBMITTING":
+    case "UNKNOWN":
+      return true;
+    case "RELEASED":
+      return false;
+    case "COMMITTED": {
+      const committedAt = input.committedAt;
+      const stockSyncedAt = input.stockSyncedAt;
+      if (!(committedAt instanceof Date) || !(stockSyncedAt instanceof Date)) return true;
+      if (Number.isNaN(committedAt.getTime()) || Number.isNaN(stockSyncedAt.getTime())) return true;
+      return !(stockSyncedAt.getTime() > committedAt.getTime());
+    }
+  }
+}
+
+export type MultiLineReservationLine<T> = Readonly<{
+  line: T;
+  input: VariantCapacityInput;
+  quantity: number;
+}>;
+
+export type MultiLineReservationDecision<T> = Readonly<{
+  allowed: boolean;
+  /** Every line's decision, in input order, so an operator sees which one failed and why. */
+  decisions: readonly Readonly<{ line: T; decision: CapacityDecision }>[];
+  /** The first refused line, or `null` when every line fits. */
+  refusedLine: T | null;
+}>;
+
+/**
+ * All-or-nothing capacity for a multi-line order.
+ *
+ * Every line is evaluated, not just up to the first failure, so one call explains the whole order
+ * rather than making an operator retry to discover the next problem. The order still fails as a
+ * unit: a partially reservable basket is a refusal, never a partial reservation (master spec §31).
+ *
+ * Callers must pass one entry per *variant*; two lines for the same variant would each see the other
+ * excluded from `activeReservedQuantity` and could jointly overshoot. I6a merges duplicate variants
+ * before calling, and ADR 0014 §7 makes that a precondition of the transaction.
+ */
+export function evaluateMultiLineReservation<T>(
+  lines: readonly MultiLineReservationLine<T>[],
+): MultiLineReservationDecision<T> {
+  const decisions = lines.map((entry) =>
+    Object.freeze({ line: entry.line, decision: evaluateVariantCapacity(entry.input, entry.quantity) }),
+  );
+  const refused = decisions.find((entry) => !entry.decision.allowed);
+
+  return Object.freeze({
+    allowed: lines.length > 0 && refused === undefined,
+    decisions: Object.freeze(decisions),
+    refusedLine: refused ? refused.line : null,
+  });
+}
