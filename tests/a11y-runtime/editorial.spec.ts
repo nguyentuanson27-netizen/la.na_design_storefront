@@ -330,9 +330,13 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(footerNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
   await expectVisualFoundationTokens(page);
 
-  const mobileMenu = page.locator("summary", { hasText: "Menu" });
+  const mobileMenu = page.getByRole("button", { name: "Menu", exact: true });
   await expect(mobileMenu).toBeVisible();
   await mobileMenu.click();
+
+  const mobileMenuDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+  await expect(mobileMenuDialog).toBeVisible();
+
   const mobileNavigation = page.getByRole("navigation", { name: "Điều hướng chính trên di động" });
   for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
     await expect(mobileNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
@@ -341,6 +345,20 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(mobileNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
+
+  // Verify Escape closes mobile nav and restores focus to hamburger trigger
+  await page.keyboard.press("Escape");
+  await expect(mobileMenuDialog).toHaveCount(0);
+  await expect(mobileMenu).toBeFocused();
+
+  // Re-open and test close button dismissal and focus restoration
+  await mobileMenu.click();
+  await expect(mobileMenuDialog).toBeVisible();
+  const closeMenuBtn = page.getByRole("button", { name: "Đóng menu", exact: true });
+  await expect(closeMenuBtn).toBeVisible();
+  await closeMenuBtn.click();
+  await expect(mobileMenuDialog).toHaveCount(0);
+  await expect(mobileMenu).toBeFocused();
 
   await page.reload({ waitUntil: "networkidle" });
   await page.keyboard.press("Tab");

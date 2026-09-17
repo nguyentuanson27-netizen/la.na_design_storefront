@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   buildCategoryDiscoveryHref,
@@ -7,7 +10,10 @@ import {
   encodeCategoryCursor,
   parseCategoryDiscoverySearchParams,
 } from "../../src/commerce/category-discovery-url.ts";
+import { handleDrawerFocusTrap } from "../../src/components/headless/cart-drawer-model.ts";
 import { buildCatalogListingMetadata } from "../../src/seo/catalog-listing-metadata.ts";
+
+const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 const ORIGIN = "https://lanadesign.vn";
 
@@ -207,5 +213,98 @@ test("F4b infinite-scroll URL contract updates to loaded page (not nextHref) and
   assert.equal(reconstructed.page, 2);
   assert.equal(reconstructed.color, "Trắng");
   assert.equal(reconstructed.sort, "price-asc");
+});
+
+test("F4b mobile PLP filter drawer: enforces focus trap, Escape dismissal, and opener restoration", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/plp-filter-panel.tsx"),
+    "utf8",
+  );
+
+  // Dialog semantics
+  assert.match(source, /id="mobile-plp-filters"/);
+  assert.match(source, /role="dialog"/);
+  assert.match(source, /aria-modal="true"/);
+  assert.match(source, /aria-label="Bộ lọc sản phẩm"/);
+
+  // Escape closes filter drawer
+  assert.match(source, /e\.key === "Escape"/);
+  assert.match(source, /setIsMobileOpen\(false\)/);
+
+  // Tab focus trap
+  assert.match(source, /handleDrawerFocusTrap\(e,\s*drawerRef\.current\)/);
+
+  // Opener button reference captured on open
+  assert.match(source, /openerButtonRef\.current = e\.currentTarget/);
+
+  // Focus restored to opener on drawer close
+  assert.match(source, /openerButtonRef\.current\?\.focus\?\.\(\)/);
+
+  // Body scroll locked while drawer is open
+  assert.match(source, /document\.body\.style\.overflow = "hidden"/);
+});
+
+test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within filter drawer", () => {
+  let closeBtnFocused = false;
+  let applyBtnFocused = false;
+
+  const mockCloseBtn = {
+    tagName: "BUTTON",
+    hasAttribute: (attr: string) => false,
+    getAttribute: (attr: string) => null,
+    focus: () => { closeBtnFocused = true; },
+  } as unknown as HTMLElement;
+
+  const mockFilterLink = {
+    tagName: "A",
+    hasAttribute: (attr: string) => false,
+    getAttribute: (attr: string) => null,
+    focus: () => {},
+  } as unknown as HTMLElement;
+
+  const mockApplyBtn = {
+    tagName: "BUTTON",
+    hasAttribute: (attr: string) => false,
+    getAttribute: (attr: string) => null,
+    focus: () => { applyBtnFocused = true; },
+  } as unknown as HTMLElement;
+
+  const focusables = [mockCloseBtn, mockFilterLink, mockApplyBtn];
+
+  const mockContainer = {
+    querySelectorAll: (selector: string) => focusables,
+  } as unknown as HTMLElement;
+
+  const originalDoc = globalThis.document;
+  (globalThis as any).document = { activeElement: mockApplyBtn };
+
+  try {
+    // 1. Tab on last element (Apply button) wraps to close button (first)
+    let prevented = false;
+    const tabEvent = {
+      key: "Tab",
+      shiftKey: false,
+      preventDefault: () => { prevented = true; },
+    } as unknown as KeyboardEvent;
+
+    handleDrawerFocusTrap(tabEvent, mockContainer);
+    assert.equal(closeBtnFocused, true, "Tab from last element must wrap to close button");
+    assert.equal(prevented, true, "Tab from last element must prevent default");
+
+    // 2. Shift+Tab on first element (close button) wraps to apply button (last)
+    (globalThis as any).document.activeElement = mockCloseBtn;
+    let shiftPrevented = false;
+    const shiftTabEvent = {
+      key: "Tab",
+      shiftKey: true,
+      preventDefault: () => { shiftPrevented = true; },
+    } as unknown as KeyboardEvent;
+
+    handleDrawerFocusTrap(shiftTabEvent, mockContainer);
+    assert.equal(applyBtnFocused, true, "Shift+Tab from close button must wrap to apply button");
+    assert.equal(shiftPrevented, true, "Shift+Tab from close button must prevent default");
+  } finally {
+    (globalThis as any).document = originalDoc;
+  }
 });
 

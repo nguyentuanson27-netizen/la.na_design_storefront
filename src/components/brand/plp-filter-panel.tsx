@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 
 import type { CategoryDiscoverySort } from "../../commerce/category-discovery-url";
+import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
 import {
   buildClearAllFiltersHref,
   buildSortChangeHref,
@@ -52,28 +53,53 @@ export function PlpFilterPanel({
 
   const drawerRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
+  const openerButtonRef = useRef<HTMLElement | null>(null);
+  const wasMobileOpenRef = useRef(false);
 
   const hasFilters = hasActivePlpFilters(activeFilters);
   const activeCount = countActivePlpFilters(activeFilters);
 
-  // Close mobile drawer on escape
+  // Manage body scroll, auto-focus, and focus restoration to opener
   useEffect(() => {
-    if (!isMobileOpen) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setIsMobileOpen(false);
+    if (isMobileOpen) {
+      wasMobileOpenRef.current = true;
+      if (!openerButtonRef.current) {
+        openerButtonRef.current = document.activeElement as HTMLElement | null;
       }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isMobileOpen]);
-
-  // Focus trap for mobile drawer
-  useEffect(() => {
-    if (isMobileOpen && closeBtnRef.current) {
-      closeBtnRef.current.focus();
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      const timer = setTimeout(() => {
+        closeBtnRef.current?.focus();
+      }, 50);
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        clearTimeout(timer);
+      };
+    } else if (wasMobileOpenRef.current) {
+      wasMobileOpenRef.current = false;
+      openerButtonRef.current?.focus?.();
     }
   }, [isMobileOpen]);
+
+  // Handle Escape to close drawer, and Tab to trap focus in mobile drawer
+  const handleKeyDown = useCallback(
+    (e: KeyboardEvent) => {
+      if (!isMobileOpen) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setIsMobileOpen(false);
+      } else if (e.key === "Tab") {
+        handleDrawerFocusTrap(e, drawerRef.current);
+      }
+    },
+    [isMobileOpen],
+  );
+
+  useEffect(() => {
+    if (!isMobileOpen) return;
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isMobileOpen, handleKeyDown]);
 
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextSort = e.target.value as CategoryDiscoverySort;
@@ -122,7 +148,10 @@ export function PlpFilterPanel({
           {/* Mobile Filter Button */}
           <button
             type="button"
-            onClick={() => setIsMobileOpen(true)}
+            onClick={(e) => {
+              openerButtonRef.current = e.currentTarget;
+              setIsMobileOpen(true);
+            }}
             aria-expanded={isMobileOpen}
             aria-controls="mobile-plp-filters"
             className="inline-flex items-center gap-2 rounded-full border border-[#3B2219]/25 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#3B2219] transition hover:border-[#2A1810] hover:text-[#2A1810] md:hidden"

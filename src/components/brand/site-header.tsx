@@ -8,6 +8,7 @@ import { usePathname } from "next/navigation";
 import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
 import { CartDrawer } from "@/components/brand/cart-drawer";
 import { SearchOverlay } from "@/components/brand/search-overlay";
+import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
 
@@ -52,10 +53,16 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const [activeMegaMenu, setActiveMegaMenu] = useState<string | null>(null);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
   const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
   const cartTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const mobileNavTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const mobileNavCloseRef = useRef<HTMLButtonElement | null>(null);
+  const mobileNavDrawerRef = useRef<HTMLDivElement | null>(null);
+  const previouslyFocusedBeforeMobileNav = useRef<HTMLElement | null>(null);
+  const wasMobileNavOpenRef = useRef(false);
 
   const loginPath = ["", "login"].join("/");
   const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
@@ -64,6 +71,34 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const closeCartDrawer = () => setCartDrawerOpen(false);
   const openSearch = () => setSearchOpen(true);
   const closeSearch = () => setSearchOpen(false);
+
+  const openMobileNav = () => {
+    previouslyFocusedBeforeMobileNav.current = document.activeElement as HTMLElement | null;
+    setIsMobileNavOpen(true);
+  };
+  const closeMobileNav = () => {
+    setIsMobileNavOpen(false);
+  };
+
+  // Manage body scroll and focus restoration for full-screen mobile nav
+  useEffect(() => {
+    if (isMobileNavOpen) {
+      wasMobileNavOpenRef.current = true;
+      const originalOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      const timer = setTimeout(() => {
+        mobileNavCloseRef.current?.focus();
+      }, 50);
+      return () => {
+        document.body.style.overflow = originalOverflow;
+        clearTimeout(timer);
+      };
+    } else if (wasMobileNavOpenRef.current) {
+      wasMobileNavOpenRef.current = false;
+      const returnTarget = previouslyFocusedBeforeMobileNav.current ?? mobileNavTriggerRef.current;
+      returnTarget?.focus?.();
+    }
+  }, [isMobileNavOpen]);
 
   // Track scroll position for transparent -> cream transition
   useEffect(() => {
@@ -80,14 +115,26 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   if (prevPathname !== pathname) {
     setPrevPathname(pathname);
     setActiveMegaMenu(null);
+    if (isMobileNavOpen) {
+      setIsMobileNavOpen(false);
+    }
   }
 
-  // Handle escape key to dismiss open menus
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      setActiveMegaMenu(null);
-    }
-  }, []);
+  // Handle escape key to dismiss open menus, and tab to trap focus in mobile nav
+  const handleKeyDown = useCallback(
+    (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        if (isMobileNavOpen) {
+          event.preventDefault();
+          setIsMobileNavOpen(false);
+        }
+        setActiveMegaMenu(null);
+      } else if (event.key === "Tab" && isMobileNavOpen) {
+        handleDrawerFocusTrap(event, mobileNavDrawerRef.current);
+      }
+    },
+    [isMobileNavOpen],
+  );
 
   useEffect(() => {
     window.addEventListener("keydown", handleKeyDown);
@@ -113,6 +160,34 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
       </a>
 
       <div className="nav-shell">
+        {/* Mobile Hamburger Trigger (visible on mobile, positioned on the left) */}
+        <div className="mobile-nav">
+          <button
+            ref={mobileNavTriggerRef}
+            type="button"
+            onClick={openMobileNav}
+            aria-expanded={isMobileNavOpen}
+            aria-haspopup="dialog"
+            aria-controls="mobile-navigation-dialog"
+            aria-label="Menu"
+            className="inline-flex h-9 w-9 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+          >
+            <svg
+              className="h-5 w-5 stroke-current"
+              fill="none"
+              viewBox="0 0 24 24"
+              strokeWidth="1.8"
+              aria-hidden="true"
+            >
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
+            <span className="sr-only">Menu</span>
+          </button>
+        </div>
+
+        {/* Brand Logo (centered on mobile, left on desktop) */}
         <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
           {BRAND.identity.displayNameUpper}
         </Link>
@@ -225,28 +300,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           })}
         </nav>
 
-        {/* Mobile Navigation */}
-        <div className="mobile-nav">
-          <details>
-            <summary>Menu</summary>
-            <nav className="mobile-menu" aria-label="Điều hướng chính trên di động">
-              {primary.map((item) => (
-                <div key={item.href}>
-                  <Link href={item.href}>{item.label}</Link>
-                  {item.children?.map((child) => (
-                    <Link key={child.href} href={child.href}>{child.label}</Link>
-                  ))}
-                </div>
-              ))}
-              {mobileUtility.map((item) => {
-                const destination = item.href === "/account" ? (session ? item.href : loginPath) : item.href;
-                return (
-                  <Link key={item.href} href={destination}>{item.label}</Link>
-                );
-              })}
-            </nav>
-          </details>
-        </div>
+
 
         {/* Utility Navigation */}
         <nav className="utility-nav" aria-label="Tiện ích">
@@ -301,6 +355,95 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           })}
         </nav>
       </div>
+
+      {/* Full-Screen Mobile Navigation Dialog */}
+      {isMobileNavOpen ? (
+        <div
+          id="mobile-navigation-dialog"
+          ref={mobileNavDrawerRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu điều hướng"
+          className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2] text-[#3B2219] overflow-y-auto"
+        >
+          {/* Header row in mobile nav dialog */}
+          <div className="flex items-center justify-between border-b border-[#3B2219]/15 px-6 py-4 min-h-[58px]">
+            <span className="font-bold text-sm tracking-[0.18em] uppercase text-[#2A1810]">
+              {BRAND.identity.displayNameUpper}
+            </span>
+            <button
+              ref={mobileNavCloseRef}
+              type="button"
+              onClick={closeMobileNav}
+              aria-label="Đóng menu"
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[#3B2219] hover:bg-[#3B2219]/10 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+            >
+              <svg
+                className="h-5 w-5 stroke-current"
+                fill="none"
+                viewBox="0 0 24 24"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+              <span className="sr-only">Đóng menu</span>
+            </button>
+          </div>
+
+          {/* Mobile Navigation List */}
+          <nav className="mobile-menu flex-1 px-6 py-6" aria-label="Điều hướng chính trên di động">
+            <div className="divide-y divide-[#3B2219]/10">
+              {primary.map((item) => {
+                const hasChildren = item.children && item.children.length > 0;
+                return (
+                  <div key={item.href} className="py-3 first:pt-0 last:pb-0">
+                    <Link
+                      href={item.href}
+                      onClick={closeMobileNav}
+                      className="block text-base font-medium text-[#2A1810] uppercase tracking-wider py-1 hover:text-black focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                    >
+                      {item.label}
+                    </Link>
+                    {hasChildren ? (
+                      <div className="pl-4 mt-2 space-y-2 border-l border-[#3B2219]/15">
+                        {item.children!.map((child) => (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={closeMobileNav}
+                            className="block text-sm text-[#70584B] hover:text-[#2A1810] py-1 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                          >
+                            {child.label}
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Mobile Utility Links */}
+            <div className="mt-8 border-t border-[#3B2219]/15 pt-6 space-y-3">
+              {mobileUtility.map((item) => {
+                const destination = item.href === "/account" ? (session ? item.href : loginPath) : item.href;
+                return (
+                  <Link
+                    key={item.href}
+                    href={destination}
+                    onClick={closeMobileNav}
+                    className="block text-sm font-semibold uppercase tracking-wider text-[#3B2219] py-1.5 hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  >
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </div>
+      ) : null}
 
       {/* Cart Drawer */}
       <CartDrawer
