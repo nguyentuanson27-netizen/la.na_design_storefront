@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test:domain": "node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/*.test.ts",
     "test": "node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/*.test.ts tests/integrations/*.test.ts",
-    "test:db": "node --env-file-if-exists=.env.local --experimental-strip-types --test --test-concurrency=1 tests/database/*.test.ts",
+    "test:db": "node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 tests/database/*.test.ts",
     "prisma:validate": "prisma validate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:deploy": "prisma migrate deploy",

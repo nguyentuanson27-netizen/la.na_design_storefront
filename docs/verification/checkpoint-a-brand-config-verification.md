@@ -248,10 +248,11 @@ Theo đúng quy định của Checkpoint A:
 
 ### 10.1. Các thay đổi đã thực hiện
 1. **Cross-platform path separator bug (`tests/domain/route-boundary.test.ts`)**:
-   - Thêm helper `normalizePath(filePath)` dùng `path.resolve()` để normalize đường dẫn TypeScript `/` và Windows `\`.
+   - Thêm helper `normalizePath(filePath)` chuẩn hóa canonical đường dẫn bằng `filePath.replaceAll("\\", "/")` để đồng nhất dấu phân cách trên mọi nền tảng (Windows và POSIX/Linux).
    - Bổ sung regression test bảo vệ tính tương thích đa nền tảng.
 2. **Cấu hình môi trường phát triển cục bộ (`package.json`, `prisma.config.ts`, `.env.local`)**:
-   - Thêm cờ `--env-file-if-exists=.env.local` vào scripts `test:domain`, `test`, và `test:db`.
+   - Thêm cờ `--env-file-if-exists=.env.local` vào scripts `test:domain` và `test`.
+   - Riêng script `test:db` không auto-load `.env.local` nhằm bảo vệ an toàn dữ liệu, tránh mutate nhầm database dev-shared/staging/prod; thay vào đó hỗ trợ `--env-file-if-exists=.env.test.local` dành riêng cho disposable test DB hoặc nhận `DATABASE_URL` truyền explicit.
    - Cập nhật `prisma.config.ts` nạp `.env.local` qua `dotenv.config({ path: ".env.local" })`.
    - Thiết lập `.env.local` local dev (nằm trong `.gitignore`).
 3. **Môi trường Database cho Integration Tests (`docker-compose.test.yml`)**:
