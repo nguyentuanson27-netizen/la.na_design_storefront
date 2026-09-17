@@ -322,6 +322,9 @@ function createFakeCapacity(
       lines: readonly { variantId: string; quantity: number }[];
     }) {
       events.push("reserve");
+      if (lines.length === 0) {
+        return { ok: false as const, reason: "empty-basket" as const, refusedVariantId: null };
+      }
       if (options.refuse) {
         return {
           ok: false as const,
@@ -359,7 +362,7 @@ function createFakeCapacity(
 test("I6b holds capacity before the external write and commits it on success", async () => {
   const { capacity, rows, events } = createFakeCapacity();
   const service = createGuestCheckoutSubmitService({
-    snapshot: { async create() { return snapshotOrder("LA-ok", "CONFIRMED"); } },
+    snapshot: { async create() { return snapshotOrder("LA-ok"); } },
     orderSubmission: {
       async submit() {
         events.push("submit");
@@ -481,11 +484,95 @@ test("I6b a hold already decided elsewhere stops the submission closed", async (
   // to move it again, so treating it as a blocker would strand every legitimate retry.
   const { capacity, rows } = createFakeCapacity({ initialState: "SUBMITTING" });
   const service = createGuestCheckoutSubmitService({
-    snapshot: { async create() { return snapshotOrder("LA-retry", "CONFIRMED"); } },
+    snapshot: { async create() { return snapshotOrder("LA-retry"); } },
     orderSubmission: { async submit() { return { ok: true as const } as never; } },
     generatePublicCode: () => "LA-retry",
     capacity,
   });
   assert.equal((await service.submit({ cartId, shopId, checkoutInput, now })).ok, true);
   assert.equal(rows[0]?.state, "COMMITTED");
+});
+
+test("I6b an order already past submission is not re-reserved", async () => {
+  // The hole the guest-checkout HTTP smoke caught, which no unit test here had: the snapshot can
+  // hand back an order that is ALREADY confirmed — the recovery path finds an active checkout
+  // rather than creating one, and a buyer resubmitting a confirmed order lands there too.
+  //
+  // Reserving for it is wrong twice over. Its capacity was decided when it was first submitted, so
+  // a fresh hold double-counts it; and for an order created before this boundary existed there are
+  // no lines to hold, so the reservation refused `empty-basket` and turned a confirmed checkout
+  // into CART_CHANGED — which is how CI found it.
+  for (const state of ["CONFIRMED", "SYNC_UNKNOWN"] as const) {
+    const { capacity, events } = createFakeCapacity();
+    const service = createGuestCheckoutSubmitService({
+      snapshot: {
+        async create() {
+          return {
+            ok: true as const,
+            order: {
+              id: "order-settled",
+              publicCode: "LA-settled",
+              state,
+              merchandiseSubtotalVnd: BigInt(500_000),
+              shippingFeeVnd: BigInt(30_000),
+              totalVnd: BigInt(530_000),
+              // No lines, exactly like the recovered order the smoke reuses.
+              lines: [],
+            },
+          };
+        },
+      },
+      orderSubmission: {
+        async submit() {
+          events.push("submit");
+          return { ok: true as const } as never;
+        },
+      },
+      generatePublicCode: () => "LA-settled",
+      capacity,
+    });
+
+    assert.deepEqual(await service.submit({ cartId, shopId, checkoutInput, now }), {
+      ok: true,
+      status: "CONFIRMED",
+      orderCode: "LA-settled",
+    });
+    assert.deepEqual(events, ["submit"], `${state} must reach submission without a fresh hold`);
+  }
+
+  // A DRAFT with no lines is a different thing entirely — nothing has been submitted, so an empty
+  // basket is a real refusal and must not reach Pancake. Both directions, so the skip above cannot
+  // widen into "an empty basket is always fine".
+  const { capacity, events } = createFakeCapacity();
+  const service = createGuestCheckoutSubmitService({
+    snapshot: {
+      async create() {
+        return {
+          ok: true as const,
+          order: {
+            id: "order-empty-draft",
+            publicCode: "LA-empty",
+            state: "DRAFT" as const,
+            merchandiseSubtotalVnd: BigInt(500_000),
+            shippingFeeVnd: BigInt(30_000),
+            totalVnd: BigInt(530_000),
+            lines: [],
+          },
+        };
+      },
+    },
+    orderSubmission: {
+      async submit() {
+        events.push("submit");
+        return { ok: true as const } as never;
+      },
+    },
+    generatePublicCode: () => "LA-empty",
+    capacity,
+  });
+
+  const outcome = await service.submit({ cartId, shopId, checkoutInput, now });
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.status, "RETRYABLE");
+  assert.ok(!events.includes("submit"), "an unheld DRAFT must not reach the vendor");
 });

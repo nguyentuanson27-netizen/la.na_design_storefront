@@ -126,6 +126,21 @@ export type GuestCheckoutSubmitDependencies = {
 };
 
 /**
+ * States that mean the external write has already happened.
+ *
+ * The snapshot can hand back an order that is past the submit boundary — the recovery path finds an
+ * active checkout rather than creating one, and a buyer who resubmits a confirmed order lands here.
+ * Reserving for such an order is wrong twice over: its capacity was decided when it was first
+ * submitted, and taking a fresh hold now would either double-count it or, for an order created
+ * before this boundary existed, invent a hold for units Pancake has already consumed.
+ *
+ * So the boundary applies to orders that are about to be submitted. `VALIDATING` and
+ * `POS_SUBMITTING` still reserve: they are mid-flight rather than done, and the §3 idempotency
+ * branch answers a retry that already holds.
+ */
+const SETTLED_SUBMISSION_STATES: readonly ActiveSnapshotState[] = ["CONFIRMED", "SYNC_UNKNOWN"];
+
+/**
  * Which reservation state a submission outcome moves the hold to (ADR 0014 §4, §8, §9).
  *
  * The mapping is the whole safety argument of I6b, so it is one function rather than branches
@@ -320,7 +335,8 @@ export function createGuestCheckoutSubmitService({
     // is ADR 0014 §2's "server-side order commit boundary". Everything the cart and the PDP said was
     // advisory; this is the decision, and it is allowed to refuse what they offered.
     let reservations: readonly HeldReservation[] = [];
-    if (capacity) {
+    const alreadySubmitted = SETTLED_SUBMISSION_STATES.includes(snapshotResult.order.state);
+    if (capacity && !alreadySubmitted) {
       const reserved = await capacity.reserveOrderCapacity({
         orderId: snapshotResult.order.id,
         lines: snapshotResult.order.lines,
