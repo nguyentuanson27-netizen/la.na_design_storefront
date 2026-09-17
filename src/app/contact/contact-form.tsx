@@ -2,8 +2,7 @@
 
 import { useRef, useState, type FormEvent } from "react";
 
-import { submitContactForm } from "@/contact/contact-action";
-import type { ContactSubmissionResult } from "@/contact/contact-delivery";
+import { submitContactForm } from "@/routes/contact-action";
 
 type FormStatus =
   | Readonly<{ kind: "idle" }>
@@ -13,7 +12,7 @@ type FormStatus =
 const FIELD_CLASS =
   "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus-visible:outline-2 focus-visible:outline-offset-2";
 
-function messageForResult(result: ContactSubmissionResult): FormStatus {
+function messageForResult(result: Awaited<ReturnType<typeof submitContactForm>>): FormStatus {
   if (result.ok) {
     return {
       kind: "success",
