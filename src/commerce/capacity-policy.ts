@@ -176,6 +176,47 @@ export function evaluateVariantCapacity(
   return Object.freeze({ allowed: true, reason: "capacity-available", projectedCapacity, floor });
 }
 
+export type VariantSellability = Readonly<{
+  /** Whether one more unit may be sold right now. */
+  sellable: boolean;
+  reason: CapacityDecisionReason;
+  /**
+   * Master spec §30's `Đặt trước`: a `PREORDER` variant that is still purchasable but no longer has
+   * ready stock. Above 0 a preorder product sells normally and carries **no** marker; at or below 0
+   * and above the limit it stays purchasable and the surface must say so.
+   *
+   * False whenever the variant is not sellable at all, so a surface cannot label something the
+   * shopper cannot buy.
+   */
+  isPreorderSale: boolean;
+  floor: number;
+}>;
+
+/**
+ * Is this variant sellable right now, and how should it be described?
+ *
+ * Sellability is exactly "may one more unit be reserved", so this is `evaluateVariantCapacity()` at
+ * quantity 1 rather than a second rule that happens to agree. Before I4 the storefront decided it
+ * independently with `sellableStock <= 0`, which silently assumed `STANDARD` for every product: an
+ * `OVERSELL` variant at −3 would have been hidden even though the owner had allowed selling to −20.
+ *
+ * **This is advisory.** ADR 0014 §2 puts the authoritative check at the order commit boundary, where
+ * I6a recomputes it inside the transaction holding the variant lock. A page rendered a moment ago
+ * cannot bind a decision made now, so a surface may show a variant that checkout then refuses —
+ * that ordering is intended, and the reverse (trusting the page) is the oversell §31 forbids.
+ */
+export function resolveVariantSellability(input: VariantCapacityInput): VariantSellability {
+  const decision = evaluateVariantCapacity(input, 1);
+  const readyStock = input.mirroredStock - input.activeReservedQuantity;
+
+  return Object.freeze({
+    sellable: decision.allowed,
+    reason: decision.reason,
+    isPreorderSale: decision.allowed && input.sellingMode === "PREORDER" && readyStock <= 0,
+    floor: decision.floor,
+  });
+}
+
 /**
  * Reservation lifecycle.
  *

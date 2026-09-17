@@ -14,6 +14,7 @@ import {
   isTerminalReservationState,
   reservationHoldsCapacity,
   resolveSellingPolicy,
+  resolveVariantSellability,
   type ReservationState,
   type SellingMode,
   type StoredSellingPolicy,
@@ -421,4 +422,88 @@ test("G5 a stock read that started before the commit does not retire the hold, h
     true,
     "a read that started before the commit may carry pre-commit stock, so the hold must stay",
   );
+});
+
+test("I4 sellability is the capacity predicate at quantity one, per selling mode", () => {
+  const at = (mirroredStock: number, sellingMode: SellingMode, negativeStockLimit = -20) =>
+    resolveVariantSellability({
+      mirroredStock,
+      activeReservedQuantity: 0,
+      sellingMode,
+      negativeStockLimit,
+      isComposite: false,
+    });
+
+  // STANDARD is floored at 0 whatever the limit says, so this is today's behaviour exactly.
+  assert.equal(at(1, "STANDARD").sellable, true);
+  assert.equal(at(0, "STANDARD").sellable, false);
+  assert.equal(at(0, "STANDARD").reason, "standard-would-go-negative");
+  assert.equal(at(-1, "STANDARD").sellable, false);
+
+  // OVERSELL sells down to the limit. Before I4 the storefront hid every one of these, because it
+  // assumed STANDARD for every product.
+  assert.equal(at(0, "OVERSELL").sellable, true);
+  assert.equal(at(-19, "OVERSELL").sellable, true);
+});
+
+test("I4 the hard limit is exact: the last sellable unit is the one that reaches it", () => {
+  const at = (mirroredStock: number, sellingMode: SellingMode) =>
+    resolveVariantSellability({
+      mirroredStock,
+      activeReservedQuantity: 0,
+      sellingMode,
+      negativeStockLimit: -20,
+      isComposite: false,
+    });
+
+  for (const mode of ["OVERSELL", "PREORDER"] as const) {
+    // Selling one unit from −19 lands exactly on −20, which is allowed: the limit is the floor the
+    // projection may reach, not one it must stop short of.
+    assert.equal(at(-19, mode).sellable, true, `${mode} must sell the unit that reaches the limit`);
+    // At the limit there is nothing left; master spec §29 says disabled and `Hết hàng`.
+    assert.equal(at(-20, mode).sellable, false, `${mode} must stop at the limit`);
+    assert.equal(at(-20, mode).reason, "negative-limit-reached");
+    assert.equal(at(-21, mode).sellable, false, `${mode} must stay closed past the limit`);
+    // And the marker never appears on something the shopper cannot buy.
+    assert.equal(at(-20, mode).isPreorderSale, false);
+  }
+});
+
+test("I4 the preorder marker appears only below ready stock, and only for PREORDER", () => {
+  const at = (mirroredStock: number, sellingMode: SellingMode) =>
+    resolveVariantSellability({
+      mirroredStock,
+      activeReservedQuantity: 0,
+      sellingMode,
+      negativeStockLimit: -20,
+      isComposite: false,
+    });
+
+  // Master spec §30: above 0 a preorder product sells normally with NO marker.
+  assert.equal(at(3, "PREORDER").sellable, true);
+  assert.equal(at(3, "PREORDER").isPreorderSale, false);
+
+  // At or below 0 and above the limit it stays purchasable and must say `Đặt trước`.
+  assert.equal(at(0, "PREORDER").isPreorderSale, true);
+  assert.equal(at(-5, "PREORDER").isPreorderSale, true);
+
+  // OVERSELL carries no customer-facing label even in the same stock position (§29).
+  assert.equal(at(-5, "OVERSELL").sellable, true);
+  assert.equal(at(-5, "OVERSELL").isPreorderSale, false);
+});
+
+test("I4 a reservation already held moves the boundary", () => {
+  // The same predicate the reservation gate uses, so a held unit counts against display too once a
+  // caller supplies it. Display passes 0 today (ADR §2 keeps the authoritative check at commit).
+  const held = (activeReservedQuantity: number) =>
+    resolveVariantSellability({
+      mirroredStock: 1,
+      activeReservedQuantity,
+      sellingMode: "STANDARD",
+      negativeStockLimit: -20,
+      isComposite: false,
+    });
+
+  assert.equal(held(0).sellable, true);
+  assert.equal(held(1).sellable, false, "the only unit is already spoken for");
 });

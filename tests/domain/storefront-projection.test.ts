@@ -42,6 +42,7 @@ test("storefront projection keeps standalone products on the existing size/color
       basePriceVnd: null,
       isDiscounted: false,
       purchasable: true,
+      isPreorderSale: false,
       unavailableReason: null,
       kindKey: null,
       kindLabel: null,
