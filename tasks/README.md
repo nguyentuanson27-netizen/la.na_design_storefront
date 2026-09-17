@@ -1,30 +1,26 @@
 # Task planning policy
 
-Task plans in this directory define dependencies, ownership, acceptance criteria, and verification for their workstreams.
+Task plans in this directory define dependencies, ownership, acceptance criteria and verification for their workstreams.
 
-## Current owner-decision source of truth
+## Current execution authority
 
-Owner-approved LA Clothing business facts and owner-controlled launch/planning decisions are recorded in
-[`docs/specs/la-clothing-owner-approved-facts-and-decisions.md`](../docs/specs/la-clothing-owner-approved-facts-and-decisions.md).
-The current status reconciliation against older roadmap/audit blockers is recorded in
-[`docs/audits/owner-facts-reconciliation-2026-09-07.md`](../docs/audits/owner-facts-reconciliation-2026-09-07.md).
+For active La.na Design work, use these sources in this order:
 
-For the specific owner-controlled decisions reconciled there, a historical `BLOCKED — OWNER FACT/APPROVAL REQUIRED`,
-`proposed`, or unchecked owner-gate line in an older plan/audit does not override the newer approved source. This
-precedence applies only to the owner decision itself: the older owning spec/audit/plan still governs technical
-behavior, implementation order, acceptance criteria, verification, security, and independent launch gates.
+1. [`docs/specs/la-na-design-master-spec.md`](../docs/specs/la-na-design-master-spec.md) — current implementation contract and precedence rules.
+2. [`docs/specs/la-na-design-owner-approved-facts-and-decisions.md`](../docs/specs/la-na-design-owner-approved-facts-and-decisions.md) — field-level owner-approved brand truth.
+3. [`docs/specs/la-na-design-policy-authority.md`](../docs/specs/la-na-design-policy-authority.md) — approved policy wording.
+4. [`tasks/plan.md`](./plan.md) — dependency-ordered implementation plan.
+5. [`tasks/todo.md`](./todo.md) — current execution checklist and completion state.
 
-A reconciled unit described as **owner-unblocked** is not implemented merely because its owner fact is resolved.
-Items still marked `OPEN` in the owner source remain fail-closed. In particular, permanent-domain/Gate S approval
-and O4 real vendor IDs/GTM live approval remain separate open gates. The Merchant↔JSON-LD family-collapse
-**decision is resolved**, but its U27 runtime implementation, parity regression evidence, and launch-gate closure
-remain separate pending work until the dedicated implementation PR is green.
+If an older plan, audit or task note conflicts with these current authorities, the current La.na Design source wins for brand truth and current execution state.
 
-## Storefront Refinement V3 execution record
+## Legacy plans and audits
 
-The original V3 design/plan/todo files preserve the planning-state language under which they were authored. After the reviewed implementation slices were merged, current execution/closeout truth is recorded in [Storefront Refinement V3 — U6b final verification record](../docs/verification/storefront-refinement-v3-final.md).
+This repository preserves Core Kit / Brand #1 history. Older files such as the growth-commerce, marketing, storefront-refinement and other completed workstream plans may mention LA Clothing, previous domains, previous databases or old owner gates.
 
-Do not interpret an original `DRAFT` status line in those historical planning files as the current runtime status, and do not infer approval for deferred support content, permanent-domain selection, or `SEARCH_INDEXING_ENABLED=true` from implementation completion.
+Treat those files as **historical technical context**, not as current La.na Design brand truth and not as the current execution checklist. Do not revive an old `BLOCKED`, `OPEN`, owner-fact value or launch decision without checking the current master spec and `tasks/todo.md` first.
+
+The old LA Clothing source-of-truth document paths are intentionally reduced to tombstones so historical links remain understandable without competing with current La.na Design authorities. Their original contents remain available through Git history.
 
 ## Pull request sizing
 
@@ -32,9 +28,9 @@ Current PR sizing is governed by [ADR 0005](../docs/decisions/0005-pr-scope-revi
 
 - There is **no hard file-count limit**.
 - File count is a signal, not a merge/split gate.
-- Use effective changed lines (`additions + deletions`), atomicity, subsystem ownership, risk, verification, and revertability to judge scope.
+- Use effective changed lines (`additions + deletions`), atomicity, subsystem ownership, risk, verification and revertability to judge scope.
 - `≤300` changed lines is the preferred small-review target; `301–500` is normally acceptable for one coherent concern; `501–800` requires an explicit cohesion/reviewability justification; `>800` defaults to split; `>1000` has a strong presumption to split except for justified mechanical/generated/migration/fixture bulk or an inseparable atomic change.
 - Do not split production behavior from directly affected tests/assertions merely to meet a size target.
 - Independent concerns should still split even when the diff is small.
 
-Any older `≤5`, `>5`, `~5 files`, or equivalent wording in historical task plans is **non-authoritative for PR sizing** where it conflicts with ADR 0005. Those notes remain useful only as historical estimates; they do not create a mandatory split gate.
+Older `≤5`, `>5`, `~5 files` or equivalent wording in historical plans is non-authoritative where it conflicts with ADR 0005.
