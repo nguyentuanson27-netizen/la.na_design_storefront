@@ -178,6 +178,104 @@ test("I6a a retry on the same order finds its own hold instead of reserving twic
   assert.equal(await prisma.variantCapacityReservation.count({ where: { variantId } }), 1);
 });
 
+test("I6a a retry that asks for MORE than it holds is refused, not confirmed", async () => {
+  // Comment 5716862253, Required. The first version compared only the row COUNT, so A x1 followed
+  // by a retry of A x2 under the same order returned ok: true while the ledger held one unit. A
+  // caller treating ok: true as the capacity gate would have shipped two units on a one-unit hold —
+  // straight past the owner's hard limit, with nothing in the ledger to show for it.
+  const variantId = await seedVariant("retry-grows", { stock: 10 });
+  const orderId = await seedOrder("retry-grows");
+
+  const first = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId, quantity: 1 }] });
+  assert.equal(first.ok, true);
+
+  const grown = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId, quantity: 2 }] });
+  assert.equal(grown.ok, false, "a different basket under a reused order id is a conflict");
+  assert.equal(grown.ok === false && grown.reason, "reservation-conflict");
+  assert.equal(grown.ok === false && grown.refusedVariantId, variantId);
+
+  // Stock was never the constraint here — 10 units were free — so a refusal proves the conflict
+  // rule fired rather than the capacity rule.
+  const rows = await prisma.variantCapacityReservation.findMany({ where: { orderId } });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.quantity, 1, "the held quantity is untouched by the refused retry");
+
+  // Asking for LESS is a conflict too: the ledger holds 2 for a basket of 1, and silently
+  // reporting success would overstate what was reserved in the other direction.
+  const shrunk = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId, quantity: 1 }] });
+  assert.equal(shrunk.ok, true, "the exact same basket is still idempotent");
+  assert.equal(shrunk.ok === true && shrunk.alreadyHeld, true);
+});
+
+test("I6a a released row does not satisfy an idempotent retry", async () => {
+  // Same finding, the second half. RELEASED holds no capacity, so a retry answered from it would
+  // claim a hold that does not exist.
+  const variantId = await seedVariant("retry-released", { stock: 10 });
+  const orderId = await seedOrder("retry-released");
+
+  const first = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId, quantity: 1 }] });
+  assert.equal(first.ok, true);
+  const id = first.ok === true ? first.reservations[0]!.id : "";
+  assert.equal(await repository.transitionReservation({ id, from: "RESERVED", to: "RELEASED" }), true);
+
+  const retry = await repository.reserveOrderCapacity({ orderId, lines: [{ variantId, quantity: 1 }] });
+  assert.equal(retry.ok, false, "a released row holds nothing and must not read as a hold");
+  assert.equal(retry.ok === false && retry.reason, "reservation-conflict");
+
+  // A COMMITTED row still holds while the mirror has not caught up (§4.1), so it stays idempotent —
+  // both directions, so this cannot rot into "any non-RESERVED row is a conflict".
+  const stillHolding = await seedVariant("retry-committed", { stock: 10 });
+  const committedOrder = await seedOrder("retry-committed");
+  const held = await repository.reserveOrderCapacity({
+    orderId: committedOrder,
+    lines: [{ variantId: stillHolding, quantity: 1 }],
+  });
+  const heldId = held.ok === true ? held.reservations[0]!.id : "";
+  await repository.transitionReservation({ id: heldId, from: "RESERVED", to: "SUBMITTING" });
+  await repository.transitionReservation({
+    id: heldId,
+    from: "SUBMITTING",
+    to: "COMMITTED",
+    // After the stock observation started, so the hold has not retired.
+    at: new Date("2026-09-18T00:00:00.000Z"),
+  });
+  const committedRetry = await repository.reserveOrderCapacity({
+    orderId: committedOrder,
+    lines: [{ variantId: stillHolding, quantity: 1 }],
+  });
+  assert.equal(committedRetry.ok, true);
+  assert.equal(committedRetry.ok === true && committedRetry.alreadyHeld, true);
+});
+
+test("I6a a retry that adds a variant is a conflict, not a partial top-up", async () => {
+  // The partial case the count check also got wrong in the other direction: with one row held and
+  // two requested it fell through and inserted the missing one, quietly mixing an old hold with a
+  // new one under a single ok: true.
+  const first = await seedVariant("partial-a", { stock: 10 });
+  const second = await seedVariant("partial-b", { stock: 10 });
+  const orderId = await seedOrder("partial");
+
+  assert.equal(
+    (await repository.reserveOrderCapacity({ orderId, lines: [{ variantId: first, quantity: 1 }] })).ok,
+    true,
+  );
+
+  const widened = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [
+      { variantId: first, quantity: 1 },
+      { variantId: second, quantity: 1 },
+    ],
+  });
+  assert.equal(widened.ok, false);
+  assert.equal(widened.ok === false && widened.reason, "reservation-conflict");
+  assert.equal(
+    await prisma.variantCapacityReservation.count({ where: { orderId } }),
+    1,
+    "the refused retry must not top up the basket",
+  );
+});
+
 test("I6a a basket fails as a unit and leaves no partial hold", async () => {
   const roomy = await seedVariant("multi-roomy", { stock: 5 });
   const empty = await seedVariant("multi-empty", { stock: 0 });
