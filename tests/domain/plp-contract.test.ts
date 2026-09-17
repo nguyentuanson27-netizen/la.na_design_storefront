@@ -180,3 +180,32 @@ test("F4a base category route self-canonicalizes while query states withhold can
   });
   assert.equal(queryStateFiltered.alternates?.canonical, undefined);
 });
+
+test("F4b infinite-scroll URL contract updates to loaded page (not nextHref) and reconstructs on refresh", () => {
+  const categoryPath = "/danh-muc/dam";
+  const discovery = parseCategoryDiscoverySearchParams("dam", {
+    color: "Trắng",
+    sort: "price-asc",
+    page: "2",
+  });
+
+  // When page 2 is loaded, browser URL must reflect page 2 (currentHref), preserving filters
+  const currentHref = buildCategoryDiscoveryHref(categoryPath, discovery, 2);
+  assert.equal(currentHref, "/danh-muc/dam?color=Tr%E1%BA%AFng&sort=price-asc&page=2");
+
+  // While nextHref continues to point to page 3 for crawler / load-next contract
+  const nextHref = buildCategoryDiscoveryHref(categoryPath, discovery, 3);
+  assert.equal(nextHref, "/danh-muc/dam?color=Tr%E1%BA%AFng&sort=price-asc&page=3");
+
+  // When browser refreshes with currentHref, discovery contract reconstructs page 2
+  const refreshedUrl = new URL(currentHref, "https://lanadesign.vn");
+  const reconstructed = parseCategoryDiscoverySearchParams(
+    "dam",
+    Object.fromEntries(refreshedUrl.searchParams.entries()),
+  );
+
+  assert.equal(reconstructed.page, 2);
+  assert.equal(reconstructed.color, "Trắng");
+  assert.equal(reconstructed.sort, "price-asc");
+});
+

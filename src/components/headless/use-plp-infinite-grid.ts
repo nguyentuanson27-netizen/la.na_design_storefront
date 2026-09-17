@@ -79,8 +79,8 @@ export function usePlpInfiniteGrid({
         `Đã tải thêm ${result.products.length} sản phẩm. Tổng cộng ${totalLoaded} trên ${totalCount} sản phẩm.`,
       );
 
-      if (result.nextHref && typeof window !== "undefined") {
-        window.history.replaceState(null, "", result.nextHref);
+      if (result.currentHref && typeof window !== "undefined") {
+        window.history.replaceState(null, "", result.currentHref);
       }
     } catch {
       setError("Không thể tải thêm sản phẩm. Vui lòng thử lại.");

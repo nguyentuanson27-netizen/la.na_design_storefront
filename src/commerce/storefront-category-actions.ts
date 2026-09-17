@@ -34,6 +34,7 @@ export type CategoryNextPageActionResult = {
   hasNext: boolean;
   nextCursor: string | null;
   nextHref: string | null;
+  currentHref: string;
 };
 
 export async function loadCategoryNextPageAction(
@@ -70,6 +71,7 @@ export async function loadCategoryNextPageAction(
 
   const hasNext = pageResult.hasNext;
   const nextPage = discovery.page + 1;
+  const currentHref = buildCategoryDiscoveryHref(input.categoryPath, discovery, pageResult.page);
 
   return {
     products: cards,
@@ -79,5 +81,6 @@ export async function loadCategoryNextPageAction(
     hasNext,
     nextCursor: hasNext ? encodeCategoryCursor(nextPage) : null,
     nextHref: hasNext ? buildCategoryDiscoveryHref(input.categoryPath, discovery, nextPage) : null,
+    currentHref,
   };
 }

@@ -32,7 +32,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       }, 50);
       return () => clearTimeout(timer);
     } else {
-      const returnFocusTarget = triggerRef?.current ?? previouslyFocusedElement.current;
+      const returnFocusTarget = previouslyFocusedElement.current ?? triggerRef?.current;
       returnFocusTarget?.focus?.();
     }
   }, [isOpen, triggerRef]);

@@ -85,6 +85,9 @@ test("F2d cart drawer component: enforces accessible dialog contracts and Escape
 
   // Must have close button with accessible label
   assert.match(source, /aria-label="Đóng giỏ hàng"/);
+
+  // Focus restore prioritizes actual opener over desktop trigger
+  assert.match(source, /previouslyFocusedElement\.current \?\? triggerRef\?\.current/);
 });
 
 test("F2d cart drawer focus trap: safely handles null container", () => {

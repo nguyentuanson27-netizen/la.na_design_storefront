@@ -33,7 +33,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
       }, 50);
       return () => clearTimeout(timer);
     } else {
-      const target = triggerRef?.current ?? previouslyFocusedElement.current;
+      const target = previouslyFocusedElement.current ?? triggerRef?.current;
       target?.focus?.();
     }
   }, [isOpen, triggerRef]);
@@ -180,8 +180,17 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
             </div>
           ) : null}
 
-          {/* Product Suggestions */}
-          {result.products.length > 0 ? (
+          {/* Search Results / Error / Empty */}
+          {result.error && !isLoading ? (
+            <div role="alert" className="py-8 text-center">
+              <p className="font-serif text-lg text-[#8A3A35]">
+                {result.error}
+              </p>
+              <p className="mt-2 text-xs text-[#70584B]">
+                Vui lòng thử lại sau hoặc tìm kiếm với từ khóa khác.
+              </p>
+            </div>
+          ) : result.products.length > 0 ? (
             <div>
               <p className="eyebrow text-[#70584B] mb-4">Sản phẩm gợi ý</p>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">

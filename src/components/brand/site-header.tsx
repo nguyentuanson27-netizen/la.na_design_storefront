@@ -54,8 +54,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   const headerRef = useRef<HTMLElement | null>(null);
-  const searchTriggerRef = useRef<HTMLAnchorElement | null>(null);
-  const cartTriggerRef = useRef<HTMLAnchorElement | null>(null);
+  const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const cartTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   const loginPath = ["", "login"].join("/");
   const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
@@ -253,23 +253,46 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           {NAVIGATION.utility.map((item, index) => {
             const isSearch = index === 0;
             const isAccount = index === 1;
+            const isCart = index === 2;
             const destination = isAccount && !session ? loginPath : item.href;
-            const triggerRef = isSearch ? searchTriggerRef : isAccount ? undefined : cartTriggerRef;
+
+            if (isSearch) {
+              return (
+                <button
+                  key={item.href}
+                  ref={searchTriggerRef}
+                  type="button"
+                  onClick={openSearch}
+                  aria-label={item.label}
+                  aria-haspopup="dialog"
+                >
+                  <UtilityIcon href={item.href} />
+                  <span className="sr-only">{item.label}</span>
+                </button>
+              );
+            }
+
+            if (isCart) {
+              return (
+                <button
+                  key={item.href}
+                  ref={cartTriggerRef}
+                  type="button"
+                  onClick={() => setCartDrawerOpen(true)}
+                  aria-label={item.label}
+                  aria-haspopup="dialog"
+                >
+                  <UtilityIcon href={item.href} />
+                  <span className="sr-only">{item.label}</span>
+                </button>
+              );
+            }
 
             return (
               <Link
                 key={item.href}
-                ref={triggerRef}
                 href={destination}
                 aria-label={item.label}
-                onClick={
-                  isSearch
-                    ? (e) => {
-                        e.preventDefault();
-                        openSearch();
-                      }
-                    : undefined
-                }
               >
                 <UtilityIcon href={item.href} />
                 <span className="sr-only">{item.label}</span>

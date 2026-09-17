@@ -18,6 +18,7 @@ export type SearchSuggestionsResult = Readonly<{
   query: string;
   categories: readonly SearchSuggestionCategory[];
   products: readonly SearchSuggestionProduct[];
+  error?: string | null;
 }>;
 
 /**

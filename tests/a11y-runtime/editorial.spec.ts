@@ -320,7 +320,7 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
 
   const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
   await expect(footerNavigation).toBeVisible();
@@ -365,9 +365,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
-  await expect(utilityNavigation.getByRole("link", { name: "Tìm kiếm", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
-  await expect(utilityNavigation.getByRole("link", { name: "Giỏ hàng", exact: true })).toBeVisible();
+  await expect(utilityNavigation.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
   await expect(page.locator(".mobile-nav")).toBeHidden();
   await expectRuntimePageClean(page);
 
@@ -393,7 +393,7 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
   await searchInput.fill("Oxford");
   await Promise.all([
     page.waitForURL(`${BASE_URL}/shop?q=Oxford`),
-    page.getByRole("button", { name: "Tìm kiếm", exact: true }).click(),
+    searchForm.getByRole("button", { name: "Tìm kiếm", exact: true }).click(),
   ]);
   expect(page.url()).toBe(`${BASE_URL}/shop?q=Oxford`);
 

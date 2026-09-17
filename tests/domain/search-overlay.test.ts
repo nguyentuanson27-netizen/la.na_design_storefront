@@ -70,4 +70,49 @@ test("F2b search overlay component: enforces accessible dialog contracts and Esc
 
   // Close button with accessible label
   assert.match(source, /aria-label="Đóng tìm kiếm"/);
+
+  // Role alert for error state
+  assert.match(source, /role="alert"/);
+
+  // Focus restore prioritizes actual opener over desktop trigger
+  assert.match(source, /previouslyFocusedElement\.current \?\? triggerRef\?\.current/);
 });
+
+test("F2b search suggestions: enforces 80-character query limit and handles infrastructure errors", async () => {
+  const { searchStorefrontSuggestionsWithFinder } = await import(
+    "../../src/commerce/storefront-search-actions.ts"
+  );
+
+  // 1. Query exceeding 80 chars must be rejected with error state
+  const overlongQuery = "a".repeat(81);
+  const overlongResult = await searchStorefrontSuggestionsWithFinder(overlongQuery, async () => []);
+  assert.ok(overlongResult.error, "Overlong query must return error");
+  assert.match(overlongResult.error, /80 ký tự/);
+  assert.deepEqual(overlongResult.categories, []);
+  assert.deepEqual(overlongResult.products, []);
+
+  // 2. Query within 80 chars succeeds
+  const validQuery = "áo dài";
+  const validResult = await searchStorefrontSuggestionsWithFinder(validQuery, async () => [
+    {
+      id: "prod-1",
+      slug: "ao-dai-lua",
+      name: "Áo Dài Lụa",
+      primaryImageUrl: null,
+      priceText: "850.000 ₫",
+    },
+  ]);
+  assert.equal(validResult.error, undefined);
+  assert.equal(validResult.products.length, 1);
+  assert.ok(validResult.categories.length > 0);
+
+  // 3. Finder/DB failure must return typed error state, not silent empty result
+  const failingResult = await searchStorefrontSuggestionsWithFinder("áo", async () => {
+    throw new Error("Prisma client connection failure");
+  });
+  assert.ok(failingResult.error, "Infrastructure failure must return error property");
+  assert.match(failingResult.error, /Không thể kết nối/);
+  assert.deepEqual(failingResult.products, [], "Products must be empty on failure");
+  assert.ok(failingResult.categories.length > 0, "Matched taxonomy categories can still be provided");
+});
+

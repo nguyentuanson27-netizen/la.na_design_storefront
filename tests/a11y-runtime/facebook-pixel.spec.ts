@@ -341,8 +341,8 @@ test("a client-side navigation reports its own page view without repeating the f
   await waitForEvent(page, "PageView");
 
   // App Router never reloads the snippet, so without the route tracker only the entry page counts.
-  await page.getByRole("link", { name: "Giỏ hàng", exact: true }).click();
-  await page.waitForURL("**/cart");
+  await page.getByRole("link", { name: "Váy, đầm", exact: true }).first().click();
+  await page.waitForURL("**/vay-dam");
 
   await expect
     .poll(async () => trackedEventNames(await readCalls(page)).filter((n) => n === "PageView").length)

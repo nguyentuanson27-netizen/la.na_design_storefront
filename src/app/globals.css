@@ -192,7 +192,8 @@ summary:focus-visible {
     display: block;
   }
 
-  .utility-nav a:not(:last-child) {
+  .utility-nav a:not(:last-child),
+  .utility-nav button:not(:last-child) {
     display: none;
   }
 
@@ -644,6 +645,7 @@ body:has(.admin-shell) .site-masthead {
 
 .desktop-nav a,
 .utility-nav a,
+.utility-nav button,
 .mobile-nav summary,
 .mobile-menu a,
 .footer-links a {
@@ -652,6 +654,7 @@ body:has(.admin-shell) .site-masthead {
 
 .desktop-nav a,
 .utility-nav a,
+.utility-nav button,
 .footer-links a {
   display: inline-flex;
   align-items: center;

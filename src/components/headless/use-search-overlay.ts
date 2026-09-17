@@ -54,12 +54,22 @@ export function useSearchOverlay(isOpen: boolean) {
         const data = await searchStorefrontSuggestionsAction(trimmed);
         if (!cancelled) {
           setResult(data);
-          setAnnouncement(
-            buildSearchAnnouncement(trimmed, false, data.products.length, data.categories.length),
-          );
+          if (data.error) {
+            setAnnouncement(data.error);
+          } else {
+            setAnnouncement(
+              buildSearchAnnouncement(trimmed, false, data.products.length, data.categories.length),
+            );
+          }
         }
       } catch {
         if (!cancelled) {
+          setResult({
+            query: trimmed,
+            categories: [],
+            products: [],
+            error: "Không thể kết nối đến hệ thống tìm kiếm lúc này.",
+          });
           setAnnouncement(`Không thể tìm kiếm cho "${trimmed}".`);
         }
       } finally {
