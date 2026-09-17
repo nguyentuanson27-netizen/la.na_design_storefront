@@ -622,6 +622,10 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
       primaryImageUrl: null,
       isPresent: true,
       isActive: true,
+      // I5 — this double stands in for `productSelection`, so it has to carry the capacity facts
+      // the real query now reads. `null` is what Prisma returns for an unconfigured product, which
+      // resolves to the approved missing-row answer rather than to a second opinion invented here.
+      sellingPolicy: null,
       variants: [
         {
           id: "var-cuid-1",
@@ -634,6 +638,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
           pancakeRetailPriceAfterDiscount: null,
           pancakeImageUrls: "[]",
           warehouseStocks: [{ pancakeWarehouseId: 1, quantity: variantStock }],
+          compositeComponents: [],
           compositeParents: [],
         },
       ],

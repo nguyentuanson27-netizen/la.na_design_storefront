@@ -56,6 +56,10 @@ const productSelection = {
   primaryImageUrl: true,
   isPresent: true,
   isActive: true,
+  // I5 — server truth for the capacity rule. Read here rather than passed in, because "using
+  // server truth" is the whole point of enforcing eligibility at this boundary: a client-supplied
+  // policy would be exactly the browser-reported availability ADR 0014 §2 forbids.
+  sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
   variants: {
     orderBy: [{ pancakeVariationId: "asc" as const }],
     select: {
@@ -72,6 +76,10 @@ const productSelection = {
         orderBy: [{ pancakeWarehouseId: "asc" as const }],
         select: { quantity: true },
       },
+      // Whether this variant is a composite PARENT (it has components), which is the §11
+      // restriction's subject — distinct from `compositeParents` below, which asks whether this
+      // variant is somebody else's component.
+      compositeComponents: { select: { parentVariantId: true }, take: 1 },
       compositeParents: {
         select: {
           parentVariant: {
@@ -102,6 +110,12 @@ function toCartProduct(product: SelectedProduct) {
     primaryImageUrl: product.primaryImageUrl,
     isPresent: product.isPresent,
     isActive: product.isActive,
+    // Absent resolves to the approved missing-row answer inside `buildStorefrontCartLines`, which
+    // is the same single producer §5.1 requires rather than a second opinion invented here.
+    sellingPolicy: product.sellingPolicy ?? undefined,
+    // Product-level, matching I2's admin refusal and I6a's reservation check: if any variant has
+    // components, the product is a composite parent for §11's purposes.
+    isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
     variants: product.variants.map((variant) => ({
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,

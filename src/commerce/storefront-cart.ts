@@ -3,9 +3,16 @@ import {
   type StorefrontProductMedia,
 } from "./product-media.ts";
 import {
+  evaluateVariantCapacity,
+  type SellingMode,
+  type VariantCapacityInput,
+} from "./capacity-policy.ts";
+import {
   buildStorefrontVariantOptions,
   defaultStorefrontPricingRule,
+  STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
+  type StorefrontProductCapacity,
   type StorefrontVariantUnavailableReason,
 } from "./storefront-product.ts";
 
@@ -37,6 +44,20 @@ export type StorefrontCartProduct = {
   isPresent: boolean;
   isActive: boolean;
   primaryImageUrl?: string | null;
+  /**
+   * I5 — the product's stored selling policy, as `resolveSellingPolicy()` returns it.
+   *
+   * Optional, defaulting to the approved missing-row answer (`STANDARD` at `−20`), so a caller that
+   * has not been switched keeps exactly today's behaviour. That default is what made I1's
+   * no-backfill safe and it does the same job here.
+   */
+  sellingPolicy?: Readonly<{ sellingMode: SellingMode; negativeStockLimit: number }>;
+  /**
+   * Whether this product is a composite parent (ADR 0014 §11 disables `OVERSELL`/`PREORDER` for
+   * one). Product-level rather than per variant, matching how I2's admin boundary refuses the write
+   * and how I6a's reservation transaction tests it — three places agreeing on one granularity.
+   */
+  isComposite?: boolean;
   variants: readonly StorefrontCartVariant[];
 };
 
@@ -119,6 +140,7 @@ export function buildStorefrontCartLines({
   const variantOwner = new Map<string, StorefrontCartProduct>();
   const productMediaMap = new Map<string, StorefrontProductMedia>();
   const resolvedOptions = new Map<string, ReturnType<typeof buildStorefrontVariantOptions>[number]>();
+  const capacityByVariantId = new Map<string, StorefrontProductCapacity>();
 
   for (const product of products) {
     const media = resolveStorefrontProductMedia({
@@ -132,11 +154,23 @@ export function buildStorefrontCartLines({
       variantOwner.set(variant.id, product);
     }
 
+    // I5 — the product's real capacity facts, not the hard-coded default. Without this the cart
+    // judged every product by `STANDARD`'s floor of 0, so an `OVERSELL` variant the owner had
+    // allowed down to −20 was refused here while the PDP (since I4) offered it: the display and the
+    // cart disagreeing about one product, which is the drift this series exists to remove.
+    const productCapacity: StorefrontProductCapacity = {
+      sellingMode: product.sellingPolicy?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
+      negativeStockLimit:
+        product.sellingPolicy?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
+      isComposite: product.isComposite ?? false,
+    };
+
     const currentVariants = product.variants.filter((variant) =>
       isCommerceEligibleVariant(product, variant),
     );
-    for (const option of buildStorefrontVariantOptions(currentVariants, pricingRule)) {
+    for (const option of buildStorefrontVariantOptions(currentVariants, pricingRule, productCapacity)) {
       resolvedOptions.set(option.id, option);
+      capacityByVariantId.set(option.id, productCapacity);
     }
   }
 
@@ -221,13 +255,41 @@ export function buildStorefrontCartLines({
       };
     }
 
-    if (option.purchasable && option.sellableStock < item.quantity) {
-      return {
-        ...base,
-        price: option.price,
-        available: false,
-        unavailableReason: "INSUFFICIENT_STOCK" as const,
-      };
+    // I5 — "may this many be sold" is `evaluateVariantCapacity()` at the requested quantity: the
+    // same predicate `buildStorefrontVariantOptions()` used above at quantity 1, and the same one
+    // I6a's reservation transaction will use at commit. It replaces `sellableStock < quantity`,
+    // which was a second capacity rule pinned to `STANDARD`'s floor of 0 — it refused 5 units of an
+    // `OVERSELL` variant sitting at stock 2 even though the owner's −20 allowance covers it, and it
+    // agreed with the real rule only because nothing could set a non-`STANDARD` policy yet.
+    //
+    // Advisory, per ADR 0014 §2: no reservation is subtracted here, because the authoritative check
+    // runs at the commit boundary inside the reservation transaction. The cart may show a line as
+    // buyable and the commit may still refuse it, and that refusal is correct.
+    if (option.purchasable) {
+      const capacity = capacityByVariantId.get(item.variantId);
+      const decision = evaluateVariantCapacity(
+        {
+          mirroredStock: variant.sellableStock,
+          activeReservedQuantity: 0,
+          sellingMode: capacity?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
+          negativeStockLimit:
+            capacity?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
+          isComposite: capacity?.isComposite ?? false,
+        } satisfies VariantCapacityInput,
+        item.quantity,
+      );
+      if (!decision.allowed) {
+        // `purchasable` already established that one unit sells, so the only thing that can have
+        // failed here is the requested count — the shopper can still buy fewer, which is what
+        // INSUFFICIENT_STOCK tells them. A variant that cannot sell at all falls through to
+        // `option.unavailableReason` below instead, keeping "sold out" distinct from "not enough".
+        return {
+          ...base,
+          price: option.price,
+          available: false,
+          unavailableReason: "INSUFFICIENT_STOCK" as const,
+        };
+      }
     }
 
     return {
