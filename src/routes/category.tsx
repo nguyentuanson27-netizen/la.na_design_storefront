@@ -1,41 +1,87 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
+import { connection } from "next/server";
 
-import type { StorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
+import {
+  parseCategoryDiscoverySearchParams,
+  type StorefrontDiscoverySearchParams,
+} from "@/commerce/category-discovery-url";
 import { categoryByKey, categoryByPath } from "@/commerce/category-taxonomy";
+import {
+  listConfiguredCategoryDiscoveryFacets,
+  listConfiguredCategoryDiscoveryPage,
+} from "@/commerce/storefront-catalog-runtime";
+import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
+import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
+import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { buildCategoryBreadcrumbStructuredData } from "@/seo/category-breadcrumb-structured-data";
 import { readSearchExposure } from "@/seo/search-exposure";
+import { resolveCategoryBreadcrumbs } from "./category-breadcrumbs.ts";
 import { CATEGORY_DESTINATIONS, type CategoryDestination } from "./category-destinations.ts";
-import { resolveCategoryBreadcrumbs, type CategoryBreadcrumb } from "./category-breadcrumbs.ts";
+import {
+  buildCategoryViewModel,
+  type CategoryViewModel,
+} from "./category-model.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
 export { CATEGORY_DESTINATIONS };
-export type { CategoryDestination };
+export type { CategoryDestination, CategoryViewModel };
+
+export const CATEGORY_PAGE_SIZE = 24;
 
 export type CategoryRouteProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;
-}>;
-
-export type CategoryViewModel = Readonly<{
-  destination: CategoryDestination;
-  breadcrumbs: readonly CategoryBreadcrumb[];
-  subcategories: readonly Readonly<{ label: string; href: string }>[];
 }>;
 
 export async function loadCategoryRoute(
   destination: CategoryDestination,
   props: CategoryRouteProps,
 ): Promise<RouteHandle<CategoryViewModel>> {
-  void props;
+  await connection();
   const exposure = readSearchExposure();
   const node = categoryByPath(destination.href);
-  const breadcrumbs = node ? resolveCategoryBreadcrumbs(node.key) : [];
+  if (!node) notFound();
 
-  const subcategories = (node?.childKeys ?? [])
+  const categoryKey = node.key;
+  const breadcrumbs = resolveCategoryBreadcrumbs(categoryKey);
+
+  const subcategories = (node.childKeys ?? [])
     .map((childKey) => {
       const childNode = categoryByKey(childKey);
       return childNode ? { label: childNode.label, href: childNode.path } : null;
     })
     .filter((item): item is { label: string; href: string } => item !== null);
+
+  const requestNow = new Date();
+  let discovery: ReturnType<typeof parseCategoryDiscoverySearchParams>;
+  let catalogPage: Awaited<ReturnType<typeof listConfiguredCategoryDiscoveryPage>>;
+  let facets: Awaited<ReturnType<typeof listConfiguredCategoryDiscoveryFacets>>;
+
+  try {
+    const rawSearchParams = await props.searchParams;
+    discovery = parseCategoryDiscoverySearchParams(categoryKey, rawSearchParams);
+    [catalogPage, facets] = await Promise.all([
+      listConfiguredCategoryDiscoveryPage({
+        categoryKey,
+        discovery,
+        pageSize: CATEGORY_PAGE_SIZE,
+        now: requestNow,
+      }),
+      listConfiguredCategoryDiscoveryFacets({ categoryKey }),
+    ]);
+  } catch (error) {
+    if (error instanceof RangeError) notFound();
+    throw error;
+  }
+
+  const { page, products, totalCount, totalPages, pricingRule, refreshAfterMs } = catalogPage;
+  if (page > Math.max(totalPages, 1)) notFound();
+
+  const listTracking = buildProductListTracking({
+    products,
+    list: { listId: `category:${categoryKey}`, listName: destination.label },
+    pricingRule,
+  });
 
   const structuredData = [
     buildCategoryBreadcrumbStructuredData({
@@ -44,24 +90,53 @@ export async function loadCategoryRoute(
     }),
   ];
 
+  const data = buildCategoryViewModel({
+    destination,
+    categoryKey,
+    breadcrumbs,
+    subcategories,
+    discovery,
+    products,
+    facets,
+    totalCount,
+    totalPages,
+    page,
+    hasPrevious: catalogPage.hasPrevious,
+    hasNext: catalogPage.hasNext,
+    pageSize: CATEGORY_PAGE_SIZE,
+    pricingRule,
+    selectEventBySlug: listTracking.selectEventBySlug,
+  });
+
   return sealRoute({
-    data: Object.freeze({
-      destination,
-      breadcrumbs,
-      subcategories: Object.freeze(subcategories),
-    }),
-    refreshAfterMs: 60_000,
-    trackingEvent: null,
+    data,
+    refreshAfterMs,
+    trackingEvent: listTracking.listEvent,
     structuredData,
     pixelEvents: [],
   });
 }
 
 export function renderCategoryRoute(data: CategoryViewModel) {
-  const { destination, breadcrumbs, subcategories } = data;
+  const {
+    destination,
+    categoryKey,
+    breadcrumbs,
+    subcategories,
+    cards,
+    totalCount,
+    totalPages,
+    page,
+    hasNext,
+    nextHref,
+    nextCursor,
+    facets,
+    activeFilters,
+  } = data;
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-12 md:py-20">
+      {/* Breadcrumbs */}
       <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-[#3B2219]/70">
         <ol className="flex flex-wrap items-center gap-2">
           {breadcrumbs.map((crumb, idx) => (
@@ -81,6 +156,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
         </ol>
       </nav>
 
+      {/* Category Header */}
       <div className="mt-8 border-b border-[#3B2219]/15 pb-8">
         <p className="eyebrow text-[#70584B]">Danh mục thiết kế</p>
         <h1 className="mt-3 font-serif text-4xl sm:text-5xl md:text-6xl font-normal text-[#2A1810] tracking-tight">
@@ -102,14 +178,30 @@ export function renderCategoryRoute(data: CategoryViewModel) {
         ) : null}
       </div>
 
+      {/* Accessible PLP Filter Panel */}
       <div className="mt-8">
-        <Link
-          className="inline-flex items-center text-xs font-semibold uppercase tracking-[0.14em] text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
-          href="/shop"
-        >
-          Khám phá tất cả sản phẩm
-        </Link>
+        <PlpFilterPanel
+          categoryPath={destination.href}
+          totalCount={totalCount}
+          availableSizes={facets.sizes}
+          availableColors={facets.colors}
+          activeFilters={activeFilters}
+        />
       </div>
+
+      {/* Infinite Product Grid */}
+      <PlpInfiniteGrid
+        initialProducts={cards}
+        totalCount={totalCount}
+        totalPages={totalPages}
+        initialPage={page}
+        categoryKey={categoryKey}
+        categoryPath={destination.href}
+        activeFilters={activeFilters}
+        hasNext={hasNext}
+        nextHref={nextHref}
+        nextCursor={nextCursor}
+      />
     </div>
   );
 }

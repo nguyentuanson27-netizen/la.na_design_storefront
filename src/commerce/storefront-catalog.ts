@@ -354,6 +354,9 @@ function buildVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   if (discovery.availability === "in-stock") {
     filters.push(Prisma.sql`vf."sellableStock" > 0`);
   }
+  if (discovery.sale) {
+    filters.push(Prisma.sql`vf."resolvedPrice" < vf."basePrice"`);
+  }
   if (discovery.minPriceVnd !== null) {
     filters.push(Prisma.sql`vf."resolvedPrice" >= ${discovery.minPriceVnd}`);
   }
@@ -390,6 +393,16 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
 
   if (discovery.query) {
     filters.push(Prisma.sql`POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0`);
+  }
+  if (discovery.categoryListingKeys && discovery.categoryListingKeys.length > 0) {
+    filters.push(Prisma.sql`
+      EXISTS (
+        SELECT 1
+        FROM "ProductCategoryMembership" pcm
+        WHERE pcm."productId" = p."id"
+          AND pcm."categoryKey" IN (${Prisma.join([...discovery.categoryListingKeys])})
+      )
+    `);
   }
   if (discovery.collection) {
     filters.push(Prisma.sql`
@@ -455,8 +468,25 @@ function buildSortPrice(variantFilters: readonly Prisma.Sql[]) {
   `;
 }
 
-function buildDiscoveryOrder(sort: StorefrontDiscoveryQuery["sort"]) {
+function buildDiscoveryOrder(
+  sort: StorefrontDiscoveryQuery["sort"],
+  categoryKey?: string | null,
+) {
   switch (sort) {
+    case "default":
+      if (categoryKey) {
+        return Prisma.sql`
+          (
+            SELECT cpo."position"
+            FROM "CategoryProductOrder" cpo
+            WHERE cpo."categoryKey" = ${categoryKey}
+              AND cpo."productId" = p."id"
+          ) ASC NULLS LAST,
+          p."name" ASC,
+          p."id" ASC
+        `;
+      }
+      return Prisma.sql`p."name" ASC, p."id" ASC`;
     case "name-desc":
       return Prisma.sql`p."name" DESC, p."id" ASC`;
     case "price-asc":
@@ -582,7 +612,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery);
     const transitionProductPredicate = buildTransitionProductPredicate(shopId, discovery);
     const sortPrice = buildSortPrice(variantFilters);
-    const orderBy = buildDiscoveryOrder(discovery.sort);
+    const orderBy = buildDiscoveryOrder(discovery.sort, discovery.categoryKey);
     const variantStockCte = buildVariantStockCte(now);
 
     const [countRows, idRows, transitionRows] = await Promise.all([
@@ -679,8 +709,25 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     };
   }
 
-  async function listDiscoveryFacets({ shopId }: { shopId: number }) {
+  async function listDiscoveryFacets({
+    shopId,
+    categoryListingKeys,
+  }: {
+    shopId: number;
+    categoryListingKeys?: readonly string[];
+  }) {
     const safeShopId = parseShopId(shopId);
+    const categoryClause =
+      categoryListingKeys && categoryListingKeys.length > 0
+        ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1 FROM "ProductCategoryMembership" pcm
+            WHERE pcm."productId" = p."id"
+              AND pcm."categoryKey" IN (${Prisma.join([...categoryListingKeys])})
+          )
+        `
+        : Prisma.sql``;
+
     const [colorRows, sizeRows, collectionRows] = await Promise.all([
       client.$queryRaw<FacetRow[]>(Prisma.sql`
         SELECT DISTINCT BTRIM(v."color") AS "value"
@@ -693,6 +740,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
           AND v."isActive" = TRUE
           AND v."color" IS NOT NULL
           AND BTRIM(v."color") <> ''
+          ${categoryClause}
         ORDER BY "value" ASC
       `),
       client.$queryRaw<FacetRow[]>(Prisma.sql`
@@ -706,6 +754,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
           AND v."isActive" = TRUE
           AND v."size" IS NOT NULL
           AND BTRIM(v."size") <> ''
+          ${categoryClause}
         ORDER BY "value" ASC
       `),
       client.$queryRaw<FacetRow[]>(Prisma.sql`

@@ -9,6 +9,7 @@ import {
   listRelatedStorefrontProducts,
 } from "./storefront-related-products.ts";
 import { createMerchandisingRepository } from "./merchandising-repository.ts";
+import { categoryListingKeys, type CategoryKey } from "./category-taxonomy.ts";
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
@@ -132,6 +133,44 @@ export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
 
 export async function readConfiguredNextSaleBoundary(now?: Date) {
   return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now });
+}
+
+export async function listConfiguredCategoryDiscoveryPage({
+  categoryKey,
+  discovery,
+  pageSize,
+  now,
+}: {
+  categoryKey: string;
+  discovery: StorefrontDiscoveryQuery;
+  pageSize: number;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  const listingKeys = categoryListingKeys(categoryKey as CategoryKey);
+  return createStorefrontCatalogRepository(prisma).listDiscoveryPage({
+    shopId,
+    discovery: {
+      ...discovery,
+      categoryKey,
+      categoryListingKeys: listingKeys,
+    },
+    pageSize,
+    now,
+  });
+}
+
+export async function listConfiguredCategoryDiscoveryFacets({
+  categoryKey,
+}: {
+  categoryKey: string;
+}) {
+  const shopId = readPancakeShopId();
+  const listingKeys = categoryListingKeys(categoryKey as CategoryKey);
+  return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({
+    shopId,
+    categoryListingKeys: listingKeys,
+  });
 }
 
 export async function listConfiguredStorefrontDiscoveryFacets() {
