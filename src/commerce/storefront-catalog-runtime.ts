@@ -212,3 +212,37 @@ export async function resolveConfiguredStorefrontProductSlug(slug: string) {
   const shopId = readPancakeShopId();
   return createStorefrontProductSlugResolver(prisma)({ shopId, slug });
 }
+
+export type CategoryMegaMediaFacts = Readonly<{
+  categoryKey: string;
+  imageUrl: string;
+  altText?: string | null;
+}>;
+
+export async function readConfiguredCategoryMegaMedia(): Promise<readonly CategoryMegaMediaFacts[]> {
+  try {
+    const merchandising = createMerchandisingRepository(prisma);
+    const [aoDai, setDo] = await Promise.all([
+      merchandising.readCategoryEditorialMedia("aoDai"),
+      merchandising.readCategoryEditorialMedia("setDo"),
+    ]);
+    const items: CategoryMegaMediaFacts[] = [];
+    if (aoDai?.megaMenuImageUrl) {
+      items.push({
+        categoryKey: "aoDai",
+        imageUrl: aoDai.megaMenuImageUrl,
+        altText: null,
+      });
+    }
+    if (setDo?.megaMenuImageUrl) {
+      items.push({
+        categoryKey: "setDo",
+        imageUrl: setDo.megaMenuImageUrl,
+        altText: null,
+      });
+    }
+    return Object.freeze(items);
+  } catch {
+    return Object.freeze([]);
+  }
+}
