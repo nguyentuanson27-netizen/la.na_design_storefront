@@ -12,7 +12,6 @@ import test from "node:test";
 
 import { DEFAULT_NEGATIVE_STOCK_LIMIT } from "../../src/commerce/capacity-policy.ts";
 import {
-  MAX_NEGATIVE_STOCK_ALLOWANCE,
   parseSellingPolicySubmission,
   SellingPolicyError,
   SELLING_POLICY_MODE_INPUTS,
@@ -87,8 +86,10 @@ test("I2 the limit defaults to the approved value and refuses anything unstorabl
   }
 
   // 0 is legitimate: "oversell enabled, no negative allowance", which `evaluateVariantCapacity`
-  // accepts. The boundary of the operational bound is accepted; one past it is not.
-  for (const accepted of [0, -1, -20, MAX_NEGATIVE_STOCK_ALLOWANCE]) {
+  // accepts. There is no lower bound, because the master spec fixes none — comment 5714858155.
+  // `-250` is here so a floor cannot quietly come back: an earlier version of this parser invented
+  // `-200` and would have refused a limit the approved contract allows.
+  for (const accepted of [0, -1, -20, -200, -201, -250, -1_000_000]) {
     const parsed = parseSellingPolicySubmission({
       productId: PRODUCT_ID,
       sellingMode: "oversell",
@@ -97,10 +98,11 @@ test("I2 the limit defaults to the approved value and refuses anything unstorabl
     assert.equal(parsed.negativeStockLimit, accepted);
   }
 
+  // Only two families are refused: a positive limit, which the gate refuses as `invalid-limit`
+  // anyway, and a value that is not a safe integer, which is not a limit at all.
   for (const rejected of [
     1,
     5,
-    MAX_NEGATIVE_STOCK_ALLOWANCE - 1,
     -0.5,
     Number.NaN,
     Number.NEGATIVE_INFINITY,

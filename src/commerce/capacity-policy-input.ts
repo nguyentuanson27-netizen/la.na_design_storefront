@@ -31,16 +31,6 @@ const MODE_BY_INPUT: Readonly<Record<SellingPolicyModeInput, SellingMode>> = Obj
 /** Product ids are `cuid`s from `ProductMirror.id`; this bounds the string, not its alphabet. */
 const MAX_PRODUCT_ID_LENGTH = 64;
 
-/**
- * The most negative allowance an operator may set in one submission.
- *
- * An operational bound rather than an approved fact — master spec §29 fixes no floor. It exists so
- * that a mistyped `-2000` is refused at the boundary instead of quietly authorizing two thousand
- * units of unbacked demand. The approved default is `−20`; anything beyond this bound is a decision
- * the owner should make explicitly, not a form field.
- */
-export const MAX_NEGATIVE_STOCK_ALLOWANCE = -200;
-
 export type SellingPolicyErrorReason =
   | "selling-policy-shape"
   | "selling-policy-invalid-product"
@@ -92,15 +82,20 @@ function parseSellingMode(value: unknown): SellingMode {
  * default", not "no limit". A positive value is refused rather than negated: `evaluateVariantCapacity`
  * refuses it as `invalid-limit` at the gate, and storing one would leave a product whose configured
  * policy can never sell anything, with nothing on the admin surface to explain why.
+ *
+ * There is deliberately **no lower bound**. An earlier version of this parser invented a `−200`
+ * floor and described it, in its own comment, as "an operational bound rather than an approved
+ * fact" — which is the argument against it. The master spec defines the limit as an integer with a
+ * default of `−20` and fixes no floor, so `−250` is valid under the approved contract and this
+ * boundary has no standing to refuse it. If a floor is wanted, it gets approved first and enforced
+ * second; a parser is not the place to legislate one.
  */
 function parseNegativeStockLimit(value: unknown): number {
   if (value === undefined || value === null) return DEFAULT_NEGATIVE_STOCK_LIMIT;
   if (typeof value !== "number" || !Number.isSafeInteger(value)) {
     throw new SellingPolicyError("selling-policy-invalid-limit");
   }
-  if (value > 0 || value < MAX_NEGATIVE_STOCK_ALLOWANCE) {
-    throw new SellingPolicyError("selling-policy-invalid-limit");
-  }
+  if (value > 0) throw new SellingPolicyError("selling-policy-invalid-limit");
   return value;
 }
 
