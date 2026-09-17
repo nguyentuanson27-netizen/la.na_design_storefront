@@ -1,170 +1,68 @@
-# LA Clothing release and rollback runbook
+# La.na Design release and rollback runbook
 
-Production infrastructure is defined by [ADR 0002](../decisions/0002-vps-production-infrastructure.md) and amended for the selected shared VPS by [ADR 0003](../decisions/0003-shared-host-npm-edge.md). The active edge is nginx-proxy-manager (NPM) on host 80/81/443, with LA Clothing's Caddy running internal-only behind it. [ADR 0001](../decisions/0001-production-infrastructure.md) remains historical context for the superseded Render decision.
+This runbook follows the checked-in deployment assets under `deploy/vps/`. Repository configuration is not proof that a real VPS, DNS record, TLS certificate or public edge has already been configured.
 
-Host provisioning is documented in [VPS bootstrap handoff](./vps-bootstrap.md).
+Non-secret project identity has one source: `project.config.json`. `deploy/vps/project-identity.sh` loads the project slug, database, Compose project, application domain and Better Auth URL from it. Do not substitute inherited LA Clothing project names or domains.
 
 ## Release model
 
-Production does not auto-deploy a moving branch. Every release uses one reviewed, CI-green, full 40-character Git SHA.
+Every production release uses one reviewed, CI-green, full 40-character Git SHA. `deploy/vps/.env.production` carries the release SHA and runtime secrets/configuration; `deploy.sh` refuses a dirty or mismatched checkout.
 
-`deploy/vps/.env.production` contains `RELEASE_SHA`. `bash deploy/vps/deploy.sh` refuses to continue if the checked-out commit differs or the worktree is dirty.
+The current Compose topology expects PostgreSQL, app, ops and Caddy plus an external edge Docker network named by `EDGE_NETWORK_NAME`. Caddy's edge alias is `${COMPOSE_PROJECT_NAME}-caddy`, currently `la-na-design-caddy`. The real trusted proxy range must be supplied through `EDGE_TRUSTED_PROXY_CIDR`; the documentation fallback is not a production value.
+
+If nginx-proxy-manager is the real public edge, verify its actual network, proxy host and certificate before promotion. Never assume the old LA Clothing proxy-host state still exists or is correct for this project.
 
 ## Release gate
 
-A candidate is eligible only when all of these are true:
+A candidate is releasable only when all applicable items are true:
 
-1. Human review/approval exists for the exact candidate.
-2. CI is green on that exact commit, including normal application gates and the VPS Docker/Compose smoke.
-3. The production domain and server configuration are known.
-4. `deploy/vps/.env.production` contains real production values and is protected on the VPS.
-5. `EDGE_NETWORK_NAME` identifies the existing NPM Docker network and `EDGE_TRUSTED_PROXY_CIDR` contains the smallest reviewed stable NPM trust range. Do not deploy the documentation-only fallbacks `la-clothing-edge-unconfigured` or `192.0.2.1/32`.
-6. NPM is attached to that network and the LA Clothing Proxy Host is configured to forward `APP_DOMAIN` to `http://la-clothing-caddy:80` without changing unrelated live proxy hosts.
-7. PostgreSQL/Caddy image references have been reviewed/pinned for the host.
-8. Migration changes since the current deployment have been reviewed.
-9. Off-site backup is configured and a restore drill has succeeded; destructive migrations additionally have a release-specific recovery plan.
-10. The previous known-good application SHA/image is recorded and retained locally.
-11. The controlled Pancake production write acceptance has completed; a read-only contract probe alone is insufficient.
-12. VPS host firewall/SSH/NPM/TLS/monitoring prerequisites in `vps-bootstrap.md` are satisfied.
+1. human review/approval exists for the exact SHA;
+2. exact-head CI and required runtime checks are green;
+3. target host/DNS/TLS/edge state has been observed;
+4. protected `deploy/vps/.env.production` contains real runtime values and no placeholders;
+5. the external edge network exists and the trusted proxy range is narrowly reviewed;
+6. database migration/recovery impact has been reviewed;
+7. backup/restore readiness matches the migration risk;
+8. the previous known-good application SHA/image is retained;
+9. any required controlled Pancake write acceptance is completed separately from generic smoke testing.
 
-## Production configuration preflight
+Do not treat repository docs as evidence that host-only work has happened.
 
-The canonical application preflight remains:
+## Preflight and release
+
+From the clean detached checkout:
 
 ```bash
 pnpm release:check
+bash deploy/vps/deploy.sh
 ```
 
-On VPS it is run inside the `ops` Docker target with the real production environment before migration. It validates PostgreSQL URL shape, Better Auth URL/secret/trusted IP header, Pancake configuration, and shipping policy without printing secret values.
+`deploy.sh` loads current project identity, validates Compose, builds exact-SHA images, waits for PostgreSQL, runs the production preflight, creates a pre-migration custom-format dump, deploys Prisma migrations, starts app/Caddy and waits for `/shop` health.
 
-Production uses:
+The default local backup directory is `/var/backups/$PROJECT_SLUG`, currently `/var/backups/la-na-design`. It is not a substitute for off-site backup.
 
-```text
-BETTER_AUTH_URL=https://<production-domain>
-BETTER_AUTH_IP_HEADER=x-la-client-ip
-DATABASE_URL=postgresql://...@postgres:5432/...
-EDGE_NETWORK_NAME=<existing NPM Docker network>
-EDGE_TRUSTED_PROXY_CIDR=<reviewed NPM trust CIDR>
-```
+After promotion, verify through the real public edge: HTTPS/hostname, buyer-critical flows, security headers, client-IP/rate-limit behavior, service health/logs, and the explicitly approved search-exposure posture. Do not create a live Pancake order merely as a generic release smoke test.
 
-NPM terminates public TLS and appends the forwarding chain. Caddy accepts traffic only over its Docker networks, trusts the configured NPM CIDR with strict right-to-left `X-Forwarded-For` parsing, and overwrites `X-LA-Client-IP` before proxying to Next.js.
+## Application rollback
 
-Cloudflare remains DNS-only for the initial launch. If Cloudflare proxying is enabled later, that trust must be handled at the NPM edge in a separately reviewed change.
-
-## Standard release
-
-1. Record current known-good SHA and candidate SHA.
-2. Confirm review/CI for the candidate.
-3. Review migrations and database recovery requirements.
-4. Confirm off-site backup/restore evidence and current backup freshness.
-5. Confirm Pancake controlled production acceptance is complete.
-6. Confirm the existing NPM stack is healthy and its unrelated proxy hosts are unchanged.
-7. Confirm the external edge network exists and NPM is attached.
-8. Confirm the LA Clothing NPM Proxy Host targets `http://la-clothing-caddy:80` and owns certificate/HTTPS redirect for `APP_DOMAIN`.
-9. On VPS, fetch and detach at the exact candidate SHA; confirm clean worktree.
-10. Set `RELEASE_SHA`, `EDGE_NETWORK_NAME`, and `EDGE_TRUSTED_PROXY_CIDR` in protected `deploy/vps/.env.production` to the reviewed values.
-11. Run:
-
-   ```bash
-   bash deploy/vps/deploy.sh
-   ```
-
-12. The helper validates Compose, builds exact-SHA images, starts/waits for PostgreSQL, runs production `release:check`, creates a pre-migration custom-format dump, deploys Prisma migrations, starts the exact app/Caddy stack, and waits for `/shop` application health.
-13. Verify public HTTPS and non-destructive buyer-flow smoke through **NPM -> Caddy -> app**.
-14. Verify Caddy exposes no host ports and client-IP/rate-limit behavior is not collapsed to the NPM container address.
-15. Review NPM/Caddy/application/PostgreSQL logs and container health.
-16. Record post-release evidence before declaring success.
-
-Do not create a live Pancake order merely as a generic release smoke test. The write acceptance is a controlled, separately recorded gate.
-
-## Rollback triggers
-
-Rollback/recovery is required for material user harm or integrity/security risk, including:
-
-- the app container cannot become healthy;
-- public critical buyer flows fail after promotion;
-- NPM -> Caddy routing or TLS for the LA Clothing host fails after launch changes;
-- client-IP attribution is incorrect enough to break or weaken auth/rate limiting;
-- new auth/authz/security failure is observed;
-- a migration causes data/read/write integrity issues;
-- checkout/Pancake telemetry shows a release-caused unsafe state.
-
-## Application-only rollback
-
-When schema/data remain compatible with the previous application:
+When the previous application remains schema/data compatible and its exact image exists locally:
 
 ```bash
 bash deploy/vps/rollback.sh <PREVIOUS_APPROVED_FULL_SHA>
 ```
 
-The previous exact image must already exist locally. The rollback helper does not rebuild old code during the incident.
+The helper restores the prior application image and waits for app health. It does **not** roll back database migrations/data, edge configuration, DNS/TLS or Pancake side effects.
 
-After rollback:
-
-- wait for `/shop` health;
-- verify public HTTPS through NPM and critical read/checkout/tracking flows;
-- inspect NPM/Caddy/application logs/error state;
-- record the failed candidate and rollback SHA.
-
-Do not automatically reverse additive migrations.
-
-NPM route/certificate rollback is a separate host operation. Do not revert or restart unrelated shared proxy hosts while rolling back LA Clothing.
+After rollback, verify public routing and buyer-critical flows. For ambiguous `SYNC_UNKNOWN` POS outcomes, reconcile the remote state; never issue a blind duplicate create.
 
 ## Database/data recovery
 
-Application rollback is not database rollback.
+Application rollback is not database recovery. For destructive/incompatible migrations or damaged data, use a release-specific recovery plan and validate the restore point before deliberately switching production data.
 
-For destructive/incompatible migrations or damaged data, use the release-specific recovery plan. Restore the selected logical/off-site backup into an isolated target first, validate it, then deliberately switch the application database only after the recovery point is understood.
+## Promotion rollback
 
-Never invent a reverse migration while responding to an incident.
+Promotion-specific containment remains documented in [`promotion-rollback-runbook.md`](./promotion-rollback-runbook.md). The historical `LA_` environment-variable prefix is a technical namespace, not a LA Clothing brand authority.
 
-## Pancake write safety during rollback
+## Evidence to record
 
-Application or database rollback does not undo a Pancake order accepted by the external POS.
-
-For an order in `SYNC_UNKNOWN`, never issue a blind duplicate create request. Use the existing status/reconciliation path to determine the remote outcome before any additional write.
-
-## Promotion and campaign rollback
-
-For promotion and campaign rollback, operational runbooks, kill-switch procedures, and durable pricing revision invalidation, refer to [Promotion rollback runbook](./promotion-rollback-runbook.md).
-
-
-## Post-release evidence
-
-Record without secrets:
-
-- exact deployed application SHA;
-- GitHub CI run for that SHA;
-- runtime Docker image tag/digest;
-- PostgreSQL and Caddy image digests;
-- NPM stack/version identifier where available;
-- selected NPM Docker network and reviewed trust CIDR;
-- NPM Proxy Host target `la-clothing-caddy:80` and TLS status;
-- `release:check` pass/fail;
-- migration set applied;
-- local pre-migration dump path/checksum;
-- off-site backup freshness / restore-drill reference;
-- `/shop` health result;
-- domain/TLS status;
-- public non-destructive smoke result;
-- client-IP attribution/rate-limit sanity result;
-- NPM/Caddy/app/database telemetry review;
-- Pancake production-acceptance evidence;
-- previous known-good SHA retained for rollback;
-- any rollback or `SYNC_UNKNOWN` reconciliation performed.
-
-## Host-only work not performed by repository automation
-
-The repository cannot claim these complete until observed on the real VPS:
-
-- OS hardening/patching;
-- SSH/firewall configuration;
-- Docker Engine/Compose installation;
-- existing NPM inventory and safe network attachment;
-- LA Clothing NPM Proxy Host and certificate issuance;
-- production DNS;
-- real secret installation;
-- off-site backup scheduling and restore drill;
-- external uptime/disk/backup/NPM alerting;
-- controlled Pancake create -> verify -> cancel acceptance;
-- first real production deploy and public smoke.
+Record non-secret evidence appropriate to the release: exact SHA, CI run, runtime image, migration set, backup reference, public health, domain/TLS/edge state, client-IP sanity, telemetry review, and rollback SHA if used.

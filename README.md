@@ -58,7 +58,7 @@ Use these documents for current La.na Design work:
 
 This repository was forked from the storefront Core Kit / Brand #1 history, so older phase notes, audits, task plans and ADRs can still mention LA Clothing, its old domains or its old production environment. Those files are **historical technical evidence only** unless a current La.na Design document explicitly adopts their contract.
 
-The former LA Clothing spec/fact/reconciliation paths are kept only as short tombstones so old links fail safely instead of presenting Brand #1 truth as current truth. Git history remains the archive for their original contents.
+Former LA Clothing source-of-truth and executable-operation paths are either replaced with current La.na Design instructions or kept as short tombstones so old links fail safely instead of presenting Brand #1 truth as current truth. Git history remains the archive for their original contents.
 
 ## Architecture boundaries
 
@@ -75,7 +75,7 @@ The storefront keeps the Core Kit separation between brand presentation and shar
 
 ## Production deployment
 
-The active production architecture is a self-managed VPS using Docker Compose with Next.js, PostgreSQL and Caddy.
+The checked-in deployment architecture targets a self-managed VPS using Docker Compose with Next.js, PostgreSQL and Caddy. Repository configuration is not evidence that the external VPS/DNS/TLS cutover has been completed.
 
 Repository deployment assets live under `deploy/vps/`:
 
@@ -87,8 +87,9 @@ Repository deployment assets live under `deploy/vps/`:
 
 Operational references:
 
-- `docs/decisions/0002-vps-production-infrastructure.md`
+- `docs/decisions/0010-la-na-design-permanent-domain.md`
 - `docs/operations/vps-bootstrap.md`
 - `docs/operations/release-and-rollback.md`
+- `docs/operations/p12-search-exposure.md`
 
 Production secrets and VPS credentials must never be committed to this repository.
