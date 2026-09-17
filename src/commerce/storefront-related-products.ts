@@ -119,7 +119,7 @@ function categoryVisitOrder(assignedKeys: readonly CategoryKey[]): readonly Cate
  * the comparison still falls through to name and id rather than returning `0`, so a row written
  * around the unique index cannot make the sort unstable.
  */
-function compareWithinCategory<T extends RelatedProductBase>(
+export function compareCategoryRankedProducts<T extends RelatedProductBase>(
   left: CategoryRankedProduct<T>,
   right: CategoryRankedProduct<T>,
 ): number {
@@ -167,7 +167,9 @@ export async function listRelatedStorefrontProducts<T extends RelatedProductBase
 
   const assignedKeys = assignedKeysInDeclaredOrder(currentProduct.categoryKeys);
   for (const categoryKey of categoryVisitOrder(assignedKeys)) {
-    const candidates = [...(await loadCategoryCandidates(categoryKey))].sort(compareWithinCategory);
+    const candidates = [...(await loadCategoryCandidates(categoryKey))].sort(
+      compareCategoryRankedProducts,
+    );
     for (const candidate of candidates) {
       if (take(candidate.product)) return related;
     }

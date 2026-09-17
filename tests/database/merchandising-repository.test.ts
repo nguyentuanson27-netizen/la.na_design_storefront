@@ -6,6 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { MerchandisingError } from "../../src/commerce/merchandising-input.ts";
 import { CategoryMembershipError } from "../../src/commerce/category-taxonomy.ts";
 import { createMerchandisingRepository } from "../../src/commerce/merchandising-repository.ts";
+import { listRelatedStorefrontProducts } from "../../src/commerce/storefront-related-products.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -341,4 +342,104 @@ test("G4 the audit reads see every category-keyed owner", async () => {
   assert.deepEqual(await repository.listCategoryEditorialMediaForAudit(100), [
     { categoryKey: "aoDaiTet" },
   ]);
+});
+
+test("M3a a ranked winner outside the product-id sample is still selected", async () => {
+  // Review 5709811796. The previous shape took `limit` rows ordered by `productId` and only then
+  // applied the §7 order, so a merchandised product whose id sorted past the sample was
+  // unreachable — the bound silently changed the answer instead of just capping it.
+  //
+  // The fixture constructs that exact case: seed more products than the per-category bound, read
+  // their ids back in ascending order, and rank the LAST one. Under the old query it would never
+  // have been fetched; under §7 it must come first.
+  const limit = 4;
+  const seeded: string[] = [];
+  for (let index = 0; index < limit * 3; index += 1) {
+    seeded.push(
+      await seed(`sample-${index}`, { name: `Candidate ${String(index).padStart(2, "0")}` }),
+    );
+  }
+
+  for (const productId of seeded) {
+    await repository.replaceCategoryMembership({
+      shopId: testShopId,
+      productId,
+      categoryKeys: ["aoDaiTet"],
+    });
+  }
+
+  const byIdAscending = [...seeded].sort((left, right) => left.localeCompare(right));
+  const winner = byIdAscending[byIdAscending.length - 1];
+  assert.ok(
+    byIdAscending.slice(0, limit).every((id) => id !== winner),
+    "the fixture must place the winner outside the first `limit` product ids",
+  );
+
+  await repository.replaceCategoryProductOrder({
+    shopId: testShopId,
+    input: { categoryKey: "aoDaiTet", productIds: [winner] },
+  });
+
+  const candidates = await repository.listCategoryRelatedCandidates({
+    shopId: testShopId,
+    categoryKey: "aoDaiTet",
+    limit,
+  });
+
+  const ranked = candidates.filter((candidate) => candidate.position !== null);
+  assert.deepEqual(
+    ranked.map((candidate) => candidate.product.id),
+    [winner],
+    "the ranked product must be in the bounded candidate set",
+  );
+
+  // And end to end through the §7 resolver, which is what actually decides the order.
+  const related = await listRelatedStorefrontProducts({
+    currentProduct: { id: seeded[0], categoryKeys: ["aoDaiTet"] },
+    loadManualOverrides: async () => [],
+    loadCategoryCandidates: async (categoryKey) =>
+      repository.listCategoryRelatedCandidates({ shopId: testShopId, categoryKey, limit }),
+    limit,
+  });
+
+  assert.equal(related[0]?.id, winner, "the merchandised rank must lead the related list");
+});
+
+test("M3b a ranked winner outside the name-ordered page still leads the PLP", async () => {
+  // The PLP read was never truncated before ordering, so this does not reproduce the reviewed bug —
+  // it guards the bound newly introduced alongside the fix, which is where the same mistake would
+  // reappear. The ranked product is named last on purpose, so name ordering alone would push it off
+  // the first page.
+  const limit = 3;
+  const ids: string[] = [];
+  for (let index = 0; index < limit * 3; index += 1) {
+    ids.push(await seed(`plp-bound-${index}`, { name: `Item ${String(index).padStart(2, "0")}` }));
+  }
+  const lastByName = ids[ids.length - 1];
+
+  for (const productId of ids) {
+    await repository.replaceCategoryMembership({
+      shopId: testShopId,
+      productId,
+      categoryKeys: ["aoDaiTet"],
+    });
+  }
+  await repository.replaceCategoryProductOrder({
+    shopId: testShopId,
+    input: { categoryKey: "aoDaiTet", productIds: [lastByName] },
+  });
+
+  const page = await repository.listCategoryProducts({
+    shopId: testShopId,
+    categoryKey: "aoDaiTet",
+    limit,
+  });
+
+  assert.equal(page.length, limit);
+  assert.equal(page[0]?.id, lastByName, "the merchandised rank must lead the page");
+  // The rest is the unranked tail by name, and the ranked product is not repeated.
+  assert.deepEqual(
+    page.slice(1).map((product) => product.name),
+    ["Item 00", "Item 01"],
+  );
 });

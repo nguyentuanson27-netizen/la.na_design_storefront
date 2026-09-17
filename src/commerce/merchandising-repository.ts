@@ -20,6 +20,7 @@ import {
   parseCategoryMembership,
   type CategoryKey,
 } from "./category-taxonomy.ts";
+import { compareCategoryRankedProducts } from "./storefront-related-products.ts";
 import {
   MerchandisingError,
   parseCategoryEditorialMedia,
@@ -198,14 +199,78 @@ export function createMerchandisingRepository(client: PrismaClient) {
   }
 
   /**
+   * Candidates for one category, bounded *without* breaking the ADR §7 order.
+   *
+   * The naive shape — one query with `take: limit` — is wrong, and wrong in a way that hides: the
+   * database has to order by *something* to truncate, that something is not the §7 order (which
+   * depends on a rank in a second table and is finished in TypeScript), and so a merchandised
+   * winner outside the sampled slice can never be selected at all. Review `5709811796` caught
+   * exactly that: ordering by `productId` and taking 16 meant a ranked product whose id sorted
+   * 17th was unreachable.
+   *
+   * Two bounded queries fix it without moving the contract into SQL:
+   *
+   * - **ranked** — `CategoryProductOrder` rows for this category, `position` ascending, take `limit`;
+   * - **unranked** — products with membership here and *no* rank here, `name` then `id`, take `limit`.
+   *
+   * Each query orders by the same key it truncates on, so neither can drop a row that would have
+   * won. Their union contains the true first `limit` in §7 order: that prefix is either the first
+   * `limit` ranked products, or every ranked product followed by the first unranked ones — and both
+   * buckets supply `limit` of their own kind. The caller still sorts, so the decision stays in
+   * `compareCategoryRankedProducts()` and remains testable without a database.
+   */
+  async function listCategoryCandidates({
+    shopId,
+    rankCategoryKey,
+    membershipKeys,
+    limit,
+  }: {
+    shopId: number;
+    /** The category whose ranking applies — a PLP ranks by its own key, even for inherited rows. */
+    rankCategoryKey: CategoryKey;
+    /** The membership keys that make a product a candidate at all. */
+    membershipKeys: readonly CategoryKey[];
+    limit: number;
+  }) {
+    if (membershipKeys.length === 0 || limit <= 0) return [];
+    const keys = [...membershipKeys];
+    const productFields = { id: true, slug: true, name: true } as const;
+
+    const [ranked, unranked] = await Promise.all([
+      client.categoryProductOrder.findMany({
+        where: {
+          categoryKey: rankCategoryKey,
+          product: { ...visibleProduct(shopId), categoryMemberships: { some: { categoryKey: { in: keys } } } },
+        },
+        orderBy: [{ position: "asc" }],
+        take: limit,
+        select: { position: true, product: { select: productFields } },
+      }),
+      client.productMirror.findMany({
+        where: {
+          ...visibleProduct(shopId),
+          categoryMemberships: { some: { categoryKey: { in: keys } } },
+          categoryOrders: { none: { categoryKey: rankCategoryKey } },
+        },
+        orderBy: [{ name: "asc" }, { id: "asc" }],
+        take: limit,
+        select: productFields,
+      }),
+    ]);
+
+    return [
+      ...ranked.map((row) => ({ product: row.product, position: row.position })),
+      ...unranked.map((product) => ({ product, position: null as number | null })),
+    ];
+  }
+
+  /**
    * One category's PLP, in the order ADR §5 and §7 specify.
    *
    * Membership matches the whole listing key set, which is the single place parent projection
    * happens (§4.7): a product assigned to a subcategory appears on the parent page because this
-   * query widens, not because a derived row was written.
-   *
-   * Ranked products come first by `position`; the unranked tail is `name` then `id`, the ordering
-   * the rest of the catalogue already uses. `id` is unique, so no tie reaches the database.
+   * query widens, not because a derived row was written. The ranking, by contrast, is keyed by the
+   * page's own category, so `/ao-dai` ranks an inherited product with its `aoDai` position.
    */
   async function listCategoryProducts({
     shopId,
@@ -216,33 +281,15 @@ export function createMerchandisingRepository(client: PrismaClient) {
     categoryKey: CategoryKey;
     limit: number;
   }) {
-    const listingKeys = [...categoryListingKeys(categoryKey)];
-    if (listingKeys.length === 0) return [];
-
-    const memberships = await client.productCategoryMembership.findMany({
-      where: { categoryKey: { in: listingKeys }, product: visibleProduct(shopId) },
-      select: { product: { select: { id: true, slug: true, name: true } } },
-      distinct: ["productId"],
+    const candidates = await listCategoryCandidates({
+      shopId,
+      rankCategoryKey: categoryKey,
+      membershipKeys: categoryListingKeys(categoryKey),
+      limit,
     });
 
-    const ranks = await client.categoryProductOrder.findMany({
-      where: { categoryKey, productId: { in: memberships.map((row) => row.product.id) } },
-      select: { productId: true, position: true },
-    });
-    const positionByProductId = new Map(ranks.map((row) => [row.productId, row.position]));
-
-    return memberships
-      .map((row) => ({ product: row.product, position: positionByProductId.get(row.product.id) ?? null }))
-      .sort((left, right) => {
-        const leftRanked = left.position !== null;
-        const rightRanked = right.position !== null;
-        if (leftRanked !== rightRanked) return leftRanked ? -1 : 1;
-        if (leftRanked && rightRanked && left.position !== right.position) {
-          return (left.position ?? 0) - (right.position ?? 0);
-        }
-        const byName = left.product.name.localeCompare(right.product.name);
-        return byName !== 0 ? byName : left.product.id.localeCompare(right.product.id);
-      })
+    return candidates
+      .sort(compareCategoryRankedProducts)
       .slice(0, limit)
       .map((entry) => entry.product);
   }
@@ -335,11 +382,14 @@ export function createMerchandisingRepository(client: PrismaClient) {
   }
 
   /**
-   * Stage 2–3 candidates for one category key.
+   * Stage 2–3 candidates for one exact category key.
    *
    * Returned unordered on purpose: `listRelatedStorefrontProducts()` owns the §7 order so it can be
    * pinned by domain tests without a database. The `position` carried alongside is this category's
    * rank, which is what lets related products agree with the PLP the visitor came from.
+   *
+   * Membership is the exact key rather than the listing set, because the resolver visits each key
+   * in turn and widening here would make stage 2 and stage 3 return the same rows.
    */
   async function listCategoryRelatedCandidates({
     shopId,
@@ -350,24 +400,12 @@ export function createMerchandisingRepository(client: PrismaClient) {
     categoryKey: CategoryKey;
     limit: number;
   }) {
-    const memberships = await client.productCategoryMembership.findMany({
-      where: { categoryKey, product: visibleProduct(shopId) },
-      take: limit,
-      orderBy: [{ productId: "asc" }],
-      select: { product: { select: { id: true, slug: true, name: true } } },
+    return listCategoryCandidates({
+      shopId,
+      rankCategoryKey: categoryKey,
+      membershipKeys: [categoryKey],
+      limit,
     });
-    if (memberships.length === 0) return [];
-
-    const ranks = await client.categoryProductOrder.findMany({
-      where: { categoryKey, productId: { in: memberships.map((row) => row.product.id) } },
-      select: { productId: true, position: true },
-    });
-    const positionByProductId = new Map(ranks.map((row) => [row.productId, row.position]));
-
-    return memberships.map((row) => ({
-      product: row.product,
-      position: positionByProductId.get(row.product.id) ?? null,
-    }));
   }
 
   return {
