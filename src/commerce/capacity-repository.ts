@@ -218,15 +218,15 @@ export function createCapacityRepository(
       async (tx) => {
         await acquireCatalogSyncLock(tx, shopId);
         await requireVisibleProduct(tx, shopId, productId);
-      await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
+        await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
 
-      const stored = await tx.productSellingPolicy.upsert({
-        where: { productId },
-        create: { productId, sellingMode, negativeStockLimit },
-        update: { sellingMode, negativeStockLimit },
-        select: policySelect,
-      });
-      const resolved = resolveSellingPolicy(stored);
+        const stored = await tx.productSellingPolicy.upsert({
+          where: { productId },
+          create: { productId, sellingMode, negativeStockLimit },
+          update: { sellingMode, negativeStockLimit },
+          select: policySelect,
+        });
+        const resolved = resolveSellingPolicy(stored);
         await observePolicyChange(tx, productId, resolved.sellingMode, clock());
         return resolved;
       },
@@ -253,11 +253,11 @@ export function createCapacityRepository(
       async (tx) => {
         await acquireCatalogSyncLock(tx, shopId);
         await requireVisibleProduct(tx, shopId, productId);
-      await tx.productSellingPolicy.deleteMany({ where: { productId } });
-      // The missing-row answer, from the one resolver that owns it.
-      const resolved = resolveSellingPolicy(null);
-      // Clearing the policy returns the product to STANDARD, which ends any open cycle — the same
-      // boundary as switching the mode explicitly.
+        await tx.productSellingPolicy.deleteMany({ where: { productId } });
+        // The missing-row answer, from the one resolver that owns it.
+        const resolved = resolveSellingPolicy(null);
+        // Clearing the policy returns the product to STANDARD, which ends any open cycle — the same
+        // boundary as switching the mode explicitly.
         await observePolicyChange(tx, productId, resolved.sellingMode, clock());
         return resolved;
       },
