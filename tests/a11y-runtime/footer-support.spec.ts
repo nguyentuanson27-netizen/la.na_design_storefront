@@ -11,7 +11,9 @@ import {
   describePublicAddress,
   describePublicSupportHours,
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_LEGAL_FACTS,
 } from "../../src/content/public-brand-facts.ts";
+import { POLICY_HUB_TOPICS } from "../../src/routes/evergreen-model.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3224;
@@ -75,43 +77,90 @@ test.afterAll(async () => {
   await stopServer();
 });
 
-test("U5 footer exposes canonical factual trust without unapproved support routes", async ({ page }) => {
+test("F9a footer renders four final groups, canonical destinations and exact legal block", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/search`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
   const footer = page.locator("footer");
   await expect(footer).toBeVisible();
-  await expect(footer).toContainText("Thanh toán khi nhận hàng (COD).");
-  await expect(footer).toContainText(/Đơn trên 750\.000.*hoặc từ 4 sản phẩm\./);
-  await expect(footer).toContainText("Tra cứu trạng thái đơn COD bằng mã đơn và số điện thoại đã dùng khi đặt hàng.");
-  await expect(footer.locator('a[href="/track-order"]')).toBeVisible();
 
-  // U32b/B2 — the contact facts the Organization JSON-LD marks up have to be facts a reader can
-  // actually see, and the footer is the site-wide surface that carries them. Asserted against the
-  // fact authority, not against literals, so the visible text and the markup cannot drift apart.
+  const groups = footer.locator("[data-footer-group]");
+  await expect(groups).toHaveCount(4);
+  for (const heading of ["La.na Design", "Mua sắm", "Hỗ trợ khách hàng", "Thông tin & chính sách"]) {
+    await expect(footer.getByRole("heading", { level: 2, name: heading, exact: true })).toBeVisible();
+  }
+
+  // F1/F9a: current repository authority uses the approved display mark as the master-wordmark
+  // fallback. Do not derive a new image from the favicon/social card while no binary master logo is
+  // committed.
+  const brandHome = footer.getByRole("link", { name: "La.na Design — Trang chủ" });
+  await expect(brandHome).toBeVisible();
+  await expect(brandHome).toContainText("La.na Design");
+  await expect(footer).toContainText("Charismatic in every yard of cloth.");
+
+  // Support facts stay projected from Brand Config rather than repeated in presentation.
   await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.telephone);
   await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.email);
   await expect(footer).toContainText(describePublicAddress());
   await expect(footer).toContainText(describePublicSupportHours());
-  // Visible text is the owner's spelling; the dial target and the Organization markup both carry
-  // the international one. Both come from the authority, so they cannot describe two numbers.
   await expect(
     footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}"]`),
   ).toBeVisible();
   await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
   await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
 
-  // U33a built `/about` and `/contact`, U33b built `/shipping` and `/returns`, and U33c built
-  // `/size-guide` from owner-approved facts, so they are now linked. The rest of the list stays absent:
-  // those routes have no approved facts behind them yet, and linking a page this repository has not built
-  // is how a 404 reaches a buyer looking for a policy.
-  for (const href of ["/about", "/contact", "/shipping", "/returns", "/size-guide"]) {
-    await expect(footer.locator(`a[href="${href}"]`)).toBeVisible();
-  }
-  for (const href of ["/shipping-returns", "/faq"]) {
-    await expect(footer.locator(`a[href="${href}"]`)).toHaveCount(0);
+  const shopping = footer.getByRole("navigation", { name: "Mua sắm" });
+  const expectedShopping = [
+    ["Áo dài", "/ao-dai"],
+    ["Set đồ", "/set-do"],
+    ["Váy, đầm", "/vay-dam"],
+    ["Hàng mới về", "/new-arrivals"],
+    ["Sale", "/sale"],
+    ["Bộ sưu tập", "/collections"],
+  ] as const;
+  for (const [label, href] of expectedShopping) {
+    await expect(shopping.getByRole("link", { name: label, exact: true })).toHaveAttribute("href", href);
   }
 
+  const support = footer.getByRole("navigation", { name: "Hỗ trợ khách hàng" });
+  const policy = footer.getByRole("navigation", { name: "Thông tin và chính sách" });
+  for (const topic of POLICY_HUB_TOPICS.slice(0, 6)) {
+    await expect(support.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
+  }
+  for (const topic of POLICY_HUB_TOPICS.slice(6)) {
+    await expect(policy.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
+  }
+
+  const legal = footer.locator("[data-footer-legal]");
+  await expect(legal).toContainText(PUBLIC_LEGAL_FACTS.legalEntityName);
+  await expect(legal).toContainText(PUBLIC_LEGAL_FACTS.registeredAddress);
+  await expect(legal).toContainText(
+    `MST: ${PUBLIC_LEGAL_FACTS.taxCode} - ngày cấp: ${PUBLIC_LEGAL_FACTS.taxIdIssueDate}`,
+  );
+  await expect(legal).toContainText(`Email: ${PUBLIC_LEGAL_FACTS.legalEmail}`);
+
+  await expect(footer.locator('a[href="/lookbook"]')).toHaveCount(0);
+  await expect(footer.locator('a[href="/flash-sale"]')).toHaveCount(0);
+  await expect(footer.getByText(/newsletter/i)).toHaveCount(0);
+  await expect(footer.getByText(/đại diện pháp luật|legal representative/i)).toHaveCount(0);
+  await expect(footer.locator("details, summary")).toHaveCount(0);
+
+  // Every active same-origin footer destination must resolve. Fragments are client-side anchors, so
+  // request the path portion while preserving the link's configured href in the UI assertion above.
+  const internalHrefs = await footer.locator('a[href^="/"]').evaluateAll((links) =>
+    [...new Set(links.map((link) => link.getAttribute("href")).filter((href): href is string => Boolean(href)))],
+  );
+  for (const href of internalHrefs) {
+    const path = href.split("#")[0] || "/";
+    const destination = await page.request.get(`${BASE_URL}${path}`);
+    expect(destination.status(), href).toBeLessThan(400);
+  }
+
+  // Mobile keeps all groups expanded and usable with no horizontal overflow.
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(page.locator("footer [data-footer-group]")).toHaveCount(4);
+  await expect(page.locator("footer details, footer summary")).toHaveCount(0);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 
