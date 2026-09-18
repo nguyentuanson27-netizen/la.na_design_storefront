@@ -25,7 +25,7 @@ function candidateVariants(variantCount: number) {
 }
 
 describe("Merchant public-feed repository query envelope", () => {
-  it("loads 5,000 variants completely while the whole generation stays at eight DB operations", async () => {
+  it("loads 5,000 variants completely while the whole generation stays at nine DB operations", async () => {
     const calls = new Map<string, number>();
     const count = (name: string) => calls.set(name, (calls.get(name) ?? 0) + 1);
     const counted = <T>(name: string, value: T) => async () => {
@@ -58,6 +58,9 @@ describe("Merchant public-feed repository query envelope", () => {
         ),
       },
       compositeComponentMirror: { findMany: counted("compositeComponentMirror", []) },
+      // I9 — the availability-cycle read. One flat query for the whole page, exactly like the
+      // warehouse and promotion reads, so it cannot become per-offer as the catalog grows.
+      variantAvailabilityCycle: { findMany: counted("variantAvailabilityCycle", []) },
       $queryRawUnsafe: async (sql: string) => {
         if (sql.includes('FROM "ProductMirror" p')) {
           count("productFactsJoin");
@@ -132,6 +135,9 @@ describe("Merchant public-feed repository query envelope", () => {
       warehouseStock: 1,
       compositeComponentMirror: 1,
       promotionJoin: 1,
+      // I9 — one per generation, not one per offer. That is the property this envelope exists to
+      // hold, and the reason the constant could move from eight to nine without weakening it.
+      variantAvailabilityCycle: 1,
     });
   });
 });

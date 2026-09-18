@@ -6,6 +6,7 @@ import {
   deriveStorefrontProjectionSelection,
 } from "../../src/commerce/storefront-projection.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 function variant(
   id: string,
@@ -44,6 +45,11 @@ test("storefront projection keeps standalone products on the existing size/color
       purchasable: true,
       isPreorderSale: false,
       unavailableReason: null,
+      availability: fixtureAvailability({
+        purchasable: true,
+        isPreorderSale: false,
+        unavailableReason: null,
+      }),
       kindKey: null,
       kindLabel: null,
     },

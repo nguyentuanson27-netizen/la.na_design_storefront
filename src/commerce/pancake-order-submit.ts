@@ -13,6 +13,7 @@ import type {
   PromotionCandidateReadClient,
 } from "./promotion-candidate-repository.ts";
 import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
+import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
 import {
   capacityFloorForMode,
   resolveSellingPolicy,
@@ -879,15 +880,26 @@ export function createPancakeOrderSubmissionService(
     }
 
     try {
-      const confirmed = await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: {
-          state: "CONFIRMED",
-          pancakeOrderId,
-          syncErrorCode: null,
-        },
+      const confirmedAt = readNow();
+      const confirmed = await client.$transaction(async (tx) => {
+        const updated = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: {
+            state: "CONFIRMED",
+            pancakeOrderId,
+            syncErrorCode: null,
+          },
+        });
+        if (updated.count !== 1) return false;
+
+        // I7 is part of the local CONFIRMED transition. The remote order is already known to exist,
+        // and complete I7 capacity metadata is copied into immutable history in this transaction.
+        // Rolling/pre-I7 reservations intentionally produce no I7 row rather than re-deriving one
+        // from mutable stock or policy after the Pancake write.
+        await createPreorderSnapshotAtConfirmation(tx, order.id, confirmedAt);
+        return true;
       });
-      if (confirmed.count !== 1) {
+      if (!confirmed) {
         const current = await client.orderMirror.findUniqueOrThrow({
           where: { id: order.id },
           select: { state: true, pancakeOrderId: true, syncErrorCode: true },

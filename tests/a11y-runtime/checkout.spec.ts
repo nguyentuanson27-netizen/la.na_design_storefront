@@ -38,6 +38,7 @@ let server: ChildProcess | undefined;
 let serverOutput = "";
 let cartId = "";
 let testVariantId = "";
+let nextPancakeOrderIdSeed = 987_654_321;
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -110,6 +111,9 @@ async function startServer({
       PANCAKE_A11Y_PRODUCT_ID: productExternalId,
       PANCAKE_A11Y_VARIATION_ID: variationExternalId,
       PANCAKE_A11Y_WAREHOUSE_ID: warehouseExternalId,
+      // Each test restarts the fixture server. I7 keeps confirmed history immutable, so a restarted
+      // mock must not reuse the same external order id and collide with OrderMirror.pancakeOrderId.
+      PANCAKE_A11Y_ORDER_ID_SEED: String(nextPancakeOrderIdSeed++),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -123,15 +127,17 @@ async function cleanupRateLimits() {
 }
 
 async function cleanupDatabase() {
-  await prisma.orderLineSnapshot.deleteMany({}).catch(() => {});
-  // I6b — reservations reference their order and variant with `onDelete: Restrict` (ADR 0014 §13),
-  // deliberately: cascading them away would silently free capacity that is still counting. Now that
-  // a real checkout takes a hold, a fixture that deletes orders or products has to clear the ledger
-  // first, or the delete is refused.
-  await prisma.variantCapacityReservation.deleteMany({});
-  await prisma.orderMirror.deleteMany({});
-  await prisma.cartItem.deleteMany({});
-  await prisma.cart.deleteMany({});
+  // I6b capacity rows may be removed in test cleanup, but I7 confirmed snapshots are deliberately
+  // immutable and hold their OrderMirror with RESTRICT. This fixture uses a per-run external id, so
+  // confirmed order history is left intact instead of teaching tests to bypass production history
+  // guarantees merely to obtain a clean database.
+  if (cartId) {
+    await prisma.variantCapacityReservation.deleteMany({
+      where: { order: { sourceCartId: cartId } },
+    });
+    await prisma.cartItem.deleteMany({ where: { cartId } });
+    await prisma.cart.deleteMany({ where: { id: cartId } });
+  }
   await prisma.productMirror.deleteMany({
     where: { pancakeProductId: productExternalId },
   });
@@ -271,15 +277,11 @@ test.afterEach(async () => {
   await stopServer();
   await cleanupRateLimits();
   if (cartId) {
-    await prisma.orderLineSnapshot.deleteMany({
-      where: { order: { sourceCartId: cartId } },
-    }).catch(() => {});
-    // I6b — the ledger holds its order with `onDelete: Restrict`, so it goes first here too. This
-    // per-test cleanup is the one that actually runs after a confirmed checkout.
+    // Confirmed I7 history is immutable and intentionally not test-cleaned. Remove only mutable
+    // capacity/cart fixtures; run-scoped ids prevent the retained historical rows from colliding.
     await prisma.variantCapacityReservation.deleteMany({
       where: { order: { sourceCartId: cartId } },
     });
-    await prisma.orderMirror.deleteMany({ where: { sourceCartId: cartId } });
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
@@ -398,6 +400,7 @@ for (const { name, viewport } of [
     const confirmed = await prisma.orderMirror.findFirstOrThrow({
       where: { sourceCartId: cartId, state: "CONFIRMED" },
       select: {
+        id: true,
         publicCode: true,
         pancakeOrderId: true,
         provinceRef: true,
@@ -406,6 +409,18 @@ for (const { name, viewport } of [
         guestName: true,
         guestPhone: true,
         addressDetail: true,
+        preorderSnapshot: {
+          select: {
+            confirmedAt: true,
+            preorderReadyAt: true,
+            lines: {
+              select: {
+                state: true,
+                preorderReadyAt: true,
+              },
+            },
+          },
+        },
       },
     });
     expect(confirmed.pancakeOrderId).toMatch(/^\d+$/);
@@ -416,6 +431,17 @@ for (const { name, viewport } of [
     expect(confirmed.guestPhone).toBe("0901234567");
     expect(confirmed.addressDetail).toBe("12 Đường A");
     expect(confirmed.publicCode).toMatch(/^LA-/);
+
+    // I7 production seam regression: this checkout reaches the real pancake-order-submit
+    // confirmation transaction. A future edit that confirms the order but drops the snapshot call
+    // must fail here, rather than being hidden by helper-only I7 tests.
+    expect(await prisma.orderPreorderSnapshot.count({ where: { orderId: confirmed.id } })).toBe(1);
+    expect(confirmed.preorderSnapshot).not.toBeNull();
+    expect(confirmed.preorderSnapshot!.confirmedAt).toBeInstanceOf(Date);
+    expect(confirmed.preorderSnapshot!.preorderReadyAt).toBeNull();
+    expect(confirmed.preorderSnapshot!.lines).toHaveLength(1);
+    expect(confirmed.preorderSnapshot!.lines[0]?.state).toBe("READY");
+    expect(confirmed.preorderSnapshot!.lines[0]?.preorderReadyAt).toBeNull();
 
     await assertCheckoutAccessibility(page);
 

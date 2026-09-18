@@ -1,4 +1,7 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import { vietnamCalendarDate } from "./availability-cycle.ts";
+import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 
 import {
   mapMerchantOffers,
@@ -14,7 +17,10 @@ import {
 } from "./product-media.ts";
 import { buildStorefrontProductProjection } from "./storefront-projection.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
-import type { StorefrontVariantFacts } from "./storefront-product.ts";
+import type {
+  StorefrontAvailabilityDates,
+  StorefrontVariantFacts,
+} from "./storefront-product.ts";
 import { toMerchantApparelWireValues } from "./merchant-apparel-facts.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "./product-merchant-facts-repository.ts";
 
@@ -35,6 +41,10 @@ const productSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
+  // I9 — the feed must know the selling mode, or `isPreorderSale` is false for every variant and
+  // ADR 0011's backorder row can never appear however good the date is. Read through
+  // `resolveSellingPolicy` below so a missing row means the approved default, not "unknown".
+  sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
 } satisfies Prisma.ProductMirrorSelect;
 
 const variantSelection = {
@@ -215,6 +225,7 @@ function toCandidateProduct(
   product: LoadedCandidateProduct,
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
   now: Date,
+  availabilityDates: StorefrontAvailabilityDates,
 ): MerchantCandidateProduct {
   const variantImageUrls = product.variants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
@@ -268,6 +279,8 @@ function toCandidateProduct(
       componentGroups: [],
       hasCompositeGraph,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+      sellingPolicy: resolveSellingPolicy(product.sellingPolicy),
+      availabilityDates,
     }),
     apparelOverrides:
       product.merchantFacts === null
@@ -427,6 +440,17 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     }
 
     const campaignsByVariantId = buildCampaignsByVariantId({ variants, promotionRows });
+
+    // I9 — the persisted cycle dates, read once for the whole page of candidates rather than per
+    // offer. This is a READ: a feed run must never open, move or close a cycle, or the published
+    // date would depend on when the feed last happened to run (ADR 0011's moving product fact).
+    const availabilityDates: StorefrontAvailabilityDates = {
+      byVariantId: await readVariantAvailabilityDates(
+        client,
+        variants.map((variant) => variant.id),
+      ),
+      today: vietnamCalendarDate(now),
+    };
     const loadedProducts: LoadedCandidateProduct[] = products.map((product) => ({
       ...product,
       content: contentByProductId.get(product.id) ?? null,
@@ -436,7 +460,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
 
     return Object.freeze({
       products: loadedProducts.map((product) =>
-        toCandidateProduct(product, campaignsByVariantId, now),
+        toCandidateProduct(product, campaignsByVariantId, now, availabilityDates),
       ),
       nextPricingTransitionAtMs: nextRelevantPricingTransitionAtMs(promotionRows, now),
     });

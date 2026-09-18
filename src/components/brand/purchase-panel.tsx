@@ -26,7 +26,7 @@ import {
 export function PurchasePanelView({ controller }: Readonly<{ controller: VariantSelectionController }>) {
   const { view, selection, isPending, message, chooseKind, chooseColor, chooseSize, addToBag } =
     controller;
-  const { priceDisplay } = view;
+  const { priceDisplay, availabilityDateLabel } = view;
 
   const kindFieldset = view.hasKindOptions ? (
     <fieldset className="mt-8">
@@ -113,6 +113,26 @@ export function PurchasePanelView({ controller }: Readonly<{ controller: Variant
       <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
         {message || view.unavailableMessage || (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : "")}
       </p>
+
+      {/*
+        I9 — Google requires the availability date to be visible on the landing page beside the
+        `backorder` it publishes in the feed, so this line is what makes that row truthful rather
+        than a claim only a crawler sees.
+
+        Its own live region, not appended to the status line above: that one carries transient
+        add-to-bag feedback, and merging them would let a cart message overwrite a standing fact
+        about the selected size. `aria-live="polite"` because the text changes as the shopper
+        switches variants, which is exactly a dynamic update a screen-reader user should hear.
+
+        Rendered only when the shared availability resolved a date for the SELECTED variant, so
+        owner rule 10's three conditions need no logic here: nothing before a choice is made,
+        never another variant's date, and nothing once the cycle has lapsed.
+      */}
+      {availabilityDateLabel === null ? null : (
+        <p className="mt-1 text-xs text-black/55" role="status" aria-live="polite">
+          Dự kiến có hàng: {availabilityDateLabel}
+        </p>
+      )}
     </div>
   );
 }

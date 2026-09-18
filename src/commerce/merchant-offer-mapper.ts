@@ -41,6 +41,7 @@
  * Composite offers stay `COMPOSITE_DEFERRED` for Merchant v1, exactly as M1 audited them.
  */
 
+import type { MerchantAvailability as SharedMerchantAvailability } from "./availability-projection.ts";
 import {
   classifyExternalIdentifier,
   classifyMerchantAvailability,
@@ -81,7 +82,12 @@ export const MERCHANT_SIZE_MAX_LENGTH = 100;
 
 export const MERCHANT_MARKET_UNRESOLVED = "MERCHANT_MARKET_UNRESOLVED";
 
-export type MerchantAvailability = "in_stock" | "out_of_stock";
+/**
+ * I9 — the shared vocabulary, re-exported so the feed and JSON-LD cannot drift apart on it. ADR
+ * 0011 adds `backorder`; Google's `preorder` is deliberately absent, because it means an unreleased
+ * product and La.na's internal preorder is a released one.
+ */
+export type MerchantAvailability = SharedMerchantAvailability;
 
 export type MerchantExclusionReason =
   | "COMPOSITE_DEFERRED"
@@ -172,6 +178,8 @@ export type MerchantOffer = Readonly<{
   imageLink: string;
   additionalImageLinks: readonly string[];
   availability: MerchantAvailability;
+  /** ADR 0011: required beside `backorder`, null on every other state. */
+  availabilityDate: string | null;
   /**
    * The effective storefront price in Vietnamese dong, which is the denomination the mirrored
    * catalog holds. Turning it into a Merchant `price` string with an ISO currency belongs to the
@@ -479,8 +487,44 @@ function draftCandidate(
   const priceVnd = resolveMerchantPrice(addressableOption?.price ?? null);
   if (addressableOption !== null && priceVnd === null) reasons.add("PRICE_UNRESOLVED");
 
-  const availabilityClass = classifyMerchantAvailability(variation.stockQuantity);
-  if (availabilityClass === "AVAILABILITY_UNRESOLVED") reasons.add("AVAILABILITY_UNRESOLVED");
+  // I9 — availability comes from the shared projection, not from a second read of raw stock.
+  //
+  // Before I9 this classified `variation.stockQuantity` directly while product JSON-LD read the
+  // page projection, so the two published surfaces could describe the same variant differently —
+  // exactly the parity ADR 0011 requires and Google enforces. The projection option already knows
+  // the answer, including the `backorder` row and its date, so the feed now reads it.
+  //
+  // A variant with no addressable option cannot state an availability at all; that is the same
+  // fail-closed result the old classifier produced for unreadable stock.
+  const availability = addressableOption?.availability ?? null;
+  const isBackorder = availability?.published === true && availability.merchant === "backorder";
+
+  // U27a, kept: a per-warehouse row the catalog cannot read makes the SUM unverifiable — `[5, -3]`
+  // adds to an ordinary 2 — so Merchant refuses the exact quantity claim rather than publishing a
+  // number it cannot stand behind.
+  //
+  // The exception is ADR 0011's backorder row, and it is narrow on purpose. Under ADR 0014 a
+  // preorder variant is EXPECTED to go negative, so the M1 rule would otherwise exclude exactly the
+  // state I9 exists to publish. It is sound because a backorder offer asserts no quantity at all:
+  // it says orders are accepted and the item is available by a date, and that date comes from the
+  // cycle rather than from the stock number this gate mistrusts.
+  if (classifyMerchantAvailability(variation.stockQuantity) === "AVAILABILITY_UNRESOLVED" && !isBackorder) {
+    reasons.add("AVAILABILITY_UNRESOLVED");
+  }
+
+  // The projection's own refusal. Reported only when availability is the thing that could not be
+  // resolved: a variant whose option is ambiguous, unmapped or unpriced already has its own reason
+  // here, and the projection withholds availability as a *consequence* of that — repeating it would
+  // send an operator looking at stock for a problem that is not there.
+  if (
+    addressableOption !== null &&
+    availability !== null &&
+    !availability.published &&
+    (addressableOption.unavailableReason === null ||
+      addressableOption.unavailableReason === "OUT_OF_STOCK")
+  ) {
+    reasons.add("AVAILABILITY_UNRESOLVED");
+  }
 
   const { imageLink, additionalImageLinks } = resolveOfferImages(product, variation.variantId);
   if (imageLink === null) reasons.add("MEDIA_UNRESOLVED");
@@ -541,7 +585,13 @@ function draftCandidate(
       link: new URL(path, origin).href,
       imageLink,
       additionalImageLinks: Object.freeze(additionalImageLinks),
-      availability: availabilityClass === "IN_STOCK" ? "in_stock" : "out_of_stock",
+      availability: availability !== null && availability.published ? availability.merchant : "out_of_stock",
+      /**
+       * Google requires `availability_date` for `backorder` and accepts it for nothing else here,
+       * so this is null on every other row by construction rather than by a caller remembering.
+       */
+      availabilityDate:
+        availability !== null && availability.published ? availability.availabilityDate : null,
       priceVnd,
       gender: apparel.facts.gender,
       ageGroup: apparel.facts.ageGroup,

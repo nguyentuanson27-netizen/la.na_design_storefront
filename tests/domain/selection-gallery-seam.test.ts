@@ -8,6 +8,7 @@ import ts from "typescript";
 
 import type { StorefrontProductMedia, TrustedProductImage } from "../../src/commerce/product-media.ts";
 import type { StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 import { resolveGalleryModel } from "../../src/components/headless/resolve-gallery-model.ts";
 import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
 import { collectModuleEdges } from "../support/boundary-verifier.ts";
@@ -23,8 +24,11 @@ const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
  * and the component surfaces that make it wireable.
  */
 
-function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
-  return {
+function option({
+  availability,
+  ...overrides
+}: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
+  const merged = {
     id: "variant-1",
     pancakeVariationId: "pancake-1",
     kindKey: null,
@@ -35,9 +39,15 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     basePriceVnd: null,
     isDiscounted: false,
     purchasable: true,
+    isPreorderSale: false,
     unavailableReason: null,
     ...overrides,
-  } as StorefrontProjectionOption;
+  };
+  // I9 — derived from what the fixture already says rather than cast away, so an option here can
+  // never carry an availability the shipped projection would not produce for it.
+  return availability === undefined
+    ? withFixtureAvailability(merged)
+    : { ...merged, availability };
 }
 
 function image(n: number): TrustedProductImage {

@@ -1,3 +1,4 @@
+import { serializeVietnamAvailabilityDate } from "./availability-cycle.ts";
 import type { MerchantMarketPolicy, MerchantOffer } from "./merchant-offer-mapper.ts";
 import { MAX_MERCHANT_FEED_BYTES, MAX_MERCHANT_OFFERS } from "./merchant-feed-limits.ts";
 import { BRAND } from "../brand/index.ts";
@@ -61,6 +62,14 @@ class BoundedXmlWriter {
   }
 }
 
+function merchantAvailabilityDate(value: string): string {
+  const serialized = serializeVietnamAvailabilityDate(value);
+  if (serialized === null) {
+    throw new MerchantFeedSerializationError("Merchant availability date must be a real YYYY-MM-DD calendar day");
+  }
+  return serialized.merchant;
+}
+
 export function assertMerchantOfferCount(count: number): void {
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new MerchantFeedSerializationError("Merchant offer count must be a non-negative integer");
@@ -87,6 +96,12 @@ function itemXml(offer: MerchantOffer, market: MerchantMarketPolicy): string {
     `<g:image_link>${xml(offer.imageLink)}</g:image_link>\n` +
     additionalImages +
     `<g:availability>${xml(offer.availability)}</g:availability>\n` +
+    // I9 — Google requires `availability_date` beside `backorder` and accepts it nowhere else on
+    // this feed, so the element is emitted exactly when the mapper resolved one. ADR 0011 forbids
+    // fabricating it, which is why there is no fallback branch here.
+    (offer.availabilityDate === null
+      ? ""
+      : `<g:availability_date>${xml(merchantAvailabilityDate(offer.availabilityDate))}</g:availability_date>\n`) +
     `<g:price>${xml(String(offer.priceVnd))} ${xml(market.currency)}</g:price>\n` +
     `<g:brand>${xml(offer.brand)}</g:brand>\n` +
     `<g:mpn>${xml(offer.mpn)}</g:mpn>\n` +

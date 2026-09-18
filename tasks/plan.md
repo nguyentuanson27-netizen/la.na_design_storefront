@@ -433,7 +433,16 @@ Required: approve G4 and G5; accept G1 and G2 evidence; accept G3 transport deci
 
 **Work:** standard sold-out → out of stock; oversell above hard limit → in stock; internal preorder on released sold-out product → exact G1-approved Merchant backorder/date contract and matching structured-data availability/date semantics; hard limit → out of stock.
 
-**Acceptance:** Merchant feed and structured data reflect buyer ability using valid external vocabulary/date semantics and remain in parity while storefront says `Đặt trước`.
+**Amended 2026-09-18 — the date authority arrived, and it carries persistence.** The owner approved
+an automatic **variant-level** preorder availability cycle (ADR 0011 §`availability_date` authority
+— approved 2026-09-18), which unblocks the backorder row and enlarges this task beyond the M
+estimate above: it adds a `VariantAvailabilityCycle` table and its migration, cycle observation in
+the catalog sync and in the admin selling-policy write, and the minimum product-page presentation
+Google requires — `Dự kiến có hàng: <date>` on the selected variant only, because
+`availability_date` must be visible on the landing page. The page work is that line and nothing
+else; the F8a/F7b redesign is not pulled forward.
+
+**Acceptance:** Merchant feed and structured data reflect buyer ability using valid external vocabulary/date semantics and remain in parity while storefront says `Đặt trước`; the same persisted cycle date appears on both published surfaces and on the product page for the selected variant; an absent or expired date withholds the offer from both rather than relabelling it.
 
 **Verification:** mapper/feed + structured-data tests + Merchant/structured-data parity audits.
 

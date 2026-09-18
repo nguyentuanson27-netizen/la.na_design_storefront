@@ -401,6 +401,42 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   Provenance: given by the repository owner in Claude Code session
   [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
   in direct answer to the open Checkpoint B row.
+
+  **Superseded in part on 2026-09-18**: the owner supplied the missing date authority, so the
+  `backorder` row is no longer blocked. See the next entry. The refusals above are unchanged —
+  `today + 15`, order confirmation and campaign expiry remain forbidden as date sources.
+- **I9 — automatic variant-level preorder availability-date authority** — **approved 2026-09-18**.
+  This is the authority ADR 0011 was waiting for, and it supersedes that ADR's
+  "blocked until a product-level authority exists" state. It is **variant-level**, finer than the
+  product-level authority ADR 0011 anticipated: two sizes of one product sell out on different days,
+  so one date per product would be wrong for at least one size.
+
+  The owner's rules, verbatim in substance:
+
+  1. The rule applies per **size/variant**.
+  2. Only for variants whose internal mode is `preorder`.
+  3. A preorder availability cycle starts when stock goes from `> 0` to `<= 0`; **or** when the
+     feature starts watching and the variant is already `preorder` with stock `<= 0`, using the
+     first day the website observed that state; **or** when an admin turns `preorder` off and on
+     again while stock is still `<= 0`, which is a new cycle.
+  4. Cycle dates are in Vietnam time, UTC+7.
+  5. `availability_date` = cycle start date + **15 calendar days**.
+  6. The date is **persisted fixed**. Never `today + 15` recomputed per feed run.
+  7. When stock returns `> 0` the old cycle ends; the next `<= 0` creates a new cycle and date.
+  8. If the date has passed and stock is still `<= 0`: do **not** add 15 more days; stop publishing
+     `backorder` for that cycle; the product page hides the date line; the variant may still keep
+     shopper-facing `Đặt trước` under the capacity policy.
+  9. The Merchant feed and the JSON-LD consume the **same** canonical projection and date.
+  10. On the product page, only after the shopper selects the preorder variant, show a small line
+      `Dự kiến có hàng: <date>`; never another variant's date; hidden when expired.
+  11. This Merchant date rule must **not** be used for the I7 order ETA.
+  12. I7's order ETA remains order confirmation + 15 calendar days, decided separately.
+  13. The owner **approved** the small migration/persistence that stores the cycle start and date
+      per variant.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01P6QRsuGorqgLbRBtsHhXkR`](https://claude.ai/code/session_01P6QRsuGorqgLbRBtsHhXkR),
+  as the I9 task brief, stated as "OWNER-APPROVED RULES — không được thay đổi/diễn giải lại".
 - **Checkpoint B — G2 Pancake zero/negative-stock + composite evidence** — **accepted 2026-09-17**.
   The owner accepted the bounded live evidence recorded in
   [`docs/integrations/pancake-zero-negative-stock-capability-probe.md`](../integrations/pancake-zero-negative-stock-capability-probe.md):
@@ -438,6 +474,32 @@ from the approved table, not as an owner fact still to come.
 
 The `RESERVED` capacity-hold expiry window was briefly on this list during I6b and is **no longer
 pending** — it was approved on 2026-09-18 and has its own section below.
+
+## I7 immutable preorder/order snapshot — migration authorized 2026-09-18
+
+| | |
+|---|---|
+| **Decision** | I7 may add a dedicated PostgreSQL migration for immutable preorder/order history |
+| **Approved by** | The repository owner, 2026-09-18 |
+| **Scope** | Only immutable preorder/order snapshot and order-history persistence required by ADR 0014 §12 |
+| **Explicit exclusions** | No authorization for I8/I9, Merchant/JSON-LD, F8b/F8c UI, or unrelated schema changes |
+| **Backfill** | None; older orders without I7 authority are not fabricated or rewritten |
+
+The time authority is the successful local `CONFIRMED` boundary: preorder preparation is
+**15 calendar days** from that confirmation, using the project's existing **UTC+7** authority. The
+READY/PREORDER classification authority is earlier and narrower: the atomic capacity transaction
+persists the classification it accepted on each reservation while holding the variant lock.
+Confirmation copies that fact; it does **not** re-read mutable stock or selling policy after Pancake
+has created the order. The stored fact is an **order ETA/preparation fact** and must never be derived
+from Merchant `availability_date`.
+
+The snapshot is immutable history: later stock or selling-policy changes do not rewrite it. Mixed
+ready + preorder orders retain the slowest snapshotted preorder readiness and ship together after that
+readiness. The reservation metadata is nullable only for rolling compatibility and no-backfill.
+Orders/reservations that predate I7 authority remain explicitly without an I7 snapshot rather than
+fabricating one from current catalog state.
+
+Provenance: repository owner authorization given directly for the I7 build on 2026-09-18.
 
 ## The `RESERVED` capacity-hold expiry window — approved 2026-09-18
 
@@ -489,7 +551,8 @@ and no contact-form channel is published before F9b implements real outbound del
 
 ## Open technical questions
 
-Master spec §48 — implementation-plan gates, not licence to invent behaviour now: Merchant
-`availability_date` strategy for the rolling preorder rule; whether Pancake accepts zero/negative
-stock order submission; the atomic capacity mechanism; composite/bundle variant interaction with
-selling modes; and outbound mail transport for the `/contact` form.
+Master spec §48 — implementation-plan gates, not licence to invent behaviour now: ~~Merchant
+`availability_date` strategy for the rolling preorder rule~~ (**answered 2026-09-18** by the
+variant-level availability-cycle authority in Settled decisions); whether Pancake accepts
+zero/negative stock order submission; the atomic capacity mechanism; composite/bundle variant
+interaction with selling modes; and outbound mail transport for the `/contact` form.

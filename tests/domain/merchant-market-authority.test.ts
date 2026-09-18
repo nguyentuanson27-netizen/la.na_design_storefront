@@ -18,6 +18,7 @@ import { readProjectConfig } from "../../src/config/project-config.ts";
 import { validateReleaseEnvironment } from "../../src/operations/release-readiness.ts";
 import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
 import type { StorefrontProductProjection } from "../../src/commerce/storefront-projection.ts";
+import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
   ? true
@@ -50,6 +51,11 @@ function createCandidateProduct(): MerchantCandidateProduct {
         purchasable: true,
         isPreorderSale: false,
         unavailableReason: null,
+        availability: fixtureAvailability({
+          purchasable: true,
+          isPreorderSale: false,
+          unavailableReason: null,
+        }),
         kindKey: null,
         kindLabel: null,
       },
@@ -172,6 +178,7 @@ describe("U41 / M5a: trusted server-owned Merchant market authority", () => {
       condition: "new" as const,
       color: "Đen",
       size: "M",
+      availabilityDate: null,
     };
 
     const feed = serializeMerchantFeed({

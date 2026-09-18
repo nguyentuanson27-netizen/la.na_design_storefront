@@ -16,9 +16,10 @@ import type {
   StorefrontProductProjection,
   StorefrontProjectionOption,
 } from "../../src/commerce/storefront-projection.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
-  return {
+  const merged = {
     id: "variant-mirror-cuid",
     pancakeVariationId: "pv-1",
     color: "Đen",
@@ -33,6 +34,7 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     kindLabel: null,
     ...overrides,
   };
+  return withFixtureAvailability(merged);
 }
 
 const standalone: StorefrontProductProjection = {

@@ -14,6 +14,7 @@ import type {
   StorefrontVariantFacts,
 } from "../../src/commerce/storefront-product.ts";
 import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
+import { withFixtureAvailabilities } from "../fixtures/storefront-projection-option.ts";
 
 const currency = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -131,31 +132,31 @@ test("PDP wires product-level options into its unselected price presentation", a
   // now lives in the headless selection model the panel renders, so the text match would only
   // prove where the code sits. The contract itself -- an unselected PDP prices from the parent's
   // own options, never from a cheaper component -- is asserted directly instead.
-  const parentOnly = [
+  const setM = {
+    id: "set-m",
+    pancakeVariationId: "pancake-set-m",
+    kindKey: null,
+    kindLabel: null,
+    color: null,
+    size: "M",
+    price: 180_000,
+    basePriceVnd: 200_000,
+    isDiscounted: true,
+    purchasable: true,
+    isPreorderSale: false,
+    unavailableReason: null,
+  };
+  const parentOnly: StorefrontProjectionOption[] = withFixtureAvailabilities([setM]);
+  const withComponent: StorefrontProjectionOption[] = withFixtureAvailabilities([
+    setM,
     {
-      id: "set-m",
-      pancakeVariationId: "pancake-set-m",
-      kindKey: null,
-      kindLabel: null,
-      color: null,
-      size: "M",
-      price: 180_000,
-      basePriceVnd: 200_000,
-      isDiscounted: true,
-      purchasable: true,
-      unavailableReason: null,
-    },
-  ] as unknown as StorefrontProjectionOption[];
-  const withComponent = [
-    ...parentOnly,
-    {
-      ...parentOnly[0]!,
+      ...setM,
       id: "shirt-m",
       pancakeVariationId: "pancake-shirt-m",
       price: 50_000,
       basePriceVnd: 100_000,
     },
-  ] as unknown as StorefrontProjectionOption[];
+  ]);
 
   const view = resolveVariantSelectionView({
     options: withComponent,
