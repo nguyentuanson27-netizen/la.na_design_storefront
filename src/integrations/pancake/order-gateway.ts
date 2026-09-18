@@ -62,7 +62,7 @@ export function createPancakeOrderGateway(
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {
       const shopId = requireShopId(request.shop_id);
-      return client.postJson(`/shops/${shopId}/orders`, request);
+      return client.postJson(`/shops/${shopId}/orders`, request, { expectedStatus: 200 });
     },
 
     async searchOrderByMarker(
