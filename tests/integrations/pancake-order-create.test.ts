@@ -5,6 +5,8 @@ import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
 } from "../../src/integrations/pancake/order-create.ts";
+import { PancakeHttpError } from "../../src/integrations/pancake/client.ts";
+import { createPancakeOrderGateway } from "../../src/integrations/pancake/order-gateway.ts";
 
 test("create-order mapper emits only the reviewed server-owned allowlist and omits unverified semantic fields", () => {
   const request = buildPancakeCreateOrderRequest({
