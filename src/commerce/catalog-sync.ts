@@ -14,6 +14,7 @@ type CatalogMirrorWriter = {
     variations: readonly PancakeParsedCatalogVariation[];
     compositeSnapshot: PancakeCompositeSnapshot;
     syncedAt: Date;
+    availabilityObservedAt: Date;
   }): Promise<{ products: number; variations: number }>;
 };
 
@@ -42,11 +43,13 @@ export async function syncPancakeCatalog({
   repository,
   shopId,
   clock = () => new Date(),
+  availabilityClock = () => new Date(),
 }: {
   client: CatalogClient;
   repository: CatalogMirrorWriter;
   shopId: number;
   clock?: () => Date;
+  availabilityClock?: () => Date;
 }) {
   // Before the first read, deliberately. Moving this line below either fetch reintroduces exactly
   // the hazard ADR 0014 §4.2 exists to close.
@@ -54,5 +57,16 @@ export async function syncPancakeCatalog({
 
   const variations = await fetchAllPancakeCatalogVariations({ client, shopId });
   const compositeSnapshot = await fetchPancakeCompositeSnapshot({ client, shopId });
-  return repository.syncSnapshot({ shopId, variations, compositeSnapshot, syncedAt });
+
+  // I9 is a different fact from G5 freshness: this instant answers when the website had a complete,
+  // validated snapshot available to observe, so it is deliberately sampled after all Pancake reads.
+  const availabilityObservedAt = availabilityClock();
+
+  return repository.syncSnapshot({
+    shopId,
+    variations,
+    compositeSnapshot,
+    syncedAt,
+    availabilityObservedAt,
+  });
 }
