@@ -5,6 +5,7 @@ import type {
 } from "../integrations/pancake/catalog-contract.ts";
 import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
+import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import {
   createBootstrapProductSlug,
@@ -16,7 +17,6 @@ const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_COMPOSITE_ENTRIES = 50_000;
 const MAX_COMPOSITE_ID_LENGTH = 512;
-const SYNC_LOCK_NAMESPACE = 1_277_934_572;
 const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 
 type CatalogProductSnapshot = {
@@ -275,14 +275,17 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
     variations,
     compositeSnapshot,
     syncedAt,
+    availabilityObservedAt = syncedAt,
   }: {
     shopId: number;
     variations: readonly PancakeParsedCatalogVariation[];
     compositeSnapshot?: PancakeCompositeSnapshot;
     syncedAt: Date;
+    availabilityObservedAt?: Date;
   }) {
     const safeShopId = requireShopId(shopId);
     const safeSyncedAt = requireSyncedAt(syncedAt);
+    const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
     const { productByExternalId, variationIds, productIdByVariationId } =
       validateCatalogSnapshot(variations);
     if (compositeSnapshot !== undefined) {
@@ -293,7 +296,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
 
     return client.$transaction(
       async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
+        await acquireCatalogSyncLock(tx, safeShopId);
 
         if (compositeSnapshot === undefined) {
           const persistedComposite = await tx.compositeComponentMirror.findFirst({
@@ -639,7 +642,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
             },
           ];
         });
-        await observeVariantAvailabilityCycles(tx, availabilityObservations, safeSyncedAt);
+        await observeVariantAvailabilityCycles(tx, availabilityObservations, safeAvailabilityObservedAt);
 
         await tx.catalogSyncState.upsert({
           where: { pancakeShopId: safeShopId },
