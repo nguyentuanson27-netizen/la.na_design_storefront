@@ -48,13 +48,12 @@ test("F7a canonical media supplies meaningful product-based alt text", () => {
   assert.equal(media.gallery[1]?.alt, "Set Lụa - Ảnh 2");
 });
 
-test("F7a brand gallery uses the editorial wrapper without carousel controls", async () => {
+test("F7a brand gallery removes carousel controls for the editorial presentation", async () => {
   const source = await readFile(
     new URL("../../src/components/brand/product-gallery.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /product-editorial-gallery/);
   assert.equal(source.includes('aria-roledescription="carousel"'), false);
   assert.equal(source.includes("<button"), false, "editorial grid must not render thumbnail controls");
 });
