@@ -33,7 +33,11 @@ function queryMatches(url, expected) {
   );
 }
 
-let nextOrderId = 987654321;
+const configuredOrderIdSeed = Number(process.env.PANCAKE_A11Y_ORDER_ID_SEED ?? "987654321");
+if (!Number.isSafeInteger(configuredOrderIdSeed) || configuredOrderIdSeed <= 0) {
+  throw new Error("PANCAKE_A11Y_ORDER_ID_SEED must be a positive safe integer");
+}
+let nextOrderId = configuredOrderIdSeed;
 
 async function pancakeResponse(url, init) {
   if (url.pathname === `${API_PREFIX}/geo/provinces`) {
