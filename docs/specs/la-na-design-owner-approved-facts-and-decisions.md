@@ -449,15 +449,19 @@ pending** — it was approved on 2026-09-18 and has its own section below.
 | **Explicit exclusions** | No authorization for I8/I9, Merchant/JSON-LD, F8b/F8c UI, or unrelated schema changes |
 | **Backfill** | None; older orders without I7 authority are not fabricated or rewritten |
 
-The implementation authority is the successful local `CONFIRMED` boundary. Preorder preparation is
+The time authority is the successful local `CONFIRMED` boundary: preorder preparation is
 **15 calendar days** from that confirmation, using the project's existing **UTC+7** authority. The
-stored fact is an **order ETA/preparation fact** and must never be derived from Merchant
-`availability_date`.
+READY/PREORDER classification authority is earlier and narrower: the atomic capacity transaction
+persists the classification it accepted on each reservation while holding the variant lock.
+Confirmation copies that fact; it does **not** re-read mutable stock or selling policy after Pancake
+has created the order. The stored fact is an **order ETA/preparation fact** and must never be derived
+from Merchant `availability_date`.
 
 The snapshot is immutable history: later stock or selling-policy changes do not rewrite it. Mixed
 ready + preorder orders retain the slowest snapshotted preorder readiness and ship together after that
-readiness. If authoritative data required for a new confirmation snapshot is unavailable, the system
-must fail closed rather than fabricate a historical preorder state.
+readiness. The reservation metadata is nullable only for rolling compatibility and no-backfill.
+Orders/reservations that predate I7 authority remain explicitly without an I7 snapshot rather than
+fabricating one from current catalog state.
 
 Provenance: repository owner authorization given directly for the I7 build on 2026-09-18.
 
