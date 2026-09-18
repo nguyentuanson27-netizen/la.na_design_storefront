@@ -308,19 +308,6 @@ summary:focus-visible {
   gap: var(--space-4);
 }
 
-.product-editorial-gallery {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--space-3);
-}
-
-@media (min-width: 64rem) {
-  .product-editorial-gallery {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-4);
-  }
-}
-
 .product-visual {
   position: relative;
   aspect-ratio: 3 / 4;
