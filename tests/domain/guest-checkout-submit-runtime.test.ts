@@ -15,6 +15,16 @@ const checkoutInput = {
   note: null,
 };
 
+function createReconciliationDouble(calls: string[]) {
+  return () => ({
+    async reconcileCart(receivedCartId: string) {
+      assert.equal(receivedCartId, cartId);
+      calls.push("reconcile");
+      return null;
+    },
+  });
+}
+
 test("fresh guest checkout validates geo before creating a snapshot", async () => {
   let configReads = 0;
   let recoveryInput: unknown;
@@ -30,6 +40,7 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
       calls.push("recover");
       recoveryInput = input;
     },
+    createOrderReconciliation: createReconciliationDouble(calls),
     readConfig: () => {
       calls.push("config");
       configReads += 1;
@@ -110,7 +121,7 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
     status: "CONFIRMED",
     orderCode: "LA-server-owned",
   });
-  assert.deepEqual(calls, ["recover", "config", "fresh-check", "geo", "snapshot", "submit"]);
+  assert.deepEqual(calls, ["recover", "config", "reconcile", "fresh-check", "geo", "snapshot", "submit"]);
   assert.deepEqual(recoveryInput, { cartId, now });
   assert.equal(configReads, 1);
   assert.deepEqual(geoInput, checkoutInput);
@@ -149,6 +160,7 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
     recoverStranded: async () => {
       calls.push("recover");
     },
+    createOrderReconciliation: createReconciliationDouble(calls),
     readConfig: () => {
       calls.push("config");
       return { apiKey: "server-secret", shopId: 920_007 };
@@ -218,7 +230,7 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
     status: "CONFIRMED",
     orderCode: "LA-confirmed",
   });
-  assert.deepEqual(calls, ["recover", "config", "fresh-check", "snapshot", "submit"]);
+  assert.deepEqual(calls, ["recover", "config", "reconcile", "fresh-check", "snapshot", "submit"]);
   assert.equal(snapshotFactoryInput?.checkoutInputValidated, false);
   // The runtime must hand the snapshot a real verifier on every path, whatever it decided about
   // geo authority: a snapshot service built without one would create submit-capable DRAFTs at
@@ -233,6 +245,7 @@ test("fresh guest checkout rejects an invalid geo hierarchy before snapshot or o
     recoverStranded: async () => {
       calls.push("recover");
     },
+    createOrderReconciliation: createReconciliationDouble(calls),
     readConfig: () => {
       calls.push("config");
       return { apiKey: "server-secret", shopId: 920_007 };
@@ -261,5 +274,5 @@ test("fresh guest checkout rejects an invalid geo hierarchy before snapshot or o
     status: "RETRYABLE",
     reason: "INVALID_INPUT",
   });
-  assert.deepEqual(calls, ["recover", "config", "fresh-check", "geo"]);
+  assert.deepEqual(calls, ["recover", "config", "reconcile", "fresh-check", "geo"]);
 });
