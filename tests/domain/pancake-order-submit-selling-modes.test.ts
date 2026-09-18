@@ -130,7 +130,7 @@ function buildMockPrisma({
         return found;
       },
     },
-    variantMirror: {
+    orderPreorderSnapshot: {\n      async findUnique() {\n        return null;\n      },\n    },\n    variantMirror: {
       async findMany() {
         return [
           {
