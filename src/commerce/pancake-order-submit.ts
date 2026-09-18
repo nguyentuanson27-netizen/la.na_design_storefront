@@ -13,6 +13,7 @@ import type {
   PromotionCandidateReadClient,
 } from "./promotion-candidate-repository.ts";
 import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
+import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 
@@ -786,15 +787,26 @@ export function createPancakeOrderSubmissionService(
     }
 
     try {
-      const confirmed = await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: {
-          state: "CONFIRMED",
-          pancakeOrderId,
-          syncErrorCode: null,
-        },
+      const confirmedAt = readNow();
+      const confirmed = await client.$transaction(async (tx) => {
+        const updated = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: {
+            state: "CONFIRMED",
+            pancakeOrderId,
+            syncErrorCode: null,
+          },
+        });
+        if (updated.count !== 1) return false;
+
+        // I7 is part of the local CONFIRMED transition. The remote order is already known to exist,
+        // but the local state and its immutable preorder history must commit together. If the
+        // snapshot cannot be produced from authoritative line/policy/stock facts, the transaction
+        // rolls back and the existing ambiguous-write recovery path keeps the order fail-closed.
+        await createPreorderSnapshotAtConfirmation(tx, order.id, confirmedAt);
+        return true;
       });
-      if (confirmed.count !== 1) {
+      if (!confirmed) {
         const current = await client.orderMirror.findUniqueOrThrow({
           where: { id: order.id },
           select: { state: true, pancakeOrderId: true, syncErrorCode: true },
