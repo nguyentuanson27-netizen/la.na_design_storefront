@@ -158,26 +158,39 @@ test("I9 leaving and re-entering preorder while sold out opens a new cycle", asy
   assert.equal(back.get(variant.id), "2026-10-06");
 });
 
-test("I9 concurrent observations of the same sell-out produce one cycle, not two", async () => {
-  // Two syncs overlapping is the ordinary case, not an exotic one. Whichever commits first defines
-  // the cycle; the other must adopt it rather than write a competing date.
+test("I9 concurrent first observations across a Vietnam-day boundary converge on one immutable cycle", async () => {
+  // This reproduces the stale-read race: observers can all read "no cycle" before any insert wins.
+  // They intentionally disagree about the observed Vietnamese day, so last-writer-wins would move
+  // the promise between 03/10 and 04/10. The first committed cycle must instead become authoritative.
   const variant = await seedVariant("race");
 
-  const results = await Promise.allSettled(
-    ["2026-09-18T03:00:00.000Z", "2026-09-18T04:00:00.000Z", "2026-09-18T05:00:00.000Z"].map((at) =>
+  const instants = Array.from({ length: 16 }, (_, index) =>
+    index % 2 === 0
+      ? "2026-09-18T16:59:59.000Z" // 23:59:59 on 18/09 in Vietnam -> 03/10 promise
+      : "2026-09-18T17:00:01.000Z", // 00:00:01 on 19/09 in Vietnam -> 04/10 promise
+  );
+  const results = await Promise.all(
+    instants.map((at) =>
       observeVariantAvailabilityCycles(prisma, soldOutOnPreorder(variant.id), new Date(at)),
     ),
   );
-  // A lost upsert race surfaces as a rejected promise, never as a second row.
-  assert.ok(
-    results.some((result) => result.status === "fulfilled"),
-    "at least one observer must succeed",
+
+  const returnedDates = results.map((dates) => dates.get(variant.id));
+  assert.equal(
+    new Set(returnedDates).size,
+    1,
+    "every racing observer must adopt the one cycle that actually won persistence",
   );
 
-  const rows = await prisma.variantAvailabilityCycle.findMany({ where: { variantId: variant.id } });
-  assert.equal(rows.length, 1, "the variant key admits exactly one cycle");
-  // All three observers saw the same Vietnamese day, so whoever won, the date is the same fact.
-  assert.equal(rows[0]!.availabilityDate?.toISOString(), "2026-10-03T00:00:00.000Z");
+  const stored = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: variant.id },
+  });
+  const storedDate = stored.availabilityDate?.toISOString().slice(0, 10);
+  assert.equal(returnedDates[0], storedDate);
+  assert.ok(
+    storedDate === "2026-10-03" || storedDate === "2026-10-04",
+    "either observer may win, but the winner must stay fixed",
+  );
 });
 
 test("I9 a variant that has never been on preorder stores no row at all", async () => {
