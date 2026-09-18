@@ -139,4 +139,33 @@ describe("Merchant RSS serializer", () => {
   it("keeps the reviewed production byte ceiling at 16 MiB", () => {
     assert.equal(MAX_MERCHANT_FEED_BYTES, 16 * 1024 * 1024);
   });
+
+  /**
+   * I9 — `availability_date` is the one element Google both requires and restricts: `backorder`
+   * is invalid without it, and it belongs on nothing else in this feed. So both directions are
+   * asserted. The mapper is what decides whether a date exists; the serializer's only job is to
+   * emit exactly what it was handed, which is why there is no fallback branch to test.
+   */
+  it("emits availability_date for a backorder offer and for nothing else", () => {
+    const backorder = serializeMerchantFeed({
+      offers: [offer({ availability: "backorder", availabilityDate: "2026-10-03" })],
+      market: MARKET,
+      origin: "https://shop.example.test",
+    });
+    assert.match(backorder.body, /<g:availability>backorder<\/g:availability>/);
+    assert.match(backorder.body, /<g:availability_date>2026-10-03<\/g:availability_date>/);
+
+    for (const availability of ["in_stock", "out_of_stock"] as const) {
+      const plain = serializeMerchantFeed({
+        offers: [offer({ availability })],
+        market: MARKET,
+        origin: "https://shop.example.test",
+      });
+      assert.equal(
+        plain.body.includes("<g:availability_date>"),
+        false,
+        `${availability} carries no date`,
+      );
+    }
+  });
 });
