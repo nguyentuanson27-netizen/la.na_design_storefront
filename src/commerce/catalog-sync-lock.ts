@@ -11,6 +11,8 @@ const MAX_POSTGRES_INTEGER = 2_147_483_647;
  * and safer than introducing a second locking scheme just for availability.
  */
 export const CATALOG_SYNC_LOCK_NAMESPACE = 1_277_934_572;
+export const CATALOG_SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
+export const CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS = CATALOG_SYNC_TRANSACTION_TIMEOUT_MS + 5_000;
 
 function requireCatalogLockShopId(shopId: number): number {
   if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
