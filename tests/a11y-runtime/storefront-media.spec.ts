@@ -329,7 +329,7 @@ test("PDP with single trusted image renders hero image without redundant thumbna
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
 });
 
-test("PDP with multiple images renders interactive gallery, handles click and keyboard thumbnail switching, and names thumbnails accessibly", async ({
+test("PDP with multiple images renders a one-column mobile editorial grid with every trusted image once", async ({
   page,
 }) => {
   await page.route("**/_next/image**", (route) => {
@@ -342,40 +342,34 @@ test("PDP with multiple images renders interactive gallery, handles click and ke
 
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: multiName })).toBeVisible();
-  await assertPageQuality(page);
 
-  // 3 unique images deduplicated: primary, angle-front, detail-fabric
-  const thumbnails = page.locator("button[aria-label^='Xem ảnh']");
-  await expect(thumbnails).toHaveCount(3);
+  const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
+  const images = gallery.locator("img");
+  await expect(images).toHaveCount(3);
 
-  // Initial state: thumbnail 1 selected, hero displays image 1
-  await expect(thumbnails.nth(0)).toHaveAttribute("aria-pressed", "true");
-  await expect(thumbnails.nth(1)).toHaveAttribute("aria-pressed", "false");
-  await expect(thumbnails.nth(2)).toHaveAttribute("aria-pressed", "false");
-  const heroImg = page.locator("div[role='region'] img");
-  await expect(heroImg).toHaveAttribute("alt", `${multiName} - Ảnh 1`);
-
-  // Click thumbnail 2: hero updates to image 2
-  await thumbnails.nth(1).click();
-  await expect(thumbnails.nth(0)).toHaveAttribute("aria-pressed", "false");
-  await expect(thumbnails.nth(1)).toHaveAttribute("aria-pressed", "true");
-  await expect(heroImg).toHaveAttribute("alt", `${multiName} - Ảnh 2`);
-
-  // Keyboard navigation on thumbnail 3: focus and press Enter: hero updates to image 3
-  await thumbnails.nth(2).focus();
-  await page.keyboard.press("Enter");
-  await expect(thumbnails.nth(1)).toHaveAttribute("aria-pressed", "false");
-  await expect(thumbnails.nth(2)).toHaveAttribute("aria-pressed", "true");
-  await expect(heroImg).toHaveAttribute("alt", `${multiName} - Ảnh 3`);
-
-  // Each thumbnail carries the accessible name a screen reader announces on focus
-  await thumbnails.nth(0).focus();
-  await expect(thumbnails.nth(0)).toBeFocused();
-  for (const index of [0, 1, 2]) {
-    await expect(thumbnails.nth(index)).toHaveAccessibleName(
-      new RegExp(`^Xem ảnh ${index + 1}\\b`, "i"),
-    );
+  for (let index = 0; index < 3; index += 1) {
+    await expect(images.nth(index)).toBeVisible();
   }
+
+  const renderedImages = await images.evaluateAll((elements) =>
+    elements.map((element) => ({
+      alt: element.getAttribute("alt"),
+      src: element.getAttribute("src"),
+    })),
+  );
+  expect(renderedImages.map(({ alt }) => alt)).toEqual([
+    `${multiName} - Ảnh 1`,
+    `${multiName} - Ảnh 2`,
+    `${multiName} - Ảnh 3`,
+  ]);
+  expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
+
+  const columnCount = await gallery.evaluate((element) => {
+    const columns = getComputedStyle(element).gridTemplateColumns.trim();
+    return columns.length === 0 ? 0 : columns.split(/\\s+/).length;
+  });
+  expect(columnCount).toBe(1);
+  await expect(gallery.locator("button")).toHaveCount(0);
 
   await assertPageQuality(page);
 });
@@ -409,8 +403,14 @@ test("desktop viewport renders catalog cards and PDP gallery without horizontal 
   await assertPageQuality(page);
 
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+  const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
+  await expect(gallery.locator("img")).toHaveCount(3);
+  const columnCount = await gallery.evaluate((element) => {
+    const columns = getComputedStyle(element).gridTemplateColumns.trim();
+    return columns.length === 0 ? 0 : columns.split(/\\s+/).length;
+  });
+  expect(columnCount).toBe(2);
   await assertPageQuality(page);
-  await expect(page.locator("div[role='region'] img")).toBeVisible();
 });
 
 test("runtime network and CSP headers enforce Pancake media allowlist and reject unreviewed optimizer requests", async ({
