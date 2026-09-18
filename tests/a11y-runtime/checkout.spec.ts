@@ -123,15 +123,17 @@ async function cleanupRateLimits() {
 }
 
 async function cleanupDatabase() {
-  await prisma.orderLineSnapshot.deleteMany({}).catch(() => {});
-  // I6b — reservations reference their order and variant with `onDelete: Restrict` (ADR 0014 §13),
-  // deliberately: cascading them away would silently free capacity that is still counting. Now that
-  // a real checkout takes a hold, a fixture that deletes orders or products has to clear the ledger
-  // first, or the delete is refused.
-  await prisma.variantCapacityReservation.deleteMany({});
-  await prisma.orderMirror.deleteMany({});
-  await prisma.cartItem.deleteMany({});
-  await prisma.cart.deleteMany({});
+  // I6b capacity rows may be removed in test cleanup, but I7 confirmed snapshots are deliberately
+  // immutable and hold their OrderMirror with RESTRICT. This fixture uses a per-run external id, so
+  // confirmed order history is left intact instead of teaching tests to bypass production history
+  // guarantees merely to obtain a clean database.
+  await prisma.variantCapacityReservation.deleteMany({
+    where: { order: { sourceCartId: cartId || undefined } },
+  });
+  if (cartId) {
+    await prisma.cartItem.deleteMany({ where: { cartId } });
+    await prisma.cart.deleteMany({ where: { id: cartId } });
+  }
   await prisma.productMirror.deleteMany({
     where: { pancakeProductId: productExternalId },
   });
@@ -271,15 +273,11 @@ test.afterEach(async () => {
   await stopServer();
   await cleanupRateLimits();
   if (cartId) {
-    await prisma.orderLineSnapshot.deleteMany({
-      where: { order: { sourceCartId: cartId } },
-    }).catch(() => {});
-    // I6b — the ledger holds its order with `onDelete: Restrict`, so it goes first here too. This
-    // per-test cleanup is the one that actually runs after a confirmed checkout.
+    // Confirmed I7 history is immutable and intentionally not test-cleaned. Remove only mutable
+    // capacity/cart fixtures; run-scoped ids prevent the retained historical rows from colliding.
     await prisma.variantCapacityReservation.deleteMany({
       where: { order: { sourceCartId: cartId } },
     });
-    await prisma.orderMirror.deleteMany({ where: { sourceCartId: cartId } });
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
