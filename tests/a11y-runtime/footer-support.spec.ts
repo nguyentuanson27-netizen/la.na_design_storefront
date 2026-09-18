@@ -93,7 +93,7 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   // F1/F9a: current repository authority uses the approved display mark as the master-wordmark
   // fallback. Do not derive a new image from the favicon/social card while no binary master logo is
   // committed.
-  const brandHome = footer.getByRole("link", { name: "La.na Design — Trang chủ" });
+  const brandHome = footer.getByRole("link", { name: "La.na Design", exact: true });
   await expect(brandHome).toBeVisible();
   await expect(brandHome).toContainText("La.na Design");
   await expect(footer).toContainText("Charismatic in every yard of cloth.");
