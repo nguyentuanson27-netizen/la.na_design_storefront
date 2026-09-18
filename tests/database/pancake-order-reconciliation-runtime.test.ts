@@ -90,18 +90,21 @@ test("runtime reconciliation makes checkout-recovery UNKNOWN orders convergent w
       search: { kind: "FOUND" as const, orderId: "880125" },
       expectedOrderState: "CONFIRMED",
       expectedReservationState: "COMMITTED",
+      expectedSearchCalls: 1,
     },
     {
       label: "absent",
       search: { kind: "ABSENT" as const },
       expectedOrderState: "REJECTED",
       expectedReservationState: "RELEASED",
+      expectedSearchCalls: 5,
     },
     {
       label: "ambiguous",
       search: { kind: "AMBIGUOUS" as const, reason: "marker search still inconclusive" },
       expectedOrderState: "SYNC_UNKNOWN",
       expectedReservationState: "UNKNOWN",
+      expectedSearchCalls: 1,
     },
   ] as const;
 
@@ -127,7 +130,7 @@ test("runtime reconciliation makes checkout-recovery UNKNOWN orders convergent w
 
       const result = await runtime.reconcileCart(seed.cartId);
       assert.ok(result, "the cart-scoped runtime must find its SYNC_UNKNOWN order");
-      assert.equal(searchCalls, 1, "recovery must search by marker exactly once and never repost");
+      assert.equal(searchCalls, scenario.expectedSearchCalls, "recovery must use bounded marker search and never repost");
 
       const [order, reservation] = await Promise.all([
         prisma.orderMirror.findUniqueOrThrow({

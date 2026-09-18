@@ -384,6 +384,88 @@ test("reconcileOrder FOUND writes the canonical I7 PREORDER snapshot at confirma
   assert.ok(snapshot.lines.every((line) => line.state === "PREORDER"));
 });
 
+test("reconcileOrder waits through transient ABSENT propagation and confirms when the marker appears", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "UNKNOWN",
+  });
+
+  let searchCalls = 0;
+  let sleepCalls = 0;
+  const gateway = {
+    async searchOrderByMarker() {
+      searchCalls += 1;
+      return searchCalls < 3
+        ? { kind: "ABSENT" as const }
+        : { kind: "FOUND" as const, orderId: "777890" };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+    absenceConfirmationAttempts: 5,
+    absenceConfirmationDelayMs: 1,
+    sleep: async () => {
+      sleepCalls += 1;
+    },
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+
+  assert.deepEqual(result, {
+    ok: true,
+    state: "CONFIRMED",
+    pancakeOrderId: "777890",
+    reservationsCommitted: 2,
+  });
+  assert.equal(searchCalls, 3);
+  assert.equal(sleepCalls, 2);
+  assert.equal(prismaMock.getState().orderState, "CONFIRMED");
+});
+
+test("reconcileOrder keeps UNKNOWN when ABSENT propagation becomes ambiguous before confirmation", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "UNKNOWN",
+  });
+
+  let searchCalls = 0;
+  const gateway = {
+    async searchOrderByMarker() {
+      searchCalls += 1;
+      return searchCalls === 1
+        ? { kind: "ABSENT" as const }
+        : {
+            kind: "AMBIGUOUS" as const,
+            reason: "propagation or pagination inconclusive",
+          };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+    absenceConfirmationAttempts: 5,
+    absenceConfirmationDelayMs: 1,
+    sleep: async () => {},
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+
+  assert.deepEqual(result, {
+    ok: false,
+    state: "SYNC_UNKNOWN",
+    reason: "AMBIGUOUS",
+    detail: "propagation or pagination inconclusive",
+    reservationsUnknown: 2,
+  });
+  assert.equal(searchCalls, 2);
+  assert.equal(prismaMock.getState().orderState, "SYNC_UNKNOWN");
+});
+
 test("reconcileOrder ABSENT: rejects order and releases capacity when order is proven absent", async () => {
   const prismaMock = buildMockPrisma({
     initialOrderState: "SYNC_UNKNOWN",

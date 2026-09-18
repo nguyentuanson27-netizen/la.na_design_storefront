@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { recoverOrderIdByMarker } from "../../scripts/i8-pancake-live-acceptance-support.ts";
+import { recoverOrderIdByMarker, requireAuthorizedFixture } from "../../scripts/i8-pancake-live-acceptance-support.ts";
 
 test("I8 cleanup marker recovery retries bounded propagation until the created order appears", async () => {
   let calls = 0;
@@ -47,4 +47,42 @@ test("I8 cleanup marker recovery stays bounded when no unique order can be recov
 
   assert.equal(orderId, null);
   assert.equal(calls, 3);
+});
+
+
+test("I8 live fixture selection matches only exact V8014-S identity", () => {
+  const authorized = { id: "variation-2", displayId: "V8014-S", barcode: "OTHER" };
+  const selected = requireAuthorizedFixture(
+    [
+      { id: "variation-1", displayId: "V8014-M", barcode: "V8014-M" },
+      authorized,
+      { id: "variation-3", displayId: "V8014-S-OLD", barcode: "V8014-S-OLD" },
+    ],
+    "V8014-S",
+  );
+
+  assert.equal(selected, authorized);
+});
+
+test("I8 live fixture selection fails closed when exact V8014-S is missing or duplicated", () => {
+  assert.throws(
+    () =>
+      requireAuthorizedFixture(
+        [{ id: "variation-1", displayId: "V8014-M", barcode: "V8014-M" }],
+        "V8014-S",
+      ),
+    /exactly one authorized fixture/i,
+  );
+
+  assert.throws(
+    () =>
+      requireAuthorizedFixture(
+        [
+          { id: "variation-1", displayId: "V8014-S", barcode: "A" },
+          { id: "variation-2", displayId: "B", barcode: "V8014-S" },
+        ],
+        "V8014-S",
+      ),
+    /exactly one authorized fixture/i,
+  );
 });
