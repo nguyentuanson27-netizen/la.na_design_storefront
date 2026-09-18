@@ -50,6 +50,7 @@ async function seedUnknownOrder(label: string) {
           variantId: variant.id,
           pancakeVariationId: variant.pancakeVariationId,
           productName: `I8 runtime ${label}`,
+          size: "M",
           quantity: 1,
           unitPriceVnd: BigInt(100_000),
           lineTotalVnd: BigInt(100_000),
