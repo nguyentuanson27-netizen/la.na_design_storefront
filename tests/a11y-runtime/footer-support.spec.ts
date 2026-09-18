@@ -131,6 +131,20 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     await expect(policy.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
   }
 
+  const desktopColumns = await footer.locator(".footer-groups").evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
+  );
+  expect(desktopColumns).toBe(4);
+
+  const firstShoppingLink = shopping.getByRole("link").first();
+  await firstShoppingLink.focus();
+  const focusOutline = await firstShoppingLink.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { style: style.outlineStyle, width: style.outlineWidth };
+  });
+  expect(focusOutline.style).not.toBe("none");
+  expect(focusOutline.width).not.toBe("0px");
+
   const legal = footer.locator("[data-footer-legal]");
   await expect(legal).toContainText(PUBLIC_LEGAL_FACTS.legalEntityName);
   await expect(legal).toContainText(PUBLIC_LEGAL_FACTS.registeredAddress);
@@ -161,6 +175,17 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.locator("footer [data-footer-group]")).toHaveCount(4);
   await expect(page.locator("footer details, footer summary")).toHaveCount(0);
+
+  const mobileColumns = await page.locator("footer .footer-groups").evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
+  );
+  expect(mobileColumns).toBe(1);
+
+  const footerTargets = await page.locator("footer a").evaluateAll((links) =>
+    links.map((link) => link.getBoundingClientRect().height),
+  );
+  expect(footerTargets.every((height) => height >= 44)).toBe(true);
+
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
 
