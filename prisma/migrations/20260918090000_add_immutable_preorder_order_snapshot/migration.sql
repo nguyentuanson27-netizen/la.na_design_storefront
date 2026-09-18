@@ -63,7 +63,7 @@ ALTER TABLE "OrderPreorderSnapshot"
 ALTER TABLE "OrderPreorderLineSnapshot"
   ADD CONSTRAINT "OrderPreorderLineSnapshot_snapshotId_fkey"
   FOREIGN KEY ("snapshotId") REFERENCES "OrderPreorderSnapshot"("id")
-  ON DELETE RESTRICT ON UPDATE CASCADE;
+  ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE "OrderPreorderLineSnapshot"
   ADD CONSTRAINT "OrderPreorderLineSnapshot_quantity_positive"
