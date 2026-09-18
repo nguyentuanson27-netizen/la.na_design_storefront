@@ -14,11 +14,13 @@ function buildMockPrisma({
   pancakeOrderId = null as string | null,
   initialReservationState = "UNKNOWN",
   reservationsCount = 2,
+  acceptedPreorderState = null as "READY" | "PREORDER" | null,
 }: {
   initialOrderState?: "DRAFT" | "VALIDATING" | "POS_SUBMITTING" | "CONFIRMED" | "SYNC_UNKNOWN" | "REJECTED";
   pancakeOrderId?: string | null;
   initialReservationState?: "RESERVED" | "SUBMITTING" | "COMMITTED" | "RELEASED" | "UNKNOWN";
   reservationsCount?: number;
+  acceptedPreorderState?: "READY" | "PREORDER" | null;
 } = {}) {
   let orderState = initialOrderState;
   let currentPancakeOrderId = pancakeOrderId;
@@ -41,7 +43,22 @@ function buildMockPrisma({
     state: initialReservationState,
     committedAt: null as Date | null,
     releasedAt: null as Date | null,
+    acceptedPreorderState,
   }));
+
+  let preorderSnapshot:
+    | {
+        orderId: string;
+        confirmedAt: Date;
+        preorderReadyAt: Date | null;
+        lines: readonly {
+          variantId: string;
+          quantity: number;
+          state: "READY" | "PREORDER";
+          preorderReadyAt: Date | null;
+        }[];
+      }
+    | null = null;
 
   async function findUnique({ where }: { where: { publicCode?: string; id?: string } }) {
     if (where.publicCode === publicCode || where.id === mockOrder.id) {
@@ -50,6 +67,15 @@ function buildMockPrisma({
         state: orderState,
         pancakeOrderId: currentPancakeOrderId,
         syncErrorCode,
+        lines: reservations.map((reservation) => ({
+          variantId: reservation.variantId,
+          quantity: reservation.quantity,
+        })),
+        capacityReservations: reservations.map((reservation) => ({
+          variantId: reservation.variantId,
+          quantity: reservation.quantity,
+          acceptedPreorderState: reservation.acceptedPreorderState,
+        })),
       };
     }
     return null;
@@ -86,6 +112,36 @@ function buildMockPrisma({
         mockOrder.syncErrorCode = syncErrorCode;
         mockOrder.pancakeOrderId = currentPancakeOrderId;
         return { count: 1 };
+      },
+    },
+    orderPreorderSnapshot: {
+      async findUnique() {
+        return preorderSnapshot;
+      },
+      async create({
+        data,
+      }: {
+        data: {
+          orderId: string;
+          confirmedAt: Date;
+          preorderReadyAt: Date | null;
+          lines: {
+            create: readonly {
+              variantId: string;
+              quantity: number;
+              state: "READY" | "PREORDER";
+              preorderReadyAt: Date | null;
+            }[];
+          };
+        };
+      }) {
+        preorderSnapshot = {
+          orderId: data.orderId,
+          confirmedAt: data.confirmedAt,
+          preorderReadyAt: data.preorderReadyAt,
+          lines: data.lines.create,
+        };
+        return preorderSnapshot;
       },
     },
     variantCapacityReservation: {
@@ -140,6 +196,7 @@ function buildMockPrisma({
       currentPancakeOrderId,
       syncErrorCode,
       reservations: reservations.map((r) => ({ ...r })),
+      preorderSnapshot,
     }),
   };
 
@@ -295,6 +352,36 @@ test("reconcileOrder FOUND: commits order and reservations when remote order is 
     assert.equal(r.committedAt, now);
     assert.equal(r.releasedAt, null);
   }
+});
+
+test("reconcileOrder FOUND writes the canonical I7 PREORDER snapshot at confirmation", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "UNKNOWN",
+    acceptedPreorderState: "PREORDER",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      return { kind: "FOUND" as const, orderId: "777889" };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.equal(result.ok, true);
+
+  const snapshot = prismaMock.getState().preorderSnapshot;
+  assert.ok(snapshot, "reconciliation confirmation must create the I7 snapshot");
+  assert.equal(snapshot.confirmedAt.toISOString(), now.toISOString());
+  assert.equal(snapshot.preorderReadyAt?.toISOString(), "2026-10-03T06:00:00.000Z");
+  assert.equal(snapshot.lines.length, 2);
+  assert.ok(snapshot.lines.every((line) => line.state === "PREORDER"));
 });
 
 test("reconcileOrder ABSENT: rejects order and releases capacity when order is proven absent", async () => {

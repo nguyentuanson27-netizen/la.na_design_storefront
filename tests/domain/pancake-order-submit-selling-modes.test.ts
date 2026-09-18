@@ -70,6 +70,7 @@ function buildMockPrisma({
     merchandiseSubtotalVnd: BigInt(200_000),
     shippingFeeVnd: BigInt(30_000),
     totalVnd: BigInt(230_000),
+    capacityReservations: [],
     lines: [
       {
         id: "line-01",
@@ -130,7 +131,12 @@ function buildMockPrisma({
         return found;
       },
     },
-    orderPreorderSnapshot: {\n      async findUnique() {\n        return null;\n      },\n    },\n    variantMirror: {
+    orderPreorderSnapshot: {
+      async findUnique() {
+        return null;
+      },
+    },
+    variantMirror: {
       async findMany() {
         return [
           {
