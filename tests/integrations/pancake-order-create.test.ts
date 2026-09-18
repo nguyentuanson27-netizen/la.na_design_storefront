@@ -147,3 +147,40 @@ test("create-order response requires a positive safe integer Pancake order id", 
     assert.throws(() => parsePancakeCreateOrderResponse(payload), /Pancake create-order response is invalid/);
   }
 });
+
+
+test("order gateway accepts observed HTTP 201 create success without requiring exact 200", async () => {
+  const client = {
+    async getJson() {
+      throw new Error("not used");
+    },
+    async postJson(
+      endpoint: string,
+      _body: unknown,
+      options?: Readonly<{ expectedStatus?: number }>,
+    ) {
+      const observedStatus = 201;
+      if (options?.expectedStatus !== undefined && options.expectedStatus !== observedStatus) {
+        throw new PancakeHttpError(observedStatus, endpoint);
+      }
+      return { success: true, data: { id: 123456 } };
+    },
+  };
+
+  const gateway = createPancakeOrderGateway(client);
+  const request = buildPancakeCreateOrderRequest({
+    shopId: 920_007,
+    guestName: "Nguyễn Văn A",
+    guestPhone: "0901234567",
+    provinceRef: "province-01",
+    districtRef: "district-001",
+    communeRef: "commune-0001",
+    addressDetail: "12 Đường A",
+    note: "HTTP 201 regression",
+    shippingFeeVnd: 0,
+    lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+  });
+
+  const response = await gateway.createOrder(request);
+  assert.equal(parsePancakeCreateOrderResponse(response), "123456");
+});
