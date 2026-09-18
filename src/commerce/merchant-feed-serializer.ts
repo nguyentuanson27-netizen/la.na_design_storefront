@@ -115,7 +115,7 @@ function itemXml(offer: MerchantOffer, market: MerchantMarketPolicy): string {
     // fabricating it, which is why there is no fallback branch here.
     (offer.availabilityDate === null
       ? ""
-      : `<g:availability_date>${xml(\n          merchantAvailabilityDate(offer.availabilityDate),\n        )}</g:availability_date>\n`) +
+      : `<g:availability_date>${xml(merchantAvailabilityDate(offer.availabilityDate))}</g:availability_date>\n`) +
     `<g:price>${xml(String(offer.priceVnd))} ${xml(market.currency)}</g:price>\n` +
     `<g:brand>${xml(offer.brand)}</g:brand>\n` +
     `<g:mpn>${xml(offer.mpn)}</g:mpn>\n` +
