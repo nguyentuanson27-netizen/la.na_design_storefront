@@ -366,7 +366,7 @@ test("PDP with multiple images renders a one-column mobile editorial grid with e
 
   const columnCount = await gallery.evaluate((element) => {
     const columns = getComputedStyle(element).gridTemplateColumns.trim();
-    return columns.length === 0 ? 0 : columns.split(/\\s+/).length;
+    return columns.length === 0 ? 0 : columns.split(/\s+/).length;
   });
   expect(columnCount).toBe(1);
   await expect(gallery.locator("button")).toHaveCount(0);
@@ -407,7 +407,7 @@ test("desktop viewport renders catalog cards and PDP gallery without horizontal 
   await expect(gallery.locator("img")).toHaveCount(3);
   const columnCount = await gallery.evaluate((element) => {
     const columns = getComputedStyle(element).gridTemplateColumns.trim();
-    return columns.length === 0 ? 0 : columns.split(/\\s+/).length;
+    return columns.length === 0 ? 0 : columns.split(/\s+/).length;
   });
   expect(columnCount).toBe(2);
   await assertPageQuality(page);
