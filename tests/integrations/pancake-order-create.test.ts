@@ -5,7 +5,7 @@ import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
 } from "../../src/integrations/pancake/order-create.ts";
-import { PancakeHttpError } from "../../src/integrations/pancake/client.ts";
+import { PancakeClient } from "../../src/integrations/pancake/client.ts";
 import { createPancakeOrderGateway } from "../../src/integrations/pancake/order-gateway.ts";
 
 test("create-order mapper emits only the reviewed server-owned allowlist and omits unverified semantic fields", () => {
@@ -151,23 +151,17 @@ test("create-order response requires a positive safe integer Pancake order id", 
 });
 
 
-test("order gateway accepts observed HTTP 201 create success without requiring exact 200", async () => {
-  const client = {
-    async getJson() {
-      throw new Error("not used");
+test("order gateway accepts observed HTTP 201 create success", async () => {
+  const client = new PancakeClient({
+    apiKey: "test-api-key",
+    fetcher: async (_input, init) => {
+      assert.equal(init?.method, "POST");
+      return new Response(JSON.stringify({ success: true, data: { id: 123456 } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
     },
-    async postJson(
-      endpoint: string,
-      _body: unknown,
-      options?: Readonly<{ expectedStatus?: number }>,
-    ) {
-      const observedStatus = 201;
-      if (options?.expectedStatus !== undefined && options.expectedStatus !== observedStatus) {
-        throw new PancakeHttpError(observedStatus, endpoint);
-      }
-      return { success: true, data: { id: 123456 } };
-    },
-  };
+  });
 
   const gateway = createPancakeOrderGateway(client);
   const request = buildPancakeCreateOrderRequest({

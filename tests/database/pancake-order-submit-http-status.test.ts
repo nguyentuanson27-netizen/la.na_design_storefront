@@ -75,7 +75,7 @@ test.after(async () => {
 });
 
 test("undocumented successful-looking 2xx create statuses become SYNC_UNKNOWN and are never posted twice", async () => {
-  for (const status of [201, 202]) {
+  for (const status of [202]) {
     const order = await createDraft(status);
     let postCalls = 0;
 

@@ -14,7 +14,7 @@ import {
 } from "./order-status.ts";
 
 type QueryValue = string | number | boolean;
-type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
+type PostJsonOptions = Readonly<{ expectedStatus?: number | readonly number[] }>;
 
 export type PancakeOrderGatewayClient = {
   getJson(endpoint: string, query?: Readonly<Record<string, QueryValue>>): Promise<unknown>;
@@ -62,7 +62,7 @@ export function createPancakeOrderGateway(
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {
       const shopId = requireShopId(request.shop_id);
-      return client.postJson(`/shops/${shopId}/orders`, request);
+      return client.postJson(`/shops/${shopId}/orders`, request, { expectedStatus: [200, 201] });
     },
 
     async searchOrderByMarker(
