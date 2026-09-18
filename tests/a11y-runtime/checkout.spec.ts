@@ -400,6 +400,7 @@ for (const { name, viewport } of [
     const confirmed = await prisma.orderMirror.findFirstOrThrow({
       where: { sourceCartId: cartId, state: "CONFIRMED" },
       select: {
+        id: true,
         publicCode: true,
         pancakeOrderId: true,
         provinceRef: true,
@@ -408,6 +409,18 @@ for (const { name, viewport } of [
         guestName: true,
         guestPhone: true,
         addressDetail: true,
+        preorderSnapshot: {
+          select: {
+            confirmedAt: true,
+            preorderReadyAt: true,
+            lines: {
+              select: {
+                state: true,
+                preorderReadyAt: true,
+              },
+            },
+          },
+        },
       },
     });
     expect(confirmed.pancakeOrderId).toMatch(/^\d+$/);
@@ -418,6 +431,17 @@ for (const { name, viewport } of [
     expect(confirmed.guestPhone).toBe("0901234567");
     expect(confirmed.addressDetail).toBe("12 Đường A");
     expect(confirmed.publicCode).toMatch(/^LA-/);
+
+    // I7 production seam regression: this checkout reaches the real pancake-order-submit
+    // confirmation transaction. A future edit that confirms the order but drops the snapshot call
+    // must fail here, rather than being hidden by helper-only I7 tests.
+    expect(await prisma.orderPreorderSnapshot.count({ where: { orderId: confirmed.id } })).toBe(1);
+    expect(confirmed.preorderSnapshot).not.toBeNull();
+    expect(confirmed.preorderSnapshot!.confirmedAt).toBeInstanceOf(Date);
+    expect(confirmed.preorderSnapshot!.preorderReadyAt).toBeNull();
+    expect(confirmed.preorderSnapshot!.lines).toHaveLength(1);
+    expect(confirmed.preorderSnapshot!.lines[0]?.state).toBe("READY");
+    expect(confirmed.preorderSnapshot!.lines[0]?.preorderReadyAt).toBeNull();
 
     await assertCheckoutAccessibility(page);
 
