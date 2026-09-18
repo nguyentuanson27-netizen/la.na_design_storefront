@@ -14,6 +14,13 @@
 
 CREATE TYPE "OrderPreorderLineState" AS ENUM ('READY', 'PREORDER');
 
+-- The reservation is the atomic capacity acceptance boundary. Persist the accepted READY/PREORDER
+-- classification there so confirmation never re-derives historical order truth from mutable stock
+-- or selling policy. Nullable is intentional for rolling compatibility and NO BACKFILL: reservations
+-- created by an older application version carry no I7 authority and therefore cannot fabricate one.
+ALTER TABLE "VariantCapacityReservation"
+  ADD COLUMN "acceptedPreorderState" "OrderPreorderLineState";
+
 CREATE TABLE "OrderPreorderSnapshot" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
