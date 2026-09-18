@@ -5,7 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
 import { createPreorderSnapshotAtConfirmation } from "../../src/commerce/preorder-order-snapshot-repository.ts";
-import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { Prisma, PrismaClient } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -17,7 +17,7 @@ const prefix = "i7-preorder-snapshot";
 const confirmedAt = new Date("2026-01-25T10:15:00.000Z");
 
 async function withRollback<T>(
-  callback: (tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0]) => Promise<T>,
+  callback: (tx: Prisma.TransactionClient) => Promise<T>,
 ): Promise<T> {
   const rollback = Symbol("I7_TEST_ROLLBACK");
   try {
@@ -34,7 +34,7 @@ async function withRollback<T>(
 }
 
 async function seedProduct(
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
+  tx: Prisma.TransactionClient,
   label: string,
   sellingMode: "STANDARD" | "PREORDER",
   stock: number,
