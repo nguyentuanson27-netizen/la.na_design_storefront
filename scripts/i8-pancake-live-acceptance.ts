@@ -96,7 +96,14 @@ async function run() {
     try {
       createRaw = await gateway.createOrder(orderRequest);
     } catch (error) {
-      if (error instanceof PancakeHttpError && error.status >= 400 && error.status < 500) {
+      if (
+        error instanceof PancakeHttpError &&
+        (error.status === 400 ||
+          error.status === 401 ||
+          error.status === 403 ||
+          error.status === 404 ||
+          error.status === 422)
+      ) {
         createMayHaveSucceeded = false;
       }
       throw error;
