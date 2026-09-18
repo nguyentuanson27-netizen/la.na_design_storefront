@@ -61,6 +61,29 @@ class BoundedXmlWriter {
   }
 }
 
+function merchantAvailabilityDate(value: string): string {
+  // The persisted authority is a Vietnam calendar day. Google Merchant requires date + time +
+  // timezone, so serialize that day at local midnight rather than relying on UTC defaults.
+  const match = /^(\\d{4})-(\\d{2})-(\\d{2})$/.exec(value);
+  if (match === null) {
+    throw new MerchantFeedSerializationError("Merchant availability date must be YYYY-MM-DD");
+  }
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const asUtc = new Date(Date.UTC(year, month - 1, day));
+  if (
+    Number.isNaN(asUtc.getTime()) ||
+    asUtc.getUTCFullYear() !== year ||
+    asUtc.getUTCMonth() !== month - 1 ||
+    asUtc.getUTCDate() !== day
+  ) {
+    throw new MerchantFeedSerializationError("Merchant availability date must be a real calendar day");
+  }
+  return `${value}T00:00+0700`;
+}
+
 export function assertMerchantOfferCount(count: number): void {
   if (!Number.isSafeInteger(count) || count < 0) {
     throw new MerchantFeedSerializationError("Merchant offer count must be a non-negative integer");
@@ -92,7 +115,7 @@ function itemXml(offer: MerchantOffer, market: MerchantMarketPolicy): string {
     // fabricating it, which is why there is no fallback branch here.
     (offer.availabilityDate === null
       ? ""
-      : `<g:availability_date>${xml(offer.availabilityDate)}</g:availability_date>\n`) +
+      : `<g:availability_date>${xml(merchantAvailabilityDate(offer.availabilityDate))}</g:availability_date>\n`) +
     `<g:price>${xml(String(offer.priceVnd))} ${xml(market.currency)}</g:price>\n` +
     `<g:brand>${xml(offer.brand)}</g:brand>\n` +
     `<g:mpn>${xml(offer.mpn)}</g:mpn>\n` +
