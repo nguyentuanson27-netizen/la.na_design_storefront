@@ -642,6 +642,15 @@ the 2026-09-16 five-model approval, and nothing in either approval authorizes a 
 
 ---
 
+### I7 migration rollback reasoning
+
+The I7 migration is **expand-only**. It must be deployed before enabling the confirmation seam that writes
+the snapshot, so old and new application versions can coexist while the new tables are present. If the
+application needs to roll back, roll back the application code while **keeping the I7 tables and trigger
+history intact**; pre-I7 code ignores the additive tables. Do not use a down-migration that drops the
+snapshot tables, because that would destroy immutable order history. Re-enabling I7 later simply resumes
+writing snapshots for newly confirmed orders; there is still no backfill of older orders.
+
 ## 15. Rollback and disable
 
 The feature is off by default and reversible without a down-migration:
