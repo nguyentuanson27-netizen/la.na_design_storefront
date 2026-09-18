@@ -39,6 +39,11 @@ export type HeldReservation = Readonly<{
   variantId: string;
   quantity: number;
   state: ReservationState;
+  /**
+   * I7 authority captured by the same locked transaction that accepted this reservation.
+   * null means the row predates I7 / was created by rolling old code, so history must stay unknown.
+   */
+  acceptedPreorderState: "READY" | "PREORDER" | null;
 }>;
 
 export type ReservationRefusalReason =
@@ -186,7 +191,14 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         // equal the requested set, so every row it accepts is one this transaction has locked.
         const own = await tx.variantCapacityReservation.findMany({
           where: { orderId },
-          select: { id: true, variantId: true, quantity: true, state: true, committedAt: true },
+          select: {
+            id: true,
+            variantId: true,
+            quantity: true,
+            state: true,
+            acceptedPreorderState: true,
+            committedAt: true,
+          },
         });
         if (own.length > 0) {
           const requestedByVariantId = new Map(merged.map((line) => [line.variantId, line.quantity]));
@@ -211,8 +223,8 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           return {
             ok: true,
             alreadyHeld: true,
-            reservations: own.map(({ id, variantId, quantity, state }) =>
-              Object.freeze({ id, variantId, quantity, state }),
+            reservations: own.map(({ id, variantId, quantity, state, acceptedPreorderState }) =>
+              Object.freeze({ id, variantId, quantity, state, acceptedPreorderState }),
             ),
           } as const;
         }
@@ -277,11 +289,31 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         // row, so a duplicate here is an impossible state, and swallowing it would hide exactly the
         // quantity mismatch that branch exists to refuse.
         await tx.variantCapacityReservation.createMany({
-          data: merged.map((line) => ({ orderId, variantId: line.variantId, quantity: line.quantity })),
+          data: merged.map((line) => {
+            const input = inputByVariantId.get(line.variantId)!;
+            const readyStock = input.mirroredStock - input.activeReservedQuantity;
+            return {
+              orderId,
+              variantId: line.variantId,
+              quantity: line.quantity,
+              // This is historical order authority, not a later sellability re-check. If any part
+              // of an accepted PREORDER line exceeds ready stock, the line waits for preparation.
+              acceptedPreorderState:
+                input.sellingMode === "PREORDER" && readyStock < line.quantity
+                  ? ("PREORDER" as const)
+                  : ("READY" as const),
+            };
+          }),
         });
         const inserted = await tx.variantCapacityReservation.findMany({
           where: { orderId, variantId: { in: variantIds } },
-          select: { id: true, variantId: true, quantity: true, state: true },
+          select: {
+            id: true,
+            variantId: true,
+            quantity: true,
+            state: true,
+            acceptedPreorderState: true,
+          },
         });
 
         return {
