@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
+import { mergeReservationLines } from "./capacity-reservation.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -14,6 +15,22 @@ import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projec
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
+/**
+ * Whether an order's existing holds are exactly the basket now being snapshotted.
+ *
+ * The same comparison `reserveOrderCapacity` makes, so the two cannot disagree about what "the same
+ * basket" means: merged per variant, and equal on both the set of variants and each quantity.
+ */
+function reservationsMatchBasket(
+  holds: readonly { variantId: string; quantity: number }[],
+  items: readonly { variantId: string; quantity: number }[],
+): boolean {
+  const requested = mergeReservationLines(items);
+  if (holds.length !== requested.length) return false;
+  const heldByVariantId = new Map(holds.map((hold) => [hold.variantId, hold.quantity]));
+  return requested.every((line) => heldByVariantId.get(line.variantId) === line.quantity);
+}
+
 const ACTIVE_CHECKOUT_STATES = [
   "DRAFT",
   "VALIDATING",
@@ -383,6 +400,43 @@ export function createGuestCheckoutSnapshotService(
         }
         if (items.length > ANONYMOUS_CART_MAX_DISTINCT_ITEMS) {
           return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
+        }
+
+        // I6b — an order id must not outlive the basket its ledger rows hold.
+        //
+        // A reservation is keyed by the order (ADR 0014 §3) and only answers a retry for the *same*
+        // basket; anything else is `reservation-conflict`, fail-closed on purpose. Rewriting this
+        // DRAFT's lines in place would therefore bind a live order id to a basket its own holds
+        // contradict, and every retry would be refused — a buyer with a perfectly valid cart stuck
+        // on CART_CHANGED for good, with the active-checkout index blocking a second order too.
+        //
+        // The DRAFT is superseded instead, exactly as the shop-scope mismatch above does: retire
+        // it, free its holds, and let the fresh order below mint a new idempotency key.
+        //
+        // Only when every hold is still RESERVED. `SUBMITTING`, `COMMITTED` or `UNKNOWN` means a
+        // write may have reached Pancake, and §8 lets nothing free those on inference — that order
+        // stays as it is and §10 reconciliation owns it. Releasing here is a guarded compare-and-set
+        // in the same transaction as the retirement, so the two cannot diverge.
+        if (mutableDraft) {
+          const holds = await tx.variantCapacityReservation.findMany({
+            where: { orderId: mutableDraft.id },
+            select: { variantId: true, quantity: true, state: true },
+          });
+          if (holds.length > 0 && !reservationsMatchBasket(holds, items)) {
+            if (holds.every((hold) => hold.state === "RESERVED")) {
+              await tx.variantCapacityReservation.updateMany({
+                where: { orderId: mutableDraft.id, state: "RESERVED" },
+                data: { state: "RELEASED", releasedAt: now },
+              });
+              await tx.orderMirror.update({
+                where: { id: mutableDraft.id },
+                data: { state: "REJECTED", syncErrorCode: "SUPERSEDED_BY_CART_CHANGE" },
+              });
+              mutableDraft = null;
+            }
+            // Otherwise it is left alone deliberately. `reserveOrderCapacity` will still refuse the
+            // rewritten DRAFT, which is the correct fail-closed answer while a write may be live.
+          }
         }
 
         const variantIds = items.map(({ variantId }) => variantId);
