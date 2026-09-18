@@ -518,9 +518,8 @@ test("Ambiguous write (network error / 5xx) marks order as SYNC_UNKNOWN", async 
   assert.equal(prisma500.getOrderState().orderState, "SYNC_UNKNOWN");
 });
 
-test("Immediate marker recovery: confirms order when ambiguous create landed remotely", async () => {
+test("Ambiguous create leaves order in SYNC_UNKNOWN without inline marker search", async () => {
   const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
-  let searchMarkerCalled = false;
 
   const gateway = {
     async fetchCompleteCatalog() {
@@ -530,23 +529,17 @@ test("Immediate marker recovery: confirms order when ambiguous create landed rem
       // Simulates network drop after Pancake accepted order
       throw new PancakeNetworkError("/shops/orders");
     },
-    async searchOrderByMarker(sid: number, marker: string) {
-      searchMarkerCalled = true;
-      assert.equal(sid, shopId);
-      assert.ok(marker.includes(publicCode));
-      return { kind: "FOUND" as const, orderId: "999999" };
-    },
   };
 
   const service = createPancakeOrderSubmissionService(prismaMock, gateway);
   const result = await service.submit({ publicCode, shopId });
 
-  assert.equal(searchMarkerCalled, true);
   assert.deepEqual(result, {
-    ok: true,
-    state: "CONFIRMED",
-    pancakeOrderId: "999999",
+    ok: false,
+    state: "SYNC_UNKNOWN",
+    reason: "CREATE_OUTCOME_UNKNOWN",
   });
-  assert.equal(prismaMock.getOrderState().orderState, "CONFIRMED");
-  assert.equal(prismaMock.getOrderState().pancakeOrderId, "999999");
+  assert.equal(prismaMock.getOrderState().orderState, "SYNC_UNKNOWN");
+  assert.equal(prismaMock.getOrderState().syncErrorCode, "CREATE_OUTCOME_UNKNOWN");
+  assert.equal(prismaMock.getOrderState().pancakeOrderId, null);
 });

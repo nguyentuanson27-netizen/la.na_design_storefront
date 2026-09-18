@@ -18,7 +18,6 @@ import {
   resolveSellingPolicy,
 } from "./capacity-policy.ts";
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
-import type { MarkerSearchResult } from "../integrations/pancake/order-search.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 
@@ -128,10 +127,6 @@ export type PancakeOrderSubmissionResult =
 export type PancakeOrderSubmissionGateway = {
   fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
-  searchOrderByMarker?(
-    shopId: number,
-    marker: string,
-  ): Promise<MarkerSearchResult>;
 };
 
 export type PancakeOrderSubmissionOptions = {
@@ -870,30 +865,17 @@ export function createPancakeOrderSubmissionService(
         return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
       }
 
-      if (gateway.searchOrderByMarker) {
-        try {
-          const search = await gateway.searchOrderByMarker(persistedShopId, orderMarker);
-          if (search.kind === "FOUND") {
-            pancakeOrderId = search.orderId;
-          }
-        } catch {
-          // Keep going to ambiguous handling
-        }
-      }
-
-      if (pancakeOrderId === null) {
-        await client.orderMirror.updateMany({
-          where: { id: order.id, state: "POS_SUBMITTING" },
-          data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
-        });
-        emitSafely(options.onEvent, {
-          name: "pancake_order.create_unknown",
-          correlationId,
-          state: "SYNC_UNKNOWN",
-          reason: "CREATE_OUTCOME_UNKNOWN",
-        });
-        return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
-      }
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "POS_SUBMITTING" },
+        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.create_unknown",
+        correlationId,
+        state: "SYNC_UNKNOWN",
+        reason: "CREATE_OUTCOME_UNKNOWN",
+      });
+      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
     }
 
     try {
