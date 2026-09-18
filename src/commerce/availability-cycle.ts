@@ -1,3 +1,5 @@
+import { VIETNAM_UTC_OFFSET, VIETNAM_UTC_OFFSET_MINUTES } from "../brand/schema.ts";
+
 /**
  * I9 — the owner-approved preorder availability cycle (ADR 0011, superseding its blocked state).
  *
@@ -25,8 +27,6 @@ export const PREORDER_AVAILABILITY_WINDOW_DAYS = 15;
  * rather than an approximation. `promotion-admin-input.ts` already reads owner-entered campaign
  * times this way; using the same convention keeps one notion of "a Vietnamese day" in the codebase.
  */
-const VIETNAM_UTC_OFFSET_MINUTES = 7 * 60;
-
 /** A Vietnam calendar day as `YYYY-MM-DD`. Deliberately a date, with no time and no zone. */
 export type VietnamCalendarDate = string;
 
@@ -155,9 +155,10 @@ export function serializeVietnamAvailabilityDate(
   availabilityDate: VietnamCalendarDate,
 ): SerializedVietnamAvailabilityDate | null {
   if (parseCalendarDate(availabilityDate) === null) return null;
+  const merchantOffset = VIETNAM_UTC_OFFSET.replace(":", "");
   return Object.freeze({
-    merchant: `${availabilityDate}T00:00+0700`,
-    schema: `${availabilityDate}T00:00:00+07:00`,
+    merchant: `${availabilityDate}T00:00${merchantOffset}`,
+    schema: `${availabilityDate}T00:00:00${VIETNAM_UTC_OFFSET}`,
   });
 }
 
