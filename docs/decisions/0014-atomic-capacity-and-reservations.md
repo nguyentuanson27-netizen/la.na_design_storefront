@@ -447,15 +447,35 @@ unaffected — it never goes below zero, so no component accounting is needed.
 
 ## 12. Immutable order and preorder snapshot (I7)
 
-Preorder facts are snapshotted onto the order at successful confirmation and never recomputed:
+Preorder facts are snapshotted onto the order at successful local `CONFIRMED` and never recomputed:
 
-- preparation time **15 calendar days**, clock starting at successful system confirmation;
-- shipping added after preparation — Hà Nội `+1–3` days, other provinces `+3–10` days;
-- a mixed ready + preorder order is **held whole** and ships in one shipment after the preorder
-  items are ready; the customer ETA follows the slowest preorder item plus the shipping window.
+- preparation time **15 calendar days**, clock starting at the successful system confirmation instant;
+- this is an **ORDER ETA authority**, not Merchant `availability_date` and not a product-level public
+  availability date;
+- a mixed ready + preorder order is held whole and ships in one shipment after the preorder items
+  are ready; the order-level preorder readiness is the slowest snapshotted preorder readiness;
+- later policy or stock changes must not rewrite historical order truth;
+- no historical row is fabricated for orders confirmed before I7 or for rows whose required authority
+  was not available.
 
-A later policy change must not rewrite historical order truth. This mirrors the existing
-`OrderLineSnapshot` approach, which already freezes price and promotion facts at commit.
+I7 uses a dedicated `OrderPreorderSnapshot` + `OrderPreorderLineSnapshot` projection rather than
+the mutable DRAFT `OrderLineSnapshot`. The parent is one-to-one with the order; line rows preserve
+the confirmation-time READY/PREORDER state and line readiness. PostgreSQL triggers reject UPDATE and
+DELETE on both snapshot tables, and the order foreign key is `RESTRICT`, making the history
+append-only/immutable at the database boundary.
+
+The confirmation transition writes the local `CONFIRMED` state and the I7 snapshot in one database
+transaction. If authoritative policy/stock facts cannot be read safely, that local confirmation
+transaction fails closed instead of persisting a fabricated ETA; the existing ambiguous-write
+recovery path keeps the order from being treated as a clean confirmation until it can be reconciled.
+
+Calendar arithmetic uses the existing project authority of **UTC+7**. Because that authority has no
+DST transition, 15 calendar days preserves the confirmation local wall-clock time deterministically
+across month, year and leap-year boundaries.
+
+The snapshot never reads or derives Merchant `availability_date`. Shipping-window calculation is
+intentionally not part of I7 persistence; later F8 consumers may add the already-approved fulfillment
+window to this immutable preorder readiness, but must not rewrite the stored preparation fact.
 
 ---
 
