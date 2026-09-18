@@ -127,10 +127,10 @@ async function cleanupDatabase() {
   // immutable and hold their OrderMirror with RESTRICT. This fixture uses a per-run external id, so
   // confirmed order history is left intact instead of teaching tests to bypass production history
   // guarantees merely to obtain a clean database.
-  await prisma.variantCapacityReservation.deleteMany({
-    where: { order: { sourceCartId: cartId || undefined } },
-  });
   if (cartId) {
+    await prisma.variantCapacityReservation.deleteMany({
+      where: { order: { sourceCartId: cartId } },
+    });
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
