@@ -345,6 +345,92 @@ test("I7 creates one idempotent mixed snapshot from accepted reservation metadat
   });
 });
 
+test("I7 confirmation fails closed when accepted reservation metadata disagrees with the order", async () => {
+  const suffix = randomUUID();
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: `${prefix}-mismatch-${suffix}`,
+      slug: `${prefix}-mismatch-${suffix}`,
+      name: "I7 mismatch",
+      isPresent: true,
+      isActive: true,
+      syncedAt: new Date("2026-09-18T00:00:00.000Z"),
+      variants: {
+        create: {
+          pancakeVariationId: `${prefix}-mismatch-variation-${suffix}`,
+          size: "M",
+          isPresent: true,
+          isActive: true,
+          syncedAt: new Date("2026-09-18T00:00:00.000Z"),
+          warehouseStocks: {
+            create: {
+              pancakeWarehouseId: `${prefix}-mismatch-warehouse-${suffix}`,
+              quantity: 5,
+              syncedAt: new Date("2026-09-18T00:00:00.000Z"),
+            },
+          },
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  const variant = product.variants[0]!;
+  const order = await prisma.orderMirror.create({
+    data: {
+      publicCode: `${prefix}-mismatch-order-${suffix}`,
+      state: "DRAFT",
+      lines: {
+        create: {
+          variantId: variant.id,
+          pancakeVariationId: variant.pancakeVariationId,
+          productName: "I7 mismatch",
+          size: "M",
+          quantity: 2,
+          unitPriceVnd: BigInt(100_000),
+          lineTotalVnd: BigInt(200_000),
+        },
+      },
+      capacityReservations: {
+        create: {
+          variantId: variant.id,
+          quantity: 1,
+          acceptedPreorderState: "READY",
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      prisma.$transaction(async (tx) => {
+        await tx.orderMirror.update({
+          where: { id: order.id },
+          data: { state: "CONFIRMED", pancakeOrderId: `i7-mismatch-${suffix}` },
+        });
+        await createPreorderSnapshotAtConfirmation(
+          tx,
+          order.id,
+          new Date("2026-09-18T05:30:00.000Z"),
+        );
+      }),
+      /accepted reservation does not match order line/i,
+    );
+
+    const rolledBack = await prisma.orderMirror.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { state: true, pancakeOrderId: true },
+    });
+    assert.equal(rolledBack.state, "DRAFT");
+    assert.equal(rolledBack.pancakeOrderId, null);
+    assert.equal(await prisma.orderPreorderSnapshot.count({ where: { orderId: order.id } }), 0);
+  } finally {
+    await prisma.variantCapacityReservation.deleteMany({ where: { orderId: order.id } });
+    await prisma.orderMirror.delete({ where: { id: order.id } });
+    await prisma.productMirror.delete({ where: { id: product.id } });
+  }
+});
+
 test("I7 does not fabricate a snapshot when accepted capacity authority is absent", async () => {
   await inRollbackTransaction(async (tx) => {
     const { variant } = await seedVariant(tx, { label: "legacy", stock: 5 });
