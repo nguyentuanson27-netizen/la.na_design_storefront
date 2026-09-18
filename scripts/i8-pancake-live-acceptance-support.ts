@@ -26,3 +26,27 @@ export async function recoverOrderIdByMarker({
   }
   return null;
 }
+
+
+type AuthorizedFixtureIdentity = Readonly<{
+  displayId?: string | null;
+  barcode?: string | null;
+}>;
+
+export function requireAuthorizedFixture<T extends AuthorizedFixtureIdentity>(
+  catalog: readonly T[],
+  authorizedFixtureCode: string,
+): T {
+  const matches = catalog.filter(
+    (fixture) =>
+      fixture.displayId === authorizedFixtureCode || fixture.barcode === authorizedFixtureCode,
+  );
+
+  if (matches.length !== 1) {
+    throw new Error(
+      `Expected exactly one authorized fixture ${authorizedFixtureCode}; found ${matches.length}`,
+    );
+  }
+
+  return matches[0]!;
+}

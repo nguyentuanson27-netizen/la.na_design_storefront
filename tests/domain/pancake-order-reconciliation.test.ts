@@ -484,6 +484,8 @@ test("reconcileOrder ABSENT: rejects order and releases capacity when order is p
     client: prismaMock,
     gateway,
     clock: () => now,
+    absenceConfirmationDelayMs: 0,
+    sleep: async () => {},
   });
 
   const result = await service.reconcileOrder(publicCode);
@@ -623,6 +625,8 @@ test("crash-window regression: SYNC_UNKNOWN + SUBMITTING + ABSENT converges to R
     client: prismaMock,
     gateway,
     clock: () => now,
+    absenceConfirmationDelayMs: 0,
+    sleep: async () => {},
   });
 
   const result = await service.reconcileOrder(publicCode);

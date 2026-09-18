@@ -17,6 +17,9 @@ export type PancakeOrderReconciliationDependencies = {
   client: PrismaClient;
   gateway: PancakeOrderReconciliationGateway;
   clock?: () => Date;
+  absenceConfirmationAttempts?: number;
+  absenceConfirmationDelayMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 export type OrderReconciliationResult =
@@ -42,7 +45,33 @@ export function createPancakeOrderReconciliationService({
   client,
   gateway,
   clock = () => new Date(),
+  absenceConfirmationAttempts = 5,
+  absenceConfirmationDelayMs = 1000,
+  sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
 }: PancakeOrderReconciliationDependencies) {
+  if (!Number.isSafeInteger(absenceConfirmationAttempts) || absenceConfirmationAttempts < 1) {
+    throw new TypeError("Absence confirmation attempts must be a positive safe integer");
+  }
+  if (!Number.isSafeInteger(absenceConfirmationDelayMs) || absenceConfirmationDelayMs < 0) {
+    throw new TypeError("Absence confirmation delay must be a non-negative safe integer");
+  }
+
+  async function searchWithAbsenceConfirmation(
+    shopId: number,
+    marker: string,
+  ): Promise<MarkerSearchResult> {
+    let search = await gateway.searchOrderByMarker(shopId, marker);
+    if (search.kind !== "ABSENT") return search;
+
+    for (let attempt = 2; attempt <= absenceConfirmationAttempts; attempt += 1) {
+      await sleep(absenceConfirmationDelayMs);
+      search = await gateway.searchOrderByMarker(shopId, marker);
+      if (search.kind !== "ABSENT") return search;
+    }
+
+    return search;
+  }
+
   async function reconcileOrder(publicCode: string): Promise<OrderReconciliationResult> {
     const order = await client.orderMirror.findUnique({
       where: { publicCode },
@@ -103,7 +132,7 @@ export function createPancakeOrderReconciliationService({
     }
 
     const marker = `[ORDER:${order.publicCode}]`;
-    const search = await gateway.searchOrderByMarker(order.pancakeShopId, marker);
+    const search = await searchWithAbsenceConfirmation(order.pancakeShopId, marker);
 
     if (search.kind === "FOUND") {
       const committedAt = clock();

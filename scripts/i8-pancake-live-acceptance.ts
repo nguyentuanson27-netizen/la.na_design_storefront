@@ -5,10 +5,10 @@ import {
   parsePancakeCreateOrderResponse,
 } from "../src/integrations/pancake/order-create.ts";
 import { sanitizeSecrets } from "../src/integrations/pancake/order-search.ts";
-import { recoverOrderIdByMarker } from "./i8-pancake-live-acceptance-support.ts";
+import { recoverOrderIdByMarker, requireAuthorizedFixture } from "./i8-pancake-live-acceptance-support.ts";
 
 const AUTHORIZED_SHOP_ID = 1720000650;
-const AUTHORIZED_FIXTURE_PREFIX = "V8014";
+const AUTHORIZED_FIXTURE_CODE = "V8014-S";
 
 const SYNTHETIC_GEO = {
   provinceId: "805",
@@ -43,19 +43,9 @@ async function run() {
   const client = new PancakeClient({ apiKey });
   const gateway = createPancakeOrderGateway(client);
 
-  console.log("[3/6] Fetching catalog and resolving authorized fixture V8014...");
+  console.log(`[3/6] Fetching catalog and resolving authorized fixture ${AUTHORIZED_FIXTURE_CODE}...`);
   const catalog = await gateway.fetchCompleteCatalog(shopId);
-  const fixture = catalog.find(
-    (v) =>
-      v.displayId?.startsWith(AUTHORIZED_FIXTURE_PREFIX) ||
-      v.barcode?.startsWith(AUTHORIZED_FIXTURE_PREFIX),
-  );
-
-  if (!fixture) {
-    throw new Error(
-      `Authorized fixture ${AUTHORIZED_FIXTURE_PREFIX} not found in shop ${shopId} catalog`,
-    );
-  }
+  const fixture = requireAuthorizedFixture(catalog, AUTHORIZED_FIXTURE_CODE);
 
   console.log(`  -> Found target fixture: ${fixture.displayId} (ID: ${fixture.id})`);
   const initialStock = fixture.sellableStock;
@@ -143,9 +133,7 @@ async function run() {
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const postCleanupCatalog = await gateway.fetchCompleteCatalog(shopId);
-      const postCleanupFixture = postCleanupCatalog.find(
-        (v) => v.id === fixture.id || v.displayId === fixture.displayId,
-      );
+      const postCleanupFixture = postCleanupCatalog.find((v) => v.id === fixture.id);
       if (postCleanupFixture && postCleanupFixture.sellableStock === initialStock) {
         restoredStock = postCleanupFixture.sellableStock;
         break;
