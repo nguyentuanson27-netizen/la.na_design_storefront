@@ -45,37 +45,41 @@ const build = (products: readonly HomeProduct[]) =>
 
 /* ------------------------------------------------------------------ editorial panels */
 
-test("the three editorial panels take the first three photographed products in order", () => {
+// Two panels, not three: the hero is no longer one of them. Master spec §17 makes it campaign media
+// with its own destination, which `buildHomeHeroSlides` decides from admin-owned rows -- so a
+// product photo can no longer become the largest image on the homepage by sorting first.
+test("the two editorial panels take the first two photographed products in order", () => {
   const model = build([product(1, true), product(2, true), product(3, true)]);
 
-  assert.equal(model.hero?.image.url, image(1).url);
-  assert.equal(model.lookbookLarge?.image.url, image(2).url);
-  assert.equal(model.lookbookSmall?.image.url, image(3).url);
+  assert.equal(model.lookbookLarge?.image.url, image(1).url);
+  assert.equal(model.lookbookSmall?.image.url, image(2).url);
 });
 
 test("each panel falls back to the one above it rather than going blank", () => {
-  // A full-bleed panel with no photo is a blank wall, so one photographed product fills all three.
+  // A full-bleed panel with no photo is a blank wall, so one photographed product fills both.
   const one = build([product(1, true)]);
-  assert.equal(one.hero?.image.url, image(1).url);
   assert.equal(one.lookbookLarge?.image.url, image(1).url);
-  assert.equal(one.lookbookSmall?.image.url, image(1).url);
+  assert.equal(one.lookbookSmall?.image.url, image(1).url, "the small panel falls back to the large");
 
   const two = build([product(1, true), product(2, true)]);
-  assert.equal(two.lookbookLarge?.image.url, image(2).url);
-  assert.equal(two.lookbookSmall?.image.url, image(2).url, "the small panel falls back to the large");
+  assert.equal(two.lookbookLarge?.image.url, image(1).url);
+  assert.equal(two.lookbookSmall?.image.url, image(2).url);
 });
 
 test("products without trusted photography are skipped for panels but still get cards", () => {
   const model = build([product(1, false), product(2, true), product(3, false)]);
 
-  assert.equal(model.hero?.image.url, image(2).url, "the unphotographed first product is passed over");
+  assert.equal(
+    model.lookbookLarge?.image.url,
+    image(2).url,
+    "the unphotographed first product is passed over",
+  );
   assert.equal(model.cards.length, 3, "every product is still merchandised");
 });
 
 test("a page with no photography at all reports no panels rather than an empty image", () => {
   const model = build([product(1, false)]);
 
-  assert.equal(model.hero, null);
   assert.equal(model.lookbookLarge, null);
   assert.equal(model.lookbookSmall, null);
 });
@@ -83,7 +87,7 @@ test("a page with no photography at all reports no panels rather than an empty i
 test("a panel carries the product name, so markup can caption a photo with no alt text", () => {
   const model = build([product(1, true)]);
 
-  assert.equal(model.hero?.productName, "Sản phẩm 1");
+  assert.equal(model.lookbookLarge?.productName, "Sản phẩm 1");
 });
 
 /* ----------------------------------------------------------------------- the cards */
@@ -117,7 +121,8 @@ test("an empty catalog produces no cards and no panels, not a crash", () => {
   const model = build([]);
 
   assert.deepEqual(model.cards, []);
-  assert.equal(model.hero, null);
+  assert.equal(model.lookbookLarge, null);
+  assert.equal(model.lookbookSmall, null);
 });
 
 /* ------------------------------------------------------------------- collections */

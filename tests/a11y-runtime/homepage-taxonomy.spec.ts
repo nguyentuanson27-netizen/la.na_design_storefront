@@ -190,7 +190,8 @@ test("U2 homepage collection rail uses explicit published merchandising position
   await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
   await expect(page.getByText("U2 Published Unpositioned", { exact: true })).toHaveCount(0);
   await expect(page.getByText("U2 Draft Positioned", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Mua bộ sưu tập/ })).toHaveAttribute("href", "/shop");
+  // No collection here publishes hero media, so the homepage hero stays absent (master spec §17).
+  await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expectCanonicalTrustStrip(page);
   expect(
     await page.locator("[data-homepage-region]").evaluateAll((regions) =>

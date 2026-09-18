@@ -9,6 +9,7 @@ import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { sealRoute, type RouteHandle } from "./core.tsx";
+import { buildHomeHeroSlides, type HomeHeroSlide } from "./home-hero.ts";
 import { buildHomeViewModel, type HomeViewModel } from "./home-model.ts";
 
 /**
@@ -22,7 +23,32 @@ import { buildHomeViewModel, type HomeViewModel } from "./home-model.ts";
 const collectionRepository = createCollectionDefinitionRepository(prisma);
 
 export type HomeRouteData = HomeViewModel &
-  Readonly<{ brandFacts: ReturnType<typeof buildPublicBrandFacts> }>;
+  Readonly<{
+    heroSlides: readonly HomeHeroSlide[];
+    brandFacts: ReturnType<typeof buildPublicBrandFacts>;
+  }>;
+
+/**
+ * The hero's source, and the only place that knows what a campaign slide is made of today.
+ *
+ * Master spec §17 wants campaign slides, and no campaign owner is approved yet. Published
+ * collections that carry hero media are the one real admin-owned pair of image and destination the
+ * site already has, and `homepagePosition` already orders them, so they stand in as the source
+ * rather than a hardcoded slide or a placeholder. A collection with no hero image contributes
+ * nothing, which is why the hero is absent today rather than invented.
+ *
+ * When a campaign owner is approved, this function is what changes. `buildHomeHeroSlides`, the
+ * component and their tests are written against `HomeHeroSlideCandidate`, not against collections.
+ */
+function toHeroCandidates(
+  collections: readonly Readonly<{ slug: string; title: string; heroImageUrl: string | null }>[],
+) {
+  return collections.map((collection) => ({
+    imageUrl: collection.heroImageUrl,
+    href: `/collections/${collection.slug}`,
+    label: collection.title,
+  }));
+}
 
 export type HomeRouteProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -70,6 +96,7 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
         collections,
         selectEventBySlug: listTracking.selectEventBySlug,
       }),
+      heroSlides: buildHomeHeroSlides(toHeroCandidates(collections)),
       brandFacts: buildPublicBrandFacts(readGuestShippingPolicy()),
     },
     refreshAfterMs,

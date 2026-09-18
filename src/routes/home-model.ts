@@ -40,7 +40,6 @@ export type HomeCard = Readonly<{ id: string; model: ProductCardModel }>;
 
 export type HomeViewModel = Readonly<{
   cards: readonly HomeCard[];
-  hero: HomeEditorialPanel;
   lookbookLarge: HomeEditorialPanel;
   lookbookSmall: HomeEditorialPanel;
   collections: readonly HomeCollectionLink[];
@@ -60,8 +59,10 @@ export function buildHomeViewModel({
   collections,
   selectEventBySlug,
 }: HomeViewModelInput): HomeViewModel {
-  // Three panels: hero, then the two lookbook slots.
-  const [hero, lookbookLarge, lookbookSmall] = selectEditorialPanels(products, 3);
+  // Two panels, for the two lookbook slots. The hero is no longer one of them: master spec §17
+  // makes it campaign media with its own destination, which `buildHomeHeroSlides` decides from
+  // admin-owned rows rather than from whichever product photo happened to sort first.
+  const [lookbookLarge, lookbookSmall] = selectEditorialPanels(products, 2);
 
   return Object.freeze({
     cards: Object.freeze(
@@ -79,7 +80,6 @@ export function buildHomeViewModel({
         }),
       ),
     ),
-    hero: hero ?? null,
     lookbookLarge: lookbookLarge ?? null,
     lookbookSmall: lookbookSmall ?? null,
     collections: Object.freeze([...collections]),

@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { BrandHeroSlider } from "@/components/brand/hero-slider";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadHomeRoute, type HomeRouteData, type HomeRouteProps } from "@/routes/home";
@@ -44,25 +45,12 @@ function render(data: HomeRouteData) {
 
   return (
     <>
-      <section className="campaign-hero" aria-labelledby="campaign-title">
-        <EditorialPanel
-          panel={data.hero}
-          className="campaign-visual relative min-h-[620px] overflow-hidden bg-[var(--stone)]"
-          fallbackAlt={`${BRAND.identity.name} Campaign`}
-          sizes="(min-width: 900px) 60vw, 100vw"
-          preload
-        />
-        <div className="campaign-copy">
-          <p className="eyebrow">{BRAND.identity.name} / Campaign</p>
-          <h1 id="campaign-title">QUIET FORM.</h1>
-          <p className="campaign-intro">
-            Clean lines, relaxed proportions and a muted palette designed for everyday movement.
-          </p>
-          <Link className="text-link" href="/shop">
-            Mua bộ sưu tập <span aria-hidden="true">↗</span>
-          </Link>
-        </div>
-      </section>
+      {/* The hero carries image and CTA only (§17), so the page's one h1 cannot live inside it.
+          It reads the approved homepage title rather than restating it, and is available to
+          assistive technology without putting a heading over the campaign art. */}
+      <h1 className="sr-only">{BRAND.identity.homeTitle}</h1>
+
+      <BrandHeroSlider slides={data.heroSlides} />
 
       <section className="collection-intro" aria-labelledby="new-collection-title">
         <p className="eyebrow">Collection / 01</p>

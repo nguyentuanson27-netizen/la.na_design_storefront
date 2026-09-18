@@ -443,13 +443,15 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
 test("homepage uses the configured local catalog while retired Lookbook is absent", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "QUIET FORM." })).toBeVisible();
-  await expect(page.locator(".campaign-visual img")).toBeVisible();
+  // The page's one h1 is the approved homepage title, carried outside the hero: master spec §17
+  // puts image and CTA on a slide and no heading over the campaign art.
+  await expect(page.locator("h1")).toHaveCount(1);
+  // This fixture publishes no collection hero media, so the hero region is absent rather than
+  // rendered against a product photo the way the retired campaign block was.
+  await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expect(page.locator(".lookbook-panel--large img")).toBeVisible();
   await expect(page.locator(".lookbook-panel--small img")).toBeVisible();
-  await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Mua bộ sưu tập", exact: true })).toHaveAttribute("href", "/shop");
   await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
@@ -537,9 +539,8 @@ test("P8 homepage empty state uses the shared semantic state pattern and degrade
   await expect(
     emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", { exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".campaign-visual img")).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
-  await expect(page.locator(".campaign-figure")).toHaveCount(0);
   await expect(page.locator(".lookbook-figure")).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
   await expectRuntimePageClean(page);
