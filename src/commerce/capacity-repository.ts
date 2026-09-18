@@ -21,7 +21,7 @@
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
-import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
+import { acquireCatalogSyncLock, CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import {
   resolveSellingPolicy,
   type ResolvedSellingPolicy,
@@ -214,9 +214,10 @@ export function createCapacityRepository(
     sellingMode: SellingMode;
     negativeStockLimit: number;
   }): Promise<ResolvedSellingPolicy> {
-    return client.$transaction(async (tx) => {
-      await acquireCatalogSyncLock(tx, shopId);
-      await requireVisibleProduct(tx, shopId, productId);
+    return client.$transaction(
+      async (tx) => {
+        await acquireCatalogSyncLock(tx, shopId);
+        await requireVisibleProduct(tx, shopId, productId);
       await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
 
       const stored = await tx.productSellingPolicy.upsert({
@@ -226,9 +227,11 @@ export function createCapacityRepository(
         select: policySelect,
       });
       const resolved = resolveSellingPolicy(stored);
-      await observePolicyChange(tx, productId, resolved.sellingMode, clock());
-      return resolved;
-    });
+        await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+        return resolved;
+      },
+      { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+    );
   }
 
   /**
@@ -246,17 +249,20 @@ export function createCapacityRepository(
     shopId: number;
     productId: string;
   }): Promise<ResolvedSellingPolicy> {
-    return client.$transaction(async (tx) => {
-      await acquireCatalogSyncLock(tx, shopId);
-      await requireVisibleProduct(tx, shopId, productId);
+    return client.$transaction(
+      async (tx) => {
+        await acquireCatalogSyncLock(tx, shopId);
+        await requireVisibleProduct(tx, shopId, productId);
       await tx.productSellingPolicy.deleteMany({ where: { productId } });
       // The missing-row answer, from the one resolver that owns it.
       const resolved = resolveSellingPolicy(null);
       // Clearing the policy returns the product to STANDARD, which ends any open cycle — the same
       // boundary as switching the mode explicitly.
-      await observePolicyChange(tx, productId, resolved.sellingMode, clock());
-      return resolved;
-    });
+        await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+        return resolved;
+      },
+      { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
+    );
   }
 
   return {
