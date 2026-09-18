@@ -1,10 +1,11 @@
-import { PancakeClient } from "../src/integrations/pancake/client.ts";
+import { PancakeClient, PancakeHttpError } from "../src/integrations/pancake/client.ts";
 import { createPancakeOrderGateway } from "../src/integrations/pancake/order-gateway.ts";
 import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
 } from "../src/integrations/pancake/order-create.ts";
 import { sanitizeSecrets } from "../src/integrations/pancake/order-search.ts";
+import { recoverOrderIdByMarker } from "./i8-pancake-live-acceptance-support.ts";
 
 const AUTHORIZED_SHOP_ID = 1720000650;
 const AUTHORIZED_FIXTURE_PREFIX = "V8014";
@@ -84,40 +85,54 @@ async function run() {
     ],
   });
 
-  const createRaw = await gateway.createOrder(orderRequest);
-  const orderId = parsePancakeCreateOrderResponse(createRaw);
-  console.log(`  -> Order successfully created with remote Pancake ID: ${orderId}`);
-
+  let orderId: string | null = null;
+  let createMayHaveSucceeded = false;
   let isCanceled = false;
   let restoredStock: number | null = null;
+
   try {
-    console.log("[5/6] Verifying remote order search by marker & order status readback...");
-    let searchResult = await gateway.searchOrderByMarker(shopId, marker);
-    for (let attempt = 1; attempt <= 5 && searchResult.kind !== "FOUND"; attempt += 1) {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      searchResult = await gateway.searchOrderByMarker(shopId, marker);
+    createMayHaveSucceeded = true;
+    let createRaw: unknown;
+    try {
+      createRaw = await gateway.createOrder(orderRequest);
+    } catch (error) {
+      if (error instanceof PancakeHttpError && error.status >= 400 && error.status < 500) {
+        createMayHaveSucceeded = false;
+      }
+      throw error;
     }
-    if (searchResult.kind !== "FOUND" || searchResult.orderId !== orderId) {
+
+    const createdOrderId = parsePancakeCreateOrderResponse(createRaw);
+    orderId = createdOrderId;
+    console.log(`  -> Order successfully created with remote Pancake ID: ${createdOrderId}`);
+
+    console.log("[5/6] Verifying remote order search by marker & order status readback...");
+    const discoveredOrderId = await recoverOrderIdByMarker({
+      gateway,
+      shopId,
+      marker,
+    });
+    if (discoveredOrderId !== createdOrderId) {
       throw new Error(
-        `Order search verification failed: expected FOUND ${orderId}, got ${JSON.stringify(searchResult)}`,
+        `Order search verification failed: expected FOUND ${createdOrderId}, got ${discoveredOrderId ?? "NOT_FOUND"}`,
       );
     }
-    console.log(`  -> searchOrderByMarker verified: FOUND order ${searchResult.orderId}`);
+    console.log(`  -> searchOrderByMarker verified: FOUND order ${discoveredOrderId}`);
 
-    const initialStatus = await gateway.fetchOrderStatus(shopId, orderId);
+    const initialStatus = await gateway.fetchOrderStatus(shopId, createdOrderId);
     console.log(`  -> fetchOrderStatus verified: current status is ${initialStatus.status}`);
 
     console.log("[6/6] Cancelling test order to terminal state (status: 7) & verifying stock restoration...");
-    await gateway.cancelOrder(shopId, orderId);
+    await gateway.cancelOrder(shopId, createdOrderId);
     isCanceled = true;
 
-    const finalStatus = await gateway.fetchOrderStatus(shopId, orderId);
+    const finalStatus = await gateway.fetchOrderStatus(shopId, createdOrderId);
     if (finalStatus.status !== 7) {
       throw new Error(
         `Order cleanup verification failed: expected status 7, observed ${finalStatus.status}`,
       );
     }
-    console.log(`  -> Order ${orderId} successfully canceled to terminal status 7`);
+    console.log(`  -> Order ${createdOrderId} successfully canceled to terminal status 7`);
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const postCleanupCatalog = await gateway.fetchCompleteCatalog(shopId);
@@ -140,15 +155,50 @@ async function run() {
     }
     console.log(`  -> Fixture ${fixture.displayId} sellable stock refetched & verified restored to baseline: ${restoredStock}`);
   } finally {
-    if (!isCanceled) {
-      console.log(`  [CLEANUP] Attempting emergency cancellation for order ${orderId}...`);
-      try {
-        await gateway.cancelOrder(shopId, orderId);
-        console.log(`  [CLEANUP] Emergency cancellation sent for order ${orderId}`);
-      } catch (cleanupError) {
-        console.error(`  [CLEANUP ERROR] Failed to cancel test order ${orderId}:`, cleanupError);
+    if (!isCanceled && createMayHaveSucceeded) {
+      let cleanupOrderId = orderId;
+      if (cleanupOrderId === null) {
+        console.log(`  [CLEANUP] Recovering created order by marker ${marker}...`);
+        try {
+          cleanupOrderId = await recoverOrderIdByMarker({
+            gateway,
+            shopId,
+            marker,
+          });
+          if (cleanupOrderId !== null) orderId = cleanupOrderId;
+        } catch (cleanupSearchError) {
+          console.error(
+            "  [CLEANUP ERROR] Marker recovery failed:",
+            sanitizeSecrets(
+              cleanupSearchError instanceof Error
+                ? cleanupSearchError.message
+                : String(cleanupSearchError),
+            ),
+          );
+        }
+      }
+
+      if (cleanupOrderId === null) {
+        console.error(
+          `  [CLEANUP ERROR] Could not recover a unique order for marker ${marker}; operator cleanup is required.`,
+        );
+      } else {
+        console.log(`  [CLEANUP] Attempting emergency cancellation for order ${cleanupOrderId}...`);
+        try {
+          await gateway.cancelOrder(shopId, cleanupOrderId);
+          console.log(`  [CLEANUP] Emergency cancellation sent for order ${cleanupOrderId}`);
+        } catch (cleanupError) {
+          console.error(
+            `  [CLEANUP ERROR] Failed to cancel test order ${cleanupOrderId}:`,
+            sanitizeSecrets(cleanupError instanceof Error ? cleanupError.message : String(cleanupError)),
+          );
+        }
       }
     }
+  }
+
+  if (orderId === null) {
+    throw new Error(`Created order id could not be recovered for marker ${marker}`);
   }
 
   console.log("\n==================================================");

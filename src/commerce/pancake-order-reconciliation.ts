@@ -1,4 +1,5 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
+import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
 import type {
   MarkerSearchResult,
   OrderSearchOptions,
@@ -152,6 +153,8 @@ export function createPancakeOrderReconciliationService({
             reason: "ORDER_NOT_IN_SYNC_UNKNOWN" as const,
           };
         }
+
+        await createPreorderSnapshotAtConfirmation(tx, order.id, committedAt);
 
         const resClaim = await tx.variantCapacityReservation.updateMany({
           where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
