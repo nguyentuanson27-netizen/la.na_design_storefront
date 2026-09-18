@@ -51,7 +51,7 @@ CREATE INDEX "OrderPreorderLineSnapshot_variantId_idx"
 ALTER TABLE "OrderPreorderSnapshot"
   ADD CONSTRAINT "OrderPreorderSnapshot_orderId_fkey"
   FOREIGN KEY ("orderId") REFERENCES "OrderMirror"("id")
-  ON DELETE RESTRICT ON UPDATE CASCADE;
+  ON DELETE RESTRICT ON UPDATE RESTRICT;
 
 ALTER TABLE "OrderPreorderLineSnapshot"
   ADD CONSTRAINT "OrderPreorderLineSnapshot_snapshotId_fkey"
