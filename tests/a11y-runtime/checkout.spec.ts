@@ -51,10 +51,20 @@ async function waitForServer() {
     }
 
     try {
-      const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
-      if (response.status < 500) return;
+      const [pageResponse, authResponse] = await Promise.all([
+        fetch(`${BASE_URL}/`, { redirect: "manual" }),
+        fetch(`${BASE_URL}/api/auth/get-session`, {
+          redirect: "manual",
+          headers: { "x-ci-client-ip": TRUSTED_CLIENT_IP },
+        }),
+      ]);
+      // The header mounts Better Auth on every storefront page. A homepage-only readiness probe can
+      // race a freshly restarted Next dev server and let Playwright navigate while the catch-all
+      // auth route still answers 404. Do not weaken the browser's clean-console assertion; declare
+      // this fixture ready only when both the page and the route it immediately depends on are live.
+      if (pageResponse.status < 500 && authResponse.status === 200) return;
     } catch {
-      // Next dev may still be compiling.
+      // Next dev may still be compiling either the page or the auth route.
     }
     await delay(500);
   }
