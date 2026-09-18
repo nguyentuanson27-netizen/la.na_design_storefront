@@ -33,7 +33,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
               <a href={`mailto:${model.contact.email}`}>{model.contact.email}</a>
             </li>
             <li>
-              <span className="footer-label">Địa chỉ hỗ trợ/đổi trả</span>
+              <span className="footer-label">Địa chỉ kinh doanh/đổi trả</span>
               <span>{model.address}</span>
             </li>
             <li>
@@ -89,8 +89,9 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
       </div>
 
       <div className="footer-legal" data-footer-legal>
+        <p className="footer-label">Thông tin pháp lý</p>
         <p className="footer-legal-name">{model.legal.legalEntityName}</p>
-        <p>{model.legal.registeredAddress}</p>
+        <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
         <p>
           MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}
         </p>
