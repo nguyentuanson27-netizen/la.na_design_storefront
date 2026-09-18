@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { createCapacityRepository } from "../../src/commerce/capacity-repository.ts";
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type {
@@ -547,4 +548,103 @@ test("I9 availability cycle uses the post-fetch observation day, not the G5 read
   });
   assert.equal(cycle.cycleStartDate?.toISOString(), "2026-09-19T00:00:00.000Z");
   assert.equal(cycle.availabilityDate?.toISOString(), "2026-10-04T00:00:00.000Z");
+});
+
+
+async function seedI9SerializedOrderingFixture(label: string) {
+  const inStock = [
+    variation({
+      id: `mirror-variation-i9-order-${label}`,
+      displayId: `DISPLAY-I9-ORDER-${label}`,
+      barcode: `BAR-I9-ORDER-${label}`,
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 1 }],
+    }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: inStock,
+    syncedAt: new Date("2026-09-18T10:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-18T10:00:01.000Z"),
+  });
+  const product = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+    include: { variants: true },
+  });
+  await prisma.productMirror.update({ where: { id: product.id }, data: { isActive: true } });
+  const capacity = createCapacityRepository(
+    prisma,
+    () => new Date("2026-09-18T12:00:00.000Z"),
+  );
+  await capacity.saveSellingPolicy({
+    shopId,
+    productId: product.id,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+  });
+  return { product, capacity };
+}
+
+function i9SoldOutSnapshot(label: string) {
+  return [
+    variation({
+      id: `mirror-variation-i9-order-${label}`,
+      displayId: `DISPLAY-I9-ORDER-${label}`,
+      barcode: `BAR-I9-ORDER-${label}`,
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 0 }],
+    }),
+  ];
+}
+
+async function assertI9FinalStandardSoldOutState(productId: string, variantId: string) {
+  const [policy, stock, cycle] = await Promise.all([
+    prisma.productSellingPolicy.findUniqueOrThrow({ where: { productId } }),
+    prisma.warehouseStock.aggregate({ where: { variantId }, _sum: { quantity: true } }),
+    prisma.variantAvailabilityCycle.findUniqueOrThrow({ where: { variantId } }),
+  ]);
+  assert.equal(policy.sellingMode, "STANDARD");
+  assert.equal(stock._sum.quantity, 0);
+  assert.equal(cycle.cycleStartDate, null);
+  assert.equal(cycle.availabilityDate, null);
+  assert.equal(cycle.lastPreorder, false);
+  assert.equal(cycle.lastStockNonPositive, true);
+}
+
+test("I9 serialized sync then admin STANDARD leaves the final sold-out cycle closed", async () => {
+  const { product, capacity } = await seedI9SerializedOrderingFixture("sync-first");
+  const variant = product.variants[0]!;
+
+  await repository.syncSnapshot({
+    shopId,
+    variations: i9SoldOutSnapshot("sync-first"),
+    syncedAt: new Date("2026-09-18T13:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-18T13:00:01.000Z"),
+  });
+  await capacity.saveSellingPolicy({
+    shopId,
+    productId: product.id,
+    sellingMode: "STANDARD",
+    negativeStockLimit: 0,
+  });
+
+  await assertI9FinalStandardSoldOutState(product.id, variant.id);
+});
+
+test("I9 serialized admin STANDARD then sync leaves the final sold-out cycle closed", async () => {
+  const { product, capacity } = await seedI9SerializedOrderingFixture("admin-first");
+  const variant = product.variants[0]!;
+
+  await capacity.saveSellingPolicy({
+    shopId,
+    productId: product.id,
+    sellingMode: "STANDARD",
+    negativeStockLimit: 0,
+  });
+  await repository.syncSnapshot({
+    shopId,
+    variations: i9SoldOutSnapshot("admin-first"),
+    syncedAt: new Date("2026-09-18T13:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-18T13:00:01.000Z"),
+  });
+
+  await assertI9FinalStandardSoldOutState(product.id, variant.id);
 });
