@@ -77,7 +77,9 @@ test("stale VALIDATING is rejected, stale POS_SUBMITTING becomes SYNC_UNKNOWN, a
 
   assert.deepEqual(
     await recoverStrandedGuestCheckouts(prisma, { now, staleAfterMs: 60_000 }),
-    { validatingRejected: 1, submittingUnknown: 1 },
+    // `reservedExpired: 0` is load-bearing here, not noise: with no approved §8 window the sweep
+    // must free nothing at all, and this pins that it stays off unless a window is supplied.
+    { validatingRejected: 1, submittingUnknown: 1, reservedExpired: 0 },
   );
 
   const recoveredValidating = await prisma.orderMirror.findUniqueOrThrow({ where: { id: validating.id } });
