@@ -3,7 +3,10 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { recoverStrandedGuestCheckouts } from "../../src/commerce/guest-checkout-recovery.ts";
+import {
+  RESERVED_HOLD_WINDOW_MS,
+  recoverStrandedGuestCheckouts,
+} from "../../src/commerce/guest-checkout-recovery.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
 /**
@@ -264,18 +267,59 @@ test("I6b a fresh in-flight checkout is left alone entirely", async () => {
 });
 
 /**
- * ADR 0014 §8 expiry — the mechanism, exercised with an explicitly supplied window.
+ * ADR 0014 §8 expiry.
  *
- * The production window (`RESERVED_HOLD_WINDOW_MS`) is deliberately `null`: §8 says only that it
- * "belongs to I6a" and "must be long enough to cover a slow legitimate checkout", and neither it
- * nor the owner-approved facts authority names a number. Inventing one here would be choosing, in
- * a test, when real buyers lose units they are mid-way through buying.
+ * The window is **15 minutes**, approved by the repository owner on 2026-09-18. Until then it was
+ * `null` and the path was inert, because §8 names no duration and inventing one would have meant
+ * choosing, in a test, when real buyers lose units they are mid-way through buying.
  *
- * So these pass a window explicitly. They prove the path is correct and complete the day a number
- * is approved — and that until then it frees nothing.
+ * These pass a window explicitly so each case states the age it is about, rather than depending on
+ * a constant that could change underneath them. The constant itself is asserted separately below:
+ * without that, a future edit setting it back to `null` would turn expiry off in production and
+ * every test here would still pass.
  */
 
 const EXPLICIT_TEST_WINDOW_MS = 30 * 60_000;
+
+test("I6b the approved expiry window is wired, so production actually expires holds", async () => {
+  // The one assertion these specs cannot make with an injected window. Every other test here would
+  // still pass if the constant were `null` — production would simply never expire anything, which
+  // is precisely the gap the owner's approval closed.
+  assert.equal(
+    RESERVED_HOLD_WINDOW_MS,
+    15 * 60_000,
+    "the owner-approved RESERVED hold window is 15 minutes (facts authority, 2026-09-18)",
+  );
+
+  // And it is genuinely the default: a caller that supplies no window still expires a stale hold.
+  const { hold } = await seedStranded("approved-window", "DRAFT", "RESERVED");
+  const olderThanTheWindow = new Date(now.getTime() - 16 * 60_000);
+  await prisma.$executeRaw`UPDATE "VariantCapacityReservation" SET "updatedAt" = ${olderThanTheWindow} WHERE id = ${hold.id}`;
+
+  const result = await recoverStrandedGuestCheckouts(prisma, { now });
+
+  assert.equal(result.reservedExpired, 1);
+  assert.equal(
+    (await prisma.variantCapacityReservation.findUniqueOrThrow({ where: { id: hold.id } })).state,
+    "RELEASED",
+  );
+});
+
+test("I6b a hold inside the approved window survives the default sweep", async () => {
+  // The other side of the same constant: 14 minutes is still a live checkout, and §8's whole
+  // requirement is that the window be long enough to cover a slow legitimate one.
+  const { hold } = await seedStranded("inside-window", "DRAFT", "RESERVED");
+  const insideTheWindow = new Date(now.getTime() - 14 * 60_000);
+  await prisma.$executeRaw`UPDATE "VariantCapacityReservation" SET "updatedAt" = ${insideTheWindow} WHERE id = ${hold.id}`;
+
+  const result = await recoverStrandedGuestCheckouts(prisma, { now });
+
+  assert.equal(result.reservedExpired, 0, "a hold inside the approved window must not be expired");
+  assert.equal(
+    (await prisma.variantCapacityReservation.findUniqueOrThrow({ where: { id: hold.id } })).state,
+    "RESERVED",
+  );
+});
 
 test("I6b an abandoned RESERVED hold stops counting once a window is supplied", async () => {
   // A DRAFT, which is exactly the abandoned-checkout shape: reserve, submission ends pre-write and
@@ -297,19 +341,23 @@ test("I6b an abandoned RESERVED hold stops counting once a window is supplied", 
   assert.notEqual(expired.releasedAt, null);
 });
 
-test("I6b no window means no hold is ever timer-released", async () => {
-  // Today's production behaviour, and the reason it is not a bug: an unapproved duration is not a
-  // licence to pick one. The facts authority is explicit that a pending value stays unset.
-  const { hold } = await seedStranded("no-window", "DRAFT", "RESERVED");
+test("I6b expiry is driven by the window, not by the sweep running", async () => {
+  // Before the owner approved a duration, the constant was `null` and this proved nothing was ever
+  // timer-released. That property still matters as a mechanism: expiry must be the WINDOW's doing,
+  // so that a deployment which has not yet agreed a duration cannot free a buyer's units merely by
+  // running recovery. A window of zero-length applicability is expressed by supplying none.
+  const { hold } = await seedStranded("window-drives", "DRAFT", "RESERVED");
   await prisma.$executeRaw`UPDATE "VariantCapacityReservation" SET "updatedAt" = ${stale} WHERE id = ${hold.id}`;
 
-  const result = await recoverStrandedGuestCheckouts(prisma, { now });
+  const result = await recoverStrandedGuestCheckouts(prisma, {
+    now,
+    reservedHoldWindowMs: 24 * 60 * 60_000,
+  });
 
-  assert.equal(result.reservedExpired, 0, "no approved window must mean no expiry at all");
+  assert.equal(result.reservedExpired, 0, "a hold inside the supplied window must not be expired");
   assert.equal(
     (await prisma.variantCapacityReservation.findUniqueOrThrow({ where: { id: hold.id } })).state,
     "RESERVED",
-    "without an approved window the hold keeps counting — the gap, stated honestly",
   );
 });
 

@@ -6,17 +6,21 @@ const MAX_CART_ID_LENGTH = 128;
 /**
  * How long a pre-submit `RESERVED` hold may keep counting before it is released (ADR 0014 §8).
  *
- * **Deliberately `null`: the duration is not an owner-approved fact yet.** §8 says only that the
- * window "belongs to I6a" and "must be long enough to cover a slow legitimate checkout" — it names
- * no number, and neither does the owner-approved facts authority. A number chosen here would be an
- * invented one governing when real buyers lose their held units: too short strips a slow checkout
- * mid-purchase, too long recreates the false hold this path exists to prevent. The facts authority
- * is explicit that a pending value is left unset rather than given a placeholder.
+ * **Fifteen minutes, approved by the repository owner on 2026-09-18.** §8 assigns the window to I6a
+ * and requires only that it be "long enough to cover a slow legitimate checkout"; the duration
+ * itself was not a fact anywhere in the repository until that approval, and is recorded with its
+ * provenance in the owner-approved facts authority.
  *
- * The release path below is complete and tested; it is inert while this is `null`, and setting it
- * to an approved number is the only change needed to make expiry live.
+ * Deliberately the same shape as `DEFAULT_STALE_AFTER_MS` but a separate constant, because the two
+ * answer different questions — how long a *hold* may count, versus how long an *order* may sit
+ * mid-flight — and a future change to one must not silently move the other.
+ *
+ * Note for whoever revisits this: the anonymous cart lives for 30 days, far longer than this
+ * window. That is not a conflict. An expired hold does not empty the basket; the buyer's next
+ * submission re-reserves it, and either succeeds or gets a truthful capacity refusal. What expiry
+ * ends is the *claim* on the units, not the cart.
  */
-export const RESERVED_HOLD_WINDOW_MS: number | null = null;
+export const RESERVED_HOLD_WINDOW_MS: number | null = 15 * 60_000;
 
 type RecoveryOptions = Readonly<{
   now?: Date;

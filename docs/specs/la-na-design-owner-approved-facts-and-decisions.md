@@ -436,31 +436,30 @@ Master spec §47. These are content gaps, not architecture blockers:
 The `set-vay-form-nho` hip values are deliberately **not** on this list: §6 records them as absent
 from the approved table, not as an owner fact still to come.
 
-### The `RESERVED` capacity-hold expiry window — architecture, not content
+The `RESERVED` capacity-hold expiry window was briefly on this list during I6b and is **no longer
+pending** — it was approved on 2026-09-18 and has its own section below.
 
-Unlike the seven above, this one blocks a behaviour that is already built.
-
-ADR 0014 §8 says a pre-submit `RESERVED` hold **may** expire, that the window "belongs to I6a", and
-that it "must be long enough to cover a slow legitimate checkout". It names no duration, and no
-duration appears anywhere in this authority. So there is no approved number, and I6b does not invent
-one.
+## The `RESERVED` capacity-hold expiry window — approved 2026-09-18
 
 | | |
 |---|---|
-| **Decision needed** | How long a `RESERVED` hold keeps counting before it is released |
-| **Authority today** | ADR 0014 §8 — qualitative only; assigns the window to I6a and states the lower bound in prose |
-| **Status** | **Pending owner approval.** No number in this document, the ADR, or the master spec |
-| **Implementation** | `RESERVED_HOLD_WINDOW_MS` in `src/commerce/guest-checkout-recovery.ts`, deliberately `null` |
-| **Effect while pending** | No hold is ever released on a timer. An abandoned checkout's units keep counting until the order is superseded or recovered |
-| **To make it live** | Set that one constant to the approved number. The release path is implemented and covered by database regressions that supply a window explicitly |
+| **Decision** | A pre-submit `RESERVED` capacity hold is released after **15 minutes** |
+| **Approved by** | The repository owner, 2026-09-18, answering the question I6b raised on PR #22 |
+| **Prior authority** | ADR 0014 §8 — qualitative only: assigns the window to I6a and requires it be "long enough to cover a slow legitimate checkout" |
+| **Implementation** | `RESERVED_HOLD_WINDOW_MS` in `src/commerce/guest-checkout-recovery.ts` |
 
-The cost of guessing runs both ways, which is why it is the owner's number and not a default: too
-short strips a slow but legitimate checkout of units mid-purchase, and too long recreates the false
-hold the path exists to prevent. Only `RESERVED` is eligible — §8 forbids any timer from touching
-`SUBMITTING` or `UNKNOWN`, and `COMMITTED` retires by the §4.1 mirror rule instead.
+Only `RESERVED` is eligible. §8 forbids any timer from touching `SUBMITTING` (a write may be in
+flight) or `UNKNOWN` (one may have landed), and `COMMITTED` retires by the §4.1 mirror rule instead.
 
-*Recorded 2026-09-18 during I6b, in response to the repository owner's review on PR #22 asking that
-a missing window be surfaced as the one open decision rather than invented.*
+Two consequences worth recording so they are not rediscovered as bugs:
+
+- The anonymous cart lives for **30 days**, far longer than this window. That is not a conflict: an
+  expired hold does not empty the basket. The buyer's next submission re-reserves, and either
+  succeeds or receives a truthful capacity refusal. Expiry ends the *claim* on the units, not the
+  cart.
+- Fifteen minutes coincides with the stranded-order staleness threshold, but they are separate
+  constants answering different questions — how long a hold may count, versus how long an order may
+  sit mid-flight. Changing one must not silently move the other.
 
 ## 11. Public policy surface — all §33 topics owner-approved
 
