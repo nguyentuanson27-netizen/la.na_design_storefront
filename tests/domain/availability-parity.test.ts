@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { vietnamCalendarDate } from "../../src/commerce/availability-cycle.ts";
+import { serializeMerchantFeed } from "../../src/commerce/merchant-feed-serializer.ts";
 import { mapMerchantOffers } from "../../src/commerce/merchant-offer-mapper.ts";
 import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
@@ -27,6 +28,7 @@ const ORIGIN = "https://la.example.test";
 const NOW = new Date("2026-09-18T03:00:00.000Z");
 const TODAY = vietnamCalendarDate(NOW)!;
 const IMAGE = "https://content.pancake.vn/web-media/1/2/3/primary.jpg";
+const MARKET = { targetCountry: "VN", contentLanguage: "vi", currency: "VND" } as const;
 
 const SIZE_M = "variant-m";
 const SIZE_L = "variant-l";
@@ -160,10 +162,20 @@ test("I9 a preorder sell-out publishes backorder and the same date on both surfa
   assert.equal(offer.availability, "backorder");
   assert.equal(offer.availabilityDate, "2026-10-03");
 
+  const feed = serializeMerchantFeed({ offers: merchant.offers, market: MARKET, origin: ORIGIN });
+  assert.match(
+    feed.body,
+    /<g:availability_date>2026-10-03T00:00\+0700<\/g:availability_date>/,
+    "Merchant serializes the canonical Vietnam day with its required timezone",
+  );
+
   const jsonLd = offersByUrl(structuredData).get(`${ORIGIN}/shop/ao-so-mi-oxford?variant=pv-m`)!;
   assert.equal(jsonLd.availability, "https://schema.org/BackOrder");
-  // The parity that matters: not merely both "some backorder", but the SAME day.
-  assert.equal(jsonLd.availabilityStarts, offer.availabilityDate);
+  assert.equal(
+    jsonLd.availabilityStarts,
+    "2026-10-03T00:00:00+07:00",
+    "JSON-LD serializes the same canonical day as a timezone-qualified DateTime",
+  );
 });
 
 test("I9 two sizes that sold out on different days keep their own dates on both surfaces", () => {
