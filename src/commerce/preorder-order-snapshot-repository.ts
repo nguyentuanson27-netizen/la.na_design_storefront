@@ -1,47 +1,18 @@
-import {
-  resolveSellingPolicy,
-  resolveVariantSellability,
-  reservationHoldsCapacity,
-} from "./capacity-policy.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 import { buildPreorderOrderSnapshot } from "./preorder-order-snapshot.ts";
 
 type TransactionClient = Prisma.TransactionClient;
 
-const snapshotLineSelection = {
-  variantId: true,
-  quantity: true,
-} satisfies Prisma.OrderLineSnapshotSelect;
-
-function earliestObservationStart(stocks: readonly { syncedAt: Date }[]): Date | null {
-  let earliest: Date | null = null;
-  for (const stock of stocks) {
-    if (earliest === null || stock.syncedAt.getTime() < earliest.getTime()) {
-      earliest = stock.syncedAt;
-    }
-  }
-  return earliest;
-}
-
-function sumStock(stocks: readonly { quantity: number }[]): number | null {
-  let total = 0;
-  for (const stock of stocks) {
-    if (!Number.isFinite(stock.quantity)) return null;
-    total += stock.quantity;
-    if (!Number.isFinite(total)) return null;
-  }
-  return total;
-}
-
 /**
  * I7 confirmation boundary.
  *
- * The function reads current website-owned selling policy and current mirrored stock only to classify
- * the order line at confirmation time. It writes those facts into the dedicated immutable snapshot;
- * no later policy/stock read can change the persisted result.
+ * READY/PREORDER is NOT re-derived here. The atomic capacity transaction already made that decision
+ * while holding the variant lock and persisted it on VariantCapacityReservation. Confirmation only
+ * copies that accepted fact into immutable order history.
  *
- * A missing policy row is intentionally resolved through the canonical STANDARD/-20 resolver. A
- * missing/invalid stock observation is treated as unavailable rather than fabricated.
+ * A reservation with no acceptedPreorderState is a rolling-deploy / pre-I7 row. Likewise, an order
+ * with no reservation was never given I7 capacity authority. In both cases the truthful historical
+ * state is "no I7 snapshot"; current stock/policy must never be used to fabricate one.
  */
 export async function createPreorderSnapshotAtConfirmation(
   tx: TransactionClient,
@@ -59,7 +30,15 @@ export async function createPreorderSnapshotAtConfirmation(
     select: {
       lines: {
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-        select: snapshotLineSelection,
+        select: { variantId: true, quantity: true },
+      },
+      capacityReservations: {
+        orderBy: [{ variantId: "asc" }],
+        select: {
+          variantId: true,
+          quantity: true,
+          acceptedPreorderState: true,
+        },
       },
     },
   });
@@ -67,73 +46,32 @@ export async function createPreorderSnapshotAtConfirmation(
     throw new Error("I7 cannot snapshot a confirmed order without order lines");
   }
 
-  const variantIds = [...new Set(order.lines.map((line) => line.variantId))];
-  const variants = await tx.variantMirror.findMany({
-    where: { id: { in: variantIds } },
-    select: {
-      id: true,
-      warehouseStocks: { select: { quantity: true, syncedAt: true } },
-      compositeComponents: { select: { parentVariantId: true }, take: 1 },
-      product: {
-        select: {
-          sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
-        },
-      },
-      capacityReservations: {
-        where: { orderId: { not: orderId } },
-        select: {
-          quantity: true,
-          state: true,
-          committedAt: true,
-        },
-      },
-    },
-  });
+  // No accepted capacity authority means no truthful I7 history. This is intentionally not an
+  // error: older application versions and lower-level integrations can confirm orders without I7
+  // metadata during a rolling deployment, and I7 explicitly forbids backfilling by inference.
+  if (order.capacityReservations.length === 0) return;
 
-  const byVariantId = new Map(variants.map((variant) => [variant.id, variant]));
-  const snapshotInputs = order.lines.map((line) => {
-    const variant = byVariantId.get(line.variantId);
-    if (!variant) {
-      throw new Error(`I7 cannot snapshot missing variant ${line.variantId}`);
+  const reservationByVariantId = new Map(
+    order.capacityReservations.map((reservation) => [reservation.variantId, reservation]),
+  );
+  if (reservationByVariantId.size !== order.lines.length) return;
+
+  const snapshotInputs = [];
+  for (const line of order.lines) {
+    const reservation = reservationByVariantId.get(line.variantId);
+    if (
+      !reservation ||
+      reservation.quantity !== line.quantity ||
+      reservation.acceptedPreorderState === null
+    ) {
+      return;
     }
-
-    const mirroredStock = sumStock(variant.warehouseStocks);
-    const stockObservationStartedAt = earliestObservationStart(variant.warehouseStocks);
-    if (mirroredStock === null) {
-      throw new Error(`I7 cannot snapshot invalid mirrored stock for variant ${line.variantId}`);
-    }
-
-    const policy = resolveSellingPolicy(variant.product.sellingPolicy);
-    let activeReservedQuantity = 0;
-    for (const reservation of variant.capacityReservations) {
-      if (
-        reservationHoldsCapacity({
-          state: reservation.state,
-          committedAt: reservation.committedAt,
-          stockObservationStartedAt,
-        })
-      ) {
-        activeReservedQuantity += reservation.quantity;
-      }
-    }
-    if (!Number.isSafeInteger(activeReservedQuantity) || activeReservedQuantity < 0) {
-      throw new Error(`I7 cannot snapshot invalid active reservation quantity for variant ${line.variantId}`);
-    }
-
-    const sellability = resolveVariantSellability({
-      mirroredStock,
-      activeReservedQuantity,
-      sellingMode: policy.sellingMode,
-      negativeStockLimit: policy.negativeStockLimit,
-      isComposite: variant.compositeComponents.length > 0,
-    });
-
-    return {
+    snapshotInputs.push({
       variantId: line.variantId,
       quantity: line.quantity,
-      isPreorderSale: sellability.isPreorderSale,
-    };
-  });
+      isPreorderSale: reservation.acceptedPreorderState === "PREORDER",
+    });
+  }
 
   const snapshot = buildPreorderOrderSnapshot({
     confirmedAt,
