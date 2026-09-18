@@ -57,7 +57,8 @@ async function run() {
   }
 
   console.log(`  -> Found target fixture: ${fixture.displayId} (ID: ${fixture.id})`);
-  console.log(`  -> Initial sellable stock: ${fixture.sellableStock}`);
+  const initialStock = fixture.sellableStock;
+  console.log(`  -> Initial sellable stock: ${initialStock}`);
   console.log(`  -> Retail price: ${fixture.retailPrice} VND`);
 
   const runId = Math.random().toString(36).slice(2, 8);
@@ -103,7 +104,7 @@ async function run() {
   const initialStatus = await gateway.fetchOrderStatus(shopId, orderId);
   console.log(`  -> fetchOrderStatus verified: current status is ${initialStatus.status}`);
 
-  console.log("[6/6] Cancelling test order to terminal state (status: 7) & verifying cleanup...");
+  console.log("[6/6] Cancelling test order to terminal state (status: 7) & verifying stock restoration...");
   await gateway.cancelOrder(shopId, orderId);
 
   const finalStatus = await gateway.fetchOrderStatus(shopId, orderId);
@@ -114,6 +115,28 @@ async function run() {
   }
   console.log(`  -> Order ${orderId} successfully canceled to terminal status 7`);
 
+  let restoredStock: number | null = null;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const postCleanupCatalog = await gateway.fetchCompleteCatalog(shopId);
+    const postCleanupFixture = postCleanupCatalog.find(
+      (v) => v.id === fixture.id || v.displayId === fixture.displayId,
+    );
+    if (postCleanupFixture && postCleanupFixture.sellableStock === initialStock) {
+      restoredStock = postCleanupFixture.sellableStock;
+      break;
+    }
+    if (attempt < 5) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  if (restoredStock !== initialStock) {
+    throw new Error(
+      `Stock restoration verification failed for fixture ${fixture.displayId}: expected baseline ${initialStock}, observed ${restoredStock ?? "NOT_FOUND"}`,
+    );
+  }
+  console.log(`  -> Fixture ${fixture.displayId} sellable stock refetched & verified restored to baseline: ${restoredStock}`);
+
   console.log("\n==================================================");
   console.log("I8 ACCEPTANCE VERIFICATION SUMMARY");
   console.log("==================================================");
@@ -123,6 +146,7 @@ async function run() {
   console.log("   ✔ Error classification: HTTP 4xx definite rejection -> REJECTED");
   console.log("   ✔ Ambiguous error classification: network/5xx -> SYNC_UNKNOWN");
   console.log("   ✔ Reconciliation service: FOUND -> COMMITTED, ABSENT -> RELEASED, AMBIGUOUS -> UNKNOWN");
+  console.log("   ✔ Crash window handling: converged SUBMITTING holds on FOUND/ABSENT/CONFIRMED/REJECTED");
   console.log("   ✔ Guarded compare-and-set idempotency and zero double-commit/double-release");
   console.log("   ✔ Full test suite pass, lint pass, Next.js build pass");
   console.log("2. Verified Against Pancake Live (Shop 1720000650):");
@@ -131,6 +155,7 @@ async function run() {
   console.log(`   ✔ Order discovered via searchOrderByMarker matching ID ${orderId}`);
   console.log(`   ✔ Order status read back accurately`);
   console.log(`   ✔ Order successfully canceled (PUT { status: 7 }) and read back as status 7`);
+  console.log(`   ✔ Catalog refetched and fixture ${fixture.displayId} sellable stock verified restored to baseline (${restoredStock})`);
   console.log("3. Not Verified:");
   console.log("   - Production shop mutations (strictly restricted to test shop 1720000650)");
   console.log("   - Out-of-scope selling modes for composite parents (deliberately fail-closed)");

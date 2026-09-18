@@ -92,24 +92,37 @@ function buildMockPrisma({
       async findMany({ where }: { where: { orderId?: string } }) {
         return reservations.filter((r) => !where.orderId || r.orderId === where.orderId);
       },
-      async count({ where }: { where: { orderId?: string; state?: string } }) {
+      async count({ where }: { where: { orderId?: string; state?: string | { in?: string[] } } }) {
         return reservations.filter(
           (r) =>
             (!where.orderId || r.orderId === where.orderId) &&
-            (!where.state || r.state === where.state),
+            (!where.state ||
+              (typeof where.state === "string"
+                ? r.state === where.state
+                : Array.isArray(where.state.in) && where.state.in.includes(r.state))),
         ).length;
       },
       async updateMany({
         where,
         data,
       }: {
-        where: { orderId?: string; state?: string };
+        where: { orderId?: string; state?: string | { in?: string[] } };
         data: { state?: typeof initialReservationState; committedAt?: Date | null; releasedAt?: Date | null };
       }) {
         let count = 0;
         for (const r of reservations) {
           if (where.orderId && r.orderId !== where.orderId) continue;
-          if (where.state && r.state !== where.state) continue;
+          if (where.state) {
+            if (typeof where.state === "string" && r.state !== where.state) continue;
+            if (
+              typeof where.state === "object" &&
+              where.state !== null &&
+              Array.isArray(where.state.in) &&
+              !where.state.in.includes(r.state)
+            ) {
+              continue;
+            }
+          }
 
           if (data.state) r.state = data.state;
           if (data.committedAt !== undefined) r.committedAt = data.committedAt;
@@ -388,4 +401,184 @@ test("reconcileAllUnknownOrders scans and reports correct batch summary", async 
     rejected: 0,
     ambiguous: 0,
   });
+});
+
+test("crash-window regression: SYNC_UNKNOWN + SUBMITTING + FOUND converges to CONFIRMED + COMMITTED", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "SUBMITTING",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      return { kind: "FOUND" as const, orderId: "888999" };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.deepEqual(result, {
+    ok: true,
+    state: "CONFIRMED",
+    pancakeOrderId: "888999",
+    reservationsCommitted: 2,
+  });
+
+  const finalState = prismaMock.getState();
+  assert.equal(finalState.orderState, "CONFIRMED");
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "COMMITTED");
+    assert.equal(r.committedAt, now);
+    assert.equal(r.releasedAt, null);
+  }
+});
+
+test("crash-window regression: SYNC_UNKNOWN + SUBMITTING + ABSENT converges to REJECTED + RELEASED", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "SUBMITTING",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      return { kind: "ABSENT" as const };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.deepEqual(result, {
+    ok: false,
+    state: "REJECTED",
+    reason: "ORDER_REJECTED",
+    reservationsReleased: 2,
+  });
+
+  const finalState = prismaMock.getState();
+  assert.equal(finalState.orderState, "REJECTED");
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "RELEASED");
+    assert.equal(r.releasedAt, now);
+    assert.equal(r.committedAt, null);
+  }
+});
+
+test("crash-window regression: CONFIRMED + SUBMITTING converges to COMMITTED", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "CONFIRMED",
+    pancakeOrderId: "90002",
+    initialReservationState: "SUBMITTING",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      throw new Error("must not search");
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.deepEqual(result, {
+    ok: true,
+    state: "CONFIRMED",
+    pancakeOrderId: "90002",
+    reservationsCommitted: 2,
+  });
+
+  const finalState = prismaMock.getState();
+  assert.equal(finalState.orderState, "CONFIRMED");
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "COMMITTED");
+    assert.equal(r.committedAt, now);
+    assert.equal(r.releasedAt, null);
+  }
+});
+
+test("crash-window regression: REJECTED + SUBMITTING converges to RELEASED", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "REJECTED",
+    initialReservationState: "SUBMITTING",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      throw new Error("must not search");
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.deepEqual(result, {
+    ok: false,
+    state: "REJECTED",
+    reason: "ORDER_REJECTED",
+    reservationsReleased: 2,
+  });
+
+  const finalState = prismaMock.getState();
+  assert.equal(finalState.orderState, "REJECTED");
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "RELEASED");
+    assert.equal(r.releasedAt, now);
+    assert.equal(r.committedAt, null);
+  }
+});
+
+test("crash-window regression: SYNC_UNKNOWN + SUBMITTING + AMBIGUOUS transitions holds to UNKNOWN and does not release capacity", async () => {
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "SUBMITTING",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      return {
+        kind: "AMBIGUOUS" as const,
+        reason: "bounded order search did not cover all reported pages",
+      };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => now,
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.deepEqual(result, {
+    ok: false,
+    state: "SYNC_UNKNOWN",
+    reason: "AMBIGUOUS",
+    detail: "bounded order search did not cover all reported pages",
+    reservationsUnknown: 2,
+  });
+
+  const finalState = prismaMock.getState();
+  assert.equal(finalState.orderState, "SYNC_UNKNOWN");
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "UNKNOWN");
+    assert.equal(r.committedAt, null);
+    assert.equal(r.releasedAt, null);
+  }
 });

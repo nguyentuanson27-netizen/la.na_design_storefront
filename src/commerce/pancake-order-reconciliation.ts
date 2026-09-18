@@ -60,10 +60,10 @@ export function createPancakeOrderReconciliationService({
 
     const now = clock();
 
-    // Already settled: converge any remaining UNKNOWN reservations
+    // Already settled: converge any remaining UNKNOWN or SUBMITTING reservations
     if (order.state === "CONFIRMED") {
       const updated = await client.variantCapacityReservation.updateMany({
-        where: { orderId: order.id, state: "UNKNOWN" },
+        where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
         data: { state: "COMMITTED", committedAt: now, releasedAt: null },
       });
       return {
@@ -76,7 +76,7 @@ export function createPancakeOrderReconciliationService({
 
     if (order.state === "REJECTED") {
       const updated = await client.variantCapacityReservation.updateMany({
-        where: { orderId: order.id, state: "UNKNOWN" },
+        where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
         data: { state: "RELEASED", releasedAt: now, committedAt: null },
       });
       return {
@@ -121,19 +121,27 @@ export function createPancakeOrderReconciliationService({
             select: { state: true, pancakeOrderId: true },
           });
           if (fresh.state === "CONFIRMED") {
+            const resClaim = await tx.variantCapacityReservation.updateMany({
+              where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
+              data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+            });
             return {
               ok: true as const,
               state: "CONFIRMED" as const,
               pancakeOrderId: fresh.pancakeOrderId ?? search.orderId,
-              reservationsCommitted: 0,
+              reservationsCommitted: resClaim.count,
             };
           }
           if (fresh.state === "REJECTED") {
+            const resClaim = await tx.variantCapacityReservation.updateMany({
+              where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
+              data: { state: "RELEASED", releasedAt: now, committedAt: null },
+            });
             return {
               ok: false as const,
               state: "REJECTED" as const,
               reason: "ORDER_REJECTED" as const,
-              reservationsReleased: 0,
+              reservationsReleased: resClaim.count,
             };
           }
           return {
@@ -144,7 +152,7 @@ export function createPancakeOrderReconciliationService({
         }
 
         const resClaim = await tx.variantCapacityReservation.updateMany({
-          where: { orderId: order.id, state: "UNKNOWN" },
+          where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
           data: { state: "COMMITTED", committedAt: now, releasedAt: null },
         });
 
@@ -173,19 +181,27 @@ export function createPancakeOrderReconciliationService({
             select: { state: true, pancakeOrderId: true },
           });
           if (fresh.state === "CONFIRMED") {
+            const resClaim = await tx.variantCapacityReservation.updateMany({
+              where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
+              data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+            });
             return {
               ok: true as const,
               state: "CONFIRMED" as const,
               pancakeOrderId: fresh.pancakeOrderId ?? "",
-              reservationsCommitted: 0,
+              reservationsCommitted: resClaim.count,
             };
           }
           if (fresh.state === "REJECTED") {
+            const resClaim = await tx.variantCapacityReservation.updateMany({
+              where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
+              data: { state: "RELEASED", releasedAt: now, committedAt: null },
+            });
             return {
               ok: false as const,
               state: "REJECTED" as const,
               reason: "ORDER_REJECTED" as const,
-              reservationsReleased: 0,
+              reservationsReleased: resClaim.count,
             };
           }
           return {
@@ -196,7 +212,7 @@ export function createPancakeOrderReconciliationService({
         }
 
         const resClaim = await tx.variantCapacityReservation.updateMany({
-          where: { orderId: order.id, state: "UNKNOWN" },
+          where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
           data: { state: "RELEASED", releasedAt: now, committedAt: null },
         });
 
@@ -210,6 +226,12 @@ export function createPancakeOrderReconciliationService({
     }
 
     // search.kind === "AMBIGUOUS"
+    // ADR 0014 §9: Move any SUBMITTING hold to UNKNOWN to survive restart / operator review
+    await client.variantCapacityReservation.updateMany({
+      where: { orderId: order.id, state: "SUBMITTING" },
+      data: { state: "UNKNOWN" },
+    });
+
     const unknownCount = await client.variantCapacityReservation.count({
       where: { orderId: order.id, state: "UNKNOWN" },
     });
