@@ -667,9 +667,10 @@ model VariantCapacityReservation {
   id          String           @id @default(cuid())
   orderId     String
   variantId   String
-  quantity    Int
-  state       ReservationState @default(RESERVED)
-  committedAt DateTime?
+  quantity              Int
+  state                 ReservationState       @default(RESERVED)
+  acceptedPreorderState OrderPreorderLineState?
+  committedAt           DateTime?
   releasedAt  DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
