@@ -686,10 +686,10 @@ export function createPancakeOrderSubmissionService(
         return reject("VARIATION_UNAVAILABLE");
       }
 
-      const variantMeta = variantMetaById.get(line.variantId);
-      if (!variantMeta) {
-        return reject("VARIATION_UNAVAILABLE");
-      }
+      const variantMeta = variantMetaById.get(line.variantId) ?? {
+        policy: resolveSellingPolicy(null),
+        isComposite: false,
+      };
 
       // ADR 0014 §11: Composite products under OVERSELL / PREORDER are disallowed in v1.
       if (variantMeta.isComposite && variantMeta.policy.sellingMode !== "STANDARD") {

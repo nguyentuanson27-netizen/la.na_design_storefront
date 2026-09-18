@@ -88,54 +88,68 @@ async function run() {
   const orderId = parsePancakeCreateOrderResponse(createRaw);
   console.log(`  -> Order successfully created with remote Pancake ID: ${orderId}`);
 
-  console.log("[5/6] Verifying remote order search by marker & order status readback...");
-  let searchResult = await gateway.searchOrderByMarker(shopId, marker);
-  for (let attempt = 1; attempt <= 5 && searchResult.kind !== "FOUND"; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    searchResult = await gateway.searchOrderByMarker(shopId, marker);
-  }
-  if (searchResult.kind !== "FOUND" || searchResult.orderId !== orderId) {
-    throw new Error(
-      `Order search verification failed: expected FOUND ${orderId}, got ${JSON.stringify(searchResult)}`,
-    );
-  }
-  console.log(`  -> searchOrderByMarker verified: FOUND order ${searchResult.orderId}`);
-
-  const initialStatus = await gateway.fetchOrderStatus(shopId, orderId);
-  console.log(`  -> fetchOrderStatus verified: current status is ${initialStatus.status}`);
-
-  console.log("[6/6] Cancelling test order to terminal state (status: 7) & verifying stock restoration...");
-  await gateway.cancelOrder(shopId, orderId);
-
-  const finalStatus = await gateway.fetchOrderStatus(shopId, orderId);
-  if (finalStatus.status !== 7) {
-    throw new Error(
-      `Order cleanup verification failed: expected status 7, observed ${finalStatus.status}`,
-    );
-  }
-  console.log(`  -> Order ${orderId} successfully canceled to terminal status 7`);
-
+  let isCanceled = false;
   let restoredStock: number | null = null;
-  for (let attempt = 1; attempt <= 5; attempt += 1) {
-    const postCleanupCatalog = await gateway.fetchCompleteCatalog(shopId);
-    const postCleanupFixture = postCleanupCatalog.find(
-      (v) => v.id === fixture.id || v.displayId === fixture.displayId,
-    );
-    if (postCleanupFixture && postCleanupFixture.sellableStock === initialStock) {
-      restoredStock = postCleanupFixture.sellableStock;
-      break;
-    }
-    if (attempt < 5) {
+  try {
+    console.log("[5/6] Verifying remote order search by marker & order status readback...");
+    let searchResult = await gateway.searchOrderByMarker(shopId, marker);
+    for (let attempt = 1; attempt <= 5 && searchResult.kind !== "FOUND"; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
+      searchResult = await gateway.searchOrderByMarker(shopId, marker);
+    }
+    if (searchResult.kind !== "FOUND" || searchResult.orderId !== orderId) {
+      throw new Error(
+        `Order search verification failed: expected FOUND ${orderId}, got ${JSON.stringify(searchResult)}`,
+      );
+    }
+    console.log(`  -> searchOrderByMarker verified: FOUND order ${searchResult.orderId}`);
+
+    const initialStatus = await gateway.fetchOrderStatus(shopId, orderId);
+    console.log(`  -> fetchOrderStatus verified: current status is ${initialStatus.status}`);
+
+    console.log("[6/6] Cancelling test order to terminal state (status: 7) & verifying stock restoration...");
+    await gateway.cancelOrder(shopId, orderId);
+    isCanceled = true;
+
+    const finalStatus = await gateway.fetchOrderStatus(shopId, orderId);
+    if (finalStatus.status !== 7) {
+      throw new Error(
+        `Order cleanup verification failed: expected status 7, observed ${finalStatus.status}`,
+      );
+    }
+    console.log(`  -> Order ${orderId} successfully canceled to terminal status 7`);
+
+    for (let attempt = 1; attempt <= 5; attempt += 1) {
+      const postCleanupCatalog = await gateway.fetchCompleteCatalog(shopId);
+      const postCleanupFixture = postCleanupCatalog.find(
+        (v) => v.id === fixture.id || v.displayId === fixture.displayId,
+      );
+      if (postCleanupFixture && postCleanupFixture.sellableStock === initialStock) {
+        restoredStock = postCleanupFixture.sellableStock;
+        break;
+      }
+      if (attempt < 5) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    }
+
+    if (restoredStock !== initialStock) {
+      throw new Error(
+        `Stock restoration verification failed for fixture ${fixture.displayId}: expected baseline ${initialStock}, observed ${restoredStock ?? "NOT_FOUND"}`,
+      );
+    }
+    console.log(`  -> Fixture ${fixture.displayId} sellable stock refetched & verified restored to baseline: ${restoredStock}`);
+  } finally {
+    if (!isCanceled) {
+      console.log(`  [CLEANUP] Attempting emergency cancellation for order ${orderId}...`);
+      try {
+        await gateway.cancelOrder(shopId, orderId);
+        console.log(`  [CLEANUP] Emergency cancellation sent for order ${orderId}`);
+      } catch (cleanupError) {
+        console.error(`  [CLEANUP ERROR] Failed to cancel test order ${orderId}:`, cleanupError);
+      }
     }
   }
-
-  if (restoredStock !== initialStock) {
-    throw new Error(
-      `Stock restoration verification failed for fixture ${fixture.displayId}: expected baseline ${initialStock}, observed ${restoredStock ?? "NOT_FOUND"}`,
-    );
-  }
-  console.log(`  -> Fixture ${fixture.displayId} sellable stock refetched & verified restored to baseline: ${restoredStock}`);
 
   console.log("\n==================================================");
   console.log("I8 ACCEPTANCE VERIFICATION SUMMARY");

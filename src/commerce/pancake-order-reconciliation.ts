@@ -58,13 +58,12 @@ export function createPancakeOrderReconciliationService({
       return { ok: false, reason: "ORDER_NOT_FOUND" };
     }
 
-    const now = clock();
-
     // Already settled: converge any remaining UNKNOWN or SUBMITTING reservations
     if (order.state === "CONFIRMED") {
+      const settledAt = clock();
       const updated = await client.variantCapacityReservation.updateMany({
         where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-        data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+        data: { state: "COMMITTED", committedAt: settledAt, releasedAt: null },
       });
       return {
         ok: true,
@@ -75,9 +74,10 @@ export function createPancakeOrderReconciliationService({
     }
 
     if (order.state === "REJECTED") {
+      const settledAt = clock();
       const updated = await client.variantCapacityReservation.updateMany({
         where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-        data: { state: "RELEASED", releasedAt: now, committedAt: null },
+        data: { state: "RELEASED", releasedAt: settledAt, committedAt: null },
       });
       return {
         ok: false,
@@ -105,6 +105,7 @@ export function createPancakeOrderReconciliationService({
     const search = await gateway.searchOrderByMarker(order.pancakeShopId, marker);
 
     if (search.kind === "FOUND") {
+      const committedAt = clock();
       return client.$transaction(async (tx) => {
         const orderClaim = await tx.orderMirror.updateMany({
           where: { id: order.id, state: "SYNC_UNKNOWN" },
@@ -123,7 +124,7 @@ export function createPancakeOrderReconciliationService({
           if (fresh.state === "CONFIRMED") {
             const resClaim = await tx.variantCapacityReservation.updateMany({
               where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-              data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+              data: { state: "COMMITTED", committedAt, releasedAt: null },
             });
             return {
               ok: true as const,
@@ -133,9 +134,10 @@ export function createPancakeOrderReconciliationService({
             };
           }
           if (fresh.state === "REJECTED") {
+            const releasedAt = clock();
             const resClaim = await tx.variantCapacityReservation.updateMany({
               where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-              data: { state: "RELEASED", releasedAt: now, committedAt: null },
+              data: { state: "RELEASED", releasedAt, committedAt: null },
             });
             return {
               ok: false as const,
@@ -153,7 +155,7 @@ export function createPancakeOrderReconciliationService({
 
         const resClaim = await tx.variantCapacityReservation.updateMany({
           where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-          data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+          data: { state: "COMMITTED", committedAt, releasedAt: null },
         });
 
         return {
@@ -166,6 +168,7 @@ export function createPancakeOrderReconciliationService({
     }
 
     if (search.kind === "ABSENT") {
+      const releasedAt = clock();
       return client.$transaction(async (tx) => {
         const orderClaim = await tx.orderMirror.updateMany({
           where: { id: order.id, state: "SYNC_UNKNOWN" },
@@ -181,9 +184,10 @@ export function createPancakeOrderReconciliationService({
             select: { state: true, pancakeOrderId: true },
           });
           if (fresh.state === "CONFIRMED") {
+            const committedAt = clock();
             const resClaim = await tx.variantCapacityReservation.updateMany({
               where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-              data: { state: "COMMITTED", committedAt: now, releasedAt: null },
+              data: { state: "COMMITTED", committedAt, releasedAt: null },
             });
             return {
               ok: true as const,
@@ -195,7 +199,7 @@ export function createPancakeOrderReconciliationService({
           if (fresh.state === "REJECTED") {
             const resClaim = await tx.variantCapacityReservation.updateMany({
               where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-              data: { state: "RELEASED", releasedAt: now, committedAt: null },
+              data: { state: "RELEASED", releasedAt, committedAt: null },
             });
             return {
               ok: false as const,
@@ -213,7 +217,7 @@ export function createPancakeOrderReconciliationService({
 
         const resClaim = await tx.variantCapacityReservation.updateMany({
           where: { orderId: order.id, state: { in: ["UNKNOWN", "SUBMITTING"] } },
-          data: { state: "RELEASED", releasedAt: now, committedAt: null },
+          data: { state: "RELEASED", releasedAt, committedAt: null },
         });
 
         return {

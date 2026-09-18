@@ -582,3 +582,37 @@ test("crash-window regression: SYNC_UNKNOWN + SUBMITTING + AMBIGUOUS transitions
     assert.equal(r.releasedAt, null);
   }
 });
+
+test("reconciliation takes committedAt strictly after Pancake FOUND observation, not before network search", async () => {
+  let searchCompleted = false;
+  const tBeforeSearch = new Date("2026-09-18T06:00:00.000Z");
+  const tAfterSearch = new Date("2026-09-18T06:00:05.000Z");
+
+  const prismaMock = buildMockPrisma({
+    initialOrderState: "SYNC_UNKNOWN",
+    initialReservationState: "UNKNOWN",
+  });
+
+  const gateway = {
+    async searchOrderByMarker() {
+      searchCompleted = true;
+      return { kind: "FOUND" as const, orderId: "123456" };
+    },
+  };
+
+  const service = createPancakeOrderReconciliationService({
+    client: prismaMock,
+    gateway,
+    clock: () => (searchCompleted ? tAfterSearch : tBeforeSearch),
+  });
+
+  const result = await service.reconcileOrder(publicCode);
+  assert.equal(result.ok, true);
+
+  const finalState = prismaMock.getState();
+  for (const r of finalState.reservations) {
+    assert.equal(r.state, "COMMITTED");
+    assert.equal(r.committedAt, tAfterSearch);
+  }
+});
+
