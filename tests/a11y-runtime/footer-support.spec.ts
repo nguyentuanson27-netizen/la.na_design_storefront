@@ -78,6 +78,12 @@ test.afterAll(async () => {
 });
 
 test("F9a footer renders four final groups, canonical destinations and exact legal block", async ({ page }) => {
+  const browserErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+
   const response = await page.goto(`${BASE_URL}/search`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
@@ -170,6 +176,15 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     expect(destination.status(), href).toBeLessThan(400);
   }
 
+  // Tablet keeps the final footer readable without horizontal overflow.
+  await page.setViewportSize({ width: 768, height: 1024 });
+  await page.reload({ waitUntil: "networkidle" });
+  const tabletColumns = await page.locator("footer .footer-groups").evaluate((element) =>
+    getComputedStyle(element).gridTemplateColumns.split(" ").filter(Boolean).length,
+  );
+  expect(tabletColumns).toBe(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+
   // Mobile keeps all groups expanded and usable with no horizontal overflow.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "networkidle" });
@@ -191,4 +206,5 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
 });
