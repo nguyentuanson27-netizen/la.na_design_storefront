@@ -1,4 +1,3 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
 import {
   resolveSellingPolicy,
   resolveVariantSellability,
@@ -13,10 +12,6 @@ const snapshotLineSelection = {
   variantId: true,
   quantity: true,
 } satisfies Prisma.OrderLineSnapshotSelect;
-
-type SnapshotLine = Prisma.OrderLineSnapshotGetPayload<{
-  select: typeof snapshotLineSelection;
-}>;
 
 function earliestObservationStart(stocks: readonly { syncedAt: Date }[]): Date | null {
   let earliest: Date | null = null;
