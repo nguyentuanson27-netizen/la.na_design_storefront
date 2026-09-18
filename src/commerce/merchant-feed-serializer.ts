@@ -1,3 +1,4 @@
+import { serializeVietnamAvailabilityDate } from "./availability-cycle.ts";
 import type { MerchantMarketPolicy, MerchantOffer } from "./merchant-offer-mapper.ts";
 import { MAX_MERCHANT_FEED_BYTES, MAX_MERCHANT_OFFERS } from "./merchant-feed-limits.ts";
 import { BRAND } from "../brand/index.ts";
@@ -62,26 +63,11 @@ class BoundedXmlWriter {
 }
 
 function merchantAvailabilityDate(value: string): string {
-  // The persisted authority is a Vietnam calendar day. Google Merchant requires date + time +
-  // timezone, so serialize that day at local midnight rather than relying on UTC defaults.
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (match === null) {
-    throw new MerchantFeedSerializationError("Merchant availability date must be YYYY-MM-DD");
+  const serialized = serializeVietnamAvailabilityDate(value);
+  if (serialized === null) {
+    throw new MerchantFeedSerializationError("Merchant availability date must be a real YYYY-MM-DD calendar day");
   }
-  const [, yearText, monthText, dayText] = match;
-  const year = Number(yearText);
-  const month = Number(monthText);
-  const day = Number(dayText);
-  const asUtc = new Date(Date.UTC(year, month - 1, day));
-  if (
-    Number.isNaN(asUtc.getTime()) ||
-    asUtc.getUTCFullYear() !== year ||
-    asUtc.getUTCMonth() !== month - 1 ||
-    asUtc.getUTCDate() !== day
-  ) {
-    throw new MerchantFeedSerializationError("Merchant availability date must be a real calendar day");
-  }
-  return `${value}T00:00+0700`;
+  return serialized.merchant;
 }
 
 export function assertMerchantOfferCount(count: number): void {
