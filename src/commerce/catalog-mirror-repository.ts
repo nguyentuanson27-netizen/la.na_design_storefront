@@ -5,7 +5,7 @@ import type {
 } from "../integrations/pancake/catalog-contract.ts";
 import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
-import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
+import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import {
   createBootstrapProductSlug,
@@ -17,7 +17,6 @@ const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_COMPOSITE_ENTRIES = 50_000;
 const MAX_COMPOSITE_ID_LENGTH = 512;
-const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 
 type CatalogProductSnapshot = {
   pancakeProductId: string;
@@ -655,7 +654,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
           variations: variationIdList.length,
         };
       },
-      { timeout: SYNC_TRANSACTION_TIMEOUT_MS },
+      { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
     );
   }
 
