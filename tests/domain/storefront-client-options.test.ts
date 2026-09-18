@@ -36,6 +36,18 @@ test("storefront client options omit stock and raw integration price fields", ()
       // to describe the offer truthfully, carrying no stock number and no integration price.
       isPreorderSale: false,
       unavailableReason: null,
+      // I9 — the ADR 0011 external availability. It crosses to the client deliberately: the PDP
+      // needs the date to render `Dự kiến có hàng`, and Merchant/JSON-LD parity requires one
+      // decision rather than a second one made here.
+      //
+      // Same class as the fields above. It is the published vocabulary plus a calendar day — no
+      // stock number, no limit, no mirrored integration price, and nothing from a Pancake payload.
+      availability: {
+        published: true,
+        merchant: "in_stock",
+        schema: "InStock",
+        availabilityDate: null,
+      },
     },
   ]);
 
@@ -49,4 +61,12 @@ test("storefront client options omit stock and raw integration price fields", ()
       `${withheld} must never cross to the client`,
     );
   }
+
+  // I9 — the same guard one level down. `availability` is the one nested object on a client option,
+  // so it is the one place a stock number or a raw provider field could ride along unnoticed.
+  assert.deepEqual(
+    Object.keys(clientOption!.availability).sort(),
+    ["availabilityDate", "merchant", "published", "schema"],
+    "the external availability must carry the published vocabulary and nothing else",
+  );
 });

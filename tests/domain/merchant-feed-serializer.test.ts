@@ -31,6 +31,7 @@ function offer(overrides: Partial<MerchantOffer> = {}): MerchantOffer {
     imageLink: "https://cdn.example.test/a&b.jpg",
     additionalImageLinks: ["https://cdn.example.test/2.jpg"],
     availability: "in_stock",
+    availabilityDate: null,
     priceVnd: 249000,
     gender: "male",
     ageGroup: "adult",

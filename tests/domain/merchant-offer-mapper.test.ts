@@ -27,6 +27,7 @@ import type {
   StorefrontProductProjection,
   StorefrontProjectionOption,
 } from "../../src/commerce/storefront-projection.ts";
+import { fixtureAvailability, withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const ORIGIN = "https://la.example.test";
 
@@ -35,7 +36,7 @@ const TRUSTED_VARIANT_M = "https://content.pancake.vn/web-media/1/2/3/variant-m.
 const TRUSTED_VARIANT_L = "https://content.pancake.vn/web-media/1/2/3/variant-l.jpg";
 
 function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
-  return {
+  const merged = {
     id: "variant-m",
     pancakeVariationId: "pv-m",
     color: "Den",
@@ -50,10 +51,10 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     kindLabel: null,
     ...overrides,
   };
+  return withFixtureAvailability(merged);
 }
 
-function variation(
-  overrides: Partial<MerchantCandidateVariation> = {},
+function variation(overrides: Partial<MerchantCandidateVariation> = {},
 ): MerchantCandidateVariation {
   return {
     variantId: "variant-m",
@@ -122,6 +123,7 @@ test("M3 a valid standalone variation maps to a complete Merchant offer", () => 
     imageLink: TRUSTED_VARIANT_M,
     additionalImageLinks: [TRUSTED_PRIMARY, TRUSTED_VARIANT_L],
     availability: "in_stock",
+    availabilityDate: null,
     priceVnd: 890_000,
     gender: "female",
     ageGroup: "adult",
@@ -377,13 +379,72 @@ test("M3 a structurally valid zero-stock offer is emitted as out_of_stock", () =
 });
 
 test("M3 an unresolved availability excludes the offer instead of fabricating a stock state", () => {
-  for (const unresolved of [Number.NaN, -3, Number.POSITIVE_INFINITY]) {
+  // I9 moved the authority: availability now comes from the shared projection the product page and
+  // JSON-LD also read, rather than from a second classification of raw mirrored stock. So an
+  // unreadable catalog state is expressed where production expresses it — on the option — and the
+  // exclusion it causes is unchanged.
+  //
+  // In production the two cannot disagree, because the same summed stock feeds the projection. Only
+  // a fixture could have described one variant two ways, which is exactly the parity ADR 0011 asks
+  // for and what this test used to rely on.
+  for (const capacityReason of ["invalid-stock", "invalid-limit"] as const) {
+    const unreadable: StorefrontProductProjection = {
+      mode: "standalone",
+      options: [
+        {
+          ...option({ purchasable: false, unavailableReason: "OUT_OF_STOCK" }),
+          availability: fixtureAvailability(
+            { purchasable: false, isPreorderSale: false, unavailableReason: "OUT_OF_STOCK" },
+            { capacityReason },
+          ),
+        },
+      ],
+    };
     assert.deepEqual(
-      onlyExclusionReasons({ variations: [variation({ stockQuantity: unresolved })] }),
+      onlyExclusionReasons({ projection: unreadable }),
       ["AVAILABILITY_UNRESOLVED"],
-      `expected ${String(unresolved)} to be unresolved`,
+      `expected ${capacityReason} to be unresolved`,
     );
   }
+});
+
+test("M3 a preorder sell-out with no current date is withheld rather than published", () => {
+  // ADR 0011's fail-closed backorder row, at the feed boundary. Google requires availability_date
+  // beside `backorder`, so without one the offer does not go out — and it is NOT relabelled
+  // `out_of_stock`, which would contradict a checkout still accepting the order.
+  const backordered: StorefrontProductProjection = {
+    mode: "standalone",
+    options: [
+      {
+        ...option({ purchasable: true, isPreorderSale: true }),
+        availability: fixtureAvailability(
+          { purchasable: true, isPreorderSale: true, unavailableReason: null },
+          { availabilityDate: null, today: "2026-09-18" },
+        ),
+      },
+    ],
+  };
+  assert.deepEqual(onlyExclusionReasons({ projection: backordered }), ["AVAILABILITY_UNRESOLVED"]);
+});
+
+test("M3 a preorder sell-out with a current date is published as backorder with that date", () => {
+  const backordered: StorefrontProductProjection = {
+    mode: "standalone",
+    options: [
+      {
+        ...option({ purchasable: true, isPreorderSale: true }),
+        availability: fixtureAvailability(
+          { purchasable: true, isPreorderSale: true, unavailableReason: null },
+          { availabilityDate: "2026-10-03", today: "2026-09-18" },
+        ),
+      },
+    ],
+  };
+  const result = mapOne({ projection: backordered });
+
+  assert.deepEqual(result.excluded, []);
+  assert.equal(result.offers[0]!.availability, "backorder");
+  assert.equal(result.offers[0]!.availabilityDate, "2026-10-03");
 });
 
 // --- Landing URL ---------------------------------------------------------------------------------
@@ -586,6 +647,21 @@ test("M3 every unresolved fact for one candidate is reported in one bounded, ord
     galleryIndexByVariantId: new Map(),
     apparelOverrides: { gender: "nam", ageGroup: null, condition: null },
     variations: [variation({ pancakeDisplayId: null, stockQuantity: Number.NaN })],
+    // I9 — the unreadable stock is stated on the option, which is where availability is now
+    // decided. The variation's own NaN is left in place because it is still what the repository
+    // would have summed; the two describing the same thing is the point.
+    projection: {
+      mode: "standalone",
+      options: [
+        {
+          ...option({ purchasable: false, unavailableReason: "OUT_OF_STOCK" }),
+          availability: fixtureAvailability(
+            { purchasable: false, isPreorderSale: false, unavailableReason: "OUT_OF_STOCK" },
+            { capacityReason: "invalid-stock" },
+          ),
+        },
+      ],
+    },
   });
 
   assert.deepEqual(reasons, [

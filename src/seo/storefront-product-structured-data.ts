@@ -96,13 +96,21 @@ type StorefrontStructuredDataProduct = Readonly<{
 function resolvePublishableOffer(
   option: StorefrontProjectionOption,
   availabilityResolved: boolean,
-): Readonly<{ price: number; availability: StructuredDataAvailability }> | null {
+): Readonly<{
+  price: number;
+  availability: StructuredDataAvailability;
+  availabilityDate: string | null;
+}> | null {
   if (!availabilityResolved) return null;
   const { price } = option;
   if (price === null || !Number.isFinite(price) || price <= 0) return null;
-  if (option.purchasable) return { price, availability: "IN_STOCK" };
-  if (option.unavailableReason === "OUT_OF_STOCK") return { price, availability: "OUT_OF_STOCK" };
-  return null;
+  // I9 — the shared ADR 0011 decision, the same object the Merchant feed publishes from. This
+  // function used to translate `purchasable`/`unavailableReason` itself, which is precisely the
+  // independent translation ADR 0011 § Structured-data parity forbids: the feed and this markup
+  // could describe one variant two ways. It now only decides whether to publish, never what.
+  const { availability } = option;
+  if (!availability.published) return null;
+  return { price, availability: availability.schema, availabilityDate: availability.availabilityDate };
 }
 
 function resolveVariantImageUrl(

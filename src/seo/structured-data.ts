@@ -1,3 +1,4 @@
+import type { StructuredDataAvailability as SharedStructuredDataAvailability } from "../commerce/availability-projection.ts";
 import {
   PUBLIC_CONTACT_FACTS,
   supportHoursSchemaTime,
@@ -9,6 +10,14 @@ const SITE_NAME = BRAND.identity.name;
 const SCHEMA_CONTEXT = "https://schema.org" as const;
 const IN_STOCK = "https://schema.org/InStock" as const;
 const OUT_OF_STOCK = "https://schema.org/OutOfStock" as const;
+/** I9 — ADR 0011's external term for a released product still accepting orders without ready stock. */
+const BACK_ORDER = "https://schema.org/BackOrder" as const;
+
+const SCHEMA_URI_BY_AVAILABILITY = {
+  InStock: IN_STOCK,
+  OutOfStock: OUT_OF_STOCK,
+  BackOrder: BACK_ORDER,
+} as const satisfies Record<StructuredDataAvailability, string>;
 /**
  * How long a mirrored external identifier may be before this module refuses to publish it.
  *
@@ -45,7 +54,14 @@ type StructuredDataVariantOption = Readonly<{
   unavailableReason: StorefrontUnavailableReason;
 }>;
 
-export type StructuredDataAvailability = "IN_STOCK" | "OUT_OF_STOCK";
+/**
+ * I9 — the shared schema.org vocabulary, imported rather than restated.
+ *
+ * This module used to own a second spelling (`IN_STOCK`/`OUT_OF_STOCK`) that a caller had to
+ * translate into. ADR 0011 requires one availability decision behind both published surfaces, and
+ * two vocabularies is how the translation crept back in.
+ */
+export type StructuredDataAvailability = SharedStructuredDataAvailability;
 
 /**
  * One publishable variant, as the caller has already resolved it.
@@ -64,6 +80,11 @@ export type StructuredDataVariant = Readonly<{
   size: string | null;
   price: number;
   availability: StructuredDataAvailability;
+  /**
+   * I9 — ADR 0011: published only beside `BackOrder`, where Google requires it, and null on every
+   * other state. Never fabricated.
+   */
+  availabilityDate?: string | null;
   imageUrl: string | null;
 }>;
 
@@ -99,7 +120,9 @@ type OfferNode = {
   url: string;
   priceCurrency: "VND";
   price: number;
-  availability: typeof IN_STOCK | typeof OUT_OF_STOCK;
+  availability: (typeof SCHEMA_URI_BY_AVAILABILITY)[StructuredDataAvailability];
+  /** I9 — ADR 0011: set only beside `BackOrder`, which is the only state Google dates. */
+  availabilityStarts?: string;
 };
 
 type ProductVariantNode = {
@@ -271,6 +294,10 @@ function buildOffer(
   );
   if (!allUnavailableStateIsStockOnly) return undefined;
 
+  // Deliberately still `InStock`/`OutOfStock` only. This is the PRODUCT-level offer, and ADR 0011's
+  // `backorder` carries a date that belongs to one variant's cycle — a product whose sizes sold out
+  // on different days has no single date to publish here. A family that would need one therefore
+  // states availability at the variant nodes instead, which is where the date is true.
   const availability = hasPurchasableVariant
     ? IN_STOCK
     : variantOptions.every((option) => option.unavailableReason === "OUT_OF_STOCK")
@@ -370,7 +397,13 @@ function buildVariantNode(name: string, variant: StructuredDataVariant): Product
       url: variant.url,
       priceCurrency: "VND",
       price: variant.price,
-      availability: variant.availability === "IN_STOCK" ? IN_STOCK : OUT_OF_STOCK,
+      availability: SCHEMA_URI_BY_AVAILABILITY[variant.availability],
+      // Google accepts `availabilityStarts` on an Offer as the date the item becomes available,
+      // and requires the matching `availability_date` in the feed. Emitted only when the shared
+      // decision resolved one, so the two surfaces state the same day or neither states any.
+      ...(typeof variant.availabilityDate === "string" && variant.availabilityDate.length > 0
+        ? { availabilityStarts: variant.availabilityDate }
+        : {}),
     },
   };
 

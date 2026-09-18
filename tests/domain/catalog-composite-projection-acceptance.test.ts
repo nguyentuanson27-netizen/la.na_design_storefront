@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { buildCatalogAcceptanceReport } from "../../src/commerce/catalog-acceptance.ts";
 import type { StorefrontProductProjection } from "../../src/commerce/storefront-projection.ts";
+import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const trustedImage = "https://content.pancake.vn/catalog/1/2/3/item.jpg";
 
@@ -31,6 +32,11 @@ function projection(): StorefrontProductProjection {
         purchasable: true,
         isPreorderSale: false,
         unavailableReason: null,
+        availability: fixtureAvailability({
+          purchasable: true,
+          isPreorderSale: false,
+          unavailableReason: null,
+        }),
         kindKey: "parent",
         kindLabel: "Set",
       },
@@ -45,6 +51,11 @@ function projection(): StorefrontProductProjection {
         purchasable: true,
         isPreorderSale: false,
         unavailableReason: null,
+        availability: fixtureAvailability({
+          purchasable: true,
+          isPreorderSale: false,
+          unavailableReason: null,
+        }),
         kindKey: "component-1",
         kindLabel: "Ao A",
       },

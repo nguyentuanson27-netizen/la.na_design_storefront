@@ -7,6 +7,9 @@ import {
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import { vietnamCalendarDate } from "./availability-cycle.ts";
+import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -32,6 +35,13 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
   }: { shopId: number; slug: string; now?: Date }) {
     const product = await catalog.getProductBySlug({ shopId, slug });
     if (!product) return null;
+
+    // I9 — website-owned, and deliberately its own read rather than a widened catalog select: the
+    // selling policy is not mirrored Pancake data and must not travel with it.
+    const sellingPolicyRow = await client.productSellingPolicy.findUnique({
+      where: { productId: product.id },
+      select: { sellingMode: true, negativeStockLimit: true },
+    });
 
     const parentRelations = await client.variantMirror.findMany({
       where: {
@@ -152,6 +162,19 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         parentVariants: product.variants,
         componentGroups,
         hasCompositeGraph,
+        // I9 — the same two inputs the Merchant feed supplies, because the page's JSON-LD and the
+        // feed have to publish one answer (ADR 0011 § parity). The policy decides whether a
+        // sold-out variant is a preorder sale at all; the cycle date decides whether that sale is
+        // publishable as `backorder`. Reading the dates here is a READ — a page render must never
+        // move a cycle, or the published date would depend on who last looked.
+        sellingPolicy: resolveSellingPolicy(sellingPolicyRow),
+        availabilityDates: {
+          byVariantId: await readVariantAvailabilityDates(
+            client,
+            product.variants.map((variant) => variant.id),
+          ),
+          today: vietnamCalendarDate(now),
+        },
         // The PDP's price authority. Passing the default rule here would quietly un-promote every
         // surface built from this projection — the panel, and the variant structured data that
         // reads the same options. That wiring is gated by `tests/a11y-runtime/pdp-promotion.spec.ts`

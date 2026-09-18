@@ -87,6 +87,12 @@ function itemXml(offer: MerchantOffer, market: MerchantMarketPolicy): string {
     `<g:image_link>${xml(offer.imageLink)}</g:image_link>\n` +
     additionalImages +
     `<g:availability>${xml(offer.availability)}</g:availability>\n` +
+    // I9 — Google requires `availability_date` beside `backorder` and accepts it nowhere else on
+    // this feed, so the element is emitted exactly when the mapper resolved one. ADR 0011 forbids
+    // fabricating it, which is why there is no fallback branch here.
+    (offer.availabilityDate === null
+      ? ""
+      : `<g:availability_date>${xml(offer.availabilityDate)}</g:availability_date>\n`) +
     `<g:price>${xml(String(offer.priceVnd))} ${xml(market.currency)}</g:price>\n` +
     `<g:brand>${xml(offer.brand)}</g:brand>\n` +
     `<g:mpn>${xml(offer.mpn)}</g:mpn>\n` +

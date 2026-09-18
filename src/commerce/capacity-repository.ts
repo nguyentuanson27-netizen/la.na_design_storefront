@@ -19,7 +19,8 @@
  * policy is.
  */
 
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
 import {
   resolveSellingPolicy,
   type ResolvedSellingPolicy,
@@ -30,7 +31,15 @@ import { SellingPolicyError } from "./capacity-policy-input.ts";
 
 const policySelect = { sellingMode: true, negativeStockLimit: true } as const;
 
-export function createCapacityRepository(client: PrismaClient) {
+export function createCapacityRepository(
+  client: PrismaClient,
+  /**
+   * I9 — when a policy change is observed. Injectable like the rest of the repository's
+   * dependencies so a test can place a cycle boundary on a chosen Vietnamese day rather than
+   * whichever one the suite happens to run on.
+   */
+  clock: () => Date = () => new Date(),
+) {
   /**
    * The effective selling policy for one product.
    *
@@ -153,6 +162,46 @@ export function createCapacityRepository(client: PrismaClient) {
    * negative preserves the negative value" is a property of *not writing stock*, so it is kept by
    * construction here rather than by a rule that could be forgotten.
    */
+  /**
+   * I9 — re-observe every variant of a product after its selling policy changed.
+   *
+   * The catalog sync sees stock; only this path sees the mode. Owner rule 3 makes the operator's
+   * toggle a cycle boundary in its own right — leaving preorder and returning to it while the
+   * variant is still sold out starts a NEW cycle, even though the stock never moved — so a cycle
+   * driven by stock transitions alone would miss it entirely.
+   *
+   * In the same transaction as the policy write, so a refused save cannot leave cycles describing a
+   * mode the product does not have. The instant is passed in rather than read here: the caller's
+   * clock is what the rest of the transaction is stamped with.
+   */
+  async function observePolicyChange(
+    tx: Prisma.TransactionClient,
+    productId: string,
+    sellingMode: SellingMode,
+    observedAt: Date,
+  ): Promise<void> {
+    const variants = await tx.variantMirror.findMany({
+      where: { productId },
+      select: { id: true, warehouseStocks: { select: { quantity: true } } },
+    });
+    if (variants.length === 0) return;
+
+    await observeVariantAvailabilityCycles(
+      tx,
+      variants.map((variant) => {
+        const stock = variant.warehouseStocks.reduce((total, row) => total + row.quantity, 0);
+        // Same rule as the sync: an unreadable total is not evidence of a sell-out, so it must not
+        // open a cycle and publish a date the catalog cannot support.
+        return {
+          variantId: variant.id,
+          stockNonPositive: Number.isFinite(stock) && stock <= 0,
+          isPreorder: sellingMode === "PREORDER",
+        };
+      }),
+      observedAt,
+    );
+  }
+
   async function saveSellingPolicy({
     shopId,
     productId,
@@ -174,7 +223,9 @@ export function createCapacityRepository(client: PrismaClient) {
         update: { sellingMode, negativeStockLimit },
         select: policySelect,
       });
-      return resolveSellingPolicy(stored);
+      const resolved = resolveSellingPolicy(stored);
+      await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+      return resolved;
     });
   }
 
@@ -197,7 +248,11 @@ export function createCapacityRepository(client: PrismaClient) {
       await requireVisibleProduct(tx, shopId, productId);
       await tx.productSellingPolicy.deleteMany({ where: { productId } });
       // The missing-row answer, from the one resolver that owns it.
-      return resolveSellingPolicy(null);
+      const resolved = resolveSellingPolicy(null);
+      // Clearing the policy returns the product to STANDARD, which ends any open cycle — the same
+      // boundary as switching the mode explicitly.
+      await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+      return resolved;
     });
   }
 

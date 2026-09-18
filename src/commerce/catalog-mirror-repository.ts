@@ -4,6 +4,8 @@ import type {
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
 import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
+import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -595,6 +597,49 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
             data: { isPresent: false, isActive: false, syncedAt: safeSyncedAt },
           });
         }
+
+        // I9 — the trusted stock observation, which is where a preorder availability cycle opens
+        // and closes (ADR 0011, owner-approved 2026-09-18).
+        //
+        // Here rather than at read time on purpose: a date that a page render or a feed run could
+        // open would depend on who happened to look, and two readers could disagree. The catalog
+        // sync is the one place the website learns what Pancake's stock actually is, so it is the
+        // one place allowed to move a cycle. Inside this transaction, so a sync that rolls back
+        // leaves no cycle claiming a stock state that was never committed.
+        //
+        // The selling policy is read per product because a cycle depends on BOTH halves — stock
+        // and mode — and only one of them arrives with the catalog.
+        const observedProductIds = [...internalProductIds.values()];
+        const storedPolicies =
+          observedProductIds.length > 0
+            ? await tx.productSellingPolicy.findMany({
+                where: { productId: { in: observedProductIds } },
+                select: { productId: true, sellingMode: true, negativeStockLimit: true },
+              })
+            : [];
+        const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
+
+        const availabilityObservations = variations.flatMap((variation) => {
+          const variantId = internalVariantIds.get(variation.id);
+          const productId = internalProductIds.get(variation.productId);
+          if (variantId === undefined || productId === undefined) return [];
+          const policy = resolveSellingPolicy(policyByProductId.get(productId) ?? null);
+          const stock = sumWarehouseStocks(
+            variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+          );
+          // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
+          // sell-out would open a cycle — and publish a date — off a number the catalog could not
+          // read, so it is reported as having stock and the feed's own fail-closed path handles it.
+          const stockNonPositive = Number.isFinite(stock) && stock <= 0;
+          return [
+            {
+              variantId,
+              stockNonPositive,
+              isPreorder: policy.sellingMode === "PREORDER",
+            },
+          ];
+        });
+        await observeVariantAvailabilityCycles(tx, availabilityObservations, safeSyncedAt);
 
         await tx.catalogSyncState.upsert({
           where: { pancakeShopId: safeShopId },
