@@ -262,15 +262,22 @@ test("P18 captures representative production performance evidence for home, PLP,
           const images = gallery.locator("img");
           await expect(images).toHaveCount(3);
 
-          const altTexts = await images.evaluateAll((elements) =>
-            elements.map((element) => element.getAttribute("alt")),
+          for (let index = 0; index < 3; index += 1) {
+            await expect(images.nth(index)).toBeVisible();
+          }
+
+          const renderedImages = await images.evaluateAll((elements) =>
+            elements.map((element) => ({
+              alt: element.getAttribute("alt"),
+              src: element.getAttribute("src"),
+            })),
           );
-          expect(altTexts).toEqual([
+          expect(renderedImages.map(({ alt }) => alt)).toEqual([
             `${productName} - Ảnh 1`,
             `${productName} - Ảnh 2`,
             `${productName} - Ảnh 3`,
           ]);
-          expect(new Set(altTexts).size).toBe(3);
+          expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
 
           const columnCount = await gallery.evaluate((element) => {
             const columns = getComputedStyle(element).gridTemplateColumns.trim();
