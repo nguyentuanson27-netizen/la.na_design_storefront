@@ -78,6 +78,7 @@ export async function createPreorderSnapshotAtConfirmation(
     select: {
       id: true,
       warehouseStocks: { select: { quantity: true, syncedAt: true } },
+      compositeComponents: { select: { parentVariantId: true }, take: 1 },
       product: {
         select: {
           sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
@@ -129,7 +130,7 @@ export async function createPreorderSnapshotAtConfirmation(
       activeReservedQuantity,
       sellingMode: policy.sellingMode,
       negativeStockLimit: policy.negativeStockLimit,
-      isComposite: false,
+      isComposite: variant.compositeComponents.length > 0,
     });
 
     return {
