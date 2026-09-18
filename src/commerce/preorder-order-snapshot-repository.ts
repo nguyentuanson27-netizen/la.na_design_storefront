@@ -26,9 +26,9 @@ function earliestObservationStart(stocks: readonly { syncedAt: Date }[]): Date |
 function sumStock(stocks: readonly { quantity: number }[]): number | null {
   let total = 0;
   for (const stock of stocks) {
-    if (!Number.isSafeInteger(stock.quantity)) return null;
+    if (!Number.isFinite(stock.quantity)) return null;
     total += stock.quantity;
-    if (!Number.isSafeInteger(total)) return null;
+    if (!Number.isFinite(total)) return null;
   }
   return total;
 }
