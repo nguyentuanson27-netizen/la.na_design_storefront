@@ -1,0 +1,185 @@
+export type ContactPayload = Readonly<{
+  name: string;
+  email: string;
+  message: string;
+}>;
+
+export type ContactInvalidField = "name" | "email" | "message" | "form";
+
+export type ContactSubmissionResult =
+  | Readonly<{ ok: true }>
+  | Readonly<{ ok: false; reason: "INVALID_INPUT"; field: ContactInvalidField }>
+  | Readonly<{ ok: false; reason: "RATE_LIMITED" | "DELIVERY_FAILED" }>;
+
+type ValidationResult =
+  | Readonly<{ ok: true; value: ContactPayload }>
+  | Readonly<{ ok: false; field: ContactInvalidField }>;
+
+type ProviderErrorClass = "AUTH" | "RATE_LIMIT" | "CLIENT" | "PROVIDER" | "MALFORMED_RESPONSE";
+
+type ProviderResult =
+  | Readonly<{ ok: true; id: string }>
+  | Readonly<{ ok: false; reason: "NETWORK_ERROR" }>
+  | Readonly<{
+      ok: false;
+      reason: "PROVIDER_ERROR";
+      status: number;
+      errorClass: ProviderErrorClass;
+    }>;
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const HEADER_CONTROL = /[\u0000-\u001f\u007f]/;
+const APPROVED_KEYS = new Set(["name", "email", "message"]);
+const RESEND_ENDPOINT = "https://api.resend.com/emails";
+const RESEND_USER_AGENT = "la-na-design-contact/1.0";
+const RESEND_TIMEOUT_MS = 10_000;
+const FROM_ADDRESS = "website@lanadesign.vn";
+
+function codePointLength(value: string): number {
+  return [...value].length;
+}
+
+function classifyProviderStatus(status: number): ProviderErrorClass {
+  if (status === 401 || status === 403) return "AUTH";
+  if (status === 429) return "RATE_LIMIT";
+  if (status >= 400 && status < 500) return "CLIENT";
+  return "PROVIDER";
+}
+
+export function validateContactPayload(input: unknown): ValidationResult {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) {
+    return { ok: false, field: "form" };
+  }
+
+  const record = input as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length !== APPROVED_KEYS.size || keys.some((key) => !APPROVED_KEYS.has(key))) {
+    return { ok: false, field: "form" };
+  }
+
+  if (typeof record.name !== "string") return { ok: false, field: "name" };
+  if (typeof record.email !== "string") return { ok: false, field: "email" };
+  if (typeof record.message !== "string") return { ok: false, field: "message" };
+
+  const name = record.name.trim();
+  const email = record.email.trim();
+  const message = record.message.trim();
+
+  if (codePointLength(name) < 1 || codePointLength(name) > 100) {
+    return { ok: false, field: "name" };
+  }
+  if (
+    email.length < 1 ||
+    email.length > 254 ||
+    HEADER_CONTROL.test(email) ||
+    !EMAIL_PATTERN.test(email)
+  ) {
+    return { ok: false, field: "email" };
+  }
+  if (codePointLength(message) < 1 || codePointLength(message) > 4_000) {
+    return { ok: false, field: "message" };
+  }
+
+  return { ok: true, value: { name, email, message } };
+}
+
+export async function sendContactEmailViaResend(
+  payload: ContactPayload,
+  options: Readonly<{
+    apiKey: string;
+    to: string;
+    idempotencyKey: string;
+    subject: string;
+    fetchImpl?: typeof fetch;
+  }>,
+): Promise<ProviderResult> {
+  const fetchImpl = options.fetchImpl ?? fetch;
+
+  let response: Response;
+  try {
+    response = await fetchImpl(RESEND_ENDPOINT, {
+      method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
+      headers: {
+        Authorization: `Bearer ${options.apiKey}`,
+        "Content-Type": "application/json",
+        "Idempotency-Key": options.idempotencyKey,
+        "User-Agent": RESEND_USER_AGENT,
+      },
+      body: JSON.stringify({
+        from: FROM_ADDRESS,
+        to: [options.to],
+        reply_to: payload.email,
+        subject: options.subject,
+        text: `Tên: ${payload.name}\nEmail: ${payload.email}\n\n${payload.message}`,
+      }),
+    });
+  } catch {
+    return { ok: false, reason: "NETWORK_ERROR" };
+  }
+
+  if (response.status !== 200) {
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: classifyProviderStatus(response.status),
+    };
+  }
+
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: "MALFORMED_RESPONSE",
+    };
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    Array.isArray(body) ||
+    typeof (body as { id?: unknown }).id !== "string" ||
+    (body as { id: string }).id.length < 1 ||
+    (body as { id: string }).id.length > 256
+  ) {
+    return {
+      ok: false,
+      reason: "PROVIDER_ERROR",
+      status: response.status,
+      errorClass: "MALFORMED_RESPONSE",
+    };
+  }
+
+  return { ok: true, id: (body as { id: string }).id };
+}
+
+export function createContactDelivery(dependencies: Readonly<{
+  consumeRateLimits: (clientBucket: string) => Promise<boolean>;
+  sendEmail: (payload: ContactPayload, idempotencyKey: string) => Promise<ProviderResult>;
+}>) {
+  return {
+    async submit(
+      input: unknown,
+      clientBucket: string,
+      idempotencyKey: string,
+    ): Promise<ContactSubmissionResult> {
+      const validated = validateContactPayload(input);
+      if (!validated.ok) {
+        return { ok: false, reason: "INVALID_INPUT", field: validated.field };
+      }
+
+      if (!(await dependencies.consumeRateLimits(clientBucket))) {
+        return { ok: false, reason: "RATE_LIMITED" };
+      }
+
+      const result = await dependencies.sendEmail(validated.value, idempotencyKey);
+      return result.ok ? { ok: true } : { ok: false, reason: "DELIVERY_FAILED" };
+    },
+  };
+}

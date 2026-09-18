@@ -6,6 +6,8 @@ import { loadContactRoute, type ContactRouteProps } from "@/routes/contact";
 import type { ContactViewModel } from "@/routes/evergreen-model";
 import { buildContactMetadata } from "@/routes/metadata/contact";
 
+import { ContactForm } from "./contact-form";
+
 /**
  * W13/U33a — the evergreen Contact page.
  *
@@ -22,8 +24,8 @@ import { buildContactMetadata } from "@/routes/metadata/contact";
  * is a different place and belongs to About; a page offering a bare "Địa chỉ" is how a customer
  * posts a return to a registered office that does not receive post.
  *
- * Outbound delivery for a contact form is G3/F9b work and is deliberately absent: no provider, no
- * form, and nothing that could tell a visitor a message was sent when nothing sent it.
+ * F9b adds the owner-approved contact form without replacing any of these canonical support channels.
+ * Delivery remains server-authoritative; this page owns presentation only.
  */
 
 const CONTACT_LINK =
@@ -40,6 +42,8 @@ function render(data: ContactViewModel) {
         Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên
         dưới.
       </p>
+
+      <ContactForm />
 
       <dl className="mt-12 grid max-w-2xl gap-8 text-base leading-7">
         <div>
