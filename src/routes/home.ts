@@ -2,8 +2,12 @@ import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import { listConfiguredStorefrontDiscoveryPage } from "@/commerce/storefront-catalog-runtime";
-import { parseStorefrontDiscoverySearchParams } from "@/commerce/storefront-discovery";
+import { parseTrustedProductImageUrl } from "@/commerce/product-media";
+import {
+  listConfiguredHomepageFeaturedWithPricing,
+  listConfiguredHomepageNewArrivals,
+  readConfiguredCategoryHeroMedia,
+} from "@/commerce/storefront-catalog-runtime";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
@@ -22,11 +26,22 @@ import { buildHomeViewModel, type HomeViewModel } from "./home-model.ts";
 
 const collectionRepository = createCollectionDefinitionRepository(prisma);
 
+/** Master spec §18: four per row on desktop, two on mobile. Two full rows. */
+const NEW_ARRIVALS_LIMIT = 8;
+
+/** The categories whose editorial media the homepage renders (§19, §21). */
+const EDITORIAL_CATEGORY_KEYS = ["aoDai", "setDo", "vayDam"] as const;
+
 export type HomeRouteData = HomeViewModel &
   Readonly<{
     heroSlides: readonly HomeHeroSlide[];
+    categoryHeroMedia: ReadonlyMap<string, string>;
     brandFacts: ReturnType<typeof buildPublicBrandFacts>;
   }>;
+
+export type HomeRouteProps = Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>;
 
 /**
  * The hero's source, and the only place that knows what a campaign slide is made of today.
@@ -50,24 +65,24 @@ function toHeroCandidates(
   }));
 }
 
-export type HomeRouteProps = Readonly<{
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}>;
+const emptyGrid = { products: [], pricingRule: undefined } as const;
 
-async function loadEdit(now: Date) {
+async function loadNewArrivals(now: Date) {
   try {
-    const page = await listConfiguredStorefrontDiscoveryPage({
-      discovery: parseStorefrontDiscoverySearchParams({}),
-      pageSize: 20,
-      now,
-    });
-    return { products: page.products, pricingRule: page.pricingRule, refreshAfterMs: page.refreshAfterMs };
+    return await listConfiguredHomepageNewArrivals(NEW_ARRIVALS_LIMIT, now);
   } catch (error) {
     // An unconfigured Pancake shop is a deployment state, not a broken page: the homepage still
-    // renders its brand copy and collection navigation with no merchandising.
-    if (error instanceof PancakeConfigError) {
-      return { products: [], pricingRule: undefined, refreshAfterMs: 60_000 };
-    }
+    // renders its brand copy, editorial blocks and collection navigation with no merchandising.
+    if (error instanceof PancakeConfigError) return { ...emptyGrid, refreshAfterMs: 60_000 };
+    throw error;
+  }
+}
+
+async function loadFeatured(now: Date) {
+  try {
+    return await listConfiguredHomepageFeaturedWithPricing(now);
+  } catch (error) {
+    if (error instanceof PancakeConfigError) return emptyGrid;
     throw error;
   }
 }
@@ -77,30 +92,59 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
   // One instant for the whole request, so counting, ordering and card pricing cannot disagree.
   const requestNow = new Date();
 
-  const [{ products, pricingRule, refreshAfterMs }, collections] = await Promise.all([
-    loadEdit(requestNow),
+  const [newArrivals, featured, collections, storedCategoryMedia] = await Promise.all([
+    loadNewArrivals(requestNow),
+    loadFeatured(requestNow),
     collectionRepository.listHomepageMerchandising(),
+    readConfiguredCategoryHeroMedia([...EDITORIAL_CATEGORY_KEYS]),
   ]);
 
-  const listTracking = buildProductListTracking({
-    products,
-    list: { listId: "homepage-edit", listName: "Tuyển chọn" },
-    pricingRule,
+  // Validated here rather than in the page: an untrusted origin must fail the same media contract
+  // every other storefront image goes through, and the page layer renders what it is handed. A
+  // rejected URL leaves no entry, which is what makes that block omit itself.
+  const categoryHeroMedia = new Map<string, string>();
+  for (const [categoryKey, rawUrl] of storedCategoryMedia) {
+    const trusted = parseTrustedProductImageUrl(rawUrl);
+    if (trusted !== null) categoryHeroMedia.set(categoryKey, trusted);
+  }
+
+  const newArrivalsTracking = buildProductListTracking({
+    products: newArrivals.products,
+    list: { listId: "homepage-new-arrivals", listName: "Hàng mới về" },
+    pricingRule: newArrivals.pricingRule,
+  });
+
+  // Featured gets its own select events, so a click from that grid is attributed to the product a
+  // shopper actually clicked. Its list *impression* is not reported: the route contract seals one
+  // tracking event, and reporting two `view_item_list` events needs a change to that contract
+  // rather than a second event smuggled through this page.
+  const featuredTracking = buildProductListTracking({
+    products: featured.products,
+    list: { listId: "homepage-featured", listName: "Sản phẩm nổi bật" },
+    pricingRule: featured.pricingRule,
   });
 
   return sealRoute({
     data: {
       ...buildHomeViewModel({
-        products,
-        pricingRule,
+        newArrivals: {
+          products: newArrivals.products,
+          pricingRule: newArrivals.pricingRule,
+          selectEventBySlug: newArrivalsTracking.selectEventBySlug,
+        },
+        featured: {
+          products: featured.products,
+          pricingRule: featured.pricingRule,
+          selectEventBySlug: featuredTracking.selectEventBySlug,
+        },
         collections,
-        selectEventBySlug: listTracking.selectEventBySlug,
       }),
       heroSlides: buildHomeHeroSlides(toHeroCandidates(collections)),
+      categoryHeroMedia,
       brandFacts: buildPublicBrandFacts(readGuestShippingPolicy()),
     },
-    refreshAfterMs,
-    trackingEvent: listTracking.listEvent,
+    refreshAfterMs: newArrivals.refreshAfterMs,
+    trackingEvent: newArrivalsTracking.listEvent,
     // The homepage publishes no JSON-LD of its own; the root layout carries the site graph.
     structuredData: [],
     pixelEvents: [],

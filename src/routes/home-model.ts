@@ -15,8 +15,12 @@ import { selectEditorialPanels, type EditorialPanel } from "./editorial-panels.t
  *
  * The loader fetches; this turns what came back into what the page renders. It is separate from
  * `home.ts` because that file reaches the catalog runtime and `next/server`, neither of which the
- * domain test runner can load -- and the editorial picks below are the part worth testing, because
- * their fallback chain is the kind of thing that silently degrades to a blank panel.
+ * domain test runner can load.
+ *
+ * Master spec §16 fixes the section order, and two of those sections are product grids that must
+ * stay separate reads all the way through: `Hàng mới về` is a recency read, Featured (§20) is a
+ * manual list whose emptiness is meaningful. They are two fields here rather than one merged list
+ * precisely so an empty Featured section cannot quietly inherit new arrivals.
  *
  * No pricing is decided here: every card comes from `buildProductCardModel`, which is where the
  * money rules live.
@@ -39,49 +43,61 @@ export type HomeEditorialPanel = EditorialPanel;
 export type HomeCard = Readonly<{ id: string; model: ProductCardModel }>;
 
 export type HomeViewModel = Readonly<{
-  cards: readonly HomeCard[];
-  lookbookLarge: HomeEditorialPanel;
-  lookbookSmall: HomeEditorialPanel;
+  newArrivals: readonly HomeCard[];
+  featured: readonly HomeCard[];
+  /** The brand-story photograph (§23). Null when the catalog carries no trusted photography. */
+  storyPanel: HomeEditorialPanel;
   collections: readonly HomeCollectionLink[];
 }>;
 
-export type HomeViewModelInput = Readonly<{
+type CardGridInput = Readonly<{
   products: readonly HomeProduct[];
   pricingRule?: StorefrontPricingRule;
-  collections: readonly HomeCollectionLink[];
   /** Prebuilt on the server, so a click handler never reassembles a payload from the DOM. */
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
 }>;
 
-export function buildHomeViewModel({
+export type HomeViewModelInput = Readonly<{
+  newArrivals: CardGridInput;
+  featured: CardGridInput;
+  collections: readonly HomeCollectionLink[];
+}>;
+
+export function buildHomeCards({
   products,
   pricingRule,
-  collections,
   selectEventBySlug,
+}: CardGridInput): readonly HomeCard[] {
+  return Object.freeze(
+    products.map((product) =>
+      Object.freeze({
+        id: product.id,
+        model: buildProductCardModel({
+          slug: product.slug,
+          name: product.name,
+          media: product.media,
+          variants: product.variants,
+          pricingRule,
+          selectEvent: selectEventBySlug.get(product.slug) ?? null,
+        }),
+      }),
+    ),
+  );
+}
+
+export function buildHomeViewModel({
+  newArrivals,
+  featured,
+  collections,
 }: HomeViewModelInput): HomeViewModel {
-  // Two panels, for the two lookbook slots. The hero is no longer one of them: master spec §17
-  // makes it campaign media with its own destination, which `buildHomeHeroSlides` decides from
-  // admin-owned rows rather than from whichever product photo happened to sort first.
-  const [lookbookLarge, lookbookSmall] = selectEditorialPanels(products, 2);
+  // One panel, for the brand story's photograph. The hero is no longer one of these: §17 makes it
+  // campaign media with its own destination, decided by `buildHomeHeroSlides`.
+  const [storyPanel] = selectEditorialPanels(newArrivals.products, 1);
 
   return Object.freeze({
-    cards: Object.freeze(
-      products.map((product) =>
-        Object.freeze({
-          id: product.id,
-          model: buildProductCardModel({
-            slug: product.slug,
-            name: product.name,
-            media: product.media,
-            variants: product.variants,
-            pricingRule,
-            selectEvent: selectEventBySlug.get(product.slug) ?? null,
-          }),
-        }),
-      ),
-    ),
-    lookbookLarge: lookbookLarge ?? null,
-    lookbookSmall: lookbookSmall ?? null,
+    newArrivals: buildHomeCards(newArrivals),
+    featured: buildHomeCards(featured),
+    storyPanel: storyPanel ?? null,
     collections: Object.freeze([...collections]),
   });
 }

@@ -94,8 +94,13 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **F4a** PLP server contract: filters, manual default order, stable crawlable page/cursor URLs.
 - [x] **F4b** PLP UI: accessible filters + infinite loading + loading/error/empty/back-navigation behavior.
 - [x] **F5** Product card: 4:5, second-image hover, sale display, one marketing badge, availability slot.
-- [ ] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe.
-- [ ] **F6b** Homepage lower sections in exact approved order; no fake content.
+- [x] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe. Slides come
+  from published collections carrying hero media until a campaign owner is approved; the swap is
+  one function in `home.ts`.
+- [x] **F6b** Homepage lower sections in exact approved order; no fake content. Two follow-ups
+  left open and deliberately not invented: §19's short Vietnamese paragraph for the Áo dài
+  section awaits owner-approved copy, and the Featured grid reports no `view_item_list` because
+  the route contract seals a single tracking event.
 - [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
 - [ ] **F7b** PDP buy panel with exact `Thêm vào giỏ` + `Mua ngay`; without size highlight selector + show `Vui lòng chọn size`; standard OOS stays visible/disabled with `Hết hàng`; mobile sticky purchase controls.
 - [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.

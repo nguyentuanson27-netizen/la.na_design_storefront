@@ -449,14 +449,33 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   // This fixture publishes no collection hero media, so the hero region is absent rather than
   // rendered against a product photo the way the retired campaign block was.
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
-  await expect(page.locator(".lookbook-panel--large img")).toBeVisible();
-  await expect(page.locator(".lookbook-panel--small img")).toBeVisible();
-  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Xem các bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
-  await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute("href", "/shop");
-  await expect(page.getByRole("link", { name: "Xem bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
+  // Master spec §16's first product grid. `Tuyển chọn` and the Brand #1 lookbook block are gone:
+  // neither is in the approved order.
+  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute(
+    "href",
+    "/new-arrivals",
+  );
+  await expect(page.locator(".lookbook-panel")).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
+
+  // §22: exactly these three facts, and the brand story links to /about.
+  const serviceStrip = page.locator('[data-homepage-region="service"]');
+  await expect(serviceStrip.getByRole("listitem")).toHaveCount(3);
+  await expect(serviceStrip.getByText("Đổi trả trong 15 ngày", { exact: true })).toBeVisible();
+  await expect(serviceStrip.getByText("Giao hàng toàn quốc", { exact: true })).toBeVisible();
+  await expect(serviceStrip.getByText("Tư vấn size 08:00–22:00", { exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Về La.na Design ↗" })).toHaveAttribute(
+    "href",
+    "/about",
+  );
+
+  // §19 and §21 depend on category editorial media this fixture does not configure, and §20 on a
+  // manual Featured selection it does not make, so all three omit themselves.
+  await expect(page.locator('[data-homepage-region="lead-category"]')).toHaveCount(0);
+  await expect(page.locator('[data-homepage-region="featured"]')).toHaveCount(0);
+  await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
 
   const brandFactsNavigation = page.getByRole("navigation", { name: "Hỗ trợ và khám phá" });
   await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute("href", "/shop");
@@ -534,14 +553,13 @@ test("P8 homepage empty state uses the shared semantic state pattern and degrade
   const emptyState = page.locator('[data-ui-state="empty"]');
   await expect(emptyState).toBeVisible();
   await expect(
-    emptyState.getByRole("heading", { level: 2, name: "Tuyển chọn hiện tại đang được chuẩn bị." }),
-  ).toBeVisible();
-  await expect(
     emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", { exact: true }),
   ).toBeVisible();
+  // An empty catalog empties the grid, not the page: the approved copy sections stay.
+  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
+  await expect(page.locator('[data-homepage-region="service"]').getByRole("listitem")).toHaveCount(3);
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
-  await expect(page.locator(".lookbook-panel img")).toHaveCount(0);
-  await expect(page.locator(".lookbook-figure")).toHaveCount(0);
+  await expect(page.locator(".lookbook-panel")).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
   await expectRuntimePageClean(page);
 });
