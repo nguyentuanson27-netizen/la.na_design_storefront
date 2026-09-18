@@ -29,6 +29,7 @@ const HEADER_CONTROL = /[\u0000-\u001f\u007f]/;
 const APPROVED_KEYS = new Set(["name", "email", "message"]);
 const RESEND_ENDPOINT = "https://api.resend.com/emails";
 const RESEND_USER_AGENT = "la-na-design-contact/1.0";
+const RESEND_TIMEOUT_MS = 10_000;
 const FROM_ADDRESS = "website@lanadesign.vn";
 
 function codePointLength(value: string): number {
@@ -95,6 +96,8 @@ export async function sendContactEmailViaResend(
   try {
     response = await fetchImpl(RESEND_ENDPOINT, {
       method: "POST",
+      redirect: "error",
+      signal: AbortSignal.timeout(RESEND_TIMEOUT_MS),
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
         "Content-Type": "application/json",

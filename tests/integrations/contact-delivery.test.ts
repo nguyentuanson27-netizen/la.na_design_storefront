@@ -90,6 +90,9 @@ test("Resend transport owns fixed headers and accepts success only with an email
   assert.deepEqual(result, { ok: true, id: "email-123" });
   assert.equal(request?.input, "https://api.resend.com/emails");
   assert.equal(request?.init?.method, "POST");
+  assert.equal(request?.init?.redirect, "error");
+  assert.ok(request?.init?.signal instanceof AbortSignal);
+  assert.equal(request?.init?.signal?.aborted, false);
   assert.deepEqual(request?.init?.headers, {
     Authorization: "Bearer test-api-key",
     "Content-Type": "application/json",

@@ -6,7 +6,11 @@ import { prisma } from "../../src/db/prisma.ts";
 
 const WINDOW_MS = 15 * 60 * 1_000;
 const baseNow = Date.parse("2026-09-18T00:00:00.000Z");
-const buckets = ["contact-rate-limit-sequential-test", "contact-rate-limit-concurrent-test"];
+const buckets = [
+  "contact-rate-limit-sequential-test",
+  "contact-rate-limit-concurrent-test",
+  "contact-rate-limit-cap-test",
+];
 const ids = buckets.flatMap((bucket) => [
   `contact:15m:${bucket}`,
   `contact:24h:${bucket}`,
@@ -38,6 +42,21 @@ test("contact limiter enforces 3/15m and 10/24h windows and then resets", async 
 
   assert.equal(await consumeContactRateLimits(bucket, baseNow + 7 * WINDOW_MS + 1), false);
   assert.equal(await consumeContactRateLimits(bucket, baseNow + 24 * 60 * 60 * 1_000 + 1), true);
+});
+
+test("contact limiter caps saturated counters instead of growing without bound", async () => {
+  const bucket = buckets[2]!;
+
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await consumeContactRateLimits(bucket, baseNow);
+  }
+
+  const [shortWindow, dailyWindow] = await Promise.all([
+    prisma.rateLimit.findUniqueOrThrow({ where: { id: `contact:15m:${bucket}` } }),
+    prisma.rateLimit.findUniqueOrThrow({ where: { id: `contact:24h:${bucket}` } }),
+  ]);
+  assert.equal(shortWindow.count, 4);
+  assert.equal(dailyWindow.count, 11);
 });
 
 test("contact limiter increments atomically under concurrent attempts", async () => {

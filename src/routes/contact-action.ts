@@ -1,10 +1,12 @@
 "use server";
 
-import { createHmac, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { headers } from "next/headers";
 
+import { readAuthServerConfig } from "@/auth/config";
 import { BRAND } from "@/brand";
+import { deriveGuestCheckoutClientKey as deriveTrustedClientKey } from "@/commerce/guest-checkout-client-identity";
 import {
   createContactDelivery,
   sendContactEmailViaResend,
@@ -13,20 +15,12 @@ import {
 } from "@/contact/contact-delivery";
 import { consumeContactRateLimits } from "@/contact/contact-rate-limit";
 
-async function resolveClientBucket(secret: string): Promise<string | null> {
-  const headerName = process.env.BETTER_AUTH_IP_HEADER?.trim().toLowerCase();
-
-  if (!headerName) {
-    if (process.env.NODE_ENV !== "production") {
-      return createHmac("sha256", secret).update("local-development").digest("hex");
-    }
+async function resolveClientBucket(): Promise<string | null> {
+  try {
+    return deriveTrustedClientKey(await headers(), readAuthServerConfig());
+  } catch {
     return null;
   }
-
-  const value = (await headers()).get(headerName)?.trim();
-  if (!value || value.includes(",")) return null;
-
-  return createHmac("sha256", secret).update(value).digest("hex");
 }
 
 function createResendSender(apiKey: string) {
@@ -43,7 +37,7 @@ export async function submitContactForm(input: unknown): Promise<ContactSubmissi
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) return { ok: false, reason: "DELIVERY_FAILED" };
 
-  const clientBucket = await resolveClientBucket(apiKey);
+  const clientBucket = await resolveClientBucket();
   if (!clientBucket) return { ok: false, reason: "DELIVERY_FAILED" };
 
   const delivery = createContactDelivery({

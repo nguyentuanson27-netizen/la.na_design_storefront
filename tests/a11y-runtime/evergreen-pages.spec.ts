@@ -88,7 +88,7 @@ test.afterAll(async () => {
   await stopServer();
 });
 
-test("U33a the Contact page publishes the approved channels and claims no other support route", async ({
+test("U33a the Contact page publishes approved channels and the approved F9b contact form", async ({
   page,
 }) => {
   const response = await page.goto(`${BASE_URL}/contact`, { waitUntil: "networkidle" });
@@ -109,10 +109,19 @@ test("U33a the Contact page publishes the approved channels and claims no other 
   await expect(main.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
   await expect(main.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
 
-  // No support channel or promise the owner has not approved. A contact form or a stated response
-  // time would be a policy this repository invented.
-  await expect(main.locator("form")).toHaveCount(0);
-  for (const invented of [/phản hồi trong \d/i, /24\/7/, /live chat/i, /hotline miễn phí/i]) {
+  const form = main.locator("form");
+  await expect(form).toHaveCount(1);
+  await expect(form.locator("input, textarea")).toHaveCount(3);
+  await expect(form.getByLabel("Họ tên")).toHaveAttribute("name", "name");
+  await expect(form.getByLabel("Họ tên")).toHaveAttribute("maxlength", "100");
+  await expect(form.getByLabel("Email")).toHaveAttribute("name", "email");
+  await expect(form.getByLabel("Email")).toHaveAttribute("maxlength", "254");
+  await expect(form.getByLabel("Nội dung")).toHaveAttribute("name", "message");
+  await expect(form.getByLabel("Nội dung")).toHaveAttribute("maxlength", "4000");
+  await expect(form.getByRole("button", { name: "Gửi tin nhắn" })).toBeVisible();
+
+  // F9b adds only the approved contact form; other unapproved support channels remain absent.
+  for (const invented of [/24\/7/, /live chat/i, /hotline miễn phí/i]) {
     await expect(main).not.toContainText(invented);
   }
 
