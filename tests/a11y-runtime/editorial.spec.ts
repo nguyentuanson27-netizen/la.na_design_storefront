@@ -331,12 +331,13 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
 
-  const footerNavigation = page.getByRole("navigation", { name: "Liên kết cuối trang" });
+  const footerNavigation = page.getByRole("navigation", { name: "Mua sắm" });
   await expect(footerNavigation).toBeVisible();
-  await expect(footerNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toBeVisible();
-  await expect(footerNavigation.getByRole("link", { name: "Hàng mới", exact: true })).toBeVisible();
-  await expect(footerNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
-  await expect(footerNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Áo dài", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Hàng mới về", exact: true })).toBeVisible();
+  await expect(footerNavigation.getByRole("link", { name: "Sale", exact: true })).toBeVisible();
+  await expect(page.locator('footer a[href="/lookbook"]')).toHaveCount(0);
+  await expect(page.locator('footer a[href="/flash-sale"]')).toHaveCount(0);
   await expectVisualFoundationTokens(page);
 
   const mobileMenu = page.getByRole("button", { name: "Menu", exact: true });
