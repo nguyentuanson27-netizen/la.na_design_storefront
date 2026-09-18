@@ -38,6 +38,7 @@ let server: ChildProcess | undefined;
 let serverOutput = "";
 let cartId = "";
 let testVariantId = "";
+let nextPancakeOrderIdSeed = 987_654_321;
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -110,6 +111,9 @@ async function startServer({
       PANCAKE_A11Y_PRODUCT_ID: productExternalId,
       PANCAKE_A11Y_VARIATION_ID: variationExternalId,
       PANCAKE_A11Y_WAREHOUSE_ID: warehouseExternalId,
+      // Each test restarts the fixture server. I7 keeps confirmed history immutable, so a restarted
+      // mock must not reuse the same external order id and collide with OrderMirror.pancakeOrderId.
+      PANCAKE_A11Y_ORDER_ID_SEED: String(nextPancakeOrderIdSeed++),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
