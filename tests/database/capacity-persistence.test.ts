@@ -287,6 +287,61 @@ async function seedProductForShop(
   return { productId: product.id, variantId: variant.id };
 }
 
+test("I9 policy writes wait behind the catalog-sync advisory boundary", async () => {
+  const { productId } = await seedProductForShop("availability-lock", testShopId);
+  const blocker = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+
+  let releaseLock!: () => void;
+  let markLocked!: () => void;
+  const locked = new Promise<void>((resolve) => {
+    markLocked = resolve;
+  });
+  const released = new Promise<void>((resolve) => {
+    releaseLock = resolve;
+  });
+
+  const held = blocker.$transaction(
+    async (tx) => {
+      // Same existing shop-scoped lock catalog sync takes before reading/writing its mirror. I9
+      // policy writes must join this boundary or a sync can read PREORDER and reopen a cycle after
+      // an admin has already committed STANDARD.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(${1_277_934_572}, ${testShopId})`;
+      markLocked();
+      await released;
+    },
+    { timeout: 5_000 },
+  );
+
+  await locked;
+  let write:
+    | Promise<Awaited<ReturnType<typeof repository.saveSellingPolicy>>>
+    | null = null;
+  try {
+    write = repository.saveSellingPolicy({
+      shopId: testShopId,
+      productId,
+      sellingMode: "PREORDER",
+      negativeStockLimit: -5,
+    });
+
+    const state = await Promise.race([
+      write.then(() => "settled" as const),
+      new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 250)),
+    ]);
+    assert.equal(
+      state,
+      "blocked",
+      "policy mutation must not pass the same serialization boundary while catalog sync owns it",
+    );
+  } finally {
+    releaseLock();
+    await Promise.allSettled([held, ...(write === null ? [] : [write])]);
+    await blocker.$disconnect();
+  }
+
+  assert.equal((await repository.readSellingPolicy(productId)).sellingMode, "PREORDER");
+});
+
 test("I2 a policy write refuses a product that is not a visible product of this shop", async () => {
   // The foreign key proves the product exists; only this predicate proves whose it is.
   const foreign = await seedProductForShop("other-shop", otherShopId);
