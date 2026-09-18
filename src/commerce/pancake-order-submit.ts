@@ -800,9 +800,9 @@ export function createPancakeOrderSubmissionService(
         if (updated.count !== 1) return false;
 
         // I7 is part of the local CONFIRMED transition. The remote order is already known to exist,
-        // but the local state and its immutable preorder history must commit together. If the
-        // snapshot cannot be produced from authoritative line/policy/stock facts, the transaction
-        // rolls back and the existing ambiguous-write recovery path keeps the order fail-closed.
+        // and complete I7 capacity metadata is copied into immutable history in this transaction.
+        // Rolling/pre-I7 reservations intentionally produce no I7 row rather than re-deriving one
+        // from mutable stock or policy after the Pancake write.
         await createPreorderSnapshotAtConfirmation(tx, order.id, confirmedAt);
         return true;
       });
