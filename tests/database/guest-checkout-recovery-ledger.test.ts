@@ -318,8 +318,10 @@ test("I6b a clock never frees SUBMITTING, UNKNOWN or COMMITTED, however stale", 
   // write from a landed one, so freeing on age is the oversell G2 proved Pancake will not prevent.
   for (const state of ["SUBMITTING", "UNKNOWN", "COMMITTED"] as const) {
     const variant = await seedVariant(`ageless-${state}`);
-    // A CONFIRMED order so recovery's own state machine has nothing to say about it: this test is
-    // about the clock, not about crash recovery.
+    // A DRAFT order, so nothing else in recovery has anything to say about these rows: DRAFT is
+    // neither swept as stranded nor converged from a persisted outcome. This test is about the
+    // CLOCK alone, and a CONFIRMED order would now (correctly) have its SUBMITTING hold settled to
+    // COMMITTED by outcome convergence — which is evidence, not a timer, and a different rule.
     //
     // `sourceCartId` is set deliberately. The sweep is scoped through the order's cart, so an order
     // without one is excluded by the join before the state filter is ever consulted — and this test
@@ -335,8 +337,7 @@ test("I6b a clock never frees SUBMITTING, UNKNOWN or COMMITTED, however stale", 
         publicCode: `${key}-ageless-${state}`,
         sourceCartId: cart.id,
         pancakeShopId: shopId,
-        state: "CONFIRMED",
-        pancakeOrderId: `${key}-pancake-${state}`,
+        state: "DRAFT",
       },
     });
     const hold = await prisma.variantCapacityReservation.create({
@@ -379,4 +380,196 @@ test("I6b a hold younger than the window is left alone", async () => {
   });
 
   assert.equal(result.reservedExpired, 0, "a hold inside its window must not be expired");
+});
+
+/**
+ * The TOCTOU the guarded write exists to close.
+ *
+ * Recovery used to select stale candidate ids and then update them by id alone. Under READ
+ * COMMITTED a live submission can advance an order between those two statements, so recovery would
+ * retire an order that had *just* been claimed for submission, release its hold, and let the
+ * submitter go on to call Pancake — an order that exists remotely, reads `REJECTED` locally, and
+ * holds no capacity at all.
+ *
+ * The predicates now live on the `UPDATE` itself, re-checked under the row lock, with `RETURNING`
+ * reporting only the rows this recovery actually won.
+ */
+
+test("I6b recovery never overwrites an order a submitter advanced first", async () => {
+  // Deterministic half: the order is advanced BEFORE recovery runs, exactly as a racing submitter
+  // would leave it. The stale `updatedAt` is preserved, so only the state predicate can save it.
+  const { order, hold } = await seedStranded("advanced", "VALIDATING", "RESERVED");
+  await prisma.variantCapacityReservation.update({
+    where: { id: hold.id },
+    data: { state: "SUBMITTING" },
+  });
+  await prisma.$executeRaw`UPDATE "OrderMirror" SET "state" = 'POS_SUBMITTING', "updatedAt" = ${stale} WHERE id = ${order.id}`;
+
+  const result = await recoverStrandedGuestCheckouts(prisma, { now });
+
+  // It is swept as a stale POS_SUBMITTING — which is correct and is a different rule — but it must
+  // NEVER have been retired as VALIDATING, and its hold must never have been released.
+  assert.equal(result.validatingRejected, 0, "the VALIDATING sweep must not claim an advanced order");
+  const recovered = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
+  assert.equal(recovered.state, "SYNC_UNKNOWN");
+  assert.equal(
+    (await prisma.variantCapacityReservation.findUniqueOrThrow({ where: { id: hold.id } })).state,
+    "UNKNOWN",
+    "a hold on an advanced order must never be released by the VALIDATING path",
+  );
+});
+
+test("I6b a real race between recovery and a submitter has no interleaving that loses the write", async () => {
+  // The genuine concurrency regression: recovery and a submitter's claim run at the same time,
+  // repeatedly. Which one wins is nondeterministic; what must hold either way is that the two
+  // outcomes stay CONSISTENT — the losing side must not have partially applied.
+  //
+  // The forbidden state is precise: an order retired to REJECTED whose hold was released, while the
+  // submitter also believes it holds the claim. That is the state that puts a real order into
+  // Pancake with no local record and no capacity held.
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const { order, hold } = await seedStranded(`race-${attempt}`, "VALIDATING", "RESERVED");
+
+    const [, claimed] = await Promise.all([
+      recoverStrandedGuestCheckouts(prisma, { now }),
+      // Exactly what `pancake-order-submit` does at its write boundary: a guarded CAS out of
+      // VALIDATING. `count` tells the submitter whether it owns the write.
+      prisma.orderMirror
+        .updateMany({
+          where: { id: order.id, state: "VALIDATING" },
+          data: { state: "POS_SUBMITTING" },
+        })
+        .then(({ count }) => count === 1),
+    ]);
+
+    const finalOrder = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
+    const finalHold = await prisma.variantCapacityReservation.findUniqueOrThrow({
+      where: { id: hold.id },
+    });
+
+    if (claimed) {
+      // The submitter won the claim, so recovery must not have retired the order underneath it and
+      // must not have freed the units it is about to spend.
+      assert.notEqual(
+        finalOrder.state,
+        "REJECTED",
+        "an order claimed for submission must not be retired by recovery",
+      );
+      assert.notEqual(
+        finalHold.state,
+        "RELEASED",
+        "capacity must not be freed under a submitter that owns the write",
+      );
+    } else {
+      // Recovery won. The order is retired and its hold released together — never one without the
+      // other, which is what running both in one transaction guarantees.
+      assert.equal(finalOrder.state, "REJECTED");
+      assert.equal(finalHold.state, "RELEASED");
+    }
+    await cleanup();
+  }
+});
+
+/**
+ * The crash window after an outcome is persisted and before the ledger is settled.
+ *
+ * Submission writes the order's outcome, then settles its holds. A crash between the two leaves a
+ * decided order with an in-flight hold, and nothing swept those: the order is no longer in a state
+ * the stranded paths look at, so a confirmed order could keep a hold counting forever even though
+ * its outcome had been known locally all along.
+ */
+
+test("I6b a persisted outcome converges its unsettled hold", async () => {
+  for (const [orderState, holdState, expected] of [
+    // Pancake accepted, so the hold is committed rather than freed — §4.1 retires it by the mirror
+    // rule, not this.
+    ["CONFIRMED", "SUBMITTING", "COMMITTED"],
+    // The ambiguous write stays ambiguous. §8: never released on anything but evidence.
+    ["SYNC_UNKNOWN", "SUBMITTING", "UNKNOWN"],
+    // A refusal is evidence nothing landed — from Pancake, so the boundary had been crossed.
+    ["REJECTED", "SUBMITTING", "RELEASED"],
+    // ...and from local validation, where the hold never left RESERVED.
+    ["REJECTED", "RESERVED", "RELEASED"],
+  ] as const) {
+    const variant = await seedVariant(`settled-${orderState}-${holdState}`);
+    const cart = await prisma.cart.create({
+      data: {
+        expiresAt: new Date(now.getTime() + 600_000),
+        items: { create: { variantId: variant.id, quantity: 1 } },
+      },
+    });
+    const order = await prisma.orderMirror.create({
+      data: {
+        publicCode: `${key}-settled-${orderState}-${holdState}`,
+        sourceCartId: cart.id,
+        pancakeShopId: shopId,
+        state: orderState,
+        pancakeOrderId: orderState === "CONFIRMED" ? `${key}-pk-${holdState}` : null,
+      },
+    });
+    const hold = await prisma.variantCapacityReservation.create({
+      data: { orderId: order.id, variantId: variant.id, quantity: 1, state: holdState },
+    });
+    await prisma.$executeRaw`UPDATE "OrderMirror" SET "updatedAt" = ${stale} WHERE id = ${order.id}`;
+
+    const result = await recoverStrandedGuestCheckouts(prisma, { now });
+    assert.equal(result.settledConverged, 1, `${orderState} + ${holdState} must converge`);
+
+    const converged = await prisma.variantCapacityReservation.findUniqueOrThrow({
+      where: { id: hold.id },
+    });
+    assert.equal(converged.state, expected, `${orderState} + ${holdState} -> ${expected}`);
+    if (expected === "COMMITTED") {
+      // The CHECK constraint demands it, and the value matters: a recovery-time `committedAt` is
+      // LATER than the true commit, so §4.1 demands a fresher stock observation before retiring the
+      // hold. The error is a hold that counts slightly too long, never one that stops counting
+      // while Pancake's decrement is still unobserved.
+      assert.notEqual(converged.committedAt, null);
+    }
+    await cleanup();
+  }
+});
+
+test("I6b a decided order whose hold was already settled is not converged again", async () => {
+  // Convergence must be idempotent, or a second sweep would rewrite a decision with its own.
+  const variant = await seedVariant("settled-idempotent");
+  const cart = await prisma.cart.create({
+    data: {
+      expiresAt: new Date(now.getTime() + 600_000),
+      items: { create: { variantId: variant.id, quantity: 1 } },
+    },
+  });
+  const order = await prisma.orderMirror.create({
+    data: {
+      publicCode: `${key}-settled-idempotent`,
+      sourceCartId: cart.id,
+      pancakeShopId: shopId,
+      state: "CONFIRMED",
+      pancakeOrderId: `${key}-pk-idempotent`,
+    },
+  });
+  const committedAt = new Date(now.getTime() - 120_000);
+  const hold = await prisma.variantCapacityReservation.create({
+    data: {
+      orderId: order.id,
+      variantId: variant.id,
+      quantity: 1,
+      state: "COMMITTED",
+      committedAt,
+    },
+  });
+  await prisma.$executeRaw`UPDATE "OrderMirror" SET "updatedAt" = ${stale} WHERE id = ${order.id}`;
+
+  const result = await recoverStrandedGuestCheckouts(prisma, { now });
+
+  assert.equal(result.settledConverged, 0);
+  const untouched = await prisma.variantCapacityReservation.findUniqueOrThrow({
+    where: { id: hold.id },
+  });
+  assert.equal(untouched.state, "COMMITTED");
+  assert.deepEqual(
+    untouched.committedAt,
+    committedAt,
+    "a settled hold keeps the timestamp its own settlement wrote",
+  );
 });
