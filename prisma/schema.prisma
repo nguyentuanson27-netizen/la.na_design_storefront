@@ -510,7 +510,7 @@ model OrderPreorderSnapshot {
   confirmedAt      DateTime
   preorderReadyAt  DateTime?
   createdAt        DateTime                     @default(now())
-  order            OrderMirror                  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  order            OrderMirror                  @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines            OrderPreorderLineSnapshot[]
 
   @@index([preorderReadyAt])
@@ -525,7 +525,7 @@ model OrderPreorderLineSnapshot {
   state       OrderPreorderLineState
   preorderReadyAt DateTime?
   createdAt   DateTime                @default(now())
-  snapshot    OrderPreorderSnapshot   @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  snapshot    OrderPreorderSnapshot   @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
 
   @@unique([snapshotId, variantId])
   @@index([variantId])
