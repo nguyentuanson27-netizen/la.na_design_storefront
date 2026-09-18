@@ -60,8 +60,9 @@ function addCalendarDays(confirmedAt: Date, days: number): Date {
 /**
  * Build the one immutable snapshot that is persisted when the order first becomes CONFIRMED.
  *
- * isPreorderSale is supplied by the canonical capacity/sellability authority at that confirmation
- * boundary. This function never reads policy, stock or Merchant availability and therefore cannot
+ * isPreorderSale is the classification persisted by the canonical capacity authority when the
+ * basket was accepted. Confirmation supplies only the clock instant. This function never reads
+ * policy, stock or Merchant availability and therefore cannot
  * accidentally turn a later I9 availability date into an order ETA.
  */
 export function buildPreorderOrderSnapshot({
