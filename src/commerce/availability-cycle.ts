@@ -1,5 +1,3 @@
-import { VIETNAM_UTC_OFFSET, VIETNAM_UTC_OFFSET_MINUTES } from "../brand/schema.ts";
-
 /**
  * I9 — the owner-approved preorder availability cycle (ADR 0011, superseding its blocked state).
  *
@@ -20,8 +18,7 @@ import { VIETNAM_UTC_OFFSET, VIETNAM_UTC_OFFSET_MINUTES } from "../brand/schema.
  */
 
 /** Owner-approved on 2026-09-18: a cycle promises availability fifteen calendar days after it opens. */
-export const PREORDER_AVAILABILITY_WINDOW_DAYS = 15;
-
+export const PREORDER_AVAILABILITY_WINDOW_DAYS = 15;\n\nconst VIETNAM_UTC_OFFSET = "+07:00";\nconst VIETNAM_UTC_OFFSET_MINUTES = 7 * 60;\n
 /**
  * Vietnam is UTC+07:00 year-round and observes no daylight saving, so a fixed offset is exact
  * rather than an approximation. `promotion-admin-input.ts` already reads owner-entered campaign
