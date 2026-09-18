@@ -60,7 +60,7 @@ export function BrandProductGallery(props: BrandProductGalleryProps) {
 
   return (
     <div
-      className="product-editorial-gallery min-w-0"
+      className="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4"
       aria-label={model.regionLabel}
     >
       {editorialImages.map((image, index) => (
