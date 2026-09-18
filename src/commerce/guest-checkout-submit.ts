@@ -54,7 +54,15 @@ type SnapshotService = {
 
 
 type OrderSubmissionService = {
-  submit(input: { publicCode: string; shopId: number }): Promise<PancakeOrderSubmissionResult>;
+  submit(input: {
+    publicCode: string;
+    shopId: number;
+    /**
+     * Run by the submission service at its write boundary — after every local and read-only step,
+     * immediately before an order may exist in Pancake. Returning `false` aborts with nothing sent.
+     */
+    beforeExternalWrite?: () => Promise<boolean>;
+  }): Promise<PancakeOrderSubmissionResult>;
 };
 
 /**
@@ -152,11 +160,16 @@ const SETTLED_SUBMISSION_STATES: readonly ActiveSnapshotState[] = ["CONFIRMED", 
  * - **unknown** — `SYNC_UNKNOWN` is the ambiguous write. It must **never** be released on a timer
  *   (§8); only reconciliation (§10) can resolve it, and a stuck `UNKNOWN` holding capacity is the
  *   safe failure — a variant that stops selling, not one that oversells.
- * - **null — stay `SUBMITTING`** for everything still in flight (`VALIDATING`, `POS_SUBMITTING`,
- *   `DRAFT`). §8 is explicit that `SUBMITTING` moves on the call's outcome or to `UNKNOWN`, and
- *   these outcomes are not an outcome yet. A `DRAFT` repriced by the P9b handshake is the clearest
- *   case: the buyer is about to reconfirm, and releasing the hold underneath them would let another
- *   checkout take the units they are mid-way through buying.
+ * - **null — leave the hold where it is** for everything still in flight (`VALIDATING`,
+ *   `POS_SUBMITTING`, `DRAFT`). §8 is explicit that `SUBMITTING` moves on the call's outcome or to
+ *   `UNKNOWN`, and these outcomes are not an outcome yet.
+ *
+ * Where "where it is" leaves the hold is the point of the write-boundary hook. A `DRAFT` from
+ * repricing or unavailable validation never reached the write, so its hold is still `RESERVED` and
+ * still expires — the buyer keeps their units while they decide, and an abandoned checkout stops
+ * holding capacity when the reservation lapses. A `VALIDATING` or `POS_SUBMITTING` outcome after
+ * the boundary was crossed leaves a `SUBMITTING` hold, which is correct: a write may be in flight,
+ * and §10 reconciliation is what resolves those.
  */
 function reservationStateForSubmission(
   result: PancakeOrderSubmissionResult,
@@ -245,7 +258,14 @@ export function createGuestCheckoutSubmitService({
   clock = () => new Date(),
 }: GuestCheckoutSubmitDependencies) {
   /**
-   * Move every hold this order owns to `SUBMITTING` before the external write (§4).
+   * Move every hold this order owns to `SUBMITTING` at the external write boundary (§4).
+   *
+   * Called by the submission service through `beforeExternalWrite`, not before `submit()`. The
+   * difference is the whole point: `submit()` has a substantial pre-write phase — the live catalog
+   * fetch, repricing, validation — that can end in `DRAFT` with nothing sent. Claiming `SUBMITTING`
+   * around that whole call would convert an expirable pre-submit hold into a non-expiring one on
+   * every abandoned reprice, and §8 forbids releasing `SUBMITTING` on a timer, so those units would
+   * be held for good. `RESERVED` is the state that may expire; it must survive until the write.
    *
    * Rows already `SUBMITTING` are left alone rather than re-transitioned: that is what a retry of an
    * in-flight submission looks like, and the guarded compare-and-set would refuse it anyway.
@@ -280,11 +300,12 @@ export function createGuestCheckoutSubmitService({
    */
   async function settleReservations(
     reservations: readonly HeldReservation[],
+    from: Extract<ReservationState, "RESERVED" | "SUBMITTING">,
     to: Extract<ReservationState, "COMMITTED" | "RELEASED" | "UNKNOWN">,
   ): Promise<void> {
     const at = clock();
     for (const reservation of reservations) {
-      await capacity!.transitionReservation({ id: reservation.id, from: "SUBMITTING", to, at });
+      await capacity!.transitionReservation({ id: reservation.id, from, to, at });
     }
   }
 
@@ -349,19 +370,42 @@ export function createGuestCheckoutSubmitService({
         return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", orderCode };
       }
       reservations = reserved.reservations;
-
-      if (!(await beginSubmitting(reservations))) {
-        return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode };
-      }
     }
 
-    const submissionResult = await orderSubmission.submit({ publicCode: orderCode, shopId });
+    // Whether this submission reached the point where a Pancake order may exist. It is set by the
+    // hook below rather than assumed, because that is the only thing that distinguishes "our holds
+    // are SUBMITTING" from "our holds are still RESERVED" once `submit()` returns.
+    let crossedWriteBoundary = false;
+    const submissionResult = await orderSubmission.submit({
+      publicCode: orderCode,
+      shopId,
+      beforeExternalWrite:
+        reservations.length > 0
+          ? async () => {
+              const claimed = await beginSubmitting(reservations);
+              if (claimed) crossedWriteBoundary = true;
+              return claimed;
+            }
+          : undefined,
+    });
 
     if (capacity && reservations.length > 0) {
       const settled = reservationStateForSubmission(submissionResult);
-      // `null` means the submission has no outcome yet, so the holds stay SUBMITTING and keep
-      // counting. That is deliberate, not an omission — see `reservationStateForSubmission`.
-      if (settled !== null) await settleReservations(reservations, settled);
+      // `null` means the submission has no outcome yet, so the holds keep counting wherever the
+      // write boundary left them. That is deliberate — see `reservationStateForSubmission`.
+      if (settled !== null) {
+        if (crossedWriteBoundary) {
+          await settleReservations(reservations, "SUBMITTING", settled);
+        } else if (settled === "RELEASED") {
+          // A refusal before the write: our holds never left RESERVED, and RESERVED -> RELEASED is
+          // legal, so the units go back now rather than waiting out an expiry.
+          await settleReservations(reservations, "RESERVED", settled);
+        }
+        // COMMITTED or UNKNOWN without having crossed the boundary means another worker owns this
+        // order's write — it moved these same rows (they are keyed by order, §3) through SUBMITTING
+        // itself and will settle them. Reaching in from here would be a second settlement of a
+        // decision that is not ours, and RESERVED -> COMMITTED is not even a legal edge.
+      }
     }
 
     return mapSubmissionResult(orderCode, submissionResult);

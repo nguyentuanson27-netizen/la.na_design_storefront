@@ -229,9 +229,26 @@ export function createPancakeOrderSubmissionService(
   async function submit({
     publicCode,
     shopId,
+    beforeExternalWrite,
   }: {
     publicCode: string;
     shopId: number;
+    /**
+     * The last precondition, evaluated at the write boundary.
+     *
+     * Everything this service does before calling it is local or read-only against Pancake: the
+     * DRAFT claim, the live catalog fetch, repricing, validation. Those can all end the submission
+     * with nothing sent. Only past this point may an order exist in Pancake.
+     *
+     * So a caller holding a resource *for the write* — I6b's capacity hold (ADR 0014 §4) is the
+     * one that exists today — claims it here rather than around the whole call, because here is
+     * where "claimed" and "a write may be in flight" become the same instant. Returning `false`
+     * aborts with nothing sent and the order returned to DRAFT.
+     *
+     * Per call rather than a service option: the resource belongs to this submission, not to the
+     * service.
+     */
+    beforeExternalWrite?: () => Promise<boolean>;
   }): Promise<PancakeOrderSubmissionResult> {
     const safePublicCode = requirePublicCode(publicCode);
     const safeShopId = requireShopId(shopId);
@@ -722,6 +739,13 @@ export function createPancakeOrderSubmissionService(
       shippingFeeVnd,
       lines: requestLines,
     });
+
+    // The write boundary itself. The request above is pure, so nothing is committed to yet; the
+    // update below is what declares a write may be in flight. A caller that cannot claim its
+    // resource here gets the same answer as any other pre-write bailout — DRAFT, nothing sent.
+    if (beforeExternalWrite && !(await beforeExternalWrite())) {
+      return resetValidation();
+    }
 
     const submitting = await client.orderMirror.updateMany({
       where: { id: order.id, state: "VALIDATING" },

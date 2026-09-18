@@ -127,10 +127,18 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
     checkoutInput,
     now,
   });
-  assert.deepEqual(submissionInput, {
-    publicCode: "LA-server-owned",
-    shopId: 920_007,
-  });
+  const submission = submissionInput as {
+    publicCode: string;
+    shopId: number;
+    beforeExternalWrite?: unknown;
+  };
+  assert.equal(submission.publicCode, "LA-server-owned");
+  assert.equal(submission.shopId, 920_007);
+  // I6b — the runtime must hand the submission service a real write-boundary hook whenever it holds
+  // capacity. Without one the service writes to Pancake with the hold still RESERVED, which is the
+  // bypass the boundary exists to prevent; the hook's behaviour itself is pinned in
+  // guest-checkout-submit.test.ts.
+  assert.equal(typeof submission.beforeExternalWrite, "function");
 });
 
 test("reusable active checkout skips geo reads while snapshot transaction retains race authority", async () => {
