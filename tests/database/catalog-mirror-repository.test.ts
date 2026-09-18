@@ -499,3 +499,52 @@ test("omitting an entire product marks mirror and variants as not present/inacti
 });
 
 
+
+
+test("I9 availability cycle uses the post-fetch observation day, not the G5 read-start day", async () => {
+  const initial = [
+    variation({
+      id: "mirror-variation-i9-midnight",
+      displayId: "DISPLAY-I9-MIDNIGHT",
+      barcode: "BAR-I9-MIDNIGHT",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 1 }],
+    }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: initial,
+    syncedAt: new Date("2026-09-18T16:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-18T16:00:01.000Z"),
+  });
+
+  const product = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "mirror-product-1" },
+    include: { variants: true },
+  });
+  await prisma.productSellingPolicy.create({
+    data: { productId: product.id, sellingMode: "PREORDER", negativeStockLimit: -20 },
+  });
+
+  const soldOut = [
+    variation({
+      id: "mirror-variation-i9-midnight",
+      displayId: "DISPLAY-I9-MIDNIGHT",
+      barcode: "BAR-I9-MIDNIGHT",
+      stocks: [{ warehouseId: "warehouse-a", remainQuantity: 0 }],
+    }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: soldOut,
+    // 23:59:59 in Vietnam: still the 18th. This remains the reservation freshness marker.
+    syncedAt: new Date("2026-09-18T16:59:59.000Z"),
+    // 00:00:01 in Vietnam: the website only has the completed sold-out snapshot on the 19th.
+    availabilityObservedAt: new Date("2026-09-18T17:00:01.000Z"),
+  });
+
+  const cycle = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: product.variants[0]!.id },
+  });
+  assert.equal(cycle.cycleStartDate?.toISOString(), "2026-09-19T00:00:00.000Z");
+  assert.equal(cycle.availabilityDate?.toISOString(), "2026-10-04T00:00:00.000Z");
+});
