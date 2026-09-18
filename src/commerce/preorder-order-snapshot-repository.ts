@@ -1,5 +1,8 @@
 import type { Prisma } from "../generated/prisma/client.ts";
-import { buildPreorderOrderSnapshot } from "./preorder-order-snapshot.ts";
+import {
+  buildPreorderOrderSnapshot,
+  type PreorderSnapshotLineInput,
+} from "./preorder-order-snapshot.ts";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -50,21 +53,22 @@ export async function createPreorderSnapshotAtConfirmation(
   // error: older application versions and lower-level integrations can confirm orders without I7
   // metadata during a rolling deployment, and I7 explicitly forbids backfilling by inference.
   if (order.capacityReservations.length === 0) return;
+  if (order.capacityReservations.some((reservation) => reservation.acceptedPreorderState === null)) {
+    return;
+  }
 
   const reservationByVariantId = new Map(
     order.capacityReservations.map((reservation) => [reservation.variantId, reservation]),
   );
-  if (reservationByVariantId.size !== order.lines.length) return;
+  if (reservationByVariantId.size !== order.lines.length) {
+    throw new Error("I7 accepted reservation set does not match confirmed order lines");
+  }
 
-  const snapshotInputs = [];
+  const snapshotInputs: PreorderSnapshotLineInput[] = [];
   for (const line of order.lines) {
     const reservation = reservationByVariantId.get(line.variantId);
-    if (
-      !reservation ||
-      reservation.quantity !== line.quantity ||
-      reservation.acceptedPreorderState === null
-    ) {
-      return;
+    if (!reservation || reservation.quantity !== line.quantity) {
+      throw new Error(`I7 accepted reservation does not match order line ${line.variantId}`);
     }
     snapshotInputs.push({
       variantId: line.variantId,
