@@ -70,6 +70,113 @@ export type VariantAvailabilityObservation = Readonly<{
   isPreorder: boolean;
 }>;
 
+const MAX_CYCLE_WRITE_ATTEMPTS = 8;
+
+function sameCycleState(
+  previous: AvailabilityCycleState | null,
+  next: AvailabilityCycleState,
+): boolean {
+  return (
+    previous !== null &&
+    previous.cycleStartDate === next.cycleStartDate &&
+    previous.availabilityDate === next.availabilityDate &&
+    previous.lastStockNonPositive === next.lastStockNonPositive &&
+    previous.lastPreorder === next.lastPreorder
+  );
+}
+
+function persistedFields(state: AvailabilityCycleState) {
+  return {
+    cycleStartDate: toStoredDate(state.cycleStartDate),
+    availabilityDate: toStoredDate(state.availabilityDate),
+    lastStockNonPositive: state.lastStockNonPositive,
+    lastPreorder: state.lastPreorder,
+  };
+}
+
+async function readCycleRow(
+  client: CycleClient,
+  variantId: string,
+): Promise<PersistedCycleRow | null> {
+  return client.variantAvailabilityCycle.findUnique({
+    where: { variantId },
+    select: {
+      cycleStartDate: true,
+      availabilityDate: true,
+      lastStockNonPositive: true,
+      lastPreorder: true,
+    },
+  });
+}
+
+/**
+ * Persist one observation with optimistic concurrency control.
+ *
+ * A plain read-then-upsert lets two observers both derive a new cycle from stale `null` state and
+ * lets the later upsert overwrite the earlier date. Here the first insert/update wins only if the
+ * row still matches what this observer read. A loser re-reads the authoritative row, folds its
+ * observation again, and normally discovers that the cycle is already open and therefore immutable.
+ */
+async function persistObservation(
+  client: CycleClient,
+  observation: VariantAvailabilityObservation,
+  observedAt: Date,
+  initialRow: PersistedCycleRow | null,
+): Promise<VietnamCalendarDate | null> {
+  let row = initialRow;
+
+  for (let attempt = 0; attempt < MAX_CYCLE_WRITE_ATTEMPTS; attempt += 1) {
+    const previous = toCycleState(row);
+    const next = observeAvailabilityCycle(previous, {
+      stockNonPositive: observation.stockNonPositive,
+      isPreorder: observation.isPreorder,
+      observedAt,
+    });
+
+    // Every ordinary STANDARD variant still avoids a row entirely.
+    if (previous === null && next.cycleStartDate === null && !next.lastPreorder) {
+      return null;
+    }
+
+    // Re-observing the same state is a true no-op, including updatedAt.
+    if (sameCycleState(previous, next)) {
+      return next.availabilityDate;
+    }
+
+    const persisted = persistedFields(next);
+
+    if (previous === null) {
+      // PostgreSQL backs skipDuplicates with ON CONFLICT DO NOTHING. Exactly one concurrent first
+      // observer creates the row; every loser re-reads instead of overwriting the winner.
+      const created = await client.variantAvailabilityCycle.createMany({
+        data: [{ variantId: observation.variantId, ...persisted }],
+        skipDuplicates: true,
+      });
+      if (created.count === 1) return next.availabilityDate;
+    } else {
+      // Compare the complete state we read. If any concurrent observer changed it, count is zero
+      // and this stale writer must re-read before deciding anything.
+      const updated = await client.variantAvailabilityCycle.updateMany({
+        where: {
+          variantId: observation.variantId,
+          cycleStartDate: toStoredDate(previous.cycleStartDate),
+          availabilityDate: toStoredDate(previous.availabilityDate),
+          lastStockNonPositive: previous.lastStockNonPositive,
+          lastPreorder: previous.lastPreorder,
+        },
+        data: persisted,
+      });
+      if (updated.count === 1) return next.availabilityDate;
+    }
+
+    row = await readCycleRow(client, observation.variantId);
+  }
+
+  throw new Error(
+    `Availability cycle for variant ${observation.variantId} changed too many times concurrently`,
+  );
+}
+
 /**
  * Apply one batch of trusted observations, returning each variant's availability date.
  *
@@ -102,33 +209,13 @@ export async function observeVariantAvailabilityCycles(
   const byVariantId = new Map(existing.map((row) => [row.variantId, row]));
 
   for (const observation of observations) {
-    const previous = toCycleState(byVariantId.get(observation.variantId) ?? null);
-    const next = observeAvailabilityCycle(previous, {
-      stockNonPositive: observation.stockNonPositive,
-      isPreorder: observation.isPreorder,
+    const availabilityDate = await persistObservation(
+      client,
+      observation,
       observedAt,
-    });
-
-    // Nothing to record and nothing recorded before: skip the write entirely rather than store a
-    // row saying "this variant has never been on preorder", which is every variant in the catalog.
-    if (previous === null && next.cycleStartDate === null && !next.lastPreorder) {
-      dates.set(observation.variantId, null);
-      continue;
-    }
-
-    const persisted = {
-      cycleStartDate: toStoredDate(next.cycleStartDate),
-      availabilityDate: toStoredDate(next.availabilityDate),
-      lastStockNonPositive: next.lastStockNonPositive,
-      lastPreorder: next.lastPreorder,
-    };
-
-    await client.variantAvailabilityCycle.upsert({
-      where: { variantId: observation.variantId },
-      create: { variantId: observation.variantId, ...persisted },
-      update: persisted,
-    });
-    dates.set(observation.variantId, next.availabilityDate);
+      byVariantId.get(observation.variantId) ?? null,
+    );
+    dates.set(observation.variantId, availabilityDate);
   }
 
   return dates;
