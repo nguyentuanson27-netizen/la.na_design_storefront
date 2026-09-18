@@ -121,8 +121,8 @@ export function isAvailabilityDateExpired(
  * transform rather than `toLocaleDateString`, deliberately: a locale-aware formatter would depend
  * on the viewer's browser locale and the runtime's zone, which means the server and the client
  * could disagree about the same date and React would report a hydration mismatch on a fact we
- * already hold exactly. Only the presentation changes — the feed and the JSON-LD keep the ISO
- * value, which is what Google's schema wants.
+ * already hold exactly. Only the presentation changes here — machine-readable boundaries serialize
+ * the same canonical day as timezone-qualified DateTimes.
  *
  * `null` for a date this module cannot parse, so a malformed one renders nothing rather than
  * something misread.
