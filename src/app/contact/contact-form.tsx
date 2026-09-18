@@ -92,7 +92,6 @@ export function ContactForm() {
             id="contact-name"
             name="name"
             autoComplete="name"
-            maxLength={100}
             required
             type="text"
           />
@@ -118,7 +117,6 @@ export function ContactForm() {
             className={`${FIELD_CLASS} min-h-40 resize-y`}
             id="contact-message"
             name="message"
-            maxLength={4000}
             required
             rows={6}
           />

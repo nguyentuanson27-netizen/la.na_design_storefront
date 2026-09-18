@@ -113,11 +113,9 @@ test("U33a the Contact page publishes approved channels and the approved F9b con
   await expect(form).toHaveCount(1);
   await expect(form.locator("input, textarea")).toHaveCount(3);
   await expect(form.getByLabel("Họ tên")).toHaveAttribute("name", "name");
-  await expect(form.getByLabel("Họ tên")).toHaveAttribute("maxlength", "100");
   await expect(form.getByLabel("Email")).toHaveAttribute("name", "email");
   await expect(form.getByLabel("Email")).toHaveAttribute("maxlength", "254");
   await expect(form.getByLabel("Nội dung")).toHaveAttribute("name", "message");
-  await expect(form.getByLabel("Nội dung")).toHaveAttribute("maxlength", "4000");
   await expect(form.getByRole("button", { name: "Gửi tin nhắn" })).toBeVisible();
 
   // F9b adds only the approved contact form; other unapproved support channels remain absent.
