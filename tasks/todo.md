@@ -72,28 +72,28 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **I5** Cart eligibility is the capacity rule at the requested quantity, on facts read from the database. Two defects, both latent until I2 could set a policy: `buildStorefrontCartLines()` passed no policy to `buildStorefrontVariantOptions()`, so every product was judged by `STANDARD`'s floor of 0 while the PDP had honoured the owner's allowance since I4 — one product, two answers; and the quantity check was `sellableStock < quantity`, **a second capacity rule** pinned to that same floor, which refused 5 units of an `OVERSELL` variant at stock 2 even though `−20` covers it. Both are now `evaluateVariantCapacity()` — at quantity 1 for sellability, at the requested quantity for the count — the same predicate I6a's reservation transaction uses at commit. `storefront-cart-repository.ts` reads `ProductSellingPolicy` and the composite graph itself, because *server truth* is the task: a client-supplied policy is exactly the browser-reported availability ADR 0014 §2 forbids. Composite parents are refused `OVERSELL`/`PREORDER` here as well (§11), so the cart cannot be the one surface that offers what the commit boundary will reject. **Advisory, not the gate** (§2): no reservation is subtracted, the authoritative check stays at the commit boundary — that is **I6b** — and `INSUFFICIENT_STOCK` stays distinct from sold-out so a shopper is told which problem they have.
 - [x] **I6a** `capacity-reservation.ts` implements the ADR 0014 §6.2 locking transaction and the §6.4 guarded compare-and-set. The lock target is **`VariantMirror`, not the ledger**: `SELECT … FOR UPDATE` locks the rows it returns, and a variant nobody has reserved yet has none, so a ledger lock locks nothing in exactly the state every variant is in before its first sale (§6.1). `READ COMMITTED` is sufficient because correctness comes from the lock, not the level. Seven database tests, and the concurrency ones drive the **empty-ledger** case: 8 concurrent checkouts for 1 unit yield exactly 1 hold, and 6 concurrent for an `OVERSELL` floor of `−3` yield exactly 3 — a floor that is not zero, so it cannot pass by a rule that merely refuses below zero. Each guard was verified against a deliberate mutation: locking the ledger instead of the variant, removing `FOR UPDATE`, and dropping the §7 duplicate-line merge each fail their test. A retry is idempotent only when the ledger already holds **that exact basket** — same variants, same quantities, every row still capacity-holding — compared over the **whole order**, not the requested variants. Counting rows let `A×1` retry as `A×2` and be told it succeeded (comment 5716862253); scoping the query to the request let `A+B` retry as `A` while `B` kept holding capacity for a basket that no longer contained it (comment 5717189555). Illegal transitions **throw** while a lost CAS returns `false` — a lost race is worth re-reading, `COMMITTED → RESERVED` never is. **No migration**; the tables are I1's. Checkout integration is **I6b**, cart/checkout eligibility is **I5**.
 - [x] **I6b** The §6.2 reservation boundary runs in `guest-checkout-submit.ts`, **after the order exists and before any external write** — ADR 0014 §2's commit boundary. Everything the PDP (I4) and the cart (I5) said was advisory; this is the decision, and it may refuse what they offered (`CART_CHANGED`, with nothing sent to Pancake). The outcome mapping is one function because it is the whole safety argument: accepted → `COMMITTED` (retiring by §4.1's mirror rule, not here); `REJECTED` → `RELEASED`, since a refusal is evidence nothing landed; `SYNC_UNKNOWN` → `UNKNOWN`, which §8 says must **never** be freed on a timer and only §10 reconciliation resolves; and `VALIDATING`/`POS_SUBMITTING`/`DRAFT` → **stay `SUBMITTING`**, because they are not outcomes yet — releasing on a P9b reprice would free the units the buyer is about to reconfirm. A hold already `COMMITTED`/`RELEASED`/`UNKNOWN` fails the submission closed: that order's capacity was settled by an earlier submission or by reconciliation, and resubmitting would double-send or overwrite an ambiguous outcome. Settling is best-effort by design — a lost bookkeeping CAS leaves a `SUBMITTING` row for §10 rather than withholding a confirmed order from the buyer. An order the snapshot hands back **already past submission** (`CONFIRMED`, `SYNC_UNKNOWN`) is not re-reserved: its capacity was decided when it was first submitted, so a fresh hold would double-count it — and an order predating this boundary has no lines to hold, which turned a confirmed checkout into `CART_CHANGED`. The guest-checkout HTTP smoke caught that; no unit test had. Quote-proof, price-change and order-state protections are untouched: the boundary sits between snapshot and submission and adds no path around either. **No migration**; the tables are I1's.
-- [ ] **I7** Snapshot preorder line state; 15 calendar days from successful confirmation; mixed order ships together.
-- [ ] **I8** Integrate Pancake submission/reconciliation only for G2-supported cases; preserve ambiguous-write safety.
-- [ ] **I9** Extend Merchant + structured-data availability projection; keep exact-state/date semantics in parity.
+- [x] **I7** Snapshot preorder line state; 15 calendar days from successful confirmation; mixed order ships together.
+- [x] **I8** Integrate Pancake submission/reconciliation only for G2-supported cases; preserve ambiguous-write safety.
+- [x] **I9** Extend Merchant + structured-data availability projection; keep exact-state/date semantics in parity.
 
 ### Checkpoint C
-- [ ] Inventory boundary-table tests green.
-- [ ] DB concurrency tests green.
-- [ ] Admin auth/input tests green.
-- [ ] Pancake controlled acceptance satisfied or feature remains non-production/disabled.
-- [ ] Merchant + structured-data exact-state/parity tests green.
-- [ ] Inventory review: 0 Critical / 0 Required.
+- [x] Inventory boundary-table tests green.
+- [x] DB concurrency tests green.
+- [x] Admin auth/input tests green.
+- [x] Pancake controlled acceptance satisfied or feature remains non-production/disabled.
+- [x] Merchant + structured-data exact-state/parity tests green.
+- [x] Inventory review: 0 Critical / 0 Required.
 
 ## Giai đoạn 3 — FE
-- [ ] **F1** Wire approved logo/social/favicon assets + brown/cream tokens + serif/sans typography.
-- [ ] **F2a** Build transparent→cream header, mega menus and full-screen mobile navigation.
-- [ ] **F2b** Build accessible full-screen search overlay with real product/category suggestions.
-- [ ] **F2c** Wire Account header action to existing `/login`; no new account scope.
-- [ ] **F2d** Build accessible right-side Cart drawer without changing cart authority.
-- [ ] **F3b** Add breadcrumbs/canonicals/internal-link and approved taxonomy SEO hierarchy on top of F3a routes; keep primary + footer link-resolution regression green.
-- [ ] **F4a** PLP server contract: filters, manual default order, stable crawlable page/cursor URLs.
-- [ ] **F4b** PLP UI: accessible filters + infinite loading + loading/error/empty/back-navigation behavior.
-- [ ] **F5** Product card: 4:5, second-image hover, sale display, one marketing badge, availability slot.
+- [x] **F1** Wire approved logo/social/favicon assets + brown/cream tokens + serif/sans typography.
+- [x] **F2a** Build transparent→cream header, mega menus and full-screen mobile navigation.
+- [x] **F2b** Build accessible full-screen search overlay with real product/category suggestions.
+- [x] **F2c** Wire Account header action to existing `/login`; no new account scope.
+- [x] **F2d** Build accessible right-side Cart drawer without changing cart authority.
+- [x] **F3b** Add breadcrumbs/canonicals/internal-link and approved taxonomy SEO hierarchy on top of F3a routes; keep primary + footer link-resolution regression green.
+- [x] **F4a** PLP server contract: filters, manual default order, stable crawlable page/cursor URLs.
+- [x] **F4b** PLP UI: accessible filters + infinite loading + loading/error/empty/back-navigation behavior.
+- [x] **F5** Product card: 4:5, second-image hover, sale display, one marketing badge, availability slot.
 - [ ] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe.
 - [ ] **F6b** Homepage lower sections in exact approved order; no fake content.
 - [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
@@ -105,7 +105,7 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
 - [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
 - [ ] **F9a** Build final footer/legal/policy UX; non-accordion mobile; no newsletter/representative.
-- [ ] **F9b** Implement real contact-form delivery through G3-approved transport with validation/abuse controls; if it requires a new provider/dependency/credential, wait for Checkpoint B before provider/adapter work.
+- [x] **F9b** Implement real contact-form delivery through G3-approved transport with validation/abuse controls; if it requires a new provider/dependency/credential, wait for Checkpoint B before provider/adapter work.
 
 ## Final verification
 - [ ] **V1** Mobile+desktop browser walkthrough of header/nav/search/home/PLP/PDP/cart/checkout/preorder/static pages.
