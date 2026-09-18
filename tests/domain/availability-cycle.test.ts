@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PREORDER_AVAILABILITY_WINDOW_DAYS,
   addVietnamCalendarDays,
+  formatVietnamCalendarDate,
   isAvailabilityDateExpired,
   observeAvailabilityCycle,
   vietnamCalendarDate,
@@ -196,4 +197,19 @@ test("I9 an unusable observation instant opens no cycle rather than a fabricated
   });
   assert.equal(state.cycleStartDate, null, "no trustworthy day means no cycle, not today's guess");
   assert.equal(state.availabilityDate, null);
+});
+
+test("I9 the shopper-facing date is Vietnamese day/month/year, and never guessed", () => {
+  // Google requires `availability_date` to be visible on the landing page, so this label and the
+  // ISO value the feed publishes have to be the same day written two ways.
+  assert.equal(formatVietnamCalendarDate("2026-10-03"), "03/10/2026");
+  assert.equal(formatVietnamCalendarDate("2027-01-01"), "01/01/2027");
+  // Zero padding both parts, so a single-digit day cannot read as the month.
+  assert.equal(formatVietnamCalendarDate("2026-02-09"), "09/02/2026");
+
+  // A date this module cannot parse renders nothing rather than something misread. February 30 is
+  // the case a regex alone would pass.
+  for (const malformed of ["2026-02-30", "2026-13-01", "03/10/2026", "2026-10-3", ""]) {
+    assert.equal(formatVietnamCalendarDate(malformed), null, malformed);
+  }
 });

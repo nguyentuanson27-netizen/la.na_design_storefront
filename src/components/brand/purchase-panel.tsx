@@ -26,7 +26,7 @@ import {
 export function PurchasePanelView({ controller }: Readonly<{ controller: VariantSelectionController }>) {
   const { view, selection, isPending, message, chooseKind, chooseColor, chooseSize, addToBag } =
     controller;
-  const { priceDisplay } = view;
+  const { priceDisplay, availabilityDateLabel } = view;
 
   const kindFieldset = view.hasKindOptions ? (
     <fieldset className="mt-8">
@@ -128,9 +128,9 @@ export function PurchasePanelView({ controller }: Readonly<{ controller: Variant
         owner rule 10's three conditions need no logic here: nothing before a choice is made,
         never another variant's date, and nothing once the cycle has lapsed.
       */}
-      {view.selectedAvailabilityDate === null ? null : (
+      {availabilityDateLabel === null ? null : (
         <p className="mt-1 text-xs text-black/55" role="status" aria-live="polite">
-          Dự kiến có hàng: {view.selectedAvailabilityDate}
+          Dự kiến có hàng: {availabilityDateLabel}
         </p>
       )}
     </div>

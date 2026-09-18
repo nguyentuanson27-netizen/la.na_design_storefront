@@ -6,7 +6,10 @@ import {
   resolveVariantSelectionView,
 } from "../../src/components/headless/variant-selection-model.ts";
 import type { StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
-import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
+import {
+  fixtureAvailability,
+  withFixtureAvailability,
+} from "../fixtures/storefront-projection-option.ts";
 
 /**
  * Characterization tests for the purchase panel's money and purchasability decisions, captured
@@ -362,4 +365,56 @@ test("priceDisplay covers the plain branch with nothing struck through", () => {
     compareAtText: null,
     discountPercent: null,
   });
+});
+
+/* ------------------------------------------------- I9 preorder availability date */
+
+/** A preorder option that is sold out but still buyable, with a cycle date of the caller's choosing. */
+function preorderOption(id: string, size: string, availabilityDate: string | null) {
+  return option({
+    id,
+    size,
+    isPreorderSale: true,
+    availability: fixtureAvailability(
+      { purchasable: true, isPreorderSale: true, unavailableReason: null },
+      { availabilityDate, today: "2026-09-18" },
+    ),
+  });
+}
+
+test("the panel is handed the availability date already written the way a shopper reads it", () => {
+  // Google requires the date on the landing page, and the panel is markup a brand rewrites — so it
+  // must not be the place that decides how a date is spelled, any more than it decides currency.
+  const options = [preorderOption("a", "S", "2026-10-03")];
+
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: "S" },
+  });
+
+  assert.equal(view.availabilityDateLabel, "03/10/2026");
+  // The ISO value survives beside it, because that is what the feed and the JSON-LD publish.
+  assert.equal(view.selectedAvailabilityDate, "2026-10-03");
+});
+
+test("no size chosen, another size's date, and a lapsed date all render nothing", () => {
+  const options = [
+    preorderOption("s", "S", "2026-10-03"),
+    preorderOption("m", "M", null),
+    // Owner rule 8: the cycle lapsed, so the dated promise stops — but the shopper may still buy.
+    preorderOption("l", "L", "2026-09-17"),
+  ];
+  const ask = (size: string | null) =>
+    resolveVariantSelectionView({
+      options,
+      productLevelOptions: options,
+      selection: { kindKey: null, color: null, size },
+    });
+
+  assert.equal(ask(null).availabilityDateLabel, null, "nothing before a size is chosen");
+  assert.equal(ask("M").availabilityDateLabel, null, "never the S date on the M option");
+  assert.equal(ask("L").availabilityDateLabel, null, "nothing once the cycle has lapsed");
+  assert.equal(ask("L").canAdd, true, "and Đặt trước survives the date lapsing");
+  assert.equal(ask("S").availabilityDateLabel, "03/10/2026", "and the real one still shows");
 });

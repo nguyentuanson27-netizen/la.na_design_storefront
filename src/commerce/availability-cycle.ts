@@ -113,6 +113,30 @@ export function isAvailabilityDateExpired(
 }
 
 /**
+ * The same day, written the way a Vietnamese shopper reads one.
+ *
+ * `availability_date` must be visible on the landing page, and `2026-10-03` beside otherwise
+ * entirely Vietnamese copy is a rough edge, so the page renders `03/10/2026`. It is a pure string
+ * transform rather than `toLocaleDateString`, deliberately: a locale-aware formatter would depend
+ * on the viewer's browser locale and the runtime's zone, which means the server and the client
+ * could disagree about the same date and React would report a hydration mismatch on a fact we
+ * already hold exactly. Only the presentation changes — the feed and the JSON-LD keep the ISO
+ * value, which is what Google's schema wants.
+ *
+ * `null` for a date this module cannot parse, so a malformed one renders nothing rather than
+ * something misread.
+ */
+export function formatVietnamCalendarDate(
+  availabilityDate: VietnamCalendarDate,
+): string | null {
+  const parsed = parseCalendarDate(availabilityDate);
+  if (parsed === null) return null;
+  const day = String(parsed.day).padStart(2, "0");
+  const month = String(parsed.month).padStart(2, "0");
+  return `${day}/${month}/${parsed.year}`;
+}
+
+/**
  * The persisted state of one variant's cycle.
  *
  * `cycleStartDate` and `availabilityDate` are both null exactly when no cycle is open. The two
