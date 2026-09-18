@@ -277,7 +277,21 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         // row, so a duplicate here is an impossible state, and swallowing it would hide exactly the
         // quantity mismatch that branch exists to refuse.
         await tx.variantCapacityReservation.createMany({
-          data: merged.map((line) => ({ orderId, variantId: line.variantId, quantity: line.quantity })),
+          data: merged.map((line) => {
+            const input = inputByVariantId.get(line.variantId)!;
+            const readyStock = input.mirroredStock - input.activeReservedQuantity;
+            return {
+              orderId,
+              variantId: line.variantId,
+              quantity: line.quantity,
+              // This is historical order authority, not a later sellability re-check. If any part
+              // of an accepted PREORDER line exceeds ready stock, the line waits for preparation.
+              acceptedPreorderState:
+                input.sellingMode === "PREORDER" && readyStock < line.quantity
+                  ? ("PREORDER" as const)
+                  : ("READY" as const),
+            };
+          }),
         });
         const inserted = await tx.variantCapacityReservation.findMany({
           where: { orderId, variantId: { in: variantIds } },

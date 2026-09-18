@@ -87,6 +87,11 @@ enum ReservationState {
   UNKNOWN
 }
 
+enum OrderPreorderLineState {
+  READY
+  PREORDER
+}
+
 model User {
   id            String        @id
   name          String
@@ -456,6 +461,7 @@ model OrderMirror {
   user                   User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   lines                  OrderLineSnapshot[]
   capacityReservations   VariantCapacityReservation[]
+  preorderSnapshot       OrderPreorderSnapshot?
 
   @@index([userId, createdAt])
   @@index([sourceCartId])
@@ -490,6 +496,39 @@ model OrderLineSnapshot {
   order                    OrderMirror            @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([orderId])
+}
+
+/// I7 — immutable order-level preorder facts captured exactly when the order becomes CONFIRMED.
+///
+/// This is deliberately separate from the mutable DRAFT quote snapshot. Once created, the database
+/// migration protects both this row and its line rows from UPDATE/DELETE, and the order relation is
+/// RESTRICT, so historical preorder truth cannot be rewritten or silently removed by later policy,
+/// stock, or order cleanup.
+model OrderPreorderSnapshot {
+  id               String                       @id @default(cuid())
+  orderId          String                       @unique
+  confirmedAt      DateTime
+  preorderReadyAt  DateTime?
+  createdAt        DateTime                     @default(now())
+  order            OrderMirror                  @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines            OrderPreorderLineSnapshot[]
+
+  @@index([preorderReadyAt])
+}
+
+/// I7 — one immutable line-level preorder/ready state from the confirmation boundary.
+model OrderPreorderLineSnapshot {
+  id          String                  @id @default(cuid())
+  snapshotId  String
+  variantId   String
+  quantity    Int
+  state       OrderPreorderLineState
+  preorderReadyAt DateTime?
+  createdAt   DateTime                @default(now())
+  snapshot    OrderPreorderSnapshot   @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([snapshotId, variantId])
+  @@index([variantId])
 }
 
 model SyncEvent {
@@ -628,9 +667,10 @@ model VariantCapacityReservation {
   id          String           @id @default(cuid())
   orderId     String
   variantId   String
-  quantity    Int
-  state       ReservationState @default(RESERVED)
-  committedAt DateTime?
+  quantity              Int
+  state                 ReservationState       @default(RESERVED)
+  acceptedPreorderState OrderPreorderLineState?
+  committedAt           DateTime?
   releasedAt  DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt

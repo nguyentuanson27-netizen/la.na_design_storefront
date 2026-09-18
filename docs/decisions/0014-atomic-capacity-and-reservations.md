@@ -447,15 +447,41 @@ unaffected — it never goes below zero, so no component accounting is needed.
 
 ## 12. Immutable order and preorder snapshot (I7)
 
-Preorder facts are snapshotted onto the order at successful confirmation and never recomputed:
+Preorder facts are snapshotted onto the order at successful local `CONFIRMED` and never recomputed:
 
-- preparation time **15 calendar days**, clock starting at successful system confirmation;
-- shipping added after preparation — Hà Nội `+1–3` days, other provinces `+3–10` days;
-- a mixed ready + preorder order is **held whole** and ships in one shipment after the preorder
-  items are ready; the customer ETA follows the slowest preorder item plus the shipping window.
+- preparation time **15 calendar days**, clock starting at the successful system confirmation instant;
+- this is an **ORDER ETA authority**, not Merchant `availability_date` and not a product-level public
+  availability date;
+- a mixed ready + preorder order is held whole and ships in one shipment after the preorder items
+  are ready; the order-level preorder readiness is the slowest snapshotted preorder readiness;
+- later policy or stock changes must not rewrite historical order truth;
+- no historical row is fabricated for orders confirmed before I7 or for rows whose required authority
+  was not available.
 
-A later policy change must not rewrite historical order truth. This mirrors the existing
-`OrderLineSnapshot` approach, which already freezes price and promotion facts at commit.
+I7 uses a dedicated `OrderPreorderSnapshot` + `OrderPreorderLineSnapshot` projection rather than
+the mutable DRAFT `OrderLineSnapshot`. The parent is one-to-one with the order; line rows preserve
+the confirmation-time READY/PREORDER state and line readiness. PostgreSQL triggers reject UPDATE and
+DELETE on both snapshot tables, and the order foreign key is `RESTRICT`, making the history
+append-only/immutable at the database boundary.
+
+The READY/PREORDER classification is decided at the **atomic capacity acceptance boundary**, while
+the variant lock is held. I7 stores that accepted classification as nullable metadata on the
+`VariantCapacityReservation`; confirmation never re-reads mutable stock, selling policy, or competing
+reservations to reconstruct it after the Pancake write.
+
+The confirmation transition writes the local `CONFIRMED` state and the I7 snapshot in one database
+transaction when complete I7 reservation authority exists. A reservation created by rolling old code
+has null I7 metadata, and a legacy/lower-level order may have no capacity reservation at all. Those
+orders remain truthfully **without an I7 snapshot** rather than deriving history from current mutable
+facts. This is rolling-compatible no-backfill, not an alternate ETA calculation.
+
+Calendar arithmetic uses the existing project authority of **UTC+7**. Because that authority has no
+DST transition, 15 calendar days preserves the confirmation local wall-clock time deterministically
+across month, year and leap-year boundaries.
+
+The snapshot never reads or derives Merchant `availability_date`. Shipping-window calculation is
+intentionally not part of I7 persistence; later F8 consumers may add the already-approved fulfillment
+window to this immutable preorder readiness, but must not rewrite the stored preparation fact.
 
 ---
 
@@ -621,6 +647,15 @@ own authorization. That was granted on **2026-09-17** and the migration
 the 2026-09-16 five-model approval, and nothing in either approval authorizes a backfill.
 
 ---
+
+### I7 migration rollback reasoning
+
+The I7 migration is **expand-only**. It must be deployed before enabling the confirmation seam that writes
+the snapshot, so old and new application versions can coexist while the new tables are present. If the
+application needs to roll back, roll back the application code while **keeping the I7 tables and trigger
+history intact**; pre-I7 code ignores the additive tables. Do not use a down-migration that drops the
+snapshot tables, because that would destroy immutable order history. Re-enabling I7 later simply resumes
+writing snapshots for newly confirmed orders; there is still no backfill of older orders.
 
 ## 15. Rollback and disable
 
