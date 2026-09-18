@@ -133,6 +133,7 @@ test("create-order mapper does not infer cod even when subtotal plus shipping wo
 
 test("create-order response requires a positive safe integer Pancake order id", () => {
   assert.equal(parsePancakeCreateOrderResponse({ id: 123456 }), "123456");
+  assert.equal(parsePancakeCreateOrderResponse({ success: true, data: { id: 123456 } }), "123456");
 
   for (const payload of [
     {},

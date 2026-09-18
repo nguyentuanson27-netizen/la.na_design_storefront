@@ -13,6 +13,12 @@ import type {
   PromotionCandidateReadClient,
 } from "./promotion-candidate-repository.ts";
 import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
+import {
+  capacityFloorForMode,
+  resolveSellingPolicy,
+} from "./capacity-policy.ts";
+import { PancakeHttpError } from "../integrations/pancake/client.ts";
+import type { MarkerSearchResult } from "../integrations/pancake/order-search.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 
@@ -28,7 +34,8 @@ export type PancakeOrderSubmissionReason =
   | "STOCK_UNAVAILABLE"
   | "VALIDATION_UNAVAILABLE"
   | "CREATE_OUTCOME_UNKNOWN"
-  | "ORDER_REJECTED";
+  | "ORDER_REJECTED"
+  | "COMPOSITE_SELLING_MODE_UNSUPPORTED";
 
 type PancakeOrderValidationRejectionReason = Extract<
   PancakeOrderSubmissionReason,
@@ -38,6 +45,7 @@ type PancakeOrderValidationRejectionReason = Extract<
   | "PRICE_CHANGED"
   | "PRICE_UNAVAILABLE"
   | "STOCK_UNAVAILABLE"
+  | "COMPOSITE_SELLING_MODE_UNSUPPORTED"
 >;
 
 export type PancakeOrderSubmissionEvent =
@@ -51,6 +59,12 @@ export type PancakeOrderSubmissionEvent =
       correlationId: string;
       state: "REJECTED";
       reason: PancakeOrderValidationRejectionReason;
+    }
+  | {
+      name: "pancake_order.create_rejected";
+      correlationId: string;
+      state: "REJECTED";
+      reason: "ORDER_REJECTED";
     }
   | {
       name: "pancake_order.validation_unavailable";
@@ -114,6 +128,10 @@ export type PancakeOrderSubmissionResult =
 export type PancakeOrderSubmissionGateway = {
   fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
+  searchOrderByMarker?(
+    shopId: number,
+    marker: string,
+  ): Promise<MarkerSearchResult>;
 };
 
 export type PancakeOrderSubmissionOptions = {
@@ -202,7 +220,8 @@ function existingResult(order: {
       reason === "VARIATION_UNAVAILABLE" ||
       reason === "PRICE_CHANGED" ||
       reason === "PRICE_UNAVAILABLE" ||
-      reason === "STOCK_UNAVAILABLE"
+      reason === "STOCK_UNAVAILABLE" ||
+      reason === "COMPOSITE_SELLING_MODE_UNSUPPORTED"
     ) {
       return { ok: false, state: "REJECTED", reason };
     }
@@ -587,11 +606,47 @@ export function createPancakeOrderSubmissionService(
     // `REJECTED / VALIDATION_INTERRUPTED` fifteen minutes later — killing an order that only needed
     // to be tried again.
     let campaignsByVariantId: ApplicableCampaignLookup["campaignsByVariantId"];
+    let variantMetaById: Map<
+      string,
+      {
+        policy: ReturnType<typeof resolveSellingPolicy>;
+        isComposite: boolean;
+      }
+    >;
     try {
-      ({ campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
-        variantIds: order.lines.map(({ variantId }) => variantId),
-        client: client as unknown as PromotionCandidateReadClient,
-      }));
+      const [campaignsResult, variantsResult] = await Promise.all([
+        readApplicablePromotionCampaignsBatched({
+          variantIds: order.lines.map(({ variantId }) => variantId),
+          client: client as unknown as PromotionCandidateReadClient,
+        }),
+        client.variantMirror.findMany({
+          where: { id: { in: order.lines.map(({ variantId }) => variantId) } },
+          select: {
+            id: true,
+            product: {
+              select: {
+                sellingPolicy: {
+                  select: {
+                    sellingMode: true,
+                    negativeStockLimit: true,
+                  },
+                },
+              },
+            },
+            compositeComponents: { select: { parentVariantId: true }, take: 1 },
+          },
+        }),
+      ]);
+      campaignsByVariantId = campaignsResult.campaignsByVariantId;
+      variantMetaById = new Map(
+        variantsResult.map((v) => [
+          v.id,
+          {
+            policy: resolveSellingPolicy(v.product?.sellingPolicy),
+            isComposite: v.compositeComponents.length > 0,
+          },
+        ]),
+      );
     } catch {
       return resetValidation();
     }
@@ -631,6 +686,16 @@ export function createPancakeOrderSubmissionService(
         return reject("VARIATION_UNAVAILABLE");
       }
 
+      const variantMeta = variantMetaById.get(line.variantId);
+      if (!variantMeta) {
+        return reject("VARIATION_UNAVAILABLE");
+      }
+
+      // ADR 0014 §11: Composite products under OVERSELL / PREORDER are disallowed in v1.
+      if (variantMeta.isComposite && variantMeta.policy.sellingMode !== "STANDARD") {
+        return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
+      }
+
       // Deliberately `retailPrice` alone, matching the central authority: a lower Pancake
       // after-discount field is an order-level rule there, not a catalog price, so it neither sets
       // nor invalidates the website price.
@@ -646,7 +711,15 @@ export function createPancakeOrderSubmissionService(
       if (freshUnitPriceVnd === null || !isSupportedVndAmount(freshUnitPriceVnd)) {
         return reject("PRICE_UNAVAILABLE");
       }
-      if (!Number.isFinite(live.sellableStock) || live.sellableStock < line.quantity) {
+
+      if (!Number.isFinite(live.sellableStock)) {
+        return reject("STOCK_UNAVAILABLE");
+      }
+      const floor = capacityFloorForMode(
+        variantMeta.policy.sellingMode,
+        variantMeta.policy.negativeStockLimit,
+      );
+      if (live.sellableStock - line.quantity < floor) {
         return reject("STOCK_UNAVAILABLE");
       }
       if (line.unitPriceVnd !== BigInt(freshUnitPriceVnd)) {
@@ -727,6 +800,10 @@ export function createPancakeOrderSubmissionService(
       }
     }
 
+    const orderMarker = `[ORDER:${order.publicCode}]`;
+    const noteWithMarker = order.note ? `${order.note} ${orderMarker}` : orderMarker;
+    const addressDetailWithMarker = `${order.addressDetail} ${orderMarker}`;
+
     const request = buildPancakeCreateOrderRequest({
       shopId: persistedShopId,
       guestName: order.guestName,
@@ -734,8 +811,8 @@ export function createPancakeOrderSubmissionService(
       provinceRef: order.provinceRef,
       districtRef: order.districtRef,
       communeRef: order.communeRef,
-      addressDetail: order.addressDetail,
-      note: order.note,
+      addressDetail: addressDetailWithMarker,
+      note: noteWithMarker,
       shippingFeeVnd,
       lines: requestLines,
     });
@@ -767,22 +844,56 @@ export function createPancakeOrderSubmissionService(
       operation: "create_order",
     });
 
-    let pancakeOrderId: string;
+    let pancakeOrderId: string | null = null;
     try {
       const response = await gateway.createOrder(request);
       pancakeOrderId = parsePancakeCreateOrderResponse(response);
-    } catch {
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
-      });
-      emitSafely(options.onEvent, {
-        name: "pancake_order.create_unknown",
-        correlationId,
-        state: "SYNC_UNKNOWN",
-        reason: "CREATE_OUTCOME_UNKNOWN",
-      });
-      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+    } catch (error) {
+      if (
+        error instanceof PancakeHttpError &&
+        (error.status === 400 ||
+          error.status === 401 ||
+          error.status === 403 ||
+          error.status === 404 ||
+          error.status === 422)
+      ) {
+        await client.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: { state: "REJECTED", syncErrorCode: "ORDER_REJECTED" },
+        });
+        emitSafely(options.onEvent, {
+          name: "pancake_order.create_rejected",
+          correlationId,
+          state: "REJECTED",
+          reason: "ORDER_REJECTED",
+        });
+        return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
+      }
+
+      if (gateway.searchOrderByMarker) {
+        try {
+          const search = await gateway.searchOrderByMarker(persistedShopId, orderMarker);
+          if (search.kind === "FOUND") {
+            pancakeOrderId = search.orderId;
+          }
+        } catch {
+          // Keep going to ambiguous handling
+        }
+      }
+
+      if (pancakeOrderId === null) {
+        await client.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
+        });
+        emitSafely(options.onEvent, {
+          name: "pancake_order.create_unknown",
+          correlationId,
+          state: "SYNC_UNKNOWN",
+          reason: "CREATE_OUTCOME_UNKNOWN",
+        });
+        return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+      }
     }
 
     try {

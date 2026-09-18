@@ -140,7 +140,8 @@ export function buildPancakeCreateOrderRequest(
 
 export function parsePancakeCreateOrderResponse(payload: unknown): string {
   if (!isRecord(payload)) invalidResponse();
-  const id = payload.id;
+  const record = isRecord(payload.data) ? payload.data : payload;
+  const id = record.id;
   if (typeof id !== "number" || !Number.isSafeInteger(id) || id <= 0) {
     invalidResponse();
   }

@@ -42,6 +42,23 @@ test("order status parser returns only the allowlisted status fields for the exp
   );
 });
 
+test("order status parser accepts data-wrapped responses as returned by Pancake API", () => {
+  assert.deepEqual(
+    parsePancakeOrderStatusResponse(
+      { success: true, data: validPayload() },
+      { shopId: 4, orderId: "1418" },
+    ),
+    {
+      orderId: "1418",
+      systemId: 862,
+      shopId: 4,
+      status: 9,
+      insertedAt: "2026-08-12T08:10:11Z",
+      updatedAt: "2026-08-12T09:12:13Z",
+    },
+  );
+});
+
 test("order status parser accepts timezone-less Pancake wall-clock timestamps without inventing an offset", () => {
   assert.deepEqual(
     parsePancakeOrderStatusResponse(
