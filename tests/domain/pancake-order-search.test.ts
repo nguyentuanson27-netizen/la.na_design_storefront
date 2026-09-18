@@ -153,3 +153,55 @@ test("searchOrderByMarker catches errors and sanitizes secrets in reason", async
   assert.equal(result.reason.includes(secretKey), false);
   assert.ok(result.reason.includes("[REDACTED]"));
 });
+
+test("searchOrderByMarker returns AMBIGUOUS when matching order has malformed id", async () => {
+  const marker = "[ORDER:TEST-MALFORMED-ID]";
+  const malformedIds = [
+    "abc",
+    1.5,
+    {},
+    0,
+    -1,
+    Number.MAX_SAFE_INTEGER + 1,
+    "",
+    "01001",
+    "9007199254740992",
+  ];
+
+  for (const malformedId of malformedIds) {
+    const client = {
+      async getJson() {
+        return {
+          total_pages: 1,
+          data: [{ id: malformedId, note: marker }],
+        };
+      },
+    };
+
+    const result = await searchOrderByMarker(client, 1720000650, marker);
+    assert.equal(
+      result.kind,
+      "AMBIGUOUS",
+      `Expected AMBIGUOUS for malformed id ${String(malformedId)}, got ${JSON.stringify(result)}`,
+    );
+    if (result.kind === "AMBIGUOUS") {
+      assert.equal(result.reason, "matching order has invalid id");
+    }
+  }
+});
+
+test("searchOrderByMarker returns FOUND for canonical numeric string order id", async () => {
+  const marker = "[ORDER:TEST-CANONICAL-STRING-ID]";
+  const client = {
+    async getJson() {
+      return {
+        total_pages: 1,
+        data: [{ id: "987654", note: marker }],
+      };
+    },
+  };
+
+  const result = await searchOrderByMarker(client, 1720000650, marker);
+  assert.deepEqual(result, { kind: "FOUND", orderId: "987654" });
+});
+

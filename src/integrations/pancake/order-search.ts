@@ -1,3 +1,5 @@
+import { isCanonicalPancakeOrderId } from "./order-status.ts";
+
 export const DEFAULT_ORDER_SEARCH_PAGE_SIZE = 50;
 export const DEFAULT_ORDER_SEARCH_MAX_PAGES = 3;
 
@@ -35,6 +37,16 @@ export function sanitizeSecrets(message: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function toCanonicalPancakeOrderId(value: unknown): string | null {
+  if (typeof value === "number") {
+    return Number.isSafeInteger(value) && value > 0 ? String(value) : null;
+  }
+  if (typeof value === "string" && isCanonicalPancakeOrderId(value)) {
+    return value;
+  }
+  return null;
 }
 
 function requireShopId(value: number): number {
@@ -122,7 +134,12 @@ export async function searchOrderByMarker(
           return { kind: "AMBIGUOUS", reason: "matching order has no id" };
         }
 
-        matches.push(String(item.id));
+        const canonicalOrderId = toCanonicalPancakeOrderId(item.id);
+        if (canonicalOrderId === null) {
+          return { kind: "AMBIGUOUS", reason: "matching order has invalid id" };
+        }
+
+        matches.push(canonicalOrderId);
       }
 
       const reportedTotalPages = validatedReportedTotalPages(raw, page);
