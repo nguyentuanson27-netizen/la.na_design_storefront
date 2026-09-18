@@ -439,6 +439,28 @@ from the approved table, not as an owner fact still to come.
 The `RESERVED` capacity-hold expiry window was briefly on this list during I6b and is **no longer
 pending** — it was approved on 2026-09-18 and has its own section below.
 
+## I7 immutable preorder/order snapshot — migration authorized 2026-09-18
+
+| | |
+|---|---|
+| **Decision** | I7 may add a dedicated PostgreSQL migration for immutable preorder/order history |
+| **Approved by** | The repository owner, 2026-09-18 |
+| **Scope** | Only immutable preorder/order snapshot and order-history persistence required by ADR 0014 §12 |
+| **Explicit exclusions** | No authorization for I8/I9, Merchant/JSON-LD, F8b/F8c UI, or unrelated schema changes |
+| **Backfill** | None; older orders without I7 authority are not fabricated or rewritten |
+
+The implementation authority is the successful local `CONFIRMED` boundary. Preorder preparation is
+**15 calendar days** from that confirmation, using the project's existing **UTC+7** authority. The
+stored fact is an **order ETA/preparation fact** and must never be derived from Merchant
+`availability_date`.
+
+The snapshot is immutable history: later stock or selling-policy changes do not rewrite it. Mixed
+ready + preorder orders retain the slowest snapshotted preorder readiness and ship together after that
+readiness. If authoritative data required for a new confirmation snapshot is unavailable, the system
+must fail closed rather than fabricate a historical preorder state.
+
+Provenance: repository owner authorization given directly for the I7 build on 2026-09-18.
+
 ## The `RESERVED` capacity-hold expiry window — approved 2026-09-18
 
 | | |
