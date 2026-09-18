@@ -10,8 +10,9 @@
  *   - **a re-observation of the same state must not move the date.** The catalog syncs repeatedly
  *     all day, and a date that shifted on every run would be the rolling product fact ADR 0011
  *     rejected;
- *   - **two concurrent observers must not open two cycles.** The upsert is keyed by variant, so the
- *     database decides the winner and the loser re-reads rather than inserting a second opinion.
+ *   - **two concurrent observers must not open two cycles.** Inserts use conflict-ignore and
+ *     updates compare the state that was read, so a stale loser re-reads instead of overwriting
+ *     the cycle that already won persistence.
  */
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
