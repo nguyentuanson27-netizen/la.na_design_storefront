@@ -16,19 +16,17 @@ const prefix = "i7-preorder-snapshot";
 
 const confirmedAt = new Date("2026-01-25T10:15:00.000Z");
 
-async function withRollback<T>(
-  callback: (tx: Prisma.TransactionClient) => Promise<T>,
-): Promise<T> {
+async function withRollback(
+  callback: (tx: Prisma.TransactionClient) => Promise<void>,
+): Promise<void> {
   const rollback = Symbol("I7_TEST_ROLLBACK");
   try {
-    return await prisma.$transaction(async (tx) => {
-      const result = await callback(tx);
+    await prisma.$transaction(async (tx) => {
+      await callback(tx);
       throw rollback;
     });
   } catch (error) {
-    if (error === rollback) {
-      return undefined as T;
-    }
+    if (error === rollback) return;
     throw error;
   }
 }
