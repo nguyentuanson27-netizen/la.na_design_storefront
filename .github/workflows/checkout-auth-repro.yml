@@ -42,12 +42,5 @@ jobs:
         run: npm ci --ignore-scripts --no-audit --no-fund
       - working-directory: tests/a11y-runtime
         run: npx playwright install chromium
-      - name: Reproduce checkout restart race
-        working-directory: tests/a11y-runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          for attempt in 1 2 3 4 5; do
-            echo "focused checkout attempt $attempt"
-            npx playwright test checkout.spec.ts --config playwright.config.ts --project=chromium-mobile
-          done
+      - name: Reproduce auth-route readiness race
+        run: node scripts/repro-checkout-auth-restart.mjs
