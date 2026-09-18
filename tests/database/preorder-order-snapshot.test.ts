@@ -5,6 +5,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
+import { createPancakeOrderReconciliationService } from "../../src/commerce/pancake-order-reconciliation.ts";
 import { createPreorderSnapshotAtConfirmation } from "../../src/commerce/preorder-order-snapshot-repository.ts";
 import { PrismaClient, type Prisma } from "../../src/generated/prisma/client.ts";
 
@@ -283,6 +284,86 @@ test("I7 copies the accepted PREORDER fact even if stock and policy change befor
     });
     assert.equal(unchanged.lines[0]?.state, "PREORDER");
     assert.equal(unchanged.preorderReadyAt?.toISOString(), "2026-10-03T04:30:00.000Z");
+  });
+});
+
+test("I8 reconciliation FOUND confirms, commits, and writes the I7 PREORDER snapshot atomically", async () => {
+  await inRollbackTransaction(async (tx) => {
+    const { variant } = await seedVariant(tx, {
+      label: "reconciliation",
+      stock: 0,
+      sellingMode: "PREORDER",
+    });
+    const order = await seedOrder(tx, "reconciliation", [
+      { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
+    ]);
+    await tx.orderMirror.update({
+      where: { id: order.id },
+      data: {
+        state: "SYNC_UNKNOWN",
+        pancakeShopId: shopId,
+        syncErrorCode: "CREATE_OUTCOME_UNKNOWN",
+      },
+    });
+    const reservation = await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: variant.id,
+      quantity: 1,
+      acceptedPreorderState: "PREORDER",
+    });
+    await tx.variantCapacityReservation.update({
+      where: { id: reservation.id },
+      data: { state: "UNKNOWN" },
+    });
+
+    const confirmedAt = new Date("2026-09-18T06:30:00.000Z");
+    const reconciliationClient = {
+      orderMirror: tx.orderMirror,
+      variantCapacityReservation: tx.variantCapacityReservation,
+      async $transaction<T>(run: (inner: TransactionClient) => Promise<T>): Promise<T> {
+        return run(tx);
+      },
+    } as unknown as PrismaClient;
+
+    const service = createPancakeOrderReconciliationService({
+      client: reconciliationClient,
+      gateway: {
+        async searchOrderByMarker() {
+          return { kind: "FOUND" as const, orderId: "880001" };
+        },
+      },
+      clock: () => confirmedAt,
+    });
+
+    const result = await service.reconcileOrder(order.publicCode);
+    assert.deepEqual(result, {
+      ok: true,
+      state: "CONFIRMED",
+      pancakeOrderId: "880001",
+      reservationsCommitted: 1,
+    });
+
+    const persistedOrder = await tx.orderMirror.findUniqueOrThrow({
+      where: { id: order.id },
+      select: { state: true, pancakeOrderId: true },
+    });
+    assert.equal(persistedOrder.state, "CONFIRMED");
+    assert.equal(persistedOrder.pancakeOrderId, "880001");
+
+    const committed = await tx.variantCapacityReservation.findUniqueOrThrow({
+      where: { id: reservation.id },
+      select: { state: true, committedAt: true },
+    });
+    assert.equal(committed.state, "COMMITTED");
+    assert.equal(committed.committedAt?.toISOString(), confirmedAt.toISOString());
+
+    const snapshot = await tx.orderPreorderSnapshot.findUniqueOrThrow({
+      where: { orderId: order.id },
+      include: { lines: true },
+    });
+    assert.equal(snapshot.confirmedAt.toISOString(), confirmedAt.toISOString());
+    assert.equal(snapshot.preorderReadyAt?.toISOString(), "2026-10-03T06:30:00.000Z");
+    assert.equal(snapshot.lines[0]?.state, "PREORDER");
   });
 });
 
