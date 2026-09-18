@@ -245,6 +245,10 @@ function resolvePublishableVariants({
         size: option.size,
         price: offer.price,
         availability: offer.availability,
+        // I9 — the same persisted cycle date the Merchant feed publishes, from the same projection
+        // option. `null` for everything except a live `BackOrder`, which is the only availability
+        // Google requires a date for.
+        availabilityDate: offer.availabilityDate,
         imageUrl: resolveVariantImageUrl(product, option),
       },
     });

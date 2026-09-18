@@ -6,6 +6,7 @@ import {
   resolveVariantSelectionView,
 } from "../../src/components/headless/variant-selection-model.ts";
 import type { StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 /**
  * Characterization tests for the purchase panel's money and purchasability decisions, captured
@@ -19,8 +20,11 @@ import type { StorefrontProjectionOption } from "../../src/commerce/storefront-p
 const NBSP = " ";
 const vnd = (amount: string): string => `${amount}${NBSP}₫`;
 
-function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
-  return {
+function option({
+  availability,
+  ...overrides
+}: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
+  const merged = {
     id: "variant-1",
     pancakeVariationId: "pancake-1",
     kindKey: null,
@@ -31,9 +35,15 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     basePriceVnd: null,
     isDiscounted: false,
     purchasable: true,
+    isPreorderSale: false,
     unavailableReason: null,
     ...overrides,
-  } as StorefrontProjectionOption;
+  };
+  // I9 — derived from what the fixture already says rather than cast away, so an option here can
+  // never carry an availability the shipped projection would not produce for it.
+  return availability === undefined
+    ? withFixtureAvailability(merged)
+    : { ...merged, availability };
 }
 
 /* ------------------------------------------------------------------ price label */

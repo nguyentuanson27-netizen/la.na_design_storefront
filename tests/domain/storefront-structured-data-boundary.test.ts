@@ -26,7 +26,7 @@ import {
   serializeJsonLd,
   type ProductStructuredDataDocument,
 } from "../../src/seo/structured-data.ts";
-import { fixtureAvailability, withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const ORIGIN = "https://shop.example.com";
 const SLUG = "ao-oxford-relaxed";

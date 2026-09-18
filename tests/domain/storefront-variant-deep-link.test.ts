@@ -16,7 +16,7 @@ import type {
   StorefrontProductProjection,
   StorefrontProjectionOption,
 } from "../../src/commerce/storefront-projection.ts";
-import { fixtureAvailability, withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
   const merged = {

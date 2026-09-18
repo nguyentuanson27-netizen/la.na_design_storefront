@@ -112,6 +112,22 @@ export type StorefrontSelectableOption = Pick<
   | "availability"
 >;
 
+/**
+ * I9 — the `Dự kiến có hàng` date the product page may show for one selected option, or `null`.
+ *
+ * Owner rule 10 has three halves — nothing before a variant is chosen, never another variant's
+ * date, and nothing once the date has lapsed — and all three are already decided: the first by
+ * whether there is a `selected` option at all, the other two by the shared availability projection,
+ * which withholds publication for an expired or missing date. So this states the rule once and
+ * both selection models call it, rather than each re-reading `availability` and drifting.
+ */
+export function selectedAvailabilityDateOf(
+  selected: Pick<StorefrontSelectableOption, "availability"> | null,
+): string | null {
+  if (selected === null) return null;
+  return selected.availability.published ? selected.availability.availabilityDate : null;
+}
+
 type StorefrontPriceFacts = Pick<
   StorefrontVariantFacts,
   "retailPrice" | "retailPriceAfterDiscount"

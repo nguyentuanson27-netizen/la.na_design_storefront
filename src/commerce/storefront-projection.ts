@@ -3,6 +3,7 @@ import { projectExternalAvailability } from "./availability-projection.ts";
 import {
   buildStorefrontVariantOptions,
   defaultStorefrontPricingRule,
+  selectedAvailabilityDateOf,
   toStorefrontSelectableOptions,
   NO_AVAILABILITY_DATES,
   STANDARD_STANDALONE_CAPACITY,
@@ -334,6 +335,8 @@ export function deriveStorefrontProjectionSelection(
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    /** I9 — owner rule 10, decided by the same helper the standalone path uses. */
+    selectedAvailabilityDate: selectedAvailabilityDateOf(selected),
     canAdd: selected !== null && selected.purchasable,
   };
 }
