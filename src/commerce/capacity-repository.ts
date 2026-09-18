@@ -21,6 +21,7 @@
 
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
+import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
 import {
   resolveSellingPolicy,
   type ResolvedSellingPolicy,
@@ -214,6 +215,7 @@ export function createCapacityRepository(
     negativeStockLimit: number;
   }): Promise<ResolvedSellingPolicy> {
     return client.$transaction(async (tx) => {
+      await acquireCatalogSyncLock(tx, shopId);
       await requireVisibleProduct(tx, shopId, productId);
       await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
 
@@ -245,6 +247,7 @@ export function createCapacityRepository(
     productId: string;
   }): Promise<ResolvedSellingPolicy> {
     return client.$transaction(async (tx) => {
+      await acquireCatalogSyncLock(tx, shopId);
       await requireVisibleProduct(tx, shopId, productId);
       await tx.productSellingPolicy.deleteMany({ where: { productId } });
       // The missing-row answer, from the one resolver that owns it.
