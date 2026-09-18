@@ -6,7 +6,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { createPreorderSnapshotAtConfirmation } from "../../src/commerce/preorder-order-snapshot-repository.ts";
-import { Prisma, PrismaClient } from "../../src/generated/prisma/client.ts";
+import { PrismaClient, type Prisma } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -14,12 +14,26 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
 const shopId = 920_107;
 const prefix = "i7-snapshot";
-const ROLLBACK = Symbol("I7 test rollback");
+const rollback = new Error("I7_TEST_ROLLBACK");
 
+type TransactionClient = Prisma.TransactionClient;
 type SellingMode = "STANDARD" | "OVERSELL" | "PREORDER";
 
-async function seedVariantInTransaction(
-  tx: Prisma.TransactionClient,
+async function inRollbackTransaction(
+  run: (tx: TransactionClient) => Promise<void>,
+): Promise<void> {
+  try {
+    await prisma.$transaction(async (tx) => {
+      await run(tx);
+      throw rollback;
+    });
+  } catch (error) {
+    if (error !== rollback) throw error;
+  }
+}
+
+async function seedVariant(
+  tx: TransactionClient,
   {
     label,
     stock,
@@ -72,14 +86,15 @@ async function seedVariantInTransaction(
   return { product, variant: product.variants[0]! };
 }
 
-async function seedOrderInTransaction(
-  tx: Prisma.TransactionClient,
+async function seedOrder(
+  tx: TransactionClient,
   label: string,
   lines: readonly { variantId: string; pancakeVariationId: string; quantity: number }[],
 ) {
+  const suffix = randomUUID();
   return tx.orderMirror.create({
     data: {
-      publicCode: `${prefix}-${label}-${randomUUID()}`,
+      publicCode: `${prefix}-${label}-${suffix}`,
       state: "DRAFT",
       lines: {
         create: lines.map((line, index) => ({
@@ -96,24 +111,35 @@ async function seedOrderInTransaction(
   });
 }
 
-async function rollbackAfter(
-  assertion: (tx: Prisma.TransactionClient) => Promise<void>,
-): Promise<void> {
-  try {
-    await prisma.$transaction(async (tx) => {
-      await assertion(tx);
-      throw ROLLBACK;
-    });
-  } catch (error) {
-    if (error !== ROLLBACK) throw error;
-  }
+async function seedAcceptedReservation(
+  tx: TransactionClient,
+  {
+    orderId,
+    variantId,
+    quantity,
+    acceptedPreorderState,
+  }: {
+    orderId: string;
+    variantId: string;
+    quantity: number;
+    acceptedPreorderState: "READY" | "PREORDER";
+  },
+) {
+  return tx.variantCapacityReservation.create({
+    data: {
+      orderId,
+      variantId,
+      quantity,
+      acceptedPreorderState,
+    },
+  });
 }
 
 async function confirmWithI7(
-  tx: Prisma.TransactionClient,
+  tx: TransactionClient,
   orderId: string,
   confirmedAt: Date,
-) {
+): Promise<void> {
   await tx.orderMirror.update({
     where: { id: orderId },
     data: { state: "CONFIRMED", pancakeOrderId: `i7-${randomUUID()}` },
@@ -121,58 +147,37 @@ async function confirmWithI7(
   await createPreorderSnapshotAtConfirmation(tx, orderId, confirmedAt);
 }
 
-async function seedAcceptedSnapshot(
-  tx: Prisma.TransactionClient,
-  label: string,
-  acceptedPreorderState: "READY" | "PREORDER",
-) {
-  const { variant } = await seedVariantInTransaction(tx, {
-    label,
-    stock: acceptedPreorderState === "PREORDER" ? 0 : 5,
-    sellingMode: acceptedPreorderState === "PREORDER" ? "PREORDER" : undefined,
-  });
-  const order = await seedOrderInTransaction(tx, label, [
-    { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
-  ]);
-  await tx.variantCapacityReservation.create({
-    data: {
-      orderId: order.id,
-      variantId: variant.id,
-      quantity: 1,
-      acceptedPreorderState,
-    },
-  });
-  await confirmWithI7(tx, order.id, new Date("2026-09-18T06:00:00.000Z"));
-  return tx.orderPreorderSnapshot.findUniqueOrThrow({
-    where: { orderId: order.id },
-    include: { lines: true },
-  });
-}
-
 test.after(async () => {
   await prisma.$disconnect();
 });
 
-test("I7 capacity acceptance persists PREORDER before confirmation starts the ETA clock", async () => {
+test("I7 capacity acceptance persists PREORDER classification before confirmation", async () => {
   const suffix = randomUUID();
   const product = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
-      pancakeProductId: `${prefix}-capacity-${suffix}`,
-      slug: `${prefix}-capacity-${suffix}`,
-      name: "I7 capacity authority",
+      pancakeProductId: `${prefix}-writer-${suffix}`,
+      slug: `${prefix}-writer-${suffix}`,
+      name: "I7 writer",
+      isPresent: true,
+      isActive: true,
       syncedAt: new Date("2026-09-18T00:00:00.000Z"),
       sellingPolicy: {
-        create: { sellingMode: "PREORDER", negativeStockLimit: -20 },
+        create: {
+          sellingMode: "PREORDER",
+          negativeStockLimit: -20,
+        },
       },
       variants: {
         create: {
-          pancakeVariationId: `${prefix}-capacity-variant-${suffix}`,
+          pancakeVariationId: `${prefix}-writer-variation-${suffix}`,
           size: "M",
+          isPresent: true,
+          isActive: true,
           syncedAt: new Date("2026-09-18T00:00:00.000Z"),
           warehouseStocks: {
             create: {
-              pancakeWarehouseId: `${prefix}-capacity-wh-${suffix}`,
+              pancakeWarehouseId: `${prefix}-writer-warehouse-${suffix}`,
               quantity: 0,
               syncedAt: new Date("2026-09-18T00:00:00.000Z"),
             },
@@ -184,25 +189,44 @@ test("I7 capacity acceptance persists PREORDER before confirmation starts the ET
   });
   const variant = product.variants[0]!;
   const order = await prisma.orderMirror.create({
-    data: { publicCode: `${prefix}-capacity-order-${suffix}` },
+    data: {
+      publicCode: `${prefix}-writer-order-${suffix}`,
+      lines: {
+        create: {
+          variantId: variant.id,
+          pancakeVariationId: variant.pancakeVariationId,
+          productName: "I7 writer",
+          size: "M",
+          quantity: 1,
+          unitPriceVnd: BigInt(100_000),
+          lineTotalVnd: BigInt(100_000),
+        },
+      },
+    },
   });
 
   try {
-    const reserved = await createCapacityReservationRepository(prisma).reserveOrderCapacity({
+    const capacity = createCapacityReservationRepository(prisma);
+    const reserved = await capacity.reserveOrderCapacity({
       orderId: order.id,
       lines: [{ variantId: variant.id, quantity: 1 }],
     });
     assert.equal(reserved.ok, true);
 
     const accepted = await prisma.variantCapacityReservation.findUniqueOrThrow({
-      where: { orderId_variantId: { orderId: order.id, variantId: variant.id } },
+      where: {
+        orderId_variantId: {
+          orderId: order.id,
+          variantId: variant.id,
+        },
+      },
       select: { acceptedPreorderState: true },
     });
     assert.equal(accepted.acceptedPreorderState, "PREORDER");
     assert.equal(
       await prisma.orderPreorderSnapshot.count({ where: { orderId: order.id } }),
       0,
-      "capacity acceptance alone must not start the 15-day confirmation clock",
+      "reservation acceptance must not start the 15-day preparation clock",
     );
   } finally {
     await prisma.variantCapacityReservation.deleteMany({ where: { orderId: order.id } });
@@ -211,26 +235,24 @@ test("I7 capacity acceptance persists PREORDER before confirmation starts the ET
   }
 });
 
-test("I7 confirmation copies accepted PREORDER even if mutable stock and policy changed meanwhile", async () => {
-  await rollbackAfter(async (tx) => {
-    const { product, variant } = await seedVariantInTransaction(tx, {
+test("I7 copies the accepted PREORDER fact even if stock and policy change before confirmation", async () => {
+  await inRollbackTransaction(async (tx) => {
+    const { product, variant } = await seedVariant(tx, {
       label: "race",
       stock: 0,
       sellingMode: "PREORDER",
     });
-    const order = await seedOrderInTransaction(tx, "race", [
+    const order = await seedOrder(tx, "race", [
       { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
     ]);
-    await tx.variantCapacityReservation.create({
-      data: {
-        orderId: order.id,
-        variantId: variant.id,
-        quantity: 1,
-        acceptedPreorderState: "PREORDER",
-      },
+    await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: variant.id,
+      quantity: 1,
+      acceptedPreorderState: "PREORDER",
     });
 
-    // The review race: mutable facts change while Pancake's create is in flight.
+    // The exact review race: mutable catalog truth changes while Pancake's create is in flight.
     await tx.warehouseStock.updateMany({
       where: { variantId: variant.id },
       data: { quantity: 10 },
@@ -247,6 +269,7 @@ test("I7 confirmation copies accepted PREORDER even if mutable stock and policy 
       where: { orderId: order.id },
       include: { lines: true },
     });
+    assert.equal(snapshot.confirmedAt.toISOString(), confirmedAt.toISOString());
     assert.equal(snapshot.preorderReadyAt?.toISOString(), "2026-10-03T04:30:00.000Z");
     assert.equal(snapshot.lines[0]?.state, "PREORDER");
 
@@ -254,24 +277,24 @@ test("I7 confirmation copies accepted PREORDER even if mutable stock and policy 
       where: { variantId: variant.id },
       data: { quantity: 50 },
     });
-    const after = await tx.orderPreorderSnapshot.findUniqueOrThrow({
+    const unchanged = await tx.orderPreorderSnapshot.findUniqueOrThrow({
       where: { orderId: order.id },
       include: { lines: true },
     });
-    assert.equal(after.lines[0]?.state, "PREORDER");
-    assert.equal(after.preorderReadyAt?.toISOString(), "2026-10-03T04:30:00.000Z");
+    assert.equal(unchanged.lines[0]?.state, "PREORDER");
+    assert.equal(unchanged.preorderReadyAt?.toISOString(), "2026-10-03T04:30:00.000Z");
   });
 });
 
 test("I7 creates one idempotent mixed snapshot from accepted reservation metadata", async () => {
-  await rollbackAfter(async (tx) => {
-    const ready = await seedVariantInTransaction(tx, { label: "mixed-ready", stock: 5 });
-    const preorder = await seedVariantInTransaction(tx, {
+  await inRollbackTransaction(async (tx) => {
+    const ready = await seedVariant(tx, { label: "mixed-ready", stock: 5 });
+    const preorder = await seedVariant(tx, {
       label: "mixed-preorder",
       stock: 0,
       sellingMode: "PREORDER",
     });
-    const order = await seedOrderInTransaction(tx, "mixed", [
+    const order = await seedOrder(tx, "mixed", [
       {
         variantId: ready.variant.id,
         pancakeVariationId: ready.variant.pancakeVariationId,
@@ -283,21 +306,17 @@ test("I7 creates one idempotent mixed snapshot from accepted reservation metadat
         quantity: 2,
       },
     ]);
-    await tx.variantCapacityReservation.createMany({
-      data: [
-        {
-          orderId: order.id,
-          variantId: ready.variant.id,
-          quantity: 1,
-          acceptedPreorderState: "READY",
-        },
-        {
-          orderId: order.id,
-          variantId: preorder.variant.id,
-          quantity: 2,
-          acceptedPreorderState: "PREORDER",
-        },
-      ],
+    await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: ready.variant.id,
+      quantity: 1,
+      acceptedPreorderState: "READY",
+    });
+    await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: preorder.variant.id,
+      quantity: 2,
+      acceptedPreorderState: "PREORDER",
     });
 
     const confirmedAt = new Date("2026-12-25T03:00:00.000Z");
@@ -326,10 +345,10 @@ test("I7 creates one idempotent mixed snapshot from accepted reservation metadat
   });
 });
 
-test("I7 leaves legacy confirmation without a snapshot when accepted authority is absent", async () => {
-  await rollbackAfter(async (tx) => {
-    const { variant } = await seedVariantInTransaction(tx, { label: "legacy", stock: 5 });
-    const order = await seedOrderInTransaction(tx, "legacy", [
+test("I7 does not fabricate a snapshot when accepted capacity authority is absent", async () => {
+  await inRollbackTransaction(async (tx) => {
+    const { variant } = await seedVariant(tx, { label: "legacy", stock: 5 });
+    const order = await seedOrder(tx, "legacy", [
       { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
     ]);
 
@@ -338,33 +357,53 @@ test("I7 leaves legacy confirmation without a snapshot when accepted authority i
     assert.equal(
       await tx.orderPreorderSnapshot.count({ where: { orderId: order.id } }),
       0,
-      "no accepted reservation metadata means no inferred/backfilled history",
+      "no accepted reservation authority means no inferred/backfilled history",
     );
   });
 });
 
 async function assertImmutableMutation(
-  mutation: (tx: Prisma.TransactionClient, snapshot: Awaited<ReturnType<typeof seedAcceptedSnapshot>>) => Promise<unknown>,
-) {
-  await assert.rejects(
-    prisma.$transaction(async (tx) => {
-      const snapshot = await seedAcceptedSnapshot(tx, `immutable-${randomUUID()}`, "PREORDER");
-      await mutation(tx, snapshot);
-    }),
-    /immutable/i,
-  );
+  mutate: (tx: TransactionClient, snapshotId: string, lineId: string) => Promise<unknown>,
+): Promise<void> {
+  await inRollbackTransaction(async (tx) => {
+    const { variant } = await seedVariant(tx, {
+      label: "immutable",
+      stock: 0,
+      sellingMode: "PREORDER",
+    });
+    const order = await seedOrder(tx, "immutable", [
+      { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
+    ]);
+    await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: variant.id,
+      quantity: 1,
+      acceptedPreorderState: "PREORDER",
+    });
+    await confirmWithI7(tx, order.id, new Date("2026-09-18T06:00:00.000Z"));
+
+    const snapshot = await tx.orderPreorderSnapshot.findUniqueOrThrow({
+      where: { orderId: order.id },
+      include: { lines: true },
+    });
+    await assert.rejects(
+      mutate(tx, snapshot.id, snapshot.lines[0]!.id),
+      /immutable/i,
+    );
+  });
 }
 
-test("I7 database triggers reject UPDATE and DELETE of persisted snapshot history", async () => {
-  await assertImmutableMutation((tx, snapshot) =>
+test("I7 database triggers reject snapshot UPDATE, line DELETE and snapshot DELETE", async () => {
+  await assertImmutableMutation((tx, snapshotId) =>
     tx.orderPreorderSnapshot.update({
-      where: { id: snapshot.id },
+      where: { id: snapshotId },
       data: { preorderReadyAt: null },
     }),
   );
-  await assertImmutableMutation((tx, snapshot) =>
-    tx.orderPreorderLineSnapshot.delete({
-      where: { id: snapshot.lines[0]!.id },
-    }),
+  await assertImmutableMutation((tx, _snapshotId, lineId) =>
+    tx.orderPreorderLineSnapshot.delete({ where: { id: lineId } }),
+  );
+  await assertImmutableMutation((tx, snapshotId) =>
+    tx.orderPreorderSnapshot.delete({ where: { id: snapshotId } }),
   );
 });
