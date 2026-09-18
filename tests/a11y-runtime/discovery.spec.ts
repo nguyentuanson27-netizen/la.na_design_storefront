@@ -31,10 +31,19 @@ async function waitForServer() {
       throw new Error(`Next.js discovery server exited with ${server.exitCode}\n${serverOutput}`);
     }
     try {
-      const response = await fetch(`${BASE_URL}/shop`, { redirect: "manual" });
-      if (response.status < 500) return;
+      const [pageResponse, authResponse] = await Promise.all([
+        fetch(`${BASE_URL}/shop`, { redirect: "manual" }),
+        fetch(`${BASE_URL}/api/auth/get-session`, { redirect: "manual" }),
+      ]);
+      // Every storefront page mounts useAccountAuth(), which requests Better Auth's catch-all route
+      // as soon as it hydrates. A page-only readiness probe can win the race against a freshly
+      // started `next dev` and let Playwright navigate while that route still answers a transient
+      // 404, which the browser's clean-console guard then correctly records. Declare the fixture
+      // ready only once the page and the route it immediately depends on are both live; the
+      // assertion itself stays strict.
+      if (pageResponse.status < 500 && authResponse.status === 200) return;
     } catch {
-      // Next dev may still be compiling.
+      // Next dev may still be compiling either the page or the auth route.
     }
     await delay(500);
   }
