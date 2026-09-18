@@ -136,6 +136,31 @@ export function formatVietnamCalendarDate(
   return `${day}/${month}/${parsed.year}`;
 }
 
+
+export type SerializedVietnamAvailabilityDate = Readonly<{
+  /** Google Merchant XML format documented for availability_date. */
+  merchant: string;
+  /** Schema.org DateTime spelling used by Offer.availabilityStarts. */
+  schema: string;
+}>;
+
+/**
+ * Serialize one persisted Vietnam calendar day for the two public machine-readable boundaries.
+ *
+ * Persistence stays date-only because the owner approved a calendar-day fact. The public formats
+ * require timezone-qualified DateTimes, so both are derived here from that same validated day and
+ * can differ only in wire spelling, never in the day they claim.
+ */
+export function serializeVietnamAvailabilityDate(
+  availabilityDate: VietnamCalendarDate,
+): SerializedVietnamAvailabilityDate | null {
+  if (parseCalendarDate(availabilityDate) === null) return null;
+  return Object.freeze({
+    merchant: `${availabilityDate}T00:00+0700`,
+    schema: `${availabilityDate}T00:00:00+07:00`,
+  });
+}
+
 /**
  * The persisted state of one variant's cycle.
  *
