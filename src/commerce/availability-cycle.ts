@@ -1,3 +1,5 @@
+import { VIETNAM_UTC_OFFSET } from "../brand/schema.ts";
+
 /**
  * I9 — the owner-approved preorder availability cycle (ADR 0011, superseding its blocked state).
  *
@@ -20,7 +22,6 @@
 /** Owner-approved on 2026-09-18: a cycle promises availability fifteen calendar days after it opens. */
 export const PREORDER_AVAILABILITY_WINDOW_DAYS = 15;
 
-const VIETNAM_UTC_OFFSET = "+07:00";
 const VIETNAM_UTC_OFFSET_MINUTES = 7 * 60;
 
 /**
