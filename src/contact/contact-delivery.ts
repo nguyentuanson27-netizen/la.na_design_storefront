@@ -4,13 +4,16 @@ export type ContactPayload = Readonly<{
   message: string;
 }>;
 
+export type ContactInvalidField = "name" | "email" | "message" | "form";
+
 export type ContactSubmissionResult =
   | Readonly<{ ok: true }>
-  | Readonly<{ ok: false; reason: "INVALID_INPUT" | "RATE_LIMITED" | "DELIVERY_FAILED" }>;
+  | Readonly<{ ok: false; reason: "INVALID_INPUT"; field: ContactInvalidField }>
+  | Readonly<{ ok: false; reason: "RATE_LIMITED" | "DELIVERY_FAILED" }>;
 
 type ValidationResult =
   | Readonly<{ ok: true; value: ContactPayload }>
-  | Readonly<{ ok: false }>;
+  | Readonly<{ ok: false; field: ContactInvalidField }>;
 
 type ProviderErrorClass = "AUTH" | "RATE_LIMIT" | "CLIENT" | "PROVIDER" | "MALFORMED_RESPONSE";
 
@@ -45,37 +48,37 @@ function classifyProviderStatus(status: number): ProviderErrorClass {
 
 export function validateContactPayload(input: unknown): ValidationResult {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    return { ok: false };
+    return { ok: false, field: "form" };
   }
 
   const record = input as Record<string, unknown>;
   const keys = Object.keys(record);
   if (keys.length !== APPROVED_KEYS.size || keys.some((key) => !APPROVED_KEYS.has(key))) {
-    return { ok: false };
+    return { ok: false, field: "form" };
   }
 
-  if (
-    typeof record.name !== "string" ||
-    typeof record.email !== "string" ||
-    typeof record.message !== "string"
-  ) {
-    return { ok: false };
-  }
+  if (typeof record.name !== "string") return { ok: false, field: "name" };
+  if (typeof record.email !== "string") return { ok: false, field: "email" };
+  if (typeof record.message !== "string") return { ok: false, field: "message" };
 
   const name = record.name.trim();
   const email = record.email.trim();
   const message = record.message.trim();
 
-  if (codePointLength(name) < 1 || codePointLength(name) > 100) return { ok: false };
+  if (codePointLength(name) < 1 || codePointLength(name) > 100) {
+    return { ok: false, field: "name" };
+  }
   if (
     email.length < 1 ||
     email.length > 254 ||
     HEADER_CONTROL.test(email) ||
     !EMAIL_PATTERN.test(email)
   ) {
-    return { ok: false };
+    return { ok: false, field: "email" };
   }
-  if (codePointLength(message) < 1 || codePointLength(message) > 4_000) return { ok: false };
+  if (codePointLength(message) < 1 || codePointLength(message) > 4_000) {
+    return { ok: false, field: "message" };
+  }
 
   return { ok: true, value: { name, email, message } };
 }
@@ -167,7 +170,9 @@ export function createContactDelivery(dependencies: Readonly<{
       idempotencyKey: string,
     ): Promise<ContactSubmissionResult> {
       const validated = validateContactPayload(input);
-      if (!validated.ok) return { ok: false, reason: "INVALID_INPUT" };
+      if (!validated.ok) {
+        return { ok: false, reason: "INVALID_INPUT", field: validated.field };
+      }
 
       if (!(await dependencies.consumeRateLimits(clientBucket))) {
         return { ok: false, reason: "RATE_LIMITED" };

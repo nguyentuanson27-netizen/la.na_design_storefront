@@ -10,6 +10,7 @@ import { deriveGuestCheckoutClientKey as deriveTrustedClientKey } from "@/commer
 import {
   createContactDelivery,
   sendContactEmailViaResend,
+  validateContactPayload,
   type ContactPayload,
   type ContactSubmissionResult,
 } from "@/contact/contact-delivery";
@@ -34,6 +35,11 @@ function createResendSender(apiKey: string) {
 }
 
 export async function submitContactForm(input: unknown): Promise<ContactSubmissionResult> {
+  const validated = validateContactPayload(input);
+  if (!validated.ok) {
+    return { ok: false, reason: "INVALID_INPUT", field: validated.field };
+  }
+
   const apiKey = process.env.RESEND_API_KEY?.trim();
   if (!apiKey) return { ok: false, reason: "DELIVERY_FAILED" };
 
@@ -45,5 +51,5 @@ export async function submitContactForm(input: unknown): Promise<ContactSubmissi
     sendEmail: createResendSender(apiKey),
   });
 
-  return delivery.submit(input, clientBucket, `contact-${randomUUID()}`);
+  return delivery.submit(validated.value, clientBucket, `contact-${randomUUID()}`);
 }

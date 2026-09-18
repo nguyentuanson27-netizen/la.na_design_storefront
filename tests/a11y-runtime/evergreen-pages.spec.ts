@@ -118,6 +118,43 @@ test("U33a the Contact page publishes approved channels and the approved F9b con
   await expect(form.getByLabel("Nội dung")).toHaveAttribute("name", "message");
   await expect(form.getByRole("button", { name: "Gửi tin nhắn" })).toBeVisible();
 
+  const controlContrast = await form.getByLabel("Họ tên").evaluate((control) => {
+    function rgba(value: string): [number, number, number, number] {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas 2D context is unavailable");
+      context.clearRect(0, 0, 1, 1);
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+      return [red!, green!, blue!, alpha! / 255];
+    }
+
+    function luminance([red, green, blue]: [number, number, number]): number {
+      const channels = [red, green, blue].map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045
+          ? normalized / 12.92
+          : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * channels[0]! + 0.7152 * channels[1]! + 0.0722 * channels[2]!;
+    }
+
+    const border = rgba(getComputedStyle(control).borderTopColor);
+    const background = rgba(getComputedStyle(document.body).backgroundColor);
+    const effectiveBorder: [number, number, number] = [
+      border[0] * border[3] + background[0] * (1 - border[3]),
+      border[1] * border[3] + background[1] * (1 - border[3]),
+      border[2] * border[3] + background[2] * (1 - border[3]),
+    ];
+    const lighter = luminance(background.slice(0, 3) as [number, number, number]);
+    const darker = luminance(effectiveBorder);
+    return (lighter + 0.05) / (darker + 0.05);
+  });
+  expect(controlContrast).toBeGreaterThanOrEqual(3);
+
   // F9b adds only the approved contact form; other unapproved support channels remain absent.
   for (const invented of [/24\/7/, /live chat/i, /hotline miễn phí/i]) {
     await expect(main).not.toContainText(invented);
@@ -130,6 +167,38 @@ test("U33a the Contact page publishes approved channels and the approved F9b con
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("F9b server-only validation associates and focuses the first invalid contact field", async ({
+  page,
+}) => {
+  await page.goto(`${BASE_URL}/contact`, { waitUntil: "networkidle" });
+
+  const name = page.getByLabel("Họ tên");
+  const email = page.getByLabel("Email");
+  const message = page.getByLabel("Nội dung");
+  const submit = page.getByRole("button", { name: "Gửi tin nhắn" });
+
+  await name.fill("😀".repeat(101));
+  await email.fill("an@example.com");
+  await message.fill("Xin chào");
+  await submit.click();
+
+  await expect(name).toBeFocused();
+  await expect(name).toHaveAttribute("aria-invalid", "true");
+  await expect(name).toHaveAttribute("aria-describedby", "contact-name-error");
+  await expect(page.locator("#contact-name-error")).toHaveAttribute("role", "alert");
+  await expect(page.locator("#contact-name-error")).toContainText("1 đến 100");
+
+  await name.fill("Nguyễn An");
+  await message.fill("a".repeat(4_001));
+  await submit.click();
+
+  await expect(message).toBeFocused();
+  await expect(message).toHaveAttribute("aria-invalid", "true");
+  await expect(message).toHaveAttribute("aria-describedby", "contact-message-error");
+  await expect(page.locator("#contact-message-error")).toHaveAttribute("role", "alert");
+  await expect(page.locator("#contact-message-error")).toContainText("1 đến 4.000");
 });
 
 test("U33a the About page publishes the approved minimum and invents no brand history", async ({

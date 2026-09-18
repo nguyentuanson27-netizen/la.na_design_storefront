@@ -1,18 +1,32 @@
 "use client";
 
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 
 import { submitContactForm } from "@/routes/contact-action";
+
+type ContactResult = Awaited<ReturnType<typeof submitContactForm>>;
+type InvalidField = Extract<
+  ContactResult,
+  { ok: false; reason: "INVALID_INPUT" }
+>["field"];
+type FieldName = Exclude<InvalidField, "form">;
 
 type FormStatus =
   | Readonly<{ kind: "idle" }>
   | Readonly<{ kind: "success"; message: string }>
-  | Readonly<{ kind: "error"; message: string }>;
+  | Readonly<{ kind: "error"; message: string; field: InvalidField }>;
 
 const FIELD_CLASS =
-  "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus-visible:outline-2 focus-visible:outline-offset-2";
+  "mt-2 w-full border border-black/45 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus-visible:outline-2 focus-visible:outline-offset-2";
 
-function messageForResult(result: Awaited<ReturnType<typeof submitContactForm>>): FormStatus {
+function validationMessage(field: InvalidField): string {
+  if (field === "name") return "Họ tên phải có từ 1 đến 100 ký tự.";
+  if (field === "email") return "Email không hợp lệ hoặc vượt quá 254 ký tự.";
+  if (field === "message") return "Nội dung phải có từ 1 đến 4.000 ký tự.";
+  return "Vui lòng kiểm tra họ tên, email và nội dung trước khi gửi.";
+}
+
+function messageForResult(result: ContactResult): FormStatus {
   if (result.ok) {
     return {
       kind: "success",
@@ -23,19 +37,22 @@ function messageForResult(result: Awaited<ReturnType<typeof submitContactForm>>)
   if (result.reason === "INVALID_INPUT") {
     return {
       kind: "error",
-      message: "Vui lòng kiểm tra họ tên, email và nội dung trước khi gửi.",
+      field: result.field,
+      message: validationMessage(result.field),
     };
   }
 
   if (result.reason === "RATE_LIMITED") {
     return {
       kind: "error",
+      field: "form",
       message: "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.",
     };
   }
 
   return {
     kind: "error",
+    field: "form",
     message: "Chưa thể gửi tin nhắn lúc này. Vui lòng dùng một trong các kênh liên hệ chính thức bên dưới.",
   };
 }
@@ -44,6 +61,21 @@ export function ContactForm() {
   const formRef = useRef<HTMLFormElement>(null);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState<FormStatus>({ kind: "idle" });
+
+  useEffect(() => {
+    if (status.kind !== "error" || status.field === "form") return;
+
+    const control = formRef.current?.elements.namedItem(status.field);
+    if (control instanceof HTMLElement) control.focus();
+  }, [status]);
+
+  function fieldError(field: FieldName): string | null {
+    return status.kind === "error" && status.field === field ? status.message : null;
+  }
+
+  const nameError = fieldError("name");
+  const emailError = fieldError("email");
+  const messageError = fieldError("message");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -68,6 +100,7 @@ export function ContactForm() {
     } catch {
       setStatus({
         kind: "error",
+        field: "form",
         message: "Chưa thể gửi tin nhắn lúc này. Vui lòng dùng một trong các kênh liên hệ chính thức bên dưới.",
       });
     } finally {
@@ -91,10 +124,17 @@ export function ContactForm() {
             className={FIELD_CLASS}
             id="contact-name"
             name="name"
+            aria-describedby={nameError ? "contact-name-error" : undefined}
+            aria-invalid={nameError ? true : undefined}
             autoComplete="name"
             required
             type="text"
           />
+          {nameError ? (
+            <span id="contact-name-error" className="mt-2 block text-sm leading-6" role="alert">
+              {nameError}
+            </span>
+          ) : null}
         </label>
 
         <label className="block text-sm font-medium" htmlFor="contact-email">
@@ -103,12 +143,19 @@ export function ContactForm() {
             className={FIELD_CLASS}
             id="contact-email"
             name="email"
+            aria-describedby={emailError ? "contact-email-error" : undefined}
+            aria-invalid={emailError ? true : undefined}
             autoComplete="email"
             inputMode="email"
             maxLength={254}
             required
             type="email"
           />
+          {emailError ? (
+            <span id="contact-email-error" className="mt-2 block text-sm leading-6" role="alert">
+              {emailError}
+            </span>
+          ) : null}
         </label>
 
         <label className="block text-sm font-medium" htmlFor="contact-message">
@@ -117,9 +164,16 @@ export function ContactForm() {
             className={`${FIELD_CLASS} min-h-40 resize-y`}
             id="contact-message"
             name="message"
+            aria-describedby={messageError ? "contact-message-error" : undefined}
+            aria-invalid={messageError ? true : undefined}
             required
             rows={6}
           />
+          {messageError ? (
+            <span id="contact-message-error" className="mt-2 block text-sm leading-6" role="alert">
+              {messageError}
+            </span>
+          ) : null}
         </label>
 
         <div>
@@ -132,7 +186,7 @@ export function ContactForm() {
           </button>
         </div>
 
-        {status.kind !== "idle" ? (
+        {status.kind === "success" || (status.kind === "error" && status.field === "form") ? (
           <p
             className="text-sm leading-6"
             role={status.kind === "error" ? "alert" : "status"}

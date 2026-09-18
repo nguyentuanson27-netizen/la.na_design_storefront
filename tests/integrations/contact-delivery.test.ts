@@ -23,13 +23,51 @@ test("contact validation accepts only the approved payload and trims values", ()
     },
   });
 
-  assert.equal(validateContactPayload(null).ok, false);
-  assert.equal(validateContactPayload([]).ok, false);
-  assert.equal(validateContactPayload({ ...validPayload, phone: "0923159666" }).ok, false);
-  assert.equal(validateContactPayload({ ...validPayload, name: "a".repeat(101) }).ok, false);
-  assert.equal(validateContactPayload({ ...validPayload, email: `a@${"b".repeat(250)}.com` }).ok, false);
-  assert.equal(validateContactPayload({ ...validPayload, email: "a@example.com\r\nBcc:x@example.com" }).ok, false);
-  assert.equal(validateContactPayload({ ...validPayload, message: "a".repeat(4001) }).ok, false);
+  assert.deepEqual(validateContactPayload(null), { ok: false, field: "form" });
+  assert.deepEqual(validateContactPayload([]), { ok: false, field: "form" });
+  assert.deepEqual(validateContactPayload({ ...validPayload, phone: "0923159666" }), {
+    ok: false,
+    field: "form",
+  });
+  assert.deepEqual(validateContactPayload({ ...validPayload, name: "a".repeat(101) }), {
+    ok: false,
+    field: "name",
+  });
+  assert.equal(validateContactPayload({ ...validPayload, name: "😀".repeat(100) }).ok, true);
+  assert.deepEqual(validateContactPayload({ ...validPayload, email: `a@${"b".repeat(250)}.com` }), {
+    ok: false,
+    field: "email",
+  });
+  assert.deepEqual(
+    validateContactPayload({ ...validPayload, email: "a@example.com\r\nBcc:x@example.com" }),
+    { ok: false, field: "email" },
+  );
+  assert.deepEqual(validateContactPayload({ ...validPayload, message: "a".repeat(4001) }), {
+    ok: false,
+    field: "message",
+  });
+});
+
+test("contact delivery returns a field-safe validation error before rate limiting or provider access", async () => {
+  let limits = 0;
+  let sends = 0;
+  const delivery = createContactDelivery({
+    consumeRateLimits: async () => {
+      limits += 1;
+      return true;
+    },
+    sendEmail: async () => {
+      sends += 1;
+      return { ok: true, id: "email-1" };
+    },
+  });
+
+  assert.deepEqual(
+    await delivery.submit({ ...validPayload, message: "a".repeat(4001) }, "bucket-1", "submission-1"),
+    { ok: false, reason: "INVALID_INPUT", field: "message" },
+  );
+  assert.equal(limits, 0);
+  assert.equal(sends, 0);
 });
 
 test("contact delivery consumes the limiter before calling the provider", async () => {
