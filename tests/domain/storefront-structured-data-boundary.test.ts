@@ -26,6 +26,7 @@ import {
   serializeJsonLd,
   type ProductStructuredDataDocument,
 } from "../../src/seo/structured-data.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const ORIGIN = "https://shop.example.com";
 const SLUG = "ao-oxford-relaxed";
@@ -35,7 +36,7 @@ const CREAM_IMAGE = "https://content.pancake.vn/catalog/1/2/3/oxford-kem.jpg";
 const NOW = new Date("2026-09-04T12:00:00.000Z");
 
 function option(overrides: Partial<StorefrontProjectionOption> = {}): StorefrontProjectionOption {
-  return {
+  const merged = {
     id: "cuid-a",
     pancakeVariationId: "pv-a",
     color: "Đen",
@@ -50,6 +51,7 @@ function option(overrides: Partial<StorefrontProjectionOption> = {}): Storefront
     kindLabel: null,
     ...overrides,
   };
+  return withFixtureAvailability(merged);
 }
 
 type BoundaryProduct = Parameters<typeof buildStorefrontProductStructuredData>[0]["product"];
@@ -117,8 +119,7 @@ function singleProductNode(document: ProductStructuredDataDocument) {
   return node;
 }
 
-function facts(
-  overrides: Partial<StorefrontVariantFacts> & Pick<StorefrontVariantFacts, "id">,
+function facts(overrides: Partial<StorefrontVariantFacts> & Pick<StorefrontVariantFacts, "id">,
 ): StorefrontVariantFacts {
   return {
     pancakeVariationId: `pv-${overrides.id}`,

@@ -4,6 +4,7 @@ import test from "node:test";
 import { createStorefrontPurchaseService } from "../../src/commerce/storefront-purchase.ts";
 import type { StorefrontProductProjection } from "../../src/commerce/storefront-projection.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 function variant(id: string, size = "M"): StorefrontVariantFacts {
   return {
@@ -31,6 +32,11 @@ const projection: StorefrontProductProjection = {
       purchasable: true,
       isPreorderSale: false,
       unavailableReason: null,
+      availability: fixtureAvailability({
+        purchasable: true,
+        isPreorderSale: false,
+        unavailableReason: null,
+      }),
       kindKey: "parent",
       kindLabel: "Set",
     },
@@ -45,6 +51,11 @@ const projection: StorefrontProductProjection = {
       purchasable: true,
       isPreorderSale: false,
       unavailableReason: null,
+      availability: fixtureAvailability({
+        purchasable: true,
+        isPreorderSale: false,
+        unavailableReason: null,
+      }),
       kindKey: "component-1",
       kindLabel: "Ao A",
     },

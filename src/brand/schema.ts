@@ -32,6 +32,9 @@ export type Market = typeof MARKET_VN;
  */
 export const VIETNAM_CALLING_CODE = "84";
 
+/** Vietnam market UTC offset, centralized so machine-readable commerce facts do not hardcode it. */
+export const VIETNAM_UTC_OFFSET = "+07:00";
+
 export type SupportHours = Readonly<{
   days: readonly string[];
   opens: string;

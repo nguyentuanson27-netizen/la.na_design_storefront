@@ -47,6 +47,7 @@ import {
   VARIANT_QUERY_PARAM,
 } from "../../src/commerce/storefront-variant-deep-link.ts";
 import { buildStorefrontProductStructuredData } from "../../src/seo/storefront-product-structured-data.ts";
+import type { MerchantAvailability } from "../../src/commerce/availability-projection.ts";
 
 const ORIGIN = "https://shop.example.test";
 const NOW = new Date("2026-09-05T09:00:00.000Z");
@@ -74,7 +75,7 @@ type VariantCommerceParity = Readonly<{
   mpn: string;
   url: string;
   priceVnd: number;
-  availability: "IN_STOCK" | "OUT_OF_STOCK";
+  availability: MerchantAvailability;
 }>;
 
 type CatalogVariant = Readonly<{
@@ -333,7 +334,9 @@ function parseMerchantFeedParity(body: string): VariantCommerceParity[] {
 
     const availability = readItemElement(item, "g:availability");
     assert.ok(
-      availability === "in_stock" || availability === "out_of_stock",
+      availability === "in_stock" ||
+        availability === "out_of_stock" ||
+        availability === "backorder",
       `unexpected Merchant availability ${availability}`,
     );
 
@@ -343,7 +346,7 @@ function parseMerchantFeedParity(body: string): VariantCommerceParity[] {
       mpn: readItemElement(item, "g:mpn"),
       url: readItemElement(item, "g:link"),
       priceVnd: Number(amount),
-      availability: availability === "in_stock" ? "IN_STOCK" : "OUT_OF_STOCK",
+      availability: availability as MerchantAvailability,
     });
   });
 }
@@ -398,7 +401,9 @@ function parseStructuredDataParity(document: unknown): VariantCommerceParity[] {
     const offer = node.offers as JsonRecord;
     const availability = String(offer.availability);
     assert.ok(
-      availability.endsWith("/InStock") || availability.endsWith("/OutOfStock"),
+      availability.endsWith("/InStock") ||
+        availability.endsWith("/OutOfStock") ||
+        availability.endsWith("/BackOrder"),
       `unexpected JSON-LD availability ${availability}`,
     );
     assert.equal(offer.priceCurrency, "VND");
@@ -412,9 +417,13 @@ function parseStructuredDataParity(document: unknown): VariantCommerceParity[] {
       mpn: String(node.mpn),
       url,
       priceVnd: offer.price as number,
+      // Normalised into the Merchant vocabulary so the two sides are compared as one fact rather
+      // than through a mapping table the test itself owns.
       availability: availability.endsWith("/InStock")
-        ? ("IN_STOCK" as const)
-        : ("OUT_OF_STOCK" as const),
+        ? ("in_stock" as const)
+        : availability.endsWith("/BackOrder")
+          ? ("backorder" as const)
+          : ("out_of_stock" as const),
     });
   });
 }
@@ -484,7 +493,7 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     assert.equal(first.mpn, "LA-OXF-BLK-L");
     assert.equal(first.url, `${ORIGIN}/shop/ao-oxford-relaxed?variant=pv-black-l`);
     assert.equal(first.priceVnd, 890_000);
-    assert.equal(first.availability, "IN_STOCK");
+    assert.equal(first.availability, "in_stock");
   });
 
   it("keeps a zero-stock variant a valid offer with the same out-of-stock meaning on both sides", () => {
@@ -506,7 +515,7 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     assert.deepEqual(merchant, jsonLd);
     const soldOut = merchant.find((row) => row.variantExternalId === "pv-black-l");
     assert.ok(soldOut !== undefined, "a zero-stock variant stays publishable on both sides");
-    assert.equal(soldOut.availability, "OUT_OF_STOCK");
+    assert.equal(soldOut.availability, "out_of_stock");
     // Sold out is a stock fact, not a pricing one: the exact price is still published.
     assert.equal(soldOut.priceVnd, 890_000);
   });
@@ -819,8 +828,8 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
     assert.deepEqual(
       merchant.map((row) => [row.variantExternalId, row.availability]),
       [
-        ["pv-black-l", "OUT_OF_STOCK"],
-        ["pv-black-m", "IN_STOCK"],
+        ["pv-black-l", "out_of_stock"],
+        ["pv-black-m", "in_stock"],
       ],
     );
   });
@@ -901,10 +910,10 @@ describe("Merchant feed ↔ U27 variant JSON-LD parity", () => {
   }
 
   for (const [label, warehouseQuantities, availability] of [
-    ["no warehouse rows at all", [], "OUT_OF_STOCK"],
-    ["an explicit zero row", [0], "OUT_OF_STOCK"],
-    ["a single positive row", [5], "IN_STOCK"],
-    ["several well-formed rows", [2, 3], "IN_STOCK"],
+    ["no warehouse rows at all", [], "out_of_stock"],
+    ["an explicit zero row", [0], "out_of_stock"],
+    ["a single positive row", [5], "in_stock"],
+    ["several well-formed rows", [2, 3], "in_stock"],
   ] as const) {
     it(`keeps ${label} publishable and identical on both sides`, () => {
       const { merchant, jsonLd } = runParity(

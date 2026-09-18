@@ -1,5 +1,8 @@
 import { sortClothingSizes } from "./clothing-size.ts";
-import type { StorefrontSelectableOption } from "./storefront-product.ts";
+import {
+  selectedAvailabilityDateOf,
+  type StorefrontSelectableOption,
+} from "./storefront-product.ts";
 
 type StorefrontSelection = {
   color: string | null;
@@ -77,6 +80,9 @@ export function deriveStorefrontSelection(
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    // I9 — owner rule 10, from the one place that owns it. Standalone products are the common case,
+    // so this path is where the product page usually reads the date.
+    selectedAvailabilityDate: selectedAvailabilityDateOf(selected),
     canAdd: selected !== null && selected.purchasable,
   };
 }

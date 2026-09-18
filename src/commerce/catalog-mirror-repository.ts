@@ -4,6 +4,9 @@ import type {
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
 import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
+import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
+import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -14,8 +17,6 @@ const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_COMPOSITE_ENTRIES = 50_000;
 const MAX_COMPOSITE_ID_LENGTH = 512;
-const SYNC_LOCK_NAMESPACE = 1_277_934_572;
-const SYNC_TRANSACTION_TIMEOUT_MS = 60_000;
 
 type CatalogProductSnapshot = {
   pancakeProductId: string;
@@ -273,14 +274,17 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
     variations,
     compositeSnapshot,
     syncedAt,
+    availabilityObservedAt = syncedAt,
   }: {
     shopId: number;
     variations: readonly PancakeParsedCatalogVariation[];
     compositeSnapshot?: PancakeCompositeSnapshot;
     syncedAt: Date;
+    availabilityObservedAt?: Date;
   }) {
     const safeShopId = requireShopId(shopId);
     const safeSyncedAt = requireSyncedAt(syncedAt);
+    const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
     const { productByExternalId, variationIds, productIdByVariationId } =
       validateCatalogSnapshot(variations);
     if (compositeSnapshot !== undefined) {
@@ -291,7 +295,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
 
     return client.$transaction(
       async (tx) => {
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${SYNC_LOCK_NAMESPACE}, ${safeShopId})`;
+        await acquireCatalogSyncLock(tx, safeShopId);
 
         if (compositeSnapshot === undefined) {
           const persistedComposite = await tx.compositeComponentMirror.findFirst({
@@ -596,6 +600,49 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
           });
         }
 
+        // I9 — the trusted stock observation, which is where a preorder availability cycle opens
+        // and closes (ADR 0011, owner-approved 2026-09-18).
+        //
+        // Here rather than at read time on purpose: a date that a page render or a feed run could
+        // open would depend on who happened to look, and two readers could disagree. The catalog
+        // sync is the one place the website learns what Pancake's stock actually is, so it is the
+        // one place allowed to move a cycle. Inside this transaction, so a sync that rolls back
+        // leaves no cycle claiming a stock state that was never committed.
+        //
+        // The selling policy is read per product because a cycle depends on BOTH halves — stock
+        // and mode — and only one of them arrives with the catalog.
+        const observedProductIds = [...internalProductIds.values()];
+        const storedPolicies =
+          observedProductIds.length > 0
+            ? await tx.productSellingPolicy.findMany({
+                where: { productId: { in: observedProductIds } },
+                select: { productId: true, sellingMode: true, negativeStockLimit: true },
+              })
+            : [];
+        const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
+
+        const availabilityObservations = variations.flatMap((variation) => {
+          const variantId = internalVariantIds.get(variation.id);
+          const productId = internalProductIds.get(variation.productId);
+          if (variantId === undefined || productId === undefined) return [];
+          const policy = resolveSellingPolicy(policyByProductId.get(productId) ?? null);
+          const stock = sumWarehouseStocks(
+            variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+          );
+          // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
+          // sell-out would open a cycle — and publish a date — off a number the catalog could not
+          // read, so it is reported as having stock and the feed's own fail-closed path handles it.
+          const stockNonPositive = Number.isFinite(stock) && stock <= 0;
+          return [
+            {
+              variantId,
+              stockNonPositive,
+              isPreorder: policy.sellingMode === "PREORDER",
+            },
+          ];
+        });
+        await observeVariantAvailabilityCycles(tx, availabilityObservations, safeAvailabilityObservedAt);
+
         await tx.catalogSyncState.upsert({
           where: { pancakeShopId: safeShopId },
           create: { pancakeShopId: safeShopId, syncedAt: safeSyncedAt },
@@ -607,7 +654,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
           variations: variationIdList.length,
         };
       },
-      { timeout: SYNC_TRANSACTION_TIMEOUT_MS },
+      { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
     );
   }
 

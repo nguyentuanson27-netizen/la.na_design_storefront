@@ -232,3 +232,55 @@ test("G5 a caller cannot supply a marker taken after the reads returned", async 
   assert.equal(fetchesAtSampleTime, 0, "no Pancake request may have been issued when the clock is read");
   assert.ok(fetches > 0, "the fixture must actually fetch, or the assertion above is vacuous");
 });
+
+
+test("I9 samples availability observation after all Pancake reads without moving the G5 read-start marker", async () => {
+  const events: string[] = [];
+  const readStartedAt = new Date("2026-09-18T16:59:59.000Z");
+  const availabilityObservedAt = new Date("2026-09-18T17:00:01.000Z");
+  let persisted:
+    | Readonly<{ syncedAt: Date; availabilityObservedAt: Date }>
+    | null = null;
+
+  const client = {
+    async getJson(_endpoint: string, query: Query) {
+      const role = query.included_composite;
+      events.push(role === "parent" || role === "children" ? `fetch:composite:${role}` : "fetch:catalog");
+      return role === "parent" || role === "children" ? emptyCompositePage() : catalogPage(1, 1);
+    },
+  };
+
+  await syncPancakeCatalog({
+    client,
+    repository: {
+      async syncSnapshot(input: { syncedAt: Date; availabilityObservedAt: Date }) {
+        events.push("persist");
+        persisted = {
+          syncedAt: input.syncedAt,
+          availabilityObservedAt: input.availabilityObservedAt,
+        };
+        return { products: 0, variations: 0 };
+      },
+    },
+    shopId: 123,
+    clock: () => {
+      events.push("sync-clock");
+      return readStartedAt;
+    },
+    availabilityClock: () => {
+      events.push("availability-clock");
+      return availabilityObservedAt;
+    },
+  });
+
+  assert.equal(events[0], "sync-clock", "G5 syncedAt stays sampled before the first request");
+  assert.ok(
+    events.indexOf("availability-clock") > events.lastIndexOf("fetch:composite:children"),
+    "I9 observation time is sampled only after the fetched snapshot is complete",
+  );
+  assert.ok(
+    events.indexOf("availability-clock") < events.indexOf("persist"),
+    "I9 observation time is sampled immediately before persistence",
+  );
+  assert.deepEqual(persisted, { syncedAt: readStartedAt, availabilityObservedAt });
+});

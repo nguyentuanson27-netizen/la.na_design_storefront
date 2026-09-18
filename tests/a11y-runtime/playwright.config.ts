@@ -33,6 +33,7 @@ export default defineConfig({
     "merchant-return-policy.spec.ts",
     "not-found-recovery.spec.ts",
     "pdp-language.spec.ts",
+    "pdp-preorder-availability.spec.ts",
     "pdp-promotion.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",

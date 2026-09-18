@@ -47,7 +47,7 @@ const oneVariant = {
   color: null,
   size: "M",
   price: 590_000,
-  availability: "IN_STOCK" as const,
+  availability: "InStock" as const,
   imageUrl: null,
 };
 

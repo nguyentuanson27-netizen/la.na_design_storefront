@@ -1,9 +1,13 @@
 import { sortClothingSizes } from "./clothing-size.ts";
+import { projectExternalAvailability } from "./availability-projection.ts";
 import {
   buildStorefrontVariantOptions,
   defaultStorefrontPricingRule,
+  selectedAvailabilityDateOf,
   toStorefrontSelectableOptions,
+  NO_AVAILABILITY_DATES,
   STANDARD_STANDALONE_CAPACITY,
+  type StorefrontAvailabilityDates,
   type StorefrontPricingRule,
   type StorefrontProductCapacity,
   type StorefrontSelectableOption,
@@ -72,6 +76,7 @@ function projectOptions(
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
   sellingPolicy: StorefrontSellingPolicy = STANDARD_STANDALONE_CAPACITY,
   isComposite = false,
+  availabilityDates: StorefrontAvailabilityDates = NO_AVAILABILITY_DATES,
 ): StorefrontProjectionOption[] {
   // This module is the only one that can tell a set apart from its parts, so it is the only one
   // that can tell the capacity rule — the caller supplies the policy, never the composite flag.
@@ -82,7 +87,7 @@ function projectOptions(
   };
 
   return toStorefrontSelectableOptions(
-    buildStorefrontVariantOptions(variants, pricingRule, productCapacity),
+    buildStorefrontVariantOptions(variants, pricingRule, productCapacity, availabilityDates),
   ).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
@@ -92,7 +97,19 @@ function projectOptions(
           kindLabel,
           purchasable: false,
           isDiscounted: false,
+          isPreorderSale: false,
           unavailableReason: forcedUnavailableReason,
+          // I9 — the forced reason overrides what capacity decided, so the external availability
+          // has to be re-decided with it. Keeping the un-forced answer would publish an offer for
+          // a variant this projection has just declared unusable.
+          availability: projectExternalAvailability({
+            purchasable: false,
+            isPreorderSale: false,
+            unavailableReason: forcedUnavailableReason,
+            capacityReason: "capacity-available",
+            availabilityDate: null,
+            today: null,
+          }),
         },
   );
 }
@@ -103,6 +120,7 @@ export function buildStorefrontProductProjection({
   hasCompositeGraph,
   pricingRule = defaultStorefrontPricingRule,
   sellingPolicy = STANDARD_STANDALONE_CAPACITY,
+  availabilityDates = NO_AVAILABILITY_DATES,
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
@@ -119,11 +137,25 @@ export function buildStorefrontProductProjection({
    * wired now so that it is already enforced on the day it stops being inert.
    */
   sellingPolicy?: StorefrontSellingPolicy;
+  /**
+   * I9 — the persisted preorder availability dates, supplied only by the two surfaces that publish
+   * (the Merchant feed and the product page's JSON-LD). Absent means no date, which fails closed.
+   */
+  availabilityDates?: StorefrontAvailabilityDates;
 }>): StorefrontProductProjection {
   if (!hasCompositeGraph) {
     return {
       mode: "standalone",
-      options: projectOptions(parentVariants, null, null, null, pricingRule, sellingPolicy),
+      options: projectOptions(
+        parentVariants,
+        null,
+        null,
+        null,
+        pricingRule,
+        sellingPolicy,
+        false,
+        availabilityDates,
+      ),
     };
   }
 
@@ -143,6 +175,7 @@ export function buildStorefrontProductProjection({
       pricingRule,
       sellingPolicy,
       true,
+      availabilityDates,
     ),
   ];
 
@@ -302,6 +335,8 @@ export function deriveStorefrontProjectionSelection(
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    /** I9 — owner rule 10, decided by the same helper the standalone path uses. */
+    selectedAvailabilityDate: selectedAvailabilityDateOf(selected),
     canAdd: selected !== null && selected.purchasable,
   };
 }

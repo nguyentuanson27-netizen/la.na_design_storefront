@@ -6,6 +6,7 @@ import {
   type MerchantCandidateProduct,
 } from "../../src/commerce/merchant-offer-mapper.ts";
 import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
+import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const ORIGIN = "https://la.example.test";
 const IMAGE = "https://content.pancake.vn/web-media/1/2/3/merchant-price.jpg";
@@ -39,6 +40,11 @@ function productWithPrice(price: number): MerchantCandidateProduct {
           purchasable: true,
           isPreorderSale: false,
           unavailableReason: null,
+          availability: fixtureAvailability({
+            purchasable: true,
+            isPreorderSale: false,
+            unavailableReason: null,
+          }),
           kindKey: null,
           kindLabel: null,
         },

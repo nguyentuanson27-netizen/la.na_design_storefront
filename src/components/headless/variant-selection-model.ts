@@ -1,3 +1,4 @@
+import { formatVietnamCalendarDate } from "../../commerce/availability-cycle.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
 import {
   deriveStorefrontProjectionSelection,
@@ -103,6 +104,17 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */
     entryPrice: getStorefrontResolvedPriceRange(input.options)?.minimum ?? null,
+    /**
+     * I9 — the selected variant's `Dự kiến có hàng` date as the shopper reads it, or `null`.
+     *
+     * Formatted here for the same reason the price is: the panel is markup a brand rewrites, and
+     * the decisions it must never have to make again live in this module. The projection keeps the
+     * ISO value the feed and the JSON-LD publish; only this label is Vietnamese.
+     */
+    availabilityDateLabel:
+      selection.selectedAvailabilityDate === null
+        ? null
+        : formatVietnamCalendarDate(selection.selectedAvailabilityDate),
   });
 }
 

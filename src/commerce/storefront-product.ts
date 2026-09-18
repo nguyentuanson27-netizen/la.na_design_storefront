@@ -1,3 +1,8 @@
+import type { VietnamCalendarDate } from "./availability-cycle.ts";
+import {
+  projectExternalAvailability,
+  type ExternalAvailability,
+} from "./availability-projection.ts";
 import {
   DEFAULT_NEGATIVE_STOCK_LIMIT,
   resolveVariantSellability,
@@ -61,6 +66,13 @@ export type StorefrontVariantOption = StorefrontVariantFacts & {
    */
   isPreorderSale: boolean;
   unavailableReason: StorefrontVariantUnavailableReason | null;
+  /**
+   * I9 — the ADR 0011 external availability for this variant, decided once here so Merchant output
+   * and JSON-LD consume the same answer instead of each translating internal state.
+   *
+   * A surface that only renders for shoppers can ignore it; the two published surfaces cannot.
+   */
+  availability: ExternalAvailability;
 };
 
 /**
@@ -97,7 +109,24 @@ export type StorefrontSelectableOption = Pick<
   | "purchasable"
   | "isPreorderSale"
   | "unavailableReason"
+  | "availability"
 >;
+
+/**
+ * I9 — the `Dự kiến có hàng` date the product page may show for one selected option, or `null`.
+ *
+ * Owner rule 10 has three halves — nothing before a variant is chosen, never another variant's
+ * date, and nothing once the date has lapsed — and all three are already decided: the first by
+ * whether there is a `selected` option at all, the other two by the shared availability projection,
+ * which withholds publication for an expired or missing date. So this states the rule once and
+ * both selection models call it, rather than each re-reading `availability` and drifting.
+ */
+export function selectedAvailabilityDateOf(
+  selected: Pick<StorefrontSelectableOption, "availability"> | null,
+): string | null {
+  if (selected === null) return null;
+  return selected.availability.published ? selected.availability.availabilityDate : null;
+}
 
 type StorefrontPriceFacts = Pick<
   StorefrontVariantFacts,
@@ -186,7 +215,7 @@ export function toStorefrontSelectableOptions(
   return options.map((
     {
       id, pancakeVariationId, color, size, price, basePriceVnd, isDiscounted,
-      purchasable, isPreorderSale, unavailableReason,
+      purchasable, isPreorderSale, unavailableReason, availability,
     },
   ) => ({
     id,
@@ -199,6 +228,7 @@ export function toStorefrontSelectableOptions(
     purchasable,
     isPreorderSale,
     unavailableReason,
+    availability,
   }));
 }
 
@@ -229,10 +259,30 @@ export const STANDARD_STANDALONE_CAPACITY: StorefrontProductCapacity = Object.fr
   isComposite: false,
 });
 
+/**
+ * I9 — the persisted preorder availability dates this projection may publish, keyed by variant id,
+ * plus the Vietnamese day to judge expiry against.
+ *
+ * Optional, and absent means **no date**: a caller that does not supply one gets the fail-closed
+ * answer for a preorder sell-out (the offer is withheld) rather than an unpublished guess. Only the
+ * two surfaces that actually publish — the Merchant feed and the product page's JSON-LD — read the
+ * cycle table, so every other caller keeps exactly its pre-I9 behaviour.
+ */
+export type StorefrontAvailabilityDates = Readonly<{
+  byVariantId: ReadonlyMap<string, VietnamCalendarDate | null>;
+  today: VietnamCalendarDate | null;
+}>;
+
+export const NO_AVAILABILITY_DATES: StorefrontAvailabilityDates = Object.freeze({
+  byVariantId: new Map<string, VietnamCalendarDate | null>(),
+  today: null,
+});
+
 export function buildStorefrontVariantOptions(
   variants: readonly StorefrontVariantFacts[],
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
   productCapacity: StorefrontProductCapacity = STANDARD_STANDALONE_CAPACITY,
+  availabilityDates: StorefrontAvailabilityDates = NO_AVAILABILITY_DATES,
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -287,6 +337,16 @@ export function buildStorefrontVariantOptions(
       purchasable: unavailableReason === null,
       isPreorderSale: unavailableReason === null && sellability.isPreorderSale,
       unavailableReason,
+      // I9 — decided here, from the shared capacity answer plus the persisted cycle date, so the
+      // feed and the structured data cannot disagree about the same variant (ADR 0011 § parity).
+      availability: projectExternalAvailability({
+        purchasable: unavailableReason === null,
+        isPreorderSale: unavailableReason === null && sellability.isPreorderSale,
+        unavailableReason,
+        capacityReason: sellability.reason,
+        availabilityDate: availabilityDates.byVariantId.get(variant.id) ?? null,
+        today: availabilityDates.today,
+      }),
     };
   });
 }

@@ -368,6 +368,7 @@ model VariantMirror {
   compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
   promotionTargets                PromotionTarget[]
   capacityReservations            VariantCapacityReservation[]
+  availabilityCycle               VariantAvailabilityCycle?
 
   @@index([productId])
   @@index([sku])
@@ -681,4 +682,41 @@ model VariantCapacityReservation {
   @@unique([orderId, variantId])
   @@index([variantId, state])
   @@index([state, updatedAt])
+}
+
+/// I9 — one preorder availability cycle per variant (ADR 0011, owner-approved 2026-09-18).
+///
+/// ADR 0011 blocked Google's `backorder` row because no truthful availability date existed, and
+/// named the fabrications it would not accept: a rolling `today + 15`, and an order ETA. The owner
+/// approved an automatic per-variant cycle instead, and this table is its canonical owner — the one
+/// place the date lives, so Merchant output and JSON-LD read the same fact rather than each
+/// deriving one.
+///
+/// Exactly one row per variant, holding the CURRENT cycle rather than a history. A cycle ends when
+/// ready stock returns or the product leaves preorder, and the next sold-out observation opens a
+/// new one, so past cycles have no consumer and storing them would only invite a reader to pick the
+/// wrong one.
+///
+/// `lastStockNonPositive` and `lastPreorder` are the previous trusted observation. They are what
+/// makes an edge detectable at all: without them a re-sync could not tell "still sold out" from
+/// "just sold out", and the date would move every time the catalog ran.
+model VariantAvailabilityCycle {
+  variantId String @id
+
+  /// The Vietnam (UTC+7) calendar day this cycle opened. Null exactly when no cycle is open.
+  cycleStartDate DateTime? @db.Date
+  /// `cycleStartDate` + 15 calendar days, fixed when the cycle opens and never recomputed.
+  availabilityDate DateTime? @db.Date
+
+  lastStockNonPositive Boolean
+  lastPreorder         Boolean
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  /// Cascade, unlike the capacity ledger's `Restrict`: a cycle is derived observation state that
+  /// holds no capacity, so deleting it with its variant frees nothing and hides nothing.
+  variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@index([availabilityDate])
 }
