@@ -5,6 +5,8 @@ import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
 } from "../../src/integrations/pancake/order-create.ts";
+import { PancakeClient } from "../../src/integrations/pancake/client.ts";
+import { createPancakeOrderGateway } from "../../src/integrations/pancake/order-gateway.ts";
 
 test("create-order mapper emits only the reviewed server-owned allowlist and omits unverified semantic fields", () => {
   const request = buildPancakeCreateOrderRequest({
@@ -133,6 +135,7 @@ test("create-order mapper does not infer cod even when subtotal plus shipping wo
 
 test("create-order response requires a positive safe integer Pancake order id", () => {
   assert.equal(parsePancakeCreateOrderResponse({ id: 123456 }), "123456");
+  assert.equal(parsePancakeCreateOrderResponse({ success: true, data: { id: 123456 } }), "123456");
 
   for (const payload of [
     {},
@@ -145,4 +148,35 @@ test("create-order response requires a positive safe integer Pancake order id", 
   ]) {
     assert.throws(() => parsePancakeCreateOrderResponse(payload), /Pancake create-order response is invalid/);
   }
+});
+
+
+test("order gateway accepts observed HTTP 201 create success", async () => {
+  const client = new PancakeClient({
+    apiKey: "test-api-key",
+    fetcher: async (_input, init) => {
+      assert.equal(init?.method, "POST");
+      return new Response(JSON.stringify({ success: true, data: { id: 123456 } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  const gateway = createPancakeOrderGateway(client);
+  const request = buildPancakeCreateOrderRequest({
+    shopId: 920_007,
+    guestName: "Nguyễn Văn A",
+    guestPhone: "0901234567",
+    provinceRef: "province-01",
+    districtRef: "district-001",
+    communeRef: "commune-0001",
+    addressDetail: "12 Đường A",
+    note: "HTTP 201 regression",
+    shippingFeeVnd: 0,
+    lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+  });
+
+  const response = await gateway.createOrder(request);
+  assert.equal(parsePancakeCreateOrderResponse(response), "123456");
 });

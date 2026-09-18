@@ -5,7 +5,7 @@ const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
 type QueryValue = string | number | boolean;
 type Fetcher = typeof fetch;
-type PostJsonOptions = Readonly<{ expectedStatus?: number }>;
+type PostJsonOptions = Readonly<{ expectedStatus?: number | readonly number[] }>;
 
 export class PancakeHttpError extends Error {
   readonly status: number;
@@ -17,6 +17,16 @@ export class PancakeHttpError extends Error {
     this.status = status;
     this.endpoint = endpoint;
   }
+}
+
+function matchesExpectedStatus(
+  status: number,
+  expectedStatus: number | readonly number[] | undefined,
+): boolean {
+  if (expectedStatus === undefined) return true;
+  return typeof expectedStatus === "number"
+    ? status === expectedStatus
+    : expectedStatus.includes(status);
 }
 
 export class PancakeNetworkError extends Error {
@@ -109,7 +119,7 @@ export class PancakeClient {
       throw new PancakeNetworkError(endpoint);
     }
 
-    if (!response.ok || (options.expectedStatus !== undefined && response.status !== options.expectedStatus)) {
+    if (!response.ok || !matchesExpectedStatus(response.status, options.expectedStatus)) {
       throw new PancakeHttpError(response.status, endpoint);
     }
 
@@ -144,7 +154,7 @@ export class PancakeClient {
       throw new PancakeNetworkError(endpoint);
     }
 
-    if (!response.ok || (options.expectedStatus !== undefined && response.status !== options.expectedStatus)) {
+    if (!response.ok || !matchesExpectedStatus(response.status, options.expectedStatus)) {
       throw new PancakeHttpError(response.status, endpoint);
     }
 

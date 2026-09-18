@@ -30,6 +30,7 @@ import {
   emitPromotionSignal,
 } from "../operations/promotion-observability.ts";
 import { createPancakeOrderSubmissionRuntime } from "./pancake-order-submit-runtime.ts";
+import { createPancakeOrderReconciliationRuntime } from "./pancake-order-reconciliation-runtime.ts";
 
 type SnapshotAuthority = Readonly<{
   checkoutInputValidated: boolean;
@@ -51,6 +52,9 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   createOrderSubmission: (
     config: PancakeConfig,
   ) => GuestCheckoutSubmitDependencies["orderSubmission"];
+  createOrderReconciliation: (
+    config: PancakeConfig,
+  ) => Pick<ReturnType<typeof createPancakeOrderReconciliationRuntime>, "reconcileCart">;
   recoverStranded: (input: { cartId: string; now: Date }) => Promise<void>;
   generatePublicCode: () => string;
   onQuoteProofRejection: (reason: RenderedQuoteProofRejection) => void;
@@ -100,6 +104,8 @@ export function createGuestCheckoutSubmitRuntime(
     ((authority) => createGuestCheckoutSnapshotService(prisma, authority));
   const createOrderSubmission =
     options.createOrderSubmission ?? createPancakeOrderSubmissionRuntime;
+  const createOrderReconciliation =
+    options.createOrderReconciliation ?? createPancakeOrderReconciliationRuntime;
   const recoverStranded =
     options.recoverStranded ??
     (({ cartId, now }) => recoverStrandedGuestCheckoutForCart(prisma, cartId, now));
@@ -128,6 +134,7 @@ export function createGuestCheckoutSubmitRuntime(
     await recoverStranded({ cartId, now });
 
     const config = readConfig();
+    await createOrderReconciliation(config).reconcileCart(cartId);
     const needsFreshSnapshot = await requiresFreshSnapshot(cartId);
 
     let authoritativeCheckoutInput = checkoutInput;

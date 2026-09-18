@@ -241,12 +241,14 @@ export function parsePancakeOrderStatusResponse(
 
   if (!isRecord(payload)) invalidContract();
 
-  const orderId = requirePositiveSafeInteger(payload.id);
-  const systemId = requirePositiveSafeInteger(payload.system_id);
-  const shopId = requirePositiveSafeInteger(payload.shop_id);
-  const status = requireStatusCode(payload.status);
-  const insertedAt = requireDateTime(payload.inserted_at);
-  const updatedAt = requireDateTime(payload.updated_at);
+  const record = isRecord(payload.data) ? payload.data : payload;
+
+  const orderId = requirePositiveSafeInteger(record.id);
+  const systemId = requirePositiveSafeInteger(record.system_id);
+  const shopId = requirePositiveSafeInteger(record.shop_id);
+  const status = requireStatusCode(record.status);
+  const insertedAt = requireDateTime(record.inserted_at);
+  const updatedAt = requireDateTime(record.updated_at);
 
   if (String(orderId) !== expectedOrderId || shopId !== expectedShopId) {
     invalidContract();

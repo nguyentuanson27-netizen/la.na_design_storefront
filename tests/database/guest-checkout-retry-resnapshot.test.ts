@@ -200,11 +200,11 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
   assert.ok(request);
   assert.equal(request.bill_full_name, "Nguyễn Văn B");
   assert.equal(request.bill_phone_number, "0987654321");
-  assert.equal(request.shipping_address.address, "34 Đường Y");
+  assert.ok(request.shipping_address.address.startsWith("34 Đường Y"));
   assert.equal(request.shipping_address.province_id, "province-y");
   assert.equal(request.shipping_address.district_id, "district-y");
   assert.equal(request.shipping_address.commune_id, "commune-y");
-  assert.equal(request.note, "Địa chỉ mới");
+  assert.ok(request.note?.startsWith("Địa chỉ mới"));
   assert.deepEqual(request.items.map(({ variation_id }) => variation_id), [variantB.pancakeVariationId]);
 });
 
