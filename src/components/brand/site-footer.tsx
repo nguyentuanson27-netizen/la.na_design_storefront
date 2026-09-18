@@ -15,7 +15,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
       <div className="footer-groups">
         <section className="footer-group footer-group--brand" data-footer-group>
           <h2 className="footer-brand-heading">
-            <Link className="footer-brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
+            <Link className="footer-brand-mark" href="/">
               {BRAND.identity.displayNameUpper}
             </Link>
           </h2>
@@ -88,7 +88,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
         </section>
       </div>
 
-      <div className="footer-legal" data-footer-legal aria-label="Thông tin pháp lý">
+      <div className="footer-legal" data-footer-legal>
         <p className="footer-legal-name">{model.legal.legalEntityName}</p>
         <p>{model.legal.registeredAddress}</p>
         <p>
