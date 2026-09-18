@@ -1,4 +1,4 @@
-import { MARKET_VN, VIETNAM_UTC_OFFSET, type BrandConfig } from "./schema.ts";
+import { MARKET_VN, type BrandConfig } from "./schema.ts";
 
 /**
  * The brand facts this storefront publishes.
@@ -56,7 +56,7 @@ export const BRAND: BrandConfig = {
       days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
       opens: "08:00",
       closes: "22:00",
-      utcOffset: VIETNAM_UTC_OFFSET,
+      utcOffset: "+07:00",
       utcOffsetLabel: "UTC+7",
     },
   },
