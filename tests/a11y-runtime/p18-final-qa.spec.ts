@@ -281,7 +281,7 @@ test("P18 captures representative production performance evidence for home, PLP,
 
           const columnCount = await gallery.evaluate((element) => {
             const columns = getComputedStyle(element).gridTemplateColumns.trim();
-            return columns.length === 0 ? 0 : columns.split(/\\s+/).length;
+            return columns.length === 0 ? 0 : columns.split(/\s+/).length;
           });
           expect(columnCount).toBe(viewport.name === "desktop" ? 2 : 1);
         }
