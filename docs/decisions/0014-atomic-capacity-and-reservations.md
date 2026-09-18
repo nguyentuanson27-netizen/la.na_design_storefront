@@ -464,10 +464,16 @@ the confirmation-time READY/PREORDER state and line readiness. PostgreSQL trigge
 DELETE on both snapshot tables, and the order foreign key is `RESTRICT`, making the history
 append-only/immutable at the database boundary.
 
+The READY/PREORDER classification is decided at the **atomic capacity acceptance boundary**, while
+the variant lock is held. I7 stores that accepted classification as nullable metadata on the
+`VariantCapacityReservation`; confirmation never re-reads mutable stock, selling policy, or competing
+reservations to reconstruct it after the Pancake write.
+
 The confirmation transition writes the local `CONFIRMED` state and the I7 snapshot in one database
-transaction. If authoritative policy/stock facts cannot be read safely, that local confirmation
-transaction fails closed instead of persisting a fabricated ETA; the existing ambiguous-write
-recovery path keeps the order from being treated as a clean confirmation until it can be reconciled.
+transaction when complete I7 reservation authority exists. A reservation created by rolling old code
+has null I7 metadata, and a legacy/lower-level order may have no capacity reservation at all. Those
+orders remain truthfully **without an I7 snapshot** rather than deriving history from current mutable
+facts. This is rolling-compatible no-backfill, not an alternate ETA calculation.
 
 Calendar arithmetic uses the existing project authority of **UTC+7**. Because that authority has no
 DST transition, 15 calendar days preserves the confirmation local wall-clock time deterministically
