@@ -198,7 +198,7 @@ test("I9 two sizes that sold out on different days keep their own dates on both 
     assert.equal(offer.availabilityDate, expected, `${variantId} keeps its own date in the feed`);
     assert.equal(
       jsonLd.get(`${ORIGIN}/shop/ao-so-mi-oxford?variant=${external}`)!.availabilityStarts,
-      expected,
+      `${expected}T00:00:00+07:00`,
       `${variantId} keeps its own date in the markup`,
     );
   }
