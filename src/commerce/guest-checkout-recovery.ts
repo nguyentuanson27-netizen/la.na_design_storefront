@@ -260,10 +260,83 @@ export async function recoverStrandedGuestCheckouts(
   });
 }
 
+/**
+ * How many expired holds one checkout may release on behalf of carts that are not its own.
+ *
+ * Bounded so a buyer's submission can never turn into an unbounded sweep: the work is one indexed
+ * select and one guarded update over at most this many rows, inside the transaction that was
+ * happening anyway.
+ */
+const ABANDONED_HOLD_SWEEP_LIMIT = 50;
+
+/**
+ * Release holds that outlived the approved window, for any cart (ADR 0014 §8).
+ *
+ * The cart-scoped recovery below cannot do this. It only ever runs for the cart that is submitting,
+ * so a buyer who closes the tab and never comes back leaves a `RESERVED` row that nothing would
+ * visit — the window would be approved and implemented and still never reached, which on a
+ * low-stock SKU reads to every other buyer as a false out-of-stock.
+ *
+ * So the sweep is unscoped but **bounded**, and it rides the checkout path rather than a scheduler:
+ * every submission clears up to `ABANDONED_HOLD_SWEEP_LIMIT` lapsed holds. That is deliberate for
+ * a store this size — it needs no new infrastructure, and the moment capacity matters is exactly
+ * when checkouts are happening. Its one honest limitation: a store with no traffic at all sweeps
+ * nothing, which is harmless precisely because nothing is competing for the units.
+ *
+ * `RESERVED` only, and the state predicate stays **on the write**: the ids are selected first to
+ * bound the batch, but a row that stopped being `RESERVED` in between is re-excluded under the row
+ * lock rather than trusted from the read.
+ */
+export async function releaseExpiredReservations(
+  client: PrismaClient,
+  options: Readonly<{ now?: Date; windowMs?: number | null; limit?: number }> = {},
+): Promise<number> {
+  const now = requireNow(options.now ?? new Date());
+  const windowMs = options.windowMs === undefined ? RESERVED_HOLD_WINDOW_MS : options.windowMs;
+  if (windowMs === null) return 0;
+  const safeWindowMs = requirePositiveSafeInteger(windowMs, "Reserved hold expiry window");
+  const limit = requirePositiveSafeInteger(
+    options.limit ?? ABANDONED_HOLD_SWEEP_LIMIT,
+    "Abandoned hold sweep limit",
+  );
+  const cutoffMs = now.getTime() - safeWindowMs;
+  if (!Number.isSafeInteger(cutoffMs)) {
+    throw new TypeError("Reserved hold expiry cutoff is outside the supported range");
+  }
+  const cutoff = new Date(cutoffMs);
+
+  const expiring = await client.variantCapacityReservation.findMany({
+    where: { state: "RESERVED", updatedAt: { lte: cutoff } },
+    select: { id: true },
+    orderBy: { updatedAt: "asc" },
+    take: limit,
+  });
+  if (expiring.length === 0) return 0;
+
+  const { count } = await client.variantCapacityReservation.updateMany({
+    where: {
+      id: { in: expiring.map((row) => row.id) },
+      state: "RESERVED",
+      updatedAt: { lte: cutoff },
+    },
+    data: { state: "RELEASED", releasedAt: now },
+  });
+  return count;
+}
+
 export async function recoverStrandedGuestCheckoutForCart(
   client: PrismaClient,
   cartId: string,
   now: Date = new Date(),
 ): Promise<void> {
   await recoverStrandedGuestCheckouts(client, { cartId, now });
+  // Abandoned carts have no submission of their own to recover them, so this is where their lapsed
+  // holds are freed. Kept out of the transaction above on purpose: it is other carts' bookkeeping,
+  // and it must never be able to fail this buyer's checkout.
+  try {
+    await releaseExpiredReservations(client, { now });
+  } catch {
+    // Best effort by design. A sweep that could not run leaves capacity held slightly longer, which
+    // is the safe direction; failing the submission over other carts' bookkeeping would not be.
+  }
 }

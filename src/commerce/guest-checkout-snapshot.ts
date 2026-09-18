@@ -1,5 +1,6 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
+import type { ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
@@ -29,6 +30,23 @@ function reservationsMatchBasket(
   if (holds.length !== requested.length) return false;
   const heldByVariantId = new Map(holds.map((hold) => [hold.variantId, hold.quantity]));
   return requested.every((line) => heldByVariantId.get(line.variantId) === line.quantity);
+}
+
+/**
+ * Whether this order's holds are still a live claim on the basket being snapshotted.
+ *
+ * Matching the basket is not enough. An expired hold keeps its variant and quantity, so it still
+ * *looks* like the basket while no longer holding anything — and `reserveOrderCapacity` refuses it
+ * as `reservation-conflict` because a `RELEASED` row does not hold capacity. An order whose holds
+ * lapsed therefore has to be superseded exactly like one whose basket changed: same dead end, same
+ * remedy, and the reserve boundary's rule is the one both have to agree with.
+ */
+function holdsAreLiveFor(
+  holds: readonly { variantId: string; quantity: number; state: ReservationState }[],
+  items: readonly { variantId: string; quantity: number }[],
+): boolean {
+  if (!holds.every((hold) => hold.state === "RESERVED" || hold.state === "SUBMITTING")) return false;
+  return reservationsMatchBasket(holds, items);
 }
 
 const ACTIVE_CHECKOUT_STATES = [
@@ -422,8 +440,13 @@ export function createGuestCheckoutSnapshotService(
             where: { orderId: mutableDraft.id },
             select: { variantId: true, quantity: true, state: true },
           });
-          if (holds.length > 0 && !reservationsMatchBasket(holds, items)) {
-            if (holds.every((hold) => hold.state === "RESERVED")) {
+          if (holds.length > 0 && !holdsAreLiveFor(holds, items)) {
+            // Safe to supersede only when no hold is in a state where a write may have landed.
+            // `RELEASED` joins `RESERVED` here: it is terminal *and* it is evidence nothing was
+            // sent, so retiring the attempt around it frees nothing and hides nothing.
+            if (
+              holds.every((hold) => hold.state === "RESERVED" || hold.state === "RELEASED")
+            ) {
               await tx.variantCapacityReservation.updateMany({
                 where: { orderId: mutableDraft.id, state: "RESERVED" },
                 data: { state: "RELEASED", releasedAt: now },

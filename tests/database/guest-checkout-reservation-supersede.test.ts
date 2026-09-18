@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
+import { recoverStrandedGuestCheckoutForCart } from "../../src/commerce/guest-checkout-recovery.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -229,4 +230,99 @@ test("I6b a hold that may have reached Pancake is never superseded", async () =>
     assert.equal(holds[0]!.state, state, `a ${state} hold must be left exactly as it was`);
     await cleanup();
   }
+});
+
+
+/**
+ * The whole expiry lifecycle, end to end, as a buyer actually produces it.
+ *
+ * Each piece was covered on its own and the sequence still dead-ended, which is the point of this
+ * test existing separately: expiry released the hold but left the order an active DRAFT, the
+ * snapshot reused that DRAFT because the basket was unchanged, and `reserveOrderCapacity` then
+ * refused its own order's RELEASED row. A buyer with a valid basket, stuck on CART_CHANGED.
+ *
+ * Matching the basket was never sufficient — a lapsed hold keeps its variant and quantity, so it
+ * still looks like the basket while holding nothing.
+ */
+
+test("I6b an abandoned hold expires, and the same cart can then reserve again", async () => {
+  const variant = await seedVariant("lifecycle", 9);
+  const cart = await prisma.cart.create({
+    data: {
+      expiresAt: new Date(now.getTime() + 600_000),
+      items: { create: { variantId: variant.id, quantity: 1 } },
+    },
+  });
+
+  // 1. A x1 is held.
+  const first = await snapshot(cart.id, `${key}-lifecycle-1`);
+  assert.equal(first.ok, true);
+  const firstOrderId = first.ok ? first.order.id : "";
+  assert.equal(
+    (await capacity.reserveOrderCapacity({
+      orderId: firstOrderId,
+      lines: [{ variantId: variant.id, quantity: 1 }],
+    })).ok,
+    true,
+  );
+
+  // 2. The buyer abandons checkout, and the hold ages past the approved 15-minute window.
+  const holds = await prisma.variantCapacityReservation.findMany({ where: { orderId: firstOrderId } });
+  const expiredAt = new Date(now.getTime() - 16 * 60_000);
+  await prisma.$executeRaw`UPDATE "VariantCapacityReservation" SET "updatedAt" = ${expiredAt} WHERE "orderId" = ${firstOrderId}`;
+
+  // 3. Something sweeps it. Crucially this is driven by ANOTHER cart's checkout — the abandoned
+  //    cart never submits again, which is exactly why a cart-scoped sweep could not reach it.
+  const bystanderCart = await prisma.cart.create({
+    data: { expiresAt: new Date(now.getTime() + 600_000), items: { create: { variantId: variant.id, quantity: 1 } } },
+  });
+  await recoverStrandedGuestCheckoutForCart(prisma, bystanderCart.id, now);
+
+  assert.equal(
+    (await prisma.variantCapacityReservation.findUniqueOrThrow({ where: { id: holds[0]!.id } })).state,
+    "RELEASED",
+    "an abandoned hold must be released without its own cart ever coming back",
+  );
+
+  // 4. The buyer returns with the SAME basket. The order must not be reused around a dead hold.
+  const second = await snapshot(cart.id, `${key}-lifecycle-2`);
+  assert.equal(second.ok, true);
+  const secondOrderId = second.ok ? second.order.id : "";
+  assert.notEqual(
+    secondOrderId,
+    firstOrderId,
+    "an unchanged basket whose holds lapsed still needs a fresh idempotency key",
+  );
+  assert.equal(
+    (await prisma.orderMirror.findUniqueOrThrow({ where: { id: firstOrderId } })).state,
+    "REJECTED",
+  );
+
+  // 5. And it can hold again — the assertion the whole chain exists for.
+  const reReserved = await capacity.reserveOrderCapacity({
+    orderId: secondOrderId,
+    lines: [{ variantId: variant.id, quantity: 1 }],
+  });
+  assert.equal(reReserved.ok, true, "the retry must be able to reserve the same basket again");
+});
+
+test("I6b a live hold is never swept by another cart's checkout", async () => {
+  // The other direction. The bounded sweep is unscoped, so it has to be the AGE that selects rows —
+  // otherwise one buyer's submission would free another buyer's in-flight units.
+  const variant = await seedVariant("bystander", 9);
+  const cart = await prisma.cart.create({
+    data: { expiresAt: new Date(now.getTime() + 600_000), items: { create: { variantId: variant.id, quantity: 1 } } },
+  });
+  const held = await snapshot(cart.id, `${key}-bystander-1`);
+  assert.equal(held.ok, true);
+  const orderId = held.ok ? held.order.id : "";
+  await capacity.reserveOrderCapacity({ orderId, lines: [{ variantId: variant.id, quantity: 1 }] });
+
+  const other = await prisma.cart.create({
+    data: { expiresAt: new Date(now.getTime() + 600_000), items: { create: { variantId: variant.id, quantity: 1 } } },
+  });
+  await recoverStrandedGuestCheckoutForCart(prisma, other.id, now);
+
+  const holds = await prisma.variantCapacityReservation.findMany({ where: { orderId } });
+  assert.equal(holds[0]!.state, "RESERVED", "a fresh hold must survive another cart's sweep");
 });
