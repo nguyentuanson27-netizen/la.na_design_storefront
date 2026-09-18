@@ -1,4 +1,5 @@
 import type { StructuredDataAvailability as SharedStructuredDataAvailability } from "../commerce/availability-projection.ts";
+import { serializeVietnamAvailabilityDate } from "../commerce/availability-cycle.ts";
 import {
   PUBLIC_CONTACT_FACTS,
   supportHoursSchemaTime,
@@ -401,9 +402,11 @@ function buildVariantNode(name: string, variant: StructuredDataVariant): Product
       // Google accepts `availabilityStarts` on an Offer as the date the item becomes available,
       // and requires the matching `availability_date` in the feed. Emitted only when the shared
       // decision resolved one, so the two surfaces state the same day or neither states any.
-      ...(typeof variant.availabilityDate === "string" && variant.availabilityDate.length > 0
-        ? { availabilityStarts: variant.availabilityDate }
-        : {}),
+      ...(() => {
+        if (typeof variant.availabilityDate !== "string") return {};
+        const serialized = serializeVietnamAvailabilityDate(variant.availabilityDate);
+        return serialized === null ? {} : { availabilityStarts: serialized.schema };
+      })(),
     },
   };
 
