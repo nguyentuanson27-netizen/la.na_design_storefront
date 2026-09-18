@@ -153,7 +153,11 @@ describe("Merchant RSS serializer", () => {
       origin: "https://shop.example.test",
     });
     assert.match(backorder.body, /<g:availability>backorder<\/g:availability>/);
-    assert.match(backorder.body, /<g:availability_date>2026-10-03<\/g:availability_date>/);
+    assert.match(
+      backorder.body,
+      /<g:availability_date>2026-10-03T00:00\+0700<\/g:availability_date>/,
+      "Merchant wire format carries the canonical Vietnam day with an explicit local time and timezone",
+    );
 
     for (const availability of ["in_stock", "out_of_stock"] as const) {
       const plain = serializeMerchantFeed({
