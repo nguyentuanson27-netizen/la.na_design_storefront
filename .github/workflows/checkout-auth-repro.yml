@@ -1,0 +1,47 @@
+name: Checkout auth restart repro
+
+on:
+  push:
+    branches:
+      - repro/checkout-auth-404
+
+permissions:
+  contents: read
+
+jobs:
+  checkout-repro:
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3212
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: 127.0.0.1:3212
+      SEARCH_INDEXING_ENABLED: "false"
+      PANCAKE_SHOP_ID: "920942"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+      - run: corepack enable
+      - name: Prepare PostgreSQL 16
+        shell: bash
+        run: |
+          brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
+          PG_BIN="$(brew --prefix postgresql@16)/bin"
+          echo "$PG_BIN" >> "$GITHUB_PATH"
+          "$PG_BIN/initdb" -D "$RUNNER_TEMP/pgdata"
+          "$PG_BIN/pg_ctl" -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/postgres.log" -o "-p 5432" start
+          "$PG_BIN/createdb" -p 5432 la_na_design
+          echo "DATABASE_URL=postgresql://$(whoami)@127.0.0.1:5432/la_na_design" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm prisma:generate
+      - run: pnpm prisma:migrate:deploy
+      - working-directory: tests/a11y-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - working-directory: tests/a11y-runtime
+        run: npx playwright install chromium
+      - name: Reproduce checkout restart race
+        working-directory: tests/a11y-runtime
+        run: npx playwright test checkout.spec.ts --config playwright.config.ts --project=chromium-mobile --repeat-each=3
