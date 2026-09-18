@@ -74,6 +74,12 @@ async function stopServer() {
 }
 
 async function cleanupDatabase() {
+  // I6b — `onDelete: Restrict` on both reservation relations (ADR 0014 §13) means the ledger has to
+  // be cleared before its order can go. That restriction is deliberate: cascading a hold away with
+  // its order would silently free capacity that is still counting.
+  await prisma.variantCapacityReservation.deleteMany({
+    where: { order: { publicCode } },
+  });
   await prisma.orderMirror.deleteMany({ where: { publicCode } });
   if (cartId) {
     await prisma.rateLimit.deleteMany({

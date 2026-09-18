@@ -90,6 +90,11 @@ async function stopServer() {
 }
 
 async function cleanup() {
+  // I6b — reservations reference their order and variant with `onDelete: Restrict` (ADR 0014 §13),
+  // deliberately: cascading them away would silently free capacity that is still counting. Now that
+  // a real checkout takes a hold, a fixture that deletes orders or products has to clear the ledger
+  // first, or the delete is refused.
+  await prisma.variantCapacityReservation.deleteMany({});
   await prisma.orderMirror.deleteMany({ where: { publicCode: orderCode } });
   await prisma.cartItem.deleteMany({
     where: { variant: { product: { pancakeShopId: SHOP_ID } } },

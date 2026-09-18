@@ -121,7 +121,7 @@ test("unvalidated checkout input cannot supersede a retryable draft", async () =
 
 test("unvalidated current form input may reuse a confirmed snapshot without a fresh geo read", async () => {
   const cart = await createBareCart();
-  await prisma.orderMirror.create({
+  const confirmed = await prisma.orderMirror.create({
     data: {
       publicCode: "checkout-geo-authority-confirmed",
       sourceCartId: cart.id,
@@ -157,11 +157,16 @@ test("unvalidated current form input may reuse a confirmed snapshot without a fr
     {
       ok: true,
       order: {
+        // I6b — the snapshot now reports the order id and its persisted lines, because ADR 0014 §3
+        // makes the order the reservation's idempotency key and the lines are what gets held. This
+        // fixture's confirmed order has no lines, so the reused snapshot reserves nothing.
+        id: confirmed.id,
         publicCode: "checkout-geo-authority-confirmed",
         state: "CONFIRMED",
         merchandiseSubtotalVnd: BigInt(500_000),
         shippingFeeVnd: BigInt(30_000),
         totalVnd: BigInt(530_000),
+        lines: [],
       },
     },
   );

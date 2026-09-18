@@ -1,5 +1,7 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
+import type { ReservationState } from "./capacity-policy.ts";
+import { mergeReservationLines } from "./capacity-reservation.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -14,6 +16,39 @@ import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projec
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const MAX_PUBLIC_CODE_LENGTH = 128;
+/**
+ * Whether an order's existing holds are exactly the basket now being snapshotted.
+ *
+ * The same comparison `reserveOrderCapacity` makes, so the two cannot disagree about what "the same
+ * basket" means: merged per variant, and equal on both the set of variants and each quantity.
+ */
+function reservationsMatchBasket(
+  holds: readonly { variantId: string; quantity: number }[],
+  items: readonly { variantId: string; quantity: number }[],
+): boolean {
+  const requested = mergeReservationLines(items);
+  if (holds.length !== requested.length) return false;
+  const heldByVariantId = new Map(holds.map((hold) => [hold.variantId, hold.quantity]));
+  return requested.every((line) => heldByVariantId.get(line.variantId) === line.quantity);
+}
+
+/**
+ * Whether this order's holds are still a live claim on the basket being snapshotted.
+ *
+ * Matching the basket is not enough. An expired hold keeps its variant and quantity, so it still
+ * *looks* like the basket while no longer holding anything — and `reserveOrderCapacity` refuses it
+ * as `reservation-conflict` because a `RELEASED` row does not hold capacity. An order whose holds
+ * lapsed therefore has to be superseded exactly like one whose basket changed: same dead end, same
+ * remedy, and the reserve boundary's rule is the one both have to agree with.
+ */
+function holdsAreLiveFor(
+  holds: readonly { variantId: string; quantity: number; state: ReservationState }[],
+  items: readonly { variantId: string; quantity: number }[],
+): boolean {
+  if (!holds.every((hold) => hold.state === "RESERVED" || hold.state === "SUBMITTING")) return false;
+  return reservationsMatchBasket(holds, items);
+}
+
 const ACTIVE_CHECKOUT_STATES = [
   "DRAFT",
   "VALIDATING",
@@ -36,11 +71,15 @@ type CheckoutSnapshotResult =
   | {
       ok: true;
       order: {
+        /** ADR 0014 §3 makes the order the reservation's idempotency key, so I6b needs it. */
+        id: string;
         publicCode: string;
         state: ActiveCheckoutState;
         merchandiseSubtotalVnd: bigint;
         shippingFeeVnd: bigint;
         totalVnd: bigint;
+        /** The committed basket, as persisted. One entry per line; I6b merges by variant (§7). */
+        lines: readonly { variantId: string; quantity: number }[];
       };
     }
   | { ok: false; reason: CheckoutFailureReason }
@@ -79,6 +118,11 @@ const snapshotOrderSelection = {
   merchandiseSubtotalVnd: true,
   shippingFeeVnd: true,
   totalVnd: true,
+  // I6b — what the reservation boundary reserves. Read back from the persisted lines rather than
+  // carried out of the in-memory `snapshots` array, so the recovery path below (which finds an
+  // existing active checkout after a `P2002`) reports the same basket as the create path. A hold
+  // taken against a basket the order does not actually have would be worse than no hold.
+  lines: { select: { variantId: true, quantity: true } },
 } satisfies Prisma.OrderMirrorSelect;
 
 const productSelection = {
@@ -165,11 +209,13 @@ function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult 
   return {
     ok: true,
     order: {
+      id: order.id,
       publicCode: order.publicCode,
       state: order.state,
       merchandiseSubtotalVnd: order.merchandiseSubtotalVnd,
       shippingFeeVnd: order.shippingFeeVnd,
       totalVnd: order.totalVnd,
+      lines: order.lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
     },
   };
 }
@@ -372,6 +418,48 @@ export function createGuestCheckoutSnapshotService(
         }
         if (items.length > ANONYMOUS_CART_MAX_DISTINCT_ITEMS) {
           return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
+        }
+
+        // I6b — an order id must not outlive the basket its ledger rows hold.
+        //
+        // A reservation is keyed by the order (ADR 0014 §3) and only answers a retry for the *same*
+        // basket; anything else is `reservation-conflict`, fail-closed on purpose. Rewriting this
+        // DRAFT's lines in place would therefore bind a live order id to a basket its own holds
+        // contradict, and every retry would be refused — a buyer with a perfectly valid cart stuck
+        // on CART_CHANGED for good, with the active-checkout index blocking a second order too.
+        //
+        // The DRAFT is superseded instead, exactly as the shop-scope mismatch above does: retire
+        // it, free its holds, and let the fresh order below mint a new idempotency key.
+        //
+        // Only when every hold is still RESERVED. `SUBMITTING`, `COMMITTED` or `UNKNOWN` means a
+        // write may have reached Pancake, and §8 lets nothing free those on inference — that order
+        // stays as it is and §10 reconciliation owns it. Releasing here is a guarded compare-and-set
+        // in the same transaction as the retirement, so the two cannot diverge.
+        if (mutableDraft) {
+          const holds = await tx.variantCapacityReservation.findMany({
+            where: { orderId: mutableDraft.id },
+            select: { variantId: true, quantity: true, state: true },
+          });
+          if (holds.length > 0 && !holdsAreLiveFor(holds, items)) {
+            // Safe to supersede only when no hold is in a state where a write may have landed.
+            // `RELEASED` joins `RESERVED` here: it is terminal *and* it is evidence nothing was
+            // sent, so retiring the attempt around it frees nothing and hides nothing.
+            if (
+              holds.every((hold) => hold.state === "RESERVED" || hold.state === "RELEASED")
+            ) {
+              await tx.variantCapacityReservation.updateMany({
+                where: { orderId: mutableDraft.id, state: "RESERVED" },
+                data: { state: "RELEASED", releasedAt: now },
+              });
+              await tx.orderMirror.update({
+                where: { id: mutableDraft.id },
+                data: { state: "REJECTED", syncErrorCode: "SUPERSEDED_BY_CART_CHANGE" },
+              });
+              mutableDraft = null;
+            }
+            // Otherwise it is left alone deliberately. `reserveOrderCapacity` will still refuse the
+            // rewritten DRAFT, which is the correct fail-closed answer while a write may be live.
+          }
         }
 
         const variantIds = items.map(({ variantId }) => variantId);

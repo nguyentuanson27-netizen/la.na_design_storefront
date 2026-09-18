@@ -21,6 +21,7 @@ import {
 } from "@/components/admin/product-commerce-panel";
 import { ProductEditorialForm } from "@/components/admin/product-editorial-form";
 import { ProductMerchantFactsEditor } from "@/components/admin/product-merchant-facts-editor";
+import { ProductSellingPolicyEditor } from "@/components/admin/product-selling-policy-editor";
 import {
   ProductPancakeSource,
   type ProductPancakeCompositeParent,
@@ -95,6 +96,8 @@ type ProductEditorPageProps = {
     variantError?: string | string[];
     merchantSaved?: string | string[];
     merchantError?: string | string[];
+    policySaved?: string | string[];
+    policyError?: string | string[];
   }>;
 };
 
@@ -380,6 +383,10 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
   const variantStatus = variantError ? "error" : variantSaved ? "success" : null;
   const merchantSaved = queryValue(query.merchantSaved) === "1";
   const merchantError = queryValue(query.merchantError) === "1";
+  // I3 — the refusal reason travels in the query so the editor can name which precondition failed.
+  // The boundary's reasons are a closed set and carry no operator input, so echoing one is safe.
+  const policySaved = queryValue(query.policySaved) === "1";
+  const policyError = queryValue(query.policyError);
   const variantErrorMessage =
     variantError === "unavailable"
       ? "Không thể cập nhật. Một hoặc nhiều biến thể không còn khả dụng cho sản phẩm này."
@@ -508,6 +515,13 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
         error={merchantError}
         productId={persistedProductId}
         saved={merchantSaved}
+      />
+
+      <ProductSellingPolicyEditor
+        editorPath={editorPath}
+        error={policyError}
+        productId={persistedProductId}
+        saved={policySaved}
       />
 
       <ProductSlugEditor
