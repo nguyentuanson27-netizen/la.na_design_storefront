@@ -17,10 +17,21 @@ const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TRUSTED_CLIENT_IP = "203.0.113.55";
 const runId = `${Date.now()}-${process.pid}`;
 const publicCode = `LA-tracking-${runId}`;
+const preorderOnlyCode = `LA-tracking-preorder-${runId}`;
+const readyOnlyCode = `LA-tracking-ready-${runId}`;
+const legacyCode = `LA-tracking-legacy-${runId}`;
 const guestPhone = "0901234567";
+const confirmedAt = new Date("2026-09-18T04:30:00.000Z");
+const preorderReadyAt = new Date("2026-10-03T04:30:00.000Z");
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
+let historicalProductId = "";
+let historicalVariantId = "";
+
+function normalizeVisibleText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
 
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
@@ -78,7 +89,13 @@ async function cleanup() {
   // a real checkout takes a hold, a fixture that deletes orders or products has to clear the ledger
   // first, or the delete is refused.
   await prisma.variantCapacityReservation.deleteMany({});
-  await prisma.orderMirror.deleteMany({ where: { publicCode } });
+  const immutableHistory = await prisma.orderPreorderSnapshot.findFirst({
+    where: { order: { publicCode } },
+    select: { id: true },
+  });
+  if (!immutableHistory) {
+    await prisma.orderMirror.deleteMany({ where: { publicCode } });
+  }
   await prisma.rateLimit.deleteMany({
     where: {
       OR: [
@@ -91,6 +108,41 @@ async function cleanup() {
 
 test.beforeAll(async () => {
   await cleanup();
+
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: 920_007,
+      pancakeProductId: `tracking-f8c-product-${runId}`,
+      slug: `tracking-f8c-product-${runId}`,
+      name: "Tracking F8c Product",
+      isPresent: true,
+      isActive: true,
+      syncedAt: confirmedAt,
+      sellingPolicy: {
+        create: { sellingMode: "PREORDER", negativeStockLimit: -20 },
+      },
+      variants: {
+        create: {
+          pancakeVariationId: `tracking-f8c-variant-${runId}`,
+          size: "M",
+          isPresent: true,
+          isActive: true,
+          syncedAt: confirmedAt,
+          warehouseStocks: {
+            create: {
+              pancakeWarehouseId: `tracking-f8c-warehouse-${runId}`,
+              quantity: 0,
+              syncedAt: confirmedAt,
+            },
+          },
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  historicalProductId = product.id;
+  historicalVariantId = product.variants[0]!.id;
+
   await prisma.orderMirror.create({
     data: {
       publicCode,
@@ -111,6 +163,170 @@ test.beforeAll(async () => {
       merchandiseSubtotalVnd: BigInt(500_000),
       shippingFeeVnd: BigInt(30_000),
       totalVnd: BigInt(530_000),
+      lines: {
+        create: [
+          {
+            variantId: historicalVariantId,
+            pancakeVariationId: `tracking-f8c-variant-${runId}`,
+            productName: "Tracking F8c Preorder",
+            size: "M",
+            quantity: 1,
+            unitPriceVnd: BigInt(300_000),
+            lineTotalVnd: BigInt(300_000),
+          },
+          {
+            variantId: `tracking-f8c-ready-${runId}`,
+            pancakeVariationId: `tracking-f8c-ready-${runId}`,
+            productName: "Tracking F8c Ready",
+            size: "S",
+            quantity: 1,
+            unitPriceVnd: BigInt(200_000),
+            lineTotalVnd: BigInt(200_000),
+          },
+        ],
+      },
+      preorderSnapshot: {
+        create: {
+          confirmedAt,
+          preorderReadyAt,
+          shippingInnerCityMinDays: 1,
+          shippingInnerCityMaxDays: 3,
+          shippingOtherProvinceMinDays: 3,
+          shippingOtherProvinceMaxDays: 10,
+          lines: {
+            create: [
+              {
+                variantId: historicalVariantId,
+                quantity: 1,
+                state: "PREORDER",
+                preorderReadyAt,
+              },
+              {
+                variantId: `tracking-f8c-ready-${runId}`,
+                quantity: 1,
+                state: "READY",
+                preorderReadyAt: null,
+              },
+            ],
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: preorderOnlyCode,
+      state: "CONFIRMED",
+      guestName: "Tracking F8c Fixture",
+      guestPhone,
+      provinceRef: "tracking-province",
+      districtRef: "tracking-district",
+      communeRef: "tracking-commune",
+      addressDetail: "Tracking fixture address",
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(300_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(330_000),
+      lines: {
+        create: {
+          variantId: `tracking-preorder-only-${runId}`,
+          pancakeVariationId: `tracking-preorder-only-${runId}`,
+          productName: "Tracking Preorder Only",
+          size: "M",
+          quantity: 1,
+          unitPriceVnd: BigInt(300_000),
+          lineTotalVnd: BigInt(300_000),
+        },
+      },
+      preorderSnapshot: {
+        create: {
+          confirmedAt,
+          preorderReadyAt,
+          shippingInnerCityMinDays: 1,
+          shippingInnerCityMaxDays: 3,
+          shippingOtherProvinceMinDays: 3,
+          shippingOtherProvinceMaxDays: 10,
+          lines: {
+            create: {
+              variantId: `tracking-preorder-only-${runId}`,
+              quantity: 1,
+              state: "PREORDER",
+              preorderReadyAt,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: readyOnlyCode,
+      state: "CONFIRMED",
+      guestName: "Tracking F8c Fixture",
+      guestPhone,
+      provinceRef: "tracking-province",
+      districtRef: "tracking-district",
+      communeRef: "tracking-commune",
+      addressDetail: "Tracking fixture address",
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(200_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(230_000),
+      lines: {
+        create: {
+          variantId: `tracking-ready-only-${runId}`,
+          pancakeVariationId: `tracking-ready-only-${runId}`,
+          productName: "Tracking Ready Only",
+          size: "S",
+          quantity: 1,
+          unitPriceVnd: BigInt(200_000),
+          lineTotalVnd: BigInt(200_000),
+        },
+      },
+      preorderSnapshot: {
+        create: {
+          confirmedAt,
+          preorderReadyAt: null,
+          lines: {
+            create: {
+              variantId: `tracking-ready-only-${runId}`,
+              quantity: 1,
+              state: "READY",
+              preorderReadyAt: null,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: legacyCode,
+      state: "CONFIRMED",
+      guestName: "Tracking F8c Fixture",
+      guestPhone,
+      provinceRef: "tracking-province",
+      districtRef: "tracking-district",
+      communeRef: "tracking-commune",
+      addressDetail: "Tracking fixture address",
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(200_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(230_000),
+      lines: {
+        create: {
+          variantId: `tracking-legacy-${runId}`,
+          pancakeVariationId: `tracking-legacy-${runId}`,
+          productName: "Tracking Legacy",
+          size: "S",
+          quantity: 1,
+          unitPriceVnd: BigInt(200_000),
+          lineTotalVnd: BigInt(200_000),
+        },
+      },
     },
   });
 
@@ -136,6 +352,10 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await stopServer();
   await cleanup();
+  await prisma.orderMirror.deleteMany({ where: { publicCode: legacyCode } });
+  if (historicalProductId) {
+    await prisma.productMirror.deleteMany({ where: { id: historicalProductId } });
+  }
   await prisma.$disconnect();
 });
 
@@ -237,6 +457,156 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
+test("F8c browser surfaces distinguish ready, preorder, mixed and legacy confirmed history", async ({
+  page,
+  context,
+}) => {
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.86" });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(readyOnlyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(preorderOnlyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  const preorderOnly = page.locator('[data-historical-preorder="true"]');
+  await expect(preorderOnly).toContainText("Đặt trước");
+  await expect(preorderOnly).toContainText("03/10/2026");
+  await expect(preorderOnly.locator('[data-preorder-mixed="true"]')).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(publicCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.locator('[data-preorder-mixed="true"]')).toContainText("giao cùng nhau");
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(legacyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.getByText("Cảm ơn bạn đã đặt hàng.")).toBeVisible();
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
+  await page.getByLabel("Mã đơn hàng").fill(legacyCode);
+  await page.getByLabel("Số điện thoại").fill(guestPhone);
+  await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã tiếp nhận" })).toBeVisible();
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+test("F8c confirmation and tracking keep immutable preorder history after live catalog mutations", async ({
+  page,
+  context,
+}) => {
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.87" });
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(publicCode)}`, {
+    waitUntil: "networkidle",
+  });
+  const confirmation = page.locator('[data-historical-preorder="true"]');
+  await expect(confirmation).toContainText("Đặt trước");
+  await expect(confirmation).toContainText("03/10/2026");
+  await expect(confirmation).toContainText("1–3 ngày");
+  await expect(confirmation).toContainText("3–10 ngày");
+  await expect(confirmation).toContainText("không phải cam kết");
+  await expect(confirmation).toContainText("giao cùng nhau");
+  const before = normalizeVisibleText(await confirmation.innerText());
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
+  await page.getByLabel("Mã đơn hàng").fill(publicCode);
+  await page.getByLabel("Số điện thoại").fill(guestPhone);
+  await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
+
+  await prisma.productSellingPolicy.update({
+    where: { productId: historicalProductId },
+    data: { sellingMode: "OVERSELL", negativeStockLimit: -7 },
+  });
+  await prisma.warehouseStock.updateMany({
+    where: { variantId: historicalVariantId },
+    data: { quantity: 25 },
+  });
+  await prisma.variantAvailabilityCycle.upsert({
+    where: { variantId: historicalVariantId },
+    create: {
+      variantId: historicalVariantId,
+      cycleStartDate: new Date("2026-09-20T00:00:00.000Z"),
+      availabilityDate: new Date("2026-11-20T00:00:00.000Z"),
+      lastStockNonPositive: false,
+      lastPreorder: false,
+    },
+    update: {
+      availabilityDate: new Date("2026-11-20T00:00:00.000Z"),
+      lastStockNonPositive: false,
+      lastPreorder: false,
+    },
+  });
+  await prisma.productMirror.update({
+    where: { id: historicalProductId },
+    data: { isPresent: false, isActive: false },
+  });
+  await prisma.variantMirror.update({
+    where: { id: historicalVariantId },
+    data: { isPresent: false, isActive: false },
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(publicCode)}`, {
+    waitUntil: "networkidle",
+  });
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
+  await page.getByLabel("Mã đơn hàng").fill(publicCode);
+  await page.getByLabel("Số điện thoại").fill(guestPhone);
+  await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });

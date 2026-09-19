@@ -52,3 +52,42 @@ test("I7 mixed READY and PREORDER lines ship against the preorder order readines
     ],
   );
 });
+
+
+test("F8c I7 copies factual shipping windows only when the confirmed order contains preorder", () => {
+  const confirmedAt = new Date("2026-09-18T04:00:00.000Z");
+  const shippingEstimate = {
+    innerCity: { minimum: 8, maximum: 12 },
+    otherProvince: { minimum: 13, maximum: 21 },
+  } as const;
+
+  const preorder = buildPreorderOrderSnapshot({
+    confirmedAt,
+    lines: [{ variantId: "preorder", quantity: 1, isPreorderSale: true }],
+    shippingEstimate,
+  });
+  assert.deepEqual(
+    {
+      innerMin: preorder.shippingInnerCityMinDays,
+      innerMax: preorder.shippingInnerCityMaxDays,
+      otherMin: preorder.shippingOtherProvinceMinDays,
+      otherMax: preorder.shippingOtherProvinceMaxDays,
+    },
+    { innerMin: 8, innerMax: 12, otherMin: 13, otherMax: 21 },
+  );
+
+  const ready = buildPreorderOrderSnapshot({
+    confirmedAt,
+    lines: [{ variantId: "ready", quantity: 1, isPreorderSale: false }],
+    shippingEstimate,
+  });
+  assert.deepEqual(
+    {
+      innerMin: ready.shippingInnerCityMinDays,
+      innerMax: ready.shippingInnerCityMaxDays,
+      otherMin: ready.shippingOtherProvinceMinDays,
+      otherMax: ready.shippingOtherProvinceMaxDays,
+    },
+    { innerMin: null, innerMax: null, otherMin: null, otherMax: null },
+  );
+});

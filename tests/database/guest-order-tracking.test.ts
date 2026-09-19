@@ -4,7 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { createGuestOrderTrackingService } from "../../src/commerce/guest-order-tracking.ts";
-import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import { PrismaClient, type Prisma } from "../../src/generated/prisma/client.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -144,4 +144,106 @@ test("guest order tracking excludes account-linked orders from the public guest 
     ok: false,
     reason: "NOT_FOUND",
   });
+});
+
+
+test("F8c authorized tracking exposes only safe immutable preorder history and legacy orders infer nothing", async () => {
+  const rollback = new Error("F8C_TRACKING_ROLLBACK");
+  try {
+    await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
+      const confirmedAt = new Date("2026-09-18T04:30:00.000Z");
+      const readyAt = new Date("2026-10-03T04:30:00.000Z");
+      const preorderCode = `${key}-f8c-preorder`;
+      const legacyCode = `${key}-f8c-legacy`;
+      const phone = "0907777777";
+
+      await tx.orderMirror.create({
+        data: {
+          publicCode: preorderCode,
+          state: "CONFIRMED",
+          ...completeSnapshot(phone),
+          preorderSnapshot: {
+            create: {
+              confirmedAt,
+              preorderReadyAt: readyAt,
+              shippingInnerCityMinDays: 1,
+              shippingInnerCityMaxDays: 3,
+              shippingOtherProvinceMinDays: 3,
+              shippingOtherProvinceMaxDays: 10,
+              lines: {
+                create: [
+                  {
+                    variantId: "internal-ready-variant",
+                    quantity: 1,
+                    state: "READY",
+                    preorderReadyAt: null,
+                  },
+                  {
+                    variantId: "internal-preorder-variant",
+                    quantity: 2,
+                    state: "PREORDER",
+                    preorderReadyAt: readyAt,
+                  },
+                ],
+              },
+            },
+          },
+        },
+      });
+      await tx.orderMirror.create({
+        data: {
+          publicCode: legacyCode,
+          state: "CONFIRMED",
+          ...completeSnapshot(phone),
+        },
+      });
+
+      const service = createGuestOrderTrackingService(tx as unknown as PrismaClient);
+      const historical = await service.lookup({ orderCode: preorderCode, phone });
+      assert.equal(historical.ok, true);
+      if (!historical.ok) throw new Error("expected authorized historical tracking result");
+      assert.equal(historical.order.orderCode, preorderCode);
+      assert.equal(historical.order.status, "CONFIRMED");
+      assert.equal(historical.order.totalVnd, "130000");
+      assert.equal(historical.order.preorderHistory?.preorderLabel, "Đặt trước");
+      assert.equal(historical.order.preorderHistory?.preorderReadyAt, readyAt.toISOString());
+      assert.equal(historical.order.preorderHistory?.isMixedReadyAndPreorder, true);
+      assert.deepEqual(
+        historical.order.preorderHistory?.shippingWindows?.map(
+          ({ minimumDays, maximumDays }) => ({ minimumDays, maximumDays }),
+        ),
+        [
+          { minimumDays: 1, maximumDays: 3 },
+          { minimumDays: 3, maximumDays: 10 },
+        ],
+      );
+
+      const serialized = JSON.stringify(historical);
+      for (const forbidden of [
+        "internal-ready-variant",
+        "internal-preorder-variant",
+        "variantId",
+        "acceptedPreorderState",
+        "reservation",
+        "sellingMode",
+        "negativeStockLimit",
+      ]) {
+        assert.equal(serialized.includes(forbidden), false, `public F8c result leaked ${forbidden}`);
+      }
+
+      const legacy = await service.lookup({ orderCode: legacyCode, phone });
+      assert.equal(legacy.ok, true);
+      if (legacy.ok) {
+        assert.equal(
+          "preorderHistory" in legacy.order,
+          false,
+          "confirmed legacy orders without I7 authority must not infer preorder history",
+        );
+      }
+
+      throw rollback;
+    });
+  } catch (error) {
+    if (error !== rollback) throw error;
+  }
 });

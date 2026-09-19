@@ -4,6 +4,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { FULFILLMENT } from "../../src/brand/index.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { createPancakeOrderReconciliationService } from "../../src/commerce/pancake-order-reconciliation.ts";
 import { createPreorderSnapshotAtConfirmation } from "../../src/commerce/preorder-order-snapshot-repository.ts";
@@ -573,4 +574,126 @@ test("I7 database triggers reject snapshot UPDATE, line DELETE and snapshot DELE
   await assertImmutableMutation((tx, snapshotId) =>
     tx.orderPreorderSnapshot.delete({ where: { id: snapshotId } }),
   );
+});
+
+
+test("F8c I7 snapshots the confirmation-time shipping window and live product facts cannot rewrite history", async () => {
+  await inRollbackTransaction(async (tx) => {
+    const { product, variant } = await seedVariant(tx, {
+      label: "historical-mutation",
+      stock: 0,
+      sellingMode: "PREORDER",
+    });
+    const order = await seedOrder(tx, "historical-mutation", [
+      { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
+    ]);
+    await tx.orderMirror.update({
+      where: { id: order.id },
+      data: {
+        checkoutSnapshottedAt: new Date("2026-09-18T04:00:00.000Z"),
+        guestName: "I7 historical fixture",
+        guestPhone: "0900000000",
+        provinceRef: "opaque-province-ref",
+        districtRef: "opaque-district-ref",
+        communeRef: "opaque-commune-ref",
+        addressDetail: "I7 historical fixture address",
+        merchandiseSubtotalVnd: BigInt(100_000),
+        shippingFeeVnd: BigInt(30_000),
+        totalVnd: BigInt(130_000),
+      },
+    });
+    await seedAcceptedReservation(tx, {
+      orderId: order.id,
+      variantId: variant.id,
+      quantity: 1,
+      acceptedPreorderState: "PREORDER",
+    });
+
+    const confirmedAt = new Date("2026-09-18T04:30:00.000Z");
+    await confirmWithI7(tx, order.id, confirmedAt);
+
+    const selectHistory = () =>
+      tx.orderPreorderSnapshot.findUniqueOrThrow({
+        where: { orderId: order.id },
+        select: {
+          confirmedAt: true,
+          preorderReadyAt: true,
+          shippingInnerCityMinDays: true,
+          shippingInnerCityMaxDays: true,
+          shippingOtherProvinceMinDays: true,
+          shippingOtherProvinceMaxDays: true,
+          lines: {
+            orderBy: [{ variantId: "asc" }],
+            select: {
+              variantId: true,
+              quantity: true,
+              state: true,
+              preorderReadyAt: true,
+            },
+          },
+        },
+      });
+
+    const before = await selectHistory();
+    assert.equal(
+      before.shippingInnerCityMinDays,
+      FULFILLMENT.delivery.estimateDays.innerCity.minimum,
+    );
+    assert.equal(
+      before.shippingInnerCityMaxDays,
+      FULFILLMENT.delivery.estimateDays.innerCity.maximum,
+    );
+    assert.equal(
+      before.shippingOtherProvinceMinDays,
+      FULFILLMENT.delivery.estimateDays.otherProvince.minimum,
+    );
+    assert.equal(
+      before.shippingOtherProvinceMaxDays,
+      FULFILLMENT.delivery.estimateDays.otherProvince.maximum,
+    );
+
+    await tx.productSellingPolicy.update({
+      where: { productId: product.id },
+      data: { sellingMode: "STANDARD", negativeStockLimit: -5 },
+    });
+    await tx.warehouseStock.updateMany({
+      where: { variantId: variant.id },
+      data: { quantity: 15 },
+    });
+    await tx.variantAvailabilityCycle.upsert({
+      where: { variantId: variant.id },
+      create: {
+        variantId: variant.id,
+        cycleStartDate: new Date("2026-09-20T00:00:00.000Z"),
+        availabilityDate: new Date("2026-10-20T00:00:00.000Z"),
+        lastStockNonPositive: true,
+        lastPreorder: true,
+      },
+      update: {
+        availabilityDate: new Date("2026-11-20T00:00:00.000Z"),
+        lastStockNonPositive: false,
+        lastPreorder: false,
+      },
+    });
+    await tx.productSellingPolicy.update({
+      where: { productId: product.id },
+      data: { sellingMode: "OVERSELL", negativeStockLimit: -12 },
+    });
+    await tx.warehouseStock.updateMany({
+      where: { variantId: variant.id },
+      data: { quantity: -7 },
+    });
+    await tx.productMirror.update({
+      where: { id: product.id },
+      data: { isPresent: false, isActive: false },
+    });
+    await tx.variantMirror.update({
+      where: { id: variant.id },
+      data: { isPresent: false, isActive: false },
+    });
+
+    const after = await selectHistory();
+    assert.deepEqual(after, before);
+    assert.equal(after.lines[0]?.state, "PREORDER");
+  });
 });

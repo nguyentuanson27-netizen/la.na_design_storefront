@@ -1,4 +1,8 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
+import {
+  buildHistoricalPreorderPresentation,
+  type HistoricalPreorderPresentation,
+} from "./historical-preorder-presentation.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 const MAX_PHONE_LENGTH = 64;
@@ -30,6 +34,8 @@ export type GuestOrderTrackingResult =
         status: GuestOrderPublicStatus;
         createdAt: string;
         totalVnd: string;
+        /** Present only when a confirmed I7 snapshot contains preorder history. */
+        preorderHistory?: HistoricalPreorderPresentation;
       };
     }
   | { ok: false; reason: "NOT_FOUND" };
@@ -95,6 +101,24 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
         createdAt: true,
         checkoutSnapshottedAt: true,
         totalVnd: true,
+        preorderSnapshot: {
+          select: {
+            confirmedAt: true,
+            preorderReadyAt: true,
+            shippingInnerCityMinDays: true,
+            shippingInnerCityMaxDays: true,
+            shippingOtherProvinceMinDays: true,
+            shippingOtherProvinceMaxDays: true,
+            lines: {
+              orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+              select: {
+                quantity: true,
+                state: true,
+                preorderReadyAt: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -107,6 +131,11 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
       return { ok: false, reason: "NOT_FOUND" };
     }
 
+    const preorderHistory =
+      order.state === "CONFIRMED"
+        ? buildHistoricalPreorderPresentation(order.preorderSnapshot)
+        : null;
+
     return {
       ok: true,
       order: {
@@ -114,6 +143,7 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
         status: toGuestOrderPublicStatus(order.state),
         createdAt: order.createdAt.toISOString(),
         totalVnd: order.totalVnd.toString(),
+        ...(preorderHistory ? { preorderHistory } : {}),
       },
     };
   }

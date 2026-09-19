@@ -1,4 +1,5 @@
 import { readCanonicalPurchaseSnapshotSafely } from "@/commerce/canonical-purchase-snapshot";
+import { buildHistoricalPreorderPresentation } from "@/commerce/historical-preorder-presentation";
 import { buildMetaPurchasePixelParameters } from "@/commerce/meta-pixel-parameters";
 import { readMetaPurchaseSnapshot } from "@/commerce/meta-purchase-snapshot";
 import { prisma } from "@/db/prisma";
@@ -23,13 +24,36 @@ export async function loadCheckoutSuccessRoute({
   const order = orderCode
     ? await prisma.orderMirror.findUnique({
         where: { publicCode: orderCode },
-        select: { state: true },
+        select: {
+          state: true,
+          preorderSnapshot: {
+            select: {
+              preorderReadyAt: true,
+              shippingInnerCityMinDays: true,
+              shippingInnerCityMaxDays: true,
+              shippingOtherProvinceMinDays: true,
+              shippingOtherProvinceMaxDays: true,
+              lines: {
+                orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+                select: {
+                  quantity: true,
+                  state: true,
+                  preorderReadyAt: true,
+                },
+              },
+            },
+          },
+        },
       })
     : null;
 
+  const confirmed = order?.state === "CONFIRMED";
   const data = buildCheckoutSuccessViewModel({
     orderCode,
-    confirmed: order?.state === "CONFIRMED",
+    confirmed,
+    preorderHistory: confirmed
+      ? buildHistoricalPreorderPresentation(order?.preorderSnapshot ?? null)
+      : null,
   });
 
   // Vendor-neutral canonical Purchase, built from immutable finalized order facts (T7).

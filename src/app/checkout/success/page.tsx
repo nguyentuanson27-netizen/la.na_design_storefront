@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-preorder-notice";
 import { createStorefrontRoute } from "@/routes/factory";
 import {
   loadCheckoutSuccessRoute,
@@ -50,6 +51,10 @@ function render(data: CheckoutSuccessViewModel) {
             </p>
           </div>
         )}
+
+        {data.confirmed && data.preorderHistory ? (
+          <BrandHistoricalPreorderNotice history={data.preorderHistory} />
+        ) : null}
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
           {data.confirmed ? (
