@@ -1,63 +1,144 @@
 import { test } from "@playwright/test";
 
-test("temporary F9a probe: inspect canonical production brand-mark sources", async ({ page }) => {
+test("temporary F9a probe: recover canonical production brand-mark candidates", async ({ page }) => {
   test.setTimeout(90_000);
 
   try {
     const response = await page.goto("https://www.lanadesign.vn/", {
-      waitUntil: "domcontentloaded",
+      waitUntil: "networkidle",
       timeout: 60_000,
     });
 
-    const result = await page.evaluate(() => {
-      const images = [...document.images].map((image) => {
-        const rect = image.getBoundingClientRect();
-        return {
-          src: image.currentSrc || image.src,
-          alt: image.alt,
-          width: image.naturalWidth,
-          height: image.naturalHeight,
-          renderedWidth: Math.round(rect.width),
-          renderedHeight: Math.round(rect.height),
-          top: Math.round(rect.top),
-          left: Math.round(rect.left),
-          className: image.className,
-          parentHref: image.closest("a")?.getAttribute("href") ?? null,
-        };
-      });
+    const result = await page.evaluate(async () => {
+      const absolute = (value: string) => {
+        try {
+          return new URL(value, location.href).href;
+        } catch {
+          return value;
+        }
+      };
 
-      const homeLinks = [...document.querySelectorAll<HTMLAnchorElement>('a[href="/"], a[href="https://www.lanadesign.vn/"]')]
-        .map((link) => ({
-          text: link.textContent?.trim() ?? "",
-          html: link.innerHTML.slice(0, 1200),
-          className: link.className,
-        }))
-        .slice(0, 20);
-
-      const backgroundImages = [...document.querySelectorAll<HTMLElement>("body *")]
-        .map((element) => {
-          const style = getComputedStyle(element);
-          const rect = element.getBoundingClientRect();
+      const imageCandidates = [...document.images]
+        .map((image) => {
+          const rect = image.getBoundingClientRect();
+          const parentHref = image.closest("a")?.getAttribute("href") ?? null;
           return {
-            tag: element.tagName,
-            className: element.className,
-            backgroundImage: style.backgroundImage,
+            kind: "img" as const,
+            src: image.currentSrc || image.src,
+            alt: image.alt,
+            naturalWidth: image.naturalWidth,
+            naturalHeight: image.naturalHeight,
+            renderedWidth: Math.round(rect.width),
+            renderedHeight: Math.round(rect.height),
             top: Math.round(rect.top),
             left: Math.round(rect.left),
-            width: Math.round(rect.width),
-            height: Math.round(rect.height),
+            className: String(image.className),
+            parentHref,
           };
         })
         .filter(
           (entry) =>
-            entry.backgroundImage !== "none" &&
-            entry.top < 700 &&
-            entry.width > 20 &&
-            entry.height > 20,
+            Boolean(entry.src) &&
+            (entry.parentHref === "/" ||
+              entry.parentHref === "https://www.lanadesign.vn/" ||
+              entry.top < 260),
         )
-        .slice(0, 30);
+        .slice(0, 20);
 
-      return { images, homeLinks, backgroundImages };
+      const backgroundCandidates = [...document.querySelectorAll<HTMLElement>("body *")]
+        .map((element) => {
+          const style = getComputedStyle(element);
+          const rect = element.getBoundingClientRect();
+          const match = style.backgroundImage.match(/^url\(["']?(.*?)["']?\)$/);
+          return {
+            kind: "background" as const,
+            src: match?.[1] ? absolute(match[1]) : "",
+            tag: element.tagName,
+            className: String(element.className),
+            text: element.textContent?.trim().slice(0, 80) ?? "",
+            top: Math.round(rect.top),
+            left: Math.round(rect.left),
+            renderedWidth: Math.round(rect.width),
+            renderedHeight: Math.round(rect.height),
+            parentHref: element.closest("a")?.getAttribute("href") ?? null,
+          };
+        })
+        .filter(
+          (entry) =>
+            Boolean(entry.src) &&
+            (entry.parentHref === "/" ||
+              entry.parentHref === "https://www.lanadesign.vn/" ||
+              entry.top < 260),
+        )
+        .slice(0, 20);
+
+      const inlineSvgs = [...document.querySelectorAll<SVGElement>("svg")]
+        .map((svg) => {
+          const rect = svg.getBoundingClientRect();
+          return {
+            kind: "svg" as const,
+            top: Math.round(rect.top),
+            left: Math.round(rect.left),
+            renderedWidth: Math.round(rect.width),
+            renderedHeight: Math.round(rect.height),
+            parentHref: svg.closest("a")?.getAttribute("href") ?? null,
+            html: svg.outerHTML.slice(0, 20_000),
+          };
+        })
+        .filter(
+          (entry) =>
+            entry.parentHref === "/" ||
+            entry.parentHref === "https://www.lanadesign.vn/" ||
+            entry.top < 260,
+        )
+        .slice(0, 20);
+
+      const urls = [...new Set([...imageCandidates, ...backgroundCandidates].map((entry) => entry.src))];
+      const recovered: Array<{
+        src: string;
+        contentType: string | null;
+        byteLength: number;
+        base64: string | null;
+        error?: string;
+      }> = [];
+
+      for (const src of urls) {
+        try {
+          const fetched = await fetch(src);
+          const buffer = await fetched.arrayBuffer();
+          const bytes = new Uint8Array(buffer);
+          let binary = "";
+          if (bytes.byteLength <= 512_000) {
+            for (let index = 0; index < bytes.length; index += 0x8000) {
+              binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+            }
+          }
+          recovered.push({
+            src,
+            contentType: fetched.headers.get("content-type"),
+            byteLength: bytes.byteLength,
+            base64: bytes.byteLength <= 512_000 ? btoa(binary) : null,
+          });
+        } catch (error) {
+          recovered.push({
+            src,
+            contentType: null,
+            byteLength: 0,
+            base64: null,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+
+      const homeLinks = [...document.querySelectorAll<HTMLAnchorElement>('a[href="/"], a[href="https://www.lanadesign.vn/"]')]
+        .map((link) => ({
+          text: link.textContent?.trim() ?? "",
+          html: link.innerHTML.slice(0, 20_000),
+          className: link.className,
+        }))
+        .slice(0, 20);
+
+      return { imageCandidates, backgroundCandidates, inlineSvgs, recovered, homeLinks };
     });
 
     console.log(
