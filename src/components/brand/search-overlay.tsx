@@ -31,7 +31,8 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
   useEffect(() => {
     if (isOpen) {
       wasOpenRef.current = true;
-      previouslyFocusedElement.current = document.activeElement as HTMLElement | null;
+      previouslyFocusedElement.current =
+        triggerRef?.current ?? (document.activeElement as HTMLElement | null);
       const timer = setTimeout(() => {
         inputRef.current?.focus();
       }, 50);
