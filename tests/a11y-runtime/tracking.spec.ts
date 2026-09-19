@@ -17,6 +17,9 @@ const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TRUSTED_CLIENT_IP = "203.0.113.55";
 const runId = `${Date.now()}-${process.pid}`;
 const publicCode = `LA-tracking-${runId}`;
+const preorderOnlyCode = `LA-tracking-preorder-${runId}`;
+const readyOnlyCode = `LA-tracking-ready-${runId}`;
+const legacyCode = `LA-tracking-legacy-${runId}`;
 const guestPhone = "0901234567";
 const confirmedAt = new Date("2026-09-18T04:30:00.000Z");
 const preorderReadyAt = new Date("2026-10-03T04:30:00.000Z");
@@ -207,6 +210,107 @@ test.beforeAll(async () => {
     },
   });
 
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: preorderOnlyCode,
+      state: "CONFIRMED",
+      guestPhone,
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(300_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(330_000),
+      lines: {
+        create: {
+          variantId: `tracking-preorder-only-${runId}`,
+          pancakeVariationId: `tracking-preorder-only-${runId}`,
+          productName: "Tracking Preorder Only",
+          size: "M",
+          quantity: 1,
+          unitPriceVnd: BigInt(300_000),
+          lineTotalVnd: BigInt(300_000),
+        },
+      },
+      preorderSnapshot: {
+        create: {
+          confirmedAt,
+          preorderReadyAt,
+          shippingInnerCityMinDays: 1,
+          shippingInnerCityMaxDays: 3,
+          shippingOtherProvinceMinDays: 3,
+          shippingOtherProvinceMaxDays: 10,
+          lines: {
+            create: {
+              variantId: `tracking-preorder-only-${runId}`,
+              quantity: 1,
+              state: "PREORDER",
+              preorderReadyAt,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: readyOnlyCode,
+      state: "CONFIRMED",
+      guestPhone,
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(200_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(230_000),
+      lines: {
+        create: {
+          variantId: `tracking-ready-only-${runId}`,
+          pancakeVariationId: `tracking-ready-only-${runId}`,
+          productName: "Tracking Ready Only",
+          size: "S",
+          quantity: 1,
+          unitPriceVnd: BigInt(200_000),
+          lineTotalVnd: BigInt(200_000),
+        },
+      },
+      preorderSnapshot: {
+        create: {
+          confirmedAt,
+          preorderReadyAt: null,
+          lines: {
+            create: {
+              variantId: `tracking-ready-only-${runId}`,
+              quantity: 1,
+              state: "READY",
+              preorderReadyAt: null,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  await prisma.orderMirror.create({
+    data: {
+      publicCode: legacyCode,
+      state: "CONFIRMED",
+      guestPhone,
+      checkoutSnapshottedAt: confirmedAt,
+      merchandiseSubtotalVnd: BigInt(200_000),
+      shippingFeeVnd: BigInt(30_000),
+      totalVnd: BigInt(230_000),
+      lines: {
+        create: {
+          variantId: `tracking-legacy-${runId}`,
+          pancakeVariationId: `tracking-legacy-${runId}`,
+          productName: "Tracking Legacy",
+          size: "S",
+          quantity: 1,
+          unitPriceVnd: BigInt(200_000),
+          lineTotalVnd: BigInt(200_000),
+        },
+      },
+    },
+  });
+
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
@@ -229,6 +333,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await stopServer();
   await cleanup();
+  await prisma.orderMirror.deleteMany({ where: { publicCode: legacyCode } });
   if (historicalProductId) {
     await prisma.productMirror.deleteMany({ where: { id: historicalProductId } });
   }
@@ -335,6 +440,53 @@ test("guest tracking hides order existence on wrong proof and exposes only safe 
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
+});
+
+test("F8c browser surfaces distinguish ready, preorder, mixed and legacy confirmed history", async ({
+  page,
+  context,
+}) => {
+  await context.setExtraHTTPHeaders({ "x-ci-client-ip": "203.0.113.86" });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(readyOnlyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(preorderOnlyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  const preorderOnly = page.locator('[data-historical-preorder="true"]');
+  await expect(preorderOnly).toContainText("Đặt trước");
+  await expect(preorderOnly).toContainText("03/10/2026");
+  await expect(preorderOnly.locator('[data-preorder-mixed="true"]')).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(publicCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.locator('[data-preorder-mixed="true"]')).toContainText("giao cùng nhau");
+
+  await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(legacyCode)}`, {
+    waitUntil: "networkidle",
+  });
+  await expect(page.getByText("Cảm ơn bạn đã đặt hàng.")).toBeVisible();
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
+  await page.getByLabel("Mã đơn hàng").fill(legacyCode);
+  await page.getByLabel("Số điện thoại").fill(guestPhone);
+  await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Đã tiếp nhận" })).toBeVisible();
+  await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
 
 test("F8c confirmation and tracking keep immutable preorder history after live catalog mutations", async ({
