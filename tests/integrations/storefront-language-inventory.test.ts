@@ -417,7 +417,7 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   for (const expected of [
     "Cửa hàng",
     `${BRAND_NAME_IN_JSX} / Sản phẩm`,
-    "Bảo quản",
+    "Hướng dẫn bảo quản",
     "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
     "Số lượng tồn kho chính xác không được hiển thị trên website.",
   ]) {

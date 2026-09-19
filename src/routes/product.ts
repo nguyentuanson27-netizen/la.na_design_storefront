@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
+import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import {
   getConfiguredStorefrontProductBySlug,
   listConfiguredRelatedStorefrontProducts,
@@ -18,6 +19,12 @@ import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-structured-data";
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
+import {
+  buildReturnsViewModel,
+  buildShippingViewModel,
+  type ReturnsViewModel,
+  type ShippingViewModel,
+} from "./evergreen-model.ts";
 import { buildProductViewModel, type ProductViewModel } from "./product-model.ts";
 
 /** The product page's loader: the product, its related grid, the deep link, and the JSON-LD. */
@@ -33,6 +40,9 @@ export type ProductRouteData = ProductViewModel &
     commerceTrackingEnabled: boolean;
     /** The related grid's own `view_item_list`; the shell carries the product view event. */
     relatedListEvent: ReturnType<typeof buildProductListTracking>["listEvent"];
+    /** Canonical A5 policy projections; the PDP does not restate shipping/returns facts. */
+    shipping: ShippingViewModel;
+    returns: ReturnsViewModel;
   }>;
 
 export async function loadProductRoute({
@@ -94,6 +104,8 @@ export async function loadProductRoute({
       }),
       commerceTrackingEnabled: isCommerceTrackingEnabled(),
       relatedListEvent: relatedTracking.listEvent,
+      shipping: buildShippingViewModel({ policy: readGuestShippingPolicy() }),
+      returns: buildReturnsViewModel(),
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({
