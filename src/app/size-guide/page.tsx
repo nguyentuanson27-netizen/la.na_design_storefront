@@ -49,7 +49,7 @@ function render(data: SizeGuideViewModel) {
 
       <div className="mt-16 grid max-w-5xl gap-16">
         {data.charts.map((chart) => (
-          <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`}>
+          <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`} className="min-w-0">
             <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
               {chart.title}
             </h2>
@@ -57,7 +57,11 @@ function render(data: SizeGuideViewModel) {
               <p className="mt-2 text-sm text-black/60">Dung sai: {data.tolerance.text}.</p>
             )}
 
-            <div className="mt-6 overflow-x-auto">
+            <div
+              className="mt-6 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2"
+              tabIndex={0}
+              aria-labelledby={`chart-${chart.id}-heading`}
+            >
               <table className="w-full min-w-[560px] border-collapse text-left text-sm">
                 <caption className="sr-only">{chart.title}</caption>
                 <thead>

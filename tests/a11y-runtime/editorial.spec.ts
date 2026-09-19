@@ -413,6 +413,147 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   expect(failedResponses).toEqual([]);
 });
 
+test("V1 accepts remaining buyer surfaces on mobile and desktop", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) {
+      failedResponses.push(`${response.status()} ${response.url()}`);
+    }
+  });
+
+  const viewports = [
+    { name: "mobile", width: 390, height: 844 },
+    { name: "desktop", width: 1440, height: 900 },
+  ] as const;
+  const routes = [
+    { path: "/", label: "homepage" },
+    { path: "/shop", label: "PLP" },
+    { path: "/about", label: "about" },
+    { path: "/contact", label: "contact" },
+    { path: "/shipping", label: "shipping policy" },
+    { path: "/returns", label: "returns policy" },
+    { path: "/size-guide", label: "size guide" },
+    { path: "/policies", label: "policy hub" },
+  ] as const;
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+
+    for (const route of routes) {
+      browserErrors.length = 0;
+      failedResponses.length = 0;
+
+      const response = await page.goto(`${BASE_URL}${route.path}`, { waitUntil: "networkidle" });
+      expect(response?.status(), `${viewport.name} ${route.label} response`).toBe(200);
+
+      const main = page.locator("main");
+      await expect(main, `${viewport.name} ${route.label} main`).toBeVisible();
+      await expect(main.locator("h1").first(), `${viewport.name} ${route.label} h1`).toBeAttached();
+
+      const overflow = await page.evaluate(() => ({
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+      }));
+      expect(
+        overflow.documentWidth,
+        `${viewport.name} ${route.label} horizontal overflow`,
+      ).toBeLessThanOrEqual(overflow.viewportWidth + 1);
+
+      const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+      expect(
+        accessibility.violations,
+        `${viewport.name} ${route.label} Axe violations`,
+      ).toEqual([]);
+
+      await page.keyboard.press("Tab");
+      expect(
+        await page.evaluate(() => document.activeElement?.tagName),
+        `${viewport.name} ${route.label} keyboard focus`,
+      ).not.toBe("BODY");
+
+      if (route.path === "/shop") {
+        const search = page.getByRole("searchbox", { name: "Tìm sản phẩm" });
+        await search.fill("Editorial Runtime");
+        await Promise.all([
+          page.waitForURL((url) => url.pathname === "/shop" && url.searchParams.get("q") === "Editorial Runtime"),
+          page.getByRole("button", { name: "Áp dụng", exact: true }).click(),
+        ]);
+        await expect(page.getByRole("heading", { level: 1, name: "CỬA HÀNG" })).toBeVisible();
+      }
+
+      expect(browserErrors, `${viewport.name} ${route.label} console/page errors`).toEqual([]);
+      expect(failedResponses, `${viewport.name} ${route.label} failed requests`).toEqual([]);
+    }
+  }
+});
+
+test("V1 search overlay keeps keyboard focus, closes cleanly, and works from desktop and mobile navigation", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  for (const viewport of [
+    { name: "mobile", width: 390, height: 844 },
+    { name: "desktop", width: 1440, height: 900 },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+    const trigger =
+      viewport.name === "mobile"
+        ? page.getByRole("button", { name: "Menu", exact: true })
+        : page.getByRole("navigation", { name: "Tiện ích" }).getByRole("button", {
+            name: "Tìm kiếm",
+            exact: true,
+          });
+
+    if (viewport.name === "mobile") {
+      await trigger.click();
+      const mobileDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+      await expect(mobileDialog).toBeVisible();
+      await mobileDialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
+      await expect(mobileDialog).toHaveCount(0);
+    } else {
+      await trigger.click();
+    }
+
+    const dialog = page.getByRole("dialog", { name: "Tìm kiếm sản phẩm" });
+    await expect(dialog).toBeVisible();
+    const input = dialog.getByRole("searchbox", { name: "Nhập từ khóa tìm kiếm" });
+    await expect(input).toBeFocused();
+
+    await input.fill("Editorial Runtime");
+    await expect(
+      dialog.getByRole("link", { name: /Xem tất cả kết quả cho/ }),
+    ).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+    expect(accessibilityScan.violations).toEqual([]);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
 test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", async ({ page }) => {
   const searchResponse = await page.goto(`${BASE_URL}/search`, { waitUntil: "networkidle" });
   expect(searchResponse?.headers()["x-robots-tag"]).toBe("noindex, nofollow");
