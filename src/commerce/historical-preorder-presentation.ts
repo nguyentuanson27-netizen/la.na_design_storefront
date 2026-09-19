@@ -2,14 +2,12 @@ import { FULFILLMENT } from "../brand/index.ts";
 import { PREORDER_LABEL } from "./preorder-fulfillment-presentation.ts";
 
 export type HistoricalPreorderSnapshotFacts = Readonly<{
-  confirmedAt: Date;
   preorderReadyAt: Date | null;
   shippingInnerCityMinDays: number | null;
   shippingInnerCityMaxDays: number | null;
   shippingOtherProvinceMinDays: number | null;
   shippingOtherProvinceMaxDays: number | null;
   lines: readonly Readonly<{
-    variantId: string;
     quantity: number;
     state: "READY" | "PREORDER";
     preorderReadyAt: Date | null;
