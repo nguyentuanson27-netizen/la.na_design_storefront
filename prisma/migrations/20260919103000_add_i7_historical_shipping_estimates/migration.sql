@@ -25,7 +25,11 @@ ALTER TABLE "OrderPreorderSnapshot"
     )
     OR
     (
-      "shippingInnerCityMinDays" > 0
+      "shippingInnerCityMinDays" IS NOT NULL
+      AND "shippingInnerCityMaxDays" IS NOT NULL
+      AND "shippingOtherProvinceMinDays" IS NOT NULL
+      AND "shippingOtherProvinceMaxDays" IS NOT NULL
+      AND "shippingInnerCityMinDays" > 0
       AND "shippingInnerCityMaxDays" >= "shippingInnerCityMinDays"
       AND "shippingOtherProvinceMinDays" > 0
       AND "shippingOtherProvinceMaxDays" >= "shippingOtherProvinceMinDays"
