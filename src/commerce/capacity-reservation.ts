@@ -33,7 +33,26 @@ import {
   resolveAcceptedPreorderState,
 } from "./capacity-policy.ts";
 
-export type ReservationLineRequest = Readonly<{ variantId: string; quantity: number }>;
+export type ReservationLineRequest = Readonly<{
+  variantId: string;
+  quantity: number;
+  /**
+   * The fulfillment state the buyer was shown and acknowledged for this line, when the caller has
+   * one to declare.
+   *
+   * The signed quote proof catches a state that moved where the *projection* can see it, but the
+   * projection deliberately does not subtract competing live reservations — it passes
+   * `activeReservedQuantity: 0`, because ADR 0014 §2 puts the authoritative read here. So the state
+   * can still flip under this lock: PREORDER stock 2, quantity 2, and another order holding 1 unit
+   * makes an acknowledged READY line into a PREORDER one. Declaring the expectation lets that be
+   * refused before any row is written and before any external call.
+   *
+   * Optional because only a caller that actually showed a buyer something can promise it. Absent
+   * means no promise was made on this attempt and nothing is compared — it never means "accept
+   * whatever comes out".
+   */
+  expectedFulfillmentState?: "READY" | "PREORDER";
+}>;
 
 export type HeldReservation = Readonly<{
   id: string;
@@ -52,6 +71,13 @@ export type ReservationRefusalReason =
    * purpose — see `reserveOrderCapacity`.
    */
   | "reservation-conflict"
+  /**
+   * The line may be held, but not as the buyer was told it would be: capacity moved between the
+   * quote they acknowledged and this lock, and an accepted READY line would have become PREORDER
+   * (or the reverse). Fail-closed, and surfaced through the same re-confirm path as any other
+   * cart change.
+   */
+  | "fulfillment-state-changed"
   | CapacityDecisionReason;
 
 export type ReservationOutcome =
@@ -79,10 +105,23 @@ export function mergeReservationLines(
   lines: readonly ReservationLineRequest[],
 ): ReservationLineRequest[] {
   const byVariantId = new Map<string, number>();
+  const expectedByVariantId = new Map<string, "READY" | "PREORDER">();
   for (const line of lines) {
     byVariantId.set(line.variantId, (byVariantId.get(line.variantId) ?? 0) + line.quantity);
+    if (line.expectedFulfillmentState === undefined) continue;
+    // §30 gives the order one readiness basis, so a merged quantity waits if any part of it was
+    // presented as waiting. A cart carries one line per variant, so this only arbitrates a
+    // defensive case — but the rule it applies is the spec's, not a convenience.
+    if (line.expectedFulfillmentState === "PREORDER" || !expectedByVariantId.has(line.variantId)) {
+      expectedByVariantId.set(line.variantId, line.expectedFulfillmentState);
+    }
   }
-  return [...byVariantId].map(([variantId, quantity]) => ({ variantId, quantity }));
+  return [...byVariantId].map(([variantId, quantity]) => {
+    const expected = expectedByVariantId.get(variantId);
+    return expected === undefined
+      ? { variantId, quantity }
+      : { variantId, quantity, expectedFulfillmentState: expected };
+  });
 }
 
 /**
@@ -187,15 +226,32 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         // equal the requested set, so every row it accepts is one this transaction has locked.
         const own = await tx.variantCapacityReservation.findMany({
           where: { orderId },
-          select: { id: true, variantId: true, quantity: true, state: true, committedAt: true },
+          select: {
+            id: true,
+            variantId: true,
+            quantity: true,
+            state: true,
+            committedAt: true,
+            acceptedPreorderState: true,
+          },
         });
         if (own.length > 0) {
           const requestedByVariantId = new Map(merged.map((line) => [line.variantId, line.quantity]));
           // A row for a variant outside the basket has no requested quantity, so `undefined`
           // compares unequal and it lands here as a mismatch — which is exactly the A + B -> A case.
+          const expectedByVariantId = new Map(
+            merged
+              .filter((line) => line.expectedFulfillmentState !== undefined)
+              .map((line) => [line.variantId, line.expectedFulfillmentState!]),
+          );
           const mismatch = own.find(
             (row) =>
               row.quantity !== requestedByVariantId.get(row.variantId) ||
+              // An existing hold classified differently from what this attempt's buyer was told is
+              // not this basket either. Letting it satisfy the retry would accept an old hold whose
+              // fulfillment state the buyer never acknowledged.
+              (expectedByVariantId.has(row.variantId) &&
+                row.acceptedPreorderState !== expectedByVariantId.get(row.variantId)) ||
               !reservationHoldsCapacity({
                 state: row.state,
                 committedAt: row.committedAt,
@@ -269,6 +325,25 @@ export function createCapacityReservationRepository(client: PrismaClient) {
             ok: false,
             reason: refused?.decision.reason ?? "invalid-quantity",
             refusedVariantId: decision.refusedLine?.variantId ?? null,
+          } as const;
+        }
+
+        // Step 5b — the acknowledgement gate for fulfillment state, under the lock and before any
+        // row exists. This is the first point at which `activeReservedQuantity` is real, so it is
+        // the first point at which a READY line the buyer accepted can be seen to have become a
+        // PREORDER one. Refusing here means no ledger row, no `POS_SUBMITTING` and no external
+        // write happened under a state nobody agreed to.
+        const stateMismatch = merged.find((line) => {
+          if (line.expectedFulfillmentState === undefined) return false;
+          const input = inputByVariantId.get(line.variantId);
+          if (input === undefined) return false;
+          return resolveAcceptedPreorderState(input, line.quantity) !== line.expectedFulfillmentState;
+        });
+        if (stateMismatch !== undefined) {
+          return {
+            ok: false,
+            reason: "fulfillment-state-changed",
+            refusedVariantId: stateMismatch.variantId,
           } as const;
         }
 

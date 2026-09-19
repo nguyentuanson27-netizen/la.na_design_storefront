@@ -73,6 +73,7 @@ test("fresh guest checkout validates geo before creating a snapshot", async () =
               totalVnd: BigInt(530_000),
               lines: [{ variantId: "variant-1", quantity: 1 }],
             },
+            verifiedFulfillmentStateByVariantId: new Map(),
           };
         },
       };
@@ -189,6 +190,7 @@ test("reusable active checkout skips geo reads while snapshot transaction retain
               totalVnd: BigInt(530_000),
               lines: [{ variantId: "variant-1", quantity: 1 }],
             },
+            verifiedFulfillmentStateByVariantId: new Map(),
           };
         },
       };

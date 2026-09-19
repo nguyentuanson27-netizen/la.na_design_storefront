@@ -81,6 +81,14 @@ type CheckoutSnapshotResult =
         /** The committed basket, as persisted. One entry per line; I6b merges by variant (§7). */
         lines: readonly { variantId: string; quantity: number }[];
       };
+      /**
+       * F8b — the fulfillment state each line carried in the quote this attempt authenticated.
+       *
+       * Empty on the paths that return an existing checkout without re-verifying a proof: there is
+       * no promise made on *this* attempt to hold the reservation to, and inventing one would be
+       * worse than declaring none. `reserveOrderCapacity()` compares only what it is given.
+       */
+      verifiedFulfillmentStateByVariantId: ReadonlyMap<string, "READY" | "PREORDER">;
     }
   | { ok: false; reason: CheckoutFailureReason }
   /**
@@ -227,6 +235,9 @@ function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult 
       totalVnd: order.totalVnd,
       lines: order.lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
     },
+    // This path returns an order that already exists without re-authenticating a quote, so this
+    // attempt made no promise about fulfillment state and declares none. See the field's doc.
+    verifiedFulfillmentStateByVariantId: new Map(),
   };
 }
 
@@ -551,6 +562,7 @@ export function createGuestCheckoutSnapshotService(
           unitPriceVnd: number;
           fulfillmentState: "READY" | "PREORDER";
         }> = [];
+        const verifiedFulfillmentStateByVariantId = new Map<string, "READY" | "PREORDER">();
         let merchandiseSubtotalVnd = 0;
         let totalQuantity = 0;
 
@@ -621,6 +633,12 @@ export function createGuestCheckoutSnapshotService(
             // fulfillment state they never saw.
             fulfillmentState: line.isPreorderSale ? ("PREORDER" as const) : ("READY" as const),
           });
+          // Same fact, keyed by the internal id I6b addresses lines by. The quote item carries the
+          // external identity, which the reservation ledger does not use.
+          verifiedFulfillmentStateByVariantId.set(
+            line.variantId,
+            line.isPreorderSale ? "PREORDER" : "READY",
+          );
         }
 
         const shippingFeeVnd = calculateGuestShippingFeeVnd({
@@ -692,7 +710,14 @@ export function createGuestCheckoutSnapshotService(
               select: snapshotOrderSelection,
             });
 
-        return toSnapshotResult(order) ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+        const snapshot = toSnapshotResult(order);
+        if (snapshot === null || !snapshot.ok) {
+          return snapshot ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
+        }
+        // This attempt authenticated a quote, so it *can* promise a fulfillment state — unlike the
+        // paths that hand back an existing checkout. `toSnapshotResult()` cannot know it: it reads
+        // persisted rows, and the state is not persisted.
+        return { ...snapshot, verifiedFulfillmentStateByVariantId };
       });
     } catch (error) {
       if (

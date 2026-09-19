@@ -35,6 +35,9 @@ function snapshotOrder(
       totalVnd: BigInt(530_000),
       lines: [{ variantId: "variant-1", quantity: 1 }],
     },
+    // These doubles predate F8b and make no fulfillment promise, which is the shape the snapshot
+    // service returns from the paths that hand back an existing checkout.
+    verifiedFulfillmentStateByVariantId: new Map<string, "READY" | "PREORDER">(),
   };
 }
 
@@ -627,6 +630,7 @@ test("I6b an order already past submission is not re-reserved", async () => {
               // No lines, exactly like the recovered order the smoke reuses.
               lines: [],
             },
+            verifiedFulfillmentStateByVariantId: new Map<string, "READY" | "PREORDER">(),
           };
         },
       },
@@ -666,6 +670,7 @@ test("I6b an order already past submission is not re-reserved", async () => {
             totalVnd: BigInt(530_000),
             lines: [],
           },
+          verifiedFulfillmentStateByVariantId: new Map<string, "READY" | "PREORDER">(),
         };
       },
     },

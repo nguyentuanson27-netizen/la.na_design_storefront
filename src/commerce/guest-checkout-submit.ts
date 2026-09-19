@@ -33,6 +33,13 @@ type SnapshotResult =
         totalVnd: bigint;
         lines: readonly { variantId: string; quantity: number }[];
       };
+      /**
+       * F8b — the fulfillment state each line carried in the quote this attempt authenticated.
+       *
+       * Empty when the snapshot handed back an existing checkout without re-authenticating one:
+       * there is no promise from this attempt to hold the reservation to.
+       */
+      verifiedFulfillmentStateByVariantId: ReadonlyMap<string, "READY" | "PREORDER">;
     }
   | { ok: false; reason: SnapshotFailureReason }
   | {
@@ -74,7 +81,11 @@ type OrderSubmissionService = {
 type CapacityReservationService = {
   reserveOrderCapacity(input: {
     orderId: string;
-    lines: readonly { variantId: string; quantity: number }[];
+    lines: readonly {
+      variantId: string;
+      quantity: number;
+      expectedFulfillmentState?: "READY" | "PREORDER";
+    }[];
   }): Promise<ReservationOutcome>;
   transitionReservation(input: {
     id: string;
@@ -360,7 +371,14 @@ export function createGuestCheckoutSubmitService({
     if (capacity && !alreadySubmitted) {
       const reserved = await capacity.reserveOrderCapacity({
         orderId: snapshotResult.order.id,
-        lines: snapshotResult.order.lines,
+        // Each line carries the fulfillment state the buyer acknowledged on this attempt, when
+        // this attempt authenticated a quote. The gate only becomes real under the reservation's
+        // lock: that is where competing live holds are counted, and where an accepted READY line
+        // can be seen to have turned into a PREORDER one.
+        lines: snapshotResult.order.lines.map((line) => {
+          const expected = snapshotResult.verifiedFulfillmentStateByVariantId.get(line.variantId);
+          return expected === undefined ? line : { ...line, expectedFulfillmentState: expected };
+        }),
       });
       if (!reserved.ok) {
         // The basket cannot be held, so nothing is sent to Pancake. Reported as CART_CHANGED
