@@ -135,10 +135,14 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
 
   const support = footer.getByRole("navigation", { name: "Hỗ trợ khách hàng" });
   const policy = footer.getByRole("navigation", { name: "Thông tin và chính sách" });
-  for (const topic of POLICY_HUB_TOPICS.slice(0, 6)) {
+  const supportTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support");
+  const policyTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy");
+  expect(supportTopics.length + policyTopics.length).toBe(POLICY_HUB_TOPICS.length);
+
+  for (const topic of supportTopics) {
     await expect(support.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
   }
-  for (const topic of POLICY_HUB_TOPICS.slice(6)) {
+  for (const topic of policyTopics) {
     await expect(policy.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
   }
 
