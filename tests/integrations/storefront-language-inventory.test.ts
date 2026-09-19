@@ -383,10 +383,20 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
   // commerce shim that used to keep the panel's public surface is gone: every route renders the
   // brand panel directly, so there is no second file left to carry this copy. A shim coming back
   // with shopper-facing copy is caught by the repo-wide inventory below rather than here.
-  const source = await readFile(
+  // F8a moved the add-to-bag wording one layer up, into the headless selection model: §30 makes the
+  // CTA say something different for a preorder sale, and that is a decision about what is true
+  // rather than how it looks. The copy is still shopper-facing and still has to be Vietnamese, so
+  // both layers are read here — checking only the panel would let the label leave the repository's
+  // copy inventory entirely the moment it was projected.
+  const panelSource = await readFile(
     join(REPO_ROOT, "src/components/brand/purchase-panel.tsx"),
     "utf8",
   );
+  const modelSource = await readFile(
+    join(REPO_ROOT, "src/components/headless/variant-selection-model.ts"),
+    "utf8",
+  );
+  const source = `${panelSource}\n${modelSource}`;
 
   for (const expected of [
     "Thêm vào giỏ hàng",

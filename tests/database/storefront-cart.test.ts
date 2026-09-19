@@ -128,6 +128,7 @@ test("storefront cart resolves current lines only from the configured shop and p
       quantity: 2,
       price: 590_000,
       available: true,
+      isPreorderSale: false,
       unavailableReason: null,
       media: { primary: null, gallery: [] },
     },
@@ -143,6 +144,7 @@ test("storefront cart resolves current lines only from the configured shop and p
       quantity: 1,
       price: null,
       available: false,
+      isPreorderSale: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
       media: { primary: null, gallery: [] },
     },
@@ -158,6 +160,7 @@ test("storefront cart resolves current lines only from the configured shop and p
       quantity: 1,
       price: null,
       available: false,
+      isPreorderSale: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
       media: { primary: null, gallery: [] },
     },
@@ -291,6 +294,81 @@ test("I5 cart eligibility reads the stored selling policy, not a client claim", 
     items: [{ variantId: variant.id, quantity: 20 }],
   });
   assert.equal(atLimit?.available, true, "the unit that lands on the floor is still sold");
+});
+
+test("F8b the cart's preorder classification comes from the stored policy, end to end", async () => {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "cart-preorder-product",
+      slug: "cart-preorder-product",
+      name: "Cart Preorder Product",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "cart-preorder-variant",
+      productId: product.id,
+      color: "Black",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 500_000,
+      pancakeRetailPriceAfterDiscount: 500_000,
+      syncedAt,
+    },
+  });
+  // Stock exactly 0 again: the same number is sold out, an ordinary oversell, or `Đặt trước`,
+  // depending only on the row below. Nothing about the request distinguishes the three.
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: variant.id,
+      pancakeWarehouseId: "cart-preorder-warehouse",
+      quantity: 0,
+      syncedAt,
+    },
+  });
+
+  const read = async () => {
+    const [line] = await repository.getLines({
+      shopId,
+      items: [{ variantId: variant.id, quantity: 1 }],
+    });
+    return line;
+  };
+
+  // STANDARD at 0: sold out, and a line nobody can buy is never a preorder sale.
+  const unconfigured = await read();
+  assert.equal(unconfigured?.available, false);
+  assert.equal(unconfigured?.isPreorderSale, false);
+
+  // OVERSELL at 0: purchasable, and still not a preorder sale — §31 keeps it ordinary.
+  await prisma.productSellingPolicy.create({
+    data: { productId: product.id, sellingMode: "OVERSELL", negativeStockLimit: -20 },
+  });
+  const oversell = await read();
+  assert.equal(oversell?.available, true);
+  assert.equal(oversell?.isPreorderSale, false, "§31: an oversell sale is ready stock to the buyer");
+
+  // PREORDER at 0: purchasable, and now a preorder sale. Only the stored row changed.
+  await prisma.productSellingPolicy.update({
+    where: { productId: product.id },
+    data: { sellingMode: "PREORDER" },
+  });
+  const preorder = await read();
+  assert.equal(preorder?.available, true);
+  assert.equal(preorder?.isPreorderSale, true, "§30: depleted PREORDER stock is Đặt trước");
+
+  // At the hard floor the variant is disabled, so it is not a preorder sale either.
+  const [atFloor] = await repository.getLines({
+    shopId,
+    items: [{ variantId: variant.id, quantity: 21 }],
+  });
+  assert.equal(atFloor?.available, false);
+  assert.equal(atFloor?.isPreorderSale, false);
 });
 
 test("I5 a composite parent is refused an oversell allowance the cart read from the database", async () => {
