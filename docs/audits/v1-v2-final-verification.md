@@ -90,6 +90,22 @@ A dedicated harness regression drives the current PDP, forces the footer logo in
 
 On the corrected benchmark, the real optimized local image appears as `/_next/image` at about 11.6 KB in the representative resource list, instead of the original raw ~194 KB source.
 
+### V1 acceptance finding — Size Guide escaped the mobile viewport
+
+The focused two-viewport acceptance caught the Size Guide document at 584 px wide on a 390 px viewport.
+
+Root cause: the 560 px minimum-width table sits in a CSS Grid item. The table's intended `overflow-x-auto` wrapper could scroll, but the grid item's automatic minimum size still contributed the table's intrinsic width and expanded the document.
+
+Minimal fix: add `min-w-0` to the per-chart grid item. The table remains 560 px minimum width and horizontally scrollable inside its own container; the document itself can now remain viewport-bounded.
+
+### V1 acceptance finding — mobile search focus restored to body
+
+The focused search-overlay acceptance also caught Escape closing the mobile-opened search overlay without returning focus to the hamburger trigger.
+
+Root cause: opening search from the mobile menu closes/unmounts the clicked menu search button in the same state transition. By the time the overlay effect sampled `document.activeElement`, the browser could already have moved focus to `body`; that valid-in-DOM body node then won over the explicit trigger fallback on close.
+
+Minimal fix: when a caller supplies an explicit `triggerRef`, the overlay records that as the restoration target before falling back to `document.activeElement`. This applies equally to desktop and mobile callers and does not special-case menu copy or fixture data.
+
 ## V2
 
 V2 remains a separate gate after V1:
