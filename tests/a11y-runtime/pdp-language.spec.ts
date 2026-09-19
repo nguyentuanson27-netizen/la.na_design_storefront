@@ -178,7 +178,9 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   await expect(
     page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
   ).toBeVisible();
-  await expect(page.getByRole("heading", { level: 3, name: "Bảo quản" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { level: 2, name: "Hướng dẫn bảo quản", exact: true }),
+  ).toBeVisible();
   await expect(
     page.getByText(
       "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng. Số lượng tồn kho chính xác không được hiển thị trên website.",

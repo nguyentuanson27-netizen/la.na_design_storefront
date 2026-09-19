@@ -272,74 +272,95 @@ export function buildSizeGuideViewModel(): SizeGuideViewModel {
  * supplied terms contained older facts: website payment remains COD-only and contact placeholders
  * are resolved from the approved contact config. No contact-form channel is published before F9b.
  */
+export type PolicyFooterGroup = "support" | "policy";
+
+type PolicyHubTopicDefinition = Readonly<{
+  id: string;
+  title: string;
+  href: string;
+  linkLabel: string | null;
+  footerGroup: PolicyFooterGroup;
+}>;
+
 export const POLICY_HUB_TOPICS = [
   {
     id: "van-chuyen",
+    footerGroup: "support",
     title: "Chính sách vận chuyển",
     href: "/shipping",
     linkLabel: "Xem chính sách vận chuyển",
   },
   {
     id: "thanh-toan",
+    footerGroup: "support",
     title: "Chính sách thanh toán",
     href: "/shipping#thanh-toan",
     linkLabel: "Xem chi tiết thanh toán",
   },
   {
     id: "doi-tra-hoan-tien",
+    footerGroup: "support",
     title: "Chính sách đổi trả và hoàn tiền",
     href: "/returns",
     linkLabel: "Xem chính sách đổi trả và hoàn tiền",
   },
   {
     id: "lien-he",
+    footerGroup: "support",
     title: "Thông tin liên hệ",
     href: "/contact",
     linkLabel: "Xem thông tin liên hệ",
   },
   {
     id: "ho-tro-truc-tuyen",
+    footerGroup: "support",
     title: "Các hình thức hỗ trợ trực tuyến",
     href: "/contact",
     linkLabel: "Xem các kênh hỗ trợ",
   },
   {
     id: "khieu-nai",
+    footerGroup: "support",
     title: "Chính sách tiếp nhận và giải quyết phản ánh, khiếu nại",
     href: "/contact",
     linkLabel: "Liên hệ bộ phận hỗ trợ",
   },
   {
     id: "dieu-khoan-chung",
+    footerGroup: "policy",
     title: "Điều khoản chung",
     href: "/policies#dieu-khoan-chung",
     linkLabel: null,
   },
   {
     id: "chinh-sach-gia",
+    footerGroup: "policy",
     title: "Chính sách giá",
     href: "/policies#chinh-sach-gia",
     linkLabel: null,
   },
   {
     id: "bao-mat",
+    footerGroup: "policy",
     title: "Chính sách bảo mật",
     href: "/policies#bao-mat",
     linkLabel: null,
   },
   {
     id: "dieu-kien-cung-cap",
+    footerGroup: "policy",
     title: "Các điều kiện và hạn chế trong việc cung cấp hàng hóa",
     href: "/policies#dieu-kien-cung-cap",
     linkLabel: null,
   },
   {
     id: "quyen-nghia-vu",
+    footerGroup: "policy",
     title: "Quyền và nghĩa vụ của các bên trên nền tảng",
     href: "/policies#quyen-nghia-vu",
     linkLabel: null,
   },
-] as const;
+] as const satisfies readonly PolicyHubTopicDefinition[];
 
 export type PolicyTopicId = (typeof POLICY_HUB_TOPICS)[number]["id"];
 

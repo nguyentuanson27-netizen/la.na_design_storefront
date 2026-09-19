@@ -194,7 +194,7 @@ test("published collection exposes visible copy and deterministic website-owned 
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
   // C — rendered check. The brand half comes from Brand Config, not from a literal.
   await expect(
     page.getByText(`${BRAND.identity.name} / Bộ sưu tập`, { exact: true }),

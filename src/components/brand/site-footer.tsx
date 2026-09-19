@@ -4,85 +4,111 @@ import { BRAND, NAVIGATION } from "@/brand";
 import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
 
 /**
- * Markup over props. The facts arrive already derived from the approved authority, so redrawing
- * this footer cannot change which facts a brand publishes -- only how they read on the page.
+ * F9a footer layout. Presentation consumes approved Brand Config and policy projections only:
+ * shopping links stay in NAVIGATION, while support/policy/legal facts arrive through the chrome
+ * model. There is deliberately no accordion, newsletter, representative field or page-specific
+ * policy copy here.
+ *
+ * The footer master logo is the owner-approved production PNG recorded in the owner-facts
+ * authority. It is committed byte-for-byte under public/brand; no favicon/social-card derivation or
+ * restyling is performed here.
  */
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
-  const brandFacts = model.facts;
-
   return (
     <footer className="site-footer">
-      <div>
-        {/* Uses text wordmark fallback pending owner-supplied master logo asset */}
-        <p className="footer-kicker">{BRAND.identity.displayNameUpper}</p>
-        <p className="footer-copy">{BRAND.identity.strapline}</p>
+      <div className="footer-groups">
+        <section className="footer-group footer-group--brand" data-footer-group>
+          <h2 className="footer-brand-heading">
+            <Link className="footer-brand-mark" href="/">
+              <img
+                className="footer-brand-logo"
+                src="/brand/la-na-design-master-logo.png"
+                alt={BRAND.identity.name}
+                width={4185}
+                height={2148}
+                loading="lazy"
+                decoding="async"
+              />
+            </Link>
+          </h2>
+          <p className="footer-copy">{BRAND.identity.strapline}</p>
 
-        <dl className="mt-8 grid max-w-2xl gap-5 text-sm leading-6">
-          <div>
-            <dt className="font-semibold uppercase tracking-[0.12em]">Thanh toán</dt>
-            <dd className="mt-1 text-black/70">
-              {brandFacts.paymentMethod} {brandFacts.checkoutAccount}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-semibold uppercase tracking-[0.12em]">Vận chuyển</dt>
-            <dd className="mt-1 text-black/70">
-              {brandFacts.shipping.title}. {brandFacts.shipping.detail}
-            </dd>
-          </div>
-          <div>
-            <dt className="font-semibold uppercase tracking-[0.12em]">{brandFacts.orderTracking.title}</dt>
-            <dd className="mt-1 text-black/70">{brandFacts.orderTracking.detail}</dd>
-          </div>
-          {/*
-            U32b/B2. The same owner-approved contact facts the site JSON-LD marks up on the
-            Organization entity, rendered from the same authority so every marked-up fact is one a
-            reader can actually see. The footer is site-wide, matching where that JSON-LD is
-            injected. Only the approved §2 facts appear here — no support route, policy page or
-            business claim the owner has not approved.
-          */}
-          <div>
-            <dt className="font-semibold uppercase tracking-[0.12em]">Liên hệ</dt>
-            <dd className="mt-1 text-black/70">
-              {/*
-                The visible text is the number exactly as the owner wrote it; the dial target uses
-                the same number's international spelling, which is also what the Organization
-                markup carries. One fact, two spellings, both from the authority.
-              */}
-              <a
-                className="underline underline-offset-4"
-                href={`tel:${model.contact.telephoneInternational}`}
-              >
+          <ul className="footer-contact-list">
+            <li>
+              <span className="footer-label">Hotline/Zalo</span>
+              <a href={`tel:${model.contact.telephoneInternational}`}>
                 {model.contact.telephone}
-              </a>{" "}
-              (hotline &amp; Zalo) ·{" "}
-              <a className="underline underline-offset-4" href={`mailto:${model.contact.email}`}>
-                {model.contact.email}
               </a>
-            </dd>
-            <dd className="mt-1 text-black/70">{model.address}</dd>
-            <dd className="mt-1 text-black/70">Hỗ trợ {model.supportHours}</dd>
-            <dd className="mt-1 text-black/70">
-              <a
-                className="underline underline-offset-4"
-                href={model.contact.fanpageUrl}
-                rel="noreferrer"
-                target="_blank"
-              >
-                Fanpage {BRAND.identity.name}
+            </li>
+            <li>
+              <span className="footer-label">Email hỗ trợ</span>
+              <a href={`mailto:${model.contact.email}`}>{model.contact.email}</a>
+            </li>
+            <li>
+              <span className="footer-label">Địa chỉ kinh doanh/đổi trả</span>
+              <span>{model.address}</span>
+            </li>
+            <li>
+              <span className="footer-label">Giờ hỗ trợ</span>
+              <span>{model.supportHours}</span>
+            </li>
+            <li>
+              <a href={model.contact.fanpageUrl} rel="noreferrer" target="_blank">
+                Facebook {BRAND.identity.name}
               </a>
-            </dd>
-          </div>
-        </dl>
+            </li>
+          </ul>
+        </section>
+
+        <section className="footer-group" data-footer-group>
+          <h2 className="footer-heading">Mua sắm</h2>
+          <nav aria-label="Mua sắm">
+            <ul className="footer-nav-list">
+              {NAVIGATION.footer.map((item) => (
+                <li key={item.href}>
+                  <Link href={item.href}>{item.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </section>
+
+        <section className="footer-group" data-footer-group>
+          <h2 className="footer-heading">Hỗ trợ khách hàng</h2>
+          <nav aria-label="Hỗ trợ khách hàng">
+            <ul className="footer-nav-list">
+              {model.supportLinks.map((item) => (
+                <li key={item.label}>
+                  <Link href={item.href}>{item.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </section>
+
+        <section className="footer-group" data-footer-group>
+          <h2 className="footer-heading">Thông tin &amp; chính sách</h2>
+          <nav aria-label="Thông tin và chính sách">
+            <ul className="footer-nav-list">
+              {model.policyLinks.map((item) => (
+                <li key={item.label}>
+                  <Link href={item.href}>{item.label}</Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </section>
       </div>
 
-      <nav className="footer-links" aria-label="Liên kết cuối trang">
-        {NAVIGATION.footer.map((item) => (
-          <Link key={item.href} href={item.href}>
-            {item.label}
-          </Link>
-        ))}
-      </nav>
+      <div className="footer-legal" data-footer-legal>
+        <p className="footer-label">Thông tin pháp lý</p>
+        <p className="footer-legal-name">{model.legal.legalEntityName}</p>
+        <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
+        <p>
+          MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}
+        </p>
+        <p>Email: {model.legal.legalEmail}</p>
+      </div>
 
       <p className="footer-meta">© 2026 {BRAND.identity.name}</p>
     </footer>
