@@ -457,10 +457,14 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   // Master spec §16's first product grid. `Tuyển chọn` and the Brand #1 lookbook block are gone:
   // neither is in the approved order.
   await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveAttribute(
-    "href",
-    "/new-arrivals",
-  );
+  // No `Xem tất cả` out of this grid. `/new-arrivals` is the drop announcement and carries no
+  // product listing, so that CTA sent a shopper asking for more products to a page with none.
+  // Pinned as an absence rather than deleted, so it cannot come back before that route has a
+  // listing to land on.
+  await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveCount(0);
+  await expect(
+    page.locator('[data-homepage-region="new-arrivals"] a[href="/new-arrivals"]'),
+  ).toHaveCount(0);
   await expect(page.locator(".lookbook-panel")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);

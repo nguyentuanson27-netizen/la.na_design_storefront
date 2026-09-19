@@ -94,9 +94,12 @@ function render(data: HomeRouteData) {
         aria-labelledby="home-new-arrivals-title"
         data-homepage-region="new-arrivals"
       >
+        {/* No `Xem tất cả` here. `/new-arrivals` is the drop announcement and carries no product
+            listing on purpose -- `/shop` owns filtering and ordering -- so a CTA out of this grid
+            would land a shopper who wants more products on a page with none. It can return when
+            that route gains a listing, not before. */}
         <div className="section-heading-row">
           <h2 id="home-new-arrivals-title">Hàng mới về</h2>
-          <Link className="text-link" href="/new-arrivals">Xem tất cả</Link>
         </div>
         {data.newArrivals.length > 0 ? (
           <ProductGrid cards={data.newArrivals} />
