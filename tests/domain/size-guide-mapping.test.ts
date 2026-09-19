@@ -280,8 +280,27 @@ test("M1 Category and Size Guide Independence: explicit size-guide mapping is st
         sizeGuide: guideId,
       }),
     );
-    assert.equal(vm.editorial.sizeGuide, guideId);
-    assert.equal(vm.editorial.hasNotes, true);
+    assert.equal(vm.editorial.sizeGuide?.id, guideId);
+    assert.equal(vm.editorial.sizeGuide?.chart.id, guideId);
+    assert.equal(vm.editorial.hasNotes, false);
   }
 });
 
+
+
+test("F7c PDP model resolves only the exact manually mapped approved guide", () => {
+  const aoDai = buildProductViewModel(productInput({ sizeGuide: "ao-dai" }));
+  const wide = buildProductViewModel(productInput({ sizeGuide: "set-vay-form-rong" }));
+  const unmapped = buildProductViewModel(productInput({ sizeGuide: null }));
+  const invalid = buildProductViewModel(productInput({ sizeGuide: "vayDam" }));
+
+  assert.equal(aoDai.editorial.sizeGuide?.id, "ao-dai");
+  assert.equal(aoDai.editorial.sizeGuide?.chart.title, "Áo dài");
+  assert.equal(wide.editorial.sizeGuide?.id, "set-vay-form-rong");
+  assert.equal(wide.editorial.sizeGuide?.chart.title, "Set/Váy form rộng");
+  assert.notDeepEqual(aoDai.editorial.sizeGuide, wide.editorial.sizeGuide);
+
+  // Missing/invalid mappings fail closed: no category/name/option inference or default guide.
+  assert.equal(unmapped.editorial.sizeGuide, null);
+  assert.equal(invalid.editorial.sizeGuide, null);
+});
