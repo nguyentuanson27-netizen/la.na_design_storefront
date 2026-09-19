@@ -9,11 +9,9 @@ import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
  * model. There is deliberately no accordion, newsletter, representative field or page-specific
  * policy copy here.
  *
- * BLOCKED(F9a master logo): every accessible repository/project source was checked during PR #31,
- * but none contains the owner-approved master-logo binary named by master spec §8/§33. The text
- * wordmark below remains the pre-existing temporary fallback; it does not satisfy that acceptance
- * criterion and must be replaced only with the recovered approved asset, never the favicon/social
- * card or a regenerated logo.
+ * The footer master logo is the owner-approved production PNG recorded in the owner-facts
+ * authority. It is committed byte-for-byte under public/brand; no favicon/social-card derivation or
+ * restyling is performed here.
  */
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
@@ -22,7 +20,15 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
         <section className="footer-group footer-group--brand" data-footer-group>
           <h2 className="footer-brand-heading">
             <Link className="footer-brand-mark" href="/">
-              {BRAND.identity.displayNameUpper}
+              <img
+                className="footer-brand-logo"
+                src="/brand/la-na-design-master-logo.png"
+                alt={BRAND.identity.name}
+                width={4185}
+                height={2148}
+                loading="lazy"
+                decoding="async"
+              />
             </Link>
           </h2>
           <p className="footer-copy">{BRAND.identity.strapline}</p>
