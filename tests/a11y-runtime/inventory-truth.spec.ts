@@ -296,7 +296,10 @@ test("F8a a preorder PDP shows the state, and its CTA says so too", async ({ pag
   await page.goto(`${BASE_URL}/shop/${slugs.preorder}`, { waitUntil: "networkidle" });
 
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  // These products carry a colour dimension, so a variant is addressed only once both are picked —
+  // the same two clicks a shopper makes. Before that there is no selected variant to have a state.
   await selectOption(page, "M");
+  await selectOption(page, "Black");
 
   // Two separate things §30 requires: the state is visible, and the button communicates it.
   await expect(panel.locator('[data-purchase-state="preorder"]')).toHaveText(PREORDER);
@@ -331,6 +334,7 @@ test("F8a switching variants moves the state and leaves nothing behind", async (
 
   const readyPanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await selectOption(page, "M");
+  await selectOption(page, "Black");
   await expect(readyPanel.locator('[data-purchase-state="preorder"]')).toHaveCount(0);
   await expect(
     readyPanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }),
@@ -340,6 +344,7 @@ test("F8a switching variants moves the state and leaves nothing behind", async (
   await page.goto(`${BASE_URL}/shop/${slugs.preorder}`, { waitUntil: "networkidle" });
   const preorderPanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await selectOption(page, "M");
+  await selectOption(page, "Black");
   await expect(preorderPanel.locator('[data-purchase-state="preorder"]')).toHaveText(PREORDER);
 });
 
@@ -349,12 +354,15 @@ test("F8a a deep-linked variant renders its own state", async ({ page }) => {
     where: { pancakeVariationId: `${slugs.preorder}-v0` },
   });
 
-  await page.goto(`${BASE_URL}/shop/${slugs.preorder}?variation=${variant.pancakeVariationId}`, {
+  // `VARIANT_QUERY_PARAM` — the one addressing contract, spelled the way the route reads it.
+  await page.goto(`${BASE_URL}/shop/${slugs.preorder}?variant=${variant.pancakeVariationId}`, {
     waitUntil: "networkidle",
   });
 
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  // The link addresses one variation, so both dimensions arrive preselected: no clicks at all.
   await expect(panel.getByRole("radio", { name: "M", exact: true })).toBeChecked();
+  await expect(panel.getByRole("radio", { name: "Black", exact: true })).toBeChecked();
   await expect(panel.locator('[data-purchase-state="preorder"]')).toHaveText(PREORDER);
 });
 
@@ -367,6 +375,7 @@ test("F8a an oversell PDP is keyboard-operable and says nothing special", async 
   const size = await selectOption(page, "M");
   // Focus stays on the control the keyboard reached.
   await expect(size).toBeFocused();
+  await selectOption(page, "Black");
 
   await expect(panel.locator('[data-purchase-state="preorder"]')).toHaveCount(0);
   await expect(
@@ -398,8 +407,11 @@ test("F8b a preorder line keeps its marker in the cart and states the preparatio
   // The approved A5 windows, applied after preparation rather than instead of it.
   await expect(notice).toContainText("1–3 ngày");
   await expect(notice).toContainText("3–10 ngày");
-  // No guaranteed date, and none of the preparation counted from add-to-cart.
-  await expect(notice).not.toContainText("cam kết");
+  // The approved caveat is the only place the word "cam kết" may appear, and it appears there to
+  // deny a commitment: "không phải cam kết thời hạn tuyệt đối". So the check is that the caveat is
+  // present, and that no date is produced — §30 starts the clock at confirmation, not here.
+  await expect(notice).toContainText("không phải cam kết");
+  await expect(notice).not.toContainText(/\d{1,2}\/\d{1,2}\/\d{4}/);
   // Preorder-only basket: nothing is being held alongside it.
   await expect(page.locator('[data-preorder-mixed="true"]')).toHaveCount(0);
 
