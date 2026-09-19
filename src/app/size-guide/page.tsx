@@ -49,7 +49,7 @@ function render(data: SizeGuideViewModel) {
 
       <div className="mt-16 grid max-w-5xl gap-16">
         {data.charts.map((chart) => (
-          <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`}>
+          <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`} className="min-w-0">
             <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
               {chart.title}
             </h2>
