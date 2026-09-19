@@ -80,6 +80,22 @@ async function waitForServerExit(timeoutMs: number) {
   ]);
 }
 
+/**
+ * Which build directory this fixture is currently using.
+ *
+ * A directory per *spec* is not enough here: this is the one fixture that restarts its server
+ * between cases, and `stopServer()` reaches SIGKILL whenever SIGTERM is ignored. A SIGKILLed server
+ * leaves its lock file behind, so a restart reusing that directory reproduces inside this file the
+ * very failure per-spec directories removed between files -- the next server refusing to start.
+ *
+ * Bumped on SIGKILL rather than on every restart, which is both the precise rule and the affordable
+ * one. A clean SIGTERM releases the lock, so that directory is still good and still warm; retiring
+ * it anyway would make every restart compile from cold, and these restarts happen *inside* a test's
+ * 120s budget. Measured: doing it unconditionally timed out both guest-checkout cases at
+ * `page.waitForURL`.
+ */
+let serverGeneration = 0;
+
 async function stopServer() {
   if (!server || server.exitCode !== null) {
     server = undefined;
@@ -89,9 +105,14 @@ async function stopServer() {
   if (!(await waitForServerExit(5_000))) {
     server.kill("SIGKILL");
     await waitForServerExit(5_000);
+    // A SIGKILLed server never released its lock file, so this build directory is spent: the next
+    // server pointed at it would refuse to start. Retire it here, where the cause is, rather than
+    // on every restart -- see `serverGeneration`.
+    serverGeneration += 1;
   }
   server = undefined;
 }
+
 
 async function startServer({
   apiKey,
@@ -113,6 +134,9 @@ async function startServer({
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock file
+      // there. Retired and replaced whenever a stop had to SIGKILL: see `serverGeneration`.
+      NEXT_DIST_DIR: `.next-test/checkout-${serverGeneration}`,
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
       NODE_OPTIONS: nodeOptions,
@@ -295,6 +319,7 @@ test.afterEach(async () => {
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
+
 });
 
 test.afterAll(async () => {

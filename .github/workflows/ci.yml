@@ -221,7 +221,17 @@ jobs:
   admin-a11y-runtime:
     needs: identity
     runs-on: macos-14
-    timeout-minutes: 30
+    # Raised from 30 with the move to a Next build directory per spec. Sharing one directory was
+    # what let a SIGKILLed server's lock file stop the next spec's server from starting at all, and
+    # the price of separating them is that each spec compiles cold instead of inheriting the last
+    # one's build. The browser step went from roughly 8 minutes to past 18 on this runner, which
+    # left no room under the old cap.
+    #
+    # This is a ceiling for a hung job, not a target: the suite is expected to finish well inside
+    # it, and a run that approaches this number is a regression worth reading rather than a new
+    # normal to raise again. macOS runner minutes bill at ten times the Linux rate, so the cost of
+    # a genuinely stuck job is what this number is chosen against.
+    timeout-minutes: 60
     env:
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
       BETTER_AUTH_URL: http://127.0.0.1:3212

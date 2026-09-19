@@ -114,9 +114,9 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
-/** The hero frame the gallery is currently showing, whatever index it landed on. */
+/** The first editorial image is the gallery's current variant/default lead image. */
 function heroImage(page: Page) {
-  return page.locator('[aria-roledescription="carousel"] img').first();
+  return page.locator('[aria-label^="Bộ sưu tập hình ảnh "] img').first();
 }
 
 async function expectHeroToShow(page: Page, urlFragment: string) {
@@ -197,6 +197,11 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock
+      // file there. Every spec drives this one project, so they share that lock unless
+      // each gets its own directory -- and a server that has to be SIGKILLed leaves the
+      // lock behind, which makes the next spec's server refuse to start entirely.
+      NEXT_DIST_DIR: ".next-test/variant-deep-link",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
