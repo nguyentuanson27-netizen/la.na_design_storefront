@@ -64,6 +64,7 @@ export async function loadLookbookRoute(): Promise<RouteHandle<LookbookRouteData
               name: product.name,
               media: product.media,
               variants: product.variants,
+              productCapacity: product.productCapacity,
               pricingRule,
               selectEvent: listTracking.selectEventBySlug.get(product.slug) ?? null,
             }),

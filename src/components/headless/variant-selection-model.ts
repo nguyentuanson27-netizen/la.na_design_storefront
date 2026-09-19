@@ -1,4 +1,5 @@
 import { formatVietnamCalendarDate } from "../../commerce/availability-cycle.ts";
+import { PREORDER_LABEL } from "../../commerce/preorder-fulfillment-presentation.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
 import {
   deriveStorefrontProjectionSelection,
@@ -42,6 +43,32 @@ function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): stri
     : `Từ ${currency.format(range.minimum)}`;
 }
 
+/**
+ * The add-to-bag wording for the two states master spec §30 distinguishes.
+ *
+ * The ready-stock word is unchanged, because it is the approved CTA and F7b's browser contract
+ * pins it. The preorder word is §30's own: a button that still said "add to bag" while the item
+ * will not ship for fifteen days is precisely the misreading §30 forbids.
+ */
+export const DEFAULT_ADD_TO_BAG_LABEL = "Thêm vào giỏ";
+export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
+
+/**
+ * The accessible names for the same two buttons.
+ *
+ * A button whose visible word changes but whose accessible name does not would tell a screen-reader
+ * user "add to bag" for a preorder — §30's misreading, delivered only to the people least able to
+ * catch it from surrounding layout.
+ */
+const ADD_TO_BAG_NAMES = {
+  ready: "Thêm vào giỏ hàng",
+  preorder: `${PREORDER_LABEL} sản phẩm này`,
+} as const;
+const QUICK_ADD_NAMES = {
+  ready: "Thêm vào giỏ từ thanh mua nhanh",
+  preorder: `${PREORDER_LABEL} từ thanh mua nhanh`,
+} as const;
+
 export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const selection = deriveStorefrontProjectionSelection(input.options, input.selection);
 
@@ -64,6 +91,16 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
         ? "Lựa chọn này đã hết hàng."
         : "Lựa chọn này hiện chưa mua được."
       : "";
+
+  /**
+   * F8a / master spec §30 — the preorder facts for the option the shopper has actually selected.
+   *
+   * Both are false/absent until a variant is selected, and both follow the selection: switching to
+   * a ready variant clears them, which is what stops one variant's state leaking onto the next.
+   * Nothing is derived from stock here — `selectedIsPreorderSale` is the capacity authority's own
+   * classification, passed through the projection.
+   */
+  const isPreorderSelection = selection.selectedIsPreorderSale;
 
   const initialDiscount = resolveStorefrontDiscountPresentation(input.productLevelOptions);
 
@@ -100,6 +137,18 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
         ? currency.format(selection.selectedBasePriceVnd)
         : null,
     unavailableMessage,
+    isPreorderSelection,
+    /** The exact §30 word for the selected option, or `null` when it is ordinary ready stock. */
+    preorderLabel: isPreorderSelection ? PREORDER_LABEL : null,
+    /**
+     * What the add-to-bag button must say. §30 requires the CTA itself to communicate preorder
+     * semantics, so the word changes rather than a badge appearing beside an unchanged button.
+     */
+    addToBagLabel: isPreorderSelection ? PREORDER_ADD_TO_BAG_LABEL : DEFAULT_ADD_TO_BAG_LABEL,
+    addToBagAccessibleName: isPreorderSelection
+      ? ADD_TO_BAG_NAMES.preorder
+      : ADD_TO_BAG_NAMES.ready,
+    quickAddAccessibleName: isPreorderSelection ? QUICK_ADD_NAMES.preorder : QUICK_ADD_NAMES.ready,
     hasPurchasableVariant: input.options.some((option) => option.purchasable),
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */

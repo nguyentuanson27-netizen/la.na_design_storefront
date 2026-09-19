@@ -335,6 +335,8 @@ export function deriveStorefrontProjectionSelection(
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    /** F8a / §30 — the selected option's own preorder classification, never re-derived. */
+    selectedIsPreorderSale: selected?.isPreorderSale ?? false,
     /** I9 — owner rule 10, decided by the same helper the standalone path uses. */
     selectedAvailabilityDate: selectedAvailabilityDateOf(selected),
     canAdd: selected !== null && selected.purchasable,

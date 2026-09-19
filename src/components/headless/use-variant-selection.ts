@@ -18,6 +18,12 @@ import {
 } from "./variant-selection-model.ts";
 
 /**
+ * Re-exported so a redrawn panel reads the exact §29 word from the layer it already imports,
+ * instead of reaching into `@/commerce` (which this markup layer must not) or retyping it.
+ */
+export { OUT_OF_STOCK_LABEL } from "../../commerce/preorder-fulfillment-presentation.ts";
+
+/**
  * Purchase behaviour for a redrawn panel: selection state, the add-to-cart mutation and the
  * reporting that follows it.
  *

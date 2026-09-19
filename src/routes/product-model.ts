@@ -8,6 +8,7 @@ import type { StorefrontProjectionOption } from "../commerce/storefront-projecti
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
+  StorefrontProductCapacity,
 } from "../commerce/storefront-product.ts";
 import type { DeepLinkedVariantSelection } from "../commerce/storefront-variant-deep-link.ts";
 import {
@@ -50,6 +51,11 @@ export type RelatedProduct = Readonly<{
   name: string;
   media?: StorefrontProductMedia | null;
   variants: StorefrontVariantFacts[];
+  /**
+   * I5/F8a — the product's real capacity, when the read supplied one. Absent keeps the approved
+   * STANDARD default, which is what this surface assumed before F8a.
+   */
+  productCapacity?: StorefrontProductCapacity;
 }>;
 
 export type ProductViewModel = Readonly<{
@@ -155,6 +161,7 @@ export function buildProductViewModel(input: ProductViewModelInput): ProductView
             name: related.name,
             media: related.media,
             variants: related.variants,
+            productCapacity: related.productCapacity,
             pricingRule: input.relatedPricingRule,
             selectEvent: input.relatedSelectEventBySlug.get(related.slug) ?? null,
           }),

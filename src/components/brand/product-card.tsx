@@ -21,7 +21,7 @@ export function ProductCard({
   model: ProductCardModel;
   tone: ProductCardTone;
 }) {
-  const { price, primaryImage, hoverImage, flashSale, marketingBadge } = model;
+  const { price, primaryImage, hoverImage, flashSale, marketingBadge, availabilityLabel } = model;
 
   return (
     <article className="group">
@@ -107,8 +107,16 @@ export function ProductCard({
               {price.displayText}
             </p>
           )}
-          {/* F8a: Reserved slot for server-authoritative availability presentation when F8a is implemented.
-              Per F5 spec, product card must not deduce out-of-stock label from raw sellableStock. */}
+          {/* F8a — availability, from the canonical projection. F5 reserved this slot and forbade
+              deducing it from raw stock, which is why the model resolves it through
+              `resolveVariantSellability()`. It is a separate element from the marketing badge
+              above on purpose: §30 forbids the marketing badge priority hiding the preorder state,
+              so both can render at once. Text, not colour, carries the state. */}
+          {availabilityLabel ? (
+            <p className="product-availability font-sans mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-[#3B2219]">
+              {availabilityLabel}
+            </p>
+          ) : null}
         </div>
       </ProductSelectLink>
     </article>
