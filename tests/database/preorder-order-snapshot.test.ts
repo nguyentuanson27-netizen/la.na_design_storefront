@@ -587,10 +587,6 @@ test("F8c I7 snapshots the confirmation-time shipping window and live product fa
     const order = await seedOrder(tx, "historical-mutation", [
       { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
     ]);
-    await tx.orderMirror.update({
-      where: { id: order.id },
-      data: { provinceRef: "101" },
-    });
     await seedAcceptedReservation(tx, {
       orderId: order.id,
       variantId: variant.id,
