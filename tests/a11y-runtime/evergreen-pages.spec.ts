@@ -257,15 +257,24 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
   expect(accessibilityScan.violations).toEqual([]);
 });
 
-test("U33a/U33b each evergreen page is reachable from the site footer", async ({ page }) => {
+test("U33a/U33b required support pages are reachable from the final site footer", async ({ page }) => {
   // Started from an evergreen page rather than the homepage on purpose: the footer is site-wide, so
-  // any page proves reachability, and the homepage additionally needs the catalog database. Coupling
-  // a navigation assertion to catalog availability makes it fail for reasons it does not test.
+  // any page proves reachability, and the homepage additionally needs the catalog database. F9a §33
+  // requires the support/policy destinations below; About remains public but is not a footer item.
   await page.goto(`${BASE_URL}/about`, { waitUntil: "networkidle" });
 
-  for (const path of ["/contact", "/shipping", "/returns", "/about"]) {
-    await page.locator("footer").locator(`a[href="${path}"]`).click();
-    await page.waitForURL((url) => url.pathname === path);
+  const destinations = [
+    { path: "/contact", label: "Thông tin liên hệ" },
+    { path: "/shipping", label: "Chính sách vận chuyển" },
+    { path: "/returns", label: "Chính sách đổi trả và hoàn tiền" },
+  ] as const;
+
+  for (const destination of destinations) {
+    await page
+      .locator("footer")
+      .getByRole("link", { name: destination.label, exact: true })
+      .click();
+    await page.waitForURL((url) => url.pathname === destination.path);
   }
 });
 
