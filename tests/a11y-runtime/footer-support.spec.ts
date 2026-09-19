@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { BRAND } from "../../src/brand/index.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import {
   describePublicAddress,
@@ -103,11 +104,26 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     await expect(footer.getByRole("heading", { level: 2, name: heading, exact: true })).toBeVisible();
   }
 
-  // The approved master-logo binary is not present in any accessible repository/project source.
-  // This test deliberately does not treat the temporary text wordmark as proof of that blocked
-  // acceptance criterion. The PR stays draft until the approved asset can be restored.
-  await expect(footer.getByRole("link", { name: "La.na Design", exact: true })).toBeVisible();
-  await expect(footer).toContainText("Charismatic in every yard of cloth.");
+  const brandHome = footer.getByRole("link", { name: BRAND.identity.name, exact: true });
+  await expect(brandHome).toBeVisible();
+  const masterLogo = brandHome.getByRole("img", { name: BRAND.identity.name, exact: true });
+  await expect(masterLogo).toHaveAttribute("src", "/brand/la-na-design-master-logo.png");
+  await expect(masterLogo).toBeVisible();
+  const masterLogoIntrinsic = await masterLogo.evaluate((image) => {
+    const element = image as HTMLImageElement;
+    return {
+      complete: element.complete,
+      naturalWidth: element.naturalWidth,
+      naturalHeight: element.naturalHeight,
+    };
+  });
+  expect(masterLogoIntrinsic).toEqual({ complete: true, naturalWidth: 4185, naturalHeight: 2148 });
+
+  const masterLogoResponse = await page.request.get(`${BASE_URL}/brand/la-na-design-master-logo.png`);
+  expect(masterLogoResponse.status()).toBe(200);
+  expect(masterLogoResponse.headers()["content-type"]).toContain("image/png");
+
+  await expect(footer).toContainText(BRAND.identity.strapline);
 
   // Support facts stay projected from Brand Config rather than repeated in presentation.
   await expect(footer).toContainText(PUBLIC_CONTACT_FACTS.telephone);
