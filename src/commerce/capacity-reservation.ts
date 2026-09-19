@@ -30,6 +30,7 @@ import {
   type CapacityDecisionReason,
   type ReservationState,
   type VariantCapacityInput,
+  resolveAcceptedPreorderState,
 } from "./capacity-policy.ts";
 
 export type ReservationLineRequest = Readonly<{ variantId: string; quantity: number }>;
@@ -279,17 +280,15 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         await tx.variantCapacityReservation.createMany({
           data: merged.map((line) => {
             const input = inputByVariantId.get(line.variantId)!;
-            const readyStock = input.mirroredStock - input.activeReservedQuantity;
             return {
               orderId,
               variantId: line.variantId,
               quantity: line.quantity,
               // This is historical order authority, not a later sellability re-check. If any part
               // of an accepted PREORDER line exceeds ready stock, the line waits for preparation.
-              acceptedPreorderState:
-                input.sellingMode === "PREORDER" && readyStock < line.quantity
-                  ? ("PREORDER" as const)
-                  : ("READY" as const),
+              // The rule lives in the capacity authority so the state persisted here and the state
+              // the buyer was shown cannot be two different comparisons.
+              acceptedPreorderState: resolveAcceptedPreorderState(input, line.quantity),
             };
           }),
         });

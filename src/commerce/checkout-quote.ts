@@ -6,6 +6,8 @@ export type RenderedCheckoutQuoteItem = Readonly<{
   variantExternalId: string;
   quantity: number;
   unitPriceVnd: number;
+  /** §30 — whether this line was quoted as waiting for preparation. Signed with the money. */
+  fulfillmentState: "READY" | "PREORDER";
 }>;
 
 export type RenderedCheckoutQuoteFacts = Readonly<{
@@ -81,6 +83,10 @@ export function buildRenderedCheckoutQuoteFacts(
       variantExternalId: variationId,
       quantity: line.quantity,
       unitPriceVnd: line.price,
+      // The quantity-aware classification the cart line already carries — the same one the
+      // reservation writes into history. Quoting it here is what lets P9a catch a basket whose
+      // fulfillment state moved between the page the buyer read and the order they submitted.
+      fulfillmentState: line.isPreorderSale ? ("PREORDER" as const) : ("READY" as const),
     }));
     merchandiseSubtotalVnd = nextSubtotal;
     totalQuantity = nextQuantity;

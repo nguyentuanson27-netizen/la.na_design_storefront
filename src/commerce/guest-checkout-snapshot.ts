@@ -1,6 +1,6 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
-import type { ReservationState } from "./capacity-policy.ts";
+import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
@@ -130,6 +130,12 @@ const productSelection = {
   pancakeProductId: true,
   isPresent: true,
   isActive: true,
+  // I5 — the stored selling policy. Without it `buildStorefrontCartLines()` below judged every
+  // product by `STANDARD`'s floor of 0, so this path refused exactly the lines the storefront and
+  // the cart had just offered: a `PREORDER` variant at 0 and an `OVERSELL` variant above its
+  // allowance were both turned into `OUT_OF_STOCK` here, before I6b's reservation ever got to make
+  // the authoritative decision. Same one select the storefront catalog read carries.
+  sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
   variants: {
     orderBy: [{ pancakeVariationId: "asc" as const }],
     select: {
@@ -145,6 +151,10 @@ const productSelection = {
         orderBy: [{ pancakeWarehouseId: "asc" as const }],
         select: { quantity: true },
       },
+      // ADR 0014 §11 disables OVERSELL/PREORDER for a composite parent, and composition is a
+      // variant-level relation. One bounded row per variant answers it at the same granularity
+      // I2's admin boundary and I6a's reservation transaction use.
+      compositeComponents: { take: 1, select: { componentVariantId: true } },
       compositeParents: {
         select: {
           parentVariant: {
@@ -336,6 +346,11 @@ function toStorefrontProduct(product: SelectedProduct) {
     name: product.name,
     isPresent: product.isPresent,
     isActive: product.isActive,
+    // The canonical capacity facts, carried so this path judges a line by the same policy the
+    // shopper was shown. No PREORDER/OVERSELL special case is made here: the mode is data, and
+    // `resolveSellingPolicy()` supplies the approved default when no row exists.
+    sellingPolicy: resolveSellingPolicy(product.sellingPolicy),
+    isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
     variants,
   };
 }
@@ -534,6 +549,7 @@ export function createGuestCheckoutSnapshotService(
           variantExternalId: string;
           quantity: number;
           unitPriceVnd: number;
+          fulfillmentState: "READY" | "PREORDER";
         }> = [];
         let merchandiseSubtotalVnd = 0;
         let totalQuantity = 0;
@@ -598,6 +614,12 @@ export function createGuestCheckoutSnapshotService(
             variantExternalId: pancakeVariationId,
             quantity: line.quantity,
             unitPriceVnd: line.price,
+            // Re-resolved here from the same canonical, quantity-aware rule the checkout render
+            // used — now that this path carries the real selling policy, the two agree whenever
+            // capacity has not moved. When it has, the refreshed quote no longer matches the
+            // proof and the buyer is asked to re-confirm, instead of the order committing under a
+            // fulfillment state they never saw.
+            fulfillmentState: line.isPreorderSale ? ("PREORDER" as const) : ("READY" as const),
           });
         }
 

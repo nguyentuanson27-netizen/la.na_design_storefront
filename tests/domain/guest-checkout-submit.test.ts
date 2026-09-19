@@ -195,7 +195,7 @@ test("P9a an unproven quote returns refreshed money and nothing that could autho
           reason: "QUOTE_UNPROVEN" as const,
           quoteReason: "PRICE_CHANGED" as const,
           refreshedQuote: {
-            items: [{ variantExternalId: "var-a", quantity: 3, unitPriceVnd: 500_000 }],
+            items: [{ variantExternalId: "var-a", quantity: 3, unitPriceVnd: 500_000, fulfillmentState: "READY" as const }],
             merchandiseSubtotalVnd: 1_500_000,
             shippingFeeVnd: 30_000,
             totalVnd: 1_530_000,

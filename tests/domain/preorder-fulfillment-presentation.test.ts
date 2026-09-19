@@ -2,6 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { FULFILLMENT } from "../../src/brand/index.ts";
+import {
+  resolveAcceptedPreorderState,
+  resolveVariantSellability,
+} from "../../src/commerce/capacity-policy.ts";
 import { buildPreorderFulfillmentNotice } from "../../src/commerce/preorder-fulfillment-presentation.ts";
 import { PREORDER_PREPARATION_DAYS } from "../../src/commerce/preorder-order-snapshot.ts";
 
@@ -114,4 +118,42 @@ test("F8b an oversell line reaches the notice as ordinary ready stock", () => {
   // An OVERSELL sale is `isPreorderSale: false` by construction upstream; this pins that the
   // projection has no other route to a preorder notice.
   assert.equal(buildPreorderFulfillmentNotice([readyLine, readyLine]), null);
+});
+
+/* ------------------------------------------ the accepted state is quantity-aware, once */
+
+const capacityInput = (mirroredStock: number, sellingMode: "STANDARD" | "OVERSELL" | "PREORDER") => ({
+  mirroredStock,
+  activeReservedQuantity: 0,
+  sellingMode,
+  negativeStockLimit: -20,
+  isComposite: false,
+});
+
+test("F8b a preorder line waits as soon as the quantity exceeds ready stock", () => {
+  // Review finding: the advisory projection asked "is one more unit a preorder sale", while the
+  // reservation wrote history from "does this quantity exceed ready stock". At stock 1 those two
+  // disagree for a quantity of 2 — the buyer saw a ready checkout and I7 recorded PREORDER.
+  assert.equal(resolveAcceptedPreorderState(capacityInput(1, "PREORDER"), 1), "READY");
+  assert.equal(resolveAcceptedPreorderState(capacityInput(1, "PREORDER"), 2), "PREORDER");
+  assert.equal(resolveAcceptedPreorderState(capacityInput(2, "PREORDER"), 2), "READY");
+  assert.equal(resolveAcceptedPreorderState(capacityInput(0, "PREORDER"), 1), "PREORDER");
+});
+
+test("F8b only PREORDER can produce a waiting line, whatever the quantity", () => {
+  // §31: an oversell sale is ready stock to the buyer even when it takes the balance far negative.
+  assert.equal(resolveAcceptedPreorderState(capacityInput(1, "OVERSELL"), 10), "READY");
+  assert.equal(resolveAcceptedPreorderState(capacityInput(0, "STANDARD"), 1), "READY");
+});
+
+test("F8b the unit-level sellability answer is this same rule at quantity one", () => {
+  // The two must not be able to drift: `isPreorderSale` is defined as this function at 1.
+  for (const stock of [3, 1, 0, -1, -19]) {
+    const expected = resolveAcceptedPreorderState(capacityInput(stock, "PREORDER"), 1) === "PREORDER";
+    assert.equal(
+      resolveVariantSellability(capacityInput(stock, "PREORDER")).isPreorderSale,
+      expected,
+      `stock ${stock}`,
+    );
+  }
 });

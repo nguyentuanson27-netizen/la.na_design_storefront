@@ -178,6 +178,27 @@ function resolveIsPreorderOnly(options: readonly StorefrontVariantOption[]): boo
   return purchasable.length > 0 && purchasable.every((option) => option.isPreorderSale);
 }
 
+/**
+ * The exact word to render, or nothing.
+ *
+ * `purchasable === false` is broader than "sold out": `buildStorefrontVariantOptions()` also
+ * refuses an option for `PRICE_UNRESOLVED`, `MAPPING_REQUIRED` and `AMBIGUOUS_OPTION`. Saying
+ * `Hết hàng` for those is a false factual claim about stock — and on a product whose price has not
+ * resolved it would render beside `Giá đang cập nhật`, which contradicts it.
+ *
+ * So the out-of-stock word is reserved for the one reason that means it: every option blocked, and
+ * blocked by capacity. Anything else says nothing, and the price line already tells the shopper
+ * what is actually wrong.
+ */
+function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): string | null {
+  if (options.some((option) => option.purchasable)) {
+    return resolveIsPreorderOnly(options) ? PREORDER_LABEL : null;
+  }
+  const blockedByCapacity =
+    options.length > 0 && options.every((option) => option.unavailableReason === "OUT_OF_STOCK");
+  return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
+}
+
 /** Distinct colours in first-seen order, each with the image its variant maps to, when known. */
 function resolveColorSwatches(
   variants: readonly StorefrontVariantFacts[],
@@ -287,8 +308,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
     marketingBadge,
     availability,
     isPreorderOnly,
-    availabilityLabel:
-      availability === "out-of-stock" ? OUT_OF_STOCK_LABEL : isPreorderOnly ? PREORDER_LABEL : null,
+    availabilityLabel: resolveAvailabilityLabel(capacityOptions),
     selectEvent: input.selectEvent ?? null,
   });
 }

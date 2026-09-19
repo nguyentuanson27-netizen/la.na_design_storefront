@@ -40,12 +40,14 @@ async function createCartProduct({
   quantity,
   stock,
   productShopId = shopId,
+  sellingMode,
 }: {
   key: string;
   unitPriceVnd: number;
   quantity: number;
   stock: number;
   productShopId?: number;
+  sellingMode?: "STANDARD" | "OVERSELL" | "PREORDER";
 }) {
   const product = await prisma.productMirror.create({
     data: {
@@ -56,6 +58,11 @@ async function createCartProduct({
       isPresent: true,
       isActive: true,
       syncedAt: now,
+      // Absent by default, which is the approved missing-row answer and what every existing case
+      // in this file relies on.
+      ...(sellingMode === undefined
+        ? {}
+        : { sellingPolicy: { create: { sellingMode, negativeStockLimit: -20 } } }),
       variants: {
         create: {
           pancakeVariationId: `checkout-variation-${key}`,
@@ -208,6 +215,47 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
   assert.equal(unchanged.lines[0]?.unitPriceVnd, BigInt(500_000));
 
   await cleanup(key);
+});
+
+test("F8a the submit path judges a line by the stored selling policy, not by STANDARD", async () => {
+  // Review finding: this path hydrated products without `ProductSellingPolicy`, so
+  // `buildStorefrontCartLines()` fell back to STANDARD's floor of 0. A PREORDER variant at stock 0
+  // and an OVERSELL variant below zero were both shown as purchasable on the PDP, the cart and the
+  // checkout, and then refused here as CART_LINE_UNAVAILABLE — before I6b's reservation ever got to
+  // make the authoritative decision. Nothing about the request distinguishes them; only the row.
+  for (const [key, sellingMode, stock] of [
+    ["preorder-policy", "PREORDER", 0],
+    ["oversell-policy", "OVERSELL", -5],
+  ] as const) {
+    await cleanup(key);
+    const { cart } = await createCartProduct({
+      key,
+      unitPriceVnd: 500_000,
+      quantity: 1,
+      stock,
+      sellingMode,
+    });
+    const publicCode = `checkout-${key}-001`;
+    const service = createGuestCheckoutSnapshotService(prisma, {
+      checkoutInputValidated: true,
+      verifyRenderedQuote: acceptAnyRenderedQuote,
+    });
+
+    const result = await service.create({
+      cartId: cart.id,
+      shopId,
+      publicCode,
+      checkoutInput,
+      now,
+    });
+
+    assert.equal(
+      result.ok,
+      true,
+      `${sellingMode} at stock ${stock} must survive to the capacity boundary, not be refused here`,
+    );
+    await cleanup(key);
+  }
 });
 
 test("checkout snapshot grants freeship when total quantity reaches three products", async () => {

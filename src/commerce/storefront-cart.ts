@@ -4,6 +4,7 @@ import {
 } from "./product-media.ts";
 import {
   evaluateVariantCapacity,
+  resolveAcceptedPreorderState,
   type SellingMode,
   type VariantCapacityInput,
 } from "./capacity-policy.ts";
@@ -309,13 +310,30 @@ export function buildStorefrontCartLines({
       }
     }
 
+    const capacity = capacityByVariantId.get(item.variantId);
+
     return {
       ...base,
       price: option.price,
       available: option.purchasable,
-      // The option carries the answer the capacity authority already gave for this variant under
-      // this product's real policy. Nothing here re-reads stock or the negative limit.
-      isPreorderSale: option.isPreorderSale,
+      // Quantity-aware, from the same authority the reservation writes history with. The option's
+      // own `isPreorderSale` answers "is one more unit a preorder sale", which is the wrong
+      // question for a line of two: a PREORDER variant with one unit of ready stock is a ready
+      // sale at quantity 1 and a preorder sale at quantity 2. Reading the unit-level answer here
+      // showed the buyer a ready checkout while `acceptedPreorderState` persisted PREORDER.
+      isPreorderSale:
+        option.purchasable &&
+        capacity !== undefined &&
+        resolveAcceptedPreorderState(
+          {
+            mirroredStock: variant.sellableStock,
+            activeReservedQuantity: 0,
+            sellingMode: capacity.sellingMode,
+            negativeStockLimit: capacity.negativeStockLimit,
+            isComposite: capacity.isComposite,
+          },
+          item.quantity,
+        ) === "PREORDER",
       unavailableReason: option.unavailableReason,
     };
   });

@@ -46,7 +46,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  */
 export const MAX_RENDERED_QUOTE_PROOF_BYTES = 16 * 1024;
 
-const PROOF_FORMAT = "laq1";
+// Bumped for F8b: the canonical bytes now carry each line's fulfillment state, so a proof issued
+// under the old format no longer describes the same facts. An in-flight checkout gets one
+// re-confirmation rather than silently redeeming a token that said nothing about waiting.
+const PROOF_FORMAT = "laq2";
 const PROOF_KEY_CONTEXT = "la-clothing:checkout-quote-proof-key:v1";
 const MIN_SECRET_LENGTH = 32;
 const MAC_BYTES = 32;
@@ -62,6 +65,15 @@ export type RenderedQuoteProofFacts = Readonly<{
     variantExternalId: string;
     quantity: number;
     unitPriceVnd: number;
+    /**
+     * Master spec §30 — whether this line was presented as waiting for preparation.
+     *
+     * Authenticated with the money, because it is part of what the buyer acknowledged. Without it
+     * capacity could move between render and reservation and the order could be accepted under a
+     * fulfillment state the buyer never saw: a checkout that read as ready stock, committed as
+     * `PREORDER`, and snapshotted that way into immutable history.
+     */
+    fulfillmentState: "READY" | "PREORDER";
   }>[];
   merchandiseSubtotalVnd: number;
   shippingFeeVnd: number;
@@ -118,7 +130,8 @@ function areUsableFacts(quote: RenderedQuoteProofFacts): boolean {
       seen.has(item.variantExternalId) ||
       !Number.isSafeInteger(item.quantity) ||
       item.quantity <= 0 ||
-      !isUsableVnd(item.unitPriceVnd)
+      !isUsableVnd(item.unitPriceVnd) ||
+      (item.fulfillmentState !== "READY" && item.fulfillmentState !== "PREORDER")
     ) {
       return false;
     }
@@ -160,7 +173,7 @@ function canonicalQuoteBytes(quote: RenderedQuoteProofFacts): Buffer {
 
   for (const item of items) {
     const idBytes = Buffer.byteLength(item.variantExternalId, "utf8");
-    canonical += `|${idBytes}:${item.variantExternalId}:${item.quantity}:${item.unitPriceVnd}`;
+    canonical += `|${idBytes}:${item.variantExternalId}:${item.quantity}:${item.unitPriceVnd}:${item.fulfillmentState}`;
   }
 
   return Buffer.from(canonical, "utf8");

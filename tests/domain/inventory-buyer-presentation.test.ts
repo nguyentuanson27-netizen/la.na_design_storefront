@@ -324,3 +324,50 @@ test("F8a a composite parent is never a preorder sale, whatever policy the opera
   assert.equal(model.availability, "out-of-stock");
   assert.equal(model.availabilityLabel, OUT_OF_STOCK_LABEL);
 });
+
+/* ----------------------------------------------- the card's word must match the reason */
+
+test("F8a a product blocked by unresolved price does not claim to be out of stock", () => {
+  // Review finding: `purchasable === false` is broader than "sold out". A product with real stock
+  // whose price has not resolved was rendering `Hết hàng` beside `Giá đang cập nhật` — two claims
+  // that contradict each other, one of them false about inventory.
+  const unpriced = () => ({ price: null, basePriceVnd: null, isDiscounted: false });
+  const model = card([variant("v", 5)], capacity("STANDARD"), { pricingRule: unpriced });
+
+  assert.equal(model.availabilityLabel, null, "say nothing rather than a false stock claim");
+  assert.equal(model.price.displayText, "Giá đang cập nhật", "the price line states the real problem");
+});
+
+test("F8a a product blocked by a broken option mapping does not claim to be out of stock", () => {
+  // No size at all: `MAPPING_REQUIRED`, not a capacity verdict.
+  const model = card([variant("v", 5, { size: null })], capacity("STANDARD"));
+
+  assert.equal(model.availabilityLabel, null);
+});
+
+test("F8a a product blocked by an ambiguous option pair does not claim to be out of stock", () => {
+  // Two variants resolving to the same colour × size: `AMBIGUOUS_OPTION`.
+  const model = card(
+    [variant("one", 5), variant("two", 5)],
+    capacity("STANDARD"),
+  );
+
+  assert.equal(model.availabilityLabel, null);
+});
+
+test("F8a the out-of-stock word survives only where capacity is what blocks every option", () => {
+  // The positive half, so the previous three cannot pass by the label never rendering at all.
+  const model = card([variant("v", 0)], capacity("STANDARD"));
+
+  assert.equal(model.availabilityLabel, OUT_OF_STOCK_LABEL);
+});
+
+test("F8a a mix of a sold-out option and an unmapped one says nothing", () => {
+  // Nothing is purchasable, but not everything is blocked by capacity, so the word is not earned.
+  const model = card(
+    [variant("sold-out", 0), variant("unmapped", 5, { size: null })],
+    capacity("STANDARD"),
+  );
+
+  assert.equal(model.availabilityLabel, null);
+});

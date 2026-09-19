@@ -371,6 +371,62 @@ test("F8b the cart's preorder classification comes from the stored policy, end t
   assert.equal(atFloor?.isPreorderSale, false);
 });
 
+test("F8b the cart line waits when the requested quantity exceeds ready stock", async () => {
+  // Review finding: the line carried the unit-level classification, so at ready stock 1 a quantity
+  // of 2 was shown as an ordinary ready sale while the reservation would persist PREORDER. The two
+  // now ask one quantity-aware rule, and this drives it through the real read.
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "cart-preorder-qty-product",
+      slug: "cart-preorder-qty-product",
+      name: "Cart Preorder Quantity Product",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      sellingPolicy: { create: { sellingMode: "PREORDER", negativeStockLimit: -20 } },
+    },
+  });
+  const variant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "cart-preorder-qty-variant",
+      productId: product.id,
+      color: "Black",
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 500_000,
+      pancakeRetailPriceAfterDiscount: 500_000,
+      syncedAt,
+    },
+  });
+  // Exactly one unit of ready stock: the boundary the two rules disagreed across.
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: variant.id,
+      pancakeWarehouseId: "cart-preorder-qty-warehouse",
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const read = async (quantity: number) => {
+    const [line] = await repository.getLines({
+      shopId,
+      items: [{ variantId: variant.id, quantity }],
+    });
+    return line;
+  };
+
+  const one = await read(1);
+  assert.equal(one?.available, true);
+  assert.equal(one?.isPreorderSale, false, "one unit comes from ready stock");
+
+  const two = await read(2);
+  assert.equal(two?.available, true, "the allowance covers the second unit");
+  assert.equal(two?.isPreorderSale, true, "the second unit has to be prepared, so the line waits");
+});
+
 test("I5 a composite parent is refused an oversell allowance the cart read from the database", async () => {
   // ADR §11, end to end: I2 refuses to store this, but a row written around that boundary (a repair
   // query, a fixture) must still not sell here. The restriction is the rule's, not the writer's.
