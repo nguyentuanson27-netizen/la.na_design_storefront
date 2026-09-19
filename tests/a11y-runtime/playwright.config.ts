@@ -9,7 +9,9 @@ const adminDesktopTests = [
 
 export default defineConfig({
   testDir: ".",
+  maxFailures: 1,
   testMatch: [
+    "000-f9a-logo-probe.spec.ts",
     "admin-bulk-operations.spec.ts",
     "admin-bulk-status.spec.ts",
     "admin-collections.spec.ts",
