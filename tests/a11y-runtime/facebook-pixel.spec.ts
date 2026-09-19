@@ -302,6 +302,11 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock
+      // file there. Every spec drives this one project, so they share that lock unless
+      // each gets its own directory -- and a server that has to be SIGKILLed leaves the
+      // lock behind, which makes the next spec's server refuse to start entirely.
+      NEXT_DIST_DIR: ".next-test/facebook-pixel",
       // The whole point of this spec: the rest of CI builds without one.
       NEXT_PUBLIC_FACEBOOK_PIXEL_ID: PIXEL_ID,
       // Both destinations observable on one server, so a test can prove they succeed and fail
