@@ -1,3 +1,4 @@
+import { FULFILLMENT } from "../brand/index.ts";
 import type { Prisma } from "../generated/prisma/client.ts";
 import {
   buildPreorderOrderSnapshot,
@@ -80,6 +81,7 @@ export async function createPreorderSnapshotAtConfirmation(
   const snapshot = buildPreorderOrderSnapshot({
     confirmedAt,
     lines: snapshotInputs,
+    shippingEstimate: FULFILLMENT.delivery.estimateDays,
   });
 
   await tx.orderPreorderSnapshot.create({
@@ -87,6 +89,10 @@ export async function createPreorderSnapshotAtConfirmation(
       orderId,
       confirmedAt: snapshot.confirmedAt,
       preorderReadyAt: snapshot.preorderReadyAt,
+      shippingInnerCityMinDays: snapshot.shippingInnerCityMinDays,
+      shippingInnerCityMaxDays: snapshot.shippingInnerCityMaxDays,
+      shippingOtherProvinceMinDays: snapshot.shippingOtherProvinceMinDays,
+      shippingOtherProvinceMaxDays: snapshot.shippingOtherProvinceMaxDays,
       lines: {
         create: snapshot.lines.map((line) => ({
           variantId: line.variantId,
