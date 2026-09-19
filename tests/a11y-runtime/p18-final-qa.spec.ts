@@ -19,7 +19,11 @@ const runId = `${Date.now()}-${process.pid}`;
 const syncedAt = new Date("2026-08-23T00:00:00.000Z");
 const productSlug = `p18-final-qa-product-${runId}`;
 const productName = `P18 Final QA Overshirt ${runId}`;
-const trustedImage = "https://content.pancake.vn/images/1/2/3/p18-final-qa.jpg";
+const trustedImages = [
+  "https://content.pancake.vn/images/1/2/3/p18-final-qa-front.jpg",
+  "https://content.pancake.vn/images/1/2/3/p18-final-qa-back.jpg",
+  "https://content.pancake.vn/images/1/2/3/p18-final-qa-detail.jpg",
+] as const;
 
 const TINY_JPEG_BASE64 =
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
@@ -173,7 +177,7 @@ test.beforeAll(async () => {
       slug: productSlug,
       name: productName,
       sourceDescription: "Reviewed source context for P18 final QA fixture.",
-      primaryImageUrl: trustedImage,
+      primaryImageUrl: trustedImages[0],
       isPresent: true,
       isActive: true,
       syncedAt,
@@ -194,7 +198,7 @@ test.beforeAll(async () => {
       productId: product.id,
       color: "Black",
       size: "M",
-      pancakeImageUrls: [trustedImage],
+      pancakeImageUrls: [...trustedImages],
       isPresent: true,
       isActive: true,
       pancakeRetailPrice: 890_000,
@@ -252,6 +256,36 @@ test("P18 captures representative production performance evidence for home, PLP,
       const { context, page, browserErrors } = await createMeasuredPage(browser, viewport);
       try {
         await measureRoute(page, route.name, route.url, viewport.name);
+
+        if (route.name === "pdp") {
+          const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`);
+          const images = gallery.locator("img");
+          await expect(images).toHaveCount(3);
+
+          for (let index = 0; index < 3; index += 1) {
+            await expect(images.nth(index)).toBeVisible();
+          }
+
+          const renderedImages = await images.evaluateAll((elements) =>
+            elements.map((element) => ({
+              alt: element.getAttribute("alt"),
+              src: element.getAttribute("src"),
+            })),
+          );
+          expect(renderedImages.map(({ alt }) => alt)).toEqual([
+            `${productName} - Ảnh 1`,
+            `${productName} - Ảnh 2`,
+            `${productName} - Ảnh 3`,
+          ]);
+          expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
+
+          const columnCount = await gallery.evaluate((element) => {
+            const columns = getComputedStyle(element).gridTemplateColumns.trim();
+            return columns.length === 0 ? 0 : columns.split(/\s+/).length;
+          });
+          expect(columnCount).toBe(viewport.name === "desktop" ? 2 : 1);
+        }
+
         await page.keyboard.press("Tab");
         expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
         expect(browserErrors).toEqual([]);
