@@ -166,9 +166,10 @@ test("F8c authorized tracking exposes only safe immutable preorder history and l
             create: {
               confirmedAt,
               preorderReadyAt: readyAt,
-              shippingScope: "HANOI",
-              shippingEstimateMinDays: 1,
-              shippingEstimateMaxDays: 3,
+              shippingInnerCityMinDays: 1,
+              shippingInnerCityMaxDays: 3,
+              shippingOtherProvinceMinDays: 3,
+              shippingOtherProvinceMaxDays: 10,
               lines: {
                 create: [
                   {
@@ -199,25 +200,23 @@ test("F8c authorized tracking exposes only safe immutable preorder history and l
 
       const service = createGuestOrderTrackingService(tx as unknown as PrismaClient);
       const historical = await service.lookup({ orderCode: preorderCode, phone });
-      assert.deepEqual(historical, {
-        ok: true,
-        order: {
-          orderCode: preorderCode,
-          status: "CONFIRMED",
-          createdAt: historical.ok ? historical.order.createdAt : "unreachable",
-          totalVnd: "130000",
-          preorderHistory: {
-            preorderLabel: "Đặt trước",
-            preorderReadyAt: readyAt.toISOString(),
-            isMixedReadyAndPreorder: true,
-            shippingEstimate: {
-              scope: "HANOI",
-              minimumDays: 1,
-              maximumDays: 3,
-            },
-          },
-        },
-      });
+      assert.equal(historical.ok, true);
+      if (!historical.ok) throw new Error("expected authorized historical tracking result");
+      assert.equal(historical.order.orderCode, preorderCode);
+      assert.equal(historical.order.status, "CONFIRMED");
+      assert.equal(historical.order.totalVnd, "130000");
+      assert.equal(historical.order.preorderHistory?.preorderLabel, "Đặt trước");
+      assert.equal(historical.order.preorderHistory?.preorderReadyAt, readyAt.toISOString());
+      assert.equal(historical.order.preorderHistory?.isMixedReadyAndPreorder, true);
+      assert.deepEqual(
+        historical.order.preorderHistory?.shippingWindows?.map(
+          ({ minimumDays, maximumDays }) => ({ minimumDays, maximumDays }),
+        ),
+        [
+          { minimumDays: 1, maximumDays: 3 },
+          { minimumDays: 3, maximumDays: 10 },
+        ],
+      );
 
       const serialized = JSON.stringify(historical);
       for (const forbidden of [
@@ -236,8 +235,8 @@ test("F8c authorized tracking exposes only safe immutable preorder history and l
       assert.equal(legacy.ok, true);
       if (legacy.ok) {
         assert.equal(
-          legacy.order.preorderHistory,
-          null,
+          "preorderHistory" in legacy.order,
+          false,
           "confirmed legacy orders without I7 authority must not infer preorder history",
         );
       }
