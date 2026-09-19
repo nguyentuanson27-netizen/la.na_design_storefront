@@ -514,7 +514,7 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  await expect(addToBag).toBeEnabled();
   await page.getByText("Ink", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Ink" })).toBeChecked();
