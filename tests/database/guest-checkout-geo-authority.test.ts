@@ -168,6 +168,10 @@ test("unvalidated current form input may reuse a confirmed snapshot without a fr
         totalVnd: BigInt(530_000),
         lines: [],
       },
+      // F8b — reusing a confirmed snapshot hands back an existing checkout without
+      // re-authenticating a rendered quote, so there is no buyer-accepted fulfillment state to
+      // carry forward and nothing for the reservation lock to hold the order to.
+      verifiedFulfillmentStateByVariantId: new Map(),
     },
   );
 
