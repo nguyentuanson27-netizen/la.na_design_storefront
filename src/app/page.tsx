@@ -43,19 +43,17 @@ function ProductGrid({ cards }: Readonly<{ cards: readonly HomeCard[] }>) {
 }
 
 /**
- * One category editorial block (§21), or nothing.
+ * One category editorial block (§21).
  *
  * The clickable label is the category name itself, per §21 -- no invented `Khám phá` wrapper. The
- * image URL arrives already checked against the trusted-media contract in the loader, so an absent
- * entry here means the row had no image or its URL failed that check.
+ * image URL arrives already checked against the trusted-media contract in the loader, so this
+ * component is only ever reached with a trusted URL; whether the section renders at all is decided
+ * once, in `render`, because §21 fixes the section at exactly two blocks.
  */
 function CategoryEditorial({
   category,
   imageUrl,
-}: Readonly<{ category: { href: string; label: string }; imageUrl: string | undefined }>) {
-  // No image means no block. The URL arrives already validated by the loader.
-  if (imageUrl === undefined) return null;
-
+}: Readonly<{ category: { href: string; label: string }; imageUrl: string }>) {
   return (
     <Link className="category-editorial__block" href={category.href}>
       <span className="category-editorial__media">
@@ -77,7 +75,10 @@ function render(data: HomeRouteData) {
   const aoDaiImage = categoryHeroMedia.get(AO_DAI.key);
   const setDoImage = categoryHeroMedia.get(SET_DO.key);
   const vayDamImage = categoryHeroMedia.get(VAY_DAM.key);
-  const hasCategoryEditorial = setDoImage !== undefined || vayDamImage !== undefined;
+  // §21 fixes this section at exactly two blocks, and the house rule forbids a placeholder to
+  // stand in for a missing one. So it is both or neither: one untrusted or absent image closes the
+  // whole section rather than publishing a half-width row nobody approved.
+  const hasCategoryEditorial = setDoImage !== undefined && vayDamImage !== undefined;
 
   return (
     <>

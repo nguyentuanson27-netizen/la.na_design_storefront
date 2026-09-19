@@ -313,18 +313,46 @@ test("F6b the category editorial is exactly Set đồ and Váy, đầm, labelled
   await expect(editorial.locator('a[href="/phu-kien"]')).toHaveCount(0);
 });
 
-test("F6b a category with no editorial media drops only its own block", async ({ page }) => {
+test("F6b one missing category image closes the whole editorial section, not half of it", async ({
+  page,
+}) => {
+  // §21 fixes this section at exactly two blocks, and no placeholder may stand in for a missing
+  // one. So a single half-width block is not a degraded state to allow -- it is a layout nobody
+  // approved. Removing either image must remove the section.
   await prisma.categoryEditorialMedia.deleteMany({ where: { categoryKey: "vayDam" } });
 
   try {
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-    const editorial = page.locator('[data-homepage-region="category-editorial"]');
-    await expect(editorial.locator(".category-editorial__block")).toHaveCount(1);
-    await expect(editorial.locator(".category-editorial__block")).toHaveAttribute("href", "/set-do");
+    await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
+    await expect(page.locator(".category-editorial__block")).toHaveCount(0);
+
+    // The rest of the page is untouched: only this section is fail-closed.
+    await expect(page.locator('[data-homepage-region="new-arrivals"]')).toHaveCount(1);
   } finally {
     await prisma.categoryEditorialMedia.create({
       data: { categoryKey: "vayDam", heroImageUrl: IMAGE("editorial-vayDam") },
+    });
+  }
+});
+
+test("F6b an untrusted category image closes the section rather than reaching the page", async ({
+  page,
+}) => {
+  await prisma.categoryEditorialMedia.update({
+    where: { categoryKey: "setDo" },
+    data: { heroImageUrl: "https://evil.example.com/set-do.jpg" },
+  });
+
+  try {
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+    await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
+    await expect(page.locator('img[src*="evil.example.com"]')).toHaveCount(0);
+  } finally {
+    await prisma.categoryEditorialMedia.update({
+      where: { categoryKey: "setDo" },
+      data: { heroImageUrl: IMAGE("editorial-setDo") },
     });
   }
 });
