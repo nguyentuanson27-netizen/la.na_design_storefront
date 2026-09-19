@@ -1,4 +1,4 @@
-import type { HistoricalPreorderPresentation } from "@/commerce/historical-preorder-presentation";
+import type { HistoricalPreorderPresentation } from "../commerce/historical-preorder-presentation.ts";
 
 /**
  * Everything the order-confirmation route decides, as pure functions.
