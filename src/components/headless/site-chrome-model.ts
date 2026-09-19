@@ -4,11 +4,12 @@ import {
   readGuestShippingPolicy,
 } from "../../commerce/guest-shipping-policy.ts";
 import {
-  buildPublicBrandFacts,
   describePublicAddress,
   describePublicSupportHours,
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_LEGAL_FACTS,
 } from "../../content/public-brand-facts.ts";
+import { POLICY_HUB_TOPICS } from "../../routes/evergreen-model.ts";
 
 /**
  * Everything the site chrome renders, decided here so the brand layer stays markup over props.
@@ -38,11 +39,18 @@ export type SiteHeaderModel = Readonly<{
   megaMedia: readonly CategoryMegaMedia[];
 }>;
 
+export type SiteFooterLink = Readonly<{
+  href: string;
+  label: string;
+}>;
+
 export type SiteFooterModel = Readonly<{
-  facts: ReturnType<typeof buildPublicBrandFacts>;
   contact: typeof PUBLIC_CONTACT_FACTS;
   address: string;
   supportHours: string;
+  legal: typeof PUBLIC_LEGAL_FACTS;
+  supportLinks: readonly SiteFooterLink[];
+  policyLinks: readonly SiteFooterLink[];
 }>;
 
 export type SiteChromeContent = Readonly<{
@@ -65,10 +73,16 @@ export function buildSiteChromeContent(
       megaMedia: headerMedia,
     },
     footer: {
-      facts: buildPublicBrandFacts(policy),
       contact: PUBLIC_CONTACT_FACTS,
       address: describePublicAddress(),
       supportHours: describePublicSupportHours(),
+      legal: PUBLIC_LEGAL_FACTS,
+      supportLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support").map(
+        (topic) => Object.freeze({ href: topic.href, label: topic.title }),
+      ),
+      policyLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy").map(
+        (topic) => Object.freeze({ href: topic.href, label: topic.title }),
+      ),
     },
   };
 }

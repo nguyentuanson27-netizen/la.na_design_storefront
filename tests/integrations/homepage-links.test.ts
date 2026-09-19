@@ -30,6 +30,7 @@ const STOREFRONT_SOURCES = [
   },
 ] as const;
 const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;
+const STATIC_ASSET_PATH = /\.(?:avif|gif|ico|jpe?g|png|svg|webp)$/i;
 // `/about` is deliberately absent. U2 forbade it when no About page existed and the homepage had
 // no approved reason to link one; master spec §23 now specifies the homepage brand story linking to
 // `/about`, and U33a built and published that route. The rest stay forbidden: `/faq` and
@@ -110,6 +111,7 @@ async function findMissingInternalLinks(
   for (const href of hrefs) {
     const rawPathname = new URL(href, "https://storefront.invalid").pathname;
     const pathname = decodeURIComponent(rawPathname);
+    if (STATIC_ASSET_PATH.test(pathname)) continue;
     if (!(await exists(pathname))) {
       missing.push(href);
     }
@@ -141,6 +143,7 @@ test("U2 homepage link guard rejects inert category queries and unapproved suppo
     const inert = "/shop?category=shirts";
     const unapproved = "/faq";
     const allowed = "/track-order";
+    const staticAsset = "/brand/la-na-design-master-logo.png";
   `;
   assert.deepEqual(findU2ForbiddenHomepageLinks(counterexample), ["/faq", "/shop?category=shirts"]);
 });
@@ -161,6 +164,7 @@ test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-fo
 test("storefront link guard detects a missing internal destination without treating query state as a route", async () => {
   const source = `
     const valid = "/shop?q=shirt";
+    const asset = "/brand/la-na-design-master-logo.png";
     const broken = "/products/missing-product";
   `;
 

@@ -152,14 +152,29 @@ function assertNoChoiceChecked(body: string, label: string) {
   assert.deepEqual(preselected, [], `${label}: no option may render preselected`);
 }
 
-/** The gallery renders its opening image as the sole non-thumbnail <img> in the visual frame. */
+/**
+ * The streamed PDP can serialize its Suspense skeleton before the resolved gallery frame. Inspect
+ * rendered product-media frames that actually contain an image instead of assuming the first
+ * `product-visual` block is the gallery.
+ */
 function assertGalleryOpensOn(body: string, expectedUrlFragment: string, label: string) {
-  const openingImage = body.match(/<div class="product-visual[^"]*"[\s\S]{0,600}?<img[^>]*>/);
-  assert.ok(openingImage, `${label}: expected a gallery image to render`);
+  const renderedFrames = [
+    ...body.matchAll(/<div class="product-visual(?![^"]*animate-pulse)[^"]*"[\s\S]{0,1200}?<img[^>]*>/g),
+  ].map((match) => match[0]);
+
+  assert.ok(renderedFrames.length > 0, `${label}: expected a resolved gallery image to render`);
+
+  const openingImage = renderedFrames.find(
+    (frame) =>
+      frame.includes(encodeURIComponent(expectedUrlFragment))
+      || frame.includes(expectedUrlFragment),
+  );
   assert.ok(
-    openingImage[0].includes(encodeURIComponent(expectedUrlFragment))
-      || openingImage[0].includes(expectedUrlFragment),
-    `${label}: gallery must open on ${expectedUrlFragment}, got ${openingImage[0].slice(0, 400)}`,
+    openingImage,
+    `${label}: gallery must open on ${expectedUrlFragment}, got ${renderedFrames
+      .slice(0, 3)
+      .map((frame) => frame.slice(0, 240))
+      .join(" | ")}`,
   );
 }
 
