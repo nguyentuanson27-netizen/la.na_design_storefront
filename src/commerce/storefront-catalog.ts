@@ -524,6 +524,37 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
   }
 
   /**
+   * The most recently mirrored products, for the homepage's `Hàng mới về` grid (master spec §18).
+   *
+   * Ordered by when a product first entered this mirror. That is a real timestamp rather than a
+   * merchandiser's choice, and the limit of what it can honestly claim is worth stating: it answers
+   * "recently added to the catalog", not "recently released by the brand", and a bulk re-sync that
+   * rewrites every row would flatten the ordering until the catalog moves again.
+   *
+   * Deliberately not a `sort` value on the discovery query. Adding one there would publish a new
+   * crawlable `?sort=` URL on every listing page and hand the PLP a second ordering authority,
+   * which is F4a's contract and not this section's to change. When an approved new-arrivals
+   * merchandising order exists, it replaces this read rather than sorting alongside it.
+   */
+  async function listNewestProducts({ shopId, limit }: { shopId: number; limit: number }) {
+    const products = await client.productMirror.findMany({
+      where: visibleProductWhere(shopId),
+      take: parseListLimit(limit),
+      // `id` breaks ties, so a re-sync that gives many rows the same instant still returns a
+      // stable page rather than one that reshuffles between requests.
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      select: productSelection,
+    });
+
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
+    return products.map((product) => toStorefrontProduct(product, collectionMap));
+  }
+
+  /**
    * Hydrate an explicit, already-ordered set of product ids into full storefront products.
    *
    * The caller's order is preserved rather than re-derived: related products (ADR 0013 §7) decide
@@ -799,6 +830,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
   return {
     listProducts,
     listProductsByIds,
+    listNewestProducts,
     listProductPage,
     listDiscoveryPage,
     listDiscoveryFacets,
