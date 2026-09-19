@@ -145,6 +145,12 @@ summary:focus-visible {
   min-height: var(--control-height);
 }
 
+.footer-brand-logo {
+  display: block;
+  width: min(100%, 11rem);
+  height: auto;
+}
+
 .footer-heading,
 .footer-label,
 .footer-meta {
