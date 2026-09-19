@@ -541,6 +541,16 @@ test("standard sold-out variant remains visible, disabled, and says exact Hết 
 
 
 test("F7c mapped size-guide modal uses the exact product mapping and restores focus", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
@@ -573,11 +583,23 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   await expect(dialog).toBeHidden();
   await expect(trigger).toBeFocused();
   await assertPageQuality(page);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });
 
 test("F7c different manual mappings stay product-specific and an unmapped same-category product has no trigger", async ({
   page,
 }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
   await page.setViewportSize({ width: 390, height: 844 });
 
   await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
@@ -599,4 +621,6 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   await expect(page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true })).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await assertPageQuality(page);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });
