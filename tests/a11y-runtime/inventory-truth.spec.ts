@@ -29,7 +29,10 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const SHOP_ID = 920_011;
-const runId = `${Date.now()}-${process.pid}`;
+// Deliberately hyphen-free. The oversell case asserts that no negative quantity is rendered, and
+// a run id of the shape `<millis>-<pid>` puts a literal `-5` into the product name whenever the
+// runner's pid starts with 5 — which is exactly how this spec failed on CI while passing locally.
+const runId = `${Date.now()}${process.pid}`;
 
 const PREORDER = "Đặt trước";
 const OUT_OF_STOCK = "Hết hàng";
@@ -381,8 +384,15 @@ test("F8a an oversell PDP is keyboard-operable and says nothing special", async 
   await expect(
     panel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }),
   ).toBeEnabled();
-  // The internal negative quantity must not reach the page in any form.
-  await expect(page.locator("body")).not.toContainText("-5");
+
+  // §31 — the internal balance is −5 here and the buyer must never see it. Asserted against the
+  // *visible* text rather than the DOM, because that is the claim: an href or a data attribute
+  // carrying a slug is not something a shopper reads. Any standalone negative integer fails, not
+  // just this fixture's, so a different balance leaking later is caught too.
+  const visibleText = await page.evaluate(() => document.body.innerText);
+  expect(visibleText, "no negative balance may be rendered to a buyer").not.toMatch(
+    /(?:^|[^\w-])-\d+/,
+  );
 
   await assertPageQuality(page);
   expect(health.browserErrors).toEqual([]);
