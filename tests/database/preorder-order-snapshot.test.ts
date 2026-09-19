@@ -587,6 +587,21 @@ test("F8c I7 snapshots the confirmation-time shipping window and live product fa
     const order = await seedOrder(tx, "historical-mutation", [
       { variantId: variant.id, pancakeVariationId: variant.pancakeVariationId, quantity: 1 },
     ]);
+    await tx.orderMirror.update({
+      where: { id: order.id },
+      data: {
+        checkoutSnapshottedAt: new Date("2026-09-18T04:00:00.000Z"),
+        guestName: "I7 historical fixture",
+        guestPhone: "0900000000",
+        provinceRef: "opaque-province-ref",
+        districtRef: "opaque-district-ref",
+        communeRef: "opaque-commune-ref",
+        addressDetail: "I7 historical fixture address",
+        merchandiseSubtotalVnd: BigInt(100_000),
+        shippingFeeVnd: BigInt(30_000),
+        totalVnd: BigInt(130_000),
+      },
+    });
     await seedAcceptedReservation(tx, {
       orderId: order.id,
       variantId: variant.id,
