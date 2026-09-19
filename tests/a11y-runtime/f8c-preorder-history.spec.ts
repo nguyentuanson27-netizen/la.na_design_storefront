@@ -158,9 +158,10 @@ test.beforeAll(async () => {
         create: {
           confirmedAt,
           preorderReadyAt: readyAt,
-          shippingScope: "HANOI",
-          shippingEstimateMinDays: 1,
-          shippingEstimateMaxDays: 3,
+          shippingInnerCityMinDays: 1,
+          shippingInnerCityMaxDays: 3,
+          shippingOtherProvinceMinDays: 3,
+          shippingOtherProvinceMaxDays: 10,
           lines: {
             create: [
               {
@@ -242,6 +243,8 @@ test("F8c confirmation and tracking keep identical immutable preorder history af
   await expect(confirmation).toContainText("Đặt trước");
   await expect(confirmation).toContainText("03/10/2026");
   await expect(confirmation).toContainText("1–3 ngày");
+  await expect(confirmation).toContainText("3–10 ngày");
+  await expect(confirmation).toContainText("không phải cam kết");
   await expect(confirmation).toContainText("giao cùng nhau");
   const before = await confirmation.innerText();
   await assertPageQuality(page);
