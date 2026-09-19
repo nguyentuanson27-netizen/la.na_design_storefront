@@ -447,6 +447,30 @@ test("U33c the Size Guide page renders every approved chart with its body-measur
     await expect(main).not.toContainText(overclaim);
   }
 
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.reload({ waitUntil: "networkidle" });
+
+  const firstChart = PUBLIC_SIZE_GUIDE.charts[0]!;
+  const scrollRegion = page.locator(
+    `[tabindex="0"][aria-labelledby="chart-${firstChart.id}-heading"]`,
+  );
+  await expect(scrollRegion).toHaveCount(1);
+  expect(
+    await scrollRegion.evaluate((element) => element.scrollWidth > element.clientWidth),
+  ).toBe(true);
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (await scrollRegion.evaluate((element) => document.activeElement === element)) break;
+    await page.keyboard.press("Tab");
+  }
+  await expect(scrollRegion).toBeFocused();
+
+  const initialScrollLeft = await scrollRegion.evaluate((element) => element.scrollLeft);
+  await page.keyboard.press("ArrowRight");
+  await expect
+    .poll(() => scrollRegion.evaluate((element) => element.scrollLeft))
+    .toBeGreaterThan(initialScrollLeft);
+
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
 });
