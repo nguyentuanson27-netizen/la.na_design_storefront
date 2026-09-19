@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 
 import { lookupGuestOrderAction } from "@/commerce/guest-order-tracking-actions";
+import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-preorder-notice";
 import type {
   GuestOrderPublicStatus,
 } from "@/commerce/guest-order-tracking";
@@ -102,6 +103,9 @@ export function GuestOrderTrackingForm() {
               <dd className="mt-1 font-semibold">{formatVnd(state.order.totalVnd)}</dd>
             </div>
           </dl>
+          {state.order.preorderHistory ? (
+            <BrandHistoricalPreorderNotice history={state.order.preorderHistory} />
+          ) : null}
           {state.order.status === "CHECKING" ? (
             <p className="mt-5 text-sm leading-6 text-black/75">
               Hệ thống đang kiểm tra lại kết quả đồng bộ. Vui lòng không gửi lại đơn chỉ vì trạng thái này.
