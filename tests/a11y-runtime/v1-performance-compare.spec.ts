@@ -36,6 +36,12 @@ type RuntimeLabel = "baseline" | "current";
 type ViewportLabel = "mobile" | "desktop";
 type RouteLabel = "home" | "plp" | "pdp";
 
+type ResourceSample = Readonly<{
+  name: string;
+  initiatorType: string;
+  transferSize: number;
+}>;
+
 type MetricSample = Readonly<{
   ttfbMs: number;
   fcpMs: number;
@@ -45,6 +51,7 @@ type MetricSample = Readonly<{
   loadMs: number;
   resourceCount: number;
   resourceTransferBytes: number;
+  topResources: readonly ResourceSample[];
 }>;
 
 let currentServer: ChildProcess | undefined;
@@ -241,6 +248,14 @@ async function measureOnce(page: Page, url: string): Promise<MetricSample> {
       loadMs: navigation.loadEventEnd,
       resourceCount: resources.length,
       resourceTransferBytes: resources.reduce((sum, resource) => sum + resource.transferSize, 0),
+      topResources: resources
+        .map((resource) => ({
+          name: new URL(resource.name).pathname,
+          initiatorType: resource.initiatorType,
+          transferSize: resource.transferSize,
+        }))
+        .sort((left, right) => right.transferSize - left.transferSize)
+        .slice(0, 12),
     };
   });
 
@@ -362,7 +377,15 @@ test("V1 compares Home PLP PDP against the approved baseline with identical fixt
         resourceTransferBytes: changePct(current.resourceTransferBytes, baseline.resourceTransferBytes),
       };
 
-      results[key] = { baseline, current, deltaPct };
+      results[key] = {
+        baseline,
+        current,
+        deltaPct,
+        topResources: {
+          baseline: runtimeSamples.baseline[0]?.topResources ?? [],
+          current: runtimeSamples.current[0]?.topResources ?? [],
+        },
+      };
     }
   }
 
