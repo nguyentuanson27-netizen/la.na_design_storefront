@@ -6,7 +6,9 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { readGuestShippingPolicy } from "../../src/commerce/guest-shipping-policy.ts";
 import { prisma } from "../../src/db/prisma.ts";
+import { buildReturnsViewModel, buildShippingViewModel } from "../../src/routes/evergreen-model.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const HOST = "127.0.0.1";
@@ -19,6 +21,8 @@ const suffix = `${Date.now()}-${process.pid}`;
 const collectionSlug = `u4-related-${suffix}`;
 const currentSlug = `u4-current-${suffix}`;
 const soloSlug = `u4-solo-${suffix}`;
+const fallbackSlug = `u4-fallback-${suffix}`;
+const fallbackName = `Fallback Source ${suffix}`;
 const currentName = `Current U4 Jacket ${suffix}`;
 const draftCandidateName = `Alpha Draft Candidate ${suffix}`;
 const publishedCandidateName = `Bravo Published Candidate ${suffix}`;
@@ -82,6 +86,10 @@ async function seedProduct({
   categoryKeys = [],
   status = "PUBLISHED",
   isActive = true,
+  editorialDescription,
+  material = null,
+  craftDetails = [],
+  careInstructions = null,
 }: {
   key: string;
   slug: string;
@@ -90,6 +98,10 @@ async function seedProduct({
   categoryKeys?: string[];
   status?: "DRAFT" | "PUBLISHED";
   isActive?: boolean;
+  editorialDescription?: string | null;
+  material?: string | null;
+  craftDetails?: string[];
+  careInstructions?: string | null;
 }): Promise<string> {
   const product = await prisma.productMirror.create({
     data: {
@@ -103,7 +115,15 @@ async function seedProduct({
       content: {
         create: {
           status,
-          editorialDescription: status === "PUBLISHED" ? `Editorial ${key}` : null,
+          editorialDescription:
+            editorialDescription === undefined
+              ? status === "PUBLISHED"
+                ? `Editorial ${key}`
+                : null
+              : editorialDescription,
+          material,
+          craftDetails,
+          careInstructions,
           collectionSlugs,
         },
       },
@@ -157,6 +177,10 @@ test.beforeAll(async () => {
     name: currentName,
     collectionSlugs: [collectionSlug],
     categoryKeys: [SHARED_CATEGORY],
+    editorialDescription: "Mô tả approved cho PDP content runtime.",
+    material: "Lụa tơ tằm.",
+    craftDetails: ["Đính kết thủ công."],
+    careInstructions: "Giặt tay nhẹ.",
   });
   await seedProduct({
     key: "draft",
@@ -193,7 +217,19 @@ test.beforeAll(async () => {
     name: pinnedName,
     categoryKeys: [PINNED_CATEGORY],
   });
-  await seedProduct({ key: "solo", slug: soloSlug, name: `Solo Product ${suffix}` });
+  await seedProduct({
+    key: "solo",
+    slug: soloSlug,
+    name: `Solo Product ${suffix}`,
+    editorialDescription: null,
+  });
+  await seedProduct({
+    key: "fallback-source",
+    slug: fallbackSlug,
+    name: fallbackName,
+    categoryKeys: [PINNED_CATEGORY],
+    editorialDescription: null,
+  });
 
   await prisma.relatedProductOverride.create({
     data: { productId: currentId, relatedProductId: pinnedId, position: 0 },
@@ -231,7 +267,18 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("U4 PDP renders deterministic visible related products from website-owned category membership", async ({ page }) => {
+test("F7d/F7e PDP keeps manual related order and renders approved detail/policy blocks in order", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
   const response = await page.goto(`${BASE_URL}/shop/${currentSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
@@ -247,14 +294,90 @@ test("U4 PDP renders deterministic visible related products from website-owned c
   // nothing else, and the superseded implementation would have listed it.
   await expect(related.getByText(collectionOnlyName, { exact: true })).toHaveCount(0);
   await expect(related.locator('a[href="/size-guide"]')).toHaveCount(0);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await expect(related.getByText("Cùng bộ sưu tập", { exact: true })).toHaveCount(0);
+  await expect(related.locator(`a[href="/shop/${currentSlug}"]`)).toHaveCount(0);
 
+  const relatedHrefs = await related.locator('article a[href^="/shop/"]').evaluateAll((links) =>
+    links.map((link) => link.getAttribute("href")),
+  );
+  expect(new Set(relatedHrefs).size).toBe(relatedHrefs.length);
+
+  const details = page.getByRole("region", { name: "Chi tiết sản phẩm" });
+  const detailHeadings = await details.getByRole("heading", { level: 2 }).allTextContents();
+  expect(detailHeadings).toEqual([
+    "Mô tả sản phẩm",
+    "Chất liệu",
+    "Hướng dẫn bảo quản",
+    "Giao hàng",
+    "Đổi trả",
+  ]);
+  await expect(details.getByText("Mô tả approved cho PDP content runtime.", { exact: true })).toBeVisible();
+  await expect(details.getByText("Đính kết thủ công.", { exact: true })).toBeVisible();
+  await expect(details.getByText("Lụa tơ tằm.", { exact: true })).toBeVisible();
+  await expect(details.getByText("Giặt tay nhẹ.", { exact: true })).toBeVisible();
+  await expect(details.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
+
+  const shipping = buildShippingViewModel({ policy: readGuestShippingPolicy() });
+  const returns = buildReturnsViewModel();
+  await expect(details.getByText(shipping.coverage, { exact: true })).toBeVisible();
+  await expect(details.getByText(`${shipping.innerCityLabel}: ${shipping.innerCityEstimate}`, { exact: true })).toBeVisible();
+  await expect(details.getByText(`${shipping.otherProvinceLabel}: ${shipping.otherProvinceEstimate}`, { exact: true })).toBeVisible();
+  await expect(details.getByText(shipping.estimateCaveat, { exact: true })).toBeVisible();
+  await expect(details.getByText(returns.returnWindow, { exact: true })).toBeVisible();
+  await expect(details.getByText(returns.refundWindow, { exact: true })).toBeVisible();
+  await expect(details.locator('a[href="/shipping"]')).toBeVisible();
+  await expect(details.locator('a[href="/returns"]')).toBeVisible();
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });
 
-test("U4 PDP omits the related-products region when category membership has no candidates", async ({ page }) => {
+test("F7d same-category fallback works without manual picks", async ({ page }) => {
+  const response = await page.goto(`${BASE_URL}/shop/${fallbackSlug}`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+
+  const related = page.getByRole("region", { name: "Hoàn thiện phối đồ" });
+  await expect(related).toBeVisible();
+  await expect(related.getByText(pinnedName, { exact: true })).toBeVisible();
+  await expect(related.getByText(fallbackName, { exact: true })).toHaveCount(0);
+});
+
+test("F7d/F7e empty related set is omitted and missing product facts create no placeholder blocks", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
   const response = await page.goto(`${BASE_URL}/shop/${soloSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("region", { name: "Hoàn thiện phối đồ" })).toHaveCount(0);
+  await expect(page.getByText("Thông tin biên tập cho sản phẩm này đang được cập nhật.")).toHaveCount(0);
+
+  const details = page.getByRole("region", { name: "Chi tiết sản phẩm" });
+  expect(await details.getByRole("heading", { level: 2 }).allTextContents()).toEqual([
+    "Giao hàng",
+    "Đổi trả",
+  ]);
+  await expect(details.getByRole("heading", { name: "Chất liệu", exact: true })).toHaveCount(0);
+  await expect(details.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
+  await expect(details.getByRole("heading", { name: "Hướng dẫn bảo quản", exact: true })).toHaveCount(0);
+  await expect(details.getByText(/N\/A|Đang cập nhật/i)).toHaveCount(0);
+  await expect(details.getByText(/xuất xứ/i)).toHaveCount(0);
+
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });
