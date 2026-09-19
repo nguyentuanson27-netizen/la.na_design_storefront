@@ -14,7 +14,6 @@ function snapshot(
 ): HistoricalPreorderSnapshotFacts {
   const hasPreorder = lines.some((line) => line.state === "PREORDER");
   return {
-    confirmedAt: new Date("2026-09-18T04:30:00.000Z"),
     preorderReadyAt: hasPreorder ? READY_AT : null,
     shippingInnerCityMinDays: hasPreorder ? 1 : null,
     shippingInnerCityMaxDays: hasPreorder ? 3 : null,
@@ -28,7 +27,7 @@ function snapshot(
 test("F8c ready-only history produces no preorder presentation", () => {
   assert.equal(
     buildHistoricalPreorderPresentation(
-      snapshot([{ variantId: "ready", quantity: 1, state: "READY", preorderReadyAt: null }]),
+      snapshot([{ quantity: 1, state: "READY", preorderReadyAt: null }]),
     ),
     null,
   );
@@ -37,7 +36,7 @@ test("F8c ready-only history produces no preorder presentation", () => {
 test("F8c preorder history renders persisted readiness and persisted shipping windows", () => {
   const presentation = buildHistoricalPreorderPresentation(
     snapshot(
-      [{ variantId: "pre", quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
+      [{ quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
       {
         shippingInnerCityMinDays: 8,
         shippingInnerCityMaxDays: 12,
@@ -65,8 +64,8 @@ test("F8c preorder history renders persisted readiness and persisted shipping wi
 test("F8c mixed immutable history is one shipment", () => {
   const presentation = buildHistoricalPreorderPresentation(
     snapshot([
-      { variantId: "ready", quantity: 1, state: "READY", preorderReadyAt: null },
-      { variantId: "pre", quantity: 2, state: "PREORDER", preorderReadyAt: READY_AT },
+      { quantity: 1, state: "READY", preorderReadyAt: null },
+      { quantity: 2, state: "PREORDER", preorderReadyAt: READY_AT },
     ]),
   );
 
@@ -77,8 +76,8 @@ test("F8c mixed immutable history is one shipment", () => {
 test("F8c multiple preorder lines use the snapshotted order readiness instead of recomputing", () => {
   const presentation = buildHistoricalPreorderPresentation(
     snapshot([
-      { variantId: "a", quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT },
-      { variantId: "b", quantity: 4, state: "PREORDER", preorderReadyAt: READY_AT },
+      { quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT },
+      { quantity: 4, state: "PREORDER", preorderReadyAt: READY_AT },
     ]),
   );
 
@@ -90,7 +89,7 @@ test("F8c multiple preorder lines use the snapshotted order readiness instead of
 test("F8c legacy I7 history without snapshotted shipping facts never fabricates shipping ETA", () => {
   const presentation = buildHistoricalPreorderPresentation(
     snapshot(
-      [{ variantId: "pre", quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
+      [{ quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
       {
         shippingInnerCityMinDays: null,
         shippingInnerCityMaxDays: null,
@@ -109,7 +108,7 @@ test("F8c invalid or partial persisted history fails closed instead of consultin
   assert.equal(
     buildHistoricalPreorderPresentation(
       snapshot(
-        [{ variantId: "pre", quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
+        [{ quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }],
         { shippingOtherProvinceMaxDays: null },
       ),
     ),
@@ -134,13 +133,13 @@ test("F8c invalid or partial persisted history fails closed instead of consultin
 test("F8c READY history cannot become preorder and PREORDER history cannot become ready from live facts", () => {
   assert.equal(
     buildHistoricalPreorderPresentation(
-      snapshot([{ variantId: "v", quantity: 1, state: "READY", preorderReadyAt: null }]),
+      snapshot([{ quantity: 1, state: "READY", preorderReadyAt: null }]),
     ),
     null,
   );
 
   const preorderHistory = buildHistoricalPreorderPresentation(
-    snapshot([{ variantId: "v", quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }]),
+    snapshot([{ quantity: 1, state: "PREORDER", preorderReadyAt: READY_AT }]),
   );
   assert.equal(preorderHistory?.preorderLabel, "Đặt trước");
 });
