@@ -394,6 +394,7 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
     "Chọn loại × kích cỡ",
     "Chọn màu × kích cỡ",
     "Chọn kích cỡ",
+    "Hướng dẫn chọn size",
   ]) {
     assert.equal(source.includes(expected), true, `purchase panel missing Vietnamese copy: ${expected}`);
   }
@@ -404,6 +405,7 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
     "Chọn Loại × Size",
     "Chọn Color × Size",
     "Chọn Size",
+    "Hướng dẫn chọn kích cỡ",
   ]) {
     assert.equal(source.includes(oldCopy), false, `purchase panel retained old copy: ${oldCopy}`);
   }
@@ -415,7 +417,6 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   for (const expected of [
     "Cửa hàng",
     `${BRAND_NAME_IN_JSX} / Sản phẩm`,
-    "Hướng dẫn chọn kích cỡ",
     "Bảo quản",
     "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
     "Số lượng tồn kho chính xác không được hiển thị trên website.",
