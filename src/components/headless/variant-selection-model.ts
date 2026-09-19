@@ -60,7 +60,7 @@ export const PREORDER_ADD_TO_BAG_LABEL = PREORDER_LABEL;
  * user "add to bag" for a preorder — §30's misreading, delivered only to the people least able to
  * catch it from surrounding layout.
  */
-const ADD_TO_BAG_NAMES = {
+export const ADD_TO_BAG_NAMES = {
   ready: "Thêm vào giỏ hàng",
   preorder: `${PREORDER_LABEL} sản phẩm này`,
 } as const;
