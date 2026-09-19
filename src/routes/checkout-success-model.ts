@@ -1,3 +1,5 @@
+import type { HistoricalPreorderPresentation } from "@/commerce/historical-preorder-presentation";
+
 /**
  * Everything the order-confirmation route decides, as pure functions.
  *
@@ -31,11 +33,21 @@ export type CheckoutSuccessViewModel = Readonly<{
    * unconfirmed page cannot echo back a code someone typed into the address bar.
    */
   orderCode: string | null;
+  /** Immutable I7 history. Null for ready-only, legacy/no-snapshot, or unconfirmed orders. */
+  preorderHistory: HistoricalPreorderPresentation | null;
 }>;
 
 export function buildCheckoutSuccessViewModel(
-  input: Readonly<{ orderCode: string | null; confirmed: boolean }>,
+  input: Readonly<{
+    orderCode: string | null;
+    confirmed: boolean;
+    preorderHistory?: HistoricalPreorderPresentation | null;
+  }>,
 ): CheckoutSuccessViewModel {
   const confirmed = input.confirmed && input.orderCode !== null;
-  return Object.freeze({ confirmed, orderCode: confirmed ? input.orderCode : null });
+  return Object.freeze({
+    confirmed,
+    orderCode: confirmed ? input.orderCode : null,
+    preorderHistory: confirmed ? (input.preorderHistory ?? null) : null,
+  });
 }
