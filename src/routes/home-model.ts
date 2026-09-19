@@ -1,4 +1,5 @@
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "../commerce/storefront-promotion-freshness.ts";
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
@@ -15,8 +16,12 @@ import { selectEditorialPanels, type EditorialPanel } from "./editorial-panels.t
  *
  * The loader fetches; this turns what came back into what the page renders. It is separate from
  * `home.ts` because that file reaches the catalog runtime and `next/server`, neither of which the
- * domain test runner can load -- and the editorial picks below are the part worth testing, because
- * their fallback chain is the kind of thing that silently degrades to a blank panel.
+ * domain test runner can load.
+ *
+ * Master spec §16 fixes the section order, and two of those sections are product grids that must
+ * stay separate reads all the way through: `Hàng mới về` is a recency read, Featured (§20) is a
+ * manual list whose emptiness is meaningful. They are two fields here rather than one merged list
+ * precisely so an empty Featured section cannot quietly inherit new arrivals.
  *
  * No pricing is decided here: every card comes from `buildProductCardModel`, which is where the
  * money rules live.
@@ -39,49 +44,85 @@ export type HomeEditorialPanel = EditorialPanel;
 export type HomeCard = Readonly<{ id: string; model: ProductCardModel }>;
 
 export type HomeViewModel = Readonly<{
-  cards: readonly HomeCard[];
-  hero: HomeEditorialPanel;
-  lookbookLarge: HomeEditorialPanel;
-  lookbookSmall: HomeEditorialPanel;
+  newArrivals: readonly HomeCard[];
+  featured: readonly HomeCard[];
+  /** The brand-story photograph (§23). Null when the catalog carries no trusted photography. */
+  storyPanel: HomeEditorialPanel;
   collections: readonly HomeCollectionLink[];
 }>;
 
-export type HomeViewModelInput = Readonly<{
+type CardGridInput = Readonly<{
   products: readonly HomeProduct[];
   pricingRule?: StorefrontPricingRule;
-  collections: readonly HomeCollectionLink[];
   /** Prebuilt on the server, so a click handler never reassembles a payload from the DOM. */
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
 }>;
 
-export function buildHomeViewModel({
+export type HomeViewModelInput = Readonly<{
+  newArrivals: CardGridInput;
+  featured: CardGridInput;
+  collections: readonly HomeCollectionLink[];
+}>;
+
+/**
+ * How long the homepage may wait before asking the server for prices again.
+ *
+ * The page carries two independently priced grids (§18 and §20), and each resolves its own next
+ * campaign boundary against the request instant. They are not interchangeable: a campaign can
+ * start or end for a Featured product while nothing near happens to new arrivals. Sealing only one
+ * grid's window lets the other hold a price past its own boundary until the 60s ceiling, which is
+ * exactly the staleness the freshness contract exists to prevent -- so the page takes the soonest
+ * window any priced grid reported.
+ *
+ * An empty page (no priced grids at all) still revalidates within the reviewed ceiling rather than
+ * never, and a window that is not a usable number is ignored instead of poisoning the minimum.
+ */
+export function resolveHomeRefreshAfterMs(refreshWindows: readonly number[]): number {
+  let soonest = MAX_STOREFRONT_PROMOTION_REFRESH_MS;
+
+  for (const window of refreshWindows) {
+    if (!Number.isFinite(window) || window < 0) continue;
+    if (window < soonest) soonest = window;
+  }
+
+  return soonest;
+}
+
+export function buildHomeCards({
   products,
   pricingRule,
-  collections,
   selectEventBySlug,
+}: CardGridInput): readonly HomeCard[] {
+  return Object.freeze(
+    products.map((product) =>
+      Object.freeze({
+        id: product.id,
+        model: buildProductCardModel({
+          slug: product.slug,
+          name: product.name,
+          media: product.media,
+          variants: product.variants,
+          pricingRule,
+          selectEvent: selectEventBySlug.get(product.slug) ?? null,
+        }),
+      }),
+    ),
+  );
+}
+
+export function buildHomeViewModel({
+  newArrivals,
+  featured,
+  collections,
 }: HomeViewModelInput): HomeViewModel {
-  // Three panels: hero, then the two lookbook slots.
-  const [hero, lookbookLarge, lookbookSmall] = selectEditorialPanels(products, 3);
+  // One panel, for the brand story's photograph. The hero is no longer one of these: §17 makes it
+  // campaign media with its own destination, decided by `buildHomeHeroSlides`.
+  const [storyPanel] = selectEditorialPanels(newArrivals.products, 1);
 
   return Object.freeze({
-    cards: Object.freeze(
-      products.map((product) =>
-        Object.freeze({
-          id: product.id,
-          model: buildProductCardModel({
-            slug: product.slug,
-            name: product.name,
-            media: product.media,
-            variants: product.variants,
-            pricingRule,
-            selectEvent: selectEventBySlug.get(product.slug) ?? null,
-          }),
-        }),
-      ),
-    ),
-    hero: hero ?? null,
-    lookbookLarge: lookbookLarge ?? null,
-    lookbookSmall: lookbookSmall ?? null,
+    newArrivals: buildHomeCards(newArrivals),
+    featured: buildHomeCards(featured),
+    storyPanel: storyPanel ?? null,
     collections: Object.freeze([...collections]),
   });
 }

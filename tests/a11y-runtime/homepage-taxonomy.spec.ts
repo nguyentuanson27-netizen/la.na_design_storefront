@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
 
+import { BRAND } from "../../src/brand/index.ts";
 import { readGuestShippingPolicy } from "../../src/commerce/guest-shipping-policy.ts";
 import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -134,7 +135,9 @@ async function addCollection(
 async function expectCanonicalTrustStrip(page: import("@playwright/test").Page) {
   const trustStrip = page.locator('[data-homepage-region="trust-support"]');
   await expect(trustStrip).toBeVisible();
-  await expect(trustStrip.getByText(expectedBrandFacts.brandSummary, { exact: true })).toBeVisible();
+  // Master spec §23's brand-story paragraph is its own approved fact, distinct from the tagline
+  // every other route inherits, so the homepage quotes it rather than the tagline.
+  await expect(trustStrip.getByText(BRAND.identity.homeBrandStory, { exact: true })).toBeVisible();
   await expect(
     trustStrip.getByText(
       `${expectedBrandFacts.paymentMethod} ${expectedBrandFacts.checkoutAccount}`,
@@ -195,13 +198,14 @@ test("U2 homepage collection rail uses explicit published merchandising position
   await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
   await expect(page.getByText("U2 Published Unpositioned", { exact: true })).toHaveCount(0);
   await expect(page.getByText("U2 Draft Positioned", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: /Mua bộ sưu tập/ })).toHaveAttribute("href", "/shop");
+  // No collection here publishes hero media, so the homepage hero stays absent (master spec §17).
+  await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expectCanonicalTrustStrip(page);
   expect(
     await page.locator("[data-homepage-region]").evaluateAll((regions) =>
       regions.map((region) => region.getAttribute("data-homepage-region")),
     ),
-  ).toEqual(["trust-support"]);
+  ).toEqual(["new-arrivals", "service", "trust-support"]);
 
   await addCollection(`${TEST_PREFIX}a-six`, "U2 Position Six", true, 6);
   await addCollection(`${TEST_PREFIX}z-two`, "U2 Position Two", true, 2);
@@ -228,7 +232,7 @@ test("U2 homepage collection rail uses explicit published merchandising position
     await page.locator("[data-homepage-region]").evaluateAll((regions) =>
       regions.map((region) => region.getAttribute("data-homepage-region")),
     ),
-  ).toEqual(["collection-navigation", "trust-support"]);
+  ).toEqual(["new-arrivals", "collection-navigation", "service", "trust-support"]);
 
   await prisma.collectionDefinition.update({
     where: { slug: `${TEST_PREFIX}draft` },

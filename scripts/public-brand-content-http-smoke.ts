@@ -112,8 +112,16 @@ try {
 
   const text = visibleText(body);
   for (const fact of [
-    "La.na Design / About",
-    "Thời trang nữ thiết kế thanh lịch với áo dài, váy và set đồ",
+    // The brand name, which the brand-story heading carries. It used to be checked through a
+    // `La.na Design / About` eyebrow; master spec §16 does not carry that Brand #1 label into the
+    // approved composition, so the name is asserted directly rather than through the retired label.
+    "La.na Design",
+    // §23's approved brand-story paragraph. This replaced the inherited tagline on the homepage:
+    // the tagline is the short line other routes inherit, and §23 specifies this paragraph as the
+    // body copy a shopper reads here. Asserting it keeps the guarantee the tagline assertion gave —
+    // the homepage states brand voice the owner approved word for word, and cannot drift into
+    // prose a page wrote for itself.
+    "La.na Design mang đến những thiết kế thời trang nữ thanh lịch, nữ tính, với điểm nhấn là áo dài, váy và set đồ được chọn lọc kĩ lưỡng và tỉ mỉ.",
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
     "Miễn phí vận chuyển",
