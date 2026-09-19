@@ -59,6 +59,11 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock
+      // file there. Every spec drives this one project, so they share that lock unless
+      // each gets its own directory -- and a server that has to be SIGKILLed leaves the
+      // lock behind, which makes the next spec's server refuse to start entirely.
+      NEXT_DIST_DIR: ".next-test/footer-support",
       APP_DOMAIN: `${HOST}:${PORT}`,
       BETTER_AUTH_URL: BASE_URL,
       LA_SHIPPING_FEE_VND: "25000",
