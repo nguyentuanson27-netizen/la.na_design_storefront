@@ -509,8 +509,12 @@ model OrderPreorderSnapshot {
   id               String                       @id @default(cuid())
   orderId          String                       @unique
   confirmedAt      DateTime
-  preorderReadyAt  DateTime?
-  createdAt        DateTime                     @default(now())
+  preorderReadyAt             DateTime?
+  shippingInnerCityMinDays     Int?
+  shippingInnerCityMaxDays     Int?
+  shippingOtherProvinceMinDays Int?
+  shippingOtherProvinceMaxDays Int?
+  createdAt                   DateTime                     @default(now())
   order            OrderMirror                  @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines            OrderPreorderLineSnapshot[]
 
