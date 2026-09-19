@@ -441,7 +441,8 @@ test("size-only product hides Color and becomes purchasable after selecting Size
 });
 
 test("desktop purchase panel is sticky and validates size before add-to-cart", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // Keep a desktop width but enough vertical scroll budget to actually cross the sticky threshold.
+  await page.setViewportSize({ width: 1440, height: 700 });
 
   const browserErrors: string[] = [];
   const postRequests: string[] = [];
@@ -466,7 +467,13 @@ test("desktop purchase panel is sticky and validates size before add-to-cart", a
     documentTop: element.getBoundingClientRect().top + window.scrollY,
   }));
   expect(stickyMetrics.position).toBe("sticky");
-  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyMetrics.documentTop);
+  const stickyThreshold = stickyMetrics.documentTop - stickyMetrics.top;
+  const maxScrollY = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  );
+  expect(maxScrollY).toBeGreaterThan(stickyThreshold + 24);
+
+  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyThreshold + 24);
   await expect
     .poll(async () => {
       const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
