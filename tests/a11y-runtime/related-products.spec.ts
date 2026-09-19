@@ -331,6 +331,20 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+  // The same source-backed block order must survive the mobile composition.
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await details.getByRole("heading", { level: 2 }).allTextContents()).toEqual([
+    "Mô tả sản phẩm",
+    "Chất liệu",
+    "Hướng dẫn bảo quản",
+    "Giao hàng",
+    "Đổi trả",
+  ]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const mobileAccessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(mobileAccessibilityScan.violations).toEqual([]);
+
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
