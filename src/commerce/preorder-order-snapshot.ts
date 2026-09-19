@@ -24,9 +24,18 @@ export type PreorderSnapshotLine = Readonly<{
   preorderReadyAt: Date | null;
 }>;
 
+export type PreorderShippingEstimateSnapshotInput = Readonly<{
+  innerCity: Readonly<{ minimum: number; maximum: number }>;
+  otherProvince: Readonly<{ minimum: number; maximum: number }>;
+}>;
+
 export type PreorderOrderSnapshot = Readonly<{
   confirmedAt: Date;
   preorderReadyAt: Date | null;
+  shippingInnerCityMinDays: number | null;
+  shippingInnerCityMaxDays: number | null;
+  shippingOtherProvinceMinDays: number | null;
+  shippingOtherProvinceMaxDays: number | null;
   lines: readonly PreorderSnapshotLine[];
 }>;
 
@@ -49,6 +58,18 @@ function requireValidLine(line: PreorderSnapshotLineInput): void {
   }
 }
 
+function requireDayRange(
+  range: Readonly<{ minimum: number; maximum: number }>,
+  label: string,
+): void {
+  if (!Number.isSafeInteger(range.minimum) || range.minimum <= 0) {
+    throw new TypeError(`I7 ${label} minimum must be a positive safe integer`);
+  }
+  if (!Number.isSafeInteger(range.maximum) || range.maximum < range.minimum) {
+    throw new TypeError(`I7 ${label} maximum must be a safe integer not smaller than minimum`);
+  }
+}
+
 function addCalendarDays(confirmedAt: Date, days: number): Date {
   const result = new Date(confirmedAt.getTime() + days * CALENDAR_DAY_MS);
   if (Number.isNaN(result.getTime())) {
@@ -68,18 +89,26 @@ function addCalendarDays(confirmedAt: Date, days: number): Date {
 export function buildPreorderOrderSnapshot({
   confirmedAt,
   lines,
+  shippingEstimate = null,
 }: Readonly<{
   confirmedAt: Date;
   lines: readonly PreorderSnapshotLineInput[];
+  shippingEstimate?: PreorderShippingEstimateSnapshotInput | null;
 }>): PreorderOrderSnapshot {
   const safeConfirmedAt = requireValidConfirmationTime(confirmedAt);
   if (lines.length === 0) {
     throw new TypeError("I7 preorder snapshot requires at least one order line");
   }
 
-  const preorderReadyAt = lines.some((line) => line.isPreorderSale)
+  const hasPreorder = lines.some((line) => line.isPreorderSale);
+  const preorderReadyAt = hasPreorder
     ? addCalendarDays(safeConfirmedAt, PREORDER_PREPARATION_DAYS)
     : null;
+
+  if (hasPreorder && shippingEstimate) {
+    requireDayRange(shippingEstimate.innerCity, "inner-city shipping estimate");
+    requireDayRange(shippingEstimate.otherProvince, "other-province shipping estimate");
+  }
 
   const snapshotLines = lines.map((line) => {
     requireValidLine(line);
@@ -94,6 +123,14 @@ export function buildPreorderOrderSnapshot({
   return Object.freeze({
     confirmedAt: new Date(safeConfirmedAt.getTime()),
     preorderReadyAt,
+    shippingInnerCityMinDays:
+      hasPreorder && shippingEstimate ? shippingEstimate.innerCity.minimum : null,
+    shippingInnerCityMaxDays:
+      hasPreorder && shippingEstimate ? shippingEstimate.innerCity.maximum : null,
+    shippingOtherProvinceMinDays:
+      hasPreorder && shippingEstimate ? shippingEstimate.otherProvince.minimum : null,
+    shippingOtherProvinceMaxDays:
+      hasPreorder && shippingEstimate ? shippingEstimate.otherProvince.maximum : null,
     lines: Object.freeze(snapshotLines),
   });
 }
