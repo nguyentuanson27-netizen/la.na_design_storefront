@@ -39,47 +39,87 @@ function render(data: ProductRouteData) {
         </div>
       ) : null}
 
-      {editorial.description ? (
-        <p className="mt-7 max-w-2xl break-words font-serif text-2xl leading-snug text-black/80 md:text-3xl">
-          {editorial.description}
-        </p>
-      ) : (
-        <p className="mt-7 max-w-xl text-sm leading-6 text-black/60">
-          Thông tin biên tập cho sản phẩm này đang được cập nhật.
-        </p>
-      )}
     </>
   );
 
   const afterPanel = (
     <>
-      {editorial.hasNotes ? (
-        <section className="mt-12 border-t border-black/20" aria-labelledby="product-notes-title">
-          <h2 id="product-notes-title" className="sr-only">Thông tin sản phẩm</h2>
-          {editorial.material ? (
-            <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Chất liệu</h3>
-              <p className="max-w-xl text-sm leading-6 text-black/70">{editorial.material}</p>
-            </div>
-          ) : null}
-          {editorial.craftDetails.length > 0 ? (
-            <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Hoàn thiện</h3>
-              <ul className="max-w-xl list-disc space-y-1 pl-5 text-sm leading-6 text-black/70">
+      <section
+        aria-label="Chi tiết sản phẩm"
+        className="mt-12 border-t border-black/20"
+      >
+        {editorial.description || editorial.craftDetails.length > 0 ? (
+          <section className="border-b border-black/15 py-6" aria-labelledby="pdp-description-title">
+            <h2 id="pdp-description-title" className="text-xs font-semibold uppercase tracking-[0.14em]">
+              Mô tả sản phẩm
+            </h2>
+            {editorial.description ? (
+              <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">{editorial.description}</p>
+            ) : null}
+            {editorial.craftDetails.length > 0 ? (
+              <ul className="mt-3 max-w-xl list-disc space-y-1 pl-5 text-sm leading-6 text-black/70">
                 {editorial.craftDetails.map((detail) => (
                   <li key={detail}>{detail}</li>
                 ))}
               </ul>
-            </div>
-          ) : null}
-          {editorial.careInstructions ? (
-            <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Bảo quản</h3>
-              <p className="max-w-xl text-sm leading-6 text-black/70">{editorial.careInstructions}</p>
-            </div>
-          ) : null}
+            ) : null}
+          </section>
+        ) : null}
+
+        {editorial.material ? (
+          <section className="border-b border-black/15 py-6" aria-labelledby="pdp-material-title">
+            <h2 id="pdp-material-title" className="text-xs font-semibold uppercase tracking-[0.14em]">
+              Chất liệu
+            </h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">{editorial.material}</p>
+          </section>
+        ) : null}
+
+        {/*
+          The approved order includes "Thông số/fit", but current ProductContent has no dedicated,
+          approved fit/measurement fact. Size options, category and craft details are not fit facts,
+          so F7e truthfully omits the block until such a source exists.
+        */}
+
+        {editorial.careInstructions ? (
+          <section className="border-b border-black/15 py-6" aria-labelledby="pdp-care-title">
+            <h2 id="pdp-care-title" className="text-xs font-semibold uppercase tracking-[0.14em]">
+              Hướng dẫn bảo quản
+            </h2>
+            <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">
+              {editorial.careInstructions}
+            </p>
+          </section>
+        ) : null}
+
+        <section className="border-b border-black/15 py-6" aria-labelledby="pdp-shipping-title">
+          <h2 id="pdp-shipping-title" className="text-xs font-semibold uppercase tracking-[0.14em]">
+            Giao hàng
+          </h2>
+          <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">
+            <p>{data.shipping.coverage}</p>
+            <p>{data.shipping.innerCityLabel}: {data.shipping.innerCityEstimate}</p>
+            <p>{data.shipping.otherProvinceLabel}: {data.shipping.otherProvinceEstimate}</p>
+            <p>{data.shipping.estimateCaveat}</p>
+            <Link className="inline-block underline underline-offset-4" href="/shipping">
+              Xem chính sách vận chuyển
+            </Link>
+          </div>
         </section>
-      ) : null}
+
+        <section className="border-b border-black/15 py-6" aria-labelledby="pdp-returns-title">
+          <h2 id="pdp-returns-title" className="text-xs font-semibold uppercase tracking-[0.14em]">
+            Đổi trả
+          </h2>
+          <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">
+            <p>{data.returns.returnWindow}</p>
+            <p>{data.returns.refundWindow}</p>
+            <Link className="inline-block underline underline-offset-4" href="/returns">
+              Xem chính sách đổi trả
+            </Link>
+          </div>
+        </section>
+      </section>
 
       <p className="mt-8 max-w-xl text-xs leading-5 text-black/60">
         Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng. Số lượng tồn kho chính xác không được hiển thị trên website.
@@ -121,7 +161,7 @@ function render(data: ProductRouteData) {
         <section aria-labelledby="related-products-title" className="mt-20 border-t border-black/20 pt-6">
           <div className="section-heading-row">
             <h2 id="related-products-title">Hoàn thiện phối đồ</h2>
-            <p className="eyebrow">Cùng bộ sưu tập</p>
+            <p className="eyebrow">Sản phẩm liên quan</p>
           </div>
           <CommerceEventReporter event={data.relatedListEvent} />
           <div className="product-grid">
