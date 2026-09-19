@@ -77,11 +77,11 @@ export function buildSiteChromeContent(
       address: describePublicAddress(),
       supportHours: describePublicSupportHours(),
       legal: PUBLIC_LEGAL_FACTS,
-      supportLinks: POLICY_HUB_TOPICS.slice(0, 6).map((topic) =>
-        Object.freeze({ href: topic.href, label: topic.title }),
+      supportLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support").map(
+        (topic) => Object.freeze({ href: topic.href, label: topic.title }),
       ),
-      policyLinks: POLICY_HUB_TOPICS.slice(6).map((topic) =>
-        Object.freeze({ href: topic.href, label: topic.title }),
+      policyLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy").map(
+        (topic) => Object.freeze({ href: topic.href, label: topic.title }),
       ),
     },
   };
