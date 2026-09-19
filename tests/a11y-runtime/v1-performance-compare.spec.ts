@@ -188,8 +188,23 @@ async function createMeasuredPage(
   page.on("response", (response) => {
     if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
   });
-  await page.route("**/_next/image**", (route) => {
-    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  await page.route("**/_next/image**", async (route) => {
+    const optimizerRequest = new URL(route.request().url());
+    const sourceUrl = optimizerRequest.searchParams.get("url");
+    const isControlledFixture =
+      sourceUrl?.startsWith("https://content.pancake.vn/") === true &&
+      sourceUrl.includes("v1-performance-");
+
+    if (isControlledFixture) {
+      await route.fulfill({
+        status: 200,
+        contentType: "image/jpeg",
+        body: TINY_JPEG_BUFFER,
+      });
+      return;
+    }
+
+    await route.continue();
   });
 
   await context.addInitScript(() => {
@@ -306,6 +321,52 @@ test.afterAll(async () => {
   await Promise.all([stopServer(baselineServer), stopServer(currentServer)]);
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.$disconnect();
+});
+
+test("V1 performance harness mocks only controlled Pancake fixture images", async ({ browser }) => {
+  const { context, page, browserErrors, failedResponses } = await createMeasuredPage(browser, {
+    width: 1440,
+    height: 900,
+  });
+
+  try {
+    let brandLogoBodyBytes: number | null = null;
+    let fixtureBodyBytes: number | null = null;
+
+    page.on("response", async (response) => {
+      const responseUrl = new URL(response.url());
+      if (responseUrl.pathname !== "/_next/image") return;
+
+      const sourceUrl = responseUrl.searchParams.get("url");
+      if (
+        sourceUrl === "/brand/la-na-design-master-logo.png" ||
+        sourceUrl?.includes("v1-performance-primary.jpg")
+      ) {
+        const body = await response.body();
+        if (sourceUrl === "/brand/la-na-design-master-logo.png") {
+          brandLogoBodyBytes = body.byteLength;
+        } else {
+          fixtureBodyBytes = body.byteLength;
+        }
+      }
+    });
+
+    await page.goto(`${CURRENT_URL}/shop/${PRODUCT_SLUG}`, { waitUntil: "networkidle" });
+    await page.locator(".footer-brand-logo").scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => brandLogoBodyBytes, { message: "local master logo should use the real Next image optimizer" })
+      .not.toBeNull();
+
+    expect(brandLogoBodyBytes!).toBeGreaterThan(TINY_JPEG_BUFFER.byteLength);
+    await expect
+      .poll(() => fixtureBodyBytes, { message: "controlled Pancake fixture should stay mocked" })
+      .toBe(TINY_JPEG_BUFFER.byteLength);
+
+    expect(browserErrors).toEqual([]);
+    expect(failedResponses).toEqual([]);
+  } finally {
+    await context.close();
+  }
 });
 
 test("V1 compares Home PLP PDP against the approved baseline with identical fixture and profile", async ({ browser }) => {
