@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND, NAVIGATION } from "@/brand";
@@ -20,14 +21,14 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
         <section className="footer-group footer-group--brand" data-footer-group>
           <h2 className="footer-brand-heading">
             <Link className="footer-brand-mark" href="/">
-              <img
+              <Image
                 className="footer-brand-logo"
                 src="/brand/la-na-design-master-logo.png"
                 alt={BRAND.identity.name}
                 width={4185}
                 height={2148}
+                sizes="176px"
                 loading="lazy"
-                decoding="async"
               />
             </Link>
           </h2>
