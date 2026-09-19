@@ -119,7 +119,6 @@ test("F8c invalid or partial persisted history fails closed instead of consultin
     buildHistoricalPreorderPresentation(
       snapshot([
         {
-          variantId: "pre",
           quantity: 1,
           state: "PREORDER",
           preorderReadyAt: new Date("2026-10-04T04:30:00.000Z"),
