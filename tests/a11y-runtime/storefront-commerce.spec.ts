@@ -467,9 +467,12 @@ test("desktop purchase panel is sticky and validates size before add-to-cart", a
   }));
   expect(stickyMetrics.position).toBe("sticky");
   await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyMetrics.documentTop);
-  await page.waitForTimeout(50);
-  const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
-  expect(Math.abs(stuckTop - stickyMetrics.top)).toBeLessThanOrEqual(2);
+  await expect
+    .poll(async () => {
+      const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
+      return Math.abs(stuckTop - stickyMetrics.top);
+    })
+    .toBeLessThanOrEqual(2);
 
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   await expect(addToBag).toHaveText("Thêm vào giỏ");
