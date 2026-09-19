@@ -413,6 +413,67 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   expect(failedResponses).toEqual([]);
 });
 
+test("V1 search overlay keeps keyboard focus, closes cleanly, and works from desktop and mobile navigation", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  for (const viewport of [
+    { name: "mobile", width: 390, height: 844 },
+    { name: "desktop", width: 1440, height: 900 },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+    const trigger =
+      viewport.name === "mobile"
+        ? page.getByRole("button", { name: "Menu", exact: true })
+        : page.getByRole("navigation", { name: "Tiện ích" }).getByRole("button", {
+            name: "Tìm kiếm",
+            exact: true,
+          });
+
+    if (viewport.name === "mobile") {
+      await trigger.click();
+      const mobileDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+      await expect(mobileDialog).toBeVisible();
+      await mobileDialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
+      await expect(mobileDialog).toHaveCount(0);
+    } else {
+      await trigger.click();
+    }
+
+    const dialog = page.getByRole("dialog", { name: "Tìm kiếm sản phẩm" });
+    await expect(dialog).toBeVisible();
+    const input = dialog.getByRole("searchbox", { name: "Nhập từ khóa tìm kiếm" });
+    await expect(input).toBeFocused();
+
+    await input.fill("Editorial Runtime");
+    await expect(
+      dialog.getByRole("link", { name: /Xem tất cả kết quả cho/ }),
+    ).toBeVisible();
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+    const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+    expect(accessibilityScan.violations).toEqual([]);
+
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
 test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", async ({ page }) => {
   const searchResponse = await page.goto(`${BASE_URL}/search`, { waitUntil: "networkidle" });
   expect(searchResponse?.headers()["x-robots-tag"]).toBe("noindex, nofollow");
