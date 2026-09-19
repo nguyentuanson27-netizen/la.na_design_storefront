@@ -106,6 +106,12 @@ or cropping for delivery formats is allowed where it preserves the approved visu
 regenerating or restyling an approved asset is not. Hero, mega-menu and category-editorial campaign
 images are **pending** content, not assets to invent.
 
+**Master logo binding — owner-approved 2026-09-19:** the production PNG whose source identifier starts
+`7fe037369d2725ac696f41c14c333f5aa9cc1b6ef94cc2e820687ccc` is the approved master-logo asset.
+The repository stores the original 193,993-byte PNG byte-for-byte at
+`public/brand/la-na-design-master-logo.png` (intrinsic size 4185×2148). This approval resolves the
+earlier F1 placeholder/fallback ambiguity; do not substitute the favicon or social card for this role.
+
 ## 3. Customer-facing business / support contact → `src/brand/brand.config.ts` › `contact`
 
 Master spec §6 and §15. This is the **business** contact — distinct from the registered legal

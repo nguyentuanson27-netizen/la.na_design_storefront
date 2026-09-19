@@ -96,24 +96,30 @@ test("F1 typography tokens: serif heading and sans-serif body are declared", () 
 });
 
 test("F1 brand assets: distinct roles for master logo, social card, and favicon", () => {
-  // Master logo role contract: header and footer must both wire to the home link
-  // and share the same brand identity display mark as fallback.
   const headerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-header.tsx"), "utf8");
   const footerContent = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-footer.tsx"), "utf8");
+  const masterLogoPath = path.join(REPO_ROOT, "public/brand/la-na-design-master-logo.png");
 
-  assert.ok(headerContent.includes('href="/"'), "Header logo must link to /");
-  assert.ok(headerContent.includes("displayNameUpper"), "Header must reference brand identity mark");
-  assert.ok(footerContent.includes("displayNameUpper"), "Footer must reference brand identity mark");
+  // F9a now has the approved binary. Header remains a separate F1 surface and is intentionally not
+  // rewritten by this footer-scoped PR.
+  assert.ok(headerContent.includes('href="/"'), "Header brand mark must link to /");
+  assert.ok(existsSync(masterLogoPath), `Approved master logo must exist at ${masterLogoPath}`);
+  assert.ok(
+    footerContent.includes('src="/brand/la-na-design-master-logo.png"'),
+    "Footer must render the approved master-logo asset",
+  );
+  assert.ok(footerContent.includes('href="/"'), "Footer master logo must link to /");
 
-  // Social card role: dedicated endpoint serves 1200x630 OG image route
+  // Social card role: dedicated endpoint serves the separate social preview.
   const socialCardPath = path.join(REPO_ROOT, `src/app/${BRAND.identity.socialCardSlug}.png`);
   assert.ok(existsSync(socialCardPath), `Social card endpoint must exist at ${socialCardPath}`);
 
-  // Favicon role: dedicated entry point in src/app
+  // Favicon role: dedicated entry point in src/app.
   const faviconPath = path.join(REPO_ROOT, "src/app/icon.svg");
   assert.ok(existsSync(faviconPath), `Favicon asset must exist at ${faviconPath}`);
 
-  // Distinct roles: social card endpoint is separate from favicon entry
+  assert.notEqual(masterLogoPath, socialCardPath, "Master logo and social card must be separate asset locations");
+  assert.notEqual(masterLogoPath, faviconPath, "Master logo and favicon must be separate asset locations");
   assert.notEqual(socialCardPath, faviconPath, "Social card and favicon must be separate asset locations");
 });
 
