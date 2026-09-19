@@ -8,6 +8,7 @@ import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3218;
@@ -131,11 +132,25 @@ async function assertPageQuality(page: import("@playwright/test").Page) {
     `horizontal overflow report: ${JSON.stringify(overflowReport)}`,
   ).toBeLessThanOrEqual(overflowReport.viewportWidth);
 
+  // The scans in this file run after a Server Action has revalidated the page, and the root
+  // layout's `generateMetadata` awaits `connection()`, so React unmounts and remounts the hoisted
+  // <title> across that head swap. Axe landing in the gap reports `document-title` against a page
+  // whose title is fine. `document-title-watch.ts` already carries this fix for the admin and
+  // checkout specs; this one was still scanning straight after the click.
+  await expectSettledDocumentTitle(page);
+
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 }
+
+// The watch has to be observing before the transient, so it is installed before any navigation
+// rather than when a scan wants to read it. `expectSettledDocumentTitle` refuses to answer without
+// it, so a forgotten install fails loudly instead of silently restoring the flake.
+test.beforeEach(async ({ page }) => {
+  await watchDocumentTitle(page);
+});
 
 test.beforeAll(async () => {
   await cleanup();

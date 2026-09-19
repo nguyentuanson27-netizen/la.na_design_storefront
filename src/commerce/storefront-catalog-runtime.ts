@@ -247,6 +247,46 @@ export async function listConfiguredHomepageFeaturedProducts() {
   });
 }
 
+/**
+ * The homepage `Hàng mới về` grid (master spec §18), priced like any other card grid.
+ *
+ * Featured (§20) and this are separate reads on purpose and must not be merged into one "homepage
+ * products" call: Featured is a manual list whose emptiness is meaningful, and this one is a
+ * recency read. Collapsing them is how an empty Featured section quietly starts showing new
+ * arrivals, which §20 forbids in as many words.
+ */
+export async function listConfiguredHomepageNewArrivals(limit: number, now?: Date) {
+  const shopId = readPancakeShopId();
+  const products = await createStorefrontCatalogRepository(prisma).listNewestProducts({
+    shopId,
+    limit,
+  });
+
+  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
+    products,
+    now,
+  });
+  return { products, pricingRule, refreshAfterMs };
+}
+
+/**
+ * Featured products with the pricing rule their cards need, and the freshness window that pricing
+ * is only valid for.
+ *
+ * `refreshAfterMs` is returned rather than dropped because Featured is priced independently of the
+ * `Hàng mới về` grid: a campaign boundary can fall inside Featured's products and nowhere near new
+ * arrivals. A caller rendering both has to take the soonest of the two windows, and cannot do that
+ * with a window it was never handed.
+ */
+export async function listConfiguredHomepageFeaturedWithPricing(now?: Date) {
+  const products = await listConfiguredHomepageFeaturedProducts();
+  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
+    products,
+    now,
+  });
+  return { products, pricingRule, refreshAfterMs };
+}
+
 export async function resolveConfiguredStorefrontProductSlug(slug: string) {
   const shopId = readPancakeShopId();
   return createStorefrontProductSlugResolver(prisma)({ shopId, slug });
@@ -284,4 +324,28 @@ export async function readConfiguredCategoryMegaMedia(): Promise<readonly Catego
   } catch {
     return Object.freeze([]);
   }
+}
+
+/**
+ * Category editorial hero images, for the homepage's Áo dài section (§19) and the two-block
+ * category editorial (§21).
+ *
+ * Returned as a map keyed by category rather than a list, because each homepage block asks for one
+ * specific category and a missing entry is what makes that block omit itself. The URLs are the raw
+ * stored values: the route re-validates them through the trusted-media contract, the same as every
+ * other image the storefront renders.
+ */
+export async function readConfiguredCategoryHeroMedia(
+  categoryKeys: readonly CategoryKey[],
+): Promise<ReadonlyMap<string, string>> {
+  const merchandising = createMerchandisingRepository(prisma);
+  const rows = await Promise.all(
+    categoryKeys.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
+  );
+
+  const media = new Map<string, string>();
+  for (const row of rows) {
+    if (row?.heroImageUrl) media.set(row.categoryKey, row.heroImageUrl);
+  }
+  return media;
 }

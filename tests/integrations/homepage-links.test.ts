@@ -30,8 +30,12 @@ const STOREFRONT_SOURCES = [
   },
 ] as const;
 const INTERNAL_PATH_LITERAL = /(["'`])(\/(?!\/)[^"'`\s]*)\1/g;
+// `/about` is deliberately absent. U2 forbade it when no About page existed and the homepage had
+// no approved reason to link one; master spec §23 now specifies the homepage brand story linking to
+// `/about`, and U33a built and published that route. The rest stay forbidden: `/faq` and
+// `/shipping-returns` are still unimplemented support routes, and `/size-guide` is reachable from
+// a product, not from the homepage.
 const UNAPPROVED_SUPPORT_PATHS = new Set([
-  "/about",
   "/faq",
   "/shipping-returns",
   "/size-guide",

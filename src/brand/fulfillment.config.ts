@@ -112,3 +112,20 @@ export const FULFILLMENT: FulfillmentConfig = {
     complaintResponseNote: "24–48 giờ làm việc kể từ khi tiếp nhận đủ thông tin.",
   },
 };
+
+/**
+ * Master spec §22 — the homepage service strip: exactly these three facts, and no fourth.
+ *
+ * Derived here, in Brand Config, from the authorities that already own each part: the return
+ * window, the approved delivery-coverage wording and the support hours. Deriving rather than
+ * retyping is what stops the homepage promising 15 days while `/returns` promises something else,
+ * and keeping it in `src/brand` is what keeps the strings out of page markup.
+ *
+ * Not part of `buildPublicBrandFacts`: that projection's shape is pinned by the W13A historical
+ * inventory, and a new homepage section is not a new W13A fact.
+ */
+export const HOME_SERVICE_FACTS: readonly string[] = Object.freeze([
+  `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`,
+  FULFILLMENT.delivery.coverage,
+  `Tư vấn size ${BRAND.contact.supportHours.opens}–${BRAND.contact.supportHours.closes}`,
+]);

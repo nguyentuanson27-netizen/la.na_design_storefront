@@ -94,8 +94,29 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **F4a** PLP server contract: filters, manual default order, stable crawlable page/cursor URLs.
 - [x] **F4b** PLP UI: accessible filters + infinite loading + loading/error/empty/back-navigation behavior.
 - [x] **F5** Product card: 4:5, second-image hover, sale display, one marketing badge, availability slot.
-- [ ] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe.
-- [ ] **F6b** Homepage lower sections in exact approved order; no fake content.
+- [x] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe. Slides come
+  from published collections carrying hero media until a campaign owner is approved; the swap is
+  one function in `home.ts`.
+  - **Debt — the hero's content authority is borrowed.** ADR 0013 scopes
+    `CollectionDefinition.heroImageUrl` as *collection-owned* media, so reading it as homepage
+    campaign media crosses an ownership boundary: publishing and positioning a collection also
+    publishes it as a homepage campaign, with no separate approval step. Raised in review on
+    PR #32 and **accepted by the owner as an interim** rather than shipping a hero that can never
+    render. Retire it by giving campaigns their own authority and repointing
+    `toHeroCandidates()` in `src/routes/home.ts` — the validator, the component and every test
+    against them are written to `HomeHeroSlideCandidate` and need no change.
+- [x] **F6b** Homepage lower sections in exact approved order; no fake content. Three follow-ups
+  left open and deliberately not invented: §19's short Vietnamese paragraph for the Áo dài
+  section awaits owner-approved copy, the Featured grid reports no `view_item_list` because
+  the route contract seals a single tracking event, and `Hàng mới về` carries no `Xem tất cả`
+  CTA.
+  - **The missing `Xem tất cả` is waiting on a route, not on copy.** The master spec describes
+    `/new-arrivals` as showing newest products automatically, but that route is currently the
+    drop announcement with no product listing (`/shop` owns filtering and ordering), so the CTA
+    landed a shopper who wanted more products on a page with none. Raised in review on PR #32
+    and removed there rather than pulling the listing work into that PR. Restore the CTA in the
+    same change that gives `/new-arrivals` a listing; `editorial.spec.ts` pins its absence until
+    then.
 - [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
 - [ ] **F7b** PDP buy panel with exact `Thêm vào giỏ` + `Mua ngay`; without size highlight selector + show `Vui lòng chọn size`; standard OOS stays visible/disabled with `Hết hàng`; mobile sticky purchase controls.
 - [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.

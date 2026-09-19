@@ -385,6 +385,8 @@ export const SIZE_GUIDE = loaded.sizeGuide;
 export const NAVIGATION = loaded.navigation;
 export const FULFILLMENT = loaded.fulfillment;
 
+export { HOME_SERVICE_FACTS } from "./fulfillment.config.ts";
+
 export {
   APPROVED_SIZE_GUIDE_IDS,
   type ApprovedSizeGuideId,
