@@ -386,10 +386,16 @@ test("PDP with untrusted media renders intentional fallback without broken image
   await expect(page.getByRole("heading", { level: 1, name: fallbackName })).toBeVisible();
   await assertPageQuality(page);
 
-  // Intentional silhouette fallback
-  await expect(page.locator(".garment-silhouette")).toBeVisible();
+  // Intentional product-media silhouette fallback. Scope the no-image assertion to the
+  // fallback media container so site-wide chrome assets (for example the footer master logo)
+  // cannot invalidate this PDP-specific regression check.
+  const fallbackMedia = page.locator(".product-visual").filter({
+    has: page.locator(".garment-silhouette"),
+  });
+  await expect(fallbackMedia).toHaveCount(1);
+  await expect(fallbackMedia.locator(".garment-silhouette")).toBeVisible();
   await expect(page.getByText("Hình ảnh sản phẩm đang được chuẩn hóa cho storefront.")).toBeVisible();
-  await expect(page.locator("img")).toHaveCount(0);
+  await expect(fallbackMedia.locator("img")).toHaveCount(0);
 });
 
 test("desktop viewport renders catalog cards and PDP gallery without horizontal overflow", async ({
