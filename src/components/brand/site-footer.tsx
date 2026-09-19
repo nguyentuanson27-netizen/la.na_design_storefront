@@ -4,10 +4,16 @@ import { BRAND, NAVIGATION } from "@/brand";
 import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
 
 /**
- * Final F9a footer. Presentation consumes approved Brand Config and policy projections only:
+ * F9a footer layout. Presentation consumes approved Brand Config and policy projections only:
  * shopping links stay in NAVIGATION, while support/policy/legal facts arrive through the chrome
  * model. There is deliberately no accordion, newsletter, representative field or page-specific
  * policy copy here.
+ *
+ * BLOCKED(F9a master logo): every accessible repository/project source was checked during PR #31,
+ * but none contains the owner-approved master-logo binary named by master spec §8/§33. The text
+ * wordmark below remains the pre-existing temporary fallback; it does not satisfy that acceptance
+ * criterion and must be replaced only with the recovered approved asset, never the favicon/social
+ * card or a regenerated logo.
  */
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
