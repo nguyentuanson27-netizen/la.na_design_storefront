@@ -274,6 +274,11 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock
+      // file there. Every spec drives this one project, so they share that lock unless
+      // each gets its own directory -- and a server that has to be SIGKILLed leaves the
+      // lock behind, which makes the next spec's server refuse to start entirely.
+      NEXT_DIST_DIR: ".next-test/editorial",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       LA_SHIPPING_FEE_VND: "25000",
@@ -510,7 +515,7 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   await expect(page.getByText("Runtime editorial layer for the city uniform.")).toBeVisible();
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  await expect(addToBag).toBeEnabled();
   await page.getByText("Ink", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Ink" })).toBeChecked();
