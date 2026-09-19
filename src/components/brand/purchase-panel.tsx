@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type KeyboardEvent } from "react";
 
 import {
   useVariantSelection,
@@ -18,16 +18,63 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * methods, so neither surface can drift into a second selection or cart path.
  */
 
+const DIALOG_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
 function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGuide }>) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
 
   function openDialog() {
-    dialogRef.current?.showModal();
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    closeButtonRef.current?.focus();
   }
 
   function closeDialog() {
     dialogRef.current?.close();
+  }
+
+  function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
+    if (event.key !== "Tab") return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR),
+    ).filter((element) => element.getClientRects().length > 0);
+
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+
+    if (event.shiftKey) {
+      if (active === first || !dialog.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+
+    if (active === last || !dialog.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
   }
 
   return (
@@ -35,7 +82,7 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
       <button
         ref={triggerRef}
         type="button"
-        className="mt-4 min-h-11 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+        className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
         onClick={openDialog}
       >
         Hướng dẫn chọn size
@@ -45,8 +92,10 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
         ref={dialogRef}
         aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
         data-size-guide-id={guide.id}
+        tabIndex={-1}
         className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45"
         onClose={() => triggerRef.current?.focus()}
+        onKeyDown={containFocus}
       >
         <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
           <div className="flex items-start justify-between gap-6">
@@ -57,6 +106,7 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
               <h2 className="mt-2 font-serif text-3xl tracking-[-0.03em]">{guide.chart.title}</h2>
             </div>
             <button
+              ref={closeButtonRef}
               type="button"
               className="min-h-11 shrink-0 border border-black/30 px-4 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
               onClick={closeDialog}
@@ -283,7 +333,11 @@ export function PurchasePanelView({
           </>
         )}
 
-        {sizeGuide ? <MappedSizeGuideDialog guide={sizeGuide} /> : null}
+        {sizeGuide ? (
+          <div className="relative h-0">
+            <MappedSizeGuideDialog guide={sizeGuide} />
+          </div>
+        ) : null}
 
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button

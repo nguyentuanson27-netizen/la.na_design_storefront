@@ -71,6 +71,15 @@ export type BrandIdentity = Readonly<{
   /** The homepage's own approved meta description, separate from the inherited `tagline`. */
   homeMetaDescription: string;
   /**
+   * The homepage brand-story paragraph the owner approved word for word (master spec §5, §23).
+   *
+   * A third distinct string, and deliberately not folded into `tagline` or `homeMetaDescription`:
+   * the tagline is the short line a route inherits, the meta description is written for a search
+   * result, and this is body copy a shopper reads. Rewording any of them to serve another surface
+   * would be inventing brand voice the owner did not approve.
+   */
+  homeBrandStory: string;
+  /**
    * The brand's approved search/SEO spelling variant.
    *
    * Usable in structured data, search matching and natural SEO copy. It is **not** a display name

@@ -35,6 +35,10 @@ export const BRAND: BrandConfig = {
     homeTitle: "La.na Design | Áo dài & Thời trang nữ thiết kế",
     homeMetaDescription:
       "La.na Design - thời trang nữ thiết kế với áo dài cách tân, áo dài Tết, áo dài cưới, áo dài 4 tà, áo dài 6 tà, váy, set đồ và phụ kiện.",
+    // Master spec §23, quoted exactly. Body copy for the homepage brand story, not a rewrite of
+    // the tagline or the meta description above.
+    homeBrandStory:
+      "La.na Design mang đến những thiết kế thời trang nữ thanh lịch, nữ tính, với điểm nhấn là áo dài, váy và set đồ được chọn lọc kĩ lưỡng và tỉ mỉ.",
     // Approved for search matching and natural SEO copy only. The public display name stays
     // "La.na Design", and no doorway page may be built for the spelling variant.
     searchAlias: "Lana Design",

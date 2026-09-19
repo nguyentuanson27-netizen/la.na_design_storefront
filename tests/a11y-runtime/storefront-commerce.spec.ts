@@ -8,6 +8,7 @@ import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
 
 const HOST = "127.0.0.1";
 const PORT = 3218;
@@ -131,11 +132,25 @@ async function assertPageQuality(page: import("@playwright/test").Page) {
     `horizontal overflow report: ${JSON.stringify(overflowReport)}`,
   ).toBeLessThanOrEqual(overflowReport.viewportWidth);
 
+  // The scans in this file run after a Server Action has revalidated the page, and the root
+  // layout's `generateMetadata` awaits `connection()`, so React unmounts and remounts the hoisted
+  // <title> across that head swap. Axe landing in the gap reports `document-title` against a page
+  // whose title is fine. `document-title-watch.ts` already carries this fix for the admin and
+  // checkout specs; this one was still scanning straight after the click.
+  await expectSettledDocumentTitle(page);
+
   const accessibilityScan = await new AxeBuilder({ page })
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
 }
+
+// The watch has to be observing before the transient, so it is installed before any navigation
+// rather than when a scan wants to read it. `expectSettledDocumentTitle` refuses to answer without
+// it, so a forgotten install fails loudly instead of silently restoring the flake.
+test.beforeEach(async ({ page }) => {
+  await watchDocumentTitle(page);
+});
 
 test.beforeAll(async () => {
   await cleanup();
@@ -373,8 +388,8 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sizeGroup.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
@@ -412,14 +427,15 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  const size = page.getByRole("radio", { name: "L" });
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const size = sizeGroup.getByRole("radio", { name: "L" });
   const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
   await expect(size).not.toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
-  await expect(purchasePanel.getByRole("group", { name: "Kích cỡ" })).toBeFocused();
-  await page.getByText("L", { exact: true }).click();
+  await expect(sizeGroup).toBeFocused();
+  await sizeGroup.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
@@ -440,7 +456,8 @@ test("size-only product hides Color and becomes purchasable after selecting Size
 });
 
 test("desktop purchase panel is sticky and validates size before add-to-cart", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // Keep a desktop width but enough vertical scroll budget to actually cross the sticky threshold.
+  await page.setViewportSize({ width: 1440, height: 700 });
 
   const browserErrors: string[] = [];
   const postRequests: string[] = [];
@@ -465,10 +482,19 @@ test("desktop purchase panel is sticky and validates size before add-to-cart", a
     documentTop: element.getBoundingClientRect().top + window.scrollY,
   }));
   expect(stickyMetrics.position).toBe("sticky");
-  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyMetrics.documentTop);
-  await page.waitForTimeout(50);
-  const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
-  expect(Math.abs(stuckTop - stickyMetrics.top)).toBeLessThanOrEqual(2);
+  const stickyThreshold = stickyMetrics.documentTop - stickyMetrics.top;
+  const maxScrollY = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  );
+  expect(maxScrollY).toBeGreaterThan(stickyThreshold + 24);
+
+  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyThreshold + 24);
+  await expect
+    .poll(async () => {
+      const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
+      return Math.abs(stuckTop - stickyMetrics.top);
+    })
+    .toBeLessThanOrEqual(2);
 
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   await expect(addToBag).toHaveText("Thêm vào giỏ");
@@ -508,8 +534,11 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await purchasePanel
+    .getByRole("group", { name: "Kích cỡ" })
+    .getByText("M", { exact: true })
+    .click();
   await purchasePanel.getByRole("button", { name: "Mua ngay", exact: true }).click();
 
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
@@ -565,6 +594,7 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   await expect(dialog.getByRole("heading", { name: "Áo dài", exact: true })).toBeVisible();
   await expect(dialog.getByRole("columnheader", { name: "S", exact: true })).toBeVisible();
   await expect(dialog.getByRole("rowheader", { name: "Ngực (cm)", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
 
   for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
@@ -573,6 +603,12 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
       "native modal focus must remain inside the dialog",
     ).toBe(true);
   }
+
+  await page.keyboard.press("Shift+Tab");
+  expect(
+    await dialog.evaluate((element) => element.contains(document.activeElement)),
+    "reverse tabbing must remain inside the dialog",
+  ).toBe(true);
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
