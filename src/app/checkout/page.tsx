@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
+import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadCheckoutRoute, type CheckoutRouteProps } from "@/routes/checkout";
 import type { CheckoutViewModel } from "@/routes/checkout-model";
@@ -118,6 +119,16 @@ function render(data: CheckoutViewModel) {
                   <p className="mt-1 text-xs leading-5 text-black/75">
                     {line.optionLabel} · SL {line.quantity}
                   </p>
+                  {/* §30 — a preorder line must not become visually ready stock on the way from
+                      the cart, so the marker is rendered per line here too. */}
+                  {line.preorderLabel === null ? null : (
+                    <p
+                      className="mt-1 inline-flex items-center border border-black px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]"
+                      data-line-state="preorder"
+                    >
+                      {line.preorderLabel}
+                    </p>
+                  )}
                 </div>
                 <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
               </div>
@@ -142,6 +153,10 @@ function render(data: CheckoutViewModel) {
           <p className="mt-5 text-xs leading-5 text-black/75">
             Đây là số tiền dự kiến. Máy chủ sẽ kiểm tra lại giá, tồn kho và phí vận chuyển khi bạn đặt hàng.
           </p>
+
+          {data.preorderNotice === null ? null : (
+            <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
+          )}
         </aside>
       </div>
     </div>

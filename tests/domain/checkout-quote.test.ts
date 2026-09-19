@@ -29,6 +29,7 @@ function line({
     quantity,
     price,
     available,
+    isPreorderSale: false,
     unavailableReason: available ? null : "PRICE_UNRESOLVED",
     media: { primary: null, gallery: [] },
   };

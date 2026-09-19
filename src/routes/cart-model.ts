@@ -1,3 +1,8 @@
+import {
+  buildPreorderFulfillmentNotice,
+  PREORDER_LABEL,
+  type PreorderFulfillmentNotice,
+} from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 
@@ -32,6 +37,14 @@ export type CartLineView = Readonly<{
    * the quantity is the fix, so locking the field would trap the shopper on the row.
    */
   canUpdate: boolean;
+  /**
+   * F8b / §30 — the exact `Đặt trước` word for this line, or `null` for an ordinary line.
+   *
+   * Per line rather than per basket, because the marker has to survive the trip from the PDP for
+   * the line the shopper actually chose. An `OVERSELL` line is `null` here: it is a ready-stock
+   * sale that happens to sit below zero internally, and §31 keeps it visually normal.
+   */
+  preorderLabel: string | null;
 }>;
 
 export type CartViewModel = Readonly<{
@@ -45,6 +58,11 @@ export type CartViewModel = Readonly<{
   canCheckout: boolean;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled: boolean;
+  /**
+   * F8b / §30 — the preparation and shipment truth for this basket, or `null` when it holds no
+   * preorder line. Decided by the shared projection so cart and checkout say the same thing.
+   */
+  preorderNotice: PreorderFulfillmentNotice | null;
 }>;
 
 /** Why a line cannot be bought, in the shopper's words. */
@@ -112,6 +130,9 @@ export function buildCartViewModel(
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
+          // The line's own canonical classification. Withheld when the line cannot be bought, for
+          // the same reason the cart line withholds it: an unavailable line is not being ordered.
+          preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
         }),
       ),
     ),
@@ -119,5 +140,6 @@ export function buildCartViewModel(
     hasUnavailableLines,
     canCheckout: !hasUnavailableLines && subtotal !== null,
     commerceTrackingEnabled: input.commerceTrackingEnabled,
+    preorderNotice: buildPreorderFulfillmentNotice(input.lines),
   });
 }

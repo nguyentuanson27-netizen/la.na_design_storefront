@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
+import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -115,6 +116,16 @@ function render(data: CartViewModel) {
                       <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
                     )}
                     <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
+                    {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
+                        it belongs to rather than only the basket-level notice below. */}
+                    {line.preorderLabel === null ? null : (
+                      <p
+                        className="mt-2 inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
+                        data-line-state="preorder"
+                      >
+                        {line.preorderLabel}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="font-medium">{line.priceText}</p>
@@ -149,6 +160,9 @@ function render(data: CartViewModel) {
           <p className="mt-4 text-sm leading-6 text-black/75">
             Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.
           </p>
+          {data.preorderNotice === null ? null : (
+            <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
+          )}
           {data.canCheckout ? (
             <Link
               className="checkout-cta mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white underline decoration-transparent underline-offset-4 hover:bg-transparent hover:text-black hover:decoration-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"

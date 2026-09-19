@@ -93,6 +93,17 @@ export type StorefrontCartLine = {
   quantity: number;
   price: number | null;
   available: boolean;
+  /**
+   * F8b / master spec §30 — whether this line is a `Đặt trước` sale, as the capacity authority
+   * classified it when the line was resolved.
+   *
+   * Carried on the line rather than re-derived downstream, because cart and checkout must say the
+   * same thing about the same line and neither is allowed to compare stock against a limit. It is
+   * false whenever the line is unavailable: a line the shopper cannot buy is not a preorder sale,
+   * and labelling one `Đặt trước` would promise a preparation window for something that will not
+   * be ordered at all.
+   */
+  isPreorderSale: boolean;
   unavailableReason: StorefrontCartUnavailableReason | null;
   media: StorefrontProductMedia;
 };
@@ -190,6 +201,7 @@ export function buildStorefrontCartLines({
         quantity: item.quantity,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
         media,
       };
@@ -210,6 +222,7 @@ export function buildStorefrontCartLines({
         quantity: item.quantity,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
         media,
       };
@@ -232,6 +245,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "PRODUCT_UNAVAILABLE" as const,
       };
     }
@@ -241,6 +255,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
@@ -251,6 +266,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
@@ -287,6 +303,7 @@ export function buildStorefrontCartLines({
           ...base,
           price: option.price,
           available: false,
+          isPreorderSale: false,
           unavailableReason: "INSUFFICIENT_STOCK" as const,
         };
       }
@@ -296,6 +313,9 @@ export function buildStorefrontCartLines({
       ...base,
       price: option.price,
       available: option.purchasable,
+      // The option carries the answer the capacity authority already gave for this variant under
+      // this product's real policy. Nothing here re-reads stock or the negative limit.
+      isPreorderSale: option.isPreorderSale,
       unavailableReason: option.unavailableReason,
     };
   });
