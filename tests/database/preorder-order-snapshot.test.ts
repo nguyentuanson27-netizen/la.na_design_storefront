@@ -607,9 +607,10 @@ test("F8c I7 snapshots the confirmation-time shipping window and live product fa
         select: {
           confirmedAt: true,
           preorderReadyAt: true,
-          shippingScope: true,
-          shippingEstimateMinDays: true,
-          shippingEstimateMaxDays: true,
+          shippingInnerCityMinDays: true,
+          shippingInnerCityMaxDays: true,
+          shippingOtherProvinceMinDays: true,
+          shippingOtherProvinceMaxDays: true,
           lines: {
             orderBy: [{ variantId: "asc" }],
             select: {
@@ -623,14 +624,21 @@ test("F8c I7 snapshots the confirmation-time shipping window and live product fa
       });
 
     const before = await selectHistory();
-    assert.equal(before.shippingScope, "HANOI");
     assert.equal(
-      before.shippingEstimateMinDays,
+      before.shippingInnerCityMinDays,
       FULFILLMENT.delivery.estimateDays.innerCity.minimum,
     );
     assert.equal(
-      before.shippingEstimateMaxDays,
+      before.shippingInnerCityMaxDays,
       FULFILLMENT.delivery.estimateDays.innerCity.maximum,
+    );
+    assert.equal(
+      before.shippingOtherProvinceMinDays,
+      FULFILLMENT.delivery.estimateDays.otherProvince.minimum,
+    );
+    assert.equal(
+      before.shippingOtherProvinceMaxDays,
+      FULFILLMENT.delivery.estimateDays.otherProvince.maximum,
     );
 
     await tx.productSellingPolicy.update({
