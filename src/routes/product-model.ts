@@ -1,3 +1,8 @@
+import {
+  isApprovedSizeGuideId,
+  type ApprovedSizeGuideId,
+} from "../brand/size-guide.config.ts";
+import type { SizeChart } from "../brand/schema.ts";
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
 import type { StorefrontProjectionOption } from "../commerce/storefront-projection.ts";
 import type {
@@ -10,6 +15,7 @@ import {
   type ProductCardModel,
 } from "../components/headless/build-product-card-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
+import { buildSizeGuideViewModel, type SizeGuideViewModel } from "./evergreen-model.ts";
 
 /**
  * Everything the product route decides, as one pure function.
@@ -19,13 +25,22 @@ import type { TrackingEvent } from "../tracking/commerce-events.ts";
  * blocks have anything to say, and the related grid's cards.
  */
 
+export type ProductMappedSizeGuide = Readonly<{
+  id: ApprovedSizeGuideId;
+  chart: SizeChart;
+  tolerance: SizeGuideViewModel["tolerance"];
+  circumferenceSemanticsNote: string;
+  guidanceNote: string;
+}>;
+
 export type ProductEditorial = Readonly<{
   description: string | null;
   material: string | null;
   craftDetails: readonly string[];
-  sizeGuide: string | null;
+  /** The exact manually mapped approved guide; null means no PDP trigger. */
+  sizeGuide: ProductMappedSizeGuide | null;
   careInstructions: string | null;
-  /** Whether the notes section has any row at all; an empty bordered block is worse than none. */
+  /** Whether the detail-notes section has any product-specific row at all. */
   hasNotes: boolean;
 }>;
 
@@ -85,8 +100,27 @@ export function resolveInitialGalleryIndex(
   return galleryIndexByVariantId[deepLinkedSelection.variantId] ?? 0;
 }
 
+export function resolveProductMappedSizeGuide(
+  sizeGuideId: string | null,
+): ProductMappedSizeGuide | null {
+  if (!isApprovedSizeGuideId(sizeGuideId)) return null;
+
+  const publicGuide = buildSizeGuideViewModel();
+  const chart = publicGuide.charts.find((candidate) => candidate.id === sizeGuideId);
+  if (!chart) return null;
+
+  return Object.freeze({
+    id: sizeGuideId,
+    chart,
+    tolerance: publicGuide.tolerance,
+    circumferenceSemanticsNote: publicGuide.circumferenceSemanticsNote,
+    guidanceNote: publicGuide.guidanceNote,
+  });
+}
+
 export function buildProductViewModel(input: ProductViewModelInput): ProductViewModel {
   const craftDetails = input.craftDetails.filter((detail) => detail.trim().length > 0);
+  const sizeGuide = resolveProductMappedSizeGuide(input.sizeGuide);
 
   return Object.freeze({
     slug: input.slug,
@@ -97,12 +131,11 @@ export function buildProductViewModel(input: ProductViewModelInput): ProductView
       description: input.editorialDescription,
       material: input.material,
       craftDetails: Object.freeze(craftDetails),
-      sizeGuide: input.sizeGuide,
+      sizeGuide,
       careInstructions: input.careInstructions,
       hasNotes:
         input.material !== null
         || craftDetails.length > 0
-        || input.sizeGuide !== null
         || input.careInstructions !== null,
     }),
     options: input.options,
