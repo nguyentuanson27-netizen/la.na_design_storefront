@@ -874,6 +874,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
           pancakeVariationId: "pan-var-orphan-999",
           quantity: 1,
           unitPriceVnd: BigInt(500_000),
+          fulfillmentState: "READY" as const,
         },
       ],
     };
@@ -909,6 +910,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
             pancakeVariationId: "pan-var-101",
             quantity: 1,
             unitPriceVnd: BigInt(500_000),
+            fulfillmentState: "READY" as const,
           },
         ],
       };
@@ -925,7 +927,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
 
 describe("U39 / G1: Stateless Quote Proof Tamper Resistance", () => {
   const quote = {
-    items: [{ variantExternalId: "pan-var-101", quantity: 1, unitPriceVnd: 400_000 }],
+    items: [{ variantExternalId: "pan-var-101", quantity: 1, unitPriceVnd: 400_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 400_000,
     shippingFeeVnd: 30_000,
     totalVnd: 430_000,
@@ -942,7 +944,7 @@ describe("U39 / G1: Stateless Quote Proof Tamper Resistance", () => {
     // Case A: Buyer tampers with unit price in quote facts
     const tamperedQuote = {
       ...quote,
-      items: [{ variantExternalId: "pan-var-101", quantity: 1, unitPriceVnd: 200_000 }],
+      items: [{ variantExternalId: "pan-var-101", quantity: 1, unitPriceVnd: 200_000, fulfillmentState: "READY" as const }],
       merchandiseSubtotalVnd: 200_000,
       totalVnd: 230_000,
     };

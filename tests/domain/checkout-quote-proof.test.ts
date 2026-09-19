@@ -16,8 +16,8 @@ const otherCartId = "9a1b7c6d-3e2f-4a5b-8c9d-1e2f3a4b5c6d";
 
 const quote: RenderedQuoteProofFacts = {
   items: [
-    { variantExternalId: "var-b", quantity: 2, unitPriceVnd: 400_000 },
-    { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 650_000 },
+    { variantExternalId: "var-b", quantity: 2, unitPriceVnd: 400_000, fulfillmentState: "READY" as const },
+    { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 650_000, fulfillmentState: "READY" as const },
   ],
   merchandiseSubtotalVnd: 1_450_000,
   shippingFeeVnd: 30_000,
@@ -64,7 +64,10 @@ test("P9a the proof is ASCII base64url and carries a format/version fact", () =>
   const proof = issue();
   assert.match(proof, /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/);
   const payload = Buffer.from(proof.split(".")[0]!, "base64url").toString("utf8");
-  assert.match(payload, /^laq1\|/, "payload must open with the format/version fact");
+  // Bumped to `laq2` by F8b, which added each line's fulfillment state to the signed facts. The
+  // version is pinned here on purpose: changing what a proof means without changing what it is
+  // called would let a token issued under the old meaning be redeemed under the new one.
+  assert.match(payload, /^laq2\|/, "payload must open with the format/version fact");
 });
 
 test("P9a browser-visible proof bytes never carry the raw HttpOnly cart id", () => {
@@ -156,6 +159,7 @@ test("P9a the 16 KiB envelope genuinely fits a full 50-line cart", () => {
     variantExternalId: `${String(index).padStart(4, "0")}-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee`,
     quantity: 999,
     unitPriceVnd: 999_999_999,
+    fulfillmentState: "READY" as const,
   }));
   const full: RenderedQuoteProofFacts = {
     items,
@@ -182,7 +186,7 @@ test("P9a issuing refuses a token the verifier could never accept", () => {
   // can push the token past the envelope. Issuing it anyway would hand the buyer a proof every
   // submission rejects as oversized — a reconfirm loop no retry escapes.
   const withIdLength = (length: number): RenderedQuoteProofFacts => ({
-    items: [{ variantExternalId: "v".repeat(length), quantity: 1, unitPriceVnd: 100_000 }],
+    items: [{ variantExternalId: "v".repeat(length), quantity: 1, unitPriceVnd: 100_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 100_000,
     shippingFeeVnd: 0,
     totalVnd: 100_000,
@@ -227,6 +231,7 @@ test("P9a many oversized lines are refused at issue time too, not only one long 
     variantExternalId: `${index}-${"v".repeat(1_000)}`,
     quantity: 1,
     unitPriceVnd: 100_000,
+    fulfillmentState: "READY" as const,
   }));
   assert.equal(
     issueRenderedQuoteProof({
@@ -244,9 +249,54 @@ test("P9a many oversized lines are refused at issue time too, not only one long 
   );
 });
 
+test("F8b a fulfillment state that moved between render and submit is not silently accepted", () => {
+  // The exact §30 hazard: same items, same money, but the line has become a preorder sale between
+  // the page the buyer read and the order they submitted. Without the state in the signed facts
+  // this verified, and the order committed — and was snapshotted by I7 — as PREORDER against a
+  // checkout that read as ready stock.
+  const readyItems = [
+    { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000, fulfillmentState: "READY" as const },
+  ];
+  const preorderItems = [
+    { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000, fulfillmentState: "PREORDER" as const },
+  ];
+
+  assert.deepEqual(
+    verifyRenderedQuoteProof({
+      proof: issue({ quote: { ...quote, items: readyItems } }),
+      cartId,
+      currentQuote: { ...quote, items: preorderItems },
+      secret,
+    }),
+    { ok: false, reason: "PRICE_CHANGED" },
+  );
+
+  // And the other direction, so this is a comparison rather than a one-way check.
+  assert.deepEqual(
+    verifyRenderedQuoteProof({
+      proof: issue({ quote: { ...quote, items: preorderItems } }),
+      cartId,
+      currentQuote: { ...quote, items: readyItems },
+      secret,
+    }),
+    { ok: false, reason: "PRICE_CHANGED" },
+  );
+
+  // An unchanged preorder basket still redeems: the gate is a change, not the state itself.
+  assert.equal(
+    verifyRenderedQuoteProof({
+      proof: issue({ quote: { ...quote, items: preorderItems } }),
+      cartId,
+      currentQuote: { ...quote, items: preorderItems },
+      secret,
+    }).ok,
+    true,
+  );
+});
+
 test("P9a a stale proof reports PRICE_CHANGED against the current quote", () => {
   const staleProof = issue({
-    quote: { ...quote, items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000 }] },
+    quote: { ...quote, items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000, fulfillmentState: "READY" as const }] },
   });
 
   assert.deepEqual(
@@ -255,7 +305,7 @@ test("P9a a stale proof reports PRICE_CHANGED against the current quote", () => 
       cartId,
       currentQuote: {
         ...quote,
-        items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 500_000 }],
+        items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 500_000, fulfillmentState: "READY" as const }],
       },
       secret,
     }),
@@ -286,7 +336,7 @@ test("P9a every quote fact is bound, so any single change invalidates the proof"
 
 test("P9a a line count change cannot be smuggled past canonicalization", () => {
   const oneLine = {
-    items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 100_000 }],
+    items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 100_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 100_000,
     shippingFeeVnd: 0,
     totalVnd: 100_000,
@@ -294,8 +344,8 @@ test("P9a a line count change cannot be smuggled past canonicalization", () => {
   };
   const twoLines = {
     items: [
-      { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 100_000 },
-      { variantExternalId: "var-b", quantity: 1, unitPriceVnd: 0o0 + 1 },
+      { variantExternalId: "var-a", quantity: 1, unitPriceVnd: 100_000, fulfillmentState: "READY" as const },
+      { variantExternalId: "var-b", quantity: 1, unitPriceVnd: 0o0 + 1, fulfillmentState: "READY" as const },
     ],
     merchandiseSubtotalVnd: 100_001,
     shippingFeeVnd: 0,
@@ -312,14 +362,14 @@ test("P9a a line count change cannot be smuggled past canonicalization", () => {
 
 test("P9a variant ids containing the field delimiters cannot forge a different quote", () => {
   const injected = {
-    items: [{ variantExternalId: "var-a:1:400000|1", quantity: 1, unitPriceVnd: 100_000 }],
+    items: [{ variantExternalId: "var-a:1:400000|1", quantity: 1, unitPriceVnd: 100_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 100_000,
     shippingFeeVnd: 0,
     totalVnd: 100_000,
     totalQuantity: 1,
   };
   const benign = {
-    items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000 }],
+    items: [{ variantExternalId: "var-a", quantity: 1, unitPriceVnd: 400_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 100_000,
     shippingFeeVnd: 0,
     totalVnd: 100_000,
@@ -335,16 +385,16 @@ test("P9a variant ids containing the field delimiters cannot forge a different q
 
 test("P9a issuing refuses facts that are not usable website money", () => {
   const invalid = [
-    { ...quote, items: [{ variantExternalId: "var-a", quantity: 0, unitPriceVnd: 1 }] },
-    { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1 }] },
-    { ...quote, items: [{ variantExternalId: "var-a", quantity: 1.5, unitPriceVnd: 1 }] },
+    { ...quote, items: [{ variantExternalId: "var-a", quantity: 0, unitPriceVnd: 1, fulfillmentState: "READY" as const }] },
+    { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1, fulfillmentState: "READY" as const }] },
+    { ...quote, items: [{ variantExternalId: "var-a", quantity: 1.5, unitPriceVnd: 1, fulfillmentState: "READY" as const }] },
     { ...quote, totalVnd: Number.NaN },
     { ...quote, merchandiseSubtotalVnd: -1 },
     {
       ...quote,
       items: [
-        { variantExternalId: "dupe", quantity: 1, unitPriceVnd: 1 },
-        { variantExternalId: "dupe", quantity: 1, unitPriceVnd: 1 },
+        { variantExternalId: "dupe", quantity: 1, unitPriceVnd: 1, fulfillmentState: "READY" as const },
+        { variantExternalId: "dupe", quantity: 1, unitPriceVnd: 1, fulfillmentState: "READY" as const },
       ],
     },
   ];
@@ -368,7 +418,7 @@ test("P9a a free line is provable, because the order snapshot treats zero as sup
   // authority. Tightening past `isSupportedVndAmount` would make a quote the snapshot persists
   // unprovable, and this module throws where the snapshot does not.
   const free: RenderedQuoteProofFacts = {
-    items: [{ variantExternalId: "gift", quantity: 1, unitPriceVnd: 0 }],
+    items: [{ variantExternalId: "gift", quantity: 1, unitPriceVnd: 0, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 0,
     shippingFeeVnd: 0,
     totalVnd: 0,
@@ -390,8 +440,8 @@ test("P9a verification is total, because it runs inside the snapshot transaction
     { ...quote, totalQuantity: 0 },
     { ...quote, totalVnd: Number.NaN },
     { ...quote, merchandiseSubtotalVnd: -1 },
-    { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1 }] },
-    { ...quote, items: [{ variantExternalId: "v", quantity: 0, unitPriceVnd: 1 }] },
+    { ...quote, items: [{ variantExternalId: "", quantity: 1, unitPriceVnd: 1, fulfillmentState: "READY" as const }] },
+    { ...quote, items: [{ variantExternalId: "v", quantity: 0, unitPriceVnd: 1, fulfillmentState: "READY" as const }] },
   ];
   for (const currentQuote of unusable) {
     assert.deepEqual(

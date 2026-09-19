@@ -176,6 +176,31 @@ export function evaluateVariantCapacity(
   return Object.freeze({ allowed: true, reason: "capacity-available", projectedCapacity, floor });
 }
 
+/**
+ * The fulfillment state an accepted line of `quantity` units carries — the one rule, one place.
+ *
+ * Master spec §30 is about whether the buyer waits, and that depends on **how many units** they
+ * are taking, not on whether one more could be sold. A `PREORDER` variant with one unit of ready
+ * stock is a ready sale at quantity 1 and a preorder sale at quantity 2, because the second unit
+ * has to be prepared.
+ *
+ * It exists because the answer was being derived twice from two different comparisons: the
+ * reservation wrote `acceptedPreorderState` from `readyStock < quantity`, while the advisory
+ * projections asked `resolveVariantSellability()`, whose answer is for one unit. A buyer taking
+ * two of a one-in-stock preorder variant was therefore shown a ready-stock checkout and then had
+ * `PREORDER` persisted into their immutable order history. Both callers now ask this.
+ *
+ * Purchasability is deliberately not considered here: this answers "if accepted, does it wait",
+ * and whether it may be accepted at all is `evaluateVariantCapacity()`'s question.
+ */
+export function resolveAcceptedPreorderState(
+  input: VariantCapacityInput,
+  quantity: number,
+): "READY" | "PREORDER" {
+  const readyStock = input.mirroredStock - input.activeReservedQuantity;
+  return input.sellingMode === "PREORDER" && readyStock < quantity ? "PREORDER" : "READY";
+}
+
 export type VariantSellability = Readonly<{
   /** Whether one more unit may be sold right now. */
   sellable: boolean;
@@ -207,12 +232,13 @@ export type VariantSellability = Readonly<{
  */
 export function resolveVariantSellability(input: VariantCapacityInput): VariantSellability {
   const decision = evaluateVariantCapacity(input, 1);
-  const readyStock = input.mirroredStock - input.activeReservedQuantity;
 
   return Object.freeze({
     sellable: decision.allowed,
     reason: decision.reason,
-    isPreorderSale: decision.allowed && input.sellingMode === "PREORDER" && readyStock <= 0,
+    // The same rule the reservation writes into history, asked at the one unit this function is
+    // about, rather than a second comparison that happens to agree at quantity 1.
+    isPreorderSale: decision.allowed && resolveAcceptedPreorderState(input, 1) === "PREORDER",
     floor: decision.floor,
   });
 }

@@ -19,6 +19,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { ADD_TO_BAG_NAMES } from "../../src/components/headless/variant-selection-model.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -183,6 +184,13 @@ test("I9 the preorder date is on the landing page for the selected size only", a
 
   const dateLine = page.getByText(/Dự kiến có hàng:/);
   const sizes = page.getByRole("group", { name: "Kích cỡ" });
+  // F8a — this fixture is a PREORDER product with no ready stock, so §30 now makes the CTA say
+  // `Đặt trước` in both its visible word and its accessible name. This test is about the date and
+  // about the variant staying purchasable, so it addresses the button by what it does rather than
+  // by the ready-stock wording it is no longer allowed to carry.
+  const addToBag = page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .getByRole("button", { name: ADD_TO_BAG_NAMES.preorder, exact: true });
   // The radio itself is `sr-only` with the visible swatch over it, so the swatch is what a shopper
   // actually hits — the same way every other storefront spec here chooses a size.
   const chooseSize = async (size: string) => {
@@ -200,14 +208,14 @@ test("I9 the preorder date is on the landing page for the selected size only", a
   await expect(dateLine).toHaveText(`Dự kiến có hàng: ${live.label}`);
   // It is a live region, because it changes under the shopper as they switch sizes.
   await expect(dateLine).toHaveAttribute("aria-live", "polite");
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
+  await expect(addToBag).toBeEnabled();
 
   // Owner rule 8: L's cycle lapsed, so its dated promise is over — and M's date must not stand in
   // for it. The shopper can still order, which is the half the feed is not allowed to copy.
   await chooseSize("L");
   await expect(dateLine).toHaveCount(0);
   await expect(page.getByText(live.label)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
+  await expect(addToBag).toBeEnabled();
 
   // Back to M, so a disappearing line cannot be mistaken for a line that never renders twice.
   await chooseSize("M");

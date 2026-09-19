@@ -11,12 +11,14 @@ function line({
   price,
   quantity,
   available = true,
+  isPreorderSale = false,
 }: {
   variantId: string;
   variationId: string | null;
   price: number | null;
   quantity: number;
   available?: boolean;
+  isPreorderSale?: boolean;
 }): StorefrontCartLine {
   return {
     variantId,
@@ -29,6 +31,7 @@ function line({
     quantity,
     price,
     available,
+    isPreorderSale,
     unavailableReason: available ? null : "PRICE_UNRESOLVED",
     media: { primary: null, gallery: [] },
   };
@@ -42,8 +45,11 @@ test("P8 rendered checkout quote is deterministic, bounded and contains only ext
 
   assert.deepEqual(quote, {
     items: [
-      { variantExternalId: "variation-a", quantity: 1, unitPriceVnd: 500_000 },
-      { variantExternalId: "variation-b", quantity: 1, unitPriceVnd: 300_000 },
+      // F8b — each line's fulfillment state joins the quoted facts, so P9a authenticates whether
+      // the buyer was told to wait. It is an external fact about the order, not an internal id:
+      // the two exclusions below are unchanged and still the point of this case.
+      { variantExternalId: "variation-a", quantity: 1, unitPriceVnd: 500_000, fulfillmentState: "READY" },
+      { variantExternalId: "variation-b", quantity: 1, unitPriceVnd: 300_000, fulfillmentState: "READY" },
     ],
     merchandiseSubtotalVnd: 800_000,
     shippingFeeVnd: 30_000,
@@ -52,6 +58,16 @@ test("P8 rendered checkout quote is deterministic, bounded and contains only ext
   });
   assert.equal(JSON.stringify(quote).includes("local-a"), false, "internal variant ids stay out");
   assert.equal(JSON.stringify(quote).includes("Product"), false, "names/PII-like text stay out");
+});
+
+test("P8 a preorder line is quoted as waiting, and no stock quantity rides along with it", () => {
+  const quote = buildRenderedCheckoutQuoteFacts([
+    line({ variantId: "local-a", variationId: "variation-a", price: 500_000, quantity: 2, isPreorderSale: true }),
+  ]);
+
+  assert.equal(quote?.items[0]?.fulfillmentState, "PREORDER");
+  // The state is the only new fact: nothing about the balance behind it may reach the buyer.
+  assert.equal(JSON.stringify(quote).includes("sellableStock"), false);
 });
 
 test("P8 rendered checkout quote accepts the cart ceiling and rejects max+1 before projection", () => {

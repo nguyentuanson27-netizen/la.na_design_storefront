@@ -71,6 +71,7 @@ test("cart lines expose current storefront price and availability without exact 
       quantity: 2,
       price: 590_000,
       available: true,
+      isPreorderSale: false,
       unavailableReason: null,
       media: { primary: null, gallery: [] },
     },
@@ -85,6 +86,7 @@ test("cart lines expose current storefront price and availability without exact 
       quantity: 1,
       price: 590_000,
       available: false,
+      isPreorderSale: false,
       unavailableReason: "OUT_OF_STOCK",
       media: { primary: null, gallery: [] },
     },
@@ -99,6 +101,7 @@ test("cart lines expose current storefront price and availability without exact 
       quantity: 1,
       price: null,
       available: false,
+      isPreorderSale: false,
       unavailableReason: "VARIANT_UNAVAILABLE",
       media: { primary: null, gallery: [] },
     },
@@ -126,6 +129,7 @@ test("cart line fails closed when its requested quantity exceeds current sellabl
     quantity: 4,
     price: 590_000,
     available: false,
+    isPreorderSale: false,
     unavailableReason: "INSUFFICIENT_STOCK",
     media: { primary: null, gallery: [] },
   });
@@ -174,6 +178,7 @@ test("cart lines fail closed without linking unavailable product owners to dead 
     quantity: 1,
     price: null,
     available: false,
+    isPreorderSale: false,
     unavailableReason: "PRODUCT_UNAVAILABLE",
     media: { primary: null, gallery: [] },
   });
@@ -189,6 +194,7 @@ test("cart lines fail closed without linking unavailable product owners to dead 
     quantity: 1,
     price: null,
     available: false,
+    isPreorderSale: false,
     unavailableReason: "VARIANT_UNAVAILABLE",
     media: { primary: null, gallery: [] },
   });

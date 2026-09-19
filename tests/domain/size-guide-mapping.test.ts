@@ -66,6 +66,9 @@ function rawProductPayload(
       seoDescription: "Mô tả SEO.",
       collectionSlugs: [],
     },
+    // No stored policy, which is the common case: `resolveSellingPolicy()` applies the approved
+    // STANDARD default rather than the fixture asserting one.
+    sellingPolicy: null,
     variants: [
       {
         id: `var-${id}-1`,
@@ -75,6 +78,7 @@ function rawProductPayload(
         pancakeRetailPrice: 1_200_000,
         pancakeRetailPriceAfterDiscount: 1_200_000,
         pancakeImageUrls: "[]",
+        compositeComponents: [],
         warehouseStocks: [{ quantity: 5 }],
       },
     ],

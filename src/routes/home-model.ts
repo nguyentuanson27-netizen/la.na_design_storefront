@@ -3,6 +3,7 @@ import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "../commerce/storefront-prom
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
+  StorefrontProductCapacity,
 } from "../commerce/storefront-product.ts";
 import {
   buildProductCardModel,
@@ -34,6 +35,11 @@ export type HomeProduct = Readonly<{
   name: string;
   media?: StorefrontProductMedia | null;
   variants: StorefrontVariantFacts[];
+  /**
+   * I5/F8a — the product's real capacity, when the read supplied one. Absent keeps the approved
+   * STANDARD default, which is what this surface assumed before F8a.
+   */
+  productCapacity?: StorefrontProductCapacity;
 }>;
 
 export type HomeCollectionLink = Readonly<{ slug: string; title: string }>;
@@ -102,6 +108,7 @@ export function buildHomeCards({
           name: product.name,
           media: product.media,
           variants: product.variants,
+          productCapacity: product.productCapacity,
           pricingRule,
           selectEvent: selectEventBySlug.get(product.slug) ?? null,
         }),

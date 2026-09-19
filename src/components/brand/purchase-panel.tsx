@@ -7,6 +7,7 @@ import {
   type PurchaseAttemptResult,
   type UseVariantSelectionInput,
   type VariantSelectionController,
+  OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
@@ -209,7 +210,7 @@ export function PurchasePanelView({
               disabled={choice.disabled || isPending}
               onChange={() => chooseKind(choice.key)}
             />
-            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-60">
               {choice.label}
             </span>
           </label>
@@ -233,7 +234,7 @@ export function PurchasePanelView({
               disabled={choice.disabled || isPending}
               onChange={() => chooseColor(choice.value)}
             />
-            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+            <span className="flex min-h-11 items-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-60">
               {choice.value}
             </span>
           </label>
@@ -263,7 +264,7 @@ export function PurchasePanelView({
               disabled={choice.disabled || isPending}
               onChange={() => chooseSize(choice.value)}
             />
-            <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-35">
+            <span className="flex min-h-11 min-w-12 items-center justify-center border border-black/30 px-4 text-sm transition peer-checked:border-black peer-checked:bg-black peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-black peer-disabled:cursor-not-allowed peer-disabled:opacity-60">
               {choice.value}
             </span>
           </label>
@@ -280,7 +281,7 @@ export function PurchasePanelView({
   const purchaseStatus =
     message ||
     (view.selectedUnavailableReason === "OUT_OF_STOCK"
-      ? "Hết hàng"
+      ? OUT_OF_STOCK_LABEL
       : view.unavailableMessage || (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
 
   return (
@@ -307,6 +308,17 @@ export function PurchasePanelView({
               priceDisplay.displayText
             )}
           </p>
+          {view.preorderLabel === null ? null : (
+            /* §30 — the availability state itself, not a marketing badge and not the button. It
+               sits with the price because that is what the shopper is reading when they decide,
+               and it is plain text so the state never depends on colour alone. */
+            <span
+              className="preorder-marker inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
+              data-purchase-state="preorder"
+            >
+              {view.preorderLabel}
+            </span>
+          )}
           <p className="text-xs uppercase tracking-[0.14em] text-black/55">
             {view.hasPurchasableVariant
               ? view.hasKindOptions
@@ -343,12 +355,12 @@ export function PurchasePanelView({
           <button
             className="min-h-12 w-full border border-black bg-black px-4 text-sm font-semibold text-white hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
             type="button"
-            aria-label="Thêm vào giỏ hàng"
+            aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
             onClick={() => runPurchase(addToBag)}
           >
-            Thêm vào giỏ
+            {view.addToBagLabel}
           </button>
           <button
             className="min-h-12 w-full border border-black bg-white px-4 text-sm font-semibold text-black hover:bg-black hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/5 disabled:text-black/35"
@@ -387,12 +399,12 @@ export function PurchasePanelView({
           <button
             className="min-h-11 shrink-0 border border-black bg-black px-4 text-sm font-semibold text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
             type="button"
-            aria-label="Thêm vào giỏ từ thanh mua nhanh"
+            aria-label={view.quickAddAccessibleName}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
             onClick={() => runPurchase(addToBag)}
           >
-            Thêm vào giỏ
+            {view.addToBagLabel}
           </button>
         </div>
       </section>

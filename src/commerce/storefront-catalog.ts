@@ -3,6 +3,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { resolveVariantAvailabilityFromWarehouseStocks } from "./storefront-product.ts";
 import {
   resolveStorefrontProductMedia,
@@ -89,6 +90,10 @@ const productSelection = {
       collectionSlugs: true,
     },
   },
+  // I5/F8a — this product's stored selling policy, read once here so every listing surface resolves
+  // availability under the owner's real rule instead of `STANDARD`'s floor. Absence is the common
+  // case and is the approved default, which `resolveSellingPolicy()` supplies.
+  sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -100,6 +105,10 @@ const productSelection = {
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
+      // ADR 0014 §11 disables OVERSELL/PREORDER for a composite parent, and composition is a
+      // variant-level relation. One bounded row per variant answers "is this product a composite"
+      // without pulling the component graph a listing has no other use for.
+      compositeComponents: { take: 1, select: { componentVariantId: true } },
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
@@ -196,6 +205,14 @@ export function toStorefrontProduct(
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
     })),
+    // I5/F8a — the capacity every surface must judge this product by, resolved once from the row
+    // above. It is product-level because the policy is, and because `isComposite` is decided by
+    // whether *any* variant composes others — the same granularity I2's admin boundary and I6a's
+    // reservation transaction use.
+    productCapacity: {
+      ...resolveSellingPolicy(product.sellingPolicy),
+      isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
+    },
     // Server-only, and kept off the variant facts for the same reason `galleryIndexByVariantId` is:
     // the purchase panel has no use for it, and widening the client option contract would ship a
     // publication concern to the browser. Resolved here because this is the last place that still

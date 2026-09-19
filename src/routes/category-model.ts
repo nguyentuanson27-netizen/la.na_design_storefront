@@ -7,6 +7,7 @@ import type { StorefrontProductMedia } from "../commerce/product-media.ts";
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
+  StorefrontProductCapacity,
 } from "../commerce/storefront-product.ts";
 import {
   buildProductCardModel,
@@ -23,6 +24,11 @@ export type CategoryProduct = Readonly<{
   name: string;
   media?: StorefrontProductMedia | null;
   variants: StorefrontVariantFacts[];
+  /**
+   * I5/F8a — the product's real capacity, when the read supplied one. Absent keeps the approved
+   * STANDARD default, which is what this surface assumed before F8a.
+   */
+  productCapacity?: StorefrontProductCapacity;
 }>;
 
 export type CategoryFacets = Readonly<{
@@ -91,6 +97,7 @@ export function buildCategoryViewModel(input: CategoryViewModelInput): CategoryV
       name: product.name,
       media: product.media,
       variants: product.variants,
+      productCapacity: product.productCapacity,
       pricingRule,
       selectEvent: selectEventBySlug.get(product.slug) ?? null,
     }),

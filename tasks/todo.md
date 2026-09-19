@@ -122,8 +122,17 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.
 - [ ] **F7d** PDP related products: manual order first, same-category fallback.
 - [ ] **F7e** Render PDP detail blocks in exact approved order; omit missing product-specific facts without inference; shipping/returns use approved policy projections.
-- [ ] **F8a** Show preorder/oversell truth on product card + PDP from canonical sellability projection; standard OOS/hard limit remain visible+disabled with exact `Hết hàng`.
-- [ ] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
+- [x] **F8a** Show preorder/oversell truth on product card + PDP from canonical sellability projection; standard OOS/hard limit remain visible+disabled with exact `Hết hàng`.
+  - The card stopped re-deriving the rule: `resolveAvailability()` counted raw stock, which is
+    STANDARD's floor written twice, so it called an allowed OVERSELL variant sold out and a
+    purchasable PREORDER variant sold out too. It now reads `purchasable` from the option
+    projection, and `productSelection` carries the stored `ProductSellingPolicy` so every listing
+    surface has the policy to judge by.
+- [x] **F8b** Show preorder preparation/shipping truth in cart + checkout; mixed order ships together.
+  - `StorefrontCartLine.isPreorderSale` carries the marker from the PDP, and one shared projection
+    states the basket truth for both pages. The 15 days are I7's `PREORDER_PREPARATION_DAYS` and
+    the shipping windows are Brand Config's approved A5 policy — no second copy, no date (§30
+    starts the clock at confirmation, which I7 owns) and no guarantee.
 - [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
 - [ ] **F9a** Build final footer/legal/policy UX; non-accordion mobile; no newsletter/representative.
 - [x] **F9b** Implement real contact-form delivery through G3-approved transport with validation/abuse controls; if it requires a new provider/dependency/credential, wait for Checkpoint B before provider/adapter work.

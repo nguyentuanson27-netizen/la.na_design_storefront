@@ -449,7 +449,7 @@ test("F4b infinite grid: consumes server nextCursor and announces errors via acc
   );
 });
 
-test("F5 editorial product card: does not display out-of-stock label derived from raw stock, reserving slot for F8a", () => {
+test("F8a product card presents availability without duplicating any stock threshold", () => {
   const cardSource = readFileSync(
     path.join(REPO_ROOT, "src/components/brand/product-card.tsx"),
     "utf8",
@@ -459,24 +459,41 @@ test("F5 editorial product card: does not display out-of-stock label derived fro
     "utf8",
   );
 
-  // Card markup must not contain "Hết hàng"
+  // F5 reserved this slot and forbade deducing the state from raw stock; F8a fills it. The markup
+  // renders one projected field and spells neither approved word, so a brand redrawing the card
+  // cannot mistype `Hết hàng`/`Đặt trước` or invent a third state.
   assert.ok(
-    !cardSource.includes("Hết hàng"),
-    "product-card.tsx must not display visible 'Hết hàng' label derived from raw sellableStock",
+    !cardSource.includes("Hết hàng") && !cardSource.includes("Đặt trước"),
+    "product-card.tsx must render the projected availability label, not its own copy",
   );
-
-  // Card markup must have comment reserving slot for F8a
   assert.match(
     cardSource,
-    /F8a:\s*Reserved slot for server-authoritative availability/,
-    "product-card.tsx must contain comment reserving slot for F8a",
+    /availabilityLabel/,
+    "product-card.tsx must render the model's availability label",
   );
 
-  // Headless model retains availability field definition for F8a
+  // The threshold itself. `sellableStock <= 0` is STANDARD's floor, and writing it here is what
+  // made the card call an OVERSELL variant sold out while the PDP and the cart still sold it.
+  for (const [label, source] of [
+    ["product-card.tsx", cardSource],
+    ["build-product-card-model.ts", modelSource],
+  ] as const) {
+    assert.ok(
+      !/sellableStock\s*[<>]/.test(source),
+      `${label} must not compare raw stock against a threshold`,
+    );
+  }
+
+  // The card's availability comes from the canonical predicate, through the option projection.
+  assert.match(
+    modelSource,
+    /option\) => option\.purchasable/,
+    "build-product-card-model.ts must resolve availability from canonical purchasability",
+  );
   assert.match(
     modelSource,
     /availability:\s*"in-stock"\s*\|\s*"out-of-stock"\s*\|\s*"partial"/,
-    "build-product-card-model.ts must preserve availability type for future F8a usage",
+    "build-product-card-model.ts must keep the availability type F5 reserved",
   );
 });
 

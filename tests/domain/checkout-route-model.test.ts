@@ -37,7 +37,7 @@ function line(overrides: Partial<StorefrontCartLine> = {}): StorefrontCartLine {
 
 function quote(overrides: Partial<RenderedCheckoutQuoteFacts> = {}): RenderedCheckoutQuoteFacts {
   return {
-    items: [{ variantExternalId: "pancake-1", quantity: 2, unitPriceVnd: 100_000 }],
+    items: [{ variantExternalId: "pancake-1", quantity: 2, unitPriceVnd: 100_000, fulfillmentState: "READY" as const }],
     merchandiseSubtotalVnd: 200_000,
     shippingFeeVnd: 30_000,
     totalVnd: 230_000,

@@ -1,9 +1,15 @@
+import {
+  OUT_OF_STOCK_LABEL,
+  PREORDER_LABEL,
+} from "../../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontProductMedia, TrustedProductImage } from "../../commerce/product-media.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
+  STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
+  type StorefrontProductCapacity,
   type StorefrontVariantFacts,
   type StorefrontVariantOption,
 } from "../../commerce/storefront-product.ts";
@@ -65,6 +71,26 @@ export type ProductCardModel = Readonly<{
   flashSale: Readonly<{ remainingMs: number; countdownText: string | null }> | null;
   marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
   availability: "in-stock" | "out-of-stock" | "partial";
+  /**
+   * F8a / master spec §30 — whether this product can currently be bought **only** as `Đặt trước`.
+   *
+   * A card addresses a product, not a variant, so it cannot repeat §30's per-variant rule verbatim.
+   * The honest card-level reading is "everything you can buy here is a preorder sale": if any
+   * variant still has ready stock the shopper can buy it today, and §30 says a product with ready
+   * stock must not show preorder state at all.
+   *
+   * It is a separate field from `marketingBadge` on purpose. §30 forbids the Sale/New/Bestseller
+   * priority hiding availability, so the two cannot share one slot — a card renders both.
+   */
+  isPreorderOnly: boolean;
+  /**
+   * The exact availability word to render, or `null` when the product has ready stock and there is
+   * nothing to say.
+   *
+   * Decided here rather than in markup so a brand redrawing the card cannot mistype one of the two
+   * strings master spec §29/§30 fixes, and cannot invent a third.
+   */
+  availabilityLabel: string | null;
   selectEvent: TrackingEvent | null;
 }>;
 
@@ -74,6 +100,15 @@ export type ProductCardModelInput = Readonly<{
   variants: readonly StorefrontVariantFacts[];
   media?: StorefrontProductMedia | null;
   pricingRule?: StorefrontPricingRule;
+  /**
+   * I4/I5 — this product's real selling policy and composite flag, when the caller read one.
+   *
+   * Defaults to the approved missing-row answer (`STANDARD` floored at 0, not a composite), which
+   * is exactly what every caller behaved as before F8a. A listing that supplies the real policy
+   * gets availability and `isPreorderOnly` resolved by the same authority the PDP and the cart use;
+   * one that does not keeps today's answer rather than guessing.
+   */
+  productCapacity?: StorefrontProductCapacity;
   flashSale?: StorefrontFlashSalePresentation;
   selectEvent?: TrackingEvent | null;
   isNewArrival?: boolean;
@@ -120,12 +155,48 @@ function describeFlashCountdown(remainingMs: number): string | null {
   return `Còn ${minutes} phút`;
 }
 
+/**
+ * Availability from the canonical answer, not from raw stock.
+ *
+ * This used to count a positive raw stock, which is `STANDARD`'s floor written out a second time. It
+ * called an `OVERSELL` variant sitting at −5 sold out while the PDP and the cart both offered it,
+ * and it called a depleted `PREORDER` variant sold out while it was still purchasable as
+ * `Đặt trước`. `purchasable` is what `resolveVariantSellability()` decided under this product's own
+ * policy, so the card now agrees with every other surface by construction.
+ */
 function resolveAvailability(
-  variants: readonly StorefrontVariantFacts[],
+  options: readonly StorefrontVariantOption[],
 ): ProductCardModel["availability"] {
-  const inStock = variants.filter((candidate) => candidate.sellableStock > 0).length;
-  if (inStock === 0) return "out-of-stock";
-  return inStock === variants.length ? "in-stock" : "partial";
+  const purchasable = options.filter((option) => option.purchasable).length;
+  if (purchasable === 0) return "out-of-stock";
+  return purchasable === options.length ? "in-stock" : "partial";
+}
+
+/** §30's card-level reading: preorder only when nothing here can be bought from ready stock. */
+function resolveIsPreorderOnly(options: readonly StorefrontVariantOption[]): boolean {
+  const purchasable = options.filter((option) => option.purchasable);
+  return purchasable.length > 0 && purchasable.every((option) => option.isPreorderSale);
+}
+
+/**
+ * The exact word to render, or nothing.
+ *
+ * `purchasable === false` is broader than "sold out": `buildStorefrontVariantOptions()` also
+ * refuses an option for `PRICE_UNRESOLVED`, `MAPPING_REQUIRED` and `AMBIGUOUS_OPTION`. Saying
+ * `Hết hàng` for those is a false factual claim about stock — and on a product whose price has not
+ * resolved it would render beside `Giá đang cập nhật`, which contradicts it.
+ *
+ * So the out-of-stock word is reserved for the one reason that means it: every option blocked, and
+ * blocked by capacity. Anything else says nothing, and the price line already tells the shopper
+ * what is actually wrong.
+ */
+function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): string | null {
+  if (options.some((option) => option.purchasable)) {
+    return resolveIsPreorderOnly(options) ? PREORDER_LABEL : null;
+  }
+  const blockedByCapacity =
+    options.length > 0 && options.every((option) => option.unavailableReason === "OUT_OF_STOCK");
+  return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
 }
 
 /** Distinct colours in first-seen order, each with the image its variant maps to, when known. */
@@ -158,10 +229,20 @@ function resolveColorSwatches(
 
 export function buildProductCardModel(input: ProductCardModelInput): ProductCardModel {
   const { flashSale, media } = input;
+  const productCapacity = input.productCapacity ?? STANDARD_STANDALONE_CAPACITY;
+
+  // Resolved once, under this product's real capacity, and used for two different jobs: the price
+  // presentation below (which a flash card resolves from its representative instead) and the
+  // availability facts, which every card needs whichever price path it took.
+  const capacityOptions = buildStorefrontVariantOptions(
+    input.variants,
+    input.pricingRule,
+    productCapacity,
+  );
 
   // Flash cards receive the exact representative selected before pagination. Other listings keep
   // their existing option-range path and can still inject a promotion-aware pricing rule.
-  const options = flashSale ? null : buildStorefrontVariantOptions(input.variants, input.pricingRule);
+  const options = flashSale ? null : capacityOptions;
   const promotionSale = options ? resolveStorefrontDiscountPresentation(options) : null;
 
   const primaryImage = media?.primary ?? null;
@@ -199,6 +280,9 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           discountPercent: null,
         };
 
+  const availability = resolveAvailability(capacityOptions);
+  const isPreorderOnly = resolveIsPreorderOnly(capacityOptions);
+
   const marketingBadge =
     discountPercent > 0
       ? Object.freeze({ type: "sale" as const, label: `-${discountPercent}%` })
@@ -222,7 +306,9 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
         })
       : null,
     marketingBadge,
-    availability: resolveAvailability(input.variants),
+    availability,
+    isPreorderOnly,
+    availabilityLabel: resolveAvailabilityLabel(capacityOptions),
     selectEvent: input.selectEvent ?? null,
   });
 }

@@ -32,6 +32,7 @@ export default defineConfig({
     "homepage-composition.spec.ts",
     "homepage-hero.spec.ts",
     "homepage-taxonomy.spec.ts",
+    "inventory-truth.spec.ts",
     "merchant-return-policy.spec.ts",
     "not-found-recovery.spec.ts",
     "pdp-language.spec.ts",

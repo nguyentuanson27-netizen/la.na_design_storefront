@@ -1,5 +1,9 @@
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
-import type { StorefrontPricingRule, StorefrontVariantFacts } from "../commerce/storefront-product.ts";
+import type {
+  StorefrontPricingRule,
+  StorefrontProductCapacity,
+  StorefrontVariantFacts,
+} from "../commerce/storefront-product.ts";
 import {
   buildProductCardModel,
   type ProductCardModel,
@@ -13,6 +17,11 @@ export type FlashSaleProduct = Readonly<{
   name: string;
   media?: StorefrontProductMedia | null;
   variants: StorefrontVariantFacts[];
+  /**
+   * I5/F8a — the product's real capacity, when the read supplied one. Absent keeps the approved
+   * STANDARD default, which is what this surface assumed before F8a.
+   */
+  productCapacity?: StorefrontProductCapacity;
   flashSale?: StorefrontFlashSalePresentation;
 }>;
 
@@ -47,6 +56,7 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
             name: product.name,
             media: product.media,
             variants: product.variants,
+            productCapacity: product.productCapacity,
             pricingRule: input.pricingRule,
             flashSale: product.flashSale,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,

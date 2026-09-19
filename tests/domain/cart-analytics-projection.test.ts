@@ -17,6 +17,7 @@ function line(overrides: Partial<StorefrontCartLine> = {}): StorefrontCartLine {
     quantity: 2,
     price: 490_000,
     available: true,
+    isPreorderSale: false,
     unavailableReason: null,
     media: { primary: null, gallery: [] },
     ...overrides,

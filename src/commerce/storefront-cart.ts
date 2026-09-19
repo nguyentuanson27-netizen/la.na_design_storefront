@@ -4,6 +4,7 @@ import {
 } from "./product-media.ts";
 import {
   evaluateVariantCapacity,
+  resolveAcceptedPreorderState,
   type SellingMode,
   type VariantCapacityInput,
 } from "./capacity-policy.ts";
@@ -93,6 +94,17 @@ export type StorefrontCartLine = {
   quantity: number;
   price: number | null;
   available: boolean;
+  /**
+   * F8b / master spec §30 — whether this line is a `Đặt trước` sale, as the capacity authority
+   * classified it when the line was resolved.
+   *
+   * Carried on the line rather than re-derived downstream, because cart and checkout must say the
+   * same thing about the same line and neither is allowed to compare stock against a limit. It is
+   * false whenever the line is unavailable: a line the shopper cannot buy is not a preorder sale,
+   * and labelling one `Đặt trước` would promise a preparation window for something that will not
+   * be ordered at all.
+   */
+  isPreorderSale: boolean;
   unavailableReason: StorefrontCartUnavailableReason | null;
   media: StorefrontProductMedia;
 };
@@ -190,6 +202,7 @@ export function buildStorefrontCartLines({
         quantity: item.quantity,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
         media,
       };
@@ -210,6 +223,7 @@ export function buildStorefrontCartLines({
         quantity: item.quantity,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
         media,
       };
@@ -232,6 +246,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "PRODUCT_UNAVAILABLE" as const,
       };
     }
@@ -241,6 +256,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
@@ -251,6 +267,7 @@ export function buildStorefrontCartLines({
         ...base,
         price: null,
         available: false,
+        isPreorderSale: false,
         unavailableReason: "VARIANT_UNAVAILABLE" as const,
       };
     }
@@ -287,15 +304,36 @@ export function buildStorefrontCartLines({
           ...base,
           price: option.price,
           available: false,
+          isPreorderSale: false,
           unavailableReason: "INSUFFICIENT_STOCK" as const,
         };
       }
     }
 
+    const capacity = capacityByVariantId.get(item.variantId);
+
     return {
       ...base,
       price: option.price,
       available: option.purchasable,
+      // Quantity-aware, from the same authority the reservation writes history with. The option's
+      // own `isPreorderSale` answers "is one more unit a preorder sale", which is the wrong
+      // question for a line of two: a PREORDER variant with one unit of ready stock is a ready
+      // sale at quantity 1 and a preorder sale at quantity 2. Reading the unit-level answer here
+      // showed the buyer a ready checkout while `acceptedPreorderState` persisted PREORDER.
+      isPreorderSale:
+        option.purchasable &&
+        capacity !== undefined &&
+        resolveAcceptedPreorderState(
+          {
+            mirroredStock: variant.sellableStock,
+            activeReservedQuantity: 0,
+            sellingMode: capacity.sellingMode,
+            negativeStockLimit: capacity.negativeStockLimit,
+            isComposite: capacity.isComposite,
+          },
+          item.quantity,
+        ) === "PREORDER",
       unavailableReason: option.unavailableReason,
     };
   });

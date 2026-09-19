@@ -1,4 +1,9 @@
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
+import {
+  buildPreorderFulfillmentNotice,
+  PREORDER_LABEL,
+  type PreorderFulfillmentNotice,
+} from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 
@@ -36,6 +41,13 @@ export type CheckoutLineView = Readonly<{
   optionLabel: string;
   quantity: number;
   lineTotalText: string;
+  /**
+   * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
+   *
+   * Recomputed from the same canonical line fact rather than carried over from the cart render, so
+   * a line cannot arrive here looking like ready stock because the cart page was stale.
+   */
+  preorderLabel: string | null;
 }>;
 
 export type CheckoutTotalsView = Readonly<{
@@ -52,6 +64,13 @@ export type CheckoutViewModel = Readonly<{
   totals: CheckoutTotalsView | null;
   /** The token the form submits with. Present exactly when `state` is `ready`. */
   quoteProof: string | null;
+  /**
+   * F8b / §30 — the preparation and shipment truth, from the same projection the cart uses.
+   *
+   * `null` in the `empty` and `unquotable` states: there is no order to describe, and describing
+   * one would be a claim about a basket that is not going to be submitted as it stands.
+   */
+  preorderNotice: PreorderFulfillmentNotice | null;
 }>;
 
 /**
@@ -73,7 +92,13 @@ export function buildCheckoutViewModel(
   }>,
 ): CheckoutViewModel {
   if (input.lines.length === 0) {
-    return Object.freeze({ state: "empty", lines: Object.freeze([]), totals: null, quoteProof: null });
+    return Object.freeze({
+      state: "empty",
+      lines: Object.freeze([]),
+      totals: null,
+      quoteProof: null,
+      preorderNotice: null,
+    });
   }
 
   // A quote without a proof is unusable: submission would reject it and the shopper would loop
@@ -84,6 +109,7 @@ export function buildCheckoutViewModel(
       lines: Object.freeze([]),
       totals: null,
       quoteProof: null,
+      preorderNotice: null,
     });
   }
 
@@ -101,6 +127,7 @@ export function buildCheckoutViewModel(
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
+          preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
         }),
       ),
     ),
@@ -111,5 +138,6 @@ export function buildCheckoutViewModel(
       totalText: currency.format(totals.totalVnd),
     }),
     quoteProof: input.quoteProof,
+    preorderNotice: buildPreorderFulfillmentNotice(input.lines),
   });
 }

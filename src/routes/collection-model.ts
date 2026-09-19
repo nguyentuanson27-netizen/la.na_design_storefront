@@ -6,6 +6,7 @@ import {
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
+  StorefrontProductCapacity,
 } from "../commerce/storefront-product.ts";
 import {
   buildProductCardModel,
@@ -30,6 +31,11 @@ export type CollectionProduct = Readonly<{
   name: string;
   media?: StorefrontProductMedia | null;
   variants: StorefrontVariantFacts[];
+  /**
+   * I5/F8a — the product's real capacity, when the read supplied one. Absent keeps the approved
+   * STANDARD default, which is what this surface assumed before F8a.
+   */
+  productCapacity?: StorefrontProductCapacity;
 }>;
 
 export type CollectionVideo = Readonly<{ src: string; poster: string | null }>;
@@ -180,6 +186,7 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
             name: product.name,
             media: product.media,
             variants: product.variants,
+            productCapacity: product.productCapacity,
             pricingRule: input.pricingRule,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
           }),

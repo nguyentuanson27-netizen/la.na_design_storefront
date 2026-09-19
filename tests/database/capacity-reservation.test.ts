@@ -161,6 +161,85 @@ test("I6a concurrency holds at an OVERSELL limit, not only at zero", async () =>
   assert.equal(held._sum.quantity, 3, "the owner's -3 allowance is spent exactly once");
 });
 
+test("F8b a competing hold that turns an acknowledged READY line into PREORDER is refused", async () => {
+  // The race the signed quote cannot see. The storefront and snapshot projections pass
+  // `activeReservedQuantity: 0` on purpose — ADR 0014 §2 puts the authoritative read here — so a
+  // competing live hold only exists under this lock. PREORDER stock 2, quantity 2 is READY while
+  // nobody else holds anything, and becomes PREORDER the moment one unit is held elsewhere.
+  const variantId = await seedVariant("race", { stock: 2, sellingMode: "PREORDER" });
+  const competitorOrderId = await seedOrder("race-competitor");
+  const buyerOrderId = await seedOrder("race-buyer");
+
+  // Establish the competing hold first, so the buyer's lock-time view differs from their quote's.
+  const competitor = await repository.reserveOrderCapacity({
+    orderId: competitorOrderId,
+    lines: [{ variantId, quantity: 1 }],
+  });
+  assert.equal(competitor.ok, true);
+
+  const refused = await repository.reserveOrderCapacity({
+    orderId: buyerOrderId,
+    // What the buyer acknowledged: ready stock, from a quote resolved before the competitor held.
+    lines: [{ variantId, quantity: 2, expectedFulfillmentState: "READY" }],
+  });
+
+  assert.equal(refused.ok, false);
+  if (refused.ok) return;
+  assert.equal(refused.reason, "fulfillment-state-changed");
+  assert.equal(refused.refusedVariantId, variantId);
+
+  // Fail-closed means nothing was written: no ledger row for this order to leak capacity or to
+  // satisfy a later retry.
+  assert.equal(
+    await prisma.variantCapacityReservation.count({ where: { orderId: buyerOrderId } }),
+    0,
+    "a refused fulfillment state must leave no hold behind",
+  );
+
+  // The same basket is accepted once the buyer acknowledges what is now true. The line is still
+  // sellable — the preorder floor covers it — so this is a re-confirmation, not a sell-out.
+  const accepted = await repository.reserveOrderCapacity({
+    orderId: buyerOrderId,
+    lines: [{ variantId, quantity: 2, expectedFulfillmentState: "PREORDER" }],
+  });
+  assert.equal(accepted.ok, true);
+  const [row] = await prisma.variantCapacityReservation.findMany({
+    where: { orderId: buyerOrderId },
+    select: { acceptedPreorderState: true },
+  });
+  assert.equal(row?.acceptedPreorderState, "PREORDER");
+});
+
+test("F8b an existing hold classified differently does not satisfy an idempotent retry", async () => {
+  // A retry must not be waved through by a hold whose fulfillment state this attempt's buyer never
+  // acknowledged: the persisted classification is part of "the same basket", like quantity.
+  const variantId = await seedVariant("retry-state", { stock: 0, sellingMode: "PREORDER" });
+  const orderId = await seedOrder("retry-state-order");
+
+  const held = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [{ variantId, quantity: 1, expectedFulfillmentState: "PREORDER" }],
+  });
+  assert.equal(held.ok, true);
+
+  const mismatched = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [{ variantId, quantity: 1, expectedFulfillmentState: "READY" }],
+  });
+  assert.equal(mismatched.ok, false);
+  if (mismatched.ok) return;
+  assert.equal(mismatched.reason, "reservation-conflict");
+
+  // The matching retry still finds its own hold, so this did not break idempotency.
+  const matching = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [{ variantId, quantity: 1, expectedFulfillmentState: "PREORDER" }],
+  });
+  assert.equal(matching.ok, true);
+  if (!matching.ok) return;
+  assert.equal(matching.alreadyHeld, true);
+});
+
 test("I6a a retry on the same order finds its own hold instead of reserving twice", async () => {
   // §3 — the order is the idempotency key. This is also why a caller's own rows are excluded from
   // activeReservedQuantity: counting them would make a retry refuse its own basket.

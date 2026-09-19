@@ -80,6 +80,14 @@ export function deriveStorefrontSelection(
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,
     selectedIsDiscounted: selected?.isDiscounted ?? false,
     selectedUnavailableReason: selected === null ? null : selected.unavailableReason,
+    /**
+     * F8a / master spec §30 — whether the selected option is a `Đặt trước` sale.
+     *
+     * Passed through from the option the capacity authority already classified. A surface must not
+     * re-derive it from stock and selling mode: that is the duplicated threshold §30 and ADR 0014
+     * exist to prevent, and it would disagree with the commit boundary the moment a policy changes.
+     */
+    selectedIsPreorderSale: selected?.isPreorderSale ?? false,
     // I9 — owner rule 10, from the one place that owns it. Standalone products are the common case,
     // so this path is where the product page usually reads the date.
     selectedAvailabilityDate: selectedAvailabilityDateOf(selected),
