@@ -29,6 +29,10 @@ let serverOutput = "";
 let historicalProductId = "";
 let historicalVariantId = "";
 
+function normalizeVisibleText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function captureServerOutput(chunk: Buffer) {
   serverOutput = `${serverOutput}${chunk.toString()}`.slice(-20_000);
 }
@@ -530,14 +534,18 @@ test("F8c confirmation and tracking keep immutable preorder history after live c
   await expect(confirmation).toContainText("3–10 ngày");
   await expect(confirmation).toContainText("không phải cam kết");
   await expect(confirmation).toContainText("giao cùng nhau");
-  const before = await confirmation.innerText();
+  const before = normalizeVisibleText(await confirmation.innerText());
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
   await page.getByLabel("Mã đơn hàng").fill(publicCode);
   await page.getByLabel("Số điện thoại").fill(guestPhone);
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
-  await expect(page.locator('[data-historical-preorder="true"]')).toHaveText(before);
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
 
   await prisma.productSellingPolicy.update({
     where: { productId: historicalProductId },
@@ -575,14 +583,22 @@ test("F8c confirmation and tracking keep immutable preorder history after live c
   await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(publicCode)}`, {
     waitUntil: "networkidle",
   });
-  await expect(page.locator('[data-historical-preorder="true"]')).toHaveText(before);
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/track-order`, { waitUntil: "networkidle" });
   await page.getByLabel("Mã đơn hàng").fill(publicCode);
   await page.getByLabel("Số điện thoại").fill(guestPhone);
   await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
-  await expect(page.locator('[data-historical-preorder="true"]')).toHaveText(before);
+  expect(
+    normalizeVisibleText(
+      await page.locator('[data-historical-preorder="true"]').innerText(),
+    ),
+  ).toBe(before);
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
     true,
