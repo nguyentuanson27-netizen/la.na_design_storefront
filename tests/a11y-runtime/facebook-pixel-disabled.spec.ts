@@ -152,7 +152,11 @@ test.beforeAll(async () => {
   });
 
   // Deliberately no NEXT_PUBLIC_FACEBOOK_PIXEL_ID: this is the untracked default.
-  const environment = { ...process.env };
+  // Next 16 dev permits one server per build directory and guards it with a lock file
+  // there. Every spec drives this one project, so they share that lock unless each gets
+  // its own directory -- and a server that has to be SIGKILLed leaves the lock behind,
+  // which makes the next spec's server refuse to start entirely.
+  const environment = { ...process.env, NEXT_DIST_DIR: ".next-test/facebook-pixel-disabled" };
   delete environment.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,

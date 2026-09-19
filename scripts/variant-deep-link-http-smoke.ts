@@ -280,7 +280,7 @@ try {
     `a sold-out deep link must show its own exact price\n${soldOutPage.body.slice(0, 3000)}`,
   );
   assert.ok(
-    soldOutPage.body.includes("Lựa chọn này đã hết hàng."),
+    soldOutPage.body.includes("Hết hàng"),
     "a sold-out deep link must state why it cannot be bought, in the announced status region",
   );
 

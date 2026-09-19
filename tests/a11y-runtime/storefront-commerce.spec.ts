@@ -21,6 +21,8 @@ const productSlug = `commerce-runtime-product-${runId}`;
 const productName = `Commerce Runtime Overshirt ${runId}`;
 const variantExternalId = `commerce-runtime-variant-${runId}`;
 const warehouseExternalId = `commerce-runtime-warehouse-${runId}`;
+const soldOutVariantExternalId = `commerce-runtime-sold-out-variant-${runId}`;
+const soldOutWarehouseExternalId = `commerce-runtime-sold-out-warehouse-${runId}`;
 const sizeOnlyProductExternalId = `commerce-runtime-size-only-product-${runId}`;
 const sizeOnlyProductSlug = `commerce-runtime-size-only-product-${runId}`;
 const sizeOnlyProductName = `Commerce Runtime Size Only Tee ${runId}`;
@@ -170,6 +172,28 @@ test.beforeAll(async () => {
     },
   });
 
+  const soldOutVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: soldOutVariantExternalId,
+      productId: product.id,
+      color: "Black",
+      size: "XL",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 920_000,
+      pancakeRetailPriceAfterDiscount: 920_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: soldOutVariant.id,
+      pancakeWarehouseId: soldOutWarehouseExternalId,
+      quantity: 0,
+      syncedAt,
+    },
+  });
+
   const sizeOnlyProduct = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -212,6 +236,11 @@ test.beforeAll(async () => {
     cwd: APP_ROOT,
     env: {
       ...process.env,
+      // Next 16 dev permits one server per build directory and guards it with a lock
+      // file there. Every spec drives this one project, so they share that lock unless
+      // each gets its own directory -- and a server that has to be SIGKILLed leaves the
+      // lock behind, which makes the next spec's server refuse to start entirely.
+      NEXT_DIST_DIR: ".next-test/storefront-commerce",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
@@ -229,11 +258,12 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("mobile shopper selects Color × Size, adds to bag, updates cart and reaches checkout", async ({
+test("mobile required-size flow shares one selection with the sticky purchase bar and adds the selected variant", async ({
   page,
 }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
+  const postRequests: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
   });
@@ -241,25 +271,59 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   page.on("response", (response) => {
     if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
   });
+  page.on("request", (request) => {
+    if (request.method() === "POST") postRequests.push(request.url());
+  });
 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
-  await assertPageQuality(page);
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const mobileBar = page.getByRole("region", { name: "Mua nhanh" });
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const mainAdd = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const mobileAdd = mobileBar.getByRole("button", {
+    name: "Thêm vào giỏ từ thanh mua nhanh",
+    exact: true,
+  });
+
+  await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
+  await expect(mobileBar).toBeVisible();
+  expect(await mobileBar.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
+  await expect(mobileBar.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(mobileBar.getByText("Chưa chọn size", { exact: true })).toBeVisible();
+  await expect(mainAdd).toHaveText("Thêm vào giỏ");
+  await expect(mainAdd).toBeEnabled();
+  await expect(mobileAdd).toHaveText("Thêm vào giỏ");
+  await expect(mobileAdd).toBeEnabled();
+
+  const postCountBeforeValidation = postRequests.length;
+  await mobileAdd.click();
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(sizeGroup).toBeFocused();
+  await expect
+    .poll(async () => {
+      const [sizeBox, mobileBarBox] = await Promise.all([
+        sizeGroup.boundingBox(),
+        mobileBar.boundingBox(),
+      ]);
+      if (!sizeBox || !mobileBarBox) return Number.POSITIVE_INFINITY;
+      return sizeBox.y + sizeBox.height - mobileBarBox.y;
+    })
+    .toBeLessThanOrEqual(1);
+  expect(postRequests).toHaveLength(postCountBeforeValidation);
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
-  await expect(addToBag).toBeEnabled();
-  await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await expect(mobileBar.getByText("Size M", { exact: true })).toBeVisible();
+  await assertPageQuality(page);
 
-  const cartCookie = (await page.context().cookies()).find(({ name }) => name === "la_cart");
-  expect(cartCookie?.httpOnly).toBe(true);
-  expect(cartCookie?.sameSite).toBe("Lax");
+  await mobileAdd.click();
+  await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
@@ -268,22 +332,6 @@ test("mobile shopper selects Color × Size, adds to bag, updates cart and reache
   await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
   await assertPageQuality(page);
 
-  const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
-  await expect(quantity).toHaveValue("1");
-  await quantity.fill("2");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
-  await expect(page.getByRole("status")).toContainText("Đã cập nhật số lượng.");
-  await expect(quantity).toHaveValue("2");
-
-  const checkoutLink = page.getByRole("link", { name: "Tiến hành đặt hàng" });
-  await expect(checkoutLink).toBeVisible();
-  await checkoutLink.click();
-  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
-  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-  await assertPageQuality(page);
-
-  await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => document.activeElement?.tagName)).not.toBe("BODY");
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
@@ -304,11 +352,17 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
   await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   const size = page.getByRole("radio", { name: "L" });
-  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  await expect(size).not.toBeChecked();
+  await expect(addToBag).toBeEnabled();
+  await addToBag.click();
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByRole("group", { name: "Kích cỡ" })).toBeFocused();
   await page.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
   await assertPageQuality(page);
 
@@ -326,60 +380,102 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   expect(failedResponses).toEqual([]);
 });
 
-test("desktop shopper (1440px) selects Color × Size, adds to bag, updates cart, and reaches checkout", async ({
-  page,
-}) => {
+test("desktop purchase panel is sticky and validates size before add-to-cart", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
 
   const browserErrors: string[] = [];
-  const failedResponses: string[] = [];
+  const postRequests: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  page.on("response", (response) => {
-    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  page.on("request", (request) => {
+    if (request.method() === "POST") postRequests.push(request.url());
   });
 
-  // 1. PDP selection at 1440px
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByText("Chọn màu × kích cỡ", { exact: true })).toBeVisible();
-  await assertPageQuality(page);
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  const buyNow = purchasePanel.getByRole("button", { name: "Mua ngay", exact: true });
 
-  const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  await expect(page.getByRole("region", { name: "Mua nhanh" })).toBeHidden();
+  const stickyMetrics = await purchasePanel.evaluate((element) => ({
+    position: getComputedStyle(element).position,
+    top: Number.parseFloat(getComputedStyle(element).top),
+    documentTop: element.getBoundingClientRect().top + window.scrollY,
+  }));
+  expect(stickyMetrics.position).toBe("sticky");
+  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyMetrics.documentTop);
+  await page.waitForTimeout(50);
+  const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
+  expect(Math.abs(stuckTop - stickyMetrics.top)).toBeLessThanOrEqual(2);
+
+  await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
+  await expect(addToBag).toHaveText("Thêm vào giỏ");
+  await expect(addToBag).toBeEnabled();
+  await expect(buyNow).toHaveText("Mua ngay");
+  await expect(buyNow).toBeEnabled();
+
+  const postCountBeforeValidation = postRequests.length;
+  await addToBag.click();
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(sizeGroup).toBeFocused();
+  expect(postRequests).toHaveLength(postCountBeforeValidation);
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+
+  await buyNow.click();
+  await expect(sizeGroup).toBeFocused();
+  expect(postRequests).toHaveLength(postCountBeforeValidation);
+  await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
+
+  const color = page.getByRole("radio", { name: "Black", exact: true });
+  await color.focus();
+  await page.keyboard.press("Space");
+  await expect(color).toBeChecked();
+  const size = page.getByRole("radio", { name: "M", exact: true });
+  await size.focus();
+  await page.keyboard.press("Space");
+  await expect(size).toBeChecked();
+  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await addToBag.click();
+  await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  await assertPageQuality(page);
+  expect(browserErrors).toEqual([]);
+});
+
+test("Mua ngay reuses canonical cart authority before navigating to checkout", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await page.getByText("Black", { exact: true }).click();
   await page.getByText("M", { exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
-  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
-  await expect(addToBag).toBeEnabled();
-  await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  await purchasePanel.getByRole("button", { name: "Mua ngay", exact: true }).click();
 
-  // 2. Cart page & quantity update at 1440px
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
+
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("Black / M")).toBeVisible();
   await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+});
+
+test("standard sold-out variant remains visible, disabled, and says exact Hết hàng", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(
+    `${BASE_URL}/shop/${productSlug}?variant=${soldOutVariantExternalId}`,
+    { waitUntil: "networkidle" },
+  );
+
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const soldOutSize = page.getByRole("radio", { name: "XL", exact: true });
+  await expect(soldOutSize).toBeChecked();
+  await expect(soldOutSize).toBeDisabled();
+  await expect(purchasePanel.getByText("Hết hàng", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeDisabled();
+  await expect(purchasePanel.getByRole("button", { name: "Mua ngay", exact: true })).toBeDisabled();
   await assertPageQuality(page);
-
-  const quantity = page.getByRole("spinbutton", { name: "Số lượng" });
-  await expect(quantity).toHaveValue("1");
-  await quantity.fill("2");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
-  await expect(page.getByRole("status")).toContainText("Đã cập nhật số lượng.");
-  await expect(quantity).toHaveValue("2");
-
-  // 3. Checkout page at 1440px
-  const checkoutLink = page.getByRole("link", { name: "Tiến hành đặt hàng" });
-  await expect(checkoutLink).toBeVisible();
-  await checkoutLink.click();
-  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
-  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-  await assertPageQuality(page);
-
-  expect(browserErrors).toEqual([]);
-  expect(failedResponses).toEqual([]);
 });

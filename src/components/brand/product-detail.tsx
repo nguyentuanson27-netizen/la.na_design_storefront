@@ -57,7 +57,7 @@ export function BrandProductDetail({
 
       <article className="min-w-0 pb-10 lg:pt-4">
         {beforePanel}
-        <div className="mt-10">
+        <div className="contents">
           <PurchasePanelView controller={controller} />
         </div>
         {afterPanel}

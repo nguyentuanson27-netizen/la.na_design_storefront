@@ -68,6 +68,12 @@ const securityHeaders = [
 
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // Next 16 dev allows exactly one dev server per build directory, and enforces it with a lock file
+  // under that directory. The browser suite spawns a dev server per spec file against this one
+  // project, so without a per-spec directory they contend for a single lock -- and a server that
+  // has to be SIGKILLed leaves the lock behind, which makes the *next* spec's server refuse to
+  // start at all. Defaults to `.next`, so a build with this unset is exactly what it was.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   // Frozen into the bundle at build time, from the same value that assembled the policy above.
   // NEXT_PUBLIC_ alone is not enough: Next only inlines those keys when they exist at build, so an
   // id supplied only at runtime would still reach the server component and render a loader script
