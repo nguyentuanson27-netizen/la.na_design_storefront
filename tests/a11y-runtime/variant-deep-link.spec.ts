@@ -114,9 +114,9 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
-/** The hero frame the gallery is currently showing, whatever index it landed on. */
+/** The first editorial image is the gallery's current variant/default lead image. */
 function heroImage(page: Page) {
-  return page.locator('[aria-roledescription="carousel"] img').first();
+  return page.locator('[aria-label^="Bộ sưu tập hình ảnh "] img').first();
 }
 
 async function expectHeroToShow(page: Page, urlFragment: string) {
