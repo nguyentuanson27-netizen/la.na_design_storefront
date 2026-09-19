@@ -72,12 +72,6 @@ function render(data: ProductRouteData) {
               </ul>
             </div>
           ) : null}
-          {editorial.sizeGuide ? (
-            <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
-              <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Hướng dẫn chọn kích cỡ</h3>
-              <p className="max-w-xl text-sm leading-6 text-black/70">{editorial.sizeGuide}</p>
-            </div>
-          ) : null}
           {editorial.careInstructions ? (
             <div className="grid gap-3 border-b border-black/15 py-6 sm:grid-cols-[8rem_1fr]">
               <h3 className="text-xs font-semibold uppercase tracking-[0.14em]">Bảo quản</h3>
@@ -118,6 +112,7 @@ function render(data: ProductRouteData) {
         productName={data.name}
         initialGalleryIndex={data.initialGalleryIndex}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
+        sizeGuide={editorial.sizeGuide}
         beforePanel={beforePanel}
         afterPanel={afterPanel}
       />

@@ -9,6 +9,7 @@ import {
   useVariantSelection,
   type UseVariantSelectionInput,
 } from "@/components/headless/use-variant-selection";
+import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
 /**
  * The product detail's client coordinator: one selection, two components.
@@ -30,6 +31,7 @@ type BrandProductDetailProps = Readonly<{
   /** Server-resolved from a `?variant=` deep link; the gallery clamps anything out of range. */
   initialGalleryIndex: number;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
+  sizeGuide: ProductMappedSizeGuide | null;
   beforePanel: ReactNode;
   afterPanel: ReactNode;
 }>;
@@ -40,6 +42,7 @@ export function BrandProductDetail({
   productName,
   initialGalleryIndex,
   galleryIndexByVariantId,
+  sizeGuide,
   beforePanel,
   afterPanel,
 }: BrandProductDetailProps) {
@@ -58,7 +61,7 @@ export function BrandProductDetail({
       <article className="min-w-0 pb-10 lg:pt-4">
         {beforePanel}
         <div className="contents">
-          <PurchasePanelView controller={controller} />
+          <PurchasePanelView controller={controller} sizeGuide={sizeGuide} />
         </div>
         {afterPanel}
       </article>

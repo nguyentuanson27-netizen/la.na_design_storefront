@@ -104,7 +104,7 @@ test.beforeAll(async () => {
         create: {
           status: "PUBLISHED",
           editorialDescription: "Áo khoác thử nghiệm cho PDP language contract.",
-          sizeGuide: "Chọn kích cỡ thường mặc; phom thử nghiệm tiêu chuẩn.",
+          sizeGuide: "ao-dai",
           careInstructions: "Giặt nhẹ và phơi nơi thoáng mát.",
         },
       },
@@ -175,7 +175,9 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
     page.getByText(`${BRAND.identity.name} / Sản phẩm`, { exact: true }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 3, name: "Hướng dẫn chọn kích cỡ" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
+  ).toBeVisible();
   await expect(page.getByRole("heading", { level: 3, name: "Bảo quản" })).toBeVisible();
   await expect(
     page.getByText(
@@ -188,6 +190,9 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
 
   await expect(page.getByText("Shop", { exact: true })).toHaveCount(0);
   await expect(page.getByText("La.na Design / Product", { exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole("heading", { name: "Hướng dẫn chọn kích cỡ", exact: true }),
+  ).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 3, name: "Size guide" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 3, name: "Care" })).toHaveCount(0);
   await expect(page.getByText(/phía máy chủ|client/)).toHaveCount(0);

@@ -29,6 +29,11 @@ const sizeOnlyProductSlug = `commerce-runtime-size-only-product-${runId}`;
 const sizeOnlyProductName = `Commerce Runtime Size Only Tee ${runId}`;
 const sizeOnlyVariantExternalId = `commerce-runtime-size-only-variant-${runId}`;
 const sizeOnlyWarehouseExternalId = `commerce-runtime-size-only-warehouse-${runId}`;
+const unmappedProductExternalId = `commerce-runtime-unmapped-product-${runId}`;
+const unmappedProductSlug = `commerce-runtime-unmapped-product-${runId}`;
+const unmappedProductName = `Commerce Runtime Unmapped Dress ${runId}`;
+const unmappedVariantExternalId = `commerce-runtime-unmapped-variant-${runId}`;
+const unmappedWarehouseExternalId = `commerce-runtime-unmapped-warehouse-${runId}`;
 const syncedAt = new Date("2026-08-13T03:00:00.000Z");
 
 let server: ChildProcess | undefined;
@@ -160,7 +165,9 @@ test.beforeAll(async () => {
       syncedAt,
       content: {
         create: {
+          status: "PUBLISHED",
           editorialDescription: "Mobile runtime purchase-path regression product.",
+          sizeGuide: "ao-dai",
         },
       },
     },
@@ -220,7 +227,9 @@ test.beforeAll(async () => {
       syncedAt,
       content: {
         create: {
+          status: "PUBLISHED",
           editorialDescription: "Size-only storefront regression product.",
+          sizeGuide: "set-vay-form-rong",
         },
       },
     },
@@ -245,6 +254,56 @@ test.beforeAll(async () => {
       quantity: 2,
       syncedAt,
     },
+  });
+
+  const unmappedProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: unmappedProductExternalId,
+      slug: unmappedProductSlug,
+      name: unmappedProductName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "PUBLISHED",
+          editorialDescription: "Same-category product with no size-guide mapping.",
+          sizeGuide: null,
+        },
+      },
+    },
+  });
+  const unmappedVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: unmappedVariantExternalId,
+      productId: unmappedProduct.id,
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 710_000,
+      pancakeRetailPriceAfterDiscount: 710_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: unmappedVariant.id,
+      pancakeWarehouseId: unmappedWarehouseExternalId,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
+  // All three deliberately share one category. F7c must use only ProductContent.sizeGuide:
+  // category membership cannot select or fill in a guide.
+  await prisma.productCategoryMembership.createMany({
+    data: [
+      { productId: product.id, categoryKey: "vayDam" },
+      { productId: sizeOnlyProduct.id, categoryKey: "vayDam" },
+      { productId: unmappedProduct.id, categoryKey: "vayDam" },
+    ],
   });
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
@@ -329,8 +388,8 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sizeGroup.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
@@ -368,14 +427,15 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  const size = page.getByRole("radio", { name: "L" });
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const size = sizeGroup.getByRole("radio", { name: "L" });
   const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
   await expect(size).not.toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
-  await expect(purchasePanel.getByRole("group", { name: "Kích cỡ" })).toBeFocused();
-  await page.getByText("L", { exact: true }).click();
+  await expect(sizeGroup).toBeFocused();
+  await sizeGroup.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
@@ -396,7 +456,8 @@ test("size-only product hides Color and becomes purchasable after selecting Size
 });
 
 test("desktop purchase panel is sticky and validates size before add-to-cart", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+  // Keep a desktop width but enough vertical scroll budget to actually cross the sticky threshold.
+  await page.setViewportSize({ width: 1440, height: 700 });
 
   const browserErrors: string[] = [];
   const postRequests: string[] = [];
@@ -421,10 +482,19 @@ test("desktop purchase panel is sticky and validates size before add-to-cart", a
     documentTop: element.getBoundingClientRect().top + window.scrollY,
   }));
   expect(stickyMetrics.position).toBe("sticky");
-  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyMetrics.documentTop);
-  await page.waitForTimeout(50);
-  const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
-  expect(Math.abs(stuckTop - stickyMetrics.top)).toBeLessThanOrEqual(2);
+  const stickyThreshold = stickyMetrics.documentTop - stickyMetrics.top;
+  const maxScrollY = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  );
+  expect(maxScrollY).toBeGreaterThan(stickyThreshold + 24);
+
+  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyThreshold + 24);
+  await expect
+    .poll(async () => {
+      const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
+      return Math.abs(stuckTop - stickyMetrics.top);
+    })
+    .toBeLessThanOrEqual(2);
 
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   await expect(addToBag).toHaveText("Thêm vào giỏ");
@@ -464,8 +534,11 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await purchasePanel
+    .getByRole("group", { name: "Kích cỡ" })
+    .getByText("M", { exact: true })
+    .click();
   await purchasePanel.getByRole("button", { name: "Mua ngay", exact: true }).click();
 
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
@@ -493,4 +566,97 @@ test("standard sold-out variant remains visible, disabled, and says exact Hết 
   await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeDisabled();
   await expect(purchasePanel.getByRole("button", { name: "Mua ngay", exact: true })).toBeDisabled();
   await assertPageQuality(page);
+});
+
+
+test("F7c mapped size-guide modal uses the exact product mapping and restores focus", async ({ page }) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const trigger = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  await expect(trigger).toBeVisible();
+  await trigger.focus();
+  await trigger.click();
+
+  const dialog = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Áo dài" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("data-size-guide-id", "ao-dai");
+  await expect(dialog.getByRole("heading", { name: "Áo dài", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("columnheader", { name: "S", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("rowheader", { name: "Ngực (cm)", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
+
+  for (let index = 0; index < 4; index += 1) {
+    await page.keyboard.press("Tab");
+    expect(
+      await dialog.evaluate((element) => element.contains(document.activeElement)),
+      "native modal focus must remain inside the dialog",
+    ).toBe(true);
+  }
+
+  await page.keyboard.press("Shift+Tab");
+  expect(
+    await dialog.evaluate((element) => element.contains(document.activeElement)),
+    "reverse tabbing must remain inside the dialog",
+  ).toBe(true);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+
+  await trigger.click();
+  await dialog.getByRole("button", { name: "Đóng", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await assertPageQuality(page);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
+});
+
+test("F7c different manual mappings stay product-specific and an unmapped same-category product has no trigger", async ({
+  page,
+}) => {
+  const browserErrors: string[] = [];
+  const failedResponses: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") browserErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => browserErrors.push(error.message));
+  page.on("response", (response) => {
+    if (response.status() >= 400) failedResponses.push(`${response.status()} ${response.url()}`);
+  });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
+  const mappedTrigger = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  await mappedTrigger.click();
+  const mappedDialog = page.getByRole("dialog", {
+    name: "Hướng dẫn chọn size: Set/Váy form rộng",
+  });
+  await expect(mappedDialog).toBeVisible();
+  await expect(mappedDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-rong");
+  expect(
+    await mappedDialog.evaluate((element) => element.scrollWidth <= element.clientWidth),
+    "modal shell must not create horizontal overflow",
+  ).toBe(true);
+  await page.keyboard.press("Escape");
+
+  await page.goto(`${BASE_URL}/shop/${unmappedProductSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { level: 1, name: unmappedProductName })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await assertPageQuality(page);
+  expect(browserErrors).toEqual([]);
+  expect(failedResponses).toEqual([]);
 });

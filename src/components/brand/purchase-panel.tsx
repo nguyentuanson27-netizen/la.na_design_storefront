@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, type KeyboardEvent } from "react";
 
 import {
   useVariantSelection,
@@ -8,6 +8,7 @@ import {
   type UseVariantSelectionInput,
   type VariantSelectionController,
 } from "@/components/headless/use-variant-selection";
+import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
 /**
  * Brand PDP purchase presentation.
@@ -17,7 +18,157 @@ import {
  * methods, so neither surface can drift into a second selection or cart path.
  */
 
-export function PurchasePanelView({ controller }: Readonly<{ controller: VariantSelectionController }>) {
+const DIALOG_FOCUSABLE_SELECTOR = [
+  "button:not([disabled])",
+  "[href]",
+  "input:not([disabled])",
+  "select:not([disabled])",
+  "textarea:not([disabled])",
+  '[tabindex]:not([tabindex="-1"])',
+].join(",");
+
+function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGuide }>) {
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
+
+  function openDialog() {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    dialog.showModal();
+    closeButtonRef.current?.focus();
+  }
+
+  function closeDialog() {
+    dialogRef.current?.close();
+  }
+
+  function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
+    if (event.key !== "Tab") return;
+
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+
+    const focusable = Array.from(
+      dialog.querySelectorAll<HTMLElement>(DIALOG_FOCUSABLE_SELECTOR),
+    ).filter((element) => element.getClientRects().length > 0);
+
+    if (focusable.length === 0) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const first = focusable[0]!;
+    const last = focusable[focusable.length - 1]!;
+    const active = document.activeElement;
+
+    if (event.shiftKey) {
+      if (active === first || !dialog.contains(active)) {
+        event.preventDefault();
+        last.focus();
+      }
+      return;
+    }
+
+    if (active === last || !dialog.contains(active)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  return (
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+        onClick={openDialog}
+      >
+        Hướng dẫn chọn size
+      </button>
+
+      <dialog
+        ref={dialogRef}
+        aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
+        data-size-guide-id={guide.id}
+        tabIndex={-1}
+        className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45"
+        onClose={() => triggerRef.current?.focus()}
+        onKeyDown={containFocus}
+      >
+        <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
+          <div className="flex items-start justify-between gap-6">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/55">
+                Hướng dẫn chọn size
+              </p>
+              <h2 className="mt-2 font-serif text-3xl tracking-[-0.03em]">{guide.chart.title}</h2>
+            </div>
+            <button
+              ref={closeButtonRef}
+              type="button"
+              className="min-h-11 shrink-0 border border-black/30 px-4 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              onClick={closeDialog}
+            >
+              Đóng
+            </button>
+          </div>
+
+          <div className="mt-5 space-y-3 text-sm leading-6 text-black/70">
+            <p>{guide.circumferenceSemanticsNote}</p>
+            {guide.tolerance ? (
+              <p>
+                <strong>Dung sai:</strong> {guide.tolerance.note}
+              </p>
+            ) : null}
+            <p>{guide.guidanceNote}</p>
+          </div>
+
+          <div className="mt-6 max-w-full overflow-x-auto">
+            <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
+              <caption className="sr-only">{guide.chart.title}</caption>
+              <thead>
+                <tr className="border-b border-black/15 bg-black/[0.03]">
+                  <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold">
+                    Thông số
+                  </th>
+                  {guide.chart.sizes.map((size) => (
+                    <th key={size} scope="col" className="px-4 py-3.5 text-right font-semibold">
+                      {size}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-black/10">
+                {guide.chart.rows.map((row) => (
+                  <tr key={row.parameter}>
+                    <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
+                      {row.parameter}
+                    </th>
+                    {guide.chart.sizes.map((size) => (
+                      <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">
+                        {row.values[size]}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
+export function PurchasePanelView({
+  controller,
+  sizeGuide,
+}: Readonly<{
+  controller: VariantSelectionController;
+  sizeGuide: ProductMappedSizeGuide | null;
+}>) {
   const {
     view,
     selection,
@@ -182,6 +333,12 @@ export function PurchasePanelView({ controller }: Readonly<{ controller: Variant
           </>
         )}
 
+        {sizeGuide ? (
+          <div className="relative h-0">
+            <MappedSizeGuideDialog guide={sizeGuide} />
+          </div>
+        ) : null}
+
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button
             className="min-h-12 w-full border border-black bg-black px-4 text-sm font-semibold text-white hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
@@ -245,5 +402,5 @@ export function PurchasePanelView({ controller }: Readonly<{ controller: Variant
 
 /** The panel standing alone: owns its own selection state. */
 export function BrandPurchasePanel(props: UseVariantSelectionInput) {
-  return <PurchasePanelView controller={useVariantSelection(props)} />;
+  return <PurchasePanelView controller={useVariantSelection(props)} sizeGuide={null} />;
 }

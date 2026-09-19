@@ -84,11 +84,10 @@ test("a product with nothing written up reports no notes section", () => {
   assert.equal(model.editorial.hasNotes, false);
 });
 
-test("any one editorial field is enough to open the notes section", () => {
+test("any one product-note field is enough to open the notes section", () => {
   const cases: Partial<ProductViewModelInput>[] = [
     { material: "100% cotton" },
     { craftDetails: ["May tay"] },
-    { sizeGuide: "Chọn size lớn hơn nếu..." },
     { careInstructions: "Giặt tay" },
   ];
 
@@ -99,6 +98,14 @@ test("any one editorial field is enough to open the notes section", () => {
       `${Object.keys(only)[0]} alone must open the notes`,
     );
   }
+});
+
+test("F7c mapped size guide is independent of the product notes section", () => {
+  const model = buildProductViewModel(input({ sizeGuide: "ao-dai" }));
+
+  assert.equal(model.editorial.hasNotes, false);
+  assert.equal(model.editorial.sizeGuide?.id, "ao-dai");
+  assert.equal(model.editorial.sizeGuide?.chart.id, "ao-dai");
 });
 
 test("the editorial description alone does not open the notes section", () => {
