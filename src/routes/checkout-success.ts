@@ -28,7 +28,6 @@ export async function loadCheckoutSuccessRoute({
           state: true,
           preorderSnapshot: {
             select: {
-              confirmedAt: true,
               preorderReadyAt: true,
               shippingInnerCityMinDays: true,
               shippingInnerCityMaxDays: true,
@@ -37,7 +36,6 @@ export async function loadCheckoutSuccessRoute({
               lines: {
                 orderBy: [{ createdAt: "asc" }, { id: "asc" }],
                 select: {
-                  variantId: true,
                   quantity: true,
                   state: true,
                   preorderReadyAt: true,
