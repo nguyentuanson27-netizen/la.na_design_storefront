@@ -78,6 +78,8 @@ test.afterAll(async () => {
 });
 
 test("F9a footer renders four final groups, canonical destinations and exact legal block", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+
   const browserErrors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") browserErrors.push(message.text());
@@ -96,12 +98,10 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     await expect(footer.getByRole("heading", { level: 2, name: heading, exact: true })).toBeVisible();
   }
 
-  // F1/F9a: current repository authority uses the approved display mark as the master-wordmark
-  // fallback. Do not derive a new image from the favicon/social card while no binary master logo is
-  // committed.
-  const brandHome = footer.getByRole("link", { name: "La.na Design", exact: true });
-  await expect(brandHome).toBeVisible();
-  await expect(brandHome).toContainText("La.na Design");
+  // The approved master-logo binary is not present in any accessible repository/project source.
+  // This test deliberately does not treat the temporary text wordmark as proof of that blocked
+  // acceptance criterion. The PR stays draft until the approved asset can be restored.
+  await expect(footer.getByRole("link", { name: "La.na Design", exact: true })).toBeVisible();
   await expect(footer).toContainText("Charismatic in every yard of cloth.");
 
   // Support facts stay projected from Brand Config rather than repeated in presentation.
