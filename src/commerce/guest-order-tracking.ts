@@ -112,7 +112,6 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
             lines: {
               orderBy: [{ createdAt: "asc" }, { id: "asc" }],
               select: {
-                variantId: true,
                 quantity: true,
                 state: true,
                 preorderReadyAt: true,
