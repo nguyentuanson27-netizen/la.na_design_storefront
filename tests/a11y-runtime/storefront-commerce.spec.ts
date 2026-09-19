@@ -373,8 +373,8 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sizeGroup.getByText("M", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
@@ -412,14 +412,15 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  const size = page.getByRole("radio", { name: "L" });
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const size = sizeGroup.getByRole("radio", { name: "L" });
   const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
   await expect(size).not.toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
-  await expect(purchasePanel.getByRole("group", { name: "Kích cỡ" })).toBeFocused();
-  await page.getByText("L", { exact: true }).click();
+  await expect(sizeGroup).toBeFocused();
+  await sizeGroup.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
@@ -508,8 +509,11 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  await page.getByText("Black", { exact: true }).click();
-  await page.getByText("M", { exact: true }).click();
+  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await purchasePanel
+    .getByRole("group", { name: "Kích cỡ" })
+    .getByText("M", { exact: true })
+    .click();
   await purchasePanel.getByRole("button", { name: "Mua ngay", exact: true }).click();
 
   await expect(page).toHaveURL(`${BASE_URL}/checkout`);
@@ -565,6 +569,7 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   await expect(dialog.getByRole("heading", { name: "Áo dài", exact: true })).toBeVisible();
   await expect(dialog.getByRole("columnheader", { name: "S", exact: true })).toBeVisible();
   await expect(dialog.getByRole("rowheader", { name: "Ngực (cm)", exact: true })).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
 
   for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
@@ -573,6 +578,12 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
       "native modal focus must remain inside the dialog",
     ).toBe(true);
   }
+
+  await page.keyboard.press("Shift+Tab");
+  expect(
+    await dialog.evaluate((element) => element.contains(document.activeElement)),
+    "reverse tabbing must remain inside the dialog",
+  ).toBe(true);
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
