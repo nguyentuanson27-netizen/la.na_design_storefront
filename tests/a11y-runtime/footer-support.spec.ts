@@ -108,7 +108,11 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   await expect(brandHome).toBeVisible();
   const masterLogo = brandHome.getByRole("img", { name: BRAND.identity.name, exact: true });
   await expect(masterLogo).toHaveAttribute("src", "/brand/la-na-design-master-logo.png");
+  await masterLogo.scrollIntoViewIfNeeded();
   await expect(masterLogo).toBeVisible();
+  await expect.poll(() =>
+    masterLogo.evaluate((image) => (image as HTMLImageElement).naturalWidth),
+  ).toBe(4185);
   const masterLogoIntrinsic = await masterLogo.evaluate((image) => {
     const element = image as HTMLImageElement;
     return {
