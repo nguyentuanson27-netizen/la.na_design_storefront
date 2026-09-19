@@ -232,8 +232,9 @@ test("a valid deep link survives hydration with its own option, price and photo"
   await expect(page.getByRole("radio", { name: "Đen", exact: true })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
   await expect(page.getByRole("radio", { name: "L", exact: true })).not.toBeChecked();
-  await expect(page.getByText(/890\.000/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchasePanel.getByText(/890\.000/)).toBeVisible();
+  await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
   await expectHeroToShow(page, "u12b-medium.jpg");
 
   expect(browserErrors, `browser errors: ${browserErrors.join(" | ")}`).toEqual([]);
@@ -245,7 +246,8 @@ test("a different variation opens on its own photo and price, not the first one'
 
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
-  await expect(page.getByText(/910\.000/)).toBeVisible();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchasePanel.getByText(/910\.000/)).toBeVisible();
   await expectHeroToShow(page, "u12b-large.jpg");
 });
 
@@ -255,10 +257,11 @@ test("a sold-out variation stays addressable, shows its exact price and refuses 
   await openDeepLink(page, SOLD_OUT_VARIATION);
 
   await expect(page.getByRole("radio", { name: "XL", exact: true })).toBeChecked();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   // Its own exact price, not the product's "from" range: the shopper asked about this variant.
-  await expect(page.getByText(/777\.000/)).toBeVisible();
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
-  await expect(page.getByRole("status")).toContainText("Lựa chọn này đã hết hàng.");
+  await expect(purchasePanel.getByText(/777\.000/)).toBeVisible();
+  await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
+  await expect(purchasePanel.getByRole("status")).toHaveText("Hết hàng");
   await assertPageQuality(page);
 });
 
@@ -268,7 +271,8 @@ test("a forged variation degrades to the ordinary product page", async ({ page }
   for (const name of ["Đen", "M", "L", "XL"]) {
     await expect(page.getByRole("radio", { name, exact: true })).not.toBeChecked();
   }
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
   await expectHeroToShow(page, "u12b-primary.jpg");
 });
 
@@ -281,7 +285,8 @@ test("the shopper's own choice takes the selection back from the URL", async ({ 
 
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
-  await expect(page.getByText(/910\.000/)).toBeVisible();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchasePanel.getByText(/910\.000/)).toBeVisible();
   // The preselection is an initial value, not a controlled prop, so the URL must not snap back.
   expect(new URL(page.url()).searchParams.get("variant")).toBe(MEDIUM_VARIATION);
 });

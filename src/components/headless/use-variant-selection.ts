@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 
 import { buildMetaAddToCartPixelParameters } from "@/commerce/meta-pixel-parameters";
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
@@ -43,6 +44,8 @@ export type UseVariantSelectionInput = Readonly<{
  * selection state -- the panel and the gallery showing the same colour -- calls `useVariantSelection`
  * once and passes the result to both, which is only possible if the shape has a name.
  */
+export type PurchaseAttemptResult = "missing-size" | "blocked" | "submitted";
+
 export type VariantSelectionController = ReturnType<typeof useVariantSelection>;
 
 export function useVariantSelection({
@@ -53,12 +56,14 @@ export function useVariantSelection({
   initialSelection = null,
   commerceTrackingEnabled = false,
 }: UseVariantSelectionInput) {
+  const router = useRouter();
   const [state, setState] = useState<VariantSelectionState>({
     kindKey: initialSelection?.kindKey ?? null,
     color: initialSelection?.color ?? null,
     size: initialSelection?.size ?? null,
   });
   const [message, setMessage] = useState("");
+  const [sizeValidationMessage, setSizeValidationMessage] = useState("");
   const [isPending, startTransition] = useTransition();
 
   const view = useMemo(
@@ -91,6 +96,7 @@ export function useVariantSelection({
   function chooseSize(value: string) {
     setState((current) => resolveSelectionAfterSizeChange({ options, selection: current, size: value }));
     setMessage("");
+    setSizeValidationMessage("");
   }
 
   /**
@@ -136,16 +142,34 @@ export function useVariantSelection({
     }
   }
 
-  function addToBag() {
-    if (!view.canAdd || !view.selectedVariantId || isPending) return;
+  const requiresSize = view.sizes.length > 0;
+  const isMissingRequiredSize = requiresSize && state.size === null;
+  const hasResolvedKind = !view.hasKindOptions || state.kindKey !== null;
+  const canAttemptPurchase =
+    !isPending &&
+    (view.canAdd || (isMissingRequiredSize && hasResolvedKind && view.hasPurchasableVariant));
+
+  function attemptPurchase(navigateToCheckout: boolean): PurchaseAttemptResult {
+    if (isMissingRequiredSize) {
+      setMessage("");
+      setSizeValidationMessage("Vui lòng chọn size");
+      return "missing-size";
+    }
+    if (!view.canAdd || !view.selectedVariantId || isPending) return "blocked";
+
     const variantId = view.selectedVariantId;
     setMessage("");
+    setSizeValidationMessage("");
     startTransition(async () => {
       try {
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
-          setMessage("Đã thêm sản phẩm vào giỏ hàng.");
           reportAcceptedAdd(result);
+          if (navigateToCheckout) {
+            router.push("/checkout");
+          } else {
+            setMessage("Đã thêm sản phẩm vào giỏ hàng.");
+          }
           return;
         }
         setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");
@@ -153,17 +177,30 @@ export function useVariantSelection({
         setMessage("Không thể thêm vào giỏ hàng lúc này. Vui lòng thử lại.");
       }
     });
+    return "submitted";
+  }
+
+  function addToBag(): PurchaseAttemptResult {
+    return attemptPurchase(false);
+  }
+
+  function buyNow(): PurchaseAttemptResult {
+    return attemptPurchase(true);
   }
 
   return {
     view,
     selection: state,
     isPending,
+    canAttemptPurchase,
     /** The add-to-cart outcome message, or "" when there is nothing to say. */
     message,
+    /** Client validation only; cart authority still lives in the server action. */
+    sizeValidationMessage,
     chooseKind,
     chooseColor,
     chooseSize,
     addToBag,
+    buyNow,
   };
 }

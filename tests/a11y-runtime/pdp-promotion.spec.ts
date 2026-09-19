@@ -154,11 +154,12 @@ test("U15 promoted deep link renders the central quote with accessible base/sale
   await page.goto(`${BASE_URL}/shop/${slug}?variant=${variationExternalId}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
-  await expect(page.getByText(/500\.000/)).toBeVisible();
-  await expect(page.getByText(/450\.000/)).toBeVisible();
-  await expect(page.getByText("Giá gốc", { exact: false })).toBeAttached();
-  await expect(page.getByText("Giá khuyến mãi", { exact: false })).toBeAttached();
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchasePanel.getByText(/500\.000/)).toBeVisible();
+  await expect(purchasePanel.getByText(/450\.000/)).toBeVisible();
+  await expect(purchasePanel.getByText("Giá gốc", { exact: false })).toBeAttached();
+  await expect(purchasePanel.getByText("Giá khuyến mãi", { exact: false })).toBeAttached();
+  await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
 
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibility.violations).toEqual([]);
