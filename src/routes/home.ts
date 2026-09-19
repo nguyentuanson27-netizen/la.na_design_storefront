@@ -8,13 +8,18 @@ import {
   listConfiguredHomepageNewArrivals,
   readConfiguredCategoryHeroMedia,
 } from "@/commerce/storefront-catalog-runtime";
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "@/commerce/storefront-promotion-freshness";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildHomeHeroSlides, type HomeHeroSlide } from "./home-hero.ts";
-import { buildHomeViewModel, type HomeViewModel } from "./home-model.ts";
+import {
+  buildHomeViewModel,
+  resolveHomeRefreshAfterMs,
+  type HomeViewModel,
+} from "./home-model.ts";
 
 /**
  * The home route's loader: every fetch, the tracking event and the refresh window, in one place.
@@ -65,7 +70,14 @@ function toHeroCandidates(
   }));
 }
 
-const emptyGrid = { products: [], pricingRule: undefined } as const;
+// A grid that could not be read prices nothing, so it has no campaign boundary of its own and
+// reports the reviewed ceiling rather than 0 -- an unreadable grid must not pin the whole page to
+// an immediate refresh.
+const emptyGrid = {
+  products: [],
+  pricingRule: undefined,
+  refreshAfterMs: MAX_STOREFRONT_PROMOTION_REFRESH_MS,
+} as const;
 
 async function loadNewArrivals(now: Date) {
   try {
@@ -73,7 +85,7 @@ async function loadNewArrivals(now: Date) {
   } catch (error) {
     // An unconfigured Pancake shop is a deployment state, not a broken page: the homepage still
     // renders its brand copy, editorial blocks and collection navigation with no merchandising.
-    if (error instanceof PancakeConfigError) return { ...emptyGrid, refreshAfterMs: 60_000 };
+    if (error instanceof PancakeConfigError) return emptyGrid;
     throw error;
   }
 }
@@ -143,7 +155,10 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
       categoryHeroMedia,
       brandFacts: buildPublicBrandFacts(readGuestShippingPolicy()),
     },
-    refreshAfterMs: newArrivals.refreshAfterMs,
+    // Both grids are priced, so both carry a boundary. The soonest one governs the page: sealing
+    // only new arrivals would let a Featured campaign start or end while the page holds the old
+    // price until the 60s ceiling.
+    refreshAfterMs: resolveHomeRefreshAfterMs([newArrivals.refreshAfterMs, featured.refreshAfterMs]),
     trackingEvent: newArrivalsTracking.listEvent,
     // The homepage publishes no JSON-LD of its own; the root layout carries the site graph.
     structuredData: [],

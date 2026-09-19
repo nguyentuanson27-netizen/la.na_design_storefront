@@ -269,11 +269,22 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
   return { products, pricingRule, refreshAfterMs };
 }
 
-/** Featured products with the pricing rule their cards need. */
+/**
+ * Featured products with the pricing rule their cards need, and the freshness window that pricing
+ * is only valid for.
+ *
+ * `refreshAfterMs` is returned rather than dropped because Featured is priced independently of the
+ * `Hàng mới về` grid: a campaign boundary can fall inside Featured's products and nowhere near new
+ * arrivals. A caller rendering both has to take the soonest of the two windows, and cannot do that
+ * with a window it was never handed.
+ */
 export async function listConfiguredHomepageFeaturedWithPricing(now?: Date) {
   const products = await listConfiguredHomepageFeaturedProducts();
-  const { pricingRule } = await resolveStorefrontPromotionForProducts({ products, now });
-  return { products, pricingRule };
+  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
+    products,
+    now,
+  });
+  return { products, pricingRule, refreshAfterMs };
 }
 
 export async function resolveConfiguredStorefrontProductSlug(slug: string) {

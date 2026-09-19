@@ -97,6 +97,14 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
 - [x] **F6a** Empty-aware hero: 0 omit / 1 static / 2–3 slider; reduced-motion safe. Slides come
   from published collections carrying hero media until a campaign owner is approved; the swap is
   one function in `home.ts`.
+  - **Debt — the hero's content authority is borrowed.** ADR 0013 scopes
+    `CollectionDefinition.heroImageUrl` as *collection-owned* media, so reading it as homepage
+    campaign media crosses an ownership boundary: publishing and positioning a collection also
+    publishes it as a homepage campaign, with no separate approval step. Raised in review on
+    PR #32 and **accepted by the owner as an interim** rather than shipping a hero that can never
+    render. Retire it by giving campaigns their own authority and repointing
+    `toHeroCandidates()` in `src/routes/home.ts` — the validator, the component and every test
+    against them are written to `HomeHeroSlideCandidate` and need no change.
 - [x] **F6b** Homepage lower sections in exact approved order; no fake content. Two follow-ups
   left open and deliberately not invented: §19's short Vietnamese paragraph for the Áo dài
   section awaits owner-approved copy, and the Featured grid reports no `view_item_list` because

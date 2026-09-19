@@ -1,8 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "../../src/commerce/storefront-promotion-freshness.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
-import { buildHomeViewModel, type HomeProduct } from "../../src/routes/home-model.ts";
+import {
+  buildHomeViewModel,
+  resolveHomeRefreshAfterMs,
+  type HomeProduct,
+} from "../../src/routes/home-model.ts";
 import type { TrackingEvent } from "../../src/tracking/commerce-events.ts";
 
 /**
@@ -40,6 +45,8 @@ function product(n: number, withPhoto: boolean): HomeProduct {
 }
 
 const noEvents = new Map<string, TrackingEvent>();
+
+const MAX = MAX_STOREFRONT_PROMOTION_REFRESH_MS;
 
 const grid = (products: readonly HomeProduct[]) => ({ products, selectEventBySlug: noEvents });
 
@@ -184,4 +191,45 @@ test("the view model is frozen so markup cannot mutate a decision it was handed"
   assert.equal(Object.isFrozen(model), true);
   assert.equal(Object.isFrozen(model.newArrivals), true);
   assert.equal(Object.isFrozen(model.featured), true);
+});
+
+/* ------------------------------------------------------- the page's refresh window */
+
+/**
+ * Review regression: the homepage prices two grids, and only one of their refresh windows used to
+ * reach `sealRoute`. A Featured campaign boundary a few seconds out was therefore ignored whenever
+ * new arrivals had no boundary of their own, and the page held the old Featured price until the
+ * 60s ceiling -- the exact staleness the freshness contract forbids.
+ */
+
+test("a Featured boundary sooner than any new-arrivals boundary governs the page", () => {
+  // Featured has a campaign starting in 5s; new arrivals have nothing near, so they report the
+  // ceiling. Before the fix the page sealed 60_000 and missed the boundary entirely.
+  assert.equal(resolveHomeRefreshAfterMs([MAX, 5_000]), 5_000);
+});
+
+test("a new-arrivals boundary sooner than any Featured boundary governs the page", () => {
+  assert.equal(resolveHomeRefreshAfterMs([5_000, MAX]), 5_000);
+});
+
+test("with boundaries in both grids the page takes the soonest, not the last one read", () => {
+  assert.equal(resolveHomeRefreshAfterMs([30_000, 5_000]), 5_000);
+  assert.equal(resolveHomeRefreshAfterMs([5_000, 30_000]), 5_000);
+});
+
+test("a boundary already reached refreshes immediately rather than being rounded up", () => {
+  assert.equal(resolveHomeRefreshAfterMs([MAX, 0]), 0);
+});
+
+test("no boundary anywhere still revalidates within the reviewed ceiling", () => {
+  assert.equal(resolveHomeRefreshAfterMs([MAX, MAX]), MAX);
+});
+
+test("a page with no priced grid at all revalidates within the ceiling rather than never", () => {
+  assert.equal(resolveHomeRefreshAfterMs([]), MAX);
+});
+
+test("an unusable window is ignored instead of poisoning the page's refresh", () => {
+  assert.equal(resolveHomeRefreshAfterMs([Number.NaN, 5_000]), 5_000);
+  assert.equal(resolveHomeRefreshAfterMs([-1, MAX]), MAX);
 });

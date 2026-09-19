@@ -1,4 +1,5 @@
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
+import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "../commerce/storefront-promotion-freshness.ts";
 import type {
   StorefrontPricingRule,
   StorefrontVariantFacts,
@@ -62,6 +63,30 @@ export type HomeViewModelInput = Readonly<{
   featured: CardGridInput;
   collections: readonly HomeCollectionLink[];
 }>;
+
+/**
+ * How long the homepage may wait before asking the server for prices again.
+ *
+ * The page carries two independently priced grids (§18 and §20), and each resolves its own next
+ * campaign boundary against the request instant. They are not interchangeable: a campaign can
+ * start or end for a Featured product while nothing near happens to new arrivals. Sealing only one
+ * grid's window lets the other hold a price past its own boundary until the 60s ceiling, which is
+ * exactly the staleness the freshness contract exists to prevent -- so the page takes the soonest
+ * window any priced grid reported.
+ *
+ * An empty page (no priced grids at all) still revalidates within the reviewed ceiling rather than
+ * never, and a window that is not a usable number is ignored instead of poisoning the minimum.
+ */
+export function resolveHomeRefreshAfterMs(refreshWindows: readonly number[]): number {
+  let soonest = MAX_STOREFRONT_PROMOTION_REFRESH_MS;
+
+  for (const window of refreshWindows) {
+    if (!Number.isFinite(window) || window < 0) continue;
+    if (window < soonest) soonest = window;
+  }
+
+  return soonest;
+}
 
 export function buildHomeCards({
   products,
