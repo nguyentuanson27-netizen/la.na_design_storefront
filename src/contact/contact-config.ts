@@ -15,7 +15,12 @@ export function readContactDeliveryConfig(
   env: ContactDeliveryEnvironment = process.env,
 ): ContactDeliveryConfig {
   const resendApiKey = env.RESEND_API_KEY?.trim();
-  if (!resendApiKey || /^REPLACE_ME(?:_|$)/i.test(resendApiKey)) {
+  const normalized = resendApiKey?.toLowerCase();
+  if (
+    !resendApiKey ||
+    normalized === "replace-me" ||
+    normalized?.startsWith("replace_me") === true
+  ) {
     throw new ContactDeliveryConfigError("RESEND_API_KEY must be configured on the server");
   }
 
