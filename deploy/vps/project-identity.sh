@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Loads non-secret project identity from the committed project.config.json and exports the
-# variables Compose needs. Sourced by deploy.sh and rollback.sh; not executable on its own.
+# Loads non-secret project identity from project.config.json and resolves the explicit public
+# deploy target (production or the approved temporary/noindex host). Exports the variables Compose
+# needs. Sourced by deploy.sh and rollback.sh; not executable on its own.
 #
 # `jq -e` exits non-zero when a key is missing or null, and the assignments run under the caller's
 # `set -e`, so a broken config stops the deployment instead of producing empty container, image and
