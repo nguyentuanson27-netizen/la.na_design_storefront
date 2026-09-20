@@ -22,13 +22,14 @@ PROJECT_SLUG="$(jq -er '.projectSlug' "$PROJECT_CONFIG_FILE")"
 POSTGRES_DB="$(jq -er '.databaseName' "$PROJECT_CONFIG_FILE")"
 COMPOSE_PROJECT_NAME="$(jq -er '.composeProjectName' "$PROJECT_CONFIG_FILE")"
 production_domain="$(jq -er '.productionDomain' "$PROJECT_CONFIG_FILE")"
+temporary_domain="$(jq -er '.temporaryDomain' "$PROJECT_CONFIG_FILE")"
 
 case "${DEPLOY_TARGET:-}" in
   production)
     APP_DOMAIN="$production_domain"
     ;;
   temporary)
-    APP_DOMAIN="la.lanadesign.vn"
+    APP_DOMAIN="$temporary_domain"
     ;;
   *)
     echo "DEPLOY_TARGET must be exactly 'production' or 'temporary'" >&2
