@@ -1,0 +1,71 @@
+name: Debug admin bulk runtime
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  identity:
+    uses: ./.github/workflows/project-identity.yml
+
+  admin-bulk:
+    if: github.event.pull_request.head.ref == 'test/v1-v2-final-verification'
+    needs: identity
+    runs-on: macos-14
+    timeout-minutes: 20
+    env:
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://127.0.0.1:3212
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: 127.0.0.1:3212
+      SEARCH_INDEXING_ENABLED: "false"
+      PANCAKE_SHOP_ID: "920942"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Prepare PostgreSQL 16
+        shell: bash
+        env:
+          DATABASE_NAME: ${{ needs.identity.outputs.database-name }}
+        run: |
+          brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
+          PG_BIN="$(brew --prefix postgresql@16)/bin"
+          echo "$PG_BIN" >> "$GITHUB_PATH"
+          "$PG_BIN/initdb" -D "$RUNNER_TEMP/pgdata"
+          "$PG_BIN/pg_ctl" -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/postgres.log" -o "-p 5432" start
+          "$PG_BIN/createdb" -p 5432 "$DATABASE_NAME"
+          echo "DATABASE_URL=postgresql://$(whoami)@127.0.0.1:5432/$DATABASE_NAME" >> "$GITHUB_ENV"
+
+      - name: Install application from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Install pinned accessibility runtime tooling
+        working-directory: tests/a11y-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install Playwright Chromium
+        working-directory: tests/a11y-runtime
+        run: npx playwright install chromium
+
+      - name: Run focused admin bulk runtime
+        working-directory: tests/a11y-runtime
+        run: npx playwright test admin-bulk-operations.spec.ts --project chromium-admin-desktop --config playwright.config.ts
