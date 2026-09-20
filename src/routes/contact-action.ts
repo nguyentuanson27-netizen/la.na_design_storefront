@@ -14,6 +14,7 @@ import {
   type ContactPayload,
   type ContactSubmissionResult,
 } from "@/contact/contact-delivery";
+import { readContactDeliveryConfig } from "@/contact/contact-config";
 import { consumeContactRateLimits } from "@/contact/contact-rate-limit";
 
 async function resolveClientBucket(): Promise<string | null> {
@@ -40,8 +41,12 @@ export async function submitContactForm(input: unknown): Promise<ContactSubmissi
     return { ok: false, reason: "INVALID_INPUT", field: validated.field };
   }
 
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  if (!apiKey) return { ok: false, reason: "DELIVERY_FAILED" };
+  let apiKey: string;
+  try {
+    apiKey = readContactDeliveryConfig().resendApiKey;
+  } catch {
+    return { ok: false, reason: "DELIVERY_FAILED" };
+  }
 
   const clientBucket = await resolveClientBucket();
   if (!clientBucket) return { ok: false, reason: "DELIVERY_FAILED" };
