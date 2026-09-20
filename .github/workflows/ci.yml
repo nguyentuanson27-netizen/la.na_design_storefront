@@ -160,6 +160,7 @@ jobs:
           SEARCH_INDEXING_ENABLED: "false"
           PANCAKE_API_KEY: ci-only-pancake-placeholder
           PANCAKE_SHOP_ID: "920007"
+          RESEND_API_KEY: re_ci-only-contact-placeholder
           LA_SHIPPING_FEE_VND: "30000"
           LA_FREE_SHIPPING_SUBTOTAL_VND: "1000000"
           LA_FREE_SHIPPING_MIN_QUANTITY: "3"
