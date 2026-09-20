@@ -68,4 +68,4 @@ jobs:
 
       - name: Run focused admin bulk runtime
         working-directory: tests/a11y-runtime
-        run: npx playwright test admin-bulk-operations.spec.ts --project chromium-admin-desktop --config playwright.config.ts
+        run: npx playwright test admin-bulk-operations.spec.ts --project chromium-admin-desktop --config playwright.config.ts --repeat-each=5
