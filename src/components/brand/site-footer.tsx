@@ -2,21 +2,54 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND, NAVIGATION } from "@/brand";
+import { FooterNavGroup } from "@/components/brand/footer-nav-group";
 import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
 
 /**
  * F9a footer layout. Presentation consumes approved Brand Config and policy projections only:
  * shopping links stay in NAVIGATION, while support/policy/legal facts arrive through the chrome
- * model. There is deliberately no accordion, newsletter, representative field or page-specific
- * policy copy here.
+ * model. There is deliberately no newsletter, representative field or page-specific policy copy
+ * here.
+ *
+ * The three link columns collapse into disclosures on the single-column mobile footer, which the
+ * owner approved in place of the original always-expanded mobile rule -- twenty-odd links between
+ * the page and the legal block is a scroll, not a footer. `FooterNavGroup` owns that behaviour and
+ * keeps every link visible wherever the footer is still a column.
  *
  * The footer master logo is the owner-approved production PNG recorded in the owner-facts
  * authority. It is committed byte-for-byte under public/brand; no favicon/social-card derivation or
  * restyling is performed here.
  */
+
+/**
+ * The other half of §33's mobile rule: with scripting disabled the footer keeps every link.
+ *
+ * The disclosure is a React button, so without JavaScript it can never open. Collapsing the groups
+ * anyway would leave a visitor with three buttons that do nothing and no way to reach the support
+ * or policy pages, which is worse than the long footer the disclosures were introduced to fix. A
+ * browser with scripting enabled never parses the contents of `<noscript>`, so this costs those
+ * visitors nothing and changes nothing about the hydrated behaviour; a browser with scripting
+ * disabled applies it and gets the same arrangement the desktop footer has.
+ *
+ * Each selector carries a `:root` prefix so it outranks the rule it reverses on specificity rather
+ * than on where the browser happened to put this stylesheet, and the attribute value is unquoted so
+ * the declaration survives HTML escaping if this ever stops being written as raw markup.
+ */
+const NO_SCRIPT_FOOTER_CSS = `
+@media (max-width: 640px) {
+  :root .footer-heading__static { display: inline; }
+  :root .footer-disclosure { display: none; }
+  :root .footer-group[data-open=false] .footer-panel { display: block; }
+}
+`;
+
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
     <footer className="site-footer">
+      <noscript>
+        <style dangerouslySetInnerHTML={{ __html: NO_SCRIPT_FOOTER_CSS }} />
+      </noscript>
+
       <div className="footer-groups">
         <section className="footer-group footer-group--brand" data-footer-group>
           <h2 className="footer-brand-heading">
@@ -61,44 +94,26 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
           </ul>
         </section>
 
-        <section className="footer-group" data-footer-group>
-          <h2 className="footer-heading">Mua sắm</h2>
-          <nav aria-label="Mua sắm">
-            <ul className="footer-nav-list">
-              {NAVIGATION.footer.map((item) => (
-                <li key={item.href}>
-                  <Link href={item.href}>{item.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </section>
+        <FooterNavGroup
+          heading="Mua sắm"
+          navigationLabel="Mua sắm"
+          panelId="footer-shopping-links"
+          links={NAVIGATION.footer}
+        />
 
-        <section className="footer-group" data-footer-group>
-          <h2 className="footer-heading">Hỗ trợ khách hàng</h2>
-          <nav aria-label="Hỗ trợ khách hàng">
-            <ul className="footer-nav-list">
-              {model.supportLinks.map((item) => (
-                <li key={item.label}>
-                  <Link href={item.href}>{item.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </section>
+        <FooterNavGroup
+          heading="Hỗ trợ khách hàng"
+          navigationLabel="Hỗ trợ khách hàng"
+          panelId="footer-support-links"
+          links={model.supportLinks}
+        />
 
-        <section className="footer-group" data-footer-group>
-          <h2 className="footer-heading">Thông tin &amp; chính sách</h2>
-          <nav aria-label="Thông tin và chính sách">
-            <ul className="footer-nav-list">
-              {model.policyLinks.map((item) => (
-                <li key={item.label}>
-                  <Link href={item.href}>{item.label}</Link>
-                </li>
-              ))}
-            </ul>
-          </nav>
-        </section>
+        <FooterNavGroup
+          heading="Thông tin & chính sách"
+          navigationLabel="Thông tin và chính sách"
+          panelId="footer-policy-links"
+          links={model.policyLinks}
+        />
       </div>
 
       <div className="footer-legal" data-footer-legal>

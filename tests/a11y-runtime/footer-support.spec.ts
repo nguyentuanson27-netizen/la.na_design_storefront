@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { BRAND } from "../../src/brand/index.ts";
+import { BRAND, NAVIGATION } from "../../src/brand/index.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import {
   describePublicAddress,
@@ -219,10 +219,13 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   expect(tabletColumns).toBe(2);
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
 
-  // Mobile keeps all groups expanded and usable with no horizontal overflow.
+  // Mobile collapses the three link columns into disclosures -- the owner's replacement for the
+  // original always-expanded mobile footer -- and keeps them usable with no horizontal overflow.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.reload({ waitUntil: "networkidle" });
   await expect(page.locator("footer [data-footer-group]")).toHaveCount(4);
+  // Still no <details>: the disclosure is a button whose expanded state React owns, so the
+  // panel's visibility and `aria-expanded` cannot disagree.
   await expect(page.locator("footer details, footer summary")).toHaveCount(0);
 
   const mobileColumns = await page.locator("footer .footer-groups").evaluate((element) =>
@@ -230,10 +233,42 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   );
   expect(mobileColumns).toBe(1);
 
-  const footerTargets = await page.locator("footer a").evaluateAll((links) =>
-    links.map((link) => link.getBoundingClientRect().height),
-  );
-  expect(footerTargets.every((height) => height >= 44)).toBe(true);
+  const mobileGroups = [
+    { heading: "Mua sắm", navigation: "Mua sắm", firstLink: "Áo dài" },
+    { heading: "Hỗ trợ khách hàng", navigation: "Hỗ trợ khách hàng", firstLink: supportTopics[0]!.title },
+    { heading: "Thông tin & chính sách", navigation: "Thông tin và chính sách", firstLink: policyTopics[0]!.title },
+  ] as const;
+
+  for (const group of mobileGroups) {
+    const toggle = page.locator("footer").getByRole("button", { name: group.heading, exact: true });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(
+      page.locator("footer").getByRole("link", { name: group.firstLink, exact: true }),
+    ).toHaveCount(0);
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const panel = page.getByRole("navigation", { name: group.navigation });
+    await expect(panel).toBeVisible();
+
+    const linkHeights = await panel.getByRole("link").evaluateAll((links) =>
+      links.map((link) => link.getBoundingClientRect().height),
+    );
+    expect(linkHeights.length).toBeGreaterThan(0);
+    expect(linkHeights.every((height) => height >= 44), group.heading).toBe(true);
+
+    // One at a time is not the rule; closing again is, so the collapsed footer stays collapsed.
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  }
+
+  // The brand column is not a disclosure: its contact details are the footer's point.
+  const brandTargets = await page
+    .locator("footer .footer-group--brand a")
+    .evaluateAll((links) => links.map((link) => link.getBoundingClientRect().height));
+  expect(brandTargets.length).toBeGreaterThan(0);
+  expect(brandTargets.every((height) => height >= 44)).toBe(true);
 
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   expect(overflow).toBeLessThanOrEqual(1);
@@ -241,4 +276,63 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
+});
+
+test("F9a mobile footer without JavaScript keeps every link and ships no disclosure a visitor cannot open", async ({
+  browser,
+}) => {
+  // The disclosure is a React button, so with scripting disabled it could never open. §33's
+  // guarantee is that such a visitor keeps every link, which the hydrating tests above cannot
+  // observe: by the time they click, the page has hydrated and the button works.
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    javaScriptEnabled: false,
+  });
+  const page = await context.newPage();
+
+  try {
+    const response = await page.goto(`${BASE_URL}/search`, { waitUntil: "load" });
+    expect(response?.status()).toBe(200);
+
+    const footer = page.locator("footer");
+    await expect(footer).toBeVisible();
+
+    // No dead controls: a button that cannot do anything must not be in the page at all.
+    await expect(footer.getByRole("button")).toHaveCount(0);
+
+    for (const group of ["Mua sắm", "Hỗ trợ khách hàng", "Thông tin & chính sách"]) {
+      await expect(footer.getByRole("heading", { level: 2, name: group, exact: true })).toBeVisible();
+    }
+
+    // Every destination the hydrated footer hides behind a disclosure is reachable here.
+    const expectedShopping = NAVIGATION.footer;
+    const supportTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support");
+    const policyTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy");
+    const expected = [
+      ...expectedShopping.map((item) => ({ label: item.label, href: item.href })),
+      ...supportTopics.map((topic) => ({ label: topic.title, href: topic.href })),
+      ...policyTopics.map((topic) => ({ label: topic.title, href: topic.href })),
+    ];
+    expect(expected.length).toBeGreaterThan(0);
+
+    for (const { label, href } of expected) {
+      const link = footer.getByRole("link", { name: label, exact: true });
+      await expect(link, label).toBeVisible();
+      await expect(link, label).toHaveAttribute("href", href);
+    }
+
+    // The panels are genuinely laid out, not merely present in the accessibility tree.
+    const panelDisplays = await page
+      .locator("footer .footer-panel")
+      .evaluateAll((panels) => panels.map((panel) => getComputedStyle(panel).display));
+    expect(panelDisplays).toHaveLength(3);
+    expect(panelDisplays.every((display) => display !== "none")).toBe(true);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  } finally {
+    await context.close();
+  }
 });

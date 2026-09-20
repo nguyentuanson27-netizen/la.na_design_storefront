@@ -336,6 +336,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
 
+  // This project runs at 390px, where the footer's link columns are disclosures. The shopping
+  // group opens before its links are asserted; footer-support.spec.ts owns the collapsed state.
+  await page.locator("footer").getByRole("button", { name: "Mua sắm", exact: true }).click();
   const footerNavigation = page.getByRole("navigation", { name: "Mua sắm" });
   await expect(footerNavigation).toBeVisible();
   await expect(footerNavigation.getByRole("link", { name: "Áo dài", exact: true })).toBeVisible();
@@ -356,6 +359,20 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
     await expect(mobileNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
   }
+
+  // Subcategories start collapsed and open under their own category, one at a time.
+  await expect(mobileNavigation.getByRole("link", { name: "Áo dài Tết", exact: true })).toHaveCount(0);
+  const aoDaiDisclosure = mobileNavigation.getByRole("button", { name: "Mở rộng Áo dài", exact: true });
+  await expect(aoDaiDisclosure).toHaveAttribute("aria-expanded", "false");
+  await aoDaiDisclosure.click();
+  await expect(mobileNavigation.getByRole("link", { name: "Áo dài Tết", exact: true })).toBeVisible();
+
+  await mobileNavigation.getByRole("button", { name: "Mở rộng Set đồ", exact: true }).click();
+  await expect(mobileNavigation.getByRole("link", { name: "Set váy", exact: true })).toBeVisible();
+  await expect(mobileNavigation.getByRole("link", { name: "Áo dài Tết", exact: true })).toHaveCount(0);
+
+  await mobileNavigation.getByRole("button", { name: "Thu gọn Set đồ", exact: true }).click();
+  await expect(mobileNavigation.getByRole("link", { name: "Set váy", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
   await expect(mobileNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();

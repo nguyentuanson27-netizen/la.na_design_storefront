@@ -351,7 +351,14 @@ test("a client-side navigation reports its own page view without repeating the f
   await waitForEvent(page, "PageView");
 
   // App Router never reloads the snippet, so without the route tracker only the entry page counts.
-  await page.locator("footer").getByRole("link", { name: "Hàng mới về", exact: true }).click();
+  // The shopping column is a disclosure at this project's 390px viewport, so open it first. The
+  // retry covers a click that lands before hydration, which leaves the group closed.
+  const newArrivals = page.locator("footer").getByRole("link", { name: "Hàng mới về", exact: true });
+  await expect(async () => {
+    await page.locator("footer").getByRole("button", { name: "Mua sắm", exact: true }).click();
+    await expect(newArrivals).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 30_000 });
+  await newArrivals.click();
   await page.waitForURL("**/new-arrivals");
 
   await expect

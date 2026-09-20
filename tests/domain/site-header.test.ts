@@ -164,6 +164,53 @@ test("F2a mobile navigation dialog: enforces full-screen accessible dialog, Esca
   assert.match(source, /document\.body\.style\.overflow = "hidden"/);
 });
 
+test("mobile navigation: subcategories are collapsed behind a per-category disclosure", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/site-header.tsx"),
+    "utf8",
+  );
+  const cssSource = readFileSync(path.join(REPO_ROOT, "src/app/globals.css"), "utf8");
+
+  // One expanded category at a time, reset whenever the drawer is reopened, so the menu never
+  // reopens showing whatever was last expanded.
+  assert.match(source, /const \[expandedMobileGroup, setExpandedMobileGroup\] = useState<string \| null>\(null\)/);
+  assert.match(
+    source,
+    /const openMobileNav = \(\) => \{[^}]*setExpandedMobileGroup\(null\);/,
+    "reopening the mobile menu must collapse every category again",
+  );
+  assert.match(
+    source,
+    /setExpandedMobileGroup\(isExpanded \? null : item\.href\)/,
+    "the disclosure must expand one category and collapse the previous one",
+  );
+
+  // The children render only while their own category is expanded, and the disclosure says so.
+  assert.match(source, /aria-expanded=\{isExpanded\}/);
+  assert.match(source, /aria-controls=\{panelId\}/);
+  assert.match(source, /hidden=\{!isExpanded\}/);
+  assert.match(
+    source,
+    /aria-label=\{`\$\{isExpanded \? "Thu gọn" : "Mở rộng"\} \$\{item\.label\}`\}/,
+    "the disclosure must name the category it opens, in Vietnamese",
+  );
+
+  // The category itself stays a link: collapsing the children must not cost it its route.
+  assert.match(source, /className="mobile-menu__link"/);
+
+  // Compact rows: the 44px touch target is the whole row height, with no padding stacked on it.
+  assert.match(
+    cssSource,
+    /\.mobile-menu a,\s*\.mobile-menu button,[^{]*\{[^}]*min-height:\s*var\(--control-height\);/,
+    "mobile menu rows must keep the 44px touch target",
+  );
+  assert.doesNotMatch(
+    cssSource,
+    /\.mobile-menu a \{[^}]*padding-block:/,
+    "mobile menu rows must not stack padding on top of the touch target",
+  );
+});
+
 test("F2a mobile navigation focus trap: traps Tab and Shift+Tab within container", () => {
   let closeBtnFocused = false;
   let lastLinkFocused = false;
@@ -236,10 +283,12 @@ test("F2b mobile search: mobile navigation triggers SearchOverlay instead of nav
     "utf8",
   );
 
-  // In mobile utility section, /search must render a button, not a Link
+  // In mobile utility section, /search must render a button, not a Link. The list item around it
+  // is markup; what this rule is about is that the control is a button, so the assertion allows
+  // the row wrapper and still rejects a <Link>.
   assert.match(
     source,
-    /if\s*\(\s*item\.href\s*===\s*"\/search"\s*\)\s*\{\s*return\s*\(\s*<button/,
+    /if\s*\(\s*item\.href\s*===\s*"\/search"\s*\)\s*\{\s*return\s*\(\s*(<li[^>]*>\s*)?<button/,
     "Mobile utility search must render a <button>, not a <Link>",
   );
 
