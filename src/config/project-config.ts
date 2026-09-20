@@ -11,6 +11,7 @@ export type ProjectConfig = Readonly<{
   databaseName: string;
   composeProjectName: string;
   productionDomain: string;
+  temporaryDomain: string;
 }>;
 
 const PROJECT_CONFIG_FILE_LABEL = "project.config.json";
@@ -46,6 +47,11 @@ const FIELD_RULES: readonly FieldRule[] = [
   },
   {
     key: "productionDomain",
+    pattern: /^[a-z0-9.-]+\.[a-z]{2,}$/,
+    requirement: "a bare lowercase hostname with no scheme, no path and no port",
+  },
+  {
+    key: "temporaryDomain",
     pattern: /^[a-z0-9.-]+\.[a-z]{2,}$/,
     requirement: "a bare lowercase hostname with no scheme, no path and no port",
   },
