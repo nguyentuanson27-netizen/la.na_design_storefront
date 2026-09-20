@@ -5,7 +5,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { OFFICIAL_PRODUCTION_STOREFRONT_HOST } from "../../src/commerce/storefront-origin.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../../src/commerce/storefront-origin.ts";
 import { PROJECT_CONFIG_PATH, readProjectConfig } from "../../src/config/project-config.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -99,7 +102,13 @@ test("the reusable identity workflow fails closed on a missing key", () => {
     "utf8",
   );
   assert.match(contents, /set -euo pipefail/);
-  for (const key of ["projectSlug", "databaseName", "composeProjectName", "productionDomain"]) {
+  for (const key of [
+    "projectSlug",
+    "databaseName",
+    "composeProjectName",
+    "productionDomain",
+    "temporaryDomain",
+  ]) {
     // `jq -e` exits non-zero on a missing or null key; the assignment lets `set -e` stop the job.
     assert.match(contents, new RegExp(`jq -er '\\.${key}'`));
   }
@@ -156,7 +165,7 @@ test("deployment target is explicit and temporary maps only to the approved noin
   });
   assert.equal(
     temporary,
-    "temporary|la.lanadesign.vn|https://la.lanadesign.vn",
+    `temporary|${CONFIG.temporaryDomain}|https://${CONFIG.temporaryDomain}`,
   );
 
   const production = execFileSync("bash", ["-lc", script], {
@@ -184,7 +193,7 @@ test("Caddy trusts only the explicitly supplied edge proxy range", () => {
   assert.equal(caddy.includes("192.0.2.1/32"), false);
 });
 
-test("the storefront origin constant mirrors the committed production domain", () => {
-  // The one copy of the domain that lives in application code rather than infrastructure.
+test("the storefront origin constants mirror the committed public deployment domains", () => {
   assert.equal(OFFICIAL_PRODUCTION_STOREFRONT_HOST, CONFIG.productionDomain);
+  assert.equal(LEGACY_TEMPORARY_STOREFRONT_HOST, CONFIG.temporaryDomain);
 });
