@@ -1,6 +1,6 @@
 # V1 + V2 final verification
 
-Status: **V1 evidence captured; release completion remains gated by exact-head CI and V2**
+Status: **V1 + V2 verification complete; final exact-head CI is the remaining runtime confirmation for this housekeeping commit**
 
 Base: `main@53b227568e14a7d89809687fbab3423dd3512f20`
 Performance baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
@@ -108,28 +108,58 @@ Minimal fix: when a caller supplies an explicit `triggerRef`, the overlay record
 
 ## V2
 
-V2 remains a separate gate after V1:
+A dedicated one-off GitHub Actions job ran the requested commands as separate fail-fast steps on `8598dea2f8dfe46e366e76602e21b63b589025a3`, using the repository's pinned Node/pnpm, PostgreSQL 16, deployed migrations, and the canonical project identity workflow.
 
-```bash
-pnpm lint
-pnpm typecheck
-pnpm test:domain
-pnpm test
-pnpm test:db
-pnpm build
-pnpm release:check
+The first run found a verification-harness defect rather than a storefront defect: the temporary workflow hard-coded a database/domain identity. `pnpm test:domain` correctly failed `project-identity-operations.test.ts`. The workflow was fixed to call `./.github/workflows/project-identity.yml` and consume its `database-name` / `production-domain` outputs; no product code changed for this finding.
+
+The rerun passed all requested commands:
+
+```text
+pnpm lint           PASS
+pnpm typecheck      PASS
+pnpm test:domain    PASS
+pnpm test           PASS
+pnpm test:db        PASS — 529/529
+pnpm build          PASS — optimized production build; 38 static-page generation slots completed
+pnpm release:check  PASS
 ```
 
-No command is marked complete here until its exact result is captured.
+`release:check` ran with the canonical production domain from `project.config.json`, CI-only placeholder credentials, and `SEARCH_INDEXING_ENABLED=false`.
 
-## Security / indexing
+The one-off V2 workflow is deleted in the final housekeeping commit so this convergence PR does not add permanent CI cost.
 
-No auth, API, secret, selling-policy, order-history authority, or indexing-enablement boundary is changed by the V1 remediation.
+## Security / indexing / migration readiness
 
-`SEARCH_INDEXING_ENABLED=false` remains the required release mode. Deployment and indexing enablement remain out of scope.
+- No auth, API, selling-policy, order-history authority, or production secret boundary is changed.
+- PR diff scan found no private-key / GitHub token / API-key / OpenAI-style secret pattern; workflow values are explicit CI placeholders.
+- PR #39 introduces no Prisma schema or migration file.
+- The production fixes are additive/reversible code changes: footer image delivery, search focus restoration, and Size Guide layout/focusability can each be reverted without data migration.
+- `SEARCH_INDEXING_ENABLED=false` remains fail-closed: V2 `release:check` passed with it disabled, and exact-head P18/Catalog runtime checks have continued to pass without enabling indexing.
+- No deploy or indexing enablement is performed by this PR.
+
+## Checklist convergence
+
+Merged PR evidence used to correct stale feature boxes only:
+
+- F7a — PR #30;
+- F7b — PR #33;
+- F7c — PR #35;
+- F7d/F7e — PR #36;
+- F9a — PR #31;
+- F8c — PR #38.
+
+No unrelated task descriptions were rewritten.
 
 ## Final review
 
-Required order: correctness → security → architecture → simplicity → performance.
+Review order: correctness → security → architecture → simplicity → performance.
 
-The PR is not release-complete until exact-head gates and V2 satisfy the repository Definition of Done.
+- Correctness: V1 browser/Axe and V2 command gates pass; each V1 regression has a behavior test.
+- Security: no trust-boundary weakening; no secret found in diff; indexing remains disabled/fail-closed.
+- Architecture: fixes reuse existing UI/Next/project-identity authorities; no new product subsystem or schema.
+- Simplicity: production changes remain narrow; one-off benchmark/V2 CI is not left as permanent workflow cost.
+- Performance: benchmark is corrected to measure the real local optimizer response; no unsupported improvement claim is made.
+
+Self-review verdict: **0 Critical / 0 Required**.
+
+The final housekeeping commit changes only checklist/audit state and removes the one-off V2 workflow. Its exact-head CI is the final runtime confirmation before the PR can be considered release-ready.
