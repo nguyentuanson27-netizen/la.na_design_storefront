@@ -67,6 +67,7 @@ jobs:
       EDGE_TRUSTED_PROXY_CIDR: 127.0.0.1/32
       PROJECT_SLUG: ${{ needs.identity.outputs.project-slug }}
       PRODUCTION_DOMAIN: ${{ needs.identity.outputs.production-domain }}
+      TEMPORARY_DOMAIN: ${{ needs.identity.outputs.temporary-domain }}
       # compose.yml now interpolates project identity instead of embedding it, so `docker compose`
       # needs these in the environment the same way deploy.sh supplies them on the VPS.
       COMPOSE_PROJECT_NAME: ${{ needs.identity.outputs.compose-project-name }}
@@ -87,8 +88,8 @@ jobs:
         run: |
           set -euo pipefail
           source deploy/vps/project-identity.sh
-          test "$APP_DOMAIN" = "la.lanadesign.vn"
-          test "$BETTER_AUTH_URL" = "https://la.lanadesign.vn"
+          test "$APP_DOMAIN" = "$TEMPORARY_DOMAIN"
+          test "$BETTER_AUTH_URL" = "https://$TEMPORARY_DOMAIN"
 
       - name: Validate Compose model
         shell: bash
