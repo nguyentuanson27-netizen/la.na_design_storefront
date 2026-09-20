@@ -1,0 +1,49 @@
+name: Refresh Next lockfile
+
+on:
+  push:
+    branches:
+      - fix/temporary-deploy-readiness
+    paths:
+      - package.json
+      - .github/workflows/refresh-next-lock.yml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+        with:
+          ref: fix/temporary-deploy-readiness
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          test "$(pnpm --version)" = "11.4.0"
+
+      - name: Refresh lockfile without lifecycle scripts
+        run: pnpm install --lockfile-only --ignore-scripts
+
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+
+      - name: Commit refreshed lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pnpm-lock.yaml
+          git diff --cached --quiet && exit 0
+          git commit -m "chore(deps): refresh Next.js lockfile"
+          git push origin HEAD:fix/temporary-deploy-readiness
