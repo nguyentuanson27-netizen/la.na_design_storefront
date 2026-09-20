@@ -38,7 +38,7 @@ Populate the runtime values/secrets required by the template, including exact `R
 
 Use `DEPLOY_TARGET=temporary` for the public test deployment at `la.lanadesign.vn`. The script maps that target itself; do not add `APP_DOMAIN` or `BETTER_AUTH_URL` to the env file. Temporary remains noindex by release policy.
 
-`APP_DOMAIN`, `BETTER_AUTH_URL`, `POSTGRES_DB` and `COMPOSE_PROJECT_NAME` are derived from `project.config.json` by the deployment scripts; do not maintain a second manual copy.
+`POSTGRES_DB` and `COMPOSE_PROJECT_NAME` come from `project.config.json`. `APP_DOMAIN` and `BETTER_AUTH_URL` are derived by the deployment scripts from the explicit target: production uses the committed production domain; temporary uses only the approved `la.lanadesign.vn` host. Do not maintain manual copies in the env file.
 
 Never print the completed environment file into logs, issues, PRs or chat transcripts.
 
