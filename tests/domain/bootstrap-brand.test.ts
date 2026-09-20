@@ -11,6 +11,7 @@ const VALID_IDENTITY = {
   databaseName: "acme_women",
   composeProjectName: "acme-women",
   productionDomain: "acme-women.vn",
+  temporaryDomain: "legacy.acme-women.vn",
 };
 
 const ENV_EXAMPLE = [
@@ -23,6 +24,7 @@ const ENV_EXAMPLE = [
   'BETTER_AUTH_URL="http://localhost:3000"',
   'PANCAKE_API_KEY="replace-me"',
   'PANCAKE_SHOP_ID="replace-me"',
+  'RESEND_API_KEY="replace-me"',
   'NEXT_PUBLIC_FACEBOOK_PIXEL_ID=""',
   'FACEBOOK_CAPI_ACCESS_TOKEN=""',
   "",
@@ -97,6 +99,7 @@ test("bootstrap never generates a secret", () => {
       "BETTER_AUTH_SECRET",
       "PANCAKE_API_KEY",
       "PANCAKE_SHOP_ID",
+      "RESEND_API_KEY",
       "NEXT_PUBLIC_FACEBOOK_PIXEL_ID",
       "FACEBOOK_CAPI_ACCESS_TOKEN",
     ]) {
@@ -173,6 +176,7 @@ test("bootstrap prints the manual checklist it is not allowed to perform", () =>
     for (const owner of [
       "PANCAKE_API_KEY",
       "BETTER_AUTH_SECRET",
+      "RESEND_API_KEY",
       "NEXT_PUBLIC_FACEBOOK_PIXEL_ID",
       "FACEBOOK_CAPI_ACCESS_TOKEN",
       "DNS",
