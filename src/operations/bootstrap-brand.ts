@@ -32,6 +32,7 @@ const SOCIAL_CARD_ROUTE_SUFFIX = "-social-card.png";
 const MANUAL_CHECKLIST: readonly string[] = [
   "Create the new Pancake shop and copy PANCAKE_API_KEY / PANCAKE_SHOP_ID into .env.local by hand.",
   "Generate a fresh BETTER_AUTH_SECRET (>= 32 random characters) yourself; this script never mints one.",
+  "Verify the sending domain in Resend and copy RESEND_API_KEY into .env.local by hand.",
   "Create the new Meta Pixel and copy NEXT_PUBLIC_FACEBOOK_PIXEL_ID and FACEBOOK_CAPI_ACCESS_TOKEN in by hand.",
   "Point DNS at the new production domain and provision TLS.",
   "Leave SEARCH_INDEXING_ENABLED=false until the launch gate and an explicit human indexing approval are complete.",
