@@ -60,7 +60,11 @@ jobs:
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
       PANCAKE_API_KEY: ci-only-pancake-placeholder
       PANCAKE_SHOP_ID: "920007"
+      RESEND_API_KEY: re_ci-only-contact-placeholder
       SEARCH_INDEXING_ENABLED: "false"
+      DEPLOY_TARGET: temporary
+      EDGE_NETWORK_NAME: ci-edge-network
+      EDGE_TRUSTED_PROXY_CIDR: 127.0.0.1/32
       PROJECT_SLUG: ${{ needs.identity.outputs.project-slug }}
       PRODUCTION_DOMAIN: ${{ needs.identity.outputs.production-domain }}
       # compose.yml now interpolates project identity instead of embedding it, so `docker compose`
@@ -78,17 +82,27 @@ jobs:
           bash -n deploy/vps/deploy.sh
           bash -n deploy/vps/rollback.sh
 
+      - name: Verify explicit temporary deployment target
+        shell: bash
+        run: |
+          set -euo pipefail
+          source deploy/vps/project-identity.sh
+          test "$APP_DOMAIN" = "la.lanadesign.vn"
+          test "$BETTER_AUTH_URL" = "https://la.lanadesign.vn"
+
       - name: Validate Compose model
         shell: bash
         run: |
           cp deploy/vps/env.example deploy/vps/.env.production
           sed -i "s/^RELEASE_SHA=.*/RELEASE_SHA=${GITHUB_SHA}/" deploy/vps/.env.production
+          sed -i "s/^DEPLOY_TARGET=.*/DEPLOY_TARGET=temporary/" deploy/vps/.env.production
           docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml config --quiet
 
       - name: Validate Caddy configuration
         run: >-
           docker run --rm
           -e APP_DOMAIN=localhost
+          -e EDGE_TRUSTED_PROXY_CIDR
           -v "${{ github.workspace }}/deploy/vps/Caddyfile:/etc/caddy/Caddyfile:ro"
           caddy:2-alpine
           caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
@@ -119,6 +133,7 @@ jobs:
             -e BETTER_AUTH_IP_HEADER \
             -e PANCAKE_API_KEY \
             -e PANCAKE_SHOP_ID \
+            -e RESEND_API_KEY \
             -e SEARCH_INDEXING_ENABLED \
             -e APP_DOMAIN="$PRODUCTION_DOMAIN" \
             -e BETTER_AUTH_URL="https://$PRODUCTION_DOMAIN" \
