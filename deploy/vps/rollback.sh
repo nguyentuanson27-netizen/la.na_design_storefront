@@ -9,12 +9,20 @@ fi
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-# shellcheck source=deploy/vps/project-identity.sh
-source "deploy/vps/project-identity.sh"
-
 ENV_FILE="deploy/vps/.env.production"
 COMPOSE_FILE="deploy/vps/compose.yml"
 PREVIOUS_SHA="$1"
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Missing $ENV_FILE" >&2
+  exit 1
+fi
+
+DEPLOY_TARGET="$(grep -E '^DEPLOY_TARGET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+export DEPLOY_TARGET
+
+# shellcheck source=deploy/vps/project-identity.sh
+source "deploy/vps/project-identity.sh"
 
 if ! [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]]; then
   echo "Rollback SHA must be a full 40-character lowercase Git SHA" >&2
