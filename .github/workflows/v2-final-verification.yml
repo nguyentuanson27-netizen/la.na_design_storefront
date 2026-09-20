@@ -7,8 +7,12 @@ permissions:
   contents: read
 
 jobs:
+  identity:
+    uses: ./.github/workflows/project-identity.yml
+
   v2:
     if: github.event.pull_request.head.ref == 'test/v1-v2-final-verification'
+    needs: identity
     runs-on: ubuntu-latest
     timeout-minutes: 35
     services:
@@ -17,16 +21,16 @@ jobs:
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: lana_v2_verification
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U postgres -d lana_v2_verification"
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
     env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/lana_v2_verification
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/${{ needs.identity.outputs.database-name }}
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
       BETTER_AUTH_URL: http://localhost:3000
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
@@ -83,8 +87,8 @@ jobs:
 
       - name: V2 pnpm release:check
         env:
-          APP_DOMAIN: la-na-design.example
-          BETTER_AUTH_URL: https://la-na-design.example
+          APP_DOMAIN: ${{ needs.identity.outputs.production-domain }}
+          BETTER_AUTH_URL: https://${{ needs.identity.outputs.production-domain }}
           SEARCH_INDEXING_ENABLED: "false"
           PANCAKE_API_KEY: ci-only-pancake-placeholder
           PANCAKE_SHOP_ID: "920007"
