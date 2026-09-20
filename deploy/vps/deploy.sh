@@ -13,7 +13,7 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 # Load only non-secret deployment controls before identity resolution. Never source the whole file.
-DEPLOY_TARGET="$(grep -E '^DEPLOY_TARGET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+DEPLOY_TARGET="$(grep -E '^DEPLOY_TARGET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 export DEPLOY_TARGET
 
 # shellcheck source=deploy/vps/project-identity.sh
