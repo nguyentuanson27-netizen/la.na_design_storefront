@@ -6,21 +6,28 @@ import { useEffect, useRef } from "react";
 import { trackFacebookPixelEvent } from "./facebook-pixel-client";
 
 /**
- * Reports PageView for client-side navigations.
+ * Reports PageView for real client-side URL changes.
  *
- * The base snippet already fired PageView for the document that loaded it, so the first run here
- * is skipped; without that guard every first page would be counted twice.
+ * The base snippet already reports the document load. Router state can re-emit an equivalent
+ * pathname/search value during hydration or development checks, so "skip the first effect" is not
+ * enough: remember the last logical URL and report only when that value actually changes.
  */
 export function FacebookPixelRouteTracker() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const isInitialRender = useRef(true);
+  const lastRoute = useRef<string | null>(null);
 
   useEffect(() => {
-    if (isInitialRender.current) {
-      isInitialRender.current = false;
+    const search = searchParams.toString();
+    const route = search.length > 0 ? `${pathname}?${search}` : pathname;
+
+    if (lastRoute.current === null) {
+      lastRoute.current = route;
       return;
     }
+    if (lastRoute.current === route) return;
+
+    lastRoute.current = route;
     trackFacebookPixelEvent("PageView");
   }, [pathname, searchParams]);
 
