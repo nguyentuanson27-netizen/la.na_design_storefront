@@ -631,7 +631,13 @@ Approved copy:
 hamburger left / logo center / cart right
 ```
 
-Mobile navigation is full-screen.
+The centre slot is the master logo itself, not a text wordmark. The approved PNG has a transparent
+background, so it sits on the cream header and on the scrolled/blurred header unchanged.
+
+Mobile navigation is full-screen. Subcategories are **collapsed**: each parent category shows its
+own link plus a disclosure control, and one category's subcategory list is open at a time. Rows are
+sized to the 44px touch target and nothing more, so the seven categories and the utility links fit
+one phone screen.
 
 ### Search
 
@@ -881,7 +887,14 @@ Possible strategies must be reviewed; do not invent a fixed date or continuously
 
 ## 33. Footer structure
 
-Mobile footer does **not** use accordion/collapsible groups; links remain visible.
+Mobile footer uses collapsible groups: `Mua sắm`, `Hỗ trợ khách hàng` and
+`Thông tin & chính sách` each collapse behind a disclosure at the single-column breakpoint (640px),
+starting closed. This replaces the original always-expanded rule at the owner's request -- twenty-odd
+links between the page and the legal block is a scroll, not a footer.
+
+Wherever the footer is still more than one column, every link stays visible: the disclosure is a
+mobile-only presentation, and the column-1 brand/contact block never collapses. A visitor without
+JavaScript keeps all links expanded.
 
 No newsletter in current scope.
 

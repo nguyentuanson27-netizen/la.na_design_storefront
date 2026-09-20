@@ -12,6 +12,13 @@ import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
 
+/**
+ * The owner-approved master logo, committed byte-for-byte under `public/brand`. It is the same
+ * asset the footer renders; the header simply draws it smaller. Replacing the wordmark is a swap of
+ * this one file, not an edit spread across two chrome surfaces.
+ */
+const BRAND_MASTER_LOGO_SRC = "/brand/la-na-design-master-logo.png";
+
 type HierarchicalNavigationLink = NavigationLink & Readonly<{
   key?: string;
   children?: readonly HierarchicalNavigationLink[];
@@ -54,6 +61,9 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  // One open category at a time: the point of collapsing the subcategories is that the whole
+  // menu stays short enough to scan without scrolling, which two open groups already undo.
+  const [expandedMobileGroup, setExpandedMobileGroup] = useState<string | null>(null);
 
   const headerRef = useRef<HTMLElement | null>(null);
   const searchTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -78,6 +88,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
   const openMobileNav = () => {
     previouslyFocusedBeforeMobileNav.current = document.activeElement as HTMLElement | null;
+    setExpandedMobileGroup(null);
     setIsMobileNavOpen(true);
   };
   const closeMobileNav = () => {
@@ -198,9 +209,20 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </button>
         </div>
 
-        {/* Brand Logo (centered on mobile, left on desktop) - uses text wordmark fallback pending owner-supplied master logo asset */}
+        {/* Brand Logo (centered on mobile, left on desktop). The approved master logo ships with a
+            transparent background, so it sits on the cream header and on the scrolled/blurred
+            header without a plate behind it. The link keeps its own accessible name, so the image
+            stays decorative rather than announcing the wordmark twice. */}
         <Link className="brand-mark" href="/" aria-label={NAVIGATION.brandHomeLabel}>
-          {BRAND.identity.displayNameUpper}
+          <Image
+            className="brand-mark-logo"
+            src={BRAND_MASTER_LOGO_SRC}
+            alt=""
+            width={4185}
+            height={2148}
+            sizes="176px"
+            priority
+          />
         </Link>
 
         {/* Desktop Primary Navigation */}
@@ -375,13 +397,18 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           role="dialog"
           aria-modal="true"
           aria-label="Menu điều hướng"
-          className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2] p-6 overflow-y-auto"
+          className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto bg-[#FAF7F2]"
         >
           {/* Mobile Header Bar inside full-screen menu: Logo + Close Button */}
-          <div className="flex items-center justify-between border-b border-[#3B2219]/15 pb-4">
-            <span className="font-serif text-xl font-medium tracking-wide text-[#2A1810]">
-              {BRAND.identity.displayNameUpper}
-            </span>
+          <div className="mobile-nav-dialog__bar">
+            <Image
+              className="brand-mark-logo"
+              src={BRAND_MASTER_LOGO_SRC}
+              alt={BRAND.identity.name}
+              width={4185}
+              height={2148}
+              sizes="176px"
+            />
             <button
               ref={mobileNavCloseRef}
               type="button"
@@ -404,67 +431,99 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           </div>
 
           {/* Primary Mobile Navigation Links */}
-          <nav className="mobile-menu flex-1 px-6 py-6" aria-label="Điều hướng chính trên di động">
-            <div className="space-y-4">
+          <nav className="mobile-menu flex-1" aria-label="Điều hướng chính trên di động">
+            <ul className="mobile-menu__list">
               {primary.map((item) => {
                 const hasChildren = item.children && item.children.length > 0;
+                const panelId = `mobile-nav-panel${item.href.replaceAll("/", "-")}`;
+                const isExpanded = expandedMobileGroup === item.href;
                 return (
-                  <div key={item.href} className="border-b border-[#3B2219]/10 pb-3">
-                    <Link
-                      href={item.href}
-                      onClick={closeMobileNav}
-                      className="block text-base font-serif font-medium text-[#2A1810] hover:text-[#70584B] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-                    >
-                      {item.label}
-                    </Link>
-                    {hasChildren ? (
-                      <div className="mt-2 pl-4 space-y-2 border-l border-[#3B2219]/15">
-                        {item.children!.map((child) => (
-                          <Link
-                            key={child.href}
-                            href={child.href}
-                            onClick={closeMobileNav}
-                            className="block text-sm text-[#70584B] hover:text-[#2A1810] py-1 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  <li key={item.href} className="mobile-menu__item">
+                    <div className="mobile-menu__row">
+                      {/* The category stays a link: collapsing its children must not cost the
+                          category page its one route into the catalogue. The disclosure is a
+                          separate control beside it, so a tap either navigates or expands and
+                          never guesses which was meant. */}
+                      <Link
+                        href={item.href}
+                        onClick={closeMobileNav}
+                        className="mobile-menu__link"
+                      >
+                        {item.label}
+                      </Link>
+                      {hasChildren ? (
+                        <button
+                          type="button"
+                          className="mobile-menu__disclosure"
+                          aria-expanded={isExpanded}
+                          aria-controls={panelId}
+                          aria-label={`${isExpanded ? "Thu gọn" : "Mở rộng"} ${item.label}`}
+                          onClick={() => setExpandedMobileGroup(isExpanded ? null : item.href)}
+                        >
+                          <svg
+                            className={`mobile-menu__chevron${isExpanded ? " mobile-menu__chevron--open" : ""}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            aria-hidden="true"
                           >
-                            {child.label}
-                          </Link>
+                            <polyline points="6 9 12 15 18 9" />
+                          </svg>
+                        </button>
+                      ) : null}
+                    </div>
+                    {hasChildren ? (
+                      <ul id={panelId} className="mobile-menu__sublist" hidden={!isExpanded}>
+                        {item.children!.map((child) => (
+                          <li key={child.href}>
+                            <Link
+                              href={child.href}
+                              onClick={closeMobileNav}
+                              className="mobile-menu__sublink"
+                            >
+                              {child.label}
+                            </Link>
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     ) : null}
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
 
             {/* Mobile Utility Links */}
-            <div className="mt-8 border-t border-[#3B2219]/15 pt-6 space-y-3">
+            <ul className="mobile-menu__utility">
               {mobileUtility.map((item) => {
                 if (item.href === "/search") {
                   return (
-                    <button
-                      key={item.href}
-                      type="button"
-                      onClick={handleOpenMobileSearch}
-                      aria-haspopup="dialog"
-                      className="block w-full text-left text-sm font-semibold uppercase tracking-wider text-[#3B2219] py-1.5 hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-                    >
-                      {item.label}
-                    </button>
+                    <li key={item.href}>
+                      <button
+                        type="button"
+                        onClick={handleOpenMobileSearch}
+                        aria-haspopup="dialog"
+                        className="mobile-menu__utility-link"
+                      >
+                        {item.label}
+                      </button>
+                    </li>
                   );
                 }
                 const destination = item.href === "/account" ? (session ? item.href : loginPath) : item.href;
                 return (
-                  <Link
-                    key={item.href}
-                    href={destination}
-                    onClick={closeMobileNav}
-                    className="block text-sm font-semibold uppercase tracking-wider text-[#3B2219] py-1.5 hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
-                  >
-                    {item.label}
-                  </Link>
+                  <li key={item.href}>
+                    <Link
+                      href={destination}
+                      onClick={closeMobileNav}
+                      className="mobile-menu__utility-link"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           </nav>
         </div>
       ) : null}

@@ -275,10 +275,23 @@ test("U33a/U33b required support pages are reachable from the final site footer"
   ] as const;
 
   for (const destination of destinations) {
-    await page
+    // At this project's 390px viewport the support column is a disclosure, and it collapses again
+    // on every navigation. Reachability is what this test is about, so opening it is part of the
+    // journey rather than a detour around one. The retry is for the click that lands before the
+    // page has hydrated: it leaves the group closed, so re-clicking opens it rather than toggling
+    // an already-open group shut.
+    const supportLink = page
       .locator("footer")
-      .getByRole("link", { name: destination.label, exact: true })
-      .click();
+      .getByRole("link", { name: destination.label, exact: true });
+    await expect(async () => {
+      await page
+        .locator("footer")
+        .getByRole("button", { name: "Hỗ trợ khách hàng", exact: true })
+        .click();
+      await expect(supportLink).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
+
+    await supportLink.click();
     await page.waitForURL((url) => url.pathname === destination.path);
   }
 });

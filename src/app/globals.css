@@ -85,9 +85,21 @@ summary:focus-visible {
 
 .brand-mark {
   justify-self: start;
+  display: inline-flex;
+  align-items: center;
   font-size: 0.95rem;
   font-weight: 700;
   letter-spacing: 0.18em;
+}
+
+/*
+ * The wordmark is sized by height, not width: the master logo is a wide lockup, so a width-based
+ * cap turns into a header three lines tall on a narrow phone.
+ */
+.brand-mark-logo {
+  display: block;
+  width: auto;
+  height: 2.75rem;
 }
 
 .desktop-nav,
@@ -164,6 +176,41 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   font-weight: 600;
+}
+
+/*
+ * `FooterNavGroup` renders both the plain heading and the disclosure that replaces it on the
+ * single-column footer; this is the half that decides which one is in play. Above the breakpoint
+ * the button is removed outright -- a control that cannot change anything should not be in the
+ * accessibility tree or the tab order next to links that are already visible.
+ *
+ * The disclosure inherits the heading's type so the row reads the same either way, and fills the
+ * column so the whole row is the touch target rather than the seven characters of "Mua sắm".
+ */
+.footer-disclosure {
+  display: none;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-height);
+  padding: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.footer-chevron {
+  flex: none;
+  width: 1.05rem;
+  height: 1.05rem;
+  color: var(--olive);
+  transition: transform 0.2s ease;
 }
 
 .footer-copy {
@@ -263,9 +310,61 @@ summary:focus-visible {
 }
 
 @media (max-width: 640px) {
+  /*
+   * One column, and the three link columns are disclosures (see `FooterNavGroup`). Collapsed rows
+   * sit directly on top of each other with a hairline between them, so the closed footer is four
+   * headings rather than the two screens of links it used to be. The `--space-6` gap that
+   * separated columns would read as a gap between accordion rows, so it goes.
+   */
   .footer-groups {
     grid-template-columns: 1fr;
-    gap: var(--space-6);
+    gap: 0;
+  }
+
+  .footer-group + .footer-group {
+    border-top: 1px solid var(--line);
+  }
+
+  .footer-group--brand {
+    padding-bottom: var(--space-4);
+  }
+
+  .footer-copy {
+    font-size: 1.05rem;
+  }
+
+  .footer-contact-list {
+    margin-top: var(--space-3);
+  }
+
+  .footer-heading__static {
+    display: none;
+  }
+
+  .footer-disclosure {
+    display: inline-flex;
+  }
+
+  .footer-group[data-open="false"] .footer-panel {
+    display: none;
+  }
+
+  .footer-group[data-open="true"] .footer-chevron {
+    transform: rotate(180deg);
+  }
+
+  .footer-nav-list {
+    gap: 0;
+    padding-bottom: var(--space-3);
+  }
+
+  .footer-legal {
+    margin-top: var(--space-5);
+    padding-top: var(--space-4);
+  }
+
+  .footer-meta {
+    margin-top: var(--space-4);
   }
 }
 
@@ -777,6 +876,7 @@ body:has(.admin-shell) .site-masthead {
 .utility-nav a,
 .utility-nav button,
 .mobile-menu a,
+.mobile-menu button,
 .footer-nav-list a,
 .footer-contact-list a {
   min-height: var(--control-height);
@@ -791,15 +891,114 @@ body:has(.admin-shell) .site-masthead {
   align-items: center;
 }
 
-.mobile-menu {
-  padding-inline: var(--shell-gutter);
-  padding-bottom: var(--space-5);
+/*
+ * The full-screen mobile menu.
+ *
+ * Rows are sized by `--control-height` alone rather than by height plus padding plus a gap. That
+ * is still the 44px touch target, and it is what lets the seven categories, their disclosures and
+ * the utility links share one screen without scrolling -- the previous 1rem of padding on every
+ * row pushed "Sale" and "Bộ sưu tập" below the fold on a 390px phone.
+ */
+.mobile-nav-dialog {
+  padding: var(--space-3) var(--shell-gutter) var(--space-5);
 }
 
-.mobile-menu a {
+.mobile-nav-dialog__bar {
   display: flex;
   align-items: center;
-  padding-block: var(--space-4);
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.mobile-menu {
+  padding-block: var(--space-2) var(--space-4);
+}
+
+.mobile-menu__list,
+.mobile-menu__sublist,
+.mobile-menu__utility {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mobile-menu__item + .mobile-menu__item {
+  border-top: 1px solid rgba(59, 34, 25, 0.1);
+}
+
+.mobile-menu__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.mobile-menu__link {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--black);
+}
+
+.mobile-menu__disclosure {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-height);
+  margin-right: calc(var(--space-2) * -1);
+  color: var(--olive);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.mobile-menu__chevron {
+  width: 1.05rem;
+  height: 1.05rem;
+  transition: transform 0.2s ease;
+}
+
+.mobile-menu__chevron--open {
+  transform: rotate(180deg);
+}
+
+.mobile-menu__sublist {
+  margin-left: var(--space-3);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--line);
+}
+
+.mobile-menu__sublink {
+  display: flex;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--olive);
+}
+
+.mobile-menu__utility {
+  margin-top: var(--space-4);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+}
+
+.mobile-menu__utility-link {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  text-align: left;
+  color: var(--ink);
+  background: none;
+  border: 0;
+  cursor: pointer;
 }
 
 .site-footer {
@@ -807,6 +1006,15 @@ body:has(.admin-shell) .site-masthead {
   margin-inline: auto;
   gap: var(--space-7);
   padding: var(--space-8) var(--shell-gutter) var(--space-6);
+}
+
+/* Declared here rather than with the rest of the mobile footer rules because the shell padding
+   above is what it overrides, and the earlier block loses to it on source order. */
+@media (max-width: 640px) {
+  .site-footer {
+    padding-top: var(--space-6);
+    padding-bottom: var(--space-5);
+  }
 }
 
 .footer-copy,
