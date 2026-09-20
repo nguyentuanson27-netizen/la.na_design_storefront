@@ -107,22 +107,27 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   const brandHome = footer.getByRole("link", { name: BRAND.identity.name, exact: true });
   await expect(brandHome).toBeVisible();
   const masterLogo = brandHome.getByRole("img", { name: BRAND.identity.name, exact: true });
-  await expect(masterLogo).toHaveAttribute("src", "/brand/la-na-design-master-logo.png");
+  await expect(masterLogo).toHaveAttribute("src", /\/_next\/image\?url=%2Fbrand%2Fla-na-design-master-logo\.png/);
+  await expect(masterLogo).toHaveAttribute("sizes", "176px");
   await masterLogo.scrollIntoViewIfNeeded();
   await expect(masterLogo).toBeVisible();
   await expect.poll(() =>
     masterLogo.evaluate((image) => (image as HTMLImageElement).naturalWidth),
-  ).toBe(4185);
-  const masterLogoIntrinsic = await masterLogo.evaluate((image) => {
+  ).toBeGreaterThan(0);
+  const renderedLogo = await masterLogo.evaluate((image) => {
     const element = image as HTMLImageElement;
     return {
       complete: element.complete,
       naturalWidth: element.naturalWidth,
-      naturalHeight: element.naturalHeight,
+      currentSrc: element.currentSrc,
     };
   });
-  expect(masterLogoIntrinsic).toEqual({ complete: true, naturalWidth: 4185, naturalHeight: 2148 });
+  expect(renderedLogo.complete).toBe(true);
+  expect(renderedLogo.naturalWidth).toBeLessThan(4185);
+  expect(renderedLogo.currentSrc).toContain("/_next/image?url=%2Fbrand%2Fla-na-design-master-logo.png");
 
+  // The owner-approved source asset remains byte-preserved and directly reachable; presentation
+  // simply stops shipping all 4,185 source pixels to a logo rendered at 11rem.
   const masterLogoResponse = await page.request.get(`${BASE_URL}/brand/la-na-design-master-logo.png`);
   expect(masterLogoResponse.status()).toBe(200);
   expect(masterLogoResponse.headers()["content-type"]).toContain("image/png");

@@ -285,6 +285,7 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
+
   await page.goto(`${BASE_URL}/admin?q=${encodeURIComponent(runId)}`, { waitUntil: "networkidle" });
 
   // C5 — row metrics come from database truth, not from the client's view of the mirror.
@@ -545,6 +546,8 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
-  expect(browserErrors).toEqual([]);
-  expect(failedResponses).toEqual([]);
+  expect({ browserErrors, failedResponses }).toEqual({
+    browserErrors: [],
+    failedResponses: [],
+  });
 });

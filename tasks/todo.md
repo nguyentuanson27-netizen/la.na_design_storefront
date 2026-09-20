@@ -117,11 +117,11 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
     and removed there rather than pulling the listing work into that PR. Restore the CTA in the
     same change that gives `/new-arrivals` a listing; `editorial.spec.ts` pins its absence until
     then.
-- [ ] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
-- [ ] **F7b** PDP buy panel with exact `Thêm vào giỏ` + `Mua ngay`; without size highlight selector + show `Vui lòng chọn size`; standard OOS stays visible/disabled with `Hết hàng`; mobile sticky purchase controls.
-- [ ] **F7c** PDP mapped size-guide modal; never infer guide from category.
-- [ ] **F7d** PDP related products: manual order first, same-category fallback.
-- [ ] **F7e** Render PDP detail blocks in exact approved order; omit missing product-specific facts without inference; shipping/returns use approved policy projections.
+- [x] **F7a** PDP 2-column editorial gallery with trusted-media fallback.
+- [x] **F7b** PDP buy panel with exact `Thêm vào giỏ` + `Mua ngay`; without size highlight selector + show `Vui lòng chọn size`; standard OOS stays visible/disabled with `Hết hàng`; mobile sticky purchase controls.
+- [x] **F7c** PDP mapped size-guide modal; never infer guide from category.
+- [x] **F7d** PDP related products: manual order first, same-category fallback.
+- [x] **F7e** Render PDP detail blocks in exact approved order; omit missing product-specific facts without inference; shipping/returns use approved policy projections.
 - [x] **F8a** Show preorder/oversell truth on product card + PDP from canonical sellability projection; standard OOS/hard limit remain visible+disabled with exact `Hết hàng`.
   - The card stopped re-deriving the rule: `resolveAvailability()` counted raw stock, which is
     STANDARD's floor written twice, so it called an allowed OVERSELL variant sold out and a
@@ -133,26 +133,26 @@ Baseline: `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`
     states the basket truth for both pages. The 15 days are I7's `PREORDER_PREPARATION_DAYS` and
     the shipping windows are Brand Config's approved A5 policy — no second copy, no date (§30
     starts the clock at confirmation, which I7 owns) and no guarantee.
-- [ ] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
-- [ ] **F9a** Build final footer/legal/policy UX; non-accordion mobile; no newsletter/representative.
+- [x] **F8c** Show immutable historical preorder/ETA truth on confirmation + tracking.
+- [x] **F9a** Build final footer/legal/policy UX; non-accordion mobile; no newsletter/representative.
 - [x] **F9b** Implement real contact-form delivery through G3-approved transport with validation/abuse controls; if it requires a new provider/dependency/credential, wait for Checkpoint B before provider/adapter work.
 
 ## Final verification
-- [ ] **V1** Mobile+desktop browser walkthrough of header/nav/search/home/PLP/PDP/cart/checkout/preorder/static pages.
-- [ ] **V1** Keyboard/focus/modal/menu checks.
-- [ ] **V1** Axe/accessibility runtime checks.
-- [ ] **V1** Compare representative Home/PLP/PDP using the same harness/test data/network profile against `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`; record measurements/observations.
-- [ ] **V2** `pnpm lint`
-- [ ] **V2** `pnpm typecheck`
-- [ ] **V2** `pnpm test:domain`
-- [ ] **V2** `pnpm test`
-- [ ] **V2** `pnpm test:db`
-- [ ] **V2** `pnpm build`
-- [ ] **V2** `pnpm release:check`
-- [ ] Exact-head CI green.
-- [ ] No secrets in diff; migrations/config/rollback documented.
-- [ ] `SEARCH_INDEXING_ENABLED=false` still fail-closed.
-- [ ] Final review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required.
+- [x] **V1** Mobile+desktop browser walkthrough of header/nav/search/home/PLP/PDP/cart/checkout/preorder/static pages.
+- [x] **V1** Keyboard/focus/modal/menu checks.
+- [x] **V1** Axe/accessibility runtime checks.
+- [x] **V1** Compare representative Home/PLP/PDP using the same harness/test data/network profile against `main@8f7b20552d7dee0df4dff8e662ce508276a65f72`; record measurements/observations.
+- [x] **V2** `pnpm lint`
+- [x] **V2** `pnpm typecheck`
+- [x] **V2** `pnpm test:domain`
+- [x] **V2** `pnpm test`
+- [x] **V2** `pnpm test:db`
+- [x] **V2** `pnpm build`
+- [x] **V2** `pnpm release:check`
+- [x] Exact-head CI green.
+- [x] No secrets in diff; migrations/config/rollback documented.
+- [x] `SEARCH_INDEXING_ENABLED=false` still fail-closed.
+- [x] Final review: correctness → security → architecture → simplicity → performance; 0 Critical / 0 Required.
 
 ## Explicitly still pending / do not invent
 - [ ] Real hero campaign assets/destinations.
