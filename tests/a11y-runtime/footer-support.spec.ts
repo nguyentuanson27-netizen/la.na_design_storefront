@@ -6,7 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-import { BRAND } from "../../src/brand/index.ts";
+import { BRAND, NAVIGATION } from "../../src/brand/index.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import {
   describePublicAddress,
@@ -276,4 +276,63 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
   expect(browserErrors).toEqual([]);
+});
+
+test("F9a mobile footer without JavaScript keeps every link and ships no disclosure a visitor cannot open", async ({
+  browser,
+}) => {
+  // The disclosure is a React button, so with scripting disabled it could never open. §33's
+  // guarantee is that such a visitor keeps every link, which the hydrating tests above cannot
+  // observe: by the time they click, the page has hydrated and the button works.
+  const context = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    javaScriptEnabled: false,
+  });
+  const page = await context.newPage();
+
+  try {
+    const response = await page.goto(`${BASE_URL}/search`, { waitUntil: "load" });
+    expect(response?.status()).toBe(200);
+
+    const footer = page.locator("footer");
+    await expect(footer).toBeVisible();
+
+    // No dead controls: a button that cannot do anything must not be in the page at all.
+    await expect(footer.getByRole("button")).toHaveCount(0);
+
+    for (const group of ["Mua sắm", "Hỗ trợ khách hàng", "Thông tin & chính sách"]) {
+      await expect(footer.getByRole("heading", { level: 2, name: group, exact: true })).toBeVisible();
+    }
+
+    // Every destination the hydrated footer hides behind a disclosure is reachable here.
+    const expectedShopping = NAVIGATION.footer;
+    const supportTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support");
+    const policyTopics = POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy");
+    const expected = [
+      ...expectedShopping.map((item) => ({ label: item.label, href: item.href })),
+      ...supportTopics.map((topic) => ({ label: topic.title, href: topic.href })),
+      ...policyTopics.map((topic) => ({ label: topic.title, href: topic.href })),
+    ];
+    expect(expected.length).toBeGreaterThan(0);
+
+    for (const { label, href } of expected) {
+      const link = footer.getByRole("link", { name: label, exact: true });
+      await expect(link, label).toBeVisible();
+      await expect(link, label).toHaveAttribute("href", href);
+    }
+
+    // The panels are genuinely laid out, not merely present in the accessibility tree.
+    const panelDisplays = await page
+      .locator("footer .footer-panel")
+      .evaluateAll((panels) => panels.map((panel) => getComputedStyle(panel).display));
+    expect(panelDisplays).toHaveLength(3);
+    expect(panelDisplays.every((display) => display !== "none")).toBe(true);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - window.innerWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  } finally {
+    await context.close();
+  }
 });

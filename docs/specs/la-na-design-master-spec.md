@@ -893,8 +893,12 @@ starting closed. This replaces the original always-expanded rule at the owner's 
 links between the page and the legal block is a scroll, not a footer.
 
 Wherever the footer is still more than one column, every link stays visible: the disclosure is a
-mobile-only presentation, and the column-1 brand/contact block never collapses. A visitor without
-JavaScript keeps all links expanded.
+mobile-only presentation, and the column-1 brand/contact block never collapses.
+
+A visitor without JavaScript keeps all links expanded, and is shown no disclosure control at all.
+The disclosure cannot open without scripting, so collapsing the groups for that visitor would put
+the support and policy pages out of reach entirely; the collapse is therefore reversed for them,
+and the footer falls back to the same arrangement it has above the breakpoint.
 
 No newsletter in current scope.
 

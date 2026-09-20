@@ -19,6 +19,12 @@ import type { NavigationLink } from "@/brand";
  * React owns only `data-open`. The panel's visibility follows from it in CSS, so the panel and
  * `aria-expanded` cannot disagree, and the control that is not in play is `display: none` rather
  * than a button announcing a collapsed state next to links that are plainly visible.
+ *
+ * The initial `false` is the hydrated mobile default, not the no-JS one. Because the disclosure is
+ * a React button, a visitor with scripting disabled could never open it, so `SiteFooter` ships a
+ * `<noscript>` stylesheet that reverses the collapse for them; §33 guarantees they keep every link.
+ * Any change to the mobile rules in `globals.css` has to keep that block in step, which is what
+ * `tests/domain/site-footer.test.ts` and the JavaScript-disabled runtime test check.
  */
 export function FooterNavGroup({
   heading,

@@ -20,9 +20,36 @@ import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
  * authority. It is committed byte-for-byte under public/brand; no favicon/social-card derivation or
  * restyling is performed here.
  */
+
+/**
+ * The other half of §33's mobile rule: with scripting disabled the footer keeps every link.
+ *
+ * The disclosure is a React button, so without JavaScript it can never open. Collapsing the groups
+ * anyway would leave a visitor with three buttons that do nothing and no way to reach the support
+ * or policy pages, which is worse than the long footer the disclosures were introduced to fix. A
+ * browser with scripting enabled never parses the contents of `<noscript>`, so this costs those
+ * visitors nothing and changes nothing about the hydrated behaviour; a browser with scripting
+ * disabled applies it and gets the same arrangement the desktop footer has.
+ *
+ * Each selector carries a `:root` prefix so it outranks the rule it reverses on specificity rather
+ * than on where the browser happened to put this stylesheet, and the attribute value is unquoted so
+ * the declaration survives HTML escaping if this ever stops being written as raw markup.
+ */
+const NO_SCRIPT_FOOTER_CSS = `
+@media (max-width: 640px) {
+  :root .footer-heading__static { display: inline; }
+  :root .footer-disclosure { display: none; }
+  :root .footer-group[data-open=false] .footer-panel { display: block; }
+}
+`;
+
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
     <footer className="site-footer">
+      <noscript>
+        <style dangerouslySetInnerHTML={{ __html: NO_SCRIPT_FOOTER_CSS }} />
+      </noscript>
+
       <div className="footer-groups">
         <section className="footer-group footer-group--brand" data-footer-group>
           <h2 className="footer-brand-heading">

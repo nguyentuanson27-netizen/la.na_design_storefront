@@ -58,3 +58,58 @@ test("F9a mobile footer: link columns collapse behind a disclosure, and only on 
     "a closed group hides its panel, and only below the single-column breakpoint",
   );
 });
+
+/**
+ * The disclosure is a React button, so scripting disabled means it can never open. §33 guarantees
+ * such a visitor keeps every link, which is the half the browser tests could not see until one of
+ * them ran with JavaScript off -- and the half a later edit to the mobile rules can silently drop,
+ * because nothing else in the stylesheet refers to it.
+ */
+test("F9a mobile footer: a visitor without JavaScript keeps every link and no dead disclosure", () => {
+  const footer = read("src/components/brand/site-footer.tsx");
+  const css = read("src/app/globals.css");
+
+  const noscript = footer.match(/<noscript>[\s\S]*?<\/noscript>/);
+  assert.ok(noscript, "the footer must ship a <noscript> fallback for the collapsed groups");
+  assert.match(
+    footer,
+    /const NO_SCRIPT_FOOTER_CSS = `[\s\S]*?`;/,
+    "the fallback stylesheet is a code-authored constant, not assembled at render time",
+  );
+
+  const fallback = footer.match(/const NO_SCRIPT_FOOTER_CSS = `([\s\S]*?)`;/)?.[1] ?? "";
+  assert.match(fallback, /@media \(max-width: 640px\)/, "the fallback is scoped to the same breakpoint");
+
+  // Each rule the mobile block applies has to be reversed, or a no-JS visitor is left with either a
+  // hidden panel or a button that does nothing.
+  for (const [rule, reversal] of [
+    ["\\.footer-heading__static \\{\\s*display:\\s*none;", /\.footer-heading__static \{ display: inline; \}/],
+    ["\\.footer-disclosure \\{\\s*display:\\s*inline-flex;", /\.footer-disclosure \{ display: none; \}/],
+    [
+      "\\.footer-group\\[data-open=\"false\"\\] \\.footer-panel \\{\\s*display:\\s*none;",
+      /\.footer-group\[data-open=false\] \.footer-panel \{ display: block; \}/,
+    ],
+  ] as const) {
+    assert.match(
+      css,
+      new RegExp(`@media \\(max-width: 640px\\) \\{[\\s\\S]*?${rule}`),
+      `globals.css must still apply the rule the fallback reverses: ${rule}`,
+    );
+    assert.match(fallback, reversal, `the <noscript> fallback must reverse ${rule}`);
+  }
+
+  // The reversal has to win on specificity rather than on where the browser puts this stylesheet.
+  assert.ok(
+    fallback
+      .split("\n")
+      .filter((line) => line.includes("{") && !line.includes("@media"))
+      .every((line) => line.trim().startsWith(":root ")),
+    "every fallback rule must carry the :root prefix that outranks the rule it reverses",
+  );
+
+  // Escaping the attribute value would leave the selector matching nothing.
+  assert.ok(
+    !fallback.includes('data-open="false"'),
+    "the fallback's attribute value stays unquoted so it survives HTML escaping",
+  );
+});
