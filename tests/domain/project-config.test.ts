@@ -15,6 +15,7 @@ const VALID: ProjectConfig = {
   databaseName: "acme_women",
   composeProjectName: "acme-women",
   productionDomain: "acme-women.vn",
+  temporaryDomain: "legacy.acme-women.vn",
 };
 
 function withField<K extends keyof ProjectConfig>(key: K, value: unknown): Record<string, unknown> {
@@ -124,27 +125,26 @@ test("composeProjectName follows the Docker Compose project rules", () => {
   }
 });
 
-test("productionDomain rejects scheme, path and port", () => {
-  for (const value of [
-    "https://acme-women.vn",
-    "acme-women.vn/",
-    "acme-women.vn:443",
-    "acme-women",
-    "ACME-WOMEN.VN",
-    "acme-women.v",
-    "acme women.vn",
-  ]) {
-    assert.throws(
-      () => parseProjectConfig(withField("productionDomain", value)),
-      /productionDomain/,
-      `${value} must fail closed`,
-    );
-  }
-  for (const value of ["acme-women.vn", "www.lafashion.asia", "shop.acme-women.com"]) {
-    assert.equal(
-      parseProjectConfig(withField("productionDomain", value)).productionDomain,
-      value,
-    );
+test("public deployment domains reject scheme, path and port", () => {
+  for (const key of ["productionDomain", "temporaryDomain"] as const) {
+    for (const value of [
+      "https://acme-women.vn",
+      "acme-women.vn/",
+      "acme-women.vn:443",
+      "acme-women",
+      "ACME-WOMEN.VN",
+      "acme-women.v",
+      "acme women.vn",
+    ]) {
+      assert.throws(
+        () => parseProjectConfig(withField(key, value)),
+        new RegExp(key),
+        `${key}=${value} must fail closed`,
+      );
+    }
+    for (const value of ["acme-women.vn", "www.lafashion.asia", "shop.acme-women.com"]) {
+      assert.equal(parseProjectConfig(withField(key, value))[key], value);
+    }
   }
 });
 
