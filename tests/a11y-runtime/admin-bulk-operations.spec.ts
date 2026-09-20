@@ -24,6 +24,10 @@ const password = "admin-bulk-operations-password-123";
 const collectionSlug = `bulkops-collection-${runId}`.toLowerCase().replace(/[^a-z0-9-]/g, "-");
 const trustedImageUrl = "https://content.pancake.vn/media/1/2/3/bulkops.jpg";
 const untrustedImageUrl = "https://cdn.example.com/media/1/2/3/bulkops.jpg";
+const tinyJpegBuffer = Buffer.from(
+  "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+  "base64",
+);
 
 const plainName = `Bulk Ops Plain ${runId}`;
 const boundName = `Bulk Ops Scan Bound ${runId}`;
@@ -285,6 +289,21 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   await watchDocumentTitle(page);
   await context.addCookies(adminCookies);
+
+  // This spec owns a synthetic Pancake media URL only to exercise trusted-image classification.
+  // Keep the browser runtime deterministic: the admin table renders trusted media unoptimized, so
+  // letting this fixture escape to the public network can turn an unrelated remote 404 into a CI
+  // console failure. Untrusted media remains unmocked and must never be requested by the UI.
+  let trustedFixtureRequests = 0;
+  await page.route(trustedImageUrl, async (route) => {
+    trustedFixtureRequests += 1;
+    await route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: tinyJpegBuffer,
+    });
+  });
+
   await page.goto(`${BASE_URL}/admin?q=${encodeURIComponent(runId)}`, { waitUntil: "networkidle" });
 
   // C5 — row metrics come from database truth, not from the client's view of the mirror.
@@ -545,6 +564,7 @@ test("admin directory surfaces health truth and runs bulk collection and catalog
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
+  expect(trustedFixtureRequests).toBeGreaterThan(0);
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
 });
