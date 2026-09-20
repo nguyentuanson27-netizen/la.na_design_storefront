@@ -3,10 +3,9 @@
 	# forwards plain HTTP to Caddy over a host-owned external Docker network.
 	# Trust only the configured NPM network and parse X-Forwarded-For from
 	# right-to-left because NPM appends the connecting address to that header.
-	# The documentation-only default lets static config validation run; the VPS
-	# runbook requires the real reviewed CIDR before production promotion.
+	# Compose requires the reviewed NPM trust range before Caddy can start.
 	servers {
-		trusted_proxies static {$EDGE_TRUSTED_PROXY_CIDR:192.0.2.1/32}
+		trusted_proxies static {$EDGE_TRUSTED_PROXY_CIDR}
 		trusted_proxies_strict
 		client_ip_headers X-Forwarded-For
 	}
