@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { OFFICIAL_PRODUCTION_STOREFRONT_HOST } from "../../src/commerce/storefront-origin.ts";
+import {
+  LEGACY_TEMPORARY_STOREFRONT_HOST,
+  OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+} from "../../src/commerce/storefront-origin.ts";
 import { PROJECT_CONFIG_PATH, readProjectConfig } from "../../src/config/project-config.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -98,24 +102,32 @@ test("the reusable identity workflow fails closed on a missing key", () => {
     "utf8",
   );
   assert.match(contents, /set -euo pipefail/);
-  for (const key of ["projectSlug", "databaseName", "composeProjectName", "productionDomain"]) {
+  for (const key of [
+    "projectSlug",
+    "databaseName",
+    "composeProjectName",
+    "productionDomain",
+    "temporaryDomain",
+  ]) {
     // `jq -e` exits non-zero on a missing or null key; the assignment lets `set -e` stop the job.
     assert.match(contents, new RegExp(`jq -er '\\.${key}'`));
   }
 });
 
-test("compose interpolates project identity instead of embedding it", () => {
+test("compose interpolates project identity and requires the real edge boundary", () => {
   const compose = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "compose.yml"), "utf8");
   for (const required of [
     "name: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}",
     "${PROJECT_SLUG:?set PROJECT_SLUG}",
     "APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}",
+    "EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}",
+    "name: ${EDGE_NETWORK_NAME:?set EDGE_NETWORK_NAME}",
   ]) {
     assert.ok(compose.includes(required), `compose.yml must contain ${required}`);
   }
 });
 
-test("the deploy env example carries secrets only, never project identity", () => {
+test("the deploy env example carries runtime controls and secrets, never duplicated project identity", () => {
   const envExample = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "env.example"), "utf8");
   const assignments = envExample
     .split("\n")
@@ -129,14 +141,59 @@ test("the deploy env example carries secrets only, never project identity", () =
     );
   }
 
-  // The secret placeholders still have to be there, and still have to be placeholders.
-  for (const secretKey of ["BETTER_AUTH_SECRET", "POSTGRES_PASSWORD", "DATABASE_URL"]) {
-    assert.ok(assignments.includes(secretKey), `${secretKey} must stay in env.example`);
+  for (const requiredKey of [
+    "DEPLOY_TARGET",
+    "BETTER_AUTH_SECRET",
+    "POSTGRES_PASSWORD",
+    "DATABASE_URL",
+    "RESEND_API_KEY",
+    "EDGE_NETWORK_NAME",
+    "EDGE_TRUSTED_PROXY_CIDR",
+  ]) {
+    assert.ok(assignments.includes(requiredKey), `${requiredKey} must stay in env.example`);
   }
   assert.match(envExample, /BETTER_AUTH_SECRET=REPLACE_ME_/);
 });
 
-test("the storefront origin constant mirrors the committed production domain", () => {
-  // The one copy of the domain that lives in application code rather than infrastructure.
+test("deployment target is explicit and temporary maps only to the approved noindex host", () => {
+  const script = "source deploy/vps/project-identity.sh; printf '%s|%s|%s' \"$DEPLOY_TARGET\" \"$APP_DOMAIN\" \"$BETTER_AUTH_URL\"";
+
+  const temporary = execFileSync("bash", ["-lc", script], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, DEPLOY_TARGET: "temporary" },
+    encoding: "utf8",
+  });
+  assert.equal(
+    temporary,
+    `temporary|${CONFIG.temporaryDomain}|https://${CONFIG.temporaryDomain}`,
+  );
+
+  const production = execFileSync("bash", ["-lc", script], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, DEPLOY_TARGET: "production" },
+    encoding: "utf8",
+  });
+  assert.equal(
+    production,
+    `production|${CONFIG.productionDomain}|https://${CONFIG.productionDomain}`,
+  );
+
+  const invalid = spawnSync("bash", ["-lc", "source deploy/vps/project-identity.sh"], {
+    cwd: REPO_ROOT,
+    env: { ...process.env, DEPLOY_TARGET: "other" },
+    encoding: "utf8",
+  });
+  assert.notEqual(invalid.status, 0);
+  assert.match(invalid.stderr, /DEPLOY_TARGET/);
+});
+
+test("Caddy trusts only the explicitly supplied edge proxy range", () => {
+  const caddy = readFileSync(path.join(REPO_ROOT, "deploy", "vps", "Caddyfile"), "utf8");
+  assert.match(caddy, /trusted_proxies static \{\$EDGE_TRUSTED_PROXY_CIDR\}/);
+  assert.equal(caddy.includes("192.0.2.1/32"), false);
+});
+
+test("the storefront origin constants mirror the committed public deployment domains", () => {
   assert.equal(OFFICIAL_PRODUCTION_STOREFRONT_HOST, CONFIG.productionDomain);
+  assert.equal(LEGACY_TEMPORARY_STOREFRONT_HOST, CONFIG.temporaryDomain);
 });

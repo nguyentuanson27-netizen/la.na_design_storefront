@@ -91,9 +91,7 @@ services:
     restart: unless-stopped
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
-      # Documentation-only default keeps `docker compose config` usable in CI.
-      # The VPS runbook requires the real NPM trust range before promotion.
-      EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:-192.0.2.1/32}
+      EDGE_TRUSTED_PROXY_CIDR: ${EDGE_TRUSTED_PROXY_CIDR:?set EDGE_TRUSTED_PROXY_CIDR}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -114,7 +112,7 @@ networks:
   # deliberately non-production; deployment fails unless that network exists.
   edge:
     external: true
-    name: ${EDGE_NETWORK_NAME:-edge-network-unconfigured}
+    name: ${EDGE_NETWORK_NAME:?set EDGE_NETWORK_NAME}
 
 volumes:
   postgres_data:

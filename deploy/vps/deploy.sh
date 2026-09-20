@@ -4,17 +4,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT_DIR"
 
-# shellcheck source=deploy/vps/project-identity.sh
-source "deploy/vps/project-identity.sh"
-
 ENV_FILE="deploy/vps/.env.production"
 COMPOSE_FILE="deploy/vps/compose.yml"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
 if [[ ! -f "$ENV_FILE" ]]; then
   echo "Missing $ENV_FILE" >&2
   exit 1
 fi
+
+# Load only non-secret deployment controls before identity resolution. Never source the whole file.
+DEPLOY_TARGET="$(grep -E '^DEPLOY_TARGET=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+export DEPLOY_TARGET
+
+# shellcheck source=deploy/vps/project-identity.sh
+source "deploy/vps/project-identity.sh"
+
+BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
 # Load only RELEASE_SHA for the exact-checkout invariant. Do not echo env contents.
 RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"

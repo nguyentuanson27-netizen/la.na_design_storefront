@@ -9,6 +9,7 @@ const CONFIG: ProjectConfig = Object.freeze({
   databaseName: "acme_women",
   composeProjectName: "acme-women",
   productionDomain: "acme-women.vn",
+  temporaryDomain: "legacy.acme-women.vn",
 });
 
 function mirrors(overrides: Partial<Parameters<typeof assertIdentityMirrors>[0]> = {}) {

@@ -6,7 +6,9 @@ Non-secret project identity has one source: `project.config.json`. `deploy/vps/p
 
 ## Release model
 
-Every production release uses one reviewed, CI-green, full 40-character Git SHA. `deploy/vps/.env.production` carries the release SHA and runtime secrets/configuration; `deploy.sh` refuses a dirty or mismatched checkout.
+Every release uses one reviewed, CI-green, full 40-character Git SHA. `deploy/vps/.env.production` carries the release SHA, an explicit `DEPLOY_TARGET`, and runtime secrets/configuration; `deploy.sh` refuses a dirty or mismatched checkout.
+
+`DEPLOY_TARGET=production` resolves the application origin from `project.config.json`. `DEPLOY_TARGET=temporary` resolves only to the already-approved `la.lanadesign.vn` temporary host. No arbitrary hostname is accepted, and the temporary host remains fail-closed for indexing.
 
 The current Compose topology expects PostgreSQL, app, ops and Caddy plus an external edge Docker network named by `EDGE_NETWORK_NAME`. Caddy's edge alias is `${COMPOSE_PROJECT_NAME}-caddy`, currently `la-na-design-caddy`. The real trusted proxy range must be supplied through `EDGE_TRUSTED_PROXY_CIDR`; the documentation fallback is not a production value.
 
@@ -19,8 +21,8 @@ A candidate is releasable only when all applicable items are true:
 1. human review/approval exists for the exact SHA;
 2. exact-head CI and required runtime checks are green;
 3. target host/DNS/TLS/edge state has been observed;
-4. protected `deploy/vps/.env.production` contains real runtime values and no placeholders;
-5. the external edge network exists and the trusted proxy range is narrowly reviewed;
+4. protected `deploy/vps/.env.production` contains real runtime values and no placeholders, including `DEPLOY_TARGET` and `RESEND_API_KEY`;
+5. the external edge network exists and both `EDGE_NETWORK_NAME` and `EDGE_TRUSTED_PROXY_CIDR` are explicitly configured and narrowly reviewed;
 6. database migration/recovery impact has been reviewed;
 7. backup/restore readiness matches the migration risk;
 8. the previous known-good application SHA/image is retained;
@@ -41,7 +43,9 @@ bash deploy/vps/deploy.sh
 
 The default local backup directory is `/var/backups/$PROJECT_SLUG`, currently `/var/backups/la-na-design`. It is not a substitute for off-site backup.
 
-After promotion, verify through the real public edge: HTTPS/hostname, buyer-critical flows, security headers, client-IP/rate-limit behavior, service health/logs, and the explicitly approved search-exposure posture. Do not create a live Pancake order merely as a generic release smoke test.
+After promotion, verify through the real public edge: HTTPS/hostname, buyer-critical flows, security headers, client-IP/rate-limit behavior, service health/logs, contact-form delivery, and the explicitly approved search-exposure posture. For the temporary target, verify robots/noindex behavior remains blocked. Do not create a live Pancake order merely as a generic release smoke test.
+
+Before accepting the contact form, verify `lanadesign.vn` for sending in Resend, create a server-only sending key, store it as `RESEND_API_KEY`, and confirm a controlled message from `website@lanadesign.vn` reaches the approved support inbox.
 
 ## Application rollback
 

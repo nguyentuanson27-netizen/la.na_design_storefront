@@ -15,6 +15,7 @@ const validEnvironment = {
   BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
   PANCAKE_API_KEY: "super-secret-pancake-key",
   PANCAKE_SHOP_ID: "920007",
+  RESEND_API_KEY: "re_ci-only-contact-key",
   LA_SHIPPING_FEE_VND: "30000",
   LA_FREE_SHIPPING_SUBTOTAL_VND: "1000000",
   LA_FREE_SHIPPING_MIN_QUANTITY: "3",
@@ -34,6 +35,7 @@ test("release preflight validates required server configuration without returnin
     trustedIpHeaderConfigured: true,
     pancakeConfigured: true,
     pancakeShopId: 920_007,
+    contactDeliveryConfigured: true,
     shippingPolicy: {
       feeVnd: 30_000,
       freeShippingSubtotalVnd: 1_000_000,
@@ -52,6 +54,7 @@ test("release preflight validates required server configuration without returnin
     "super-secret-password",
     validEnvironment.BETTER_AUTH_SECRET,
     validEnvironment.PANCAKE_API_KEY,
+    validEnvironment.RESEND_API_KEY,
   ]) {
     assert.equal(serialized.includes(sensitiveValue), false);
   }
@@ -145,6 +148,44 @@ test("release preflight requires explicit fail-closed search indexing configurat
     SEARCH_INDEXING_ENABLED: "true",
   });
   assert.equal(enabled.searchIndexingEnabled, true);
+});
+
+test("release preflight requires Resend contact delivery configuration without exposing the secret", () => {
+  assert.throws(
+    () => validateReleaseEnvironment({ ...validEnvironment, RESEND_API_KEY: undefined }),
+    /RESEND_API_KEY/,
+  );
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        RESEND_API_KEY: "REPLACE_ME_RESEND_API_KEY",
+      }),
+    /RESEND_API_KEY/,
+  );
+});
+
+test("temporary deployment origin stays explicitly approved and fail-closed for indexing", () => {
+  const summary = validateReleaseEnvironment({
+    ...validEnvironment,
+    APP_DOMAIN: "la.lanadesign.vn",
+    BETTER_AUTH_URL: "https://la.lanadesign.vn",
+    SEARCH_INDEXING_ENABLED: "false",
+  });
+
+  assert.equal(summary.identityMirrors.appDomainScope, "legacy");
+  assert.equal(summary.searchIndexingEnabled, false);
+
+  assert.throws(
+    () =>
+      validateReleaseEnvironment({
+        ...validEnvironment,
+        APP_DOMAIN: "la.lanadesign.vn",
+        BETTER_AUTH_URL: "https://la.lanadesign.vn",
+        SEARCH_INDEXING_ENABLED: "true",
+      }),
+    /temporary production storefront origin/,
+  );
 });
 
 test("T2 release preflight fails closed on malformed tracking configuration", () => {

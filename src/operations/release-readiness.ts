@@ -3,6 +3,7 @@ import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 import { resolveMerchantMarketFromEnvironment } from "../commerce/merchant-offer-mapper.ts";
 import { LEGACY_TEMPORARY_STOREFRONT_HOST } from "../commerce/storefront-origin.ts";
 import { readProjectConfig } from "../config/project-config.ts";
+import { readContactDeliveryConfig } from "../contact/contact-config.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
 import { validateSearchExposureForRelease } from "../seo/search-exposure.ts";
 import { readTrackingConfig, resolveTrackingRuntime, type TrackingMode } from "../tracking/config.ts";
@@ -21,6 +22,7 @@ export type ReleaseReadinessSummary = Readonly<{
   trustedIpHeaderConfigured: boolean;
   pancakeConfigured: true;
   pancakeShopId: number;
+  contactDeliveryConfigured: true;
   shippingPolicy: Readonly<{
     feeVnd: number;
     freeShippingSubtotalVnd: number;
@@ -61,6 +63,7 @@ export function validateReleaseEnvironment(
     throw new Error("BETTER_AUTH_URL must match APP_DOMAIN storefront origin");
   }
   const pancake = readPancakeConfig(env);
+  readContactDeliveryConfig(env);
   const shippingPolicy = readGuestShippingPolicy(env);
   // Last, so every existing preflight failure still reports its own reason first. This is the gate
   // that stops a release pointed at another project's database or domain before deploy.sh reaches
@@ -84,6 +87,7 @@ export function validateReleaseEnvironment(
     trustedIpHeaderConfigured: auth.ipAddressHeader !== undefined,
     pancakeConfigured: true,
     pancakeShopId: pancake.shopId,
+    contactDeliveryConfigured: true,
     shippingPolicy,
     identityMirrors,
   };

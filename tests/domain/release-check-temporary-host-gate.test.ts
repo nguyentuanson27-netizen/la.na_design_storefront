@@ -38,6 +38,7 @@ function releaseEnvironment(overrides: Record<string, string>): NodeJS.ProcessEn
     BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
     PANCAKE_API_KEY: "super-secret-pancake-key",
     PANCAKE_SHOP_ID: "920007",
+    RESEND_API_KEY: "re_ci-only-contact-key",
     LA_MERCHANT_TARGET_COUNTRY: "VN",
     LA_MERCHANT_CONTENT_LANGUAGE: "vi",
     LA_MERCHANT_CURRENCY: "VND",
@@ -78,7 +79,12 @@ test("W15b the refused release:check leaks no credentials in its failure output"
   });
 
   const output = `${result.stdout}${result.stderr}`;
-  for (const secret of [DATABASE_PASSWORD, "super-secret-pancake-key", "release-only-secret-0123456789abcdef"]) {
+  for (const secret of [
+    DATABASE_PASSWORD,
+    "super-secret-pancake-key",
+    "release-only-secret-0123456789abcdef",
+    "re_ci-only-contact-key",
+  ]) {
     assert.equal(output.includes(secret), false, `release:check output must not echo ${secret.slice(0, 12)}…`);
   }
 });

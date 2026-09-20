@@ -22,6 +22,9 @@ on:
       production-domain:
         description: Bare production hostname.
         value: ${{ jobs.load.outputs.production-domain }}
+      temporary-domain:
+        description: Approved temporary noindex hostname.
+        value: ${{ jobs.load.outputs.temporary-domain }}
 
 permissions:
   contents: read
@@ -35,6 +38,7 @@ jobs:
       database-name: ${{ steps.identity.outputs.database-name }}
       compose-project-name: ${{ steps.identity.outputs.compose-project-name }}
       production-domain: ${{ steps.identity.outputs.production-domain }}
+      temporary-domain: ${{ steps.identity.outputs.temporary-domain }}
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
@@ -48,9 +52,11 @@ jobs:
           database_name="$(jq -er '.databaseName' project.config.json)"
           compose_project_name="$(jq -er '.composeProjectName' project.config.json)"
           production_domain="$(jq -er '.productionDomain' project.config.json)"
+          temporary_domain="$(jq -er '.temporaryDomain' project.config.json)"
           {
             echo "project-slug=${project_slug}"
             echo "database-name=${database_name}"
             echo "compose-project-name=${compose_project_name}"
             echo "production-domain=${production_domain}"
+            echo "temporary-domain=${temporary_domain}"
           } >> "$GITHUB_OUTPUT"
