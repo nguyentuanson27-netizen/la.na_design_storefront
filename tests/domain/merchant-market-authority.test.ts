@@ -212,6 +212,7 @@ describe("U41 / M5a: trusted server-owned Merchant market authority", () => {
       BETTER_AUTH_IP_HEADER: "cf-connecting-ip",
       PANCAKE_API_KEY: "secret-key",
       PANCAKE_SHOP_ID: "920007",
+      RESEND_API_KEY: "re_ci-only-contact-key",
       LA_SHIPPING_FEE_VND: "30000",
       LA_FREE_SHIPPING_SUBTOTAL_VND: "1000000",
       LA_FREE_SHIPPING_MIN_QUANTITY: "3",
