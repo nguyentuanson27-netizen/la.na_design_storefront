@@ -107,14 +107,15 @@ async function cleanup() {
 async function expectSizeGuideArtworkFits(
   page: Page,
   dialog: Locator,
-  expectedAlt: string,
   expectedSrc: string,
   expectedChartTitle: string,
   expectedSmallChest: string,
 ) {
-  const image = dialog.getByRole("img", { name: expectedAlt, exact: true });
+  const image = dialog.locator("img");
+  await expect(image).toHaveCount(1);
   await expect(image).toBeVisible();
   await expect(image).toHaveAttribute("src", expectedSrc);
+  await expect(image).toHaveAttribute("alt", "");
 
   const semanticTable = dialog.getByRole("table", {
     name: `Dữ liệu bảng size ${expectedChartTitle}`,
@@ -701,7 +702,6 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
     await expectSizeGuideArtworkFits(
       page,
       dialog,
-      "Bảng size Áo dài La.na Design",
       "/brand/size-guides/ao-dai.webp",
       "Áo dài",
       "86",
@@ -761,7 +761,6 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   await expectSizeGuideArtworkFits(
     page,
     mappedDialog,
-    "Bảng size Set/Váy form rộng La.na Design",
     "/brand/size-guides/set-vay-form-rong.webp",
     "Set/Váy form rộng",
     "86",
@@ -779,7 +778,6 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   await expectSizeGuideArtworkFits(
     page,
     smallFormDialog,
-    "Bảng size Set/Váy form nhỏ La.na Design",
     "/brand/size-guides/set-vay-form-nho.webp",
     "Set/Váy form nhỏ",
     "84",
