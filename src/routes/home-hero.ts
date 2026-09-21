@@ -23,7 +23,7 @@ import { parseTrustedProductImageUrl } from "../commerce/product-media.ts";
 export const HOME_HERO_MAX_SLIDES = 3;
 
 /** Master spec §17: the CTA wording is approved copy, not a per-slide choice. */
-export const HOME_HERO_CTA_LABEL = "Khám phá thiết kế";
+export const HOME_HERO_CTA_LABEL = "MUA NGAY";
 
 export type HomeHeroSlideCandidate = Readonly<{
   /** Unvalidated media URL; anything the trusted-media contract rejects drops the slide. */

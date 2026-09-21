@@ -326,12 +326,44 @@ test("PDP with single trusted image renders hero image without redundant thumbna
   await expect(page.getByRole("heading", { level: 1, name: singleName })).toBeVisible();
   await assertPageQuality(page);
 
-  // Hero image is visible
-  const heroImg = page.locator(`img[alt="${singleName}"]`);
+  // The canonical first image is the full-bleed hero and the header overlays it at the top.
+  const hero = page.getByRole("region", { name: `Ảnh chính của ${singleName}` });
+  const heroImg = hero.locator(`img[alt="${singleName}"]`);
+  await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
   await expect(heroImg).toBeVisible();
+  await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+  expect(await page.locator("header.site-header").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+
+  // A one-image product has nothing left to duplicate below the hero.
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
 
   // No redundant carousel thumbnail controls
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
+});
+
+test("single-image PDP keeps the product purchase panel in the right desktop column", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
+
+  await page.goto(`${BASE_URL}/shop/${singleSlug}`, { waitUntil: "networkidle" });
+
+  const heading = page.getByRole("heading", { level: 1, name: singleName });
+  await expect(heading).toBeVisible();
+  const purchaseArticle = page.locator("article").filter({ has: heading });
+  await expect(purchaseArticle).toBeVisible();
+
+  const box = await purchaseArticle.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThan(1440 / 2);
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
 });
 
 test("PDP with multiple images renders a one-column mobile editorial grid with every trusted image once", async ({
@@ -348,22 +380,27 @@ test("PDP with multiple images renders a one-column mobile editorial grid with e
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: multiName })).toBeVisible();
 
+  const hero = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+  await expect(hero.locator(`img[alt="${multiName}"]`)).toHaveCount(1);
+
   const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
   const images = gallery.locator("img");
-  await expect(images).toHaveCount(3);
+  await expect(images).toHaveCount(2);
 
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 2; index += 1) {
     await expect(images.nth(index)).toBeVisible();
   }
 
-  const renderedImages = await images.evaluateAll((elements) =>
+  const allProductImages = page.locator(`img[alt^="${multiName}"]`);
+  await expect(allProductImages).toHaveCount(3);
+  const renderedImages = await allProductImages.evaluateAll((elements) =>
     elements.map((element) => ({
       alt: element.getAttribute("alt"),
       src: element.getAttribute("src"),
     })),
   );
   expect(renderedImages.map(({ alt }) => alt)).toEqual([
-    `${multiName} - Ảnh 1`,
+    multiName,
     `${multiName} - Ảnh 2`,
     `${multiName} - Ảnh 3`,
   ]);
@@ -415,7 +452,8 @@ test("desktop viewport renders catalog cards and PDP gallery without horizontal 
 
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
   const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
-  await expect(gallery.locator("img")).toHaveCount(3);
+  await expect(page.getByRole("region", { name: `Ảnh chính của ${multiName}` })).toBeVisible();
+  await expect(gallery.locator("img")).toHaveCount(2);
   const columnCount = await gallery.evaluate((element) => {
     const columns = getComputedStyle(element).gridTemplateColumns.trim();
     return columns.length === 0 ? 0 : columns.split(/\s+/).length;

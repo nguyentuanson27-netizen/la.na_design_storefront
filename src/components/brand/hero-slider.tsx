@@ -7,27 +7,15 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
 
 /**
- * Markup and interaction only. Which slides exist is decided by `buildHomeHeroSlides`.
+ * Owner-approved §17 hero: image + one linked CTA only.
  *
- * Master spec §17 in three states: nothing at zero slides, a stable static hero at one, and an
- * autoplaying slider at two or three. The single-slide case is a different element tree rather than
- * a slider with its controls hidden -- a one-slide carousel is the broken empty state the acceptance
- * criterion names, and dots that cannot go anywhere are worse than no dots.
- *
- * Autoplay stops for three separate reasons and they are not the same reason:
- *   - `prefers-reduced-motion: reduce` means it never starts, and is watched rather than read once
- *     so a shopper who changes the setting is honoured without a reload;
- *   - hover and focus pause it and release it again, because the shopper is only looking;
- *   - an explicit move -- a dot, a swipe -- stops it for good, because they have taken over.
- *
- * Only the active slide is in the DOM flow; the others are `hidden`, which keeps their CTA out of
- * the tab order. That is what stops the keyboard walking through three identical links.
+ * Zero slides render nothing. One slide is a static hero. Two or three slides autoplay every two
+ * seconds unless reduced motion is requested or the shopper is actively hovering, focusing or
+ * dragging. Manual swipe changes the slide but does not permanently take ownership of autoplay.
  */
-
-const AUTOPLAY_INTERVAL_MS = 6_000;
+const AUTOPLAY_INTERVAL_MS = 2_000;
 /** Below this a drag is a tap or a vertical scroll, not a deliberate swipe. */
 const SWIPE_THRESHOLD_PX = 40;
-
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
 function subscribeToReducedMotion(onStoreChange: () => void) {
@@ -36,14 +24,6 @@ function subscribeToReducedMotion(onStoreChange: () => void) {
   return () => query.removeEventListener("change", onStoreChange);
 }
 
-/**
- * Read as an external store rather than mirrored into state in an effect.
- *
- * The effect version renders once with motion allowed and then corrects itself, which is a frame of
- * movement shown to the shopper who asked for none -- exactly the shopper the setting protects. The
- * server snapshot is `false` because the preference is not knowable there; hydration then reads the
- * real value before paint.
- */
 function usePrefersReducedMotion(): boolean {
   return useSyncExternalStore(
     subscribeToReducedMotion,
@@ -65,15 +45,12 @@ function HeroSlideFigure({
           fill
           preload={preload}
           sizes="100vw"
-          // Native image dragging would compete with the swipe gesture for the same pointer.
           draggable={false}
           className="object-cover"
         />
       </div>
-      {/* Desktop overlays this over the image, mobile drops it below -- both from CSS, so the
-          reading order the CTA has here is the one a screen reader gets on either. */}
       <p className="home-hero__cta">
-        <Link className="btn btn--primary" href={slide.href}>
+        <Link className="home-hero__cta-link" href={slide.href}>
           {HOME_HERO_CTA_LABEL}
         </Link>
       </p>
@@ -83,13 +60,15 @@ function HeroSlideFigure({
 
 export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHeroSlide[] }>) {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const [tookOver, setTookOver] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [interacting, setInteracting] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();
   const dragStartX = useRef<number | null>(null);
 
   const isSlider = slides.length > 1;
-  const autoplaying = isSlider && !prefersReducedMotion && !paused && !tookOver;
+  const autoplaying =
+    isSlider && !prefersReducedMotion && !hovered && !focused && !interacting;
 
   useEffect(() => {
     if (!autoplaying) return;
@@ -101,25 +80,31 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
 
   const goTo = useCallback(
     (index: number) => {
-      setTookOver(true);
       setActiveIndex(((index % slides.length) + slides.length) % slides.length);
     },
     [slides.length],
   );
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest('a[href], button, input, select, textarea, [contenteditable="true"]')
+    ) {
+      return;
+    }
+
     dragStartX.current = event.clientX;
-    // Capture the pointer so the matching `up` comes back here. Without it a drag that starts on
-    // the image or crosses the CTA becomes the browser's own image/link drag, which cancels the
-    // gesture -- the swipe would then work everywhere except over the two things filling the hero.
+    setInteracting(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
 
-  const onPointerUp = useCallback(
-    (event: React.PointerEvent<HTMLDivElement>) => {
+  const finishPointerInteraction = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
       const startX = dragStartX.current;
       dragStartX.current = null;
-      if (startX === null) return;
+      setInteracting(false);
+      if (cancelled || startX === null) return;
       const delta = event.clientX - startX;
       if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
       goTo(activeIndex + (delta < 0 ? 1 : -1));
@@ -127,12 +112,16 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
     [activeIndex, goTo],
   );
 
-  // Zero slides omits the region outright: no empty frame, no placeholder, nothing announced.
+  // Zero valid slides means there is no first-surface hero and therefore no header overlay marker.
   if (slides.length === 0) return null;
 
   if (!isSlider) {
     return (
-      <section className="home-hero home-hero--static" aria-label="Ảnh bìa trang chủ">
+      <section
+        className="home-hero home-hero--static"
+        aria-label="Ảnh bìa trang chủ"
+        data-header-overlay-hero=""
+      >
         <HeroSlideFigure slide={slides[0]!} preload />
       </section>
     );
@@ -143,19 +132,22 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
       className="home-hero home-hero--slider"
       aria-label="Ảnh bìa trang chủ"
       aria-roledescription="carousel"
+      data-header-overlay-hero=""
       data-autoplaying={autoplaying ? "true" : "false"}
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)}
-      onBlur={() => setPaused(false)}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocusCapture={() => setFocused(true)}
+      onBlurCapture={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setFocused(false);
+        }
+      }}
     >
       <div
         className="home-hero__track"
         onPointerDown={onPointerDown}
-        onPointerUp={onPointerUp}
-        onPointerCancel={() => {
-          dragStartX.current = null;
-        }}
+        onPointerUp={(event) => finishPointerInteraction(event)}
+        onPointerCancel={(event) => finishPointerInteraction(event, true)}
       >
         {slides.map((slide, index) => (
           <div
@@ -168,20 +160,6 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
           >
             <HeroSlideFigure slide={slide} preload={index === 0} />
           </div>
-        ))}
-      </div>
-
-      {/* Dots only. §17 rules out arrow controls. */}
-      <div className="home-hero__dots" role="group" aria-label="Chọn ảnh bìa">
-        {slides.map((slide, index) => (
-          <button
-            key={slide.href}
-            type="button"
-            className="home-hero__dot"
-            aria-label={`Ảnh bìa ${index + 1}`}
-            aria-current={index === activeIndex}
-            onClick={() => goTo(index)}
-          />
         ))}
       </div>
     </section>

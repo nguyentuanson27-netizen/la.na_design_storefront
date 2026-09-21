@@ -69,3 +69,23 @@ test("F7a presentation continues to consume the canonical gallery model instead 
   assert.equal(source.includes("resolveStorefrontProductMedia"), false);
   assert.equal(source.includes("pancakeImageUrls"), false);
 });
+
+
+test("owner PDP contract promotes the canonical first gallery image and removes it from the remaining gallery", async () => {
+  const [pageSource, detailSource] = await Promise.all([
+    readFile(new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/components/brand/product-detail.tsx", import.meta.url), "utf8"),
+  ]);
+
+  assert.match(pageSource, /const heroImage = data\.media\.gallery\[0\] \?\? null/);
+  assert.match(pageSource, /data-header-overlay-hero/);
+  assert.match(pageSource, /excludeFirstImage=\{heroImage !== null\}/);
+  assert.doesNotMatch(
+    pageSource,
+    /MUA NGAY/,
+    "PDP hero must not receive the landing-page CTA",
+  );
+  assert.match(detailSource, /media\.gallery\.slice\(1\)/);
+  assert.match(detailSource, /\.filter\(\(\[, index\]\) => index > 0\)/);
+  assert.match(detailSource, /preloadFirstImage=\{!excludeFirstImage\}/);
+});

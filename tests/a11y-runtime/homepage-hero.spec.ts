@@ -26,6 +26,7 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TEST_PREFIX = "f6a-hero-";
+const SHOP_ID = 920_032;
 
 const TINY_JPEG_BUFFER = Buffer.from(
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
@@ -148,7 +149,7 @@ test.beforeAll(async () => {
       NEXT_DIST_DIR: ".next-test/homepage-hero",
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
-      PANCAKE_SHOP_ID: "",
+      PANCAKE_SHOP_ID: String(SHOP_ID),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -169,44 +170,55 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("F6a zero slides omit the hero entirely rather than render an empty carousel", async ({
-  page,
-}) => {
+test("owner hero zero-state omits overlay and keeps the header cream", async ({ page }) => {
   await clearHeroSlides();
-  // A published, positioned collection with no hero image must contribute no slide: absence of
-  // media is absence of a slide, not a slide with a placeholder behind it.
   await addHeroSlide(1, null);
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
   await expect(hero(page)).toHaveCount(0);
-  await expect(dots(page)).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Khám phá thiết kế" })).toHaveCount(0);
-  // The page still has exactly one h1, which the hero never carried.
-  await expect(page.locator("h1")).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+  const background = await page.locator("header.site-header").evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(background).not.toBe("rgba(0, 0, 0, 0)");
 });
 
-test("F6a one slide renders a stable static hero with no slider controls", async ({ page }) => {
+test("one slide is a static full-bleed hero with one per-slide MUA NGAY link and no controls", async ({
+  page,
+}) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
 
+  await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
   const region = hero(page);
   await expect(region).toBeVisible();
   await expect(region).toHaveClass(/home-hero--static/);
-  await expect(region.locator("img")).toBeVisible();
-
-  const cta = region.getByRole("link", { name: "Khám phá thiết kế" });
-  await expect(cta).toBeVisible();
-  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
-
-  // One slide is not a carousel: no dots, and nothing claiming to autoplay.
-  await expect(dots(page)).toHaveCount(0);
+  await expect(region).toHaveAttribute("data-header-overlay-hero", "");
+  await expect(region.getByRole("button")).toHaveCount(0);
+  await expect(region).not.toHaveAttribute("aria-roledescription", "carousel");
   await expect(region).not.toHaveAttribute("data-autoplaying", /.*/);
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  await expect(cta).toHaveCount(1);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+  await expect(page.getByText("Khám phá thiết kế", { exact: true })).toHaveCount(0);
+
+  const box = await region.boundingBox();
+  expect(box?.x).toBe(0);
+  expect(Math.round(box?.width ?? 0)).toBe(390);
+  expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
+
+  const headerBackground = await page.locator("header.site-header").evaluate(
+    (element) => getComputedStyle(element).backgroundColor,
+  );
+  expect(headerBackground).toBe("rgba(0, 0, 0, 0)");
 });
 
-test("F6a three slides autoplay, pause on hover, and expose dots but no arrows", async ({
+test("slider advances at two seconds and pauses/resumes for hover and keyboard focus", async ({
   page,
 }) => {
   await clearHeroSlides();
@@ -215,27 +227,44 @@ test("F6a three slides autoplay, pause on hover, and expose dots but no arrows",
   await addHeroSlide(3, "https://content.pancake.vn/1/2/3/4/hero-three.jpg");
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
   const region = hero(page);
-  await expect(region).toBeVisible();
-  await expect(region).toHaveClass(/home-hero--slider/);
-  await expect(dots(page)).toHaveCount(3);
+  await expect(region.getByRole("button")).toHaveCount(0);
+  await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveCount(1);
   await expect(region).toHaveAttribute("data-autoplaying", "true");
+  await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute(
+    "href",
+    `/collections/${TEST_PREFIX}1`,
+  );
 
-  // §17 rules out arrow controls; the only buttons in the region are the dots.
-  await expect(region.getByRole("button")).toHaveCount(3);
-
-  // Exactly one slide is exposed at a time, so the keyboard walks one CTA rather than three.
-  await expect(region.getByRole("link", { name: "Khám phá thiết kế" })).toHaveCount(1);
+  await expect
+    .poll(async () => region.getByRole("link", { name: "MUA NGAY" }).getAttribute("href"), {
+      timeout: 3_500,
+    })
+    .toBe(`/collections/${TEST_PREFIX}2`);
 
   await region.hover();
   await expect(region).toHaveAttribute("data-autoplaying", "false");
+  const hoverHref = await region.getByRole("link", { name: "MUA NGAY" }).getAttribute("href");
+  await page.waitForTimeout(2_300);
+  await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute("href", hoverHref!);
 
   await page.mouse.move(0, 0);
   await expect(region).toHaveAttribute("data-autoplaying", "true");
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  await cta.focus();
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+  const focusHref = await cta.getAttribute("href");
+  await page.waitForTimeout(2_300);
+  await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute("href", focusHref!);
+
+  await page.getByRole("link", { name: "La.na Design — Trang chủ" }).focus();
+  await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
-test("F6a a dot takes the shopper over and stops autoplay for good", async ({ page }) => {
+test("MUA NGAY remains pointer-clickable inside the swipe track and follows the active slide href", async ({
+  page,
+}) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
   await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
@@ -243,28 +272,29 @@ test("F6a a dot takes the shopper over and stops autoplay for good", async ({ pa
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
   const region = hero(page);
-  await expect(dots(page).nth(0)).toHaveAttribute("aria-current", "true");
-
-  await dots(page).nth(1).click();
-
-  await expect(dots(page).nth(1)).toHaveAttribute("aria-current", "true");
-  await expect(dots(page).nth(0)).toHaveAttribute("aria-current", "false");
-  await expect(
-    region.getByRole("link", { name: "Khám phá thiết kế" }),
-  ).toHaveAttribute("href", `/collections/${TEST_PREFIX}2`);
-
-  // Moving the pointer away must not restart a slider the shopper has taken over.
-  await page.mouse.move(0, 0);
+  await region.hover();
   await expect(region).toHaveAttribute("data-autoplaying", "false");
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${TEST_PREFIX}1`),
+    cta.click(),
+  ]);
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "F6a Hero 1" }),
+  ).toBeVisible();
 });
 
-test("F6a a horizontal drag advances the hero", async ({ page }) => {
+test("swipe pauses during interaction, advances, then resumes autoplay", async ({ page }) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
   await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
+  const region = hero(page);
   const track = page.locator(".home-hero__track");
   const box = await track.boundingBox();
   if (!box) throw new Error("Expected the hero track to have a layout box");
@@ -272,27 +302,27 @@ test("F6a a horizontal drag advances the hero", async ({ page }) => {
   const y = box.y + box.height / 2;
   await page.mouse.move(box.x + box.width * 0.8, y);
   await page.mouse.down();
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
   await page.mouse.move(box.x + box.width * 0.2, y, { steps: 8 });
   await page.mouse.up();
 
-  await expect(dots(page).nth(1)).toHaveAttribute("aria-current", "true");
-
-  // A drag shorter than the threshold is a tap, and must not move the hero.
-  await dots(page).nth(0).click();
-  await page.mouse.move(box.x + box.width * 0.5, y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + box.width * 0.5 - 10, y, { steps: 4 });
-  await page.mouse.up();
-
-  await expect(dots(page).nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute(
+    "href",
+    `/collections/${TEST_PREFIX}2`,
+  );
+  // The drag has ended, but the mouse is still hovering the hero, so hover remains an
+  // independent pause reason. Autoplay resumes only after the pointer leaves the hero.
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+  await page.mouse.move(0, 0);
+  await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
-test("F6a reduced motion never starts autoplay, and leaves the dots usable", async ({ browser }) => {
+test("reduced motion disables autoplay while keeping swipe manual interaction", async ({ browser }) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
   await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
 
-  const context = await browser.newContext({ reducedMotion: "reduce" });
+  const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 390, height: 844 } });
   const page = await context.newPage();
   await page.route("**/_next/image**", (route) => {
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
@@ -300,15 +330,52 @@ test("F6a reduced motion never starts autoplay, and leaves the dots usable", asy
 
   try {
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
     const region = hero(page);
-    await expect(region).toBeVisible();
     await expect(region).toHaveAttribute("data-autoplaying", "false");
-
-    // Reduced motion removes the movement, not the navigation.
-    await dots(page).nth(1).click();
-    await expect(dots(page).nth(1)).toHaveAttribute("aria-current", "true");
+    const track = page.locator(".home-hero__track");
+    const box = await track.boundingBox();
+    if (!box) throw new Error("Expected the hero track to have a layout box");
+    const y = box.y + box.height / 2;
+    await page.mouse.move(box.x + box.width * 0.8, y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width * 0.2, y, { steps: 8 });
+    await page.mouse.up();
+    await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute(
+      "href",
+      `/collections/${TEST_PREFIX}2`,
+    );
+    await expect(region).toHaveAttribute("data-autoplaying", "false");
   } finally {
     await context.close();
   }
+});
+
+test("overlay header is transparent at top and cream after the existing short scroll threshold", async ({
+  page,
+}) => {
+  await clearHeroSlides();
+  await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  const header = page.locator("header.site-header");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+
+  await page.evaluate(() => window.scrollTo(0, 30));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(20);
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(header).toHaveAttribute("data-scrolled", "false");
+  // The header intentionally has a 300ms color transition. The state attribute flips before the
+  // transition finishes, so assert the settled visual state instead of sampling mid-transition.
+  await expect
+    .poll(() => header.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgba(0, 0, 0, 0)");
 });

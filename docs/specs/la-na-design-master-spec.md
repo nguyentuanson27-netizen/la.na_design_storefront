@@ -494,19 +494,18 @@ Hero slider
 
 ## 17. Hero slider
 
-- 2–3 campaign slides.
-- Auto-plays.
-- Pauses on hover and user interaction/focus.
-- Swipe/drag navigation.
-- Dots navigation.
-- No arrow controls.
-- Each slide contains **image + one CTA only**; no campaign title/description overlay by default.
-- CTA text: `Khám phá thiết kế`.
-- Desktop: CTA overlays the image.
-- Mobile: CTA sits below the image.
-- Exact slide destination is campaign-specific and must be configured with real content; do not hardcode a fake collection.
-- If only one valid slide exists, render a stable single hero rather than a broken slider.
-- Respect `prefers-reduced-motion` and keyboard/focus accessibility.
+- 2–3 campaign slides when real configured media exists; zero valid slides omit the hero entirely.
+- Hero is full-bleed from the top of the viewport on desktop and mobile.
+- Each slide contains **image + one CTA only**; no campaign title, description, dots or arrow controls.
+- CTA text: `MUA NGAY`.
+- CTA overlays the image on both desktop and mobile and each slide keeps its own real destination.
+- Auto-advance interval: **2 seconds**.
+- Pause autoplay while the hero is hovered, keyboard focus is inside it, or a pointer/touch interaction is in progress; resume after that interaction ends.
+- Swipe/drag navigation remains available and a swipe does not permanently disable autoplay.
+- If only one valid slide exists, render a stable static hero with the same CTA and no carousel semantics.
+- Respect `prefers-reduced-motion`: reduced motion disables auto-advance while preserving appropriate manual/swipe interaction.
+- Only the initial/LCP image is eagerly preloaded; hidden slides stay out of the tab order.
+- A real first-surface hero opts the page into the shared transparent-header overlay contract; no hero means normal cream header.
 
 ---
 
@@ -610,10 +609,16 @@ Approved copy:
 
 ## 24. Header / navigation / search
 
+### Header overlay contract
+
+- On any page whose **first surface is a real hero image**, the header overlays that image transparently on desktop and mobile.
+- Header logo/menu/icons keep the existing La.na warm-brown tone; they do not switch to white.
+- Pages without a real first-surface hero use the normal cream/light header from the start.
+- After a short scroll (current ~20px threshold), an overlay header becomes the normal cream/light header; scrolling back to the top restores transparency.
+- The transition must not add layout shift or a separate cream plate above the hero.
+
 ### Desktop header
 
-- Starts transparent/overlay over hero.
-- On scroll, becomes cream/light background.
 - Primary nav follows approved order.
 - `Áo dài` and `Set đồ` use mega menus with editorial image + subcategory list.
 - Mega-menu image is manually selected by admin/content manager.
@@ -680,9 +685,16 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 
 ## 26. PDP
 
-### Gallery
+### First-image hero and gallery
 
-- Desktop gallery: large 2-column editorial image grid.
+- The first trusted image from the existing product gallery is the PDP's full-bleed first surface on desktop and mobile.
+- The transparent header overlays that first image; no separate PDP hero field/schema exists.
+- The PDP hero has **no** `MUA NGAY` overlay CTA.
+- Product name, price, variant/size and purchase actions follow the hero.
+- The first image is removed from the remaining editorial gallery so it is never duplicated.
+- Variant selection may continue to drive the remaining gallery, but must not replace or destabilize the canonical first-image hero.
+- If no trusted product image exists, do not invent a hero; keep the existing truthful missing-media behavior and normal cream header.
+- Desktop remaining gallery keeps the editorial grid behavior where images remain.
 
 ### Buy panel
 

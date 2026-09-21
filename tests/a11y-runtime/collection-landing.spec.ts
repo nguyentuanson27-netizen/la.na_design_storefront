@@ -22,6 +22,7 @@ const publishedSlug = `runtime-city-${suffix}`;
 const pagedSlug = `runtime-paged-${suffix}`;
 const draftSlug = `runtime-draft-${suffix}`;
 const emptySlug = `runtime-empty-${suffix}`;
+const heroSlug = `runtime-hero-${suffix}`;
 const operationalCategoryId = 987_654_321;
 
 let server: ChildProcess | undefined;
@@ -66,7 +67,7 @@ async function stopServer() {
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug] } },
+    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug] } },
   });
 }
 
@@ -147,6 +148,13 @@ test.beforeAll(async () => {
         description: "A published collection may intentionally be empty.",
         isPublished: true,
       },
+      {
+        slug: heroSlug,
+        title: "Runtime Hero Collection",
+        description: "Published collection with real configured hero media.",
+        heroImageUrl: "https://content.pancake.vn/images/1/2/3/collection-hero.jpg",
+        isPublished: true,
+      },
     ],
   });
   await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug], "M");
@@ -187,6 +195,110 @@ test.afterAll(async () => {
   await stopServer();
   await cleanup();
   await prisma.$disconnect();
+});
+
+test("collection with configured hero uses the shared full-bleed header overlay without inventing a CTA", async ({
+  page,
+}) => {
+  const tinyJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+    "base64",
+  );
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${heroSlug}`, { waitUntil: "networkidle" });
+
+  const hero = page.getByRole("region", { name: "Ảnh bìa bộ sưu tập Runtime Hero Collection" });
+  await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
+  const box = await hero.boundingBox();
+  expect(box?.x).toBe(0);
+  expect(Math.round(box?.width ?? 0)).toBe(390);
+  expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
+  await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+
+  const header = page.locator("header.site-header");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+  await page.evaluate(() => window.scrollTo(0, 30));
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
+});
+
+/**
+ * The hero contract and the shared listing chrome are one arrangement, not two.
+ *
+ * They arrived on separate branches that both rewrote this page's top: one moved the hero out of
+ * the container to become the first full-bleed surface the header overlays, the other replaced the
+ * page's own heading with the chrome every listing shares. Either change alone reads as correct
+ * while quietly undoing the other -- a naive merge puts the hero back under the heading, inside
+ * the container, and the overlay stops applying. This asserts the order between them, so that
+ * reconciliation is not something a future merge can resolve by dropping one.
+ */
+test("a collection hero is the first full-bleed surface and the shared listing chrome follows it", async ({
+  page,
+}) => {
+  const tinyJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+    "base64",
+  );
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${heroSlug}`, { waitUntil: "networkidle" });
+
+  const hero = page.locator("[data-header-overlay-hero]");
+  await expect(hero).toHaveCount(1);
+
+  // The hero is inside the main landmark the overlay selector keys off, and nothing renders
+  // before it there -- an image nested in the constrained container would fail both halves.
+  expect(
+    await hero.evaluate((element) => element.closest("#main-content") !== null),
+    "the overlay selector is scoped to #main-content",
+  ).toBe(true);
+  expect(
+    await hero.evaluate(
+      (element) => element.parentElement?.firstElementChild === element,
+    ),
+    "the hero is the first surface of the page, not a block inside the listing container",
+  ).toBe(true);
+
+  // The shared chrome is present and comes after the hero in document order.
+  const heading = page.getByRole("heading", { level: 1, name: "Runtime Hero Collection" });
+  await expect(heading).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
+
+  const heroPrecedesChrome = await page.evaluate(() => {
+    const heroElement = document.querySelector("[data-header-overlay-hero]");
+    const headingElement = document.querySelector("#main-content h1");
+    if (!heroElement || !headingElement) return null;
+    // DOCUMENT_POSITION_FOLLOWING === 4: the heading follows the hero.
+    return Boolean(heroElement.compareDocumentPosition(headingElement) & 4);
+  });
+  expect(heroPrecedesChrome, "the serif listing heading renders after the hero").toBe(true);
+
+  // And the heading is still the shared chrome's, not a page-local one.
+  const headingStyle = await heading.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
+  });
+  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
+  expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
+
+  // The hero is not inside the constrained listing container.
+  expect(
+    await hero.evaluate((element) => element.closest(".mx-auto.max-w-\\[1600px\\]") !== null),
+  ).toBe(false);
 });
 
 test("published collection exposes visible copy and deterministic website-owned membership", async ({ page }) => {

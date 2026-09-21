@@ -13,9 +13,12 @@ import {
  * Trusted URLs, deduplication, caps, variant-to-gallery mapping and fallback decisions stay in the
  * existing media/model boundaries. This component only lays the resolved gallery out editorially.
  */
-type BrandProductGalleryProps = Omit<GalleryModelInput, "manualSelection">;
+type BrandProductGalleryProps = Omit<GalleryModelInput, "manualSelection"> & Readonly<{
+  /** PDP hero already owns LCP preload; below-fold remaining media must stay lazy. */
+  preloadFirstImage?: boolean;
+}>;
 
-export function BrandProductGallery(props: BrandProductGalleryProps) {
+export function BrandProductGallery({ preloadFirstImage = true, ...props }: BrandProductGalleryProps) {
   const model = resolveGalleryModel(props);
 
   if (model.mode === "empty") {
@@ -44,7 +47,7 @@ export function BrandProductGallery(props: BrandProductGalleryProps) {
             src={image.url}
             alt={image.alt}
             fill
-            preload
+            preload={preloadFirstImage}
             sizes="(min-width: 1024px) 60vw, 100vw"
             className="object-cover"
           />
@@ -72,7 +75,7 @@ export function BrandProductGallery(props: BrandProductGalleryProps) {
             src={image.url}
             alt={image.alt || `${props.productName} - Ảnh ${model.images.indexOf(image) + 1}`}
             fill
-            preload={index === 0 && model.preloadsActiveImage}
+            preload={preloadFirstImage && index === 0 && model.preloadsActiveImage}
             sizes="(min-width: 1024px) 30vw, 100vw"
             className="object-cover"
           />

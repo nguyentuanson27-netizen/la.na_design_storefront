@@ -2,6 +2,7 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import {
   buildStorefrontProductProjection,
+  resolveCompositeComponentGroupLabel,
   type StorefrontCompositeComponentGroup,
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
@@ -61,6 +62,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               select: {
                 id: true,
                 pancakeVariationId: true,
+                sku: true,
                 color: true,
                 size: true,
                 isPresent: true,
@@ -91,7 +93,11 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     );
     const groups = new Map<
       string,
-      { label: string; variants: Map<string, StorefrontVariantFacts> }
+      {
+        sortLabel: string;
+        skus: (string | null)[];
+        variants: Map<string, StorefrontVariantFacts>;
+      }
     >();
 
     for (const parent of parentRelations) {
@@ -108,9 +114,16 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
         let group = groups.get(component.product.id);
         if (!group) {
-          group = { label: component.product.name, variants: new Map() };
+          group = {
+            // Preserve the existing child-product ordering so positional kind keys do not drift
+            // merely because presentation labels became canonical roles.
+            sortLabel: component.product.name,
+            skus: [],
+            variants: new Map(),
+          };
           groups.set(component.product.id, group);
         }
+        group.skus.push(component.sku);
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
             id: component.id,
@@ -126,11 +139,13 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     }
 
     const componentGroups: StorefrontCompositeComponentGroup[] = [...groups.values()]
-      .sort((left, right) => left.label.localeCompare(right.label, "vi"))
-      .map((group) => ({
-        label: group.label,
-        variants: [...group.variants.values()],
-      }));
+      .sort((left, right) => left.sortLabel.localeCompare(right.sortLabel, "vi"))
+      .flatMap((group) => {
+        const label = resolveCompositeComponentGroupLabel(group.skus);
+        return label === null
+          ? []
+          : [{ label, variants: [...group.variants.values()] }];
+      });
 
     const pricedVariantIds = [
       ...new Set([

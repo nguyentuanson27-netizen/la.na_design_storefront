@@ -126,6 +126,15 @@ async function expectHeroToShow(page: Page, urlFragment: string) {
   );
 }
 
+async function expectProductHeroToShow(page: Page, urlFragment: string) {
+  const image = page
+    .getByRole("region", { name: `Ảnh chính của ${productName}` })
+    .locator("img");
+  await expect(image).toHaveAttribute(
+    "src",
+    new RegExp(encodeURIComponent(urlFragment).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+}
 async function openDeepLink(page: Page, query: string | null) {
   // Offline-safe: the optimizer would otherwise reach content.pancake.vn.
   await page.route("**/_next/image**", (route) => {
@@ -273,7 +282,7 @@ test("a forged variation degrades to the ordinary product page", async ({ page }
   }
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
-  await expectHeroToShow(page, "u12b-primary.jpg");
+  await expectProductHeroToShow(page, "u12b-primary.jpg");
 });
 
 test("the shopper's own choice takes the selection back from the URL", async ({ page }) => {

@@ -305,6 +305,48 @@ test("collections stays an aggregate index with an honest empty state", () => {
   );
 });
 
+/**
+ * The fast-gate half of the same contract the runtime spec drives.
+ *
+ * The hero and the shared chrome arrived on separate branches that both rewrote this page's top.
+ * A merge that resolves them by putting the hero back inside the container is a one-line change
+ * that looks right in review and silently drops the header overlay, so the order is pinned here
+ * too -- a browser is not needed to see which of the two comes first in the file.
+ */
+test("a collection hero stays the first full-bleed surface, above the shared listing chrome", () => {
+  const page = read("src/app/collections/[slug]/page.tsx");
+
+  // The class the stylesheet targets, not the bare attribute name: the comment above the hero
+  // names the contract too, and matching that would let this pass wherever the hero ended up.
+  // Matched by regex rather than an exact string so re-indenting the JSX does not read as a
+  // regression.
+  const heroIndex = page.search(/className="collection-page-hero"/);
+  const shellIndex = page.search(/<ListingShell[\s>]/);
+  assert.ok(heroIndex >= 0, "the hero must render as the full-bleed section");
+  assert.ok(shellIndex >= 0, "the listing chrome must still be rendered");
+  assert.match(
+    page.slice(heroIndex, heroIndex + 400),
+    /data-header-overlay-hero=""/,
+    "the hero must declare the header overlay contract",
+  );
+  assert.ok(
+    heroIndex < shellIndex,
+    "the hero renders before the listing container, not inside it",
+  );
+
+  assert.match(
+    page,
+    /className="collection-page-hero"/,
+    "the hero keeps the full-bleed class its stylesheet rule targets",
+  );
+  // The constrained block the hero used to be is what a naive merge restores.
+  assert.doesNotMatch(
+    page,
+    /aspect-\[16\/9\][^]*?editorial\.heroImage|editorial\.heroImage[^]*?aspect-\[16\/9\]/,
+    "the hero must not go back to a constrained 16:9 block inside the container",
+  );
+});
+
 /** The collection detail keeps its editorial half and its featured ordering. */
 test("a collection page keeps its editorial content and featured ordering", () => {
   const page = read("src/app/collections/[slug]/page.tsx");
