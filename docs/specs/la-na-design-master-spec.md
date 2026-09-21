@@ -662,6 +662,13 @@ Cart icon opens a right-side cart drawer.
 
 ## 25. PLP / category listing
 
+### Density
+
+- Reduce excessive vertical padding between breadcrumb, title, explanatory copy, filters/result controls and the product grid without shrinking practical control targets.
+- **Desktop acceptance:** at 1440×900, on a PLP with products and filters in their default/unexpanded state, the top edge of the first product image is visible inside the initial viewport on page load.
+- **Mobile acceptance:** at 390×844, under the same product-bearing/default-filter conditions, the top edge of the first product image is visible inside the initial viewport on page load.
+- Preserve responsive filter usability, URL/query semantics, product-card column counts, loading/error/empty states and accessibility announcements while meeting those fold criteria.
+
 ### Filters
 
 - Size
@@ -687,29 +694,26 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 
 ### First-image hero and gallery
 
-- The first trusted image from the existing product gallery is the PDP's full-bleed first surface on desktop and mobile.
-- The transparent header overlays that first image; no separate PDP hero field/schema exists.
-- The PDP hero has **no** `MUA NGAY` overlay CTA.
-- Product name, price, variant/size and purchase actions follow the hero.
-- The first image is removed from the remaining editorial gallery so it is never duplicated.
-- Variant selection may continue to drive the remaining gallery, but must not replace or destabilize the canonical first-image hero.
-- If no trusted product image exists, do not invent a hero; keep the existing truthful missing-media behavior and normal cream header.
-- Desktop remaining gallery keeps the editorial grid behavior where images remain.
+- The first trusted image remains the PDP's canonical first surface; if no trusted image exists, keep the truthful missing-media behavior and normal cream header.
+- The transparent header may overlay the first image; there is no separate PDP hero field/schema and no hero CTA.
+- **Desktop = the repository's existing Tailwind `lg` breakpoint and above.** Do not introduce a second custom breakpoint for this PDP refinement; below `lg`, this desktop refinement intentionally does not freeze the mobile/tablet structural flow.
+- **At `lg` and above:** the gallery is a near-viewport-height media stage using `object-contain` so the full garment/model silhouette remains visible. Slide 1 contains image 1 full width; later slides group images `2+3`, `4+5`, etc. at 50/50, with an odd final image full width.
+- **Desktop interaction:** right-half click advances, left-half click goes back, horizontal drag/swipe navigates in the same direction, first/last slides do not loop, and keyboard users have equivalent previous/next controls. Vertical wheel/trackpad/page-scroll gestures must continue to scroll the document rather than drive the gallery.
+- **Initial-load priority:** slide 1 / trusted image 1 remains the first visible PDP surface even when `?variant=` preselects a variant whose mapped media is later in the gallery. The deep link must not replace the canonical first visible surface on initial load. After initial load, an explicit variant selection change may sync to mapped media; manual gallery navigation remains until the selected variant changes again.
+- **Below `lg`:** mobile/tablet gallery structure is owned by the dedicated mobile UX follow-up. This desktop refinement only forbids the paired desktop composition from leaking below `lg`.
 
-### Buy panel
+### Information and buy panel
 
-- Right-side product info panel is sticky on desktop.
-- Primary actions: `Thêm vào giỏ` + `Mua ngay`.
-- Size guide opens from `Hướng dẫn chọn size` link into a modal.
+- **Desktop:** after the gallery, use one two-column information row. Left: product identity/editorial information. Right: price, availability/preorder, variant/size controls, size guide, purchase actions, purchase feedback, shipping and returns.
+- The desktop purchase panel is **not sticky** and no nested sticky selector may overlap adjacent copy.
+- **Mobile:** PDP/purchase structure is owned by the dedicated mobile UX follow-up rather than frozen by this desktop refinement; shared copy/state/visual refinements still apply unless that mobile contract is more specific.
+- Primary actions remain `Thêm vào giỏ` + `Mua ngay`.
+- Size guide opens from `Hướng dẫn chọn size` into the existing accessible modal.
 - Each product maps manually to the correct size guide ID.
 
 ### Mobile sticky purchase bar
 
-Contains:
-
-- price;
-- selected size;
-- `Thêm vào giỏ`.
+The previous selected-size-only quick-bar shape is **not frozen by this desktop/shared refinement**. A dedicated mobile UX contract owns the mobile sticky-purchase interaction while preserving the same server/cart/variant authority.
 
 ### Product details order
 
@@ -722,6 +726,8 @@ Mô tả sản phẩm
 → Đổi trả
 ```
 
+Desktop may distribute these truthful blocks between the product-information and purchase-information columns; mobile preserves a coherent stacked reading order.
+
 ### Variant UX
 
 Standard out-of-stock variant:
@@ -730,16 +736,33 @@ Standard out-of-stock variant:
 - disabled;
 - shows `Hết hàng`.
 
-If user has not selected a size:
+For products that require a kind/classification:
+- before a kind is selected, show the exact guidance **`Nàng chọn phân loại trước để xem size còn hàng`**;
+- size inputs may remain non-selectable/`disabled` before kind selection exactly as the current selection authority returns them;
+- that disabled state is neutral/unresolved and must not reuse genuine sold-out opacity, copy, badge, strike-through or other `Hết hàng` presentation;
+- `Chưa chọn phân loại` and `Hết hàng` are distinct states;
+- this task does not make sizes clickable before kind selection and does not change `deriveStorefrontProjectionSelection` or commerce purchasability rules merely to achieve the presentation distinction.
+
+If user has not selected a required size:
 
 - do not auto-select;
 - do not add to cart;
 - highlight selector and show `Vui lòng chọn size`.
 
+### Buyer-facing copy and visual language
+
+- Remove implementation-facing wording such as `Chọn loại × kích cỡ` and server/catalog explanations that do not help the shopper decide.
+- Only communicate shopping facts already supported by repository authorities: price, availability, approved delivery/returns information and size guidance.
+- Headings use the approved elegant serif; price, variants, body copy, forms and transactional UI use the clean sans-serif.
+- Reduce wide uppercase tracking in small buyer information.
+- Purchase actions use the approved warm brown/chocolate + cream palette instead of generic black/white pairing, on desktop and mobile.
+
 ### Related products
 
 - manual admin selection first;
-- if absent, fallback to same-category products.
+- if absent, fallback to same-category products;
+- the current generic related surface is titled **`Nàng có thể thích`**;
+- use `Hoàn thiện phối đồ` only when an explicit merchandising authority identifies complementary pants, bags or accessories. Do not infer complementarity from category/name heuristics.
 
 ---
 
