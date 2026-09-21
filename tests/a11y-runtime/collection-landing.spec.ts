@@ -22,6 +22,7 @@ const publishedSlug = `runtime-city-${suffix}`;
 const pagedSlug = `runtime-paged-${suffix}`;
 const draftSlug = `runtime-draft-${suffix}`;
 const emptySlug = `runtime-empty-${suffix}`;
+const heroSlug = `runtime-hero-${suffix}`;
 const operationalCategoryId = 987_654_321;
 
 let server: ChildProcess | undefined;
@@ -66,7 +67,7 @@ async function stopServer() {
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug] } },
+    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug] } },
   });
 }
 
@@ -147,6 +148,13 @@ test.beforeAll(async () => {
         description: "A published collection may intentionally be empty.",
         isPublished: true,
       },
+      {
+        slug: heroSlug,
+        title: "Runtime Hero Collection",
+        description: "Published collection with real configured hero media.",
+        heroImageUrl: "https://content.pancake.vn/images/1/2/3/collection-hero.jpg",
+        isPublished: true,
+      },
     ],
   });
   await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug], "M");
@@ -187,6 +195,43 @@ test.afterAll(async () => {
   await stopServer();
   await cleanup();
   await prisma.$disconnect();
+});
+
+test("collection with configured hero uses the shared full-bleed header overlay without inventing a CTA", async ({
+  page,
+}) => {
+  const tinyJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+    "base64",
+  );
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${heroSlug}`, { waitUntil: "networkidle" });
+
+  const hero = page.getByRole("region", { name: "Ảnh bìa bộ sưu tập Runtime Hero Collection" });
+  await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
+  const box = await hero.boundingBox();
+  expect(box?.x).toBe(0);
+  expect(Math.round(box?.width ?? 0)).toBe(390);
+  expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
+  await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+
+  const header = page.locator("header.site-header");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+  await page.evaluate(() => window.scrollTo(0, 30));
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(
+    "rgba(0, 0, 0, 0)",
+  );
+
+  const accessibilityScan = await new AxeBuilder({ page })
+    .withTags(BUYER_AXE_TAGS)
+    .analyze();
+  expect(accessibilityScan.violations).toEqual([]);
 });
 
 test("published collection exposes visible copy and deterministic website-owned membership", async ({ page }) => {
