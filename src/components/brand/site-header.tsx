@@ -171,10 +171,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   return (
     <header
       ref={headerRef}
+      data-scrolled={isScrolled ? "true" : "false"}
       className={`site-header sticky top-0 z-40 transition-colors duration-300 ${
         isScrolled
           ? "bg-[#FAF7F2]/95 backdrop-blur-md border-b border-[#3B2219]/15 shadow-sm"
-          : "bg-[#FAF7F2] md:bg-transparent border-b border-[#3B2219]/10"
+          : "bg-[#FAF7F2] border-b border-[#3B2219]/10"
       }`}
     >
       <a className="skip-link" href="#main-content">

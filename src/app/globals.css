@@ -368,15 +368,24 @@ summary:focus-visible {
   }
 }
 
-/* Homepage hero (master spec §17).
-   Mobile is the base: image, then the CTA underneath it. The desktop rule below is what lifts the
-   CTA onto the image, so the mobile arrangement is never a desktop layout being undone. */
-.home-hero {
+/* Homepage hero (master spec §17): full-bleed image with one restrained CTA overlay. */
+.home-hero,
+.product-page-hero,
+.collection-page-hero {
   position: relative;
-  border-bottom: 1px solid var(--line);
+  width: 100%;
+  min-height: 100svh;
+  overflow: hidden;
+  background: var(--stone);
 }
 
-/* Horizontal gestures belong to the slider, vertical ones stay with the page scroll. */
+.home-hero__track,
+.home-hero__slide,
+.home-hero__media {
+  min-height: 100svh;
+}
+
+/* Horizontal gestures belong to the slider; vertical gestures stay with page scrolling. */
 .home-hero__track {
   touch-action: pan-y;
   user-select: none;
@@ -385,50 +394,48 @@ summary:focus-visible {
 .home-hero__media {
   position: relative;
   overflow: hidden;
-  min-height: 72vh;
-  background: var(--stone);
 }
 
 .home-hero__cta {
+  position: absolute;
+  z-index: 2;
+  inset: auto 0 clamp(2rem, 7vh, 5rem);
   display: flex;
   justify-content: center;
-  padding: 1.5rem var(--shell-gutter);
+  margin: 0;
+  padding-inline: var(--shell-gutter);
 }
 
-.home-hero__dots {
-  display: flex;
-  gap: 0.75rem;
+.home-hero__cta-link {
+  display: inline-flex;
+  min-height: var(--control-height);
+  align-items: center;
   justify-content: center;
-  padding-bottom: 1.5rem;
+  padding: 0.85rem clamp(2rem, 6vw, 4.5rem);
+  border: 1px solid var(--chocolate);
+  border-radius: 2px;
+  background: var(--chocolate);
+  color: var(--cream);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  transition: background-color 180ms ease, color 180ms ease;
 }
 
-.home-hero__dot {
-  width: 0.75rem;
-  height: 0.75rem;
-  border: 1px solid var(--ink);
-  border-radius: 999px;
-  background: transparent;
+.home-hero__cta-link:hover {
+  background: var(--cream);
+  color: var(--chocolate);
 }
 
-.home-hero__dot[aria-current="true"] {
-  background: var(--ink);
+.product-page-hero,
+.collection-page-hero {
+  height: 100svh;
 }
 
-@media (min-width: 901px) {
-  .home-hero__media {
-    min-height: calc(100vh - 112px);
-  }
-
-  /* Desktop overlays the CTA on the image; the dots sit just under it, still on the art. */
-  .home-hero__cta {
-    position: absolute;
-    inset: auto 0 5.5rem 0;
-  }
-
-  .home-hero__dots {
-    position: absolute;
-    inset: auto 0 3rem 0;
-    padding-bottom: 0;
+@media (prefers-reduced-motion: reduce) {
+  .home-hero__cta-link {
+    transition: none;
   }
 }
 
@@ -818,6 +825,22 @@ body {
   z-index: 50;
   top: 0;
   background: var(--paper);
+}
+
+/* A page opts into overlay chrome only by rendering a real first-surface hero marker. CSS owns the
+   initial composition so there is no hydration flash; SiteHeader remains the sole scroll owner. */
+body:has(#main-content [data-header-overlay-hero]) .site-masthead {
+  position: fixed;
+  inset: 0 0 auto;
+  width: 100%;
+  background: transparent;
+}
+
+body:has(#main-content [data-header-overlay-hero]) .site-header[data-scrolled="false"] {
+  background: transparent;
+  border-bottom-color: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
 }
 
 /* Anchor targets land below the pinned masthead instead of underneath it; without this the skip

@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
@@ -17,6 +18,7 @@ const relatedTones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand
 
 function render(data: ProductRouteData) {
   const { editorial } = data;
+  const heroImage = data.media.gallery[0] ?? null;
 
   const beforePanel = (
     <>
@@ -128,7 +130,25 @@ function render(data: ProductRouteData) {
   );
 
   return (
-    <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
+    <>
+      {heroImage ? (
+        <section
+          className="product-page-hero"
+          aria-label={`Ảnh chính của ${data.name}`}
+          data-header-overlay-hero
+        >
+          <Image
+            src={heroImage.url}
+            alt={heroImage.alt || data.name}
+            fill
+            preload
+            sizes="100vw"
+            className="object-cover"
+          />
+        </section>
+      ) : null}
+
+      <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
@@ -153,6 +173,7 @@ function render(data: ProductRouteData) {
         initialGalleryIndex={data.initialGalleryIndex}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
         sizeGuide={editorial.sizeGuide}
+        excludeFirstImage={heroImage !== null}
         beforePanel={beforePanel}
         afterPanel={afterPanel}
       />
@@ -175,7 +196,8 @@ function render(data: ProductRouteData) {
           </div>
         </section>
       ) : null}
-    </div>
+      </div>
+    </>
   );
 }
 
