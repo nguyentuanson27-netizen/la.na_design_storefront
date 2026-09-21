@@ -107,3 +107,23 @@ test("one invalid candidate does not take the valid ones with it", () => {
 test("the approved CTA wording is published as one constant, not per slide", () => {
   assert.equal(HOME_HERO_CTA_LABEL, "MUA NGAY");
 });
+
+test("internal banner paths and mobileImageUrl are preserved", () => {
+  const slides = buildHomeHeroSlides([
+    candidate({
+      imageUrl: "/banners/hero-xuan-hoai-ky-desktop.webp",
+      mobileImageUrl: "/banners/hero-xuan-hoai-ky-mobile.jpg",
+      href: "/shop",
+      label: "Xuân Hoài Ký",
+    }),
+  ]);
+
+  assert.equal(slides.length, 1);
+  assert.deepEqual(slides[0], {
+    imageUrl: "/banners/hero-xuan-hoai-ky-desktop.webp",
+    mobileImageUrl: "/banners/hero-xuan-hoai-ky-mobile.jpg",
+    href: "/shop",
+    label: "Xuân Hoài Ký",
+  });
+});
+

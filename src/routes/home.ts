@@ -14,7 +14,11 @@ import { buildPublicBrandFacts } from "@/content/public-brand-facts";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { sealRoute, type RouteHandle } from "./core.tsx";
-import { buildHomeHeroSlides, type HomeHeroSlide } from "./home-hero.ts";
+import {
+  buildHomeHeroSlides,
+  type HomeHeroSlide,
+  type HomeHeroSlideCandidate,
+} from "./home-hero.ts";
 import {
   buildHomeViewModel,
   resolveHomeRefreshAfterMs,
@@ -51,23 +55,55 @@ export type HomeRouteProps = Readonly<{
 /**
  * The hero's source, and the only place that knows what a campaign slide is made of today.
  *
- * Master spec §17 wants campaign slides, and no campaign owner is approved yet. Published
- * collections that carry hero media are the one real admin-owned pair of image and destination the
- * site already has, and `homepagePosition` already orders them, so they stand in as the source
- * rather than a hardcoded slide or a placeholder. A collection with no hero image contributes
- * nothing, which is why the hero is absent today rather than invented.
- *
- * When a campaign owner is approved, this function is what changes. `buildHomeHeroSlides`, the
- * component and their tests are written against `HomeHeroSlideCandidate`, not against collections.
+ * Master spec §17 wants campaign slides. The default campaign hero slides feature the 3
+ * active campaign banners (Xuân Hoài Ký, Diệp Hoa Thư, Tinh Sắc). If none are defined,
+ * published collections that carry hero media stand in as fallback.
  */
+const DEFAULT_CAMPAIGN_HERO_CANDIDATES: readonly HomeHeroSlideCandidate[] = [
+  {
+    imageUrl: "/banners/hero-xuan-hoai-ky-desktop.webp",
+    mobileImageUrl: "/banners/hero-xuan-hoai-ky-mobile.jpg",
+    href: "/shop",
+    label: "Xuân Hoài Ký",
+  },
+  {
+    imageUrl: "/banners/hero-diep-hoa-thu-desktop.webp",
+    mobileImageUrl: "/banners/hero-diep-hoa-thu-mobile.jpg",
+    href: "/shop",
+    label: "Diệp Hoa Thư",
+  },
+  {
+    imageUrl: "/banners/hero-tinh-sac-desktop.webp",
+    mobileImageUrl: "/banners/hero-tinh-sac-mobile.jpg",
+    href: "/shop",
+    label: "Tinh Sắc",
+  },
+] as const;
+
 function toHeroCandidates(
   collections: readonly Readonly<{ slug: string; title: string; heroImageUrl: string | null }>[],
-) {
+): readonly HomeHeroSlideCandidate[] {
   return collections.map((collection) => ({
     imageUrl: collection.heroImageUrl,
     href: `/collections/${collection.slug}`,
     label: collection.title,
   }));
+}
+
+const DEFAULT_CATEGORY_HERO_MEDIA: Readonly<Record<string, string>> = {
+  aoDai: "/editorial/lead-aodai.jpeg",
+  setDo: "/editorial/category-set-do.webp",
+  vayDam: "/editorial/category-vay-dam.webp",
+};
+
+function parseCategoryHeroImageUrl(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (trimmed.length === 0) return null;
+  if (trimmed.startsWith("/") && !trimmed.startsWith("//") && /\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return parseTrustedProductImageUrl(trimmed);
 }
 
 // A grid that could not be read prices nothing, so it has no campaign boundary of its own and
@@ -115,9 +151,12 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
   // every other storefront image goes through, and the page layer renders what it is handed. A
   // rejected URL leaves no entry, which is what makes that block omit itself.
   const categoryHeroMedia = new Map<string, string>();
-  for (const [categoryKey, rawUrl] of storedCategoryMedia) {
-    const trusted = parseTrustedProductImageUrl(rawUrl);
-    if (trusted !== null) categoryHeroMedia.set(categoryKey, trusted);
+  for (const key of EDITORIAL_CATEGORY_KEYS) {
+    const rawUrl = storedCategoryMedia.get(key) ?? DEFAULT_CATEGORY_HERO_MEDIA[key];
+    if (rawUrl) {
+      const trusted = parseCategoryHeroImageUrl(rawUrl);
+      if (trusted !== null) categoryHeroMedia.set(key, trusted);
+    }
   }
 
   const newArrivalsTracking = buildProductListTracking({
@@ -151,7 +190,10 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
         },
         collections,
       }),
-      heroSlides: buildHomeHeroSlides(toHeroCandidates(collections)),
+      heroSlides: buildHomeHeroSlides([
+        ...DEFAULT_CAMPAIGN_HERO_CANDIDATES,
+        ...toHeroCandidates(collections),
+      ]),
       categoryHeroMedia,
       brandFacts: buildPublicBrandFacts(readGuestShippingPolicy()),
     },

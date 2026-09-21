@@ -39,15 +39,41 @@ function HeroSlideFigure({
   return (
     <>
       <div className="home-hero__media">
-        <Image
-          src={slide.imageUrl}
-          alt={slide.label}
-          fill
-          preload={preload}
-          sizes="100vw"
-          draggable={false}
-          className="object-cover"
-        />
+        {slide.mobileImageUrl ? (
+          <>
+            <Image
+              src={slide.mobileImageUrl}
+              alt={slide.label}
+              fill
+              unoptimized
+              preload={preload}
+              sizes="(max-width: 900px) 100vw, 1px"
+              draggable={false}
+              className="object-cover home-hero__img--mobile"
+            />
+            <Image
+              src={slide.imageUrl}
+              alt={slide.label}
+              fill
+              unoptimized
+              preload={preload}
+              sizes="(min-width: 901px) 100vw, 1px"
+              draggable={false}
+              className="object-cover home-hero__img--desktop"
+            />
+          </>
+        ) : (
+          <Image
+            src={slide.imageUrl}
+            alt={slide.label}
+            fill
+            unoptimized
+            preload={preload}
+            sizes="100vw"
+            draggable={false}
+            className="object-cover"
+          />
+        )}
       </div>
       <p className="home-hero__cta">
         <Link className="home-hero__cta-link" href={slide.href}>

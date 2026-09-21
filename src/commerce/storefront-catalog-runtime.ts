@@ -334,18 +334,21 @@ export async function readConfiguredCategoryMegaMedia(): Promise<readonly Catego
       merchandising.readCategoryEditorialMedia("aoDai"),
       merchandising.readCategoryEditorialMedia("setDo"),
     ]);
+    const aoDaiUrl = aoDai?.megaMenuImageUrl ?? "/menu/mega-menu-aodai.png";
+    const setDoUrl = setDo?.megaMenuImageUrl ?? "/menu/mega-menu-set-do.webp";
+
     const items: CategoryMegaMediaFacts[] = [];
-    if (aoDai?.megaMenuImageUrl) {
+    if (aoDaiUrl) {
       items.push({
         categoryKey: "aoDai",
-        imageUrl: aoDai.megaMenuImageUrl,
+        imageUrl: aoDaiUrl,
         altText: null,
       });
     }
-    if (setDo?.megaMenuImageUrl) {
+    if (setDoUrl) {
       items.push({
         categoryKey: "setDo",
-        imageUrl: setDo.megaMenuImageUrl,
+        imageUrl: setDoUrl,
         altText: null,
       });
     }

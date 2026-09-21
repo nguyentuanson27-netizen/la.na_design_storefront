@@ -423,6 +423,24 @@ summary:focus-visible {
   overflow: hidden;
 }
 
+.home-hero__img--mobile {
+  display: block !important;
+}
+
+.home-hero__img--desktop {
+  display: none !important;
+}
+
+@media (min-width: 901px) {
+  .home-hero__img--mobile {
+    display: none !important;
+  }
+
+  .home-hero__img--desktop {
+    display: block !important;
+  }
+}
+
 .home-hero__cta {
   position: absolute;
   z-index: 2;

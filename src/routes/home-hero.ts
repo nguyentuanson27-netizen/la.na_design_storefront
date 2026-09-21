@@ -28,6 +28,8 @@ export const HOME_HERO_CTA_LABEL = "MUA NGAY";
 export type HomeHeroSlideCandidate = Readonly<{
   /** Unvalidated media URL; anything the trusted-media contract rejects drops the slide. */
   imageUrl: string | null;
+  /** Optional mobile-optimized media URL. */
+  mobileImageUrl?: string | null;
   /** Where the CTA goes. Must be an internal path -- the hero never sends a shopper off-site. */
   href: string;
   /**
@@ -41,6 +43,7 @@ export type HomeHeroSlideCandidate = Readonly<{
 
 export type HomeHeroSlide = Readonly<{
   imageUrl: string;
+  mobileImageUrl?: string;
   href: string;
   label: string;
 }>;
@@ -48,6 +51,17 @@ export type HomeHeroSlide = Readonly<{
 /** An internal path, and not a protocol-relative URL that would leave the site. */
 function isInternalPath(href: string): boolean {
   return href.startsWith("/") && !href.startsWith("//");
+}
+
+function parseHeroSlideImageUrl(url: unknown): string | null {
+  if (typeof url !== "string") return null;
+  const trimmed = url.trim();
+  if (trimmed.length === 0) return null;
+  // Allow internal site assets (e.g. /banners/...)
+  if (isInternalPath(trimmed) && /\.(jpg|jpeg|png|webp)$/i.test(trimmed)) {
+    return trimmed;
+  }
+  return parseTrustedProductImageUrl(trimmed);
 }
 
 export function buildHomeHeroSlides(
@@ -61,14 +75,25 @@ export function buildHomeHeroSlides(
     // Re-validated here rather than trusted from the caller: the same contract the rest of the
     // storefront's media goes through, so a row edited around the admin boundary cannot put an
     // arbitrary origin into the homepage's largest image.
-    const imageUrl = parseTrustedProductImageUrl(candidate.imageUrl);
+    const imageUrl = parseHeroSlideImageUrl(candidate.imageUrl);
     if (imageUrl === null) continue;
     if (!isInternalPath(candidate.href)) continue;
 
     const label = candidate.label.trim();
     if (label.length === 0) continue;
 
-    slides.push(Object.freeze({ imageUrl, href: candidate.href, label }));
+    const mobileImageUrl = candidate.mobileImageUrl
+      ? parseHeroSlideImageUrl(candidate.mobileImageUrl) ?? undefined
+      : undefined;
+
+    slides.push(
+      Object.freeze({
+        imageUrl,
+        ...(mobileImageUrl !== undefined ? { mobileImageUrl } : {}),
+        href: candidate.href,
+        label,
+      }),
+    );
   }
 
   return Object.freeze(slides);
