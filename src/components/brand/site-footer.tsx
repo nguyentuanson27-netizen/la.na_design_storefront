@@ -68,24 +68,28 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
           </h2>
           <p className="footer-copy">{BRAND.identity.strapline}</p>
 
+          {/* Each fact is one sentence: label, colon, value, in one inline flow. The label and the
+              value used to be two grid rows, which made a two-word fact occupy two lines and left
+              the rows an uneven height. The `{" "}` is a real space rather than a CSS margin so a
+              screen reader reads `Hotline/Zalo: 0923159666` as one phrase. The colon is content,
+              and matches how `policy.config.ts` already writes the same facts. */}
           <ul className="footer-contact-list">
             <li>
-              <span className="footer-label">Hotline/Zalo</span>
+              <span className="footer-label">Hotline/Zalo:</span>{" "}
               <a href={`tel:${model.contact.telephoneInternational}`}>
                 {model.contact.telephone}
               </a>
             </li>
             <li>
-              <span className="footer-label">Email hỗ trợ</span>
+              <span className="footer-label">Email hỗ trợ:</span>{" "}
               <a href={`mailto:${model.contact.email}`}>{model.contact.email}</a>
             </li>
             <li>
-              <span className="footer-label">Địa chỉ kinh doanh/đổi trả</span>
-              <span>{model.address}</span>
+              <span className="footer-label">Địa chỉ kinh doanh/đổi trả:</span>{" "}
+              {model.address}
             </li>
             <li>
-              <span className="footer-label">Giờ hỗ trợ</span>
-              <span>{model.supportHours}</span>
+              <span className="footer-label">Giờ hỗ trợ:</span> {model.supportHours}
             </li>
             <li>
               <a href={model.contact.fanpageUrl} rel="noreferrer" target="_blank">
