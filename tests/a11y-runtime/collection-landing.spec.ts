@@ -267,11 +267,12 @@ test("a collection hero is the first full-bleed surface and the shared listing c
     "the overlay selector is scoped to #main-content",
   ).toBe(true);
   expect(
-    await hero.evaluate(
-      (element) => element.parentElement?.firstElementChild === element,
-    ),
-    "the hero is the first surface of the page, not a block inside the listing container",
+    await hero.evaluate((element) => element.closest("[class*='max-w-']") === null),
+    "the hero is a full-bleed surface, not a block inside the constrained listing container",
   ).toBe(true);
+  const heroBox = await hero.boundingBox();
+  expect(heroBox?.x, "the hero starts at the viewport edge").toBe(0);
+  expect(Math.round(heroBox?.width ?? 0), "the hero spans the viewport").toBe(390);
 
   // The shared chrome is present and comes after the hero in document order.
   const heading = page.getByRole("heading", { level: 1, name: "Runtime Hero Collection" });
@@ -295,10 +296,6 @@ test("a collection hero is the first full-bleed surface and the shared listing c
   expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
-  // The hero is not inside the constrained listing container.
-  expect(
-    await hero.evaluate((element) => element.closest(".mx-auto.max-w-\\[1600px\\]") !== null),
-  ).toBe(false);
 });
 
 test("published collection exposes visible copy and deterministic website-owned membership", async ({ page }) => {
@@ -311,7 +308,9 @@ test("published collection exposes visible copy and deterministic website-owned 
   // names what the page is, and the masthead already carries the wordmark, so repeating the brand
   // over every listing said the same thing twice. Brand Config still owns the wordmark, and the
   // masthead link is asserted from it rather than from a literal.
-  await expect(page.getByText("Bộ sưu tập", { exact: true }).first()).toBeVisible();
+  await expect(
+    page.locator("#main-content p.eyebrow").filter({ hasText: "Bộ sưu tập" }),
+  ).toBeVisible();
   await expect(
     page.getByRole("link", { name: `${BRAND.identity.name} — Trang chủ` }),
   ).toBeVisible();
