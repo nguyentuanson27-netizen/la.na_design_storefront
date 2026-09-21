@@ -258,22 +258,28 @@ test("P18 captures representative production performance evidence for home, PLP,
         await measureRoute(page, route.name, route.url, viewport.name);
 
         if (route.name === "pdp") {
+          const hero = page.getByRole("region", { name: `Ảnh chính của ${productName}` });
+          await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
+          await expect(hero.locator(`img[alt="${productName}"]`)).toHaveCount(1);
+
           const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`);
           const images = gallery.locator("img");
-          await expect(images).toHaveCount(3);
+          await expect(images).toHaveCount(2);
 
-          for (let index = 0; index < 3; index += 1) {
+          for (let index = 0; index < 2; index += 1) {
             await expect(images.nth(index)).toBeVisible();
           }
 
-          const renderedImages = await images.evaluateAll((elements) =>
+          const allProductImages = page.locator(`img[alt^="${productName}"]`);
+          await expect(allProductImages).toHaveCount(3);
+          const renderedImages = await allProductImages.evaluateAll((elements) =>
             elements.map((element) => ({
               alt: element.getAttribute("alt"),
               src: element.getAttribute("src"),
             })),
           );
           expect(renderedImages.map(({ alt }) => alt)).toEqual([
-            `${productName} - Ảnh 1`,
+            productName,
             `${productName} - Ảnh 2`,
             `${productName} - Ảnh 3`,
           ]);
