@@ -79,7 +79,7 @@ export function BrandProductDetail({
         />
       ) : null}
 
-      <article className="min-w-0 pb-10 lg:pt-4">
+      <article className="min-w-0 pb-10 lg:col-start-2 lg:pt-4">
         {beforePanel}
         <div className="contents">
           <PurchasePanelView controller={controller} sizeGuide={sizeGuide} />

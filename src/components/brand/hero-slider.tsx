@@ -86,6 +86,14 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
   );
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target.closest('a[href], button, input, select, textarea, [contenteditable="true"]')
+    ) {
+      return;
+    }
+
     dragStartX.current = event.clientX;
     setInteracting(true);
     event.currentTarget.setPointerCapture(event.pointerId);
