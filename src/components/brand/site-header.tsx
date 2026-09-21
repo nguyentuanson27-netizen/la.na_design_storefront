@@ -396,7 +396,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           placement; refs, state, React events and focus management stay owned by SiteHeader. */}
       {isMobileNavOpen
         ? createPortal(
-        <div
+            <div
           id="mobile-navigation-dialog"
           ref={mobileNavDrawerRef}
           role="dialog"
@@ -530,7 +530,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               })}
             </ul>
           </nav>
-        </div>,
+            </div>,
             document.body,
           )
         : null}

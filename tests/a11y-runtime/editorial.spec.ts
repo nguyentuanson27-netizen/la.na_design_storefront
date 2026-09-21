@@ -321,10 +321,11 @@ test("mobile navigation is a true viewport overlay before and after header scrol
     const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
 
     for (const scrollTop of [0, 120] as const) {
-    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollTop);
-    await expect
-      .poll(() => page.evaluate(() => Math.round(window.scrollY)))
-      .toBe(scrollTop);
+      await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollTop);
+      await expect
+        .poll(() => page.evaluate(() => Math.round(window.scrollY)))
+        .toBe(scrollTop);
+
       const header = page.locator("header.site-header");
       await expect(header).toHaveAttribute(
         "data-scrolled",
@@ -341,47 +342,57 @@ test("mobile navigation is a true viewport overlay before and after header scrol
 
       await menuTrigger.click();
 
-    const dialog = page.getByRole("dialog", { name: "Menu điều hướng" });
-    await expect(dialog).toBeVisible();
-    expect(await dialog.evaluate((element) => element.parentElement === document.body)).toBe(true);
+      const dialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+      await expect(dialog).toBeVisible();
+      expect(await dialog.evaluate((element) => element.parentElement === document.body)).toBe(true);
 
-    const box = await dialog.boundingBox();
-    expect(box).not.toBeNull();
-    expect(Math.round(box!.x)).toBe(0);
-    expect(Math.round(box!.y)).toBe(0);
-    expect(Math.round(box!.width)).toBe(390);
-    expect(Math.round(box!.height)).toBe(844);
+      const box = await dialog.boundingBox();
+      expect(box).not.toBeNull();
+      expect(Math.round(box!.x)).toBe(0);
+      expect(Math.round(box!.y)).toBe(0);
+      expect(Math.round(box!.width)).toBe(390);
+      expect(Math.round(box!.height)).toBe(844);
 
-    await expect(dialog.locator("img.brand-mark-logo").first()).toBeVisible();
-    const closeButton = dialog.getByRole("button", { name: "Đóng menu", exact: true });
-    await expect(closeButton).toBeVisible();
+      await expect(dialog.locator("img.brand-mark-logo").first()).toBeVisible();
+      const closeButton = dialog.getByRole("button", { name: "Đóng menu", exact: true });
+      await expect(closeButton).toBeVisible();
 
-    const primaryNavigation = dialog.getByRole("navigation", {
-      name: "Điều hướng chính trên di động",
-    });
-    for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
-      await expect(primaryNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
-    }
-
-    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
-    const lockedPageScrollY = await page.evaluate(() => window.scrollY);
-    await page.mouse.move(380, 820);
-    await page.mouse.wheel(0, 500);
-    await page.waitForTimeout(100);
-    expect(await page.evaluate(() => window.scrollY)).toBe(lockedPageScrollY);
-
-    const menuScrollState = await dialog.evaluate((element) => {
-      const overflowY = getComputedStyle(element).overflowY;
-      const scrollable = element.scrollHeight > element.clientHeight;
-      if (scrollable) {
-        element.scrollTop = Math.min(160, element.scrollHeight - element.clientHeight);
+      const primaryNavigation = dialog.getByRole("navigation", {
+        name: "Điều hướng chính trên di động",
+      });
+      for (const label of [
+        "Áo dài",
+        "Set đồ",
+        "Váy, đầm",
+        "Phụ kiện",
+        "Hàng mới về",
+        "Bộ sưu tập",
+        "Sale",
+      ]) {
+        await expect(
+          primaryNavigation.getByRole("link", { name: label, exact: true }),
+        ).toBeVisible();
       }
-      return { overflowY, scrollable, scrollTop: element.scrollTop };
-    });
-    expect(["auto", "scroll"]).toContain(menuScrollState.overflowY);
-    if (menuScrollState.scrollable) {
-      expect(menuScrollState.scrollTop).toBeGreaterThan(0);
-    }
+
+      expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+      const lockedPageScrollY = await page.evaluate(() => window.scrollY);
+      await page.mouse.move(380, 820);
+      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(100);
+      expect(await page.evaluate(() => window.scrollY)).toBe(lockedPageScrollY);
+
+      const menuScrollState = await dialog.evaluate((element) => {
+        const overflowY = getComputedStyle(element).overflowY;
+        const scrollable = element.scrollHeight > element.clientHeight;
+        if (scrollable) {
+          element.scrollTop = Math.min(160, element.scrollHeight - element.clientHeight);
+        }
+        return { overflowY, scrollable, scrollTop: element.scrollTop };
+      });
+      expect(["auto", "scroll"]).toContain(menuScrollState.overflowY);
+      if (menuScrollState.scrollable) {
+        expect(menuScrollState.scrollTop).toBeGreaterThan(0);
+      }
 
       await closeButton.click();
       await expect(dialog).toHaveCount(0);
