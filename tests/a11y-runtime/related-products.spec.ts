@@ -282,7 +282,7 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   const response = await page.goto(`${BASE_URL}/shop/${currentSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
-  const related = page.getByRole("region", { name: "Hoàn thiện phối đồ" });
+  const related = page.getByRole("region", { name: "Nàng có thể thích" });
   await expect(related).toBeVisible();
   const names = await related.locator("article h2").allTextContents();
   // ADR 0013 §7, end to end: the manual override first even though it sits in another tree, then
@@ -353,7 +353,7 @@ test("F7d same-category fallback works without manual picks", async ({ page }) =
   const response = await page.goto(`${BASE_URL}/shop/${fallbackSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
 
-  const related = page.getByRole("region", { name: "Hoàn thiện phối đồ" });
+  const related = page.getByRole("region", { name: "Nàng có thể thích" });
   await expect(related).toBeVisible();
   await expect(related.getByText(pinnedName, { exact: true })).toBeVisible();
   await expect(related.getByText(fallbackName, { exact: true })).toHaveCount(0);
@@ -375,7 +375,7 @@ test("F7d/F7e empty related set is omitted and missing product facts create no p
 
   const response = await page.goto(`${BASE_URL}/shop/${soloSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
-  await expect(page.getByRole("region", { name: "Hoàn thiện phối đồ" })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Nàng có thể thích" })).toHaveCount(0);
   await expect(page.getByText("Thông tin biên tập cho sản phẩm này đang được cập nhật.")).toHaveCount(0);
 
   const details = page.getByRole("region", { name: "Chi tiết sản phẩm" });
