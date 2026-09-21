@@ -413,7 +413,11 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(page.getByRole("radio", { name: pantsName })).toHaveCount(0);
   await expect(page.getByRole("radio", { name: skirtName })).toHaveCount(0);
   await expect(page.getByRole("radio", { name: malformedName })).toHaveCount(0);
-  await expect(page.getByText("Chọn loại × kích cỡ", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
+  ).toBeVisible();
+  const unresolvedSize = page.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true });
+  expect(await unresolvedSize.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
 
   const structuredDocuments = (await page
     .locator('script[type="application/ld+json"]')
