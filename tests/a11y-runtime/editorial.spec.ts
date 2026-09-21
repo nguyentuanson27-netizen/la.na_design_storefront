@@ -501,7 +501,7 @@ test("V1 accepts remaining buyer surfaces on mobile and desktop", async ({ page 
           page.waitForURL((url) => url.pathname === "/shop" && url.searchParams.get("q") === "Editorial Runtime"),
           page.getByRole("button", { name: "Áp dụng", exact: true }).click(),
         ]);
-        await expect(page.getByRole("heading", { level: 1, name: "CỬA HÀNG" })).toBeVisible();
+        await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
       }
 
       expect(browserErrors, `${viewport.name} ${route.label} console/page errors`).toEqual([]);
@@ -594,7 +594,9 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
 
   await page.goto(`${BASE_URL}/new-arrivals`, { waitUntil: "networkidle" });
   await expect(page).toHaveTitle(/Hàng mới/);
-  await expect(page.getByRole("heading", { level: 1, name: "HÀNG MỚI" })).toBeVisible();
+  // Master spec §10 keeps /new-arrivals and says it shows newest products automatically, so the
+  // heading is the listing's, in the same serif hierarchy every other listing uses.
+  await expect(page.getByRole("heading", { level: 1, name: "Hàng mới về" })).toBeVisible();
   await expect(
     page.getByText(
       "Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng chọn lọc.",
@@ -616,10 +618,10 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   // Master spec §16's first product grid. `Tuyển chọn` and the Brand #1 lookbook block are gone:
   // neither is in the approved order.
   await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
-  // No `Xem tất cả` out of this grid. `/new-arrivals` is the drop announcement and carries no
-  // product listing, so that CTA sent a shopper asking for more products to a page with none.
-  // Pinned as an absence rather than deleted, so it cannot come back before that route has a
-  // listing to land on.
+  // No `Xem tất cả` out of this grid. `/new-arrivals` now has a listing to land on, so the reason
+  // is no longer that the destination is empty -- it is that the approved homepage composition
+  // (§16) does not carry that CTA, and adding one is a homepage decision rather than a side effect
+  // of giving the route its products. Still pinned as an absence so it cannot arrive unreviewed.
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveCount(0);
   await expect(
     page.locator('[data-homepage-region="new-arrivals"] a[href="/new-arrivals"]'),
@@ -674,7 +676,7 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   expect(lookbookResponse.status()).toBe(404);
 
   await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "BỘ SƯU TẬP" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "Bộ sưu tập" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Essential Outerwear" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Khám phá bộ sưu tập ↗" })).toHaveAttribute(
     "href",

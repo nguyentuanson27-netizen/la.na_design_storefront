@@ -13,10 +13,12 @@ function canonical(metadata: ReturnType<typeof buildStaticPageMetadata>): string
   return null;
 }
 
+// `/new-arrivals` left this list when §10's "shows newest products automatically" became a real
+// paged listing: a paginated route's canonical belongs to `buildCatalogListingMetadata`, which is
+// the authority that knows `?page=2` is a URL rather than arbitrary query state.
 const APPROVED_STATIC_PATHS = [
   "/",
   "/collections",
-  "/new-arrivals",
   "/about",
   "/contact",
   "/returns",
@@ -47,7 +49,7 @@ test("static authority withholds canonical under noindex or query state", () => 
       buildStaticPageMetadata({
         origin: ORIGIN,
         indexingEnabled: true,
-        pathname: "/new-arrivals",
+        pathname: "/collections",
         searchParams: { utm_source: "test" },
       }),
     ),
@@ -56,7 +58,7 @@ test("static authority withholds canonical under noindex or query state", () => 
   assert.equal(
     shouldNoIndexRequest({
       indexingEnabled: true,
-      pathname: "/new-arrivals",
+      pathname: "/collections",
       search: "?utm_source=test",
     }),
     true,
@@ -68,6 +70,7 @@ test("retired and listing routes are outside static canonical authority", () => 
     "/lookbook",
     "/flash-sale",
     "/sale",
+    "/new-arrivals",
     "/ao-dai",
     "/shop",
     "/collections/summer-shirts",

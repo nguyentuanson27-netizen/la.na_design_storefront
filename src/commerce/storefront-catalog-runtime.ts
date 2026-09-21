@@ -73,6 +73,35 @@ export async function listConfiguredStorefrontProductPage({
   return createStorefrontCatalogRepository(prisma).listProductPage({ shopId, page, pageSize });
 }
 
+/**
+ * One page of `/new-arrivals`: newest first, with the pricing rule its cards need and the window
+ * that pricing is valid for.
+ *
+ * Priced through the same promotion resolution as every other listing, so a campaign that starts
+ * or ends mid-session refreshes this route too rather than leaving it showing a stale price.
+ */
+export async function listConfiguredNewestProductPage({
+  page,
+  pageSize,
+  now,
+}: {
+  page: number;
+  pageSize: number;
+  now?: Date;
+}) {
+  const shopId = readPancakeShopId();
+  const result = await createStorefrontCatalogRepository(prisma).listNewestProductPage({
+    shopId,
+    page,
+    pageSize,
+  });
+  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
+    products: result.products,
+    now,
+  });
+  return { ...result, pricingRule, refreshAfterMs };
+}
+
 export async function listConfiguredStorefrontDiscoveryPage({
   discovery,
   pageSize,

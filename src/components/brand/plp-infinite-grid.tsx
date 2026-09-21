@@ -3,6 +3,10 @@
 import Link from "next/link";
 
 import type { ProductCardModel } from "@/components/headless/build-product-card-model";
+import {
+  ListingEmptyState,
+  ListingProductGrid,
+} from "@/components/brand/listing-chrome";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import type { PlpFilterState } from "@/components/headless/plp-filter-model";
 import { usePlpInfiniteGrid } from "@/components/headless/use-plp-infinite-grid";
@@ -39,20 +43,13 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   // Empty state
   if (products.length === 0) {
     return (
-      <div className="py-20 text-center">
-        <p className="font-serif text-2xl text-[#2A1810]">Không tìm thấy sản phẩm phù hợp</p>
-        <p className="mt-2 text-xs text-[#3B2219]/70">
-          Vui lòng thử điều chỉnh bộ lọc hoặc xóa các tùy chọn đã chọn.
-        </p>
-        <div className="mt-6">
-          <Link
-            href={categoryPath}
-            className="inline-flex items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition hover:bg-[#2A1810]"
-          >
-            Xóa tất cả bộ lọc
-          </Link>
-        </div>
-      </div>
+      <ListingEmptyState
+        titleId="category-empty-title"
+        eyebrow="Không tìm thấy"
+        title="Không tìm thấy sản phẩm phù hợp"
+        copy="Vui lòng thử điều chỉnh bộ lọc hoặc xóa các tùy chọn đã chọn."
+        action={{ href: categoryPath, label: "Xóa tất cả bộ lọc" }}
+      />
     );
   }
 
@@ -64,7 +61,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
       </div>
 
       {/* Product grid */}
-      <div className="grid grid-cols-2 gap-x-4 gap-y-8 sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-12">
+      <ListingProductGrid>
         {products.map((model, idx) => (
           <ProductCard
             key={`${model.href}-${idx}`}
@@ -85,7 +82,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
             ))}
           </>
         ) : null}
-      </div>
+      </ListingProductGrid>
 
       {/* Error state with retry */}
       {error ? (

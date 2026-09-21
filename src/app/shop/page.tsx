@@ -1,7 +1,15 @@
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import {
+  ListingBreadcrumbs,
+  ListingEmptyState,
+  ListingHeader,
+  ListingPagination,
+  ListingProductGrid,
+  ListingResultCount,
+  ListingShell,
+} from "@/components/brand/listing-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildShopMetadata } from "@/routes/metadata/shop";
 import { loadShopRoute, type ShopRouteProps } from "@/routes/shop";
@@ -10,42 +18,49 @@ import type { ShopViewModel } from "@/routes/shop-model";
 /**
  * Markup only. The query parsing, the catalog page, the facets, the tracking and the refresh window
  * all live in `@/routes/shop`; the shell mounts what the loader sealed.
+ *
+ * The chrome is the shared listing chrome, but the controls are this route's own. `/shop` is
+ * `Tất cả sản phẩm` with a free-text query and a collection facet, which the category PLP's filter
+ * panel has no notion of -- that panel builds every href from a taxonomy key. Sharing it would mean
+ * changing what `/shop` can be asked, so the form below stays a plain GET over this route's own
+ * parameters and only the presentation is shared.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 const controlClassName =
-  "min-h-11 w-full border-b border-black/30 bg-transparent px-0 py-2 text-sm outline-none focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
+  "min-h-11 w-full border-b border-[#3B2219]/30 bg-transparent px-0 py-2 text-sm text-[#2A1810] outline-none focus-visible:border-[#3B2219] focus-visible:outline-2 focus-visible:outline-offset-4";
+
+const fieldLabelClassName = "text-xs font-semibold uppercase tracking-wider text-[#70584B]";
 
 const linkClassName =
-  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4";
+  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline-offset-4 transition-colors hover:text-[#2A1810] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4";
 
 function render(data: ShopViewModel) {
   const { discovery } = data;
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">{BRAND.identity.name} / Cửa hàng</p>
-      <h1 className="mt-4 max-w-5xl text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-        CỬA HÀNG
-      </h1>
-      <div className="mt-12 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
-        <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
-          Phom dáng thư thái, đường nét gọn và bảng màu trung tính cho nhịp sống hằng ngày.
+    <ListingShell>
+      <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
+      <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
+          Dùng tìm kiếm và bộ lọc để khám phá sản phẩm.{" "}
+          {/* Kept on one source line: the copy inventory reads this promise as a whole string. */}
+          Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
         </p>
-        <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
-          Dùng tìm kiếm và bộ lọc để khám phá sản phẩm. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
-        </p>
-      </div>
+      </ListingHeader>
 
-      <section className="mt-14 border-y border-black/20 py-8" aria-labelledby="shop-discovery-title">
-        <div className="flex flex-wrap items-end justify-between gap-4">
-          <div>
-            <p className="eyebrow">Khám phá</p>
-            <h2 id="shop-discovery-title" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
-              Khám phá sản phẩm
-            </h2>
-          </div>
+      <section
+        className="mt-8 border-b border-[#3B2219]/15 pb-8"
+        aria-labelledby="shop-discovery-title"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <h2
+            id="shop-discovery-title"
+            className="text-xs font-semibold uppercase tracking-wider text-[#70584B]"
+          >
+            Bộ lọc
+          </h2>
           {data.filtered ? (
             <Link className={linkClassName} href="/shop">
               Xóa bộ lọc
@@ -53,9 +68,9 @@ function render(data: ShopViewModel) {
           ) : null}
         </div>
 
-        <form className="mt-8 grid gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-4" method="get">
+        <form className="mt-6 grid gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-4" method="get">
           <label className="block sm:col-span-2">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Tìm sản phẩm</span>
+            <span className={fieldLabelClassName}>Tìm sản phẩm</span>
             <input
               className={controlClassName}
               defaultValue={discovery.query ?? ""}
@@ -67,7 +82,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Bộ sưu tập</span>
+            <span className={fieldLabelClassName}>Bộ sưu tập</span>
             <select className={controlClassName} defaultValue={discovery.collection ?? ""} name="collection">
               <option value="">Tất cả</option>
               {data.collectionFacets.map((collection) => (
@@ -79,7 +94,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Sắp xếp</span>
+            <span className={fieldLabelClassName}>Sắp xếp</span>
             <select className={controlClassName} defaultValue={discovery.sort} name="sort">
               <option value="name-asc">Tên A–Z</option>
               <option value="name-desc">Tên Z–A</option>
@@ -89,7 +104,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Màu</span>
+            <span className={fieldLabelClassName}>Màu</span>
             <select className={controlClassName} defaultValue={discovery.color ?? ""} name="color">
               <option value="">Tất cả</option>
               {data.colorFacets.map((color) => (
@@ -101,7 +116,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Kích cỡ</span>
+            <span className={fieldLabelClassName}>Kích cỡ</span>
             <select className={controlClassName} defaultValue={discovery.size ?? ""} name="size">
               <option value="">Tất cả</option>
               {data.sizeFacets.map((size) => (
@@ -113,7 +128,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Giá tối thiểu</span>
+            <span className={fieldLabelClassName}>Giá tối thiểu</span>
             <input
               className={controlClassName}
               defaultValue={discovery.minPriceVnd ?? ""}
@@ -128,7 +143,7 @@ function render(data: ShopViewModel) {
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Giá tối đa</span>
+            <span className={fieldLabelClassName}>Giá tối đa</span>
             <input
               className={controlClassName}
               defaultValue={discovery.maxPriceVnd ?? ""}
@@ -149,12 +164,12 @@ function render(data: ShopViewModel) {
               type="checkbox"
               value="in-stock"
             />
-            <span className="text-xs font-semibold uppercase tracking-[0.13em]">Chỉ còn hàng</span>
+            <span className={fieldLabelClassName}>Chỉ còn hàng</span>
           </label>
 
           <div className="flex items-end sm:col-span-2 lg:col-span-1">
             <button
-              className="inline-flex min-h-11 w-full items-center justify-center border border-black px-5 py-3 text-xs font-semibold uppercase tracking-[0.14em] transition-colors hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4"
+              className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#3B2219] bg-[#3B2219] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors hover:bg-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4"
               type="submit"
             >
               Áp dụng
@@ -164,70 +179,44 @@ function render(data: ShopViewModel) {
       </section>
 
       {data.totalCount === 0 ? (
-        <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="shop-empty-title">
-          <p className="eyebrow">{data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}</p>
-          <h2 id="shop-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
-            {data.filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
-          </h2>
-          <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
-            {data.filtered
+        <ListingEmptyState
+          titleId="shop-empty-title"
+          eyebrow={data.filtered ? "Không tìm thấy" : "Sản phẩm hiện tại"}
+          title={data.filtered ? "Không có sản phẩm phù hợp." : "Chưa có sản phẩm đang mở bán."}
+          copy={
+            data.filtered
               ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm."
-              : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."}
-          </p>
-          {data.filtered ? (
-            <Link className={`mt-6 ${linkClassName}`} href="/shop">
-              Xem tất cả sản phẩm →
-            </Link>
-          ) : null}
-        </section>
+              : "Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."
+          }
+          action={data.filtered ? { href: "/shop", label: "Xem tất cả sản phẩm" } : undefined}
+        />
       ) : (
-        <section className="mt-16" aria-labelledby="shop-products-title">
-          <div className="section-heading-row border-t border-black/20 pt-5">
-            <h2 id="shop-products-title">Sản phẩm hiện tại</h2>
-            <p className="eyebrow">
-              {data.totalCount} sản phẩm · Trang {data.page}/{data.totalPages}
-            </p>
+        <section className="mt-8" aria-labelledby="shop-products-title">
+          <h2 id="shop-products-title" className="sr-only">
+            Sản phẩm hiện tại
+          </h2>
+          <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
+          <div className="mt-8">
+            <ListingProductGrid>
+              {data.cards.map((card, index) => (
+                <ProductCard
+                  key={card.id}
+                  model={card.model}
+                  tone={tones[(data.toneOffset + index) % tones.length]!}
+                />
+              ))}
+            </ListingProductGrid>
           </div>
-          <div className="product-grid">
-            {data.cards.map((card, index) => (
-              <ProductCard
-                key={card.id}
-                model={card.model}
-                tone={tones[(data.toneOffset + index) % tones.length]!}
-              />
-            ))}
-          </div>
-
-          {data.totalPages > 1 ? (
-            <nav
-              className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
-              aria-label="Phân trang sản phẩm"
-            >
-              {data.previousHref ? (
-                <Link
-                  className={`${linkClassName} focus-visible:outline focus-visible:outline-black`}
-                  href={data.previousHref}
-                  rel="prev"
-                >
-                  ← Trang trước
-                </Link>
-              ) : (
-                <span aria-hidden="true" />
-              )}
-              {data.nextHref ? (
-                <Link
-                  className={`${linkClassName} focus-visible:outline focus-visible:outline-black`}
-                  href={data.nextHref}
-                  rel="next"
-                >
-                  Trang sau →
-                </Link>
-              ) : null}
-            </nav>
-          ) : null}
+          <ListingPagination
+            label="Phân trang sản phẩm"
+            page={data.page}
+            totalPages={data.totalPages}
+            previousHref={data.previousHref}
+            nextHref={data.nextHref}
+          />
         </section>
       )}
-    </div>
+    </ListingShell>
   );
 }
 

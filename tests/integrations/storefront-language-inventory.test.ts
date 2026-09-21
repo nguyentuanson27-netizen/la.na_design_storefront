@@ -278,8 +278,12 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
       `collections metadata missing Vietnamese copy: ${expected}`,
     );
   }
+  // The uppercase display shout the listing pages opened with is gone: every listing now draws
+  // the shared serif header, so the heading is written in sentence case and passed as a prop.
+  // What this inventory is for -- Vietnamese buyer copy present, template English absent -- is
+  // unchanged, and the ban list below is untouched.
   for (const expected of [
-    "BỘ SƯU TẬP",
+    'title="Bộ sưu tập"',
     "Khám phá bộ sưu tập ↗",
     "Bộ sưu tập hiện tại",
     "Các bộ sưu tập đang được chuẩn bị.",
@@ -304,13 +308,18 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
     "the shop metadata builder must carry the Vietnamese listing title",
   );
 
+  // The brand eyebrow is gone from the page body along with the uppercase display heading: the
+  // shared listing header names the surface ("Tất cả sản phẩm" over "Cửa hàng") and the masthead
+  // already carries the wordmark, so repeating the brand here said nothing twice.
   for (const expected of [
-    `${BRAND_NAME_IN_JSX} / Cửa hàng`,
-    "CỬA HÀNG",
-    "Khám phá sản phẩm",
+    'eyebrow="Tất cả sản phẩm"',
+    'title="Cửa hàng"',
+    // Not the `>…<` form the single-line labels below use: this heading wraps onto its own line.
+    "Bộ lọc",
     ">Bộ sưu tập<",
     "Không tìm thấy",
     "Sản phẩm hiện tại",
+    "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
   ]) {
     assert.equal(pageSource.includes(expected), true, `shop listing missing Vietnamese copy: ${expected}`);
   }
@@ -333,7 +342,13 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
     assert.equal(pageSource.includes(oldCopy), false, `shop listing retained old/technical copy: ${oldCopy}`);
   }
 
-  for (const expected of [`${BRAND_NAME_IN_JSX} / Cửa hàng`, "CỬA HÀNG", "Đang tải cửa hàng."]) {
+  // The skeleton draws the shared listing header too, so its copy is the page's copy: the same
+  // eyebrow and title, passed as props rather than spelled as a display wordmark.
+  for (const expected of [
+    'eyebrow="Tất cả sản phẩm"',
+    'title="Cửa hàng"',
+    "Đang tải cửa hàng.",
+  ]) {
     assert.equal(loadingSource.includes(expected), true, `shop loading missing Vietnamese copy: ${expected}`);
   }
   for (const oldCopy of [
@@ -349,13 +364,14 @@ test("U1b shop listing and loading use Vietnamese buyer-functional copy", async 
 test("U1b collection detail uses Vietnamese buyer-functional copy", async () => {
   const source = await readFile(join(REPO_ROOT, "src/app/collections/[slug]/page.tsx"), "utf8");
 
+  // Same two changes as `/shop`: no brand eyebrow in the page body, and the pager's accessible
+  // name is now the `label` the shared pagination puts on its `aria-label`.
   for (const expected of [
-    "Bộ sưu tập",
-    `${BRAND_NAME_IN_JSX} / Bộ sưu tập`,
+    'eyebrow="Bộ sưu tập"',
     "Bộ sưu tập hiện tại",
     "Bộ sưu tập này chưa có sản phẩm.",
     "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
-    'aria-label="Phân trang bộ sưu tập"',
+    'label="Phân trang bộ sưu tập"',
     "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
   ]) {
     assert.equal(source.includes(expected), true, `collection detail missing Vietnamese copy: ${expected}`);

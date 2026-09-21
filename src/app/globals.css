@@ -43,6 +43,33 @@ a {
   color: var(--white);
 }
 
+/*
+ * The listing empty state's recovery button.
+ *
+ * `a { color: inherit }` above is unlayered, and Tailwind's utilities are in `@layer utilities`, so
+ * an unlayered rule beats every `text-*` class on a link however specific it looks. A filled pill
+ * written that way renders its label in the ink it is filled with -- the same 1:1 contrast
+ * `.checkout-cta` already exists to avoid. Declared here for the same reason, so the colour is
+ * stated once for every listing rather than re-lost each time a page writes the utility again.
+ */
+.listing-cta {
+  color: var(--paper);
+}
+
+/*
+ * The pill-shaped filter and subcategory links the listings share, for the same reason: a pill
+ * that fills on hover or when selected has to state its label colour outside `@layer utilities`,
+ * or `hover:text-*` silently does nothing and the selected pill reads ink-on-ink.
+ */
+.listing-pill {
+  color: var(--ink);
+}
+
+.listing-pill:hover,
+.listing-pill[aria-current="true"] {
+  color: var(--paper);
+}
+
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {

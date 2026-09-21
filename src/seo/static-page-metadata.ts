@@ -17,16 +17,14 @@ type StaticPageMetadataInput = Readonly<{
 /**
  * The static indexable pages the SEO/GEO audit names under W10, and only those.
  *
- * `/shop` and `/collections/<slug>` — with their pagination — belong to `buildCatalogListingMetadata`,
- * and product pages to `buildStorefrontProductMetadata`. Listing them here would make this a second
- * authority over canonicals those builders already own, which is how two answers to one question
- * start disagreeing.
+ * `/shop`, `/sale`, `/new-arrivals` and `/collections/<slug>` — with their pagination — belong to
+ * `buildCatalogListingMetadata`, and product pages to `buildStorefrontProductMetadata`. Listing
+ * them here would make this a second authority over canonicals those builders already own, which
+ * is how two answers to one question start disagreeing.
  */
 const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   "/",
   "/collections",
-  // F3a keeps `/new-arrivals` as one editorial URL with no legitimate query-state variant.
-  "/new-arrivals",
   // U33a evergreen pages. They are exactly the shape this builder was written for: one static path
   // each, no paginated form, and nothing a query string could legitimately vary.
   "/about",

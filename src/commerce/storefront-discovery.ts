@@ -125,6 +125,24 @@ export function parseStorefrontDiscoverySearchParams(
   };
 }
 
+/**
+ * The page number for a listing whose only query parameter is the page.
+ *
+ * `/new-arrivals` orders by recency and offers no filters, so the full discovery parse is the
+ * wrong shape for it: that one validates `q`, `sort` and the price bounds and throws on a
+ * malformed value, which would turn `?minPrice=abc` into a 404 on a route that has no price
+ * filter to have rejected it. Unrecognised query state is left alone here and handled where it
+ * belongs -- `shouldNoIndexRequest` already marks any non-pagination query on a listing noindex.
+ *
+ * The page itself is parsed by the same `parsePage`, so an out-of-range or malformed page raises
+ * the same `RangeError` every other listing raises, and every route turns it into the same 404.
+ */
+export function parseStorefrontListingPage(
+  searchParams: StorefrontDiscoverySearchParams,
+): number {
+  return parsePage(searchParams.page);
+}
+
 export function buildStorefrontDiscoveryHref(
   query: StorefrontDiscoveryQuery,
   page: number = query.page,

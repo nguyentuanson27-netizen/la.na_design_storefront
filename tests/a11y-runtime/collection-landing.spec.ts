@@ -234,15 +234,85 @@ test("collection with configured hero uses the shared full-bleed header overlay 
   expect(accessibilityScan.violations).toEqual([]);
 });
 
+/**
+ * The hero contract and the shared listing chrome are one arrangement, not two.
+ *
+ * They arrived on separate branches that both rewrote this page's top: one moved the hero out of
+ * the container to become the first full-bleed surface the header overlays, the other replaced the
+ * page's own heading with the chrome every listing shares. Either change alone reads as correct
+ * while quietly undoing the other -- a naive merge puts the hero back under the heading, inside
+ * the container, and the overlay stops applying. This asserts the order between them, so that
+ * reconciliation is not something a future merge can resolve by dropping one.
+ */
+test("a collection hero is the first full-bleed surface and the shared listing chrome follows it", async ({
+  page,
+}) => {
+  const tinyJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+    "base64",
+  );
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${heroSlug}`, { waitUntil: "networkidle" });
+
+  const hero = page.locator("[data-header-overlay-hero]");
+  await expect(hero).toHaveCount(1);
+
+  // The hero is inside the main landmark the overlay selector keys off, and nothing renders
+  // before it there -- an image nested in the constrained container would fail both halves.
+  expect(
+    await hero.evaluate((element) => element.closest("#main-content") !== null),
+    "the overlay selector is scoped to #main-content",
+  ).toBe(true);
+  expect(
+    await hero.evaluate((element) => element.closest("[class*='max-w-']") === null),
+    "the hero is a full-bleed surface, not a block inside the constrained listing container",
+  ).toBe(true);
+  const heroBox = await hero.boundingBox();
+  expect(heroBox?.x, "the hero starts at the viewport edge").toBe(0);
+  expect(Math.round(heroBox?.width ?? 0), "the hero spans the viewport").toBe(390);
+
+  // The shared chrome is present and comes after the hero in document order.
+  const heading = page.getByRole("heading", { level: 1, name: "Runtime Hero Collection" });
+  await expect(heading).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
+
+  const heroPrecedesChrome = await page.evaluate(() => {
+    const heroElement = document.querySelector("[data-header-overlay-hero]");
+    const headingElement = document.querySelector("#main-content h1");
+    if (!heroElement || !headingElement) return null;
+    // DOCUMENT_POSITION_FOLLOWING === 4: the heading follows the hero.
+    return Boolean(heroElement.compareDocumentPosition(headingElement) & 4);
+  });
+  expect(heroPrecedesChrome, "the serif listing heading renders after the hero").toBe(true);
+
+  // And the heading is still the shared chrome's, not a page-local one.
+  const headingStyle = await heading.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
+  });
+  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
+  expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
+
+});
+
 test("published collection exposes visible copy and deterministic website-owned membership", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
-  // C — rendered check. The brand half comes from Brand Config, not from a literal.
+  // C — rendered check. The eyebrow is the surface's own name now: the shared listing header
+  // names what the page is, and the masthead already carries the wordmark, so repeating the brand
+  // over every listing said the same thing twice. Brand Config still owns the wordmark, and the
+  // masthead link is asserted from it rather than from a literal.
   await expect(
-    page.getByText(`${BRAND.identity.name} / Bộ sưu tập`, { exact: true }),
+    page.locator("#main-content p.eyebrow").filter({ hasText: "Bộ sưu tập" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: `${BRAND.identity.name} — Trang chủ` }),
   ).toBeVisible();
   await expect(
     page.getByText(
@@ -334,7 +404,12 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     waitUntil: "networkidle",
   });
   expect(pageTwo?.status()).toBe(200);
-  await expect(page.getByText("25 sản phẩm · Trang 2/2", { exact: true })).toBeVisible();
+  // The count and the page number are two lines now -- the count above the grid, the page in the
+  // pager -- because every listing draws the same chrome. The facts asserted are the same two.
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByText("Trang 2 / 2"),
+  ).toBeVisible();
 
   const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
   const small = sizes.getByRole("link", { name: "S", exact: true });
@@ -345,7 +420,9 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     small.click(),
   ]);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime Paged Collection" })).toBeVisible();
-  await expect(page.getByText("1 sản phẩm · Trang 1/1", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
+  // A single page has no pager at all, which is what "reset to page 1" looks like here.
+  await expect(page.getByRole("navigation", { name: "Phân trang bộ sưu tập" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: `Paged Runtime Product 01 ${suffix}` })).toBeVisible();
   expect(page.url()).not.toContain("page=");
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
