@@ -75,6 +75,7 @@ export function BrandProductDetail({
           initialIndex={remainingInitialGalleryIndex}
           selectedVariantId={controller.view.selectedVariantId}
           galleryIndexByVariantId={remainingGalleryIndexByVariantId}
+          preloadFirstImage={!excludeFirstImage}
         />
       ) : null}
 

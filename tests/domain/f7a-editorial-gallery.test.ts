@@ -87,4 +87,5 @@ test("owner PDP contract promotes the canonical first gallery image and removes 
   );
   assert.match(detailSource, /media\.gallery\.slice\(1\)/);
   assert.match(detailSource, /\.filter\(\(\[, index\]\) => index > 0\)/);
+  assert.match(detailSource, /preloadFirstImage=\{!excludeFirstImage\}/);
 });
