@@ -62,19 +62,19 @@ export type HomeRouteProps = Readonly<{
 const DEFAULT_CAMPAIGN_HERO_CANDIDATES: readonly HomeHeroSlideCandidate[] = [
   {
     imageUrl: "/banners/hero-xuan-hoai-ky-desktop.webp",
-    mobileImageUrl: "/banners/hero-xuan-hoai-ky-mobile.jpg",
+    mobileImageUrl: "/banners/banner-aodai-xuan-hoai-ky-mobile.jpg",
     href: "/shop",
     label: "Xuân Hoài Ký",
   },
   {
     imageUrl: "/banners/hero-diep-hoa-thu-desktop.webp",
-    mobileImageUrl: "/banners/hero-diep-hoa-thu-mobile.jpg",
+    mobileImageUrl: "/banners/banner-aodai-diep-hoa-thu-mobile.jpg",
     href: "/shop",
     label: "Diệp Hoa Thư",
   },
   {
     imageUrl: "/banners/hero-tinh-sac-desktop.webp",
-    mobileImageUrl: "/banners/hero-tinh-sac-mobile.jpg",
+    mobileImageUrl: "/banners/banner-aodai-tinh-sac-mobile.jpg",
     href: "/shop",
     label: "Tinh Sắc",
   },
