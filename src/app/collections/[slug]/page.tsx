@@ -34,7 +34,7 @@ function render(data: CollectionViewModel) {
         <section
           className="collection-page-hero"
           aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
-          data-header-overlay-hero
+          data-header-overlay-hero=""
         >
           <Image
             src={editorial.heroImage}

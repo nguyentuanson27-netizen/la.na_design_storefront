@@ -135,7 +135,7 @@ function render(data: ProductRouteData) {
         <section
           className="product-page-hero"
           aria-label={`Ảnh chính của ${data.name}`}
-          data-header-overlay-hero
+          data-header-overlay-hero=""
         >
           <Image
             src={heroImage.url}

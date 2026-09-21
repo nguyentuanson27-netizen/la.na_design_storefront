@@ -112,7 +112,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
       <section
         className="home-hero home-hero--static"
         aria-label="Ảnh bìa trang chủ"
-        data-header-overlay-hero
+        data-header-overlay-hero=""
       >
         <HeroSlideFigure slide={slides[0]!} preload />
       </section>
@@ -124,7 +124,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
       className="home-hero home-hero--slider"
       aria-label="Ảnh bìa trang chủ"
       aria-roledescription="carousel"
-      data-header-overlay-hero
+      data-header-overlay-hero=""
       data-autoplaying={autoplaying ? "true" : "false"}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
