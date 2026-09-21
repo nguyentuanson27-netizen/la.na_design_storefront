@@ -147,7 +147,9 @@ test.beforeAll(async () => {
       // its own directory -- and a server that has to be SIGKILLed leaves the lock behind,
       // which makes the next spec's server refuse to start entirely.
       NEXT_DIST_DIR: ".next-test/homepage-hero",
+      APP_DOMAIN: `${HOST}:${PORT}`,
       BETTER_AUTH_URL: BASE_URL,
+      SEARCH_INDEXING_ENABLED: "false",
       NEXT_TELEMETRY_DISABLED: "1",
       PANCAKE_SHOP_ID: String(SHOP_ID),
     },
