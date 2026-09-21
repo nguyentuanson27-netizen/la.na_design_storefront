@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page, type Request } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -68,7 +68,7 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
 }
 
-function isSaleRscRequest(request: { url(): string; headers(): Record<string, string> }) {
+function isSaleRscRequest(request: Request) {
   const url = new URL(request.url());
   return url.pathname === "/sale" && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1");
 }
@@ -78,11 +78,11 @@ function isSaleRscRequest(request: { url(): string; headers(): Record<string, st
  * Prove the effect is live through its visibility-resume contract before advancing the fake clock;
  * otherwise a slow CI runner can advance 60s first and arm the timer only afterwards.
  */
-async function waitForPromotionRefresherHydration(page: Parameters<typeof test>[0] extends never ? never : any) {
+async function waitForPromotionRefresherHydration(page: Page) {
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const refreshed = page
       .waitForResponse(
-        (response: any) => isSaleRscRequest(response.request()),
+        (response) => isSaleRscRequest(response.request()),
         { timeout: 500 },
       )
       .then(() => true)
