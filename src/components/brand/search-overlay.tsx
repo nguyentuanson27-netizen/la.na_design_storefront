@@ -8,6 +8,7 @@ import { useRouter } from "next/navigation";
 
 import { BRAND } from "@/brand";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { STOREFRONT_DISCOVERY_LIMITS } from "@/components/headless/search-overlay-model";
 import { useSearchOverlay } from "@/components/headless/use-search-overlay";
 
@@ -50,16 +51,9 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
     }
   }, [isOpen, triggerRef]);
 
-  // Lock body scroll
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+  // Holds the page still behind the dialog; see the note in `useScrollLock` for why body alone
+  // is not enough on this site.
+  useScrollLock(isOpen);
 
   // Keyboard navigation
   const handleKeyDown = useCallback(

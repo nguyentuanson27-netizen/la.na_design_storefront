@@ -36,9 +36,12 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
-      BETTER_AUTH_URL: http://127.0.0.1:3221
+      # The spec spawns its server on its own port and passes its own `BETTER_AUTH_URL`; this is
+      # only the fallback, and is deliberately not a spec's port so the two cannot drift into a
+      # hidden coupling again.
+      BETTER_AUTH_URL: http://127.0.0.1:3000
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
-      APP_DOMAIN: 127.0.0.1:3221
+      APP_DOMAIN: 127.0.0.1:3000
       SEARCH_INDEXING_ENABLED: "false"
     steps:
       - name: Check out repository

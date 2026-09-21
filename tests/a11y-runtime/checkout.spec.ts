@@ -11,7 +11,7 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch";
 
 const HOST = "127.0.0.1";
-const PORT = 3214;
+const PORT = 3307;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
