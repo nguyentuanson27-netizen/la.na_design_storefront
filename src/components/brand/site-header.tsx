@@ -10,6 +10,7 @@ import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
 import { CartDrawer } from "@/components/brand/cart-drawer";
 import { SearchOverlay } from "@/components/brand/search-overlay";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
 
@@ -101,17 +102,18 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
     openSearch(mobileNavTriggerRef.current);
   };
 
-  // Manage body scroll and focus restoration for full-screen mobile nav
+  // Holds the page still behind the menu; see the note in `useScrollLock` for why body alone is
+  // not enough on this site.
+  useScrollLock(isMobileNavOpen);
+
+  // Focus restoration for the full-screen mobile nav.
   useEffect(() => {
     if (isMobileNavOpen) {
       wasMobileNavOpenRef.current = true;
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
       const timer = setTimeout(() => {
         mobileNavCloseRef.current?.focus();
       }, 50);
       return () => {
-        document.body.style.overflow = originalOverflow;
         clearTimeout(timer);
       };
     } else if (wasMobileNavOpenRef.current) {

@@ -241,8 +241,10 @@ test("F4b mobile PLP filter drawer: enforces focus trap, Escape dismissal, and o
   // Focus restored to opener on drawer close
   assert.match(source, /openerButtonRef\.current\?\.focus\?\.\(\)/);
 
-  // Body scroll locked while drawer is open
-  assert.match(source, /document\.body\.style\.overflow = "hidden"/);
+  // Page scroll locked while drawer is open. The lock lives in `useScrollLock` rather than inline
+  // here: locking `body` alone does nothing on this site, and four components had written that
+  // same ineffective line. Pinning the call keeps the drawer wired to the one that works.
+  assert.match(source, /useScrollLock\(isMobileOpen\)/);
 });
 
 test("F4b mobile PLP filter drawer focus trap: traps Tab and Shift+Tab within filter drawer", () => {

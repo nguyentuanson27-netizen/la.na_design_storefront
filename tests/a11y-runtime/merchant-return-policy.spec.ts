@@ -8,7 +8,7 @@ import { expect, test } from "@playwright/test";
 import { FULFILLMENT } from "../../src/brand/index.ts";
 
 const HOST = "127.0.0.1";
-const PORT = 3231;
+const PORT = 3322;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");

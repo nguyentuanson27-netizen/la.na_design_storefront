@@ -47,10 +47,15 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
 
+      # Before `setup-node`, so its `cache: pnpm` can ask pnpm where its store is.
+      - name: Enable corepack
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Enable pinned pnpm
         run: |
@@ -221,51 +226,68 @@ jobs:
 
   admin-a11y-runtime:
     needs: identity
-    runs-on: macos-14
-    # Raised from 30 with the move to a Next build directory per spec. Sharing one directory was
-    # what let a SIGKILLed server's lock file stop the next spec's server from starting at all, and
-    # the price of separating them is that each spec compiles cold instead of inheriting the last
-    # one's build. The browser step went from roughly 8 minutes to past 18 on this runner, which
-    # left no room under the old cap.
+    # Ubuntu, not macOS. The job was on `macos-14` from the initial import with no recorded reason,
+    # and `p18-final-qa.yml` already drives the same Playwright + Chromium tooling on ubuntu, so
+    # there is nothing here that needs a mac. GitHub bills macOS minutes at ten times the Linux
+    # rate, and on identical steps in the same run Linux was the faster of the two anyway
+    # (`pnpm install` 9.0s against 17.7s).
+    runs-on: ubuntu-latest
+    # Four shards, each on its own runner with its own database. The suite used to run as one
+    # serial 12.6-minute block; the specs cannot share a worker because they park and restore
+    # global rows, so the parallelism is taken across machines instead of inside one.
     #
-    # This is a ceiling for a hung job, not a target: the suite is expected to finish well inside
-    # it, and a run that approaches this number is a regression worth reading rather than a new
-    # normal to raise again. macOS runner minutes bill at ten times the Linux rate, so the cost of
-    # a genuinely stuck job is what this number is chosen against.
-    timeout-minutes: 60
+    # `fail-fast: false` on purpose: one shard going red should still let the others report, or a
+    # single failure hides the state of three quarters of the suite.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    # A ceiling for a hung shard, not a target. Each shard is expected to finish in a few minutes,
+    # and a run that approaches this number is a regression worth reading rather than a new normal
+    # to raise again.
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
       BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
-      BETTER_AUTH_URL: http://127.0.0.1:3212
+      # Each spec spawns its server on its own port and passes its own `BETTER_AUTH_URL`; this is
+      # only the fallback for anything that does not, and is deliberately not a spec's port.
+      BETTER_AUTH_URL: http://127.0.0.1:3000
       BETTER_AUTH_IP_HEADER: x-ci-client-ip
-      APP_DOMAIN: 127.0.0.1:3212
+      APP_DOMAIN: 127.0.0.1:3000
       SEARCH_INDEXING_ENABLED: "false"
       PANCAKE_SHOP_ID: "920942"
     steps:
       - name: Check out repository
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
 
+      # Before `setup-node`, so its `cache: pnpm` can ask pnpm where its store is.
+      - name: Enable corepack
+        run: corepack enable
+
       - name: Set up Node.js
         uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
+          cache: pnpm
 
       - name: Enable pinned pnpm
         run: |
           corepack enable
           pnpm --version
-
-      - name: Prepare PostgreSQL 16
-        shell: bash
-        env:
-          DATABASE_NAME: ${{ needs.identity.outputs.database-name }}
-        run: |
-          brew list postgresql@16 >/dev/null 2>&1 || brew install postgresql@16
-          PG_BIN="$(brew --prefix postgresql@16)/bin"
-          echo "$PG_BIN" >> "$GITHUB_PATH"
-          "$PG_BIN/initdb" -D "$RUNNER_TEMP/pgdata"
-          "$PG_BIN/pg_ctl" -D "$RUNNER_TEMP/pgdata" -l "$RUNNER_TEMP/postgres.log" -o "-p 5432" start
-          "$PG_BIN/createdb" -p 5432 "$DATABASE_NAME"
-          echo "DATABASE_URL=postgresql://$(whoami)@127.0.0.1:5432/$DATABASE_NAME" >> "$GITHUB_ENV"
 
       - name: Install application from lockfile without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
@@ -282,8 +304,8 @@ jobs:
 
       - name: Install Playwright Chromium
         working-directory: tests/a11y-runtime
-        run: npx playwright install chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Run admin browser accessibility runtime
         working-directory: tests/a11y-runtime
-        run: npx playwright test --config playwright.config.ts
+        run: npx playwright test --config playwright.config.ts --shard=${{ matrix.shard }}/4

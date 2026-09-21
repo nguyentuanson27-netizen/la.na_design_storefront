@@ -17,7 +17,7 @@ import {
 import { POLICY_HUB_TOPICS } from "../../src/routes/evergreen-model.ts";
 
 const HOST = "127.0.0.1";
-const PORT = 3224;
+const PORT = 3317;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");

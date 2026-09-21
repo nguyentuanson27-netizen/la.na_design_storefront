@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -160,8 +160,8 @@ test("F2a mobile navigation dialog: enforces full-screen accessible dialog, Esca
   assert.match(source, /previouslyFocusedBeforeMobileNav\.current \?\? mobileNavTriggerRef\.current/);
   assert.match(source, /returnTarget\?\.focus\?\.\(\)/);
 
-  // Body scroll locking when open
-  assert.match(source, /document\.body\.style\.overflow = "hidden"/);
+  // Page scroll locking when open, through the shared hook -- see the note in `useScrollLock`.
+  assert.match(source, /useScrollLock\(isMobileNavOpen\)/);
 });
 
 test("mobile navigation: subcategories are collapsed behind a per-category disclosure", () => {
@@ -339,5 +339,46 @@ test("owner hero overlay contract is marker-driven and keeps non-hero pages crea
     cssSource,
     /body:has\(#main-content \[data-header-overlay-hero\]\) \.site-masthead[\s\S]*position:\s*fixed/,
     "a marked first surface must begin at the top viewport behind the masthead",
+  );
+});
+
+/**
+ * The page-scroll lock is written once.
+ *
+ * `document.body.style.overflow = "hidden"` is the usual one-liner, and on this site it does
+ * nothing: `globals.css` sets `html { overflow-x: clip }`, and the viewport only falls back to
+ * `body` for its overflow when the root computes to `visible` on both axes. Four components -- the
+ * header, the search overlay, the cart drawer and the PLP filter panel -- each carried that same
+ * ineffective line, so a full-screen overlay never actually held the page still.
+ *
+ * `useScrollLock` locks the root as well, and this pins both halves of that: the hook keeps doing
+ * it, and nothing reintroduces a hand-rolled copy. A fifth copy is how the defect comes back.
+ */
+test("the page-scroll lock lives in one place and locks the element that actually scrolls", () => {
+  const hook = readFileSync(
+    path.join(REPO_ROOT, "src/components/headless/use-scroll-lock.ts"),
+    "utf8",
+  );
+
+  // The root is what scrolls here; body alone is the bug this replaced.
+  assert.match(hook, /document\.documentElement/);
+  assert.match(hook, /root\.style\.overflow = "hidden"/);
+  assert.match(hook, /document\.body\.style\.overflow = "hidden"/);
+  // ...and both are put back, rather than being cleared to a hardcoded default.
+  assert.match(hook, /root\.style\.overflow = originalRootOverflow/);
+  assert.match(hook, /document\.body\.style\.overflow = originalBodyOverflow/);
+
+  const componentsDir = path.join(REPO_ROOT, "src/components/brand");
+  const offenders = readdirSync(componentsDir)
+    .filter((name) => name.endsWith(".tsx"))
+    .filter((name) =>
+      readFileSync(path.join(componentsDir, name), "utf8").includes(
+        'document.body.style.overflow',
+      ),
+    );
+  assert.deepEqual(
+    offenders,
+    [],
+    "these components lock scroll by hand instead of calling useScrollLock, which does not work on this site",
   );
 });
