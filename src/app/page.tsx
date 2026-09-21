@@ -85,7 +85,9 @@ function render(data: HomeRouteData) {
       {/* The hero carries image and CTA only (§17), so the page's one h1 cannot live inside it.
           It reads the approved homepage title rather than restating it, and is available to
           assistive technology without putting a heading over the campaign art. */}
-      <h1 className="sr-only">{BRAND.identity.homeTitle}</h1>
+      <h1 className="sr-only" data-homepage-root="">
+        {BRAND.identity.homeTitle}
+      </h1>
 
       <BrandHeroSlider slides={data.heroSlides} />
 
