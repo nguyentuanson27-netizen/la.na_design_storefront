@@ -411,7 +411,10 @@ test("mobile search opened from scrolled navigation remains a true viewport dial
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
   await page.evaluate(() => window.scrollTo({ top: 120, behavior: "instant" }));
-  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(120);
+  // The homepage promotion joins the fixed masthead after the 20px threshold. Chromium may
+  // compensate the scroll position when that overlay gains height, so the regression contract is
+  // "scrolled past the threshold", not an invariant physical scrollY of exactly 120px.
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(20);
 
   const header = page.locator("header.site-header");
   await expect(header).toHaveAttribute("data-scrolled", "true");
@@ -456,12 +459,17 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   });
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-  const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
-  await expect(shippingPromotion).toBeVisible();
+  // DOM locator is intentional: the homepage contract removes the promotion from the
+  // accessibility tree with display:none while keeping the element mounted for the scrolled state.
+  const shippingPromotion = page.locator(".promotion-shell");
+  await expect(shippingPromotion).toBeHidden();
   await expect(shippingPromotion).toHaveClass(/promotion-shell/);
   await expect(shippingPromotion).toContainText("Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn");
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
   await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(400);
+  await expect(shippingPromotion).toBeVisible();
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
   expect(
     await page.evaluate(() => {
       const masthead = document.querySelector(".site-masthead");
@@ -471,6 +479,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
     }),
   ).toEqual({ top: 0, pinned: "promotion-shell" });
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(0);
+  await expect(shippingPromotion).toBeHidden();
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
