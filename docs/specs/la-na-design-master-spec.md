@@ -727,7 +727,7 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 
 - **Desktop:** after the gallery, use one two-column information row. Left: product identity/editorial information. Right: price, availability/preorder, variant/size controls, size guide, purchase actions, purchase feedback, shipping and returns.
 - The desktop purchase panel is **not sticky** and no nested sticky selector may overlap adjacent copy.
-- **Mobile:** immediately after the gallery, show product name (26–30px), then price/availability, then applicable kind → size → color controls and purchase actions. This order follows the current selection authority; do not change the selection model merely to make color selectable before size. Keep one shared variant-selection/cart authority; do not create a second mobile selection state.
+- **Below `lg`:** immediately after the horizontal mobile/tablet gallery, show product name (26–30px), then price/availability, then applicable kind → size → color controls and purchase actions. The below-`lg` gallery + product-info + quick-purchase redesign applies at representative 390px and 768px widths. This order follows the current selection authority; do not change the selection model merely to make color selectable before size. Keep one shared variant-selection/cart authority; do not create a second mobile selection state.
 - Primary actions remain `Thêm vào giỏ` + `Mua ngay`.
 - Size guide opens from `Hướng dẫn chọn size` into the existing accessible modal.
 - Each product maps manually to the correct size guide ID.
@@ -810,10 +810,12 @@ Mobile reading/action order is:
 Tóm tắt đơn (thu gọn mặc định, luôn thấy Đơn hàng (N) · Tổng)
 → Thông tin nhận hàng
 → Phí vận chuyển + Tổng tiền
+→ BrandPreorderFulfillmentNotice (khi preorderNotice tồn tại)
 → Đặt hàng COD
 ```
 
 - `N = sum(line.quantity)` across checkout lines; for 2 × A + 1 × B, show `Đơn hàng (3)`.
+- When `preorderNotice` exists, preserve the existing fulfillment notice and its facts; render it before submit in mobile DOM/reading order. Do not recompute preorder/mixed-order fulfillment facts in presentation.
 - Expanding the order summary shows product image, option label, quantity and line total.
 - The displayed shipping fee and final total must precede the submit button in DOM/reading order; do not fake this with CSS-only visual reordering.
 - Preserve one checkout form/server action/quote-proof workflow; do not fork submit logic.
