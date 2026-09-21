@@ -119,10 +119,63 @@ async function restoreCollections() {
   }
 }
 
-async function cleanup() {
-  await prisma.categoryEditorialMedia.deleteMany({
-    where: { categoryKey: { in: ["aoDai", "setDo", "vayDam"] } },
+const CATEGORY_KEYS = ["aoDai", "setDo", "vayDam"] as const;
+
+type ParkedCategoryMedia = {
+  categoryKey: string;
+  heroImageUrl: string | null;
+  megaMenuImageUrl: string | null;
+};
+
+/** `null` marks a key that had no row, so restoring it means removing the fixture again. */
+let parkedCategoryMedia = new Map<string, ParkedCategoryMedia | null>();
+
+/**
+ * Park the category media the way the collections above are parked.
+ *
+ * `CategoryEditorialMedia` is canonical per `categoryKey` and carries `megaMenuImageUrl` as well
+ * as the hero, so deleting a row to make room for a fixture destroys configured content this spec
+ * never owned. On CI the database is new every run and there is nothing to lose; against a
+ * developer's or a staging database it is the real hero and mega-menu images, gone, with the test
+ * still reporting green.
+ */
+async function parkCategoryMedia() {
+  const existing = await prisma.categoryEditorialMedia.findMany({
+    where: { categoryKey: { in: [...CATEGORY_KEYS] } },
+    select: { categoryKey: true, heroImageUrl: true, megaMenuImageUrl: true },
   });
+  parkedCategoryMedia = new Map(CATEGORY_KEYS.map((key) => [key as string, null]));
+  for (const row of existing) parkedCategoryMedia.set(row.categoryKey, row);
+
+  for (const categoryKey of CATEGORY_KEYS) {
+    await prisma.categoryEditorialMedia.upsert({
+      where: { categoryKey },
+      update: { heroImageUrl: IMAGE(`editorial-${categoryKey}`) },
+      create: { categoryKey, heroImageUrl: IMAGE(`editorial-${categoryKey}`) },
+    });
+  }
+}
+
+/** Puts back what was there, and removes the fixture where there was nothing. */
+async function restoreCategoryMedia() {
+  for (const [categoryKey, parked] of parkedCategoryMedia) {
+    if (parked) {
+      await prisma.categoryEditorialMedia.update({
+        where: { categoryKey },
+        data: {
+          heroImageUrl: parked.heroImageUrl,
+          megaMenuImageUrl: parked.megaMenuImageUrl,
+        },
+      });
+    } else {
+      await prisma.categoryEditorialMedia.deleteMany({ where: { categoryKey } });
+    }
+  }
+  parkedCategoryMedia = new Map();
+}
+
+/** Only what this spec created. `SHOP_ID` is its own, so no other fixture's products are in it. */
+async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
@@ -190,11 +243,7 @@ test.beforeAll(async () => {
   // section is read from this table rather than sharing the new-arrivals read.
   await prisma.homepageFeaturedProduct.create({ data: { productId: oldest.id, position: 1 } });
 
-  for (const categoryKey of ["aoDai", "setDo", "vayDam"]) {
-    await prisma.categoryEditorialMedia.create({
-      data: { categoryKey, heroImageUrl: IMAGE(`editorial-${categoryKey}`) },
-    });
-  }
+  await parkCategoryMedia();
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
@@ -219,6 +268,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await stopServer();
   await cleanup();
+  await restoreCategoryMedia();
   await restoreCollections();
   await prisma.$disconnect();
 });
