@@ -68,6 +68,34 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
 }
 
+function isSaleRscRequest(request: { url(): string; headers(): Record<string, string> }) {
+  const url = new URL(request.url());
+  return url.pathname === "/sale" && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1");
+}
+
+/**
+ * Server-rendered Sale content can be visible before the client refresher effect has mounted.
+ * Prove the effect is live through its visibility-resume contract before advancing the fake clock;
+ * otherwise a slow CI runner can advance 60s first and arm the timer only afterwards.
+ */
+async function waitForPromotionRefresherHydration(page: Parameters<typeof test>[0] extends never ? never : any) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const refreshed = page
+      .waitForResponse(
+        (response: any) => isSaleRscRequest(response.request()),
+        { timeout: 500 },
+      )
+      .then(() => true)
+      .catch(() => false);
+
+    await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    if (await refreshed) return;
+    await delay(100);
+  }
+
+  throw new Error("Timed out waiting for promotion refresher hydration");
+}
+
 test.beforeAll(async () => {
   await cleanup();
   const now = new Date();
@@ -179,10 +207,7 @@ test("U17 renders the Sale representative and self-rearms/resumes without browse
 
   let refreshRequests = 0;
   page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (url.pathname === "/sale" && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1")) {
-      refreshRequests += 1;
-    }
+    if (isSaleRscRequest(request)) refreshRequests += 1;
   });
 
   await page.goto(`${BASE_URL}/sale`, { waitUntil: "domcontentloaded" });
@@ -194,7 +219,7 @@ test("U17 renders the Sale representative and self-rearms/resumes without browse
   await expect(page.getByText(/Còn .*giờ/)).toBeVisible();
   await expect(page.getByText(/300\.000/)).toHaveCount(0);
 
-  await delay(500);
+  await waitForPromotionRefresherHydration(page);
 
   const beforeFirstTimer = refreshRequests;
   await page.clock.fastForward(60_000);
