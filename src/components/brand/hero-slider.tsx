@@ -9,11 +9,11 @@ import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
 /**
  * Owner-approved §17 hero: image + one linked CTA only.
  *
- * Zero slides render nothing. One slide is a static hero. Two or three slides autoplay every two
+ * Zero slides render nothing. One slide is a static hero. Two or three slides autoplay every three
  * seconds unless reduced motion is requested or the shopper is actively hovering, focusing or
  * dragging. Manual swipe changes the slide but does not permanently take ownership of autoplay.
  */
-const AUTOPLAY_INTERVAL_MS = 2_000;
+const AUTOPLAY_INTERVAL_MS = 3_000;
 /** Below this a drag is a tap or a vertical scroll, not a deliberate swipe. */
 const SWIPE_THRESHOLD_PX = 40;
 const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
@@ -35,7 +35,8 @@ function usePrefersReducedMotion(): boolean {
 function HeroSlideFigure({
   slide,
   preload,
-}: Readonly<{ slide: HomeHeroSlide; preload: boolean }>) {
+  interactive = true,
+}: Readonly<{ slide: HomeHeroSlide; preload: boolean; interactive?: boolean }>) {
   return (
     <>
       <div className="home-hero__media">
@@ -50,7 +51,11 @@ function HeroSlideFigure({
         />
       </div>
       <p className="home-hero__cta">
-        <Link className="home-hero__cta-link" href={slide.href}>
+        <Link
+          className="home-hero__cta-link"
+          href={slide.href}
+          tabIndex={interactive ? undefined : -1}
+        >
           {HOME_HERO_CTA_LABEL}
         </Link>
       </p>
@@ -149,18 +154,26 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
         onPointerUp={(event) => finishPointerInteraction(event)}
         onPointerCancel={(event) => finishPointerInteraction(event, true)}
       >
-        {slides.map((slide, index) => (
-          <div
-            key={slide.href}
-            className="home-hero__slide"
-            role="group"
-            aria-roledescription="slide"
-            aria-label={`${index + 1} / ${slides.length}`}
-            hidden={index !== activeIndex}
-          >
-            <HeroSlideFigure slide={slide} preload={index === 0} />
-          </div>
-        ))}
+        {slides.map((slide, index) => {
+          const isActive = index === activeIndex;
+          return (
+            <div
+              key={slide.href}
+              className="home-hero__slide"
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`${index + 1} / ${slides.length}`}
+              aria-hidden={isActive ? undefined : true}
+              data-active={isActive ? "true" : "false"}
+            >
+              <HeroSlideFigure
+                slide={slide}
+                preload={index === 0}
+                interactive={isActive}
+              />
+            </div>
+          );
+        })}
       </div>
     </section>
   );
