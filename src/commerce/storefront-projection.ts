@@ -170,7 +170,7 @@ export function buildStorefrontProductProjection({
     ...projectOptions(
       parentVariants,
       COMPOSITE_PARENT_KIND_KEY,
-      "Set",
+      "FULL SET",
       null,
       pricingRule,
       sellingPolicy,
