@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -90,13 +91,13 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       role="dialog"
       aria-modal="true"
       aria-label="Tìm kiếm sản phẩm"
-      className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2] text-[#3B2219] overflow-y-auto"
+      className="fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#FAF7F2] text-[#3B2219]"
     >
       {/* Live region for screen reader announcements */}
       <div aria-live="polite" className="sr-only">
@@ -265,6 +266,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -390,15 +391,18 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
         </nav>
       </div>
 
-      {/* Full-Screen Mobile Navigation Dialog */}
-      {isMobileNavOpen ? (
-        <div
+      {/* Render outside the scrolled header so backdrop-filter can never become the
+          containing block for this fixed viewport dialog. The portal changes only physical DOM
+          placement; refs, state, React events and focus management stay owned by SiteHeader. */}
+      {isMobileNavOpen
+        ? createPortal(
+            <div
           id="mobile-navigation-dialog"
           ref={mobileNavDrawerRef}
           role="dialog"
           aria-modal="true"
           aria-label="Menu điều hướng"
-          className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto bg-[#FAF7F2]"
+          className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#FAF7F2]"
         >
           {/* Mobile Header Bar inside full-screen menu: Logo + Close Button */}
           <div className="mobile-nav-dialog__bar">
@@ -526,8 +530,10 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               })}
             </ul>
           </nav>
-        </div>
-      ) : null}
+            </div>,
+            document.body,
+          )
+        : null}
 
       {/* Cart Drawer */}
       <CartDrawer

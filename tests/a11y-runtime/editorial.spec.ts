@@ -305,6 +305,145 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("mobile navigation is a true viewport overlay before and after header scroll styling", async ({
+  page,
+}) => {
+  await prisma.collectionDefinition.update({
+    where: { slug: "essential-outerwear" },
+    data: { heroImageUrl: "https://content.pancake.vn/images/1/2/3/mobile-nav-hero.jpg" },
+  });
+
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toBeVisible();
+
+    const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+
+    for (const scrollTop of [0, 120] as const) {
+      await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollTop);
+      await expect
+        .poll(() => page.evaluate(() => Math.round(window.scrollY)))
+        .toBe(scrollTop);
+
+      const header = page.locator("header.site-header");
+      await expect(header).toHaveAttribute(
+        "data-scrolled",
+        scrollTop > 20 ? "true" : "false",
+      );
+      const headerBackground = await header.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      if (scrollTop === 0) {
+        expect(headerBackground).toBe("rgba(0, 0, 0, 0)");
+      } else {
+        expect(headerBackground).not.toBe("rgba(0, 0, 0, 0)");
+      }
+
+      await menuTrigger.click();
+
+      const dialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+      await expect(dialog).toBeVisible();
+      expect(await dialog.evaluate((element) => element.parentElement === document.body)).toBe(true);
+
+      const box = await dialog.boundingBox();
+      expect(box).not.toBeNull();
+      expect(Math.round(box!.x)).toBe(0);
+      expect(Math.round(box!.y)).toBe(0);
+      expect(Math.round(box!.width)).toBe(390);
+      expect(Math.round(box!.height)).toBe(844);
+
+      await expect(dialog.locator("img.brand-mark-logo").first()).toBeVisible();
+      const closeButton = dialog.getByRole("button", { name: "Đóng menu", exact: true });
+      await expect(closeButton).toBeVisible();
+
+      const primaryNavigation = dialog.getByRole("navigation", {
+        name: "Điều hướng chính trên di động",
+      });
+      for (const label of [
+        "Áo dài",
+        "Set đồ",
+        "Váy, đầm",
+        "Phụ kiện",
+        "Hàng mới về",
+        "Bộ sưu tập",
+        "Sale",
+      ]) {
+        await expect(
+          primaryNavigation.getByRole("link", { name: label, exact: true }),
+        ).toBeVisible();
+      }
+
+      expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+      const lockedPageScrollY = await page.evaluate(() => window.scrollY);
+      await page.mouse.move(380, 820);
+      await page.mouse.wheel(0, 500);
+      await page.waitForTimeout(100);
+      expect(await page.evaluate(() => window.scrollY)).toBe(lockedPageScrollY);
+
+      const menuScrollState = await dialog.evaluate((element) => {
+        const overflowY = getComputedStyle(element).overflowY;
+        const scrollable = element.scrollHeight > element.clientHeight;
+        if (scrollable) {
+          element.scrollTop = Math.min(160, element.scrollHeight - element.clientHeight);
+        }
+        return { overflowY, scrollable, scrollTop: element.scrollTop };
+      });
+      expect(["auto", "scroll"]).toContain(menuScrollState.overflowY);
+      if (menuScrollState.scrollable) {
+        expect(menuScrollState.scrollTop).toBeGreaterThan(0);
+      }
+
+      await closeButton.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(menuTrigger).toBeFocused();
+    }
+  } finally {
+    await prisma.collectionDefinition.update({
+      where: { slug: "essential-outerwear" },
+      data: { heroImageUrl: null },
+    });
+  }
+});
+
+test("mobile search opened from scrolled navigation remains a true viewport dialog", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  await page.evaluate(() => window.scrollTo({ top: 120, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(120);
+
+  const header = page.locator("header.site-header");
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+
+  const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+  await menuTrigger.click();
+
+  const mobileDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+  await expect(mobileDialog).toBeVisible();
+  await mobileDialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
+  await expect(mobileDialog).toHaveCount(0);
+
+  const searchDialog = page.getByRole("dialog", { name: "Tìm kiếm sản phẩm" });
+  await expect(searchDialog).toBeVisible();
+  expect(await searchDialog.evaluate((element) => element.parentElement === document.body)).toBe(true);
+
+  const box = await searchDialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.x)).toBe(0);
+  expect(Math.round(box!.y)).toBe(0);
+  expect(Math.round(box!.width)).toBe(390);
+  expect(Math.round(box!.height)).toBe(844);
+
+  const input = searchDialog.getByRole("searchbox", { name: "Nhập từ khóa tìm kiếm" });
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+  await page.keyboard.press("Escape");
+  await expect(searchDialog).toHaveCount(0);
+  await expect(menuTrigger).toBeFocused();
+});
+
 test("P8 storefront shell exposes cutover navigation, shared tokens, focus treatment and semantic footer", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
