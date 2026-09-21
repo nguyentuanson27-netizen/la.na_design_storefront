@@ -68,7 +68,41 @@ test("admin activation converges inactive real parent and child through PDP, car
       pancakeShopId: shopId,
       pancakeProductId: "projection-component-product",
       slug: "projection-shirt-a",
-      name: "Ao A",
+      name: "Child Product X",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+
+  const pantsComponent = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "projection-pants-product",
+      slug: "projection-pants-a",
+      name: "Child Product Y",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  const skirtComponent = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "projection-skirt-product",
+      slug: "projection-skirt-a",
+      name: "Child Product Z",
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  const malformedComponent = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: "projection-malformed-product",
+      slug: "projection-malformed-a",
+      name: "Malformed Child Product",
       isPresent: true,
       isActive: false,
       syncedAt,
@@ -91,12 +125,56 @@ test("admin activation converges inactive real parent and child through PDP, car
     data: {
       pancakeVariationId: "projection-component-m",
       productId: component.id,
+      sku: "AO-001",
       color: null,
       size: "M",
       isPresent: true,
       isActive: false,
       pancakeRetailPrice: 390_000,
       pancakeRetailPriceAfterDiscount: 390_000,
+      syncedAt,
+    },
+  });
+
+  const pantsVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "projection-pants-m",
+      productId: pantsComponent.id,
+      sku: "QUAN-001",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 420_000,
+      pancakeRetailPriceAfterDiscount: 420_000,
+      syncedAt,
+    },
+  });
+  const skirtVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "projection-skirt-m",
+      productId: skirtComponent.id,
+      sku: "VAY-001",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 450_000,
+      pancakeRetailPriceAfterDiscount: 450_000,
+      syncedAt,
+    },
+  });
+  const malformedVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: "projection-malformed-m",
+      productId: malformedComponent.id,
+      sku: "AO-QUAN-01",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 100_000,
+      pancakeRetailPriceAfterDiscount: 100_000,
       syncedAt,
     },
   });
@@ -115,15 +193,53 @@ test("admin activation converges inactive real parent and child through PDP, car
         quantity: 3,
         syncedAt,
       },
+      {
+        variantId: pantsVariant.id,
+        pancakeWarehouseId: "projection-warehouse-pants",
+        quantity: 3,
+        syncedAt,
+      },
+      {
+        variantId: skirtVariant.id,
+        pancakeWarehouseId: "projection-warehouse-skirt",
+        quantity: 3,
+        syncedAt,
+      },
+      {
+        variantId: malformedVariant.id,
+        pancakeWarehouseId: "projection-warehouse-malformed",
+        quantity: 3,
+        syncedAt,
+      },
     ],
   });
-  await prisma.compositeComponentMirror.create({
-    data: {
-      parentVariantId: parentVariant.id,
-      componentVariantId: componentVariant.id,
-      quantity: 1,
-      syncedAt,
-    },
+  await prisma.compositeComponentMirror.createMany({
+    data: [
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: componentVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: pantsVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: skirtVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: malformedVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+    ],
   });
 
   const beforeActivation = await productRepository.getProductBySlug({
@@ -176,8 +292,10 @@ test("admin activation converges inactive real parent and child through PDP, car
   assert.deepEqual(
     detail.projection.options.map(({ id, kindLabel }) => ({ id, kindLabel })),
     [
-      { id: parentVariant.id, kindLabel: "Set" },
-      { id: componentVariant.id, kindLabel: "Ao A" },
+      { id: parentVariant.id, kindLabel: "FULL SET" },
+      { id: componentVariant.id, kindLabel: "ÁO LẺ" },
+      { id: pantsVariant.id, kindLabel: "QUẦN LẺ" },
+      { id: skirtVariant.id, kindLabel: "CV LẺ" },
     ],
   );
   assert.equal(
@@ -220,7 +338,7 @@ test("admin activation converges inactive real parent and child through PDP, car
       available,
       price,
     })),
-    [{ productSlug: null, productName: "Ao A", available: true, price: 390_000 }],
+    [{ productSlug: null, productName: "Child Product X", available: true, price: 390_000 }],
   );
 
   const checkout = createGuestCheckoutSnapshotService(prisma, {
@@ -259,7 +377,7 @@ test("admin activation converges inactive real parent and child through PDP, car
     [
       {
         pancakeVariationId: "projection-component-m",
-        productName: "Ao A",
+        productName: "Child Product X",
         color: null,
         size: "M",
         unitPriceVnd: BigInt(390_000),
@@ -286,7 +404,11 @@ test("admin activation converges inactive real parent and child through PDP, car
   assert.ok(afterDeactivation);
   assert.deepEqual(
     afterDeactivation.projection.options.map(({ id, kindLabel }) => ({ id, kindLabel })),
-    [{ id: parentVariant.id, kindLabel: "Set" }],
+    [
+      { id: parentVariant.id, kindLabel: "FULL SET" },
+      { id: pantsVariant.id, kindLabel: "QUẦN LẺ" },
+      { id: skirtVariant.id, kindLabel: "CV LẺ" },
+    ],
   );
 
   assert.deepEqual(
@@ -320,7 +442,7 @@ test("admin activation converges inactive real parent and child through PDP, car
     [
       {
         productSlug: null,
-        productName: "Ao A",
+        productName: "Child Product X",
         available: false,
         unavailableReason: "VARIANT_UNAVAILABLE",
         price: null,
