@@ -3,12 +3,10 @@ import test from "node:test";
 
 import {
   buildStorefrontProductProjection,
-  deriveStorefrontProjectionSelection,
-} from "../../src/commerce/storefront-projection.ts";
-import {
   classifyCompositeComponentSku,
+  deriveStorefrontProjectionSelection,
   resolveCompositeComponentGroupLabel,
-} from "../../src/commerce/storefront-product-detail.ts";
+} from "../../src/commerce/storefront-projection.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
