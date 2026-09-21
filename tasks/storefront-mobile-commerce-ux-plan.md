@@ -15,7 +15,7 @@ Source spec: `docs/specs/storefront-mobile-commerce-ux.md`.
 ## Task 1 — Contract + RED tests
 
 **Acceptance criteria:**
-- tests pin source-order mobile gallery, `current/total`, lightbox and no vertical scroll trap;
+- tests pin the below-`lg` PDP contract at both 390px and 768px: source-order horizontal gallery, `current/total`, lightbox, immediate product-info order, quick-purchase behavior and no vertical scroll trap;
 - tests pin dimension-aware sticky CTA copy only for currently supported product shapes (no color-only purchase contract), kind → size → color authority order, server-confirmed add success vs rejection, sheet → cart single-modal handoff, and sheet → size-guide single-modal handoff using the existing selection controller;
 - tests pin filter drawer persistence, the inherited 390×844 first-product fold gate, checkout DOM order, and `N = sum(line.quantity)`;
 - desktop PR #51 expectations remain unchanged.
@@ -25,7 +25,7 @@ Source spec: `docs/specs/storefront-mobile-commerce-ux.md`.
 ## Task 2 — Mobile PDP gallery + product information
 
 **Acceptance criteria:**
-- horizontal one-image-at-a-time gallery on phone;
+- horizontal one-image-at-a-time gallery at all widths below `lg`, including 390px and 768px;
 - `current/total` indicator and full-screen same-image lightbox;
 - no image reordering/heuristics;
 - initial load stays on trusted image 1 even for a later-media `?variant=` deep link; post-load explicit variant changes may sync to mapped media;
@@ -33,7 +33,7 @@ Source spec: `docs/specs/storefront-mobile-commerce-ux.md`.
 - composite product information follows kind → size → color without changing selection-model authority;
 - desktop `lg+` gallery unchanged.
 
-**Verification:** domain/gallery tests + Playwright at 320/390/768/1440.
+**Verification:** domain/gallery tests + Playwright at 320/390/**768 with explicit below-`lg` gallery/lightbox/product-info/quick-purchase assertions**/1440.
 
 ## Task 3 — Sticky purchase bottom sheet
 
@@ -78,11 +78,12 @@ Source spec: `docs/specs/storefront-mobile-commerce-ux.md`.
 - collapsed summary first with `Đơn hàng (N) · total`, where `N = sum(line.quantity)` and a multi-quantity fixture pins the rule;
 - receiving info follows;
 - shipping + total precede submit in DOM order;
-- one existing checkout form/server action remains authoritative;
+- when existing `preorderNotice` is present, preserve `BrandPreorderFulfillmentNotice` and place it before submit in DOM/reading order; do not recompute fulfillment facts in presentation;
+- one existing checkout form/server action and existing preorder-notice authority remain authoritative;
 - mobile H1 reduced; technical buyer copy removed;
 - desktop checkout layout preserved.
 
-**Verification:** checkout integration/browser tests, submission regression, Axe/focus, quote-refresh behavior.
+**Verification:** checkout integration/browser tests, including preorder and mixed-order fixtures proving the existing fulfillment notice remains before `Đặt hàng COD`; submission regression, Axe/focus, quote-refresh behavior.
 
 ## Task 7 — Verification + review
 
