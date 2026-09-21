@@ -152,6 +152,7 @@ function validateLegal(brand: BrandConfig): void {
     registeredAddress: legal.registeredAddress,
     email: legal.email,
     taxIdIssueDate: legal.taxIdIssueDate,
+    legalRepresentative: legal.legalRepresentative,
   })) {
     requireText(value, `legal.${label}`);
   }

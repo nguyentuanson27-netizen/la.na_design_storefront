@@ -31,6 +31,9 @@ test("A2 the registered legal facts are the approved ones, transcribed exactly",
     // Transcribed as the source states it, in Vietnamese day/month/year order. No ISO form is
     // derived, because reading "7/10/2025" as a month-first date would silently move the date.
     taxIdIssueDate: "7/10/2025",
+    // Also a transcription: the registration document's own casing, not a title-cased display
+    // form. Released by the owner for the footer's legal block.
+    legalRepresentative: "ĐINH THÙY LINH",
   });
 });
 
@@ -49,7 +52,13 @@ test("A2 the legal address and email cannot be written through the business cont
 });
 
 test("A2 every registered legal fact must be present, and fails closed when it is not", () => {
-  for (const field of ["registeredAddress", "email", "taxIdIssueDate"] as const) {
+  for (const field of [
+    "registeredAddress",
+    "email",
+    "taxIdIssueDate",
+    // A blank here would publish the label `Đại diện pháp luật:` with nothing after it.
+    "legalRepresentative",
+  ] as const) {
     for (const blank of ["", "   "]) {
       assert.throws(
         withBrand((draft) => ({ ...draft, legal: { ...draft.legal, [field]: blank } })),
@@ -80,18 +89,17 @@ test("A2 the tax issue date must keep the approved day/month/year shape", () => 
   }
 });
 
-test("A2 no public legal-representative field exists to be rendered", () => {
-  // The owner withheld the representative. Absence is the approved state, so there is no field to
-  // leave blank and nothing for a later About page to reach for.
+test("A2 the legal representative is published under one name, and no alias is invented for it", () => {
+  // The owner released the representative for the footer's legal block, so the approved state is
+  // now one field carrying the transcription. What this still pins is that it is *one* field: the
+  // aliases below were the shapes a later page might have reached for, and a second spelling of the
+  // same fact is how two surfaces start disagreeing about it.
+  assert.equal(BRAND.legal.legalRepresentative, "ĐINH THÙY LINH");
+  assert.equal(PUBLIC_LEGAL_FACTS.legalRepresentative, BRAND.legal.legalRepresentative);
+
   for (const source of [BRAND.legal as Record<string, unknown>, PUBLIC_LEGAL_FACTS as Record<string, unknown>]) {
-    for (const withheld of [
-      "legalRepresentative",
-      "representative",
-      "representativeName",
-      "nguoiDaiDien",
-      "director",
-    ]) {
-      assert.equal(withheld in source, false, withheld);
+    for (const alias of ["representative", "representativeName", "nguoiDaiDien", "director"]) {
+      assert.equal(alias in source, false, alias);
     }
   }
 });
@@ -103,6 +111,7 @@ test("A2 the public legal facts publish the whole registered identity from one p
     taxIdIssueDate: BRAND.legal.taxIdIssueDate,
     registeredAddress: BRAND.legal.registeredAddress,
     legalEmail: BRAND.legal.email,
+    legalRepresentative: BRAND.legal.legalRepresentative,
   });
   assert.equal(Object.isFrozen(PUBLIC_LEGAL_FACTS), true);
 });

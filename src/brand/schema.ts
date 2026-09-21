@@ -117,15 +117,20 @@ export type BrandContact = Readonly<{
  * moving them would churn every consumer for no gain. `src/content/public-brand-facts.ts` joins
  * both halves into the one projection the About/legal surface reads.
  *
- * There is deliberately no legal-representative field. The owner withheld the representative from
- * public display, and absence is the approved state -- a field left blank is a field a later page
- * can fill.
+ * The representative was withheld from public display until the owner released it for the footer's
+ * legal block (owner-facts §3b). It is a required string like every other fact here: a blank would
+ * publish the label `Đại diện pháp luật:` with nothing after it, which is worse than either state.
  */
 export type BrandLegal = Readonly<{
   /** The registered office, as the registration source states it. Never the return address. */
   registeredAddress: string;
   /** Corporate/legal correspondence. Customer service uses `BrandContact.email`. */
   email: string;
+  /**
+   * The registered legal representative, in the casing the registration source states them in.
+   * Published in the footer's legal block; `/about` renders the fact set it already had.
+   */
+  legalRepresentative: string;
   /**
    * The date the tax ID was issued, in the Vietnamese day/month/year order the source states it in.
    * Kept as the approved string rather than an ISO date: reading `7/10/2025` month-first would move

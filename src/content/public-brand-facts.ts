@@ -104,8 +104,9 @@ export const PUBLIC_BRAND_POSITIONING = BRAND.identity.positioning;
  * office is where the company is registered; it is not where a customer sends a return, so the two
  * are published side by side under distinct labels and never as one address.
  *
- * **No legal representative.** The owner withheld it from public display, so there is no field for
- * an About page to reach for.
+ * **The legal representative** was withheld until the owner released it for the footer's legal
+ * block. It is published here because the footer reads this projection, and `/about` names the
+ * fields it renders one by one -- so gaining a field here does not silently add a line there.
  */
 export const PUBLIC_LEGAL_FACTS = Object.freeze({
   legalEntityName: BRAND.identity.legalName,
@@ -113,6 +114,7 @@ export const PUBLIC_LEGAL_FACTS = Object.freeze({
   taxIdIssueDate: BRAND.legal.taxIdIssueDate,
   registeredAddress: BRAND.legal.registeredAddress,
   legalEmail: BRAND.legal.email,
+  legalRepresentative: BRAND.legal.legalRepresentative,
 });
 
 const vnd = new Intl.NumberFormat("vi-VN", {

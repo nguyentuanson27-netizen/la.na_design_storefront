@@ -52,7 +52,9 @@ test("A7a the legal and business roles cannot be swapped without the model chang
   assert.equal(contact.email, BRAND.contact.email);
 });
 
-test("A7a no legal representative reaches either surface", () => {
+test("A7a the legal representative stays out of the About and Contact models", () => {
+  // Released for the footer's legal block, and only there. These two models name every field they
+  // publish, so this pins that widening the shared legal projection did not widen them with it.
   for (const model of [
     buildAboutViewModel() as Record<string, unknown>,
     buildContactViewModel() as Record<string, unknown>,

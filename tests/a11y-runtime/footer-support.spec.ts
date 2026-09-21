@@ -192,11 +192,15 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     `MST: ${PUBLIC_LEGAL_FACTS.taxCode} - ngày cấp: ${PUBLIC_LEGAL_FACTS.taxIdIssueDate}`,
   );
   await expect(legal).toContainText(`Email: ${PUBLIC_LEGAL_FACTS.legalEmail}`);
+  // The owner released the representative for this block. It renders from the same projection as
+  // the rest, so the assertion reads the fact rather than repeating the name.
+  await expect(legal).toContainText(
+    `Đại diện pháp luật: ${PUBLIC_LEGAL_FACTS.legalRepresentative}`,
+  );
 
   await expect(footer.locator('a[href="/lookbook"]')).toHaveCount(0);
   await expect(footer.locator('a[href="/flash-sale"]')).toHaveCount(0);
   await expect(footer.getByText(/newsletter/i)).toHaveCount(0);
-  await expect(footer.getByText(/đại diện pháp luật|legal representative/i)).toHaveCount(0);
   await expect(footer.locator("details, summary")).toHaveCount(0);
 
   // Every active same-origin footer destination must resolve. Fragments are client-side anchors, so

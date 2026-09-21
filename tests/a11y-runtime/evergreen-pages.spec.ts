@@ -228,9 +228,11 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
   await expect(main).toContainText("Địa chỉ đăng ký kinh doanh");
   await expect(main).toContainText("Địa chỉ kinh doanh & nhận hàng đổi trả");
 
-  // The owner withheld the legal representative from public display.
-  for (const withheld of [/người đại diện/i, /đại diện pháp luật/i]) {
-    await expect(main).not.toContainText(withheld);
+  // The representative is a footer fact, not an About one. The owner released it for the footer's
+  // legal block only, and `main` is what this assertion is scoped to -- the footer below renders it
+  // on this page too, which is why the scope matters rather than being incidental.
+  for (const elsewhere of [/người đại diện/i, /đại diện pháp luật/i]) {
+    await expect(main).not.toContainText(elsewhere);
   }
 
   // B6 withholds the founding year, the founder and any brand story or values. This is the

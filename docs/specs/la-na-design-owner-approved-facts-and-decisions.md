@@ -142,10 +142,12 @@ Master spec §6 *Legal entity*.
 | `legal.taxIdIssueDate` | `7/10/2025` | **approved**, transcribed exactly as the source states it (Vietnamese day/month/year order). No ISO form is derived, because no consumer needs one |
 | `legal.registeredAddress` | `Số 06 Đường Manor 2str, Sunrise C, KĐT The Manor Central Park, Phường Định Công` | **approved.** The **registered** address — a different concept from the §3 business/return address |
 | `legal.email` | `congtytnhh.las@gmail.com` | **approved.** Corporate/legal correspondence only; customer service uses the §3 support email |
-| legal representative | *(not published)* | **withheld by the owner.** Must not be rendered publicly on the storefront, and no field for it may be added |
+| `legal.legalRepresentative` | `ĐINH THÙY LINH` | **approved for publication.** Previously withheld; the owner released it for the footer's legal block on 2026-09-21. Rendered as `Đại diện pháp luật: …` beside the registered identity, on mobile and desktop alike |
 
-The About/legal footer surface may display legal name, registered address, tax ID, tax issue date
-and legal email. Registered address and business address must not overwrite each other, and neither
+The About/legal footer surface may display legal name, registered address, tax ID, tax issue date,
+legal email and the legal representative. The representative is a footer fact: the owner asked for
+it in the footer's legal block, and `/about` keeps the fact set it already publishes rather than
+gaining a new one by side effect. Registered address and business address must not overwrite each other, and neither
 may the two email addresses.
 
 ## 4. Merchant defaults → `src/brand/brand.config.ts` › `merchant`

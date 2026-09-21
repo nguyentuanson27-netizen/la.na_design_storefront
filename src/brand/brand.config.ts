@@ -73,7 +73,9 @@ export const BRAND: BrandConfig = {
    * entity name and MST stay in `identity`, where they were already published; the public
    * projection joins the two halves.
    *
-   * No legal representative. The owner withheld it from public display.
+   * The legal representative was withheld until the owner released it for the footer's legal
+   * block (owner-facts §3b). Kept in the source's own casing: it is a transcription of a
+   * registration document, not a display string this file is free to title-case.
    */
   legal: {
     registeredAddress:
@@ -81,6 +83,7 @@ export const BRAND: BrandConfig = {
     email: "congtytnhh.las@gmail.com",
     // As the registration source states it: day/month/year, so this is 7 October 2025.
     taxIdIssueDate: "7/10/2025",
+    legalRepresentative: "ĐINH THÙY LINH",
   },
   // ADR 0007 section 1, updated by owner-facts §4 — the approved Merchant shop defaults. La.na
   // Design is a women's fashion brand, so the category default is female rather than the
