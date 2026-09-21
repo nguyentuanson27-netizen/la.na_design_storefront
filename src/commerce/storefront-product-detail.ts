@@ -43,6 +43,24 @@ export function classifyCompositeComponentSku(
   return matches.length === 1 ? matches[0] : null;
 }
 
+export function resolveCompositeComponentGroupLabel(
+  skus: readonly (string | null)[],
+): CompositeComponentKindLabel | null {
+  if (skus.length === 0) return null;
+
+  let resolved: CompositeComponentKindLabel | null = null;
+  for (const sku of skus) {
+    const role = classifyCompositeComponentSku(sku);
+    if (role === null) return null;
+    if (resolved === null) {
+      resolved = role;
+    } else if (resolved !== role) {
+      return null;
+    }
+  }
+  return resolved;
+}
+
 export function createStorefrontProductDetailRepository(client: PrismaClient) {
   const catalog = createStorefrontCatalogRepository(client);
 
@@ -112,8 +130,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       string,
       {
         sortLabel: string;
-        role: CompositeComponentKindLabel | null;
-        invalid: boolean;
+        skus: (string | null)[];
         variants: Map<string, StorefrontVariantFacts>;
       }
     >();
@@ -130,23 +147,18 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           continue;
         }
 
-        const role = classifyCompositeComponentSku(component.sku);
         let group = groups.get(component.product.id);
         if (!group) {
           group = {
             // Preserve the existing child-product ordering so positional kind keys do not drift
             // merely because presentation labels became canonical roles.
             sortLabel: component.product.name,
-            role,
-            invalid: role === null,
+            skus: [],
             variants: new Map(),
           };
           groups.set(component.product.id, group);
-        } else if (role === null || group.role === null || group.role !== role) {
-          // One malformed or conflicting active/present variant invalidates the whole child group.
-          // Never publish the remaining subset under a role it cannot authoritatively represent.
-          group.invalid = true;
         }
+        group.skus.push(component.sku);
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
             id: component.id,
@@ -162,15 +174,13 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     }
 
     const componentGroups: StorefrontCompositeComponentGroup[] = [...groups.values()]
-      .filter(
-        (group): group is typeof group & { role: CompositeComponentKindLabel } =>
-          !group.invalid && group.role !== null,
-      )
       .sort((left, right) => left.sortLabel.localeCompare(right.sortLabel, "vi"))
-      .map((group) => ({
-        label: group.role,
-        variants: [...group.variants.values()],
-      }));
+      .flatMap((group) => {
+        const label = resolveCompositeComponentGroupLabel(group.skus);
+        return label === null
+          ? []
+          : [{ label, variants: [...group.variants.values()] }];
+      });
 
     const pricedVariantIds = [
       ...new Set([
