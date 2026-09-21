@@ -257,7 +257,7 @@ test("slider advances at two seconds and pauses/resumes for hover and keyboard f
   await page.waitForTimeout(2_300);
   await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute("href", focusHref!);
 
-  await page.locator("h1").focus();
+  await page.getByRole("link", { name: "La.na Design — Trang chủ" }).focus();
   await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
