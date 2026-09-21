@@ -633,11 +633,15 @@ Approved copy:
 ### Mobile header
 
 ```text
-hamburger left / logo center / cart right
+menu / logo / search / cart
 ```
 
-The centre slot is the master logo itself, not a text wordmark. The approved PNG has a transparent
+The centre brand slot is the master logo itself, not a text wordmark. The approved PNG has a transparent
 background, so it sits on the cream header and on the scrolled/blurred header unchanged.
+
+Search is directly reachable from the mobile header; Account remains inside the mobile menu rather than
+occupying a top-level phone icon. Menu, Search and Cart controls use approximately 44×44px touch targets
+while keeping the visible icons visually restrained.
 
 Mobile navigation is full-screen. Subcategories are **collapsed**: each parent category shows its
 own link plus a disclosure control, and one category's subcategory list is open at a time. Rows are
@@ -676,11 +680,28 @@ Cart icon opens a right-side cart drawer.
 - Color
 - Sale status
 
+Mobile filter interaction:
+- keep one compact `Bộ lọc · Sắp xếp` row above results;
+- active conditions appear as removable chips with × controls;
+- selecting size/color/sale or applying price updates URL-backed results **without closing the filter drawer**;
+- the drawer footer stays fixed with `Xóa bộ lọc` and `Xem N sản phẩm`;
+- `N` is the current server-backed result count;
+- `Xem N sản phẩm` closes the drawer rather than applying a second hidden filter transaction.
+
 ### Sort
 
 Default ordering is manually merchandised/admin-controlled.
 
 This interview did **not** approve a new customer-visible sort menu beyond that default. Preserve only truthful sort options already supported by the product data; adding a new `Bán chạy` sort requires a defined real data source and separate review.
+
+### Mobile product-card rhythm
+
+- Keep two product columns on phone.
+- Use a consistent 2px grid gap on phone listing surfaces where the shared product-grid pattern applies.
+- Product name: 14px, maximum two lines.
+- Price: 14–15px and visually stronger than the product name.
+- Supporting availability/metadata: 12px.
+- Do not change desktop product-card column counts as part of this mobile refinement.
 
 ### Loading
 
@@ -700,20 +721,29 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 - **At `lg` and above:** the gallery is a near-viewport-height media stage using `object-contain` so the full garment/model silhouette remains visible. Slide 1 contains image 1 full width; later slides group images `2+3`, `4+5`, etc. at 50/50, with an odd final image full width.
 - **Desktop interaction:** right-half click advances, left-half click goes back, horizontal drag/swipe navigates in the same direction, first/last slides do not loop, and keyboard users have equivalent previous/next controls. Vertical wheel/trackpad/page-scroll gestures must continue to scroll the document rather than drive the gallery.
 - **Initial-load priority:** slide 1 / trusted image 1 remains the first visible PDP surface even when `?variant=` preselects a variant whose mapped media is later in the gallery. The deep link must not replace the canonical first visible surface on initial load. After initial load, an explicit variant selection change may sync to mapped media; manual gallery navigation remains until the selected variant changes again.
-- **Below `lg`:** mobile/tablet gallery structure is owned by the dedicated mobile UX follow-up. This desktop refinement only forbids the paired desktop composition from leaking below `lg`.
+- **Below `lg`:** use the mobile gallery contract: one horizontal swipe image at a time with a compact `current/total` indicator. Preserve trusted source order; frontend code must not infer or reorder a "full body" hero. Tapping the current image opens a full-screen same-image lightbox using `object-contain`, horizontal swipe and an explicit close control. No multi-level pinch-to-zoom requirement. The desktop paired composition must not leak below `lg`.
 
 ### Information and buy panel
 
 - **Desktop:** after the gallery, use one two-column information row. Left: product identity/editorial information. Right: price, availability/preorder, variant/size controls, size guide, purchase actions, purchase feedback, shipping and returns.
 - The desktop purchase panel is **not sticky** and no nested sticky selector may overlap adjacent copy.
-- **Mobile:** PDP/purchase structure is owned by the dedicated mobile UX follow-up rather than frozen by this desktop refinement; shared copy/state/visual refinements still apply unless that mobile contract is more specific.
+- **Mobile:** immediately after the gallery, show product name (26–30px), then price/availability, then applicable kind → size → color controls and purchase actions. This order follows the current selection authority; do not change the selection model merely to make color selectable before size. Keep one shared variant-selection/cart authority; do not create a second mobile selection state.
 - Primary actions remain `Thêm vào giỏ` + `Mua ngay`.
 - Size guide opens from `Hướng dẫn chọn size` into the existing accessible modal.
 - Each product maps manually to the correct size guide ID.
 
 ### Mobile sticky purchase bar
 
-The previous selected-size-only quick-bar shape is **not frozen by this desktop/shared refinement**. A dedicated mobile UX contract owns the mobile sticky-purchase interaction while preserving the same server/cart/variant authority.
+- If required options are incomplete, the sticky action names only dimensions that exist for product shapes supported by the current commerce authority: e.g. `Chọn size`, `Chọn màu / size`, `Chọn phân loại / size`, or `Chọn phân loại / màu / size` as applicable. Do not introduce a color-only purchase contract; current variant selection still requires size.
+- The bottom sheet renders applicable controls using the same shared selection controller and follows kind → size → color; the size-guide trigger stays with size.
+- There is no separate confirmation step. Once selection is complete, the sheet CTA is **`Thêm vào giỏ`**.
+- A complete sticky summary shows selected values such as **`Nguyên bộ · Trắng · M`**, omitting dimensions that do not exist.
+- Closing the sheet before purchase keeps current selection.
+- Opening size guide from the sheet suspends/closes the sheet so only one modal/focus trap is active; closing the guide restores the sheet and focus to the size-guide trigger.
+- Open the cart only after the existing async add mutation reports server-confirmed success (`result.ok === true` or an equivalent controller signal derived from it). The synchronous `"submitted"` signal is request-start only. On rejection, keep the sheet open and show purchase feedback.
+- On confirmed success, close/suspend the selection sheet first, then open the existing cart drawer. Only one modal/focus trap may be active; cart becomes focus owner and the hidden sheet must not restore focus while cart is open.
+- After confirmed success, the existing cart drawer shows the exact selected variant/options.
+- Genuine unavailable combination uses **`Lựa chọn này tạm hết`** unless current authority proves a more specific dimension-wide statement. Do not say only `Size M tạm hết` for a color-bearing product unless every purchasable color for M is proven unavailable. Alternate valid combinations remain selectable; unresolved-kind state must not look sold out.
 
 ### Product details order
 
@@ -763,6 +793,32 @@ If user has not selected a required size:
 - if absent, fallback to same-category products;
 - the current generic related surface is titled **`Nàng có thể thích`**;
 - use `Hoàn thiện phối đồ` only when an explicit merchandising authority identifies complementary pants, bags or accessories. Do not infer complementarity from category/name heuristics.
+
+## 26A. Mobile cart and checkout UX
+
+### Cart controls
+
+- Mobile cart quantity decrement/increment touch targets are approximately 44×44px.
+- Remove/delete is visually and interactively separate from the quantity control group.
+- Quantity limits and mutation authority remain unchanged.
+
+### Checkout mobile order
+
+Mobile reading/action order is:
+
+```text
+Tóm tắt đơn (thu gọn mặc định, luôn thấy Đơn hàng (N) · Tổng)
+→ Thông tin nhận hàng
+→ Phí vận chuyển + Tổng tiền
+→ Đặt hàng COD
+```
+
+- `N = sum(line.quantity)` across checkout lines; for 2 × A + 1 × B, show `Đơn hàng (3)`.
+- Expanding the order summary shows product image, option label, quantity and line total.
+- The displayed shipping fee and final total must precede the submit button in DOM/reading order; do not fake this with CSS-only visual reordering.
+- Preserve one checkout form/server action/quote-proof workflow; do not fork submit logic.
+- Reduce the mobile `THANH TOÁN` heading from the current oversized treatment while keeping desktop scale unchanged.
+- Remove buyer-facing implementation wording such as `máy chủ` and `Pancake`; internal integration code/comments may retain technical names.
 
 ---
 
