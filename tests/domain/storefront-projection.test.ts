@@ -3,7 +3,9 @@ import test from "node:test";
 
 import {
   buildStorefrontProductProjection,
+  classifyCompositeComponentSku,
   deriveStorefrontProjectionSelection,
+  resolveCompositeComponentGroupLabel,
 } from "../../src/commerce/storefront-projection.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
@@ -91,8 +93,8 @@ test("composite projection exposes real parent and component variants as separat
       purchasable,
     })),
     [
-      { id: "set-m", kindKey: "parent", kindLabel: "Set", size: "M", purchasable: true },
-      { id: "set-l", kindKey: "parent", kindLabel: "Set", size: "L", purchasable: true },
+      { id: "set-m", kindKey: "parent", kindLabel: "FULL SET", size: "M", purchasable: true },
+      { id: "set-l", kindKey: "parent", kindLabel: "FULL SET", size: "L", purchasable: true },
       {
         id: "shirt-m",
         kindKey: "component-1",
@@ -131,7 +133,7 @@ test("composite projection exposes real parent and component variants as separat
   });
   assert.equal(initial.hasKindOptions, true);
   assert.deepEqual(initial.kinds, [
-    { key: "parent", label: "Set", disabled: false },
+    { key: "parent", label: "FULL SET", disabled: false },
     { key: "component-1", label: "Ao A", disabled: false },
     { key: "component-2", label: "Quan A", disabled: false },
   ]);
@@ -167,8 +169,8 @@ test("duplicate component labels fail closed instead of presenting indistinguish
   const projection = buildStorefrontProductProjection({
     parentVariants: [variant("set-m", "M")],
     componentGroups: [
-      { label: "Ao A", variants: [variant("component-a", "M")] },
-      { label: " ao a ", variants: [variant("component-b", "M")] },
+      { label: "ÁO LẺ", variants: [variant("component-a", "M")] },
+      { label: " áo lẻ ", variants: [variant("component-b", "M")] },
     ],
     hasCompositeGraph: true,
   });
@@ -240,4 +242,36 @@ test("an OVERSELL parent policy restricts the set and is not inherited by its co
     sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
   });
   assert.equal(standalone.options[0]?.purchasable, true);
+});
+
+
+test("composite child SKU classification is case-insensitive and fail-closed", () => {
+  const cases = [
+    ["AO-SD441", "ÁO LẺ"],
+    ["xxao123", "ÁO LẺ"],
+    ["QUAN-QD001", "QUẦN LẺ"],
+    ["abc-quan-xl", "QUẦN LẺ"],
+    ["CV001", "CV LẺ"],
+    ["VAY-001", "CV LẺ"],
+    ["cv-vay-001", "CV LẺ"],
+    [null, null],
+    ["", null],
+    ["   ", null],
+    ["ABC123", null],
+    ["AO-QUAN-01", null],
+    ["AO-VAY-01", null],
+    ["QUAN-CV-01", null],
+  ] as const;
+
+  for (const [sku, expected] of cases) {
+    assert.equal(classifyCompositeComponentSku(sku), expected, String(sku));
+  }
+});
+
+
+test("composite child group validation fails closed for malformed or mixed-role SKUs", () => {
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", "AO-M", "AO-L"]), "ÁO LẺ");
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", "QUAN-M"]), null);
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", null]), null);
+  assert.equal(resolveCompositeComponentGroupLabel(["CV-S", "VAY-M", "cv-vay-l"]), "CV LẺ");
 });

@@ -29,7 +29,25 @@ function render(data: CollectionViewModel) {
   const { editorial } = data;
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
+    <>
+      {editorial.heroImage ? (
+        <section
+          className="collection-page-hero"
+          aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
+          data-header-overlay-hero=""
+        >
+          <Image
+            src={editorial.heroImage}
+            alt={data.title}
+            fill
+            preload
+            sizes="100vw"
+            className="object-cover"
+          />
+        </section>
+      ) : null}
+
+      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
       <nav aria-label="Breadcrumb" className="mb-6">
         <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
           <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
@@ -43,19 +61,6 @@ function render(data: CollectionViewModel) {
       <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
         {data.title}
       </h1>
-
-      {editorial.heroImage ? (
-        <div className="relative mt-10 aspect-[16/9] overflow-hidden bg-[var(--stone)]">
-          <Image
-            src={editorial.heroImage}
-            alt={data.title}
-            fill
-            preload
-            sizes="100vw"
-            className="object-cover"
-          />
-        </div>
-      ) : null}
 
       <div className="mt-10 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
         <p className="max-w-2xl break-words font-serif text-2xl leading-snug md:text-3xl">
@@ -186,7 +191,8 @@ function render(data: CollectionViewModel) {
           ) : null}
         </section>
       )}
-    </div>
+      </div>
+    </>
   );
 }
 

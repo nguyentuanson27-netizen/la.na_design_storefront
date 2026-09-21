@@ -314,3 +314,30 @@ test("F2b mobile search: mobile navigation triggers SearchOverlay instead of nav
   );
 });
 
+
+
+test("owner hero overlay contract is marker-driven and keeps non-hero pages cream", () => {
+  const headerSource = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/site-header.tsx"),
+    "utf8",
+  );
+  const cssSource = readFileSync(path.join(REPO_ROOT, "src/app/globals.css"), "utf8");
+
+  assert.match(headerSource, /data-scrolled=\{isScrolled \? "true" : "false"\}/);
+  assert.match(headerSource, /window\.scrollY > 20/);
+  assert.doesNotMatch(
+    headerSource,
+    /md:bg-transparent/,
+    "desktop must not become transparent merely because the viewport is wide",
+  );
+  assert.match(
+    cssSource,
+    /body:has\(#main-content \[data-header-overlay-hero\]\) \.site-header\[data-scrolled="false"\]/,
+    "only a real first-surface hero marker may opt the page into transparent header chrome",
+  );
+  assert.match(
+    cssSource,
+    /body:has\(#main-content \[data-header-overlay-hero\]\) \.site-masthead[\s\S]*position:\s*fixed/,
+    "a marked first surface must begin at the top viewport behind the masthead",
+  );
+});

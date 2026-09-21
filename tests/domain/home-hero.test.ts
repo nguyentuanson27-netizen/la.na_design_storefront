@@ -105,5 +105,5 @@ test("one invalid candidate does not take the valid ones with it", () => {
 });
 
 test("the approved CTA wording is published as one constant, not per slide", () => {
-  assert.equal(HOME_HERO_CTA_LABEL, "Khám phá thiết kế");
+  assert.equal(HOME_HERO_CTA_LABEL, "MUA NGAY");
 });

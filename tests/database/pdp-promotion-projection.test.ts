@@ -51,11 +51,18 @@ async function seedProduct(key: string, name: string) {
   });
 }
 
-async function seedVariant(productId: string, key: string, size: string, price: number) {
+async function seedVariant(
+  productId: string,
+  key: string,
+  size: string,
+  price: number,
+  sku: string | null = null,
+) {
   const variant = await prisma.variantMirror.create({
     data: {
       pancakeVariationId: `${P}-pv-${key}`,
       productId,
+      sku,
       color: "Đen",
       size,
       pancakeRetailPrice: price,
@@ -118,7 +125,13 @@ test("U15 a composite component is priced by its own owning product, not the par
   const componentProduct = await seedProduct("component-owner", "U15 Component Owner");
 
   const parentVariant = await seedVariant(parentProduct.id, "parent-m", "M", 1_000_000);
-  const componentVariant = await seedVariant(componentProduct.id, "component-m", "M", 400_000);
+  const componentVariant = await seedVariant(
+    componentProduct.id,
+    "component-m",
+    "M",
+    400_000,
+    "AO-U15",
+  );
 
   await prisma.compositeComponentMirror.create({
     data: {

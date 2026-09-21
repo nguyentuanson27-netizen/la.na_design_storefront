@@ -178,6 +178,18 @@ function assertGalleryOpensOn(body: string, expectedUrlFragment: string, label: 
   );
 }
 
+function assertProductHeroUses(body: string, expectedUrlFragment: string, label: string) {
+  const hero = body.match(
+    /<section\b[^>]*class="product-page-hero"[^>]*>[\s\S]{0,1600}?<img[^>]*>/,
+  )?.[0];
+
+  assert.ok(hero, `${label}: expected the canonical product hero to render`);
+  assert.ok(
+    hero.includes(encodeURIComponent(expectedUrlFragment)) || hero.includes(expectedUrlFragment),
+    `${label}: product hero must use ${expectedUrlFragment}, got ${hero.slice(0, 500)}`,
+  );
+}
+
 try {
   await cleanupDatabase();
 
@@ -299,10 +311,13 @@ try {
     "a sold-out deep link must state why it cannot be bought, in the announced status region",
   );
 
-  // M2 requires the image to match too, not only price/colour/size.
+  // The owner-approved PDP contract keeps the first trusted product image as a stable canonical
+  // hero. Variant deep links may still bring their own image to the front of the remaining gallery.
+  assertProductHeroUses(basePage.body, "u12-primary.jpg", "base PDP without a variant query");
+  assertProductHeroUses(mediumPage.body, "u12-primary.jpg", "medium deep link");
+  assertProductHeroUses(largePage.body, "u12-primary.jpg", "large deep link");
   assertGalleryOpensOn(mediumPage.body, "u12-medium.jpg", "medium deep link");
   assertGalleryOpensOn(largePage.body, "u12-large.jpg", "large deep link");
-  assertGalleryOpensOn(basePage.body, "u12-primary.jpg", "base PDP without a variant query");
 
   // Search contract: the query must not mint a second canonical, and must not become indexable.
   for (const path of [`/shop/${slug}`, `/shop/${slug}?variant=${MEDIUM_VARIATION}`]) {
@@ -328,7 +343,7 @@ try {
   );
 
   console.log(
-    "U12 variant deep link HTTP smoke passed: a valid standalone variation preselects its exact option, price and photo; a sold-out one stays addressable and states why it cannot be bought; forged/foreign/inactive/internal-id/repeated/oversized values all fall back to the base PDP; the base product URL remains the only canonical; and the variant query stays noindex.",
+    "U12 variant deep link HTTP smoke passed: the PDP keeps its canonical primary-image hero while a valid standalone variation preselects its exact option, price and remaining-gallery photo; a sold-out one stays addressable and states why it cannot be bought; forged/foreign/inactive/internal-id/repeated/oversized values all fall back to the base PDP; the base product URL remains the only canonical; and the variant query stays noindex.",
   );
 } finally {
   await stopServer();

@@ -24,14 +24,20 @@ const parentName = `Composite Browser Set ${runId}`;
 const parentVariantExternalId = `composite-browser-parent-variant-${runId}`;
 const componentExternalId = `composite-browser-component-${runId}`;
 const componentSlug = `composite-browser-shirt-${runId}`;
-const componentName = `Áo lẻ Browser ${runId}`;
+const componentName = `Child Product X ${runId}`;
 const componentVariantExternalId = `composite-browser-component-variant-${runId}`;
+const pantsName = `Child Product Y ${runId}`;
+const skirtName = `Child Product Z ${runId}`;
+const malformedName = `Malformed Child Product ${runId}`;
 const syncedAt = new Date("2026-08-23T00:00:00.000Z");
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
 let componentProductId = "";
 let componentVariantId = "";
+let parentVariantId = "";
+let pantsVariantId = "";
+let skirtVariantId = "";
 
 const activationSecret = "composite-fixture-confirmation-secret-1234";
 const commerceRepository = createProductCommerceRepository(prisma);
@@ -155,6 +161,39 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  const pants = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `composite-browser-pants-${runId}`,
+      slug: `composite-browser-pants-${runId}`,
+      name: pantsName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  const skirt = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `composite-browser-skirt-${runId}`,
+      slug: `composite-browser-skirt-${runId}`,
+      name: skirtName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  const malformed = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `composite-browser-malformed-${runId}`,
+      slug: `composite-browser-malformed-${runId}`,
+      name: malformedName,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
   componentProductId = component.id;
 
   const parentVariant = await prisma.variantMirror.create({
@@ -170,10 +209,12 @@ test.beforeAll(async () => {
       syncedAt,
     },
   });
+  parentVariantId = parentVariant.id;
   const componentVariant = await prisma.variantMirror.create({
     data: {
       pancakeVariationId: componentVariantExternalId,
       productId: component.id,
+      sku: "AO-001",
       color: null,
       size: "M",
       isPresent: true,
@@ -184,14 +225,59 @@ test.beforeAll(async () => {
     },
   });
 
+  const pantsVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `composite-browser-pants-variant-${runId}`,
+      productId: pants.id,
+      sku: "QUAN-001",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 420_000,
+      pancakeRetailPriceAfterDiscount: 420_000,
+      syncedAt,
+    },
+  });
+  const skirtVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `composite-browser-skirt-variant-${runId}`,
+      productId: skirt.id,
+      sku: "VAY-001",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 450_000,
+      pancakeRetailPriceAfterDiscount: 450_000,
+      syncedAt,
+    },
+  });
+  const malformedVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `composite-browser-malformed-variant-${runId}`,
+      productId: malformed.id,
+      sku: "AO-QUAN-01",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 100_000,
+      pancakeRetailPriceAfterDiscount: 100_000,
+      syncedAt,
+    },
+  });
+
   componentVariantId = componentVariant.id;
+  pantsVariantId = pantsVariant.id;
+  skirtVariantId = skirtVariant.id;
 
   await prisma.warehouseStock.createMany({
     data: [
       {
         variantId: parentVariant.id,
         pancakeWarehouseId: `composite-browser-parent-warehouse-${runId}`,
-        quantity: 0,
+        quantity: 2,
         syncedAt,
       },
       {
@@ -200,15 +286,53 @@ test.beforeAll(async () => {
         quantity: 2,
         syncedAt,
       },
+      {
+        variantId: pantsVariant.id,
+        pancakeWarehouseId: `composite-browser-pants-warehouse-${runId}`,
+        quantity: 2,
+        syncedAt,
+      },
+      {
+        variantId: skirtVariant.id,
+        pancakeWarehouseId: `composite-browser-skirt-warehouse-${runId}`,
+        quantity: 2,
+        syncedAt,
+      },
+      {
+        variantId: malformedVariant.id,
+        pancakeWarehouseId: `composite-browser-malformed-warehouse-${runId}`,
+        quantity: 2,
+        syncedAt,
+      },
     ],
   });
-  await prisma.compositeComponentMirror.create({
-    data: {
-      parentVariantId: parentVariant.id,
-      componentVariantId: componentVariant.id,
-      quantity: 1,
-      syncedAt,
-    },
+  await prisma.compositeComponentMirror.createMany({
+    data: [
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: componentVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: pantsVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: skirtVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentVariant.id,
+        componentVariantId: malformedVariant.id,
+        quantity: 1,
+        syncedAt,
+      },
+    ],
   });
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
@@ -257,8 +381,14 @@ test("composite activation opens and closes the real child purchase path while p
   await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: parentName })).toBeVisible();
   await expect(page.getByRole("group", { name: "Loại" })).toBeVisible();
-  await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: "FULL SET" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "ÁO LẺ" })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "QUẦN LẺ" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "CV LẺ" })).toBeEnabled();
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: pantsName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: skirtName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: malformedName })).toHaveCount(0);
 
   expect(
     await commerceService.setVariantActivation(adminSession, componentProductId, {
@@ -275,8 +405,14 @@ test("composite activation opens and closes the real child purchase path while p
   expect(stillPrivateComponent.status()).toBe(404);
 
   await page.reload({ waitUntil: "networkidle" });
-  await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
-  await expect(page.getByRole("radio", { name: componentName })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "FULL SET" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "ÁO LẺ" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "QUẦN LẺ" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "CV LẺ" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: pantsName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: skirtName })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: malformedName })).toHaveCount(0);
   await expect(page.getByText("Chọn loại × kích cỡ", { exact: true })).toBeVisible();
 
   const structuredDocuments = (await page
@@ -291,21 +427,32 @@ test("composite activation opens and closes the real child purchase path while p
     url: `${BASE_URL}/shop/${parentSlug}`,
     priceCurrency: "VND",
     price: 790_000,
-    availability: "https://schema.org/OutOfStock",
+    availability: "https://schema.org/InStock",
   });
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
-  await page.getByText(componentName, { exact: true }).click();
-  await expect(page.getByRole("radio", { name: componentName })).toBeChecked();
-  await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-  await page.getByText("M", { exact: true }).click();
-  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
-  await expect(addToBag).toBeEnabled();
-  await assertPageQuality(page);
 
-  await addToBag.click();
-  await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  async function selectAndAdd(kindLabel: string, variantId: string, keepInCart = false) {
+    await page.getByText(kindLabel, { exact: true }).click();
+    await expect(page.getByRole("radio", { name: kindLabel })).toBeChecked();
+    await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
+    await page.getByText("M", { exact: true }).click();
+    await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
+    await expect(addToBag).toBeEnabled();
+    await addToBag.click();
+    await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+    expect(await prisma.cartItem.count({ where: { variantId } })).toBe(1);
+    if (!keepInCart) {
+      await prisma.cartItem.deleteMany({ where: { variantId } });
+    }
+  }
+
+  await selectAndAdd("FULL SET", parentVariantId);
+  await selectAndAdd("QUẦN LẺ", pantsVariantId);
+  await selectAndAdd("CV LẺ", skirtVariantId);
+  await selectAndAdd("ÁO LẺ", componentVariantId, true);
+  await assertPageQuality(page);
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
@@ -334,7 +481,10 @@ test("composite activation opens and closes the real child purchase path while p
   });
 
   await page.goto(`${BASE_URL}/shop/${parentSlug}`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("radio", { name: "Set" })).toBeDisabled();
+  await expect(page.getByRole("radio", { name: "FULL SET" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "ÁO LẺ" })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "QUẦN LẺ" })).toBeEnabled();
+  await expect(page.getByRole("radio", { name: "CV LẺ" })).toBeEnabled();
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
 
