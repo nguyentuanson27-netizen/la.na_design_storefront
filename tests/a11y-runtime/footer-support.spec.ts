@@ -340,3 +340,167 @@ test("F9a mobile footer without JavaScript keeps every link and ships no disclos
     await context.close();
   }
 });
+
+/**
+ * The footer's layout, at the three widths the owner reads it at.
+ *
+ * Two findings. The contact facts were a two-row grid per fact -- label above, value below -- so a
+ * two-word fact took two lines, and the rows carrying a link were a full `--control-height` tall
+ * while the address and hours rows were one line, which is where the uneven rhythm came from. And
+ * the three link columns were each sized `1fr` of the whole footer, so they sat a third of the
+ * viewport apart and read as three unrelated regions rather than one navigation block.
+ *
+ * What is pinned here is the relationship rather than a measurement: every contact row is one line
+ * box in one inline flow, the gaps between them are all the same, and the three link columns are
+ * equal, close together, and in the right-hand part of the footer. Wrapping is allowed where the
+ * text genuinely does not fit -- it must just not come from a label and its value being separate
+ * blocks.
+ */
+const CONTACT_WIDTHS = [
+  { name: "320", width: 320, height: 800 },
+  { name: "390", width: 390, height: 844 },
+  // Boundary regression: the fixed 16rem desktop tracks must not overflow immediately above the
+  // legacy 900px breakpoint.
+  { name: "901", width: 901, height: 900 },
+  { name: "1440", width: 1440, height: 900 },
+] as const;
+
+for (const viewport of CONTACT_WIDTHS) {
+  test(`footer contact facts are one inline flow with an even rhythm at ${viewport.name}px`, async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+    const footer = page.locator("footer.site-footer");
+    await footer.scrollIntoViewIfNeeded();
+
+    const rows = page.locator(".footer-contact-list > li");
+    await expect(rows).toHaveCount(5);
+
+    // Label and value share one line box. Reading the rendered text is what separates "inline" from
+    // "two blocks that happen to look close together": a grid row would put a newline between them.
+    await expect(rows.nth(0)).toHaveText(/^Hotline\/Zalo:\s*\d+$/);
+    await expect(rows.nth(1)).toHaveText(/^Email hỗ trợ:\s*\S+@\S+$/);
+    await expect(rows.nth(3)).toHaveText(/^Giờ hỗ trợ:\s*\S.*$/);
+
+    const metrics = await rows.evaluateAll((items) =>
+      items.map((item) => {
+        const rect = item.getBoundingClientRect();
+        const lineHeight = Number.parseFloat(getComputedStyle(item).lineHeight);
+        return {
+          top: rect.top,
+          bottom: rect.bottom,
+          lines: Math.round(rect.height / lineHeight),
+        };
+      }),
+    );
+
+    // Equal spacing is the finding. Compare the gaps to each other rather than to a constant, so
+    // the assertion survives a change of token but not a row that inflates itself.
+    const gaps = metrics
+      .slice(1)
+      .map((row, index) => Number((row.top - metrics[index]!.bottom).toFixed(1)));
+    for (const gap of gaps) {
+      expect(Math.abs(gap - gaps[0]!), `gaps: ${gaps.join(", ")}`).toBeLessThanOrEqual(0.5);
+    }
+
+    // Every row is a single line except where the text genuinely cannot fit, which only the address
+    // reaches and only on the narrowest phone.
+    for (const [index, row] of metrics.entries()) {
+      const allowed = index === 2 && viewport.width <= 320 ? 2 : 1;
+      expect(row.lines, `row ${index} at ${viewport.name}px`).toBeLessThanOrEqual(allowed);
+    }
+
+    // The links keep a full control-height hit area even though their rows are one line tall --
+    // the point of making them inline with vertical padding rather than shrinking the target.
+    for (const selector of ['a[href^="tel:"]', 'a[href^="mailto:"]']) {
+      const box = await footer.locator(selector).first().boundingBox();
+      expect(box!.height, selector).toBeGreaterThanOrEqual(44);
+    }
+
+    // ...and two adjacent hit areas must not overlap, or a tap between the phone and the email
+    // lands on whichever happens to paint last.
+    const linkRects = await footer
+      .locator('.footer-contact-list a[href^="tel:"], .footer-contact-list a[href^="mailto:"]')
+      .evaluateAll((links) =>
+        links.map((link) => {
+          const rect = link.getBoundingClientRect();
+          return { top: rect.top, bottom: rect.bottom };
+        }),
+      );
+    for (const [index, rect] of linkRects.slice(1).entries()) {
+      expect(rect.top, "tel/mailto hit areas overlap").toBeGreaterThanOrEqual(
+        linkRects[index]!.bottom - 0.5,
+      );
+    }
+    await expect(
+      footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}"]`),
+    ).toBeVisible();
+    await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `horizontal overflow at ${viewport.name}px`).toBeLessThanOrEqual(1);
+  });
+}
+
+test("the three footer link columns read as one cluster on the right at desktop width", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  const footer = page.locator("footer.site-footer");
+  await footer.scrollIntoViewIfNeeded();
+
+  const columns = await page
+    .locator("footer .footer-group:not(.footer-group--brand)")
+    .evaluateAll((groups) =>
+      groups.map((group) => {
+        const rect = group.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, width: rect.width };
+      }),
+    );
+  expect(columns).toHaveLength(3);
+
+  const footerWidth = (await footer.boundingBox())!.width;
+
+  // One cluster: the columns are the same width and the space between them is the same gap twice,
+  // not two different amounts of leftover room.
+  for (const column of columns) {
+    expect(Math.abs(column.width - columns[0]!.width)).toBeLessThanOrEqual(1);
+  }
+  const columnGaps = [columns[1]!.left - columns[0]!.right, columns[2]!.left - columns[1]!.right];
+  expect(Math.abs(columnGaps[0]! - columnGaps[1]!)).toBeLessThanOrEqual(1);
+
+  // ...and a tight one. Sized `1fr` each, the gaps were a third of the viewport; the cluster is now
+  // narrower than the footer's right-hand half plus a margin of tolerance.
+  expect(columnGaps[0]!).toBeLessThanOrEqual(footerWidth * 0.05);
+
+  // The cluster sits in the right-hand part of the footer, with the brand block to its left.
+  const clusterStart = columns[0]!.left / footerWidth;
+  const clusterEnd = columns[2]!.right / footerWidth;
+  expect(clusterStart).toBeGreaterThan(0.33);
+  expect(clusterStart).toBeLessThan(0.5);
+  expect(clusterEnd).toBeGreaterThan(0.9);
+
+  const brand = (await page.locator("footer .footer-group--brand").boundingBox())!;
+  expect(brand.x).toBeLessThan(columns[0]!.left);
+
+  const overflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
+  expect(overflow).toBeLessThanOrEqual(1);
+
+  // The legal block below is untouched by the layout change.
+  const legal = page.locator("[data-footer-legal]");
+  await expect(legal).toContainText(PUBLIC_LEGAL_FACTS.legalEntityName);
+  await expect(legal).toContainText(
+    `Đại diện pháp luật: ${PUBLIC_LEGAL_FACTS.legalRepresentative}`,
+  );
+
+  const results = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+});
