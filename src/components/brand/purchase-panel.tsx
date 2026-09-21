@@ -129,29 +129,41 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
             <p>{guide.guidanceNote}</p>
           </div>
 
-          <table className="sr-only">
-            <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Thông số</th>
-                {guide.chart.sizes.map((size) => (
-                  <th key={size} scope="col">
-                    {size}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {guide.chart.rows.map((row) => (
-                <tr key={row.parameter}>
-                  <th scope="row">{row.parameter}</th>
+          {/*
+            The visually-hidden copy of the chart, wrapped rather than hidden in place.
+            `sr-only` works by shrinking the box to 1px and clipping what spills out, and a
+            `<table>` will not shrink: the automatic table layout algorithm takes the used width as
+            the larger of the specified width and the table's minimum content width, so `width: 1px`
+            on the table itself is ignored and the table lays out at full size. It then overflowed
+            the dialog -- measured at 320px wide, the dialog's scrollWidth was 313 against a
+            clientWidth of 302. A plain block honours the 1px and clips the table inside it, and the
+            table keeps its own display so the roles a screen reader needs are unchanged.
+          */}
+          <div className="sr-only">
+            <table>
+              <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Thông số</th>
                   {guide.chart.sizes.map((size) => (
-                    <td key={size}>{row.values[size]}</td>
+                    <th key={size} scope="col">
+                      {size}
+                    </th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {guide.chart.rows.map((row) => (
+                  <tr key={row.parameter}>
+                    <th scope="row">{row.parameter}</th>
+                    {guide.chart.sizes.map((size) => (
+                      <td key={size}>{row.values[size]}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
           <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
             <Image
