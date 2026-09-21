@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, type KeyboardEvent } from "react";
 
 import {
@@ -94,17 +95,19 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
         aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
         data-size-guide-id={guide.id}
         tabIndex={-1}
-        className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-3xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45"
+        className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
         onClose={() => triggerRef.current?.focus()}
         onKeyDown={containFocus}
       >
-        <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-5 sm:p-7">
-          <div className="flex items-start justify-between gap-6">
+        <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col p-3 sm:max-h-[calc(100dvh-2rem)] sm:p-5">
+          <div className="flex shrink-0 items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/55">
                 Hướng dẫn chọn size
               </p>
-              <h2 className="mt-2 font-serif text-3xl tracking-[-0.03em]">{guide.chart.title}</h2>
+              <h2 className="mt-1 font-serif text-2xl tracking-[-0.03em] sm:text-3xl">
+                {guide.chart.title}
+              </h2>
             </div>
             <button
               ref={closeButtonRef}
@@ -116,7 +119,7 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
             </button>
           </div>
 
-          <div className="mt-5 space-y-3 text-sm leading-6 text-black/70">
+          <div className="mt-3 shrink-0 space-y-1 text-xs leading-5 text-black/70 sm:mt-4 sm:text-sm sm:leading-6">
             <p>{guide.circumferenceSemanticsNote}</p>
             {guide.tolerance ? (
               <p>
@@ -126,36 +129,52 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
             <p>{guide.guidanceNote}</p>
           </div>
 
-          <div className="mt-6 max-w-full overflow-x-auto">
-            <table className="w-full min-w-[32rem] border-collapse text-left text-sm">
-              <caption className="sr-only">{guide.chart.title}</caption>
+          {/*
+            The visually-hidden copy of the chart, wrapped rather than hidden in place.
+            `sr-only` works by shrinking the box to 1px and clipping what spills out, and a
+            `<table>` will not shrink: the automatic table layout algorithm takes the used width as
+            the larger of the specified width and the table's minimum content width, so `width: 1px`
+            on the table itself is ignored and the table lays out at full size. It then overflowed
+            the dialog -- measured at 320px wide, the dialog's scrollWidth was 313 against a
+            clientWidth of 302. A plain block honours the 1px and clips the table inside it, and the
+            table keeps its own display so the roles a screen reader needs are unchanged.
+          */}
+          <div className="sr-only">
+            <table>
+              <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
               <thead>
-                <tr className="border-b border-black/15 bg-black/[0.03]">
-                  <th scope="col" className="py-3.5 pr-4 pl-3 font-semibold">
-                    Thông số
-                  </th>
+                <tr>
+                  <th scope="col">Thông số</th>
                   {guide.chart.sizes.map((size) => (
-                    <th key={size} scope="col" className="px-4 py-3.5 text-right font-semibold">
+                    <th key={size} scope="col">
                       {size}
                     </th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-black/10">
+              <tbody>
                 {guide.chart.rows.map((row) => (
                   <tr key={row.parameter}>
-                    <th scope="row" className="py-3.5 pr-4 pl-3 font-medium text-black/80">
-                      {row.parameter}
-                    </th>
+                    <th scope="row">{row.parameter}</th>
                     {guide.chart.sizes.map((size) => (
-                      <td key={size} className="px-4 py-3.5 text-right tabular-nums text-black/70">
-                        {row.values[size]}
-                      </td>
+                      <td key={size}>{row.values[size]}</td>
                     ))}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
+            <Image
+              src={`/brand/size-guides/${guide.id}.webp`}
+              alt=""
+              width={500}
+              height={500}
+              sizes="(max-width: 640px) calc(100vw - 2rem), 500px"
+              unoptimized
+              className="h-auto max-h-[calc(100dvh-13rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-15rem)]"
+            />
           </div>
         </div>
       </dialog>

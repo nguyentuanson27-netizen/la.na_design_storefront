@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
@@ -29,6 +29,11 @@ const sizeOnlyProductSlug = `commerce-runtime-size-only-product-${runId}`;
 const sizeOnlyProductName = `Commerce Runtime Size Only Tee ${runId}`;
 const sizeOnlyVariantExternalId = `commerce-runtime-size-only-variant-${runId}`;
 const sizeOnlyWarehouseExternalId = `commerce-runtime-size-only-warehouse-${runId}`;
+const smallFormProductExternalId = `commerce-runtime-small-form-product-${runId}`;
+const smallFormProductSlug = `commerce-runtime-small-form-product-${runId}`;
+const smallFormProductName = `Commerce Runtime Small Form Dress ${runId}`;
+const smallFormVariantExternalId = `commerce-runtime-small-form-variant-${runId}`;
+const smallFormWarehouseExternalId = `commerce-runtime-small-form-warehouse-${runId}`;
 const unmappedProductExternalId = `commerce-runtime-unmapped-product-${runId}`;
 const unmappedProductSlug = `commerce-runtime-unmapped-product-${runId}`;
 const unmappedProductName = `Commerce Runtime Unmapped Dress ${runId}`;
@@ -97,6 +102,59 @@ async function cleanup() {
     where: { variant: { product: { pancakeShopId: SHOP_ID } } },
   });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+}
+
+async function expectSizeGuideArtworkFits(
+  page: Page,
+  dialog: Locator,
+  expectedSrc: string,
+  expectedChartTitle: string,
+  expectedSmallChest: string,
+) {
+  const image = dialog.locator("img");
+  await expect(image).toHaveCount(1);
+  await expect(image).toBeVisible();
+  await expect(image).toHaveAttribute("src", expectedSrc);
+  await expect(image).toHaveAttribute("alt", "");
+
+  const semanticTable = dialog.getByRole("table", {
+    name: `Dữ liệu bảng size ${expectedChartTitle}`,
+    exact: true,
+  });
+  await expect(semanticTable).toHaveCount(1);
+  await expect(semanticTable.getByRole("columnheader", { name: "S", exact: true })).toHaveCount(1);
+  await expect(
+    semanticTable.getByRole("rowheader", { name: "Ngực (cm)", exact: true }),
+  ).toHaveCount(1);
+  await expect(semanticTable.getByRole("cell", { name: expectedSmallChest, exact: true })).toHaveCount(
+    1,
+  );
+
+  const metrics = await dialog.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    clientHeight: element.clientHeight,
+    scrollWidth: element.scrollWidth,
+    scrollHeight: element.scrollHeight,
+  }));
+  expect(metrics.scrollWidth, "size-guide dialog must not scroll horizontally").toBeLessThanOrEqual(
+    metrics.clientWidth + 1,
+  );
+  expect(metrics.scrollHeight, "size-guide dialog must not scroll vertically").toBeLessThanOrEqual(
+    metrics.clientHeight + 1,
+  );
+
+  const imageBox = await image.boundingBox();
+  const dialogBox = await dialog.boundingBox();
+  if (!imageBox || !dialogBox) throw new Error("Expected size-guide artwork and dialog to be laid out");
+
+  expect(imageBox.x).toBeGreaterThanOrEqual(dialogBox.x - 1);
+  expect(imageBox.y).toBeGreaterThanOrEqual(dialogBox.y - 1);
+  expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+  expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
+  expect(imageBox.x).toBeGreaterThanOrEqual(-1);
+  expect(imageBox.y).toBeGreaterThanOrEqual(-1);
+  expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+  expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
 }
 
 async function assertPageQuality(page: import("@playwright/test").Page) {
@@ -256,6 +314,46 @@ test.beforeAll(async () => {
     },
   });
 
+  const smallFormProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: smallFormProductExternalId,
+      slug: smallFormProductSlug,
+      name: smallFormProductName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "PUBLISHED",
+          editorialDescription: "Small-form storefront size-guide regression product.",
+          sizeGuide: "set-vay-form-nho",
+        },
+      },
+    },
+  });
+  const smallFormVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: smallFormVariantExternalId,
+      productId: smallFormProduct.id,
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 720_000,
+      pancakeRetailPriceAfterDiscount: 720_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: smallFormVariant.id,
+      pancakeWarehouseId: smallFormWarehouseExternalId,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
   const unmappedProduct = await prisma.productMirror.create({
     data: {
       pancakeShopId: SHOP_ID,
@@ -302,6 +400,7 @@ test.beforeAll(async () => {
     data: [
       { productId: product.id, categoryKey: "vayDam" },
       { productId: sizeOnlyProduct.id, categoryKey: "vayDam" },
+      { productId: smallFormProduct.id, categoryKey: "vayDam" },
       { productId: unmappedProduct.id, categoryKey: "vayDam" },
     ],
   });
@@ -591,10 +690,23 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   const dialog = page.getByRole("dialog", { name: "Hướng dẫn chọn size: Áo dài" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("data-size-guide-id", "ao-dai");
-  await expect(dialog.getByRole("heading", { name: "Áo dài", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("columnheader", { name: "S", exact: true })).toBeVisible();
-  await expect(dialog.getByRole("rowheader", { name: "Ngực (cm)", exact: true })).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
+
+  for (const viewport of [
+    { width: 320, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await expectSizeGuideArtworkFits(
+      page,
+      dialog,
+      "/brand/size-guides/ao-dai.webp",
+      "Áo dài",
+      "86",
+    );
+  }
 
   for (let index = 0; index < 4; index += 1) {
     await page.keyboard.press("Tab");
@@ -646,10 +758,30 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(mappedDialog).toBeVisible();
   await expect(mappedDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-rong");
-  expect(
-    await mappedDialog.evaluate((element) => element.scrollWidth <= element.clientWidth),
-    "modal shell must not create horizontal overflow",
-  ).toBe(true);
+  await expectSizeGuideArtworkFits(
+    page,
+    mappedDialog,
+    "/brand/size-guides/set-vay-form-rong.webp",
+    "Set/Váy form rộng",
+    "86",
+  );
+  await page.keyboard.press("Escape");
+
+  await page.goto(`${BASE_URL}/shop/${smallFormProductSlug}`, { waitUntil: "networkidle" });
+  const smallFormTrigger = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  await smallFormTrigger.click();
+  const smallFormDialog = page.getByRole("dialog", {
+    name: "Hướng dẫn chọn size: Set/Váy form nhỏ",
+  });
+  await expect(smallFormDialog).toBeVisible();
+  await expect(smallFormDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-nho");
+  await expectSizeGuideArtworkFits(
+    page,
+    smallFormDialog,
+    "/brand/size-guides/set-vay-form-nho.webp",
+    "Set/Váy form nhỏ",
+    "84",
+  );
   await page.keyboard.press("Escape");
 
   await page.goto(`${BASE_URL}/shop/${unmappedProductSlug}`, { waitUntil: "networkidle" });
