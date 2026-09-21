@@ -296,6 +296,31 @@ test("choosing a size with no colour selected leaves colour unset", () => {
 
 /* ------------------------------------------------------------------- composite */
 
+test("a composite product distinguishes unresolved kind from genuine stock state", () => {
+  const options = [
+    option({ id: "set-s", kindKey: "set", kindLabel: "FULL SET", size: "S" }),
+    option({ id: "single-s", kindKey: "single", kindLabel: "ÁO LẺ", size: "S" }),
+  ];
+
+  const beforeKind = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: null },
+  });
+  assert.equal(
+    beforeKind.kindSelectionGuidance,
+    "Nàng chọn phân loại trước để xem size còn hàng",
+  );
+  assert.equal(beforeKind.unavailableMessage, "");
+
+  const afterKind = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: "set", color: null, size: null },
+  });
+  assert.equal(afterKind.kindSelectionGuidance, null);
+});
+
 test("a composite product keeps kind selection independent of size and colour", () => {
   const options = [
     option({ id: "a", kindKey: "set", kindLabel: "Set", size: "S", price: 250_000 }),
