@@ -1359,15 +1359,28 @@ body:has(.admin-shell) .site-masthead {
    overlay above is still what Set đồ and Váy, đầm get at 901px and wider, because the owner asked
    for the mobile section and nothing else. */
 @media (max-width: 640px) {
-  /* The image: one framing for all three, in normal flow rather than as a backdrop to overlay. */
+  /* The image: one framing for all three, in normal flow rather than as a backdrop to overlay.
+
+     The stone fill moves from the block to the media with it. It was the backdrop the photograph
+     was laid over, so leaving it on the block tints the name underneath -- which would have put
+     Áo dài's name on paper and the other two on stone, the same "these are different things"
+     reading in a new colour. */
   .category-editorial__block {
     min-height: 0;
+    background: none;
+  }
+
+  /* Each feature closes the same way Áo dài's does. The section's own border closes the last one,
+     so only the join between the two needs drawing. */
+  .category-editorial__block:not(:last-child) {
+    border-bottom: 1px solid var(--line);
   }
 
   .category-editorial__media {
     position: relative;
     inset: auto;
     min-height: 60vh;
+    background: var(--stone);
   }
 
   /* The name: one serif at one size. Large enough to read as the heading it is -- ~28px against

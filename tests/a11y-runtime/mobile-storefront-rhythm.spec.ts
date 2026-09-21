@@ -229,6 +229,17 @@ async function hasHorizontalOverflow(page: Page): Promise<boolean> {
 /** The computed type treatment a category name is rendered with. */
 async function typeTreatmentOf(locator: Locator) {
   return locator.evaluate((element) => {
+    // The nearest ancestor that actually paints, since the name itself is transparent.
+    const backgroundBehind = (node: Element): string => {
+      for (let current: Element | null = node; current; current = current.parentElement) {
+        const background = getComputedStyle(current).backgroundColor;
+        if (background && background !== "rgba(0, 0, 0, 0)" && background !== "transparent") {
+          return background;
+        }
+      }
+      return "rgba(0, 0, 0, 0)";
+    };
+
     const style = getComputedStyle(element);
     return {
       fontFamily: style.fontFamily,
@@ -237,6 +248,10 @@ async function typeTreatmentOf(locator: Locator) {
       color: style.color,
       textAlign: style.textAlign,
       position: style.position,
+      // The surface the name is set on. Matching type on mismatched grounds still reads as two
+      // different components, which is the form the original inconsistency came back in once the
+      // labels came off the photographs.
+      background: backgroundBehind(element),
     };
   });
 }
@@ -292,6 +307,7 @@ test("Áo dài, Set đồ and Váy, đầm are drawn with one visual system on a
     expect(treatment.fontWeight).toBe(lead!.fontWeight);
     expect(treatment.color).toBe(lead!.color);
     expect(treatment.textAlign).toBe(lead!.textAlign);
+    expect(treatment.background).toBe(lead!.background);
     // In normal flow under the image, not floated over it.
     expect(treatment.position).toBe("static");
   }
