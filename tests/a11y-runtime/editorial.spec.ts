@@ -308,22 +308,38 @@ test.beforeEach(async ({ page }) => {
 test("mobile navigation is a true viewport overlay before and after header scroll styling", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  await prisma.collectionDefinition.update({
+    where: { slug: "essential-outerwear" },
+    data: { heroImageUrl: "https://content.pancake.vn/images/1/2/3/mobile-nav-hero.jpg" },
+  });
 
-  const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toBeVisible();
 
-  for (const scrollTop of [0, 120] as const) {
+    const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+
+    for (const scrollTop of [0, 120] as const) {
     await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollTop);
     await expect
       .poll(() => page.evaluate(() => Math.round(window.scrollY)))
       .toBe(scrollTop);
-    await expect(page.locator("header.site-header")).toHaveAttribute(
-      "data-scrolled",
-      scrollTop > 20 ? "true" : "false",
-    );
+      const header = page.locator("header.site-header");
+      await expect(header).toHaveAttribute(
+        "data-scrolled",
+        scrollTop > 20 ? "true" : "false",
+      );
+      const headerBackground = await header.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      if (scrollTop === 0) {
+        expect(headerBackground).toBe("rgba(0, 0, 0, 0)");
+      } else {
+        expect(headerBackground).not.toBe("rgba(0, 0, 0, 0)");
+      }
 
-    await menuTrigger.click();
+      await menuTrigger.click();
 
     const dialog = page.getByRole("dialog", { name: "Menu điều hướng" });
     await expect(dialog).toBeVisible();
@@ -367,9 +383,15 @@ test("mobile navigation is a true viewport overlay before and after header scrol
       expect(menuScrollState.scrollTop).toBeGreaterThan(0);
     }
 
-    await closeButton.click();
-    await expect(dialog).toHaveCount(0);
-    await expect(menuTrigger).toBeFocused();
+      await closeButton.click();
+      await expect(dialog).toHaveCount(0);
+      await expect(menuTrigger).toBeFocused();
+    }
+  } finally {
+    await prisma.collectionDefinition.update({
+      where: { slug: "essential-outerwear" },
+      data: { heroImageUrl: null },
+    });
   }
 });
 
