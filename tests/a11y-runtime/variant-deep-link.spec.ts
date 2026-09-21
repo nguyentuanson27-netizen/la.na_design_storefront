@@ -135,10 +135,6 @@ async function expectProductHeroToShow(page: Page, urlFragment: string) {
     new RegExp(encodeURIComponent(urlFragment).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
   );
 }
-async function openDeepLink(page: Page, query: string | null) {")),
-  );
-}
-
 async function openDeepLink(page: Page, query: string | null) {
   // Offline-safe: the optimizer would otherwise reach content.pancake.vn.
   await page.route("**/_next/image**", (route) => {
