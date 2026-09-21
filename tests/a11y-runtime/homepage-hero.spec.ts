@@ -261,6 +261,32 @@ test("slider advances at two seconds and pauses/resumes for hover and keyboard f
   await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
+test("MUA NGAY remains pointer-clickable inside the swipe track and follows the active slide href", async ({
+  page,
+}) => {
+  await clearHeroSlides();
+  await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+  await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
+
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  const region = hero(page);
+  await region.hover();
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${TEST_PREFIX}1`),
+    cta.click(),
+  ]);
+
+  await expect(
+    page.getByRole("heading", { level: 1, name: "F6a Hero 1" }),
+  ).toBeVisible();
+});
+
 test("swipe pauses during interaction, advances, then resumes autoplay", async ({ page }) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");

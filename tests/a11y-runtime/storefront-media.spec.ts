@@ -341,6 +341,31 @@ test("PDP with single trusted image renders hero image without redundant thumbna
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
 });
 
+test("single-image PDP keeps the product purchase panel in the right desktop column", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
+
+  await page.goto(`${BASE_URL}/shop/${singleSlug}`, { waitUntil: "networkidle" });
+
+  const heading = page.getByRole("heading", { level: 1, name: singleName });
+  await expect(heading).toBeVisible();
+  const purchaseArticle = page.locator("article").filter({ has: heading });
+  await expect(purchaseArticle).toBeVisible();
+
+  const box = await purchaseArticle.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.x).toBeGreaterThan(1440 / 2);
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
+});
+
 test("PDP with multiple images renders a one-column mobile editorial grid with every trusted image once", async ({
   page,
 }) => {
