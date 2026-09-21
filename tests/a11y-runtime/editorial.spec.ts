@@ -406,6 +406,44 @@ test("mobile navigation is a true viewport overlay before and after header scrol
   }
 });
 
+test("mobile search opened from scrolled navigation remains a true viewport dialog", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  await page.evaluate(() => window.scrollTo({ top: 120, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(120);
+
+  const header = page.locator("header.site-header");
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+
+  const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+  await menuTrigger.click();
+
+  const mobileDialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+  await expect(mobileDialog).toBeVisible();
+  await mobileDialog.getByRole("button", { name: "Tìm kiếm", exact: true }).click();
+  await expect(mobileDialog).toHaveCount(0);
+
+  const searchDialog = page.getByRole("dialog", { name: "Tìm kiếm sản phẩm" });
+  await expect(searchDialog).toBeVisible();
+  expect(await searchDialog.evaluate((element) => element.parentElement === document.body)).toBe(true);
+
+  const box = await searchDialog.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.x)).toBe(0);
+  expect(Math.round(box!.y)).toBe(0);
+  expect(Math.round(box!.width)).toBe(390);
+  expect(Math.round(box!.height)).toBe(844);
+
+  const input = searchDialog.getByRole("searchbox", { name: "Nhập từ khóa tìm kiếm" });
+  await expect(input).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+  await page.keyboard.press("Escape");
+  await expect(searchDialog).toHaveCount(0);
+  await expect(menuTrigger).toBeFocused();
+});
+
 test("P8 storefront shell exposes cutover navigation, shared tokens, focus treatment and semantic footer", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
