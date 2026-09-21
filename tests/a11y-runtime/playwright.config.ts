@@ -34,6 +34,7 @@ export default defineConfig({
     "homepage-taxonomy.spec.ts",
     "inventory-truth.spec.ts",
     "merchant-return-policy.spec.ts",
+    "mobile-storefront-rhythm.spec.ts",
     "not-found-recovery.spec.ts",
     "pdp-language.spec.ts",
     "pdp-preorder-availability.spec.ts",

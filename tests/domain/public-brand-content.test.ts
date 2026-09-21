@@ -182,6 +182,8 @@ test("U33a / A2 the approved legal facts transcribe the registered identity, and
     registeredAddress:
       "Số 06 Đường Manor 2str, Sunrise C, KĐT The Manor Central Park, Phường Định Công",
     legalEmail: "congtytnhh.las@gmail.com",
+    // Released by the owner for the footer's legal block, in the registration source's casing.
+    legalRepresentative: "ĐINH THÙY LINH",
   });
 
   // A2 widened this to the whole registered identity, not to the customer-facing contact. The

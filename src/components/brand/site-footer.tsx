@@ -8,8 +8,9 @@ import type { SiteFooterModel } from "@/components/headless/site-chrome-model";
 /**
  * F9a footer layout. Presentation consumes approved Brand Config and policy projections only:
  * shopping links stay in NAVIGATION, while support/policy/legal facts arrive through the chrome
- * model. There is deliberately no newsletter, representative field or page-specific policy copy
- * here.
+ * model. There is deliberately no newsletter and no page-specific policy copy here. The legal
+ * representative is rendered from that model since the owner released it for this block; it is not
+ * typed into this file any more than the other legal facts are.
  *
  * The three link columns collapse into disclosures on the single-column mobile footer, which the
  * owner approved in place of the original always-expanded mobile rule -- twenty-odd links between
@@ -119,6 +120,9 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
       <div className="footer-legal" data-footer-legal>
         <p className="footer-label">Thông tin pháp lý</p>
         <p className="footer-legal-name">{model.legal.legalEntityName}</p>
+        {/* Beside the entity it belongs to, not at the end of the block: the representative is part
+            of who the company is, where the lines below are where to reach it. */}
+        <p>Đại diện pháp luật: {model.legal.legalRepresentative}</p>
         <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
         <p>
           MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}

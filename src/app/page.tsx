@@ -57,9 +57,13 @@ function CategoryEditorial({
   return (
     <Link className="category-editorial__block" href={category.href}>
       <span className="category-editorial__media">
+        {/* Decorative: the label below is the link's accessible name, so alt text here would
+            announce the category twice to a screen reader -- which is what Axe's
+            `duplicate-img-label` rule reports. The photograph illustrates the name, it does not
+            add a fact to it. */}
         <Image
           src={imageUrl}
-          alt={category.label}
+          alt=""
           fill
           sizes="(min-width: 901px) 50vw, 100vw"
           className="object-cover"
