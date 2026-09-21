@@ -305,6 +305,73 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test.only("mobile navigation stays viewport-sized at top and after the blurred header scroll state", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  const menuTrigger = page.getByRole("button", { name: "Menu", exact: true });
+
+  for (const scrollTop of [0, 120] as const) {
+    await page.evaluate((top) => window.scrollTo({ top, behavior: "instant" }), scrollTop);
+    await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(scrollTop);
+
+    await expect(page.locator("header.site-header")).toHaveAttribute(
+      "data-scrolled",
+      scrollTop > 20 ? "true" : "false",
+    );
+
+    await menuTrigger.click();
+
+    const dialog = page.getByRole("dialog", { name: "Menu điều hướng" });
+    await expect(dialog).toBeVisible();
+    const box = await dialog.boundingBox();
+    expect(box).not.toBeNull();
+    expect(Math.round(box!.x)).toBe(0);
+    expect(Math.round(box!.y)).toBe(0);
+    expect(Math.round(box!.width)).toBe(390);
+    expect(Math.round(box!.height)).toBe(844);
+
+    await expect(dialog.getByRole("img", { name: BRAND.identity.name })).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Đóng menu", exact: true })).toBeVisible();
+
+    const primaryNavigation = dialog.getByRole("navigation", {
+      name: "Điều hướng chính trên di động",
+    });
+    for (const label of ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện", "Hàng mới về", "Bộ sưu tập", "Sale"]) {
+      await expect(primaryNavigation.getByRole("link", { name: label, exact: true })).toBeVisible();
+    }
+
+    expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+    const lockedScrollY = await page.evaluate(() => window.scrollY);
+    await page.mouse.move(380, 820);
+    await page.mouse.wheel(0, 500);
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.scrollY)).toBe(lockedScrollY);
+
+    const menuScrollState = await dialog.evaluate((element) => {
+      const style = getComputedStyle(element);
+      if (element.scrollHeight > element.clientHeight) {
+        element.scrollTop = Math.min(160, element.scrollHeight - element.clientHeight);
+      }
+      return {
+        overflowY: style.overflowY,
+        needsScroll: element.scrollHeight > element.clientHeight,
+        scrollTop: element.scrollTop,
+      };
+    });
+    expect(["auto", "scroll"]).toContain(menuScrollState.overflowY);
+    if (menuScrollState.needsScroll) {
+      expect(menuScrollState.scrollTop).toBeGreaterThan(0);
+    }
+
+    await dialog.getByRole("button", { name: "Đóng menu", exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(menuTrigger).toBeFocused();
+  }
+});
+
 test("P8 storefront shell exposes cutover navigation, shared tokens, focus treatment and semantic footer", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
