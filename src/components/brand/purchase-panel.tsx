@@ -29,26 +29,7 @@ const DIALOG_FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
-const SIZE_GUIDE_IMAGE_BY_ID = {
-  "ao-dai": {
-    src: "/brand/size-guides/ao-dai.webp",
-    alt: "Bảng size Áo dài La.na Design",
-  },
-  "set-vay-form-rong": {
-    src: "/brand/size-guides/set-vay-form-rong.webp",
-    alt: "Bảng size Set/Váy form rộng La.na Design",
-  },
-  "set-vay-form-nho": {
-    src: "/brand/size-guides/set-vay-form-nho.webp",
-    alt: "Bảng size Set/Váy form nhỏ La.na Design",
-  },
-} as const satisfies Record<
-  ProductMappedSizeGuide["id"],
-  Readonly<{ src: string; alt: string }>
->;
-
 function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGuide }>) {
-  const guideImage = SIZE_GUIDE_IMAGE_BY_ID[guide.id];
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const closeButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -174,8 +155,8 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
 
           <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
             <Image
-              src={guideImage.src}
-              alt={guideImage.alt}
+              src={`/brand/size-guides/${guide.id}.webp`}
+              alt=""
               width={500}
               height={500}
               sizes="(max-width: 640px) calc(100vw - 2rem), 500px"
