@@ -26,6 +26,7 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TEST_PREFIX = "f6a-hero-";
+const SHOP_ID = 920_032;
 
 const TINY_JPEG_BUFFER = Buffer.from(
   "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
@@ -148,7 +149,7 @@ test.beforeAll(async () => {
       NEXT_DIST_DIR: ".next-test/homepage-hero",
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
-      PANCAKE_SHOP_ID: "",
+      PANCAKE_SHOP_ID: String(SHOP_ID),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -309,6 +310,10 @@ test("swipe pauses during interaction, advances, then resumes autoplay", async (
     "href",
     `/collections/${TEST_PREFIX}2`,
   );
+  // The drag has ended, but the mouse is still hovering the hero, so hover remains an
+  // independent pause reason. Autoplay resumes only after the pointer leaves the hero.
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+  await page.mouse.move(0, 0);
   await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
@@ -368,7 +373,9 @@ test("overlay header is transparent at top and cream after the existing short sc
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0);
   await expect(header).toHaveAttribute("data-scrolled", "false");
-  expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-    "rgba(0, 0, 0, 0)",
-  );
+  // The header intentionally has a 300ms color transition. The state attribute flips before the
+  // transition finishes, so assert the settled visual state instead of sampling mid-transition.
+  await expect
+    .poll(() => header.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgba(0, 0, 0, 0)");
 });
