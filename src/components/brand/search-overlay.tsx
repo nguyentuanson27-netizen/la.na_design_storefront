@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -90,7 +91,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div
       ref={overlayRef}
       role="dialog"
@@ -265,6 +266,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
