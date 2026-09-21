@@ -26,12 +26,49 @@ const testShopId = 920_070;
 const otherShopId = 920_071;
 const externalPrefix = "merchandising-";
 
+/**
+ * The one table here that does not cascade from a seeded product.
+ *
+ * `CategoryEditorialMedia` is keyed by bare `categoryKey` with no foreign key, and three tests
+ * need it genuinely empty rather than merely free of this file's rows: the audit read is asserted
+ * to return exactly one row, and two other reads are asserted to be `null`. So `cleanup()`
+ * has to empty it -- and, running from both `beforeEach` and `afterEach`, it emptied whatever the
+ * database already held and never put it back. Against a developer's or a staging database that is
+ * every category's configured hero and mega-menu image, gone, with no way to tell from the test
+ * output that it happened.
+ *
+ * The rows are therefore parked once before the file's first test and restored after its last, so
+ * the tests still see the empty table they need while the database ends as it started.
+ */
+type ParkedEditorialMedia = {
+  categoryKey: string;
+  heroImageUrl: string | null;
+  megaMenuImageUrl: string | null;
+};
+
+let parkedEditorialMedia: ParkedEditorialMedia[] = [];
+
+async function parkEditorialMedia() {
+  parkedEditorialMedia = await prisma.categoryEditorialMedia.findMany({
+    select: { categoryKey: true, heroImageUrl: true, megaMenuImageUrl: true },
+  });
+}
+
+async function restoreEditorialMedia() {
+  await prisma.categoryEditorialMedia.deleteMany({});
+  if (parkedEditorialMedia.length > 0) {
+    await prisma.categoryEditorialMedia.createMany({ data: parkedEditorialMedia });
+  }
+  parkedEditorialMedia = [];
+}
+
 async function cleanup() {
   // Every merchandising row cascades from `ProductMirror`, so deleting the seeded products is
   // enough — which is itself the ADR §3/§5/§7 `onDelete: Cascade` behaviour under test.
   await prisma.productMirror.deleteMany({
     where: { pancakeProductId: { startsWith: externalPrefix } },
   });
+  // Parked by `test.before` and put back by `test.after`; see the note above.
   await prisma.categoryEditorialMedia.deleteMany({});
 }
 
@@ -57,9 +94,11 @@ async function seed(
   return created.id;
 }
 
+test.before(parkEditorialMedia);
 test.beforeEach(cleanup);
 test.afterEach(cleanup);
 test.after(async () => {
+  await restoreEditorialMedia();
   await prisma.$disconnect();
 });
 
