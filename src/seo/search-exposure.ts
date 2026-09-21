@@ -53,11 +53,15 @@ const INDEXABLE_PATH_PATTERNS = [
 
 // F3a category destinations are crawlable route shells only. Until G4 approves canonical product
 // membership they have no paginated listing semantics, so query state remains noindex. `/sale`
-// already has a truthful paginated projection and keeps the existing catalog pagination contract.
+// already has a truthful paginated projection and keeps the existing catalog pagination contract,
+// and `/new-arrivals` joined it once §10's "shows newest products automatically" became a real
+// paged listing rather than an editorial page -- §25 requires that discovery not depend on
+// client-side scrolling, which a noindex page 2 would make it.
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/]+$/,
   /^\/sale$/,
+  /^\/new-arrivals$/,
 ] as const;
 
 const MAX_INDEXABLE_CATALOG_PAGE = 10_000;

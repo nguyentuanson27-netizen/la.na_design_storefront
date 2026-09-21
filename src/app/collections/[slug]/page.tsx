@@ -1,8 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import {
+  ListingBreadcrumbs,
+  ListingEmptyState,
+  ListingHeader,
+  ListingPagination,
+  ListingProductGrid,
+  ListingResultCount,
+  ListingShell,
+} from "@/components/brand/listing-chrome";
 import { loadCollectionRoute, type CollectionRouteProps } from "@/routes/collection";
 import type { CollectionViewModel } from "@/routes/collection-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -11,15 +19,19 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
 /**
  * Markup only. The definition, its page of products, the filter links, the breadcrumb graph and the
  * refresh window all live in `@/routes/collection`.
+ *
+ * The editorial half -- hero, story, gallery, video -- is this collection's own and stays. The
+ * listing half underneath now draws the same chrome as every other listing instead of keeping a
+ * second one. The sort and size controls remain link-based because the loader builds their hrefs
+ * from the collection slug; only their styling is aligned.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
+// `listing-pill` carries the label colour; see the note on it in globals.css.
 const optionLinkClassName =
-  "inline-flex min-h-11 items-center border border-black/25 px-4 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition-colors hover:border-black hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-4";
-const activeOptionLinkClassName = "border-black bg-black/10";
-const textLinkClassName =
-  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-[0.14em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4";
+  "listing-pill inline-flex min-h-11 items-center rounded-full border border-[#3B2219]/20 px-4 py-2 text-xs font-medium uppercase tracking-wider transition hover:border-[#2A1810] hover:bg-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4";
+const activeOptionLinkClassName = "border-[#3B2219] bg-[#3B2219]";
 
 function optionClass(active: boolean): string {
   return `${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`;
@@ -29,20 +41,25 @@ function render(data: CollectionViewModel) {
   const { editorial } = data;
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-10 md:py-16">
-      <nav aria-label="Breadcrumb" className="mb-6">
-        <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-black/60">
-          <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
-          <li aria-hidden="true">/</li>
-          <li><Link className="hover:underline" href="/collections">Bộ sưu tập</Link></li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-black">{data.title}</li>
-        </ol>
-      </nav>
-      <p className="eyebrow mt-6">{BRAND.identity.name} / Bộ sưu tập</p>
-      <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
-        {data.title}
-      </h1>
+    <ListingShell>
+      <ListingBreadcrumbs
+        items={[
+          { label: "Trang chủ", href: "/" },
+          { label: "Bộ sưu tập", href: "/collections" },
+          { label: data.title },
+        ]}
+      />
+      <ListingHeader eyebrow="Bộ sưu tập" title={data.title}>
+        <p className="mt-6 max-w-2xl break-words font-serif text-xl leading-snug text-[#2A1810] md:text-2xl">
+          {editorial.story}
+        </p>
+        {/* Buyer information, not decoration: it sets the expectation that the figures on the
+            cards are re-checked at purchase, which is the same promise `/shop` makes. Kept on one
+            source line because the copy inventory reads the promise as a whole string. */}
+        <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70">
+          Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
+        </p>
+      </ListingHeader>
 
       {editorial.heroImage ? (
         <div className="relative mt-10 aspect-[16/9] overflow-hidden bg-[var(--stone)]">
@@ -56,15 +73,6 @@ function render(data: CollectionViewModel) {
           />
         </div>
       ) : null}
-
-      <div className="mt-10 grid gap-8 border-t border-black/20 pt-8 md:grid-cols-2">
-        <p className="max-w-2xl break-words font-serif text-2xl leading-snug md:text-3xl">
-          {editorial.story}
-        </p>
-        <p className="max-w-lg text-sm leading-6 text-black/65 md:justify-self-end">
-          Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
-        </p>
-      </div>
 
       {editorial.video ? (
         <div className="mt-12">
@@ -81,7 +89,10 @@ function render(data: CollectionViewModel) {
       ) : null}
 
       {editorial.gallery.length > 0 ? (
-        <section className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label={`Hình ảnh bộ sưu tập ${data.title}`}>
+        <section
+          className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+          aria-label={`Hình ảnh bộ sưu tập ${data.title}`}
+        >
           {editorial.gallery.map((url, index) => (
             <div key={url} className="relative aspect-[3/4] overflow-hidden bg-[var(--stone)]">
               <Image
@@ -96,9 +107,12 @@ function render(data: CollectionViewModel) {
         </section>
       ) : null}
 
-      <section className="mt-12 grid gap-8 border-y border-black/20 py-6 md:grid-cols-2" aria-label="Điều khiển bộ sưu tập">
+      <section
+        className="mt-12 grid gap-8 border-b border-[#3B2219]/15 pb-8 md:grid-cols-2"
+        aria-label="Điều khiển bộ sưu tập"
+      >
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.13em]">Sắp xếp</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Sắp xếp</p>
           <nav aria-label="Sắp xếp bộ sưu tập" className="mt-3 flex flex-wrap gap-2">
             {data.sortOptions.map((option) => (
               <Link
@@ -114,7 +128,7 @@ function render(data: CollectionViewModel) {
         </div>
 
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.13em]">Kích cỡ</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</p>
           <nav aria-label="Lọc theo kích cỡ" className="mt-3 flex flex-wrap gap-2">
             {data.sizeOptions.map((option) => (
               <Link
@@ -131,62 +145,48 @@ function render(data: CollectionViewModel) {
       </section>
 
       {data.totalCount === 0 ? (
-        <section className="mt-16 border-t border-black/20 py-16" aria-labelledby="collection-empty-title">
-          <p className="eyebrow">{data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}</p>
-          <h2 id="collection-empty-title" className="mt-4 max-w-2xl font-serif text-3xl leading-tight md:text-5xl">
-            {data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
-          </h2>
-          <p className="mt-5 max-w-xl text-sm leading-6 text-black/65">
-            {data.filtered
+        <ListingEmptyState
+          titleId="collection-empty-title"
+          eyebrow={data.filtered ? "Không tìm thấy" : "Bộ sưu tập hiện tại"}
+          title={data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
+          copy={
+            data.filtered
               ? "Thử chọn kích cỡ khác hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
-              : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."}
-          </p>
-          {data.filtered ? (
-            <Link className={`mt-6 ${textLinkClassName}`} href={data.clearFilterHref}>
-              Xem tất cả kích cỡ →
-            </Link>
-          ) : null}
-        </section>
+              : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
+          }
+          action={
+            data.filtered
+              ? { href: data.clearFilterHref, label: "Xem tất cả kích cỡ" }
+              : undefined
+          }
+        />
       ) : (
-        <section className="mt-16" aria-labelledby="collection-products-title">
-          <div className="section-heading-row border-t border-black/20 pt-5">
-            <h2 id="collection-products-title">Sản phẩm</h2>
-            <p className="eyebrow">
-              {data.totalCount} sản phẩm · Trang {data.page}/{data.totalPages}
-            </p>
+        <section className="mt-8" aria-labelledby="collection-products-title">
+          <h2 id="collection-products-title" className="sr-only">
+            Sản phẩm
+          </h2>
+          <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
+          <div className="mt-8">
+            <ListingProductGrid>
+              {data.cards.map((card, index) => (
+                <ProductCard
+                  key={card.id}
+                  model={card.model}
+                  tone={tones[(data.toneOffset + index) % tones.length]!}
+                />
+              ))}
+            </ListingProductGrid>
           </div>
-          <div className="product-grid">
-            {data.cards.map((card, index) => (
-              <ProductCard
-                key={card.id}
-                model={card.model}
-                tone={tones[(data.toneOffset + index) % tones.length]!}
-              />
-            ))}
-          </div>
-
-          {data.totalPages > 1 ? (
-            <nav
-              className="mt-12 flex items-center justify-between gap-4 border-t border-black/20 pt-6"
-              aria-label="Phân trang bộ sưu tập"
-            >
-              {data.previousHref ? (
-                <Link className={textLinkClassName} href={data.previousHref} rel="prev">
-                  ← Trang trước
-                </Link>
-              ) : (
-                <span aria-hidden="true" />
-              )}
-              {data.nextHref ? (
-                <Link className={textLinkClassName} href={data.nextHref} rel="next">
-                  Trang sau →
-                </Link>
-              ) : null}
-            </nav>
-          ) : null}
+          <ListingPagination
+            label="Phân trang bộ sưu tập"
+            page={data.page}
+            totalPages={data.totalPages}
+            previousHref={data.previousHref}
+            nextHref={data.nextHref}
+          />
         </section>
       )}
-    </div>
+    </ListingShell>
   );
 }
 

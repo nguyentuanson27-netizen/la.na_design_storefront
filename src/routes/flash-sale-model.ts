@@ -43,9 +43,19 @@ export type FlashSaleViewModelInput = Readonly<{
   pageSize: number;
   selectEventBySlug: ReadonlyMap<string, TrackingEvent>;
   pricingRule?: StorefrontPricingRule;
+  /**
+   * The route the paging hrefs are written against.
+   *
+   * Defaults to the surface this builder was written for. `/sale` and `/new-arrivals` reuse the
+   * same shape and each names its own path: both used to take the `/flash-sale` links and string-
+   * replace them afterwards, which is a hack that has to be repeated correctly by every new
+   * caller, and silently produces a link to an unmounted route when it is not.
+   */
+  basePath?: string;
 }>;
 
 export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSaleViewModel {
+  const basePath = input.basePath ?? "/flash-sale";
   return Object.freeze({
     cards: Object.freeze(
       input.products.map((product) =>
@@ -68,7 +78,7 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
     totalCount: input.totalCount,
     page: input.page,
     totalPages: input.totalPages,
-    previousHref: input.page > 1 ? `/flash-sale?page=${input.page - 1}` : null,
-    nextHref: input.page < input.totalPages ? `/flash-sale?page=${input.page + 1}` : null,
+    previousHref: input.page > 1 ? `${basePath}?page=${input.page - 1}` : null,
+    nextHref: input.page < input.totalPages ? `${basePath}?page=${input.page + 1}` : null,
   });
 }

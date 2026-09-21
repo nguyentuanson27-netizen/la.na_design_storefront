@@ -19,6 +19,7 @@ const CATALOG_LISTING_PATH_PATTERNS = [
   /^\/collections\/[^/?#]+$/,
   ...INDEXABLE_CATEGORY_PATH_PATTERNS,
   /^\/sale$/,
+  /^\/new-arrivals$/,
 ] as const;
 
 function isCatalogListingPath(pathname: string): boolean {

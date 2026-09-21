@@ -572,6 +572,56 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
   }
 
   /**
+   * One page of the same recency ordering `listNewestProducts` returns, for `/new-arrivals`.
+   *
+   * Master spec §10 says that route "shows newest products automatically", so it needs the whole
+   * catalog in recency order rather than the fixed-size slice the homepage grid takes. The ordering
+   * and its limits are `listNewestProducts`'s, restated nowhere: this is the same `createdAt`/`id`
+   * pair, so the page a shopper scrolls and the grid on the homepage cannot disagree about what
+   * "newest" means.
+   *
+   * Still not a `sort` value on the discovery query, for the reason given above: that would
+   * publish a new crawlable `?sort=` URL on every listing page and hand the PLP a second ordering
+   * authority.
+   */
+  async function listNewestProductPage({
+    shopId,
+    page,
+    pageSize,
+  }: {
+    shopId: number;
+    page: number;
+    pageSize: number;
+  }) {
+    const safePageSize = parseListLimit(pageSize);
+    const offset = parsePageOffset(page, safePageSize);
+    const where = visibleProductWhere(shopId);
+    const [totalProducts, products] = await Promise.all([
+      client.productMirror.count({ where }),
+      client.productMirror.findMany({
+        where,
+        skip: offset,
+        take: safePageSize,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        select: productSelection,
+      }),
+    ]);
+
+    const allSlugs = products.flatMap((p) =>
+      p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
+    );
+    const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+
+    return {
+      products: products.map((product) => toStorefrontProduct(product, collectionMap)),
+      page,
+      pageSize: safePageSize,
+      totalProducts,
+      totalPages: Math.ceil(totalProducts / safePageSize),
+    };
+  }
+
+  /**
    * Hydrate an explicit, already-ordered set of product ids into full storefront products.
    *
    * The caller's order is preserved rather than re-derived: related products (ADR 0013 §7) decide
@@ -848,6 +898,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     listProducts,
     listProductsByIds,
     listNewestProducts,
+    listNewestProductPage,
     listProductPage,
     listDiscoveryPage,
     listDiscoveryFacets,

@@ -214,8 +214,10 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   });
 
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("heading", { level: 1, name: "CỬA HÀNG" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Khám phá sản phẩm" })).toBeVisible();
+  // `/shop` draws the shared listing header now: a sentence-case serif H1 under an eyebrow, with
+  // the filter form under its own heading. The route's query semantics below are unchanged.
+  await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Bộ lọc" })).toBeVisible();
 
   await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
   await page.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
@@ -239,7 +241,9 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
 
   await expect(page.getByRole("heading", { level: 2, name: `Runtime City Coat ${runId}` })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: `Runtime Stone Trouser ${runId}` })).toHaveCount(0);
-  await expect(page.getByText("1 sản phẩm · Trang 1/1")).toBeVisible();
+  // The count sits above the grid and the page number in the pager; a single page has no pager.
+  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Xóa bộ lọc" })).toHaveAttribute("href", "/shop");
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);

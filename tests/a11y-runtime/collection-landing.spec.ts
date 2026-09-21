@@ -289,7 +289,12 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     waitUntil: "networkidle",
   });
   expect(pageTwo?.status()).toBe(200);
-  await expect(page.getByText("25 sản phẩm · Trang 2/2", { exact: true })).toBeVisible();
+  // The count and the page number are two lines now -- the count above the grid, the page in the
+  // pager -- because every listing draws the same chrome. The facts asserted are the same two.
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByText("Trang 2 / 2"),
+  ).toBeVisible();
 
   const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
   const small = sizes.getByRole("link", { name: "S", exact: true });
@@ -300,7 +305,9 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     small.click(),
   ]);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime Paged Collection" })).toBeVisible();
-  await expect(page.getByText("1 sản phẩm · Trang 1/1", { exact: true })).toBeVisible();
+  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
+  // A single page has no pager at all, which is what "reset to page 1" looks like here.
+  await expect(page.getByRole("navigation", { name: "Phân trang bộ sưu tập" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: `Paged Runtime Product 01 ${suffix}` })).toBeVisible();
   expect(page.url()).not.toContain("page=");
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);

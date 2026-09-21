@@ -1,11 +1,23 @@
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
+import {
+  ListingBreadcrumbs,
+  ListingEmptyState,
+  ListingHeader,
+  ListingShell,
+} from "@/components/brand/listing-chrome";
 import { loadCollectionsRoute, type CollectionsRouteData } from "@/routes/collections";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCollectionsMetadata } from "@/routes/metadata/collections";
 
-/** Markup only. The published collections live in `@/routes/collections`. */
+/**
+ * Markup only. The published collections live in `@/routes/collections`.
+ *
+ * This is the aggregate collections landing page, not a product listing: it shares the chrome --
+ * shell, breadcrumb, eyebrow, serif H1, empty state -- and deliberately not the product grid,
+ * filters or paging. Master spec §10 keeps it as an index, and there are no approved child
+ * collections to pad it with.
+ */
 
 type CollectionsRouteProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -13,25 +25,24 @@ type CollectionsRouteProps = Readonly<{
 
 function render(data: CollectionsRouteData) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">{BRAND.identity.name} / Bộ sưu tập</p>
-      <h1 className="mt-4 max-w-6xl break-words text-[clamp(2.5rem,8vw,7rem)] font-semibold leading-[0.88] tracking-[-0.05em]">
-        BỘ SƯU TẬP
-      </h1>
+    <ListingShell>
+      <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Bộ sưu tập" }]} />
+      <ListingHeader eyebrow="Tuyển chọn" title="Bộ sưu tập" />
+
       {data.collections.length > 0 ? (
-        <div className="mt-12 grid gap-px border border-black/20 bg-black/20 md:grid-cols-2">
+        <div className="mt-8 grid gap-px border border-[#3B2219]/15 bg-[#3B2219]/15 md:grid-cols-2">
           {data.collections.map((collection) => (
             <article
               key={collection.slug}
               className="flex min-h-72 flex-col justify-between bg-[var(--paper)] p-8 md:p-12"
             >
               <div>
-                <p className="eyebrow">Bộ sưu tập</p>
-                <h2 className="mt-4 max-w-md break-words font-serif text-3xl leading-tight md:text-5xl">
+                <p className="eyebrow text-[#70584B]">Bộ sưu tập</p>
+                <h2 className="mt-4 max-w-md break-words font-serif text-3xl font-normal leading-tight text-[#2A1810] md:text-4xl">
                   {collection.title}
                 </h2>
                 {collection.description ? (
-                  <p className="mt-4 max-w-lg break-words text-sm leading-6 text-black/65">
+                  <p className="mt-4 max-w-lg break-words text-sm leading-6 text-[#3B2219]/70">
                     {collection.description}
                   </p>
                 ) : null}
@@ -45,21 +56,14 @@ function render(data: CollectionsRouteData) {
           ))}
         </div>
       ) : (
-        <section
-          aria-labelledby="collections-empty-title"
-          className="ui-state ui-state--empty mt-12"
-          data-ui-state="empty"
-        >
-          <p className="eyebrow">Bộ sưu tập hiện tại</p>
-          <h2 id="collections-empty-title" className="ui-state__title">
-            Các bộ sưu tập đang được chuẩn bị.
-          </h2>
-          <p className="ui-state__copy">
-            Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.
-          </p>
-        </section>
+        <ListingEmptyState
+          titleId="collections-empty-title"
+          eyebrow="Bộ sưu tập hiện tại"
+          title="Các bộ sưu tập đang được chuẩn bị."
+          copy="Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng."
+        />
       )}
-    </div>
+    </ListingShell>
   );
 }
 

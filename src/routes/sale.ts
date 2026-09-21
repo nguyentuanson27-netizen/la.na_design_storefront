@@ -50,6 +50,7 @@ export async function loadSaleRoute({
     resolveStorefrontPricingRuleForProducts({ products: page.products, now }),
   ]);
   const model = buildFlashSaleViewModel({
+    basePath: "/sale",
     products: page.products,
     totalCount: page.totalCount,
     totalPages: page.totalPages,
@@ -58,14 +59,8 @@ export async function loadSaleRoute({
     selectEventBySlug: tracking.selectEventBySlug,
     pricingRule,
   });
-  const data: FlashSaleViewModel = Object.freeze({
-    ...model,
-    previousHref: model.previousHref?.replace("/flash-sale", "/sale") ?? null,
-    nextHref: model.nextHref?.replace("/flash-sale", "/sale") ?? null,
-  });
-
   return sealRoute({
-    data,
+    data: model,
     refreshAfterMs: resolveStorefrontPromotionRefresh({ now, nextBoundaryAt: boundary }).refreshAfterMs,
     trackingEvent: tracking.listEvent,
     structuredData: [],

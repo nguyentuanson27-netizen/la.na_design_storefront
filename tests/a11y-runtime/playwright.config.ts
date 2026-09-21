@@ -40,6 +40,7 @@ export default defineConfig({
     "pdp-promotion.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",
+    "storefront-listing-consistency.spec.ts",
     "storefront-composite.spec.ts",
     "storefront-media.spec.ts",
     "tracking.spec.ts",

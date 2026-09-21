@@ -12,6 +12,11 @@ import {
   listConfiguredCategoryDiscoveryPage,
 } from "@/commerce/storefront-catalog-runtime";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
+import {
+  ListingBreadcrumbs,
+  ListingHeader,
+  ListingShell,
+} from "@/components/brand/listing-chrome";
 import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
 import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
 import { buildCategoryBreadcrumbStructuredData } from "@/seo/category-breadcrumb-structured-data";
@@ -135,48 +140,24 @@ export function renderCategoryRoute(data: CategoryViewModel) {
   } = data;
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-12 md:py-20">
-      {/* Breadcrumbs */}
-      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-[#3B2219]/70">
-        <ol className="flex flex-wrap items-center gap-2">
-          {breadcrumbs.map((crumb, idx) => (
-            <li key={idx} className="flex items-center gap-2">
-              {idx > 0 ? <span aria-hidden="true">/</span> : null}
-              {crumb.href ? (
-                <Link className="hover:text-[#2A1810] transition-colors" href={crumb.href}>
-                  {crumb.label}
-                </Link>
-              ) : (
-                <span aria-current="page" className="text-[#2A1810] font-medium">
-                  {crumb.label}
-                </span>
-              )}
-            </li>
-          ))}
-        </ol>
-      </nav>
+    <ListingShell>
+      <ListingBreadcrumbs items={breadcrumbs} />
 
-      {/* Category Header */}
-      <div className="mt-8 border-b border-[#3B2219]/15 pb-8">
-        <p className="eyebrow text-[#70584B]">Danh mục thiết kế</p>
-        <h1 className="mt-3 font-serif text-4xl sm:text-5xl md:text-6xl font-normal text-[#2A1810] tracking-tight">
-          {destination.label}
-        </h1>
-
+      <ListingHeader eyebrow="Danh mục thiết kế" title={destination.label}>
         {subcategories.length > 0 ? (
           <div className="mt-6 flex flex-wrap items-center gap-3">
             {subcategories.map((sub) => (
               <Link
                 key={sub.href}
                 href={sub.href}
-                className="inline-flex items-center rounded-full border border-[#3B2219]/20 px-4 py-1.5 text-xs font-medium uppercase tracking-wider text-[#3B2219] transition hover:border-[#2A1810] hover:bg-[#2A1810] hover:text-[#FAF7F2]"
+                className="listing-pill inline-flex min-h-11 items-center rounded-full border border-[#3B2219]/20 px-4 py-1.5 text-xs font-medium uppercase tracking-wider transition hover:border-[#2A1810] hover:bg-[#2A1810]"
               >
                 {sub.label}
               </Link>
             ))}
           </div>
         ) : null}
-      </div>
+      </ListingHeader>
 
       {/* Accessible PLP Filter Panel */}
       <div className="mt-8">
@@ -202,6 +183,6 @@ export function renderCategoryRoute(data: CategoryViewModel) {
         nextHref={nextHref}
         nextCursor={nextCursor}
       />
-    </div>
+    </ListingShell>
   );
 }
