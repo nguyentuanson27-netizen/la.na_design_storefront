@@ -2,6 +2,7 @@ import type { PrismaClient } from "../generated/prisma/client.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import {
   buildStorefrontProductProjection,
+  resolveCompositeComponentGroupLabel,
   type StorefrontCompositeComponentGroup,
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
@@ -23,42 +24,6 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
     }
   }
   return total;
-}
-
-export type CompositeComponentKindLabel = "ÁO LẺ" | "QUẦN LẺ" | "CV LẺ";
-
-export function classifyCompositeComponentSku(
-  sku: string | null,
-): CompositeComponentKindLabel | null {
-  if (sku === null) return null;
-
-  const normalized = sku.trim().toUpperCase();
-  if (normalized.length === 0) return null;
-
-  const matches: CompositeComponentKindLabel[] = [];
-  if (normalized.includes("AO")) matches.push("ÁO LẺ");
-  if (normalized.includes("QUAN")) matches.push("QUẦN LẺ");
-  if (normalized.includes("CV") || normalized.includes("VAY")) matches.push("CV LẺ");
-
-  return matches.length === 1 ? matches[0] : null;
-}
-
-export function resolveCompositeComponentGroupLabel(
-  skus: readonly (string | null)[],
-): CompositeComponentKindLabel | null {
-  if (skus.length === 0) return null;
-
-  let resolved: CompositeComponentKindLabel | null = null;
-  for (const sku of skus) {
-    const role = classifyCompositeComponentSku(sku);
-    if (role === null) return null;
-    if (resolved === null) {
-      resolved = role;
-    } else if (resolved !== role) {
-      return null;
-    }
-  }
-  return resolved;
 }
 
 export function createStorefrontProductDetailRepository(client: PrismaClient) {
