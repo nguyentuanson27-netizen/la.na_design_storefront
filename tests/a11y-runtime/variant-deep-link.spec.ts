@@ -132,7 +132,10 @@ async function expectProductHeroToShow(page: Page, urlFragment: string) {
     .locator("img");
   await expect(image).toHaveAttribute(
     "src",
-    new RegExp(encodeURIComponent(urlFragment).replace(/[.*+?^${}()|[\]\\]/g, "\\async function openDeepLink(page: Page, query: string | null) {")),
+    new RegExp(encodeURIComponent(urlFragment).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
+  );
+}
+async function openDeepLink(page: Page, query: string | null) {")),
   );
 }
 
