@@ -456,12 +456,17 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   });
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-  const shippingPromotion = page.getByRole("complementary", { name: "Miễn phí vận chuyển" });
-  await expect(shippingPromotion).toBeVisible();
+  // DOM locator is intentional: the homepage contract removes the promotion from the
+  // accessibility tree with display:none while keeping the element mounted for the scrolled state.
+  const shippingPromotion = page.locator(".promotion-shell");
+  await expect(shippingPromotion).toBeHidden();
   await expect(shippingPromotion).toHaveClass(/promotion-shell/);
   await expect(shippingPromotion).toContainText("Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn");
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
   await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(400);
+  await expect(shippingPromotion).toBeVisible();
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBeGreaterThan(0);
   expect(
     await page.evaluate(() => {
       const masthead = document.querySelector(".site-masthead");
@@ -471,6 +476,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
     }),
   ).toEqual({ top: 0, pinned: "promotion-shell" });
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBe(0);
+  await expect(shippingPromotion).toBeHidden();
+  expect(await shippingPromotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await expect(page.getByText("FALL / WINTER — NEW COLLECTION", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "La.na Design — Trang chủ" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Giỏ hàng", exact: true })).toBeVisible();
