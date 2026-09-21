@@ -25,6 +25,24 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
+export type CompositeComponentKindLabel = "ÁO LẺ" | "QUẦN LẺ" | "CV LẺ";
+
+export function classifyCompositeComponentSku(
+  sku: string | null,
+): CompositeComponentKindLabel | null {
+  if (sku === null) return null;
+
+  const normalized = sku.trim().toUpperCase();
+  if (normalized.length === 0) return null;
+
+  const matches: CompositeComponentKindLabel[] = [];
+  if (normalized.includes("AO")) matches.push("ÁO LẺ");
+  if (normalized.includes("QUAN")) matches.push("QUẦN LẺ");
+  if (normalized.includes("CV") || normalized.includes("VAY")) matches.push("CV LẺ");
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
 export function createStorefrontProductDetailRepository(client: PrismaClient) {
   const catalog = createStorefrontCatalogRepository(client);
 
@@ -61,6 +79,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               select: {
                 id: true,
                 pancakeVariationId: true,
+                sku: true,
                 color: true,
                 size: true,
                 isPresent: true,
@@ -91,7 +110,12 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     );
     const groups = new Map<
       string,
-      { label: string; variants: Map<string, StorefrontVariantFacts> }
+      {
+        sortLabel: string;
+        role: CompositeComponentKindLabel | null;
+        invalid: boolean;
+        variants: Map<string, StorefrontVariantFacts>;
+      }
     >();
 
     for (const parent of parentRelations) {
@@ -106,10 +130,22 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           continue;
         }
 
+        const role = classifyCompositeComponentSku(component.sku);
         let group = groups.get(component.product.id);
         if (!group) {
-          group = { label: component.product.name, variants: new Map() };
+          group = {
+            // Preserve the existing child-product ordering so positional kind keys do not drift
+            // merely because presentation labels became canonical roles.
+            sortLabel: component.product.name,
+            role,
+            invalid: role === null,
+            variants: new Map(),
+          };
           groups.set(component.product.id, group);
+        } else if (role === null || group.role === null || group.role !== role) {
+          // One malformed or conflicting active/present variant invalidates the whole child group.
+          // Never publish the remaining subset under a role it cannot authoritatively represent.
+          group.invalid = true;
         }
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
@@ -126,9 +162,13 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     }
 
     const componentGroups: StorefrontCompositeComponentGroup[] = [...groups.values()]
-      .sort((left, right) => left.label.localeCompare(right.label, "vi"))
+      .filter(
+        (group): group is typeof group & { role: CompositeComponentKindLabel } =>
+          !group.invalid && group.role !== null,
+      )
+      .sort((left, right) => left.sortLabel.localeCompare(right.sortLabel, "vi"))
       .map((group) => ({
-        label: group.label,
+        label: group.role,
         variants: [...group.variants.values()],
       }));
 
