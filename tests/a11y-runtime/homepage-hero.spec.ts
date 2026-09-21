@@ -244,6 +244,50 @@ test("slider advances after three seconds and pauses/resumes for hover and keybo
   await expect(region).toHaveAttribute("data-autoplaying", "false");
   await page.mouse.move(0, 0);
   await expect(region).toHaveAttribute("data-autoplaying", "true");
+
+  // Observe the active-state mutation before the autoplay deadline. Waiting for the active CTA to
+  // change and only then polling opacity is racy on CI: by the time Playwright resolves the role
+  // locator, the 500ms CSS transition may already have completed.
+  const autoplayFadeObserved = page.evaluate(
+    () =>
+      new Promise<boolean>((resolve) => {
+        const slides = [...document.querySelectorAll<HTMLElement>(".home-hero__slide")];
+        const oldSlide = slides[0];
+        const newSlide = slides[1];
+        if (!oldSlide || !newSlide) {
+          resolve(false);
+          return;
+        }
+
+        let settled = false;
+        const finish = (value: boolean) => {
+          if (settled) return;
+          settled = true;
+          observer.disconnect();
+          resolve(value);
+        };
+
+        const observer = new MutationObserver(() => {
+          if (newSlide.dataset.active !== "true") return;
+          requestAnimationFrame(() => {
+            window.setTimeout(() => {
+              const oldOpacity = Number(getComputedStyle(oldSlide).opacity);
+              const newOpacity = Number(getComputedStyle(newSlide).opacity);
+              finish(
+                oldOpacity > 0 &&
+                  oldOpacity < 1 &&
+                  newOpacity > 0 &&
+                  newOpacity < 1,
+              );
+            }, 100);
+          });
+        });
+
+        observer.observe(newSlide, { attributes: true, attributeFilter: ["data-active"] });
+        window.setTimeout(() => finish(false), 4_000);
+      }),
+  );
+
   await page.waitForTimeout(2_700);
   await expect(region.getByRole("link", { name: "MUA NGAY" })).toHaveAttribute(
     "href",
@@ -254,20 +298,7 @@ test("slider advances after three seconds and pauses/resumes for hover and keybo
       timeout: 1_000,
     })
     .toBe(`/collections/${TEST_PREFIX}2`);
-
-  const autoplaySlides = region.locator(".home-hero__slide");
-  await expect
-    .poll(
-      async () => {
-        const [oldOpacity, newOpacity] = await Promise.all([
-          autoplaySlides.nth(0).evaluate((element) => Number(getComputedStyle(element).opacity)),
-          autoplaySlides.nth(1).evaluate((element) => Number(getComputedStyle(element).opacity)),
-        ]);
-        return oldOpacity > 0 && oldOpacity < 1 && newOpacity > 0 && newOpacity < 1;
-      },
-      { timeout: 450 },
-    )
-    .toBe(true);
+  expect(await autoplayFadeObserved).toBe(true);
 
   await region.hover();
   await expect(region).toHaveAttribute("data-autoplaying", "false");
