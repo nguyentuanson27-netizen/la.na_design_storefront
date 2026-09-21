@@ -5,7 +5,10 @@ import {
   buildStorefrontProductProjection,
   deriveStorefrontProjectionSelection,
 } from "../../src/commerce/storefront-projection.ts";
-import { classifyCompositeComponentSku } from "../../src/commerce/storefront-product-detail.ts";
+import {
+  classifyCompositeComponentSku,
+  resolveCompositeComponentGroupLabel,
+} from "../../src/commerce/storefront-product-detail.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import { fixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
@@ -168,8 +171,8 @@ test("duplicate component labels fail closed instead of presenting indistinguish
   const projection = buildStorefrontProductProjection({
     parentVariants: [variant("set-m", "M")],
     componentGroups: [
-      { label: "Ao A", variants: [variant("component-a", "M")] },
-      { label: " ao a ", variants: [variant("component-b", "M")] },
+      { label: "ÁO LẺ", variants: [variant("component-a", "M")] },
+      { label: " áo lẻ ", variants: [variant("component-b", "M")] },
     ],
     hasCompositeGraph: true,
   });
@@ -265,4 +268,12 @@ test("composite child SKU classification is case-insensitive and fail-closed", (
   for (const [sku, expected] of cases) {
     assert.equal(classifyCompositeComponentSku(sku), expected, String(sku));
   }
+});
+
+
+test("composite child group validation fails closed for malformed or mixed-role SKUs", () => {
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", "AO-M", "AO-L"]), "ÁO LẺ");
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", "QUAN-M"]), null);
+  assert.equal(resolveCompositeComponentGroupLabel(["AO-S", null]), null);
+  assert.equal(resolveCompositeComponentGroupLabel(["CV-S", "VAY-M", "cv-vay-l"]), "CV LẺ");
 });
