@@ -20,6 +20,87 @@ jobs:
 
   verify:
     needs: identity
+    # Split from the runtime half so the two run side by side. This is the fast feedback: lint,
+    # types, the domain suite and the build, none of which wait on the 3m40s database suite. It
+    # keeps a database because a handful of domain tests read one, and it keeps `Build` even
+    # though `verify-runtime` builds too -- 26 seconds of duplication buys a broken build being
+    # reported here rather than after the slow half.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ${{ needs.identity.outputs.database-name }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d ${{ needs.identity.outputs.database-name }}"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/${{ needs.identity.outputs.database-name }}
+      BETTER_AUTH_SECRET: ci-only-placeholder-secret-0123456789abcdef
+      BETTER_AUTH_URL: http://localhost:3000
+      BETTER_AUTH_IP_HEADER: x-ci-client-ip
+      APP_DOMAIN: localhost:3000
+      SEARCH_INDEXING_ENABLED: "false"
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      # Before `setup-node`, so its `cache: pnpm` can ask pnpm where its store is.
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Enable pinned pnpm
+        run: |
+          corepack enable
+          pnpm --version
+
+      - name: Install from lockfile without lifecycle scripts
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Validate Prisma schema
+        run: pnpm prisma:validate
+
+      - name: Generate Prisma client
+        run: pnpm prisma:generate
+
+      - name: Deploy database migrations
+        run: pnpm prisma:migrate:deploy
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Domain tests
+        run: pnpm test
+
+      - name: Build
+        env:
+          LA_SHIPPING_FEE_VND: "17000"
+          LA_FREE_SHIPPING_SUBTOTAL_VND: "650000"
+          LA_FREE_SHIPPING_MIN_QUANTITY: "5"
+        run: pnpm build
+
+
+  verify-runtime:
+    needs: identity
+    # The half that needs a running system: the database suite, the HTTP smokes that spawn a
+    # server, and the production-start checks that need a real build. It is the longer of the two
+    # and therefore the one to shorten next; `pnpm test:db` is 3m40s of it.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     services:
@@ -88,15 +169,6 @@ jobs:
 
       - name: Authenticated admin HTTP authorization smoke
         run: node --experimental-strip-types scripts/admin-authz-http-smoke.ts
-
-      - name: Lint
-        run: pnpm lint
-
-      - name: Typecheck
-        run: pnpm typecheck
-
-      - name: Domain tests
-        run: pnpm test
 
       - name: Build
         env:
@@ -223,6 +295,7 @@ jobs:
             assert.ok(metaPattern.test(head), `Expected google-site-verification meta tag with token ${token} inside <head>`);
             console.log("Production start smoke verified: 200 OK and Google-Site-Verification/1.0 crawler receives meta tag in <head>");
           '
+
 
   admin-a11y-runtime:
     needs: identity
