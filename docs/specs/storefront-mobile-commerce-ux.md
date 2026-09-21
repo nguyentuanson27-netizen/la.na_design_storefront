@@ -2,7 +2,7 @@
 
 Status: **Draft — owner-confirmed interaction decisions, pending final PR review**
 
-This mobile-only follow-up sits on top of the desktop/shared refinement in PR #51. It intentionally changes the phone experience without redesigning desktop commerce or moving any price, stock, preorder, variant, cart or checkout authority into presentation code.
+This mobile-only follow-up sits on top of the desktop/shared refinement in PR #51. It intentionally changes the below-`lg` PDP experience and the phone/mobile seams of listing/header/cart/checkout without redesigning desktop commerce or moving any price, stock, preorder, variant, cart or checkout authority into presentation code.
 
 ## Objective
 
@@ -50,14 +50,14 @@ Use the repository's existing Playwright/browser configs for focused mobile veri
 This is a **mobile-only** UX change. Do not alter approved `lg+` desktop gallery/purchase behavior from PR #51.
 
 Use each existing component's responsive seam rather than inventing a global breakpoint solely for this work:
-- PDP quick-purchase currently exists below `lg`; its new selection flow may replace that below-`lg` quick-purchase behavior.
+- **PDP gallery + immediate product-info order + quick-purchase redesign apply below the existing Tailwind `lg` seam.** Therefore both representative 390px phone and 768px tablet widths use the horizontal one-image gallery/lightbox and the below-`lg` PDP purchase structure defined here.
 - PLP filter drawer already uses its mobile disclosure breakpoint; keep that seam.
-- Product-card typography/grid changes apply to phone listing layouts and must not change desktop column counts.
-- Acceptance is anchored at 390×844, with tablet/below-`lg` regression checks where shared code is touched.
+- Product-card typography/grid and mobile header/filter behavior use their existing component-specific phone/mobile seams and must not change desktop column counts/navigation.
+- Acceptance is anchored at 390×844, with explicit 768px assertions for the below-`lg` PDP contract and 1440px desktop regression coverage.
 
 ## 1. Mobile PDP gallery
 
-- Render product images as one horizontal swipe gallery instead of a long vertical image stack on phone.
+- **Below `lg`**, render product images as one horizontal swipe gallery instead of the current long vertical image stack.
 - Show a compact current-position indicator such as `1/6`.
 - The first gallery item is the first trusted image from the existing media authority. Frontend code must **not** reorder images, infer "full body", or use AI/heuristics to choose a different first image.
 - Initial page load starts on that first trusted image even when `?variant=` preselects a variant mapped to a later image. The deep link preselects variant state but does not replace the canonical first visible surface; after initial load, an explicit variant selection change may sync to mapped media through the existing seam.
@@ -69,7 +69,7 @@ Use each existing component's responsive seam rather than inventing a global bre
 
 ## 2. Product information order and type
 
-Immediately after the mobile gallery:
+Immediately after the below-`lg` mobile/tablet gallery:
 1. product name;
 2. price / supported availability state;
 3. kind/classification when present;
@@ -193,7 +193,10 @@ Mobile checkout reading/action order:
 1. **Collapsible order summary** — default collapsed.
 2. **Receiving information**.
 3. **Shipping fee + total**.
-4. **`Đặt hàng COD`** submit action.
+4. **Existing preorder fulfillment notice, when `preorderNotice` exists.**
+5. **`Đặt hàng COD`** submit action.
+
+When `preorderNotice` exists, preserve the existing `BrandPreorderFulfillmentNotice` fulfillment truth and place it in mobile DOM/reading order **before** `Đặt hàng COD`. Presentation must consume the existing notice; do not recompute preorder/mixed-order fulfillment facts in the mobile layout.
 
 ### Order summary
 
@@ -206,9 +209,9 @@ Collapsed header always exposes:
 
 ### Submit ordering
 
-The buyer must see shipping fee and the final displayed total **before** the submit button in mobile DOM/reading order.
+The buyer must see shipping fee and the final displayed total **before** the submit button in mobile DOM/reading order. When `preorderNotice` exists, that fulfillment notice must also appear before the submit button.
 
-Do not solve this only with CSS visual reordering. Preserve the single checkout form/server action/quote-proof workflow; do not fork or duplicate checkout submission logic.
+Do not solve this only with CSS visual reordering. Preserve the single checkout form/server action/quote-proof workflow and the existing preorder-notice authority; do not fork or duplicate checkout submission or recompute notice facts.
 
 ### Checkout typography/copy
 
@@ -247,7 +250,8 @@ Add/update tests for:
 - size-guide handoff never leaves two active modal/focus traps and restores the sheet/trigger after close;
 - genuine out-of-stock feedback uses `Lựa chọn này tạm hết` (or a more specific statement only when authority proves it) and remains distinct from unresolved classification;
 - filter URL helpers remain the same authority while drawer-open state survives query updates;
-- checkout order-summary count uses `sum(line.quantity)`, including a multi-quantity fixture, without changing quote/price authority.
+- checkout order-summary count uses `sum(line.quantity)`, including a multi-quantity fixture, without changing quote/price authority;
+- preorder and mixed-order checkout fixtures preserve the existing fulfillment notice and assert that it appears before the COD submit action in DOM/reading order.
 
 ### Browser/mobile
 At 390×844 verify:
@@ -261,13 +265,13 @@ At 390×844 verify:
 - with default/unexpanded filters, the first product image still enters the initial 390×844 viewport as required by PR #51;
 - two-column grid uses 2px rhythm and text does not overflow;
 - cart quantity controls are practical touch targets;
-- checkout summary is collapsed by default and submit follows displayed shipping/total;
+- checkout summary is collapsed by default and submit follows displayed shipping/total; when `preorderNotice` exists, the existing fulfillment notice remains visible before submit;
 - no buyer-facing "máy chủ"/"Pancake" copy remains in the affected checkout surface;
 - clean console and existing buyer Axe gate remain green.
 
 Regression widths:
 - 320px phone;
-- 768px/tablet where shared below-`lg` code changes;
+- **768px/tablet: assert the same below-`lg` PDP contract — horizontal one-image gallery, current/total indicator, lightbox, immediate product-info order and quick-purchase flow — not merely "no regression";**
 - 1440px desktop to prove this mobile PR did not alter the approved desktop contract.
 
 ## Boundaries
@@ -297,7 +301,7 @@ Regression widths:
 
 ## Success criteria
 
-- [ ] Mobile PDP is a horizontal swipe gallery with `current/total` and full-screen lightbox.
+- [ ] Below `lg`, including representative 390px and 768px widths, PDP uses the horizontal swipe gallery with `current/total` and full-screen lightbox.
 - [ ] Frontend preserves admin/source image order; no image-role heuristics are introduced.
 - [ ] Product name/price are immediately after gallery and mobile name size is 26–30px.
 - [ ] Incomplete sticky purchase opens a bottom sheet with dimension-aware CTA copy only for currently supported product shapes; no color-only purchase contract is introduced. Composite control order follows kind → size → color.
@@ -311,7 +315,7 @@ Regression widths:
 - [ ] Mobile filter drawer stays open across sequential selections and closes only via explicit close/`Xem N sản phẩm`.
 - [ ] At 390×844 with default/unexpanded filters, the first product image remains visible in the initial viewport per PR #51.
 - [ ] Cart quantity controls are ~44px and remove is separate.
-- [ ] Mobile checkout shows collapsed order summary first, then receiving info, then shipping/total, then COD submit, and `Đơn hàng (N)` uses `sum(line.quantity)`.
+- [ ] Mobile checkout shows collapsed order summary first, then receiving info, then shipping/total, then existing preorder fulfillment notice when present, then COD submit; `Đơn hàng (N)` uses `sum(line.quantity)`.
 - [ ] Customer-facing technical "máy chủ"/"Pancake" wording is removed from affected checkout copy.
 - [ ] No desktop behavior from PR #51 is redesigned.
 - [ ] Relevant domain/browser/accessibility/lint/typecheck/build gates pass before implementation is complete.
