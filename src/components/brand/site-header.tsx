@@ -402,7 +402,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           role="dialog"
           aria-modal="true"
           aria-label="Menu điều hướng"
-          className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto bg-[#FAF7F2]"
+          className="mobile-nav-dialog fixed inset-0 z-50 flex flex-col overflow-y-auto overscroll-contain bg-[#FAF7F2]"
         >
           {/* Mobile Header Bar inside full-screen menu: Logo + Close Button */}
           <div className="mobile-nav-dialog__bar">
