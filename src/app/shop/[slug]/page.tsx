@@ -139,7 +139,7 @@ function render(data: ProductRouteData) {
         >
           <Image
             src={heroImage.url}
-            alt={heroImage.alt || data.name}
+            alt={data.name}
             fill
             preload
             sizes="100vw"
