@@ -530,8 +530,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               })}
             </ul>
           </nav>
-        </div>
-
+        </div>,
             document.body,
           )
         : null}
