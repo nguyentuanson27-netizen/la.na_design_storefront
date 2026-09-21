@@ -23,7 +23,7 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  */
 
 const HOST = "127.0.0.1";
-const PORT = 3229;
+const PORT = 3332;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
@@ -248,8 +248,25 @@ async function expectPageQuality(page: Page, label: string) {
     "BODY",
   );
 
-  const scan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
-  expect(scan.violations, `${label} Axe violations`).toEqual([]);
+  /*
+   * Let the page settle before scanning.
+   *
+   * `page.goto(..., { waitUntil: "networkidle" })` returns before hydration has finished moving
+   * the route around, and an Axe scan that starts while a navigation is in flight dies with
+   * `Execution context was destroyed`. That is what made this test flaky: it failed once in four
+   * local runs with exactly that error, and passed on the retry -- a green run that was one
+   * scheduling accident away from being red.
+   *
+   * Waiting for the network to go quiet again catches the common case; `toPass` covers the rest
+   * without weakening the assertion, since a genuine violation still fails every attempt. The
+   * timeout is short so a real failure surfaces quickly rather than being retried for half a
+   * minute.
+   */
+  await page.waitForLoadState("networkidle");
+  await expect(async () => {
+    const scan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+    expect(scan.violations, `${label} Axe violations`).toEqual([]);
+  }).toPass({ timeout: 15_000 });
 }
 
 const ROUTES = [

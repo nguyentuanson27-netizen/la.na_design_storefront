@@ -10,6 +10,7 @@ import {
 } from "../../commerce/category-discovery-url";
 import { STOREFRONT_DISCOVERY_LIMITS } from "../../commerce/storefront-discovery";
 import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
+import { useScrollLock } from "../headless/use-scroll-lock";
 import {
   buildClearAllFiltersHref,
   buildClearPriceHref,
@@ -77,20 +78,21 @@ export function PlpFilterPanel({
     setPriceError(null);
   }
 
-  // Manage body scroll, auto-focus, and focus restoration to opener
+  // Holds the page still behind the panel; see the note in `useScrollLock` for why body alone is
+  // not enough on this site.
+  useScrollLock(isMobileOpen);
+
+  // Auto-focus, and focus restoration to opener.
   useEffect(() => {
     if (isMobileOpen) {
       wasMobileOpenRef.current = true;
       if (!openerButtonRef.current) {
         openerButtonRef.current = document.activeElement as HTMLElement | null;
       }
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
       const timer = setTimeout(() => {
         closeBtnRef.current?.focus();
       }, 50);
       return () => {
-        document.body.style.overflow = originalOverflow;
         clearTimeout(timer);
       };
     } else if (wasMobileOpenRef.current) {

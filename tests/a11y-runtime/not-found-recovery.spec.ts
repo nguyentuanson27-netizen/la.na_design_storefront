@@ -9,7 +9,7 @@ import { expect, test } from "@playwright/test";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const HOST = "127.0.0.1";
-const PORT = 3228;
+const PORT = 3324;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const UNKNOWN_ROUTE = `${BASE_URL}/u30c-this-route-does-not-exist`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");

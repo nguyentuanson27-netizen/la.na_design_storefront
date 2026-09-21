@@ -6,6 +6,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
 
 export type CartDrawerProps = Readonly<{
@@ -41,16 +42,9 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
     }
   }, [isOpen, triggerRef]);
 
-  // Lock body scroll when drawer is open
-  useEffect(() => {
-    if (isOpen) {
-      const originalOverflow = document.body.style.overflow;
-      document.body.style.overflow = "hidden";
-      return () => {
-        document.body.style.overflow = originalOverflow;
-      };
-    }
-  }, [isOpen]);
+  // Holds the page still behind the drawer; see the note in `useScrollLock` for why body alone is
+  // not enough on this site.
+  useScrollLock(isOpen);
 
   // Keyboard navigation: Escape to close, Tab to trap focus
   const handleKeyDown = useCallback(
