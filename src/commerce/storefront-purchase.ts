@@ -6,6 +6,7 @@ import {
 
 const MAX_STOREFRONT_SLUG_LENGTH = 160;
 const MAX_STOREFRONT_VARIANT_ID_LENGTH = 200;
+const MAX_PDP_QUANTITY = 99;
 
 type StorefrontPurchaseCatalog = {
   getProductBySlug(input: {
@@ -25,6 +26,11 @@ type AddUnitInput = {
   variantId: string;
 };
 
+type AddQuantityInput = {
+  variantId: string;
+  quantity: number;
+};
+
 type StorefrontPurchaseFailure =
   | { ok: false; reason: "INVALID_SELECTION" }
   | { ok: false; reason: "VARIANT_UNAVAILABLE" };
@@ -36,9 +42,9 @@ function isBoundedTrimmed(value: string, maxLength: number): boolean {
 /**
  * The PDP purchase path.
  *
- * `addUnit` takes no quantity by design. "Thêm vào giỏ hàng" means one more unit, and a quantity
- * parameter here is what let this path be wired to an absolute set-quantity mutation, where a line
- * already holding several units would be silently reset to the value passed in.
+ * Quantity is an increment delta, never an absolute cart-line value. The mutation authorizes the
+ * prospective total under the cart lock, so adding three units to a line that already holds two is
+ * a single atomic 2 → 5 transition rather than three partially-successful requests.
  *
  * The option lookup below authorizes the request against the current public projection, but it is
  * not the authority: it runs before the cart row is locked. The mutation re-resolves the same facts
@@ -47,20 +53,25 @@ function isBoundedTrimmed(value: string, maxLength: number): boolean {
  */
 export function createStorefrontPurchaseService<TResult>({
   catalog,
+  addQuantity,
   addUnit,
 }: {
   catalog: StorefrontPurchaseCatalog;
-  addUnit(input: AddUnitInput): Promise<TResult>;
+  addQuantity?: (input: AddQuantityInput) => Promise<TResult>;
+  /** Compatibility for existing one-unit callers/tests; quantity > 1 requires addQuantity. */
+  addUnit?: (input: AddUnitInput) => Promise<TResult>;
 }) {
   async function add({
     shopId,
     slug,
     variantId,
+    quantity = 1,
     now,
   }: {
     shopId: number;
     slug: string;
     variantId: string;
+    quantity?: number;
     /** Fixed by the caller so this pre-check and the mutation resolve one campaign instant. */
     now?: Date;
   }): Promise<TResult | StorefrontPurchaseFailure> {
@@ -68,7 +79,10 @@ export function createStorefrontPurchaseService<TResult>({
       typeof slug !== "string" ||
       typeof variantId !== "string" ||
       !isBoundedTrimmed(slug, MAX_STOREFRONT_SLUG_LENGTH) ||
-      !isBoundedTrimmed(variantId, MAX_STOREFRONT_VARIANT_ID_LENGTH)
+      !isBoundedTrimmed(variantId, MAX_STOREFRONT_VARIANT_ID_LENGTH) ||
+      !Number.isSafeInteger(quantity) ||
+      quantity < 1 ||
+      quantity > MAX_PDP_QUANTITY
     ) {
       return { ok: false, reason: "INVALID_SELECTION" };
     }
@@ -87,7 +101,13 @@ export function createStorefrontPurchaseService<TResult>({
       return { ok: false, reason: "VARIANT_UNAVAILABLE" };
     }
 
-    return addUnit({ variantId: selected.id });
+    if (addQuantity) {
+      return addQuantity({ variantId: selected.id, quantity });
+    }
+    if (quantity === 1 && addUnit) {
+      return addUnit({ variantId: selected.id });
+    }
+    return { ok: false, reason: "INVALID_SELECTION" };
   }
 
   return { add };
