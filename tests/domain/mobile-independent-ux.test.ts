@@ -32,7 +32,7 @@ test("mobile independent UX: phone listing grid is two columns with a 2px rhythm
 test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigation open and owns a fixed clear/view footer", () => {
   const panel = read("src/components/brand/plp-filter-panel.tsx");
 
-  assert.match(panel, />Bộ lọc<\/span>[\s\S]*aria-hidden="true">·<\/span>[\s\S]*>Sắp xếp:/);
+  assert.match(panel, />Bộ lọc<\/span>[\s\S]*aria-hidden="true">·<\/span>[\s\S]*>\s*Sắp xếp:/);
   assert.doesNotMatch(panel, /router\.push\(href\);\s*setIsMobileOpen\(false\)/);
   assert.doesNotMatch(panel, /href=\{saleHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
   assert.match(panel, /className="mobile-plp-filter-footer/);
