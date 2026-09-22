@@ -16,11 +16,11 @@ import type {
 import { resolveVariantSelectionView } from "../../src/components/headless/variant-selection-model.ts";
 import { withFixtureAvailabilities } from "../fixtures/storefront-projection-option.ts";
 
-const currency = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "VND",
+const vndNumber = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
+
+const displayVnd = (amount: number): string => `${vndNumber.format(amount)} đ`;
 
 function variant(id: string, size: string): StorefrontVariantFacts {
   return {
@@ -165,8 +165,8 @@ test("PDP wires product-level options into its unselected price presentation", a
   });
 
   assert.equal(view.initialDiscount?.representativeVariantId, "set-m");
-  assert.equal(view.priceDisplay.compareAtText, currency.format(200_000));
-  assert.equal(view.priceDisplay.displayText, currency.format(180_000));
+  assert.equal(view.priceDisplay.compareAtText, displayVnd(200_000));
+  assert.equal(view.priceDisplay.displayText, displayVnd(180_000));
 });
 
 test("every promotion-aware storefront surface mounts the shared server-relative refresher", async () => {
