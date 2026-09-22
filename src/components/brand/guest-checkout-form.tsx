@@ -19,6 +19,13 @@ import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
  * characterization tests, not a copy made here.
  */
 
-export function BrandGuestCheckoutForm(props: Readonly<{ quoteProof: string }>) {
+export function BrandGuestCheckoutForm(
+  props: Readonly<{
+    quoteProof: string;
+    summarySlot?: React.ReactNode;
+    totalsSlot?: React.ReactNode;
+    preorderSlot?: React.ReactNode;
+  }>,
+) {
   return <GuestCheckoutForm {...props} />;
 }
