@@ -96,7 +96,7 @@ export function ListingHeader({
  */
 export function ListingProductGrid({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <div className="grid grid-cols-2 gap-[2px] sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-12">
+    <div className="listing-product-grid grid grid-cols-2 gap-[2px] sm:gap-x-6 sm:gap-y-10 md:grid-cols-3 lg:grid-cols-4 lg:gap-x-8 lg:gap-y-12">
       {children}
     </div>
   );

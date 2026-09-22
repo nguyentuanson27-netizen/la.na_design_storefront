@@ -1064,15 +1064,18 @@ summary:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .product-grid,
+  .listing-product-grid {
+    /* Product photography reaches the phone viewport edge on both the homepage and
+       shared listing surfaces. Text metadata keeps its own compact inset inside cards. */
+    width: 100vw;
+    margin-inline: calc(50% - 50vw);
+  }
+
   .product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 2px;
     row-gap: 1.5rem;
-    /* Photography meets the viewport edge on mobile. Listing pages wrap the grid
-       in containers with differing inline padding, so the grid escapes whatever
-       padding it sits in rather than each page having to drop its own. */
-    width: 100vw;
-    margin-inline: calc(50% - 50vw);
   }
 
   .product-meta {
