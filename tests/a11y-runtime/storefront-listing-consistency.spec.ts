@@ -170,13 +170,6 @@ test.beforeAll(async () => {
     seeded.set(product.key, await seedProduct(product));
   }
 
-  await prisma.productCategoryMembership.createMany({
-    data: [...seeded.values()].map((product) => ({
-      productId: product.id,
-      categoryKey: "aoDai",
-    })),
-  });
-
   // Exactly one product carries a real, currently active discount, so `/sale` has something to
   // show and something to leave out.
   const discounted = PRODUCTS.filter((product) => product.discounted);
