@@ -609,6 +609,22 @@ summary:focus-visible {
     background: var(--cream);
   }
 
+  /*
+   * An inactive slide is hidden, not merely transparent.
+   *
+   * `opacity: 0` alone leaves the slide in the accessibility tree, so a screen reader could reach
+   * photographs from a slide the stage was simultaneously reporting as not current. `visibility`
+   * takes them out of that tree along with the paint, which keeps the two facts one fact.
+   *
+   * It is `visibility` rather than `display: none` on purpose: a hidden slide keeps its layout box,
+   * so the 50/50 split of a two-image slide is measurable before it is shown, and the lazy images
+   * of the desktop composition still load the way a gallery's should.
+   *
+   * Deliberately scoped to this media query. Below `lg` the `:first-child` rule above is what
+   * decides the one visible slide, and React's slide index can move there on a variant change that
+   * the phone composition never renders -- keying the accessible state off that index instead would
+   * hide the only photograph a phone actually shows.
+   */
   .pdp-stage__slide,
   .pdp-stage__slide:first-child {
     display: grid;
@@ -616,14 +632,18 @@ summary:focus-visible {
     grid-auto-columns: minmax(0, 1fr);
     gap: 1px;
     opacity: 0;
+    visibility: hidden;
     pointer-events: none;
-    transition: opacity 400ms ease;
   }
 
+  /* The transition is declared only here, so a slide fades in as it becomes current and is hidden
+     outright as it stops being current -- no window in which both are exposed. */
   .pdp-stage__slide[data-active="true"] {
     z-index: 1;
     opacity: 1;
+    visibility: visible;
     pointer-events: auto;
+    transition: opacity 320ms ease;
   }
 
   /* Half the stage moves back, half moves forward. `pan-y` is the whole vertical-scroll contract:
@@ -675,7 +695,7 @@ summary:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .home-hero__slide,
   .home-hero__cta-link,
-  .pdp-stage__slide {
+  .pdp-stage__slide[data-active="true"] {
     transition: none;
   }
 }

@@ -581,6 +581,51 @@ test("the desktop gallery moves only on deliberate input, clamps at both ends, a
   expect(await activeSlide(), "a vertical wheel is not gallery input").toBe(0);
 });
 
+test("only the current slide's photographs are exposed to assistive technology", async ({
+  page,
+}) => {
+  /*
+   * A slide that is merely transparent is still in the accessibility tree, so a screen reader
+   * could reach photographs from a slide the stage was reporting as not current. Asserted through
+   * role queries, which resolve against the accessibility tree rather than the DOM, so a slide
+   * hidden only by `opacity` would still be matched here and fail.
+   */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+
+  const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+  const previous = stage.getByRole("button", { name: "Ảnh trước" });
+  const next = stage.getByRole("button", { name: "Ảnh tiếp theo" });
+  const exposedPhotographs = () =>
+    stage.getByRole("img").evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+
+  // Slide 1 is image 1 alone, and it is the only photograph assistive technology can reach.
+  await expect.poll(exposedPhotographs).toEqual([multiName]);
+  await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  await next.click();
+
+  // Advancing moves what can be reached, not just what is painted.
+  await expect
+    .poll(exposedPhotographs)
+    .toEqual([`${multiName} - Ảnh 2`, `${multiName} - Ảnh 3`]);
+  await expect(stage.getByRole("status")).toHaveText("Trang ảnh 2 / 2");
+  await expect(previous).toBeEnabled();
+  await expect(next).toBeDisabled();
+
+  await previous.click();
+  await expect.poll(exposedPhotographs).toEqual([multiName]);
+
+  // The Axe buyer gate still passes over the whole page with the stage in this state.
+  await assertPageQuality(page);
+});
+
 test("each trusted photograph is fetched once, whichever composition the viewport renders", async ({
   page,
 }) => {
