@@ -114,8 +114,8 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
 
   // Compact below lg without shrinking the practical touch target; desktop values are restored.
   assert.match(panel, /min-h-11 min-w-11[^"]*px-3[^"]*lg:min-w-12 lg:px-4/);
-  assert.match(panel, /<fieldset className="mt-4 lg:mt-7">/);
-  assert.match(panel, /className=\{\`mt-4 rounded-sm lg:mt-7/);
+  assert.match(panel, /<fieldset className="mt-5 lg:mt-7">/);
+  assert.match(panel, /className=\{\`relative mt-5 rounded-sm lg:mt-7/);
 
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");
   const guideEnd = panel.indexOf("export function PurchasePanelView");
