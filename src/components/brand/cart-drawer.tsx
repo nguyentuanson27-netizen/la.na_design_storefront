@@ -216,7 +216,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             disabled={isPending || line.quantity <= 1}
                             onClick={() => updateQuantity(line.variantId, line.quantity - 1)}
                             aria-label={`Giảm số lượng ${line.productName}`}
-                            className="inline-flex h-7 w-7 items-center justify-center text-xs text-[#3B2219] hover:bg-[#3B2219]/10 disabled:opacity-40 transition-colors"
+                            className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                           >
                             -
                           </button>
@@ -228,7 +228,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                             disabled={isPending || !line.canUpdate}
                             onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
                             aria-label={`Tăng số lượng ${line.productName}`}
-                            className="inline-flex h-7 w-7 items-center justify-center text-xs text-[#3B2219] hover:bg-[#3B2219]/10 disabled:opacity-40 transition-colors"
+                            className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                           >
                             +
                           </button>
@@ -238,7 +238,8 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                           type="button"
                           disabled={isPending}
                           onClick={() => removeItem(line.variantId)}
-                          className="text-xs text-[#70584B] hover:text-red-700 hover:underline transition-colors disabled:opacity-40"
+                          aria-label={`Xóa ${line.productName} khỏi giỏ hàng`}
+                          className="inline-flex min-h-11 items-center px-2 text-xs text-[#70584B] hover:text-red-700 hover:underline transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           Xóa
                         </button>
