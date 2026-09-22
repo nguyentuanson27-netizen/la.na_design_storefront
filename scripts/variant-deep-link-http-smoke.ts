@@ -152,29 +152,50 @@ function assertNoChoiceChecked(body: string, label: string) {
   assert.deepEqual(preselected, [], `${label}: no option may render preselected`);
 }
 
+function serves(frame: string, urlFragment: string) {
+  // Next's image loader percent-encodes the source into the `/_next/image?url=` query, so a frame
+  // may carry either spelling depending on whether the URL was rewritten.
+  return frame.includes(encodeURIComponent(urlFragment)) || frame.includes(urlFragment);
+}
+
 /**
- * The streamed PDP can serialize its Suspense skeleton before the resolved gallery frame. Inspect
- * rendered product-media frames that actually contain an image instead of assuming the first
- * `product-visual` block is the gallery.
+ * The below-`lg` gallery serves exactly one photograph, and it is the first trusted one.
+ *
+ * This is the mobile spec's canonical-first-surface rule read straight out of the served markup:
+ * a `?variant=` deep link resolves the *selection* on the server, but it must not open the phone
+ * gallery on that variant's photograph. Asserting it here -- rather than only in the browser --
+ * is what stops the server quietly reintroducing a variant-addressed opening frame.
+ *
+ * It replaces an assertion that looked for `product-visual` frames. That markup was the pre-#52
+ * vertical image stack, which the swipe gallery removed; a helper still hunting for it would have
+ * gone on matching nothing at all, which is a silently passing test rather than a contract.
  */
-function assertGalleryOpensOn(body: string, expectedUrlFragment: string, label: string) {
-  const renderedFrames = [
-    ...body.matchAll(/<div class="product-visual(?![^"]*animate-pulse)[^"]*"[\s\S]{0,1200}?<img[^>]*>/g),
+function assertMobileGalleryOpensOn(body: string, expectedUrlFragment: string, label: string) {
+  const frames = [
+    ...body.matchAll(/<button\b[^>]*class="pdp-mobile-gallery__image"[\s\S]{0,1600}?<img[^>]*>/g),
   ].map((match) => match[0]);
 
-  assert.ok(renderedFrames.length > 0, `${label}: expected a resolved gallery image to render`);
-
-  const openingImage = renderedFrames.find(
-    (frame) =>
-      frame.includes(encodeURIComponent(expectedUrlFragment))
-      || frame.includes(expectedUrlFragment),
-  );
+  assert.equal(frames.length, 1, `${label}: the phone gallery must serve exactly one photograph`);
   assert.ok(
-    openingImage,
-    `${label}: gallery must open on ${expectedUrlFragment}, got ${renderedFrames
-      .slice(0, 3)
-      .map((frame) => frame.slice(0, 240))
-      .join(" | ")}`,
+    serves(frames[0]!, expectedUrlFragment),
+    `${label}: the phone gallery must open on ${expectedUrlFragment}, got ${frames[0]!.slice(0, 400)}`,
+  );
+}
+
+/**
+ * The `lg+` slide track serves the named photograph.
+ *
+ * The desktop track renders every trusted image at once and reveals one slide at a time, so what
+ * the server owes a deep link is reachability: the variant's own photograph is in the delivered
+ * document rather than waiting on a client fetch.
+ */
+function assertDesktopTrackServes(body: string, expectedUrlFragment: string, label: string) {
+  const track = body.match(/<div class="pdp-stage__track[^"]*"[\s\S]*?<\/section>/)?.[0];
+
+  assert.ok(track, `${label}: expected the desktop slide track to render`);
+  assert.ok(
+    serves(track, expectedUrlFragment),
+    `${label}: the slide track must serve ${expectedUrlFragment}`,
   );
 }
 
@@ -318,8 +339,13 @@ try {
   assertProductHeroUses(basePage.body, "u12-primary.jpg", "base PDP without a variant query");
   assertProductHeroUses(mediumPage.body, "u12-primary.jpg", "medium deep link");
   assertProductHeroUses(largePage.body, "u12-primary.jpg", "large deep link");
-  assertGalleryOpensOn(mediumPage.body, "u12-medium.jpg", "medium deep link");
-  assertGalleryOpensOn(largePage.body, "u12-large.jpg", "large deep link");
+  // The deep link resolves the selection, not the opening frame: both pages still open on the
+  // product's first trusted photograph, and carry the selected variant's own further down.
+  assertMobileGalleryOpensOn(basePage.body, "u12-primary.jpg", "base PDP without a variant query");
+  assertMobileGalleryOpensOn(mediumPage.body, "u12-primary.jpg", "medium deep link");
+  assertMobileGalleryOpensOn(largePage.body, "u12-primary.jpg", "large deep link");
+  assertDesktopTrackServes(mediumPage.body, "u12-medium.jpg", "medium deep link");
+  assertDesktopTrackServes(largePage.body, "u12-large.jpg", "large deep link");
 
   // Search contract: the query must not mint a second canonical, and must not become indexable.
   for (const path of [`/shop/${slug}`, `/shop/${slug}?variant=${MEDIUM_VARIATION}`]) {

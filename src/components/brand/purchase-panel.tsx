@@ -323,6 +323,20 @@ export function PurchasePanelView({
     runPurchase(() => addToBag(requestStorefrontCartDrawerOpen));
   }
 
+  /**
+   * The radio group name for one dimension on one surface.
+   *
+   * The panel is the server-rendered surface, so it keeps the canonical names -- the deep-link and
+   * structured-data HTTP smokes read the served markup for `name="storefront-size"` to prove which
+   * option the *server* preselected, and a renamed group makes both the positive and the negative
+   * assertion match nothing at all. The sheet is a second live copy of the same groups in the same
+   * document, so it gets its own names: two copies under one name are one native radio group, and
+   * choosing in the sheet would uncheck the panel behind it.
+   */
+  function groupName(dimension: "kind" | "size" | "color", surface: "panel" | "sheet") {
+    return surface === "panel" ? `storefront-${dimension}` : `storefront-${dimension}-sheet`;
+  }
+
   function renderKindFieldset(surface: "panel" | "sheet") {
     if (!view.hasKindOptions) return null;
 
@@ -335,7 +349,7 @@ export function PurchasePanelView({
               <input
                 className="peer sr-only"
                 type="radio"
-                name={`storefront-kind-${surface}`}
+                name={groupName("kind", surface)}
                 value={choice.key}
                 checked={selection.kindKey === choice.key}
                 disabled={choice.disabled || isPending}
@@ -379,7 +393,7 @@ export function PurchasePanelView({
               <input
                 className="peer sr-only"
                 type="radio"
-                name={`storefront-size-${surface}`}
+                name={groupName("size", surface)}
                 value={choice.value}
                 checked={selection.size === choice.value}
                 disabled={choice.disabled || isPending}
@@ -418,7 +432,7 @@ export function PurchasePanelView({
               <input
                 className="peer sr-only"
                 type="radio"
-                name={`storefront-color-${surface}`}
+                name={groupName("color", surface)}
                 value={choice.value}
                 checked={selection.color === choice.value}
                 disabled={choice.disabled || isPending}
