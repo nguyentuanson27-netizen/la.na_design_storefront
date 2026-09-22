@@ -22,7 +22,7 @@ import {
  */
 
 const NBSP = " ";
-const vnd = (amount: string): string => `${amount}${NBSP}₫`;
+const vnd = (amount: string): string => `${amount}${NBSP}đ`;
 
 function option({
   availability,
