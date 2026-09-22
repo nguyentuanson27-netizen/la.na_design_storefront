@@ -165,6 +165,13 @@ test.beforeAll(async () => {
     seeded.set(product.key, await seedProduct(product));
   }
 
+  await prisma.productCategoryMembership.createMany({
+    data: [...seeded.values()].map((product) => ({
+      productId: product.id,
+      categoryKey: "aoDai",
+    })),
+  });
+
   // Exactly one product carries a real, currently active discount, so `/sale` has something to
   // show and something to leave out.
   const discounted = PRODUCTS.filter((product) => product.discounted);
@@ -309,6 +316,38 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
       expect(browserErrors, `${label} console/page errors`).toEqual([]);
     }
   }
+});
+
+test("mobile category filters stay open across sequential URL-backed selections", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "Bộ lọc", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole("link", { name: "Chỉ xem sản phẩm Sale", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole("link", { name: "M", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByRole("link", { name: "Ink", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+
+  await dialog.getByLabel("Giá tối thiểu").fill("500000");
+  await dialog.getByLabel("Giá tối đa").fill("900000");
+  await dialog.getByRole("button", { name: "Áp dụng giá", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+
+  const viewResults = dialog.getByRole("button", { name: /Xem \d+ sản phẩm/ });
+  await expect(viewResults).toBeVisible();
+  await viewResults.click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test("the product grid is 2 columns on mobile and 4 on desktop, on every listing that has one", async ({
