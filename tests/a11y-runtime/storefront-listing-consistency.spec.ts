@@ -322,9 +322,12 @@ test("mobile category filters stay open across sequential URL-backed selections"
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
 
-  const firstProductImage = page.locator("main a[href^='/shop/'] img").first();
-  await expect(firstProductImage).toBeVisible();
-  const firstProductBox = await firstProductImage.boundingBox();
+  // This fixture intentionally has no trusted product image URL, so the card renders the same
+  // product-media frame with its silhouette fallback. The fold contract is about where that media
+  // frame begins, not whether the fixture happens to carry photography.
+  const firstProductMedia = page.locator("main .product-visual").first();
+  await expect(firstProductMedia).toBeVisible();
+  const firstProductBox = await firstProductMedia.boundingBox();
   expect(firstProductBox?.y).toBeLessThan(844);
 
   await page.getByRole("button", { name: "Bộ lọc", exact: true }).click();
