@@ -545,6 +545,21 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   await expect(summary).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
+
+  const order = await page.evaluate(() => {
+    const selectors = [
+      ".checkout-order-summary",
+      ".checkout-receiving-fields",
+      ".checkout-totals",
+      'button[type="submit"]',
+    ];
+    return selectors.map((selector) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing checkout element: ${selector}`);
+      return Array.from(document.querySelectorAll("*")).indexOf(element);
+    });
+  });
+  expect(order).toEqual([...order].sort((left, right) => left - right));
 });
 
 test("P9a a price change between render and submit forces an explicit second confirmation", async ({
