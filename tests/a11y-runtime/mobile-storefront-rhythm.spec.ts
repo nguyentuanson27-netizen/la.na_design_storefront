@@ -342,6 +342,21 @@ test("the PDP frame is 2:3 and hides the identity eyebrow below lg, while deskto
   ).toBeVisible();
 });
 
+test("the PDP hides promotion and breadcrumb at the top, then reveals promotion after scroll", async ({
+  page,
+}) => {
+  await page.setViewportSize(MOBILE);
+  await page.goto(`${BASE_URL}/shop/${PRODUCT_SLUG}`, { waitUntil: "networkidle" });
+
+  const promotion = page.locator(".promotion-shell");
+  await expect(promotion).toBeHidden();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveCount(0);
+
+  await page.evaluate(() => window.scrollTo(0, 240));
+  await expect.poll(() => page.locator(".site-header").getAttribute("data-scrolled")).toBe("true");
+  await expect(promotion).toBeVisible();
+});
+
 test("Áo dài, Set đồ and Váy, đầm are drawn with one visual system on a phone", async ({ page }) => {
   await page.setViewportSize(MOBILE);
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
