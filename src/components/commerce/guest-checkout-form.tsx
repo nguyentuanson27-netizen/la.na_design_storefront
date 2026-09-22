@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 
 import {
   loadCheckoutCommunesAction,
@@ -41,7 +41,17 @@ const geoFailures = {
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
-export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string }>) {
+export function GuestCheckoutForm({
+  quoteProof,
+  summarySlot,
+  totalsSlot,
+  preorderSlot,
+}: Readonly<{
+  quoteProof: string;
+  summarySlot?: ReactNode;
+  totalsSlot?: ReactNode;
+  preorderSlot?: ReactNode;
+}>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
     null,
@@ -283,6 +293,8 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
           itself and only asks this token whether that price is the one it already showed. A tampered
           or swapped value simply fails closed into re-confirmation. */}
       <input name="quoteProof" type="hidden" value={quoteProof} />
+      {summarySlot}
+      <div className="checkout-receiving-fields space-y-8">
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>
@@ -324,7 +336,7 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
           Địa chỉ giao hàng
         </legend>
         <p className="text-sm leading-6 text-black/60">
-          Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake. Hãy chọn bộ địa chỉ đúng với thông tin giao hàng của bạn.
+          Hãy chọn tỉnh/thành, quận/huyện và phường/xã đúng với thông tin giao hàng của bạn.
         </p>
 
         <div className="grid gap-5 md:grid-cols-3">
@@ -437,6 +449,10 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
           />
         </label>
       </fieldset>
+      </div>
+
+      {totalsSlot}
+      {preorderSlot}
 
       {feedback ? (
         <div
@@ -463,7 +479,7 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
       </button>
 
       <p className="text-xs leading-5 text-black/60">
-        Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake.
+        Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
     </form>
   );
