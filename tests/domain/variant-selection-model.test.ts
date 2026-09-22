@@ -488,6 +488,38 @@ test("mobile incomplete CTA names only dimensions the product actually has", () 
   );
 });
 
+test("mobile incomplete CTA keeps color in the product shape before kind resolves it", () => {
+  const options = [
+    option({
+      id: "set-white-m",
+      kindKey: "set",
+      kindLabel: "Nguyên bộ",
+      color: "Trắng",
+      size: "M",
+    }),
+    option({
+      id: "top-black-m",
+      kindKey: "top",
+      kindLabel: "Áo lẻ",
+      color: "Đen",
+      size: "M",
+    }),
+  ];
+  const selection = { kindKey: null, color: null, size: null } as const;
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection,
+  });
+
+  assert.equal(view.hasColorOptions, false, "color choices stay unresolved before kind");
+  assert.equal(view.hasColorDimension, true, "product shape still owns a color dimension");
+  assert.equal(
+    resolveMobilePurchasePresentation(view, selection).actionLabel,
+    "Chọn phân loại / màu / size",
+  );
+});
+
 test("mobile complete summary follows kind, color, size and ready action becomes add-to-cart", () => {
   const options = [
     option({
@@ -529,12 +561,12 @@ test("genuine selected stock failure uses the buyer-safe mobile wording", () => 
     selection: { kindKey: null, color: "Đen", size: "M" },
   });
 
-  assert.equal(
-    resolveMobilePurchasePresentation(view, {
-      kindKey: null,
-      color: "Đen",
-      size: "M",
-    }).unavailableMessage,
-    "Lựa chọn này tạm hết",
-  );
+  const mobile = resolveMobilePurchasePresentation(view, {
+    kindKey: null,
+    color: "Đen",
+    size: "M",
+  });
+  assert.equal(mobile.unavailableMessage, "Lựa chọn này tạm hết");
+  assert.equal(mobile.actionLabel, "Lựa chọn này tạm hết");
+  assert.equal(mobile.summary, "Đen · M");
 });
