@@ -120,9 +120,11 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");
   const guideEnd = panel.indexOf("export function PurchasePanelView");
   const guide = panel.slice(guideStart, guideEnd);
-  assert.doesNotMatch(guide, /guide\.circumferenceSemanticsNote|guide\.guidanceNote|guide\.tolerance/);
   assert.doesNotMatch(guide, /<h2|>Hướng dẫn chọn size<\/p>/);
-  assert.match(guide, /className="sr-only"[\s\S]*<table>/);
+  assert.match(
+    guide,
+    /className="sr-only"[\s\S]*guide\.circumferenceSemanticsNote[\s\S]*guide\.tolerance[\s\S]*guide\.guidanceNote[\s\S]*<table>/,
+  );
   assert.match(guide, /aria-label=\{\`Hướng dẫn chọn size: \$\{guide\.chart\.title\}\`\}/);
   assert.match(guide, /border-0 bg-transparent/);
 });
