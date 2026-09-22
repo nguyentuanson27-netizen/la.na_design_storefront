@@ -129,26 +129,20 @@ function render(data: CheckoutViewModel) {
     </dl>
   );
 
-  const mobileSummary = (
-    <details className="checkout-mobile-summary border-y border-black/20 py-4 lg:hidden">
-      <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 text-sm font-semibold">
-        <span>Đơn hàng ({itemCount}) · {totals.totalText}</span>
-        <span aria-hidden="true">＋</span>
-      </summary>
-      <div className="pt-5">
-        {orderLines}
-        <Link
-          className="mt-4 inline-block text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
-          href="/cart"
-        >
-          Sửa giỏ hàng
-        </Link>
-      </div>
-    </details>
+  const summaryContent = (
+    <>
+      {orderLines}
+      <Link
+        className="mt-4 inline-block text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
+        href="/cart"
+      >
+        Sửa giỏ hàng
+      </Link>
+    </>
   );
 
-  const mobileTotals = (
-    <div className="checkout-mobile-totals space-y-5 border-t border-black/20 pt-6 lg:hidden">
+  const totalsContent = (
+    <div className="space-y-5">
       {totalsBlock}
       <p className="text-xs leading-5 text-black/75">
         Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
@@ -156,11 +150,9 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  const mobilePreorder =
+  const preorderContent =
     data.preorderNotice === null ? null : (
-      <div className="checkout-mobile-preorder lg:hidden">
-        <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
-      </div>
+      <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
     );
 
   return (
@@ -173,36 +165,14 @@ function render(data: CheckoutViewModel) {
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
       </div>
 
-      <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
+      <div className="mt-12 border-t border-black/20 pt-8">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
-          summarySlot={mobileSummary}
-          totalsSlot={mobileTotals}
-          preorderSlot={mobilePreorder}
+          summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
+          summarySlot={summaryContent}
+          totalsSlot={totalsContent}
+          preorderSlot={preorderContent}
         />
-
-        <aside className="hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">
-          <div className="flex items-baseline justify-between gap-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng ({itemCount})</p>
-            <Link
-              className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-              href="/cart"
-            >
-              Sửa giỏ hàng
-            </Link>
-          </div>
-
-          <div className="mt-6">{orderLines}</div>
-          <div className="mt-5">{totalsBlock}</div>
-
-          <p className="mt-5 text-xs leading-5 text-black/75">
-            Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
-          </p>
-
-          {data.preorderNotice === null ? null : (
-            <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
-          )}
-        </aside>
       </div>
     </div>
   );
