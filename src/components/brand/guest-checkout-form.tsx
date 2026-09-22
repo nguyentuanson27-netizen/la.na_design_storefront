@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-
 "use client";
+
+import type { ReactNode } from "react";
 
 import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 
