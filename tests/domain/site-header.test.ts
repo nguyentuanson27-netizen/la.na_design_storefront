@@ -121,10 +121,34 @@ test("F2a mobile navigation structure: hamburger on left, logo centered, cart on
     /\.mobile-nav\s*\{[^}]*justify-self:\s*start;/,
     "globals.css must align mobile-nav to the left",
   );
+  /*
+   * The mobile utility row used to be cart-only -- everything but the last control was hidden.
+   * The mobile spec gives the phone header menu + logo + search + cart, with Account moved into
+   * the menu, so the rule that hides "everything but the last" is replaced by one that hides
+   * exactly the account link. Search and cart are asserted to survive, which is what the old
+   * blanket rule would silently have taken away.
+   */
   assert.match(
     cssSource,
+    /\.utility-nav\s*a\.mobile-account-link\s*\{\s*display:\s*none;/,
+    "globals.css must keep Account out of the mobile utility row",
+  );
+  assert.doesNotMatch(
+    cssSource,
     /\.utility-nav\s*a:not\(:last-child\),\s*\.utility-nav\s*button:not\(:last-child\)\s*\{\s*display:\s*none;/,
-    "globals.css must hide utility items other than the last (cart) on mobile",
+    "the cart-only mobile utility row is superseded by menu + logo + search + cart",
+  );
+  assert.match(
+    headerSource,
+    /className=\{isAccount \? "mobile-account-link" : undefined\}/,
+    "only the account control may carry the class the mobile rule hides",
+  );
+
+  // ...and what stays keeps a reachable target.
+  assert.match(
+    cssSource,
+    /\.utility-nav\s*button,\s*\.utility-nav\s*a\s*\{[^}]*min-width:\s*var\(--control-height\);[^}]*min-height:\s*var\(--control-height\);/,
+    "remaining mobile utility controls must keep the practical touch target",
   );
 });
 

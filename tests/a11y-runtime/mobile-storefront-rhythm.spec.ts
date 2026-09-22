@@ -459,6 +459,22 @@ test("the footer names the legal representative at both widths, without overflow
   }
 });
 
+test("the mobile menu close control keeps a practical touch target", async ({ page }) => {
+  await page.setViewportSize(MOBILE);
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  await page.getByRole("button", { name: "Menu", exact: true }).click();
+  const closeMenu = page.getByRole("button", { name: "Đóng menu", exact: true });
+  await expect(closeMenu).toBeVisible();
+
+  const box = await closeMenu.boundingBox();
+  expect(box?.width).toBeGreaterThanOrEqual(44);
+  expect(box?.height).toBeGreaterThanOrEqual(44);
+
+  await closeMenu.click();
+  await expect(page.getByRole("dialog", { name: "Menu điều hướng" })).toHaveCount(0);
+});
+
 test("the reworked surfaces stay accessible on a phone", async ({ page }) => {
   await page.setViewportSize(MOBILE);
 

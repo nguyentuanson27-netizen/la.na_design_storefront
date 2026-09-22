@@ -89,9 +89,25 @@ test("owner PDP contract promotes the canonical first gallery image and removes 
     "PDP hero must not receive the landing-page CTA",
   );
 
-  // ...and it is still not duplicated into the below-`lg` editorial gallery.
-  assert.match(detailSource, /media\.gallery\.slice\(1\)/);
-  assert.match(detailSource, /\.filter\(\(\[, index\]\) => index > 0\)/);
+  /*
+   * ...and it is still rendered once.
+   *
+   * The desktop refinement kept image 1 out of a second, below-`lg` editorial grid. The mobile
+   * spec removed that grid entirely: the stage now carries both compositions itself, each gated to
+   * one side of the `lg` seam, so only one of them has a box at any width. That mutual exclusion
+   * is what replaces the old de-duplication, and it is what the runtime single-download gate in
+   * `storefront-media.spec.ts` proves end to end.
+   */
+  assert.match(stageSource, /className="pdp-mobile-gallery lg:hidden"/);
+  assert.match(stageSource, /className="pdp-stage__track hidden lg:block"/);
+  assert.equal(
+    detailSource.includes("media.gallery.slice(1)"),
+    false,
+    "no second gallery may re-derive a subset of the product's media",
+  );
+
+  // The one place the detail still draws media itself is the truthful missing-media fallback.
+  assert.match(detailSource, /media\.gallery\.length > 0 \? null : \(/);
   assert.match(detailSource, /preloadFirstImage=\{false\}/);
 });
 
@@ -101,8 +117,11 @@ test("the desktop media stage contains the garment and never takes the page's ve
     readFile(new URL("../../src/app/globals.css", import.meta.url), "utf8"),
   ]);
 
-  // Refinement spec §1: the new stage frames the whole silhouette rather than cropping it.
-  assert.match(stageSource, /lg:object-contain/);
+  // Refinement spec §1: the desktop stage frames the whole silhouette rather than cropping it.
+  // The framing class moved off a responsive prefix when the mobile spec gated the whole desktop
+  // subtree behind `hidden lg:block`, so the gate and the framing are asserted together.
+  assert.match(stageSource, /className="pdp-stage__track hidden lg:block"/);
+  assert.match(stageSource, /className="object-contain"/);
 
   // §2's hard rule. A wheel listener is how a gallery steals a scroll down the page, so the
   // absence of one is worth pinning rather than trusting to review.
@@ -115,4 +134,6 @@ test("the desktop media stage contains the garment and never takes the page's ve
   }
   // And the pointer surface leaves vertical panning to the browser.
   assert.match(cssSource, /\.pdp-stage__nav \{[^}]*touch-action: pan-y;/);
+  // The mobile gallery's swipe surface owes the page the same thing.
+  assert.match(cssSource, /\.pdp-mobile-gallery__image \{[^}]*touch-action: pan-y;/);
 });

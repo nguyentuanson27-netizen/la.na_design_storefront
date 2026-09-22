@@ -82,6 +82,8 @@ export const KIND_SELECTION_GUIDANCE = "Nàng chọn phân loại trước để
 
 export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const selection = deriveStorefrontProjectionSelection(input.options, input.selection);
+  const hasColorDimension = input.options.some((option) => option.color !== null);
+  const hasSizeDimension = input.options.some((option) => option.size !== null);
 
   const priceLabel =
     selection.selectedPrice === null
@@ -169,6 +171,8 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
       : ADD_TO_BAG_NAMES.ready,
     quickAddAccessibleName: isPreorderSelection ? QUICK_ADD_NAMES.preorder : QUICK_ADD_NAMES.ready,
     hasPurchasableVariant: input.options.some((option) => option.purchasable),
+    hasColorDimension,
+    hasSizeDimension,
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */
     entryPrice: getStorefrontResolvedPriceRange(input.options)?.minimum ?? null,
@@ -214,5 +218,57 @@ export function resolveSelectionAfterSizeChange(input: {
     kindKey: input.selection.kindKey,
     color: currentColor?.disabled ? null : input.selection.color,
     size: input.size,
+  });
+}
+
+
+/**
+ * Presentation-only state for the below-lg sticky purchase entry point.
+ *
+ * Commerce eligibility stays in the selection projection. This helper only names the axes the
+ * product actually exposes and formats the currently selected values in authority order.
+ */
+export function resolveMobilePurchasePresentation(
+  view: ReturnType<typeof resolveVariantSelectionView>,
+  selection: VariantSelectionState,
+): Readonly<{
+  actionLabel: string;
+  summary: string;
+  readyToAdd: boolean;
+  unavailableMessage: string;
+}> {
+  const dimensionLabels = [
+    view.hasKindOptions ? "phân loại" : null,
+    view.hasColorDimension ? "màu" : null,
+    view.hasSizeDimension ? "size" : null,
+  ].filter((value): value is string => value !== null);
+
+  const selectedKind =
+    selection.kindKey === null
+      ? null
+      : view.kinds.find((choice) => choice.key === selection.kindKey)?.label ?? null;
+
+  const selectedValues = [
+    view.hasKindOptions ? selectedKind : null,
+    view.hasColorDimension ? selection.color : null,
+    view.hasSizeDimension ? selection.size : null,
+  ].filter((value): value is string => value !== null);
+
+  const selectionComplete = view.selectedVariantId !== null;
+  const readyToAdd = view.canAdd && selectionComplete;
+  const unavailableMessage =
+    view.selectedUnavailableReason === "OUT_OF_STOCK"
+      ? "Lựa chọn này tạm hết"
+      : view.unavailableMessage;
+
+  return Object.freeze({
+    actionLabel: readyToAdd
+      ? view.addToBagLabel
+      : selectionComplete && unavailableMessage
+        ? unavailableMessage
+        : `Chọn ${dimensionLabels.join(" / ")}`,
+    summary: selectedValues.join(" · "),
+    readyToAdd,
+    unavailableMessage,
   });
 }

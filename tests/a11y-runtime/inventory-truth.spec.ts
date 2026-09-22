@@ -463,18 +463,111 @@ test("F8b checkout keeps the preorder marker and the fulfillment truth", async (
   await addSelectedToBag(page, slugs.ready, "M");
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
+  /*
+   * Checkout carries two compositions of one order -- the desktop sticky panel and the mobile
+   * stack -- and `display: none` keeps exactly one of them live. Every assertion here is scoped to
+   * the live one, so a count of 1 still means "the buyer sees this once" rather than "the document
+   * happens to contain one copy".
+   */
+  const preorderMarker = page.locator('[data-line-state="preorder"]:visible');
   // §30: the line must not become visually ready stock on the way from the cart.
-  await expect(page.locator('[data-line-state="preorder"]')).toHaveCount(1);
-  await expect(page.locator('[data-line-state="preorder"]')).toHaveText(PREORDER);
+  await expect(preorderMarker).toHaveCount(1);
+  await expect(preorderMarker).toHaveText(PREORDER);
 
-  const notice = page.locator('[data-preorder-notice="true"]');
+  const notice = page.locator('[data-preorder-notice="true"]:visible');
   await expect(notice).toContainText("15 ngày lịch");
   await expect(notice).toContainText("1–3 ngày");
-  await expect(page.locator('[data-preorder-mixed="true"]')).toBeVisible();
+  await expect(page.locator('[data-preorder-mixed="true"]:visible')).toBeVisible();
+
+  // At this width the live notice is the desktop panel's, which is where `main` keeps it.
+  await expect(page.locator('.checkout-order-panel [data-preorder-notice="true"]')).toBeVisible();
+
+  /*
+   * The ordering rule is the mobile spec's, so it is asserted at a mobile width.
+   *
+   * DOM order does not change with the viewport -- which composition is *live* does, and an
+   * assertion that reads `querySelector` would answer for the hidden copy either way. Asking for
+   * the rendered notice and the rendered submit is what makes this about the buyer's reading
+   * order rather than about source order.
+   */
+  await page.setViewportSize({ width: 390, height: 844 });
+  const noticeBeforeSubmit = await page.evaluate(() => {
+    const live = (selector: string) =>
+      Array.from(document.querySelectorAll(selector)).find(
+        (element) => element.getClientRects().length > 0,
+      );
+    const noticeElement = live('[data-preorder-notice="true"]');
+    const submitElement = live('button[type="submit"]');
+    if (!noticeElement || !submitElement) return false;
+    return Boolean(noticeElement.compareDocumentPosition(submitElement) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(noticeBeforeSubmit).toBe(true);
+  await page.setViewportSize({ width: 1440, height: 900 });
 
   await assertPageQuality(page);
   expect(health.browserErrors).toEqual([]);
   expect(health.failedResponses).toEqual([]);
+});
+
+/**
+ * Two compositions of one notice must still be two well-formed regions.
+ *
+ * Checkout renders the fulfillment notice twice -- once for the mobile stack, once for the desktop
+ * sticky panel -- and `display: none` decides which one the buyer gets. That is a presentation
+ * choice; it is not a licence to emit the same `id` twice. A duplicate IDREF is ambiguous to an
+ * accessibility tree whether or not one of the two boxes is painted, and `:visible`-scoped
+ * assertions cannot see it, so this reads the whole document at both widths.
+ */
+test("F8b the checkout fulfillment notice is labelled by its own heading, with ids unique in the document", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await addSelectedToBag(page, slugs.preorder, "M");
+  await addSelectedToBag(page, slugs.ready, "M");
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  for (const viewport of [
+    { name: "1440", width: 1440, height: 900 },
+    { name: "390", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+
+    const audit = await page.evaluate(() => {
+      const notices = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-preorder-notice="true"]'),
+      );
+      const duplicateIds = Array.from(document.querySelectorAll<HTMLElement>("[id]"))
+        .map((element) => element.id)
+        .filter((id, index, all) => all.indexOf(id) !== index);
+
+      const live = notices.find((notice) => notice.getClientRects().length > 0) ?? null;
+      const labelId = live?.getAttribute("aria-labelledby") ?? null;
+      const labelMatches = labelId === null ? [] : Array.from(document.querySelectorAll(`[id="${labelId}"]`));
+
+      return {
+        noticeCount: notices.length,
+        labelIds: notices.map((notice) => notice.getAttribute("aria-labelledby")),
+        duplicateIds,
+        hasLive: live !== null,
+        labelMatchCount: labelMatches.length,
+        // The label must be this notice's own heading, not the other composition's.
+        labelIsOwnHeading:
+          labelMatches.length === 1
+          && live !== null
+          && live.contains(labelMatches[0]!)
+          && labelMatches[0]!.tagName === "H2",
+        labelText: labelMatches[0]?.textContent?.trim() ?? null,
+      };
+    });
+
+    expect(audit.duplicateIds, `${viewport.name}: no element id may appear twice`).toEqual([]);
+    expect(audit.noticeCount, `${viewport.name}: both compositions render the notice`).toBe(2);
+    expect(new Set(audit.labelIds).size, `${viewport.name}: each notice names its own title`).toBe(2);
+    expect(audit.hasLive, `${viewport.name}: exactly one composition is on screen`).toBe(true);
+    expect(audit.labelMatchCount, `${viewport.name}: the IDREF resolves to one element`).toBe(1);
+    expect(audit.labelIsOwnHeading, `${viewport.name}: labelled by its own heading`).toBe(true);
+    expect(audit.labelText, `${viewport.name}: the heading carries the preorder word`).toBe(PREORDER);
+  }
 });
 
 test("F8b a reload preserves the server-derived truth rather than client state", async ({ page }) => {

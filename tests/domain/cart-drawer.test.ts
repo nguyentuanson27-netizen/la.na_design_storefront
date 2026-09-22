@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { handleDrawerFocusTrap } from "../../src/components/headless/cart-drawer-model.ts";
+import { handleDrawerFocusTrap, isMeaningfulReturnFocusTarget } from "../../src/components/headless/cart-drawer-model.ts";
 import { buildCartViewModel } from "../../src/routes/cart-model.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -88,8 +88,42 @@ test("F2d cart drawer component: enforces accessible dialog contracts and Escape
   // Must have close button with accessible label
   assert.match(source, /aria-label="Đóng giỏ hàng"/);
 
-  // Focus restore prioritizes actual opener over desktop trigger
-  assert.match(source, /previouslyFocusedElement\.current \?\? triggerRef\?\.current/);
+  // Focus restore prefers the real opener, and falls back to the drawer's own trigger when there
+  // was none. The decision itself is pinned by its own tests below.
+  assert.match(source, /isMeaningfulReturnFocusTarget\(saved\) \? saved : triggerRef\?\.current/);
+});
+
+test("F2d cart drawer return focus: a real opener wins, an empty one defers to the trigger", () => {
+  const opener = { isConnected: true, tagName: "BUTTON", focus() {} };
+  assert.equal(isMeaningfulReturnFocusTarget(opener), true);
+
+  // What `document.activeElement` reports when the drawer is opened programmatically rather than
+  // from a control -- the mobile purchase sheet closes and unmounts before requesting the cart.
+  // Returning focus here is the same as dropping it on the floor.
+  assert.equal(
+    isMeaningfulReturnFocusTarget({ isConnected: true, tagName: "BODY", focus() {} }),
+    false,
+  );
+  assert.equal(
+    isMeaningfulReturnFocusTarget({ isConnected: true, tagName: "HTML", focus() {} }),
+    false,
+  );
+
+  // An opener that has since left the document cannot take focus either.
+  assert.equal(
+    isMeaningfulReturnFocusTarget({ isConnected: false, tagName: "BUTTON", focus() {} }),
+    false,
+  );
+
+  // Defensive: something that is not focusable at all, and nothing saved.
+  assert.equal(isMeaningfulReturnFocusTarget({ isConnected: true, tagName: "DIV" }), false);
+  assert.equal(isMeaningfulReturnFocusTarget(null), false);
+
+  // Tag casing comes from the parser, not the author.
+  assert.equal(
+    isMeaningfulReturnFocusTarget({ isConnected: true, tagName: "body", focus() {} }),
+    false,
+  );
 });
 
 test("F2d cart drawer focus trap: safely handles null container", () => {

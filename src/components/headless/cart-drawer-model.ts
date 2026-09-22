@@ -42,3 +42,31 @@ export function handleDrawerFocusTrap(
     }
   }
 }
+
+/**
+ * The shape `resolveDrawerReturnFocus` needs from a candidate, so the decision stays testable
+ * without a DOM.
+ */
+export type DrawerFocusCandidate = Readonly<{
+  isConnected: boolean;
+  tagName: string;
+  focus?: unknown;
+}>;
+
+/**
+ * Whether the element a drawer saved on open is somewhere worth sending focus back to.
+ *
+ * `document.activeElement` is never null: with nothing focused it reports the body, and that is
+ * exactly what it reports when a drawer is opened programmatically rather than from a control --
+ * the mobile purchase sheet closes and unmounts before it asks for the cart. Restoring focus to
+ * the body is indistinguishable from dropping it, and an element that has since left the document
+ * is no better, so both defer to the drawer's own trigger.
+ */
+export function isMeaningfulReturnFocusTarget(candidate: DrawerFocusCandidate | null): boolean {
+  if (candidate === null) return false;
+  if (!candidate.isConnected) return false;
+  if (typeof candidate.focus !== "function") return false;
+
+  const tagName = candidate.tagName.toUpperCase();
+  return tagName !== "BODY" && tagName !== "HTML";
+}

@@ -39,7 +39,7 @@ function render(data: ProductRouteData) {
       <p className="eyebrow">{BRAND.identity.name} / Sản phẩm</p>
       {/* Master spec §9: the product's name is a heading, so it wears the elegant serif the rest
           of the brand's headings wear rather than the condensed bold sans it used to shout in. */}
-      <h1 className="mt-5 break-words font-serif text-[clamp(2.4rem,5vw,4.5rem)] font-normal leading-[1.02] tracking-[-0.035em]">
+      <h1 className="mt-3 break-words font-serif text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[clamp(2.4rem,5vw,4.5rem)] lg:leading-[1.02] lg:tracking-[-0.035em]">
         {data.name}
       </h1>
 
@@ -159,7 +159,6 @@ function render(data: ProductRouteData) {
         }}
         media={data.media}
         productName={data.name}
-        initialGalleryIndex={data.initialGalleryIndex}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
         sizeGuide={editorial.sizeGuide}
         breadcrumb={breadcrumb}

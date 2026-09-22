@@ -339,6 +339,7 @@ export function buildVariantStockCte(now: Date) {
       vc."productId",
       vc."color",
       vc."size",
+      vc."basePrice",
       vc."sellableStock",
       CASE
         WHEN vc."basePrice" IS NULL THEN NULL

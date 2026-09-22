@@ -114,9 +114,15 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
-/** The first editorial image is the gallery's current variant/default lead image. */
+/**
+ * The photograph the shopper is actually looking at.
+ *
+ * These tests run at a phone viewport, where the mobile spec replaced the editorial grid with a
+ * one-image-at-a-time gallery. The visible image is the variant's current lead image, which is the
+ * same fact the old `[aria-label^="Bộ sưu tập hình ảnh "]` lead image carried.
+ */
 function heroImage(page: Page) {
-  return page.locator('[aria-label^="Bộ sưu tập hình ảnh "] img').first();
+  return page.locator(".pdp-mobile-gallery__image img").first();
 }
 
 async function expectHeroToShow(page: Page, urlFragment: string) {
@@ -127,10 +133,10 @@ async function expectHeroToShow(page: Page, urlFragment: string) {
 }
 
 async function expectProductHeroToShow(page: Page, urlFragment: string) {
-  // The media stage holds every trusted image; its first cell is the canonical first surface.
+  // The canonical first surface, whichever composition this viewport renders.
   const image = page
     .getByRole("region", { name: `Ảnh chính của ${productName}` })
-    .locator("img")
+    .locator("img:visible")
     .first();
   await expect(image).toHaveAttribute(
     "src",
@@ -246,20 +252,40 @@ test("a valid deep link survives hydration with its own option, price and photo"
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await expect(purchasePanel.getByText(/890\.000/)).toBeVisible();
   await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
-  await expectHeroToShow(page, "u12b-medium.jpg");
+
+  /*
+   * The deep link preselects the variant; it does not replace the canonical first surface. The
+   * mobile spec states this for the phone gallery in the same terms the desktop refinement states
+   * it for the stage, so `u12b-medium.jpg` -- image 2 -- is reached by choosing, not by landing.
+   */
+  await expectHeroToShow(page, "u12b-primary.jpg");
 
   expect(browserErrors, `browser errors: ${browserErrors.join(" | ")}`).toEqual([]);
   await assertPageQuality(page);
 });
 
-test("a different variation opens on its own photo and price, not the first one's", async ({ page }) => {
+test("a different variation opens on its own price and the canonical photo, then follows the shopper's choice", async ({
+  page,
+}) => {
   await openDeepLink(page, LARGE_VARIATION);
 
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   await expect(purchasePanel.getByText(/910\.000/)).toBeVisible();
-  await expectHeroToShow(page, "u12b-large.jpg");
+
+  // Its own price on load, but the canonical first photograph -- the deep link preselects, it does
+  // not re-open the gallery somewhere else.
+  await expectHeroToShow(page, "u12b-primary.jpg");
+
+  /*
+   * What does move the gallery is an explicit post-load selection change, through the same seam
+   * the desktop stage uses. Choosing M from a page deep-linked to L is a change, so the phone
+   * gallery syncs to M's mapped photograph.
+   */
+  await page.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
+  await expectHeroToShow(page, "u12b-medium.jpg");
 });
 
 test("a sold-out variation stays addressable, shows its exact price and refuses add-to-bag", async ({

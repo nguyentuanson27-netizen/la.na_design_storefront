@@ -260,53 +260,43 @@ test("P18 captures representative production performance evidence for home, PLP,
         if (route.name === "pdp") {
           const stage = page.getByRole("region", { name: `Ảnh chính của ${productName}` });
           await expect(stage).toHaveAttribute("data-header-overlay-hero", "");
-          // The canonical first image keeps the product's plain name and opens the stage.
-          await expect(stage.locator(`img[alt="${productName}"]`)).toHaveCount(1);
+
+          // The below-`lg` editorial grid is gone; the mobile gallery inside the stage replaced it.
+          await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`)).toHaveCount(0);
 
           /*
-           * Refinement spec §1. The media stage carries every trusted image and the below-`lg`
-           * editorial grid carries images 2..n; exactly one of the two is displayed at any width,
-           * and the hidden one has no layout box, so its lazy images never download.
-           *
-           * Asserted over the images this viewport actually renders, which keeps the guarantee
-           * whole -- every trusted photograph once, in source order, from a distinct source --
-           * rather than counting markup the other composition leaves hidden.
+           * Both compositions live in this stage and each declares image 1, so the markup holds it
+           * more than once while a viewport paints exactly one. What final QA owes is the
+           * user-visible contract, so the assertions read what is rendered rather than counting
+           * the hidden alternate composition's DOM copies.
            */
-          const renderedImages = await page
-            .locator(`img[alt^="${productName}"]`)
-            .evaluateAll((elements) =>
-              elements
-                .filter((element) => element.getClientRects().length > 0)
-                .map((element) => ({
-                  alt: element.getAttribute("alt"),
-                  src: element.getAttribute("src"),
-                })),
-            );
-          expect(renderedImages.map(({ alt }) => alt)).toEqual([
-            productName,
-            `${productName} - Ảnh 2`,
-            `${productName} - Ảnh 3`,
-          ]);
-          expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
+          const visibleProductImages = await page
+            .locator(`img[alt^="${productName}"]:visible`)
+            .evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+          expect(
+            visibleProductImages,
+            `${viewport.name}: exactly one product photograph on screen`,
+          ).toEqual([productName]);
 
-          const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`);
           if (viewport.name === "desktop") {
-            // From `lg` up the stage is the gallery: image 1 alone, then the remaining two paired.
-            await expect(gallery).toBeHidden();
+            // From `lg` up the stage is the gallery: slide 1 is image 1 alone, then the pair.
+            await expect(stage.locator(".pdp-mobile-gallery")).toBeHidden();
+            await expect(stage.locator(".pdp-stage__track")).toBeVisible();
             await expect(stage.locator(".pdp-stage__slide")).toHaveCount(2);
+
+            const activeSlide = stage.locator('.pdp-stage__slide[data-active="true"]');
+            await expect(activeSlide).toHaveCount(1);
+            await expect(activeSlide.locator("img")).toHaveCount(1);
+            await expect(activeSlide.locator("img")).toHaveAttribute("alt", productName);
+            await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
           } else {
-            const images = gallery.locator("img");
-            await expect(images).toHaveCount(2);
-
-            for (let index = 0; index < 2; index += 1) {
-              await expect(images.nth(index)).toBeVisible();
-            }
-
-            const columnCount = await gallery.evaluate((element) => {
-              const columns = getComputedStyle(element).gridTemplateColumns.trim();
-              return columns.length === 0 ? 0 : columns.split(/\s+/).length;
-            });
-            expect(columnCount).toBe(1);
+            // Below `lg` it is the one-image swipe gallery with its current/total indicator.
+            await expect(stage.locator(".pdp-stage__track")).toBeHidden();
+            const mobileGallery = stage.locator(".pdp-mobile-gallery");
+            await expect(mobileGallery).toBeVisible();
+            await expect(mobileGallery.locator("img")).toHaveCount(1);
+            await expect(mobileGallery.locator("img")).toHaveAttribute("alt", productName);
+            await expect(stage.getByRole("status")).toHaveText("1/3");
           }
         }
 
@@ -316,6 +306,77 @@ test("P18 captures representative production performance evidence for home, PLP,
       } finally {
         await context.close();
       }
+    }
+  }
+});
+
+test("independent mobile chrome keeps practical header targets and phone grid rhythm without overflow", async ({
+  browser,
+}) => {
+  for (const viewport of [
+    { width: 320, height: 720 },
+    { width: 390, height: 844 },
+    { width: 768, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    const { context, page, browserErrors } = await createMeasuredPage(browser, viewport);
+    try {
+      await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
+
+      if (viewport.width < 900) {
+        const menu = page.getByRole("button", { name: "Menu", exact: true });
+        const search = page.locator(".utility-nav button").first();
+        const cart = page.locator(".utility-nav button").last();
+
+        for (const control of [menu, search, cart]) {
+          await expect(control).toBeVisible();
+          const box = await control.boundingBox();
+          expect(box?.width).toBeGreaterThanOrEqual(44);
+          expect(box?.height).toBeGreaterThanOrEqual(44);
+        }
+
+        await menu.click();
+        const closeMenu = page.getByRole("button", { name: "Đóng menu", exact: true });
+        await expect(closeMenu).toBeVisible();
+        const closeMenuBox = await closeMenu.boundingBox();
+        expect(closeMenuBox?.width).toBeGreaterThanOrEqual(44);
+        expect(closeMenuBox?.height).toBeGreaterThanOrEqual(44);
+        await closeMenu.click();
+
+        await expect(page.locator(".mobile-account-link")).toBeHidden();
+      }
+
+      /*
+       * The product grid, not the first two-column thing on the page: `/shop` draws its filter
+       * form as a `.grid-cols-2` too, and that one comes first in the DOM, so reading the rhythm
+       * from it measured the form's `gap-x-4` and reported 16px against the grid's 2px.
+       */
+      const grid = page
+        .locator("main .grid-cols-2")
+        .filter({ has: page.locator(".product-visual") })
+        .first();
+      await expect(grid).toBeVisible();
+      const computed = await grid.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          columns: style.gridTemplateColumns.split(/\s+/).filter(Boolean).length,
+          columnGap: style.columnGap,
+          rowGap: style.rowGap,
+        };
+      });
+
+      if (viewport.width <= 390) {
+        expect(computed.columns).toBe(2);
+        expect(computed.columnGap).toBe("2px");
+        expect(computed.rowGap).toBe("2px");
+      }
+
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      expect(browserErrors).toEqual([]);
+    } finally {
+      await context.close();
     }
   }
 });

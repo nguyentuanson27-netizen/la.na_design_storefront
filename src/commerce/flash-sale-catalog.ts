@@ -136,7 +136,6 @@ function buildSaleCte(now: Date) {
     "sale_variant_dimension" AS (
       SELECT
         vs.*,
-        vc."basePrice",
         vc."candidateCount",
         BOOL_OR(NULLIF(BTRIM(vs."color"), '') IS NOT NULL)
           OVER (PARTITION BY vs."productId") AS "hasColorDimension"

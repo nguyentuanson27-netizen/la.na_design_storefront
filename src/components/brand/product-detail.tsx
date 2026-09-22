@@ -35,8 +35,6 @@ type BrandProductDetailProps = Readonly<{
   selection: UseVariantSelectionInput;
   media: StorefrontProductMedia;
   productName: string;
-  /** Server-resolved from a `?variant=` deep link; the below-`lg` gallery clamps out-of-range. */
-  initialGalleryIndex: number;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   sizeGuide: ProductMappedSizeGuide | null;
   /** Rendered above the information row, inside the page shell. */
@@ -53,7 +51,6 @@ export function BrandProductDetail({
   selection,
   media,
   productName,
-  initialGalleryIndex,
   galleryIndexByVariantId,
   sizeGuide,
   breadcrumb,
@@ -63,22 +60,6 @@ export function BrandProductDetail({
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
 
-  /*
-   * The stage owns image 1, so the below-`lg` editorial grid keeps showing what it always showed:
-   * everything after it, with the variant map shifted by one to match.
-   */
-  const hasStage = media.gallery.length > 0;
-  const remainingMedia = Object.freeze({
-    primary: media.gallery[1] ?? null,
-    gallery: Object.freeze(media.gallery.slice(1)),
-  });
-  const remainingGalleryIndexByVariantId = Object.freeze(
-    Object.fromEntries(
-      Object.entries(galleryIndexByVariantId)
-        .filter(([, index]) => index > 0)
-        .map(([variantId, index]) => [variantId, index - 1]),
-    ),
-  );
 
   return (
     <>
@@ -89,13 +70,23 @@ export function BrandProductDetail({
         galleryIndexByVariantId={galleryIndexByVariantId}
       />
 
-      <div className="mx-auto max-w-[1600px] px-6 py-10 md:py-16">
-        {breadcrumb}
+      <div className="mx-auto max-w-[1600px] px-6 pb-10 pt-5 md:pb-16 md:pt-7 lg:py-16">
+        {/*
+          Desktop keeps the trail where it has always been, above the information row.
 
-        {/* No trusted photography at all: the gallery's own truthful fallback, not an invented
-            hero. There is no stage to hide it behind, so it stands above the information row. */}
-        {hasStage ? null : (
-          <div className="mt-7 max-w-sm">
+          Below `lg` it moves to the end of the content instead of being dropped. The mobile spec
+          asks for the product name to come immediately after the gallery, which the trail sat in
+          the way of -- but it asks for an ordering, not for the phone to lose its way back up the
+          catalogue. Rendering it twice, each copy gated to one side of the seam, is what keeps
+          reading order equal to visual order on both: a single element moved with `order` would
+          still be announced before the product name on a phone, which is the thing the ordering
+          rule exists to prevent. Only one copy is ever rendered, so only one landmark is ever live.
+        */}
+        <div className="hidden lg:block">{breadcrumb}</div>
+
+        {/* No trusted photography at all: preserve the existing truthful fallback. */}
+        {media.gallery.length > 0 ? null : (
+          <div className="max-w-sm">
             <BrandProductGallery media={media} productName={productName} preloadFirstImage={false} />
           </div>
         )}
@@ -108,20 +99,7 @@ export function BrandProductDetail({
           panel spans both content rows of the right column so a long panel cannot push the
           product's own description down past it.
         */}
-        <div className="mt-7 grid min-w-0 items-start gap-10 border-t border-black/20 pt-8 lg:grid-cols-2 lg:gap-x-16 lg:gap-y-10">
-          {hasStage && remainingMedia.gallery.length > 0 ? (
-            <div className="min-w-0 lg:hidden">
-              <BrandProductGallery
-                media={remainingMedia}
-                productName={productName}
-                initialIndex={initialGalleryIndex > 0 ? initialGalleryIndex - 1 : 0}
-                selectedVariantId={controller.view.selectedVariantId}
-                galleryIndexByVariantId={remainingGalleryIndexByVariantId}
-                preloadFirstImage={false}
-              />
-            </div>
-          ) : null}
-
+        <div className="grid min-w-0 items-start gap-6 lg:mt-7 lg:grid-cols-2 lg:gap-x-16 lg:gap-y-10 lg:border-t lg:border-black/20 lg:pt-8">
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">{identity}</div>
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
@@ -135,6 +113,8 @@ export function BrandProductDetail({
           )}
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-3">{purchaseInformation}</div>
+
+          <div className="min-w-0 border-t border-black/15 pt-5 lg:hidden">{breadcrumb}</div>
         </div>
       </div>
     </>

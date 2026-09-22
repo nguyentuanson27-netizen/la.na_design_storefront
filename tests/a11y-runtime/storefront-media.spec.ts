@@ -328,16 +328,22 @@ test("PDP with single trusted image renders hero image without redundant thumbna
 
   // The canonical first image is the full-bleed hero and the header overlays it at the top.
   const hero = page.getByRole("region", { name: `Ảnh chính của ${singleName}` });
-  const heroImg = hero.locator(`img[alt="${singleName}"]`);
   await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
-  await expect(heroImg).toBeVisible();
   await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
   expect(await page.locator("header.site-header").evaluate((element) => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
 
-  // A one-image product has nothing left to duplicate below the hero.
-  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
+  /*
+   * The stage now carries three compositions -- the below-`lg` gallery, the `lg+` track and the
+   * lightbox -- so the product's photograph appears in the markup more than once. Exactly one of
+   * them is ever displayed, which is the fact worth asserting: at this width the shopper sees the
+   * one canonical image and nothing else.
+   */
+  await expect(hero.locator(`img[alt="${singleName}"]:visible`)).toHaveCount(1);
+  await expect(hero.locator("img:visible")).toHaveCount(1);
 
-  // No redundant carousel thumbnail controls
+  // A one-image product needs no way to move between images, and never had thumbnails.
+  await expect(hero.getByRole("button", { name: "Ảnh trước" })).toHaveCount(0);
+  await expect(hero.getByRole("button", { name: "Ảnh tiếp theo" })).toHaveCount(0);
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
 });
 
@@ -380,7 +386,7 @@ test("the desktop information row puts the product's own story left and the purc
   await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
 });
 
-test("PDP with multiple images renders a one-column mobile editorial grid with every trusted image once", async ({
+test("the below-`lg` gallery shows one trusted image at a time and swipes through all of them", async ({
   page,
 }) => {
   await page.route("**/_next/image**", (route) => {
@@ -394,54 +400,142 @@ test("PDP with multiple images renders a one-column mobile editorial grid with e
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: multiName })).toBeVisible();
 
+  /*
+   * The mobile spec replaced the hero-then-editorial-grid composition with one horizontal gallery.
+   * The guarantee it inherits is unchanged -- every trusted photograph is reachable, once each, in
+   * source order -- but a phone now shows them one at a time instead of stacking them, so it is
+   * asserted by swiping rather than by counting a grid.
+   */
   const hero = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
-  await expect(hero.locator(`img[alt="${multiName}"]`)).toHaveCount(1);
-  // Below `lg` the stage shows that first image and nothing else.
-  await expect(hero.locator("img:visible")).toHaveCount(1);
+  const counter = hero.getByRole("status");
+  const visibleImage = hero.locator("img:visible");
 
-  const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
-  const images = gallery.locator("img");
-  await expect(images).toHaveCount(2);
+  const showing = async () => ({
+    alt: await visibleImage.getAttribute("alt"),
+    src: await visibleImage.getAttribute("src"),
+  });
 
-  for (let index = 0; index < 2; index += 1) {
-    await expect(images.nth(index)).toBeVisible();
+  // The swipe surface is the gallery button itself, not the full-bleed section around it.
+  const swipeSurface = hero.locator(".pdp-mobile-gallery__image");
+
+  async function swipe(direction: "next" | "previous") {
+    const box = (await swipeSurface.boundingBox())!;
+    const midY = box.y + box.height / 2;
+    const from = direction === "next" ? box.x + box.width * 0.75 : box.x + box.width * 0.25;
+    const to = direction === "next" ? box.x + box.width * 0.2 : box.x + box.width * 0.8;
+    await page.mouse.move(from, midY);
+    await page.mouse.down();
+    await page.mouse.move(to, midY + 3, { steps: 8 });
+    await page.mouse.up();
   }
 
-  /*
-   * Below `lg` the composition is still hero-then-grid, so what a shopper actually sees is the
-   * three trusted photographs, once each, in source order.
-   *
-   * The media stage also carries the later slides in the markup for the `lg` composition, but they
-   * have no box at this width -- which is both why they are excluded here and why their lazy
-   * images are never fetched on a phone. Asserting over the *visible* images keeps the old
-   * guarantee (every trusted image once, no duplicates, the canonical alt text) rather than
-   * counting markup the viewport does not render.
-   */
-  const renderedImages = await page
-    .locator(`img[alt^="${multiName}"]`)
-    .evaluateAll((elements) =>
-      elements
-        .filter((element) => element.getClientRects().length > 0)
-        .map((element) => ({
-          alt: element.getAttribute("alt"),
-          src: element.getAttribute("src"),
-        })),
-    );
-  expect(renderedImages.map(({ alt }) => alt)).toEqual([
+  // One image on screen at a time, and the counter says which.
+  await expect(visibleImage).toHaveCount(1);
+  await expect(counter).toHaveText("1/3");
+
+  const seen = [await showing()];
+  for (const expected of ["2/3", "3/3"]) {
+    await swipe("next");
+    await expect(counter).toHaveText(expected);
+    await expect(visibleImage).toHaveCount(1);
+    seen.push(await showing());
+  }
+
+  // Every trusted photograph, once each, in source order, from a distinct source.
+  expect(seen.map(({ alt }) => alt)).toEqual([
     multiName,
     `${multiName} - Ảnh 2`,
     `${multiName} - Ảnh 3`,
   ]);
-  expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
+  expect(new Set(seen.map(({ src }) => src)).size).toBe(3);
 
-  const columnCount = await gallery.evaluate((element) => {
-    const columns = getComputedStyle(element).gridTemplateColumns.trim();
-    return columns.length === 0 ? 0 : columns.split(/\s+/).length;
-  });
-  expect(columnCount).toBe(1);
-  await expect(gallery.locator("button")).toHaveCount(0);
+  // The ends clamp rather than wrap, the same as the desktop stage.
+  await swipe("next");
+  await expect(counter).toHaveText("3/3");
+  for (const expected of ["2/3", "1/3"]) {
+    await swipe("previous");
+    await expect(counter).toHaveText(expected);
+  }
+  await swipe("previous");
+  await expect(counter).toHaveText("1/3");
+
+  // The old editorial grid is gone rather than hidden.
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toHaveCount(0);
 
   await assertPageQuality(page);
+});
+
+test("the below-`lg` gallery and its lightbox work at 390 and 768, and never trap the page scroll", async ({
+  page,
+}) => {
+  /*
+   * The mobile spec puts the whole below-`lg` seam under one contract, so 768 is asserted
+   * alongside 390: a tablet is below `lg` and must get the same one-image gallery, not a squeezed
+   * desktop track.
+   */
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  for (const viewport of [
+    { label: "phone", width: 390, height: 844 },
+    { label: "tablet", width: 768, height: 1024 },
+  ]) {
+    await page.goto("about:blank");
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+
+    const hero = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+    const mobileGallery = hero.locator(".pdp-mobile-gallery");
+    const counter = hero.getByRole("status");
+
+    // Below `lg` it is the one-image gallery, never the desktop track.
+    await expect(mobileGallery, `${viewport.label} gallery`).toBeVisible();
+    await expect(hero.locator(".pdp-stage__track")).toBeHidden();
+    await expect(hero.locator("img:visible")).toHaveCount(1);
+    await expect(counter).toHaveText(`1/3`);
+
+    /*
+     * The swipe surface owes the page its vertical gestures. A wheel over the gallery scrolls the
+     * document and leaves the gallery where it was.
+     */
+    const surface = mobileGallery.locator(".pdp-mobile-gallery__image");
+    const box = (await surface.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.wheel(0, 600);
+    await page.waitForFunction(() => window.scrollY > 150);
+    expect(
+      await page.evaluate(() => window.scrollY),
+      `${viewport.label}: a vertical wheel must scroll the document`,
+    ).toBeGreaterThan(150);
+    await expect(counter, `${viewport.label}: a wheel is not gallery input`).toHaveText("1/3");
+    await page.evaluate(() => window.scrollTo(0, 0));
+
+    // The same image opens full screen, contained rather than cropped, and closes back to it.
+    const openLightbox = hero.getByRole("button", { name: new RegExp(`^Mở ảnh 1 / 3 của `) });
+    await openLightbox.click();
+
+    const lightbox = page.getByRole("dialog", { name: `Xem ảnh ${multiName}` });
+    await expect(lightbox, `${viewport.label} lightbox`).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(1);
+    const lightboxImage = lightbox.locator("img");
+    expect(
+      await lightboxImage.evaluate((element) => getComputedStyle(element).objectFit),
+      `${viewport.label}: the lightbox contains the garment`,
+    ).toBe("contain");
+
+    const close = lightbox.getByRole("button", { name: "Đóng thư viện ảnh", exact: true });
+    await expect(close).toBeFocused();
+    const closeBox = (await close.boundingBox())!;
+    expect(closeBox.width).toBeGreaterThanOrEqual(44);
+    expect(closeBox.height).toBeGreaterThanOrEqual(44);
+
+    await page.keyboard.press("Escape");
+    await expect(lightbox).toBeHidden();
+    await expect(openLightbox, `${viewport.label}: focus returns to the gallery`).toBeFocused();
+
+    await assertPageQuality(page);
+  }
 });
 
 test("PDP with untrusted media renders intentional fallback without broken image", async ({
@@ -486,9 +580,19 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   // cropping it, over the brand's cream rather than black bars.
   const stageBox = (await stage.boundingBox())!;
   expect(stageBox.height, "the stage is approximately one viewport tall").toBeGreaterThan(900 * 0.8);
+  /*
+   * Scoped to the desktop track. The stage also carries the below-`lg` gallery, which comes first
+   * in the DOM and crops deliberately -- reading `img` first from the whole stage would measure
+   * the phone composition and pass on the wrong element.
+   */
+  const desktopTrack = stage.locator(".pdp-stage__track");
   expect(
-    await stage.locator("img").first().evaluate((element) => getComputedStyle(element).objectFit),
+    await desktopTrack
+      .locator("img")
+      .first()
+      .evaluate((element) => getComputedStyle(element).objectFit),
   ).toBe("contain");
+  await expect(stage.locator(".pdp-mobile-gallery")).toBeHidden();
 
   // Slide 1 is image 1 alone at full width; the second slide pairs the remaining two 50/50.
   const slides = stage.locator(".pdp-stage__slide");
@@ -500,8 +604,8 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   expect(cellWidths).toHaveLength(2);
   expect(Math.abs(cellWidths[0]! - cellWidths[1]!), "a two-image slide splits 50/50").toBeLessThanOrEqual(2);
 
-  // The below-`lg` editorial grid is not part of the desktop composition.
-  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toBeHidden();
+  // The below-`lg` editorial grid is gone entirely; the mobile gallery above replaced it.
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toHaveCount(0);
 
   await assertPageQuality(page);
 });
@@ -626,28 +730,47 @@ test("only the current slide's photographs are exposed to assistive technology",
   await assertPageQuality(page);
 });
 
-test("each trusted photograph is fetched once, whichever composition the viewport renders", async ({
+test("each trusted photograph is fetched at full size once, whichever composition the viewport renders", async ({
   page,
 }) => {
   /*
-   * The media stage and the below-`lg` editorial grid both carry images 2..n, because one of them
-   * is always `display: none` and a phone and a desktop want different compositions. That only
-   * stays honest if the hidden copy never downloads: an element with no layout box is never near
-   * the viewport, so its `loading="lazy"` image is never requested.
+   * The stage carries both compositions, so image 1 exists twice in the markup and the `<link
+   * rel="preload">` for each is emitted whatever the viewport. What keeps that honest is the
+   * `sizes` hint on each copy: the composition this viewport is not showing declares `1px`, so the
+   * browser resolves it to the smallest candidate in the srcset instead of the real photograph.
    *
-   * Asserted as "at most once per photograph" rather than "exactly once" because a lazy image is
-   * fetched when it approaches the viewport, which is a timing the test scrolls to reach rather
-   * than one it should pin.
+   * So the guarantee is about full-size bytes, not request count: a viewport downloads each
+   * photograph at full size at most once, and the off-composition copy never grows past the
+   * smallest candidate. Dropping the `1px` hint would fetch both at full size and fail here.
    */
-  const fetched: string[] = [];
+  const fetched: { url: string; width: number }[] = [];
   await page.route("**/_next/image**", (route) => {
-    const source = new URL(route.request().url()).searchParams.get("url") ?? "";
-    fetched.push(source);
+    const params = new URL(route.request().url()).searchParams;
+    fetched.push({
+      url: params.get("url") ?? "",
+      width: Number(params.get("w") ?? "0"),
+    });
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
   });
 
   const photographs = ["primary.jpg", "angle-front.jpg", "detail-fabric.jpg"];
-  const countsFor = (name: string) => fetched.filter((source) => source.includes(name)).length;
+  const widthsFor = (name: string) =>
+    fetched.filter(({ url }) => url.includes(name)).map(({ width }) => width);
+
+  /**
+   * How many times a photograph was actually downloaded for this viewport.
+   *
+   * The widest request is the real one; anything narrower is the `1px`-hinted decoy resolving to
+   * the smallest candidate. Comparing against the widest request rather than a fixed pixel
+   * threshold keeps this correct at every viewport -- on a phone the smallest candidate *is* the
+   * right size, so a threshold would call the real download a decoy.
+   */
+  const fullSizeCountFor = (name: string) => {
+    const widths = widthsFor(name);
+    if (widths.length === 0) return 0;
+    const widest = Math.max(...widths);
+    return widths.filter((width) => width === widest).length;
+  };
 
   for (const viewport of [
     { label: "mobile", width: 390, height: 844 },
@@ -662,18 +785,46 @@ test("each trusted photograph is fetched once, whichever composition the viewpor
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForLoadState("networkidle");
 
+    const report = JSON.stringify(fetched);
+
     for (const photograph of photographs) {
       expect(
-        countsFor(photograph),
-        `${viewport.label}: ${photograph} must not be downloaded twice (${JSON.stringify(fetched)})`,
+        fullSizeCountFor(photograph),
+        `${viewport.label}: ${photograph} must not be downloaded at its full width twice (${report})`,
       ).toBeLessThanOrEqual(1);
     }
-    // The canonical first image is the one surface that is always on screen, so it always loads.
-    expect(countsFor("primary.jpg"), `${viewport.label}: canonical first image`).toBe(1);
-    // ...and the composition this viewport renders really did show the rest.
+
+    // The canonical first image is on screen at every width, so it always loads for real.
     expect(
-      photographs.slice(1).every((photograph) => countsFor(photograph) === 1),
-      `${viewport.label}: every later photograph loads exactly once (${JSON.stringify(fetched)})`,
+      fullSizeCountFor("primary.jpg"),
+      `${viewport.label}: canonical first image (${report})`,
+    ).toBe(1);
+
+    /*
+     * The `lg+` track paints every slide, so the rest load too. The below-`lg` gallery shows one
+     * photograph at a time and fetches the others only as the shopper swipes, which is why a phone
+     * leaves this page having downloaded one photograph. Pinning both directions stops the phone
+     * quietly regressing into fetching the whole gallery up front.
+     */
+    expect(
+      photographs.slice(1).map(fullSizeCountFor),
+      `${viewport.label}: later photographs (${report})`,
+    ).toEqual(viewport.label === "desktop" ? [1, 1] : [0, 0]);
+
+    /*
+     * Image 1 is the one photograph both compositions declare, so it is the one that can carry a
+     * decoy. At most two requests: the real one, and a strictly narrower hinted candidate. Three
+     * would mean a composition stopped scoping its `sizes`.
+     */
+    const primaryWidths = widthsFor("primary.jpg");
+    expect(
+      primaryWidths.length,
+      `${viewport.label}: image 1 requests (${report})`,
+    ).toBeLessThanOrEqual(2);
+    const widest = Math.max(...primaryWidths);
+    expect(
+      primaryWidths.filter((width) => width !== widest).every((width) => width < widest),
+      `${viewport.label}: the hidden composition must stay narrower than the real one (${report})`,
     ).toBe(true);
   }
 });

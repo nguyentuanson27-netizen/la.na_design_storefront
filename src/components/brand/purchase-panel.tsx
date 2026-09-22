@@ -1,7 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import { useRef, type KeyboardEvent } from "react";
+import { createPortal } from "react-dom";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 
 import {
   useVariantSelection,
@@ -10,6 +17,10 @@ import {
   type VariantSelectionController,
   OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
+import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
+import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
+import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
 
 /**
@@ -38,18 +49,17 @@ const DIALOG_FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
-function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGuide }>) {
-  const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const closeButtonRef = useRef<HTMLButtonElement | null>(null);
-
-  function openDialog() {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    dialog.showModal();
-    closeButtonRef.current?.focus();
-  }
-
+function MappedSizeGuideDialog({
+  guide,
+  dialogRef,
+  closeButtonRef,
+  onClose,
+}: Readonly<{
+  guide: ProductMappedSizeGuide;
+  dialogRef: RefObject<HTMLDialogElement | null>;
+  closeButtonRef: RefObject<HTMLButtonElement | null>;
+  onClose: () => void;
+}>) {
   function closeDialog() {
     dialogRef.current?.close();
   }
@@ -89,105 +99,84 @@ function MappedSizeGuideDialog({ guide }: Readonly<{ guide: ProductMappedSizeGui
   }
 
   return (
-    <>
-      <button
-        ref={triggerRef}
-        type="button"
-        className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-        onClick={openDialog}
-      >
-        Hướng dẫn chọn size
-      </button>
-
-      <dialog
-        ref={dialogRef}
-        aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
-        data-size-guide-id={guide.id}
-        tabIndex={-1}
-        className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
-        onClose={() => triggerRef.current?.focus()}
-        onKeyDown={containFocus}
-      >
-        <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col p-3 sm:max-h-[calc(100dvh-2rem)] sm:p-5">
-          <div className="flex shrink-0 items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/55">
-                Hướng dẫn chọn size
-              </p>
-              <h2 className="mt-1 font-serif text-2xl tracking-[-0.03em] sm:text-3xl">
-                {guide.chart.title}
-              </h2>
-            </div>
-            <button
-              ref={closeButtonRef}
-              type="button"
-              className="min-h-11 shrink-0 border border-black/30 px-4 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-              onClick={closeDialog}
-            >
-              Đóng
-            </button>
+    <dialog
+      ref={dialogRef}
+      aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
+      data-size-guide-id={guide.id}
+      tabIndex={-1}
+      className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
+      onClose={onClose}
+      onKeyDown={containFocus}
+    >
+      <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col p-3 sm:max-h-[calc(100dvh-2rem)] sm:p-5">
+        <div className="flex shrink-0 items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/55">
+              Hướng dẫn chọn size
+            </p>
+            <h2 className="mt-1 font-serif text-2xl tracking-[-0.03em] sm:text-3xl">
+              {guide.chart.title}
+            </h2>
           </div>
+          <button
+            ref={closeButtonRef}
+            type="button"
+            className="min-h-11 shrink-0 border border-black/30 px-4 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+            onClick={closeDialog}
+          >
+            Đóng
+          </button>
+        </div>
 
-          <div className="mt-3 shrink-0 space-y-1 text-xs leading-5 text-black/70 sm:mt-4 sm:text-sm sm:leading-6">
-            <p>{guide.circumferenceSemanticsNote}</p>
-            {guide.tolerance ? (
-              <p>
-                <strong>Dung sai:</strong> {guide.tolerance.note}
-              </p>
-            ) : null}
-            <p>{guide.guidanceNote}</p>
-          </div>
+        <div className="mt-3 shrink-0 space-y-1 text-xs leading-5 text-black/70 sm:mt-4 sm:text-sm sm:leading-6">
+          <p>{guide.circumferenceSemanticsNote}</p>
+          {guide.tolerance ? (
+            <p>
+              <strong>Dung sai:</strong> {guide.tolerance.note}
+            </p>
+          ) : null}
+          <p>{guide.guidanceNote}</p>
+        </div>
 
-          {/*
-            The visually-hidden copy of the chart, wrapped rather than hidden in place.
-            `sr-only` works by shrinking the box to 1px and clipping what spills out, and a
-            `<table>` will not shrink: the automatic table layout algorithm takes the used width as
-            the larger of the specified width and the table's minimum content width, so `width: 1px`
-            on the table itself is ignored and the table lays out at full size. It then overflowed
-            the dialog -- measured at 320px wide, the dialog's scrollWidth was 313 against a
-            clientWidth of 302. A plain block honours the 1px and clips the table inside it, and the
-            table keeps its own display so the roles a screen reader needs are unchanged.
-          */}
-          <div className="sr-only">
-            <table>
-              <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
-              <thead>
-                <tr>
-                  <th scope="col">Thông số</th>
+        <div className="sr-only">
+          <table>
+            <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
+            <thead>
+              <tr>
+                <th scope="col">Thông số</th>
+                {guide.chart.sizes.map((size) => (
+                  <th key={size} scope="col">
+                    {size}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {guide.chart.rows.map((row) => (
+                <tr key={row.parameter}>
+                  <th scope="row">{row.parameter}</th>
                   {guide.chart.sizes.map((size) => (
-                    <th key={size} scope="col">
-                      {size}
-                    </th>
+                    <td key={size}>{row.values[size]}</td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {guide.chart.rows.map((row) => (
-                  <tr key={row.parameter}>
-                    <th scope="row">{row.parameter}</th>
-                    {guide.chart.sizes.map((size) => (
-                      <td key={size}>{row.values[size]}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
-            <Image
-              src={`/brand/size-guides/${guide.id}.webp`}
-              alt=""
-              width={500}
-              height={500}
-              sizes="(max-width: 640px) calc(100vw - 2rem), 500px"
-              unoptimized
-              className="h-auto max-h-[calc(100dvh-13rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-15rem)]"
-            />
-          </div>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </dialog>
-    </>
+
+        <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
+          <Image
+            src={`/brand/size-guides/${guide.id}.webp`}
+            alt=""
+            width={500}
+            height={500}
+            sizes="(max-width: 640px) calc(100vw - 2rem), 500px"
+            unoptimized
+            className="h-auto max-h-[calc(100dvh-13rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-15rem)]"
+          />
+        </div>
+      </div>
+    </dialog>
   );
 }
 
@@ -212,23 +201,26 @@ export function PurchasePanelView({
     buyNow,
   } = controller;
   const { priceDisplay, availabilityDateLabel } = view;
-  const sizeSelectorRef = useRef<HTMLFieldSetElement | null>(null);
-  const sizeErrorId = "storefront-size-error";
-  const kindGuidanceId = "storefront-kind-guidance";
+  const mobilePresentation = resolveMobilePurchasePresentation(view, selection);
 
-  /*
-   * Refinement spec "Variant UX".
-   *
-   * `deriveStorefrontProjectionSelection` returns these sizes `disabled` before a kind is chosen
-   * and this panel does not argue with it. What changes is only how that reads: the unresolved
-   * state keeps full strength and a dashed edge, so it is legible as "not chosen yet" rather than
-   * borrowing the dimmed presentation a genuinely unavailable option wears.
-   */
+  const sizeSelectorRef = useRef<HTMLFieldSetElement | null>(null);
+  const stickyTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const sheetRef = useRef<HTMLDivElement | null>(null);
+  const sheetCloseRef = useRef<HTMLButtonElement | null>(null);
+  const sheetSizeGuideTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const mainSizeGuideTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const sizeGuideDialogRef = useRef<HTMLDialogElement | null>(null);
+  const sizeGuideCloseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const sizeGuideSourceRef = useRef<"main" | "sheet" | null>(null);
+  const sheetWasOpenRef = useRef(false);
+  const suppressSheetFocusRestoreRef = useRef(false);
+  const sheetInitialFocusRef = useRef<"close" | "size-guide">("close");
+
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
+
+  useScrollLock(isSheetOpen);
+
   const awaitsKindSelection = view.kindSelectionGuidance !== null;
-  const sizeDescribedBy =
-    [sizeValidationMessage ? sizeErrorId : null, awaitsKindSelection ? kindGuidanceId : null]
-      .filter((id): id is string => id !== null)
-      .join(" ") || undefined;
 
   function runPurchase(action: () => PurchaseAttemptResult) {
     if (action() === "missing-size") {
@@ -238,109 +230,249 @@ export function PurchasePanelView({
     }
   }
 
-  const kindFieldset = view.hasKindOptions ? (
-    <fieldset className="mt-8">
-      <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Loại</legend>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {view.kinds.map((choice) => (
-          <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-kind"
-              value={choice.key}
-              checked={selection.kindKey === choice.key}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseKind(choice.key)}
-            />
-            <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.label}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  ) : null;
+  function openSheet() {
+    sheetInitialFocusRef.current = "close";
+    setIsSheetOpen(true);
+  }
 
-  const colorFieldset = view.hasColorOptions ? (
-    <fieldset className="mt-7">
-      <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Màu</legend>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {view.colors.map((choice) => (
-          <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-color"
-              value={choice.value}
-              checked={selection.color === choice.value}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseColor(choice.value)}
-            />
-            <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.value}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  ) : null;
+  function closeSheet() {
+    setIsSheetOpen(false);
+  }
 
-  const sizeFieldset = (
-    <fieldset
-      ref={sizeSelectorRef}
-      tabIndex={-1}
-      aria-invalid={sizeValidationMessage ? "true" : undefined}
-      aria-describedby={sizeDescribedBy}
-      className={`${view.hasKindOptions || view.hasColorOptions ? "mt-7" : "mt-8"} rounded-sm ${sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""}`}
-    >
-      <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Kích cỡ</legend>
-      {view.kindSelectionGuidance === null ? null : (
-        <p id={kindGuidanceId} className="mt-3 max-w-xs text-sm leading-6 text-[#3B2219]">
-          {view.kindSelectionGuidance}
-        </p>
-      )}
-      <div className="mt-3 flex flex-wrap gap-2">
-        {view.sizes.map((choice) => (
-          <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
-            <input
-              className="peer sr-only"
-              type="radio"
-              name="storefront-size"
-              value={choice.value}
-              checked={selection.size === choice.value}
-              disabled={choice.disabled || isPending}
-              onChange={() => chooseSize(choice.value)}
-            />
-            <span
-              className={`${SELECTABLE_CHIP} ${
-                awaitsKindSelection
-                  ? "border-dashed border-[#3B2219]/45"
-                  : "peer-disabled:opacity-60"
-              }`}
-            >
-              {choice.value}
-            </span>
-          </label>
-        ))}
-      </div>
-      {sizeValidationMessage ? (
-        <p id={sizeErrorId} className="mt-3 text-sm font-medium text-[#8A3A35]" role="alert">
-          {sizeValidationMessage}
-        </p>
-      ) : null}
-    </fieldset>
-  );
+  function handleSheetKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeSheet();
+      return;
+    }
+    if (event.key === "Tab") {
+      handleDrawerFocusTrap(event.nativeEvent, sheetRef.current);
+    }
+  }
+
+  useEffect(() => {
+    if (isSheetOpen) {
+      sheetWasOpenRef.current = true;
+      const timer = setTimeout(() => {
+        if (sheetInitialFocusRef.current === "size-guide") {
+          sheetSizeGuideTriggerRef.current?.focus();
+          sheetInitialFocusRef.current = "close";
+        } else {
+          sheetCloseRef.current?.focus();
+        }
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+
+    if (!sheetWasOpenRef.current) return;
+    sheetWasOpenRef.current = false;
+
+    if (suppressSheetFocusRestoreRef.current) {
+      suppressSheetFocusRestoreRef.current = false;
+      return;
+    }
+
+    stickyTriggerRef.current?.focus();
+  }, [isSheetOpen]);
+
+  function showMainSizeGuide() {
+    const dialog = sizeGuideDialogRef.current;
+    if (!dialog || dialog.open) return;
+    sizeGuideSourceRef.current = "main";
+    dialog.showModal();
+    sizeGuideCloseButtonRef.current?.focus();
+  }
+
+  function showSheetSizeGuide() {
+    if (sizeGuide === null) return;
+    sizeGuideSourceRef.current = "sheet";
+    suppressSheetFocusRestoreRef.current = true;
+    setIsSheetOpen(false);
+    window.requestAnimationFrame(() => {
+      const dialog = sizeGuideDialogRef.current;
+      if (!dialog || dialog.open) return;
+      dialog.showModal();
+      sizeGuideCloseButtonRef.current?.focus();
+    });
+  }
+
+  function handleSizeGuideClose() {
+    if (sizeGuideSourceRef.current === "sheet") {
+      sizeGuideSourceRef.current = null;
+      sheetInitialFocusRef.current = "size-guide";
+      setIsSheetOpen(true);
+      return;
+    }
+    sizeGuideSourceRef.current = null;
+    mainSizeGuideTriggerRef.current?.focus();
+  }
+
+  function handleSheetAddAccepted() {
+    suppressSheetFocusRestoreRef.current = true;
+    setIsSheetOpen(false);
+    window.requestAnimationFrame(() => {
+      requestStorefrontCartDrawerOpen();
+    });
+  }
+
+  function handleStickyAction() {
+    if (!mobilePresentation.readyToAdd) {
+      openSheet();
+      return;
+    }
+    runPurchase(() => addToBag(requestStorefrontCartDrawerOpen));
+  }
+
+  /**
+   * The radio group name for one dimension on one surface.
+   *
+   * The panel is the server-rendered surface, so it keeps the canonical names -- the deep-link and
+   * structured-data HTTP smokes read the served markup for `name="storefront-size"` to prove which
+   * option the *server* preselected, and a renamed group makes both the positive and the negative
+   * assertion match nothing at all. The sheet is a second live copy of the same groups in the same
+   * document, so it gets its own names: two copies under one name are one native radio group, and
+   * choosing in the sheet would uncheck the panel behind it.
+   */
+  function groupName(dimension: "kind" | "size" | "color", surface: "panel" | "sheet") {
+    return surface === "panel" ? `storefront-${dimension}` : `storefront-${dimension}-sheet`;
+  }
+
+  function renderKindFieldset(surface: "panel" | "sheet") {
+    if (!view.hasKindOptions) return null;
+
+    return (
+      <fieldset className="mt-7">
+        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Loại</legend>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {view.kinds.map((choice) => (
+            <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+              <input
+                className="peer sr-only"
+                type="radio"
+                name={groupName("kind", surface)}
+                value={choice.key}
+                checked={selection.kindKey === choice.key}
+                disabled={choice.disabled || isPending}
+                onChange={() => chooseKind(choice.key)}
+              />
+              <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
+
+  function renderSizeFieldset(surface: "panel" | "sheet") {
+    const sizeErrorId = `storefront-size-error-${surface}`;
+    const kindGuidanceId = `storefront-kind-guidance-${surface}`;
+    const sizeDescribedBy =
+      [sizeValidationMessage ? sizeErrorId : null, awaitsKindSelection ? kindGuidanceId : null]
+        .filter((id): id is string => id !== null)
+        .join(" ") || undefined;
+
+    return (
+      <fieldset
+        ref={surface === "panel" ? sizeSelectorRef : undefined}
+        tabIndex={surface === "panel" ? -1 : undefined}
+        aria-invalid={sizeValidationMessage ? "true" : undefined}
+        aria-describedby={sizeDescribedBy}
+        className={`mt-7 rounded-sm ${
+          sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
+        }`}
+      >
+        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Kích cỡ</legend>
+        {view.kindSelectionGuidance === null ? null : (
+          <p id={kindGuidanceId} className="mt-3 max-w-xs text-sm leading-6 text-[#3B2219]">
+            {view.kindSelectionGuidance}
+          </p>
+        )}
+        <div className="mt-3 flex flex-wrap gap-2">
+          {view.sizes.map((choice) => (
+            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+              <input
+                className="peer sr-only"
+                type="radio"
+                name={groupName("size", surface)}
+                value={choice.value}
+                checked={selection.size === choice.value}
+                disabled={choice.disabled || isPending}
+                onChange={() => chooseSize(choice.value)}
+              />
+              <span
+                className={`${SELECTABLE_CHIP} ${
+                  awaitsKindSelection
+                    ? "border-dashed border-[#3B2219]/45"
+                    : "peer-disabled:opacity-60"
+                }`}
+              >
+                {choice.value}
+              </span>
+            </label>
+          ))}
+        </div>
+        {sizeValidationMessage ? (
+          <p id={sizeErrorId} className="mt-3 text-sm font-medium text-[#8A3A35]" role="alert">
+            {sizeValidationMessage}
+          </p>
+        ) : null}
+      </fieldset>
+    );
+  }
+
+  function renderColorFieldset(surface: "panel" | "sheet") {
+    if (!view.hasColorOptions) return null;
+
+    return (
+      <fieldset className="mt-7">
+        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Màu</legend>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {view.colors.map((choice) => (
+            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+              <input
+                className="peer sr-only"
+                type="radio"
+                name={groupName("color", surface)}
+                value={choice.value}
+                checked={selection.color === choice.value}
+                disabled={choice.disabled || isPending}
+                onChange={() => chooseColor(choice.value)}
+              />
+              <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.value}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+    );
+  }
 
   const purchaseStatus =
     message ||
     (view.selectedUnavailableReason === "OUT_OF_STOCK"
       ? OUT_OF_STOCK_LABEL
-      : view.unavailableMessage || (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
+      : view.unavailableMessage ||
+        (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
+  const mobilePurchaseStatus = message || mobilePresentation.unavailableMessage || purchaseStatus;
+
+  const sizeGuideTriggerMain =
+    sizeGuide === null ? null : (
+      <div className="relative h-0">
+        <button
+          ref={mainSizeGuideTriggerRef}
+          type="button"
+          className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+          onClick={showMainSizeGuide}
+        >
+          Hướng dẫn chọn size
+        </button>
+      </div>
+    );
 
   return (
     <>
-      {/* Refinement spec §3: not sticky on desktop. A panel that followed the scroll used to sit
-          over the product's own copy, which is the overlap the two-column row removes. */}
       <section
         aria-label="Mua sản phẩm"
-        className="mt-10 border-t border-black/20 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
+        className="mt-5 border-t border-black/20 pt-5 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
         <div className="flex items-baseline justify-between gap-6">
           <p className="flex flex-wrap items-baseline gap-2 text-xl font-medium tracking-[-0.02em]">
@@ -361,9 +493,6 @@ export function PurchasePanelView({
             )}
           </p>
           {view.preorderLabel === null ? null : (
-            /* §30 — the availability state itself, not a marketing badge and not the button. It
-               sits with the price because that is what the shopper is reading when they decide,
-               and it is plain text so the state never depends on colour alone. */
             <span
               className="preorder-marker inline-flex items-center border border-[#3B2219] px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.1em]"
               data-purchase-state="preorder"
@@ -371,32 +500,32 @@ export function PurchasePanelView({
               {view.preorderLabel}
             </span>
           )}
-          {/* The old label here spelled out the option axes the way the projection models them.
-              The fieldset legends below already name each one for the shopper, so the only thing
-              left worth saying beside the price is the state where none of them can be used. */}
           {view.hasPurchasableVariant ? null : (
             <p className="text-xs uppercase tracking-[0.1em] text-[#3B2219]/70">Chưa thể mua online</p>
           )}
         </div>
 
+        {/*
+          The panel is the desktop surface, so it keeps the order PR #51 approved and shipped:
+          kind then size then colour where a kind exists, and colour before size where one does
+          not. The mobile sheet below states `kind -> size -> colour` uniformly, which is this
+          spec's contract for the below-`lg` composition only -- rendering that order here would
+          reorder the desktop controls of every product that has no kind.
+        */}
         {view.hasKindOptions ? (
           <>
-            {kindFieldset}
-            {sizeFieldset}
-            {colorFieldset}
+            {renderKindFieldset("panel")}
+            {renderSizeFieldset("panel")}
+            {renderColorFieldset("panel")}
           </>
         ) : (
           <>
-            {colorFieldset}
-            {sizeFieldset}
+            {renderColorFieldset("panel")}
+            {renderSizeFieldset("panel")}
           </>
         )}
 
-        {sizeGuide ? (
-          <div className="relative h-0">
-            <MappedSizeGuideDialog guide={sizeGuide} />
-          </div>
-        ) : null}
+        {sizeGuideTriggerMain}
 
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button
@@ -440,21 +569,109 @@ export function PurchasePanelView({
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{priceDisplay.displayText}</p>
             <p className="mt-0.5 truncate text-xs text-black/60">
-              {selection.size ? `Size ${selection.size}` : "Chưa chọn size"}
+              {mobilePresentation.summary || mobilePresentation.actionLabel}
             </p>
           </div>
           <button
+            ref={stickyTriggerRef}
             className="min-h-11 shrink-0 border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
             type="button"
-            aria-label={view.quickAddAccessibleName}
-            disabled={!canAttemptPurchase}
+            aria-haspopup={mobilePresentation.readyToAdd ? undefined : "dialog"}
+            aria-expanded={mobilePresentation.readyToAdd ? undefined : isSheetOpen}
             aria-busy={isPending}
-            onClick={() => runPurchase(addToBag)}
+            disabled={isPending}
+            onClick={handleStickyAction}
           >
-            {view.addToBagLabel}
+            {mobilePresentation.actionLabel}
           </button>
         </div>
       </section>
+
+      {isSheetOpen
+        ? createPortal(
+            <div className="fixed inset-0 z-50" data-mobile-purchase-sheet="">
+              <div
+                className="absolute inset-0 bg-black/45"
+                aria-hidden="true"
+                onClick={closeSheet}
+              />
+              <div
+                ref={sheetRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Chọn lựa chọn sản phẩm"
+                className="absolute inset-x-0 bottom-0 max-h-[88dvh] overflow-hidden rounded-t-2xl bg-[#FAF7F2] shadow-2xl"
+                onKeyDown={handleSheetKeyDown}
+              >
+                <div className="flex items-center justify-between border-b border-black/15 px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-black/55">
+                      Lựa chọn sản phẩm
+                    </p>
+                    <p className="mt-1 truncate text-sm font-semibold">
+                      {mobilePresentation.summary || priceDisplay.displayText}
+                    </p>
+                  </div>
+                  <button
+                    ref={sheetCloseRef}
+                    type="button"
+                    onClick={closeSheet}
+                    aria-label="Đóng lựa chọn sản phẩm"
+                    className="inline-flex h-11 w-11 shrink-0 items-center justify-center text-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="max-h-[calc(88dvh-9rem)] overflow-y-auto px-5 pb-5">
+                  {renderKindFieldset("sheet")}
+                  {renderSizeFieldset("sheet")}
+                  {sizeGuide === null ? null : (
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        ref={sheetSizeGuideTriggerRef}
+                        type="button"
+                        className="min-h-11 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+                        onClick={showSheetSizeGuide}
+                      >
+                        Hướng dẫn chọn size
+                      </button>
+                    </div>
+                  )}
+                  {renderColorFieldset("sheet")}
+
+                  <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
+                    {mobilePurchaseStatus}
+                  </p>
+                </div>
+
+                <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
+                  <button
+                    type="button"
+                    className="min-h-12 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
+                    disabled={!mobilePresentation.readyToAdd || isPending}
+                    aria-busy={isPending}
+                    onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}
+                  >
+                    {view.selectedVariantId !== null && !view.canAdd
+                      ? mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết"
+                      : mobilePresentation.actionLabel}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {sizeGuide === null ? null : (
+        <MappedSizeGuideDialog
+          guide={sizeGuide}
+          dialogRef={sizeGuideDialogRef}
+          closeButtonRef={sizeGuideCloseButtonRef}
+          onClose={handleSizeGuideClose}
+        />
+      )}
     </>
   );
 }

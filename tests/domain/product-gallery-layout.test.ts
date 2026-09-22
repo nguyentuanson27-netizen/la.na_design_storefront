@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildDesktopProductGallerySlides,
   gallerySlideIndexForImage,
+  resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
 } from "../../src/components/brand/product-gallery-layout.ts";
@@ -112,4 +113,46 @@ test("an out-of-range mapped index is clamped away rather than trusted", () => {
   });
 
   assert.deepEqual(forged, { slide: 1, syncedVariantId: "variant-forged" });
+});
+
+
+/* -------------------------------------------------------------- below-lg image-by-image seam */
+
+test("mobile gallery starts on trusted image 1 even for a later-media deep link", () => {
+  assert.deepEqual(
+    resolveGalleryImageForSelection({
+      imageCount: 6,
+      currentImage: 0,
+      syncedVariantId: "variant-d",
+      selectedVariantId: "variant-d",
+      galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
+    }),
+    { image: 0, syncedVariantId: "variant-d" },
+  );
+});
+
+test("mobile gallery follows an explicit post-load variant change to its mapped image", () => {
+  assert.deepEqual(
+    resolveGalleryImageForSelection({
+      imageCount: 6,
+      currentImage: 1,
+      syncedVariantId: "variant-d",
+      selectedVariantId: "variant-f",
+      galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
+    }),
+    { image: 5, syncedVariantId: "variant-f" },
+  );
+});
+
+test("manual mobile gallery navigation survives renders until variant selection changes", () => {
+  assert.deepEqual(
+    resolveGalleryImageForSelection({
+      imageCount: 6,
+      currentImage: 3,
+      syncedVariantId: "variant-a",
+      selectedVariantId: "variant-a",
+      galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
+    }),
+    { image: 3, syncedVariantId: "variant-a" },
+  );
 });

@@ -10,6 +10,7 @@ import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
 import { CartDrawer } from "@/components/brand/cart-drawer";
 import { SearchOverlay } from "@/components/brand/search-overlay";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { STOREFRONT_CART_DRAWER_OPEN_EVENT } from "@/components/headless/cart-drawer-events";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
@@ -82,6 +83,13 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const mobileUtility = NAVIGATION.mobileUtility;
 
   const closeCartDrawer = () => setCartDrawerOpen(false);
+
+  useEffect(() => {
+    const openRequestedCart = () => setCartDrawerOpen(true);
+    window.addEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
+    return () => window.removeEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
+  }, []);
+
   const openSearch = (trigger?: HTMLButtonElement | null) => {
     activeSearchTriggerRef.current = trigger ?? searchTriggerRef.current;
     setSearchOpen(true);
@@ -196,7 +204,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             aria-haspopup="dialog"
             aria-controls="mobile-navigation-dialog"
             aria-label="Menu"
-            className="inline-flex h-9 w-9 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+            className="inline-flex h-11 w-11 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
           >
             <svg
               className="h-5 w-5 stroke-current"
@@ -384,6 +392,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                 key={item.href}
                 href={destination}
                 aria-label={item.label}
+                className={isAccount ? "mobile-account-link" : undefined}
               >
                 <UtilityIcon href={item.href} />
                 <span className="sr-only">{item.label}</span>
@@ -421,7 +430,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               type="button"
               onClick={closeMobileNav}
               aria-label="Đóng menu"
-              className="inline-flex h-9 w-9 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="inline-flex h-11 w-11 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <svg
                 className="h-6 w-6 stroke-current"

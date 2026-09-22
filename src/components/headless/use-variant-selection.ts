@@ -155,7 +155,10 @@ export function useVariantSelection({
     !isPending &&
     (view.canAdd || (isMissingRequiredSize && hasResolvedKind && view.hasPurchasableVariant));
 
-  function attemptPurchase(navigateToCheckout: boolean): PurchaseAttemptResult {
+  function attemptPurchase(
+    navigateToCheckout: boolean,
+    onAccepted?: () => void,
+  ): PurchaseAttemptResult {
     if (isMissingRequiredSize) {
       setMessage("");
       setSizeValidationMessage("Vui lòng chọn size");
@@ -175,6 +178,11 @@ export function useVariantSelection({
             router.push("/checkout");
           } else {
             setMessage("Đã thêm sản phẩm vào giỏ hàng.");
+            try {
+              onAccepted?.();
+            } catch {
+              // Presentation handoff failure must never rewrite a server-accepted cart mutation.
+            }
           }
           return;
         }
@@ -186,8 +194,8 @@ export function useVariantSelection({
     return "submitted";
   }
 
-  function addToBag(): PurchaseAttemptResult {
-    return attemptPurchase(false);
+  function addToBag(onAccepted?: () => void): PurchaseAttemptResult {
+    return attemptPurchase(false, onAccepted);
   }
 
   function buyNow(): PurchaseAttemptResult {

@@ -399,9 +399,21 @@ summary:focus-visible {
     text-align: center;
   }
 
-  .utility-nav a:not(:last-child),
-  .utility-nav button:not(:last-child) {
+  .utility-nav {
+    gap: 0.25rem;
+  }
+
+  .utility-nav a.mobile-account-link {
     display: none;
+  }
+
+  .mobile-nav button,
+  .utility-nav button,
+  .utility-nav a {
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    align-items: center;
+    justify-content: center;
   }
 }
 
@@ -577,6 +589,51 @@ summary:focus-visible {
  * edge of the viewport -- clipped, but still measurably outside it, which is precisely what the
  * storefront's no-horizontal-overflow guard exists to catch.
  */
+.pdp-mobile-gallery {
+  position: absolute;
+  inset: 0;
+  background: var(--stone);
+}
+
+.pdp-mobile-gallery__image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  touch-action: pan-y;
+  user-select: none;
+}
+
+.pdp-mobile-gallery__image:focus-visible {
+  outline: 2px solid var(--chocolate);
+  outline-offset: -0.5rem;
+}
+
+.pdp-mobile-gallery__counter {
+  position: absolute;
+  z-index: 2;
+  right: 1rem;
+  bottom: 1rem;
+  margin: 0;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(59, 34, 25, 0.25);
+  background: rgba(250, 247, 242, 0.9);
+  color: var(--ink);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+}
+
+@media (max-width: 63.999rem) {
+  .pdp-stage {
+    min-height: 0;
+    height: min(100svh, 133.333vw);
+  }
+}
+
 .pdp-stage__track {
   position: absolute;
   inset: 0;

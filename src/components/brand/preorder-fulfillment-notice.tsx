@@ -13,19 +13,28 @@ import type { PreorderFulfillmentNotice } from "@/commerce/preorder-fulfillment-
  */
 export function BrandPreorderFulfillmentNotice({
   notice,
-}: Readonly<{ notice: PreorderFulfillmentNotice }>) {
+  titleId,
+}: Readonly<{
+  notice: PreorderFulfillmentNotice;
+  /**
+   * The id this instance's heading carries, and the one its `aria-labelledby` points at.
+   *
+   * Required rather than defaulted, because checkout renders this notice once per breakpoint
+   * composition and a shared default made the document emit one id twice. A duplicate IDREF is
+   * ambiguous to the accessibility tree whether or not one of the two copies is painted, so the
+   * uniqueness has to be the caller's stated decision rather than this file's silent assumption.
+   */
+  titleId: string;
+}>) {
   const preorderLabel = notice.preorderLabel;
 
   return (
     <section
-      aria-labelledby="preorder-fulfillment-title"
+      aria-labelledby={titleId}
       className="preorder-notice mt-6 border border-black/25 px-4 py-4"
       data-preorder-notice="true"
     >
-      <h2
-        className="text-xs font-semibold uppercase tracking-[0.14em]"
-        id="preorder-fulfillment-title"
-      >
+      <h2 className="text-xs font-semibold uppercase tracking-[0.14em]" id={titleId}>
         {preorderLabel}
       </h2>
       <p className="mt-3 text-sm leading-6 text-black/75">
