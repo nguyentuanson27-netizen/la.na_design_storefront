@@ -319,13 +319,18 @@ What the implementation chose where the spec left it open:
 
 Run against this branch, on a local Postgres with the repository's own migrations:
 
-- `pnpm lint` -- 0 errors (16 pre-existing warnings, all in files this change does not touch);
+- `pnpm lint` -- 0 errors (16 pre-existing warnings, none in files this change touches);
 - `pnpm typecheck` -- clean;
 - `pnpm test:domain` -- 2059 tests, 0 failures;
-- `pnpm test` and `pnpm test:db`;
-- `pnpm build`;
-- the Playwright accessibility runtime, including `storefront-media`, `variant-deep-link`,
-  `storefront-composite`, `pdp-language`, `related-products`, `storefront-commerce` (which carries
-  the size-guide artwork + screen-reader chart + dialog focus guard from the merged size-guide
-  work), `storefront-listing-consistency`, `discovery`, `collection-landing` and
-  `mobile-storefront-rhythm`.
+- `pnpm test` -- 2196 tests, 0 failures;
+- `pnpm test:db` -- 533 tests, 0 failures (on a freshly migrated database; the browser suite seeds
+  into the same database, so a polluted one fails tests unrelated to this change);
+- `pnpm build` -- clean;
+- the whole Playwright accessibility runtime, one worker over both projects: **163 passed, 0
+  failed**. That includes `storefront-commerce`, which carries the size-guide artwork,
+  screen-reader chart and dialog focus guard from the merged size-guide work, and the new gates for
+  gallery grouping and navigation, the canonical first surface, the unresolved-kind state, the
+  desktop information row, the single-download guarantee and the PLP fold.
+
+The sandbox runs Chromium 1194 rather than the build this Playwright version downloads, so the runs
+above used the repository's own config with an `executablePath` override and nothing else changed.
