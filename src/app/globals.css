@@ -556,20 +556,18 @@ summary:focus-visible {
   height: 100svh;
 }
 
-/* The PDP hero is the product's own photograph, so on a phone it is framed the way every other
-   garment image on the site is framed: 3:4, the ratio `.product-visual` and the gallery already
-   use. A full-viewport crop on a 390x844 screen is roughly 1:2.2, which cuts a standing figure off
-   at the knees and pushes the name and price below the fold.
+/* Owner amendment 2026-09-22: the PDP product frame is a 2:3 portrait below the existing
+   `lg` seam, including tablet. The frame owns the ratio; the current gallery image keeps
+   `object-cover`, source order, swipe behavior and lightbox semantics unchanged.
 
-   The height is released rather than re-stated in pixels: `aspect-ratio` derives it from whatever
-   the viewport happens to be, so one rule covers every phone width. `.collection-page-hero` is
-   deliberately not part of this -- a collection hero is a campaign image, not a garment, and its
-   full-bleed framing is the contract the header overlay was built against. */
-@media (max-width: 640px) {
+   The height is released rather than capped to one viewport: a 768px-wide tablet therefore keeps
+   the same 2:3 frame instead of silently becoming 3:4. `.collection-page-hero` is deliberately
+   not part of this -- collection campaigns keep their existing full-bleed contract. */
+@media (max-width: 63.999rem) {
   .product-page-hero {
     height: auto;
     min-height: 0;
-    aspect-ratio: 3 / 4;
+    aspect-ratio: 2 / 3;
   }
 }
 
@@ -625,13 +623,6 @@ summary:focus-visible {
   font-weight: 600;
   letter-spacing: 0.08em;
   pointer-events: none;
-}
-
-@media (max-width: 63.999rem) {
-  .pdp-stage {
-    min-height: 0;
-    height: min(100svh, 133.333vw);
-  }
 }
 
 .pdp-stage__track {

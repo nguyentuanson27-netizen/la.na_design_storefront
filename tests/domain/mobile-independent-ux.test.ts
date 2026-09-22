@@ -102,3 +102,29 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(form, /submitGuestCheckoutAction/);
   assert.match(form, /PRICE_CHANGED/);
 });
+
+test("mobile independent UX: PDP compact amendment keeps responsive density and accessible size-guide data", () => {
+  const page = read("src/app/shop/[slug]/page.tsx");
+  const panel = read("src/components/brand/purchase-panel.tsx");
+  const css = read("src/app/globals.css");
+
+  assert.match(css, /@media \(max-width: 63\.999rem\)[\s\S]*\.product-page-hero\s*\{[^}]*aspect-ratio:\s*2 \/ 3;/);
+  assert.match(page, /<p className="eyebrow hidden lg:block">\{BRAND\.identity\.name\} \/ Sản phẩm<\/p>/);
+  assert.match(page, /<h1 className="mt-0[^"]*lg:mt-5/);
+
+  // Compact below lg without shrinking the practical touch target; desktop values are restored.
+  assert.match(panel, /min-h-11 min-w-11[^"]*px-3[^"]*lg:min-w-12 lg:px-4/);
+  assert.match(panel, /<fieldset className="mt-4 lg:mt-7">/);
+  assert.match(panel, /className=\{\`mt-4 rounded-sm lg:mt-7/);
+
+  const guideStart = panel.indexOf("function MappedSizeGuideDialog");
+  const guideEnd = panel.indexOf("export function PurchasePanelView");
+  const guide = panel.slice(guideStart, guideEnd);
+  assert.doesNotMatch(guide, /<h2|>Hướng dẫn chọn size<\/p>/);
+  assert.match(
+    guide,
+    /className="sr-only"[\s\S]*guide\.circumferenceSemanticsNote[\s\S]*guide\.tolerance[\s\S]*guide\.guidanceNote[\s\S]*<table>/,
+  );
+  assert.match(guide, /aria-label=\{\`Hướng dẫn chọn size: \$\{guide\.chart\.title\}\`\}/);
+  assert.match(guide, /border-0 bg-transparent/);
+});

@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { SIZE_GUIDE } from "../../src/brand/size-guide.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
@@ -460,6 +461,20 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   const stickyCta = stickyBar.getByRole("button");
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
 
+  // The inline selector stays touch-friendly but no longer spends a full section break between
+  // each dimension on a phone. This is the density contract from the owner's Áo yếm tơ reference.
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  for (const groupName of ["Màu", "Kích cỡ"]) {
+    const group = purchasePanel.getByRole("group", { name: groupName });
+    const marginTop = await group.evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).marginTop),
+    );
+    expect(marginTop, `${groupName} mobile top spacing`).toBeLessThanOrEqual(16);
+
+    const chipBox = await group.locator("label span").first().boundingBox();
+    expect(chipBox?.height, `${groupName} touch target height`).toBeGreaterThanOrEqual(44);
+  }
+
   // Nothing chosen yet: the CTA names only the dimensions this product actually has, and says it
   // opens a dialog rather than pretending it can add.
   await expect(stickyBar).toBeVisible();
@@ -830,6 +845,31 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   await expect(dialog).toBeVisible();
   await expect(dialog).toHaveAttribute("data-size-guide-id", "ao-dai");
   await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
+
+  // The artwork already contains its own title and guidance. Keep that visible surface clean while
+  // preserving the sr-only semantic table asserted by expectSizeGuideArtworkFits().
+  await expect(dialog.locator("h2:visible")).toHaveCount(0);
+  expect(
+    await dialog.locator("p").evaluateAll(
+      (elements) => elements.filter((element) => element.closest(".sr-only") === null).length,
+    ),
+    "size-guide prose exists only in the nonvisual semantic fallback",
+  ).toBe(0);
+
+  // Removing duplicate visual prose must not make the guidance disappear for screen-reader users.
+  // The image is intentionally decorative (alt=""), so these facts stay in the sr-only semantic
+  // fallback alongside the data table.
+  const semanticOnly = dialog.locator(".sr-only");
+  await expect(semanticOnly).toContainText(SIZE_GUIDE.circumferenceSemanticsNote);
+  await expect(semanticOnly).toContainText(SIZE_GUIDE.guidanceNote);
+  if (SIZE_GUIDE.tolerance !== null) {
+    await expect(semanticOnly).toContainText(SIZE_GUIDE.tolerance.note);
+  }
+
+  expect(
+    await dialog.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderTopWidth)),
+    "size-guide dialog has no framed chrome",
+  ).toBe(0);
 
   for (const viewport of [
     { width: 320, height: 800 },
