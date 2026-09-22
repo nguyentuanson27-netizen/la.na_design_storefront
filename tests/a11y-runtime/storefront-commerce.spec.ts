@@ -472,6 +472,18 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   await quantityControl.getByRole("button", { name: "Tăng số lượng" }).click();
   await expect(quantityControl.getByLabel("Số lượng hiện tại: 3")).toBeVisible();
 
+  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
+  const sizePresentation = await sizeGroup.evaluate((element) => {
+    const firstChip = element.querySelector<HTMLElement>("label span");
+    const chipRow = firstChip?.parentElement?.parentElement;
+    return {
+      radius: firstChip ? Number.parseFloat(getComputedStyle(firstChip).borderTopLeftRadius) : 0,
+      gap: chipRow ? Number.parseFloat(getComputedStyle(chipRow).columnGap) : 0,
+    };
+  });
+  expect(sizePresentation.radius, "size chips use the softer rounded treatment").toBeGreaterThanOrEqual(14);
+  expect(sizePresentation.gap, "size chips keep the approved airy spacing").toBeGreaterThanOrEqual(12);
+
   for (const groupName of ["Màu", "Kích cỡ"]) {
     const group = purchasePanel.getByRole("group", { name: groupName });
     const marginTop = await group.evaluate((element) =>
@@ -487,7 +499,7 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   // opens a dialog rather than pretending it can add.
   await expect(stickyBar).toBeVisible();
   expect(await stickyBar.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
-  await expect(stickyBar.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(stickyBar.getByText(/890\.000.*đ/)).toBeVisible();
   await expect(stickyCta).toHaveText("Chọn màu / size");
   await expect(stickyCta).toHaveAttribute("aria-haspopup", "dialog");
   await expect(stickyCta).toHaveAttribute("aria-expanded", "false");
