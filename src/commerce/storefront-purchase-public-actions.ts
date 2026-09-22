@@ -26,16 +26,19 @@
 import type { CommerceVariantItemFacts } from "../tracking/commerce-events.ts";
 import { toPublicCartAnalyticsItemFacts } from "./cart-analytics-facts.ts";
 
+const MAX_PDP_QUANTITY = 99;
+
 type StorefrontPurchaseInput = {
   slug: string;
   variantId: string;
+  quantity: number;
 };
 
 export type StorefrontPurchaseTransition = Readonly<{
   previousQuantity: number;
   quantity: number;
-  /** Always 1 for an accepted PDP add. The event reports this, never the committed total. */
-  addedQuantity: 1;
+  /** Requested quantity that committed in this PDP add. The event reports this delta, never the committed total. */
+  addedQuantity: number;
 }>;
 
 export type StorefrontPublicPurchaseResult =
@@ -64,6 +67,15 @@ function readCommittedPrice(value: unknown): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+function readRequestedQuantity(value: unknown): number | null {
+  return typeof value === "number"
+    && Number.isSafeInteger(value)
+    && value >= 1
+    && value <= MAX_PDP_QUANTITY
+    ? value
+    : null;
+}
+
 function toPublicPurchaseResult(result: unknown): StorefrontPublicPurchaseResult {
   if (!isRecord(result)) {
     return { ok: false, reason: "PURCHASE_FAILED" };
@@ -72,14 +84,14 @@ function toPublicPurchaseResult(result: unknown): StorefrontPublicPurchaseResult
   if (result.ok === true) {
     const previousQuantity = readCommittedQuantity(result.previousQuantity);
     const quantity = readCommittedQuantity(result.quantity);
-    // A success that cannot state a `previous → previous + 1` transition is not a PDP add. Rather
-    // than report an add of unknown size, it fails: an event built on a guessed delta is worse
-    // than no event, and the shopper's cart is unaffected either way.
+    const addedQuantity = readRequestedQuantity(result.addedQuantity);
+    // A success must state the exact committed delta. Never infer quantity from the final line total:
+    // an existing cart line may already contain units, and analytics must report only this action.
     if (
       previousQuantity === null
       || quantity === null
-      || result.addedQuantity !== 1
-      || quantity !== previousQuantity + 1
+      || addedQuantity === null
+      || quantity !== previousQuantity + addedQuantity
     ) {
       return { ok: false, reason: "PURCHASE_FAILED" };
     }
@@ -87,12 +99,12 @@ function toPublicPurchaseResult(result: unknown): StorefrontPublicPurchaseResult
     const transition: StorefrontPurchaseTransition = Object.freeze({
       previousQuantity,
       quantity,
-      addedQuantity: 1 as const,
+      addedQuantity,
     });
     const snapshot = isRecord(result.snapshot) ? result.snapshot : {};
     const committedUnitPriceVnd = readCommittedPrice(snapshot.unitPriceVnd);
-    // The canonical event reports the committed delta: exactly the one unit this click added.
-    const analyticsItem = toPublicCartAnalyticsItemFacts(snapshot.analyticsItem, 1);
+    // The canonical event reports the committed delta, never the line total after this add.
+    const analyticsItem = toPublicCartAnalyticsItemFacts(snapshot.analyticsItem, addedQuantity);
 
     return Object.freeze({
       ok: true as const,
@@ -129,8 +141,13 @@ export function createStorefrontPurchasePublicActions({
       return { ok: false, reason: "INVALID_SELECTION" };
     }
 
+    const quantity = input.quantity === undefined ? 1 : readRequestedQuantity(input.quantity);
+    if (quantity === null) {
+      return { ok: false, reason: "INVALID_SELECTION" };
+    }
+
     return toPublicPurchaseResult(
-      await purchase({ slug: input.slug, variantId: input.variantId }),
+      await purchase({ slug: input.slug, variantId: input.variantId, quantity }),
     );
   }
 
