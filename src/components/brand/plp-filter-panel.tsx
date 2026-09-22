@@ -458,7 +458,6 @@ export function PlpFilterPanel({
           {/* Backdrop */}
           <div
             className="fixed inset-0 bg-black/40 backdrop-blur-sm transition-opacity"
-            onClick={() => setIsMobileOpen(false)}
             aria-hidden="true"
           />
 
@@ -519,7 +518,6 @@ export function PlpFilterPanel({
                         <Link
                           key={size}
                           href={sizeHref}
-                          onClick={() => setIsMobileOpen(false)}
                           className={`min-w-9 rounded border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                             isSelected
                               ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
@@ -548,7 +546,6 @@ export function PlpFilterPanel({
                         <Link
                           key={color}
                           href={colorHref}
-                          onClick={() => setIsMobileOpen(false)}
                           className={`rounded border px-3 py-2 text-xs font-medium transition ${
                             isSelected
                               ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
