@@ -491,10 +491,27 @@ export function PurchasePanelView({
           )}
         </div>
 
-        {renderKindFieldset("panel")}
-        {renderSizeFieldset("panel")}
+        {/*
+          The panel is the desktop surface, so it keeps the order PR #51 approved and shipped:
+          kind then size then colour where a kind exists, and colour before size where one does
+          not. The mobile sheet below states `kind -> size -> colour` uniformly, which is this
+          spec's contract for the below-`lg` composition only -- rendering that order here would
+          reorder the desktop controls of every product that has no kind.
+        */}
+        {view.hasKindOptions ? (
+          <>
+            {renderKindFieldset("panel")}
+            {renderSizeFieldset("panel")}
+            {renderColorFieldset("panel")}
+          </>
+        ) : (
+          <>
+            {renderColorFieldset("panel")}
+            {renderSizeFieldset("panel")}
+          </>
+        )}
+
         {sizeGuideTriggerMain}
-        {renderColorFieldset("panel")}
 
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button

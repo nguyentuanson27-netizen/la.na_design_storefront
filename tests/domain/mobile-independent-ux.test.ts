@@ -60,7 +60,9 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   const form = read("src/components/commerce/guest-checkout-form.tsx");
 
   assert.match(page, /lines\.reduce\(\(count, line\) => count \+ line\.quantity, 0\)/);
-  assert.match(page, /Đơn hàng \(\{itemCount\}\) · \{totals\.totalText\}/);
+  // `summaryLabel` is a prop, so the label is a template literal rather than JSX interpolation.
+  // `N` is the summed quantity pinned by the reduce above, not the number of lines.
+  assert.match(page, /summaryLabel=\{`Đơn hàng \(\$\{itemCount\}\) · \$\{totals\.totalText\}`\}/);
   assert.match(form, /summaryLabel[\s\S]*aria-expanded=\{isSummaryOpen\}/);
   assert.equal((page.match(/\{orderLines\}/g) ?? []).length, 1);
   assert.equal((page.match(/\{totalsBlock\}/g) ?? []).length, 1);

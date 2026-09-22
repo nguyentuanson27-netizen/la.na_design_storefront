@@ -5,7 +5,10 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
-import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import {
+  handleDrawerFocusTrap,
+  isMeaningfulReturnFocusTarget,
+} from "@/components/headless/cart-drawer-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import { useCartDrawer } from "@/components/headless/use-cart-drawer";
 
@@ -37,7 +40,14 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
       return () => clearTimeout(timer);
     } else if (wasOpenRef.current) {
       wasOpenRef.current = false;
-      const returnFocusTarget = previouslyFocusedElement.current ?? triggerRef?.current;
+      /*
+       * The saved element is only worth returning to while it is still a real, connected control.
+       * Opened programmatically -- as the mobile purchase sheet does, after closing itself -- there
+       * was nothing focused to save, so this falls back to the header's cart button rather than
+       * leaving focus on the body.
+       */
+      const saved = previouslyFocusedElement.current;
+      const returnFocusTarget = isMeaningfulReturnFocusTarget(saved) ? saved : triggerRef?.current;
       returnFocusTarget?.focus?.();
     }
   }, [isOpen, triggerRef]);

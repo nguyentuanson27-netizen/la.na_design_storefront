@@ -361,7 +361,7 @@ test("independent mobile chrome keeps practical header targets and phone grid rh
       const computed = await grid.evaluate((element) => {
         const style = getComputedStyle(element);
         return {
-          columns: style.gridTemplateColumns.split(/\\s+/).filter(Boolean).length,
+          columns: style.gridTemplateColumns.split(/\s+/).filter(Boolean).length,
           columnGap: style.columnGap,
           rowGap: style.rowGap,
         };

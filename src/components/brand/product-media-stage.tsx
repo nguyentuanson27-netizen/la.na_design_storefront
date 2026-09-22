@@ -205,6 +205,12 @@ export function BrandProductMediaStage({
             fill
             preload={mobileImage === 0}
             sizes="(max-width: 1023px) 100vw, 1px"
+            /*
+              An `<img>` is draggable by default, and starting a native image drag fires
+              `pointercancel`, which throws away the swipe mid-gesture. Touch never hits this,
+              a mouse or trackpad always does.
+            */
+            draggable={false}
             className="object-cover"
           />
         </button>
@@ -282,8 +288,10 @@ export function BrandProductMediaStage({
             </button>
           </div>
 
+          {/* The desktop wording is PR #51's approved copy; only the mobile counter above is this
+              spec's to define. */}
           <p className="pdp-stage__counter" role="status" aria-live="polite">
-            {desktopSlide + 1} / {slides.length}
+            {`Trang ảnh ${desktopSlide + 1} / ${slides.length}`}
           </p>
         </>
       ) : null}
@@ -319,6 +327,7 @@ export function BrandProductMediaStage({
               alt={currentLightboxImage.alt || `${productName} - Ảnh ${lightboxImage + 1}`}
               fill
               sizes="100vw"
+              draggable={false}
               className="object-contain"
             />
           </div>

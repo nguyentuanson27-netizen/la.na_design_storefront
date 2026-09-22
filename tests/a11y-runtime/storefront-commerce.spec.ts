@@ -431,9 +431,14 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("mobile required-size flow shares one selection with the sticky purchase bar and adds the selected variant", async ({
+test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands off to the cart", async ({
   page,
 }) => {
+  /*
+   * The mobile spec turned the sticky bar from a scroll shortcut with its own add button into a
+   * real selection entry point: incomplete selection opens the sheet, a confirmed add closes the
+   * sheet first and only then opens the cart, so exactly one modal owns focus at a time.
+   */
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
   const postRequests: string[] = [];
@@ -451,57 +456,60 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
 
-  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
-  const mobileBar = page.getByRole("region", { name: "Mua nhanh" });
-  const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
-  const mainAdd = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
-  const mobileAdd = mobileBar.getByRole("button", {
-    name: "Thêm vào giỏ từ thanh mua nhanh",
-    exact: true,
-  });
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const stickyCta = stickyBar.getByRole("button");
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
 
-  await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
-  await expect(mobileBar).toBeVisible();
-  expect(await mobileBar.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
-  await expect(mobileBar.getByText(/890\.000.*₫/)).toBeVisible();
-  await expect(mobileBar.getByText("Chưa chọn size", { exact: true })).toBeVisible();
-  await expect(mainAdd).toHaveText("Thêm vào giỏ");
-  await expect(mainAdd).toBeEnabled();
-  await expect(mobileAdd).toHaveText("Thêm vào giỏ");
-  await expect(mobileAdd).toBeEnabled();
+  // Nothing chosen yet: the CTA names only the dimensions this product actually has, and says it
+  // opens a dialog rather than pretending it can add.
+  await expect(stickyBar).toBeVisible();
+  expect(await stickyBar.evaluate((element) => getComputedStyle(element).position)).toBe("fixed");
+  await expect(stickyBar.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(stickyCta).toHaveText("Chọn màu / size");
+  await expect(stickyCta).toHaveAttribute("aria-haspopup", "dialog");
+  await expect(stickyCta).toHaveAttribute("aria-expanded", "false");
 
-  const postCountBeforeValidation = postRequests.length;
-  await mobileAdd.click();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
-  await expect(sizeGroup).toBeFocused();
-  await expect
-    .poll(async () => {
-      const [sizeBox, mobileBarBox] = await Promise.all([
-        sizeGroup.boundingBox(),
-        mobileBar.boundingBox(),
-      ]);
-      if (!sizeBox || !mobileBarBox) return Number.POSITIVE_INFINITY;
-      return sizeBox.y + sizeBox.height - mobileBarBox.y;
-    })
-    .toBeLessThanOrEqual(1);
-  expect(postRequests).toHaveLength(postCountBeforeValidation);
+  const postCountBeforeSheet = postRequests.length;
+  await stickyCta.click();
+  await expect(sheet).toBeVisible();
+  await expect(stickyCta).toHaveAttribute("aria-expanded", "true");
+
+  // Opening a selection sheet is not a purchase attempt.
+  expect(postRequests).toHaveLength(postCountBeforeSheet);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
-  await purchasePanel.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
-  await sizeGroup.getByText("M", { exact: true }).click();
-  await expect(page.getByRole("radio", { name: "Black" })).toBeChecked();
-  await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
-  await expect(mobileBar.getByText("Size M", { exact: true })).toBeVisible();
+  // One modal, and focus inside it.
+  expect(
+    await sheet.evaluate((element) => element.contains(document.activeElement)),
+    "focus moves into the sheet",
+  ).toBe(true);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+
+  const confirm = sheet.getByRole("button", { name: /Chọn màu \/ size|Thêm vào giỏ/ });
+  await expect(confirm).toBeDisabled();
+
+  await sheet.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "Black" }).first()).toBeChecked();
+  await expect(confirm).toHaveText("Thêm vào giỏ");
+  await expect(confirm).toBeEnabled();
   await assertPageQuality(page);
 
-  await mobileAdd.click();
-  await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  await confirm.click();
 
-  await page.getByRole("button", { name: "Giỏ hàng", exact: true }).click();
+  // Server-confirmed success: the sheet is gone before the cart becomes the active modal, so the
+  // page never holds two focus traps at once.
   const cartDrawer = page.getByRole("dialog", { name: "Giỏ hàng" });
   await expect(cartDrawer).toBeVisible();
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  expect(
+    await cartDrawer.evaluate((element) => element.contains(document.activeElement)),
+    "focus moves into the cart",
+  ).toBe(true);
 
+  // The cart shows the exact selected option, and its quantity controls keep a real touch target.
+  await expect(cartDrawer.getByText("Black / M")).toBeVisible();
   for (const label of [
     `Giảm số lượng ${productName}`,
     `Tăng số lượng ${productName}`,
@@ -517,7 +525,23 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
       exact: true,
     }),
   ).toBeVisible();
+
+  /*
+   * Closing the cart returns focus to a real control. The sheet unmounted before the cart opened,
+   * so there was no focused element for the drawer to remember -- without a fallback this lands on
+   * the body and a keyboard user is dropped at the top of the document.
+   */
   await cartDrawer.getByRole("button", { name: "Đóng giỏ hàng", exact: true }).click();
+  await expect(cartDrawer).toBeHidden();
+  const restored = await page.evaluate(() => {
+    const active = document.activeElement;
+    return {
+      tagName: active?.tagName ?? "none",
+      label: active?.getAttribute("aria-label") ?? active?.textContent?.trim() ?? "",
+    };
+  });
+  expect(restored.tagName, "focus must not fall back to the document").not.toBe("BODY");
+  expect(restored.tagName).toBe("BUTTON");
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
@@ -528,6 +552,84 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
+});
+
+test("a rejected add keeps the selection sheet open with feedback, and opens no cart", async ({
+  page,
+}) => {
+  /*
+   * The sheet may only hand off to the cart on server-confirmed success. A rejected add has to
+   * leave the shopper exactly where they were, with their selection intact and something to read.
+   */
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  await stickyCta.click();
+
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+
+  const confirm = sheet.getByRole("button", { name: "Thêm vào giỏ" });
+  await expect(confirm).toBeEnabled();
+
+  // Fail the add on the way to the server, which is the one thing a client cannot talk itself out
+  // of: no confirmation, so no handoff.
+  await page.route("**/shop/**", async (route) => {
+    if (route.request().method() === "POST") {
+      await route.abort("failed");
+      return;
+    }
+    await route.fallback();
+  });
+
+  await confirm.click();
+
+  await expect(sheet, "the sheet stays open on rejection").toBeVisible();
+  await expect(sheet.getByRole("status")).toContainText("Không thể thêm vào giỏ hàng lúc này");
+  await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+
+  // The selection the shopper made is still theirs.
+  await expect(page.getByRole("radio", { name: "M", exact: true }).first()).toBeChecked();
+  expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
+
+  await page.unroute("**/shop/**");
+});
+
+test("the size guide suspends the selection sheet and gives focus back to it", async ({ page }) => {
+  /*
+   * Two modals must never be live at once. Opening the guide from the sheet suspends the sheet and
+   * closing the guide restores it with the selection intact.
+   */
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const stickyCta = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  await stickyCta.click();
+
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+
+  const sheetSizeGuide = sheet.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+  await sheetSizeGuide.click();
+
+  const guide = page.getByRole("dialog", { name: /^Hướng dẫn chọn size: / });
+  await expect(guide).toBeVisible();
+  // The sheet stands down rather than stacking behind the guide.
+  await expect(sheet).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(guide.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
+
+  await page.keyboard.press("Escape");
+
+  // ...and comes back, still holding the selection, with focus on the control that left.
+  await expect(sheet).toBeVisible();
+  await expect(guide).toBeHidden();
+  await expect(page.getByRole("dialog")).toHaveCount(1);
+  await expect(page.getByRole("radio", { name: "M", exact: true }).first()).toBeChecked();
+  await expect(sheetSizeGuide).toBeFocused();
 });
 
 test("size-only product hides Color and becomes purchasable after selecting Size", async ({ page }) => {
