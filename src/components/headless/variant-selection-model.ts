@@ -99,7 +99,7 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const unavailableMessage =
     selection.selectedVariantId !== null && !selection.canAdd
       ? selection.selectedUnavailableReason === "OUT_OF_STOCK"
-        ? "Lựa chọn này tạm hết"
+        ? "Lựa chọn này đã hết hàng."
         : "Lựa chọn này hiện chưa mua được."
       : "";
 
@@ -231,6 +231,7 @@ export function resolveMobilePurchasePresentation(
   actionLabel: string;
   summary: string;
   readyToAdd: boolean;
+  unavailableMessage: string;
 }> {
   const hasSize = view.sizes.length > 0;
   const dimensionLabels = [
@@ -258,5 +259,9 @@ export function resolveMobilePurchasePresentation(
       : `Chọn ${dimensionLabels.join(" / ")}`,
     summary: selectedValues.join(" · "),
     readyToAdd,
+    unavailableMessage:
+      view.selectedUnavailableReason === "OUT_OF_STOCK"
+        ? "Lựa chọn này tạm hết"
+        : view.unavailableMessage,
   });
 }
