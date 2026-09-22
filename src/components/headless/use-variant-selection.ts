@@ -70,6 +70,7 @@ export function useVariantSelection({
   });
   const [message, setMessage] = useState("");
   const [sizeValidationMessage, setSizeValidationMessage] = useState("");
+  const [quantity, setQuantity] = useState(1);
   const [isPending, startTransition] = useTransition();
 
   const view = useMemo(
@@ -134,6 +135,7 @@ export function useVariantSelection({
         slug,
         productName,
         committedUnitPriceVnd: result.committedUnitPriceVnd,
+        quantity: result.transition.addedQuantity,
       }),
     );
 
@@ -171,7 +173,7 @@ export function useVariantSelection({
     setSizeValidationMessage("");
     startTransition(async () => {
       try {
-        const result = await addStorefrontItemToBag({ slug, variantId });
+        const result = await addStorefrontItemToBag({ slug, variantId, quantity });
         if (result.ok) {
           reportAcceptedAdd(result);
           if (navigateToCheckout) {
@@ -214,6 +216,8 @@ export function useVariantSelection({
     chooseKind,
     chooseColor,
     chooseSize,
+    quantity,
+    setQuantity,
     addToBag,
     buyNow,
   };
