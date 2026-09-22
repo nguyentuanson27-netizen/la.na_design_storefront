@@ -69,8 +69,8 @@ function render(data: ShopViewModel) {
         </div>
 
         {/* Two columns from the narrowest width up: nine stacked fields put the first product
-              image most of a screen below the fold on a phone. The controls keep their 44px
-              targets -- only the empty space between them went. */}
+            image most of a screen below the fold on a phone. The controls keep their 44px
+            targets -- only the empty space between them went. */}
         <form className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-6 sm:gap-y-4 lg:grid-cols-4" method="get">
           <label className="col-span-2">
             <span className={fieldLabelClassName}>Tìm sản phẩm</span>

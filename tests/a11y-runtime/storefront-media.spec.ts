@@ -581,6 +581,58 @@ test("the desktop gallery moves only on deliberate input, clamps at both ends, a
   expect(await activeSlide(), "a vertical wheel is not gallery input").toBe(0);
 });
 
+test("each trusted photograph is fetched once, whichever composition the viewport renders", async ({
+  page,
+}) => {
+  /*
+   * The media stage and the below-`lg` editorial grid both carry images 2..n, because one of them
+   * is always `display: none` and a phone and a desktop want different compositions. That only
+   * stays honest if the hidden copy never downloads: an element with no layout box is never near
+   * the viewport, so its `loading="lazy"` image is never requested.
+   *
+   * Asserted as "at most once per photograph" rather than "exactly once" because a lazy image is
+   * fetched when it approaches the viewport, which is a timing the test scrolls to reach rather
+   * than one it should pin.
+   */
+  const fetched: string[] = [];
+  await page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url") ?? "";
+    fetched.push(source);
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  const photographs = ["primary.jpg", "angle-front.jpg", "detail-fabric.jpg"];
+  const countsFor = (name: string) => fetched.filter((source) => source.includes(name)).length;
+
+  for (const viewport of [
+    { label: "mobile", width: 390, height: 844 },
+    { label: "desktop", width: 1440, height: 900 },
+  ]) {
+    // Blank first: resizing a loaded page swaps the composition under it, and those fetches would
+    // be counted against the next load rather than against the one being measured.
+    await page.goto("about:blank");
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    fetched.length = 0;
+    await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForLoadState("networkidle");
+
+    for (const photograph of photographs) {
+      expect(
+        countsFor(photograph),
+        `${viewport.label}: ${photograph} must not be downloaded twice (${JSON.stringify(fetched)})`,
+      ).toBeLessThanOrEqual(1);
+    }
+    // The canonical first image is the one surface that is always on screen, so it always loads.
+    expect(countsFor("primary.jpg"), `${viewport.label}: canonical first image`).toBe(1);
+    // ...and the composition this viewport renders really did show the rest.
+    expect(
+      photographs.slice(1).every((photograph) => countsFor(photograph) === 1),
+      `${viewport.label}: every later photograph loads exactly once (${JSON.stringify(fetched)})`,
+    ).toBe(true);
+  }
+});
+
 test("runtime network and CSP headers enforce Pancake media allowlist and reject unreviewed optimizer requests", async ({
   page,
 }) => {

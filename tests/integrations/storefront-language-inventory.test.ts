@@ -446,7 +446,14 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
 });
 
 test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability disclosure", async () => {
-  const source = await readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8");
+  // The route module is read alongside the markup because the related surface's analytics list
+  // name is the same label under a different roof: renaming only the heading would leave the
+  // superseded claim in the reports.
+  const [markupSource, routeSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/routes/product.ts"), "utf8"),
+  ]);
+  const source = `${markupSource}\n${routeSource}`;
 
   for (const expected of [
     "Cửa hàng",

@@ -673,14 +673,9 @@ summary:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pdp-stage__slide {
-    transition: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
   .home-hero__slide,
-  .home-hero__cta-link {
+  .home-hero__cta-link,
+  .pdp-stage__slide {
     transition: none;
   }
 }

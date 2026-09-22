@@ -43,8 +43,8 @@ type BrandProductDetailProps = Readonly<{
   breadcrumb: ReactNode;
   /** Left column, first: name, collection context. */
   identity: ReactNode;
-  /** Left column, below the identity: description, material, care -- whatever truthfully exists. */
-  productInformation: ReactNode;
+  /** Left column, below the identity: description, material, care. `null` when none truthfully exists. */
+  productInformation: ReactNode | null;
   /** Right column, below the panel: shipping and returns. */
   purchaseInformation: ReactNode;
 }>;
@@ -128,7 +128,11 @@ export function BrandProductDetail({
             <PurchasePanelView controller={controller} sizeGuide={sizeGuide} />
           </div>
 
-          <article className="min-w-0 lg:col-start-1 lg:row-start-2">{productInformation}</article>
+          {/* Omitted entirely rather than rendered empty: a product with no approved editorial
+              facts should not contribute a blank cell to the row. */}
+          {productInformation === null ? null : (
+            <div className="min-w-0 lg:col-start-1 lg:row-start-2">{productInformation}</div>
+          )}
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-3">{purchaseInformation}</div>
         </div>
