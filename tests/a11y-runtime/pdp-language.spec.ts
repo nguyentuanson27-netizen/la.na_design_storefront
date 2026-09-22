@@ -185,11 +185,11 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   expect(headingBox!.y, "the product name comes before the trail on a phone").toBeLessThan(
     breadcrumbBox!.y,
   );
-  // C — rendered check, and the highest-value one: this is the text a shopper actually sees. The
-  // brand half comes from Brand Config so a fork inherits the rule instead of silently losing it.
+  // Owner amendment 2026-09-22 removes the identity eyebrow from the below-`lg` PDP. Keep the
+  // localized source string in the shared desktop composition, but it must not be visible here.
   await expect(
     page.getByText(`${BRAND.identity.name} / Sản phẩm`, { exact: true }),
-  ).toBeVisible();
+  ).toBeHidden();
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
