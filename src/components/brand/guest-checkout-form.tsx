@@ -24,6 +24,7 @@ import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 export function BrandGuestCheckoutForm(
   props: Readonly<{
     quoteProof: string;
+    summaryLabel?: string;
     summarySlot?: ReactNode;
     totalsSlot?: ReactNode;
     preorderSlot?: ReactNode;
