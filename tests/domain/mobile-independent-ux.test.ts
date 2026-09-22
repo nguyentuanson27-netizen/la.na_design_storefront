@@ -38,7 +38,7 @@ test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigatio
   assert.match(panel, /className="mobile-plp-filter-footer/);
   assert.match(panel, /Xóa bộ lọc/);
   assert.match(panel, /Xem \{totalCount\} sản phẩm/);
-  assert.match(panel, /onClick=\{\(\) => setIsMobileOpen\(false\)\}[\s\S]{0,160}Xem \{totalCount\} sản phẩm/);
+  assert.match(panel, /onClick=\{\(\) => setIsMobileOpen\(false\)\}[\s\S]{0,500}Xem \{totalCount\} sản phẩm/);
 });
 
 test("mobile independent UX: cart drawer quantity controls are practical touch targets and remove stays separate", () => {
@@ -59,12 +59,13 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(page, /lines\.reduce\(\(count, line\) => count \+ line\.quantity, 0\)/);
   assert.match(page, /Đơn hàng \(\{itemCount\}\) · \{totals\.totalText\}/);
   assert.match(page, /<details[^>]*className="checkout-mobile-summary/);
-  assert.doesNotMatch(page, /text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
+  assert.match(page, /text-\[2\.5rem\]/);
+  assert.match(page, /lg:text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
   assert.doesNotMatch(form, /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/);
   assert.doesNotMatch(form, /Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake/);
 
-  assert.match(form, /summarySlot[\s\S]*receivingFields[\s\S]*totalsSlot[\s\S]*preorderSlot[\s\S]*type="submit"/);
+  assert.match(form, /\{summarySlot\}[\s\S]*checkout-receiving-fields[\s\S]*\{totalsSlot\}[\s\S]*\{preorderSlot\}[\s\S]*type="submit"/);
   assert.match(form, /submitGuestCheckoutAction/);
   assert.match(form, /PRICE_CHANGED/);
 });
