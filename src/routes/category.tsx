@@ -145,7 +145,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
 
       <ListingHeader eyebrow="Danh mục thiết kế" title={destination.label}>
         {subcategories.length > 0 ? (
-          <div className="mt-6 flex flex-wrap items-center gap-3">
+          <div className="mt-4 flex flex-wrap items-center gap-3">
             {subcategories.map((sub) => (
               <Link
                 key={sub.href}
@@ -160,7 +160,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
       </ListingHeader>
 
       {/* Accessible PLP Filter Panel */}
-      <div className="mt-8">
+      <div className="mt-5">
         <PlpFilterPanel
           categoryPath={destination.href}
           totalCount={totalCount}

@@ -523,7 +523,13 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await page.goto(`${BASE_URL}/shop/${sizeOnlyProductSlug}`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: sizeOnlyProductName })).toBeVisible();
   await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-  await expect(page.getByText("Chọn kích cỡ", { exact: true })).toBeVisible();
+  // Refinement spec "Buyer-facing copy": the option axes were spelled out here the way the
+  // projection models them. The fieldset legend names the one axis this product has, so the label
+  // is gone rather than reworded -- and the axis it named is still announced.
+  await expect(page.getByText(/Chọn (loại|màu|kích cỡ)( ×|$)/)).toHaveCount(0);
+  await expect(
+    page.getByRole("group", { name: "Kích cỡ" }).getByRole("radio", { name: "L" }),
+  ).toBeVisible();
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   const sizeGroup = purchasePanel.getByRole("group", { name: "Kích cỡ" });
@@ -554,8 +560,8 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   expect(failedResponses).toEqual([]);
 });
 
-test("desktop purchase panel is sticky and validates size before add-to-cart", async ({ page }) => {
-  // Keep a desktop width but enough vertical scroll budget to actually cross the sticky threshold.
+test("desktop purchase panel is not sticky and validates size before add-to-cart", async ({ page }) => {
+  // Keep a desktop width but enough vertical scroll budget to scroll the panel out of view.
   await page.setViewportSize({ width: 1440, height: 700 });
 
   const browserErrors: string[] = [];
@@ -575,25 +581,35 @@ test("desktop purchase panel is sticky and validates size before add-to-cart", a
   const buyNow = purchasePanel.getByRole("button", { name: "Mua ngay", exact: true });
 
   await expect(page.getByRole("region", { name: "Mua nhanh" })).toBeHidden();
-  const stickyMetrics = await purchasePanel.evaluate((element) => ({
-    position: getComputedStyle(element).position,
-    top: Number.parseFloat(getComputedStyle(element).top),
-    documentTop: element.getBoundingClientRect().top + window.scrollY,
-  }));
-  expect(stickyMetrics.position).toBe("sticky");
-  const stickyThreshold = stickyMetrics.documentTop - stickyMetrics.top;
+
+  /*
+   * Refinement spec §3: the desktop panel does not follow the scroll any more.
+   *
+   * It is asserted by behaviour rather than by the computed `position` alone, because a nested
+   * sticky treatment inside it would leave the section itself `static` while still pinning the
+   * variant controls over the copy beside them: the panel's top moves with the page, by the full
+   * distance scrolled.
+   */
+  expect(await purchasePanel.evaluate((element) => getComputedStyle(element).position)).toBe("static");
+  const panelTopBefore = await purchasePanel.evaluate(
+    (element) => element.getBoundingClientRect().top,
+  );
   const maxScrollY = await page.evaluate(
     () => document.documentElement.scrollHeight - window.innerHeight,
   );
-  expect(maxScrollY).toBeGreaterThan(stickyThreshold + 24);
+  const scrollBy = Math.min(240, maxScrollY);
+  expect(scrollBy).toBeGreaterThan(24);
 
-  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), stickyThreshold + 24);
+  await page.evaluate((scrollTop) => window.scrollTo(0, scrollTop), scrollBy);
   await expect
     .poll(async () => {
-      const stuckTop = await purchasePanel.evaluate((element) => element.getBoundingClientRect().top);
-      return Math.abs(stuckTop - stickyMetrics.top);
+      const panelTopAfter = await purchasePanel.evaluate(
+        (element) => element.getBoundingClientRect().top,
+      );
+      return Math.round(panelTopBefore - panelTopAfter);
     })
-    .toBeLessThanOrEqual(2);
+    .toBe(Math.round(scrollBy));
+  await page.evaluate(() => window.scrollTo(0, 0));
 
   await expect(page.getByRole("radio", { name: "M", exact: true })).not.toBeChecked();
   await expect(addToBag).toHaveText("Thêm vào giỏ");

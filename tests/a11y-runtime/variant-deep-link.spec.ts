@@ -127,9 +127,11 @@ async function expectHeroToShow(page: Page, urlFragment: string) {
 }
 
 async function expectProductHeroToShow(page: Page, urlFragment: string) {
+  // The media stage holds every trusted image; its first cell is the canonical first surface.
   const image = page
     .getByRole("region", { name: `Ảnh chính của ${productName}` })
-    .locator("img");
+    .locator("img")
+    .first();
   await expect(image).toHaveAttribute(
     "src",
     new RegExp(encodeURIComponent(urlFragment).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")),
@@ -298,4 +300,44 @@ test("the shopper's own choice takes the selection back from the URL", async ({ 
   await expect(purchasePanel.getByText(/910\.000/)).toBeVisible();
   // The preselection is an initial value, not a controlled prop, so the URL must not snap back.
   expect(new URL(page.url()).searchParams.get("variant")).toBe(MEDIUM_VARIATION);
+});
+
+test("the desktop stage opens on slide 1 for a later-media deep link, then follows the next selection", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await openDeepLink(page, MEDIUM_VARIATION);
+
+  const stage = page.getByRole("region", { name: `Ảnh chính của ${productName}` });
+  const slides = stage.locator(".pdp-stage__slide");
+  const activeSlide = async () =>
+    slides.evaluateAll((elements) =>
+      elements.findIndex((element) => element.getAttribute("data-active") === "true"),
+    );
+
+  /*
+   * Refinement spec §2, the priority the owner settled.
+   *
+   * `u12b-medium.jpg` is image 2 of the gallery, so this variant's photograph lives on slide 2.
+   * The deep link still preselects the variant -- the panel proves that below -- but the first
+   * visible surface on load is the canonical one.
+   */
+  expect(await activeSlide(), "a deep link does not replace the canonical first surface").toBe(0);
+  await expect(
+    slides.first().locator("img"),
+  ).toHaveAttribute("src", /u12b-primary/);
+  await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
+
+  // After load, an explicit selection change is what moves the stage.
+  await page.getByText("L", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
+  await expect
+    .poll(activeSlide, { message: "a post-load variant change syncs to its mapped slide" })
+    .toBe(1);
+
+  // ...and the shopper's own navigation then holds until the selection changes again.
+  await stage.getByRole("button", { name: "Ảnh trước" }).click();
+  expect(await activeSlide()).toBe(0);
+  await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
+  await expect.poll(activeSlide, { message: "an unchanged selection does not reclaim the frame" }).toBe(0);
 });

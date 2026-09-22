@@ -195,7 +195,7 @@ export function PlpFilterPanel({
   const clearHref = buildClearAllFiltersHref(categoryPath);
 
   return (
-    <div className="border-b border-[#3B2219]/15 pb-6">
+    <div className="border-b border-[#3B2219]/15 pb-4">
       {/* Top action row: Count, mobile drawer button, desktop sort dropdown */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
@@ -259,7 +259,7 @@ export function PlpFilterPanel({
       </div>
 
       {/* Desktop Filter Bar */}
-      <div className="mt-6 hidden md:flex md:flex-wrap md:items-center md:gap-6 text-xs text-[#3B2219]">
+      <div className="mt-4 hidden md:flex md:flex-wrap md:items-center md:gap-x-6 md:gap-y-3 text-xs text-[#3B2219]">
         {/* Sale toggle */}
         <div>
           {(() => {
@@ -386,7 +386,7 @@ export function PlpFilterPanel({
 
       {/* Active Filter Pills (Desktop & Mobile) */}
       {hasFilters ? (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
+        <div className="mt-3 flex flex-wrap items-center gap-2">
           {activeFilters.sale ? (
             <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Sale</span>

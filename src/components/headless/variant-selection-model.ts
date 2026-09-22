@@ -69,6 +69,17 @@ const QUICK_ADD_NAMES = {
   preorder: `${PREORDER_LABEL} từ thanh mua nhanh`,
 } as const;
 
+/**
+ * Refinement spec "Variant UX" -- the exact approved sentence for a composite whose kind is still
+ * unchosen.
+ *
+ * It is a *presentation* fact, not a commerce one: `deriveStorefrontProjectionSelection` still
+ * returns those sizes `disabled`, and nothing here re-derives stock. What the sentence buys is the
+ * distinction the spec requires -- "not chosen yet" reads as unresolved rather than as the
+ * `Hết hàng` a shopper would otherwise infer from a greyed-out size row.
+ */
+export const KIND_SELECTION_GUIDANCE = "Nàng chọn phân loại trước để xem size còn hàng";
+
 export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const selection = deriveStorefrontProjectionSelection(input.options, input.selection);
 
@@ -101,6 +112,13 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
    * classification, passed through the projection.
    */
   const isPreorderSelection = selection.selectedIsPreorderSale;
+
+  /**
+   * Set only while a kind-bearing product has no kind selected. The panel reads it for both the
+   * sentence and the neutral (never sold-out) styling of the size inputs it explains.
+   */
+  const kindSelectionGuidance =
+    selection.hasKindOptions && input.selection.kindKey === null ? KIND_SELECTION_GUIDANCE : null;
 
   const initialDiscount = resolveStorefrontDiscountPresentation(input.productLevelOptions);
 
@@ -137,6 +155,7 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
         ? currency.format(selection.selectedBasePriceVnd)
         : null,
     unavailableMessage,
+    kindSelectionGuidance,
     isPreorderSelection,
     /** The exact §30 word for the selected option, or `null` when it is ordinary ready stock. */
     preorderLabel: isPreorderSelection ? PREORDER_LABEL : null,

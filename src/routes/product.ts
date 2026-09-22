@@ -72,7 +72,10 @@ export async function loadProductRoute({
   });
   const relatedTracking = buildProductListTracking({
     products: relatedProducts,
-    list: { listId: "related-products", listName: "Hoàn thiện phối đồ" },
+    // The list id is the analytics series and stays put; the name is what the surface is called,
+    // and the refinement spec renamed it because the generic related source cannot prove the items
+    // complete an outfit.
+    list: { listId: "related-products", listName: "Nàng có thể thích" },
     pricingRule: promotion.pricingRule,
   });
 

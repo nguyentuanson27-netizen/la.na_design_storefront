@@ -43,7 +43,7 @@ function render(data: ShopViewModel) {
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
       <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
           Dùng tìm kiếm và bộ lọc để khám phá sản phẩm.{" "}
           {/* Kept on one source line: the copy inventory reads this promise as a whole string. */}
           Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
@@ -51,7 +51,7 @@ function render(data: ShopViewModel) {
       </ListingHeader>
 
       <section
-        className="mt-8 border-b border-[#3B2219]/15 pb-8"
+        className="mt-4 border-b border-[#3B2219]/15 pb-4"
         aria-labelledby="shop-discovery-title"
       >
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -68,8 +68,11 @@ function render(data: ShopViewModel) {
           ) : null}
         </div>
 
-        <form className="mt-6 grid gap-x-6 gap-y-7 sm:grid-cols-2 lg:grid-cols-4" method="get">
-          <label className="block sm:col-span-2">
+        {/* Two columns from the narrowest width up: nine stacked fields put the first product
+            image most of a screen below the fold on a phone. The controls keep their 44px
+            targets -- only the empty space between them went. */}
+        <form className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-6 sm:gap-y-4 lg:grid-cols-4" method="get">
+          <label className="col-span-2">
             <span className={fieldLabelClassName}>Tìm sản phẩm</span>
             <input
               className={controlClassName}
@@ -157,7 +160,7 @@ function render(data: ShopViewModel) {
             />
           </label>
 
-          <label className="flex min-h-11 items-center gap-3 sm:col-span-2 lg:col-span-1">
+          <label className="flex min-h-11 items-center gap-3">
             <input
               defaultChecked={discovery.availability === "in-stock"}
               name="availability"
@@ -167,7 +170,7 @@ function render(data: ShopViewModel) {
             <span className={fieldLabelClassName}>Chỉ còn hàng</span>
           </label>
 
-          <div className="flex items-end sm:col-span-2 lg:col-span-1">
+          <div className="flex items-end">
             <button
               className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#3B2219] bg-[#3B2219] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors hover:bg-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4"
               type="submit"
@@ -191,12 +194,12 @@ function render(data: ShopViewModel) {
           action={data.filtered ? { href: "/shop", label: "Xem tất cả sản phẩm" } : undefined}
         />
       ) : (
-        <section className="mt-8" aria-labelledby="shop-products-title">
+        <section className="mt-4" aria-labelledby="shop-products-title">
           <h2 id="shop-products-title" className="sr-only">
             Sản phẩm hiện tại
           </h2>
           <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-          <div className="mt-8">
+          <div className="mt-4">
             <ListingProductGrid>
               {data.cards.map((card, index) => (
                 <ProductCard

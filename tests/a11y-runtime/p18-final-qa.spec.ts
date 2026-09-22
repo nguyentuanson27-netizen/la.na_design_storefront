@@ -258,26 +258,30 @@ test("P18 captures representative production performance evidence for home, PLP,
         await measureRoute(page, route.name, route.url, viewport.name);
 
         if (route.name === "pdp") {
-          const hero = page.getByRole("region", { name: `Ảnh chính của ${productName}` });
-          await expect(hero).toHaveAttribute("data-header-overlay-hero", "");
-          await expect(hero.locator(`img[alt="${productName}"]`)).toHaveCount(1);
+          const stage = page.getByRole("region", { name: `Ảnh chính của ${productName}` });
+          await expect(stage).toHaveAttribute("data-header-overlay-hero", "");
+          // The canonical first image keeps the product's plain name and opens the stage.
+          await expect(stage.locator(`img[alt="${productName}"]`)).toHaveCount(1);
 
-          const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`);
-          const images = gallery.locator("img");
-          await expect(images).toHaveCount(2);
-
-          for (let index = 0; index < 2; index += 1) {
-            await expect(images.nth(index)).toBeVisible();
-          }
-
-          const allProductImages = page.locator(`img[alt^="${productName}"]`);
-          await expect(allProductImages).toHaveCount(3);
-          const renderedImages = await allProductImages.evaluateAll((elements) =>
-            elements.map((element) => ({
-              alt: element.getAttribute("alt"),
-              src: element.getAttribute("src"),
-            })),
-          );
+          /*
+           * Refinement spec §1. The media stage carries every trusted image and the below-`lg`
+           * editorial grid carries images 2..n; exactly one of the two is displayed at any width,
+           * and the hidden one has no layout box, so its lazy images never download.
+           *
+           * Asserted over the images this viewport actually renders, which keeps the guarantee
+           * whole -- every trusted photograph once, in source order, from a distinct source --
+           * rather than counting markup the other composition leaves hidden.
+           */
+          const renderedImages = await page
+            .locator(`img[alt^="${productName}"]`)
+            .evaluateAll((elements) =>
+              elements
+                .filter((element) => element.getClientRects().length > 0)
+                .map((element) => ({
+                  alt: element.getAttribute("alt"),
+                  src: element.getAttribute("src"),
+                })),
+            );
           expect(renderedImages.map(({ alt }) => alt)).toEqual([
             productName,
             `${productName} - Ảnh 2`,
@@ -285,11 +289,25 @@ test("P18 captures representative production performance evidence for home, PLP,
           ]);
           expect(new Set(renderedImages.map(({ src }) => src)).size).toBe(3);
 
-          const columnCount = await gallery.evaluate((element) => {
-            const columns = getComputedStyle(element).gridTemplateColumns.trim();
-            return columns.length === 0 ? 0 : columns.split(/\s+/).length;
-          });
-          expect(columnCount).toBe(viewport.name === "desktop" ? 2 : 1);
+          const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${productName}`);
+          if (viewport.name === "desktop") {
+            // From `lg` up the stage is the gallery: image 1 alone, then the remaining two paired.
+            await expect(gallery).toBeHidden();
+            await expect(stage.locator(".pdp-stage__slide")).toHaveCount(2);
+          } else {
+            const images = gallery.locator("img");
+            await expect(images).toHaveCount(2);
+
+            for (let index = 0; index < 2; index += 1) {
+              await expect(images.nth(index)).toBeVisible();
+            }
+
+            const columnCount = await gallery.evaluate((element) => {
+              const columns = getComputedStyle(element).gridTemplateColumns.trim();
+              return columns.length === 0 ? 0 : columns.split(/\s+/).length;
+            });
+            expect(columnCount).toBe(1);
+          }
         }
 
         await page.keyboard.press("Tab");

@@ -341,7 +341,7 @@ test("PDP with single trusted image renders hero image without redundant thumbna
   await expect(page.locator("nav[aria-label^='Danh sách ảnh']")).toHaveCount(0);
 });
 
-test("single-image PDP keeps the product purchase panel in the right desktop column", async ({
+test("the desktop information row puts the product's own story left and the purchase right", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -357,12 +357,26 @@ test("single-image PDP keeps the product purchase panel in the right desktop col
 
   const heading = page.getByRole("heading", { level: 1, name: singleName });
   await expect(heading).toBeVisible();
-  const purchaseArticle = page.locator("article").filter({ has: heading });
-  await expect(purchaseArticle).toBeVisible();
+  const purchase = page.getByRole("region", { name: "Mua sản phẩm" });
+  await expect(purchase).toBeVisible();
 
-  const box = await purchaseArticle.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.x).toBeGreaterThan(1440 / 2);
+  // Refinement spec §3: two columns below the gallery -- identity and editorial on the left,
+  // everything the shopper buys with on the right.
+  const headingBox = (await heading.boundingBox())!;
+  const purchaseBox = (await purchase.boundingBox())!;
+  expect(headingBox).not.toBeNull();
+  expect(purchaseBox).not.toBeNull();
+  expect(headingBox.x + headingBox.width, "identity stays in the left column").toBeLessThanOrEqual(
+    1440 / 2,
+  );
+  expect(purchaseBox.x, "purchase stays in the right column").toBeGreaterThanOrEqual(1440 / 2);
+
+  // ...and the panel no longer follows the scroll, which is what used to put it over that copy.
+  expect(
+    await purchase.evaluate((element) => getComputedStyle(element).position),
+  ).toBe("static");
+
+  // A one-image product has nothing left for the below-`lg` editorial grid to show.
   await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${singleName}`)).toHaveCount(0);
 });
 
@@ -382,6 +396,8 @@ test("PDP with multiple images renders a one-column mobile editorial grid with e
 
   const hero = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
   await expect(hero.locator(`img[alt="${multiName}"]`)).toHaveCount(1);
+  // Below `lg` the stage shows that first image and nothing else.
+  await expect(hero.locator("img:visible")).toHaveCount(1);
 
   const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
   const images = gallery.locator("img");
@@ -391,14 +407,26 @@ test("PDP with multiple images renders a one-column mobile editorial grid with e
     await expect(images.nth(index)).toBeVisible();
   }
 
-  const allProductImages = page.locator(`img[alt^="${multiName}"]`);
-  await expect(allProductImages).toHaveCount(3);
-  const renderedImages = await allProductImages.evaluateAll((elements) =>
-    elements.map((element) => ({
-      alt: element.getAttribute("alt"),
-      src: element.getAttribute("src"),
-    })),
-  );
+  /*
+   * Below `lg` the composition is still hero-then-grid, so what a shopper actually sees is the
+   * three trusted photographs, once each, in source order.
+   *
+   * The media stage also carries the later slides in the markup for the `lg` composition, but they
+   * have no box at this width -- which is both why they are excluded here and why their lazy
+   * images are never fetched on a phone. Asserting over the *visible* images keeps the old
+   * guarantee (every trusted image once, no duplicates, the canonical alt text) rather than
+   * counting markup the viewport does not render.
+   */
+  const renderedImages = await page
+    .locator(`img[alt^="${multiName}"]`)
+    .evaluateAll((elements) =>
+      elements
+        .filter((element) => element.getClientRects().length > 0)
+        .map((element) => ({
+          alt: element.getAttribute("alt"),
+          src: element.getAttribute("src"),
+        })),
+    );
   expect(renderedImages.map(({ alt }) => alt)).toEqual([
     multiName,
     `${multiName} - Ảnh 2`,
@@ -435,7 +463,7 @@ test("PDP with untrusted media renders intentional fallback without broken image
   await expect(fallbackMedia.locator("img")).toHaveCount(0);
 });
 
-test("desktop viewport renders catalog cards and PDP gallery without horizontal overflow", async ({
+test("desktop viewport renders catalog cards and the PDP media stage without horizontal overflow", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -451,15 +479,203 @@ test("desktop viewport renders catalog cards and PDP gallery without horizontal 
   await assertPageQuality(page);
 
   await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
-  const gallery = page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`);
-  await expect(page.getByRole("region", { name: `Ảnh chính của ${multiName}` })).toBeVisible();
-  await expect(gallery.locator("img")).toHaveCount(2);
-  const columnCount = await gallery.evaluate((element) => {
-    const columns = getComputedStyle(element).gridTemplateColumns.trim();
-    return columns.length === 0 ? 0 : columns.split(/\s+/).length;
-  });
-  expect(columnCount).toBe(2);
+  const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+  await expect(stage).toBeVisible();
+
+  // Refinement spec §1: a near-viewport media stage that contains the garment rather than
+  // cropping it, over the brand's cream rather than black bars.
+  const stageBox = (await stage.boundingBox())!;
+  expect(stageBox.height, "the stage is approximately one viewport tall").toBeGreaterThan(900 * 0.8);
+  expect(
+    await stage.locator("img").first().evaluate((element) => getComputedStyle(element).objectFit),
+  ).toBe("contain");
+
+  // Slide 1 is image 1 alone at full width; the second slide pairs the remaining two 50/50.
+  const slides = stage.locator(".pdp-stage__slide");
+  await expect(slides).toHaveCount(2);
+  const cellWidths = await slides
+    .nth(1)
+    .locator(".pdp-stage__cell")
+    .evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().width)));
+  expect(cellWidths).toHaveLength(2);
+  expect(Math.abs(cellWidths[0]! - cellWidths[1]!), "a two-image slide splits 50/50").toBeLessThanOrEqual(2);
+
+  // The below-`lg` editorial grid is not part of the desktop composition.
+  await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toBeHidden();
+
   await assertPageQuality(page);
+});
+
+test("the desktop gallery moves only on deliberate input, clamps at both ends, and leaves the page scroll alone", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: "image/jpeg",
+      body: TINY_JPEG_BUFFER,
+    });
+  });
+
+  await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+
+  const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+  const slides = stage.locator(".pdp-stage__slide");
+  const previous = stage.getByRole("button", { name: "Ảnh trước" });
+  const next = stage.getByRole("button", { name: "Ảnh tiếp theo" });
+
+  const activeSlide = async () =>
+    slides.evaluateAll((elements) =>
+      elements.findIndex((element) => element.getAttribute("data-active") === "true"),
+    );
+
+  // The canonical first surface, and no way back from it.
+  expect(await activeSlide()).toBe(0);
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  // Refinement spec §2: the right half advances, the left half goes back.
+  await next.click();
+  expect(await activeSlide()).toBe(1);
+
+  // The last slide does not loop to the beginning.
+  await expect(next).toBeDisabled();
+  expect(await activeSlide()).toBe(1);
+
+  await previous.click();
+  expect(await activeSlide()).toBe(0);
+
+  // Keyboard reaches the same two controls rather than pointer geometry being the only path.
+  await next.focus();
+  expect(await page.evaluate(() => document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent?.trim())).toBe(
+    "Ảnh tiếp theo",
+  );
+  await page.keyboard.press("Enter");
+  expect(await activeSlide()).toBe(1);
+  await previous.focus();
+  await page.keyboard.press("Enter");
+  expect(await activeSlide()).toBe(0);
+
+  // A horizontal drag is the third way in, and it must not also fire the half it ended over.
+  await page.mouse.move(1000, 450);
+  await page.mouse.down();
+  await page.mouse.move(820, 455, { steps: 8 });
+  await page.mouse.up();
+  expect(await activeSlide(), "a leftward drag advances exactly one slide").toBe(1);
+
+  await page.mouse.move(400, 450);
+  await page.mouse.down();
+  await page.mouse.move(600, 445, { steps: 8 });
+  await page.mouse.up();
+  expect(await activeSlide(), "a rightward drag goes back exactly one slide").toBe(0);
+
+  /*
+   * §2's hard rule, asserted where it matters: a vertical wheel over the gallery scrolls the
+   * document and changes nothing about the gallery.
+   */
+  await page.mouse.move(720, 450);
+  await page.mouse.wheel(0, 700);
+  await page.waitForFunction(() => window.scrollY > 200);
+  expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(200);
+  expect(await activeSlide(), "a vertical wheel is not gallery input").toBe(0);
+});
+
+test("only the current slide's photographs are exposed to assistive technology", async ({
+  page,
+}) => {
+  /*
+   * A slide that is merely transparent is still in the accessibility tree, so a screen reader
+   * could reach photographs from a slide the stage was reporting as not current. Asserted through
+   * role queries, which resolve against the accessibility tree rather than the DOM, so a slide
+   * hidden only by `opacity` would still be matched here and fail.
+   */
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+
+  const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
+  const previous = stage.getByRole("button", { name: "Ảnh trước" });
+  const next = stage.getByRole("button", { name: "Ảnh tiếp theo" });
+  const exposedPhotographs = () =>
+    stage.getByRole("img").evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+
+  // Slide 1 is image 1 alone, and it is the only photograph assistive technology can reach.
+  await expect.poll(exposedPhotographs).toEqual([multiName]);
+  await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
+  await expect(previous).toBeDisabled();
+  await expect(next).toBeEnabled();
+
+  await next.click();
+
+  // Advancing moves what can be reached, not just what is painted.
+  await expect
+    .poll(exposedPhotographs)
+    .toEqual([`${multiName} - Ảnh 2`, `${multiName} - Ảnh 3`]);
+  await expect(stage.getByRole("status")).toHaveText("Trang ảnh 2 / 2");
+  await expect(previous).toBeEnabled();
+  await expect(next).toBeDisabled();
+
+  await previous.click();
+  await expect.poll(exposedPhotographs).toEqual([multiName]);
+
+  // The Axe buyer gate still passes over the whole page with the stage in this state.
+  await assertPageQuality(page);
+});
+
+test("each trusted photograph is fetched once, whichever composition the viewport renders", async ({
+  page,
+}) => {
+  /*
+   * The media stage and the below-`lg` editorial grid both carry images 2..n, because one of them
+   * is always `display: none` and a phone and a desktop want different compositions. That only
+   * stays honest if the hidden copy never downloads: an element with no layout box is never near
+   * the viewport, so its `loading="lazy"` image is never requested.
+   *
+   * Asserted as "at most once per photograph" rather than "exactly once" because a lazy image is
+   * fetched when it approaches the viewport, which is a timing the test scrolls to reach rather
+   * than one it should pin.
+   */
+  const fetched: string[] = [];
+  await page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url") ?? "";
+    fetched.push(source);
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  const photographs = ["primary.jpg", "angle-front.jpg", "detail-fabric.jpg"];
+  const countsFor = (name: string) => fetched.filter((source) => source.includes(name)).length;
+
+  for (const viewport of [
+    { label: "mobile", width: 390, height: 844 },
+    { label: "desktop", width: 1440, height: 900 },
+  ]) {
+    // Blank first: resizing a loaded page swaps the composition under it, and those fetches would
+    // be counted against the next load rather than against the one being measured.
+    await page.goto("about:blank");
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    fetched.length = 0;
+    await page.goto(`${BASE_URL}/shop/${multiSlug}`, { waitUntil: "networkidle" });
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForLoadState("networkidle");
+
+    for (const photograph of photographs) {
+      expect(
+        countsFor(photograph),
+        `${viewport.label}: ${photograph} must not be downloaded twice (${JSON.stringify(fetched)})`,
+      ).toBeLessThanOrEqual(1);
+    }
+    // The canonical first image is the one surface that is always on screen, so it always loads.
+    expect(countsFor("primary.jpg"), `${viewport.label}: canonical first image`).toBe(1);
+    // ...and the composition this viewport renders really did show the rest.
+    expect(
+      photographs.slice(1).every((photograph) => countsFor(photograph) === 1),
+      `${viewport.label}: every later photograph loads exactly once (${JSON.stringify(fetched)})`,
+    ).toBe(true);
+  }
 });
 
 test("runtime network and CSP headers enforce Pancake media allowlist and reject unreviewed optimizer requests", async ({

@@ -416,11 +416,10 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
 
   for (const expected of [
     "Thêm vào giỏ hàng",
-    "Chọn loại × kích cỡ × màu",
-    "Chọn loại × kích cỡ",
-    "Chọn màu × kích cỡ",
-    "Chọn kích cỡ",
     "Hướng dẫn chọn size",
+    "Chưa thể mua online",
+    // The refinement spec's exact approved sentence for a kind that has not been chosen yet.
+    "Nàng chọn phân loại trước để xem size còn hàng",
   ]) {
     assert.equal(source.includes(expected), true, `purchase panel missing Vietnamese copy: ${expected}`);
   }
@@ -432,20 +431,38 @@ test("U1b purchase panel uses Vietnamese buyer-functional copy", async () => {
     "Chọn Color × Size",
     "Chọn Size",
     "Hướng dẫn chọn kích cỡ",
+    /*
+     * The option-axis labels named the way the projection models a product, not the way a shopper
+     * reads one, and the refinement spec removes them: each fieldset legend already names its own
+     * axis. They move from "must be present" to "must not come back".
+     */
+    "Chọn loại × kích cỡ × màu",
+    "Chọn loại × kích cỡ",
+    "Chọn màu × kích cỡ",
+    "Chọn kích cỡ",
   ]) {
     assert.equal(source.includes(oldCopy), false, `purchase panel retained old copy: ${oldCopy}`);
   }
 });
 
 test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability disclosure", async () => {
-  const source = await readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8");
+  // The route module is read alongside the markup because the related surface's analytics list
+  // name is the same label under a different roof: renaming only the heading would leave the
+  // superseded claim in the reports.
+  const [markupSource, routeSource] = await Promise.all([
+    readFile(join(REPO_ROOT, "src/app/shop/[slug]/page.tsx"), "utf8"),
+    readFile(join(REPO_ROOT, "src/routes/product.ts"), "utf8"),
+  ]);
+  const source = `${markupSource}\n${routeSource}`;
 
   for (const expected of [
     "Cửa hàng",
     `${BRAND_NAME_IN_JSX} / Sản phẩm`,
     "Hướng dẫn bảo quản",
-    "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
-    "Số lượng tồn kho chính xác không được hiển thị trên website.",
+    "Giao hàng",
+    "Đổi trả",
+    // The generic related surface says what its data supports, not that the items complete an outfit.
+    "Nàng có thể thích",
   ]) {
     assert.equal(source.includes(expected), true, `PDP missing Vietnamese/factual copy: ${expected}`);
   }
@@ -461,6 +478,17 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
     "client",
     // C
     brandEyebrow("Product"),
+    /*
+     * The refinement spec's copy rule: say shopping facts, not catalog mechanics. This paragraph
+     * explained when the server re-checks stock and that exact quantities are withheld — true, and
+     * of no use to someone deciding whether to buy. The shipping, returns and availability blocks
+     * carry what a shopper does need.
+     */
+    "Tình trạng còn hàng được hệ thống kiểm tra lại khi bạn thêm sản phẩm vào giỏ hàng.",
+    "Số lượng tồn kho chính xác không được hiển thị trên website.",
+    "máy chủ",
+    // Asserting complementarity the recommendation source cannot prove.
+    "Hoàn thiện phối đồ",
   ]) {
     assert.equal(source.includes(oldCopy), false, `PDP retained old/technical copy: ${oldCopy}`);
   }
