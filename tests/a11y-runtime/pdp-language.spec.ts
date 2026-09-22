@@ -165,18 +165,26 @@ test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   /*
-   * The breadcrumb is desktop-only on this branch: the mobile spec requires the product name to
-   * come immediately after the below-`lg` gallery, and the implementation clears the way by gating
-   * the trail behind `lg`. Its contract -- the trail exists and `Cửa hàng` points at `/shop` -- is
-   * unchanged, so it is asserted at the width that renders it rather than dropped.
+   * The trail is on both compositions, so it is asserted at the width this spec runs at. Below
+   * `lg` it sits at the end of the content rather than between the gallery and the product name,
+   * which is what the mobile ordering rule asks for -- the name still comes first, and the phone
+   * still has its way back up the catalogue.
    */
-  await page.setViewportSize({ width: 1440, height: 900 });
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
   await expect(breadcrumb.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveAttribute(
     "href",
     "/shop",
   );
-  await page.setViewportSize({ width: 390, height: 844 });
+
+  // Exactly one trail is live at a time, and on a phone the product name precedes it.
+  await expect(breadcrumb).toHaveCount(1);
+  const [headingBox, breadcrumbBox] = await Promise.all([
+    page.getByRole("heading", { level: 1, name: productName }).boundingBox(),
+    breadcrumb.boundingBox(),
+  ]);
+  expect(headingBox!.y, "the product name comes before the trail on a phone").toBeLessThan(
+    breadcrumbBox!.y,
+  );
   // C — rendered check, and the highest-value one: this is the text a shopper actually sees. The
   // brand half comes from Brand Config so a fork inherits the rule instead of silently losing it.
   await expect(

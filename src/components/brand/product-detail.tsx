@@ -71,6 +71,17 @@ export function BrandProductDetail({
       />
 
       <div className="mx-auto max-w-[1600px] px-6 pb-10 pt-5 md:pb-16 md:pt-7 lg:py-16">
+        {/*
+          Desktop keeps the trail where it has always been, above the information row.
+
+          Below `lg` it moves to the end of the content instead of being dropped. The mobile spec
+          asks for the product name to come immediately after the gallery, which the trail sat in
+          the way of -- but it asks for an ordering, not for the phone to lose its way back up the
+          catalogue. Rendering it twice, each copy gated to one side of the seam, is what keeps
+          reading order equal to visual order on both: a single element moved with `order` would
+          still be announced before the product name on a phone, which is the thing the ordering
+          rule exists to prevent. Only one copy is ever rendered, so only one landmark is ever live.
+        */}
         <div className="hidden lg:block">{breadcrumb}</div>
 
         {/* No trusted photography at all: preserve the existing truthful fallback. */}
@@ -102,6 +113,8 @@ export function BrandProductDetail({
           )}
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-3">{purchaseInformation}</div>
+
+          <div className="min-w-0 border-t border-black/15 pt-5 lg:hidden">{breadcrumb}</div>
         </div>
       </div>
     </>
