@@ -164,7 +164,7 @@ test("an out-of-stock selection says so, and any other blocker uses the generic 
       productLevelOptions: outOfStock,
       selection: { kindKey: null, color: null, size: "S" },
     }).unavailableMessage,
-    "Lựa chọn này đã hết hàng.",
+    "Lựa chọn này tạm hết",
   );
 
   assert.equal(
