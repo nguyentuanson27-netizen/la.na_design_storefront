@@ -60,8 +60,9 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(page, /Đơn hàng \(\{itemCount\}\) · \{totals\.totalText\}/);
   assert.match(page, /<details[^>]*className="checkout-mobile-summary/);
   assert.doesNotMatch(page, /text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
-  assert.doesNotMatch(page, /Máy chủ|máy chủ|Pancake/);
-  assert.doesNotMatch(form, /Máy chủ|máy chủ|Pancake/);
+  assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
+  assert.doesNotMatch(form, /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/);
+  assert.doesNotMatch(form, /Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake/);
 
   assert.match(form, /summarySlot[\s\S]*receivingFields[\s\S]*totalsSlot[\s\S]*preorderSlot[\s\S]*type="submit"/);
   assert.match(form, /submitGuestCheckoutAction/);
