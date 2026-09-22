@@ -403,7 +403,7 @@ summary:focus-visible {
     gap: 0.25rem;
   }
 
-  .mobile-account-link {
+  .utility-nav a.mobile-account-link {
     display: none;
   }
 
