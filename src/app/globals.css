@@ -297,8 +297,8 @@ summary:focus-visible {
    * 0.82rem type, so arithmetic against the control height lands the rect at 41px. 0.95rem
    * measures 45px, just clear of it.
    */
-  --contact-link-pad: 0.95rem;
-  gap: calc(var(--contact-link-pad) * 2);
+  --contact-link-pad: 0.92rem;
+  gap: 1.5rem;
 }
 
 /*
@@ -336,7 +336,14 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* See the note on `--contact-link-pad`: inline, so the padding is hit area rather than height. */
+.footer-nav-list a,
+.footer-contact-list a,
+main nav[aria-label="Breadcrumb"] a {
+  text-decoration-line: underline;
+  text-underline-offset: 0.3em;
+}
+
+/* Inline padding keeps phone/email practical to tap without turning each fact into a 44px row. */
 .footer-contact-list a {
   display: inline;
   padding-block: var(--contact-link-pad);
