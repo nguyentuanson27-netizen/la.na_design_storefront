@@ -33,6 +33,8 @@ const now = new Date();
 const syncedAt = new Date("2026-09-19T02:00:00.000Z");
 const campaignId = `listing-consistency-sale-${runId}`;
 const COLLECTION_SLUG = "listing-consistency";
+const CATEGORY_KEY = "aoDai";
+const CATEGORY_PATH = "/ao-dai";
 
 const VIEWPORTS = [
   { name: "mobile", width: 390, height: 844 },
@@ -113,6 +115,9 @@ async function seedProduct(input: (typeof PRODUCTS)[number]) {
       isActive: true,
       syncedAt,
       createdAt: new Date(now.getTime() - input.daysAgo * 86_400_000),
+      // The category PLP is the surface master spec §25 describes and the only listing that draws
+      // the filter panel, so the density gate has to be able to measure it with products in it.
+      categoryMemberships: { create: [{ categoryKey: CATEGORY_KEY }] },
       content: {
         create: {
           editorialDescription: `Editorial ${input.key}`,
@@ -270,7 +275,7 @@ async function expectPageQuality(page: Page, label: string) {
 }
 
 const ROUTES = [
-  { path: "/ao-dai", heading: "Áo dài", breadcrumbTail: "Áo dài", label: "category reference" },
+  { path: CATEGORY_PATH, heading: "Áo dài", breadcrumbTail: "Áo dài", label: "category reference" },
   { path: "/new-arrivals", heading: "Hàng mới về", breadcrumbTail: "Hàng mới về", label: "new arrivals" },
   { path: "/sale", heading: "Sale", breadcrumbTail: "Sale", label: "sale" },
   { path: "/shop", heading: "Cửa hàng", breadcrumbTail: "Cửa hàng", label: "shop" },
@@ -314,11 +319,8 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
 test("the product grid is 2 columns on mobile and 4 on desktop, on every listing that has one", async ({
   page,
 }) => {
-  // `/collections` is an index rather than a product listing, so it is not in this list, and the
-  // category reference is not either: this fixture seeds no category membership, so `/ao-dai`
-  // renders its empty state. The column count is one fact about one shared component -- the domain
-  // test pins that the category route renders that same component.
-  const gridded = ["/new-arrivals", "/sale", "/shop", `/collections/${COLLECTION_SLUG}`];
+  // `/collections` is an index rather than a product listing, so it is not in this list.
+  const gridded = [CATEGORY_PATH, "/new-arrivals", "/sale", "/shop", `/collections/${COLLECTION_SLUG}`];
 
   for (const { name, width, height, expectedColumns } of [
     { ...VIEWPORTS[0], expectedColumns: 2 },
@@ -338,6 +340,63 @@ test("the product grid is 2 columns on mobile and 4 on desktop, on every listing
       expect(columns, `${name} ${path} columns`).toBe(expectedColumns);
     }
   }
+});
+
+/**
+ * Refinement spec "PLP / listing density" -- the owner's observable acceptance.
+ *
+ * A listing whose products start below the fold reads as a page of chrome. The criterion is
+ * deliberately about the first product *image*, not the grid container: a grid whose top edge is
+ * visible while every photograph in it is not would satisfy the letter and miss the point.
+ */
+test("a product-bearing listing shows its first product image inside the initial viewport", async ({
+  page,
+}) => {
+  const productBearing = [
+    CATEGORY_PATH,
+    "/new-arrivals",
+    "/sale",
+    "/shop",
+    `/collections/${COLLECTION_SLUG}`,
+  ];
+  const folds: { label: string; top: number; height: number }[] = [];
+
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+
+    for (const path of productBearing) {
+      await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+
+      // Filters stay in their default, unexpanded state: nothing is collapsed to make room.
+      const firstProductMedia = page.locator("main .grid-cols-2 .product-visual").first();
+      await expect(firstProductMedia, `${viewport.name} ${path} first product`).toBeVisible();
+
+      const top = await firstProductMedia.evaluate(
+        (element) => element.getBoundingClientRect().top,
+      );
+      // Collected rather than asserted here, so one run reports every listing that is still below
+      // the fold instead of stopping at the first.
+      folds.push({ label: `${viewport.name} ${path}`, top: Math.round(top), height: viewport.height });
+
+      // The page is still at the top -- this is the initial viewport, not a scrolled one.
+      expect(await page.evaluate(() => window.scrollY)).toBe(0);
+
+      // Density must not have cost the filter controls their reachable size.
+      const filterControl = page.getByRole("link", { name: "Xóa bộ lọc", exact: true });
+      if ((await filterControl.count()) > 0) {
+        const box = (await filterControl.first().boundingBox())!;
+        expect(box.height, `${viewport.name} ${path} clear-filter target`).toBeGreaterThanOrEqual(24);
+      }
+    }
+  }
+
+  expect(
+    folds.filter(({ top, height }) => top >= height),
+    `first product image below the fold: ${JSON.stringify(folds)}`,
+  ).toEqual([]);
+  // Reported unconditionally so a run that passes still leaves the measurement behind: the next
+  // person to add a row of chrome can see how much headroom they are spending.
+  console.log(`first product image offsets: ${JSON.stringify(folds)}`);
 });
 
 test("new-arrivals shows the catalog newest first, and pages without losing the ordering", async ({

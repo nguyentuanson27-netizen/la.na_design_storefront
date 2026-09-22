@@ -28,7 +28,7 @@ function render(data: NewArrivalsViewModel) {
         items={[{ label: "Trang chủ", href: "/" }, { label: "Hàng mới về" }]}
       />
       <ListingHeader eyebrow="Mới nhất" title="Hàng mới về">
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
           Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng
           chọn lọc.
         </p>
@@ -43,12 +43,12 @@ function render(data: NewArrivalsViewModel) {
           action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
         />
       ) : (
-        <section aria-labelledby="new-arrivals-products-title" className="mt-8">
+        <section aria-labelledby="new-arrivals-products-title" className="mt-5">
           <h2 id="new-arrivals-products-title" className="sr-only">
             Sản phẩm mới nhất
           </h2>
           <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-          <div className="mt-8">
+          <div className="mt-4">
             <ListingProductGrid>
               {data.cards.map((card, index) => (
                 <ProductCard

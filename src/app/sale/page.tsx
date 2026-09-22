@@ -25,7 +25,7 @@ function render(data: FlashSaleViewModel) {
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: SALE_TITLE }]} />
       <ListingHeader eyebrow="Khuyến mãi" title={SALE_TITLE}>
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{SALE_DESCRIPTION}</p>
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{SALE_DESCRIPTION}</p>
       </ListingHeader>
 
       {data.totalCount === 0 ? (
@@ -37,14 +37,14 @@ function render(data: FlashSaleViewModel) {
           action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
         />
       ) : (
-        <section aria-labelledby="sale-products-title" className="mt-8">
+        <section aria-labelledby="sale-products-title" className="mt-5">
           <h2 id="sale-products-title" className="sr-only">
             Sản phẩm đang giảm giá
           </h2>
           {/* Live, because the count is what changes when a campaign boundary passes and the
               shell re-reads the route underneath the reader. */}
           <ListingResultCount live>{data.totalCount} sản phẩm đang giảm giá</ListingResultCount>
-          <div className="mt-8">
+          <div className="mt-4">
             <ListingProductGrid>
               {data.cards.map((card, index) => (
                 <ProductCard

@@ -54,7 +54,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
   }
 
   return (
-    <div className="mt-8">
+    <div className="mt-4">
       {/* Screen reader live region */}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}

@@ -302,9 +302,19 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   );
   expect(new Set(relatedHrefs).size).toBe(relatedHrefs.length);
 
+  /*
+   * Refinement spec §3 splits these blocks between the two information columns: the product's own
+   * story on the left, the facts a shopper checks while deciding to buy on the right. The approved
+   * block order is unchanged -- it now runs across the two regions in reading order, which is what
+   * a narrow viewport still stacks them in.
+   */
   const details = page.getByRole("region", { name: "Chi tiết sản phẩm" });
-  const detailHeadings = await details.getByRole("heading", { level: 2 }).allTextContents();
-  expect(detailHeadings).toEqual([
+  const policies = page.getByRole("region", { name: "Giao hàng và đổi trả" });
+  const orderedHeadings = async () => [
+    ...(await details.getByRole("heading", { level: 2 }).allTextContents()),
+    ...(await policies.getByRole("heading", { level: 2 }).allTextContents()),
+  ];
+  expect(await orderedHeadings()).toEqual([
     "Mô tả sản phẩm",
     "Chất liệu",
     "Hướng dẫn bảo quản",
@@ -315,18 +325,18 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   await expect(details.getByText("Đính kết thủ công.", { exact: true })).toBeVisible();
   await expect(details.getByText("Lụa tơ tằm.", { exact: true })).toBeVisible();
   await expect(details.getByText("Giặt tay nhẹ.", { exact: true })).toBeVisible();
-  await expect(details.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
 
   const shipping = buildShippingViewModel({ policy: readGuestShippingPolicy() });
   const returns = buildReturnsViewModel();
-  await expect(details.getByText(shipping.coverage, { exact: true })).toBeVisible();
-  await expect(details.getByText(`${shipping.innerCityLabel}: ${shipping.innerCityEstimate}`, { exact: true })).toBeVisible();
-  await expect(details.getByText(`${shipping.otherProvinceLabel}: ${shipping.otherProvinceEstimate}`, { exact: true })).toBeVisible();
-  await expect(details.getByText(shipping.estimateCaveat, { exact: true })).toBeVisible();
-  await expect(details.getByText(returns.returnWindow, { exact: true })).toBeVisible();
-  await expect(details.getByText(returns.refundWindow, { exact: true })).toBeVisible();
-  await expect(details.locator('a[href="/shipping"]')).toBeVisible();
-  await expect(details.locator('a[href="/returns"]')).toBeVisible();
+  await expect(policies.getByText(shipping.coverage, { exact: true })).toBeVisible();
+  await expect(policies.getByText(`${shipping.innerCityLabel}: ${shipping.innerCityEstimate}`, { exact: true })).toBeVisible();
+  await expect(policies.getByText(`${shipping.otherProvinceLabel}: ${shipping.otherProvinceEstimate}`, { exact: true })).toBeVisible();
+  await expect(policies.getByText(shipping.estimateCaveat, { exact: true })).toBeVisible();
+  await expect(policies.getByText(returns.returnWindow, { exact: true })).toBeVisible();
+  await expect(policies.getByText(returns.refundWindow, { exact: true })).toBeVisible();
+  await expect(policies.locator('a[href="/shipping"]')).toBeVisible();
+  await expect(policies.locator('a[href="/returns"]')).toBeVisible();
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
@@ -334,7 +344,7 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
 
   // The same source-backed block order must survive the mobile composition.
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await details.getByRole("heading", { level: 2 }).allTextContents()).toEqual([
+  expect(await orderedHeadings()).toEqual([
     "Mô tả sản phẩm",
     "Chất liệu",
     "Hướng dẫn bảo quản",
@@ -378,16 +388,20 @@ test("F7d/F7e empty related set is omitted and missing product facts create no p
   await expect(page.getByRole("region", { name: "Nàng có thể thích" })).toHaveCount(0);
   await expect(page.getByText("Thông tin biên tập cho sản phẩm này đang được cập nhật.")).toHaveCount(0);
 
-  const details = page.getByRole("region", { name: "Chi tiết sản phẩm" });
-  expect(await details.getByRole("heading", { level: 2 }).allTextContents()).toEqual([
+  // A product with no approved editorial facts gets no product-information block at all, rather
+  // than an empty one; the delivery and returns policies are page facts and still render.
+  await expect(page.getByRole("region", { name: "Chi tiết sản phẩm" })).toHaveCount(0);
+  const policies = page.getByRole("region", { name: "Giao hàng và đổi trả" });
+  expect(await policies.getByRole("heading", { level: 2 }).allTextContents()).toEqual([
     "Giao hàng",
     "Đổi trả",
   ]);
-  await expect(details.getByRole("heading", { name: "Chất liệu", exact: true })).toHaveCount(0);
-  await expect(details.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
-  await expect(details.getByRole("heading", { name: "Hướng dẫn bảo quản", exact: true })).toHaveCount(0);
-  await expect(details.getByText(/N\/A|Đang cập nhật/i)).toHaveCount(0);
-  await expect(details.getByText(/xuất xứ/i)).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Chất liệu", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Thông số/fit", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Hướng dẫn bảo quản", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Mô tả sản phẩm", exact: true })).toHaveCount(0);
+  await expect(policies.getByText(/N\/A|Đang cập nhật/i)).toHaveCount(0);
+  await expect(policies.getByText(/xuất xứ/i)).toHaveCount(0);
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();

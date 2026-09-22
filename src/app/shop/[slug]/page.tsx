@@ -59,7 +59,14 @@ function render(data: ProductRouteData) {
     </>
   );
 
-  const productInformation = (
+  const hasProductInformation =
+    editorial.description !== null
+    || editorial.craftDetails.length > 0
+    || editorial.material !== null
+    || editorial.careInstructions !== null;
+
+  // F7e: a product with no approved editorial facts gets no empty block to explain itself with.
+  const productInformation = !hasProductInformation ? null : (
     <section aria-label="Chi tiết sản phẩm" className="border-t border-black/20">
       {editorial.description || editorial.craftDetails.length > 0 ? (
         <section className="border-b border-black/15 py-6" aria-labelledby="pdp-description-title">

@@ -21,10 +21,17 @@ import Link from "next/link";
 
 export type ListingCrumb = Readonly<{ label: string; href?: string | null }>;
 
-/** The container every listing sits in: one max width, one gutter, one vertical rhythm. */
+/**
+ * The container every listing sits in: one max width, one gutter, one vertical rhythm.
+ *
+ * The rhythm is deliberately tighter than it was. Refinement spec "PLP / listing density" judges
+ * these pages by one observable: on a product-bearing listing with its filters unexpanded, the top
+ * edge of the first product image is inside the initial viewport at 1440x900 and at 390x844. Two
+ * screens of chrome before the first photograph fails that on both.
+ */
 export function ListingShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-12 md:py-20">{children}</div>
+    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-5 md:py-8">{children}</div>
   );
 }
 
@@ -68,9 +75,9 @@ export function ListingHeader({
   children,
 }: Readonly<{ eyebrow: string; title: string; children?: ReactNode }>) {
   return (
-    <div className="mt-8 border-b border-[#3B2219]/15 pb-8">
+    <div className="mt-4 border-b border-[#3B2219]/15 pb-4">
       <p className="eyebrow text-[#70584B]">{eyebrow}</p>
-      <h1 className="mt-3 font-serif text-4xl font-normal tracking-tight text-[#2A1810] sm:text-5xl md:text-6xl">
+      <h1 className="mt-2 font-serif text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
         {title}
       </h1>
       {children}
