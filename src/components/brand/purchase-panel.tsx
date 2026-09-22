@@ -15,6 +15,7 @@ import {
   type PurchaseAttemptResult,
   type UseVariantSelectionInput,
   type VariantSelectionController,
+  OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
@@ -442,8 +443,11 @@ export function PurchasePanelView({
 
   const purchaseStatus =
     message ||
-    (view.unavailableMessage ||
-      (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
+    (view.selectedUnavailableReason === "OUT_OF_STOCK"
+      ? OUT_OF_STOCK_LABEL
+      : view.unavailableMessage ||
+        (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
+  const mobilePurchaseStatus = message || mobilePresentation.unavailableMessage || purchaseStatus;
 
   const sizeGuideTriggerMain =
     sizeGuide === null ? null : (
@@ -615,7 +619,7 @@ export function PurchasePanelView({
                   {renderColorFieldset("sheet")}
 
                   <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
-                    {purchaseStatus}
+                    {mobilePurchaseStatus}
                   </p>
                 </div>
 
@@ -628,7 +632,7 @@ export function PurchasePanelView({
                     onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}
                   >
                     {view.selectedVariantId !== null && !view.canAdd
-                      ? view.unavailableMessage || "Lựa chọn này tạm hết"
+                      ? mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết"
                       : mobilePresentation.actionLabel}
                   </button>
                 </div>
