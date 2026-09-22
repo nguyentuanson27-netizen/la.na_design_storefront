@@ -704,9 +704,11 @@ export function createAnonymousCartService(client: PrismaClient) {
     create,
     createWithItem,
     createWithUnit,
+    createWithQuantity,
     get,
     setItemQuantity,
     addItemUnit,
+    addItemQuantity,
     updateExistingItemQuantity,
     removeItem,
   };
