@@ -322,6 +322,11 @@ test("mobile category filters stay open across sequential URL-backed selections"
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
 
+  const firstProductImage = page.locator("main a[href^='/shop/'] img").first();
+  await expect(firstProductImage).toBeVisible();
+  const firstProductBox = await firstProductImage.boundingBox();
+  expect(firstProductBox?.y).toBeLessThan(844);
+
   await page.getByRole("button", { name: "Bộ lọc", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
   await expect(dialog).toBeVisible();
@@ -353,11 +358,10 @@ test("mobile category filters stay open across sequential URL-backed selections"
 test("the product grid is 2 columns on mobile and 4 on desktop, on every listing that has one", async ({
   page,
 }) => {
-  // `/collections` is an index rather than a product listing, so it is not in this list, and the
-  // category reference is not either: this fixture seeds no category membership, so `/ao-dai`
-  // renders its empty state. The column count is one fact about one shared component -- the domain
-  // test pins that the category route renders that same component.
-  const gridded = ["/new-arrivals", "/sale", "/shop", `/collections/${COLLECTION_SLUG}`];
+  // `/collections` is an index rather than a product listing, so it is not in this list.
+  // The category fixture is now seeded deliberately so the same mobile grid contract is exercised
+  // on the PLP that owns the filter drawer as well as on the shared standalone listings.
+  const gridded = ["/ao-dai", "/new-arrivals", "/sale", "/shop", `/collections/${COLLECTION_SLUG}`];
 
   for (const { name, width, height, expectedColumns } of [
     { ...VIEWPORTS[0], expectedColumns: 2 },
