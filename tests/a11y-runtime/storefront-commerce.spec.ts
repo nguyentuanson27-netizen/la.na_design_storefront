@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator, type Page } from "@playwright/test";
 
+import { SIZE_GUIDE } from "../../src/brand/size-guide.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 import { expectSettledDocumentTitle, watchDocumentTitle } from "./document-title-watch.ts";
@@ -849,6 +850,17 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   // preserving the sr-only semantic table asserted by expectSizeGuideArtworkFits().
   await expect(dialog.locator("h2:visible")).toHaveCount(0);
   await expect(dialog.locator("p:visible")).toHaveCount(0);
+
+  // Removing duplicate visual prose must not make the guidance disappear for screen-reader users.
+  // The image is intentionally decorative (alt=""), so these facts stay in the sr-only semantic
+  // fallback alongside the data table.
+  const semanticOnly = dialog.locator(".sr-only");
+  await expect(semanticOnly).toContainText(SIZE_GUIDE.circumferenceSemanticsNote);
+  await expect(semanticOnly).toContainText(SIZE_GUIDE.guidanceNote);
+  if (SIZE_GUIDE.tolerance !== null) {
+    await expect(semanticOnly).toContainText(SIZE_GUIDE.tolerance.note);
+  }
+
   expect(
     await dialog.evaluate((element) => Number.parseFloat(getComputedStyle(element).borderTopWidth)),
     "size-guide dialog has no framed chrome",
