@@ -244,3 +244,33 @@ test("storefront public action rejects malformed browser input before runtime as
 
   assert.equal(calls, 0);
 });
+
+
+test("PDP quantity is validated at the public boundary and reported as the committed add delta", async () => {
+  const calls: Array<{ slug: string; variantId: string; quantity: number }> = [];
+  const actions = createStorefrontPurchasePublicActions({
+    async purchase(input) {
+      calls.push(input);
+      return {
+        ok: true as const,
+        previousQuantity: 2,
+        quantity: 5,
+        addedQuantity: 3,
+        snapshot: committed({ ...committedSnapshot, quantity: 5 }),
+      };
+    },
+  });
+
+  const result = await actions.add({ slug: "linen-shirt", variantId: "variant-1", quantity: 3 });
+  assert.ok(result.ok);
+  assert.deepEqual(result.transition, { previousQuantity: 2, quantity: 5, addedQuantity: 3 });
+  assert.equal(result.analyticsItem?.quantity, 3);
+  assert.deepEqual(calls, [{ slug: "linen-shirt", variantId: "variant-1", quantity: 3 }]);
+
+  for (const quantity of [0, -1, 1.5, 100, "3"]) {
+    assert.deepEqual(
+      await actions.add({ slug: "linen-shirt", variantId: "variant-1", quantity }),
+      { ok: false, reason: "INVALID_SELECTION" },
+    );
+  }
+});
