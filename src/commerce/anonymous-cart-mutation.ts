@@ -177,6 +177,71 @@ export function createAnonymousCartMutationService(
     };
   }
 
+  /**
+   * Adds the requested quantity delta atomically, preserving any units already in the cart.
+   */
+  async function addItemQuantity<TSnapshot>({
+    variantId,
+    addedQuantity,
+    now,
+    resolveLine,
+  }: {
+    variantId: string;
+    addedQuantity: number;
+    now: Date;
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }) {
+    const currentCartId = cookie.read();
+    if (currentCartId) {
+      const existingResult = await carts.addItemQuantity({
+        cartId: currentCartId,
+        variantId,
+        addedQuantity,
+        now,
+        resolveLine,
+      });
+
+      if (existingResult.ok) {
+        return {
+          ok: true as const,
+          cartId: currentCartId,
+          previousQuantity: existingResult.previousQuantity,
+          quantity: existingResult.quantity,
+          addedQuantity: existingResult.addedQuantity,
+          snapshot: existingResult.snapshot,
+        };
+      }
+      if (existingResult.reason !== "CART_UNAVAILABLE") {
+        return existingResult;
+      }
+    }
+
+    const createdResult = await carts.createWithQuantity({
+      variantId,
+      addedQuantity,
+      now,
+      resolveLine,
+    });
+    if (!createdResult.ok) {
+      return createdResult;
+    }
+
+    cookie.write({
+      cartId: createdResult.cart.id,
+      expiresAt: createdResult.cart.expiresAt,
+    });
+
+    return {
+      ok: true as const,
+      cartId: createdResult.cart.id,
+      expiresAt: createdResult.cart.expiresAt,
+      previousQuantity: 0,
+      quantity: createdResult.quantity,
+      addedQuantity: createdResult.addedQuantity,
+      snapshot: createdResult.snapshot,
+    };
+  }
+
   async function updateExistingItemQuantity<TSnapshot>({
     variantId,
     quantity,
@@ -229,5 +294,5 @@ export function createAnonymousCartMutationService(
     return result;
   }
 
-  return { setItemQuantity, addItemUnit, updateExistingItemQuantity, removeItem };
+  return { setItemQuantity, addItemUnit, addItemQuantity, updateExistingItemQuantity, removeItem };
 }
