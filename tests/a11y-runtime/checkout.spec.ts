@@ -543,6 +543,9 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   const summary = page.getByRole("button", { name: /Đơn hàng \(3\) ·/ });
   await expect(summary).toBeVisible();
   await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await summary.click();
+  await expect(summary).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".checkout-order-summary a[href='/cart']")).toBeVisible();
   await expect(page.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
 
