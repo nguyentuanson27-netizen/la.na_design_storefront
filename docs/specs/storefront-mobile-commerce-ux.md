@@ -74,7 +74,7 @@ selection, stock, price, cart, preorder, media ordering, or purchase authority.
   size-guide artwork. Remove the visible `Hướng dẫn chọn size` heading, chart title, circumference/
   tolerance/guidance paragraphs, and framed dialog chrome. Keep only the artwork plus a clear close
   control as visible content. Preserve the accessible dialog label, focus containment/restoration,
-  and the existing screen-reader-only semantic size table.
+  the screen-reader-only measurement/guidance notes, and the existing semantic size table.
 - The existing `Hướng dẫn chọn size` trigger remains associated with the size selector.
 
 Out of scope: changing `deriveStorefrontProjectionSelection`, variant availability, add-to-cart
