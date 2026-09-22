@@ -509,6 +509,67 @@ test("F8b checkout keeps the preorder marker and the fulfillment truth", async (
   expect(health.failedResponses).toEqual([]);
 });
 
+/**
+ * Two compositions of one notice must still be two well-formed regions.
+ *
+ * Checkout renders the fulfillment notice twice -- once for the mobile stack, once for the desktop
+ * sticky panel -- and `display: none` decides which one the buyer gets. That is a presentation
+ * choice; it is not a licence to emit the same `id` twice. A duplicate IDREF is ambiguous to an
+ * accessibility tree whether or not one of the two boxes is painted, and `:visible`-scoped
+ * assertions cannot see it, so this reads the whole document at both widths.
+ */
+test("F8b the checkout fulfillment notice is labelled by its own heading, with ids unique in the document", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await addSelectedToBag(page, slugs.preorder, "M");
+  await addSelectedToBag(page, slugs.ready, "M");
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  for (const viewport of [
+    { name: "1440", width: 1440, height: 900 },
+    { name: "390", width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+
+    const audit = await page.evaluate(() => {
+      const notices = Array.from(
+        document.querySelectorAll<HTMLElement>('[data-preorder-notice="true"]'),
+      );
+      const duplicateIds = Array.from(document.querySelectorAll<HTMLElement>("[id]"))
+        .map((element) => element.id)
+        .filter((id, index, all) => all.indexOf(id) !== index);
+
+      const live = notices.find((notice) => notice.getClientRects().length > 0) ?? null;
+      const labelId = live?.getAttribute("aria-labelledby") ?? null;
+      const labelMatches = labelId === null ? [] : Array.from(document.querySelectorAll(`[id="${labelId}"]`));
+
+      return {
+        noticeCount: notices.length,
+        labelIds: notices.map((notice) => notice.getAttribute("aria-labelledby")),
+        duplicateIds,
+        hasLive: live !== null,
+        labelMatchCount: labelMatches.length,
+        // The label must be this notice's own heading, not the other composition's.
+        labelIsOwnHeading:
+          labelMatches.length === 1
+          && live !== null
+          && live.contains(labelMatches[0]!)
+          && labelMatches[0]!.tagName === "H2",
+        labelText: labelMatches[0]?.textContent?.trim() ?? null,
+      };
+    });
+
+    expect(audit.duplicateIds, `${viewport.name}: no element id may appear twice`).toEqual([]);
+    expect(audit.noticeCount, `${viewport.name}: both compositions render the notice`).toBe(2);
+    expect(new Set(audit.labelIds).size, `${viewport.name}: each notice names its own title`).toBe(2);
+    expect(audit.hasLive, `${viewport.name}: exactly one composition is on screen`).toBe(true);
+    expect(audit.labelMatchCount, `${viewport.name}: the IDREF resolves to one element`).toBe(1);
+    expect(audit.labelIsOwnHeading, `${viewport.name}: labelled by its own heading`).toBe(true);
+    expect(audit.labelText, `${viewport.name}: the heading carries the preorder word`).toBe(PREORDER);
+  }
+});
+
 test("F8b a reload preserves the server-derived truth rather than client state", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await addSelectedToBag(page, slugs.preorder, "M");

@@ -70,7 +70,13 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.equal((page.match(/const orderLines = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const totalsBlock = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 1);
-  assert.equal((page.match(/<BrandPreorderFulfillmentNotice notice=\{data\.preorderNotice\} \/>/g) ?? []).length, 1);
+  assert.equal((page.match(/const preorderNoticeFor = /g) ?? []).length, 1);
+  assert.equal((page.match(/<BrandPreorderFulfillmentNotice/g) ?? []).length, 1);
+  // Each composition's copy names its own heading: two identical ids would be one ambiguous IDREF,
+  // and `display: none` does not make a duplicate id valid.
+  assert.match(page, /titleId=\{`preorder-fulfillment-title-\$\{surface\}`\}/);
+  assert.match(page, /preorderNoticeFor\("mobile"\)/);
+  assert.match(page, /preorderNoticeFor\("desktop"\)/);
 
   /*
    * The desktop order panel this spec must not have changed.

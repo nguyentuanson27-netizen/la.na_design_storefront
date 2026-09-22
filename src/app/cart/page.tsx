@@ -161,7 +161,10 @@ function render(data: CartViewModel) {
             Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.
           </p>
           {data.preorderNotice === null ? null : (
-            <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
+            <BrandPreorderFulfillmentNotice
+              notice={data.preorderNotice}
+              titleId="preorder-fulfillment-title"
+            />
           )}
           {data.canCheckout ? (
             <Link

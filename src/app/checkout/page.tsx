@@ -154,9 +154,16 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  const preorderContent =
+  /**
+   * One notice, authored once, rendered once per breakpoint composition -- each with its own
+   * heading id, so the two copies are two well-formed regions rather than one ambiguous IDREF.
+   */
+  const preorderNoticeFor = (surface: "mobile" | "desktop") =>
     data.preorderNotice === null ? null : (
-      <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
+      <BrandPreorderFulfillmentNotice
+        notice={data.preorderNotice}
+        titleId={`preorder-fulfillment-title-${surface}`}
+      />
     );
 
   return (
@@ -192,7 +199,7 @@ function render(data: CheckoutViewModel) {
           summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
           summarySlot={summaryContent}
           totalsSlot={totalsContent}
-          preorderSlot={preorderContent}
+          preorderSlot={preorderNoticeFor("mobile")}
         />
 
         <aside className="checkout-order-panel hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">
@@ -209,7 +216,7 @@ function render(data: CheckoutViewModel) {
           <div className="mt-6">{orderLines}</div>
           <div className="mt-5">{totalsBlock}</div>
           <div className="mt-5">{estimateNote}</div>
-          {preorderContent}
+          {preorderNoticeFor("desktop")}
         </aside>
       </div>
     </div>
