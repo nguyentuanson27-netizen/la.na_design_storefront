@@ -518,10 +518,12 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   await expect(cartDrawer).toBeVisible();
   await expect(sheet).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(1);
-  expect(
-    await cartDrawer.evaluate((element) => element.contains(document.activeElement)),
-    "focus moves into the cart",
-  ).toBe(true);
+  await expect
+    .poll(
+      () => cartDrawer.evaluate((element) => element.contains(document.activeElement)),
+      { message: "focus moves into the cart" },
+    )
+    .toBe(true);
 
   // The cart shows the exact selected option, and its quantity controls keep a real touch target.
   await expect(cartDrawer.getByText("Black / M")).toBeVisible();
