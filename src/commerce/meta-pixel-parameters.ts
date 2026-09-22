@@ -13,18 +13,23 @@ export type MetaAddToCartParametersInput = Readonly<{
   slug: string;
   productName: string;
   committedUnitPriceVnd?: number | null;
+  quantity?: number;
 }>;
 
 export function buildMetaAddToCartPixelParameters(
   input: MetaAddToCartParametersInput,
 ): FacebookPixelEventParameters {
+  const quantity =
+    typeof input.quantity === "number" && Number.isSafeInteger(input.quantity) && input.quantity > 0
+      ? input.quantity
+      : 1;
   const parameters: FacebookPixelEventParameters = {
     content_ids: [input.slug],
     content_name: input.productName,
     content_type: "product",
     currency: "VND",
     ...(typeof input.committedUnitPriceVnd === "number"
-      ? { value: input.committedUnitPriceVnd }
+      ? { value: input.committedUnitPriceVnd * quantity }
       : {}),
   };
 
