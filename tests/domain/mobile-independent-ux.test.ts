@@ -11,11 +11,11 @@ test("mobile independent UX: header exposes menu, logo, search and cart with pra
   const header = read("src/components/brand/site-header.tsx");
   const css = read("src/app/globals.css");
 
-  assert.match(header, /className="mobile-account-link"/);
+  assert.match(header, /className=\{isAccount \? "mobile-account-link" : undefined\}/);
   assert.match(css, /\.mobile-account-link\s*\{[^}]*display:\s*none;/);
   assert.doesNotMatch(css, /\.utility-nav\s+a:not\(:last-child\),\s*\.utility-nav\s+button:not\(:last-child\)/);
   assert.match(css, /\.mobile-nav\s+button,[\s\S]*\.utility-nav\s+button[^{]*\{[^}]*min-width:\s*var\(--control-height\);[^}]*min-height:\s*var\(--control-height\);/);
-  assert.match(header, /mobile-menu__utility-link[\s\S]*item\.href === "\/account"/);
+  assert.match(header, /const destination = item\.href === "\/account"[\s\S]*className="mobile-menu__utility-link"/);
 });
 
 test("mobile independent UX: phone listing grid is two columns with a 2px rhythm and compact card type", () => {
