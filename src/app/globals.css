@@ -1167,6 +1167,9 @@ body:has(#main-content [data-header-overlay-hero]) .site-header[data-scrolled="f
    while the homepage is at the top. */
 body:has(#main-content [data-homepage-root])
   .site-masthead:has(.site-header[data-scrolled="false"])
+  .promotion-shell,
+body:has(#main-content [data-pdp-root])
+  .site-masthead:has(.site-header[data-scrolled="false"])
   .promotion-shell {
   display: none;
 }

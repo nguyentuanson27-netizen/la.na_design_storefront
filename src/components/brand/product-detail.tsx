@@ -26,9 +26,9 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * Below `lg` the old editorial grid still carries images 2..n in the content column, because the
  * mobile composition belongs to its own spec.
  *
- * Everything static about the product -- the heading, the editorial copy, the size and care notes,
- * the breadcrumb -- stays server-rendered and arrives through the slots, so becoming a client
- * component here does not drag the whole article across the boundary.
+ * Everything static about the product -- the heading, editorial copy, size/care notes and policy
+ * facts -- stays server-rendered and arrives through slots, so becoming a client component here
+ * does not drag the whole article across the boundary.
  */
 
 type BrandProductDetailProps = Readonly<{
@@ -37,8 +37,6 @@ type BrandProductDetailProps = Readonly<{
   productName: string;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   sizeGuide: ProductMappedSizeGuide | null;
-  /** Rendered above the information row, inside the page shell. */
-  breadcrumb: ReactNode;
   /** Left column, first: name, collection context. */
   identity: ReactNode;
   /** Left column, below the identity: description, material, care. `null` when none truthfully exists. */
@@ -53,7 +51,6 @@ export function BrandProductDetail({
   productName,
   galleryIndexByVariantId,
   sizeGuide,
-  breadcrumb,
   identity,
   productInformation,
   purchaseInformation,
@@ -71,19 +68,6 @@ export function BrandProductDetail({
       />
 
       <div className="mx-auto max-w-[1600px] px-6 pb-10 pt-5 md:pb-16 md:pt-7 lg:py-16">
-        {/*
-          Desktop keeps the trail where it has always been, above the information row.
-
-          Below `lg` it moves to the end of the content instead of being dropped. The mobile spec
-          asks for the product name to come immediately after the gallery, which the trail sat in
-          the way of -- but it asks for an ordering, not for the phone to lose its way back up the
-          catalogue. Rendering it twice, each copy gated to one side of the seam, is what keeps
-          reading order equal to visual order on both: a single element moved with `order` would
-          still be announced before the product name on a phone, which is the thing the ordering
-          rule exists to prevent. Only one copy is ever rendered, so only one landmark is ever live.
-        */}
-        <div className="hidden lg:block">{breadcrumb}</div>
-
         {/* No trusted photography at all: preserve the existing truthful fallback. */}
         {media.gallery.length > 0 ? null : (
           <div className="max-w-sm">
@@ -114,7 +98,6 @@ export function BrandProductDetail({
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-3">{purchaseInformation}</div>
 
-          <div className="min-w-0 border-t border-black/15 pt-5 lg:hidden">{breadcrumb}</div>
         </div>
       </div>
     </>
