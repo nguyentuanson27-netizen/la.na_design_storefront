@@ -82,6 +82,8 @@ export const KIND_SELECTION_GUIDANCE = "Nàng chọn phân loại trước để
 
 export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const selection = deriveStorefrontProjectionSelection(input.options, input.selection);
+  const hasColorDimension = input.options.some((option) => option.color !== null);
+  const hasSizeDimension = input.options.some((option) => option.size !== null);
 
   const priceLabel =
     selection.selectedPrice === null
@@ -169,6 +171,8 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
       : ADD_TO_BAG_NAMES.ready,
     quickAddAccessibleName: isPreorderSelection ? QUICK_ADD_NAMES.preorder : QUICK_ADD_NAMES.ready,
     hasPurchasableVariant: input.options.some((option) => option.purchasable),
+    hasColorDimension,
+    hasSizeDimension,
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */
     entryPrice: getStorefrontResolvedPriceRange(input.options)?.minimum ?? null,
@@ -233,11 +237,10 @@ export function resolveMobilePurchasePresentation(
   readyToAdd: boolean;
   unavailableMessage: string;
 }> {
-  const hasSize = view.sizes.length > 0;
   const dimensionLabels = [
     view.hasKindOptions ? "phân loại" : null,
-    view.hasColorOptions ? "màu" : null,
-    hasSize ? "size" : null,
+    view.hasColorDimension ? "màu" : null,
+    view.hasSizeDimension ? "size" : null,
   ].filter((value): value is string => value !== null);
 
   const selectedKind =
@@ -247,21 +250,25 @@ export function resolveMobilePurchasePresentation(
 
   const selectedValues = [
     view.hasKindOptions ? selectedKind : null,
-    view.hasColorOptions ? selection.color : null,
-    hasSize ? selection.size : null,
+    view.hasColorDimension ? selection.color : null,
+    view.hasSizeDimension ? selection.size : null,
   ].filter((value): value is string => value !== null);
 
-  const readyToAdd = view.canAdd && view.selectedVariantId !== null;
+  const selectionComplete = view.selectedVariantId !== null;
+  const readyToAdd = view.canAdd && selectionComplete;
+  const unavailableMessage =
+    view.selectedUnavailableReason === "OUT_OF_STOCK"
+      ? "Lựa chọn này tạm hết"
+      : view.unavailableMessage;
 
   return Object.freeze({
     actionLabel: readyToAdd
       ? view.addToBagLabel
-      : `Chọn ${dimensionLabels.join(" / ")}`,
+      : selectionComplete && unavailableMessage
+        ? unavailableMessage
+        : `Chọn ${dimensionLabels.join(" / ")}`,
     summary: selectedValues.join(" · "),
     readyToAdd,
-    unavailableMessage:
-      view.selectedUnavailableReason === "OUT_OF_STOCK"
-        ? "Lựa chọn này tạm hết"
-        : view.unavailableMessage,
+    unavailableMessage,
   });
 }
