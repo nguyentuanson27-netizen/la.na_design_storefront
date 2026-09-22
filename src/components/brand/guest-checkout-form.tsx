@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 "use client";
 
 import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
@@ -22,9 +24,9 @@ import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 export function BrandGuestCheckoutForm(
   props: Readonly<{
     quoteProof: string;
-    summarySlot?: React.ReactNode;
-    totalsSlot?: React.ReactNode;
-    preorderSlot?: React.ReactNode;
+    summarySlot?: ReactNode;
+    totalsSlot?: ReactNode;
+    preorderSlot?: ReactNode;
   }>,
 ) {
   return <GuestCheckoutForm {...props} />;
