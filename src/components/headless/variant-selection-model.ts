@@ -99,7 +99,7 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const unavailableMessage =
     selection.selectedVariantId !== null && !selection.canAdd
       ? selection.selectedUnavailableReason === "OUT_OF_STOCK"
-        ? "Lựa chọn này đã hết hàng."
+        ? "Lựa chọn này tạm hết"
         : "Lựa chọn này hiện chưa mua được."
       : "";
 
@@ -214,5 +214,49 @@ export function resolveSelectionAfterSizeChange(input: {
     kindKey: input.selection.kindKey,
     color: currentColor?.disabled ? null : input.selection.color,
     size: input.size,
+  });
+}
+
+
+/**
+ * Presentation-only state for the below-lg sticky purchase entry point.
+ *
+ * Commerce eligibility stays in the selection projection. This helper only names the axes the
+ * product actually exposes and formats the currently selected values in authority order.
+ */
+export function resolveMobilePurchasePresentation(
+  view: ReturnType<typeof resolveVariantSelectionView>,
+  selection: VariantSelectionState,
+): Readonly<{
+  actionLabel: string;
+  summary: string;
+  readyToAdd: boolean;
+}> {
+  const hasSize = view.sizes.length > 0;
+  const dimensionLabels = [
+    view.hasKindOptions ? "phân loại" : null,
+    view.hasColorOptions ? "màu" : null,
+    hasSize ? "size" : null,
+  ].filter((value): value is string => value !== null);
+
+  const selectedKind =
+    selection.kindKey === null
+      ? null
+      : view.kinds.find((choice) => choice.key === selection.kindKey)?.label ?? null;
+
+  const selectedValues = [
+    view.hasKindOptions ? selectedKind : null,
+    view.hasColorOptions ? selection.color : null,
+    hasSize ? selection.size : null,
+  ].filter((value): value is string => value !== null);
+
+  const readyToAdd = view.canAdd && view.selectedVariantId !== null;
+
+  return Object.freeze({
+    actionLabel: readyToAdd
+      ? view.addToBagLabel
+      : `Chọn ${dimensionLabels.join(" / ")}`,
+    summary: selectedValues.join(" · "),
+    readyToAdd,
   });
 }
