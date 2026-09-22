@@ -88,7 +88,7 @@ export function ProductCard({
                   <span className="text-[#70584B]">{flashSale.countdownText}</span>
                 ) : null}
               </div>
-              <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[15px]">
+              <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[15px] sm:text-sm">
                 <span className="sr-only">Giá gốc</span>
                 <del className="text-[#70584B] line-through">{price.compareAtText}</del>
                 <span className="sr-only">Giá Flash Sale</span>
@@ -96,14 +96,14 @@ export function ProductCard({
               </p>
             </>
           ) : price.compareAtText ? (
-            <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[15px]">
+            <p className="product-price font-sans mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[15px] sm:text-sm">
               <span className="sr-only">Giá gốc</span>
               <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
               <span className="sr-only">Giá khuyến mãi</span>
               <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
             </p>
           ) : (
-            <p className="product-price font-sans mt-1 text-[15px] text-[#3B2219] font-semibold">
+            <p className="product-price font-sans mt-1 text-[15px] font-semibold text-[#3B2219] sm:text-sm sm:font-medium">
               {price.displayText}
             </p>
           )}
