@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import {
-  useEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -60,9 +59,7 @@ export function BrandProductMediaStage({
   const mobileDraggedRef = useRef(false);
   const lightboxDragOriginRef = useRef<{ x: number; y: number } | null>(null);
 
-  useEffect(() => {
-    if (selectedVariantId === syncedVariantId) return;
-
+  if (selectedVariantId !== syncedVariantId) {
     const nextDesktop = resolveGallerySlideForSelection({
       slides,
       currentSlide: desktopSlide,
@@ -81,15 +78,7 @@ export function BrandProductMediaStage({
     setSyncedVariantId(selectedVariantId);
     setDesktopSlide(nextDesktop.slide);
     setMobileImage(nextMobile.image);
-  }, [
-    desktopSlide,
-    galleryIndexByVariantId,
-    images.length,
-    mobileImage,
-    selectedVariantId,
-    slides,
-    syncedVariantId,
-  ]);
+  }
 
   if (images.length === 0) return null;
 
