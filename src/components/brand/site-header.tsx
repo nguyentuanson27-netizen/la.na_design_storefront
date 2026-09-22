@@ -422,7 +422,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               type="button"
               onClick={closeMobileNav}
               aria-label="Đóng menu"
-              className="inline-flex h-9 w-9 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="inline-flex h-11 w-11 items-center justify-center text-[#3B2219] hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               <svg
                 className="h-6 w-6 stroke-current"
