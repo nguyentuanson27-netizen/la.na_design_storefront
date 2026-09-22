@@ -105,3 +105,42 @@ test("storefront purchase rejects malformed public selection input without reads
   assert.equal(catalogCalls, 0);
   assert.equal(addCalls, 0);
 });
+
+
+test("storefront purchase forwards a bounded requested quantity only after current option authorization", async () => {
+  const added: Array<{ variantId: string; quantity: number }> = [];
+  const service = createStorefrontPurchaseService({
+    catalog: {
+      async getProductBySlug() {
+        return { variants: [variant()] };
+      },
+    },
+    async addQuantity(input: { variantId: string; quantity: number }) {
+      added.push(input);
+      return { ok: true as const, cartId: "cart-1" };
+    },
+  });
+
+  assert.deepEqual(
+    await service.add({
+      shopId: 910_050,
+      slug: "linen-shirt",
+      variantId: "variant-available",
+      quantity: 3,
+    }),
+    { ok: true, cartId: "cart-1" },
+  );
+  assert.deepEqual(added, [{ variantId: "variant-available", quantity: 3 }]);
+
+  for (const quantity of [0, -1, 1.5, 100]) {
+    assert.deepEqual(
+      await service.add({
+        shopId: 910_050,
+        slug: "linen-shirt",
+        variantId: "variant-available",
+        quantity,
+      }),
+      { ok: false, reason: "INVALID_SELECTION" },
+    );
+  }
+});
