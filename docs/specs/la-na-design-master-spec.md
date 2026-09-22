@@ -698,6 +698,7 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 
 - Keep two product columns on phone.
 - Use a consistent 2px grid gap on phone listing surfaces where the shared product-grid pattern applies.
+- On phone, shared product-listing grids run edge-to-edge to the viewport like the homepage grid; the page-shell gutter must not inset the product photography. Keep compact metadata inset inside each card.
 - Product name: 14px, maximum two lines.
 - Price: 14–15px and visually stronger than the product name.
 - Supporting availability/metadata: 12px.
@@ -728,6 +729,8 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 - **Desktop:** after the gallery, use one two-column information row. Left: product identity/editorial information. Right: price, availability/preorder, variant/size controls, size guide, purchase actions, purchase feedback, shipping and returns.
 - The desktop purchase panel is **not sticky** and no nested sticky selector may overlap adjacent copy.
 - **Below `lg`:** hide the `LA.NA DESIGN / SẢN PHẨM` identity eyebrow so the product name (26–30px) is the first identity text after the gallery, then show price/availability, applicable kind → size → color controls and purchase actions. Keep those selectors materially denser than desktop by reducing excess vertical gaps/chip padding while retaining practical ~44×44 touch targets. The below-`lg` gallery + product-info + quick-purchase redesign applies at representative 390px and 768px widths. This order follows the current selection authority; do not change the selection model merely to make color selectable before size. Keep one shared variant-selection/cart authority; do not create a second mobile selection state.
+- The PDP renders no visible breadcrumb trail; structured breadcrumb/SEO authority remains separate from this presentation choice.
+- **Below `lg`**, hide the promotion/Freeship strip while the PDP is at the initial top position and reveal it once the existing header scroll state becomes scrolled. Keep desktop PDP promotion behavior unchanged.
 - Primary actions remain `Thêm vào giỏ` + `Mua ngay`.
 - Size guide opens from `Hướng dẫn chọn size` into the existing accessible modal. The artwork itself is the only visible guide content apart from the close control: do not duplicate the guide heading/title/measurement notes around it or add framed modal chrome. Preserve the accessible dialog label, focus behavior, screen-reader-only measurement/guidance notes and semantic size table.
 - Each product maps manually to the correct size guide ID.
@@ -792,6 +795,7 @@ If user has not selected a required size:
 - manual admin selection first;
 - if absent, fallback to same-category products;
 - the current generic related surface is titled **`Nàng có thể thích`**;
+- do not render a second visible eyebrow such as **`Sản phẩm liên quan`** above/beside that heading;
 - use `Hoàn thiện phối đồ` only when an explicit merchandising authority identifies complementary pants, bags or accessories. Do not infer complementarity from category/name heuristics.
 
 ## 26A. Mobile cart and checkout UX
@@ -994,6 +998,11 @@ the support and policy pages out of reach entirely; the collapse is therefore re
 and the footer falls back to the same arrangement it has above the breakpoint.
 
 No newsletter in current scope.
+
+Footer brand/contact rows use a compact **1.5rem visual row gap**. Text links in footer navigation
+and inline support/policy/action copy are persistently underlined so shoppers can distinguish links
+without hover. Navigation icons, buttons, pills/badges and whole-card product links keep their
+existing non-underline affordances.
 
 ### Column 1 — La.na Design
 

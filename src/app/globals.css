@@ -1162,16 +1162,21 @@ body:has(#main-content [data-header-overlay-hero]) .site-header[data-scrolled="f
   backdrop-filter: none;
 }
 
-/* Homepage only: the promotion strip joins the cream/scrolled state. Reuse the header's existing
-   scroll owner instead of installing a second listener, and remove the strip from layout entirely
-   while the homepage is at the top. */
+/* The promotion strip joins the cream/scrolled state. Reuse the header's existing scroll owner
+   instead of installing a second listener. Homepage keeps the established all-width behavior;
+   the owner asked for the same treatment on the mobile PDP only. */
 body:has(#main-content [data-homepage-root])
-  .site-masthead:has(.site-header[data-scrolled="false"])
-  .promotion-shell,
-body:has(#main-content [data-pdp-root])
   .site-masthead:has(.site-header[data-scrolled="false"])
   .promotion-shell {
   display: none;
+}
+
+@media (max-width: 63.999rem) {
+  body:has(#main-content [data-pdp-root])
+    .site-masthead:has(.site-header[data-scrolled="false"])
+    .promotion-shell {
+    display: none;
+  }
 }
 
 /* Anchor targets land below the pinned masthead instead of underneath it; without this the skip

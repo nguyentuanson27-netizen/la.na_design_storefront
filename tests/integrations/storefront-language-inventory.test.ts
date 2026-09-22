@@ -456,7 +456,6 @@ test("U1b PDP uses Vietnamese buyer-functional copy and preserves availability d
   const source = `${markupSource}\n${routeSource}`;
 
   for (const expected of [
-    "Cửa hàng",
     `${BRAND_NAME_IN_JSX} / Sản phẩm`,
     "Hướng dẫn bảo quản",
     "Giao hàng",

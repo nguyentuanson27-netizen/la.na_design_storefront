@@ -93,8 +93,9 @@ selection, stock, cart and checkout authority unchanged.
   support/policy/action links use a persistent underline rather than relying on hover alone.
   Navigation icons, buttons, pills/badges and whole-card product links keep their existing
   non-underline affordances.
-- On the PDP, the promotion/Freeship strip follows the homepage overlay behavior: hidden at the
-  initial top position and revealed once the existing header scroll state becomes scrolled.
+- **Below `lg` on the PDP**, the promotion/Freeship strip follows the homepage overlay behavior:
+  hidden at the initial top position and revealed once the existing header scroll state becomes
+  scrolled. Desktop PDP promotion behavior stays unchanged.
 - Remove the visible PDP breadcrumb entirely. Structured breadcrumb/SEO authority is not changed.
 - Keep the related-products heading **`Nàng có thể thích`**, but remove the secondary visible
   eyebrow **`Sản phẩm liên quan`**.

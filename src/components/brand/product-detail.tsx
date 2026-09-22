@@ -57,7 +57,6 @@ export function BrandProductDetail({
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
 
-
   return (
     <>
       <BrandProductMediaStage
