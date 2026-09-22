@@ -849,7 +849,12 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   // The artwork already contains its own title and guidance. Keep that visible surface clean while
   // preserving the sr-only semantic table asserted by expectSizeGuideArtworkFits().
   await expect(dialog.locator("h2:visible")).toHaveCount(0);
-  await expect(dialog.locator("p:visible")).toHaveCount(0);
+  expect(
+    await dialog.locator("p").evaluateAll(
+      (elements) => elements.filter((element) => element.closest(".sr-only") === null).length,
+    ),
+    "size-guide prose exists only in the nonvisual semantic fallback",
+  ).toBe(0);
 
   // Removing duplicate visual prose must not make the guidance disappear for screen-reader users.
   // The image is intentionally decorative (alt=""), so these facts stay in the sr-only semantic
