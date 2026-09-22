@@ -188,7 +188,6 @@ export function PlpFilterPanel({
 
     startTransition(() => {
       router.push(href);
-      setIsMobileOpen(false);
     });
   };
 
@@ -229,6 +228,7 @@ export function PlpFilterPanel({
               />
             </svg>
             <span>Bộ lọc</span>
+            <span aria-hidden="true">·</span>
             {activeCount > 0 ? (
               <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#3B2219] text-[0.6rem] font-bold text-[#FAF7F2]">
                 {activeCount}
@@ -238,7 +238,7 @@ export function PlpFilterPanel({
 
           {/* Sort Selector */}
           <div className="flex items-center gap-2">
-            <label htmlFor="plp-sort-select" className="text-xs uppercase tracking-wider text-[#3B2219]/70 hidden sm:inline">
+            <label htmlFor="plp-sort-select" className="text-xs uppercase tracking-wider text-[#3B2219]/70">
               Sắp xếp:
             </label>
             <select
@@ -472,9 +472,9 @@ export function PlpFilterPanel({
           {/* Drawer content */}
           <div
             ref={drawerRef}
-            className="relative ml-auto flex h-full w-full max-w-sm flex-col bg-[#FAF7F2] p-6 shadow-2xl overflow-y-auto"
+            className="relative ml-auto flex h-full w-full max-w-sm flex-col bg-[#FAF7F2] shadow-2xl"
           >
-            <div className="flex items-center justify-between border-b border-[#3B2219]/15 pb-4">
+            <div className="flex items-center justify-between border-b border-[#3B2219]/15 px-6 py-5">
               <h2 className="font-serif text-xl text-[#2A1810]">Bộ lọc sản phẩm</h2>
               <button
                 ref={closeBtnRef}
@@ -488,7 +488,7 @@ export function PlpFilterPanel({
             </div>
 
             {/* Filter controls */}
-            <div className="mt-6 space-y-6 flex-1">
+            <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
               {/* Sale */}
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
@@ -500,7 +500,6 @@ export function PlpFilterPanel({
                   return (
                     <Link
                       href={saleHref}
-                      onClick={() => setIsMobileOpen(false)}
                       className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
                         isSaleActive
                           ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
@@ -621,15 +620,23 @@ export function PlpFilterPanel({
               </div>
             </div>
 
-            {/* Bottom Actions */}
-            <div className="mt-8 border-t border-[#3B2219]/15 pt-4">
-              <Link
-                href={clearHref}
-                onClick={() => setIsMobileOpen(false)}
-                className="block w-full text-center py-2 text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline"
-              >
-                Xóa tất cả bộ lọc
-              </Link>
+            {/* URL-backed filter changes refresh results without dismissing this modal. */}
+            <div className="mobile-plp-filter-footer shrink-0 border-t border-[#3B2219]/15 bg-[#FAF7F2] px-6 py-4">
+              <div className="grid grid-cols-2 gap-3">
+                <Link
+                  href={clearHref}
+                  className="inline-flex min-h-11 items-center justify-center border border-[#3B2219]/30 px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#3B2219]"
+                >
+                  Xóa bộ lọc
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileOpen(false)}
+                  className="inline-flex min-h-11 items-center justify-center bg-[#3B2219] px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#FAF7F2]"
+                >
+                  Xem {totalCount} sản phẩm
+                </button>
+              </div>
             </div>
           </div>
         </div>
