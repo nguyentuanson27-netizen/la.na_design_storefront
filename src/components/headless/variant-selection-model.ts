@@ -16,11 +16,13 @@ import { getStorefrontResolvedPriceRange } from "../../commerce/storefront-produ
  * and these are the decisions a brand redrawing the panel must never have to make again.
  */
 
-const currency = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "VND",
+const vndNumber = new Intl.NumberFormat("vi-VN", {
   maximumFractionDigits: 0,
 });
+
+function formatVnd(amount: number): string {
+  return `${vndNumber.format(amount)} đ`;
+}
 
 export type VariantSelectionState = Readonly<{
   kindKey: string | null;
@@ -39,8 +41,8 @@ function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): stri
   const range = getStorefrontResolvedPriceRange(options);
   if (!range) return "Giá đang cập nhật";
   return range.minimum === range.maximum
-    ? currency.format(range.minimum)
-    : `Từ ${currency.format(range.minimum)}`;
+    ? formatVnd(range.minimum)
+    : `Từ ${formatVnd(range.minimum)}`;
 }
 
 /**
@@ -88,7 +90,7 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const priceLabel =
     selection.selectedPrice === null
       ? defaultPriceLabel(input.productLevelOptions)
-      : currency.format(selection.selectedPrice);
+      : formatVnd(selection.selectedPrice);
 
   // Base must be strictly greater than price, not merely flagged: a campaign that left the base
   // equal would otherwise strike through the amount the shopper is already paying.
@@ -134,15 +136,15 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     showsDiscount && selection.selectedBasePriceVnd !== null && selection.selectedPrice !== null
       ? {
           displayText: priceLabel,
-          compareAtText: currency.format(selection.selectedBasePriceVnd),
+          compareAtText: formatVnd(selection.selectedBasePriceVnd),
           discountPercent: Math.round(
             (1 - selection.selectedPrice / selection.selectedBasePriceVnd) * 100,
           ),
         }
       : selection.selectedPrice === null && initialDiscount
         ? {
-            displayText: `${initialDiscount.hasCheaperCurrentVariant ? "Sale từ " : ""}${currency.format(initialDiscount.effectivePriceVnd)}`,
-            compareAtText: currency.format(initialDiscount.basePriceVnd),
+            displayText: `${initialDiscount.hasCheaperCurrentVariant ? "Sale từ " : ""}${formatVnd(initialDiscount.effectivePriceVnd)}`,
+            compareAtText: formatVnd(initialDiscount.basePriceVnd),
             discountPercent: initialDiscount.discountPercent,
           }
         : { displayText: priceLabel, compareAtText: null, discountPercent: null };
@@ -154,7 +156,7 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     priceDisplay: Object.freeze(priceDisplay),
     compareAtText:
       showsDiscount && selection.selectedBasePriceVnd !== null
-        ? currency.format(selection.selectedBasePriceVnd)
+        ? formatVnd(selection.selectedBasePriceVnd)
         : null,
     unavailableMessage,
     kindSelectionGuidance,
