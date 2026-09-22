@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  resolveMobilePurchasePresentation,
   resolveSelectionAfterSizeChange,
   resolveVariantSelectionView,
 } from "../../src/components/headless/variant-selection-model.ts";
@@ -442,4 +443,90 @@ test("no size chosen, another size's date, and a lapsed date all render nothing"
   assert.equal(ask("L").availabilityDateLabel, null, "nothing once the cycle has lapsed");
   assert.equal(ask("L").canAdd, true, "and Đặt trước survives the date lapsing");
   assert.equal(ask("S").availabilityDateLabel, "03/10/2026", "and the real one still shows");
+});
+
+
+/* --------------------------------------------------------- mobile sticky/sheet presentation */
+
+test("mobile incomplete CTA names only dimensions the product actually has", () => {
+  const sizeOnly = resolveVariantSelectionView({
+    options: [option({ size: "S", color: null })],
+    productLevelOptions: [option({ size: "S", color: null })],
+    selection: { kindKey: null, color: null, size: null },
+  });
+  assert.equal(
+    resolveMobilePurchasePresentation(sizeOnly, { kindKey: null, color: null, size: null }).actionLabel,
+    "Chọn size",
+  );
+
+  const colorSizeOptions = [
+    option({ id: "black-s", color: "Đen", size: "S" }),
+    option({ id: "white-s", color: "Trắng", size: "S" }),
+  ];
+  const colorSize = resolveVariantSelectionView({
+    options: colorSizeOptions,
+    productLevelOptions: colorSizeOptions,
+    selection: { kindKey: null, color: null, size: null },
+  });
+  assert.equal(
+    resolveMobilePurchasePresentation(colorSize, { kindKey: null, color: null, size: null }).actionLabel,
+    "Chọn màu / size",
+  );
+
+  const kindSizeOptions = [
+    option({ id: "set-s", kindKey: "set", kindLabel: "Nguyên bộ", color: null, size: "S" }),
+    option({ id: "top-s", kindKey: "top", kindLabel: "Áo lẻ", color: null, size: "S" }),
+  ];
+  const kindSize = resolveVariantSelectionView({
+    options: kindSizeOptions,
+    productLevelOptions: kindSizeOptions,
+    selection: { kindKey: null, color: null, size: null },
+  });
+  assert.equal(
+    resolveMobilePurchasePresentation(kindSize, { kindKey: null, color: null, size: null }).actionLabel,
+    "Chọn phân loại / size",
+  );
+});
+
+test("mobile complete summary follows kind, color, size and ready action becomes add-to-cart", () => {
+  const options = [
+    option({
+      id: "set-white-m",
+      kindKey: "set",
+      kindLabel: "Nguyên bộ",
+      color: "Trắng",
+      size: "M",
+    }),
+  ];
+  const selection = { kindKey: "set", color: "Trắng", size: "M" } as const;
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection,
+  });
+
+  assert.deepEqual(resolveMobilePurchasePresentation(view, selection), {
+    actionLabel: "Thêm vào giỏ",
+    summary: "Nguyên bộ · Trắng · M",
+    readyToAdd: true,
+  });
+});
+
+test("genuine selected stock failure uses the buyer-safe mobile wording", () => {
+  const options = [
+    option({
+      id: "sold-out",
+      color: "Đen",
+      size: "M",
+      purchasable: false,
+      unavailableReason: "OUT_OF_STOCK",
+    }),
+  ];
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: "Đen", size: "M" },
+  });
+
+  assert.equal(view.unavailableMessage, "Lựa chọn này tạm hết");
 });
