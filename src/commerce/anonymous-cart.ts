@@ -384,6 +384,131 @@ export function createAnonymousCartService(client: PrismaClient) {
     });
   }
 
+  /**
+   * Atomically adds a positive quantity delta to one cart line.
+   *
+   * Unlike an absolute set, this preserves units already in the cart. Unlike repeated one-unit
+   * requests, the whole requested delta either commits or fails together after the prospective
+   * total is re-authorized under the cart lock.
+   */
+  async function addItemQuantity<TSnapshot>({
+    cartId,
+    variantId,
+    addedQuantity,
+    now,
+    resolveLine,
+  }: {
+    cartId: string;
+    variantId: string;
+    addedQuantity: number;
+    now: Date;
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }) {
+    if (!isPositiveDatabaseInteger(addedQuantity)) {
+      return { ok: false as const, reason: "INVALID_QUANTITY" as const };
+    }
+
+    return client.$transaction(async (tx) => {
+      if (!(await lockLiveAnonymousCart(tx, cartId, now))) {
+        return { ok: false as const, reason: "CART_UNAVAILABLE" as const };
+      }
+
+      if (!(await isCommerceEligibleVariant(tx, variantId))) {
+        return { ok: false as const, reason: "VARIANT_UNAVAILABLE" as const };
+      }
+
+      const existingItem = await tx.cartItem.findUnique({
+        where: { cartId_variantId: { cartId, variantId } },
+        select: { quantity: true },
+      });
+
+      if (!existingItem) {
+        const distinctItemCount = await tx.cartItem.count({ where: { cartId } });
+        if (distinctItemCount >= ANONYMOUS_CART_MAX_DISTINCT_ITEMS) {
+          return { ok: false as const, reason: "CART_LINE_LIMIT" as const };
+        }
+      }
+
+      const previousQuantity = existingItem?.quantity ?? 0;
+      if (!Number.isSafeInteger(previousQuantity) || previousQuantity < 0) {
+        return { ok: false as const, reason: "INVALID_QUANTITY" as const };
+      }
+
+      const prospectiveQuantity = previousQuantity + addedQuantity;
+      if (!isPositiveDatabaseInteger(prospectiveQuantity)) {
+        return { ok: false as const, reason: "INVALID_QUANTITY" as const };
+      }
+
+      const authority = await resolveLine(tx, { variantId, quantity: prospectiveQuantity });
+      if (!authority.available) {
+        return { ok: false as const, reason: "VARIANT_UNAVAILABLE" as const };
+      }
+
+      await tx.cartItem.upsert({
+        where: { cartId_variantId: { cartId, variantId } },
+        create: { cartId, variantId, quantity: prospectiveQuantity },
+        update: { quantity: prospectiveQuantity },
+        select: { variantId: true },
+      });
+
+      return {
+        ok: true as const,
+        previousQuantity,
+        quantity: prospectiveQuantity,
+        addedQuantity,
+        snapshot: authority.snapshot,
+      };
+    });
+  }
+
+  async function createWithQuantity<TSnapshot>({
+    variantId,
+    addedQuantity,
+    now,
+    resolveLine,
+  }: {
+    variantId: string;
+    addedQuantity: number;
+    now: Date;
+    resolveLine: CartLineAuthorityResolver<TSnapshot>;
+  }) {
+    if (!isPositiveDatabaseInteger(addedQuantity)) {
+      return { ok: false as const, reason: "INVALID_QUANTITY" as const };
+    }
+
+    return client.$transaction(async (tx) => {
+      if (!(await isCommerceEligibleVariant(tx, variantId))) {
+        return { ok: false as const, reason: "VARIANT_UNAVAILABLE" as const };
+      }
+
+      const authority = await resolveLine(tx, { variantId, quantity: addedQuantity });
+      if (!authority.available) {
+        return { ok: false as const, reason: "VARIANT_UNAVAILABLE" as const };
+      }
+
+      const cart = await tx.cart.create({
+        data: {
+          userId: null,
+          expiresAt: anonymousCartExpiresAt(now),
+        },
+        select: { id: true, expiresAt: true },
+      });
+      await tx.cartItem.create({
+        data: { cartId: cart.id, variantId, quantity: addedQuantity },
+        select: { variantId: true },
+      });
+
+      return {
+        ok: true as const,
+        cart,
+        previousQuantity: 0,
+        quantity: addedQuantity,
+        addedQuantity,
+        snapshot: authority.snapshot,
+      };
+    });
+  }
+
   async function get({ cartId, now }: { cartId: string; now: Date }) {
     return findLiveAnonymousCart(cartId, now);
   }
