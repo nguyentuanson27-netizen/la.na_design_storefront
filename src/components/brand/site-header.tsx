@@ -10,6 +10,7 @@ import { BRAND, NAVIGATION, type NavigationLink } from "@/brand";
 import { CartDrawer } from "@/components/brand/cart-drawer";
 import { SearchOverlay } from "@/components/brand/search-overlay";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import { STOREFRONT_CART_DRAWER_OPEN_EVENT } from "@/components/headless/cart-drawer-events";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
@@ -82,6 +83,13 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const mobileUtility = NAVIGATION.mobileUtility;
 
   const closeCartDrawer = () => setCartDrawerOpen(false);
+
+  useEffect(() => {
+    const openRequestedCart = () => setCartDrawerOpen(true);
+    window.addEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
+    return () => window.removeEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
+  }, []);
+
   const openSearch = (trigger?: HTMLButtonElement | null) => {
     activeSearchTriggerRef.current = trigger ?? searchTriggerRef.current;
     setSearchOpen(true);
