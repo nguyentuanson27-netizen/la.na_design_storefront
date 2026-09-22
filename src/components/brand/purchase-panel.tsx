@@ -38,7 +38,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * generic pure black/white one, and a focus ring that stays visible on both.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-11 items-center justify-center border border-[#3B2219]/30 px-3 text-sm peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed lg:min-w-12 lg:px-4";
+  "flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[#D8CEC1] bg-[#FFFDF9]/70 px-3 text-sm font-normal text-[#3B2219]/85 transition-[background-color,border-color,color,box-shadow,transform] duration-200 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-medium peer-checked:text-[#F5F0E8] peer-checked:shadow-[0_6px_16px_rgba(59,34,25,0.16)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed active:scale-[0.98] lg:min-w-12 lg:px-4";
 
 const DIALOG_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -188,6 +188,8 @@ export function PurchasePanelView({
     chooseKind,
     chooseColor,
     chooseSize,
+    quantity,
+    setQuantity,
     addToBag,
     buyNow,
   } = controller;
@@ -332,9 +334,9 @@ export function PurchasePanelView({
     if (!view.hasKindOptions) return null;
 
     return (
-      <fieldset className="mt-4 lg:mt-7">
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Loại</legend>
-        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
+      <fieldset className="mt-5 lg:mt-7">
+        <legend className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#70584B]">Phân loại</legend>
+        <div className="mt-3 flex flex-wrap gap-2.5 lg:mt-3">
           {view.kinds.map((choice) => (
             <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -368,17 +370,28 @@ export function PurchasePanelView({
         tabIndex={surface === "panel" ? -1 : undefined}
         aria-invalid={sizeValidationMessage ? "true" : undefined}
         aria-describedby={sizeDescribedBy}
-        className={`mt-4 rounded-sm lg:mt-7 ${
+        className={`relative mt-5 rounded-sm lg:mt-7 ${
           sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
         }`}
       >
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Kích cỡ</legend>
+        <legend className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#70584B]">Kích cỡ</legend>
+        {surface === "panel" && sizeGuide !== null ? (
+          <button
+            ref={mainSizeGuideTriggerRef}
+            type="button"
+            className="absolute right-0 top-[-0.35rem] inline-flex min-h-11 items-center gap-1.5 text-xs font-medium text-[#3B2219]/90 underline decoration-[#C7BBAA] underline-offset-4 transition-colors hover:text-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+            onClick={showMainSizeGuide}
+          >
+            <span aria-hidden="true" className="text-sm">⌁</span>
+            Hướng dẫn chọn size
+          </button>
+        ) : null}
         {view.kindSelectionGuidance === null ? null : (
           <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219] lg:mt-3">
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
+        <div className="mt-3 flex flex-wrap gap-2.5 lg:mt-3">
           {view.sizes.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -415,8 +428,8 @@ export function PurchasePanelView({
     if (!view.hasColorOptions) return null;
 
     return (
-      <fieldset className="mt-4 lg:mt-7">
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Màu</legend>
+      <fieldset className="mt-5 lg:mt-7">
+        <legend className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#70584B]">Màu sắc</legend>
         <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
           {view.colors.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
@@ -444,20 +457,6 @@ export function PurchasePanelView({
       : view.unavailableMessage ||
         (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
   const mobilePurchaseStatus = message || mobilePresentation.unavailableMessage || purchaseStatus;
-
-  const sizeGuideTriggerMain =
-    sizeGuide === null ? null : (
-      <div className="relative h-0">
-        <button
-          ref={mainSizeGuideTriggerRef}
-          type="button"
-          className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-          onClick={showMainSizeGuide}
-        >
-          Hướng dẫn chọn size
-        </button>
-      </div>
-    );
 
   return (
     <>
@@ -516,11 +515,46 @@ export function PurchasePanelView({
           </>
         )}
 
-        {sizeGuideTriggerMain}
+        <div className="mt-6 flex items-center justify-between border-t border-[#D8CEC1]/55 pt-4">
+          <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#70584B]">
+            Số lượng
+          </span>
+          <div
+            className="flex min-h-11 items-center rounded-xl border border-[#D8CEC1] bg-[#FFFDF9]/75 px-1"
+            role="group"
+            aria-label="Số lượng sản phẩm"
+          >
+            <button
+              type="button"
+              aria-label="Giảm số lượng"
+              className="flex min-h-10 min-w-10 items-center justify-center rounded-lg text-lg font-light text-[#70584B] transition hover:text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#3B2219] disabled:opacity-35"
+              disabled={quantity <= 1 || isPending}
+              onClick={() => setQuantity(Math.max(1, quantity - 1))}
+            >
+              −
+            </button>
+            <output
+              aria-live="polite"
+              aria-label={`Số lượng hiện tại: ${quantity}`}
+              className="min-w-8 text-center text-sm font-medium tabular-nums text-[#3B2219]"
+            >
+              {quantity}
+            </output>
+            <button
+              type="button"
+              aria-label="Tăng số lượng"
+              className="flex min-h-10 min-w-10 items-center justify-center rounded-lg text-lg font-light text-[#70584B] transition hover:text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#3B2219] disabled:opacity-35"
+              disabled={quantity >= 99 || isPending}
+              onClick={() => setQuantity(Math.min(99, quantity + 1))}
+            >
+              +
+            </button>
+          </div>
+        </div>
 
-        <div className="mt-8 grid grid-cols-2 gap-2">
+        <div className="mt-6 grid grid-cols-2 gap-3">
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-semibold text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="min-h-12 w-full rounded-xl border border-[#3B2219] bg-[#3B2219] px-4 text-xs font-semibold uppercase tracking-[0.08em] text-[#F5F0E8] shadow-[0_8px_22px_-6px_rgba(59,34,25,0.28)] transition hover:border-[#2A1810] hover:bg-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45 disabled:shadow-none"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -530,7 +564,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-[#F5F0E8] px-4 text-sm font-semibold text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="min-h-12 w-full rounded-xl border border-[#CFC3B5] bg-[#FFFDF9]/65 px-4 text-xs font-medium uppercase tracking-[0.08em] text-[#3B2219] transition hover:border-[#3B2219] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
