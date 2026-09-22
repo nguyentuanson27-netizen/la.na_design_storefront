@@ -87,3 +87,41 @@ export function resolveGallerySlideForSelection({
     syncedVariantId: selectedVariantId,
   };
 }
+
+
+export type GalleryImageSelectionInput = Readonly<{
+  imageCount: number;
+  currentImage: number;
+  syncedVariantId: string | null;
+  selectedVariantId: string | null;
+  galleryIndexByVariantId: Readonly<Record<string, number>>;
+}>;
+
+/**
+ * Below-lg equivalent of resolveGallerySlideForSelection: preserve the trusted source order,
+ * start on image 1 even for a deep link, and only move when the selected variant itself changes.
+ */
+export function resolveGalleryImageForSelection({
+  imageCount,
+  currentImage,
+  syncedVariantId,
+  selectedVariantId,
+  galleryIndexByVariantId,
+}: GalleryImageSelectionInput): { image: number; syncedVariantId: string | null } {
+  if (selectedVariantId === syncedVariantId) {
+    return { image: currentImage, syncedVariantId };
+  }
+
+  const mappedImage =
+    selectedVariantId === null ? undefined : galleryIndexByVariantId[selectedVariantId];
+  const isAddressable =
+    mappedImage !== undefined
+    && Number.isSafeInteger(mappedImage)
+    && mappedImage >= 0
+    && mappedImage < imageCount;
+
+  return {
+    image: isAddressable ? mappedImage : currentImage,
+    syncedVariantId: selectedVariantId,
+  };
+}
