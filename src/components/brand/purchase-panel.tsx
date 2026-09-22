@@ -112,7 +112,7 @@ function MappedSizeGuideDialog({
         <button
           ref={closeButtonRef}
           type="button"
-          className="absolute right-2 top-2 z-10 min-h-11 bg-[#FAF7F2]/95 px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FAF7F2]"
+          className="absolute right-2 top-2 z-10 min-h-11 bg-[#FAF7F2] px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
           onClick={closeDialog}
         >
           Đóng
