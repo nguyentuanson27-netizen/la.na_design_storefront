@@ -464,6 +464,14 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   // The inline selector stays touch-friendly but no longer spends a full section break between
   // each dimension on a phone. This is the density contract from the owner's Áo yếm tơ reference.
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const quantityControl = purchasePanel.getByRole("group", { name: "Số lượng sản phẩm" });
+  await expect(quantityControl).toBeVisible();
+  await expect(quantityControl.getByLabel("Giảm số lượng")).toBeDisabled();
+  await expect(quantityControl.getByLabel("Số lượng hiện tại: 1")).toBeVisible();
+  await quantityControl.getByRole("button", { name: "Tăng số lượng" }).click();
+  await quantityControl.getByRole("button", { name: "Tăng số lượng" }).click();
+  await expect(quantityControl.getByLabel("Số lượng hiện tại: 3")).toBeVisible();
+
   for (const groupName of ["Màu", "Kích cỡ"]) {
     const group = purchasePanel.getByRole("group", { name: groupName });
     const marginTop = await group.evaluate((element) =>
@@ -525,6 +533,7 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
 
   // The cart shows the exact selected option, and its quantity controls keep a real touch target.
   await expect(cartDrawer.getByText("Black / M")).toBeVisible();
+  await expect(cartDrawer.getByText("3", { exact: true })).toBeVisible();
   for (const label of [
     `Giảm số lượng ${productName}`,
     `Tăng số lượng ${productName}`,
