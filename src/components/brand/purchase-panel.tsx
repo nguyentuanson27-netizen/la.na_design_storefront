@@ -38,7 +38,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * generic pure black/white one, and a focus ring that stays visible on both.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-12 items-center justify-center border border-[#3B2219]/30 px-4 text-sm peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed";
+  "flex min-h-11 min-w-11 items-center justify-center border border-[#3B2219]/30 px-3 text-sm peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed lg:min-w-12 lg:px-4";
 
 const DIALOG_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -104,40 +104,25 @@ function MappedSizeGuideDialog({
       aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
       data-size-guide-id={guide.id}
       tabIndex={-1}
-      className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border border-black/20 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
+      className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border-0 bg-transparent p-0 text-black shadow-none backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
       onClose={onClose}
       onKeyDown={containFocus}
     >
-      <div className="flex max-h-[calc(100dvh-1rem)] min-h-0 flex-col p-3 sm:max-h-[calc(100dvh-2rem)] sm:p-5">
-        <div className="flex shrink-0 items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-black/55">
-              Hướng dẫn chọn size
-            </p>
-            <h2 className="mt-1 font-serif text-2xl tracking-[-0.03em] sm:text-3xl">
-              {guide.chart.title}
-            </h2>
-          </div>
-          <button
-            ref={closeButtonRef}
-            type="button"
-            className="min-h-11 shrink-0 border border-black/30 px-4 text-sm font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-            onClick={closeDialog}
-          >
-            Đóng
-          </button>
-        </div>
+      <div className="relative flex max-h-[calc(100dvh-1rem)] min-h-0 items-center justify-center sm:max-h-[calc(100dvh-2rem)]">
+        <button
+          ref={closeButtonRef}
+          type="button"
+          className="absolute right-2 top-2 z-10 min-h-11 bg-[#FAF7F2]/95 px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#FAF7F2]"
+          onClick={closeDialog}
+        >
+          Đóng
+        </button>
 
-        <div className="mt-3 shrink-0 space-y-1 text-xs leading-5 text-black/70 sm:mt-4 sm:text-sm sm:leading-6">
-          <p>{guide.circumferenceSemanticsNote}</p>
-          {guide.tolerance ? (
-            <p>
-              <strong>Dung sai:</strong> {guide.tolerance.note}
-            </p>
-          ) : null}
-          <p>{guide.guidanceNote}</p>
-        </div>
-
+        {/*
+          The artwork already contains the visible chart title and shopper guidance. Keep the
+          machine-readable table so replacing duplicated chrome with the image does not erase the
+          values for screen-reader users.
+        */}
         <div className="sr-only">
           <table>
             <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
@@ -164,17 +149,15 @@ function MappedSizeGuideDialog({
           </table>
         </div>
 
-        <div className="mt-3 flex min-h-0 flex-1 items-center justify-center sm:mt-4">
-          <Image
-            src={`/brand/size-guides/${guide.id}.webp`}
-            alt=""
-            width={500}
-            height={500}
-            sizes="(max-width: 640px) calc(100vw - 2rem), 500px"
-            unoptimized
-            className="h-auto max-h-[calc(100dvh-13rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-15rem)]"
-          />
-        </div>
+        <Image
+          src={`/brand/size-guides/${guide.id}.webp`}
+          alt=""
+          width={500}
+          height={500}
+          sizes="(max-width: 640px) calc(100vw - 1rem), 500px"
+          unoptimized
+          className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)]"
+        />
       </div>
     </dialog>
   );
@@ -341,9 +324,9 @@ export function PurchasePanelView({
     if (!view.hasKindOptions) return null;
 
     return (
-      <fieldset className="mt-7">
+      <fieldset className="mt-4 lg:mt-7">
         <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Loại</legend>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
           {view.kinds.map((choice) => (
             <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -377,17 +360,17 @@ export function PurchasePanelView({
         tabIndex={surface === "panel" ? -1 : undefined}
         aria-invalid={sizeValidationMessage ? "true" : undefined}
         aria-describedby={sizeDescribedBy}
-        className={`mt-7 rounded-sm ${
+        className={`mt-4 rounded-sm lg:mt-7 ${
           sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
         }`}
       >
         <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Kích cỡ</legend>
         {view.kindSelectionGuidance === null ? null : (
-          <p id={kindGuidanceId} className="mt-3 max-w-xs text-sm leading-6 text-[#3B2219]">
+          <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219] lg:mt-3">
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
           {view.sizes.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -412,7 +395,7 @@ export function PurchasePanelView({
           ))}
         </div>
         {sizeValidationMessage ? (
-          <p id={sizeErrorId} className="mt-3 text-sm font-medium text-[#8A3A35]" role="alert">
+          <p id={sizeErrorId} className="mt-2 text-sm font-medium text-[#8A3A35] lg:mt-3" role="alert">
             {sizeValidationMessage}
           </p>
         ) : null}
@@ -424,9 +407,9 @@ export function PurchasePanelView({
     if (!view.hasColorOptions) return null;
 
     return (
-      <fieldset className="mt-7">
+      <fieldset className="mt-4 lg:mt-7">
         <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Màu</legend>
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
           {view.colors.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
