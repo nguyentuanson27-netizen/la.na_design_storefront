@@ -35,6 +35,9 @@ test("mobile independent UX: PLP mobile drawer keeps URL-backed filter navigatio
   assert.match(panel, />Bộ lọc<\/span>[\s\S]*aria-hidden="true"[^>]*>·<\/span>[\s\S]*>\s*Sắp xếp:/);
   assert.doesNotMatch(panel, /router\.push\(href\);\s*setIsMobileOpen\(false\)/);
   assert.doesNotMatch(panel, /href=\{saleHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
+  assert.doesNotMatch(panel, /href=\{sizeHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
+  assert.doesNotMatch(panel, /href=\{colorHref\}[\s\S]{0,180}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
+  assert.doesNotMatch(panel, /fixed inset-0 bg-black\/40 backdrop-blur-sm transition-opacity"[\s\S]{0,120}onClick=\{\(\) => setIsMobileOpen\(false\)\}/);
   assert.match(panel, /className="mobile-plp-filter-footer/);
   assert.match(panel, /Xóa bộ lọc/);
   assert.match(panel, /Xem \{totalCount\} sản phẩm/);
@@ -59,6 +62,9 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(page, /lines\.reduce\(\(count, line\) => count \+ line\.quantity, 0\)/);
   assert.match(page, /Đơn hàng \(\{itemCount\}\) · \{totals\.totalText\}/);
   assert.match(page, /<details[^>]*className="checkout-mobile-summary/);
+  assert.equal((page.match(/\{orderLines\}/g) ?? []).length, 1);
+  assert.equal((page.match(/\{totalsBlock\}/g) ?? []).length, 1);
+  assert.equal((page.match(/<BrandPreorderFulfillmentNotice notice=\{data\.preorderNotice\} \/>/g) ?? []).length, 1);
   assert.match(page, /text-\[2\.5rem\]/);
   assert.match(page, /lg:text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
