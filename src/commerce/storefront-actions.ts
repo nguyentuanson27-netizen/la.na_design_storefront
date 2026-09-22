@@ -12,7 +12,7 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 
 const publicActions = createStorefrontPurchasePublicActions({
-  async purchase({ slug, variantId }) {
+  async purchase({ slug, variantId, quantity }) {
     const shopId = readPancakeShopId();
     // One instant for the whole request: the projection that authorizes the option and the
     // resolver that re-authorizes it under the cart lock must agree about which campaigns are
@@ -32,16 +32,17 @@ const publicActions = createStorefrontPurchasePublicActions({
 
     const purchase = createStorefrontPurchaseService({
       catalog,
-      async addUnit({ variantId: authorizedVariantId }) {
-        return mutations.addItemUnit({
+      async addQuantity({ variantId: authorizedVariantId, quantity: addedQuantity }) {
+        return mutations.addItemQuantity({
           variantId: authorizedVariantId,
+          addedQuantity,
           now,
           resolveLine,
         });
       },
     });
 
-    return purchase.add({ shopId, slug, variantId, now });
+    return purchase.add({ shopId, slug, variantId, quantity, now });
   },
 });
 
