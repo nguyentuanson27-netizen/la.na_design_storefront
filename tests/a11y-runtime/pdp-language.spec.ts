@@ -164,11 +164,19 @@ test.afterAll(async () => {
 test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability disclosure", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
+  /*
+   * The breadcrumb is desktop-only on this branch: the mobile spec requires the product name to
+   * come immediately after the below-`lg` gallery, and the implementation clears the way by gating
+   * the trail behind `lg`. Its contract -- the trail exists and `Cửa hàng` points at `/shop` -- is
+   * unchanged, so it is asserted at the width that renders it rather than dropped.
+   */
+  await page.setViewportSize({ width: 1440, height: 900 });
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
   await expect(breadcrumb.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveAttribute(
     "href",
     "/shop",
   );
+  await page.setViewportSize({ width: 390, height: 844 });
   // C — rendered check, and the highest-value one: this is the text a shopper actually sees. The
   // brand half comes from Brand Config so a fork inherits the rule instead of silently losing it.
   await expect(
