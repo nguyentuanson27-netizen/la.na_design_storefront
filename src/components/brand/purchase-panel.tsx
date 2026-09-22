@@ -38,7 +38,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * generic pure black/white one, and a focus ring that stays visible on both.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-11 items-center justify-center rounded-xl border border-[#D8CEC1] bg-[#FFFDF9]/70 px-3 text-sm font-normal text-[#3B2219]/85 transition-[background-color,border-color,color,box-shadow,transform] duration-200 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-medium peer-checked:text-[#F5F0E8] peer-checked:shadow-[0_6px_16px_rgba(59,34,25,0.16)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed active:scale-[0.98] lg:min-w-12 lg:px-4";
+  "flex min-h-11 min-w-11 items-center justify-center rounded-[14px] border border-[#D8CEC1] bg-[#FFFDF9]/70 px-3 text-sm font-normal text-[#3B2219]/85 transition-[background-color,border-color,color,box-shadow,transform] duration-200 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-medium peer-checked:text-[#F5F0E8] peer-checked:shadow-[0_6px_16px_rgba(59,34,25,0.16)] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed active:scale-[0.98] lg:min-w-12 lg:px-4";
 
 const DIALOG_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -391,7 +391,7 @@ export function PurchasePanelView({
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap gap-2.5 lg:mt-3">
+        <div className="mt-3 flex flex-wrap gap-3 lg:mt-3">
           {view.sizes.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -520,7 +520,7 @@ export function PurchasePanelView({
             Số lượng
           </span>
           <div
-            className="flex min-h-11 items-center rounded-xl border border-[#D8CEC1] bg-[#FFFDF9]/75 px-1"
+            className="flex min-h-11 items-center rounded-[14px] border border-[#D8CEC1] bg-[#FFFDF9]/75 px-1"
             role="group"
             aria-label="Số lượng sản phẩm"
           >
@@ -554,7 +554,7 @@ export function PurchasePanelView({
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button
-            className="min-h-12 w-full rounded-xl border border-[#3B2219] bg-[#3B2219] px-4 text-xs font-semibold uppercase tracking-[0.08em] text-[#F5F0E8] shadow-[0_8px_22px_-6px_rgba(59,34,25,0.28)] transition hover:border-[#2A1810] hover:bg-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45 disabled:shadow-none"
+            className="min-h-12 w-full rounded-[14px] border border-[#3B2219] bg-[#3B2219] px-4 text-xs font-semibold uppercase tracking-[0.08em] text-[#F5F0E8] shadow-[0_8px_22px_-6px_rgba(59,34,25,0.28)] transition hover:border-[#2A1810] hover:bg-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45 disabled:shadow-none"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -564,7 +564,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-12 w-full rounded-xl border border-[#CFC3B5] bg-[#FFFDF9]/65 px-4 text-xs font-medium uppercase tracking-[0.08em] text-[#3B2219] transition hover:border-[#3B2219] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="min-h-12 w-full rounded-[14px] border border-[#CFC3B5] bg-[#FFFDF9]/65 px-4 text-xs font-medium uppercase tracking-[0.08em] text-[#3B2219] transition hover:border-[#3B2219] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
