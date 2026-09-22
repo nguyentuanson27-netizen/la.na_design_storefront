@@ -540,10 +540,9 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
-  const summary = page.locator("details.checkout-mobile-summary");
+  const summary = page.getByRole("button", { name: /Đơn hàng \(3\) ·/ });
   await expect(summary).toBeVisible();
-  await expect(summary).not.toHaveAttribute("open");
-  await expect(summary.locator("summary")).toContainText("Đơn hàng (3) ·");
+  await expect(summary).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
 });
