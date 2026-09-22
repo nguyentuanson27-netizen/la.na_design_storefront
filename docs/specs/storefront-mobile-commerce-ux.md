@@ -55,6 +55,31 @@ Use each existing component's responsive seam rather than inventing a global bre
 - Product-card typography/grid and mobile header/filter behavior use their existing component-specific phone/mobile seams and must not change desktop column counts/navigation.
 - Acceptance is anchored at 390×844, with explicit 768px assertions for the below-`lg` PDP contract and 1440px desktop regression coverage.
 
+## Owner amendment — 2026-09-22: compact PDP presentation
+
+This owner-confirmed amendment refines only the product-detail presentation. It does not change
+selection, stock, price, cart, preorder, media ordering, or purchase authority.
+
+- **Below `lg`**, the PDP product-image frame is portrait **2:3 (width:height)** at representative
+  phone and tablet widths, including 390px and 768px. Keep the existing one-image swipe gallery,
+  source order, counter, lightbox, and desktop `lg+` media contract.
+- **Below `lg`**, hide the identity eyebrow **`LA.NA DESIGN / SẢN PHẨM`**. The product name remains
+  the first identity text after the gallery; the eyebrow stays available on desktop.
+- **Below `lg`**, make kind/classification and size selection materially denser, using the supplied
+  Áo yếm tơ reference as a spacing/density reference rather than an exact visual clone. Reduce
+  excess vertical gaps and chip padding while preserving practical ~44×44 touch targets, current
+  control labels/order, unresolved vs sold-out presentation, keyboard focus, and all commerce
+  eligibility rules.
+- The **size-guide dialog at every width** should not duplicate content already printed inside the
+  size-guide artwork. Remove the visible `Hướng dẫn chọn size` heading, chart title, circumference/
+  tolerance/guidance paragraphs, and framed dialog chrome. Keep only the artwork plus a clear close
+  control as visible content. Preserve the accessible dialog label, focus containment/restoration,
+  and the existing screen-reader-only semantic size table.
+- The existing `Hướng dẫn chọn size` trigger remains associated with the size selector.
+
+Out of scope: changing `deriveStorefrontProjectionSelection`, variant availability, add-to-cart
+behavior, desktop PDP composition, gallery source order, or unrelated storefront surfaces.
+
 ## 1. Mobile PDP gallery
 
 - **Below `lg`**, render product images as one horizontal swipe gallery instead of the current long vertical image stack.
