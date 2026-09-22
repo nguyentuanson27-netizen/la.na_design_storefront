@@ -561,6 +561,123 @@ summary:focus-visible {
   }
 }
 
+/*
+ * PDP media stage (refinement spec §1/§2).
+ *
+ * One markup tree for both compositions. Below `lg` only the first slide has a box at all, so the
+ * page renders exactly the cover-cropped first image it always did and the later slides' lazy
+ * `<img>`s are never fetched -- the mobile composition belongs to its own spec, not to this one.
+ *
+ * From `lg` up the same tree is the gallery: one viewport-tall frame, `object-contain` over cream
+ * so a standing figure is not cropped at the head or the hem, and a slide holding two images
+ * splits 50/50 by letting the grid divide the row rather than by hard-coded widths.
+ *
+ * Slides stack in place rather than sitting side by side on a translated track, which is how
+ * `.home-hero__slide` already does this. A track would lay the later slides out past the right
+ * edge of the viewport -- clipped, but still measurably outside it, which is precisely what the
+ * storefront's no-horizontal-overflow guard exists to catch.
+ */
+.pdp-stage__track {
+  position: absolute;
+  inset: 0;
+}
+
+.pdp-stage__slide {
+  display: none;
+  position: absolute;
+  inset: 0;
+}
+
+.pdp-stage__slide:first-child {
+  display: block;
+}
+
+.pdp-stage__cell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.pdp-stage__nav,
+.pdp-stage__counter {
+  display: none;
+}
+
+@media (min-width: 64rem) {
+  .pdp-stage {
+    background: var(--cream);
+  }
+
+  .pdp-stage__slide,
+  .pdp-stage__slide:first-child {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 1px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 400ms ease;
+  }
+
+  .pdp-stage__slide[data-active="true"] {
+    z-index: 1;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* Half the stage moves back, half moves forward. `pan-y` is the whole vertical-scroll contract:
+     the browser keeps every up/down gesture, and no wheel listener exists to take it away. */
+  .pdp-stage__nav {
+    position: absolute;
+    z-index: 2;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    touch-action: pan-y;
+  }
+
+  .pdp-stage__half {
+    appearance: none;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .pdp-stage__half:disabled {
+    cursor: default;
+  }
+
+  .pdp-stage__half:focus-visible {
+    outline: 2px solid var(--chocolate);
+    outline-offset: -0.5rem;
+  }
+
+  .pdp-stage__counter {
+    position: absolute;
+    z-index: 3;
+    right: var(--shell-gutter);
+    bottom: 1.5rem;
+    display: block;
+    margin: 0;
+    padding: 0.35rem 0.75rem;
+    border: 1px solid var(--line);
+    background: var(--paper);
+    color: var(--ink);
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    pointer-events: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdp-stage__slide {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .home-hero__slide,
   .home-hero__cta-link {

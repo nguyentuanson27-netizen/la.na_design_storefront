@@ -72,20 +72,47 @@ test("F7a presentation continues to consume the canonical gallery model instead 
 
 
 test("owner PDP contract promotes the canonical first gallery image and removes it from the remaining gallery", async () => {
-  const [pageSource, detailSource] = await Promise.all([
+  const [pageSource, detailSource, stageSource] = await Promise.all([
     readFile(new URL("../../src/app/shop/[slug]/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../../src/components/brand/product-detail.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/components/brand/product-media-stage.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(pageSource, /const heroImage = data\.media\.gallery\[0\] \?\? null/);
-  assert.match(pageSource, /data-header-overlay-hero/);
-  assert.match(pageSource, /excludeFirstImage=\{heroImage !== null\}/);
+  // The first trusted image is still the PDP's full-bleed first surface with the header over it.
+  // The refinement moved who renders it -- the stage owns every image now, because from `lg` up
+  // the first surface and the gallery are the same thing -- so the contract is asserted there.
+  assert.match(stageSource, /product-page-hero/);
+  assert.match(stageSource, /data-header-overlay-hero/);
   assert.doesNotMatch(
     pageSource,
     /MUA NGAY/,
     "PDP hero must not receive the landing-page CTA",
   );
+
+  // ...and it is still not duplicated into the below-`lg` editorial gallery.
   assert.match(detailSource, /media\.gallery\.slice\(1\)/);
   assert.match(detailSource, /\.filter\(\(\[, index\]\) => index > 0\)/);
-  assert.match(detailSource, /preloadFirstImage=\{!excludeFirstImage\}/);
+  assert.match(detailSource, /preloadFirstImage=\{false\}/);
+});
+
+test("the desktop media stage contains the garment and never takes the page's vertical scroll", async () => {
+  const [stageSource, cssSource] = await Promise.all([
+    readFile(new URL("../../src/components/brand/product-media-stage.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../../src/app/globals.css", import.meta.url), "utf8"),
+  ]);
+
+  // Refinement spec §1: the new stage frames the whole silhouette rather than cropping it.
+  assert.match(stageSource, /lg:object-contain/);
+
+  // §2's hard rule. A wheel listener is how a gallery steals a scroll down the page, so the
+  // absence of one is worth pinning rather than trusting to review.
+  for (const forbidden of ["onWheel", "onScroll", "addEventListener"]) {
+    assert.equal(
+      stageSource.includes(forbidden),
+      false,
+      `the media stage must not intercept the page with ${forbidden}`,
+    );
+  }
+  // And the pointer surface leaves vertical panning to the browser.
+  assert.match(cssSource, /\.pdp-stage__nav \{[^}]*touch-action: pan-y;/);
 });
