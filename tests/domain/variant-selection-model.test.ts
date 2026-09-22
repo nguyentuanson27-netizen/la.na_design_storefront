@@ -164,7 +164,7 @@ test("an out-of-stock selection says so, and any other blocker uses the generic 
       productLevelOptions: outOfStock,
       selection: { kindKey: null, color: null, size: "S" },
     }).unavailableMessage,
-    "Lựa chọn này tạm hết",
+    "Lựa chọn này đã hết hàng.",
   );
 
   assert.equal(
@@ -509,6 +509,7 @@ test("mobile complete summary follows kind, color, size and ready action becomes
     actionLabel: "Thêm vào giỏ",
     summary: "Nguyên bộ · Trắng · M",
     readyToAdd: true,
+    unavailableMessage: "",
   });
 });
 
@@ -528,5 +529,12 @@ test("genuine selected stock failure uses the buyer-safe mobile wording", () => 
     selection: { kindKey: null, color: "Đen", size: "M" },
   });
 
-  assert.equal(view.unavailableMessage, "Lựa chọn này tạm hết");
+  assert.equal(
+    resolveMobilePurchasePresentation(view, {
+      kindKey: null,
+      color: "Đen",
+      size: "M",
+    }).unavailableMessage,
+    "Lựa chọn này tạm hết",
+  );
 });
