@@ -217,8 +217,6 @@ export function PurchasePanelView({
   const sheetInitialFocusRef = useRef<"close" | "size-guide">("close");
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
-  const [pendingCartOpen, setPendingCartOpen] = useState(false);
-  const [pendingSheetSizeGuide, setPendingSheetSizeGuide] = useState(false);
 
   useScrollLock(isSheetOpen);
 
@@ -277,21 +275,6 @@ export function PurchasePanelView({
     stickyTriggerRef.current?.focus();
   }, [isSheetOpen]);
 
-  useEffect(() => {
-    if (!pendingCartOpen || isSheetOpen) return;
-    setPendingCartOpen(false);
-    requestStorefrontCartDrawerOpen();
-  }, [isSheetOpen, pendingCartOpen]);
-
-  useEffect(() => {
-    if (!pendingSheetSizeGuide || isSheetOpen || sizeGuide === null) return;
-    setPendingSheetSizeGuide(false);
-    const dialog = sizeGuideDialogRef.current;
-    if (!dialog || dialog.open) return;
-    dialog.showModal();
-    sizeGuideCloseButtonRef.current?.focus();
-  }, [isSheetOpen, pendingSheetSizeGuide, sizeGuide]);
-
   function showMainSizeGuide() {
     const dialog = sizeGuideDialogRef.current;
     if (!dialog || dialog.open) return;
@@ -301,10 +284,16 @@ export function PurchasePanelView({
   }
 
   function showSheetSizeGuide() {
+    if (sizeGuide === null) return;
     sizeGuideSourceRef.current = "sheet";
     suppressSheetFocusRestoreRef.current = true;
-    setPendingSheetSizeGuide(true);
     setIsSheetOpen(false);
+    window.requestAnimationFrame(() => {
+      const dialog = sizeGuideDialogRef.current;
+      if (!dialog || dialog.open) return;
+      dialog.showModal();
+      sizeGuideCloseButtonRef.current?.focus();
+    });
   }
 
   function handleSizeGuideClose() {
@@ -320,8 +309,10 @@ export function PurchasePanelView({
 
   function handleSheetAddAccepted() {
     suppressSheetFocusRestoreRef.current = true;
-    setPendingCartOpen(true);
     setIsSheetOpen(false);
+    window.requestAnimationFrame(() => {
+      requestStorefrontCartDrawerOpen();
+    });
   }
 
   function handleStickyAction() {
