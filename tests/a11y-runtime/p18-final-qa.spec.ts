@@ -327,6 +327,14 @@ test("independent mobile chrome keeps practical header targets and phone grid rh
           expect(box?.height).toBeGreaterThanOrEqual(44);
         }
 
+        await menu.click();
+        const closeMenu = page.getByRole("button", { name: "Đóng menu", exact: true });
+        await expect(closeMenu).toBeVisible();
+        const closeMenuBox = await closeMenu.boundingBox();
+        expect(closeMenuBox?.width).toBeGreaterThanOrEqual(44);
+        expect(closeMenuBox?.height).toBeGreaterThanOrEqual(44);
+        await closeMenu.click();
+
         await expect(page.locator(".mobile-account-link")).toBeHidden();
       }
 
