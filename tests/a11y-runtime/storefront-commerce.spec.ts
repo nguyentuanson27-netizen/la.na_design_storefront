@@ -498,6 +498,27 @@ test("mobile required-size flow shares one selection with the sticky purchase ba
   await mobileAdd.click();
   await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
 
+  await page.getByRole("button", { name: "Giỏ hàng", exact: true }).click();
+  const cartDrawer = page.getByRole("dialog", { name: "Giỏ hàng" });
+  await expect(cartDrawer).toBeVisible();
+
+  for (const label of [
+    `Giảm số lượng ${productName}`,
+    `Tăng số lượng ${productName}`,
+  ]) {
+    const control = cartDrawer.getByRole("button", { name: label, exact: true });
+    const box = await control.boundingBox();
+    expect(box?.width, `${label} width`).toBeGreaterThanOrEqual(44);
+    expect(box?.height, `${label} height`).toBeGreaterThanOrEqual(44);
+  }
+  await expect(
+    cartDrawer.getByRole("button", {
+      name: `Xóa ${productName} khỏi giỏ hàng`,
+      exact: true,
+    }),
+  ).toBeVisible();
+  await cartDrawer.getByRole("button", { name: "Đóng giỏ hàng", exact: true }).click();
+
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
