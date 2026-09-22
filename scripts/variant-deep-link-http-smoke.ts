@@ -179,8 +179,10 @@ function assertGalleryOpensOn(body: string, expectedUrlFragment: string, label: 
 }
 
 function assertProductHeroUses(body: string, expectedUrlFragment: string, label: string) {
+  // The hero section carries the media stage's own class alongside `product-page-hero` now, so the
+  // class attribute is matched by the token rather than by the whole string.
   const hero = body.match(
-    /<section\b[^>]*class="product-page-hero"[^>]*>[\s\S]{0,1600}?<img[^>]*>/,
+    /<section\b[^>]*class="[^"]*\bproduct-page-hero\b[^"]*"[^>]*>[\s\S]{0,1600}?<img[^>]*>/,
   )?.[0];
 
   assert.ok(hero, `${label}: expected the canonical product hero to render`);

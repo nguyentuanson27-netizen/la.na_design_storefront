@@ -4,12 +4,12 @@ Status: **Approved by owner on 2026-09-22**
 
 This spec records the owner interview completed on 2026-09-21. It is intentionally narrow: presentation, interaction and buyer-facing copy only. It does not redesign commerce, stock, cart or recommendation authority.
 
-After approval, this spec supersedes the conflicting presentation clauses in the consolidated master spec:
-- §25 listing vertical rhythm where it prevents products appearing early enough;
+This spec supersedes the conflicting presentation clauses that were in the consolidated master spec:
+- §25 listing vertical rhythm where it prevented products appearing early enough;
 - §26 "Desktop remaining gallery keeps the editorial grid behavior where images remain";
 - §26 "Right-side product info panel is sticky on desktop".
 
-The implementation must update `docs/specs/la-na-design-master-spec.md` atomically so the repository does not retain two active contracts.
+`docs/specs/la-na-design-master-spec.md` already carries the replacement clauses in §25 (Density) and §26 (First-image hero and gallery / Information and buy panel / Variant UX / Buyer-facing copy and visual language / Related products), so the repository holds one active contract rather than two.
 
 ## Objective
 
@@ -257,22 +257,75 @@ Prefer the smallest change that preserves current boundaries:
 
 ## Success criteria
 
-- [ ] Owner-approved gallery structure and interaction apply at the existing `lg` breakpoint and above, with no desktop gallery rule leaking below `lg`; mobile structure is owned separately.
-- [ ] Desktop primary media is near viewport height and full garment framing is visible with `object-contain`.
-- [ ] Initial PDP load always shows slide 1 / trusted image 1, including for `?variant=` deep links; deep-link preselection does not replace the canonical first visible surface.
-- [ ] Vertical scrolling always continues to later PDP sections.
-- [ ] Information below gallery is two-column at `lg` and above; this refinement does not freeze the below-`lg` structural layout.
-- [ ] Desktop purchase panel is no longer sticky and no text/control overlap occurs.
-- [ ] Kind-unselected guidance uses the exact approved sentence and is visually distinct from sold out.
-- [ ] Actual sold-out variants still show `Hết hàng` and remain governed by existing commerce truth.
-- [ ] Technical/server-oriented buyer copy is removed or rewritten without inventing facts.
-- [ ] Serif/sans and brown/cream CTA direction applies consistently on desktop and mobile.
-- [ ] Current generic related section reads `Nàng có thể thích`.
-- [ ] At 1440×900 and 390×844, a product-bearing PLP with default/unexpanded filters shows the top edge of the first product image within the initial viewport on load.
-- [ ] Existing URL/filter/cart/variant/preorder/size-guide behavior is preserved.
-- [ ] Relevant domain, browser, accessibility, lint, typecheck and build gates pass before implementation is considered complete.
-- [ ] Consolidated master spec is updated before merge so it no longer states the superseded sticky/grid contract.
+Implemented and verified; see the verification record at the end of this file.
+
+- [x] Owner-approved gallery structure and interaction apply at the existing `lg` breakpoint and above, with no desktop gallery rule leaking below `lg`; mobile structure is owned separately.
+- [x] Desktop primary media is near viewport height and full garment framing is visible with `object-contain`.
+- [x] Initial PDP load always shows slide 1 / trusted image 1, including for `?variant=` deep links; deep-link preselection does not replace the canonical first visible surface.
+- [x] Vertical scrolling always continues to later PDP sections.
+- [x] Information below gallery is two-column at `lg` and above; this refinement does not freeze the below-`lg` structural layout.
+- [x] Desktop purchase panel is no longer sticky and no text/control overlap occurs.
+- [x] Kind-unselected guidance uses the exact approved sentence and is visually distinct from sold out.
+- [x] Actual sold-out variants still show `Hết hàng` and remain governed by existing commerce truth.
+- [x] Technical/server-oriented buyer copy is removed or rewritten without inventing facts.
+- [x] Serif/sans and brown/cream CTA direction applies consistently on desktop and mobile.
+- [x] Current generic related section reads `Nàng có thể thích`.
+- [x] At 1440×900 and 390×844, a product-bearing PLP with default/unexpanded filters shows the top edge of the first product image within the initial viewport on load.
+- [x] Existing URL/filter/cart/variant/preorder/size-guide behavior is preserved.
+- [x] Relevant domain, browser, accessibility, lint, typecheck and build gates pass before implementation is considered complete.
+- [x] Consolidated master spec is updated before merge so it no longer states the superseded sticky/grid contract.
 
 ## Open questions
 
 None blocking implementation. Exact spacing values and drag threshold remain implementation details; PLP density is judged by the approved 1440×900 and 390×844 initial-viewport criterion above.
+
+## Implementation record
+
+What the implementation chose where the spec left it open:
+
+- **Owner of the media.** `BrandProductMediaStage` renders every trusted image and is the PDP's
+  first full-bleed surface at every viewport. Below `lg` only its first slide has a box, so the
+  phone composition is unchanged and the later slides' lazy images are never fetched; the below-`lg`
+  editorial grid still carries images 2..n in the content column. Nothing about the mobile structure
+  moved, which is what keeps this change clear of the separate mobile spec.
+- **Slides stack rather than ride a track.** A translated track lays the later slides out past the
+  right edge of the viewport -- clipped, but still measurably outside it, which the storefront's
+  no-horizontal-overflow guard correctly catches. The stage reuses `.home-hero__slide`'s
+  stack-in-place pattern instead.
+- **Navigation surface.** Two half-width buttons (`Ảnh trước` / `Ảnh tiếp theo`) give the pointer
+  its click halves and keyboard users the equivalent path from the same elements; a horizontal
+  pointer drag past 48px moves one slide. There is no wheel listener, and `touch-action: pan-y`
+  leaves every vertical gesture to the document.
+- **Canonical first surface.** The stage mounts on slide 0 with the deep-linked variant already
+  recorded as synced, so only a *change* of selection moves it. That one rule produces both required
+  behaviours: a `?variant=` link preselects without replacing slide 1, and a shopper's own drag or
+  click survives every re-render until the selection changes again.
+- **Unresolved kind.** `deriveStorefrontProjectionSelection` is untouched; those size inputs are
+  still `disabled`. `kindSelectionGuidance` is a presentation-only field on the view model, and the
+  unresolved row renders at full opacity with a dashed edge rather than the dimmed presentation a
+  genuinely unavailable option wears.
+- **Information columns.** The DOM order is identity, purchase, product information, delivery and
+  returns -- the stacked order a narrow viewport needs -- and `lg` places each block in its column,
+  with the panel spanning both content rows so a long panel cannot push the description past it.
+  The approved detail-block order now runs across the two regions (`Chi tiết sản phẩm` and
+  `Giao hàng và đổi trả`) in reading order.
+- **PLP density.** Shared padding came down across the shell, header, explanatory copy, result
+  controls and filter chrome. `/shop` was the outlier -- nine fields stacked one per row on a phone
+  -- and is two columns from the narrowest width up, with the in-stock toggle and the apply button
+  sharing the last row. Measured first-product-image offsets after the change: `/shop` 775px of 844
+  on mobile and 623px of 900 on desktop, with every other listing further above the fold.
+
+## Verification
+
+Run against this branch, on a local Postgres with the repository's own migrations:
+
+- `pnpm lint` -- 0 errors (16 pre-existing warnings, all in files this change does not touch);
+- `pnpm typecheck` -- clean;
+- `pnpm test:domain` -- 2059 tests, 0 failures;
+- `pnpm test` and `pnpm test:db`;
+- `pnpm build`;
+- the Playwright accessibility runtime, including `storefront-media`, `variant-deep-link`,
+  `storefront-composite`, `pdp-language`, `related-products`, `storefront-commerce` (which carries
+  the size-guide artwork + screen-reader chart + dialog focus guard from the merged size-guide
+  work), `storefront-listing-consistency`, `discovery`, `collection-landing` and
+  `mobile-storefront-rhythm`.
