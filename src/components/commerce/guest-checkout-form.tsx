@@ -291,41 +291,34 @@ export function GuestCheckoutForm({
         : "border-black bg-transparent text-black";
 
   return (
-    <form
-      action={submitAction}
-      className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16 lg:gap-y-0"
-    >
+    <form action={submitAction} className="space-y-8">
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
           or swapped value simply fails closed into re-confirmation. */}
       <input name="quoteProof" type="hidden" value={quoteProof} />
 
+      {/* Below `lg` only: at `lg+` the page's sticky aside is the order summary, already expanded,
+          so a second collapsible copy would be two summaries of one order. */}
       {summarySlot && summaryLabel ? (
-        <section className="checkout-order-summary lg:col-start-2 lg:row-start-1 lg:border-t lg:border-black lg:pt-6">
+        <section className="checkout-order-summary lg:hidden">
           <button
             type="button"
             aria-controls={summaryContentId}
             aria-expanded={isSummaryOpen}
             onClick={() => setIsSummaryOpen((open) => !open)}
-            className="flex min-h-11 w-full items-center justify-between gap-4 text-left text-sm font-semibold lg:hidden"
+            className="flex min-h-11 w-full items-center justify-between gap-4 text-left text-sm font-semibold"
           >
             <span>{summaryLabel}</span>
             <span aria-hidden="true">{isSummaryOpen ? "−" : "＋"}</span>
           </button>
-          <p className="hidden text-xs font-semibold uppercase tracking-[0.14em] lg:block">
-            {summaryLabel}
-          </p>
-          <div
-            id={summaryContentId}
-            className={`${isSummaryOpen ? "block" : "hidden"} pt-5 lg:block lg:pt-6`}
-          >
+          <div id={summaryContentId} className={`${isSummaryOpen ? "block" : "hidden"} pt-5`}>
             {summarySlot}
           </div>
         </section>
       ) : null}
 
-      <div className="checkout-receiving-fields space-y-8 lg:col-start-1 lg:row-start-1 lg:row-span-3">
+      <div className="checkout-receiving-fields space-y-8">
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>
@@ -482,17 +475,16 @@ export function GuestCheckoutForm({
       </fieldset>
       </div>
 
-      {totalsSlot ? (
-        <div className="checkout-totals lg:col-start-2 lg:row-start-2 lg:mt-5">{totalsSlot}</div>
-      ) : null}
-      {preorderSlot ? (
-        <div className="checkout-preorder lg:col-start-2 lg:row-start-3">{preorderSlot}</div>
-      ) : null}
+      {/* Same breakpoint split as the summary above: the shipping/total block and the fulfillment
+          notice belong between the fields and the submit button below `lg`, and inside the sticky
+          aside at `lg+`. */}
+      {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
+      {preorderSlot ? <div className="checkout-preorder lg:hidden">{preorderSlot}</div> : null}
 
       {feedback ? (
         <div
           aria-live={feedback.tone === "success" ? "polite" : "assertive"}
-          className={`border px-5 py-4 lg:col-start-1 lg:row-start-4 lg:mt-8 ${feedbackTone}`}
+          className={`border px-5 py-4 ${feedbackTone}`}
           role="status"
         >
           <p className="font-semibold">{feedback.title}</p>
@@ -506,14 +498,14 @@ export function GuestCheckoutForm({
       ) : null}
 
       <button
-        className="w-full border border-black bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45 lg:col-start-1 lg:row-start-5 lg:mt-8"
+        className="w-full border border-black bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45"
         disabled={submitDisabled}
         type="submit"
       >
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
       </button>
 
-      <p className="text-xs leading-5 text-black/60 lg:col-start-1 lg:row-start-6 lg:mt-3">
+      <p className="text-xs leading-5 text-black/60">
         Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
     </form>

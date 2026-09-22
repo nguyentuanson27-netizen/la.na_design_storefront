@@ -141,12 +141,16 @@ function render(data: CheckoutViewModel) {
     </>
   );
 
+  const estimateNote = (
+    <p className="text-xs leading-5 text-black/75">
+      Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
+    </p>
+  );
+
   const totalsContent = (
     <div className="space-y-5">
       {totalsBlock}
-      <p className="text-xs leading-5 text-black/75">
-        Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
-      </p>
+      {estimateNote}
     </div>
   );
 
@@ -165,7 +169,24 @@ function render(data: CheckoutViewModel) {
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
       </div>
 
-      <div className="mt-12 border-t border-black/20 pt-8">
+      {/*
+        Two compositions of one order, and only ever one of them live.
+
+        Below `lg` the mobile spec owns the reading order -- collapsed summary, receiving
+        information, shipping/total, preorder notice, then submit -- so those regions are real DOM
+        siblings inside the form, in that order. At `lg+` that same order would put the summary
+        above a full-width form and leave the right column empty, which is not the desktop this
+        spec was scoped to touch, so the aside below restores it: right column, sticky, order lines
+        and totals and notice in one panel.
+
+        The alternative was a single DOM reordered by CSS. It cannot work here: a grid item can only
+        stick inside its own grid area, so a summary sized to its own content has nowhere to travel,
+        and reordering the regions visually would put the submit button ahead of the total in the
+        reading order the spec exists to fix. Two compositions, each `display: none` outside its own
+        breakpoint, keep one of each region in the accessibility tree and leave the hidden copy's
+        images unfetched.
+      */}
+      <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
           summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
@@ -173,6 +194,23 @@ function render(data: CheckoutViewModel) {
           totalsSlot={totalsContent}
           preorderSlot={preorderContent}
         />
+
+        <aside className="checkout-order-panel hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">
+          <div className="flex items-baseline justify-between gap-4">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>
+            <Link
+              className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              href="/cart"
+            >
+              Sửa giỏ hàng
+            </Link>
+          </div>
+
+          <div className="mt-6">{orderLines}</div>
+          <div className="mt-5">{totalsBlock}</div>
+          <div className="mt-5">{estimateNote}</div>
+          {preorderContent}
+        </aside>
       </div>
     </div>
   );

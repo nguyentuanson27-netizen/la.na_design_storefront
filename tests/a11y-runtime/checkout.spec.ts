@@ -546,7 +546,10 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   await summary.click();
   await expect(summary).toHaveAttribute("aria-expanded", "true");
   await expect(page.locator(".checkout-order-summary a[href='/cart']")).toBeVisible();
-  await expect(page.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  // `:visible` is load-bearing: the desktop sticky aside is in the DOM at every width and carries
+  // its own copy of these regions, hidden below `lg`. One *visible* total is the contract.
+  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  await expect(page.locator(".checkout-order-panel")).toBeHidden();
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
 
   const order = await page.evaluate(() => {
@@ -565,6 +568,66 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   expect(order).toEqual([...order].sort((left, right) => left - right));
 });
 
+/**
+ * The desktop checkout this mobile spec must leave alone.
+ *
+ * An earlier revision of this PR folded the right-hand order panel into the form's grid for every
+ * viewport to get the mobile reading order. The mobile order was right and the desktop quietly
+ * lost its sticky summary, so this pins the `lg+` half of the contract: right column, really
+ * sticky -- not merely `position: sticky` on an element with nowhere to travel -- and titled
+ * `Đơn hàng` rather than the mobile collapsed label.
+ */
+test("1440 checkout keeps its right-column sticky order summary and the mobile stack stays off", async ({
+  page,
+  context,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await cleanupRateLimits();
+  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+  await createTestCart(3);
+  await prepareBrowser(context);
+
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  const summary = page.locator(".checkout-order-panel");
+  await expect(summary).toBeVisible();
+  await expect(summary.getByText("Đơn hàng", { exact: true })).toBeVisible();
+  await expect(summary.locator("a[href='/cart']")).toBeVisible();
+  await expect(summary.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+
+  // The mobile composition is off, so neither region is announced twice.
+  await expect(page.locator(".checkout-order-summary")).toBeHidden();
+  await expect(page.locator(".checkout-totals")).toBeHidden();
+  await expect(page.getByRole("button", { name: /Đơn hàng \(3\) ·/ })).toBeHidden();
+  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+
+  // Right column: the summary starts to the right of the form, not under it.
+  const [summaryBox, formBox] = await Promise.all([
+    summary.boundingBox(),
+    page.locator("form").first().boundingBox(),
+  ]);
+  expect(summaryBox!.x).toBeGreaterThan(formBox!.x + formBox!.width - 1);
+
+  expect(
+    await summary.evaluate((element) => getComputedStyle(element).position),
+  ).toBe("sticky");
+
+  /*
+   * `position: sticky` is not the same as sticking.
+   *
+   * A grid item can only travel inside its own grid area, so a summary placed in a row sized to
+   * its own content reports `sticky` and scrolls away exactly like a static one. Scrolling the
+   * long form past it is what tells the two apart: pinned at `top-24` it stays near the top of the
+   * viewport, and unpinned an 800px scroll takes it off screen.
+   */
+  const restingTop = (await summary.boundingBox())!.y;
+  await page.evaluate(() => window.scrollBy(0, 800));
+  await page.waitForFunction(() => window.scrollY > 700);
+  const stuckTop = (await summary.boundingBox())!.y;
+  expect(stuckTop).toBeGreaterThan(50);
+  expect(restingTop - stuckTop).toBeLessThan(800);
+});
+
 test("P9a a price change between render and submit forces an explicit second confirmation", async ({
   page,
   context,
@@ -577,7 +640,10 @@ test("P9a a price change between render and submit forces an explicit second con
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
   const submit = page.getByRole("button", { name: "Đặt hàng COD" });
-  const totalValue = page.locator("dl > div").filter({ hasText: "Tổng dự kiến" }).locator("dd");
+  const totalValue = page
+    .locator("dl:visible > div")
+    .filter({ hasText: "Tổng dự kiến" })
+    .locator("dd");
   const quotedTotal = (await totalValue.textContent())?.trim() ?? "";
   expect(quotedTotal).not.toEqual("");
 

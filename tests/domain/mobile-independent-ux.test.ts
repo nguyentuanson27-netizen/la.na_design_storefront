@@ -64,9 +64,28 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   // `N` is the summed quantity pinned by the reduce above, not the number of lines.
   assert.match(page, /summaryLabel=\{`Đơn hàng \(\$\{itemCount\}\) · \$\{totals\.totalText\}`\}/);
   assert.match(form, /summaryLabel[\s\S]*aria-expanded=\{isSummaryOpen\}/);
-  assert.equal((page.match(/\{orderLines\}/g) ?? []).length, 1);
-  assert.equal((page.match(/\{totalsBlock\}/g) ?? []).length, 1);
+  // Each region's markup is authored exactly once and composed into both breakpoint layouts. The
+  // uses are allowed to be plural -- the declarations are not, because a second copy of the lines
+  // or the totals is a second place for them to drift from the view model.
+  assert.equal((page.match(/const orderLines = \(/g) ?? []).length, 1);
+  assert.equal((page.match(/const totalsBlock = \(/g) ?? []).length, 1);
+  assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 1);
   assert.equal((page.match(/<BrandPreorderFulfillmentNotice notice=\{data\.preorderNotice\} \/>/g) ?? []).length, 1);
+
+  /*
+   * The desktop order panel this spec must not have changed.
+   *
+   * PR #52 is mobile-only, and an earlier revision folded the right-hand sticky aside into the
+   * form's grid for every viewport -- which silently unstuck the desktop order summary and
+   * retitled it. The aside is `lg`-only and sticky; the form's copies of the same three regions
+   * are `lg:hidden`, so exactly one of each is live at any width.
+   */
+  assert.match(page, /<aside className="checkout-order-panel hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">/);
+  assert.match(page, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(20rem,0\.42fr\)\]/);
+  assert.match(page, /<p className="text-xs font-semibold uppercase tracking-\[0\.14em\]">Đơn hàng<\/p>/);
+  assert.match(form, /className="checkout-order-summary lg:hidden"/);
+  assert.match(form, /className="checkout-totals lg:hidden"/);
+  assert.match(form, /className="checkout-preorder lg:hidden"/);
   assert.match(page, /text-\[2\.5rem\]/);
   assert.match(page, /lg:text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
