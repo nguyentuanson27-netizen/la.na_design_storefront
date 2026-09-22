@@ -18,7 +18,7 @@ const committedSnapshot = {
   size: "M",
 };
 
-test("storefront public action passes only parsed slug and variant identity to the purchase runtime", async () => {
+test("storefront public action passes only parsed purchase fields to the purchase runtime", async () => {
   const calls: Array<{ slug: string; variantId: string }> = [];
   const actions = createStorefrontPurchasePublicActions({
     async purchase(input) {
@@ -42,7 +42,7 @@ test("storefront public action passes only parsed slug and variant identity to t
       analyticsItem: committedSnapshot,
     },
   );
-  assert.deepEqual(calls, [{ slug: "linen-shirt", variantId: "variant-1" }]);
+  assert.deepEqual(calls, [{ slug: "linen-shirt", variantId: "variant-1", quantity: 1 }]);
 });
 
 test("T5 an accepted PDP add reports the committed transition with addedQuantity one", async () => {
