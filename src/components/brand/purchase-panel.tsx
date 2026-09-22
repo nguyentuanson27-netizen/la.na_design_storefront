@@ -119,11 +119,19 @@ function MappedSizeGuideDialog({
         </button>
 
         {/*
-          The artwork already contains the visible chart title and shopper guidance. Keep the
-          machine-readable table so replacing duplicated chrome with the image does not erase the
-          values for screen-reader users.
+          The artwork already contains the visible chart title and shopper guidance. Keep the same
+          guidance plus the machine-readable table in the accessibility tree so removing duplicate
+          visual chrome does not turn the image into the only source of those facts.
         */}
         <div className="sr-only">
+          <p>{guide.circumferenceSemanticsNote}</p>
+          {guide.tolerance ? (
+            <p>
+              <strong>Dung sai:</strong> {guide.tolerance.note}
+            </p>
+          ) : null}
+          <p>{guide.guidanceNote}</p>
+
           <table>
             <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
             <thead>
