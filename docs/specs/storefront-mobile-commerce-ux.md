@@ -80,6 +80,30 @@ selection, stock, price, cart, preorder, media ordering, or purchase authority.
 Out of scope: changing `deriveStorefrontProjectionSelection`, variant availability, add-to-cart
 behavior, desktop PDP composition, gallery source order, or unrelated storefront surfaces.
 
+## Owner amendment — 2026-09-22: storefront edge, footer and PDP chrome polish
+
+This owner-confirmed amendment is presentation-only and keeps all existing catalog, filtering,
+selection, stock, cart and checkout authority unchanged.
+
+- On phone listing surfaces that render product cards through the shared listing grid, the grid
+  reaches the viewport edges like the homepage product grid: two columns, 2px gap, no page-shell
+  side gutter around the photographs. Product metadata keeps its compact inset so text does not
+  touch the viewport edge. Desktop/tablet listing gutters and column counts are unchanged.
+- Footer brand/contact rows use a **1.5rem visual row gap**. Text links in the footer and inline
+  support/policy/action links use a persistent underline rather than relying on hover alone.
+  Navigation icons, buttons, pills/badges and whole-card product links keep their existing
+  non-underline affordances.
+- On the PDP, the promotion/Freeship strip follows the homepage overlay behavior: hidden at the
+  initial top position and revealed once the existing header scroll state becomes scrolled.
+- Remove the visible PDP breadcrumb entirely. Structured breadcrumb/SEO authority is not changed.
+- Keep the related-products heading **`Nàng có thể thích`**, but remove the secondary visible
+  eyebrow **`Sản phẩm liên quan`**.
+
+Acceptance at 390px: shared product listings are edge-to-edge without horizontal overflow; footer
+contact rhythm is compact and links remain discoverable; PDP loads without promotion strip or
+breadcrumb, then shows the promotion strip after scroll; the related section exposes only the main
+heading above its cards.
+
 ## 1. Mobile PDP gallery
 
 - **Below `lg`**, render product images as one horizontal swipe gallery instead of the current long vertical image stack.
