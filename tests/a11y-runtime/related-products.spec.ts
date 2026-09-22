@@ -283,6 +283,7 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   expect(response?.status()).toBe(200);
 
   const related = page.getByRole("region", { name: "Nàng có thể thích" });
+  await expect(related.getByText("Sản phẩm liên quan", { exact: true })).toHaveCount(0);
   await expect(related).toBeVisible();
   const names = await related.locator("article h2").allTextContents();
   // ADR 0013 §7, end to end: the manual override first even though it sits in another tree, then
@@ -364,6 +365,7 @@ test("F7d same-category fallback works without manual picks", async ({ page }) =
   expect(response?.status()).toBe(200);
 
   const related = page.getByRole("region", { name: "Nàng có thể thích" });
+  await expect(related.getByText("Sản phẩm liên quan", { exact: true })).toHaveCount(0);
   await expect(related).toBeVisible();
   await expect(related.getByText(pinnedName, { exact: true })).toBeVisible();
   await expect(related.getByText(fallbackName, { exact: true })).toHaveCount(0);
