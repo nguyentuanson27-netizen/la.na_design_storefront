@@ -4,7 +4,7 @@
 - [x] Contract amendment written before implementation.
 - [x] Add focused regression tests for 2:3 media, hidden mobile eyebrow, compact selectors and simplified size-guide dialog.
 - [x] Implement minimal presentation changes.
-- [ ] Run focused domain/browser checks.
-- [ ] Run lint/typecheck/build and relevant CI.
-- [ ] Review correctness → security → architecture → simplicity → performance.
-- [ ] Check project Definition of Done.
+- [x] Run focused domain/browser checks.
+- [x] Run lint/typecheck/build and relevant CI.
+- [x] Review correctness → security → architecture → simplicity → performance.
+- [x] Check project Definition of Done.
