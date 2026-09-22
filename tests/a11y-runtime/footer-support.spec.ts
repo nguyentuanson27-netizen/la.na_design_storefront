@@ -145,6 +145,16 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
   await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
 
+  const persistentFooterLinks = [
+    footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`),
+    footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`),
+  ];
+  for (const link of persistentFooterLinks) {
+    await expect
+      .poll(() => link.evaluate((element) => getComputedStyle(element).textDecorationLine))
+      .toContain("underline");
+  }
+
   const shopping = footer.getByRole("navigation", { name: "Mua sắm" });
   const expectedShopping = [
     ["Áo dài", "/ao-dai"],
@@ -177,6 +187,9 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   expect(desktopColumns).toBe(4);
 
   const firstShoppingLink = shopping.getByRole("link").first();
+  await expect
+    .poll(() => firstShoppingLink.evaluate((element) => getComputedStyle(element).textDecorationLine))
+    .toContain("underline");
   await firstShoppingLink.focus();
   const focusOutline = await firstShoppingLink.evaluate((element) => {
     const style = getComputedStyle(element);
@@ -404,6 +417,7 @@ for (const viewport of CONTACT_WIDTHS) {
     for (const gap of gaps) {
       expect(Math.abs(gap - gaps[0]!), `gaps: ${gaps.join(", ")}`).toBeLessThanOrEqual(0.5);
     }
+    expect(gaps[0], `visual row gap at ${viewport.name}px`).toBeCloseTo(24, 0);
 
     // Every row is a single line except where the text genuinely cannot fit, which only the address
     // reaches and only on the narrowest phone.
