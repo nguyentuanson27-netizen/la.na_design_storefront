@@ -15,8 +15,8 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  *
  * Four owner findings, read on a 390x844 screen:
  *
- *   1. the PDP opened on a full-viewport crop of the garment -- roughly 1:2.2 -- where every other
- *      garment image on the site is 3:4;
+ *   1. the PDP product frame should use the owner-confirmed 2:3 portrait ratio below `lg`, so
+ *      phone and tablet product media share one predictable vertical frame;
  *   2. `Áo dài La.na Design` was set at body size with a section break's worth of air around it,
  *      while `Set đồ` and `Váy, đầm` were cream serif overlaid on their images: the same kind of
  *      content in two design languages, neither of which read as a heading;
@@ -305,31 +305,41 @@ async function typeTreatmentOf(locator: Locator) {
   });
 }
 
-test("the PDP hero is framed 3:4 on a phone, and keeps its full-bleed crop on desktop", async ({
+test("the PDP frame is 2:3 and hides the identity eyebrow below lg, while desktop stays unchanged", async ({
   page,
 }) => {
-  await page.setViewportSize(MOBILE);
-  await page.goto(`${BASE_URL}/shop/${PRODUCT_SLUG}`, { waitUntil: "networkidle" });
+  for (const viewport of [
+    { width: 320, height: 720 },
+    MOBILE,
+    { width: 768, height: 1024 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}/shop/${PRODUCT_SLUG}`, { waitUntil: "networkidle" });
 
-  const hero = page.getByRole("region", { name: `Ảnh chính của ${PRODUCT_NAME}` });
-  await expect(hero).toBeVisible();
+    const hero = page.getByRole("region", { name: `Ảnh chính của ${PRODUCT_NAME}` });
+    await expect(hero).toBeVisible();
 
-  // 3:4 is 0.75. The tolerance is a rounding allowance, not room for a different ratio: a
-  // full-viewport hero on this device reads ~0.46, and the old behaviour fails this by a mile.
-  expect(await ratioOf(hero)).toBeCloseTo(0.75, 2);
+    // 2:3 is width / height = 0.666..., and the same below-`lg` rule owns phone + tablet.
+    expect(await ratioOf(hero)).toBeCloseTo(2 / 3, 2);
 
-  // The photograph still fills that frame rather than letterboxing inside it.
-  const heroImage = hero.locator("img").first();
-  await expect(heroImage).toHaveCSS("object-fit", "cover");
+    // The photograph still fills that frame rather than letterboxing inside it.
+    await expect(hero.locator("img").first()).toHaveCSS("object-fit", "cover");
 
-  // The ratio is derived from the viewport, not pinned in pixels, so a narrower phone stays 3:4.
-  await page.setViewportSize({ width: 320, height: 720 });
-  expect(await ratioOf(hero)).toBeCloseTo(0.75, 2);
+    // The owner asked to remove this implementation/category eyebrow from the mobile PDP.
+    await expect(
+      page.locator("p.eyebrow").filter({ hasText: "/ Sản phẩm" }),
+    ).toBeHidden();
+  }
 
-  // Desktop is untouched: the hero is still the full-height surface the header overlays.
+  // Desktop keeps the approved media stage and identity context.
   await page.setViewportSize(DESKTOP);
+  await page.goto(`${BASE_URL}/shop/${PRODUCT_SLUG}`, { waitUntil: "networkidle" });
+  const hero = page.getByRole("region", { name: `Ảnh chính của ${PRODUCT_NAME}` });
   const desktopBox = await hero.boundingBox();
   expect(desktopBox!.height).toBeGreaterThan(DESKTOP.height * 0.9);
+  await expect(
+    page.locator("p.eyebrow").filter({ hasText: "/ Sản phẩm" }),
+  ).toBeVisible();
 });
 
 test("Áo dài, Set đồ and Váy, đầm are drawn with one visual system on a phone", async ({ page }) => {
