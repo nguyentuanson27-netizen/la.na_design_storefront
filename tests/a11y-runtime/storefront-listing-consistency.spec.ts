@@ -330,32 +330,47 @@ test("mobile category filters stay open across sequential URL-backed selections"
   const firstProductBox = await firstProductMedia.boundingBox();
   expect(firstProductBox?.y).toBeLessThan(844);
 
-  await page.getByRole("button", { name: "Bộ lọc", exact: true }).click();
+  const opener = page.getByRole("button", { name: "Bộ lọc", exact: true });
+  await opener.click();
   const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng bộ lọc", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Xem 3 sản phẩm", exact: true })).toBeVisible();
+
+  const expectDialogOwnsFocus = async () => {
+    await expect.poll(() =>
+      dialog.evaluate((element) => element.contains(document.activeElement)),
+    ).toBe(true);
+  };
 
   await dialog.getByRole("link", { name: "Chỉ xem sản phẩm Sale", exact: true }).click();
   await page.waitForLoadState("networkidle");
   await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Xem 1 sản phẩm", exact: true })).toBeVisible();
+  await expectDialogOwnsFocus();
 
   await dialog.getByRole("link", { name: "M", exact: true }).click();
   await page.waitForLoadState("networkidle");
   await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
 
   await dialog.getByRole("link", { name: "Ink", exact: true }).click();
   await page.waitForLoadState("networkidle");
   await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
 
   await dialog.getByLabel("Giá tối thiểu").fill("500000");
   await dialog.getByLabel("Giá tối đa").fill("900000");
   await dialog.getByRole("button", { name: "Áp dụng giá", exact: true }).click();
   await page.waitForLoadState("networkidle");
   await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
 
-  const viewResults = dialog.getByRole("button", { name: /Xem \d+ sản phẩm/ });
+  const viewResults = dialog.getByRole("button", { name: "Xem 1 sản phẩm", exact: true });
   await expect(viewResults).toBeVisible();
   await viewResults.click();
   await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
 });
 
 test("the product grid is 2 columns on mobile and 4 on desktop, on every listing that has one", async ({
