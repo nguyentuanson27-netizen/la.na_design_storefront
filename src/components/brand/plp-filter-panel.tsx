@@ -18,7 +18,6 @@ import {
   buildToggleColorHref,
   buildToggleSaleHref,
   buildToggleSizeHref,
-  countActivePlpFilters,
   formatFilterPriceVnd,
   hasActivePlpFilters,
   type PlpFilterState,
@@ -64,7 +63,6 @@ export function PlpFilterPanel({
   const wasMobileOpenRef = useRef(false);
 
   const hasFilters = hasActivePlpFilters(activeFilters);
-  const activeCount = countActivePlpFilters(activeFilters);
 
   // Sync price inputs when activeFilters change externally (e.g., URL navigation or clear pill)
   const [prevActiveFilters, setPrevActiveFilters] = useState(activeFilters);
@@ -228,13 +226,8 @@ export function PlpFilterPanel({
               />
             </svg>
             <span>Bộ lọc</span>
-            <span aria-hidden="true">·</span>
-            {activeCount > 0 ? (
-              <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-[#3B2219] text-[0.6rem] font-bold text-[#FAF7F2]">
-                {activeCount}
-              </span>
-            ) : null}
           </button>
+          <span aria-hidden="true" className="text-xs text-[#70584B] md:hidden">·</span>
 
           {/* Sort Selector */}
           <div className="flex items-center gap-2">
