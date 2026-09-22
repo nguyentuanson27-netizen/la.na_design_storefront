@@ -61,7 +61,7 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
 
   assert.match(page, /lines\.reduce\(\(count, line\) => count \+ line\.quantity, 0\)/);
   assert.match(page, /Đơn hàng \(\{itemCount\}\) · \{totals\.totalText\}/);
-  assert.match(page, /<details[^>]*className="checkout-mobile-summary/);
+  assert.match(form, /summaryLabel[\s\S]*aria-expanded=\{isSummaryOpen\}/);
   assert.equal((page.match(/\{orderLines\}/g) ?? []).length, 1);
   assert.equal((page.match(/\{totalsBlock\}/g) ?? []).length, 1);
   assert.equal((page.match(/<BrandPreorderFulfillmentNotice notice=\{data\.preorderNotice\} \/>/g) ?? []).length, 1);
