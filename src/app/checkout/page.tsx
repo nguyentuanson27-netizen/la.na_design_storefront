@@ -42,7 +42,7 @@ function render(data: CheckoutViewModel) {
     return (
       <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
         <Breadcrumb />
-        <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
+        <h1 className="mt-4 text-[2.5rem] font-semibold leading-[0.92] tracking-[-0.04em] sm:text-5xl md:text-6xl lg:text-[clamp(3.5rem,10vw,9rem)] lg:leading-[0.86] lg:tracking-[-0.05em]">
           THANH TOÁN
         </h1>
         {data.state === "empty" ? (
@@ -68,96 +68,111 @@ function render(data: CheckoutViewModel) {
   }
 
   const { lines, totals, quoteProof } = data;
+  const itemCount = lines.reduce((count, line) => count + line.quantity, 0);
+
+  const orderLines = (
+    <div className="divide-y divide-black/15 border-b border-black/15">
+      {lines.map((line) => (
+        <div className="flex items-start gap-4 py-4 first:pt-0" key={line.variantId}>
+          <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden border border-black/10 bg-black/[0.04]">
+            {line.primaryImage ? (
+              <Image
+                alt={line.primaryImage.alt}
+                className="h-full w-full object-cover"
+                fill
+                sizes="56px"
+                src={line.primaryImage.url}
+              />
+            ) : (
+              <div
+                className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase tracking-wider text-black/75"
+                aria-hidden="true"
+              >
+                LA
+              </div>
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
+            <p className="mt-1 text-xs leading-5 text-black/75">
+              {line.optionLabel} · SL {line.quantity}
+            </p>
+            {line.preorderLabel === null ? null : (
+              <p
+                className="mt-1 inline-flex items-center border border-black px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]"
+                data-line-state="preorder"
+              >
+                {line.preorderLabel}
+              </p>
+            )}
+          </div>
+          <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
+        </div>
+      ))}
+    </div>
+  );
+
+  const totalsBlock = (
+    <dl className="space-y-3 text-sm">
+      <div className="flex justify-between gap-5">
+        <dt className="text-black/75">Tạm tính</dt>
+        <dd>{totals.subtotalText}</dd>
+      </div>
+      <div className="flex justify-between gap-5">
+        <dt className="text-black/75">Phí vận chuyển</dt>
+        <dd>{totals.shippingText}</dd>
+      </div>
+      <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
+        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng dự kiến</dt>
+        <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
+      </div>
+    </dl>
+  );
+
+  const summaryContent = (
+    <>
+      {orderLines}
+      <Link
+        className="mt-4 inline-block text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4"
+        href="/cart"
+      >
+        Sửa giỏ hàng
+      </Link>
+    </>
+  );
+
+  const totalsContent = (
+    <div className="space-y-5">
+      {totalsBlock}
+      <p className="text-xs leading-5 text-black/75">
+        Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
+      </p>
+    </div>
+  );
+
+  const preorderContent =
+    data.preorderNotice === null ? null : (
+      <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
+    );
 
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <Breadcrumb />
       <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-        <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
+        <h1 className="text-[2.5rem] font-semibold leading-[0.92] tracking-[-0.04em] sm:text-5xl md:text-6xl lg:text-[clamp(3.5rem,10vw,9rem)] lg:leading-[0.86] lg:tracking-[-0.05em]">
           THANH TOÁN
         </h1>
         <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
       </div>
 
-      <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
-        <BrandGuestCheckoutForm quoteProof={quoteProof} />
-
-        <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
-          <div className="flex items-baseline justify-between gap-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>
-            <Link
-              className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-              href="/cart"
-            >
-              Sửa giỏ hàng
-            </Link>
-          </div>
-
-          <div className="mt-6 divide-y divide-black/15 border-b border-black/15">
-            {lines.map((line) => (
-              <div className="flex items-start gap-4 py-4 first:pt-0" key={line.variantId}>
-                <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden border border-black/10 bg-black/[0.04]">
-                  {line.primaryImage ? (
-                    <Image
-                      alt={line.primaryImage.alt}
-                      className="h-full w-full object-cover"
-                      fill
-                      sizes="56px"
-                      src={line.primaryImage.url}
-                    />
-                  ) : (
-                    <div
-                      className="flex h-full w-full items-center justify-center text-[9px] font-semibold uppercase tracking-wider text-black/75"
-                      aria-hidden="true"
-                    >
-                      LA
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
-                  <p className="mt-1 text-xs leading-5 text-black/75">
-                    {line.optionLabel} · SL {line.quantity}
-                  </p>
-                  {/* §30 — a preorder line must not become visually ready stock on the way from
-                      the cart, so the marker is rendered per line here too. */}
-                  {line.preorderLabel === null ? null : (
-                    <p
-                      className="mt-1 inline-flex items-center border border-black px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]"
-                      data-line-state="preorder"
-                    >
-                      {line.preorderLabel}
-                    </p>
-                  )}
-                </div>
-                <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
-              </div>
-            ))}
-          </div>
-
-          <dl className="mt-5 space-y-3 text-sm">
-            <div className="flex justify-between gap-5">
-              <dt className="text-black/75">Tạm tính</dt>
-              <dd>{totals.subtotalText}</dd>
-            </div>
-            <div className="flex justify-between gap-5">
-              <dt className="text-black/75">Phí vận chuyển</dt>
-              <dd>{totals.shippingText}</dd>
-            </div>
-            <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
-              <dt className="font-semibold uppercase tracking-[0.08em]">Tổng dự kiến</dt>
-              <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
-            </div>
-          </dl>
-
-          <p className="mt-5 text-xs leading-5 text-black/75">
-            Đây là số tiền dự kiến. Máy chủ sẽ kiểm tra lại giá, tồn kho và phí vận chuyển khi bạn đặt hàng.
-          </p>
-
-          {data.preorderNotice === null ? null : (
-            <BrandPreorderFulfillmentNotice notice={data.preorderNotice} />
-          )}
-        </aside>
+      <div className="mt-12 border-t border-black/20 pt-8">
+        <BrandGuestCheckoutForm
+          quoteProof={quoteProof}
+          summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
+          summarySlot={summaryContent}
+          totalsSlot={totalsContent}
+          preorderSlot={preorderContent}
+        />
       </div>
     </div>
   );

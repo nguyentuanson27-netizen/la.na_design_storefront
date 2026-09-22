@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
 
 import {
   loadCheckoutCommunesAction,
@@ -41,7 +41,19 @@ const geoFailures = {
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
-export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string }>) {
+export function GuestCheckoutForm({
+  quoteProof,
+  summaryLabel,
+  summarySlot,
+  totalsSlot,
+  preorderSlot,
+}: Readonly<{
+  quoteProof: string;
+  summaryLabel?: string;
+  summarySlot?: ReactNode;
+  totalsSlot?: ReactNode;
+  preorderSlot?: ReactNode;
+}>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
     null,
@@ -58,6 +70,8 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
   const [districtLoading, setDistrictLoading] = useState(false);
   const [communeLoading, setCommuneLoading] = useState(false);
   const [geoError, setGeoError] = useState<GeoError | null>(null);
+  const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  const summaryContentId = useId();
   const provinceRequest = useRef(0);
   const districtRequest = useRef(0);
   const communeRequest = useRef(0);
@@ -277,12 +291,41 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
         : "border-black bg-transparent text-black";
 
   return (
-    <form action={submitAction} className="space-y-8">
+    <form
+      action={submitAction}
+      className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16 lg:gap-y-0"
+    >
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
           or swapped value simply fails closed into re-confirmation. */}
       <input name="quoteProof" type="hidden" value={quoteProof} />
+
+      {summarySlot && summaryLabel ? (
+        <section className="checkout-order-summary lg:col-start-2 lg:row-start-1 lg:border-t lg:border-black lg:pt-6">
+          <button
+            type="button"
+            aria-controls={summaryContentId}
+            aria-expanded={isSummaryOpen}
+            onClick={() => setIsSummaryOpen((open) => !open)}
+            className="flex min-h-11 w-full items-center justify-between gap-4 text-left text-sm font-semibold lg:hidden"
+          >
+            <span>{summaryLabel}</span>
+            <span aria-hidden="true">{isSummaryOpen ? "−" : "＋"}</span>
+          </button>
+          <p className="hidden text-xs font-semibold uppercase tracking-[0.14em] lg:block">
+            {summaryLabel}
+          </p>
+          <div
+            id={summaryContentId}
+            className={`${isSummaryOpen ? "block" : "hidden"} pt-5 lg:block lg:pt-6`}
+          >
+            {summarySlot}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="checkout-receiving-fields space-y-8 lg:col-start-1 lg:row-start-1 lg:row-span-3">
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>
@@ -324,7 +367,7 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
           Địa chỉ giao hàng
         </legend>
         <p className="text-sm leading-6 text-black/60">
-          Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake. Hãy chọn bộ địa chỉ đúng với thông tin giao hàng của bạn.
+          Hãy chọn tỉnh/thành, quận/huyện và phường/xã đúng với thông tin giao hàng của bạn.
         </p>
 
         <div className="grid gap-5 md:grid-cols-3">
@@ -437,11 +480,19 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
           />
         </label>
       </fieldset>
+      </div>
+
+      {totalsSlot ? (
+        <div className="checkout-totals lg:col-start-2 lg:row-start-2 lg:mt-5">{totalsSlot}</div>
+      ) : null}
+      {preorderSlot ? (
+        <div className="checkout-preorder lg:col-start-2 lg:row-start-3">{preorderSlot}</div>
+      ) : null}
 
       {feedback ? (
         <div
           aria-live={feedback.tone === "success" ? "polite" : "assertive"}
-          className={`border px-5 py-4 ${feedbackTone}`}
+          className={`border px-5 py-4 lg:col-start-1 lg:row-start-4 lg:mt-8 ${feedbackTone}`}
           role="status"
         >
           <p className="font-semibold">{feedback.title}</p>
@@ -455,15 +506,15 @@ export function GuestCheckoutForm({ quoteProof }: Readonly<{ quoteProof: string 
       ) : null}
 
       <button
-        className="w-full border border-black bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45"
+        className="w-full border border-black bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45 lg:col-start-1 lg:row-start-5 lg:mt-8"
         disabled={submitDisabled}
         type="submit"
       >
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
       </button>
 
-      <p className="text-xs leading-5 text-black/60">
-        Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake.
+      <p className="text-xs leading-5 text-black/60 lg:col-start-1 lg:row-start-6 lg:mt-3">
+        Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
     </form>
   );

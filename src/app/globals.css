@@ -399,9 +399,21 @@ summary:focus-visible {
     text-align: center;
   }
 
-  .utility-nav a:not(:last-child),
-  .utility-nav button:not(:last-child) {
+  .utility-nav {
+    gap: 0.25rem;
+  }
+
+  .mobile-account-link {
     display: none;
+  }
+
+  .mobile-nav button,
+  .utility-nav button,
+  .utility-nav a {
+    min-width: var(--control-height);
+    min-height: var(--control-height);
+    align-items: center;
+    justify-content: center;
   }
 }
 

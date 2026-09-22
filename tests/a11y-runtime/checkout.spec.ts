@@ -178,14 +178,14 @@ async function cleanupDatabase() {
   await cleanupRateLimits();
 }
 
-async function createTestCart(): Promise<string> {
+async function createTestCart(quantity = 1): Promise<string> {
   const cart = await prisma.cart.create({
     data: {
       expiresAt: new Date(Date.now() + 10 * 60_000),
       items: {
         create: {
           variantId: testVariantId,
-          quantity: 1,
+          quantity,
         },
       },
     },
@@ -389,8 +389,9 @@ for (const { name, viewport } of [
     await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
     await expect(
-      page.getByText("Danh sách tỉnh/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake."),
+      page.getByText("Hãy chọn tỉnh/thành, quận/huyện và phường/xã đúng với thông tin giao hàng của bạn."),
     ).toBeVisible();
+    await expect(page.getByText(/Pancake|máy chủ/i)).toHaveCount(0);
     await expect(province.locator(`option[value="${PROVINCE_LEGACY}"]`)).toHaveText("Tỉnh Legacy");
     await expect(province.locator(`option[value="${PROVINCE_CURRENT}"]`)).toHaveText("Tỉnh Current");
 
@@ -528,6 +529,40 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
+});
+
+test("mobile checkout summary counts units and renders one semantic total", async ({ page, context }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await cleanupRateLimits();
+  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+  await createTestCart(3);
+  await prepareBrowser(context);
+
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  const summary = page.getByRole("button", { name: /Đơn hàng \(3\) ·/ });
+  await expect(summary).toBeVisible();
+  await expect(summary).toHaveAttribute("aria-expanded", "false");
+  await summary.click();
+  await expect(summary).toHaveAttribute("aria-expanded", "true");
+  await expect(page.locator(".checkout-order-summary a[href='/cart']")).toBeVisible();
+  await expect(page.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
+
+  const order = await page.evaluate(() => {
+    const selectors = [
+      ".checkout-order-summary",
+      ".checkout-receiving-fields",
+      ".checkout-totals",
+      'button[type="submit"]',
+    ];
+    return selectors.map((selector) => {
+      const element = document.querySelector(selector);
+      if (!element) throw new Error(`Missing checkout element: ${selector}`);
+      return Array.from(document.querySelectorAll("*")).indexOf(element);
+    });
+  });
+  expect(order).toEqual([...order].sort((left, right) => left - right));
 });
 
 test("P9a a price change between render and submit forces an explicit second confirmation", async ({

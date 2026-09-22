@@ -170,6 +170,13 @@ test.beforeAll(async () => {
     seeded.set(product.key, await seedProduct(product));
   }
 
+  await prisma.productCategoryMembership.createMany({
+    data: [...seeded.values()].map((product) => ({
+      productId: product.id,
+      categoryKey: "aoDai",
+    })),
+  });
+
   // Exactly one product carries a real, currently active discount, so `/sale` has something to
   // show and something to leave out.
   const discounted = PRODUCTS.filter((product) => product.discounted);
@@ -314,6 +321,61 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
       expect(browserErrors, `${label} console/page errors`).toEqual([]);
     }
   }
+});
+
+test("mobile category filters stay open across sequential URL-backed selections", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
+
+  // This fixture intentionally has no trusted product image URL, so the card renders the same
+  // product-media frame with its silhouette fallback. The fold contract is about where that media
+  // frame begins, not whether the fixture happens to carry photography.
+  const firstProductMedia = page.locator("main .product-visual").first();
+  await expect(firstProductMedia).toBeVisible();
+  const firstProductBox = await firstProductMedia.boundingBox();
+  expect(firstProductBox?.y).toBeLessThan(844);
+
+  const opener = page.getByRole("button", { name: "Bộ lọc", exact: true });
+  await opener.click();
+  const dialog = page.getByRole("dialog", { name: "Bộ lọc sản phẩm" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Đóng bộ lọc", exact: true })).toBeFocused();
+  await expect(dialog.getByRole("button", { name: "Xem 3 sản phẩm", exact: true })).toBeVisible();
+
+  const expectDialogOwnsFocus = async () => {
+    await expect.poll(() =>
+      dialog.evaluate((element) => element.contains(document.activeElement)),
+    ).toBe(true);
+  };
+
+  await dialog.getByRole("link", { name: "Chỉ xem sản phẩm Sale", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Xem 1 sản phẩm", exact: true })).toBeVisible();
+  await expectDialogOwnsFocus();
+
+  await dialog.getByRole("link", { name: "M", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
+
+  await dialog.getByRole("link", { name: "Ink", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
+
+  await dialog.getByLabel("Giá tối thiểu").fill("500000");
+  await dialog.getByLabel("Giá tối đa").fill("900000");
+  await dialog.getByRole("button", { name: "Áp dụng giá", exact: true }).click();
+  await page.waitForLoadState("networkidle");
+  await expect(dialog).toBeVisible();
+  await expectDialogOwnsFocus();
+
+  const viewResults = dialog.getByRole("button", { name: "Xem 1 sản phẩm", exact: true });
+  await expect(viewResults).toBeVisible();
+  await viewResults.click();
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
 });
 
 test("the product grid is 2 columns on mobile and 4 on desktop, on every listing that has one", async ({

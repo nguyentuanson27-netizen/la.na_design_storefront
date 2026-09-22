@@ -472,6 +472,14 @@ test("F8b checkout keeps the preorder marker and the fulfillment truth", async (
   await expect(notice).toContainText("1–3 ngày");
   await expect(page.locator('[data-preorder-mixed="true"]')).toBeVisible();
 
+  const noticeBeforeSubmit = await page.evaluate(() => {
+    const noticeElement = document.querySelector('[data-preorder-notice="true"]');
+    const submitElement = document.querySelector('button[type="submit"]');
+    if (!noticeElement || !submitElement) return false;
+    return Boolean(noticeElement.compareDocumentPosition(submitElement) & Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+  expect(noticeBeforeSubmit).toBe(true);
+
   await assertPageQuality(page);
   expect(health.browserErrors).toEqual([]);
   expect(health.failedResponses).toEqual([]);

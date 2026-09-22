@@ -320,6 +320,69 @@ test("P18 captures representative production performance evidence for home, PLP,
   }
 });
 
+test("independent mobile chrome keeps practical header targets and phone grid rhythm without overflow", async ({
+  browser,
+}) => {
+  for (const viewport of [
+    { width: 320, height: 720 },
+    { width: 390, height: 844 },
+    { width: 768, height: 900 },
+    { width: 1440, height: 900 },
+  ]) {
+    const { context, page, browserErrors } = await createMeasuredPage(browser, viewport);
+    try {
+      await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
+
+      if (viewport.width < 900) {
+        const menu = page.getByRole("button", { name: "Menu", exact: true });
+        const search = page.locator(".utility-nav button").first();
+        const cart = page.locator(".utility-nav button").last();
+
+        for (const control of [menu, search, cart]) {
+          await expect(control).toBeVisible();
+          const box = await control.boundingBox();
+          expect(box?.width).toBeGreaterThanOrEqual(44);
+          expect(box?.height).toBeGreaterThanOrEqual(44);
+        }
+
+        await menu.click();
+        const closeMenu = page.getByRole("button", { name: "Đóng menu", exact: true });
+        await expect(closeMenu).toBeVisible();
+        const closeMenuBox = await closeMenu.boundingBox();
+        expect(closeMenuBox?.width).toBeGreaterThanOrEqual(44);
+        expect(closeMenuBox?.height).toBeGreaterThanOrEqual(44);
+        await closeMenu.click();
+
+        await expect(page.locator(".mobile-account-link")).toBeHidden();
+      }
+
+      const grid = page.locator("main .grid-cols-2").first();
+      await expect(grid).toBeVisible();
+      const computed = await grid.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return {
+          columns: style.gridTemplateColumns.split(/\\s+/).filter(Boolean).length,
+          columnGap: style.columnGap,
+          rowGap: style.rowGap,
+        };
+      });
+
+      if (viewport.width <= 390) {
+        expect(computed.columns).toBe(2);
+        expect(computed.columnGap).toBe("2px");
+        expect(computed.rowGap).toBe("2px");
+      }
+
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1),
+      ).toBe(true);
+      expect(browserErrors).toEqual([]);
+    } finally {
+      await context.close();
+    }
+  }
+});
+
 test("P18 inspects staging-safe metadata, robots, sitemap, and parent Product schema on the production build", async ({
   browser,
 }) => {

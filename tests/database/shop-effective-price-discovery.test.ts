@@ -131,6 +131,28 @@ test("U16 a price filter selects on the effective price", async () => {
   }
 });
 
+test("U16 sale filtering uses the same effective-price projection as listing count", async () => {
+  await cleanup();
+  await seedDiscountedCatalog();
+  try {
+    const page = await repository.listDiscoveryPage({
+      shopId: SHOP,
+      pageSize: 24,
+      now: NOW,
+      discovery: query({ sale: true }),
+    });
+
+    assert.deepEqual(
+      page.products.map((product) => product.slug),
+      [`${P}-expensive`],
+      "sale filtering must keep only products whose resolved price is below their base price",
+    );
+    assert.equal(page.totalCount, 1, "sale count must use the same effective-price predicate");
+  } finally {
+    await cleanup();
+  }
+});
+
 test("U16 filtering happens before pagination, so a discounted product reaches page one", async () => {
   await cleanup();
   try {
