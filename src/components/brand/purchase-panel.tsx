@@ -15,7 +15,6 @@ import {
   type PurchaseAttemptResult,
   type UseVariantSelectionInput,
   type VariantSelectionController,
-  OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
@@ -443,10 +442,8 @@ export function PurchasePanelView({
 
   const purchaseStatus =
     message ||
-    (view.selectedUnavailableReason === "OUT_OF_STOCK"
-      ? OUT_OF_STOCK_LABEL
-      : view.unavailableMessage ||
-        (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
+    (view.unavailableMessage ||
+      (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
 
   const sizeGuideTriggerMain =
     sizeGuide === null ? null : (
