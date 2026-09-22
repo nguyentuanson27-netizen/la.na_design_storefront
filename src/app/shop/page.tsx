@@ -34,7 +34,7 @@ const controlClassName =
 const fieldLabelClassName = "text-xs font-semibold uppercase tracking-wider text-[#70584B]";
 
 const linkClassName =
-  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline-offset-4 transition-colors hover:text-[#2A1810] hover:underline focus-visible:outline-2 focus-visible:outline-offset-4";
+  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 transition-colors hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4";
 
 function render(data: ShopViewModel) {
   const { discovery } = data;

@@ -180,7 +180,7 @@ export function ListingPagination({
   if (totalPages <= 1) return null;
 
   const linkClassName =
-    "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline-offset-4 transition-colors hover:text-[#2A1810] hover:underline";
+    "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 transition-colors hover:text-[#2A1810]";
 
   return (
     <nav
