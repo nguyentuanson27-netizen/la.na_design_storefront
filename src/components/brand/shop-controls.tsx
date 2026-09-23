@@ -147,16 +147,9 @@ export function ShopMobileDrawer({
               </button>
             </div>
 
-            {/* Drawer Form */}
-            <form
-              method="get"
-              action="/shop"
-              className="flex flex-1 flex-col justify-between overflow-y-auto"
-            >
+            {/* These controls belong to the one mobile /shop form rendered by the page. */}
+            <div className="flex flex-1 flex-col justify-between overflow-y-auto">
               <div className="space-y-6 px-6 py-6">
-                {/* Carry existing query & sort */}
-                <input type="hidden" name="q" value={discovery.query ?? ""} />
-                <input type="hidden" name="sort" value={discovery.sort} />
 
                 {/* Stock status */}
                 <div>
@@ -181,6 +174,7 @@ export function ShopMobileDrawer({
                   </label>
                   <select
                     name="collection"
+                    aria-label="Bộ sưu tập"
                     defaultValue={discovery.collection ?? ""}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
@@ -200,6 +194,7 @@ export function ShopMobileDrawer({
                   </label>
                   <select
                     name="size"
+                    aria-label="Kích cỡ"
                     defaultValue={discovery.size ?? ""}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
@@ -219,6 +214,7 @@ export function ShopMobileDrawer({
                   </label>
                   <select
                     name="color"
+                    aria-label="Màu sắc"
                     defaultValue={discovery.color ?? ""}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
@@ -240,6 +236,7 @@ export function ShopMobileDrawer({
                     <input
                       type="number"
                       name="minPrice"
+                      aria-label="Giá tối thiểu"
                       placeholder="Từ"
                       min={0}
                       max={limits.priceVnd}
@@ -251,6 +248,7 @@ export function ShopMobileDrawer({
                     <input
                       type="number"
                       name="maxPrice"
+                      aria-label="Giá tối đa"
                       placeholder="Đến"
                       min={0}
                       max={limits.priceVnd}
@@ -278,7 +276,7 @@ export function ShopMobileDrawer({
                   Áp dụng
                 </button>
               </div>
-            </form>
+            </div>
           </div>
         </div>
       ) : null}
