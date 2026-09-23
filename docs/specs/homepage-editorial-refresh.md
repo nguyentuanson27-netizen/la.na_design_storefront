@@ -87,7 +87,8 @@ Relevant architecture boundaries:
 
 - `src/app/` — page markup/wiring only.
 - `src/routes/` — homepage loading/view-model orchestration.
-- `src/brand/` — La.na brand/taxonomy/config authority.
+- `src/brand/` — La.na brand/taxonomy authority; do not turn it into a free-form campaign-content store.
+- `src/content/` — repository-owned public/editorial content where appropriate.
 - `src/components/brand/` — La.na presentation components.
 - `src/components/headless/` — reusable presentation models where already established.
 - `src/commerce/` — product, collection, pricing and merchandising authority.
@@ -334,7 +335,7 @@ Their underlying brand/policy facts remain valid elsewhere; this is a homepage c
 
 Introduce one focused repository-owned homepage merchandising config rather than scattering literals through `page.tsx`.
 
-Recommended ownership: `src/brand/homepage.config.ts` (final file name may follow an existing nearby convention discovered during implementation).
+Recommended ownership: `src/content/homepage.config.ts` (final file name may follow an existing nearby convention discovered during implementation). Keep campaign/editorial data out of `src/brand/*.config.ts`, whose current repository contract is reserved for owner-approved brand facts.
 
 Conceptual shape:
 
