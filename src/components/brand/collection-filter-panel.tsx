@@ -80,7 +80,6 @@ export function CollectionFilterPanel({
     });
   };
 
-  const allSizesOption = sizeOptions.find((opt) => opt.value === null);
   const concreteSizes = sizeOptions.filter((opt) => opt.value !== null);
   const activeSizeOption = sizeOptions.find((opt) => opt.value !== null && opt.active);
 
@@ -146,14 +145,6 @@ export function CollectionFilterPanel({
                 </option>
               ))}
             </select>
-            {/* Crawlable / test-accessible links */}
-            <div className="sr-only">
-              {sortOptions.map((opt) => (
-                <Link key={opt.value} href={opt.href}>
-                  {opt.label}
-                </Link>
-              ))}
-            </div>
           </nav>
         </div>
       </div>
@@ -172,6 +163,7 @@ export function CollectionFilterPanel({
               <Link
                 key={opt.value}
                 href={opt.href}
+                aria-current={opt.active ? "true" : undefined}
                 className={`min-w-7 text-center rounded border px-2 py-1 font-medium uppercase transition ${
                   opt.active
                     ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
@@ -190,10 +182,6 @@ export function CollectionFilterPanel({
             href={clearFilterHref}
             className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
           >
-            Tất cả kích cỡ
-          </Link>
-        ) : allSizesOption ? (
-          <Link href={allSizesOption.href} className="sr-only">
             Tất cả kích cỡ
           </Link>
         ) : null}
@@ -252,15 +240,25 @@ export function CollectionFilterPanel({
             {/* Filter controls */}
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
               {concreteSizes.length > 0 ? (
-                <div>
+                <nav aria-label="Lọc theo kích cỡ">
                   <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
                     Kích cỡ
                   </span>
                   <div className="flex flex-wrap gap-2">
+                    {filtered ? (
+                      <Link
+                        href={clearFilterHref}
+                        onClick={() => setIsMobileOpen(false)}
+                        className="min-w-9 rounded border border-[#3B2219]/25 px-3 py-2 text-center text-xs font-medium uppercase text-[#3B2219] transition"
+                      >
+                        Tất cả kích cỡ
+                      </Link>
+                    ) : null}
                     {concreteSizes.map((opt) => (
                       <Link
                         key={opt.value}
                         href={opt.href}
+                        aria-current={opt.active ? "true" : undefined}
                         onClick={() => setIsMobileOpen(false)}
                         className={`min-w-9 rounded border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                           opt.active
@@ -272,7 +270,7 @@ export function CollectionFilterPanel({
                       </Link>
                     ))}
                   </div>
-                </div>
+                </nav>
               ) : null}
             </div>
 
