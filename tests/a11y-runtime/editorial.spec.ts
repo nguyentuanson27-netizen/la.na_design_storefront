@@ -500,6 +500,39 @@ test("mobile search opened from scrolled navigation remains a true viewport dial
   await expect(menuTrigger).toBeFocused();
 });
 
+test("mobile cart opened from scrolled navigation remains a true viewport drawer", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  await page.evaluate(() => window.scrollTo({ top: 120, behavior: "instant" }));
+  await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(20);
+
+  const header = page.locator("header.site-header");
+  await expect(header).toHaveAttribute("data-scrolled", "true");
+
+  await page.getByRole("button", { name: "Giỏ hàng", exact: true }).click();
+
+  const cartOverlay = page.getByRole("region", { name: "Giỏ hàng" });
+  const cartDialog = page.getByRole("dialog", { name: "Giỏ hàng" });
+  await expect(cartDialog).toBeVisible();
+
+  // The cart must escape the scrolled/backdrop-filtered header containing block and own the viewport.
+  expect(await cartOverlay.evaluate((element) => element.parentElement === document.body)).toBe(true);
+
+  const box = await cartOverlay.boundingBox();
+  expect(box).not.toBeNull();
+  expect(Math.round(box!.x)).toBe(0);
+  expect(Math.round(box!.y)).toBe(0);
+  expect(Math.round(box!.width)).toBe(390);
+  expect(Math.round(box!.height)).toBe(844);
+
+  await expect(cartDialog.getByRole("button", { name: "Đóng giỏ hàng", exact: true })).toBeFocused();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+
+  await page.keyboard.press("Escape");
+  await expect(cartDialog).toHaveCount(0);
+});
+
 test("P8 storefront shell exposes cutover navigation, shared tokens, focus treatment and semantic footer", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
