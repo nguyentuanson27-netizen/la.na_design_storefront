@@ -52,16 +52,19 @@ function render(data: ShopViewModel) {
         className="mt-8 border-b border-[#3B2219]/15 pb-6"
         aria-labelledby="shop-discovery-title"
       >
-        <form method="get" action="/shop">
-          {/* Top action row: Count, responsive search, mobile drawer trigger, desktop sort */}
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <h2 id="shop-discovery-title" className="sr-only">
+          Bộ lọc cửa hàng
+        </h2>
+
+        {/* Mobile: search, sort and drawer filters are one GET form authority. */}
+        <form method="get" action="/shop" className="md:hidden">
+          <div className="flex flex-col gap-4">
             <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
               <span>{data.totalCount} sản phẩm</span>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3 md:gap-4">
-              {/* Search Input */}
-              <label className="relative flex flex-1 items-center min-w-[200px] md:w-64 lg:w-72">
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="relative flex min-w-[200px] flex-1 items-center">
                 <span className="sr-only">Tìm sản phẩm</span>
                 <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
                   <svg
@@ -90,7 +93,6 @@ function render(data: ShopViewModel) {
                 />
               </label>
 
-              {/* Mobile Drawer Trigger */}
               <ShopMobileDrawer
                 limits={data.limits}
                 discovery={discovery}
@@ -100,16 +102,68 @@ function render(data: ShopViewModel) {
                 activeFilterCount={activeFilterCount}
               />
 
-              {/* Sort Selector */}
+              <select
+                id="shop-sort-select-mobile"
+                name="sort"
+                aria-label="Sắp xếp"
+                defaultValue={discovery.sort}
+                className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              >
+                <option value="name-asc">Tên A–Z</option>
+                <option value="name-desc">Tên Z–A</option>
+                <option value="price-asc">Giá thấp → cao</option>
+                <option value="price-desc">Giá cao → thấp</option>
+              </select>
+            </div>
+          </div>
+        </form>
+
+        {/* Desktop keeps the same native GET semantics without rendering mobile duplicate fields. */}
+        <form method="get" action="/shop" className="hidden md:block">
+          <div className="flex items-center justify-between gap-4">
+            <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
+              <span>{data.totalCount} sản phẩm</span>
+            </div>
+
+            <div className="flex items-center gap-4">
+              <label className="relative flex w-64 items-center lg:w-72">
+                <span className="sr-only">Tìm sản phẩm</span>
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
+                <input
+                  type="search"
+                  name="q"
+                  aria-label="Tìm sản phẩm"
+                  placeholder="Tìm sản phẩm…"
+                  defaultValue={discovery.query ?? ""}
+                  maxLength={data.limits.query}
+                  className="w-full rounded-full border border-[#3B2219]/20 bg-transparent py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                />
+              </label>
+
               <div className="flex items-center gap-2">
                 <label
-                  htmlFor="shop-sort-select"
-                  className="text-xs uppercase tracking-wider text-[#3B2219]/70 hidden sm:inline"
+                  htmlFor="shop-sort-select-desktop"
+                  className="text-xs uppercase tracking-wider text-[#3B2219]/70"
                 >
                   Sắp xếp:
                 </label>
                 <select
-                  id="shop-sort-select"
+                  id="shop-sort-select-desktop"
                   name="sort"
                   aria-label="Sắp xếp"
                   defaultValue={discovery.sort}
@@ -124,16 +178,9 @@ function render(data: ShopViewModel) {
             </div>
           </div>
 
-          {/* Desktop Filter Bar (matching PLP filter bar) */}
-          <div className="mt-5 hidden md:flex md:flex-wrap md:items-center md:gap-4 text-xs text-[#3B2219]">
-            <h2
-              id="shop-discovery-title"
-              className="font-semibold uppercase tracking-wider text-[#70584B]"
-            >
-              Bộ lọc
-            </h2>
+          <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-[#3B2219]">
+            <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ lọc</span>
 
-            {/* Availability checkbox */}
             <label className="inline-flex items-center gap-1.5 rounded-full border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
               <input
                 type="checkbox"
@@ -146,7 +193,6 @@ function render(data: ShopViewModel) {
               <span>Chỉ còn hàng</span>
             </label>
 
-            {/* Collection facet */}
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ sưu tập</span>
               <select
@@ -164,7 +210,6 @@ function render(data: ShopViewModel) {
               </select>
             </label>
 
-            {/* Size facet */}
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</span>
               <select
@@ -182,7 +227,6 @@ function render(data: ShopViewModel) {
               </select>
             </label>
 
-            {/* Color facet */}
             <label className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Màu</span>
               <select
@@ -200,7 +244,6 @@ function render(data: ShopViewModel) {
               </select>
             </label>
 
-            {/* Price Range */}
             <div className="flex items-center gap-1.5">
               <span className="font-semibold uppercase tracking-wider text-[#70584B]">Giá:</span>
               <input
@@ -234,7 +277,6 @@ function render(data: ShopViewModel) {
               </button>
             </div>
 
-            {/* Clear All */}
             {data.filtered ? (
               <Link
                 href="/shop"
@@ -244,14 +286,13 @@ function render(data: ShopViewModel) {
               </Link>
             ) : null}
           </div>
-
-          {/* Active Filter Pills (Desktop & Mobile) */}
-          <ShopActiveFilters
-            discovery={discovery}
-            collectionFacets={data.collectionFacets}
-            filtered={data.filtered}
-          />
         </form>
+
+        <ShopActiveFilters
+          discovery={discovery}
+          collectionFacets={data.collectionFacets}
+          filtered={data.filtered}
+        />
       </section>
 
       {data.totalCount === 0 ? (
