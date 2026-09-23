@@ -57,13 +57,14 @@ function render(data: CollectionViewModel) {
 
       <ListingShell>
         <ListingBreadcrumbs
+          className="sr-only"
           items={[
             { label: "Trang chủ", href: "/" },
             { label: "Bộ sưu tập", href: "/collections" },
             { label: data.title },
           ]}
         />
-        <ListingHeader eyebrow="Bộ sưu tập" title={data.title}>
+        <ListingHeader title={data.title}>
           <p className="mt-6 max-w-2xl break-words font-serif text-xl leading-snug text-[#2A1810] md:text-2xl">
             {editorial.story}
           </p>

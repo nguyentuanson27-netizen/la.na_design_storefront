@@ -240,7 +240,7 @@ async function expectListingChrome(
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
-  await expect(breadcrumb).toBeVisible();
+  await expect(breadcrumb).toBeAttached();
   await expect(breadcrumb.getByRole("link", { name: "Trang chủ", exact: true })).toHaveAttribute(
     "href",
     "/",
