@@ -172,28 +172,6 @@ test.beforeAll(async () => {
     },
   });
 
-  await prisma.collectionDefinition.create({
-    data: {
-      slug: IMAGE_COLLECTION_SLUG,
-      title: IMAGE_COLLECTION_TITLE,
-      description: "Collection index image-card fixture.",
-      heroImageUrl: COLLECTION_HERO_URL,
-      isPublished: true,
-      pancakeCategoryIds: [],
-    },
-  });
-
-  await prisma.collectionDefinition.create({
-    data: {
-      slug: LONG_COLLECTION_SLUG,
-      title: LONG_COLLECTION_TITLE,
-      description: "Long-title collection for card overflow regression coverage.",
-      heroImageUrl: "https://example.com/images/1/2/3/untrusted.jpg",
-      isPublished: true,
-      pancakeCategoryIds: [],
-    },
-  });
-
   const seeded = new Map<string, { id: string }>();
   for (const product of PRODUCTS) {
     seeded.set(product.key, await seedProduct(product));
@@ -324,8 +302,9 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
-  for (const viewport of VIEWPORTS) {
-    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  try {
+    for (const viewport of VIEWPORTS) {
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
     for (const route of ROUTES) {
       browserErrors.length = 0;
@@ -639,6 +618,27 @@ test("a collection keeps its editorial half above the shared listing", async ({ 
 test("collection index cards keep a 16:9 media surface without clipping valid long titles", async ({
   page,
 }) => {
+  await prisma.collectionDefinition.createMany({
+    data: [
+      {
+        slug: IMAGE_COLLECTION_SLUG,
+        title: IMAGE_COLLECTION_TITLE,
+        description: "Collection index image-card fixture.",
+        heroImageUrl: COLLECTION_HERO_URL,
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+      {
+        slug: LONG_COLLECTION_SLUG,
+        title: LONG_COLLECTION_TITLE,
+        description: "Long-title collection for card overflow regression coverage.",
+        heroImageUrl: "https://example.com/images/1/2/3/untrusted.jpg",
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+    ],
+  });
+
   const tinyJpeg = Buffer.from(
     "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
     "base64",
@@ -707,7 +707,12 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
     expect(geometry).not.toBeNull();
     expect(geometry!.headingWithinCard, `${viewport.name} long title is not clipped`).toBe(true);
     expect(geometry!.ctaWithinCard, `${viewport.name} CTA is not clipped`).toBe(true);
-    expect(geometry!.titleWraps, `${viewport.name} long token wraps inside the card`).toBe(true);
+      expect(geometry!.titleWraps, `${viewport.name} long token wraps inside the card`).toBe(true);
+    }
+  } finally {
+    await prisma.collectionDefinition.deleteMany({
+      where: { slug: { in: [IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
+    });
   }
 });
 
