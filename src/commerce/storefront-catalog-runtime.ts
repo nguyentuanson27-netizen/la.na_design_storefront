@@ -302,6 +302,9 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
  * Featured products with the pricing rule their cards need, and the freshness window that pricing
  * is only valid for.
  *
+ * This ordered `HomepageFeaturedProduct` list is the manual override authority for the homepage's
+ * SPECIAL DEALS section (docs/specs/homepage-editorial-refresh.md §7.2).
+ *
  * `refreshAfterMs` is returned rather than dropped because Featured is priced independently of the
  * `Hàng mới về` grid: a campaign boundary can fall inside Featured's products and nowhere near new
  * arrivals. A caller rendering both has to take the soonest of the two windows, and cannot do that
@@ -356,11 +359,11 @@ export async function readConfiguredCategoryMegaMedia(): Promise<readonly Catego
 }
 
 /**
- * Category editorial hero images, for the homepage's Áo dài section (§19) and the two-block
- * category editorial (§21).
+ * Category editorial hero images, for the homepage's YOUR NEXT FAVOURITE section
+ * (docs/specs/homepage-editorial-refresh.md §7.4).
  *
- * Returned as a map keyed by category rather than a list, because each homepage block asks for one
- * specific category and a missing entry is what makes that block omit itself. The URLs are the raw
+ * Returned as a map keyed by category rather than a list, because the section asks for four
+ * specific categories and a missing entry is what makes it omit itself. The URLs are the raw
  * stored values: the route re-validates them through the trusted-media contract, the same as every
  * other image the storefront renders.
  */
