@@ -445,8 +445,10 @@ test("composite activation opens and closes the real child purchase path while p
 
   // Choosing the classification resolves it: the sentence goes, the sizes become selectable.
   // Click the visible label the way a shopper does; the radio itself is the sr-only peer input.
-  await page.getByRole("group", { name: "Loại" }).getByText("FULL SET", { exact: true }).click();
+  const kindGroup = page.getByRole("group", { name: "Loại", exact: true });
+  await kindGroup.getByText("FULL SET", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "FULL SET" })).toBeChecked();
+  await expect(kindGroup.locator("legend")).toHaveText("Loại: FULL SET");
   await expect(
     page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
   ).toHaveCount(0);
