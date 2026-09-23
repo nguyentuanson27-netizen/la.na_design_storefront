@@ -32,7 +32,7 @@ export function ProductCard({
         event={model.selectEvent}
       >
         <div
-          className={`product-visual product-visual--${tone} relative aspect-[4/5] overflow-hidden`}
+          className={`product-visual product-visual--${tone} relative aspect-[2/3] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
           {marketingBadge ? (

@@ -29,7 +29,7 @@ export default function ShopLoading() {
           <ListingProductGrid>
             {Array.from({ length: 8 }, (_, index) => (
               <div key={index}>
-                <div className="aspect-[3/4] animate-pulse bg-[#3B2219]/5" />
+                <div className="aspect-[2/3] animate-pulse bg-[#3B2219]/5" />
                 {/* One bar: the loaded card shows a name and a price and nothing else. */}
                 <div className="mt-3 h-3 w-1/2 animate-pulse bg-[#3B2219]/5" />
               </div>

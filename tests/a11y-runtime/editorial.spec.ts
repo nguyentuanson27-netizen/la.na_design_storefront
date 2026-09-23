@@ -184,6 +184,7 @@ async function expectVisualFoundationTokens(page: import("@playwright/test").Pag
   for (const value of Object.values(tokens)) {
     expect(value).not.toBe("");
   }
+  expect(tokens.mediaProductRatio.replace(/\s+/g, "")).toBe("2/3");
 
   const primitives = await page.evaluate(() => {
     const fixture = document.createElement("div");
