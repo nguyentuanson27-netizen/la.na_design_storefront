@@ -252,7 +252,7 @@ Mobile/touch layout:
 
 #### Missing mapping behavior
 
-- A promo row may stay absent until both collection slots are mapped with real approved image/title/destination data.
+- A promo row may stay absent until both collection slots are mapped with real approved homepage image/CTA data and route-reachable collection destinations; the visible title is then derived from `CollectionDefinition.title`.
 - Never publish a fake collection or placeholder destination to preserve layout.
 - Once enabled, both slots must resolve to **route-reachable** collection destinations: the same current public-route predicate as §7.2 (`readPublishedCollection()` succeeds and `description?.trim()` is non-empty). `isPublished = true` alone is insufficient because the collection page currently 404s without a description.
 - If either mapped destination stops being route-reachable, omit the promo row rather than publish a broken CTA.
@@ -453,7 +453,7 @@ Keep the established split:
 - `src/commerce/`: canonical collection/product reads remain here.
 - `src/components/brand/`: promo row, category discovery and feedback rail presentation.
 
-`SPECIAL DEALS` manual selection must reuse the existing `HomepageFeaturedProduct` authority; its fallback must reuse existing collection merchandising order rather than rebuilding either authority in the page. YOUR NEXT FAVOURITE media must reuse `CategoryEditorialMedia.heroImageUrl` for the four canonical category keys.
+`SPECIAL DEALS` manual selection must reuse the existing `HomepageFeaturedProduct` authority. When that authority is empty, fallback must reproduce the collection route's current unfiltered page-1 surface exactly as §7.2 defines: shared first-page candidate window/default sort, then `orderByFeaturedSlugs`, then take 4. YOUR NEXT FAVOURITE media must reuse `CategoryEditorialMedia.heroImageUrl` for the four canonical category keys.
 
 Any homepage link to `/collections/<slug>` must resolve through the current public collection route's reachability contract, not merely `isPublished`.
 
@@ -617,8 +617,8 @@ The feature is accepted when all of the following are true:
 9. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện, and their images come from existing `CategoryEditorialMedia.heroImageUrl` authority. Missing/untrusted media for any one role omits the whole section.
 10. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
 11. `/feedback` renders the complete configured image collection and follows the evergreen public SEO contract: manifest-declared page metadata, indexable under the global exposure gate, clean-URL self-canonical, query variants noindex/no-canonical, and included in static sitemap paths.
-13. Feedback metadata title/description come from approved/config-owned content; implementation does not invent brand/SEO prose.
-12. Font, palette, product-card language and overall identity remain La.na.
+12. Feedback metadata title/description come from approved/config-owned content; implementation does not invent brand/SEO prose.
+13. Font, palette, product-card language and overall identity remain La.na.
 14. Editorial image blocks are full-bleed/no rounded generic cards.
 15. No new CMS/admin/database schema/dependency is introduced without separate approval.
 16. Responsive, keyboard, accessibility and clean-console checks pass.
