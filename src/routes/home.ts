@@ -65,10 +65,16 @@ export type HomeRouteProps = Readonly<{
  * component and their tests are written against `HomeHeroSlideCandidate`, not against collections.
  */
 function toHeroCandidates(
-  collections: readonly Readonly<{ slug: string; title: string; heroImageUrl: string | null }>[],
+  collections: readonly Readonly<{
+    slug: string;
+    title: string;
+    heroImageUrl: string | null;
+    heroImageMobileUrl?: string | null;
+  }>[],
 ) {
   return collections.map((collection) => ({
     imageUrl: collection.heroImageUrl,
+    mobileImageUrl: collection.heroImageMobileUrl ?? null,
     href: `/collections/${collection.slug}`,
     label: collection.title,
   }));

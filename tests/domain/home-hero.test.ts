@@ -39,6 +39,7 @@ test("a single valid candidate yields exactly one slide", () => {
   assert.equal(slides.length, 1);
   assert.deepEqual(slides[0], {
     imageUrl: TRUSTED_IMAGE,
+    mobileImageUrl: null,
     href: "/collections/ao-dai-tet",
     label: "Áo dài Tết",
   });
@@ -107,3 +108,33 @@ test("one invalid candidate does not take the valid ones with it", () => {
 test("the approved CTA wording is published as one constant, not per slide", () => {
   assert.equal(HOME_HERO_CTA_LABEL, "MUA NGAY");
 });
+
+test("a candidate with a trusted mobile image passes it through to the slide", () => {
+  const slides = buildHomeHeroSlides([
+    candidate({
+      imageUrl: TRUSTED_IMAGE,
+      mobileImageUrl: SECOND_TRUSTED_IMAGE,
+      href: "/collections/one",
+      label: "One",
+    }),
+  ]);
+
+  assert.equal(slides.length, 1);
+  assert.equal(slides[0]?.mobileImageUrl, SECOND_TRUSTED_IMAGE);
+});
+
+test("an untrusted mobile image origin falls back to null rather than dropping the slide", () => {
+  const slides = buildHomeHeroSlides([
+    candidate({
+      imageUrl: TRUSTED_IMAGE,
+      mobileImageUrl: "https://evil.example.com/mobile-hero.jpg",
+      href: "/collections/one",
+      label: "One",
+    }),
+  ]);
+
+  assert.equal(slides.length, 1);
+  assert.equal(slides[0]?.imageUrl, TRUSTED_IMAGE);
+  assert.equal(slides[0]?.mobileImageUrl, null);
+});
+
