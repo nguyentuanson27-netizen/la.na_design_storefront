@@ -1,13 +1,13 @@
 import Link from "next/link";
 
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { ShopActiveFilters, ShopMobileDrawer } from "@/components/brand/shop-controls";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
   ListingPagination,
   ListingProductGrid,
-  ListingResultCount,
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -20,30 +20,28 @@ import type { ShopViewModel } from "@/routes/shop-model";
  * all live in `@/routes/shop`; the shell mounts what the loader sealed.
  *
  * The chrome is the shared listing chrome, but the controls are this route's own. `/shop` is
- * `Tất cả sản phẩm` with a free-text query and a collection facet, which the category PLP's filter
- * panel has no notion of -- that panel builds every href from a taxonomy key. Sharing it would mean
- * changing what `/shop` can be asked, so the form below stays a plain GET over this route's own
- * parameters and only the presentation is shared.
+ * `Tất cả sản phẩm` with a free-text query and a collection facet, now fully aligned with the
+ * Category PLP filter panel standard for both Desktop and Mobile.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-const controlClassName =
-  "min-h-11 w-full border-b border-[#3B2219]/30 bg-transparent px-0 py-2 text-sm text-[#2A1810] outline-none focus-visible:border-[#3B2219] focus-visible:outline-2 focus-visible:outline-offset-4";
-
-const fieldLabelClassName = "text-xs font-semibold uppercase tracking-wider text-[#70584B]";
-
-const linkClassName =
-  "inline-flex min-h-11 items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 transition-colors hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4";
-
 function render(data: ShopViewModel) {
   const { discovery } = data;
+
+  let activeFilterCount = 0;
+  if (discovery.query && discovery.query.trim()) activeFilterCount += 1;
+  if (discovery.collection) activeFilterCount += 1;
+  if (discovery.color) activeFilterCount += 1;
+  if (discovery.size) activeFilterCount += 1;
+  if (discovery.availability === "in-stock") activeFilterCount += 1;
+  if (discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null) activeFilterCount += 1;
 
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
       <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70 hidden sm:block">
           Dùng tìm kiếm và bộ lọc để khám phá sản phẩm.{" "}
           {/* Kept on one source line: the copy inventory reads this promise as a whole string. */}
           Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
@@ -51,133 +49,208 @@ function render(data: ShopViewModel) {
       </ListingHeader>
 
       <section
-        className="mt-4 border-b border-[#3B2219]/15 pb-4"
+        className="mt-8 border-b border-[#3B2219]/15 pb-6"
         aria-labelledby="shop-discovery-title"
       >
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <h2
-            id="shop-discovery-title"
-            className="text-xs font-semibold uppercase tracking-wider text-[#70584B]"
-          >
-            Bộ lọc
-          </h2>
-          {data.filtered ? (
-            <Link className={linkClassName} href="/shop">
-              Xóa bộ lọc
-            </Link>
-          ) : null}
-        </div>
+        <form method="get" action="/shop">
+          {/* Top action row: Count, responsive search, mobile drawer trigger, desktop sort */}
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
+              <span>{data.totalCount} sản phẩm</span>
+            </div>
 
-        {/* Two columns from the narrowest width up: nine stacked fields put the first product
-            image most of a screen below the fold on a phone. The controls keep their 44px
-            targets -- only the empty space between them went. */}
-        <form className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 sm:gap-x-6 sm:gap-y-4 lg:grid-cols-4" method="get">
-          <label className="col-span-2">
-            <span className={fieldLabelClassName}>Tìm sản phẩm</span>
-            <input
-              className={controlClassName}
-              defaultValue={discovery.query ?? ""}
-              maxLength={data.limits.query}
-              name="q"
-              placeholder="Tên sản phẩm"
-              type="search"
-            />
-          </label>
+            <div className="flex flex-wrap items-center gap-3 md:gap-4">
+              {/* Search Input */}
+              <label className="relative flex flex-1 items-center min-w-[200px] md:w-64 lg:w-72">
+                <span className="sr-only">Tìm sản phẩm</span>
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-[#3B2219]/40">
+                  <svg
+                    className="h-3.5 w-3.5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                    />
+                  </svg>
+                </div>
+                <input
+                  type="search"
+                  name="q"
+                  aria-label="Tìm sản phẩm"
+                  placeholder="Tìm sản phẩm…"
+                  defaultValue={discovery.query ?? ""}
+                  maxLength={data.limits.query}
+                  className="w-full rounded-full border border-[#3B2219]/20 bg-transparent py-1.5 pl-8 pr-3 text-xs text-[#2A1810] placeholder:text-[#3B2219]/40 focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                />
+              </label>
 
-          <label className="block">
-            <span className={fieldLabelClassName}>Bộ sưu tập</span>
-            <select className={controlClassName} defaultValue={discovery.collection ?? ""} name="collection">
-              <option value="">Tất cả</option>
-              {data.collectionFacets.map((collection) => (
-                <option key={collection.value} value={collection.value}>
-                  {collection.label}
-                </option>
-              ))}
-            </select>
-          </label>
+              {/* Mobile Drawer Trigger */}
+              <ShopMobileDrawer
+                limits={data.limits}
+                discovery={discovery}
+                collectionFacets={data.collectionFacets}
+                colorFacets={data.colorFacets}
+                sizeFacets={data.sizeFacets}
+                activeFilterCount={activeFilterCount}
+              />
 
-          <label className="block">
-            <span className={fieldLabelClassName}>Sắp xếp</span>
-            <select className={controlClassName} defaultValue={discovery.sort} name="sort">
-              <option value="name-asc">Tên A–Z</option>
-              <option value="name-desc">Tên Z–A</option>
-              <option value="price-asc">Giá thấp → cao</option>
-              <option value="price-desc">Giá cao → thấp</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className={fieldLabelClassName}>Màu</span>
-            <select className={controlClassName} defaultValue={discovery.color ?? ""} name="color">
-              <option value="">Tất cả</option>
-              {data.colorFacets.map((color) => (
-                <option key={color} value={color}>
-                  {color}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className={fieldLabelClassName}>Kích cỡ</span>
-            <select className={controlClassName} defaultValue={discovery.size ?? ""} name="size">
-              <option value="">Tất cả</option>
-              {data.sizeFacets.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="block">
-            <span className={fieldLabelClassName}>Giá tối thiểu</span>
-            <input
-              className={controlClassName}
-              defaultValue={discovery.minPriceVnd ?? ""}
-              inputMode="numeric"
-              max={data.limits.priceVnd}
-              min={0}
-              name="minPrice"
-              placeholder="VND"
-              step={1000}
-              type="number"
-            />
-          </label>
-
-          <label className="block">
-            <span className={fieldLabelClassName}>Giá tối đa</span>
-            <input
-              className={controlClassName}
-              defaultValue={discovery.maxPriceVnd ?? ""}
-              inputMode="numeric"
-              max={data.limits.priceVnd}
-              min={0}
-              name="maxPrice"
-              placeholder="VND"
-              step={1000}
-              type="number"
-            />
-          </label>
-
-          <label className="flex min-h-11 items-center gap-3">
-            <input
-              defaultChecked={discovery.availability === "in-stock"}
-              name="availability"
-              type="checkbox"
-              value="in-stock"
-            />
-            <span className={fieldLabelClassName}>Chỉ còn hàng</span>
-          </label>
-
-          <div className="flex items-end">
-            <button
-              className="inline-flex min-h-11 w-full items-center justify-center rounded-full border border-[#3B2219] bg-[#3B2219] px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition-colors hover:bg-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4"
-              type="submit"
-            >
-              Áp dụng
-            </button>
+              {/* Sort Selector */}
+              <div className="flex items-center gap-2">
+                <label
+                  htmlFor="shop-sort-select"
+                  className="text-xs uppercase tracking-wider text-[#3B2219]/70 hidden sm:inline"
+                >
+                  Sắp xếp:
+                </label>
+                <select
+                  id="shop-sort-select"
+                  name="sort"
+                  aria-label="Sắp xếp"
+                  defaultValue={discovery.sort}
+                  className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                >
+                  <option value="name-asc">Tên A–Z</option>
+                  <option value="name-desc">Tên Z–A</option>
+                  <option value="price-asc">Giá thấp → cao</option>
+                  <option value="price-desc">Giá cao → thấp</option>
+                </select>
+              </div>
+            </div>
           </div>
+
+          {/* Desktop Filter Bar (matching PLP filter bar) */}
+          <div className="mt-5 hidden md:flex md:flex-wrap md:items-center md:gap-4 text-xs text-[#3B2219]">
+            <h2
+              id="shop-discovery-title"
+              className="font-semibold uppercase tracking-wider text-[#70584B]"
+            >
+              Bộ lọc
+            </h2>
+
+            {/* Availability checkbox */}
+            <label className="inline-flex items-center gap-1.5 rounded-full border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
+              <input
+                type="checkbox"
+                name="availability"
+                value="in-stock"
+                defaultChecked={discovery.availability === "in-stock"}
+                aria-label="Chỉ còn hàng"
+                className="h-3.5 w-3.5 rounded border-[#3B2219]/30 accent-[#3B2219]"
+              />
+              <span>Chỉ còn hàng</span>
+            </label>
+
+            {/* Collection facet */}
+            <label className="flex items-center gap-1.5">
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ sưu tập</span>
+              <select
+                name="collection"
+                aria-label="Bộ sưu tập"
+                defaultValue={discovery.collection ?? ""}
+                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              >
+                <option value="">Tất cả</option>
+                {data.collectionFacets.map((col) => (
+                  <option key={col.value} value={col.value}>
+                    {col.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Size facet */}
+            <label className="flex items-center gap-1.5">
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</span>
+              <select
+                name="size"
+                aria-label="Kích cỡ"
+                defaultValue={discovery.size ?? ""}
+                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              >
+                <option value="">Tất cả</option>
+                {data.sizeFacets.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Color facet */}
+            <label className="flex items-center gap-1.5">
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Màu</span>
+              <select
+                name="color"
+                aria-label="Màu"
+                defaultValue={discovery.color ?? ""}
+                className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              >
+                <option value="">Tất cả</option>
+                {data.colorFacets.map((col) => (
+                  <option key={col} value={col}>
+                    {col}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Price Range */}
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold uppercase tracking-wider text-[#70584B]">Giá:</span>
+              <input
+                type="number"
+                name="minPrice"
+                aria-label="Giá tối thiểu"
+                placeholder="Từ"
+                min={0}
+                max={data.limits.priceVnd}
+                step={1000}
+                defaultValue={discovery.minPriceVnd ?? ""}
+                className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+              />
+              <span>-</span>
+              <input
+                type="number"
+                name="maxPrice"
+                aria-label="Giá tối đa"
+                placeholder="Đến"
+                min={0}
+                max={data.limits.priceVnd}
+                step={1000}
+                defaultValue={discovery.maxPriceVnd ?? ""}
+                className="w-20 rounded border border-[#3B2219]/20 bg-transparent px-2 py-1 text-xs text-[#2A1810]"
+              />
+              <button
+                type="submit"
+                className="rounded-full border border-[#3B2219] bg-[#3B2219] px-3 py-1 font-medium uppercase text-[#FAF7F2] transition hover:bg-[#2A1810]"
+              >
+                Áp dụng
+              </button>
+            </div>
+
+            {/* Clear All */}
+            {data.filtered ? (
+              <Link
+                href="/shop"
+                className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
+              >
+                Xóa bộ lọc
+              </Link>
+            ) : null}
+          </div>
+
+          {/* Active Filter Pills (Desktop & Mobile) */}
+          <ShopActiveFilters
+            discovery={discovery}
+            collectionFacets={data.collectionFacets}
+            filtered={data.filtered}
+          />
         </form>
       </section>
 
@@ -194,12 +267,11 @@ function render(data: ShopViewModel) {
           action={data.filtered ? { href: "/shop", label: "Xem tất cả sản phẩm" } : undefined}
         />
       ) : (
-        <section className="mt-4" aria-labelledby="shop-products-title">
+        <section className="mt-8" aria-labelledby="shop-products-title">
           <h2 id="shop-products-title" className="sr-only">
             Sản phẩm hiện tại
           </h2>
-          <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-          <div className="mt-4">
+          <div>
             <ListingProductGrid>
               {data.cards.map((card, index) => (
                 <ProductCard
