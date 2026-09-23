@@ -63,14 +63,14 @@ function render(data: CollectionsRouteData) {
                * treatment, but remains in normal flow so any valid collection title can grow the
                * card instead of being clipped by a fixed-ratio overflow container.
                */}
-              <div className="relative z-10 -mt-24 rounded-b-2xl bg-gradient-to-t from-[#2A1810] via-[#2A1810]/95 to-transparent px-6 pb-6 pt-16 sm:-mt-28 sm:px-8 sm:pb-8 sm:pt-20 lg:px-10 lg:pb-10">
+              <div className="relative z-10 -mt-24 rounded-b-2xl bg-gradient-to-t from-[#2A1810] via-[#2A1810]/95 to-[#2A1810]/70 px-6 pb-6 pt-16 sm:-mt-28 sm:px-8 sm:pb-8 sm:pt-20 lg:px-10 lg:pb-10">
                 <h2 className="max-w-xl break-words font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-md sm:text-3xl lg:text-4xl">
                   {collection.title}
                 </h2>
                 <div className="mt-4 sm:mt-6">
                   <Link
                     href={`/collections/${collection.slug}`}
-                    className="collection-card-cta inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider backdrop-blur-md transition-all duration-300 hover:border-white"
+                    className="collection-card-cta"
                   >
                     Khám phá bộ sưu tập ↗
                   </Link>
