@@ -252,7 +252,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
               <Link
                 href={`/shop?q=${encodeURIComponent(query.trim())}`}
                 onClick={onClose}
-                className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.14em] text-[#2A1810] hover:underline underline-offset-4"
+                className="inline-flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.14em] text-[#2A1810] underline underline-offset-4"
               >
                 Xem tất cả kết quả cho &ldquo;{query.trim()}&rdquo; →
               </Link>

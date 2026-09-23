@@ -397,6 +397,47 @@ test("the product grid is 2 columns on mobile and 4 on desktop, on every listing
   }
 });
 
+
+test("phone product listings run edge-to-edge with the shared 2px image rhythm", async ({ page }) => {
+  const gridded = [
+    CATEGORY_PATH,
+    "/new-arrivals",
+    "/sale",
+    "/shop",
+    `/collections/${COLLECTION_SLUG}`,
+  ];
+
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  for (const path of gridded) {
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+
+    const grid = page.locator("main .listing-product-grid").first();
+    await expect(grid, path).toBeVisible();
+
+    const geometry = await grid.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        left: rect.left,
+        right: rect.right,
+        width: rect.width,
+        columnGap: Number.parseFloat(style.columnGap),
+      };
+    });
+
+    expect(geometry.left, `${path} left edge`).toBeCloseTo(0, 0);
+    expect(geometry.right, `${path} right edge`).toBeCloseTo(390, 0);
+    expect(geometry.width, `${path} width`).toBeCloseTo(390, 0);
+    expect(geometry.columnGap, `${path} column gap`).toBeCloseTo(2, 1);
+
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow, `${path} horizontal overflow`).toBeLessThanOrEqual(1);
+  }
+});
+
 /**
  * Refinement spec "PLP / listing density" -- the owner's observable acceptance.
  *

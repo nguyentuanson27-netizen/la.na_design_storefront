@@ -107,7 +107,7 @@ function render(data: CartViewModel) {
                   <div>
                     {line.productSlug ? (
                       <Link
-                        className="text-lg font-semibold uppercase tracking-[0.06em] underline decoration-transparent underline-offset-4 transition hover:decoration-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                        className="text-lg font-semibold uppercase tracking-[0.06em] underline underline-offset-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                         href={`/shop/${encodeURIComponent(line.productSlug)}`}
                       >
                         {line.productName}

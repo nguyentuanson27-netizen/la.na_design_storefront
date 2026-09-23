@@ -198,7 +198,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                           <Link
                             href={`/shop/${encodeURIComponent(line.productSlug)}`}
                             onClick={onClose}
-                            className="font-serif text-sm font-medium text-[#2A1810] hover:underline"
+                            className="font-serif text-sm font-medium text-[#2A1810] underline underline-offset-4"
                           >
                             {line.productName}
                           </Link>

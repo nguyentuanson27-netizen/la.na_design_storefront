@@ -842,7 +842,7 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
-  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 1, name: productName })).toBeVisible();
   await expect(page.getByRole("link", { name: "Essential Outerwear" })).toHaveAttribute("href", "/collections/essential-outerwear");
   await expect(page.getByRole("link", { name: /draft capsule/i })).toHaveCount(0);

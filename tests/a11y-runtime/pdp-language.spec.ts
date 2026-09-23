@@ -164,27 +164,9 @@ test.afterAll(async () => {
 test("PDP uses Vietnamese buyer-functional copy and keeps truthful availability disclosure", async ({ page }) => {
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
-  /*
-   * The trail is on both compositions, so it is asserted at the width this spec runs at. Below
-   * `lg` it sits at the end of the content rather than between the gallery and the product name,
-   * which is what the mobile ordering rule asks for -- the name still comes first, and the phone
-   * still has its way back up the catalogue.
-   */
-  const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
-  await expect(breadcrumb.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveAttribute(
-    "href",
-    "/shop",
-  );
-
-  // Exactly one trail is live at a time, and on a phone the product name precedes it.
-  await expect(breadcrumb).toHaveCount(1);
-  const [headingBox, breadcrumbBox] = await Promise.all([
-    page.getByRole("heading", { level: 1, name: productName }).boundingBox(),
-    breadcrumb.boundingBox(),
-  ]);
-  expect(headingBox!.y, "the product name comes before the trail on a phone").toBeLessThan(
-    breadcrumbBox!.y,
-  );
+  // Owner amendment removes the visible PDP breadcrumb entirely; structured breadcrumb/SEO
+  // authority remains server-owned outside this presentation.
+  await expect(page.getByRole("navigation", { name: "Breadcrumb" })).toHaveCount(0);
   // Owner amendment 2026-09-22 removes the identity eyebrow from the below-`lg` PDP. Keep the
   // localized source string in the shared desktop composition, but it must not be visible here.
   await expect(

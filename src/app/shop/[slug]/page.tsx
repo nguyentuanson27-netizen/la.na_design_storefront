@@ -22,18 +22,6 @@ const relatedTones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand
 function render(data: ProductRouteData) {
   const { editorial } = data;
 
-  const breadcrumb = (
-    <nav aria-label="Breadcrumb">
-      <ol className="flex flex-wrap items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-black/60">
-        <li><Link className="hover:underline" href="/">Trang chủ</Link></li>
-        <li aria-hidden="true">/</li>
-        <li><Link className="hover:underline" href="/shop">Cửa hàng</Link></li>
-        <li aria-hidden="true">/</li>
-        <li aria-current="page" className="text-black">{data.name}</li>
-      </ol>
-    </nav>
-  );
-
   const identity = (
     <>
       <p className="eyebrow hidden lg:block">{BRAND.identity.name} / Sản phẩm</p>
@@ -148,6 +136,7 @@ function render(data: ProductRouteData) {
 
   return (
     <>
+      <span hidden data-pdp-root="" />
       <BrandProductDetail
         selection={{
           slug: data.slug,
@@ -161,7 +150,6 @@ function render(data: ProductRouteData) {
         productName={data.name}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
         sizeGuide={editorial.sizeGuide}
-        breadcrumb={breadcrumb}
         identity={identity}
         productInformation={productInformation}
         purchaseInformation={purchaseInformation}
@@ -176,7 +164,6 @@ function render(data: ProductRouteData) {
                 proves the items complete an outfit, so the heading says what the data supports.
               */}
               <h2 id="related-products-title">Nàng có thể thích</h2>
-              <p className="eyebrow">Sản phẩm liên quan</p>
             </div>
             <CommerceEventReporter event={data.relatedListEvent} />
             <div className="product-grid">

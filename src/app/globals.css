@@ -297,8 +297,8 @@ summary:focus-visible {
    * 0.82rem type, so arithmetic against the control height lands the rect at 41px. 0.95rem
    * measures 45px, just clear of it.
    */
-  --contact-link-pad: 0.95rem;
-  gap: calc(var(--contact-link-pad) * 2);
+  --contact-link-pad: 0.92rem;
+  gap: 1.5rem;
 }
 
 /*
@@ -336,7 +336,14 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
-/* See the note on `--contact-link-pad`: inline, so the padding is hit area rather than height. */
+.footer-nav-list a,
+.footer-contact-list a,
+main nav[aria-label="Breadcrumb"] a {
+  text-decoration-line: underline;
+  text-underline-offset: 0.3em;
+}
+
+/* Inline padding keeps phone/email practical to tap without turning each fact into a 44px row. */
 .footer-contact-list a {
   display: inline;
   padding-block: var(--contact-link-pad);
@@ -1064,15 +1071,18 @@ summary:focus-visible {
 }
 
 @media (max-width: 640px) {
+  .product-grid,
+  .listing-product-grid {
+    /* Product photography reaches the phone viewport edge on both the homepage and
+       shared listing surfaces. Text metadata keeps its own compact inset inside cards. */
+    width: 100vw;
+    margin-inline: calc(50% - 50vw);
+  }
+
   .product-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     column-gap: 2px;
     row-gap: 1.5rem;
-    /* Photography meets the viewport edge on mobile. Listing pages wrap the grid
-       in containers with differing inline padding, so the grid escapes whatever
-       padding it sits in rather than each page having to drop its own. */
-    width: 100vw;
-    margin-inline: calc(50% - 50vw);
   }
 
   .product-meta {
@@ -1152,13 +1162,21 @@ body:has(#main-content [data-header-overlay-hero]) .site-header[data-scrolled="f
   backdrop-filter: none;
 }
 
-/* Homepage only: the promotion strip joins the cream/scrolled state. Reuse the header's existing
-   scroll owner instead of installing a second listener, and remove the strip from layout entirely
-   while the homepage is at the top. */
+/* The promotion strip joins the cream/scrolled state. Reuse the header's existing scroll owner
+   instead of installing a second listener. Homepage keeps the established all-width behavior;
+   the owner asked for the same treatment on the mobile PDP only. */
 body:has(#main-content [data-homepage-root])
   .site-masthead:has(.site-header[data-scrolled="false"])
   .promotion-shell {
   display: none;
+}
+
+@media (max-width: 63.999rem) {
+  body:has(#main-content [data-pdp-root])
+    .site-masthead:has(.site-header[data-scrolled="false"])
+    .promotion-shell {
+    display: none;
+  }
 }
 
 /* Anchor targets land below the pinned masthead instead of underneath it; without this the skip
