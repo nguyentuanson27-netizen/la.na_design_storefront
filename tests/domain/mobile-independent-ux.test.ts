@@ -24,6 +24,8 @@ test("mobile independent UX: phone listing grid is two columns with a 2px rhythm
 
   assert.match(chrome, /grid-cols-2 gap-\[2px\]/);
   assert.match(chrome, /lg:grid-cols-4/);
+  assert.match(card, /aspect-\[2\/3\]/, "ProductCard visual frame must pin 2:3 portrait aspect ratio");
+  assert.doesNotMatch(card, /aspect-\[4\/5\]|aspect-\[3\/4\]/, "ProductCard must not revert to 4:5 or 3:4");
   assert.match(card, /product-title[^"]*text-sm[^"]*line-clamp-2/);
   assert.match(card, /product-price[^"]*text-\[15px\]/);
   assert.match(card, /product-availability[^"]*text-xs/);

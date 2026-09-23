@@ -97,6 +97,26 @@ test("the shared product grid is 4 across on desktop and 2 on mobile", () => {
   assert.match(grid, /lg:grid-cols-4/, "4 products per row on desktop");
 });
 
+test("storefront product card media and loading skeletons pin the 2:3 aspect ratio contract", () => {
+  const brandCard = read("src/components/brand/product-card.tsx");
+  const commerceCard = read("src/components/commerce/product-card.tsx");
+  const searchOverlay = read("src/components/brand/search-overlay.tsx");
+  const plpGrid = read("src/components/brand/plp-infinite-grid.tsx");
+  const shopLoading = read("src/app/shop/loading.tsx");
+  const css = read("src/app/globals.css");
+
+  assert.match(brandCard, /aspect-\[2\/3\]/, "brand ProductCard must use 2:3 aspect ratio");
+  assert.doesNotMatch(brandCard, /aspect-\[4\/5\]|aspect-\[3\/4\]/, "brand ProductCard must not revert to 4:5 or 3:4");
+
+  assert.match(commerceCard, /aspect-\[2\/3\]/, "commerce ProductCard must use 2:3 aspect ratio");
+  assert.match(searchOverlay, /aspect-\[2\/3\]/, "search overlay suggested product cards must use 2:3 aspect ratio");
+  assert.match(plpGrid, /aspect-\[2\/3\]/, "PLP infinite grid skeleton must use 2:3 aspect ratio");
+  assert.match(shopLoading, /aspect-\[2\/3\]/, "shop loading skeleton must use 2:3 aspect ratio");
+
+  assert.match(css, /--media-product-ratio:\s*2\s*\/\s*3;/, "CSS token --media-product-ratio must be 2 / 3");
+  assert.match(css, /\.product-visual\s*\{[^}]*aspect-ratio:\s*2\s*\/\s*3;/, ".product-visual rule must define aspect-ratio: 2 / 3");
+});
+
 test("the shared chrome stays presentation: no query parsing or href building in it", () => {
   const chrome = read("src/components/brand/listing-chrome.tsx");
   for (const leak of [

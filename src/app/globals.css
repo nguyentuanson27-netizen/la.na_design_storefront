@@ -892,7 +892,7 @@ main nav[aria-label="Breadcrumb"] a {
 
 .product-visual {
   position: relative;
-  aspect-ratio: 3 / 4;
+  aspect-ratio: 2 / 3;
   overflow: hidden;
 }
 
@@ -1130,7 +1130,7 @@ main nav[aria-label="Breadcrumb"] a {
   --masthead-height: 5.5rem;
   --shell-max: 100rem;
   --control-height: 2.75rem;
-  --media-product-ratio: 3 / 4;
+  --media-product-ratio: 2 / 3;
   --focus-ring-color: var(--ink);
   --muted-ink: rgba(17, 17, 15, 0.64);
 }

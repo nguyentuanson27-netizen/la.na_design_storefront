@@ -316,6 +316,35 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
   }
 });
 
+test("shared loaded ProductCard frame uses 2:3 portrait aspect ratio at mobile (390x844) and desktop (1440x900)", async ({
+  page,
+}) => {
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
+
+    const cardVisual = page.locator("main .product-visual").first();
+    await expect(cardVisual).toBeVisible();
+
+    const box = await cardVisual.boundingBox();
+    expect(box, `Product card visual at ${viewport.name} (${viewport.width}x${viewport.height})`).not.toBeNull();
+
+    // 2:3 portrait ratio: width / height ≈ 2 / 3 (0.6667)
+    const ratio = box!.width / box!.height;
+    expect(ratio).toBeCloseTo(2 / 3, 2);
+
+    const computed = await cardVisual.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        aspectRatio: style.aspectRatio,
+        width: Number.parseFloat(style.width),
+        height: Number.parseFloat(style.height),
+      };
+    });
+    expect(computed.width / computed.height).toBeCloseTo(2 / 3, 2);
+  }
+});
+
 test("mobile category filters stay open across sequential URL-backed selections", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
