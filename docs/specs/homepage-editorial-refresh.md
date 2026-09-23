@@ -26,7 +26,7 @@ Reference rule: Ding Dang is used only for **section order, editorial rhythm and
 2. Homepage content management remains **repository config/data only** for this scope. No CMS/admin UI, new external service or database-backed homepage editor is required.
 3. The dedicated feedback page uses the canonical route `/feedback` unless the owner changes the slug before implementation.
 4. The four collection-promo slots are intentionally unmapped at spec time. Unmapped slots must not publish fake collection names, fake links or placeholder campaign images.
-5. The primary 4-product merchandising section may change title/copy/source collection over time while preserving one fixed layout.
+5. The first refreshed section is the owner-approved `SPECIAL DEALS` 4-product section. Its layout and role stay fixed; repository data may change its supporting copy, source collection and selected products over time, but this spec does not create a generic campaign-section framework.
 6. Collection product fallback ordering must reuse the collection's existing merchandising order; no new "newest", "bestseller" or implicit sort rule is introduced.
 7. Visual copy that is not explicitly approved here remains config-owned content, not code-authored brand prose.
 
@@ -38,7 +38,7 @@ The refreshed homepage should feel less like a sequence of unrelated storefront 
 
 ```text
 Hero (unchanged)
-→ Primary 4-product merchandising section
+→ SPECIAL DEALS: 4 products
 → Collection promo row A: 2 image blocks
 → YOUR NEXT FAVOURITE: 4 category blocks
 → Collection promo row B: 2 image blocks
@@ -46,7 +46,7 @@ Hero (unchanged)
 → Footer
 ```
 
-Success means the owner can later change campaign copy, product source collection, collection promo mappings and feedback images through repository config/data **without changing the section layout/components**.
+Success means the owner can later change SPECIAL DEALS supporting copy/source collection, collection promo mappings and feedback images through repository config/data **without changing the section layout/components**. The `SPECIAL DEALS` role itself remains the fixed 4-product merchandising section defined here.
 
 ## 3. Current state being replaced
 
@@ -139,36 +139,42 @@ No redesign of hero autoplay, CTA, reduced-motion behavior or transparent-header
 
 ---
 
-### 7.2 Primary 4-product merchandising section
+### 7.2 SPECIAL DEALS — 4 products
 
-This is the La.na equivalent of the owner-referenced SALE / SPECIAL DEALS section.
+This is the owner-approved SALE / `SPECIAL DEALS` section. It is **not** a generic campaign framework: the section's role is always one four-product merchandising block in this exact homepage position.
 
 #### Purpose
 
-A fixed 4-product layout whose **content may change by campaign/time period** without changing component structure.
-
-Examples of configurable role/copy may include a sale campaign, a highlighted collection or another merchandising focus. The implementation must not hard-code the component to the word `SALE`.
+Keep one fixed four-product layout. Repository data may change which products/collection it promotes and may change supporting copy over time, but implementation must not introduce alternate campaign modes, alternate section types or role-switching abstractions.
 
 #### Content contract
 
-Configurable content:
-
-- section title;
-- optional short supporting line;
-- source collection;
-- optional manual product selection;
-- CTA label, defaulting to `Xem thêm`;
-- destination is the configured source collection.
+- Primary section label/title: `SPECIAL DEALS` for the current approved presentation.
+- Optional short supporting line may remain repository-configurable.
+- One source collection provides the `Xem thêm` destination and the automatic fallback products.
+- Manual product override comes from the **existing ordered `HomepageFeaturedProduct` authority**; do not create a second manual-product list in homepage config.
+- CTA label: `Xem thêm` unless the owner separately changes this copy.
+- Destination: the configured source collection, and it must be route-reachable under the current collection-page contract defined below.
 
 #### Product selection priority
 
-1. **Manual override** — when a manual product list is configured, preserve that explicit order.
-2. **Collection fallback** — when no manual list is configured, take up to the first 4 real products using the collection's existing merchandising order.
-3. Do not fall back to newest products, bestsellers or another category/collection.
-4. Do not duplicate products to fill missing slots.
-5. Production configuration should provide 4 valid products. If runtime data temporarily resolves fewer, render only real valid products rather than inventing placeholders.
+1. **Manual override** — read the existing `HomepageFeaturedProduct` ordered selection via the current merchandising boundary. When it resolves one or more visible products, use the first 4 in that authority's order.
+2. **Collection fallback** — only when the existing manual authority resolves empty, take up to the first 4 real products using the source collection's existing merchandising order.
+3. Do not add `manualProductSlugs` or another config/database owner for the same meaning.
+4. Do not fall back to newest products, bestsellers or another category/collection.
+5. Do not duplicate products or mix automatic fallback products into a non-empty manual selection just to fill four slots.
+6. Production configuration should normally resolve 4 valid products. If current visibility/data temporarily makes the chosen source shorter, render only real valid products rather than inventing placeholders.
 
 "Collection order" means reuse the collection's canonical ordering behavior already used by the collection surface, including its existing featured-product ordering authority. Do not create a second ranking system solely for the homepage.
+
+#### Collection destination reachability
+
+A source collection is valid for this homepage section only when the existing public collection route would actually render it. Under the current code that means:
+
+- `readPublishedCollection(slug)` resolves a published collection; **and**
+- `collection.description?.trim()` is non-empty, matching `loadCollectionRoute()`'s current `notFound()` gate.
+
+Do not treat `isPublished = true` alone as a valid CTA destination. Prefer one shared route-reachability helper/boundary if implementation needs this predicate in more than one place. If the configured source is not route-reachable, fail closed and omit this section rather than render a `Xem thêm` link that 404s.
 
 #### Presentation
 
@@ -237,7 +243,8 @@ Mobile/touch layout:
 
 - A promo row may stay absent until both collection slots are mapped with real approved image/title/destination data.
 - Never publish a fake collection or placeholder destination to preserve layout.
-- Once enabled, both slots must resolve to published collection destinations.
+- Once enabled, both slots must resolve to **route-reachable** collection destinations: the same current public-route predicate as §7.2 (`readPublishedCollection()` succeeds and `description?.trim()` is non-empty). `isPublished = true` alone is insufficient because the collection page currently 404s without a description.
+- If either mapped destination stops being route-reachable, omit the promo row rather than publish a broken CTA.
 
 ---
 
@@ -256,9 +263,10 @@ Do not duplicate these labels/hrefs as new category truth when they can be deriv
 
 #### Content
 
-- section heading/copy is repository-configurable;
-- each block has one approved editorial image;
-- visible label comes from the canonical category definition;
+- section heading/supporting copy may be repository-configurable;
+- each block image comes from the **existing `CategoryEditorialMedia.heroImageUrl` authority** for its category key, read through `readConfiguredCategoryHeroMedia()`; do not create `imageByCategoryKey` in a second homepage config;
+- the loader must request all four required keys, including `phuKien`;
+- visible label/href comes from the canonical category definition;
 - each block links to its category destination.
 
 #### Layout/rhythm
@@ -333,20 +341,22 @@ Their underlying brand/policy facts remain valid elsewhere; this is a homepage c
 
 ## 8. Config/data ownership
 
-Introduce one focused repository-owned homepage merchandising config rather than scattering literals through `page.tsx`.
+Add repository config **only for homepage data that does not already have an authority**. Do not create parallel sources for manual products or category editorial media.
 
-Recommended ownership: `src/content/homepage.config.ts` (final file name may follow an existing nearby convention discovered during implementation). Keep campaign/editorial data out of `src/brand/*.config.ts`, whose current repository contract is reserved for owner-approved brand facts.
+Existing authorities that must be reused:
 
-Conceptual shape:
+- **Manual SPECIAL DEALS override:** `HomepageFeaturedProduct` → `listHomepageFeatured()` / the existing configured homepage-featured runtime seam. This ordered website-owned list becomes the manual override source for §7.2.
+- **YOUR NEXT FAVOURITE images:** `CategoryEditorialMedia.heroImageUrl` → `readConfiguredCategoryHeroMedia()` for `aoDai`, `vayDam`, `setDo`, and `phuKien`.
+- **Category label/href:** `CATEGORY_NAVIGATION`.
+- **Collection public truth:** `CollectionDefinition` + the current collection-route reachability predicate.
+
+A focused repository-owned homepage config may own only values that have no existing canonical owner, for example:
 
 ```ts
 type HomepageConfig = {
-  primaryMerchandising: {
-    title: string;
-    description?: string;
-    collectionSlug: string;
-    manualProductSlugs?: readonly string[];
-    ctaLabel: string;
+  specialDeals: {
+    supportingCopy?: string;
+    sourceCollectionSlug: string;
   };
 
   promoRows: readonly [
@@ -357,16 +367,12 @@ type HomepageConfig = {
   categoryDiscovery: {
     title: string;
     description?: string;
-    imageByCategoryKey: Readonly<Record<
-      "aoDai" | "vayDam" | "setDo" | "phuKien",
-      string
-    >>;
   };
 
   feedback: {
     title: string;
     pageHref: "/feedback";
-    ctaLabel: string;
+    ctaLabel: "Xem thêm";
     images: readonly {
       src: string;
       alt: string;
@@ -384,14 +390,18 @@ type CollectionPromoSlot = {
 
 This is a **contract sketch**, not a requirement to copy the exact TypeScript names.
 
+Recommended ownership for this new, non-brand-fact content: `src/content/homepage.config.ts` (final file name may follow an existing nearby convention discovered during implementation). Keep campaign/editorial data out of `src/brand/*.config.ts`, whose current repository contract is reserved for owner-approved brand/taxonomy authority.
+
 Rules:
 
-- Collection/category destination truth should be resolved/validated against existing authorities.
+- **Do not** add `manualProductSlugs`, product IDs/slugs, or another manual-product list to homepage config.
+- **Do not** add `imageByCategoryKey` or another category-image map to homepage config.
+- Resolve collection destinations through the same route-reachability truth as §7.2/§7.3, not publication state alone.
 - External/remote image input remains untrusted and must pass the existing trusted-media policy where applicable.
 - Local repository assets must use stable public paths.
 - Do not add a database migration for homepage config in this scope.
 - Do not add an admin panel/CMS in this scope.
-- Do not duplicate collection titles/links across multiple files when one config/authority can own them.
+- Do not duplicate collection titles/links across multiple files when one existing authority can own them.
 
 ## 9. Data/loading architecture
 
@@ -403,7 +413,9 @@ Keep the established split:
 - `src/commerce/`: canonical collection/product reads remain here.
 - `src/components/brand/`: promo row, category discovery and feedback rail presentation.
 
-Primary merchandising fallback must reuse existing collection merchandising order rather than rebuilding it in the page.
+`SPECIAL DEALS` manual selection must reuse the existing `HomepageFeaturedProduct` authority; its fallback must reuse existing collection merchandising order rather than rebuilding either authority in the page. YOUR NEXT FAVOURITE media must reuse `CategoryEditorialMedia.heroImageUrl` for the four canonical category keys.
+
+Any homepage link to `/collections/<slug>` must resolve through the current public collection route's reachability contract, not merely `isPublished`.
 
 Because the refreshed homepage has only one product grid, its pricing refresh window should be derived from that one priced product set plus any existing hero behavior that already applies; do not keep stale refresh dependencies for removed product grids.
 
@@ -460,12 +472,13 @@ No performance claim is valid without before/after measurement during implementa
 
 Add focused tests for:
 
-- primary merchandising selection priority: manual override > collection fallback;
-- manual order preservation;
+- SPECIAL DEALS selection priority: existing `HomepageFeaturedProduct` manual override > collection fallback;
+- manual authority order preservation and first-4 bound;
 - fallback reuses collection order and limits normal result to 4;
 - no newest/bestseller fallback;
-- canonical category order/keys;
+- canonical category order/keys and category images sourced from existing `CategoryEditorialMedia` rather than duplicate config;
 - promo rows derive only from configured/mapped slots;
+- collection CTA destinations reject/omit published-but-route-unreachable collections (including missing/blank description under the current route contract);
 - feedback config order preservation;
 - removed old homepage sections are no longer part of the home view model/order where that logic is modeled.
 
@@ -506,7 +519,7 @@ At representative mobile + desktop widths:
 
 ### Always do
 
-- Reuse canonical product, collection, category, pricing and availability truth.
+- Reuse canonical product, collection, category, pricing and availability truth, including existing `HomepageFeaturedProduct` and `CategoryEditorialMedia` authorities.
 - Validate repo-owned config at a clear boundary.
 - Keep homepage page-layer imports within the existing route/brand/component boundary.
 - Preserve La.na design tokens and typography.
@@ -531,6 +544,8 @@ At representative mobile + desktop widths:
 - Invent customer feedback images, collection names, promo destinations or brand prose.
 - Derive sale/discount truth from homepage section naming.
 - Fall back to newest/bestseller when the configured source is missing.
+- Create a second manual-product authority or a second category-editorial-image authority for the homepage.
+- Render a collection CTA from publication state alone when the current public route would 404.
 - Duplicate products as filler.
 - Add fake placeholder campaign media to keep a row visible.
 - Make unrelated PDP/PLP/cart/checkout refactors.
@@ -541,14 +556,14 @@ At representative mobile + desktop widths:
 The feature is accepted when all of the following are true:
 
 1. Homepage order after Hero is exactly:
-   `4-product merchandising → promo pair A → 4 categories → promo pair B → feedback rail → footer`.
+   `SPECIAL DEALS (4 products) → promo pair A → 4 categories → promo pair B → feedback rail → footer`.
 2. Old lower homepage sections are not rendered.
-3. Primary merchandising layout remains fixed while title/copy/source collection/manual product selection are config-driven.
-4. Manual product selection wins when configured; otherwise the first 4 products follow existing collection merchandising order.
-5. `Xem thêm` from the product section opens the configured source collection.
+3. `SPECIAL DEALS` remains one fixed 4-product section; implementation does not generalize it into alternate campaign-section roles.
+4. Existing `HomepageFeaturedProduct` is the only manual override authority; when it resolves empty, the first 4 products follow existing collection merchandising order.
+5. `Xem thêm` from SPECIAL DEALS opens a route-reachable configured source collection; a merely-published collection that the current collection route would 404 is not valid.
 6. Both promo rows use one reusable component/config contract.
-7. Each promo slot maps to a real collection; desktop only CTA is clickable, mobile whole tile is tappable.
-8. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện.
+7. Each promo slot maps to a route-reachable real collection; desktop only CTA is clickable, mobile whole tile is tappable.
+8. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện, and their images come from existing `CategoryEditorialMedia.heroImageUrl` authority.
 9. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
 10. `/feedback` renders the complete configured image collection.
 11. Font, palette, product-card language and overall identity remain La.na.
@@ -578,9 +593,9 @@ The feature is accepted when all of the following are true:
 
 These values are intentionally supplied later through config and do not block the component contract:
 
-- exact current title/supporting copy for the primary merchandising section;
-- source collection for that section;
-- optional four manual product references;
+- exact current supporting copy for SPECIAL DEALS, if any;
+- source collection for SPECIAL DEALS;
+- any manual SPECIAL DEALS product selection is supplied through the existing `HomepageFeaturedProduct` authority, not this config;
 - four collection promo mappings and their images/titles/CTA copy;
 - category editorial images;
 - feedback image set + accessible alt decisions.
