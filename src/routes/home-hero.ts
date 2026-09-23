@@ -28,6 +28,8 @@ export const HOME_HERO_CTA_LABEL = "MUA NGAY";
 export type HomeHeroSlideCandidate = Readonly<{
   /** Unvalidated media URL; anything the trusted-media contract rejects drops the slide. */
   imageUrl: string | null;
+  /** Unvalidated mobile media URL; if absent or rejected, the slide falls back to imageUrl. */
+  mobileImageUrl?: string | null;
   /** Where the CTA goes. Must be an internal path -- the hero never sends a shopper off-site. */
   href: string;
   /**
@@ -41,6 +43,7 @@ export type HomeHeroSlideCandidate = Readonly<{
 
 export type HomeHeroSlide = Readonly<{
   imageUrl: string;
+  mobileImageUrl: string | null;
   href: string;
   label: string;
 }>;
@@ -68,7 +71,9 @@ export function buildHomeHeroSlides(
     const label = candidate.label.trim();
     if (label.length === 0) continue;
 
-    slides.push(Object.freeze({ imageUrl, href: candidate.href, label }));
+    const mobileImageUrl = parseTrustedProductImageUrl(candidate.mobileImageUrl);
+
+    slides.push(Object.freeze({ imageUrl, mobileImageUrl, href: candidate.href, label }));
   }
 
   return Object.freeze(slides);
