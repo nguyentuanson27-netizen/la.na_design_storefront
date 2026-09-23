@@ -81,7 +81,7 @@ function render(data: CollectionViewModel) {
           {/* Buyer information, not decoration: it sets the expectation that the figures on the
               cards are re-checked at purchase, which is the same promise `/shop` makes. Kept on one
               source line because the copy inventory reads the promise as a whole string. */}
-          <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70 hidden sm:block">
+          <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70">
             Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
           </p>
         </ListingHeader>
