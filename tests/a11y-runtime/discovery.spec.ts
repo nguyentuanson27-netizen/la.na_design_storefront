@@ -214,24 +214,48 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   });
 
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
-  // `/shop` draws the shared listing header now: a sentence-case serif H1 under an eyebrow, with
-  // the filter form under its own heading. The route's query semantics below are unchanged.
   await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Bộ lọc" })).toBeVisible();
 
-  await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
-  await page.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
-  await page.getByLabel("Màu").selectOption("Ink");
-  await page.getByLabel("Kích cỡ").selectOption("M");
-  await page.getByLabel("Giá tối thiểu").fill("1000000");
-  await page.getByLabel("Giá tối đa").fill("1300000");
-  await page.getByLabel("Chỉ còn hàng").check();
-  await page.getByRole("button", { name: "Áp dụng" }).click();
+  // Mobile keeps one URL-backed form authority across the always-visible search/sort controls and
+  // the drawer-only filters. Scope to the form containing the mobile-only drawer trigger because
+  // the desktop form remains in the DOM behind responsive CSS.
+  const mobileForm = page
+    .locator('form[action="/shop"]')
+    .filter({ has: page.getByRole("button", { name: /Bộ lọc/ }) });
+  await mobileForm.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
+  await mobileForm.getByRole("combobox", { name: "Sắp xếp", exact: true }).selectOption("price-desc");
+
+  const filterTrigger = mobileForm.getByRole("button", { name: /Bộ lọc/ });
+  await filterTrigger.click();
+
+  const filterDialog = page.getByRole("dialog", { name: "Bộ lọc" });
+  const closeFilterButton = filterDialog.getByRole("button", { name: "Đóng bộ lọc" });
+  await expect(filterDialog).toBeVisible();
+  await expect(closeFilterButton).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(filterDialog).toHaveCount(0);
+  await expect(filterTrigger).toBeFocused();
+
+  await filterTrigger.click();
+  await expect(filterDialog).toBeVisible();
+  await filterDialog.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
+  await filterDialog.getByRole("combobox", { name: "Màu sắc", exact: true }).selectOption("Ink");
+  await filterDialog.getByRole("combobox", { name: "Kích cỡ", exact: true }).selectOption("M");
+  await filterDialog.getByLabel("Giá tối thiểu").fill("1000000");
+  await filterDialog.getByLabel("Giá tối đa").fill("1300000");
+  await filterDialog.getByLabel("Chỉ còn hàng").check();
+
+  await Promise.all([
+    page.waitForURL((next) => next.pathname === "/shop" && next.searchParams.get("q") === "Runtime City Coat"),
+    filterDialog.getByRole("button", { name: "Áp dụng", exact: true }).click(),
+  ]);
   await page.waitForLoadState("networkidle");
 
   const url = new URL(page.url());
   expect(url.pathname).toBe("/shop");
   expect(url.searchParams.get("q")).toBe("Runtime City Coat");
+  expect(url.searchParams.get("sort")).toBe("price-desc");
   expect(url.searchParams.get("collection")).toBe("city-uniform");
   expect(url.searchParams.get("color")).toBe("Ink");
   expect(url.searchParams.get("size")).toBe("M");
@@ -242,9 +266,9 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   await expect(page.getByRole("heading", { level: 2, name: `Runtime City Coat ${runId}` })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: `Runtime Stone Trouser ${runId}` })).toHaveCount(0);
   // The count sits above the grid and the page number in the pager; a single page has no pager.
-  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
+  await expect(mobileForm.getByText("1 sản phẩm", { exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Xóa bộ lọc" })).toHaveAttribute("href", "/shop");
+  await expect(page.getByRole("link", { name: "Xóa tất cả", exact: true })).toHaveAttribute("href", "/shop");
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.keyboard.press("Tab");

@@ -75,19 +75,19 @@ function render(data: CollectionViewModel) {
           ]}
         />
         <ListingHeader eyebrow="Bộ sưu tập" title={data.title}>
-          <p className="mt-3 max-w-2xl break-words font-serif text-xl leading-snug text-[#2A1810] md:text-2xl">
+          <p className="mt-6 max-w-2xl break-words font-serif text-xl leading-snug text-[#2A1810] md:text-2xl">
             {editorial.story}
           </p>
           {/* Buyer information, not decoration: it sets the expectation that the figures on the
               cards are re-checked at purchase, which is the same promise `/shop` makes. Kept on one
               source line because the copy inventory reads the promise as a whole string. */}
-          <p className="mt-3 max-w-xl text-sm leading-6 text-[#3B2219]/70">
+          <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70">
             Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
           </p>
         </ListingHeader>
 
         {editorial.video ? (
-          <div className="mt-6">
+          <div className="mt-12">
             {/* Muted, loopless and controllable: an editorial panel, not an autoplaying advert. */}
             <video
               className="w-full bg-black"
@@ -102,7 +102,7 @@ function render(data: CollectionViewModel) {
 
         {editorial.gallery.length > 0 ? (
           <section
-            className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+            className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
             aria-label={`Hình ảnh bộ sưu tập ${data.title}`}
           >
             {editorial.gallery.map((url, index) => (
@@ -120,28 +120,32 @@ function render(data: CollectionViewModel) {
         ) : null}
 
         <section
-          className="mt-6 grid gap-6 border-b border-[#3B2219]/15 pb-5 md:grid-cols-2"
+          className="mt-12 border-b border-[#3B2219]/15 pb-6"
           aria-label="Điều khiển bộ sưu tập"
         >
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Sắp xếp</p>
-            <nav aria-label="Sắp xếp bộ sưu tập" className="mt-3 flex flex-wrap gap-2">
-              {data.sortOptions.map((option) => (
-                <Link
-                  aria-current={option.active ? "true" : undefined}
-                  className={optionClass(option.active)}
-                  href={option.href}
-                  key={option.value}
-                >
-                  {option.label}
-                </Link>
-              ))}
-            </nav>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-[#70584B]">Sắp xếp:</span>
+              <nav aria-label="Sắp xếp bộ sưu tập" className="flex flex-wrap items-center gap-1.5">
+                {data.sortOptions.map((option) => (
+                  <Link
+                    aria-current={option.active ? "true" : undefined}
+                    className={optionClass(option.active)}
+                    href={option.href}
+                    key={option.value}
+                  >
+                    {option.label}
+                  </Link>
+                ))}
+              </nav>
+            </div>
           </div>
 
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ</p>
-            <nav aria-label="Lọc theo kích cỡ" className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ:</span>
+            <nav aria-label="Lọc theo kích cỡ" className="flex flex-wrap items-center gap-1.5">
               {data.sizeOptions.map((option) => (
                 <Link
                   aria-current={option.active ? "true" : undefined}
@@ -173,12 +177,11 @@ function render(data: CollectionViewModel) {
             }
           />
         ) : (
-          <section className="mt-5" aria-labelledby="collection-products-title">
+          <section className="mt-8" aria-labelledby="collection-products-title">
             <h2 id="collection-products-title" className="sr-only">
               Sản phẩm
             </h2>
-            <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-            <div className="mt-4">
+            <div>
               <ListingProductGrid>
                 {data.cards.map((card, index) => (
                   <ProductCard
