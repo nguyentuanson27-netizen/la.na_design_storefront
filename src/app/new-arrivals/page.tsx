@@ -28,7 +28,7 @@ function render(data: NewArrivalsViewModel) {
         items={[{ label: "Trang chủ", href: "/" }, { label: "Hàng mới về" }]}
       />
       <ListingHeader eyebrow="Mới nhất" title="Hàng mới về">
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70 hidden sm:block">
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
           Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng
           chọn lọc.
         </p>
