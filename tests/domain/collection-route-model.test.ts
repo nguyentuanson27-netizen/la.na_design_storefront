@@ -87,12 +87,14 @@ test("trusted editorial media survives onto the model", () => {
   const editorial = resolveCollectionEditorial({
     description: "story",
     heroImageUrl: photo(1),
+    heroImageMobileUrl: photo(5),
     galleryImageUrls: [photo(2), photo(3)],
     videoSrcUrl: film,
     videoPosterUrl: photo(4),
   });
 
   assert.equal(editorial.heroImage, photo(1));
+  assert.equal(editorial.heroImageMobile, photo(5));
   assert.deepEqual(editorial.gallery, [photo(2), photo(3)]);
   assert.deepEqual(editorial.video, { src: film, poster: photo(4) });
 });
@@ -103,12 +105,14 @@ test("untrusted media is dropped rather than rendered", () => {
   const editorial = resolveCollectionEditorial({
     description: "story",
     heroImageUrl: "https://evil.example.com/1/2/3/4/photo.jpg",
+    heroImageMobileUrl: "https://evil.example.com/1/2/3/4/mobile.jpg",
     galleryImageUrls: [photo(1), "http://content.pancake.vn/1/2/3/4/photo-2.jpg", "not a url"],
     videoSrcUrl: "https://evil.example.com/1/2/3/4/film.mp4",
     videoPosterUrl: null,
   });
 
   assert.equal(editorial.heroImage, null);
+  assert.equal(editorial.heroImageMobile, null);
   assert.deepEqual(editorial.gallery, [photo(1)], "only the trusted gallery entry survives");
   assert.equal(editorial.video, null);
 });
