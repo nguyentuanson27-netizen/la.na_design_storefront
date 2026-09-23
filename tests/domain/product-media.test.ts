@@ -9,14 +9,16 @@ import {
   type TrustedProductImage,
 } from "../../src/commerce/product-media.ts";
 
-test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.jpg and .png)", () => {
+test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.jpg, .png, and .webp)", () => {
   const validUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpg",
     "https://content.pancake.vn/web_media/12/34/56/shirt.jpg",
     "https://content.pancake.vn/images/999/888/777/product-photo_123.jpg",
     "https://content.pancake.vn/images/1/2/3/shirt.png",
     "https://content.pancake.vn/web_media/12/34/56/shirt.png",
+    "https://content.pancake.vn/images/1/2/3/shirt.webp",
     "https://content.pancake.vn/2-2609/2026/9/7/60939f058e4a6add1a156b7d13d6cf1bf2226fbd.png",
+    "https://content.pancake.vn/2-2609/2026/9/23/a37fe5e5bf493ae284fa4f8fc22ba9178de76a4f.webp",
   ];
 
   for (const url of validUrls) {
@@ -25,14 +27,15 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.
   }
 });
 
-test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .webp, .svg, uppercase .JPG/.PNG, etc.)", () => {
+test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .svg, uppercase .JPG/.PNG/.WEBP, etc.)", () => {
   const unreviewedExtensionUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpeg",
-    "https://content.pancake.vn/images/1/2/3/shirt.webp",
     "https://content.pancake.vn/images/1/2/3/shirt.JPG",
     "https://content.pancake.vn/images/1/2/3/SHIRT.JPG",
     "https://content.pancake.vn/images/1/2/3/shirt.PNG",
     "https://content.pancake.vn/images/1/2/3/SHIRT.PNG",
+    "https://content.pancake.vn/images/1/2/3/shirt.WEBP",
+    "https://content.pancake.vn/images/1/2/3/SHIRT.WEBP",
     "https://content.pancake.vn/images/1/2/3/vector.svg",
     "https://content.pancake.vn/images/1/2/3/script.js",
     "https://content.pancake.vn/images/1/2/3/doc.html",

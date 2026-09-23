@@ -1,7 +1,7 @@
 const TRUSTED_IMAGE_HOSTNAME = "content.pancake.vn";
 const MAX_IMAGE_URL_LENGTH = 4096;
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png"]);
+const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png", ".webp"]);
 /**
  * Editorial video, held to exactly the image rules with one extension set swapped.
  *
@@ -31,7 +31,7 @@ export type StorefrontProductMedia = {
  * - Port must be default HTTPS port (no custom ports)
  * - Authority must not contain user credentials
  * - Path must not contain path traversal (`..`)
- * - Path must match exact reviewed shape `/:segment/:id/:id/:id/:file.(jpg|png)`
+ * - Path must match exact reviewed shape `/:segment/:id/:id/:id/:file.(jpg|png|webp)`
  * - Length must be bounded (<= 4096 chars)
  */
 export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
@@ -108,7 +108,7 @@ export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|mp4)$/;
+  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|webp|mp4)$/;
 
 function isValidReviewedMediaPath(
   pathname: string,

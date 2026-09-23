@@ -88,24 +88,30 @@ test("P3 parseTrustedProductImageUrl and P4 images.remotePatterns maintain ident
   const pancakePatterns = nextConfig.images?.remotePatterns?.filter(
     (p) => p.hostname === "content.pancake.vn",
   ) ?? [];
-  assert.equal(pancakePatterns.length, 2);
+  assert.equal(pancakePatterns.length, 3);
 
   const jpgPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.jpg");
   const pngPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.png");
+  const webpPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.webp");
   assert.ok(jpgPattern);
   assert.ok(pngPattern);
+  assert.ok(webpPattern);
 
-  // Lowercase .jpg and .png are accepted by P3 and match P4 remotePatterns
+  // Lowercase .jpg, .png and .webp are accepted by P3 and match P4 remotePatterns
   const validJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.jpg";
   const validPngUrl = "https://content.pancake.vn/images/1/2/3/photo.png";
+  const validWebpUrl = "https://content.pancake.vn/images/1/2/3/photo.webp";
   assert.notEqual(parseTrustedProductImageUrl(validJpgUrl), null);
   assert.notEqual(parseTrustedProductImageUrl(validPngUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validWebpUrl), null);
 
-  // Uppercase .JPG and .PNG are rejected by both P3 and P4 case-sensitive pattern
+  // Uppercase .JPG, .PNG and .WEBP are rejected by both P3 and P4 case-sensitive pattern
   const uppercaseJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.JPG";
   const uppercasePngUrl = "https://content.pancake.vn/images/1/2/3/photo.PNG";
+  const uppercaseWebpUrl = "https://content.pancake.vn/images/1/2/3/photo.WEBP";
   assert.equal(parseTrustedProductImageUrl(uppercaseJpgUrl), null);
   assert.equal(parseTrustedProductImageUrl(uppercasePngUrl), null);
+  assert.equal(parseTrustedProductImageUrl(uppercaseWebpUrl), null);
 
   // Custom ports and unreviewed paths are rejected by both P3 and P4
   assert.equal(parseTrustedProductImageUrl("https://content.pancake.vn:8443/images/1/2/3/photo.jpg"), null);
