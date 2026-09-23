@@ -1,6 +1,8 @@
 # Spec: Homepage editorial refresh — Ding Dang rhythm, La.na visual
 
-Status: **DRAFT — owner intent confirmed in interview, implementation not started**
+Status: **APPROVED (#60) — implemented in #62; section content pending owner mapping (§17)**
+
+Implementation note: the components, fail-closed resolution, `/feedback` route and SEO wiring are built. Until the §17 content is supplied in `src/content/homepage.config.ts` (and category images in `CategoryEditorialMedia`), SPECIAL DEALS, both promo rows and the feedback rail omit themselves and `/feedback` returns 404 and is withheld from the sitemap.
 
 Owner confirmation date: 2026-09-23
 
