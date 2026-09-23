@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -77,7 +78,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 overflow-hidden" role="region" aria-label="Giỏ hàng">
       {/* Backdrop */}
       <div
@@ -301,6 +302,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
