@@ -41,7 +41,7 @@ function render(data: ShopViewModel) {
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Cửa hàng" }]} />
       <ListingHeader eyebrow="Tất cả sản phẩm" title="Cửa hàng">
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70 hidden sm:block">
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
           Dùng tìm kiếm và bộ lọc để khám phá sản phẩm.{" "}
           {/* Kept on one source line: the copy inventory reads this promise as a whole string. */}
           Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
