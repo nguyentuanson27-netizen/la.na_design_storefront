@@ -13,6 +13,7 @@ import { COLLECTION_PAGE_SIZE } from "../../src/routes/collection-first-page.ts"
 import {
   NEXT_FAVOURITE_CATEGORY_KEYS,
   SPECIAL_DEALS_SIZE,
+  SPECIAL_DEALS_TITLE,
   buildHomeViewModel,
   listPromoCollectionSlugs,
   loadSpecialDeals,
@@ -452,6 +453,15 @@ test("pending content leaves every refreshed section absent rather than invented
     [model.specialDeals, model.promoRowA, model.categoryDiscovery, model.promoRowB, model.feedback],
     [null, null, null, null, null],
   );
+});
+
+test("the SPECIAL DEALS title is the spec's fixed constant, not something config can redefine", () => {
+  assert.equal(SPECIAL_DEALS_TITLE, "SPECIAL DEALS");
+  assert.deepEqual(Object.keys(HOMEPAGE_CONFIG.specialDeals).sort(), [
+    "ctaLabel",
+    "sourceCollectionSlug",
+    "supportingCopy",
+  ]);
 });
 
 test("SPECIAL DEALS cards keep visible order and their prebuilt select events", async () => {

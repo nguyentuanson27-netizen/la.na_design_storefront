@@ -113,7 +113,6 @@ test("every value the shipped config supplies passes the boundary, so pending ne
 });
 
 test("the approved copy the spec fixes is what the config ships", () => {
-  assert.equal(HOMEPAGE_CONFIG.specialDeals.title, "SPECIAL DEALS");
   assert.equal(HOMEPAGE_CONFIG.specialDeals.ctaLabel, "Xem thêm");
   assert.equal(HOMEPAGE_CONFIG.feedback.ctaLabel, "Xem thêm");
   assert.equal(HOMEPAGE_CONFIG.promoRows.length, 2);

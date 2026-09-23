@@ -133,6 +133,12 @@ function collectionHref(slug: string): string {
 /** Spec §7.2: one fixed four-product section. Not a campaign framework, not a configurable count. */
 export const SPECIAL_DEALS_SIZE = 4;
 
+/**
+ * Spec §7.2: the section's approved title. A constant rather than config, because the spec fixes
+ * this role -- config owns only its supporting copy and source collection.
+ */
+export const SPECIAL_DEALS_TITLE = "SPECIAL DEALS";
+
 /** A product as the catalog read returns it: the card facts plus its collection membership. */
 export type SpecialDealsProduct = HomeProduct &
   Readonly<{
@@ -432,7 +438,7 @@ export function buildHomeViewModel({
   return Object.freeze({
     specialDeals: selection
       ? Object.freeze({
-          title: config.specialDeals.title,
+          title: SPECIAL_DEALS_TITLE,
           supportingCopy: parseConfiguredCopy(config.specialDeals.supportingCopy),
           ctaLabel: config.specialDeals.ctaLabel,
           href: selection.collection.href,

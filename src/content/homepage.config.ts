@@ -40,9 +40,11 @@ export type FeedbackImageConfig = Readonly<{
 }>;
 
 export type HomepageConfig = Readonly<{
+  /**
+   * Only what genuinely varies. The section's role and its `SPECIAL DEALS` title are fixed by the
+   * spec (§7.2) and live in code (`SPECIAL_DEALS_TITLE`), so a config edit cannot redefine them.
+   */
   specialDeals: Readonly<{
-    /** Owner-approved label for the current presentation (§7.2). */
-    title: string;
     supportingCopy: string | null;
     /** The one collection that supplies the fallback products and the `Xem thêm` destination. */
     sourceCollectionSlug: string | null;
@@ -67,7 +69,6 @@ export type HomepageConfig = Readonly<{
 
 export const HOMEPAGE_CONFIG: HomepageConfig = {
   specialDeals: {
-    title: "SPECIAL DEALS",
     // Pending (§17): optional supporting line.
     supportingCopy: null,
     // Pending (§17): the source collection has not been named yet, so the section omits itself.
