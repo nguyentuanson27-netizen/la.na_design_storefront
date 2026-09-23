@@ -31,6 +31,7 @@ export default defineConfig({
     "footer-support.spec.ts",
     "homepage-composition.spec.ts",
     "homepage-hero.spec.ts",
+    "homepage-refresh-acceptance.spec.ts",
     "homepage-taxonomy.spec.ts",
     "inventory-truth.spec.ts",
     "merchant-return-policy.spec.ts",

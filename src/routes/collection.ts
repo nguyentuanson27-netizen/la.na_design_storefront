@@ -18,12 +18,13 @@ import {
   orderByFeaturedSlugs,
   type CollectionViewModel,
 } from "./collection-model.ts";
+import { COLLECTION_PAGE_SIZE, isCollectionRouteReachable } from "./collection-first-page.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { readPublishedCollection } from "./metadata/collection.ts";
 
 /** The collection detail's loader: the definition, its page of products, and the breadcrumb graph. */
 
-export const COLLECTION_PAGE_SIZE = 24;
+export { COLLECTION_PAGE_SIZE };
 
 const SORT_CHOICES = [
   { value: "name-asc", label: "Tên A–Z" },
@@ -46,7 +47,7 @@ export async function loadCollectionRoute({
   const collection = await readPublishedCollection(slug);
 
   // A published collection with no story is not a page: it would render a heading over nothing.
-  if (!collection || !collection.description?.trim()) notFound();
+  if (!isCollectionRouteReachable(collection)) notFound();
 
   let discovery: ReturnType<typeof parseCollectionDiscoverySearchParams>;
   let catalogPage: Awaited<ReturnType<typeof listConfiguredStorefrontDiscoveryPage>>;

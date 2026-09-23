@@ -25,6 +25,8 @@ const APPROVED_STATIC_PATHS = [
   "/shipping",
   "/size-guide",
   "/policies",
+  // Homepage editorial refresh §7.6.
+  "/feedback",
 ] as const;
 
 test("static authority self-canonicalizes every approved static page when indexing is enabled", () => {

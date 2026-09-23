@@ -109,33 +109,31 @@ try {
   const response = await fetch(`${BASE_URL}/`, { redirect: "manual" });
   const body = await response.text();
   assert.equal(response.status, 200, `P16A homepage must return 200\n${serverOutput}`);
+  // The homepage names the brand through its approved title, in initial HTML.
+  assert.equal(visibleText(body).includes("La.na Design"), true, "homepage must name the brand");
+  // The homepage editorial refresh (docs/specs/homepage-editorial-refresh.md §7.7) retired the
+  // homepage brand story and its facts block. The facts themselves stay published -- below, on the
+  // shipping and payment policy page that owns them -- but the retired section must not return.
+  assert.equal(
+    sectionByAriaLabelledBy(body, "brand-facts-title"),
+    "",
+    "the retired homepage brand-facts section must stay absent",
+  );
 
-  const text = visibleText(body);
+  const shipping = await fetch(`${BASE_URL}/shipping`, { redirect: "manual" });
+  const shippingBody = await shipping.text();
+  assert.equal(shipping.status, 200, `P16A shipping page must return 200\n${serverOutput}`);
+
+  const text = visibleText(shippingBody);
   for (const fact of [
-    // The brand name, which the brand-story heading carries. It used to be checked through a
-    // `La.na Design / About` eyebrow; master spec §16 does not carry that Brand #1 label into the
-    // approved composition, so the name is asserted directly rather than through the retired label.
-    "La.na Design",
-    // §23's approved brand-story paragraph. This replaced the inherited tagline on the homepage:
-    // the tagline is the short line other routes inherit, and §23 specifies this paragraph as the
-    // body copy a shopper reads here. Asserting it keeps the guarantee the tagline assertion gave —
-    // the homepage states brand voice the owner approved word for word, and cannot drift into
-    // prose a page wrote for itself.
-    "La.na Design mang đến những thiết kế thời trang nữ thanh lịch, nữ tính, với điểm nhấn là áo dài, váy và set đồ được chọn lọc kĩ lưỡng và tỉ mỉ.",
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
     "Miễn phí vận chuyển",
     "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
     "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
   ]) {
-    assert.equal(text.includes(fact), true, `homepage must expose factual visible text: ${fact}`);
+    assert.equal(text.includes(fact), true, `shipping page must expose factual visible text: ${fact}`);
   }
-
-  const brandSection = sectionByAriaLabelledBy(body, "brand-facts-title");
-  assert.notEqual(brandSection, "", "homepage must expose the public brand facts section");
-  assert.equal(anchorHasVisibleText(brandSection, "/shop", "Cửa hàng"), true);
-  assert.equal(anchorHasVisibleText(brandSection, "/collections", "Bộ sưu tập"), true);
-  assert.equal(anchorHasVisibleText(brandSection, "/track-order", "Tra cứu đơn"), true);
 
   // U30c / W14a: an unmatched route must recover the visitor, not dead-end them. Next already
   // answers 404 for these; what it answers with is an unbranded default page with no way back.
@@ -185,7 +183,7 @@ try {
   const knownRoute = await fetch(`${BASE_URL}/shop`, { redirect: "manual" });
   assert.equal(knownRoute.status, 200, "an existing route must stay 200 alongside the branded 404");
 
-  console.log("P16A/U30c public-brand HTTP smoke passed: factual brand/COD/shipping/server-verification content and internal links render in initial HTML, and an unmatched route returns a branded, recoverable HTML 404 that neither redirects nor canonicalises itself.");
+  console.log("P16A/U30c public-brand HTTP smoke passed: the homepage names the brand without the retired brand-facts section, factual COD/shipping/server-verification content renders in initial HTML on the shipping page, and an unmatched route returns a branded, recoverable HTML 404 that neither redirects nor canonicalises itself.");
 } finally {
   await stopServer();
   await rm(nextDevDirectory, { recursive: true, force: true });

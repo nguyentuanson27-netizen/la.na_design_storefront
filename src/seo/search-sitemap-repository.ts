@@ -31,7 +31,26 @@ export const STATIC_CANONICAL_PATHS = [
   "/size-guide",
   // A7b policy hub.
   "/policies",
+  // Homepage editorial refresh §7.6: the evergreen feedback gallery.
+  "/feedback",
 ] as const;
+
+/**
+ * The static paths the sitemap emits for this deployment's content.
+ *
+ * `/feedback` is a declared evergreen path, but its page exists only once the owner has supplied its
+ * feedback content (spec §7.6); until then the route 404s. A sitemap that nominated it anyway would
+ * hand crawlers a broken URL, so it is withheld on exactly the condition the route itself uses.
+ * Every other static path is unconditional, and the capacity budget below still reserves room for
+ * all of them.
+ */
+export function listStaticCanonicalPaths(
+  input: Readonly<{ feedbackPublished: boolean }>,
+): readonly string[] {
+  return STATIC_CANONICAL_PATHS.filter(
+    (pathname) => pathname !== "/feedback" || input.feedbackPublished,
+  );
+}
 
 /**
  * What is left of the per-document limit once the static paths have taken their share — 49,978.

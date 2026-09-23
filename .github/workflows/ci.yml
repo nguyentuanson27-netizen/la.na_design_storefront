@@ -201,7 +201,9 @@ jobs:
               cat "$RUNNER_TEMP/shipping-runtime.log"
               exit 1
             fi
-            if curl --fail --silent --show-error http://127.0.0.1:3218/ > "$RUNNER_TEMP/storefront.html"; then
+            # /shipping owns the full runtime shipping policy sentence since the homepage editorial
+            # refresh retired the homepage brand-story facts (docs/specs/homepage-editorial-refresh.md).
+            if curl --fail --silent --show-error http://127.0.0.1:3218/shipping > "$RUNNER_TEMP/shipping.html"; then
               ready=1
               break
             fi
@@ -213,8 +215,19 @@ jobs:
             exit 1
           fi
 
-          if grep -Fq "750.000" "$RUNNER_TEMP/storefront.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
-            if grep -Fq "650.000" "$RUNNER_TEMP/storefront.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
+          # Every page, the homepage included, still carries the compact masthead headline.
+          curl --fail --silent --show-error http://127.0.0.1:3218/ > "$RUNNER_TEMP/storefront.html"
+          if grep -Fq "5 sản phẩm hoặc đơn trên 650 nghìn" "$RUNNER_TEMP/storefront.html"; then
+            echo "Homepage promotion headline rendered the build-time policy instead of the runtime policy"
+            exit 1
+          fi
+          if ! grep -Fq "Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn" "$RUNNER_TEMP/storefront.html"; then
+            echo "Homepage promotion headline rendered an unexpected policy state"
+            exit 1
+          fi
+
+          if grep -Fq "750.000" "$RUNNER_TEMP/shipping.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
+            if grep -Fq "650.000" "$RUNNER_TEMP/shipping.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
               echo "Shipping promotion mixes runtime and build-time policy"
               exit 1
             fi
@@ -222,7 +235,7 @@ jobs:
             exit 0
           fi
 
-          if grep -Fq "650.000" "$RUNNER_TEMP/storefront.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/storefront.html"; then
+          if grep -Fq "650.000" "$RUNNER_TEMP/shipping.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
             echo "Shipping promotion rendered the build-time policy instead of the runtime policy"
             exit 1
           fi

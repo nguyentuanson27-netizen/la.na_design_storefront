@@ -132,6 +132,7 @@ test("enabled noindex policy allows approved cutover routes and retires obsolete
     "/returns",
     "/shipping",
     "/size-guide",
+    "/feedback",
   ]) {
     assert.equal(
       shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "" }),
