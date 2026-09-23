@@ -36,6 +36,8 @@ const SELF_CANONICAL_STATIC_PATHS: ReadonlySet<string> = new Set([
   "/size-guide",
   // A7b policy hub, same shape: one static path, no paginated form, nothing a query could vary.
   "/policies",
+  // Homepage editorial refresh §7.6: the feedback gallery, same evergreen shape.
+  "/feedback",
 ]);
 
 /**

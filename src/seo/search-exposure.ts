@@ -49,6 +49,7 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/returns$/,
   /^\/shipping$/,
   /^\/size-guide$/,
+  /^\/feedback$/,
 ] as const;
 
 // F3a category destinations are crawlable route shells only. Until G4 approves canonical product

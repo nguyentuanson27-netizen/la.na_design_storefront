@@ -72,6 +72,8 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
   { path: "src/app/size-guide/page.tsx", shell: true, metadata: "page" },
   // A7b: the one non-duplicative policy hub. Its per-topic anchors are a published contract.
   { path: "src/app/policies/page.tsx", shell: true, metadata: "page" },
+  // Homepage editorial refresh §7.6: the evergreen customer feedback gallery.
+  { path: "src/app/feedback/page.tsx", shell: true, metadata: "page" },
   { path: "src/app/track-order/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/search/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/account/page.tsx", shell: true, metadata: "static" },
