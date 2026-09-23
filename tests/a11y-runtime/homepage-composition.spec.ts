@@ -3,21 +3,25 @@ import { once } from "node:events";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
+import { BUYER_AXE_TAGS } from "./axe-tags";
 
 /**
- * F6b — the homepage in the fixed order master spec §16 approves, with every content-dependent
- * block present.
+ * The homepage editorial refresh (docs/specs/homepage-editorial-refresh.md) as a shopper gets it
+ * from the real database rows and the shipped repository config.
  *
- * `editorial.spec.ts` covers the absent half: with no category media and no manual Featured
- * selection, those blocks omit themselves. This spec covers the other half, because "renders when
- * the admin has configured it" and "omits itself when they have not" are different failures and a
- * page that never renders a block passes the absence test perfectly.
+ * YOUR NEXT FAVOURITE is DB-owned (`CategoryEditorialMedia`), so it is exercised here in both its
+ * complete and fail-closed states. SPECIAL DEALS, the promo rows and the feedback rail depend on
+ * owner content the spec leaves pending, so with the shipped config they must be absent -- even
+ * though this fixture writes a real `HomepageFeaturedProduct` selection, which proves the manual
+ * authority alone cannot publish SPECIAL DEALS without its configured source collection. Their
+ * selection, reachability and ordering rules are pinned by `tests/domain/home-route-model.test.ts`.
  *
- * The fixtures write the real rows -- `CategoryEditorialMedia`, `HomepageFeaturedProduct` -- rather
- * than stubbing the reads, so the section order asserted here is the order a shopper gets.
+ * The fixtures write the real rows rather than stubbing the reads, so the section order asserted
+ * here is the order a shopper gets.
  */
 
 const HOST = "127.0.0.1";
@@ -94,9 +98,8 @@ let originalCollectionState: OriginalCollectionState[] = [];
 /**
  * Park every real published/positioned collection for the duration of this spec.
  *
- * The collection rail is not one of the sections §16 orders, and it renders from rows this spec
- * does not own. Leaving them in place would make the asserted section order depend on whatever
- * collections happen to exist in the shared database.
+ * The hero renders from rows this spec does not own. Leaving them in place would make the asserted
+ * page depend on whatever collections happen to exist in the shared database.
  */
 async function parkCollections() {
   originalCollectionState = await prisma.collectionDefinition.findMany({
@@ -119,7 +122,7 @@ async function restoreCollections() {
   }
 }
 
-const CATEGORY_KEYS = ["aoDai", "setDo", "vayDam"] as const;
+const CATEGORY_KEYS = ["aoDai", "vayDam", "setDo", "phuKien"] as const;
 
 type ParkedCategoryMedia = {
   categoryKey: string;
@@ -179,10 +182,7 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
-/**
- * One sellable product, with `createdAt` set explicitly so the `Hàng mới về` ordering has something
- * to be right or wrong about rather than depending on insertion timing.
- */
+/** One sellable product. */
 async function addProduct(index: number, createdAt: Date) {
   const product = await prisma.productMirror.create({
     data: {
@@ -230,18 +230,27 @@ const regionOrder = (page: Page) =>
     .locator("[data-homepage-region]")
     .evaluateAll((regions) => regions.map((region) => region.getAttribute("data-homepage-region")));
 
+const RETIRED_REGIONS = [
+  "new-arrivals",
+  "lead-category",
+  "featured",
+  "category-editorial",
+  "collection-navigation",
+  "service",
+  "trust-support",
+] as const;
+
 test.beforeAll(async () => {
   await cleanup();
   await parkCollections();
 
-  // Deliberately inserted oldest-first, so a page that simply echoed insertion order would fail.
-  const oldest = await addProduct(1, new Date("2026-01-01T00:00:00.000Z"));
+  const first = await addProduct(1, new Date("2026-01-01T00:00:00.000Z"));
   await addProduct(2, new Date("2026-05-01T00:00:00.000Z"));
   await addProduct(3, new Date("2026-09-01T00:00:00.000Z"));
 
-  // §20: Featured is a manual, admin-ordered selection. Pinning the *oldest* product proves the
-  // section is read from this table rather than sharing the new-arrivals read.
-  await prisma.homepageFeaturedProduct.create({ data: { productId: oldest.id, position: 1 } });
+  // A real manual selection. With no configured SPECIAL DEALS source collection it must not
+  // publish anything -- and the retired Featured grid must not come back to show it.
+  await prisma.homepageFeaturedProduct.create({ data: { productId: first.id, position: 1 } });
 
   await parkCategoryMedia();
 
@@ -279,116 +288,62 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("F6b renders every approved section in the master spec §16 order", async ({ page }) => {
+test("the refreshed homepage renders only real content, and none of the retired sections", async ({ page }) => {
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-  // No collection publishes hero media or a homepage position here, so the hero and the collection
-  // rail are absent; everything §16 lists that has content is present, in order.
-  expect(await regionOrder(page)).toEqual([
-    "new-arrivals",
-    "lead-category",
-    "featured",
-    "category-editorial",
-    "service",
-    "trust-support",
+  // Hero absent (no collection hero media); SPECIAL DEALS, both promo rows and the feedback rail
+  // absent (pending config); YOUR NEXT FAVOURITE present (all four category images configured).
+  expect(await regionOrder(page)).toEqual(["category-discovery"]);
+  for (const region of RETIRED_REGIONS) {
+    await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);
+  }
+  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2, name: "Sản phẩm nổi bật" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: /F6b Sản phẩm/ })).toHaveCount(0);
+  await expect(page.locator('a[href="/feedback"]')).toHaveCount(0);
+});
+
+test("YOUR NEXT FAVOURITE links the four canonical categories in the approved order", async ({ page }) => {
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+  const section = page.locator('[data-homepage-region="category-discovery"]');
+  await expect(section.getByRole("heading", { level: 2, name: "YOUR NEXT FAVOURITE" })).toBeVisible();
+  const tiles = section.getByRole("link");
+  await expect(tiles).toHaveCount(4);
+  expect(await tiles.evaluateAll((links) => links.map((link) => link.getAttribute("href")))).toEqual([
+    "/ao-dai",
+    "/vay-dam",
+    "/set-do",
+    "/phu-kien",
   ]);
+  for (const [index, name] of ["Áo dài", "Váy, đầm", "Set đồ", "Phụ kiện"].entries()) {
+    await expect(tiles.nth(index)).toHaveAccessibleName(name);
+    await expect(tiles.nth(index).locator("img")).toHaveCount(1);
+  }
 });
 
-test("F6b Hàng mới về is ordered by recency, not by name or insertion order", async ({ page }) => {
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
-  const grid = page.locator('[data-homepage-region="new-arrivals"]');
-  await expect(grid.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
-
-  // Read the slug rather than the card's text: the card renders name and price in one link, so
-  // matching on text would assert about formatting instead of about order.
-  const hrefs = await grid
-    .getByRole("link")
-    .evaluateAll((links) =>
-      links
-        .map((link) => link.getAttribute("href") ?? "")
-        .filter((href) => href.includes("/shop/f6b-product-")),
-    );
-  const ordered = hrefs.map((href) => href.split("/shop/f6b-product-")[1]?.split("-")[0]);
-  expect(ordered).toEqual(["3", "2", "1"]);
-});
-
-test("F6b Featured renders the manual selection, not a repeat of new arrivals", async ({ page }) => {
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
-  const featured = page.locator('[data-homepage-region="featured"]');
-  await expect(featured.getByRole("heading", { level: 2, name: "Sản phẩm nổi bật" })).toBeVisible();
-
-  // Exactly the one pinned product -- the oldest, which new arrivals lists last.
-  await expect(featured.getByRole("link", { name: /F6b Sản phẩm/ })).toHaveCount(1);
-  await expect(featured.getByRole("link", { name: /F6b Sản phẩm 1/ })).toBeVisible();
-});
-
-test("F6b the Áo dài section links to all five subcategories", async ({ page }) => {
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
-  const aoDai = page.locator('[data-homepage-region="lead-category"]');
-  await expect(aoDai.getByRole("heading", { level: 2, name: "Áo dài La.na Design" })).toBeVisible();
-  await expect(aoDai.locator("img")).toBeVisible();
-
-  const hrefs = await aoDai
-    .getByRole("navigation", { name: "Áo dài" })
-    .getByRole("link")
-    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-
-  expect(hrefs).toEqual([
-    "/ao-dai/cach-tan",
-    "/ao-dai/tet",
-    "/ao-dai/cuoi",
-    "/ao-dai/4-ta",
-    "/ao-dai/6-ta",
-  ]);
-});
-
-test("F6b the category editorial is exactly Set đồ and Váy, đầm, labelled by category name", async ({
+test("one missing category image closes the whole YOUR NEXT FAVOURITE section, not one tile", async ({
   page,
 }) => {
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
-  const editorial = page.locator('[data-homepage-region="category-editorial"]');
-  const blocks = editorial.locator(".category-editorial__block");
-  await expect(blocks).toHaveCount(2);
-
-  await expect(blocks.nth(0)).toHaveAttribute("href", "/set-do");
-  await expect(blocks.nth(0)).toContainText("Set đồ");
-  await expect(blocks.nth(1)).toHaveAttribute("href", "/vay-dam");
-  await expect(blocks.nth(1)).toContainText("Váy, đầm");
-
-  // §21: Phụ kiện is not part of this section.
-  await expect(editorial.locator('a[href="/phu-kien"]')).toHaveCount(0);
-});
-
-test("F6b one missing category image closes the whole editorial section, not half of it", async ({
-  page,
-}) => {
-  // §21 fixes this section at exactly two blocks, and no placeholder may stand in for a missing
-  // one. So a single half-width block is not a degraded state to allow -- it is a layout nobody
-  // approved. Removing either image must remove the section.
-  await prisma.categoryEditorialMedia.deleteMany({ where: { categoryKey: "vayDam" } });
+  await prisma.categoryEditorialMedia.update({
+    where: { categoryKey: "phuKien" },
+    data: { heroImageUrl: null },
+  });
 
   try {
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-    await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
-    await expect(page.locator(".category-editorial__block")).toHaveCount(0);
-
-    // The rest of the page is untouched: only this section is fail-closed.
-    await expect(page.locator('[data-homepage-region="new-arrivals"]')).toHaveCount(1);
+    await expect(page.locator('[data-homepage-region="category-discovery"]')).toHaveCount(0);
+    await expect(page.locator(".category-discovery__tile")).toHaveCount(0);
   } finally {
-    await prisma.categoryEditorialMedia.create({
-      data: { categoryKey: "vayDam", heroImageUrl: IMAGE("editorial-vayDam") },
+    await prisma.categoryEditorialMedia.update({
+      where: { categoryKey: "phuKien" },
+      data: { heroImageUrl: IMAGE("editorial-phuKien") },
     });
   }
 });
 
-test("F6b an untrusted category image closes the section rather than reaching the page", async ({
-  page,
-}) => {
+test("an untrusted category image closes the section rather than reaching the page", async ({ page }) => {
   await prisma.categoryEditorialMedia.update({
     where: { categoryKey: "setDo" },
     data: { heroImageUrl: "https://evil.example.com/set-do.jpg" },
@@ -397,7 +352,7 @@ test("F6b an untrusted category image closes the section rather than reaching th
   try {
     await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-    await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
+    await expect(page.locator('[data-homepage-region="category-discovery"]')).toHaveCount(0);
     await expect(page.locator('img[src*="evil.example.com"]')).toHaveCount(0);
   } finally {
     await prisma.categoryEditorialMedia.update({
@@ -405,4 +360,41 @@ test("F6b an untrusted category image closes the section rather than reaching th
       data: { heroImageUrl: IMAGE("editorial-setDo") },
     });
   }
+});
+
+test("the refreshed homepage is accessible, keyboard reachable and overflow-free at both widths", async ({
+  page,
+}) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error" || message.type() === "warning") consoleErrors.push(message.text());
+  });
+  page.on("pageerror", (error) => consoleErrors.push(error.message));
+
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+    const results = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+    expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+    ).toBe(true);
+
+    const firstTile = page.locator(".category-discovery__tile").first();
+    await firstTile.focus();
+    await expect(firstTile).toBeFocused();
+  }
+
+  expect(consoleErrors).toEqual([]);
+});
+
+test("/feedback is not published while its gallery content is pending", async ({ page }) => {
+  const response = await page.goto(`${BASE_URL}/feedback`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(404);
+  await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
 });

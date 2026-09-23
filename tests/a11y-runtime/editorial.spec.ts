@@ -80,6 +80,55 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
+const CATEGORY_KEYS = ["aoDai", "vayDam", "setDo", "phuKien"] as const;
+
+type ParkedCategoryMedia = {
+  categoryKey: string;
+  heroImageUrl: string | null;
+  megaMenuImageUrl: string | null;
+};
+
+/** `null` marks a key that had no row, so restoring it means removing the fixture again. */
+let parkedCategoryMedia = new Map<string, ParkedCategoryMedia | null>();
+
+/**
+ * The homepage's one DB-owned editorial section is YOUR NEXT FAVOURITE, and several tests here
+ * scroll the homepage to exercise the header and promotion states -- which needs a page with real
+ * content below the fold. Its four category images are written the way the composition spec does:
+ * snapshot first, upsert only the hero, and put back exactly what was there afterwards.
+ */
+async function parkCategoryMedia() {
+  const existing = await prisma.categoryEditorialMedia.findMany({
+    where: { categoryKey: { in: [...CATEGORY_KEYS] } },
+    select: { categoryKey: true, heroImageUrl: true, megaMenuImageUrl: true },
+  });
+  parkedCategoryMedia = new Map(CATEGORY_KEYS.map((key) => [key as string, null]));
+  for (const row of existing) parkedCategoryMedia.set(row.categoryKey, row);
+
+  for (const categoryKey of CATEGORY_KEYS) {
+    const heroImageUrl = `https://content.pancake.vn/images/1/2/3/editorial-${categoryKey}.jpg`;
+    await prisma.categoryEditorialMedia.upsert({
+      where: { categoryKey },
+      update: { heroImageUrl },
+      create: { categoryKey, heroImageUrl },
+    });
+  }
+}
+
+async function restoreCategoryMedia() {
+  for (const [categoryKey, parked] of parkedCategoryMedia) {
+    if (parked) {
+      await prisma.categoryEditorialMedia.update({
+        where: { categoryKey },
+        data: { heroImageUrl: parked.heroImageUrl, megaMenuImageUrl: parked.megaMenuImageUrl },
+      });
+    } else {
+      await prisma.categoryEditorialMedia.deleteMany({ where: { categoryKey } });
+    }
+  }
+  parkedCategoryMedia = new Map();
+}
+
 async function expectRuntimePageClean(page: import("@playwright/test").Page) {
   await page.waitForFunction(() => document.title.trim().length > 0);
   await page.evaluate(() => window.scrollTo({ top: 0, behavior: "instant" }));
@@ -270,6 +319,8 @@ test.beforeAll(async () => {
     },
   });
 
+  await parkCategoryMedia();
+
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
@@ -296,6 +347,7 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await stopServer();
   await cleanup();
+  await restoreCategoryMedia();
   await prisma.$disconnect();
 });
 
@@ -756,7 +808,7 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
   await expectRuntimePageClean(page);
 });
 
-test("homepage uses the configured local catalog while retired Lookbook is absent", async ({ page }) => {
+test("homepage carries only the refreshed composition while retired Lookbook and old sections are absent", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
   // The page's one h1 is the approved homepage title, carried outside the hero: master spec §17
@@ -765,61 +817,41 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   // This fixture publishes no collection hero media, so the hero region is absent rather than
   // rendered against a product photo the way the retired campaign block was.
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
-  // Master spec §16's first product grid. `Tuyển chọn` and the Brand #1 lookbook block are gone:
-  // neither is in the approved order.
-  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
-  // No `Xem tất cả` out of this grid. `/new-arrivals` now has a listing to land on, so the reason
-  // is no longer that the destination is empty -- it is that the approved homepage composition
-  // (§16) does not carry that CTA, and adding one is a homepage decision rather than a side effect
-  // of giving the route its products. Still pinned as an absence so it cannot arrive unreviewed.
+
+  // The homepage editorial refresh retired every old lower-homepage section. None may return.
+  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { level: 2, name: "Sản phẩm nổi bật" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Xem tất cả", exact: true })).toHaveCount(0);
-  await expect(
-    page.locator('[data-homepage-region="new-arrivals"] a[href="/new-arrivals"]'),
-  ).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Về La.na Design ↗" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Hỗ trợ và khám phá" })).toHaveCount(0);
+  await expect(page.getByText("Mua theo bộ sưu tập", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
+  for (const region of [
+    "new-arrivals",
+    "lead-category",
+    "featured",
+    "category-editorial",
+    "collection-navigation",
+    "service",
+    "trust-support",
+  ]) {
+    await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);
+  }
   await expect(page.locator(".lookbook-panel")).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Tuyển chọn" })).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
 
-  // §22: exactly these three facts, and the brand story links to /about.
-  const serviceStrip = page.locator('[data-homepage-region="service"]');
-  await expect(serviceStrip.getByRole("listitem")).toHaveCount(3);
-  await expect(serviceStrip.getByText("Đổi trả trong 15 ngày", { exact: true })).toBeVisible();
-  await expect(serviceStrip.getByText("Giao hàng toàn quốc", { exact: true })).toBeVisible();
-  await expect(serviceStrip.getByText("Tư vấn size 08:00–22:00", { exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Về La.na Design ↗" })).toHaveAttribute(
-    "href",
-    "/about",
-  );
-
-  // §19 and §21 depend on category editorial media this fixture does not configure, and §20 on a
-  // manual Featured selection it does not make, so all three omit themselves.
-  await expect(page.locator('[data-homepage-region="lead-category"]')).toHaveCount(0);
-  await expect(page.locator('[data-homepage-region="featured"]')).toHaveCount(0);
-  await expect(page.locator('[data-homepage-region="category-editorial"]')).toHaveCount(0);
-
-  const brandFactsNavigation = page.getByRole("navigation", { name: "Hỗ trợ và khám phá" });
-  await expect(brandFactsNavigation.getByRole("link", { name: "Cửa hàng ↗" })).toHaveAttribute("href", "/shop");
-  await expect(brandFactsNavigation.getByRole("link", { name: "Bộ sưu tập ↗" })).toHaveAttribute("href", "/collections");
-  await expect(brandFactsNavigation.getByRole("link", { name: "Tra cứu đơn ↗" })).toHaveAttribute("href", "/track-order");
-  await expect(page.getByText("Mua theo danh mục", { exact: true })).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Danh mục sản phẩm" })).toHaveCount(0);
-  await expect(page.getByText("Mua theo bộ sưu tập", { exact: true })).toBeVisible();
-
-  const collectionNavigation = page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" });
-  await expect(collectionNavigation).toBeVisible();
-  await expect(collectionNavigation.getByRole("link", { name: "Essential Outerwear", exact: true })).toHaveAttribute(
-    "href",
-    "/collections/essential-outerwear",
-  );
-  await expect(page.getByText("Draft Capsule", { exact: true })).toHaveCount(0);
+  // The refreshed sections are fail-closed on pending content: SPECIAL DEALS has no configured
+  // source collection yet, the promo rows are unmapped and the feedback gallery is unsupplied, so
+  // none of them renders a placeholder. YOUR NEXT FAVOURITE is DB-owned and this fixture
+  // configures all four of its images, so it is the one refreshed section on the page.
+  expect(
+    await page
+      .locator("[data-homepage-region]")
+      .evaluateAll((regions) => regions.map((region) => region.getAttribute("data-homepage-region"))),
+  ).toEqual(["category-discovery"]);
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
-  await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
-  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute("href", `/shop/${productSlug}`);
-  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toHaveCount(0);
-  await expect(page.getByText("Có sẵn", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("1.290.000")).toBeVisible();
-  await expect(page.getByText("Fall / Winter 2026")).toHaveCount(0);
-  await expect(page.getByText("Relaxed Oxford Shirt")).toHaveCount(0);
+  await expect(page.getByText("Draft Capsule", { exact: true })).toHaveCount(0);
   await expectRuntimePageClean(page);
 
   const lookbookResponse = await page.request.get(`${BASE_URL}/lookbook`);
@@ -839,6 +871,11 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   await page.goto(`${BASE_URL}/collections/essential-outerwear`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "Essential Outerwear" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: productName })).toBeVisible();
+  // The product-card assertions the retired homepage grid used to carry, on the listing that
+  // still renders this product.
+  await expect(page.getByRole("link", { name: `Xem ${productName}` })).toHaveAttribute("href", `/shop/${productSlug}`);
+  await expect(page.getByText("1.290.000")).toBeVisible();
+  await expect(page.getByText("Runtime editorial layer for the city uniform.")).toHaveCount(0);
   await expectRuntimePageClean(page);
 
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
@@ -865,19 +902,17 @@ test("homepage uses the configured local catalog while retired Lookbook is absen
   await expectRuntimePageClean(page);
 });
 
-test("P8 homepage empty state uses the shared semantic state pattern and degrades gracefully", async ({ page }) => {
+test("an empty catalog leaves the refreshed homepage without product grids or placeholder states", async ({ page }) => {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-  const emptyState = page.locator('[data-ui-state="empty"]');
-  await expect(emptyState).toBeVisible();
-  await expect(
-    emptyState.getByText("Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để hiển thị trên website.", { exact: true }),
-  ).toBeVisible();
-  // An empty catalog empties the grid, not the page: the approved copy sections stay.
-  await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toBeVisible();
-  await expect(page.locator('[data-homepage-region="service"]').getByRole("listitem")).toHaveCount(3);
+  // The retired `Hàng mới về` grid carried the homepage's empty state. SPECIAL DEALS does not have
+  // one: with nothing real to show it is absent, never an empty or partial grid.
+  await expect(page.locator('[data-ui-state="empty"]')).toHaveCount(0);
+  await expect(page.locator(".product-grid")).toHaveCount(0);
+  await expect(page.locator('[data-homepage-region="special-deals"]')).toHaveCount(0);
+  await expect(page.locator("h1")).toHaveCount(1);
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expect(page.locator(".lookbook-panel")).toHaveCount(0);
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);

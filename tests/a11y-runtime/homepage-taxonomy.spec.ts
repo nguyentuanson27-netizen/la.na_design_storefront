@@ -5,9 +5,6 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
 
-import { BRAND } from "../../src/brand/index.ts";
-import { readGuestShippingPolicy } from "../../src/commerce/guest-shipping-policy.ts";
-import { buildPublicBrandFacts } from "../../src/content/public-brand-facts.ts";
 import { prisma } from "../../src/db/prisma.ts";
 
 const HOST = "127.0.0.1";
@@ -16,7 +13,6 @@ const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const TEST_PREFIX = "u2-homepage-";
-const expectedBrandFacts = buildPublicBrandFacts(readGuestShippingPolicy());
 
 type OriginalCollectionState = {
   slug: string;
@@ -132,31 +128,20 @@ async function addCollection(
   });
 }
 
-async function expectCanonicalTrustStrip(page: import("@playwright/test").Page) {
-  const trustStrip = page.locator('[data-homepage-region="trust-support"]');
-  await expect(trustStrip).toBeVisible();
-  // Master spec §23's brand-story paragraph is its own approved fact, distinct from the tagline
-  // every other route inherits, so the homepage quotes it rather than the tagline.
-  await expect(trustStrip.getByText(BRAND.identity.homeBrandStory, { exact: true })).toBeVisible();
-  await expect(
-    trustStrip.getByText(
-      `${expectedBrandFacts.paymentMethod} ${expectedBrandFacts.checkoutAccount}`,
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(
-    trustStrip.getByText(
-      `${expectedBrandFacts.shipping.title}. ${expectedBrandFacts.shipping.detail}`,
-      { exact: true },
-    ),
-  ).toBeVisible();
-  await expect(trustStrip.getByText(expectedBrandFacts.serverVerification, { exact: true })).toBeVisible();
-
-  const supportHrefs = await trustStrip
-    .getByRole("navigation", { name: "Hỗ trợ và khám phá" })
-    .getByRole("link")
-    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-  expect(supportHrefs).toEqual(["/shop", "/collections", "/track-order"]);
+/**
+ * The homepage editorial refresh retired the collection navigation rail, the service strip and the
+ * brand story (docs/specs/homepage-editorial-refresh.md §3, §7.7). Their data stays -- collections
+ * keep their `homepagePosition`, which still orders the hero -- but none of it may reappear as one
+ * of the old lower-homepage sections.
+ */
+async function expectRetiredSectionsAbsent(page: import("@playwright/test").Page) {
+  await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
+  await expect(page.getByText("Mua theo bộ sưu tập", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Hỗ trợ và khám phá" })).toHaveCount(0);
+  for (const region of ["collection-navigation", "service", "trust-support", "new-arrivals", "featured"]) {
+    await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);
+  }
+  await expect(page.locator('a[href*="category="]')).toHaveCount(0);
 }
 
 test.beforeAll(async () => {
@@ -187,75 +172,32 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("U2 homepage collection rail uses explicit published merchandising positions across 0, partial and six-slot states", async ({
+test("positioned collections no longer publish the retired homepage collection rail or brand story", async ({
   page,
 }) => {
   await addCollection(`${TEST_PREFIX}unpositioned`, "U2 Published Unpositioned", true);
   await addCollection(`${TEST_PREFIX}draft`, "U2 Draft Positioned", false, 1);
+  await addCollection(`${TEST_PREFIX}position-two`, "U2 Position Two", true, 2);
+  await addCollection(`${TEST_PREFIX}position-six`, "U2 Position Six", true, 6);
 
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-  await expect(page.locator('a[href*="category="]')).toHaveCount(0);
-  await expect(page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" })).toHaveCount(0);
-  await expect(page.getByText("U2 Published Unpositioned", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("U2 Draft Positioned", { exact: true })).toHaveCount(0);
-  // No collection here publishes hero media, so the homepage hero stays absent (master spec §17).
+
+  // No collection here publishes hero media, so the unchanged hero stays absent (master spec §17),
+  // and with the refresh content still pending and no Pancake shop configured, no refreshed
+  // section has anything real to show either.
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
-  await expectCanonicalTrustStrip(page);
-  expect(
-    await page.locator("[data-homepage-region]").evaluateAll((regions) =>
-      regions.map((region) => region.getAttribute("data-homepage-region")),
-    ),
-  ).toEqual(["new-arrivals", "service", "trust-support"]);
-
-  await addCollection(`${TEST_PREFIX}a-six`, "U2 Position Six", true, 6);
-  await addCollection(`${TEST_PREFIX}z-two`, "U2 Position Two", true, 2);
-
-  await page.reload({ waitUntil: "networkidle" });
-  const partialRail = page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" });
-  await expect(partialRail).toBeVisible();
-  await expect(partialRail.getByRole("link")).toHaveCount(2);
-  await expect(partialRail.getByRole("link").nth(0)).toHaveText("U2 Position Two");
-  await expect(partialRail.getByRole("link").nth(0)).toHaveAttribute(
-    "href",
-    `/collections/${TEST_PREFIX}z-two`,
-  );
-  await expect(partialRail.getByRole("link").nth(1)).toHaveText("U2 Position Six");
-  await expect(partialRail.getByRole("link").nth(1)).toHaveAttribute(
-    "href",
-    `/collections/${TEST_PREFIX}a-six`,
-  );
-  await expect(page.getByText("U2 Published Unpositioned", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("U2 Draft Positioned", { exact: true })).toHaveCount(0);
-  await expect(page.locator('a[href*="category="]')).toHaveCount(0);
-  await expectCanonicalTrustStrip(page);
-  expect(
-    await page.locator("[data-homepage-region]").evaluateAll((regions) =>
-      regions.map((region) => region.getAttribute("data-homepage-region")),
-    ),
-  ).toEqual(["new-arrivals", "collection-navigation", "service", "trust-support"]);
-
-  await prisma.collectionDefinition.update({
-    where: { slug: `${TEST_PREFIX}draft` },
-    data: { homepagePosition: null },
-  });
-  await addCollection(`${TEST_PREFIX}position-one`, "U2 Position One", true, 1);
-  await addCollection(`${TEST_PREFIX}position-three`, "U2 Position Three", true, 3);
-  await addCollection(`${TEST_PREFIX}position-four`, "U2 Position Four", true, 4);
-  await addCollection(`${TEST_PREFIX}position-five`, "U2 Position Five", true, 5);
-
-  await page.reload({ waitUntil: "networkidle" });
-  const fullRail = page.getByRole("navigation", { name: "Bộ sưu tập nổi bật" });
-  await expect(fullRail.getByRole("link")).toHaveCount(6);
-  await expect(fullRail.getByRole("link").allTextContents()).resolves.toEqual([
-    "U2 Position One",
+  await expectRetiredSectionsAbsent(page);
+  for (const title of [
+    "U2 Published Unpositioned",
+    "U2 Draft Positioned",
     "U2 Position Two",
-    "U2 Position Three",
-    "U2 Position Four",
-    "U2 Position Five",
     "U2 Position Six",
-  ]);
-  await expect(page.getByText("U2 Published Unpositioned", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("U2 Draft Positioned", { exact: true })).toHaveCount(0);
-  await expect(page.locator('a[href*="category="]')).toHaveCount(0);
-  await expectCanonicalTrustStrip(page);
+  ]) {
+    await expect(page.locator("main").getByText(title, { exact: true })).toHaveCount(0);
+  }
+  expect(
+    await page.locator("[data-homepage-region]").evaluateAll((regions) =>
+      regions.map((region) => region.getAttribute("data-homepage-region")),
+    ),
+  ).toEqual([]);
 });

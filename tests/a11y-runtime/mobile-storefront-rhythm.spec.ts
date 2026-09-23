@@ -17,16 +17,16 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  *
  *   1. the PDP product frame should use the owner-confirmed 2:3 portrait ratio below `lg`, so
  *      phone and tablet product media share one predictable vertical frame;
- *   2. `Áo dài La.na Design` was set at body size with a section break's worth of air around it,
- *      while `Set đồ` and `Váy, đầm` were cream serif overlaid on their images: the same kind of
- *      content in two design languages, neither of which read as a heading;
- *   3. the service strip spent ~155px on three short facts;
- *   4. the footer's legal block did not name the legal representative.
+ *   2. category names must read as headings in one visual system, not captions -- now the four
+ *      YOUR NEXT FAVOURITE tiles of the homepage editorial refresh, 2 × 2 on a phone;
+ *   3. the footer's legal block did not name the legal representative.
  *
- * What is asserted here is the *relationship*, not a pixel count: the hero's ratio, the three
- * category names sharing one computed type treatment, the strip being materially shorter than the
- * layout it replaced, and the representative present at both widths. A test that pinned 28px would
- * fail the next time the scale moves without anything actually regressing.
+ * (The homepage service strip this spec once measured was retired by the editorial refresh.)
+ *
+ * What is asserted here is the *relationship*, not a pixel count: the hero's ratio, the four
+ * category names sharing one computed type treatment under their images, and the representative
+ * present at both widths. A test that pinned 28px would fail the next time the scale moves without
+ * anything actually regressing.
  */
 
 const HOST = "127.0.0.1";
@@ -98,8 +98,8 @@ type ParkedCollection = { slug: string; isPublished: boolean; homepagePosition: 
 let parkedCollections: ParkedCollection[] = [];
 
 /**
- * The collection rail renders from rows this spec does not own, and it sits between the category
- * editorial and the service strip. Park it so the homepage this spec measures is the one it seeded.
+ * Published collections are rows this spec does not own, and homepage sections (the hero, promo
+ * rows) can render from them. Park them so the homepage this spec measures is the one it seeded.
  */
 async function parkCollections() {
   parkedCollections = await prisma.collectionDefinition.findMany({
@@ -121,7 +121,7 @@ async function restoreCollections() {
   }
 }
 
-const CATEGORY_KEYS = ["aoDai", "setDo", "vayDam"] as const;
+const CATEGORY_KEYS = ["aoDai", "vayDam", "setDo", "phuKien"] as const;
 
 type ParkedCategoryMedia = {
   categoryKey: string;
@@ -149,8 +149,8 @@ async function parkCategoryMedia() {
   parkedCategoryMedia = new Map(CATEGORY_KEYS.map((key) => [key as string, null]));
   for (const row of existing) parkedCategoryMedia.set(row.categoryKey, row);
 
-  // §19 and §21 both need configured media, or the sections omit themselves and there is nothing
-  // to compare.
+  // YOUR NEXT FAVOURITE is all-or-nothing over these four, so every one needs configured media or
+  // the section omits itself and there is nothing to compare.
   for (const categoryKey of CATEGORY_KEYS) {
     await prisma.categoryEditorialMedia.upsert({
       where: { categoryKey },
@@ -357,102 +357,62 @@ test("the PDP hides promotion and breadcrumb at the top, then reveals promotion 
   await expect(promotion).toBeVisible();
 });
 
-test("Áo dài, Set đồ and Váy, đầm are drawn with one visual system on a phone", async ({ page }) => {
+test("YOUR NEXT FAVOURITE draws four category tiles in one visual system, 2 × 2 on a phone", async ({
+  page,
+}) => {
   await page.setViewportSize(MOBILE);
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-  const aoDaiTitle = page.locator('[data-homepage-region="lead-category"] h2');
-  const otherTitles = page.locator(".category-editorial__label");
-  await expect(aoDaiTitle).toHaveText(`Áo dài La.na Design`);
-  await expect(otherTitles).toHaveCount(2);
+  const section = page.locator('[data-homepage-region="category-discovery"]');
+  await expect(section.getByRole("heading", { level: 2, name: "YOUR NEXT FAVOURITE" })).toBeVisible();
+  const tiles = section.locator(".category-discovery__tile");
+  const labels = section.locator(".category-discovery__label");
+  await expect(tiles).toHaveCount(4);
 
-  const treatments = [
-    await typeTreatmentOf(aoDaiTitle),
-    await typeTreatmentOf(otherTitles.nth(0)),
-    await typeTreatmentOf(otherTitles.nth(1)),
-  ];
+  // Destinations and names come from CATEGORY_NAVIGATION, in the spec's order.
+  expect(await tiles.evaluateAll((links) => links.map((link) => link.getAttribute("href")))).toEqual([
+    "/ao-dai",
+    "/vay-dam",
+    "/set-do",
+    "/phu-kien",
+  ]);
+  expect(await labels.allTextContents()).toEqual(["Áo dài", "Váy, đầm", "Set đồ", "Phụ kiện"]);
 
-  // One type treatment across all three. Before this, Áo dài was ~16px sans in ink and the other
-  // two were 24px serif in cream, positioned absolutely over their photographs.
+  // One type treatment across all four, large enough to read as the heading it is.
+  const treatments = await Promise.all([0, 1, 2, 3].map((index) => typeTreatmentOf(labels.nth(index))));
   const [lead] = treatments;
   for (const treatment of treatments) {
     expect(treatment.fontFamily).toBe(lead!.fontFamily);
     expect(treatment.fontSize).toBeCloseTo(lead!.fontSize, 1);
     expect(treatment.fontWeight).toBe(lead!.fontWeight);
     expect(treatment.color).toBe(lead!.color);
-    expect(treatment.textAlign).toBe(lead!.textAlign);
-    expect(treatment.background).toBe(lead!.background);
-    // In normal flow under the image, not floated over it.
-    expect(treatment.position).toBe("static");
   }
-
-  // The owner's actual complaint: the name read as a caption. It is a heading now.
-  expect(lead!.fontSize).toBeGreaterThanOrEqual(24);
+  expect(lead!.fontSize).toBeGreaterThanOrEqual(18);
   expect(lead!.fontWeight).toBe("400");
 
   // Each image sits above its own name rather than behind it.
-  for (const [media, title] of [
-    [page.locator(".lead-editorial__media"), aoDaiTitle],
-    [page.locator(".category-editorial__media").nth(0), otherTitles.nth(0)],
-    [page.locator(".category-editorial__media").nth(1), otherTitles.nth(1)],
-  ] as const) {
-    const mediaBox = (await media.boundingBox())!;
-    const titleBox = (await title.boundingBox())!;
-    expect(titleBox.y).toBeGreaterThanOrEqual(mediaBox.y + mediaBox.height - 1);
-    // Tight enough to read as one block: the gap was 3rem before.
-    expect(titleBox.y - (mediaBox.y + mediaBox.height)).toBeLessThanOrEqual(24);
+  for (const index of [0, 1, 2, 3]) {
+    const mediaBox = (await section.locator(".category-discovery__media").nth(index).boundingBox())!;
+    const labelBox = (await labels.nth(index).boundingBox())!;
+    expect(labelBox.y).toBeGreaterThanOrEqual(mediaBox.y + mediaBox.height - 1);
+    expect(labelBox.y - (mediaBox.y + mediaBox.height)).toBeLessThanOrEqual(24);
   }
 
-  // Destinations are presentation-independent and must not have moved.
-  const blocks = page.locator(".category-editorial__block");
-  await expect(blocks.nth(0)).toHaveAttribute("href", "/set-do");
-  await expect(blocks.nth(1)).toHaveAttribute("href", "/vay-dam");
-  const subcategoryHrefs = await page
-    .locator('[data-homepage-region="lead-category"]')
-    .getByRole("navigation", { name: "Áo dài" })
-    .getByRole("link")
-    .evaluateAll((links) => links.map((link) => link.getAttribute("href")));
-  expect(subcategoryHrefs).toEqual([
-    "/ao-dai/cach-tan",
-    "/ao-dai/tet",
-    "/ao-dai/cuoi",
-    "/ao-dai/4-ta",
-    "/ao-dai/6-ta",
-  ]);
-
-  expect(await hasHorizontalOverflow(page)).toBe(false);
-});
-
-test("the service strip keeps all three facts in a compact block on a phone", async ({ page }) => {
-  await page.setViewportSize(MOBILE);
-  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
-
-  const strip = page.locator('[data-homepage-region="service"]');
-  const items = strip.locator("li");
-  await expect(items).toHaveCount(3);
-  await expect(items.nth(0)).toHaveText("Đổi trả trong 15 ngày");
-  await expect(items.nth(1)).toHaveText("Giao hàng toàn quốc");
-  await expect(items.nth(2)).toHaveText("Tư vấn size 08:00–22:00");
-
-  // The block used to run to roughly 155px on this viewport: 2rem of padding top and bottom, three
-  // 0.875rem rows and 1rem between them. A ceiling rather than an exact number, because what the
-  // owner asked for is "materially shorter", not one specific height.
-  const box = (await strip.boundingBox())!;
-  expect(box.height).toBeLessThanOrEqual(120);
-
-  // ...and not shrunk into illegibility. 12px is the floor the rest of the system's uppercase
-  // micro-copy already sits on.
-  const fontSize = await items
-    .nth(0)
-    .evaluate((element) => Number.parseFloat(getComputedStyle(element).fontSize));
-  expect(fontSize).toBeGreaterThanOrEqual(12);
-
-  // Every fact is still on its own line: compacting must not have collapsed them into a run-on.
-  const tops = await items.evaluateAll((elements) =>
-    elements.map((element) => Math.round(element.getBoundingClientRect().top)),
+  // 2 × 2: two tiles share each row, and the second row sits below the first.
+  const tops = await tiles.evaluateAll((links) =>
+    links.map((link) => Math.round(link.getBoundingClientRect().top)),
   );
-  expect(new Set(tops).size).toBe(3);
+  expect(tops[0]).toBe(tops[1]);
+  expect(tops[2]).toBe(tops[3]);
+  expect(tops[2]!).toBeGreaterThan(tops[0]!);
+  expect(await hasHorizontalOverflow(page)).toBe(false);
 
+  // Desktop: all four in one row.
+  await page.setViewportSize(DESKTOP);
+  const desktopTops = await tiles.evaluateAll((links) =>
+    links.map((link) => Math.round(link.getBoundingClientRect().top)),
+  );
+  expect(new Set(desktopTops).size).toBe(1);
   expect(await hasHorizontalOverflow(page)).toBe(false);
 });
 
@@ -506,8 +466,8 @@ test("the reworked surfaces stay accessible on a phone", async ({ page }) => {
   for (const path of ["/", `/shop/${PRODUCT_SLUG}`]) {
     await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
 
-    // The category names lost their drop shadow when they came off the photographs, so their
-    // contrast is now the page's own -- which is exactly what Axe is being asked about here.
+    // The category names sit under their photographs rather than over them, so their contrast is
+    // the page's own -- which is exactly what Axe is being asked about here.
     const results = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
     expect(results.violations, `${path}: ${JSON.stringify(results.violations, null, 2)}`).toEqual(
       [],
