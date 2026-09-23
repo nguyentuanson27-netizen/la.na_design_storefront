@@ -571,6 +571,99 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   expect(failedResponses).toEqual([]);
 });
 
+test("variant selectors share compact rectangular presentation across panel and quick sheet", async ({
+  page,
+}) => {
+  for (const viewport of [
+    { name: "mobile", width: 390, height: 844 },
+    { name: "desktop", width: 1440, height: 900 },
+  ] as const) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+    const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+    const colorGroup = panel.getByRole("group", { name: "Màu", exact: true });
+    const sizeGroup = panel.getByRole("group", { name: "Kích cỡ", exact: true });
+    const blackChip = colorGroup
+      .locator("label")
+      .filter({ hasText: /^Black$/ })
+      .locator("span");
+    const mediumChip = sizeGroup
+      .locator("label")
+      .filter({ hasText: /^M$/ })
+      .locator("span");
+
+    for (const [label, group] of [
+      ["Màu", colorGroup],
+      ["Kích cỡ", sizeGroup],
+    ] as const) {
+      const marginTop = await group.evaluate((element) =>
+        Number.parseFloat(getComputedStyle(element).marginTop),
+      );
+      expect(marginTop, `${viewport.name} ${label} group spacing`).toBeLessThanOrEqual(20);
+
+      const chipBox = await group.locator("label span").first().boundingBox();
+      expect(chipBox?.height, `${viewport.name} ${label} option height`).toBeGreaterThanOrEqual(44);
+    }
+
+    const defaultChipBackground = await blackChip.evaluate(
+      (element) => getComputedStyle(element).backgroundColor,
+    );
+    expect(
+      defaultChipBackground,
+      `${viewport.name} default chip uses a neutral brand surface`,
+    ).not.toBe("rgba(0, 0, 0, 0)");
+
+    await blackChip.click();
+    await expect(colorGroup.locator("legend")).toHaveText("Màu: Black");
+    await mediumChip.click();
+    await expect(sizeGroup.locator("legend")).toHaveText("Kích cỡ: M");
+
+    await expect
+      .poll(
+        () => blackChip.evaluate((element) => getComputedStyle(element).backgroundColor),
+        { message: `${viewport.name} selected chip reaches the brand-filled state`, timeout: 2_000 },
+      )
+      .toBe("rgb(59, 34, 25)");
+
+    await expect(
+      sizeGroup.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
+    ).toHaveCount(1);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const sticky = page.getByRole("region", { name: "Mua nhanh" }).getByRole("button");
+  await sticky.click();
+
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  const sheetColor = sheet.getByRole("group", { name: "Màu", exact: true });
+  const sheetSize = sheet.getByRole("group", { name: "Kích cỡ", exact: true });
+  const sheetBlack = sheetColor
+    .locator("label")
+    .filter({ hasText: /^Black$/ })
+    .locator("span");
+  const sheetMedium = sheetSize
+    .locator("label")
+    .filter({ hasText: /^M$/ })
+    .locator("span");
+
+  expect(
+    await sheetBlack.evaluate((element) => getComputedStyle(element).backgroundColor),
+    "sheet default chip uses the same neutral surface",
+  ).not.toBe("rgba(0, 0, 0, 0)");
+
+  await sheetBlack.click();
+  await expect(sheetColor.locator("legend")).toHaveText("Màu: Black");
+  await sheetMedium.click();
+  await expect(sheetSize.locator("legend")).toHaveText("Kích cỡ: M");
+  await expect(
+    sheetSize.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
+  ).toHaveCount(1);
+
+  await assertPageQuality(page);
+});
+
 test("a rejected add keeps the selection sheet open with feedback, and opens no cart", async ({
   page,
 }) => {
@@ -815,8 +908,18 @@ test("standard sold-out variant remains visible, disabled, and says exact Hết 
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   const soldOutSize = page.getByRole("radio", { name: "XL", exact: true });
+  const soldOutSizeChip = purchasePanel
+    .getByRole("group", { name: "Kích cỡ", exact: true })
+    .locator("label")
+    .filter({ hasText: /^XL$/ })
+    .locator("span");
   await expect(soldOutSize).toBeChecked();
   await expect(soldOutSize).toBeDisabled();
+  await expect(soldOutSizeChip).toBeVisible();
+  expect(
+    await soldOutSizeChip.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity)),
+    "genuine sold-out option is visibly subdued",
+  ).toBeLessThan(1);
   await expect(purchasePanel.getByText("Hết hàng", { exact: true })).toBeVisible();
   await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeDisabled();
   await expect(purchasePanel.getByRole("button", { name: "Mua ngay", exact: true })).toBeDisabled();

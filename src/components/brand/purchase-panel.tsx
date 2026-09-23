@@ -38,7 +38,12 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * generic pure black/white one, and a focus ring that stays visible on both.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-11 items-center justify-center border border-[#3B2219]/30 px-3 text-sm peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed lg:min-w-12 lg:px-4";
+  "flex min-h-11 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-medium text-[#3B2219] transition-colors peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-semibold peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed";
+
+const DISABLED_CHIP = "peer-disabled:opacity-50";
+
+const UNRESOLVED_SIZE_CHIP =
+  "border-dashed border-[#3B2219]/35 bg-[#3B2219]/5 text-[#3B2219]/65";
 
 const DIALOG_FOCUSABLE_SELECTOR = [
   "button:not([disabled])",
@@ -212,6 +217,24 @@ export function PurchasePanelView({
   useScrollLock(isSheetOpen);
 
   const awaitsKindSelection = view.kindSelectionGuidance !== null;
+  const selectedKindLabel =
+    selection.kindKey === null
+      ? null
+      : view.kinds.find((choice) => choice.key === selection.kindKey)?.label ?? null;
+
+  function renderSelectorLegend(label: string, selectedValue: string | null) {
+    return (
+      <legend className="text-sm font-medium leading-5 text-[#3B2219]">
+        <span>{label}</span>
+        {selectedValue === null ? null : (
+          <span aria-hidden="true">
+            {": "}
+            <span className="font-semibold text-[#2A1810]">{selectedValue}</span>
+          </span>
+        )}
+      </legend>
+    );
+  }
 
   function runPurchase(action: () => PurchaseAttemptResult) {
     if (action() === "missing-size") {
@@ -287,6 +310,24 @@ export function PurchasePanelView({
     });
   }
 
+  function renderSizeGuideTrigger(surface: "panel" | "sheet") {
+    if (sizeGuide === null) return null;
+
+    const isPanel = surface === "panel";
+    return (
+      <div className="mt-3">
+        <button
+          ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
+          type="button"
+          className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+          onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
+        >
+          Hướng dẫn chọn size
+        </button>
+      </div>
+    );
+  }
+
   function handleSizeGuideClose() {
     if (sizeGuideSourceRef.current === "sheet") {
       sizeGuideSourceRef.current = null;
@@ -332,9 +373,9 @@ export function PurchasePanelView({
     if (!view.hasKindOptions) return null;
 
     return (
-      <fieldset className="mt-4 lg:mt-7">
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Loại</legend>
-        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
+      <fieldset className="mt-4">
+        {renderSelectorLegend("Loại", selectedKindLabel)}
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.kinds.map((choice) => (
             <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -346,7 +387,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseKind(choice.key)}
               />
-              <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.label}</span>
+              <span className={`${SELECTABLE_CHIP} ${DISABLED_CHIP}`}>{choice.label}</span>
             </label>
           ))}
         </div>
@@ -368,17 +409,17 @@ export function PurchasePanelView({
         tabIndex={surface === "panel" ? -1 : undefined}
         aria-invalid={sizeValidationMessage ? "true" : undefined}
         aria-describedby={sizeDescribedBy}
-        className={`mt-4 rounded-sm lg:mt-7 ${
+        className={`mt-4 rounded-sm ${
           sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
         }`}
       >
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Kích cỡ</legend>
+        {renderSelectorLegend("Kích cỡ", selection.size)}
         {view.kindSelectionGuidance === null ? null : (
-          <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219] lg:mt-3">
+          <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219]">
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.sizes.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -393,8 +434,8 @@ export function PurchasePanelView({
               <span
                 className={`${SELECTABLE_CHIP} ${
                   awaitsKindSelection
-                    ? "border-dashed border-[#3B2219]/45"
-                    : "peer-disabled:opacity-60"
+                    ? UNRESOLVED_SIZE_CHIP
+                    : DISABLED_CHIP
                 }`}
               >
                 {choice.value}
@@ -402,8 +443,9 @@ export function PurchasePanelView({
             </label>
           ))}
         </div>
+        {renderSizeGuideTrigger(surface)}
         {sizeValidationMessage ? (
-          <p id={sizeErrorId} className="mt-2 text-sm font-medium text-[#8A3A35] lg:mt-3" role="alert">
+          <p id={sizeErrorId} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
             {sizeValidationMessage}
           </p>
         ) : null}
@@ -415,9 +457,9 @@ export function PurchasePanelView({
     if (!view.hasColorOptions) return null;
 
     return (
-      <fieldset className="mt-4 lg:mt-7">
-        <legend className="text-xs font-semibold uppercase tracking-[0.1em]">Màu</legend>
-        <div className="mt-2 flex flex-wrap gap-2 lg:mt-3">
+      <fieldset className="mt-4">
+        {renderSelectorLegend("Màu", selection.color)}
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.colors.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -429,7 +471,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseColor(choice.value)}
               />
-              <span className={`${SELECTABLE_CHIP} peer-disabled:opacity-60`}>{choice.value}</span>
+              <span className={`${SELECTABLE_CHIP} ${DISABLED_CHIP}`}>{choice.value}</span>
             </label>
           ))}
         </div>
@@ -444,20 +486,6 @@ export function PurchasePanelView({
       : view.unavailableMessage ||
         (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
   const mobilePurchaseStatus = message || mobilePresentation.unavailableMessage || purchaseStatus;
-
-  const sizeGuideTriggerMain =
-    sizeGuide === null ? null : (
-      <div className="relative h-0">
-        <button
-          ref={mainSizeGuideTriggerRef}
-          type="button"
-          className="absolute right-0 top-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-          onClick={showMainSizeGuide}
-        >
-          Hướng dẫn chọn size
-        </button>
-      </div>
-    );
 
   return (
     <>
@@ -515,8 +543,6 @@ export function PurchasePanelView({
             {renderSizeFieldset("panel")}
           </>
         )}
-
-        {sizeGuideTriggerMain}
 
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button
@@ -617,18 +643,6 @@ export function PurchasePanelView({
                 <div className="max-h-[calc(88dvh-9rem)] overflow-y-auto px-5 pb-5">
                   {renderKindFieldset("sheet")}
                   {renderSizeFieldset("sheet")}
-                  {sizeGuide === null ? null : (
-                    <div className="mt-3 flex justify-end">
-                      <button
-                        ref={sheetSizeGuideTriggerRef}
-                        type="button"
-                        className="min-h-11 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
-                        onClick={showSheetSizeGuide}
-                      >
-                        Hướng dẫn chọn size
-                      </button>
-                    </div>
-                  )}
                   {renderColorFieldset("sheet")}
 
                   <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">

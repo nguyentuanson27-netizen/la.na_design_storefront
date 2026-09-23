@@ -733,6 +733,14 @@ This interview did **not** approve a new customer-visible sort menu beyond that 
 - **Below `lg`**, hide the promotion/Freeship strip while the PDP is at the initial top position and reveal it once the existing header scroll state becomes scrolled. Keep desktop PDP promotion behavior unchanged.
 - Primary actions remain `Thêm vào giỏ` + `Mua ngay`.
 - Size guide opens from `Hướng dẫn chọn size` into the existing accessible modal. The artwork itself is the only visible guide content apart from the close control: do not duplicate the guide heading/title/measurement notes around it or add framed modal chrome. Preserve the accessible dialog label, focus behavior, screen-reader-only measurement/guidance notes and semantic size table.
+- Variant selectors on desktop PDP, below-`lg` PDP and the mobile quick-purchase sheet share one compact visual system:
+  - keep the existing dimension names/copy and current selection order/eligibility;
+  - show the currently selected value beside its dimension label when one exists, e.g. `Màu: Trắng`, without inventing a placeholder before selection;
+  - use rectangular option chips with the existing La.na brown/cream palette: selected is the strongest state, default is a light neutral brand tint, and disabled/unavailable remains visibly distinct;
+  - keep practical ~44px touch targets and visible keyboard focus while reducing excess group/chip spacing;
+  - keep unresolved-kind size styling neutral and distinct from genuine sold-out presentation;
+  - place `Hướng dẫn chọn size` directly below the size choices on every selector surface.
+- This selector refinement is presentation-only: do not change `deriveStorefrontProjectionSelection`, option availability, variant resolution, add-to-cart/buy-now flows, or size-guide mapping.
 - Each product maps manually to the correct size guide ID.
 
 ### Mobile sticky purchase bar
