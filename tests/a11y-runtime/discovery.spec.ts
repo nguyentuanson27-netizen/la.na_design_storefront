@@ -214,24 +214,33 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   });
 
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
-  // `/shop` draws the shared listing header now: a sentence-case serif H1 under an eyebrow, with
-  // the filter form under its own heading. The route's query semantics below are unchanged.
   await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Bộ lọc" })).toBeVisible();
 
+  // Mobile keeps one URL-backed form authority across the always-visible search/sort controls and
+  // the drawer-only filters. A shopper can set q/sort first, then open the drawer and submit once.
   await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
-  await page.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
-  await page.getByLabel("Màu").selectOption("Ink");
-  await page.getByLabel("Kích cỡ").selectOption("M");
-  await page.getByLabel("Giá tối thiểu").fill("1000000");
-  await page.getByLabel("Giá tối đa").fill("1300000");
-  await page.getByLabel("Chỉ còn hàng").check();
-  await page.getByRole("button", { name: "Áp dụng" }).click();
+  await page.getByRole("combobox", { name: "Sắp xếp", exact: true }).selectOption("price-desc");
+  await page.getByRole("button", { name: /Bộ lọc/ }).click();
+
+  const filterDialog = page.getByRole("dialog", { name: "Bộ lọc" });
+  await expect(filterDialog).toBeVisible();
+  await filterDialog.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
+  await filterDialog.getByRole("combobox", { name: "Màu sắc", exact: true }).selectOption("Ink");
+  await filterDialog.getByRole("combobox", { name: "Kích cỡ", exact: true }).selectOption("M");
+  await filterDialog.getByLabel("Giá tối thiểu").fill("1000000");
+  await filterDialog.getByLabel("Giá tối đa").fill("1300000");
+  await filterDialog.getByLabel("Chỉ còn hàng").check();
+
+  await Promise.all([
+    page.waitForURL((next) => next.pathname === "/shop" && next.searchParams.get("q") === "Runtime City Coat"),
+    filterDialog.getByRole("button", { name: "Áp dụng", exact: true }).click(),
+  ]);
   await page.waitForLoadState("networkidle");
 
   const url = new URL(page.url());
   expect(url.pathname).toBe("/shop");
   expect(url.searchParams.get("q")).toBe("Runtime City Coat");
+  expect(url.searchParams.get("sort")).toBe("price-desc");
   expect(url.searchParams.get("collection")).toBe("city-uniform");
   expect(url.searchParams.get("color")).toBe("Ink");
   expect(url.searchParams.get("size")).toBe("M");
