@@ -40,8 +40,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
 const SELECTABLE_CHIP =
   "flex min-h-11 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-medium text-[#3B2219] transition-colors peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-semibold peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed";
 
-const DISABLED_CHIP =
-  "peer-disabled:border-[#3B2219]/10 peer-disabled:bg-[#3B2219]/5 peer-disabled:text-[#3B2219]/40";
+const DISABLED_CHIP = "peer-disabled:opacity-50";
 
 const UNRESOLVED_SIZE_CHIP =
   "border-dashed border-[#3B2219]/35 bg-[#3B2219]/5 text-[#3B2219]/65";
@@ -544,7 +543,6 @@ export function PurchasePanelView({
             {renderSizeFieldset("panel")}
           </>
         )}
-
 
         <div className="mt-8 grid grid-cols-2 gap-2">
           <button
