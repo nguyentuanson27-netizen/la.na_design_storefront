@@ -32,16 +32,16 @@ function render(data: CollectionsRouteData) {
 
       {data.collections.length > 0 ? (
         <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:gap-8">
-          {data.collections.map((collection) =>
-            collection.heroImageUrl ? (
-              <article
-                key={collection.slug}
-                className="group relative aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#FAF7F2] shadow-sm transition-all duration-500 hover:shadow-xl"
+          {data.collections.map((collection) => (
+            <article
+              key={collection.slug}
+              className="group rounded-2xl border border-[#2A1810]/10 bg-[#2A1810] shadow-md transition-shadow duration-300 hover:shadow-xl"
+            >
+              <div
+                data-collection-card-media=""
+                className="relative aspect-[16/9] overflow-hidden rounded-t-2xl bg-[#2A1810]"
               >
-                <div
-                  data-collection-card-media=""
-                  className="absolute inset-0"
-                >
+                {collection.heroImageUrl ? (
                   <Image
                     src={collection.heroImageUrl}
                     alt=""
@@ -49,55 +49,35 @@ function render(data: CollectionsRouteData) {
                     sizes="(min-width: 768px) 50vw, 100vw"
                     className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                   />
-                </div>
+                ) : (
+                  <div
+                    data-collection-card-fallback=""
+                    aria-hidden="true"
+                    className="absolute inset-0 bg-[#2A1810]"
+                  />
+                )}
+              </div>
 
-                {/* Accessible title for screen readers / WCAG */}
-                <h2 className="sr-only">{collection.title}</h2>
-
-                {/* Gentle bottom-only vignette to anchor the artistic CTA */}
-                <div
-                  aria-hidden="true"
-                  className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/35 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/45"
-                />
-
-                <div className="relative z-10 flex h-full flex-col justify-end p-5 sm:p-7 lg:p-8">
-                  <div>
-                    <Link
-                      href={`/collections/${collection.slug}`}
-                      className="collection-card-cta"
-                    >
-                      Khám phá bộ sưu tập ↗
-                    </Link>
-                  </div>
-                </div>
-              </article>
-            ) : (
-              <article
-                key={collection.slug}
-                className="group relative flex min-h-72 flex-col justify-between overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[var(--paper)] p-8 shadow-sm transition-shadow duration-300 hover:shadow-md md:p-10"
-              >
-                <div
-                  data-collection-card-media=""
-                  data-collection-card-fallback=""
-                  aria-hidden="true"
-                  className="hidden"
-                />
-                <div>
-                  <h2 className="max-w-xl break-words font-serif text-2xl font-normal leading-tight text-[#2A1810] sm:text-3xl lg:text-4xl">
-                    {collection.title}
-                  </h2>
-                </div>
-                <div className="mt-8">
+              {/*
+               * The media stays a real 16:9 box. Content overlaps its lower edge for the editorial
+               * treatment, but remains in normal flow so any valid collection title can grow the
+               * card instead of being clipped by a fixed-ratio overflow container.
+               */}
+              <div className="relative z-10 -mt-24 rounded-b-2xl bg-gradient-to-t from-[#2A1810] via-[#2A1810]/95 to-transparent px-6 pb-6 pt-16 sm:-mt-28 sm:px-8 sm:pb-8 sm:pt-20 lg:px-10 lg:pb-10">
+                <h2 className="max-w-xl break-words font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-md sm:text-3xl lg:text-4xl">
+                  {collection.title}
+                </h2>
+                <div className="mt-4 sm:mt-6">
                   <Link
                     href={`/collections/${collection.slug}`}
-                    className="collection-card-cta"
+                    className="collection-card-cta inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider backdrop-blur-md transition-all duration-300 hover:border-white"
                   >
                     Khám phá bộ sưu tập ↗
                   </Link>
                 </div>
-              </article>
-            ),
-          )}
+              </div>
+            </article>
+          ))}
         </div>
       ) : (
         <ListingEmptyState
