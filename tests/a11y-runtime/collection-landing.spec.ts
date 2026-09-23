@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { BRAND } from "../../src/brand/index.ts";
 import { prisma } from "../../src/db/prisma.ts";
@@ -153,6 +153,7 @@ test.beforeAll(async () => {
         title: "Runtime Hero Collection",
         description: "Published collection with real configured hero media.",
         heroImageUrl: "https://content.pancake.vn/images/1/2/3/collection-hero.jpg",
+        heroImageMobileUrl: "https://content.pancake.vn/images/1/2/3/collection-hero-mobile.jpg",
         isPublished: true,
       },
     ],
@@ -197,6 +198,18 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+async function visibleCollectionSizeNavigation(page: Page) {
+  const mobileFilterButton = page.getByRole("button", { name: "Bộ lọc", exact: true });
+  if (await mobileFilterButton.isVisible()) {
+    await mobileFilterButton.click();
+    await expect(page.getByRole("dialog", { name: "Bộ lọc sản phẩm" })).toBeVisible();
+  }
+
+  const navigation = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(navigation).toBeVisible();
+  return navigation;
+}
+
 test("collection with configured hero uses the shared full-bleed header overlay without inventing a CTA", async ({
   page,
 }) => {
@@ -204,7 +217,14 @@ test("collection with configured hero uses the shared full-bleed header overlay 
     "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
     "base64",
   );
+  const desktopHero = "https://content.pancake.vn/images/1/2/3/collection-hero.jpg";
+  const mobileHero = "https://content.pancake.vn/images/1/2/3/collection-hero-mobile.jpg";
+  const requestedHeroSources: string[] = [];
   await page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url");
+    if (source === desktopHero || source === mobileHero) {
+      requestedHeroSources.push(source);
+    }
     route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
   });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -217,6 +237,8 @@ test("collection with configured hero uses the shared full-bleed header overlay 
   expect(Math.round(box?.width ?? 0)).toBe(390);
   expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
   await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+  await expect.poll(() => requestedHeroSources.includes(mobileHero)).toBe(true);
+  expect(requestedHeroSources.includes(desktopHero)).toBe(false);
 
   const header = page.locator("header.site-header");
   expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
@@ -232,6 +254,11 @@ test("collection with configured hero uses the shared full-bleed header overlay 
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+  requestedHeroSources.length = 0;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => requestedHeroSources.includes(desktopHero)).toBe(true);
+  expect(requestedHeroSources.includes(mobileHero)).toBe(false);
 });
 
 /**
@@ -350,17 +377,18 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
 
   const sort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
   await expect(sort).toBeVisible();
-  await expect(sort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
-    "href",
+  const sortSelect = sort.getByRole("combobox", { name: "Sắp xếp sản phẩm" });
+  await expect(sortSelect.getByRole("option", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "value",
     `/collections/${publishedSlug}`,
   );
-  await expect(sort.getByRole("link", { name: "Giá cao → thấp", exact: true })).toHaveAttribute(
-    "href",
+  await expect(sortSelect.getByRole("option", { name: "Giá cao → thấp", exact: true })).toHaveAttribute(
+    "value",
     `/collections/${publishedSlug}?sort=price-desc`,
   );
+  await expect(sort.getByRole("link")).toHaveCount(0);
 
-  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(sizes).toBeVisible();
+  const sizes = await visibleCollectionSizeNavigation(page);
   await expect(sizes.getByRole("link", { name: "S", exact: true })).toHaveAttribute(
     "href",
     `/collections/${publishedSlug}?size=S`,
@@ -375,11 +403,13 @@ test("U3 collection controls emit route-local canonical hrefs and ignore forged 
     waitUntil: "networkidle",
   });
   const combinedSort = page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" });
-  const combinedSizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
-  await expect(combinedSort.getByRole("link", { name: "Tên A–Z", exact: true })).toHaveAttribute(
-    "href",
+  const combinedSortSelect = combinedSort.getByRole("combobox", { name: "Sắp xếp sản phẩm" });
+  await expect(combinedSortSelect.getByRole("option", { name: "Tên A–Z", exact: true })).toHaveAttribute(
+    "value",
     `/collections/${publishedSlug}?size=M`,
   );
+  await expect(combinedSort.getByRole("link")).toHaveCount(0);
+  const combinedSizes = await visibleCollectionSizeNavigation(page);
   await expect(combinedSizes.getByRole("link", { name: "Tất cả kích cỡ", exact: true })).toHaveAttribute(
     "href",
     `/collections/${publishedSlug}?sort=price-desc`,
@@ -411,7 +441,7 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
     page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByText("Trang 2 / 2"),
   ).toBeVisible();
 
-  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  const sizes = await visibleCollectionSizeNavigation(page);
   const small = sizes.getByRole("link", { name: "S", exact: true });
   await expect(small).toHaveAttribute("href", `/collections/${pagedSlug}?size=S`);
 

@@ -176,6 +176,7 @@ test("P7 public repository reads expose only published allowlisted definition fi
     seoTitle: null,
     seoDescription: null,
     heroImageUrl: null,
+    heroImageMobileUrl: null,
     galleryImageUrls: [],
     videoSrcUrl: null,
     videoPosterUrl: null,

@@ -1,14 +1,14 @@
 import Image from "next/image";
-import Link from "next/link";
 
+import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { CollectionFilterPanel } from "@/components/brand/collection-filter-panel";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
   ListingHeader,
   ListingPagination,
   ListingProductGrid,
-  ListingResultCount,
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { loadCollectionRoute, type CollectionRouteProps } from "@/routes/collection";
@@ -22,20 +22,11 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
  *
  * The editorial half -- hero, story, gallery, video -- is this collection's own and stays. The
  * listing half underneath now draws the same chrome as every other listing instead of keeping a
- * second one. The sort and size controls remain link-based because the loader builds their hrefs
- * from the collection slug; only their styling is aligned.
+ * second one. The loader still owns every canonical sort/filter href; the client panel consumes
+ * those hrefs for its sort options and size links without re-deriving route state.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
-
-// `listing-pill` carries the label colour; see the note on it in globals.css.
-const optionLinkClassName =
-  "listing-pill inline-flex min-h-11 items-center rounded-full border border-[#3B2219]/20 px-4 py-2 text-xs font-medium uppercase tracking-wider transition hover:border-[#2A1810] hover:bg-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4";
-const activeOptionLinkClassName = "border-[#3B2219] bg-[#3B2219]";
-
-function optionClass(active: boolean): string {
-  return `${optionLinkClassName}${active ? ` ${activeOptionLinkClassName}` : ""}`;
-}
 
 function render(data: CollectionViewModel) {
   const { editorial } = data;
@@ -55,39 +46,12 @@ function render(data: CollectionViewModel) {
           aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
           data-header-overlay-hero=""
         >
-          {editorial.heroImageMobile ? (
-            <>
-              <div className="collection-hero__media-mobile md:hidden">
-                <Image
-                  src={editorial.heroImageMobile}
-                  alt={data.title}
-                  fill
-                  preload
-                  sizes="100vw"
-                  className="object-cover"
-                />
-              </div>
-              <div className="collection-hero__media-desktop hidden md:block">
-                <Image
-                  src={editorial.heroImage}
-                  alt={data.title}
-                  fill
-                  preload
-                  sizes="100vw"
-                  className="object-cover"
-                />
-              </div>
-            </>
-          ) : (
-            <Image
-              src={editorial.heroImage}
-              alt={data.title}
-              fill
-              preload
-              sizes="100vw"
-              className="object-cover"
-            />
-          )}
+          <ArtDirectedHeroImage
+            desktopSrc={editorial.heroImage}
+            mobileSrc={editorial.heroImageMobile}
+            alt={data.title}
+            preload
+          />
         </section>
       ) : null}
 
@@ -145,44 +109,16 @@ function render(data: CollectionViewModel) {
         ) : null}
 
         <section
-          className="mt-12 border-b border-[#3B2219]/15 pb-6"
+          className="mt-12"
           aria-label="Điều khiển bộ sưu tập"
         >
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs uppercase tracking-wider text-[#70584B]">Sắp xếp:</span>
-              <nav aria-label="Sắp xếp bộ sưu tập" className="flex flex-wrap items-center gap-1.5">
-                {data.sortOptions.map((option) => (
-                  <Link
-                    aria-current={option.active ? "true" : undefined}
-                    className={optionClass(option.active)}
-                    href={option.href}
-                    key={option.value}
-                  >
-                    {option.label}
-                  </Link>
-                ))}
-              </nav>
-            </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-[#70584B]">Kích cỡ:</span>
-            <nav aria-label="Lọc theo kích cỡ" className="flex flex-wrap items-center gap-1.5">
-              {data.sizeOptions.map((option) => (
-                <Link
-                  aria-current={option.active ? "true" : undefined}
-                  className={optionClass(option.active)}
-                  href={option.href}
-                  key={option.value ?? "all"}
-                >
-                  {option.label}
-                </Link>
-              ))}
-            </nav>
-          </div>
+          <CollectionFilterPanel
+            totalCount={data.totalCount}
+            sortOptions={data.sortOptions}
+            sizeOptions={data.sizeOptions}
+            clearFilterHref={data.clearFilterHref}
+            filtered={data.filtered}
+          />
         </section>
 
         {data.totalCount === 0 ? (

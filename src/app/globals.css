@@ -526,31 +526,6 @@ main nav[aria-label="Breadcrumb"] a {
   overflow: hidden;
 }
 
-.home-hero__media-mobile,
-.collection-hero__media-mobile {
-  position: absolute;
-  inset: 0;
-  display: block;
-}
-
-.home-hero__media-desktop,
-.collection-hero__media-desktop {
-  position: absolute;
-  inset: 0;
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .home-hero__media-mobile,
-  .collection-hero__media-mobile {
-    display: none;
-  }
-  .home-hero__media-desktop,
-  .collection-hero__media-desktop {
-    display: block;
-  }
-}
-
 .home-hero__cta {
   position: absolute;
   z-index: 2;
