@@ -77,7 +77,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
               <div
                 key={n}
                 aria-hidden="true"
-                className="aspect-[4/5] animate-pulse rounded bg-[#FAF7F2]/80 border border-[#3B2219]/10"
+                className="aspect-[2/3] animate-pulse rounded bg-[#FAF7F2]/80 border border-[#3B2219]/10"
               />
             ))}
           </>

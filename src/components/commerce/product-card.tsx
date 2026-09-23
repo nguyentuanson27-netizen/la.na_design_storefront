@@ -24,7 +24,7 @@ export function ProductCard({
     <article className="product-card group">
       <Link href={href} className="product-visual-link" aria-label={`${name} — ${price}`}>
         <div
-          className={`product-visual product-visual--${tone} relative aspect-[3/4] overflow-hidden`}
+          className={`product-visual product-visual--${tone} relative aspect-[2/3] overflow-hidden`}
           aria-hidden={imageUrl ? undefined : "true"}
         >
           {badge ? <span className="product-badge z-10">{badge}</span> : null}
