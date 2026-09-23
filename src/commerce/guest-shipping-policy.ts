@@ -126,7 +126,7 @@ function describeCompactVnd(amountVnd: number): string {
 
 /**
  * Single-line headline for the promotion bar, which is pinned above every page and therefore has
- * one line to spend. The footer and the homepage trust strip keep the full sentence from
+ * one line to spend. The footer and the shipping page keep the full sentence from
  * describeGuestShippingPromotion, where there is room for the exact amount.
  */
 export function describeGuestShippingPromotionHeadline(policy: GuestShippingPolicy): string {
