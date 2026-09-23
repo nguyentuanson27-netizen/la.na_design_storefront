@@ -55,6 +55,20 @@ Use each existing component's responsive seam rather than inventing a global bre
 - Product-card typography/grid and mobile header/filter behavior use their existing component-specific phone/mobile seams and must not change desktop column counts/navigation.
 - Acceptance is anchored at 390×844, with explicit 768px assertions for the below-`lg` PDP contract and 1440px desktop regression coverage.
 
+## Owner amendment — 2026-09-23: product-card media ratio
+
+The owner has approved one shared product-card photography ratio across storefront product-card
+surfaces: **2:3 (width:height)** on both desktop and mobile.
+
+- Keep the existing responsive grid column counts and widths; the ratio change increases the image
+  height for the same card width.
+- Apply the same 2:3 frame to the shared loaded ProductCard, product-card loading/skeleton states,
+  search product suggestions, and other product-card surfaces that reuse this visual contract.
+- Preserve existing image crop behavior (`object-cover`), hover-image behavior, product metadata,
+  pricing, availability, marketing badges, tracking and commerce authority.
+- This amendment supersedes the earlier instruction in §4 to keep the prior image aspect ratio
+  unchanged. It does not change the separate PDP-gallery media contract.
+
 ## Owner amendment — 2026-09-22: compact PDP presentation
 
 This owner-confirmed amendment refines only the product-detail presentation. It does not change
@@ -190,7 +204,7 @@ On phone listing surfaces:
 - product name: **14px**, maximum two lines;
 - price: **14–15px**, visually stronger than the name;
 - supporting metadata/status: **12px**;
-- keep image aspect ratio and existing commerce/marketing truth unchanged.
+- use the owner-approved **2:3 (width:height)** product-card image ratio while keeping existing commerce/marketing truth unchanged.
 
 Do not change desktop column counts as part of this task.
 

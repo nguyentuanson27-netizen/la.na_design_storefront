@@ -208,7 +208,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                     onClick={onClose}
                     className="group flex flex-col gap-2"
                   >
-                    <div className="relative aspect-[4/5] w-full overflow-hidden rounded bg-[#3B2219]/5">
+                    <div className="relative aspect-[2/3] w-full overflow-hidden rounded bg-[#3B2219]/5">
                       {product.primaryImageUrl ? (
                         <Image
                           src={product.primaryImageUrl}

@@ -85,6 +85,10 @@ test("F2b search overlay component: enforces accessible dialog contracts and Esc
   // Submit and View All CTA guard against query > 80 chars
   assert.match(source, /trimmed\.length\s*<=\s*STOREFRONT_DISCOVERY_LIMITS\.query/);
   assert.match(source, /query\.trim\(\)\.length\s*<=\s*STOREFRONT_DISCOVERY_LIMITS\.query/);
+
+  // Suggested product cards pin 2:3 aspect ratio
+  assert.match(source, /aspect-\[2\/3\]/, "search suggestion product cards must pin 2:3 aspect ratio");
+  assert.doesNotMatch(source, /aspect-\[4\/5\]/, "search suggestion product cards must not revert to 4:5");
 });
 
 test("F2b search suggestions: enforces 80-character query limit and handles infrastructure errors", async () => {
