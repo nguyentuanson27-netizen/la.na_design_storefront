@@ -22,8 +22,8 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
  *
  * The editorial half -- hero, story, gallery, video -- is this collection's own and stays. The
  * listing half underneath now draws the same chrome as every other listing instead of keeping a
- * second one. The sort and size controls remain link-based because the loader builds their hrefs
- * from the collection slug; only their styling is aligned.
+ * second one. The loader still owns every canonical sort/filter href; the client panel consumes
+ * those hrefs for its sort options and size links without re-deriving route state.
  */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
