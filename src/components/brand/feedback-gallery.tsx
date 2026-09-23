@@ -9,17 +9,32 @@ type FeedbackImage = HomeFeedbackSection["images"][number];
  * Customer feedback photographs (spec §7.6): the homepage rail and the `/feedback` gallery.
  *
  * Images only. No customer name, product name, quote or caption is rendered, and no photograph is a
- * link -- each carries only the alt decision its config entry made. Every image is lazy and sits in
- * a fixed 3:4 box, so a long gallery neither eager-loads nor shifts the page as it arrives.
+ * link -- each carries only the alt decision its config entry made. Every image sits in a fixed 3:4
+ * box and is lazy -- except `/feedback`'s first row, which is its above-the-fold content -- so a
+ * long gallery neither eager-loads nor shifts the page as it arrives.
  */
 
-function FeedbackPhoto({ image, sizes }: Readonly<{ image: FeedbackImage; sizes: string }>) {
+function FeedbackPhoto({
+  image,
+  sizes,
+  eager = false,
+}: Readonly<{ image: FeedbackImage; sizes: string; eager?: boolean }>) {
   return (
     <div className="feedback-photo">
-      <Image src={image.src} alt={image.alt} fill sizes={sizes} className="object-cover" />
+      <Image
+        src={image.src}
+        alt={image.alt}
+        fill
+        sizes={sizes}
+        loading={eager ? "eager" : "lazy"}
+        className="object-cover"
+      />
     </div>
   );
 }
+
+/** `/feedback` opens on its gallery: one desktop row is above the fold, everything after it waits. */
+const FEEDBACK_PAGE_EAGER_COUNT = 4;
 
 /**
  * The homepage rail: native horizontal scroll with snap points, no carousel dependency and no
@@ -67,7 +82,11 @@ export function FeedbackGallery({ images }: Readonly<{ images: readonly Feedback
     <ul className="feedback-gallery">
       {images.map((image, index) => (
         <li key={`${index}-${image.src}`}>
-          <FeedbackPhoto image={image} sizes="(min-width: 901px) 25vw, 50vw" />
+          <FeedbackPhoto
+            image={image}
+            sizes="(min-width: 901px) 25vw, 50vw"
+            eager={index < FEEDBACK_PAGE_EAGER_COUNT}
+          />
         </li>
       ))}
     </ul>

@@ -1584,7 +1584,9 @@ body:has(.admin-shell) .site-masthead {
   justify-content: flex-end;
   aspect-ratio: 4 / 5;
   overflow: hidden;
-  background: var(--stone);
+  /* The dark La.na brown, not stone: it is what the cream overlay copy sits on until the lazy
+     photograph arrives (and if it never does), so the copy is legible in every state. */
+  background: var(--chocolate);
 }
 
 .collection-promo__media {
