@@ -255,7 +255,7 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   await expect(page.getByRole("heading", { level: 2, name: `Runtime City Coat ${runId}` })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: `Runtime Stone Trouser ${runId}` })).toHaveCount(0);
   // The count sits above the grid and the page number in the pager; a single page has no pager.
-  await expect(page.getByText("1 sản phẩm", { exact: true })).toBeVisible();
+  await expect(mobileForm.getByText("1 sản phẩm", { exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Xóa bộ lọc" })).toHaveAttribute("href", "/shop");
 
