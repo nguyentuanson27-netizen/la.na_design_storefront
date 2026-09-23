@@ -645,6 +645,14 @@ test("V1 accepts remaining buyer surfaces on mobile and desktop", async ({ page 
       ).not.toBe("BODY");
 
       if (route.path === "/shop") {
+        await expect(
+          page.getByText(
+            "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
+            { exact: true },
+          ),
+          `${viewport.name} shop buyer notice`,
+        ).toBeVisible();
+
         const search = page.getByRole("searchbox", { name: "Tìm sản phẩm" });
         await search.fill("Editorial Runtime");
 
