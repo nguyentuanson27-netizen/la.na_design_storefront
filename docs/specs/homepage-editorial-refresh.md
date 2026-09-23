@@ -23,7 +23,7 @@ Reference rule: Ding Dang is used only for **section order, editorial rhythm and
 ## 1. Assumptions surfaced before implementation
 
 1. The current La.na hero remains the only homepage section above the refreshed sequence. Existing `Hàng mới về`, lead Áo dài editorial, Featured grid, old category editorial, collection navigation, Service strip and Brand story are replaced on the homepage.
-2. Homepage content management remains **repository config/data only** for this scope. No CMS/admin UI, new external service or database-backed homepage editor is required.
+2. **New homepage-specific content** introduced by this refresh remains repository-config-owned. Existing DB-backed authorities such as `HomepageFeaturedProduct` and `CategoryEditorialMedia` are intentionally reused rather than duplicated. No new CMS/admin UI, external service or database-backed homepage editor is required.
 3. The dedicated feedback page uses the canonical route `/feedback` unless the owner changes the slug before implementation.
 4. The four collection-promo slots are intentionally unmapped at spec time. Unmapped slots must not publish fake collection names, fake links or placeholder campaign images.
 5. The first refreshed section is the owner-approved `SPECIAL DEALS` 4-product section. Its layout and role stay fixed; repository data may change its supporting copy, source collection and selected products over time, but this spec does not create a generic campaign-section framework.
@@ -161,13 +161,20 @@ Keep one fixed four-product layout. Repository data may change which products/co
 1. **Manual override** — read the existing `HomepageFeaturedProduct` ordered selection via the current merchandising boundary. If that authority resolves non-empty, its first 4 visible products are the intended SPECIAL DEALS set.
 2. Those manual products must all belong to the configured source collection under the **same collection-membership truth used by the public collection listing** (currently `ProductContent.collectionSlugs` / the collection discovery predicate). Do not treat category membership, homepage config, or visual placement as collection membership.
 3. If the manual authority is non-empty but its rendered first-4 set contains fewer than 4 visible products **or any of those products is not a member of the source collection**, treat the homepage merchandising state as inconsistent and **omit SPECIAL DEALS**. Do not silently filter, top up, cross-merchandise, or fall back to automatic products.
-4. **Collection fallback** — only when the existing manual authority resolves empty, take the first 4 real products using the source collection's existing merchandising order.
-5. The fallback must also resolve exactly 4 valid products; otherwise omit SPECIAL DEALS rather than render a partial grid or invent placeholders.
-6. Do not add `manualProductSlugs` or another config/database owner for the same meaning.
-7. Do not fall back to newest products, bestsellers or another category/collection.
-8. Do not duplicate products or mix automatic fallback products into a non-empty manual selection.
+4. **Collection fallback** — only when the existing manual authority resolves empty, derive the fallback from the **same unfiltered first-page surface the public collection route currently renders**, then take its first 4 visible products.
+5. The exact fallback algorithm is:
+   - resolve the same route-reachable source `CollectionDefinition`;
+   - build the collection's unfiltered page-1 discovery state using the same defaults as `parseCollectionDiscoverySearchParams(sourceSlug, {})` (currently `size = null`, `sort = "name-asc"`, `page = 1`);
+   - load the same first-page candidate window used by the collection route, using its shared page-size contract (currently `COLLECTION_PAGE_SIZE = 24`), **not** a homepage-specific `pageSize: 4`;
+   - apply the same `orderByFeaturedSlugs(pageProducts, collection.featuredProductSlugs)` step the collection route applies to that page;
+   - take the first 4 from that ordered page.
+6. This intentionally matches the **current collection page's visible first-four behavior**, not a new global featured-first ranking. A featured slug outside the collection route's first candidate page remains outside that page; this feature must not introduce a second/global collection-order authority.
+7. The fallback must resolve exactly 4 valid products; otherwise omit SPECIAL DEALS rather than render a partial grid or invent placeholders.
+8. Do not add `manualProductSlugs` or another config/database owner for the same meaning.
+9. Do not fall back to newest products, bestsellers or another category/collection.
+10. Do not duplicate products or mix automatic fallback products into a non-empty manual selection.
 
-"Collection order" means reuse the collection's canonical ordering behavior already used by the collection surface, including its existing featured-product ordering authority. "Belongs to the source collection" means the same membership predicate that makes the product appear on `/collections/<slug>`; implementation should reuse that boundary/helper rather than create a second membership rule solely for the homepage.
+"Belongs to the source collection" means the same membership predicate that makes the product appear on `/collections/<slug>`; implementation should reuse that boundary/helper rather than create a second membership rule solely for the homepage. If sharing the collection first-page contract requires extracting a small helper/constant, preserve one owner for the page-size/default-order rule rather than copying the literal `24` into homepage code.
 
 #### Collection destination reachability
 
@@ -343,6 +350,19 @@ Create a simple La.na feedback-gallery page at `/feedback`:
 - use the site's normal page chrome and La.na visual language;
 - responsive image gallery/rail may be simple; do not create unrelated social-network features.
 
+#### Public-route / SEO contract
+
+`/feedback` is an **evergreen public, indexable gallery route** when global search indexing is enabled. It follows the same static-evergreen SEO behavior as the existing About/Contact-style pages:
+
+- add `src/app/feedback/page.tsx` to `STOREFRONT_ROUTES` with `shell: true` and metadata mode `"page"`;
+- provide a route-specific metadata builder (for example `src/routes/metadata/feedback.ts`) through the existing evergreen/static metadata boundary rather than hand-writing metadata in the page;
+- add `/feedback` to the indexable static-path policy used by `shouldNoIndexRequest()`;
+- add `/feedback` to `SELF_CANONICAL_STATIC_PATHS`, so the clean URL self-canonicalizes when indexing is enabled and has no canonical for query-string variants, matching existing evergreen behavior;
+- add `/feedback` to `STATIC_CANONICAL_PATHS`, so it appears in the sitemap when global indexing is enabled;
+- query-string variants of `/feedback` remain noindex and do not self-canonicalize, consistent with the existing static-page metadata contract.
+
+Metadata copy must come from **owner-approved/config-owned feedback content**, not from freehand implementation prose. The feedback config therefore owns explicit metadata text (title + description) or references another approved content authority; exact copy is pending owner/content mapping and must be supplied before the route is considered production-ready.
+
 ---
 
 ### 7.7 Footer
@@ -390,6 +410,8 @@ type HomepageConfig = {
     title: string;
     pageHref: "/feedback";
     ctaLabel: "Xem thêm";
+    metadataTitle: string;
+    metadataDescription: string;
     images: readonly {
       src: string;
       alt: string;
@@ -493,7 +515,7 @@ Add focused tests for:
 - SPECIAL DEALS selection priority: existing `HomepageFeaturedProduct` manual override > collection fallback;
 - manual authority order preservation and first-4 bound;
 - manual first-4 products must match the configured source collection using the canonical collection-membership truth; a cross-collection or short manual set omits the section rather than falling back;
-- fallback reuses collection order and must resolve exactly 4 products;
+- fallback resolves the same unfiltered collection page-1 candidate window/order as the public collection route (currently 24/name-asc), applies `orderByFeaturedSlugs`, then takes 4; a regression must prove that using `pageSize: 4` would be wrong when a featured product is later within the public first-page window;
 - no newest/bestseller fallback;
 - canonical category order/keys and category images sourced from existing `CategoryEditorialMedia` rather than duplicate config;
 - YOUR NEXT FAVOURITE renders only when all four required trusted images resolve; any missing/rejected image omits the whole section;
@@ -516,6 +538,8 @@ Verify:
 - Feedback title is not a link;
 - Feedback `Xem thêm` opens `/feedback`;
 - feedback page renders configured full gallery;
+- `/feedback` is declared in the storefront manifest with page metadata mode, is indexable only under the existing global search-exposure gate, self-canonical on the clean URL, noindex/no-canonical with query state, and included in the static sitemap paths;
+- feedback metadata title/description are read from approved/config-owned feedback content rather than authored ad hoc by the route/page;
 - Service strip and Brand story are absent from homepage;
 - route/page boundary tests remain green;
 - product cards preserve pricing/availability semantics.
@@ -586,20 +610,21 @@ The feature is accepted when all of the following are true:
 2. Old lower homepage sections are not rendered.
 3. `SPECIAL DEALS` remains one fixed 4-product section; implementation does not generalize it into alternate campaign-section roles.
 4. Existing `HomepageFeaturedProduct` is the only manual override authority. A non-empty manual set must resolve exactly 4 visible products and all 4 must belong to the configured source collection; inconsistent manual data omits SPECIAL DEALS rather than cross-merchandising or falling back.
-5. When the manual authority resolves empty, collection fallback follows existing collection merchandising order and must resolve exactly 4 products.
+5. When the manual authority resolves empty, collection fallback must reproduce the public collection route's current unfiltered page-1 ordering: load the shared first-page candidate window (currently 24/name-asc), apply `orderByFeaturedSlugs`, then take 4. It must resolve exactly 4 products and must not invent a new global featured-first ranking.
 6. `Xem thêm` from SPECIAL DEALS opens a route-reachable configured source collection; a merely-published collection that the current collection route would 404 is not valid.
 7. Both promo rows use one reusable component/config contract; visible promo names are derived from canonical `CollectionDefinition.title`.
 8. Each promo slot maps to a route-reachable real collection; desktop only CTA is clickable, mobile whole tile is tappable.
 9. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện, and their images come from existing `CategoryEditorialMedia.heroImageUrl` authority. Missing/untrusted media for any one role omits the whole section.
 10. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
-11. `/feedback` renders the complete configured image collection.
+11. `/feedback` renders the complete configured image collection and follows the evergreen public SEO contract: manifest-declared page metadata, indexable under the global exposure gate, clean-URL self-canonical, query variants noindex/no-canonical, and included in static sitemap paths.
+13. Feedback metadata title/description come from approved/config-owned content; implementation does not invent brand/SEO prose.
 12. Font, palette, product-card language and overall identity remain La.na.
-13. Editorial image blocks are full-bleed/no rounded generic cards.
-14. No new CMS/admin/database schema/dependency is introduced without separate approval.
-15. Responsive, keyboard, accessibility and clean-console checks pass.
-16. Repository lint/type/test/build gates relevant to the change pass.
-17. Final review has 0 Critical and 0 Required findings.
-18. Project Definition of Done is satisfied before merge.
+14. Editorial image blocks are full-bleed/no rounded generic cards.
+15. No new CMS/admin/database schema/dependency is introduced without separate approval.
+16. Responsive, keyboard, accessibility and clean-console checks pass.
+17. Repository lint/type/test/build gates relevant to the change pass.
+18. Final review has 0 Critical and 0 Required findings.
+19. Project Definition of Done is satisfied before merge.
 
 ## 16. Explicitly out of scope
 
@@ -625,6 +650,7 @@ These values are intentionally supplied later through config and do not block th
 - any manual SPECIAL DEALS product selection is supplied through the existing `HomepageFeaturedProduct` authority, not this config;
 - four collection promo mappings and their homepage-specific images/CTA copy; visible collection titles are derived from `CollectionDefinition.title`;
 - category editorial images;
-- feedback image set + accessible alt decisions.
+- feedback image set + accessible alt decisions;
+- feedback metadata title + description, supplied as approved/config-owned copy before the public route is production-ready.
 
 No implementation may invent these values in order to make a screenshot look complete.
