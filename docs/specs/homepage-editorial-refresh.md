@@ -1,0 +1,587 @@
+# Spec: Homepage editorial refresh — Ding Dang rhythm, La.na visual
+
+Status: **DRAFT — owner intent confirmed in interview, implementation not started**
+
+Owner confirmation date: 2026-09-23
+
+## 0. Authority and precedence
+
+This document is the focused implementation contract for the La.na Design homepage refresh approved on 2026-09-23.
+
+For the homepage only, this spec **supersedes the lower-homepage order and section roles** currently described in `docs/specs/la-na-design-master-spec.md` §16 and §18–§23.
+
+The following existing contracts remain authoritative unless this document explicitly changes them:
+
+- §17 Hero slider — keep the current hero behavior and current first-surface/header contract.
+- §24 Header/navigation/search — unchanged.
+- Existing product-card commerce truth: pricing, sale display, marketing badge priority, preorder/availability truth.
+- Existing collection/product/catalog authority. This spec changes homepage merchandising presentation, not commerce eligibility or product truth.
+- Existing footer/legal/policy contract — footer remains; only the homepage `Service strip` and `Brand story` sections are removed.
+
+Reference rule: Ding Dang is used only for **section order, editorial rhythm and composition from its SALE/SPECIAL DEALS area downward**. La.na must not copy Ding Dang's typography, colors, copy, artwork, brand identity or exact pixel styling.
+
+## 1. Assumptions surfaced before implementation
+
+1. The current La.na hero remains the only homepage section above the refreshed sequence. Existing `Hàng mới về`, lead Áo dài editorial, Featured grid, old category editorial, collection navigation, Service strip and Brand story are replaced on the homepage.
+2. Homepage content management remains **repository config/data only** for this scope. No CMS/admin UI, new external service or database-backed homepage editor is required.
+3. The dedicated feedback page uses the canonical route `/feedback` unless the owner changes the slug before implementation.
+4. The four collection-promo slots are intentionally unmapped at spec time. Unmapped slots must not publish fake collection names, fake links or placeholder campaign images.
+5. The primary 4-product merchandising section may change title/copy/source collection over time while preserving one fixed layout.
+6. Collection product fallback ordering must reuse the collection's existing merchandising order; no new "newest", "bestseller" or implicit sort rule is introduced.
+7. Visual copy that is not explicitly approved here remains config-owned content, not code-authored brand prose.
+
+## 2. Objective
+
+Redesign the homepage from the SALE/SPECIAL DEALS-equivalent area downward so the page has the same **editorial cadence** the owner approved from the Ding Dang reference, while remaining visually 100% La.na Design.
+
+The refreshed homepage should feel less like a sequence of unrelated storefront modules and more like a deliberate fashion-editorial journey:
+
+```text
+Hero (unchanged)
+→ Primary 4-product merchandising section
+→ Collection promo row A: 2 image blocks
+→ YOUR NEXT FAVOURITE: 4 category blocks
+→ Collection promo row B: 2 image blocks
+→ Customer feedback horizontal image rail
+→ Footer
+```
+
+Success means the owner can later change campaign copy, product source collection, collection promo mappings and feedback images through repository config/data **without changing the section layout/components**.
+
+## 3. Current state being replaced
+
+Current `src/app/page.tsx` renders, after the hero:
+
+```text
+Hàng mới về
+→ Áo dài La.na Design
+→ Sản phẩm nổi bật
+→ Category editorial
+→ Collection navigation (when available)
+→ Service strip
+→ Brand story
+```
+
+This refresh removes those homepage section roles and replaces them with the sequence in §2.
+
+Important scope discipline:
+
+- Do not delete collection/category/product capabilities merely because their old homepage section disappears.
+- Do not change product detail, PLP, collection detail, cart, checkout or commerce rules.
+- Do not remove footer facts or policy links.
+- Do not refactor unrelated merchandising infrastructure.
+
+## 4. Tech stack and current project boundaries
+
+Current repository stack from `package.json`:
+
+- Next.js 16.3.3
+- React 19.2
+- TypeScript 5.9
+- Tailwind CSS 4 + project CSS in `src/app/globals.css`
+- PostgreSQL + Prisma 7.9.1
+- pnpm 11.4.0
+- Node.js >= 22.14.0
+
+Relevant architecture boundaries:
+
+- `src/app/` — page markup/wiring only.
+- `src/routes/` — homepage loading/view-model orchestration.
+- `src/brand/` — La.na brand/taxonomy/config authority.
+- `src/components/brand/` — La.na presentation components.
+- `src/components/headless/` — reusable presentation models where already established.
+- `src/commerce/` — product, collection, pricing and merchandising authority.
+- Page-layer boundary tests must continue to pass; `src/app/page.tsx` must not reach directly into DB/commerce/integration layers.
+
+## 5. Repository commands
+
+Use the repository's checked-in commands; do not substitute guessed test commands.
+
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+pnpm prisma:generate
+
+pnpm lint
+pnpm typecheck
+pnpm test:domain
+pnpm test
+pnpm test:db
+pnpm build
+pnpm release:check
+```
+
+During implementation, focused homepage/domain/browser tests should run before the full gate.
+
+## 6. Visual language
+
+The structure/rhythm may reference Ding Dang, but every rendered visual must remain La.na.
+
+Required:
+
+- Keep the existing La.na serif/sans typography roles.
+- Keep the existing warm brown / cream La.na palette and existing focus treatment.
+- Use square/full-bleed editorial imagery; do not introduce rounded-card styling.
+- Editorial image rows should run edge-to-edge/full-width rather than being placed inside generic padded cards.
+- Product cards continue to use the current La.na `ProductCard` language unless a later owner decision explicitly redesigns the card itself.
+- Avoid introducing new gradients, generic fashion-template decoration, excessive shadows or a second design system.
+- Images use `object-fit: cover`-style cropping with stable aspect behavior and no layout shift.
+- No Ding Dang logos, fonts, copy, proprietary artwork or brand colors.
+
+## 7. Final homepage section order
+
+### 7.1 Hero — unchanged
+
+Keep the existing Hero slider contract and current content authority. This refresh starts **after** the hero.
+
+No redesign of hero autoplay, CTA, reduced-motion behavior or transparent-header behavior is included.
+
+---
+
+### 7.2 Primary 4-product merchandising section
+
+This is the La.na equivalent of the owner-referenced SALE / SPECIAL DEALS section.
+
+#### Purpose
+
+A fixed 4-product layout whose **content may change by campaign/time period** without changing component structure.
+
+Examples of configurable role/copy may include a sale campaign, a highlighted collection or another merchandising focus. The implementation must not hard-code the component to the word `SALE`.
+
+#### Content contract
+
+Configurable content:
+
+- section title;
+- optional short supporting line;
+- source collection;
+- optional manual product selection;
+- CTA label, defaulting to `Xem thêm`;
+- destination is the configured source collection.
+
+#### Product selection priority
+
+1. **Manual override** — when a manual product list is configured, preserve that explicit order.
+2. **Collection fallback** — when no manual list is configured, take up to the first 4 real products using the collection's existing merchandising order.
+3. Do not fall back to newest products, bestsellers or another category/collection.
+4. Do not duplicate products to fill missing slots.
+5. Production configuration should provide 4 valid products. If runtime data temporarily resolves fewer, render only real valid products rather than inventing placeholders.
+
+"Collection order" means reuse the collection's canonical ordering behavior already used by the collection surface, including its existing featured-product ordering authority. Do not create a second ranking system solely for the homepage.
+
+#### Presentation
+
+Desktop:
+
+- 4 product cards in one row.
+- Product card aspect/commerce presentation remains La.na.
+- Section title/supporting copy follows La.na typography.
+- `Xem thêm` appears after the product set and links to the source collection.
+
+Mobile:
+
+- 2 columns × 2 rows for the normal 4-product state, matching the approved reference rhythm.
+- Same product truth and same card component semantics.
+- `Xem thêm` remains clearly reachable after the grid.
+
+#### Commerce and tracking
+
+- Product price, discount, availability/preorder and badge rules come from existing product-card authority.
+- No sale status may be inferred from the section title.
+- Use one stable homepage list identity for analytics; changing campaign copy must not create a new tracking contract.
+- Select-item indices must match the visible product order.
+
+---
+
+### 7.3 Collection promo row A — 2 image blocks
+
+A reusable two-slot editorial collection row.
+
+No shared section heading.
+
+Each slot contains:
+
+- editorial image;
+- display title;
+- CTA label;
+- destination collection.
+
+The exact two collections are intentionally **pending mapping**.
+
+#### Layout
+
+- Exactly 2 large image blocks side-by-side.
+- Edge-to-edge/full-bleed row with no generic card container.
+- Each image owns 50% of the row in the normal two-slot state.
+- No rounded corners.
+- Title + CTA overlay on the image, positioned consistently in the lower editorial area.
+- Image crop is editorial and fills the tile.
+
+The row keeps this two-image rhythm on mobile as well as desktop, matching the owner-approved reference direction. Mobile sizing may reduce text/spacing, but the row must not silently become an unrelated stacked-card design.
+
+#### Link interaction contract
+
+Desktop:
+
+- the image/tile itself is not a link;
+- **only the CTA** is clickable and opens the mapped collection.
+
+Mobile/touch layout:
+
+- the **whole tile** is a tap target to the same mapped collection;
+- the visible CTA communicates the destination/action;
+- implementation must use valid semantics with one canonical anchor target, not nested links.
+
+#### Missing mapping behavior
+
+- A promo row may stay absent until both collection slots are mapped with real approved image/title/destination data.
+- Never publish a fake collection or placeholder destination to preserve layout.
+- Once enabled, both slots must resolve to published collection destinations.
+
+---
+
+### 7.4 YOUR NEXT FAVOURITE — 4 category blocks
+
+Purpose: primary category discovery, not another product grid.
+
+Four required category roles, sourced from the canonical La.na category vocabulary:
+
+1. Áo dài — `aoDai` → `/ao-dai`
+2. Váy, đầm — `vayDam` → `/vay-dam`
+3. Set đồ — `setDo` → `/set-do`
+4. Phụ kiện — `phuKien` → `/phu-kien`
+
+Do not duplicate these labels/hrefs as new category truth when they can be derived from `CATEGORY_NAVIGATION`.
+
+#### Content
+
+- section heading/copy is repository-configurable;
+- each block has one approved editorial image;
+- visible label comes from the canonical category definition;
+- each block links to its category destination.
+
+#### Layout/rhythm
+
+Desktop:
+
+- 4 editorial category blocks in one visual row.
+
+Mobile:
+
+- 2 × 2 category rhythm.
+
+Presentation should follow the approved Ding Dang section rhythm while preserving La.na typography/color/spacing.
+
+Category images are visual merchandising data. Missing media must not be replaced with invented photography.
+
+---
+
+### 7.5 Collection promo row B — 2 image blocks
+
+Same reusable component and exact contract as §7.3.
+
+This is a second independent pair of collection promo slots, appearing **after** YOUR NEXT FAVOURITE.
+
+The two mapped collections are intentionally pending.
+
+Do not create a second component/design variant for this row unless a real requirement appears. Both promo rows should share one component/schema and differ only by config data.
+
+---
+
+### 7.6 Customer feedback image rail
+
+Replaces the role previously discussed as the Ding Dang "Muse" area.
+
+#### Homepage behavior
+
+- Shows **images only** visually.
+- No customer name, product name, quote or caption is rendered on the homepage.
+- Images are manually selected and ordered in repository config.
+- Horizontal rail/carousel rhythm similar to the approved reference.
+- Touch users can swipe horizontally.
+- Desktop users can scroll/drag/use an accessible control path.
+- No autoplay requirement.
+- No image should become a product/category link by default.
+- Section title itself is **not a link**.
+- At the end of the section, render `Xem thêm` linking to the dedicated feedback page.
+
+Accessibility does not mean adding visible captions the owner did not request. Each configured feedback photo must still carry an appropriate manually authored accessible text decision (`alt` text when informative, or explicitly decorative empty alt when that is truly correct).
+
+#### Dedicated feedback page
+
+Create a simple La.na feedback-gallery page at `/feedback`:
+
+- shows the full configured feedback image collection;
+- no CMS/admin requirement;
+- no quotes/captions are required by this spec;
+- use the site's normal page chrome and La.na visual language;
+- responsive image gallery/rail may be simple; do not create unrelated social-network features.
+
+---
+
+### 7.7 Footer
+
+After Feedback, go directly to the existing footer.
+
+Do **not** render these old homepage sections between Feedback and Footer:
+
+- Service strip;
+- Brand story.
+
+Their underlying brand/policy facts remain valid elsewhere; this is a homepage composition change only.
+
+## 8. Config/data ownership
+
+Introduce one focused repository-owned homepage merchandising config rather than scattering literals through `page.tsx`.
+
+Recommended ownership: `src/brand/homepage.config.ts` (final file name may follow an existing nearby convention discovered during implementation).
+
+Conceptual shape:
+
+```ts
+type HomepageConfig = {
+  primaryMerchandising: {
+    title: string;
+    description?: string;
+    collectionSlug: string;
+    manualProductSlugs?: readonly string[];
+    ctaLabel: string;
+  };
+
+  promoRows: readonly [
+    readonly [CollectionPromoSlot | null, CollectionPromoSlot | null],
+    readonly [CollectionPromoSlot | null, CollectionPromoSlot | null],
+  ];
+
+  categoryDiscovery: {
+    title: string;
+    description?: string;
+    imageByCategoryKey: Readonly<Record<
+      "aoDai" | "vayDam" | "setDo" | "phuKien",
+      string
+    >>;
+  };
+
+  feedback: {
+    title: string;
+    pageHref: "/feedback";
+    ctaLabel: string;
+    images: readonly {
+      src: string;
+      alt: string;
+    }[];
+  };
+};
+
+type CollectionPromoSlot = {
+  collectionSlug: string;
+  imageSrc: string;
+  title: string;
+  ctaLabel: string;
+};
+```
+
+This is a **contract sketch**, not a requirement to copy the exact TypeScript names.
+
+Rules:
+
+- Collection/category destination truth should be resolved/validated against existing authorities.
+- External/remote image input remains untrusted and must pass the existing trusted-media policy where applicable.
+- Local repository assets must use stable public paths.
+- Do not add a database migration for homepage config in this scope.
+- Do not add an admin panel/CMS in this scope.
+- Do not duplicate collection titles/links across multiple files when one config/authority can own them.
+
+## 9. Data/loading architecture
+
+Keep the established split:
+
+- `src/app/page.tsx`: render markup/components only.
+- `src/routes/home.ts`: load/resolve homepage data, pricing windows and tracking.
+- pure view-model helpers: resolve product cards/config state without direct request/DB dependencies.
+- `src/commerce/`: canonical collection/product reads remain here.
+- `src/components/brand/`: promo row, category discovery and feedback rail presentation.
+
+Primary merchandising fallback must reuse existing collection merchandising order rather than rebuilding it in the page.
+
+Because the refreshed homepage has only one product grid, its pricing refresh window should be derived from that one priced product set plus any existing hero behavior that already applies; do not keep stale refresh dependencies for removed product grids.
+
+## 10. Responsive behavior
+
+Representative acceptance widths:
+
+- ~390px mobile
+- ~768px tablet
+- ~1024px desktop
+- ~1440px wide desktop
+
+Requirements:
+
+- no horizontal page overflow;
+- full-bleed editorial rows reach intended page edges;
+- product section remains usable at 2 columns on mobile;
+- collection promo rows preserve the two-image composition;
+- category discovery is 2×2 mobile / 4-across desktop;
+- feedback rail scrolls horizontally without clipping controls or trapping focus;
+- overlay text remains readable over real configured images;
+- all tap targets remain practical (~44px where feasible).
+
+## 11. Accessibility
+
+Must satisfy the project accessibility bar:
+
+- semantic headings in logical order;
+- native links/buttons;
+- visible keyboard focus;
+- CTA accessible names identify their destinations;
+- mobile "whole promo tile" behavior must not create nested anchors;
+- feedback rail must be keyboard reachable/operable;
+- no hover-only information required to understand a destination;
+- image alt behavior follows semantic purpose;
+- no color-only state;
+- text/controls meet project contrast expectations;
+- reduced-motion preferences remain respected by any animated/scroll behavior.
+
+## 12. Performance
+
+- Use `next/image` / existing image delivery patterns.
+- Give images stable dimensions/aspect boxes to prevent CLS.
+- Do not eagerly load all below-fold editorial/feedback images.
+- Preserve priority only for the true first/LCP hero image.
+- Feedback rail should not force the entire full feedback gallery to eager-load.
+- Do not add a carousel dependency when native scroll/snap + minimal client behavior can satisfy the contract.
+
+No performance claim is valid without before/after measurement during implementation verification.
+
+## 13. Testing strategy
+
+### Domain/unit tests
+
+Add focused tests for:
+
+- primary merchandising selection priority: manual override > collection fallback;
+- manual order preservation;
+- fallback reuses collection order and limits normal result to 4;
+- no newest/bestseller fallback;
+- canonical category order/keys;
+- promo rows derive only from configured/mapped slots;
+- feedback config order preservation;
+- removed old homepage sections are no longer part of the home view model/order where that logic is modeled.
+
+### Integration/runtime tests
+
+Verify:
+
+- homepage section order exactly matches §7;
+- Hero remains unchanged;
+- primary merchandising CTA opens configured collection;
+- promo row A and B CTA/link semantics differ correctly between desktop/mobile hit areas;
+- category blocks link to canonical category routes;
+- Feedback title is not a link;
+- Feedback `Xem thêm` opens `/feedback`;
+- feedback page renders configured full gallery;
+- Service strip and Brand story are absent from homepage;
+- route/page boundary tests remain green;
+- product cards preserve pricing/availability semantics.
+
+### Browser verification
+
+At representative mobile + desktop widths:
+
+- visual section order/rhythm;
+- full-bleed image edges;
+- 4-product 2×2 mobile grid / 4-across desktop;
+- two-image promo composition;
+- category 2×2 / 4-across behavior;
+- swipe/scroll feedback rail;
+- desktop CTA-only promo click target;
+- mobile full-tile promo tap target;
+- keyboard focus path;
+- clean console;
+- accessibility scan;
+- no unexpected layout shift from images.
+
+## 14. Boundaries
+
+### Always do
+
+- Reuse canonical product, collection, category, pricing and availability truth.
+- Validate repo-owned config at a clear boundary.
+- Keep homepage page-layer imports within the existing route/brand/component boundary.
+- Preserve La.na design tokens and typography.
+- Use real configured content only.
+- Add regression tests before/with changed behavior.
+- Verify mobile and desktop runtime output.
+
+### Ask first
+
+- Any DB schema/migration.
+- Any new dependency/carousel library.
+- Any new CMS/admin UI.
+- Any new remote media host.
+- Changing hero behavior.
+- Changing collection/category public route semantics.
+- Changing feedback canonical route away from `/feedback`.
+- Changing product-card commerce behavior.
+
+### Never do
+
+- Copy Ding Dang brand identity/assets/copy.
+- Invent customer feedback images, collection names, promo destinations or brand prose.
+- Derive sale/discount truth from homepage section naming.
+- Fall back to newest/bestseller when the configured source is missing.
+- Duplicate products as filler.
+- Add fake placeholder campaign media to keep a row visible.
+- Make unrelated PDP/PLP/cart/checkout refactors.
+- Remove failing tests to make CI pass.
+
+## 15. Success criteria
+
+The feature is accepted when all of the following are true:
+
+1. Homepage order after Hero is exactly:
+   `4-product merchandising → promo pair A → 4 categories → promo pair B → feedback rail → footer`.
+2. Old lower homepage sections are not rendered.
+3. Primary merchandising layout remains fixed while title/copy/source collection/manual product selection are config-driven.
+4. Manual product selection wins when configured; otherwise the first 4 products follow existing collection merchandising order.
+5. `Xem thêm` from the product section opens the configured source collection.
+6. Both promo rows use one reusable component/config contract.
+7. Each promo slot maps to a real collection; desktop only CTA is clickable, mobile whole tile is tappable.
+8. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện.
+9. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
+10. `/feedback` renders the complete configured image collection.
+11. Font, palette, product-card language and overall identity remain La.na.
+12. Editorial image blocks are full-bleed/no rounded generic cards.
+13. No new CMS/admin/database schema/dependency is introduced without separate approval.
+14. Responsive, keyboard, accessibility and clean-console checks pass.
+15. Repository lint/type/test/build gates relevant to the change pass.
+16. Final review has 0 Critical and 0 Required findings.
+17. Project Definition of Done is satisfied before merge.
+
+## 16. Explicitly out of scope
+
+- Mapping the exact four collection promo destinations now.
+- Redesigning the hero.
+- Redesigning product cards.
+- New admin/CMS UI.
+- Database schema for homepage composition.
+- Customer feedback text/reviews/ratings.
+- Instagram/Facebook ingestion.
+- Gifts to Discover section.
+- Homepage Service strip.
+- Homepage Brand story.
+- Changes to product/collection/category commerce authority.
+- Deployment.
+
+## 17. Pending content, not missing requirements
+
+These values are intentionally supplied later through config and do not block the component contract:
+
+- exact current title/supporting copy for the primary merchandising section;
+- source collection for that section;
+- optional four manual product references;
+- four collection promo mappings and their images/titles/CTA copy;
+- category editorial images;
+- feedback image set + accessible alt decisions.
+
+No implementation may invent these values in order to make a screenshot look complete.
