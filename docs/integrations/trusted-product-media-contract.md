@@ -16,7 +16,7 @@ Pancake responses are untrusted external inputs. The media resolver enforces str
 
 1. **Protocol**: Strictly `https:` (rejects `http:`, `ftp:`, `data:`, `javascript:`, `file:`, etc.).
 2. **Reviewed Host**: Exactly `content.pancake.vn` (rejects unreviewed origins, wildcards, subdomains like `pos.pancake.vn`, or IP addresses).
-3. **Exact Reviewed Path Shape & Extension**: Path must strictly match `/:segment/:id/:id/:id/:file.(jpg|png)` (exactly 5 path segments after leading `/`: a valid segment name, 3 non-empty numeric ID segments, and a valid filename ending strictly in lowercase `.jpg` or `.png`). Rejects arbitrary paths, fewer/extra segments, non-numeric ID segments, and unreviewed extensions (`.jpeg`, `.webp`, `.svg`, uppercase `.JPG`/`.PNG`, etc.).
+3. **Exact Reviewed Path Shape & Extension**: Path must strictly match `/:segment/:id/:id/:id/:file.(jpg|png|webp)` (exactly 5 path segments after leading `/`: a valid segment name, 3 non-empty numeric ID segments, and a valid filename ending strictly in lowercase `.jpg`, `.png`, or `.webp`). Rejects arbitrary paths, fewer/extra segments, non-numeric ID segments, and unreviewed extensions (`.jpeg`, `.svg`, uppercase `.JPG`/`.PNG`/`.WEBP`, etc.).
 4. **No User Credentials**: Rejects any URI containing userinfo (`user:pass@`).
 5. **Standard Port Only**: Rejects custom ports (e.g. `:8443`) and explicit default ports in authority.
 6. **Path Traversal Protection**: Rejects raw or encoded path traversal tokens (`..`, `%2e%2e`) in the path before or after WHATWG URL normalization.
