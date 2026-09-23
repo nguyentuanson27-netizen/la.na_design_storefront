@@ -488,7 +488,7 @@ Verify:
 
 - homepage section order exactly matches §7;
 - Hero remains unchanged;
-- primary merchandising CTA opens configured collection;
+- SPECIAL DEALS `Xem thêm` opens the configured route-reachable source collection;
 - promo row A and B CTA/link semantics differ correctly between desktop/mobile hit areas;
 - category blocks link to canonical category routes;
 - Feedback title is not a link;
