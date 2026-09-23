@@ -156,16 +156,18 @@ Keep one fixed four-product layout. Repository data may change which products/co
 - CTA label: `Xem thêm` unless the owner separately changes this copy.
 - Destination: the configured source collection, and it must be route-reachable under the current collection-page contract defined below.
 
-#### Product selection priority
+#### Product selection priority and source-collection relationship
 
-1. **Manual override** — read the existing `HomepageFeaturedProduct` ordered selection via the current merchandising boundary. When it resolves one or more visible products, use the first 4 in that authority's order.
-2. **Collection fallback** — only when the existing manual authority resolves empty, take up to the first 4 real products using the source collection's existing merchandising order.
-3. Do not add `manualProductSlugs` or another config/database owner for the same meaning.
-4. Do not fall back to newest products, bestsellers or another category/collection.
-5. Do not duplicate products or mix automatic fallback products into a non-empty manual selection just to fill four slots.
-6. Production configuration should normally resolve 4 valid products. If current visibility/data temporarily makes the chosen source shorter, render only real valid products rather than inventing placeholders.
+1. **Manual override** — read the existing `HomepageFeaturedProduct` ordered selection via the current merchandising boundary. If that authority resolves non-empty, its first 4 visible products are the intended SPECIAL DEALS set.
+2. Those manual products must all belong to the configured source collection under the **same collection-membership truth used by the public collection listing** (currently `ProductContent.collectionSlugs` / the collection discovery predicate). Do not treat category membership, homepage config, or visual placement as collection membership.
+3. If the manual authority is non-empty but its rendered first-4 set contains fewer than 4 visible products **or any of those products is not a member of the source collection**, treat the homepage merchandising state as inconsistent and **omit SPECIAL DEALS**. Do not silently filter, top up, cross-merchandise, or fall back to automatic products.
+4. **Collection fallback** — only when the existing manual authority resolves empty, take the first 4 real products using the source collection's existing merchandising order.
+5. The fallback must also resolve exactly 4 valid products; otherwise omit SPECIAL DEALS rather than render a partial grid or invent placeholders.
+6. Do not add `manualProductSlugs` or another config/database owner for the same meaning.
+7. Do not fall back to newest products, bestsellers or another category/collection.
+8. Do not duplicate products or mix automatic fallback products into a non-empty manual selection.
 
-"Collection order" means reuse the collection's canonical ordering behavior already used by the collection surface, including its existing featured-product ordering authority. Do not create a second ranking system solely for the homepage.
+"Collection order" means reuse the collection's canonical ordering behavior already used by the collection surface, including its existing featured-product ordering authority. "Belongs to the source collection" means the same membership predicate that makes the product appear on `/collections/<slug>`; implementation should reuse that boundary/helper rather than create a second membership rule solely for the homepage.
 
 #### Collection destination reachability
 
@@ -208,10 +210,12 @@ No shared section heading.
 
 Each slot contains:
 
-- editorial image;
-- display title;
+- homepage-specific editorial image;
+- canonical collection title, derived from the resolved `CollectionDefinition.title`;
 - CTA label;
 - destination collection.
+
+The visible title is the collection's canonical title, **not** a second editorial-title authority. If a future design needs a different marketing headline, that is a separate owner decision and must use a distinctly named field rather than overloading the collection title.
 
 The exact two collections are intentionally **pending mapping**.
 
@@ -282,6 +286,19 @@ Mobile:
 Presentation should follow the approved Ding Dang section rhythm while preserving La.na typography/color/spacing.
 
 Category images are visual merchandising data. Missing media must not be replaced with invented photography.
+
+#### Missing-media behavior
+
+This section is an **all-or-nothing four-block composition**. After the existing trusted-media validation runs, all four required keys (`aoDai`, `vayDam`, `setDo`, `phuKien`) must have a valid `heroImageUrl`.
+
+If any one image is missing or rejected by the trusted-media contract:
+
+- omit the entire YOUR NEXT FAVOURITE section;
+- do not render a 3-block partial grid;
+- do not render an image-less tile;
+- do not substitute another category image or placeholder.
+
+This preserves the owner-approved 4-category rhythm and fails closed on incomplete merchandising data.
 
 ---
 
@@ -383,7 +400,6 @@ type HomepageConfig = {
 type CollectionPromoSlot = {
   collectionSlug: string;
   imageSrc: string;
-  title: string;
   ctaLabel: string;
 };
 ```
@@ -396,6 +412,8 @@ Rules:
 
 - **Do not** add `manualProductSlugs`, product IDs/slugs, or another manual-product list to homepage config.
 - **Do not** add `imageByCategoryKey` or another category-image map to homepage config.
+- **Do not** add a promo `title` that duplicates `CollectionDefinition.title`; derive the visible collection name from the resolved collection.
+- Promo `imageSrc` is intentionally homepage-slot-specific editorial media and may differ from the collection detail hero; this is a distinct surface role, not a duplicate collection-title authority.
 - Resolve collection destinations through the same route-reachability truth as §7.2/§7.3, not publication state alone.
 - External/remote image input remains untrusted and must pass the existing trusted-media policy where applicable.
 - Local repository assets must use stable public paths.
@@ -474,9 +492,11 @@ Add focused tests for:
 
 - SPECIAL DEALS selection priority: existing `HomepageFeaturedProduct` manual override > collection fallback;
 - manual authority order preservation and first-4 bound;
-- fallback reuses collection order and limits normal result to 4;
+- manual first-4 products must match the configured source collection using the canonical collection-membership truth; a cross-collection or short manual set omits the section rather than falling back;
+- fallback reuses collection order and must resolve exactly 4 products;
 - no newest/bestseller fallback;
 - canonical category order/keys and category images sourced from existing `CategoryEditorialMedia` rather than duplicate config;
+- YOUR NEXT FAVOURITE renders only when all four required trusted images resolve; any missing/rejected image omits the whole section;
 - promo rows derive only from configured/mapped slots;
 - collection CTA destinations reject/omit published-but-route-unreachable collections (including missing/blank description under the current route contract);
 - feedback config order preservation;
@@ -490,7 +510,9 @@ Verify:
 - Hero remains unchanged;
 - SPECIAL DEALS `Xem thêm` opens the configured route-reachable source collection;
 - promo row A and B CTA/link semantics differ correctly between desktop/mobile hit areas;
+- promo visible titles come from canonical `CollectionDefinition.title`, not duplicate homepage config;
 - category blocks link to canonical category routes;
+- YOUR NEXT FAVOURITE is absent rather than partial when any of its four trusted images is unavailable;
 - Feedback title is not a link;
 - Feedback `Xem thêm` opens `/feedback`;
 - feedback page renders configured full gallery;
@@ -544,8 +566,12 @@ At representative mobile + desktop widths:
 - Invent customer feedback images, collection names, promo destinations or brand prose.
 - Derive sale/discount truth from homepage section naming.
 - Fall back to newest/bestseller when the configured source is missing.
+- Cross-merchandise manual SPECIAL DEALS products from outside the configured source collection.
+- Silently filter/top-up an inconsistent non-empty manual SPECIAL DEALS selection.
 - Create a second manual-product authority or a second category-editorial-image authority for the homepage.
+- Create a second canonical collection-title authority for promo tiles.
 - Render a collection CTA from publication state alone when the current public route would 404.
+- Render a partial YOUR NEXT FAVOURITE grid when any required category image is missing/untrusted.
 - Duplicate products as filler.
 - Add fake placeholder campaign media to keep a row visible.
 - Make unrelated PDP/PLP/cart/checkout refactors.
@@ -559,20 +585,21 @@ The feature is accepted when all of the following are true:
    `SPECIAL DEALS (4 products) → promo pair A → 4 categories → promo pair B → feedback rail → footer`.
 2. Old lower homepage sections are not rendered.
 3. `SPECIAL DEALS` remains one fixed 4-product section; implementation does not generalize it into alternate campaign-section roles.
-4. Existing `HomepageFeaturedProduct` is the only manual override authority; when it resolves empty, the first 4 products follow existing collection merchandising order.
-5. `Xem thêm` from SPECIAL DEALS opens a route-reachable configured source collection; a merely-published collection that the current collection route would 404 is not valid.
-6. Both promo rows use one reusable component/config contract.
-7. Each promo slot maps to a route-reachable real collection; desktop only CTA is clickable, mobile whole tile is tappable.
-8. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện, and their images come from existing `CategoryEditorialMedia.heroImageUrl` authority.
-9. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
-10. `/feedback` renders the complete configured image collection.
-11. Font, palette, product-card language and overall identity remain La.na.
-12. Editorial image blocks are full-bleed/no rounded generic cards.
-13. No new CMS/admin/database schema/dependency is introduced without separate approval.
-14. Responsive, keyboard, accessibility and clean-console checks pass.
-15. Repository lint/type/test/build gates relevant to the change pass.
-16. Final review has 0 Critical and 0 Required findings.
-17. Project Definition of Done is satisfied before merge.
+4. Existing `HomepageFeaturedProduct` is the only manual override authority. A non-empty manual set must resolve exactly 4 visible products and all 4 must belong to the configured source collection; inconsistent manual data omits SPECIAL DEALS rather than cross-merchandising or falling back.
+5. When the manual authority resolves empty, collection fallback follows existing collection merchandising order and must resolve exactly 4 products.
+6. `Xem thêm` from SPECIAL DEALS opens a route-reachable configured source collection; a merely-published collection that the current collection route would 404 is not valid.
+7. Both promo rows use one reusable component/config contract; visible promo names are derived from canonical `CollectionDefinition.title`.
+8. Each promo slot maps to a route-reachable real collection; desktop only CTA is clickable, mobile whole tile is tappable.
+9. YOUR NEXT FAVOURITE contains exactly the four canonical roles: Áo dài / Váy, đầm / Set đồ / Phụ kiện, and their images come from existing `CategoryEditorialMedia.heroImageUrl` authority. Missing/untrusted media for any one role omits the whole section.
+10. Feedback homepage section visually renders images only, scrolls horizontally, and ends with `Xem thêm`.
+11. `/feedback` renders the complete configured image collection.
+12. Font, palette, product-card language and overall identity remain La.na.
+13. Editorial image blocks are full-bleed/no rounded generic cards.
+14. No new CMS/admin/database schema/dependency is introduced without separate approval.
+15. Responsive, keyboard, accessibility and clean-console checks pass.
+16. Repository lint/type/test/build gates relevant to the change pass.
+17. Final review has 0 Critical and 0 Required findings.
+18. Project Definition of Done is satisfied before merge.
 
 ## 16. Explicitly out of scope
 
@@ -596,7 +623,7 @@ These values are intentionally supplied later through config and do not block th
 - exact current supporting copy for SPECIAL DEALS, if any;
 - source collection for SPECIAL DEALS;
 - any manual SPECIAL DEALS product selection is supplied through the existing `HomepageFeaturedProduct` authority, not this config;
-- four collection promo mappings and their images/titles/CTA copy;
+- four collection promo mappings and their homepage-specific images/CTA copy; visible collection titles are derived from `CollectionDefinition.title`;
 - category editorial images;
 - feedback image set + accessible alt decisions.
 
