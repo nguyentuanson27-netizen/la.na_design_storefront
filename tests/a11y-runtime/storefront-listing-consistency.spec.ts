@@ -33,6 +33,8 @@ const now = new Date();
 const syncedAt = new Date("2026-09-19T02:00:00.000Z");
 const campaignId = `listing-consistency-sale-${runId}`;
 const COLLECTION_SLUG = "listing-consistency";
+const IMAGE_COLLECTION_SLUG = `listing-image-${process.pid}`;
+const IMAGE_COLLECTION_TITLE = "Listing Image Collection";
 const LONG_COLLECTION_SLUG = `listing-long-${process.pid}`;
 const COLLECTION_HERO_URL = "https://content.pancake.vn/images/1/2/3/collections-index-hero.jpg";
 const LONG_COLLECTION_TITLE = `Bộ sưu tập ${"ÁoDàiKhôngNgắt".repeat(28)}`;
@@ -104,7 +106,7 @@ async function cleanup() {
   await prisma.promotionCampaign.deleteMany({ where: { id: campaignId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
+    where: { slug: { in: [COLLECTION_SLUG, IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
   });
 }
 
@@ -165,6 +167,16 @@ test.beforeAll(async () => {
       description: "Bộ sưu tập kiểm thử bố cục danh sách.",
       seoTitle: "Listing Consistency",
       seoDescription: "Listing consistency",
+      isPublished: true,
+      pancakeCategoryIds: [],
+    },
+  });
+
+  await prisma.collectionDefinition.create({
+    data: {
+      slug: IMAGE_COLLECTION_SLUG,
+      title: IMAGE_COLLECTION_TITLE,
+      description: "Collection index image-card fixture.",
       heroImageUrl: COLLECTION_HERO_URL,
       isPublished: true,
       pancakeCategoryIds: [],
@@ -641,7 +653,7 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
 
     const imageCard = page
       .locator("article")
-      .filter({ has: page.locator(`a[href="/collections/${COLLECTION_SLUG}"]`) });
+      .filter({ has: page.locator(`a[href="/collections/${IMAGE_COLLECTION_SLUG}"]`) });
     const media = imageCard.locator("[data-collection-card-media]");
     await expect(media, `${viewport.name} collection media`).toBeVisible();
 
@@ -655,7 +667,7 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
     await expect(image).toHaveAttribute("sizes", "(min-width: 768px) 50vw, 100vw");
     await expect(image).toHaveAttribute("loading", "lazy");
     await expect(
-      imageCard.getByRole("heading", { level: 2, name: "Listing Consistency", exact: true }),
+      imageCard.getByRole("heading", { level: 2, name: IMAGE_COLLECTION_TITLE, exact: true }),
     ).toBeVisible();
 
     const fallbackCard = page
