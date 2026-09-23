@@ -514,7 +514,7 @@ Hero slider
 - 4 products per row on desktop.
 - 2 columns on mobile.
 - Large editorial image cards with generous spacing.
-- Image aspect ratio: 4:5.
+- Image aspect ratio: **2:3 (width:height)** on desktop and mobile.
 - Desktop hover: switch to second product image when available; otherwise remain on the first image.
 - Card default content: image + product name + price only.
 - Product name: serif.
@@ -1211,7 +1211,7 @@ Representative desktop + mobile checks:
 - mobile full-screen nav;
 - full-screen search;
 - hero autoplay/pause/swipe/dots/reduced motion;
-- 4:5 product grid and hover second image;
+- 2:3 product-card media frames on desktop and mobile, plus hover second image;
 - sale/badge priority;
 - preorder status cannot be hidden by marketing badge;
 - PLP filters/sort/infinite scroll/back navigation;
