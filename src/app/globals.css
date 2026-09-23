@@ -70,6 +70,24 @@ a {
   color: var(--paper);
 }
 
+/*
+ * Aggregate collections landing page CTA button on 16:9 banner cards.
+ * Declared unlayered so its label colour overrides unlayered `a { color: inherit }`.
+ */
+.collection-card-cta,
+a.collection-card-cta {
+  background-color: var(--paper);
+  color: var(--ink) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+.collection-card-cta:hover,
+a.collection-card-cta:hover {
+  background-color: #ffffff;
+  color: #1a0f0a !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {

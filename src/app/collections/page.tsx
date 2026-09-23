@@ -49,18 +49,19 @@ function render(data: CollectionsRouteData) {
               ) : (
                 <div className="absolute inset-0 bg-[#2A1810]" />
               )}
+              {/* Subtle bottom-only scrim (covers bottom 50%), preserving 100% natural brightness for the upper photo */}
               <div
                 aria-hidden="true"
-                className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/40 to-black/15 transition-opacity duration-300 group-hover:from-black/90"
+                className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 via-black/20 to-transparent transition-opacity duration-300 group-hover:from-black/75"
               />
               <div className="relative z-10 flex h-full flex-col justify-end p-6 sm:p-8 lg:p-10">
-                <h2 className="max-w-xl font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-sm sm:text-3xl lg:text-4xl">
+                <h2 className="max-w-xl font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-md sm:text-3xl lg:text-4xl">
                   {collection.title}
                 </h2>
                 <div className="mt-4 sm:mt-6">
                   <Link
                     href={`/collections/${collection.slug}`}
-                    className="inline-flex min-h-11 items-center gap-2 rounded-full border border-white/70 bg-black/40 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] backdrop-blur-md transition-all duration-300 hover:border-white hover:bg-[#FAF7F2] hover:text-[#2A1810]"
+                    className="collection-card-cta inline-flex min-h-11 items-center gap-2 rounded-full border border-white/80 px-5 py-2.5 text-xs font-semibold uppercase tracking-wider backdrop-blur-md transition-all duration-300 hover:border-white"
                   >
                     Khám phá bộ sưu tập ↗
                   </Link>
