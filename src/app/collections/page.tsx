@@ -32,30 +32,39 @@ function render(data: CollectionsRouteData) {
 
       {data.collections.length > 0 ? (
         <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:gap-8">
-          {data.collections.map((collection, index) => (
+          {data.collections.map((collection) => (
             <article
               key={collection.slug}
-              className="group relative aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#2A1810] shadow-md transition-shadow duration-300 hover:shadow-xl"
+              className="group rounded-2xl border border-[#2A1810]/10 bg-[#2A1810] shadow-md transition-shadow duration-300 hover:shadow-xl"
             >
-              {collection.heroImageUrl ? (
-                <Image
-                  src={collection.heroImageUrl}
-                  alt={collection.title}
-                  fill
-                  sizes="(min-width: 1024px) 50vw, 100vw"
-                  className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
-                  priority={index < 2}
-                />
-              ) : (
-                <div className="absolute inset-0 bg-[#2A1810]" />
-              )}
-              {/* Subtle bottom-only scrim (covers bottom 50%), preserving 100% natural brightness for the upper photo */}
               <div
-                aria-hidden="true"
-                className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/70 via-black/20 to-transparent transition-opacity duration-300 group-hover:from-black/75"
-              />
-              <div className="relative z-10 flex h-full flex-col justify-end p-6 sm:p-8 lg:p-10">
-                <h2 className="max-w-xl font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-md sm:text-3xl lg:text-4xl">
+                data-collection-card-media=""
+                className="relative aspect-[16/9] overflow-hidden rounded-t-2xl bg-[#2A1810]"
+              >
+                {collection.heroImageUrl ? (
+                  <Image
+                    src={collection.heroImageUrl}
+                    alt=""
+                    fill
+                    sizes="(min-width: 768px) 50vw, 100vw"
+                    className="object-cover transition-transform duration-700 ease-out group-hover:scale-105"
+                  />
+                ) : (
+                  <div
+                    data-collection-card-fallback=""
+                    aria-hidden="true"
+                    className="absolute inset-0 bg-[#2A1810]"
+                  />
+                )}
+              </div>
+
+              {/*
+               * The media stays a real 16:9 box. Content overlaps its lower edge for the editorial
+               * treatment, but remains in normal flow so any valid collection title can grow the
+               * card instead of being clipped by a fixed-ratio overflow container.
+               */}
+              <div className="relative z-10 -mt-24 rounded-b-2xl bg-gradient-to-t from-[#2A1810] via-[#2A1810]/95 to-transparent px-6 pb-6 pt-16 sm:-mt-28 sm:px-8 sm:pb-8 sm:pt-20 lg:px-10 lg:pb-10">
+                <h2 className="max-w-xl break-words font-serif text-2xl font-normal leading-tight text-[#FAF7F2] drop-shadow-md sm:text-3xl lg:text-4xl">
                   {collection.title}
                 </h2>
                 <div className="mt-4 sm:mt-6">
