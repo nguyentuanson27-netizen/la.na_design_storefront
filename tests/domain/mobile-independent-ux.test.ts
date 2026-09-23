@@ -112,10 +112,16 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(page, /<p className="eyebrow hidden lg:block">\{BRAND\.identity\.name\} \/ Sản phẩm<\/p>/);
   assert.match(page, /<h1 className="mt-0[^"]*lg:mt-5/);
 
-  // Compact below lg without shrinking the practical touch target; desktop values are restored.
-  assert.match(panel, /min-h-11 min-w-11[^"]*px-3[^"]*lg:min-w-12 lg:px-4/);
-  assert.match(panel, /<fieldset className="mt-4 lg:mt-7">/);
-  assert.match(panel, /className=\{\`mt-4 rounded-sm lg:mt-7/);
+  // One compact selector system now spans mobile, desktop and the quick sheet. Practical touch
+  // targets remain 44px, while desktop no longer re-expands the group spacing.
+  assert.match(panel, /min-h-11 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  assert.doesNotMatch(panel, /lg:mt-7/);
+  assert.match(panel, /function renderSelectorLegend/);
+  assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
+  assert.match(panel, /renderSelectorLegend\("Kích cỡ", selection\.size\)/);
+  assert.match(panel, /renderSelectorLegend\("Màu", selection\.color\)/);
+  assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
+  assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
 
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");
   const guideEnd = panel.indexOf("export function PurchasePanelView");
