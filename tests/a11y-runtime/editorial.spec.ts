@@ -645,11 +645,14 @@ test("V1 accepts remaining buyer surfaces on mobile and desktop", async ({ page 
       ).not.toBe("BODY");
 
       if (route.path === "/shop") {
+        const shopBuyerNotice = page
+          .locator("main p")
+          .filter({
+            hasText: "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
+          })
+          .first();
         await expect(
-          page.getByText(
-            "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
-            { exact: true },
-          ),
+          shopBuyerNotice,
           `${viewport.name} shop buyer notice`,
         ).toBeVisible();
 
