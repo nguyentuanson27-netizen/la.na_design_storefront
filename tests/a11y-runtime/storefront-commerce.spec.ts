@@ -894,8 +894,16 @@ test("standard sold-out variant remains visible, disabled, and says exact Hết 
 
   const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
   const soldOutSize = page.getByRole("radio", { name: "XL", exact: true });
+  const soldOutSizeChip = purchasePanel
+    .getByRole("group", { name: "Kích cỡ", exact: true })
+    .getByText("XL", { exact: true });
   await expect(soldOutSize).toBeChecked();
   await expect(soldOutSize).toBeDisabled();
+  await expect(soldOutSizeChip).toBeVisible();
+  expect(
+    await soldOutSizeChip.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity)),
+    "genuine sold-out option is visibly subdued",
+  ).toBeLessThan(1);
   await expect(purchasePanel.getByText("Hết hàng", { exact: true })).toBeVisible();
   await expect(purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeDisabled();
   await expect(purchasePanel.getByRole("button", { name: "Mua ngay", exact: true })).toBeDisabled();
