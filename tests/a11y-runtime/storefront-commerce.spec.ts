@@ -584,8 +584,14 @@ test("variant selectors share compact rectangular presentation across panel and 
     const panel = page.getByRole("region", { name: "Mua sản phẩm" });
     const colorGroup = panel.getByRole("group", { name: "Màu", exact: true });
     const sizeGroup = panel.getByRole("group", { name: "Kích cỡ", exact: true });
-    const blackChip = colorGroup.getByText("Black", { exact: true });
-    const mediumChip = sizeGroup.getByText("M", { exact: true });
+    const blackChip = colorGroup
+      .locator("label")
+      .filter({ hasText: /^Black$/ })
+      .locator("span");
+    const mediumChip = sizeGroup
+      .locator("label")
+      .filter({ hasText: /^M$/ })
+      .locator("span");
 
     for (const [label, group] of [
       ["Màu", colorGroup],
@@ -631,8 +637,14 @@ test("variant selectors share compact rectangular presentation across panel and 
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   const sheetColor = sheet.getByRole("group", { name: "Màu", exact: true });
   const sheetSize = sheet.getByRole("group", { name: "Kích cỡ", exact: true });
-  const sheetBlack = sheetColor.getByText("Black", { exact: true });
-  const sheetMedium = sheetSize.getByText("M", { exact: true });
+  const sheetBlack = sheetColor
+    .locator("label")
+    .filter({ hasText: /^Black$/ })
+    .locator("span");
+  const sheetMedium = sheetSize
+    .locator("label")
+    .filter({ hasText: /^M$/ })
+    .locator("span");
 
   expect(
     await sheetBlack.evaluate((element) => getComputedStyle(element).backgroundColor),
@@ -896,7 +908,9 @@ test("standard sold-out variant remains visible, disabled, and says exact Hết 
   const soldOutSize = page.getByRole("radio", { name: "XL", exact: true });
   const soldOutSizeChip = purchasePanel
     .getByRole("group", { name: "Kích cỡ", exact: true })
-    .getByText("XL", { exact: true });
+    .locator("label")
+    .filter({ hasText: /^XL$/ })
+    .locator("span");
   await expect(soldOutSize).toBeChecked();
   await expect(soldOutSize).toBeDisabled();
   await expect(soldOutSizeChip).toBeVisible();
