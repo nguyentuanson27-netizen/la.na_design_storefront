@@ -647,9 +647,22 @@ test("V1 accepts remaining buyer surfaces on mobile and desktop", async ({ page 
       if (route.path === "/shop") {
         const search = page.getByRole("searchbox", { name: "Tìm sản phẩm" });
         await search.fill("Editorial Runtime");
+
+        const submit =
+          viewport.name === "mobile"
+            ? async () => {
+                await page.getByRole("button", { name: /Bộ lọc/ }).click();
+                const dialog = page.getByRole("dialog", { name: "Bộ lọc" });
+                await expect(dialog).toBeVisible();
+                await dialog.getByRole("button", { name: "Áp dụng", exact: true }).click();
+              }
+            : async () => {
+                await page.getByRole("button", { name: "Áp dụng", exact: true }).click();
+              };
+
         await Promise.all([
           page.waitForURL((url) => url.pathname === "/shop" && url.searchParams.get("q") === "Editorial Runtime"),
-          page.getByRole("button", { name: "Áp dụng", exact: true }).click(),
+          submit(),
         ]);
         await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
       }
