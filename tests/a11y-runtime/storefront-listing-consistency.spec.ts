@@ -647,7 +647,8 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
     route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
   });
 
-  for (const viewport of VIEWPORTS) {
+  try {
+    for (const viewport of VIEWPORTS) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height });
     await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
 
