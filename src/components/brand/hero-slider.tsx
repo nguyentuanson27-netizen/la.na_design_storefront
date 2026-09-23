@@ -1,7 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
+
+import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
@@ -40,42 +41,13 @@ function HeroSlideFigure({
   return (
     <>
       <div className="home-hero__media">
-        {slide.mobileImageUrl ? (
-          <>
-            <div className="home-hero__media-mobile md:hidden">
-              <Image
-                src={slide.mobileImageUrl}
-                alt={slide.label}
-                fill
-                preload={preload}
-                sizes="100vw"
-                draggable={false}
-                className="object-cover"
-              />
-            </div>
-            <div className="home-hero__media-desktop hidden md:block">
-              <Image
-                src={slide.imageUrl}
-                alt={slide.label}
-                fill
-                preload={preload}
-                sizes="100vw"
-                draggable={false}
-                className="object-cover"
-              />
-            </div>
-          </>
-        ) : (
-          <Image
-            src={slide.imageUrl}
-            alt={slide.label}
-            fill
-            preload={preload}
-            sizes="100vw"
-            draggable={false}
-            className="object-cover"
-          />
-        )}
+        <ArtDirectedHeroImage
+          desktopSrc={slide.imageUrl}
+          mobileSrc={slide.mobileImageUrl}
+          alt={slide.label}
+          preload={preload}
+          draggable={false}
+        />
       </div>
       <p className="home-hero__cta">
         <Link

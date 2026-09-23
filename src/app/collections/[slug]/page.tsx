@@ -1,5 +1,6 @@
 import Image from "next/image";
 
+import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { CollectionFilterPanel } from "@/components/brand/collection-filter-panel";
 import {
@@ -45,39 +46,12 @@ function render(data: CollectionViewModel) {
           aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
           data-header-overlay-hero=""
         >
-          {editorial.heroImageMobile ? (
-            <>
-              <div className="collection-hero__media-mobile md:hidden">
-                <Image
-                  src={editorial.heroImageMobile}
-                  alt={data.title}
-                  fill
-                  preload
-                  sizes="100vw"
-                  className="object-cover"
-                />
-              </div>
-              <div className="collection-hero__media-desktop hidden md:block">
-                <Image
-                  src={editorial.heroImage}
-                  alt={data.title}
-                  fill
-                  preload
-                  sizes="100vw"
-                  className="object-cover"
-                />
-              </div>
-            </>
-          ) : (
-            <Image
-              src={editorial.heroImage}
-              alt={data.title}
-              fill
-              preload
-              sizes="100vw"
-              className="object-cover"
-            />
-          )}
+          <ArtDirectedHeroImage
+            desktopSrc={editorial.heroImage}
+            mobileSrc={editorial.heroImageMobile}
+            alt={data.title}
+            preload
+          />
         </section>
       ) : null}
 

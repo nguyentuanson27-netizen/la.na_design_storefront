@@ -153,6 +153,7 @@ test.beforeAll(async () => {
         title: "Runtime Hero Collection",
         description: "Published collection with real configured hero media.",
         heroImageUrl: "https://content.pancake.vn/images/1/2/3/collection-hero.jpg",
+        heroImageMobileUrl: "https://content.pancake.vn/images/1/2/3/collection-hero-mobile.jpg",
         isPublished: true,
       },
     ],
@@ -204,7 +205,14 @@ test("collection with configured hero uses the shared full-bleed header overlay 
     "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
     "base64",
   );
+  const desktopHero = "https://content.pancake.vn/images/1/2/3/collection-hero.jpg";
+  const mobileHero = "https://content.pancake.vn/images/1/2/3/collection-hero-mobile.jpg";
+  const requestedHeroSources: string[] = [];
   await page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url");
+    if (source === desktopHero || source === mobileHero) {
+      requestedHeroSources.push(source);
+    }
     route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
   });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -217,6 +225,8 @@ test("collection with configured hero uses the shared full-bleed header overlay 
   expect(Math.round(box?.width ?? 0)).toBe(390);
   expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
   await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+  await expect.poll(() => requestedHeroSources.includes(mobileHero)).toBe(true);
+  expect(requestedHeroSources.includes(desktopHero)).toBe(false);
 
   const header = page.locator("header.site-header");
   expect(await header.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
@@ -232,6 +242,11 @@ test("collection with configured hero uses the shared full-bleed header overlay 
     .withTags(BUYER_AXE_TAGS)
     .analyze();
   expect(accessibilityScan.violations).toEqual([]);
+
+  requestedHeroSources.length = 0;
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect.poll(() => requestedHeroSources.includes(desktopHero)).toBe(true);
+  expect(requestedHeroSources.includes(mobileHero)).toBe(false);
 });
 
 /**

@@ -358,6 +358,48 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("homepage hero art direction requests only the breakpoint-specific image", async ({ page }) => {
+  const desktopHero = "https://content.pancake.vn/images/1/2/3/home-art-desktop.jpg";
+  const mobileHero = "https://content.pancake.vn/images/1/2/3/home-art-mobile.jpg";
+  const requestedHeroSources: string[] = [];
+
+  await prisma.collectionDefinition.update({
+    where: { slug: "essential-outerwear" },
+    data: {
+      heroImageUrl: desktopHero,
+      heroImageMobileUrl: mobileHero,
+    },
+  });
+
+  await page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url");
+    if (source === desktopHero || source === mobileHero) {
+      requestedHeroSources.push(source);
+    }
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    await expect.poll(() => requestedHeroSources.includes(mobileHero)).toBe(true);
+    expect(requestedHeroSources.includes(desktopHero)).toBe(false);
+
+    requestedHeroSources.length = 0;
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await expect.poll(() => requestedHeroSources.includes(desktopHero)).toBe(true);
+    expect(requestedHeroSources.includes(mobileHero)).toBe(false);
+  } finally {
+    await prisma.collectionDefinition.update({
+      where: { slug: "essential-outerwear" },
+      data: {
+        heroImageUrl: null,
+        heroImageMobileUrl: null,
+      },
+    });
+  }
+});
+
 test("mobile navigation is a true viewport overlay before and after header scroll styling", async ({
   page,
 }) => {
