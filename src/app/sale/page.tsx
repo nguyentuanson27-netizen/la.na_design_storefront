@@ -25,7 +25,7 @@ function render(data: FlashSaleViewModel) {
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: SALE_TITLE }]} />
       <ListingHeader eyebrow="Khuyến mãi" title={SALE_TITLE}>
-        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70 hidden sm:block">{SALE_DESCRIPTION}</p>
+        <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">{SALE_DESCRIPTION}</p>
       </ListingHeader>
 
       {data.totalCount === 0 ? (
