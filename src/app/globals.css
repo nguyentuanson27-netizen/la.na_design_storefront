@@ -1002,28 +1002,6 @@ main nav[aria-label="Breadcrumb"] a {
   line-height: 0.86;
 }
 
-.category-strip {
-  padding: 5rem 1.5rem;
-}
-
-.category-links {
-  display: grid;
-  margin-top: 2.5rem;
-}
-
-.category-links a {
-  padding: 1rem 0;
-  border-top: 1px solid var(--line);
-  font-family: var(--font-serif);
-  font-size: clamp(2.4rem, 6vw, 6rem);
-  letter-spacing: -0.04em;
-  line-height: 1;
-}
-
-.category-links a:last-child {
-  border-bottom: 1px solid var(--line);
-}
-
 @media (max-width: 900px) {
   .campaign-hero,
   .collection-intro,
@@ -1384,15 +1362,13 @@ body:has(.admin-shell) .site-masthead {
 .campaign-intro,
 .lookbook-copy p,
 .collection-intro > p:last-child,
-.category-links a,
 .ui-state__title {
   font-family: var(--font-serif);
 }
 
 .campaign-copy,
 .collection-intro,
-.lookbook-copy,
-.category-strip {
+.lookbook-copy {
   padding-left: var(--shell-gutter);
   padding-right: var(--shell-gutter);
 }
@@ -1552,175 +1528,286 @@ body:has(.admin-shell) .site-masthead {
   }
 }
 
-/* Homepage sections (master spec §19, §21, §22, §23).
-   Mobile stacks; the 901px rules below are what introduce the side-by-side layouts. */
-.lead-editorial,
-.category-editorial,
-.brand-story {
+
+/* Homepage editorial refresh (docs/specs/homepage-editorial-refresh.md §7).
+   ------------------------------------------------------------------
+   La.na's own serif/sans roles, cream/brown palette and focus treatment throughout. Editorial image
+   rows run edge to edge with square corners; every image sits in a fixed aspect box, so nothing
+   shifts as photographs arrive. Desktop is 901px and wider, matching the rest of the stylesheet. */
+
+/* The "Xem thêm" link after SPECIAL DEALS and the feedback rail: the micro-copy style `.text-link`
+   uses, with a full control-height hit area. */
+.home-more {
+  display: flex;
+  justify-content: center;
+  margin: 2.5rem 0 0;
+  padding: 0 var(--shell-gutter);
+}
+
+.home-more a {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  padding: 0 0.25rem;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.45em;
+}
+
+.special-deals__copy {
+  max-width: 40rem;
+  margin: -1rem 0 2rem;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+/* Collection promo rows (§7.3 / §7.5): two 50% tiles at every width.
+   The tile stacks its photograph beneath its copy (`z-index: -1` inside an isolated tile) instead
+   of positioning the copy, so the tile -- not the copy box -- is the containing block of the CTA's
+   stretched hit area on a phone. */
+.collection-promo-row {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px;
   border-bottom: 1px solid var(--line);
 }
 
-.lead-editorial__media,
-.brand-story__media {
+.collection-promo {
   position: relative;
-  overflow: hidden;
-  min-height: 60vh;
-  background: var(--stone);
-}
-
-.lead-editorial__copy,
-.brand-story__copy {
-  padding: 3rem var(--shell-gutter);
-}
-
-.lead-editorial__links {
+  isolation: isolate;
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem 1.5rem;
-  margin-top: 1.5rem;
-  list-style: none;
-  padding: 0;
-}
-
-/* §21: the whole block is the link, and its label is the category name. */
-.category-editorial__block {
-  position: relative;
-  display: block;
-  min-height: 60vh;
+  flex-direction: column;
+  justify-content: flex-end;
+  aspect-ratio: 4 / 5;
   overflow: hidden;
   background: var(--stone);
 }
 
-.category-editorial__media {
+.collection-promo__media {
   position: absolute;
   inset: 0;
-  display: block;
+  z-index: -1;
 }
 
-.category-editorial__label {
-  position: absolute;
-  inset: auto 0 2rem 0;
-  text-align: center;
-  font-family: var(--font-serif, serif);
-  font-size: 1.5rem;
-  color: var(--cream, #fff);
+.collection-promo__copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: clamp(1.5rem, 3vw, 3rem);
+  color: var(--white);
   text-shadow: 0 1px 6px rgb(0 0 0 / 45%);
 }
 
-.service-strip {
-  border-bottom: 1px solid var(--line);
-  padding: 2rem var(--shell-gutter);
+.collection-promo__title {
+  margin: 0;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.75rem, 3.4vw, 3.25rem);
+  font-weight: 400;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
 }
 
-.service-strip ul {
+.collection-promo__cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--control-height);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.45em;
+}
+
+.collection-promo__cta:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 3px;
+}
+
+/* YOUR NEXT FAVOURITE (§7.4): four across on desktop, 2 × 2 on a phone. */
+.category-discovery,
+.feedback-rail {
+  padding: 4rem 0 5rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.category-discovery .section-heading-row,
+.feedback-rail .section-heading-row {
+  padding: 0 var(--shell-gutter);
+}
+
+.category-discovery__description {
+  max-width: 40rem;
+  margin: -1rem var(--shell-gutter) 2rem;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.1rem;
+  line-height: 1.5;
+}
+
+.category-discovery__grid {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
-  text-align: center;
-  font-size: 0.875rem;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
-@media (min-width: 901px) {
-  .lead-editorial,
-  .category-editorial,
-  .brand-story {
+.category-discovery__tile {
+  display: block;
+}
+
+.category-discovery__media {
+  position: relative;
+  display: block;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: var(--stone);
+}
+
+.category-discovery__label {
+  display: block;
+  padding: 1rem var(--shell-gutter) 0;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(1.25rem, 2vw, 1.75rem);
+  font-weight: 400;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.category-discovery__tile:hover .category-discovery__label {
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+
+/* Customer feedback (§7.6): a native horizontal rail -- scroll, swipe and snap, no autoplay. */
+.feedback-rail__viewport {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: var(--shell-gutter);
+  scrollbar-width: thin;
+}
+
+.feedback-rail__viewport:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.feedback-rail__track {
+  display: flex;
+  gap: 2px;
+  width: max-content;
+  margin: 0;
+  padding: 0 var(--shell-gutter) 0.75rem;
+  list-style: none;
+}
+
+.feedback-rail__item {
+  flex: 0 0 auto;
+  width: clamp(12rem, 20vw, 22rem);
+  scroll-snap-align: start;
+}
+
+.feedback-photo {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  background: var(--stone);
+}
+
+.feedback-page {
+  min-height: 65vh;
+  max-width: var(--shell-max);
+  margin: 0 auto;
+  padding: 4rem var(--shell-gutter) 6rem;
+}
+
+.feedback-page__title {
+  margin: 0 0 2.5rem;
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: clamp(2.5rem, 6vw, 4.5rem);
+  font-weight: 400;
+  line-height: 0.95;
+  letter-spacing: -0.05em;
+}
+
+.feedback-gallery {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 900px) {
+  /* A phone taps the whole promo tile: the CTA's own hit area is stretched over it. One anchor,
+     one destination, nothing nested. Desktop keeps the CTA as the only clickable part. */
+  .collection-promo {
+    aspect-ratio: 3 / 4;
+  }
+
+  .collection-promo__copy {
+    gap: 0.125rem;
+    padding: 1rem 0.875rem 0.5rem;
+  }
+
+  .collection-promo__title {
+    font-size: clamp(1.15rem, 5vw, 1.75rem);
+  }
+
+  .collection-promo__cta {
+    font-size: 0.62rem;
+  }
+
+  .collection-promo__cta::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+  }
+
+  .collection-promo:has(.collection-promo__cta:focus-visible) {
+    outline: 2px solid var(--focus-ring-color);
+    outline-offset: -4px;
+  }
+
+  .category-discovery,
+  .feedback-rail {
+    padding: 2.5rem 0 3rem;
+  }
+
+  .category-discovery__grid,
+  .feedback-gallery {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .service-strip ul {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+  .category-discovery__grid {
+    row-gap: 1.5rem;
+  }
+
+  .category-discovery__label {
+    padding: 0.75rem 1rem 0;
+    font-size: 1.25rem;
+  }
+
+  .feedback-rail__item {
+    width: 42vw;
+  }
+
+  .feedback-page {
+    padding-top: 2.5rem;
   }
 }
 
-/* The phone's category rhythm (§19, §21, §22).
-   ------------------------------------------------------------------
-   Three sections were drawn three ways here. Áo dài put its name under the image at body size --
-   a heading that read as a caption, with three centimetres of air around it. Set đồ and Váy, đầm
-   put theirs *over* the image in cream serif with a drop shadow. Same kind of content, same place
-   in the page, two different design languages and one of them barely legible as a heading.
-
-   So the declarations below are written once against both selectors rather than twice: the block
-   is the definition of what a category feature looks like on a phone, and the only way for the
-   three to drift apart again is for someone to split this rule. Desktop is untouched -- the
-   overlay above is still what Set đồ and Váy, đầm get at 901px and wider, because the owner asked
-   for the mobile section and nothing else. */
 @media (max-width: 640px) {
-  /* The image: one framing for all three, in normal flow rather than as a backdrop to overlay.
-
-     The stone fill moves from the block to the media with it. It was the backdrop the photograph
-     was laid over, so leaving it on the block tints the name underneath -- which would have put
-     Áo dài's name on paper and the other two on stone, the same "these are different things"
-     reading in a new colour. */
-  .category-editorial__block {
-    min-height: 0;
-    background: none;
-  }
-
-  /* Each feature closes the same way Áo dài's does. The section's own border closes the last one,
-     so only the join between the two needs drawing. */
-  .category-editorial__block:not(:last-child) {
-    border-bottom: 1px solid var(--line);
-  }
-
-  .category-editorial__media {
-    position: relative;
-    inset: auto;
-    min-height: 60vh;
-    background: var(--stone);
-  }
-
-  /* The name: one serif at one size. Large enough to read as the heading it is -- ~28px against
-     the ~16px Áo dài had -- and at 400 weight, which is what keeps it elegant rather than loud. */
-  .lead-editorial__copy h2,
-  .category-editorial__label {
-    position: static;
-    display: block;
-    margin: 0;
-    color: var(--ink);
-    text-align: left;
-    text-shadow: none;
-    font-family: var(--font-serif), Georgia, serif;
-    font-size: clamp(1.75rem, 6.5vw, 2.25rem);
-    font-weight: 400;
-    line-height: 1.15;
-    letter-spacing: -0.02em;
-  }
-
-  /* The air around it. Was 3rem above and below the copy, which is what put a section break's
-     worth of space between an image and the name of what is in it. */
-  .lead-editorial__copy,
-  .category-editorial__label {
-    padding: 1.25rem var(--shell-gutter) 2rem;
-  }
-
-  /* Title to subcategory links: one step, not a paragraph break. */
-  .lead-editorial__links {
-    margin-top: 0.875rem;
-    gap: 0.5rem 1.25rem;
-  }
-}
-
-/* §22 service strip on a phone: three short facts, not three headlines.
-   At 0.875rem with 2rem of padding and 1rem between rows the block ran to roughly 155px -- more
-   height than the three facts in it earn. This keeps all three, keeps them uppercase and keeps
-   them on the small-caps size the rest of the system already uses for micro-copy (`.text-link`,
-   `.product-meta`), which is what stops it shrinking below readable. Nothing here is a tap
-   target: they are plain list items, so no control minimum applies. */
-@media (max-width: 640px) {
-  .service-strip {
-    padding: 1.25rem var(--shell-gutter);
-  }
-
-  .service-strip ul {
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    line-height: 1.35;
+  .special-deals__copy {
+    margin: -0.5rem 1rem 1.5rem;
   }
 }

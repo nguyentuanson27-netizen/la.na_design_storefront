@@ -1,25 +1,30 @@
 import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
-import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
-import { parseTrustedProductImageUrl } from "@/commerce/product-media";
 import {
   listConfiguredHomepageFeaturedWithPricing,
-  listConfiguredHomepageNewArrivals,
+  listConfiguredStorefrontDiscoveryPage,
   readConfiguredCategoryHeroMedia,
 } from "@/commerce/storefront-catalog-runtime";
-import { MAX_STOREFRONT_PROMOTION_REFRESH_MS } from "@/commerce/storefront-promotion-freshness";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { buildPublicBrandFacts } from "@/content/public-brand-facts";
+import { readFeedbackContent } from "@/content/homepage-content";
+import { HOMEPAGE_CONFIG } from "@/content/homepage.config";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildHomeHeroSlides, type HomeHeroSlide } from "./home-hero.ts";
 import {
+  NEXT_FAVOURITE_CATEGORY_KEYS,
   buildHomeViewModel,
+  listPromoCollectionSlugs,
+  loadSpecialDeals,
+  resolveCategoryDiscovery,
+  resolveCollectionPromoRow,
   resolveHomeRefreshAfterMs,
+  type HomeCollectionFacts,
   type HomeViewModel,
 } from "./home-model.ts";
+import { readPublishedCollection } from "./metadata/collection.ts";
 
 /**
  * The home route's loader: every fetch, the tracking event and the refresh window, in one place.
@@ -27,21 +32,20 @@ import {
  * The page is left with markup. That is the point of the split -- promotion refresh, the commerce
  * event and structured data are the things a page author forgets, so they are sealed into the
  * handle here and the shell mounts them unconditionally.
+ *
+ * What each section is allowed to show is decided in `home-model.ts`; this file only supplies the
+ * existing authorities it reads: `HomepageFeaturedProduct`, the public collection route's own reads,
+ * `CategoryEditorialMedia` and the repository homepage config.
  */
 
 const collectionRepository = createCollectionDefinitionRepository(prisma);
 
-/** Master spec §18: four per row on desktop, two on mobile. Two full rows. */
-const NEW_ARRIVALS_LIMIT = 8;
-
-/** The categories whose editorial media the homepage renders (§19, §21). */
-const EDITORIAL_CATEGORY_KEYS = ["aoDai", "setDo", "vayDam"] as const;
+/** One stable analytics identity for the section, whatever its supporting copy says (§7.2). */
+const SPECIAL_DEALS_LIST = { listId: "homepage-special-deals", listName: "SPECIAL DEALS" } as const;
 
 export type HomeRouteData = HomeViewModel &
   Readonly<{
     heroSlides: readonly HomeHeroSlide[];
-    categoryHeroMedia: ReadonlyMap<string, string>;
-    brandFacts: ReturnType<typeof buildPublicBrandFacts>;
   }>;
 
 export type HomeRouteProps = Readonly<{
@@ -70,33 +74,28 @@ function toHeroCandidates(
   }));
 }
 
-// A grid that could not be read prices nothing, so it has no campaign boundary of its own and
-// reports the reviewed ceiling rather than 0 -- an unreadable grid must not pin the whole page to
-// an immediate refresh.
-const emptyGrid = {
-  products: [],
-  pricingRule: undefined,
-  refreshAfterMs: MAX_STOREFRONT_PROMOTION_REFRESH_MS,
-} as const;
-
-async function loadNewArrivals(now: Date) {
+async function loadSpecialDealsSection(now: Date) {
   try {
-    return await listConfiguredHomepageNewArrivals(NEW_ARRIVALS_LIMIT, now);
+    return await loadSpecialDeals({
+      sourceCollectionSlug: HOMEPAGE_CONFIG.specialDeals.sourceCollectionSlug,
+      readCollection: readPublishedCollection,
+      listManual: () => listConfiguredHomepageFeaturedWithPricing(now),
+      // The public collection route's own read, with the discovery state and page size it passes.
+      listCollectionPage: ({ discovery, pageSize }) =>
+        listConfiguredStorefrontDiscoveryPage({ discovery, pageSize, now }),
+    });
   } catch (error) {
-    // An unconfigured Pancake shop is a deployment state, not a broken page: the homepage still
-    // renders its brand copy, editorial blocks and collection navigation with no merchandising.
-    if (error instanceof PancakeConfigError) return emptyGrid;
+    // An unconfigured Pancake shop is a deployment state, not a broken page: the section omits
+    // itself and the rest of the homepage still renders.
+    if (error instanceof PancakeConfigError) return null;
     throw error;
   }
 }
 
-async function loadFeatured(now: Date) {
-  try {
-    return await listConfiguredHomepageFeaturedWithPricing(now);
-  } catch (error) {
-    if (error instanceof PancakeConfigError) return emptyGrid;
-    throw error;
-  }
+async function loadPromoCollections(): Promise<ReadonlyMap<string, HomeCollectionFacts | null>> {
+  const slugs = listPromoCollectionSlugs(HOMEPAGE_CONFIG.promoRows);
+  const collections = await Promise.all(slugs.map((slug) => readPublishedCollection(slug)));
+  return new Map(slugs.map((slug, index) => [slug, collections[index] ?? null]));
 }
 
 export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
@@ -104,62 +103,44 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
   // One instant for the whole request, so counting, ordering and card pricing cannot disagree.
   const requestNow = new Date();
 
-  const [newArrivals, featured, collections, storedCategoryMedia] = await Promise.all([
-    loadNewArrivals(requestNow),
-    loadFeatured(requestNow),
+  const [specialDeals, heroCollections, promoCollections, storedCategoryMedia] = await Promise.all([
+    loadSpecialDealsSection(requestNow),
     collectionRepository.listHomepageMerchandising(),
-    readConfiguredCategoryHeroMedia([...EDITORIAL_CATEGORY_KEYS]),
+    loadPromoCollections(),
+    readConfiguredCategoryHeroMedia([...NEXT_FAVOURITE_CATEGORY_KEYS]),
   ]);
 
-  // Validated here rather than in the page: an untrusted origin must fail the same media contract
-  // every other storefront image goes through, and the page layer renders what it is handed. A
-  // rejected URL leaves no entry, which is what makes that block omit itself.
-  const categoryHeroMedia = new Map<string, string>();
-  for (const [categoryKey, rawUrl] of storedCategoryMedia) {
-    const trusted = parseTrustedProductImageUrl(rawUrl);
-    if (trusted !== null) categoryHeroMedia.set(categoryKey, trusted);
-  }
-
-  const newArrivalsTracking = buildProductListTracking({
-    products: newArrivals.products,
-    list: { listId: "homepage-new-arrivals", listName: "Hàng mới về" },
-    pricingRule: newArrivals.pricingRule,
-  });
-
-  // Featured gets its own select events, so a click from that grid is attributed to the product a
-  // shopper actually clicked. Its list *impression* is not reported: the route contract seals one
-  // tracking event, and reporting two `view_item_list` events needs a change to that contract
-  // rather than a second event smuggled through this page.
-  const featuredTracking = buildProductListTracking({
-    products: featured.products,
-    list: { listId: "homepage-featured", listName: "Sản phẩm nổi bật" },
-    pricingRule: featured.pricingRule,
+  // Built from the exact four products the section renders, in render order, so impression and
+  // select indices describe what the shopper sees.
+  const specialDealsTracking = buildProductListTracking({
+    products: specialDeals?.products ?? [],
+    list: SPECIAL_DEALS_LIST,
+    pricingRule: specialDeals?.pricingRule,
   });
 
   return sealRoute({
     data: {
       ...buildHomeViewModel({
-        newArrivals: {
-          products: newArrivals.products,
-          pricingRule: newArrivals.pricingRule,
-          selectEventBySlug: newArrivalsTracking.selectEventBySlug,
+        config: HOMEPAGE_CONFIG,
+        specialDeals: {
+          selection: specialDeals,
+          selectEventBySlug: specialDealsTracking.selectEventBySlug,
         },
-        featured: {
-          products: featured.products,
-          pricingRule: featured.pricingRule,
-          selectEventBySlug: featuredTracking.selectEventBySlug,
-        },
-        collections,
+        promoRows: [
+          resolveCollectionPromoRow(HOMEPAGE_CONFIG.promoRows[0], promoCollections),
+          resolveCollectionPromoRow(HOMEPAGE_CONFIG.promoRows[1], promoCollections),
+        ],
+        categoryTiles: resolveCategoryDiscovery(storedCategoryMedia),
+        feedback: readFeedbackContent(),
       }),
-      heroSlides: buildHomeHeroSlides(toHeroCandidates(collections)),
-      categoryHeroMedia,
-      brandFacts: buildPublicBrandFacts(readGuestShippingPolicy()),
+      heroSlides: buildHomeHeroSlides(toHeroCandidates(heroCollections)),
     },
-    // Both grids are priced, so both carry a boundary. The soonest one governs the page: sealing
-    // only new arrivals would let a Featured campaign start or end while the page holds the old
-    // price until the 60s ceiling.
-    refreshAfterMs: resolveHomeRefreshAfterMs([newArrivals.refreshAfterMs, featured.refreshAfterMs]),
-    trackingEvent: newArrivalsTracking.listEvent,
+    // SPECIAL DEALS is the page's only priced grid, so its window is the page's window; the hero
+    // prices nothing. With no section the page still revalidates within the reviewed ceiling.
+    refreshAfterMs: resolveHomeRefreshAfterMs(
+      specialDeals ? [specialDeals.refreshAfterMs] : [],
+    ),
+    trackingEvent: specialDealsTracking.listEvent,
     // The homepage publishes no JSON-LD of its own; the root layout carries the site graph.
     structuredData: [],
     pixelEvents: [],
