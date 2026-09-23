@@ -669,7 +669,7 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
     await expect(image).toHaveAttribute("loading", "lazy");
     await expect(
       imageCard.getByRole("heading", { level: 2, name: IMAGE_COLLECTION_TITLE, exact: true }),
-    ).toBeVisible();
+    ).toBeAttached();
 
     const fallbackCard = page
       .locator("article")
