@@ -268,7 +268,7 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   // The count sits above the grid and the page number in the pager; a single page has no pager.
   await expect(mobileForm.getByText("1 sản phẩm", { exact: true })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Phân trang sản phẩm" })).toHaveCount(0);
-  await expect(page.getByRole("link", { name: "Xóa bộ lọc" })).toHaveAttribute("href", "/shop");
+  await expect(page.getByRole("link", { name: "Xóa tất cả", exact: true })).toHaveAttribute("href", "/shop");
 
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.keyboard.press("Tab");
