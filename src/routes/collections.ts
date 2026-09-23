@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 
 import { createCollectionDefinitionRepository } from "@/commerce/collection-definition-repository";
+import { parseTrustedProductImageUrl } from "@/commerce/product-media";
 import { prisma } from "@/db/prisma";
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -16,6 +17,7 @@ export type CollectionsRouteData = Readonly<{
     slug: string;
     title: string;
     description: string | null;
+    heroImageUrl: string | null;
   }>[];
 }>;
 
@@ -31,6 +33,7 @@ export async function loadCollectionsRoute(): Promise<RouteHandle<CollectionsRou
             slug: collection.slug,
             title: collection.title,
             description: collection.description,
+            heroImageUrl: parseTrustedProductImageUrl(collection.heroImageUrl),
           }),
         ),
       ),
