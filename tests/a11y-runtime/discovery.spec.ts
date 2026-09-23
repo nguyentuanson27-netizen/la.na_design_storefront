@@ -217,10 +217,14 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
   await expect(page.getByRole("heading", { level: 1, name: "Cửa hàng" })).toBeVisible();
 
   // Mobile keeps one URL-backed form authority across the always-visible search/sort controls and
-  // the drawer-only filters. A shopper can set q/sort first, then open the drawer and submit once.
-  await page.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
-  await page.getByRole("combobox", { name: "Sắp xếp", exact: true }).selectOption("price-desc");
-  await page.getByRole("button", { name: /Bộ lọc/ }).click();
+  // the drawer-only filters. Scope to the form containing the mobile-only drawer trigger because
+  // the desktop form remains in the DOM behind responsive CSS.
+  const mobileForm = page
+    .locator('form[action="/shop"]')
+    .filter({ has: page.getByRole("button", { name: /Bộ lọc/ }) });
+  await mobileForm.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
+  await mobileForm.getByRole("combobox", { name: "Sắp xếp", exact: true }).selectOption("price-desc");
+  await mobileForm.getByRole("button", { name: /Bộ lọc/ }).click();
 
   const filterDialog = page.getByRole("dialog", { name: "Bộ lọc" });
   await expect(filterDialog).toBeVisible();
