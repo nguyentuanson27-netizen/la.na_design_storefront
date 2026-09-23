@@ -44,6 +44,7 @@ export type CollectionEditorial = Readonly<{
   /** The collection's story. Not a separate field: this is `description`. */
   story: string;
   heroImage: string | null;
+  heroImageMobile: string | null;
   gallery: readonly string[];
   video: CollectionVideo | null;
 }>;
@@ -88,6 +89,7 @@ export type CollectionViewModelInput = Readonly<{
   title: string;
   description: string;
   heroImageUrl: string | null;
+  heroImageMobileUrl?: string | null;
   galleryImageUrls: readonly string[];
   videoSrcUrl: string | null;
   videoPosterUrl: string | null;
@@ -150,6 +152,7 @@ export function resolveCollectionEditorial(
   input: Readonly<{
     description: string;
     heroImageUrl: string | null;
+    heroImageMobileUrl?: string | null;
     galleryImageUrls: readonly string[];
     videoSrcUrl: string | null;
     videoPosterUrl: string | null;
@@ -160,6 +163,7 @@ export function resolveCollectionEditorial(
   return Object.freeze({
     story: input.description,
     heroImage: parseTrustedProductImageUrl(input.heroImageUrl),
+    heroImageMobile: parseTrustedProductImageUrl(input.heroImageMobileUrl),
     gallery: Object.freeze(
       input.galleryImageUrls
         .map((url) => parseTrustedProductImageUrl(url))

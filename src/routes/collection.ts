@@ -87,6 +87,7 @@ export async function loadCollectionRoute({
       title: collection.title,
       description: collection.description,
       heroImageUrl: collection.heroImageUrl,
+      heroImageMobileUrl: collection.heroImageMobileUrl,
       galleryImageUrls: collection.galleryImageUrls,
       videoSrcUrl: collection.videoSrcUrl,
       videoPosterUrl: collection.videoPosterUrl,
