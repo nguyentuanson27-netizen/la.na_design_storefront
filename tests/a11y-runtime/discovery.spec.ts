@@ -224,9 +224,20 @@ test("mobile shop filters catalog through shareable URL state", async ({ page })
     .filter({ has: page.getByRole("button", { name: /Bộ lọc/ }) });
   await mobileForm.getByLabel("Tìm sản phẩm").fill("Runtime City Coat");
   await mobileForm.getByRole("combobox", { name: "Sắp xếp", exact: true }).selectOption("price-desc");
-  await mobileForm.getByRole("button", { name: /Bộ lọc/ }).click();
+
+  const filterTrigger = mobileForm.getByRole("button", { name: /Bộ lọc/ });
+  await filterTrigger.click();
 
   const filterDialog = page.getByRole("dialog", { name: "Bộ lọc" });
+  const closeFilterButton = filterDialog.getByRole("button", { name: "Đóng bộ lọc" });
+  await expect(filterDialog).toBeVisible();
+  await expect(closeFilterButton).toBeFocused();
+
+  await page.keyboard.press("Escape");
+  await expect(filterDialog).toHaveCount(0);
+  await expect(filterTrigger).toBeFocused();
+
+  await filterTrigger.click();
   await expect(filterDialog).toBeVisible();
   await filterDialog.getByRole("combobox", { name: "Bộ sưu tập", exact: true }).selectOption("city-uniform");
   await filterDialog.getByRole("combobox", { name: "Màu sắc", exact: true }).selectOption("Ink");
