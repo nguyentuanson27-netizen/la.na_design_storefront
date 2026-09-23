@@ -619,10 +619,12 @@ test("variant selectors share compact rectangular presentation across panel and 
     await mediumChip.click();
     await expect(sizeGroup.locator("legend")).toHaveText("Kích cỡ: M");
 
-    const selectedChipBackground = await blackChip.evaluate(
-      (element) => getComputedStyle(element).backgroundColor,
-    );
-    expect(selectedChipBackground).toBe("rgb(59, 34, 25)");
+    await expect
+      .poll(
+        () => blackChip.evaluate((element) => getComputedStyle(element).backgroundColor),
+        { message: `${viewport.name} selected chip reaches the brand-filled state`, timeout: 2_000 },
+      )
+      .toBe("rgb(59, 34, 25)");
 
     await expect(
       sizeGroup.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }),
