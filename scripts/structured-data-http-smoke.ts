@@ -8,6 +8,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import {
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_SOCIAL_PROFILE_URLS,
   supportHoursSchemaTime,
 } from "../src/content/public-brand-facts.ts";
 import { prisma } from "../src/db/prisma.ts";
@@ -263,7 +264,7 @@ try {
           closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
         },
       },
-      sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
+      sameAs: [...PUBLIC_SOCIAL_PROFILE_URLS],
     },
     {
       "@type": "WebSite",

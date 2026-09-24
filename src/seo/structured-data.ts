@@ -2,6 +2,7 @@ import type { StructuredDataAvailability as SharedStructuredDataAvailability } f
 import { serializeVietnamAvailabilityDate } from "../commerce/availability-cycle.ts";
 import {
   PUBLIC_CONTACT_FACTS,
+  PUBLIC_SOCIAL_PROFILE_URLS,
   supportHoursSchemaTime,
 } from "../content/public-brand-facts.ts";
 import { BRAND } from "../brand/index.ts";
@@ -602,12 +603,7 @@ export function buildSiteStructuredData({
             closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
           },
         },
-        sameAs: [
-          PUBLIC_CONTACT_FACTS.fanpageUrl,
-          ...[PUBLIC_CONTACT_FACTS.instagramUrl, PUBLIC_CONTACT_FACTS.tiktokUrl].filter(
-            (url): url is string => url !== undefined,
-          ),
-        ],
+        sameAs: [...PUBLIC_SOCIAL_PROFILE_URLS],
       },
       {
         "@type": "WebSite",
