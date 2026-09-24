@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadContactRoute, type ContactRouteProps } from "@/routes/contact";
 import type { ContactViewModel } from "@/routes/evergreen-model";
@@ -33,15 +34,13 @@ const CONTACT_LINK =
 
 function render(data: ContactViewModel) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Hỗ trợ</p>
-      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
-        Liên hệ
-      </h1>
-      <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
-        Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên
-        dưới.
-      </p>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Liên hệ" }]} />
+      <PageHeader
+        eyebrow="Hỗ trợ"
+        title="Liên hệ"
+        lead={<>Các kênh liên hệ chính thức của {BRAND.identity.name}. Đội ngũ hỗ trợ trả lời trong giờ làm việc bên dưới.</>}
+      />
 
       <ContactForm />
 
@@ -95,7 +94,7 @@ function render(data: ContactViewModel) {
         </Link>{" "}
         bằng mã đơn và số điện thoại đã dùng khi đặt.
       </p>
-    </div>
+    </PageShell>
   );
 }
 

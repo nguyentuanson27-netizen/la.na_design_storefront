@@ -2,6 +2,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { BrandHistoricalPreorderNotice } from "@/components/brand/historical-preorder-notice";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import {
   loadCheckoutSuccessRoute,
@@ -14,38 +15,24 @@ import { buildCheckoutSuccessMetadata } from "@/routes/metadata/checkout-success
 
 function render(data: CheckoutSuccessViewModel) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
-        <ol className="flex items-center gap-2">
-          <li>
-            <Link
-              className="hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-              href="/"
-            >
-              Trang chủ
-            </Link>
-          </li>
-          <li aria-hidden="true">/</li>
-          <li aria-current="page" className="text-black font-medium">
-            Đặt hàng thành công
-          </li>
-        </ol>
-      </nav>
-      <h1 className="mt-4 text-[clamp(3rem,9vw,8rem)] font-semibold leading-[0.9] tracking-[-0.05em]">
-        {data.confirmed ? "ĐẶT HÀNG THÀNH CÔNG" : "CHƯA THỂ XÁC NHẬN"}
-      </h1>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Đặt hàng thành công" }]} />
+      <PageHeader
+        eyebrow="Đơn hàng"
+        title={data.confirmed ? "Đặt hàng thành công" : "Chưa thể xác nhận"}
+      />
 
-      <div className="mt-12 max-w-2xl border-t border-black/20 pt-8">
+      <div className="mt-8 max-w-2xl">
         {data.confirmed && data.orderCode ? (
           <div role="status">
-            <p className="font-display text-2xl md:text-3xl">Cảm ơn bạn đã đặt hàng.</p>
+            <p className="font-display text-xl md:text-2xl">Cảm ơn bạn đã đặt hàng.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Mã đơn <strong className="font-semibold text-black">{data.orderCode}</strong>. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
             </p>
           </div>
         ) : (
           <div role="alert" data-ui-state="empty">
-            <p className="font-display text-2xl md:text-3xl">Không tìm thấy đơn đã xác nhận.</p>
+            <p className="font-display text-xl md:text-2xl">Không tìm thấy đơn đã xác nhận.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Mã xác nhận không hợp lệ hoặc đơn chưa ở trạng thái hoàn tất. Nếu bạn vừa đặt hàng và chưa chắc trạng thái, vui lòng không gửi lại đơn ngay.
             </p>
@@ -73,7 +60,7 @@ function render(data: CheckoutSuccessViewModel) {
           </Link>
         </div>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

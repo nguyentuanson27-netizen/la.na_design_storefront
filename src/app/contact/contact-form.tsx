@@ -110,7 +110,7 @@ export function ContactForm() {
 
   return (
     <section className="mt-12 max-w-2xl border-t border-black/15 pt-10" aria-labelledby="contact-form-heading">
-      <h2 id="contact-form-heading" className="font-display text-3xl tracking-[-0.03em]">
+      <h2 id="contact-form-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
         Gửi tin nhắn
       </h2>
       <p className="mt-3 text-sm leading-6 text-black/65">
@@ -178,7 +178,7 @@ export function ContactForm() {
 
         <div>
           <button
-            className="min-h-11 border border-black px-6 py-3 text-sm font-semibold transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn btn--primary"
             disabled={pending}
             type="submit"
           >

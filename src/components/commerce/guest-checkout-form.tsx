@@ -498,7 +498,7 @@ export function GuestCheckoutForm({
       ) : null}
 
       <button
-        className="w-full border border-black bg-black px-6 py-4 text-sm font-semibold uppercase tracking-[0.14em] text-white transition hover:bg-transparent hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/15 disabled:text-black/45"
+        className="btn btn--primary w-full py-4"
         disabled={submitDisabled}
         type="submit"
       >

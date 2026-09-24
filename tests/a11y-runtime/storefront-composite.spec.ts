@@ -30,6 +30,9 @@ const pantsName = `Child Product Y ${runId}`;
 const skirtName = `Child Product Z ${runId}`;
 const malformedName = `Malformed Child Product ${runId}`;
 const syncedAt = new Date("2026-08-23T00:00:00.000Z");
+// A second set whose own variants carry colour, so one product exercises all three pickers.
+const colourSetSlug = `composite-browser-colour-set-${runId}`;
+const colourSetName = `Composite Colour Set ${runId}`;
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -335,6 +338,91 @@ test.beforeAll(async () => {
     ],
   });
 
+  // Kind, colour and size on one product: a set sold whole in Trắng (M, L) or Xanh (M), and its
+  // trousers sold separately. Its own component, so the activation test above keeps sole use of
+  // the first set's children.
+  const colourSet = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `composite-browser-colour-set-${runId}`,
+      slug: colourSetSlug,
+      name: colourSetName,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+      content: {
+        create: {
+          status: "PUBLISHED",
+          editorialDescription: "Composite browser regression set with colour.",
+        },
+      },
+    },
+  });
+  const colourSetTrousers = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: SHOP_ID,
+      pancakeProductId: `composite-browser-colour-trousers-${runId}`,
+      slug: `composite-browser-colour-trousers-${runId}`,
+      name: `Colour Set Trousers ${runId}`,
+      isPresent: true,
+      isActive: false,
+      syncedAt,
+    },
+  });
+  const colourSetVariants = await Promise.all(
+    (
+      [
+        ["Trắng", "M"],
+        ["Trắng", "L"],
+        ["Xanh", "M"],
+      ] as const
+    ).map(([color, size]) =>
+      prisma.variantMirror.create({
+        data: {
+          pancakeVariationId: `composite-browser-colour-set-${color}-${size}-${runId}`,
+          productId: colourSet.id,
+          color,
+          size,
+          isPresent: true,
+          isActive: true,
+          pancakeRetailPrice: 890_000,
+          pancakeRetailPriceAfterDiscount: 890_000,
+          syncedAt,
+        },
+      }),
+    ),
+  );
+  const colourSetTrousersVariant = await prisma.variantMirror.create({
+    data: {
+      pancakeVariationId: `composite-browser-colour-trousers-variant-${runId}`,
+      productId: colourSetTrousers.id,
+      sku: "QUAN-002",
+      color: null,
+      size: "M",
+      isPresent: true,
+      isActive: true,
+      pancakeRetailPrice: 420_000,
+      pancakeRetailPriceAfterDiscount: 420_000,
+      syncedAt,
+    },
+  });
+  await prisma.warehouseStock.createMany({
+    data: [...colourSetVariants, colourSetTrousersVariant].map((colourVariant) => ({
+      variantId: colourVariant.id,
+      pancakeWarehouseId: `composite-browser-colour-warehouse-${colourVariant.id}`,
+      quantity: 2,
+      syncedAt,
+    })),
+  });
+  await prisma.compositeComponentMirror.createMany({
+    data: colourSetVariants.map((setVariant) => ({
+      parentVariantId: setVariant.id,
+      componentVariantId: colourSetTrousersVariant.id,
+      quantity: 1,
+      syncedAt,
+    })),
+  });
+
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
     cwd: APP_ROOT,
     env: {
@@ -360,6 +448,38 @@ test.afterAll(async () => {
   await stopServer();
   await cleanup();
   await prisma.$disconnect();
+});
+
+/*
+ * Owner request 2026-09-24: the pickers read kind, colour, size -- on the desktop panel and in the
+ * mobile sheet, which are two separate compositions and could drift apart. The order is read from
+ * the rendered legends, and colour is chosen before size, which is the order the pickers resolve
+ * in as well as the order they are drawn in.
+ */
+test("a product with kind, colour and size draws them in that order on both surfaces", async ({ page }) => {
+  const legendsIn = (scope: import("@playwright/test").Locator) =>
+    scope.locator("fieldset > legend").evaluateAll((legends) =>
+      legends.map((legend) => (legend.textContent ?? "").split(":")[0]!.trim()),
+    );
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/shop/${colourSetSlug}`, { waitUntil: "networkidle" });
+  const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  await panel.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
+  await expect.poll(() => legendsIn(panel)).toEqual(["Loại", "Màu", "Kích cỡ"]);
+  // Colour first, then the sizes that colour comes in.
+  await panel.getByRole("group", { name: /^Màu/ }).getByText("Xanh", { exact: true }).click();
+  await expect(panel.getByRole("radio", { name: "L", exact: true })).toBeDisabled();
+  await panel.getByRole("group", { name: /^Kích cỡ/ }).getByText("M", { exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeEnabled();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/shop/${colourSetSlug}`, { waitUntil: "networkidle" });
+  await page.getByRole("region", { name: "Mua nhanh" }).getByRole("button").click();
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
+  await expect.poll(() => legendsIn(sheet)).toEqual(["Loại", "Màu", "Kích cỡ"]);
 });
 
 test("composite activation opens and closes the real child purchase path while parent schema stays authoritative", async ({
@@ -421,10 +541,13 @@ test("composite activation opens and closes the real child purchase path while p
    * says so. What must not happen is a shopper reading "this size is gone" from a state that only
    * means "you have not chosen a classification yet".
    */
+  // Owner request 2026-09-24: the sentence is not shown, but it still describes the size group, so
+  // a screen reader meeting the disabled sizes hears why.
   const sizeGroup = page.getByRole("group", { name: "Kích cỡ" });
+  await expect(sizeGroup).toHaveAccessibleDescription("Nàng chọn phân loại trước để xem size còn hàng");
   await expect(
     sizeGroup.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toBeVisible();
+  ).toHaveClass(/\bsr-only\b/);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeDisabled();
 
   const unresolvedSize = sizeGroup.getByText("M", { exact: true });
@@ -456,9 +579,9 @@ test("composite activation opens and closes the real child purchase path while p
 
   // Back to the unresolved state the rest of this test drives from.
   await page.reload({ waitUntil: "networkidle" });
-  await expect(
-    page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("group", { name: "Kích cỡ" })).toHaveAccessibleDescription(
+    "Nàng chọn phân loại trước để xem size còn hàng",
+  );
 
   const structuredDocuments = (await page
     .locator('script[type="application/ld+json"]')

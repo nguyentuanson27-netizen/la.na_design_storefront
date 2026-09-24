@@ -36,7 +36,8 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  *
  * Master spec §9 / refinement spec "Visual language": the warm brown-on-cream pairing, not the
  * generic pure black/white one, and a focus ring that stays visible on both. The chip is drawn
- * light and compact -- 32px tall, a soft tint at rest, regular weight, a hairline on hover -- so
+ * light and compact -- 32px tall, a soft tint at rest, regular weight, a hairline on hover, the
+ * buttons' 6px corner -- so
  * the one filled chip per group reads as the choice without the whole selector shouting.
  *
  * The chip is what the shopper sees; the touch target is its `<label>` (`choiceTarget`), which
@@ -44,7 +45,7 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * sentence-case `::first-letter` rule below can apply to it.
  */
 const SELECTABLE_CHIP =
-  "block min-h-8 min-w-11 whitespace-nowrap border border-transparent bg-[#3B2219]/5 px-4 text-center text-sm font-normal leading-[30px] tracking-[0.02em] text-[#3B2219] transition-colors hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
+  "block min-h-8 min-w-11 whitespace-nowrap rounded-md border border-transparent bg-[#3B2219]/5 px-4 text-center text-sm font-normal leading-[30px] tracking-[0.02em] text-[#3B2219] transition-colors hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
 
 /** A choice briefly locked while a purchase request is in flight. */
 const DISABLED_CHIP = "peer-disabled:opacity-50";
@@ -468,8 +469,14 @@ export function PurchasePanelView({
         }`}
       >
         {renderSelectorLegend("Kích cỡ", selection.size)}
+        {/*
+          Owner request 2026-09-24: the "choose a kind first" sentence is not shown. It stays in
+          the accessibility tree as the size group's description, because the size inputs are
+          disabled until a kind is chosen and a screen reader would otherwise meet locked options
+          with no reason; sighted shoppers get the dashed, unresolved chips as the cue.
+        */}
         {view.kindSelectionGuidance === null ? null : (
-          <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219]">
+          <p id={kindGuidanceId} className="sr-only">
             {view.kindSelectionGuidance}
           </p>
         )}
@@ -579,28 +586,18 @@ export function PurchasePanelView({
         </div>
 
         {/*
-          The panel is the desktop surface, so it keeps the order PR #51 approved and shipped:
-          kind then size then colour where a kind exists, and colour before size where one does
-          not. The mobile sheet below states `kind -> size -> colour` uniformly, which is this
-          spec's contract for the below-`lg` composition only -- rendering that order here would
-          reorder the desktop controls of every product that has no kind.
+          One order on both surfaces, owner request 2026-09-24: kind, then colour, then size. A
+          product without a kind renders no kind fieldset, so it reads colour then size, which is
+          what the desktop panel already showed for those products. The mobile sheet below uses
+          the same order, so the two compositions no longer disagree.
         */}
-        {view.hasKindOptions ? (
-          <>
-            {renderKindFieldset("panel")}
-            {renderSizeFieldset("panel")}
-            {renderColorFieldset("panel")}
-          </>
-        ) : (
-          <>
-            {renderColorFieldset("panel")}
-            {renderSizeFieldset("panel")}
-          </>
-        )}
+        {renderKindFieldset("panel")}
+        {renderColorFieldset("panel")}
+        {renderSizeFieldset("panel")}
 
         <div className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="min-h-11 w-full border border-[#3B2219] bg-[#3B2219] px-4 font-display text-sm font-medium tracking-[0.04em] text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="btn btn--primary w-full px-4"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -610,7 +607,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-11 w-full border border-[#3B2219] bg-transparent px-4 font-display text-sm font-medium tracking-[0.04em] text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="btn btn--outline w-full px-4"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
@@ -645,7 +642,7 @@ export function PurchasePanelView({
           </div>
           <button
             ref={stickyTriggerRef}
-            className="min-h-11 shrink-0 border border-[#3B2219] bg-[#3B2219] px-4 font-display text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="btn btn--primary shrink-0 px-4"
             type="button"
             aria-haspopup={mobilePresentation.readyToAdd ? undefined : "dialog"}
             aria-expanded={mobilePresentation.readyToAdd ? undefined : isSheetOpen}
@@ -696,8 +693,8 @@ export function PurchasePanelView({
 
                 <div className="max-h-[calc(88dvh-9rem)] overflow-y-auto px-5 pb-5">
                   {renderKindFieldset("sheet")}
-                  {renderSizeFieldset("sheet")}
                   {renderColorFieldset("sheet")}
+                  {renderSizeFieldset("sheet")}
 
                   <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
                     {mobilePurchaseStatus}
@@ -707,7 +704,7 @@ export function PurchasePanelView({
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
                   <button
                     type="button"
-                    className="min-h-11 w-full bg-[#3B2219] px-5 font-display text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
+                    className="btn btn--primary w-full"
                     disabled={!mobilePresentation.readyToAdd || isPending}
                     aria-busy={isPending}
                     onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}

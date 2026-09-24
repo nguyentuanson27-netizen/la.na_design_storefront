@@ -54,6 +54,9 @@ export const BRAND: BrandConfig = {
     telephoneInternational: "+84923159666",
     email: "la.nadesignsince2022@gmail.com",
     fanpageUrl: "https://www.facebook.com/la.nadesign.vn",
+    // Owner-supplied 2026-09-24 for the footer's social icons.
+    instagramUrl: "https://www.instagram.com/la.nadesign.vn/",
+    tiktokUrl: "https://www.tiktok.com/@la.nadesign.vn",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
     addressLocality: "Hà Nội",
     supportHours: {

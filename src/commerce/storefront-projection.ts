@@ -325,6 +325,28 @@ export function deriveStorefrontProjectionSelection(
       ? []
       : options.filter((option) => option.kindKey === selection.kindKey);
 
+  /*
+   * Within a kind, colour comes before size -- the order the panel draws them in (kind, colour,
+   * size) and the order a standalone product already resolves in. A colour is offered whenever the
+   * kind has a purchasable option in it, whatever size is chosen; the sizes then narrow to the
+   * chosen colour. It used to be the other way round -- colour locked until a size was picked --
+   * which, once colour sat above size, would have shown a shopper a locked row first.
+   */
+  const hasColorOptions =
+    selection.kindKey !== null && kindOptions.some((option) => option.color !== null);
+  const colors: StorefrontValueChoice[] = hasColorOptions
+    ? uniqueValues(kindOptions, "color").map((value) => ({
+        value,
+        disabled: !kindOptions.some((option) =>
+          supportsProjectedSelection(option, {
+            kindKey: selection.kindKey,
+            color: value,
+            size: null,
+          }),
+        ),
+      }))
+    : [];
+
   const sizes: StorefrontValueChoice[] = uniqueValues(
     selection.kindKey === null ? options : kindOptions,
     "size",
@@ -335,28 +357,11 @@ export function deriveStorefrontProjectionSelection(
       !kindOptions.some((option) =>
         supportsProjectedSelection(option, {
           kindKey: selection.kindKey,
-          color: null,
+          color: hasColorOptions ? selection.color : null,
           size: value,
         }),
       ),
   }));
-
-  const hasColorOptions =
-    selection.kindKey !== null && kindOptions.some((option) => option.color !== null);
-  const colors: StorefrontValueChoice[] = hasColorOptions
-    ? uniqueValues(kindOptions, "color").map((value) => ({
-        value,
-        disabled:
-          selection.size === null ||
-          !kindOptions.some((option) =>
-            supportsProjectedSelection(option, {
-              kindKey: selection.kindKey,
-              color: value,
-              size: selection.size,
-            }),
-          ),
-      }))
-    : [];
 
   const selected =
     selection.kindKey !== null &&

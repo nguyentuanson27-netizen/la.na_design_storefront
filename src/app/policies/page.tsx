@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import type { PolicyHubViewModel } from "@/routes/evergreen-model";
 import { buildPoliciesMetadata } from "@/routes/metadata/policies";
@@ -21,13 +22,14 @@ const POLICY_LINK =
 
 function render(data: PolicyHubViewModel) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Chính sách</p>
-      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
-        Thông tin &amp; chính sách
-      </h1>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Chính sách" }]} />
+      <PageHeader
+        eyebrow="Chính sách"
+        title="Thông tin & chính sách"
+      />
 
-      <div className="mt-16 grid max-w-3xl gap-16">
+      <div className="mt-10 grid max-w-3xl gap-16">
         {data.topics.map((topic) => (
           <section key={topic.id} id={topic.id} aria-labelledby={`${topic.id}-heading`}>
             <h2
@@ -86,7 +88,7 @@ function render(data: PolicyHubViewModel) {
           </section>
         ))}
       </div>
-    </div>
+    </PageShell>
   );
 }
 

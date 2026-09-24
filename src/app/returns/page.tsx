@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadReturnsRoute, type ReturnsRouteProps } from "@/routes/returns";
 import type { ReturnsViewModel } from "@/routes/evergreen-model";
@@ -18,18 +19,17 @@ import { buildReturnsMetadata } from "@/routes/metadata/returns";
 
 function render(data: ReturnsViewModel) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Chính sách</p>
-      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
-        Đổi trả &amp; hoàn tiền
-      </h1>
-      <p className="mt-6 max-w-2xl text-lg leading-8">
-        {BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{data.returnWindow}</strong>.
-      </p>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Đổi trả & hoàn tiền" }]} />
+      <PageHeader
+        eyebrow="Chính sách"
+        title="Đổi trả & hoàn tiền"
+        lead={<>{BRAND.identity.name} hỗ trợ đổi/trả trong vòng <strong>{data.returnWindow}</strong>.</>}
+      />
 
-      <div className="mt-16 grid max-w-4xl gap-14">
+      <div className="mt-10 grid max-w-4xl gap-14">
         <section aria-labelledby="conditions-heading">
-          <h2 id="conditions-heading" className="font-display text-3xl tracking-[-0.03em]">
+          <h2 id="conditions-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
             Điều kiện sản phẩm
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
@@ -43,7 +43,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="cases-heading">
-          <h2 id="cases-heading" className="font-display text-3xl tracking-[-0.03em]">
+          <h2 id="cases-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
             Trường hợp được hỗ trợ
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
@@ -68,7 +68,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="return-method-heading">
-          <h2 id="return-method-heading" className="font-display text-3xl tracking-[-0.03em]">
+          <h2 id="return-method-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
             Cách trả hàng
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
@@ -81,7 +81,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="fees-heading">
-          <h2 id="fees-heading" className="font-display text-3xl tracking-[-0.03em]">
+          <h2 id="fees-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
             Chi phí đổi trả
           </h2>
           <dl className="mt-6 grid max-w-2xl gap-6 text-base leading-7">
@@ -107,7 +107,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="refund-heading">
-          <h2 id="refund-heading" className="font-display text-3xl tracking-[-0.03em]">
+          <h2 id="refund-heading" className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
             Hoàn tiền
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
@@ -126,7 +126,7 @@ function render(data: ReturnsViewModel) {
         </Link>{" "}
         để được hướng dẫn gửi lại sản phẩm.
       </p>
-    </div>
+    </PageShell>
   );
 }
 

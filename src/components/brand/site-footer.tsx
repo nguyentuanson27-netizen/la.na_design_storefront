@@ -44,6 +44,74 @@ const NO_SCRIPT_FOOTER_CSS = `
 }
 `;
 
+type SocialNetwork = "instagram" | "tiktok" | "facebook";
+
+/** Simple outline marks in the footer's ink, drawn inline so they inherit `currentColor`. */
+function SocialIcon({ network }: Readonly<{ network: SocialNetwork }>) {
+  const common = {
+    "aria-hidden": true,
+    focusable: false,
+    viewBox: "0 0 24 24",
+    width: 18,
+    height: 18,
+  } as const;
+  if (network === "instagram") {
+    return (
+      <svg {...common} fill="none" stroke="currentColor" strokeWidth="1.8">
+        <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
+        <circle cx="12" cy="12" r="3.9" />
+        <circle cx="17.2" cy="6.8" r="1" fill="currentColor" stroke="none" />
+      </svg>
+    );
+  }
+  if (network === "tiktok") {
+    return (
+      <svg {...common} fill="currentColor">
+        <path d="M16.3 3c.3 2.3 1.7 3.8 4 4v3.1a7 7 0 0 1-3.9-1.2v6.3c0 3.4-2.7 5.8-5.9 5.8a5.8 5.8 0 0 1-5.8-5.8c0-3.5 3-6.2 6.6-5.7v3.2c-1.6-.4-3.4.7-3.4 2.5 0 1.5 1.2 2.6 2.6 2.6 1.6 0 2.7-1.1 2.7-3V3h3.1Z" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...common} fill="currentColor">
+      <path d="M13.4 21v-7.6h2.6l.4-3h-3V8.5c0-.9.3-1.5 1.5-1.5h1.6V4.3c-.3 0-1.2-.1-2.3-.1-2.3 0-3.8 1.4-3.8 3.9v2.3H7.8v3h2.6V21h3Z" />
+    </svg>
+  );
+}
+
+/**
+ * The brand's social profiles as round icon links, Instagram, TikTok, then Facebook. A profile
+ * missing from Brand Config is left out rather than linked to a guess. Each icon is a 44px circle,
+ * the footer's tap-target size, and its accessible name says both the network and the brand, since
+ * the icon alone says nothing to a screen reader.
+ */
+function SocialLinks({ contact }: Readonly<{ contact: SiteFooterModel["contact"] }>) {
+  const profiles: readonly (readonly [SocialNetwork, string, string | undefined])[] = [
+    ["instagram", "Instagram", contact.instagramUrl],
+    ["tiktok", "TikTok", contact.tiktokUrl],
+    ["facebook", "Facebook", contact.fanpageUrl],
+  ];
+
+  return (
+    <ul className="footer-social" aria-label="Mạng xã hội">
+      {profiles.map(([network, label, href]) =>
+        href ? (
+          <li key={network}>
+            <a
+              className="footer-social__link"
+              href={href}
+              rel="noreferrer"
+              target="_blank"
+              aria-label={`${label} ${BRAND.identity.name}`}
+            >
+              <SocialIcon network={network} />
+            </a>
+          </li>
+        ) : null,
+      )}
+    </ul>
+  );
+}
+
 export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
   return (
     <footer className="site-footer">
@@ -91,12 +159,9 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
             <li>
               <span className="footer-label">Giờ hỗ trợ:</span> {model.supportHours}
             </li>
-            <li>
-              <a href={model.contact.fanpageUrl} rel="noreferrer" target="_blank">
-                Facebook {BRAND.identity.name}
-              </a>
-            </li>
           </ul>
+
+          <SocialLinks contact={model.contact} />
         </section>
 
         <FooterNavGroup

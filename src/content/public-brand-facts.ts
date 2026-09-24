@@ -60,6 +60,18 @@ export function buildPublicBrandFacts(policy: GuestShippingPolicy) {
  */
 export const PUBLIC_CONTACT_FACTS = BRAND.contact;
 
+/**
+ * The brand's public social profiles, fanpage first, then whichever optional profiles Brand Config
+ * carries. One list, so the Organization `sameAs` and every check that reads it back agree on which
+ * profiles exist without each restating the optional-field logic.
+ */
+export const PUBLIC_SOCIAL_PROFILE_URLS: readonly string[] = [
+  PUBLIC_CONTACT_FACTS.fanpageUrl,
+  ...[PUBLIC_CONTACT_FACTS.instagramUrl, PUBLIC_CONTACT_FACTS.tiktokUrl].filter(
+    (url): url is string => url !== undefined,
+  ),
+];
+
 /** The full postal address as the owner wrote it, for surfaces that show one line. */
 export function describePublicAddress(): string {
   return `${PUBLIC_CONTACT_FACTS.streetAddress}, ${PUBLIC_CONTACT_FACTS.addressLocality}`;

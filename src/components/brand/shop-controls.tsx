@@ -81,7 +81,7 @@ export function ShopMobileDrawer({
         }}
         aria-expanded={isOpen}
         aria-controls="mobile-shop-drawer"
-        className="inline-flex items-center gap-2 rounded-full border border-[#3B2219]/25 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-[#3B2219] transition hover:border-[#2A1810] hover:text-[#2A1810] md:hidden"
+        className="btn btn--outline shrink-0 whitespace-nowrap px-4 md:hidden"
       >
         <svg
           className="h-3.5 w-3.5"
@@ -265,13 +265,13 @@ export function ShopMobileDrawer({
                 <Link
                   href="/shop"
                   onClick={() => setIsOpen(false)}
-                  className="font-display flex-1 text-center py-2.5 text-xs font-semibold uppercase tracking-wider text-[#3B2219] border border-[#3B2219]/30 rounded-full hover:bg-[#3B2219]/5 transition"
+                  className="btn btn--outline flex-1"
                 >
                   Xóa bộ lọc
                 </Link>
                 <button
                   type="submit"
-                  className="flex-1 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] bg-[#3B2219] border border-[#3B2219] rounded-full hover:bg-[#2A1810] transition"
+                  className="btn btn--primary flex-1"
                 >
                   Áp dụng
                 </button>

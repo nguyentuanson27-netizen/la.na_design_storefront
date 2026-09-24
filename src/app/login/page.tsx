@@ -1,4 +1,5 @@
 import { BrandAccountAuthPanel } from "@/components/brand/account-auth-panel";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadLoginRoute, type LoginRouteProps, type LoginViewModel } from "@/routes/login";
 import { buildLoginMetadata } from "@/routes/metadata/login";
@@ -7,22 +8,16 @@ import { buildLoginMetadata } from "@/routes/metadata/login";
 
 function render() {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Khách hàng / Đăng nhập</p>
-      <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-        ĐĂNG NHẬP
-      </h1>
-      <div className="mt-12 grid gap-8 pb-12 md:grid-cols-2 md:pb-16">
-        <p className="max-w-xl font-display text-2xl leading-snug md:text-3xl">
-          Lưu thông tin cho lần mua sau và theo dõi lịch sử đơn hàng tại một nơi.
-        </p>
-        <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">
-          Đăng ký không bắt buộc. Guest checkout và thanh toán COD vẫn hoạt động độc lập với tài khoản.
-        </p>
-      </div>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Đăng nhập" }]} />
+      <PageHeader
+        eyebrow="Khách hàng"
+        title="Đăng nhập"
+        lead="Lưu thông tin cho lần mua sau và theo dõi đơn hàng tại một nơi. Tài khoản không bắt buộc: bạn vẫn có thể đặt hàng và thanh toán COD mà không cần đăng ký."
+      />
 
       <BrandAccountAuthPanel />
-    </div>
+    </PageShell>
   );
 }
 

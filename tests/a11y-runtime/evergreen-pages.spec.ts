@@ -160,6 +160,50 @@ test("U33a the Contact page publishes approved channels and the approved F9b con
   });
   expect(controlContrast).toBeGreaterThanOrEqual(3);
 
+  /*
+   * A filled primary button's keyboard focus ring must show on the page it sits on. Its label is
+   * paper, and a ring drawn in the label colour was paper-on-paper -- invisible, and not something
+   * Axe checks. Focused from the keyboard, so `:focus-visible` is what the browser really applies.
+   */
+  const submit = form.getByRole("button", { name: "Gửi tin nhắn" });
+  await form.getByLabel("Nội dung").focus();
+  await page.keyboard.press("Tab");
+  await expect(submit).toBeFocused();
+  const focusRing = await submit.evaluate((button) => {
+    function rgb(value: string): [number, number, number] {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1;
+      canvas.height = 1;
+      const context = canvas.getContext("2d");
+      if (!context) throw new Error("Canvas 2D context is unavailable");
+      context.fillStyle = value;
+      context.fillRect(0, 0, 1, 1);
+      const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
+      return [red!, green!, blue!];
+    }
+    function luminance(channels: [number, number, number]): number {
+      const [red, green, blue] = channels.map((channel) => {
+        const normalized = channel / 255;
+        return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+      });
+      return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+    }
+    const style = getComputedStyle(button);
+    const ring = luminance(rgb(style.outlineColor));
+    const page = luminance(rgb(getComputedStyle(document.body).backgroundColor));
+    return {
+      matchesFocusVisible: button.matches(":focus-visible"),
+      outlineStyle: style.outlineStyle,
+      outlineWidth: Number.parseFloat(style.outlineWidth),
+      contrast: (Math.max(ring, page) + 0.05) / (Math.min(ring, page) + 0.05),
+    };
+  });
+  expect(focusRing.matchesFocusVisible).toBe(true);
+  expect(focusRing.outlineStyle).toBe("solid");
+  expect(focusRing.outlineWidth).toBeGreaterThanOrEqual(2);
+  // WCAG 2.2 SC 1.4.11: a focus indicator needs 3:1 against the colour it sits on.
+  expect(focusRing.contrast).toBeGreaterThanOrEqual(3);
+
   // F9b adds only the approved contact form; other unapproved support channels remain absent.
   for (const invented of [/24\/7/, /live chat/i, /hotline miễn phí/i]) {
     await expect(main).not.toContainText(invented);

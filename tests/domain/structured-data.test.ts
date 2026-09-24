@@ -282,7 +282,11 @@ test("P14 builds factual Organization and WebSite entities from the validated st
             closes: "22:00:00+07:00",
           },
         },
-        sameAs: ["https://www.facebook.com/la.nadesign.vn"],
+        sameAs: [
+          "https://www.facebook.com/la.nadesign.vn",
+          "https://www.instagram.com/la.nadesign.vn/",
+          "https://www.tiktok.com/@la.nadesign.vn",
+        ],
       },
       {
         "@type": "WebSite",
@@ -451,7 +455,14 @@ test("U32b publishes the approved B2 contact facts on the Organization entity", 
       closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
     },
   });
-  assert.deepEqual(organization.sameAs, [PUBLIC_CONTACT_FACTS.fanpageUrl]);
+  assert.deepEqual(
+    organization.sameAs,
+    [
+      PUBLIC_CONTACT_FACTS.fanpageUrl,
+      PUBLIC_CONTACT_FACTS.instagramUrl,
+      PUBLIC_CONTACT_FACTS.tiktokUrl,
+    ].filter((url) => url !== undefined),
+  );
 });
 
 test("U32b publishes no Organization fact the owner has not approved", () => {

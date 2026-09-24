@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadCheckoutRoute, type CheckoutRouteProps } from "@/routes/checkout";
@@ -10,51 +11,28 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 
 /** Checkout's markup. Every decision behind it is in `@/routes/checkout` and its model. */
 
-const BREADCRUMB_LINK =
-  "hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black";
-
-function Breadcrumb() {
-  return (
-    <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
-      <ol className="flex items-center gap-2">
-        <li>
-          <Link className={BREADCRUMB_LINK} href="/">
-            Trang chủ
-          </Link>
-        </li>
-        <li aria-hidden="true">/</li>
-        <li>
-          <Link className={BREADCRUMB_LINK} href="/cart">
-            Giỏ hàng
-          </Link>
-        </li>
-        <li aria-hidden="true">/</li>
-        <li aria-current="page" className="text-black font-medium">
-          Thanh toán
-        </li>
-      </ol>
-    </nav>
-  );
-}
+const CHECKOUT_BREADCRUMBS = [
+  { label: "Trang chủ", href: "/" },
+  { label: "Giỏ hàng", href: "/cart" },
+  { label: "Thanh toán" },
+] as const;
 
 function render(data: CheckoutViewModel) {
   if (data.state !== "ready" || !data.totals || data.quoteProof === null) {
     return (
-      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <Breadcrumb />
-        <h1 className="mt-4 text-[2.5rem] font-semibold leading-[0.92] tracking-[-0.04em] sm:text-5xl md:text-6xl lg:text-[clamp(3.5rem,10vw,9rem)] lg:leading-[0.86] lg:tracking-[-0.05em]">
-          THANH TOÁN
-        </h1>
+      <PageShell>
+        <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
+        <PageHeader eyebrow="Mua sắm" title="Thanh toán" />
         {data.state === "empty" ? (
-          <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-            <p className="font-display text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
+          <div className="mt-8" data-ui-state="empty">
+            <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
             <Link className="text-link mt-6 inline-block" href="/shop">
               Tiếp tục mua sắm ↗
             </Link>
           </div>
         ) : (
-          <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
-            <p className="font-display text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
+          <div className="mt-8 max-w-2xl" data-ui-state="empty">
+            <p className="font-display text-xl md:text-2xl">Giỏ hàng cần được kiểm tra lại.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
             </p>
@@ -63,7 +41,7 @@ function render(data: CheckoutViewModel) {
             </Link>
           </div>
         )}
-      </div>
+      </PageShell>
     );
   }
 
@@ -167,14 +145,9 @@ function render(data: CheckoutViewModel) {
     );
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <Breadcrumb />
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-        <h1 className="text-[2.5rem] font-semibold leading-[0.92] tracking-[-0.04em] sm:text-5xl md:text-6xl lg:text-[clamp(3.5rem,10vw,9rem)] lg:leading-[0.86] lg:tracking-[-0.05em]">
-          THANH TOÁN
-        </h1>
-        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">Thanh toán khi nhận hàng</p>
-      </div>
+    <PageShell>
+      <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
+      <PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" />
 
       {/*
         Two compositions of one order, and only ever one of them live.
@@ -193,7 +166,7 @@ function render(data: CheckoutViewModel) {
         breakpoint, keep one of each region in the accessibility tree and leave the hidden copy's
         images unfetched.
       */}
-      <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
+      <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
           summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
@@ -219,7 +192,7 @@ function render(data: CheckoutViewModel) {
           {preorderNoticeFor("desktop")}
         </aside>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

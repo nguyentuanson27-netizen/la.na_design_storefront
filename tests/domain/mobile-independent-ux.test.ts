@@ -26,7 +26,7 @@ test("mobile independent UX: phone listing grid is two columns with a 2px rhythm
   assert.match(chrome, /lg:grid-cols-4/);
   assert.match(card, /aspect-\[2\/3\]/, "ProductCard visual frame must pin 2:3 portrait aspect ratio");
   assert.doesNotMatch(card, /aspect-\[4\/5\]|aspect-\[3\/4\]/, "ProductCard must not revert to 4:5 or 3:4");
-  assert.match(card, /product-title[^"]*text-sm[^"]*line-clamp-2/);
+  assert.match(card, /product-title[^"]*text-\[15px\][^"]*line-clamp-2/);
   assert.match(card, /product-price[^"]*text-\[15px\]/);
   assert.match(card, /product-availability[^"]*text-xs/);
 });
@@ -94,8 +94,8 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(form, /className="checkout-order-summary lg:hidden"/);
   assert.match(form, /className="checkout-totals lg:hidden"/);
   assert.match(form, /className="checkout-preorder lg:hidden"/);
-  assert.match(page, /text-\[2\.5rem\]/);
-  assert.match(page, /lg:text-\[clamp\(3\.5rem,10vw,9rem\)\]/);
+  // The heading is the shared page header's, sized once for every page rather than per breakpoint here.
+  assert.match(page, /<PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" \/>/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
   assert.doesNotMatch(form, /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/);
   assert.doesNotMatch(form, /Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake/);
@@ -123,7 +123,11 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
   assert.match(panel, /renderSelectorLegend\("Kích cỡ", selection\.size\)/);
-  assert.match(panel, /renderSelectorLegend\(.*"Màu".*, selection\.color\)/);
+  // The colour legend defaults to "Màu" and takes a product's own dimension label when it has one
+  // (SD007 and SD023 read "Màu quần"). The exact expression is pinned rather than any legend that
+  // mentions "Màu": a literal `renderSelectorLegend("Màu", ...)` would still contain "Màu" and
+  // silently drop every product's own label.
+  assert.match(panel, /renderSelectorLegend\(view\.colorDimensionLabel \?\? "Màu", selection\.color\)/);
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
 

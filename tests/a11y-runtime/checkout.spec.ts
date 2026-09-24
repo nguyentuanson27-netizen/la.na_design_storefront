@@ -618,14 +618,21 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
    * A grid item can only travel inside its own grid area, so a summary placed in a row sized to
    * its own content reports `sticky` and scrolls away exactly like a static one. Scrolling the
    * long form past it is what tells the two apart: pinned at `top-24` it stays near the top of the
-   * viewport, and unpinned an 800px scroll takes it off screen.
+   * viewport, and unpinned the same scroll takes it off screen.
+   *
+   * The distance is measured from the summary's own resting position -- far enough that an
+   * unpinned summary would sit 200px above the viewport -- rather than a fixed 800px. A fixed
+   * distance measured the page head as much as the sticky: when the shared page header replaced
+   * the 9rem title, the grid started ~180px higher and a fixed 800px scroll ran past the end of the
+   * form, where any sticky element correctly scrolls away with its grid area.
    */
   const restingTop = (await summary.boundingBox())!.y;
-  await page.evaluate(() => window.scrollBy(0, 800));
-  await page.waitForFunction(() => window.scrollY > 700);
+  const scrollDistance = Math.round(restingTop + 200);
+  await page.evaluate((distance) => window.scrollBy(0, distance), scrollDistance);
+  await page.waitForFunction((distance) => window.scrollY >= distance - 1, scrollDistance);
   const stuckTop = (await summary.boundingBox())!.y;
   expect(stuckTop).toBeGreaterThan(50);
-  expect(restingTop - stuckTop).toBeLessThan(800);
+  expect(restingTop - stuckTop).toBeLessThan(scrollDistance);
 });
 
 test("P9a a price change between render and submit forces an explicit second confirmation", async ({

@@ -123,6 +123,28 @@ test("contact email and fanpage must be well formed", () => {
       `${fanpageUrl} must fail closed`,
     );
   }
+  // The optional social profiles are held to the same bar, plus the network they claim to be.
+  for (const [field, url] of [
+    ["instagramUrl", "instagram.com/lana"],
+    ["instagramUrl", "http://www.instagram.com/lana"],
+    ["instagramUrl", "https://www.tiktok.com/@lana"],
+    ["tiktokUrl", "https://www.instagram.com/lana"],
+  ] as const) {
+    assert.throws(
+      withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),
+      new RegExp(`contact.${field}`),
+      `${field} ${url} must fail closed`,
+    );
+  }
+  for (const [field, url] of [
+    ["instagramUrl", "https://www.instagram.com/lana"],
+    ["tiktokUrl", "https://www.tiktok.com/@lana"],
+  ] as const) {
+    assert.doesNotThrow(
+      withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),
+      `${field} ${url} is a valid profile`,
+    );
+  }
 });
 
 test("support hours must keep the shape both consumers read", () => {

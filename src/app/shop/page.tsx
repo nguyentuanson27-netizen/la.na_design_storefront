@@ -181,7 +181,7 @@ function render(data: ShopViewModel) {
           <div className="mt-5 flex flex-wrap items-center gap-4 text-xs text-[#3B2219]">
             <span className="font-semibold uppercase tracking-wider text-[#70584B]">Bộ lọc</span>
 
-            <label className="inline-flex items-center gap-1.5 rounded-full border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
+            <label className="inline-flex items-center gap-1.5 rounded-md border border-[#3B2219]/25 px-3 py-1 font-medium cursor-pointer transition hover:border-[#3B2219] text-[#3B2219]">
               <input
                 type="checkbox"
                 name="availability"
@@ -271,7 +271,7 @@ function render(data: ShopViewModel) {
               />
               <button
                 type="submit"
-                className="rounded-full border border-[#3B2219] bg-[#3B2219] px-3 py-1 font-medium uppercase text-[#FAF7F2] transition hover:bg-[#2A1810]"
+                className="btn btn--primary btn--sm"
               >
                 Áp dụng
               </button>

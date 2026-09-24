@@ -99,7 +99,7 @@ export function CollectionFilterPanel({
             }}
             aria-expanded={isMobileOpen}
             aria-controls="mobile-collection-filters"
-            className="inline-flex items-center gap-2 rounded-full border border-[#3B2219]/25 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#3B2219] transition hover:border-[#2A1810] hover:text-[#2A1810] md:hidden"
+            className="btn btn--outline shrink-0 whitespace-nowrap px-4 md:hidden"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -164,7 +164,7 @@ export function CollectionFilterPanel({
                 key={opt.value}
                 href={opt.href}
                 aria-current={opt.active ? "true" : undefined}
-                className={`min-w-7 text-center rounded border px-2 py-1 font-medium uppercase transition ${
+                className={`min-w-7 text-center rounded-md border px-2 py-1 font-medium uppercase transition ${
                   opt.active
                     ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                     : "border-[#3B2219]/20 hover:border-[#3B2219]"
@@ -249,7 +249,7 @@ export function CollectionFilterPanel({
                       <Link
                         href={clearFilterHref}
                         onClick={() => setIsMobileOpen(false)}
-                        className="min-w-9 rounded border border-[#3B2219]/25 px-3 py-2 text-center text-xs font-medium uppercase text-[#3B2219] transition"
+                        className="min-w-9 rounded-md border border-[#3B2219]/25 px-3 py-2 text-center text-xs font-medium uppercase text-[#3B2219] transition"
                       >
                         Tất cả kích cỡ
                       </Link>
@@ -260,7 +260,7 @@ export function CollectionFilterPanel({
                         href={opt.href}
                         aria-current={opt.active ? "true" : undefined}
                         onClick={() => setIsMobileOpen(false)}
-                        className={`min-w-9 rounded border px-3 py-2 text-center text-xs font-medium uppercase transition ${
+                        className={`min-w-9 rounded-md border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                           opt.active
                             ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                             : "border-[#3B2219]/25 text-[#3B2219]"
@@ -280,14 +280,14 @@ export function CollectionFilterPanel({
                 <Link
                   href={clearFilterHref}
                   onClick={() => setIsMobileOpen(false)}
-                  className="inline-flex min-h-11 items-center justify-center border border-[#3B2219]/30 px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#3B2219]"
+                  className="btn btn--outline px-3"
                 >
                   Xóa bộ lọc
                 </Link>
                 <button
                   type="button"
                   onClick={() => setIsMobileOpen(false)}
-                  className="inline-flex min-h-11 items-center justify-center bg-[#3B2219] px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#FAF7F2]"
+                  className="btn btn--primary px-3"
                 >
                   Xem {totalCount} sản phẩm
                 </button>

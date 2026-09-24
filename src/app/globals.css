@@ -13,12 +13,24 @@
  * Every button wears the display face by default, so a new control cannot quietly fall back to the
  * body face. It sits in the base layer, after Tailwind's own `font: inherit` reset, so a utility on
  * a particular button (`font-sans`) still overrides it.
+ *
+ * Links inherit their colour here too, and for the same reason it is layered. This rule used to be
+ * unlayered, and an unlayered rule beats everything in `@layer utilities` however specific the
+ * utility looks: `text-[#FAF7F2]` on a selected filter chip, `hover:text-white` on a filled button,
+ * both silently lost to `color: inherit`, so a link that filled with ink kept its label in that
+ * same ink -- an invisible label. Every filled link repaired that with its own unlayered class; in
+ * the base layer the utilities simply win, and a link says its colour where it says everything else.
  */
 @layer base {
   button,
   input[type="button"],
   input[type="submit"] {
     font-family: var(--font-display);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
   }
 }
 
@@ -52,45 +64,80 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.checkout-cta {
-  color: var(--white);
-}
-
 /*
- * The listing empty state's recovery button.
- *
- * `a { color: inherit }` above is unlayered, and Tailwind's utilities are in `@layer utilities`, so
- * an unlayered rule beats every `text-*` class on a link however specific it looks. A filled pill
- * written that way renders its label in the ink it is filled with -- the same 1:1 contrast
- * `.checkout-cta` already exists to avoid. Declared here for the same reason, so the colour is
- * stated once for every listing rather than re-lost each time a page writes the utility again.
+ * Browser autofill paints a saved email in its own pale blue, which on the cream page reads as a
+ * broken field. An inset shadow is the one paint autofill does not override, so it restores paper.
  */
-.listing-cta {
-  color: var(--paper);
+.account-auth-input:-webkit-autofill,
+.account-auth-input:-webkit-autofill:hover,
+.account-auth-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--black);
+  box-shadow: inset 0 0 0 100px var(--paper);
+  caret-color: var(--black);
 }
 
 /*
- * The pill-shaped filter and subcategory links the listings share, for the same reason: a pill
- * that fills on hover or when selected has to state its label colour outside `@layer utilities`,
- * or `hover:text-*` silently does nothing and the selected pill reads ink-on-ink.
+ * The text tabs under a listing heading (`ListingSubnav`). Muted ink at rest, full ink with a hairline
+ * underline when hovered or current -- the breadcrumb's vocabulary rather than a filled pill, so the
+ * row reads as navigation and stays one line tall. On a phone the row scrolls sideways without a
+ * scrollbar and fades at its edges to say there is more; from `md` it wraps and needs neither.
  */
-.listing-pill {
-  color: var(--ink);
+.listing-subnav {
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
 }
 
-.listing-pill:hover,
-.listing-pill[aria-current="true"] {
-  color: var(--paper);
+.listing-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .listing-subnav {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+.listing-subnav-link {
+  position: relative;
+  color: var(--olive);
+  transition: color 200ms ease;
+}
+
+.listing-subnav-link::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.625rem;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.listing-subnav-link:hover,
+.listing-subnav-link[aria-current="page"] {
+  color: var(--black);
+}
+
+.listing-subnav-link:hover::after,
+.listing-subnav-link[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listing-subnav-link,
+  .listing-subnav-link::after {
+    transition: none;
+  }
 }
 
 /*
- * Aggregate collections landing page CTA button on 16:9 banner cards.
- * Artistic haute-couture glassmorphic capsule with serif styling.
+ * The collections landing page's CTA on each 16:9 banner card. It wears the storefront button
+ * (brand ink, 6px corner) rather than the frosted-glass capsule it used to, so the one action on
+ * a photograph looks like the same action everywhere else.
  */
 .collection-card-cta,
 a.collection-card-cta {
@@ -99,28 +146,23 @@ a.collection-card-cta {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  border-radius: 9999px;
-  padding: 0.5rem 1.4rem;
+  border-radius: 0.375rem;
+  padding: 0.625rem 1.5rem;
   font-family: var(--font-display);
-  font-size: 0.85rem;
-  font-weight: 500;
-  letter-spacing: 0.05em;
-  background: rgba(250, 247, 242, 0.88);
-  color: #2a1810 !important;
-  border: 1px solid rgba(255, 255, 255, 0.95);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255, 255, 255, 0.8);
-  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--ink);
+  transition: background-color 150ms ease, border-color 150ms ease;
 }
 
 .collection-card-cta:hover,
 a.collection-card-cta:hover {
-  background: #ffffff;
-  color: #000000 !important;
-  border-color: #ffffff;
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  background: var(--black);
+  border-color: var(--black);
 }
 
 a:focus-visible,
@@ -128,6 +170,23 @@ button:focus-visible,
 summary:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 4px;
+}
+
+/*
+ * The shared buttons' focus indicator is two-tone: a paper band hugging the control, then an ink
+ * ring outside it. The rule above draws a single ring in `currentColor`, which is right for text
+ * links and for controls on the dark masthead and lightbox; but `.btn--primary` and the collection
+ * CTA have a paper label, so that ring was paper on the paper page -- invisible. A single ink ring
+ * fixes the page and fails the other place these sit: the collection CTA over an arbitrary, often
+ * dark hero photograph, where ink on near-black is about 1.4:1. Paper and ink are ~14:1 apart, so
+ * whatever the surface -- paper, a light photo, a dark one -- one of the two tones stands out.
+ * Unlayered and class-qualified, so it outranks `button:focus-visible`.
+ */
+.btn:focus-visible,
+.collection-card-cta:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--paper);
 }
 
 .skip-link {
@@ -374,6 +433,33 @@ summary:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* The social icons under the contact facts: 44px outlined circles in the footer ink. */
+.footer-social {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.footer-social__link {
+  display: inline-flex;
+  width: 2.75rem;
+  height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--ink);
+  border-radius: 9999px;
+  color: var(--ink);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.footer-social__link:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
 .footer-label {
   color: var(--muted-ink);
 }
@@ -606,7 +692,7 @@ main nav[aria-label="Breadcrumb"] a {
   justify-content: center;
   padding: 0.85rem clamp(2rem, 6vw, 4.5rem);
   border: 1px solid var(--chocolate);
-  border-radius: 2px;
+  border-radius: 0.375rem;
   background: var(--chocolate);
   color: var(--cream);
   font-size: 0.72rem;
@@ -616,9 +702,10 @@ main nav[aria-label="Breadcrumb"] a {
   transition: background-color 180ms ease, color 180ms ease;
 }
 
+/* The shared `.btn--primary` hover: a step darker, never a colour swap. */
 .home-hero__cta-link:hover {
-  background: var(--cream);
-  color: var(--chocolate);
+  background: var(--black);
+  border-color: var(--black);
 }
 
 .product-page-hero,
@@ -1059,18 +1146,25 @@ main nav[aria-label="Breadcrumb"] a {
   font-weight: 700;
 }
 
+/*
+ * The text under a product photograph: name, price, then availability when there is one, stacked
+ * and centred under the image. It used to be a name-left / price-right row, and its
+ * `font: inherit` reset -- unlayered, so it beat every utility -- pinned both to 0.72rem of the
+ * body face whatever the card asked for. The card now owns its type sizes and faces.
+ */
 .product-meta {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-top: 0.8rem;
-  font-size: 0.72rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding-top: 0.75rem;
+  text-align: center;
 }
 
 .product-meta h2,
+.product-meta h3,
 .product-meta p {
   margin: 0;
-  font: inherit;
 }
 
 .lookbook-grid {
@@ -1183,13 +1277,9 @@ main nav[aria-label="Breadcrumb"] a {
     row-gap: 1.5rem;
   }
 
+  /* The phone grid's rows sit 2px apart, so the card itself keeps its text off the next photograph. */
   .product-meta {
-    flex-direction: column;
-    gap: 0.25rem;
-    padding-top: 0.5rem;
-    padding-left: 0.375rem;
-    padding-right: 0.375rem;
-    font-size: 0.72rem;
+    padding: 0.625rem 0.375rem 1rem;
   }
 
   .product-section {
@@ -1505,10 +1595,6 @@ body:has(.admin-shell) .site-masthead {
   outline-offset: 4px;
 }
 
-.checkout-cta {
-  --focus-ring-color: var(--white);
-}
-
 .ui-state {
   border-top: 1px solid var(--line);
   padding-block: clamp(3rem, 8vw, 6rem);
@@ -1543,59 +1629,89 @@ body:has(.admin-shell) .site-masthead {
 /* Visual Foundation Reusable Component Tokens & States (Task P8)            */
 /* -------------------------------------------------------------------------- */
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: var(--control-height, 44px);
-  padding: var(--space-3, 0.75rem) var(--space-5, 1.5rem);
-  font-family: var(--font-display);
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-  text-decoration: none;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease;
-  cursor: pointer;
-  border: 1px solid transparent;
-}
+/*
+ * The storefront's one button: brand ink, a 6px corner, small-caps display type, 44px tall.
+ * `btn--primary` is filled, `btn--outline` is the outlined partner; they are the only two a buyer
+ * sees, on every page from the PDP to checkout. Before these were used, pages drew black squares,
+ * brown squares, full pills and hairline boxes -- five buttons for one action vocabulary.
+ *
+ * They sit in the components layer on purpose: above the base `a` colour reset, so a link wearing
+ * one keeps its label colour, and below the utilities, so `w-full`, `mt-6` or a responsive
+ * `hidden` on a particular button still works.
+ */
+@layer components {
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: var(--control-height, 44px);
+    padding: 0.625rem 1.5rem;
+    border: 1px solid transparent;
+    border-radius: 0.375rem;
+    font-family: var(--font-display);
+    font-size: 0.75rem;
+    font-weight: 600;
+    line-height: 1.25;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    text-decoration: none;
+    /*
+     * Colours ease on hover; `opacity` deliberately does not. A purchase button is disabled while
+     * its request is in flight and re-enabled when it lands, and a transitioned opacity left the
+     * re-enabled label at 45% for a beat -- a 2.65:1 label on a live control, which Axe (rightly)
+     * failed on the PDP.
+     */
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+    cursor: pointer;
+  }
 
-.btn--primary {
-  background: var(--ink);
-  color: var(--white);
-  border-color: var(--ink);
-}
+  .btn--primary {
+    background: var(--ink);
+    color: var(--paper);
+    border-color: var(--ink);
+  }
 
-.btn--primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
+  .btn--primary:hover:not(:disabled) {
+    background: var(--black);
+    border-color: var(--black);
+  }
 
-.btn--secondary {
-  background: var(--stone);
-  color: var(--ink);
-  border-color: var(--stone);
-}
+  .btn--secondary {
+    background: var(--stone);
+    color: var(--ink);
+    border-color: var(--stone);
+  }
 
-.btn--secondary:hover:not(:disabled) {
-  background: #cfc9be;
-}
+  .btn--secondary:hover:not(:disabled) {
+    background: #cfc9be;
+  }
 
-.btn--outline {
-  background: transparent;
-  color: var(--ink);
-  border-color: var(--ink);
-}
+  .btn--outline {
+    background: transparent;
+    color: var(--ink);
+    border-color: var(--ink);
+  }
 
-.btn--outline:hover:not(:disabled) {
-  background: var(--ink);
-  color: var(--white);
-}
+  .btn--outline:hover:not(:disabled) {
+    background: var(--ink);
+    color: var(--paper);
+  }
 
-.btn:disabled,
-.btn[aria-disabled="true"] {
-  opacity: 0.45;
-  cursor: not-allowed;
-  pointer-events: none;
+  /* Inline beside compact inputs (the PLP price filter), where a 44px button would tower. */
+  .btn--sm {
+    min-height: 2rem;
+    padding: 0.25rem 0.875rem;
+    letter-spacing: 0.1em;
+  }
+
+  .btn:disabled,
+  .btn[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
 }
 
 .badge {
@@ -1890,22 +2006,6 @@ body:has(.admin-shell) .site-masthead {
   background: var(--stone);
 }
 
-.feedback-page {
-  min-height: 65vh;
-  max-width: var(--shell-max);
-  margin: 0 auto;
-  padding: 4rem var(--shell-gutter) 6rem;
-}
-
-.feedback-page__title {
-  margin: 0 0 2.5rem;
-  font-family: var(--font-display);
-  font-size: clamp(2.5rem, 6vw, 4.5rem);
-  font-weight: 400;
-  line-height: 0.95;
-  letter-spacing: -0.05em;
-}
-
 .feedback-gallery {
   column-count: 4;
   column-gap: 8px;
@@ -2132,10 +2232,6 @@ body:has(.admin-shell) .site-masthead {
 
   .feedback-rail__item {
     width: 42vw;
-  }
-
-  .feedback-page {
-    padding-top: 2.5rem;
   }
 }
 

@@ -209,7 +209,7 @@ export function PlpFilterPanel({
             }}
             aria-expanded={isMobileOpen}
             aria-controls="mobile-plp-filters"
-            className="inline-flex items-center gap-2 rounded-full border border-[#3B2219]/25 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-[#3B2219] transition hover:border-[#2A1810] hover:text-[#2A1810] md:hidden"
+            className="btn btn--outline shrink-0 whitespace-nowrap px-4 md:hidden"
           >
             <svg
               className="h-3.5 w-3.5"
@@ -231,7 +231,7 @@ export function PlpFilterPanel({
 
           {/* Sort Selector */}
           <div className="flex items-center gap-2">
-            <label htmlFor="plp-sort-select" className="text-xs uppercase tracking-wider text-[#3B2219]/70">
+            <label htmlFor="plp-sort-select" className="whitespace-nowrap text-xs uppercase tracking-wider text-[#3B2219]/70">
               Sắp xếp:
             </label>
             <select
@@ -239,7 +239,7 @@ export function PlpFilterPanel({
               aria-label="Sắp xếp sản phẩm"
               value={activeFilters.sort}
               onChange={handleSortChange}
-              className="rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+              className="min-w-0 rounded border border-[#3B2219]/20 bg-transparent px-3 py-1.5 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
             >
               {SORT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -261,7 +261,8 @@ export function PlpFilterPanel({
             return (
               <Link
                 href={saleHref}
-                className={`inline-flex items-center rounded-full border px-3 py-1.5 font-medium transition ${
+                aria-current={isSaleActive ? "true" : undefined}
+                className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
                   isSaleActive
                     ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                     : "border-[#3B2219]/20 hover:border-[#3B2219]"
@@ -284,7 +285,8 @@ export function PlpFilterPanel({
                 <Link
                   key={size}
                   href={sizeHref}
-                  className={`min-w-7 text-center rounded border px-2 py-1 font-medium uppercase transition ${
+                  aria-current={isSelected ? "true" : undefined}
+                  className={`min-w-7 text-center rounded-md border px-2 py-1 font-medium uppercase transition ${
                     isSelected
                       ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                       : "border-[#3B2219]/20 hover:border-[#3B2219]"
@@ -308,7 +310,8 @@ export function PlpFilterPanel({
                 <Link
                   key={color}
                   href={colorHref}
-                  className={`rounded border px-2.5 py-1 font-medium transition ${
+                  aria-current={isSelected ? "true" : undefined}
+                  className={`rounded-md border px-2.5 py-1 font-medium transition ${
                     isSelected
                       ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                       : "border-[#3B2219]/20 hover:border-[#3B2219]"
@@ -354,7 +357,7 @@ export function PlpFilterPanel({
             />
             <button
               type="submit"
-              className="rounded border border-[#3B2219]/30 px-2.5 py-1 font-medium uppercase transition hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-[#FAF7F2]"
+              className="btn btn--outline btn--sm"
             >
               Lọc
             </button>
@@ -492,7 +495,8 @@ export function PlpFilterPanel({
                   return (
                     <Link
                       href={saleHref}
-                      className={`inline-flex items-center rounded-full border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
+                      aria-current={isSaleActive ? "true" : undefined}
+                      className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
                         isSaleActive
                           ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                           : "border-[#3B2219]/25 text-[#3B2219]"
@@ -518,7 +522,8 @@ export function PlpFilterPanel({
                         <Link
                           key={size}
                           href={sizeHref}
-                          className={`min-w-9 rounded border px-3 py-2 text-center text-xs font-medium uppercase transition ${
+                          aria-current={isSelected ? "true" : undefined}
+                          className={`min-w-9 rounded-md border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                             isSelected
                               ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                               : "border-[#3B2219]/25 text-[#3B2219]"
@@ -546,7 +551,8 @@ export function PlpFilterPanel({
                         <Link
                           key={color}
                           href={colorHref}
-                          className={`rounded border px-3 py-2 text-xs font-medium transition ${
+                          aria-current={isSelected ? "true" : undefined}
+                          className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
                             isSelected
                               ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
                               : "border-[#3B2219]/25 text-[#3B2219]"
@@ -597,7 +603,7 @@ export function PlpFilterPanel({
                   </div>
                   <button
                     type="submit"
-                    className="w-full rounded bg-[#3B2219] py-2 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition hover:bg-[#2A1810]"
+                    className="btn btn--primary w-full"
                   >
                     Áp dụng giá
                   </button>
@@ -615,14 +621,14 @@ export function PlpFilterPanel({
               <div className="grid grid-cols-2 gap-3">
                 <Link
                   href={clearHref}
-                  className="inline-flex min-h-11 items-center justify-center border border-[#3B2219]/30 px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#3B2219]"
+                  className="btn btn--outline px-3"
                 >
                   Xóa bộ lọc
                 </Link>
                 <button
                   type="button"
                   onClick={() => setIsMobileOpen(false)}
-                  className="inline-flex min-h-11 items-center justify-center bg-[#3B2219] px-3 text-center text-xs font-semibold uppercase tracking-wider text-[#FAF7F2]"
+                  className="btn btn--primary px-3"
                 >
                   Xem {totalCount} sản phẩm
                 </button>

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
@@ -11,20 +12,7 @@ import { buildCartMetadata } from "@/routes/metadata/cart";
 
 /** Markup only. The lines, the subtotal and the `view_cart` event live in `@/routes/cart`. */
 
-const breadcrumbLinkClassName =
-  "hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black";
-
-function Breadcrumb() {
-  return (
-    <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-black/70">
-      <ol className="flex items-center gap-2">
-        <li><Link className={breadcrumbLinkClassName} href="/">Trang chủ</Link></li>
-        <li aria-hidden="true">/</li>
-        <li aria-current="page" className="text-black font-medium">Giỏ hàng</li>
-      </ol>
-    </nav>
-  );
-}
+const CART_BREADCRUMBS = [{ label: "Trang chủ", href: "/" }, { label: "Giỏ hàng" }] as const;
 
 function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority: boolean }>) {
   return (
@@ -53,34 +41,25 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
 function render(data: CartViewModel) {
   if (data.isEmpty) {
     return (
-      <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-        <Breadcrumb />
-        <h1 className="mt-4 text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          GIỎ HÀNG
-        </h1>
-        <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-display text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
+      <PageShell>
+        <PageBreadcrumbs items={CART_BREADCRUMBS} />
+        <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" />
+        <div className="mt-8" data-ui-state="empty">
+          <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </div>
-      </div>
+      </PageShell>
     );
   }
 
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <Breadcrumb />
-      <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
-        <h1 className="text-[clamp(3.5rem,10vw,9rem)] font-semibold leading-[0.86] tracking-[-0.05em]">
-          GIỎ HÀNG
-        </h1>
-        <p className="pb-2 text-xs uppercase tracking-[0.14em] text-black/70">
-          {data.lineCount} sản phẩm
-        </p>
-      </div>
-      <div className="mt-12 grid gap-12 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
+    <PageShell>
+      <PageBreadcrumbs items={CART_BREADCRUMBS} />
+      <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" meta={`${data.lineCount} sản phẩm`} />
+      <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="divide-y divide-black/15">
           {data.lines.map((line, index) => (
             <article
@@ -168,7 +147,7 @@ function render(data: CartViewModel) {
           )}
           {data.canCheckout ? (
             <Link
-              className="checkout-cta mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white underline decoration-transparent underline-offset-4 hover:bg-transparent hover:text-black hover:decoration-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              className="btn btn--primary mt-7 w-full"
               href="/checkout"
             >
               Tiến hành đặt hàng
@@ -181,7 +160,7 @@ function render(data: CartViewModel) {
           <Link className="text-link mt-7 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </aside>
       </div>
-    </div>
+    </PageShell>
   );
 }
 

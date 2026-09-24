@@ -33,7 +33,7 @@ export function BrandCartLineControls(props: UseCartLineInput) {
           />
         </label>
         <button
-          className="min-h-11 border border-black bg-black px-5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black disabled:cursor-not-allowed disabled:border-black/20 disabled:bg-black/10 disabled:text-black/35"
+          className="btn btn--outline"
           type="button"
           disabled={!line.canSubmitUpdate}
           onClick={line.updateLine}
