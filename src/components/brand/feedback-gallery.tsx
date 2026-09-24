@@ -18,7 +18,29 @@ function FeedbackPhoto({
   image,
   sizes,
   eager = false,
-}: Readonly<{ image: FeedbackImage; sizes: string; eager?: boolean }>) {
+  uncropped = false,
+}: Readonly<{
+  image: FeedbackImage;
+  sizes: string;
+  eager?: boolean;
+  uncropped?: boolean;
+}>) {
+  if (uncropped && image.width && image.height) {
+    return (
+      <div className="feedback-photo-uncropped">
+        <Image
+          src={image.src}
+          alt={image.alt}
+          width={image.width}
+          height={image.height}
+          sizes={sizes}
+          loading={eager ? "eager" : "lazy"}
+          className="feedback-photo-uncropped__img"
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="feedback-photo">
       <Image
@@ -81,11 +103,12 @@ export function FeedbackGallery({ images }: Readonly<{ images: readonly Feedback
   return (
     <ul className="feedback-gallery">
       {images.map((image, index) => (
-        <li key={`${index}-${image.src}`}>
+        <li className="feedback-gallery__item" key={`${index}-${image.src}`}>
           <FeedbackPhoto
             image={image}
             sizes="(min-width: 901px) 25vw, 50vw"
             eager={index < FEEDBACK_PAGE_EAGER_COUNT}
+            uncropped
           />
         </li>
       ))}

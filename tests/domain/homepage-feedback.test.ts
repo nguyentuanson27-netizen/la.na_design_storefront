@@ -54,6 +54,22 @@ test("an explicit decorative alt is kept as a decision, not treated as missing",
   assert.equal(resolveFeedbackContent(complete())?.images[1]?.alt, "");
 });
 
+test("feedback preserves optional width and height dimensions when provided", () => {
+  const content = resolveFeedbackContent(
+    complete({
+      images: [
+        { src: "/feedback/01.webp", alt: "Photo", width: 1200, height: 1600 },
+        { src: "/feedback/02.webp", alt: "" },
+      ],
+    }),
+  );
+
+  assert.equal(content?.images[0]?.width, 1200);
+  assert.equal(content?.images[0]?.height, 1600);
+  assert.equal(content?.images[1]?.width, undefined);
+  assert.equal(content?.images[1]?.height, undefined);
+});
+
 test("feedback content is all-or-nothing while any part is pending", () => {
   for (const pending of [
     { title: null },

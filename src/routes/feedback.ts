@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { readFeedbackContent } from "@/content/homepage-content";
+import { readFeedbackContent, type FeedbackImage } from "@/content/homepage-content";
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
@@ -15,7 +15,7 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
 
 export type FeedbackViewModel = Readonly<{
   title: string;
-  images: readonly Readonly<{ src: string; alt: string }>[];
+  images: readonly FeedbackImage[];
 }>;
 
 export type FeedbackRouteProps = Readonly<{
