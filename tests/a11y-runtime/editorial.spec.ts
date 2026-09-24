@@ -942,14 +942,14 @@ test("homepage carries only the refreshed composition while retired Lookbook and
   await expect(page.locator('a[href="/lookbook"]')).toHaveCount(0);
 
   // The refreshed sections are fail-closed on pending content: SPECIAL DEALS has no configured
-  // source collection yet and the promo rows are unmapped, so neither renders a placeholder.
-  // YOUR NEXT FAVOURITE is DB-owned and this fixture configures all four of its images; the
-  // feedback rail's content ships in the repository config (#74). Those two are the page.
+  // source collection yet, the promo rows are unmapped and the feedback gallery is unsupplied, so
+  // none of them renders a placeholder. YOUR NEXT FAVOURITE is DB-owned and this fixture
+  // configures all four of its images, so it is the one refreshed section on the page.
   expect(
     await page
       .locator("[data-homepage-region]")
       .evaluateAll((regions) => regions.map((region) => region.getAttribute("data-homepage-region"))),
-  ).toEqual(["category-discovery", "feedback"]);
+  ).toEqual(["category-discovery"]);
   await expect(page.locator('a[href*="category="]')).toHaveCount(0);
   await expect(page.getByText("Draft Capsule", { exact: true })).toHaveCount(0);
   await expectRuntimePageClean(page);
