@@ -13,7 +13,7 @@ function render() {
         ĐĂNG NHẬP
       </h1>
       <div className="mt-12 grid gap-8 pb-12 md:grid-cols-2 md:pb-16">
-        <p className="max-w-xl font-serif text-2xl leading-snug md:text-3xl">
+        <p className="max-w-xl font-display text-2xl leading-snug md:text-3xl">
           Lưu thông tin cho lần mua sau và theo dõi lịch sử đơn hàng tại một nơi.
         </p>
         <p className="max-w-lg text-sm leading-6 text-black/70 md:justify-self-end">

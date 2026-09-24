@@ -85,7 +85,7 @@ test("the shared header is a normal-weight serif h1 under an eyebrow", () => {
   const chrome = read("src/components/brand/listing-chrome.tsx");
   const header = componentSource(chrome, "ListingHeader");
   assert.match(header, /className="eyebrow/, "the eyebrow sits above the heading");
-  assert.match(header, /<h1[\s\S]*?font-serif/, "master spec §9: elegant serif display type");
+  assert.match(header, /<h1[\s\S]*?font-display/, "master spec §9 (amended): the display face on the listing heading");
   assert.match(header, /<h1[\s\S]*?font-normal/, "normal weight, not the old bold sans shout");
 });
 

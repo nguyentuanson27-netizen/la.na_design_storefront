@@ -25,7 +25,7 @@ export function ProductPromotionsSummary({ campaigns }: ProductPromotionsSummary
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="eyebrow">Khuyến mãi</p>
-          <h2 className="mt-1 font-serif text-2xl tracking-[-0.03em]" id="product-promotions-heading">
+          <h2 className="mt-1 font-display text-2xl tracking-[-0.03em]" id="product-promotions-heading">
             Chiến dịch liên quan
           </h2>
         </div>

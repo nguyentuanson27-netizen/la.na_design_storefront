@@ -252,11 +252,11 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
             ← Quản trị sản phẩm
           </Link>
           <p className="eyebrow mt-8">Website taxonomy</p>
-          <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+          <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
             Quản lý collections
           </h1>
         </div>
-        <p className="max-w-xl font-serif text-lg leading-relaxed md:justify-self-end">
+        <p className="max-w-xl font-display text-lg leading-relaxed md:justify-self-end">
           Collection là dữ liệu website-owned. Mapping category từ Pancake chỉ là gợi ý explicit và không có quyền tự publish.
         </p>
       </div>
@@ -265,7 +265,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
 
       <section className="py-10" aria-labelledby="new-collection-title">
         <p className="eyebrow">Tạo mới</p>
-        <h2 id="new-collection-title" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+        <h2 id="new-collection-title" className="mt-2 font-display text-3xl tracking-[-0.03em]">
           Collection mới
         </h2>
         <div className="mt-8 border-t border-black/20 pt-8">
@@ -275,7 +275,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
 
       <section className="border-t border-black/20 py-10" aria-labelledby="existing-collections-title">
         <p className="eyebrow">Đã lưu</p>
-        <h2 id="existing-collections-title" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+        <h2 id="existing-collections-title" className="mt-2 font-display text-3xl tracking-[-0.03em]">
           Collections hiện có
         </h2>
 
@@ -318,7 +318,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
                       <tr className="align-middle transition-colors hover:bg-black/[0.03]" key={definition.slug}>
                         <td className="py-3 pr-4">
                           <a
-                            className="font-serif text-lg leading-tight tracking-[-0.02em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+                            className="font-display text-lg leading-tight tracking-[-0.02em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
                             href={`#collection-${definition.slug}`}
                           >
                             {definition.title}
@@ -366,7 +366,7 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
             {collections.map((definition) => (
               <article key={definition.slug} className="py-10" id={`collection-${definition.slug}`}>
                 <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2">
-                  <h3 className="font-serif text-2xl tracking-[-0.025em]">{definition.title}</h3>
+                  <h3 className="font-display text-2xl tracking-[-0.025em]">{definition.title}</h3>
                   <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
                     {definition.isPublished ? "Published" : "Draft"}
                   </span>

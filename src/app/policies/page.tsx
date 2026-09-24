@@ -23,7 +23,7 @@ function render(data: PolicyHubViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Chính sách</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Thông tin &amp; chính sách
       </h1>
 
@@ -32,7 +32,7 @@ function render(data: PolicyHubViewModel) {
           <section key={topic.id} id={topic.id} aria-labelledby={`${topic.id}-heading`}>
             <h2
               id={`${topic.id}-heading`}
-              className="font-serif text-2xl tracking-[-0.03em] md:text-3xl"
+              className="font-display text-2xl tracking-[-0.03em] md:text-3xl"
             >
               {topic.title}
             </h2>
@@ -45,7 +45,7 @@ function render(data: PolicyHubViewModel) {
               <div className="mt-8 grid gap-8">
                 {topic.sections.map((section) => (
                   <div key={section.heading}>
-                    <h3 className="font-serif text-xl tracking-[-0.02em] md:text-2xl">
+                    <h3 className="font-display text-xl tracking-[-0.02em] md:text-2xl">
                       {section.heading}
                     </h3>
                     {section.paragraphs.map((paragraph) => (

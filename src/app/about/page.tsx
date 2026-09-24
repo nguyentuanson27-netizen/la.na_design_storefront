@@ -28,13 +28,13 @@ function render(data: AboutViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Thương hiệu</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Về {BRAND.identity.name}
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">{data.positioning}</p>
 
       <section aria-labelledby="legal-heading" className="mt-16 border-t border-black/20 pt-10">
-        <h2 id="legal-heading" className="font-serif text-3xl tracking-[-0.03em]">
+        <h2 id="legal-heading" className="font-display text-3xl tracking-[-0.03em]">
           Thông tin pháp lý
         </h2>
         <dl className="mt-8 grid max-w-2xl gap-6 text-base leading-7">

@@ -45,7 +45,7 @@ export function ProductEditorialForm({
       <div className="space-y-10">
         <section aria-labelledby="editorial-heading">
           <p className="eyebrow">Storefront</p>
-          <h2 id="editorial-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="editorial-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
             Nội dung editorial
           </h2>
           <div className="mt-8 space-y-8">
@@ -101,7 +101,7 @@ export function ProductEditorialForm({
       <aside className="space-y-10 lg:border-l lg:border-black/20 lg:pl-8">
         <section aria-labelledby="publication-heading">
           <p className="eyebrow">Publication</p>
-          <h2 id="publication-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="publication-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
             Trạng thái
           </h2>
           <label className="mt-8 block">
@@ -125,7 +125,7 @@ export function ProductEditorialForm({
 
         <section aria-labelledby="collections-heading" className="border-t border-black/20 pt-10">
           <p className="eyebrow">Discovery</p>
-          <h2 id="collections-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="collections-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
             Bộ sưu tập
           </h2>
           {collectionChoices.length === 0 ? (
@@ -178,7 +178,7 @@ export function ProductEditorialForm({
 
         <section aria-labelledby="seo-heading" className="border-t border-black/20 pt-10">
           <p className="eyebrow">Tìm kiếm</p>
-          <h2 id="seo-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="seo-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
             SEO
           </h2>
           <div className="mt-8 space-y-8">

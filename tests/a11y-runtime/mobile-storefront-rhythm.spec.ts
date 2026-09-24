@@ -387,6 +387,10 @@ test("YOUR NEXT FAVOURITE draws four category tiles in one visual system, 2 × 2
     expect(treatment.fontWeight).toBe(lead!.fontWeight);
     expect(treatment.color).toBe(lead!.color);
   }
+  // Owner request 2026-09-24: each name is centred under its photograph.
+  expect(
+    await labels.evaluateAll((elements) => elements.map((element) => getComputedStyle(element).textAlign)),
+  ).toEqual(["center", "center", "center", "center"]);
   expect(lead!.fontSize).toBeGreaterThanOrEqual(18);
   expect(lead!.fontWeight).toBe("400");
 

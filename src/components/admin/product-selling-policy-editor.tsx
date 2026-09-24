@@ -123,7 +123,7 @@ export async function ProductSellingPolicyEditor({
       <p className="eyebrow">Tồn kho · chế độ bán</p>
       <h2
         id="product-selling-policy-heading"
-        className="mt-2 font-serif text-3xl tracking-[-0.03em]"
+        className="mt-2 font-display text-3xl tracking-[-0.03em]"
       >
         Chế độ bán và hạn mức âm
       </h2>

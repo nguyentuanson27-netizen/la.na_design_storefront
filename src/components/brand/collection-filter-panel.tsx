@@ -225,7 +225,7 @@ export function CollectionFilterPanel({
             className="relative ml-auto flex h-full w-full max-w-sm flex-col bg-[#FAF7F2] shadow-2xl"
           >
             <div className="flex items-center justify-between border-b border-[#3B2219]/15 px-6 py-5">
-              <h2 className="font-serif text-xl text-[#2A1810]">Bộ lọc sản phẩm</h2>
+              <h2 className="font-display text-xl text-[#2A1810]">Bộ lọc sản phẩm</h2>
               <button
                 ref={closeBtnRef}
                 type="button"

@@ -83,7 +83,7 @@ export function ListingHeader({
   return (
     <div className="mt-4 border-b border-[#3B2219]/15 pb-4">
       {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
-      <h1 className="mt-2 font-serif text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
+      <h1 className="mt-2 font-display text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
         {title}
       </h1>
       {children}
@@ -143,7 +143,7 @@ export function ListingEmptyState({
   return (
     <section aria-labelledby={titleId} className="py-20 text-center" data-ui-state="empty">
       <p className="eyebrow text-[#70584B]">{eyebrow}</p>
-      <h2 id={titleId} className="mx-auto mt-4 max-w-2xl font-serif text-2xl font-normal text-[#2A1810] md:text-3xl">
+      <h2 id={titleId} className="mx-auto mt-4 max-w-2xl font-display text-2xl font-normal text-[#2A1810] md:text-3xl">
         {title}
       </h2>
       <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#3B2219]/70">{copy}</p>
@@ -151,7 +151,7 @@ export function ListingEmptyState({
         <div className="mt-6">
           <Link
             href={action.href}
-            className="listing-cta inline-flex min-h-11 items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider transition hover:bg-[#2A1810]"
+            className="font-display listing-cta inline-flex min-h-11 items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider transition hover:bg-[#2A1810]"
           >
             {action.label}
           </Link>

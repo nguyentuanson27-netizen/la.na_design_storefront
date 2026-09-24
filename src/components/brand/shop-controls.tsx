@@ -265,7 +265,7 @@ export function ShopMobileDrawer({
                 <Link
                   href="/shop"
                   onClick={() => setIsOpen(false)}
-                  className="flex-1 text-center py-2.5 text-xs font-semibold uppercase tracking-wider text-[#3B2219] border border-[#3B2219]/30 rounded-full hover:bg-[#3B2219]/5 transition"
+                  className="font-display flex-1 text-center py-2.5 text-xs font-semibold uppercase tracking-wider text-[#3B2219] border border-[#3B2219]/30 rounded-full hover:bg-[#3B2219]/5 transition"
                 >
                   Xóa bộ lọc
                 </Link>

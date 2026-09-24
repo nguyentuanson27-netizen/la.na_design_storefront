@@ -252,8 +252,9 @@ Hero/mega-menu/category-editorial campaign images remain content-managed/pending
 
 - Primary palette: warm brown / chocolate brown.
 - Supporting palette: light / cream backgrounds.
-- Heading / brand display typography: elegant serif.
-- Body, navigation, forms, prices, transactional UI: clean sans-serif.
+- ~~Heading / brand display typography: elegant serif.~~
+- ~~Body, navigation, forms, prices, transactional UI: clean sans-serif.~~
+- **Owner amendment 2026-09-24:** the typefaces are now Josefin Sans (display: headings, product names, category labels, navigation, prices, buttons) and Mulish (body: descriptions, small print, forms, transactional copy), both with Vietnamese subsets; the class is `font-display`.
 - Mood: feminine, refined, modern, image-first, editorial-fashion.
 - Reference: use Lalin as inspiration for **rhythm, whitespace, image-led storytelling, collection identity and restrained ecommerce chrome**; do not clone its UI, colors, copy or layout pixel-for-pixel.
 
@@ -517,8 +518,8 @@ Hero slider
 - Image aspect ratio: **2:3 (width:height)** on desktop and mobile.
 - Desktop hover: switch to second product image when available; otherwise remain on the first image.
 - Card default content: image + product name + price only.
-- Product name: serif.
-- Price/commerce text: sans-serif.
+- Product name: display face (Josefin Sans; was serif, see the typography amendment above).
+- Price: display face (Josefin Sans); other commerce text: body face (Mulish).
 
 ### Sale display
 
@@ -794,7 +795,7 @@ If user has not selected a required size:
 
 - Remove implementation-facing wording such as `Chọn loại × kích cỡ` and server/catalog explanations that do not help the shopper decide.
 - Only communicate shopping facts already supported by repository authorities: price, availability, approved delivery/returns information and size guidance.
-- Headings use the approved elegant serif; price, variants, body copy, forms and transactional UI use the clean sans-serif.
+- Headings, prices and CTAs use the Josefin Sans display face; variants, body copy, forms and transactional UI use the Mulish body face (owner amendment 2026-09-24).
 - Reduce wide uppercase tracking in small buyer information.
 - Purchase actions use the approved warm brown/chocolate + cream palette instead of generic black/white pairing, on desktop and mobile.
 

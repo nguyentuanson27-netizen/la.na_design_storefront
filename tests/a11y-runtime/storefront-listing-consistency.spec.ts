@@ -235,8 +235,8 @@ async function expectListingChrome(
       const style = getComputedStyle(element);
       return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
     });
-  // Master spec §9: elegant serif display, and normal weight rather than the old bold sans.
-  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
+  // Master spec §9 (amended): the Josefin Sans display face, at normal weight rather than bold.
+  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/josefin/);
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
@@ -577,6 +577,27 @@ test("sale still lists only products with a real active discount", async ({ page
   }
 
   await expect(page.getByText(/1 sản phẩm đang giảm giá/)).toBeVisible();
+});
+
+test("navigation and text buttons wear the display face; reading text wears the body face", async ({
+  page,
+}) => {
+  // Owner amendment 2026-09-24: Josefin Sans for headings, navigation, prices and buttons, Mulish
+  // for everything read at length. Read from computed style, so a control that silently inherits
+  // the body face -- the regression this guards -- fails here rather than in review.
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto(`${BASE_URL}/ao-dai`, { waitUntil: "networkidle" });
+
+  const fontOf = (locator: import("@playwright/test").Locator) =>
+    locator.evaluate((element) => getComputedStyle(element).fontFamily.toLowerCase());
+
+  expect(await fontOf(page.locator(".desktop-nav a").first()), "primary navigation").toMatch(/josefin/);
+  // The filter trigger is a plain <button> with no font utility of its own: it proves the default.
+  expect(
+    await fontOf(page.locator('button[aria-controls="mobile-plp-filters"]')),
+    "text button without a font utility",
+  ).toMatch(/josefin/);
+  expect(await fontOf(page.locator("body")), "body text").toMatch(/mulish/);
 });
 
 test("shop keeps its own query semantics through the shared chrome", async ({ page }) => {
