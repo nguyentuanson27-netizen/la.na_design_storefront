@@ -331,13 +331,11 @@ test("published collection exposes visible copy and deterministic website-owned 
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
   await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
-  // C — rendered check. The eyebrow is the surface's own name now: the shared listing header
-  // names what the page is, and the masthead already carries the wordmark, so repeating the brand
-  // over every listing said the same thing twice. Brand Config still owns the wordmark, and the
-  // masthead link is asserted from it rather than from a literal.
+  // The collection detail intentionally omits the visible eyebrow; the masthead and semantic
+  // page heading already identify the surface without repeating "Bộ sưu tập" in the body.
   await expect(
     page.locator("#main-content p.eyebrow").filter({ hasText: "Bộ sưu tập" }),
-  ).toBeVisible();
+  ).toHaveCount(0);
   await expect(
     page.getByRole("link", { name: `${BRAND.identity.name} — Trang chủ` }),
   ).toBeVisible();
