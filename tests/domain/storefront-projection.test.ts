@@ -249,8 +249,12 @@ test("composite child SKU classification is case-insensitive and fail-closed", (
   const cases = [
     ["AO-SD441", "ÁO LẺ"],
     ["xxao123", "ÁO LẺ"],
+    ["AD005", "ÁO LẺ"],
+    ["AD002-S", "ÁO LẺ"],
     ["QUAN-QD001", "QUẦN LẺ"],
     ["abc-quan-xl", "QUẦN LẺ"],
+    ["QD001", "QUẦN LẺ"],
+    ["QD002-L", "QUẦN LẺ"],
     ["CV001", "CV LẺ"],
     ["VAY-001", "CV LẺ"],
     ["cv-vay-001", "CV LẺ"],
@@ -274,4 +278,21 @@ test("composite child group validation fails closed for malformed or mixed-role 
   assert.equal(resolveCompositeComponentGroupLabel(["AO-S", "QUAN-M"]), null);
   assert.equal(resolveCompositeComponentGroupLabel(["AO-S", null]), null);
   assert.equal(resolveCompositeComponentGroupLabel(["CV-S", "VAY-M", "cv-vay-l"]), "CV LẺ");
+});
+
+test("projection preserves custom colorDimensionLabel when provided or defaults to Màu", () => {
+  const custom = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { color: "Đỏ" })],
+    componentGroups: [],
+    hasCompositeGraph: false,
+    colorDimensionLabel: "Màu quần",
+  });
+  assert.equal(custom.colorDimensionLabel, "Màu quần");
+
+  const fallback = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { color: "Đỏ" })],
+    componentGroups: [],
+    hasCompositeGraph: false,
+  });
+  assert.equal(fallback.colorDimensionLabel, "Màu");
 });

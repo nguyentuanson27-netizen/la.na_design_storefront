@@ -38,8 +38,8 @@ export function classifyCompositeComponentSku(
   if (normalized.length === 0) return null;
 
   const matches: CompositeComponentKindLabel[] = [];
-  if (normalized.includes("AO")) matches.push("ÁO LẺ");
-  if (normalized.includes("QUAN")) matches.push("QUẦN LẺ");
+  if (normalized.includes("AO") || /(^|[^A-Z0-9])AD([-_0-9]|$)/.test(normalized) || normalized.startsWith("AD")) matches.push("ÁO LẺ");
+  if (normalized.includes("QUAN") || /(^|[^A-Z0-9])QD([-_0-9]|$)/.test(normalized) || normalized.startsWith("QD")) matches.push("QUẦN LẺ");
   if (normalized.includes("CV") || normalized.includes("VAY")) matches.push("CV LẺ");
 
   return matches.length === 1 ? matches[0] : null;
@@ -71,6 +71,7 @@ export type StorefrontProjectionOption = StorefrontSelectableOption & {
 export type StorefrontProductProjection = Readonly<{
   mode: "standalone" | "composite";
   options: StorefrontProjectionOption[];
+  colorDimensionLabel?: string;
 }>;
 
 /**
@@ -157,6 +158,7 @@ export function buildStorefrontProductProjection({
   pricingRule = defaultStorefrontPricingRule,
   sellingPolicy = STANDARD_STANDALONE_CAPACITY,
   availabilityDates = NO_AVAILABILITY_DATES,
+  colorDimensionLabel = "Màu",
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
@@ -178,10 +180,17 @@ export function buildStorefrontProductProjection({
    * (the Merchant feed and the product page's JSON-LD). Absent means no date, which fails closed.
    */
   availabilityDates?: StorefrontAvailabilityDates;
+  /**
+   * Optional custom label for the color dimension (e.g. "Màu quần" for specific Áo Dài sets).
+   * Defaults to "Màu".
+   */
+  colorDimensionLabel?: string;
 }>): StorefrontProductProjection {
+  const resolvedColorDimensionLabel = colorDimensionLabel ?? "Màu";
   if (!hasCompositeGraph) {
     return {
       mode: "standalone",
+      colorDimensionLabel: resolvedColorDimensionLabel,
       options: projectOptions(
         parentVariants,
         null,
@@ -235,7 +244,7 @@ export function buildStorefrontProductProjection({
     );
   });
 
-  return { mode: "composite", options };
+  return { mode: "composite", options, colorDimensionLabel: resolvedColorDimensionLabel };
 }
 
 /**

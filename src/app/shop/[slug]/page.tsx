@@ -145,6 +145,7 @@ function render(data: ProductRouteData) {
           productLevelOptions: data.productLevelOptions,
           initialSelection: data.deepLinkedSelection,
           commerceTrackingEnabled: data.commerceTrackingEnabled,
+          colorDimensionLabel: data.colorDimensionLabel,
         }}
         media={data.media}
         productName={data.name}

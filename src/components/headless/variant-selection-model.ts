@@ -33,6 +33,7 @@ export type VariantSelectionViewInput = Readonly<{
   /** Product-level options only: composite components must not speak for the parent before selection. */
   productLevelOptions: readonly StorefrontProjectionOption[];
   selection: VariantSelectionState;
+  colorDimensionLabel?: string;
 }>;
 
 function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
@@ -176,6 +177,8 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */
     entryPrice: getStorefrontResolvedPriceRange(input.options)?.minimum ?? null,
+    /** Custom or default label for the color dimension (e.g. "Màu quần" or "Màu"). */
+    colorDimensionLabel: input.colorDimensionLabel ?? "Màu",
     /**
      * I9 — the selected variant's `Dự kiến có hàng` date as the shopper reads it, or `null`.
      *
@@ -239,7 +242,7 @@ export function resolveMobilePurchasePresentation(
 }> {
   const dimensionLabels = [
     view.hasKindOptions ? "phân loại" : null,
-    view.hasColorDimension ? "màu" : null,
+    view.hasColorDimension ? (view.colorDimensionLabel ? view.colorDimensionLabel.toLowerCase() : "màu") : null,
     view.hasSizeDimension ? "size" : null,
   ].filter((value): value is string => value !== null);
 

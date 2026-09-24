@@ -62,6 +62,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               select: {
                 id: true,
                 pancakeVariationId: true,
+                pancakeDisplayId: true,
                 sku: true,
                 color: true,
                 size: true,
@@ -123,7 +124,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           };
           groups.set(component.product.id, group);
         }
-        group.skus.push(component.sku);
+        group.skus.push(component.sku ?? component.pancakeDisplayId);
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
             id: component.id,
@@ -196,6 +197,10 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         // (a rendering fact, so it lives in the browser suite); the domain suites cover what each
         // consumer does with the options, not which rule produced them.
         pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+        colorDimensionLabel:
+          `${product.slug} ${product.name}`.toUpperCase().includes("007")
+            ? "Màu quần"
+            : "Màu",
       }),
     };
   }

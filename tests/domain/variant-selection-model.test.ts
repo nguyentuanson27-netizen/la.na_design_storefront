@@ -570,3 +570,27 @@ test("genuine selected stock failure uses the buyer-safe mobile wording", () => 
   assert.equal(mobile.actionLabel, "Lựa chọn này tạm hết");
   assert.equal(mobile.summary, "Đen · M");
 });
+
+test("custom colorDimensionLabel flows into view and mobile incomplete CTA", () => {
+  const options = [
+    option({
+      id: "opt-1",
+      color: "Đỏ",
+      size: "M",
+    }),
+  ];
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: null },
+    colorDimensionLabel: "Màu quần",
+  });
+
+  assert.equal(view.colorDimensionLabel, "Màu quần");
+  const mobile = resolveMobilePurchasePresentation(view, {
+    kindKey: null,
+    color: null,
+    size: null,
+  });
+  assert.equal(mobile.actionLabel, "Chọn màu quần / size");
+});

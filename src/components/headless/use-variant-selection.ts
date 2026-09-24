@@ -41,6 +41,7 @@ export type UseVariantSelectionInput = Readonly<{
   initialSelection?: DeepLinkedVariantSelection | null;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled?: boolean;
+  colorDimensionLabel?: string;
 }>;
 
 /**
@@ -61,6 +62,7 @@ export function useVariantSelection({
   productLevelOptions,
   initialSelection = null,
   commerceTrackingEnabled = false,
+  colorDimensionLabel,
 }: UseVariantSelectionInput) {
   const router = useRouter();
   const [state, setState] = useState<VariantSelectionState>({
@@ -73,8 +75,14 @@ export function useVariantSelection({
   const [isPending, startTransition] = useTransition();
 
   const view = useMemo(
-    () => resolveVariantSelectionView({ options, productLevelOptions, selection: state }),
-    [options, productLevelOptions, state],
+    () =>
+      resolveVariantSelectionView({
+        options,
+        productLevelOptions,
+        selection: state,
+        colorDimensionLabel,
+      }),
+    [options, productLevelOptions, state, colorDimensionLabel],
   );
 
   const entryPrice = view.entryPrice;
