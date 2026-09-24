@@ -39,9 +39,15 @@ export function ListingShell({ children }: Readonly<{ children: ReactNode }>) {
  * The breadcrumb trail. The last crumb is the current page and carries no link, which is what
  * `aria-current` announces; passing it an href would make it a link to where the reader already is.
  */
-export function ListingBreadcrumbs({ items }: Readonly<{ items: readonly ListingCrumb[] }>) {
+export function ListingBreadcrumbs({
+  items,
+  className = "",
+}: Readonly<{ items: readonly ListingCrumb[]; className?: string }>) {
   return (
-    <nav aria-label="Breadcrumb" className="text-xs uppercase tracking-[0.14em] text-[#3B2219]/70">
+    <nav
+      aria-label="Breadcrumb"
+      className={`text-xs uppercase tracking-[0.14em] text-[#3B2219]/70 ${className}`}
+    >
       <ol className="flex flex-wrap items-center gap-2">
         {items.map((crumb, index) => (
           <li key={`${crumb.label}-${index}`} className="flex items-center gap-2">
@@ -73,10 +79,10 @@ export function ListingHeader({
   eyebrow,
   title,
   children,
-}: Readonly<{ eyebrow: string; title: string; children?: ReactNode }>) {
+}: Readonly<{ eyebrow?: string; title: string; children?: ReactNode }>) {
   return (
     <div className="mt-4 border-b border-[#3B2219]/15 pb-4">
-      <p className="eyebrow text-[#70584B]">{eyebrow}</p>
+      {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
       <h1 className="mt-2 font-serif text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
         {title}
       </h1>

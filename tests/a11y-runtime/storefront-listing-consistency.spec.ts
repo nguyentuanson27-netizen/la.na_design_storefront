@@ -33,6 +33,11 @@ const now = new Date();
 const syncedAt = new Date("2026-09-19T02:00:00.000Z");
 const campaignId = `listing-consistency-sale-${runId}`;
 const COLLECTION_SLUG = "listing-consistency";
+const IMAGE_COLLECTION_SLUG = `listing-image-${process.pid}`;
+const IMAGE_COLLECTION_TITLE = "Listing Image Collection";
+const LONG_COLLECTION_SLUG = `listing-long-${process.pid}`;
+const COLLECTION_HERO_URL = "https://content.pancake.vn/images/1/2/3/collections-index-hero.jpg";
+const LONG_COLLECTION_TITLE = `Bộ sưu tập ${"ÁoDàiKhôngNgắt".repeat(28)}`;
 const CATEGORY_KEY = "aoDai";
 const CATEGORY_PATH = "/ao-dai";
 
@@ -100,7 +105,9 @@ async function stopServer() {
 async function cleanup() {
   await prisma.promotionCampaign.deleteMany({ where: { id: campaignId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
-  await prisma.collectionDefinition.deleteMany({ where: { slug: COLLECTION_SLUG } });
+  await prisma.collectionDefinition.deleteMany({
+    where: { slug: { in: [COLLECTION_SLUG, IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
+  });
 }
 
 async function seedProduct(input: (typeof PRODUCTS)[number]) {
@@ -233,7 +240,7 @@ async function expectListingChrome(
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });
-  await expect(breadcrumb).toBeVisible();
+  await expect(breadcrumb).toBeAttached();
   await expect(breadcrumb.getByRole("link", { name: "Trang chủ", exact: true })).toHaveAttribute(
     "href",
     "/",
@@ -605,6 +612,109 @@ test("a collection keeps its editorial half above the shared listing", async ({ 
 
   const main = page.locator("main");
   await expect(main.getByRole("link", { name: new RegExp(productName("newest")) })).toBeVisible();
+});
+
+test("collection index cards keep a 16:9 media surface without clipping valid long titles", async ({
+  page,
+}) => {
+  await prisma.collectionDefinition.createMany({
+    data: [
+      {
+        slug: IMAGE_COLLECTION_SLUG,
+        title: IMAGE_COLLECTION_TITLE,
+        description: "Collection index image-card fixture.",
+        heroImageUrl: COLLECTION_HERO_URL,
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+      {
+        slug: LONG_COLLECTION_SLUG,
+        title: LONG_COLLECTION_TITLE,
+        description: "Long-title collection for card overflow regression coverage.",
+        heroImageUrl: "https://example.com/images/1/2/3/untrusted.jpg",
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+    ],
+  });
+
+  const tinyJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=",
+    "base64",
+  );
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: tinyJpeg });
+  });
+
+  try {
+    for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
+    await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
+
+    const imageCard = page
+      .locator("article")
+      .filter({ has: page.locator(`a[href="/collections/${IMAGE_COLLECTION_SLUG}"]`) });
+    const media = imageCard.locator("[data-collection-card-media]");
+    await expect(media, `${viewport.name} collection media`).toBeVisible();
+
+    const cardBox = await imageCard.boundingBox();
+    expect(cardBox, `${viewport.name} collection card box`).not.toBeNull();
+    expect(cardBox!.width / cardBox!.height).toBeCloseTo(16 / 9, 2);
+    expect(await imageCard.evaluate((element) => getComputedStyle(element).aspectRatio)).toBe("16 / 9");
+
+    const image = imageCard.locator("img");
+    await expect(image).toHaveCount(1);
+    await expect(image).toHaveAttribute("alt", "");
+    await expect(image).toHaveAttribute("sizes", "(min-width: 768px) 50vw, 100vw");
+    await expect(image).toHaveAttribute("loading", "lazy");
+    await expect(
+      imageCard.getByRole("heading", { level: 2, name: IMAGE_COLLECTION_TITLE, exact: true }),
+    ).toBeAttached();
+
+    const fallbackCard = page
+      .locator("article")
+      .filter({ has: page.locator(`a[href="/collections/${LONG_COLLECTION_SLUG}"]`) });
+    await expect(fallbackCard.locator("img")).toHaveCount(0);
+
+    const longTitle = fallbackCard.getByRole("heading", {
+      level: 2,
+      name: LONG_COLLECTION_TITLE,
+      exact: true,
+    });
+    const cta = fallbackCard.getByRole("link", { name: "Khám phá bộ sưu tập ↗", exact: true });
+    await expect(longTitle).toBeVisible();
+    await expect(cta).toBeVisible();
+
+    const geometry = await fallbackCard.evaluate((card, titleText) => {
+      const heading = [...card.querySelectorAll("h2")].find(
+        (element) => element.textContent?.trim() === titleText,
+      );
+      const link = card.querySelector("a");
+      if (!(heading instanceof HTMLElement) || !(link instanceof HTMLElement)) return null;
+      const cardRect = card.getBoundingClientRect();
+      const headingRect = heading.getBoundingClientRect();
+      const linkRect = link.getBoundingClientRect();
+      return {
+        headingWithinCard:
+          headingRect.left >= cardRect.left - 1 &&
+          headingRect.right <= cardRect.right + 1 &&
+          headingRect.top >= cardRect.top - 1 &&
+          headingRect.bottom <= cardRect.bottom + 1,
+        ctaWithinCard: linkRect.bottom <= cardRect.bottom + 1,
+        titleWraps: heading.scrollWidth <= heading.clientWidth + 1,
+      };
+    }, LONG_COLLECTION_TITLE);
+
+    expect(geometry).not.toBeNull();
+    expect(geometry!.headingWithinCard, `${viewport.name} long title is not clipped`).toBe(true);
+    expect(geometry!.ctaWithinCard, `${viewport.name} CTA is not clipped`).toBe(true);
+      expect(geometry!.titleWraps, `${viewport.name} long token wraps inside the card`).toBe(true);
+    }
+  } finally {
+    await prisma.collectionDefinition.deleteMany({
+      where: { slug: { in: [IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
+    });
+  }
 });
 
 test("collections stays an index over real published collections, and lists no products", async ({

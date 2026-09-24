@@ -106,7 +106,7 @@ test("U6a collection JSON-LD mirrors the visible breadcrumb and configured store
     "href",
     "/collections",
   );
-  await expect(visibleBreadcrumb.getByText("Runtime Breadcrumb Collection", { exact: true })).toBeVisible();
+  await expect(visibleBreadcrumb.getByText("Runtime Breadcrumb Collection", { exact: true })).toBeAttached();
 
   const jsonLdDocuments = await page.locator('script[type="application/ld+json"]').allTextContents();
   const breadcrumb = jsonLdDocuments

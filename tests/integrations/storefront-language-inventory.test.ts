@@ -367,7 +367,6 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
   // Same two changes as `/shop`: no brand eyebrow in the page body, and the pager's accessible
   // name is now the `label` the shared pagination puts on its `aria-label`.
   for (const expected of [
-    'eyebrow="Bộ sưu tập"',
     "Bộ sưu tập hiện tại",
     "Bộ sưu tập này chưa có sản phẩm.",
     "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
