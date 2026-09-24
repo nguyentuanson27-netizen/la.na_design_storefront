@@ -82,8 +82,14 @@ test("no listing surface keeps the oversized sans heading the shared header repl
 });
 
 test("the shared header is a normal-weight serif h1 under an eyebrow", () => {
-  const chrome = read("src/components/brand/listing-chrome.tsx");
-  const header = componentSource(chrome, "ListingHeader");
+  // `ListingHeader` is `PageHeader` re-exported: the listings and every other page share one.
+  assert.match(
+    read("src/components/brand/listing-chrome.tsx"),
+    /PageHeader as ListingHeader[\s\S]*from "\.\/page-chrome"/,
+    "the listing header is the page header, not a second copy of it",
+  );
+  const chrome = read("src/components/brand/page-chrome.tsx");
+  const header = componentSource(chrome, "PageHeader");
   assert.match(header, /className="eyebrow/, "the eyebrow sits above the heading");
   assert.match(header, /<h1[\s\S]*?font-display/, "master spec §9 (amended): the display face on the listing heading");
   assert.match(header, /<h1[\s\S]*?font-normal/, "normal weight, not the old bold sans shout");
@@ -134,38 +140,70 @@ test("the shared chrome stays presentation: no query parsing or href building in
 });
 
 /**
- * Filled links state their label colour in unlayered CSS, not in a `text-*` utility.
+ * Links take their colour from Tailwind utilities, because the reset that makes them inherit is layered.
  *
- * `globals.css` declares `a { color: inherit }` outside any layer, and Tailwind's utilities live in
- * `@layer utilities`, so the unlayered rule wins however specific the utility looks. A pill that
- * fills with ink on hover or when selected therefore rendered its label in that same ink -- 1:1
- * contrast, an invisible label -- which is what `.checkout-cta` already existed to avoid.
+ * `globals.css` used to declare `a { color: inherit }` outside any layer. Tailwind's utilities live
+ * in `@layer utilities`, and an unlayered rule beats every layered one however specific, so
+ * `text-[#FAF7F2]` on a selected filter chip and `hover:text-white` on a filled button silently
+ * lost: the chip filled with ink and kept its label in that same ink. Individual pages patched it
+ * with unlayered one-off classes; these pin the fix at its root instead.
  */
-test("filled listing links carry their label colour outside the utility layer", () => {
+test("the link colour reset sits in the base layer so text utilities win on links", () => {
   const css = read("src/app/globals.css");
 
   assert.match(
     css,
-    /\.listing-cta \{\s*color: var\(--paper\);\s*\}/,
-    "the empty state's recovery button needs its label colour stated unlayered",
+    /@layer base \{[\s\S]*?\n  a \{\s*color: inherit;[\s\S]*?\n\}/,
+    "`a { color: inherit }` must live inside `@layer base`",
   );
-  assert.match(
-    css,
-    /\.listing-pill:hover,\s*\.listing-pill\[aria-current="true"\] \{\s*color: var\(--paper\);\s*\}/,
-    "a pill that fills on hover or when selected needs the same",
-  );
+  // No unlayered copy of it at the top level, which would restore the bug.
+  assert.doesNotMatch(css, /^a \{\s*color: inherit/m, "an unlayered `a` colour reset beats every text-* utility");
+});
 
-  // The utility form is what silently stops working, so no listing may reach for it on a link.
-  for (const modulePath of [
-    "src/components/brand/listing-chrome.tsx",
-    "src/routes/category.tsx",
-    "src/app/collections/[slug]/page.tsx",
-  ]) {
+test("a selected PLP filter chip announces itself as well as filling", () => {
+  const panel = read("src/components/brand/plp-filter-panel.tsx");
+  // Desktop and sheet: sale, size and colour, each marked current when selected.
+  assert.equal(
+    (panel.match(/aria-current=\{(isSelected|isSaleActive) \? "true" : undefined\}/g) ?? []).length,
+    6,
+    "every selectable filter link must set aria-current when it is the active filter",
+  );
+});
+
+/**
+ * Every storefront page, not only the listings, opens with the same shell, breadcrumb and header.
+ *
+ * The account, cart, checkout, order-tracking, search and content pages each drew their own head:
+ * a 9rem bold sans H1 on some, a 72px display H1 on others, over their own gutter and padding. The
+ * login page looked like a different site from the category page it was reached from.
+ */
+const PAGE_HEAD_PAGES = [
+  "src/app/login/page.tsx",
+  "src/app/account/page.tsx",
+  "src/app/search/page.tsx",
+  "src/app/track-order/page.tsx",
+  "src/app/cart/page.tsx",
+  "src/app/cart/error.tsx",
+  "src/app/checkout/page.tsx",
+  "src/app/checkout/success/page.tsx",
+  "src/app/shop/error.tsx",
+  "src/app/feedback/page.tsx",
+  "src/app/about/page.tsx",
+  "src/app/contact/page.tsx",
+  "src/app/policies/page.tsx",
+  "src/app/shipping/page.tsx",
+  "src/app/returns/page.tsx",
+  "src/app/size-guide/page.tsx",
+] as const;
+
+test("every storefront page takes its shell, breadcrumb and heading from the shared page chrome", () => {
+  for (const modulePath of PAGE_HEAD_PAGES) {
     const source = read(modulePath);
-    assert.ok(
-      !/(hover:)?text-\[#FAF7F2\]/.test(source),
-      `${modulePath} must not colour a filled link with a text-* utility; use listing-cta/listing-pill`,
-    );
+    assert.match(source, /from "@\/components\/brand\/page-chrome"/, `${modulePath} must use the page chrome`);
+    for (const primitive of ["PageShell", "PageBreadcrumbs", "PageHeader"]) {
+      assert.ok(source.includes(`<${primitive}`), `${modulePath} must render ${primitive}`);
+    }
+    assert.doesNotMatch(source, /<h1/, `${modulePath} must not draw its own h1 beside the shared one`);
   }
 });
 

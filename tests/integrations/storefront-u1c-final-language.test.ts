@@ -33,7 +33,7 @@ test("U1c cart finishes the Vietnamese transactional language contract", async (
   const oldVariantFallback = ["Color / Size", " unavailable"].join("");
   const oldColorSize = ["Color", " × Size"].join("");
 
-  assert.equal(occurrences(cartSource, "GIỎ HÀNG"), 2, "cart empty and populated H1 must both be GIỎ HÀNG");
+  assert.equal(occurrences(cartSource, 'title="Giỏ hàng"'), 2, "cart empty and populated H1 must both be Giỏ hàng");
   assert.equal(cartSource.includes(oldBagHeading), false, "cart retained the old English bag heading");
   assert.equal(cartSource.includes("Tiếp tục mua sắm ↗"), true, "cart populated state missing Vietnamese continue-shopping link");
   assert.equal(cartSource.includes(oldContinueShopping), false, "cart retained English continue-shopping copy");

@@ -19,77 +19,16 @@ import Link from "next/link";
  * The visual reference is the category PLP, which is the surface master spec §25 describes.
  */
 
-export type ListingCrumb = Readonly<{ label: string; href?: string | null }>;
-
-/**
- * The container every listing sits in: one max width, one gutter, one vertical rhythm.
- *
- * The rhythm is deliberately tighter than it was. Refinement spec "PLP / listing density" judges
- * these pages by one observable: on a product-bearing listing with its filters unexpanded, the top
- * edge of the first product image is inside the initial viewport at 1440x900 and at 390x844. Two
- * screens of chrome before the first photograph fails that on both.
+/*
+ * The shell, breadcrumb and heading are every storefront page's, not only the listings': they live
+ * in `page-chrome` and are re-exported here under the names the listing routes already use.
  */
-export function ListingShell({ children }: Readonly<{ children: ReactNode }>) {
-  return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-5 md:py-8">{children}</div>
-  );
-}
-
-/**
- * The breadcrumb trail. The last crumb is the current page and carries no link, which is what
- * `aria-current` announces; passing it an href would make it a link to where the reader already is.
- */
-export function ListingBreadcrumbs({
-  items,
-  className = "",
-}: Readonly<{ items: readonly ListingCrumb[]; className?: string }>) {
-  return (
-    <nav
-      aria-label="Breadcrumb"
-      className={`text-xs uppercase tracking-[0.14em] text-[#3B2219]/70 ${className}`}
-    >
-      <ol className="flex flex-wrap items-center gap-2">
-        {items.map((crumb, index) => (
-          <li key={`${crumb.label}-${index}`} className="flex items-center gap-2">
-            {index > 0 ? <span aria-hidden="true">/</span> : null}
-            {crumb.href ? (
-              <Link className="transition-colors hover:text-[#2A1810]" href={crumb.href}>
-                {crumb.label}
-              </Link>
-            ) : (
-              <span aria-current="page" className="font-medium text-[#2A1810]">
-                {crumb.label}
-              </span>
-            )}
-          </li>
-        ))}
-      </ol>
-    </nav>
-  );
-}
-
-/**
- * Eyebrow, serif H1 and whatever the route puts under them -- subcategory chips, an editorial
- * line, nothing at all.
- *
- * The heading is `font-normal`: master spec §9 asks for an elegant serif display, and weight is
- * what separates that from the condensed bold sans these pages used to shout in.
- */
-export function ListingHeader({
-  eyebrow,
-  title,
-  children,
-}: Readonly<{ eyebrow?: string; title: string; children?: ReactNode }>) {
-  return (
-    <div className="mt-4 border-b border-[#3B2219]/15 pb-4">
-      {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
-      <h1 className="mt-2 font-display text-3xl font-normal tracking-tight text-[#2A1810] sm:text-4xl md:text-5xl">
-        {title}
-      </h1>
-      {children}
-    </div>
-  );
-}
+export {
+  PageBreadcrumbs as ListingBreadcrumbs,
+  PageHeader as ListingHeader,
+  PageShell as ListingShell,
+  type PageCrumb as ListingCrumb,
+} from "./page-chrome";
 
 export type ListingSubnavItem = Readonly<{
   label: string;
@@ -106,8 +45,8 @@ export type ListingSubnavItem = Readonly<{
  * result count and filters even began. The row is one line at every width: on a phone it scrolls
  * sideways under a fade that shows there is more, bleeding to the screen edges so the first tab
  * lines up with the heading; from `md` up it simply wraps, which in practice means it fits.
- * Colours live in `globals.css` (`.listing-subnav-link`) for the same unlayered-`a` reason as
- * `.listing-pill`.
+ * Its colours and the drawn-in underline live in `globals.css` (`.listing-subnav-link`), since a
+ * pseudo-element underline is clearer there than as a stack of `after:` utilities.
  */
 export function ListingSubnav({
   label,
@@ -193,7 +132,7 @@ export function ListingEmptyState({
         <div className="mt-6">
           <Link
             href={action.href}
-            className="font-display listing-cta inline-flex min-h-11 items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider transition hover:bg-[#2A1810]"
+            className="font-display inline-flex min-h-11 items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition hover:bg-[#2A1810]"
           >
             {action.label}
           </Link>

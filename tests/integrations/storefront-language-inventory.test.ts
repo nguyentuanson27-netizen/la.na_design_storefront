@@ -500,12 +500,12 @@ test("U1c cart loading and error states use Giỏ hàng terminology", async () =
     readFile(join(REPO_ROOT, "src/app/cart/error.tsx"), "utf8"),
   ]);
 
-  for (const expected of ["Mua sắm / Giỏ hàng", "Đang tải giỏ hàng."]) {
+  for (const expected of ["Mua sắm", "Đang tải giỏ hàng."]) {
     assert.equal(loadingSource.includes(expected), true, `cart loading missing Vietnamese copy: ${expected}`);
   }
   assert.equal(loadingSource.includes("Shopping / Bag"), false, "cart loading retained Shopping / Bag");
 
-  for (const expected of ["Mua sắm / Giỏ hàng", "GIỎ HÀNG", "Không thể tải giỏ hàng lúc này."]) {
+  for (const expected of ['label: "Giỏ hàng"', 'title="Giỏ hàng"', "Không thể tải giỏ hàng lúc này."]) {
     assert.equal(errorSource.includes(expected), true, `cart error missing Vietnamese copy: ${expected}`);
   }
   for (const oldCopy of ["Shopping / Bag", "YOUR BAG"]) {

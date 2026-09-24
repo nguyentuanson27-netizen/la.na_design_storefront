@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadSizeGuideRoute, type SizeGuideRouteProps } from "@/routes/size-guide";
 import type { SizeGuideViewModel } from "@/routes/evergreen-model";
@@ -27,13 +28,14 @@ import { buildSizeGuideMetadata } from "@/routes/metadata/size-guide";
 
 function render(data: SizeGuideViewModel) {
   return (
-    <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
-      <p className="eyebrow">Thông tin sản phẩm</p>
-      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
-        Hướng dẫn chọn size
-      </h1>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Hướng dẫn chọn size" }]} />
+      <PageHeader
+        eyebrow="Thông tin sản phẩm"
+        title="Hướng dẫn chọn size"
+      />
 
-      <div className="mt-6 max-w-3xl space-y-3 text-base leading-7 text-black/75">
+      <div className="mt-8 max-w-3xl space-y-3 text-base leading-7 text-[#3B2219]/75">
         <p>
           <strong>Lưu ý về số đo:</strong> {data.circumferenceSemanticsNote}
         </p>
@@ -50,7 +52,7 @@ function render(data: SizeGuideViewModel) {
       <div className="mt-16 grid max-w-5xl gap-16">
         {data.charts.map((chart) => (
           <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`} className="min-w-0">
-            <h2 id={`chart-${chart.id}-heading`} className="font-display text-3xl tracking-[-0.03em]">
+            <h2 id={`chart-${chart.id}-heading`} className="font-display text-2xl tracking-[-0.02em] md:text-3xl">
               {chart.title}
             </h2>
             {data.tolerance === null ? null : (
@@ -106,7 +108,7 @@ function render(data: SizeGuideViewModel) {
         </Link>{" "}
         để được đội ngũ chăm sóc khách hàng hỗ trợ.
       </p>
-    </div>
+    </PageShell>
   );
 }
 

@@ -13,12 +13,24 @@
  * Every button wears the display face by default, so a new control cannot quietly fall back to the
  * body face. It sits in the base layer, after Tailwind's own `font: inherit` reset, so a utility on
  * a particular button (`font-sans`) still overrides it.
+ *
+ * Links inherit their colour here too, and for the same reason it is layered. This rule used to be
+ * unlayered, and an unlayered rule beats everything in `@layer utilities` however specific the
+ * utility looks: `text-[#FAF7F2]` on a selected filter chip, `hover:text-white` on a filled button,
+ * both silently lost to `color: inherit`, so a link that filled with ink kept its label in that
+ * same ink -- an invisible label. Every filled link repaired that with its own unlayered class; in
+ * the base layer the utilities simply win, and a link says its colour where it says everything else.
  */
 @layer base {
   button,
   input[type="button"],
   input[type="submit"] {
     font-family: var(--font-display);
+  }
+
+  a {
+    color: inherit;
+    text-decoration: none;
   }
 }
 
@@ -52,40 +64,16 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.checkout-cta {
-  color: var(--white);
-}
-
 /*
- * The listing empty state's recovery button.
- *
- * `a { color: inherit }` above is unlayered, and Tailwind's utilities are in `@layer utilities`, so
- * an unlayered rule beats every `text-*` class on a link however specific it looks. A filled pill
- * written that way renders its label in the ink it is filled with -- the same 1:1 contrast
- * `.checkout-cta` already exists to avoid. Declared here for the same reason, so the colour is
- * stated once for every listing rather than re-lost each time a page writes the utility again.
+ * Browser autofill paints a saved email in its own pale blue, which on the cream page reads as a
+ * broken field. An inset shadow is the one paint autofill does not override, so it restores paper.
  */
-.listing-cta {
-  color: var(--paper);
-}
-
-/*
- * The pill-shaped filter and subcategory links the listings share, for the same reason: a pill
- * that fills on hover or when selected has to state its label colour outside `@layer utilities`,
- * or `hover:text-*` silently does nothing and the selected pill reads ink-on-ink.
- */
-.listing-pill {
-  color: var(--ink);
-}
-
-.listing-pill:hover,
-.listing-pill[aria-current="true"] {
-  color: var(--paper);
+.account-auth-input:-webkit-autofill,
+.account-auth-input:-webkit-autofill:hover,
+.account-auth-input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--black);
+  box-shadow: inset 0 0 0 100px var(--paper);
+  caret-color: var(--black);
 }
 
 /*
@@ -1563,10 +1551,6 @@ body:has(.admin-shell) .site-masthead {
   outline-offset: 4px;
 }
 
-.checkout-cta {
-  --focus-ring-color: var(--white);
-}
-
 .ui-state {
   border-top: 1px solid var(--line);
   padding-block: clamp(3rem, 8vw, 6rem);
@@ -1948,22 +1932,6 @@ body:has(.admin-shell) .site-masthead {
   background: var(--stone);
 }
 
-.feedback-page {
-  min-height: 65vh;
-  max-width: var(--shell-max);
-  margin: 0 auto;
-  padding: 4rem var(--shell-gutter) 6rem;
-}
-
-.feedback-page__title {
-  margin: 0 0 2.5rem;
-  font-family: var(--font-display);
-  font-size: clamp(2.5rem, 6vw, 4.5rem);
-  font-weight: 400;
-  line-height: 0.95;
-  letter-spacing: -0.05em;
-}
-
 .feedback-gallery {
   column-count: 4;
   column-gap: 8px;
@@ -2190,10 +2158,6 @@ body:has(.admin-shell) .site-masthead {
 
   .feedback-rail__item {
     width: 42vw;
-  }
-
-  .feedback-page {
-    padding-top: 2.5rem;
   }
 }
 

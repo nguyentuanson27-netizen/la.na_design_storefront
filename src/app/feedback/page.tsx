@@ -1,4 +1,5 @@
 import { FeedbackGallery } from "@/components/brand/feedback-gallery";
+import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadFeedbackRoute, type FeedbackRouteProps, type FeedbackViewModel } from "@/routes/feedback";
 import { buildFeedbackMetadata } from "@/routes/metadata/feedback";
@@ -10,10 +11,13 @@ import { buildFeedbackMetadata } from "@/routes/metadata/feedback";
 
 function render(data: FeedbackViewModel) {
   return (
-    <div className="feedback-page">
-      <h1 className="feedback-page__title">{data.title}</h1>
-      <FeedbackGallery images={data.images} />
-    </div>
+    <PageShell>
+      <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: data.title }]} />
+      <PageHeader eyebrow="Khách hàng" title={data.title} />
+      <div className="mt-8">
+        <FeedbackGallery images={data.images} />
+      </div>
+    </PageShell>
   );
 }
 
