@@ -282,7 +282,11 @@ test("P14 builds factual Organization and WebSite entities from the validated st
             closes: "22:00:00+07:00",
           },
         },
-        sameAs: ["https://www.facebook.com/la.nadesign.vn"],
+        sameAs: [
+          "https://www.facebook.com/la.nadesign.vn",
+          "https://www.instagram.com/la.nadesign.vn/",
+          "https://www.tiktok.com/@la.nadesign.vn",
+        ],
       },
       {
         "@type": "WebSite",

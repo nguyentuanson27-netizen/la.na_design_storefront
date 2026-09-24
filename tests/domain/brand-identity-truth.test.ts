@@ -90,6 +90,8 @@ test("A3 the approved homepage SEO copy and the alias must be present", () => {
 test("A3 the approved support contact replaces the Brand #1 channels", () => {
   assert.equal(BRAND.contact.email, "la.nadesignsince2022@gmail.com");
   assert.equal(BRAND.contact.fanpageUrl, "https://www.facebook.com/la.nadesign.vn");
+  assert.equal(BRAND.contact.instagramUrl, "https://www.instagram.com/la.nadesign.vn/");
+  assert.equal(BRAND.contact.tiktokUrl, "https://www.tiktok.com/@la.nadesign.vn");
   // The hotline, the business address and the support hours were already the approved ones.
   assert.equal(BRAND.contact.telephone, "0923159666");
   assert.equal(BRAND.contact.telephoneInternational, "+84923159666");
