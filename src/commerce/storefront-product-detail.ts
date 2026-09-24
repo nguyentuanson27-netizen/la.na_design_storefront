@@ -58,6 +58,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         compositeComponents: {
           orderBy: [{ componentVariantId: "asc" }],
           select: {
+            quantity: true,
             componentVariant: {
               select: {
                 id: true,
@@ -101,7 +102,27 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       }
     >();
 
+    const compositeStockByVariantId = new Map<string, number>();
     for (const parent of parentRelations) {
+      if (parent.compositeComponents.length > 0) {
+        const capacities = parent.compositeComponents.map((edge) => {
+          const component = edge.componentVariant;
+          if (
+            component.product.pancakeShopId !== shopId ||
+            !component.product.isPresent ||
+            !component.isPresent ||
+            !component.isActive
+          ) {
+            return 0;
+          }
+          const stock = sumWarehouseStocks(component.warehouseStocks);
+          const req = edge.quantity > 0 ? edge.quantity : 1;
+          return Math.floor(Math.max(0, stock) / req);
+        });
+        const derived = capacities.length > 0 ? Math.min(...capacities) : 0;
+        compositeStockByVariantId.set(parent.id, derived);
+      }
+
       for (const edge of parent.compositeComponents) {
         const component = edge.componentVariant;
         if (
@@ -139,6 +160,11 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       }
     }
 
+    const effectiveParentVariants = product.variants.map((v) => {
+      const derived = compositeStockByVariantId.get(v.id);
+      return derived !== undefined ? { ...v, sellableStock: derived } : v;
+    });
+
     const componentGroups: StorefrontCompositeComponentGroup[] = [...groups.values()]
       .sort((left, right) => left.sortLabel.localeCompare(right.sortLabel, "vi"))
       .flatMap((group) => {
@@ -150,7 +176,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
     const pricedVariantIds = [
       ...new Set([
-        ...product.variants.map((variant) => variant.id),
+        ...effectiveParentVariants.map((variant) => variant.id),
         ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
       ]),
     ];
@@ -162,6 +188,13 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
     return {
       ...product,
+      variants: effectiveParentVariants,
+      variantAvailabilityResolvedById: {
+        ...product.variantAvailabilityResolvedById,
+        ...Object.fromEntries(
+          [...compositeStockByVariantId.entries()].map(([id, stock]) => [id, stock > 0]),
+        ),
+      },
       // ADR 0008: the mirrored Pancake `display_id` is the manufacturer MPN authority. Keep this
       // server-only map separate from `projection.options` so the purchase-panel client contract does
       // not grow a Merchant/SEO-only fact just to let JSON-LD identify each variant.
@@ -175,7 +208,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         parentRelations.map((variant) => [variant.id, variant.sku]),
       ),
       projection: buildStorefrontProductProjection({
-        parentVariants: product.variants,
+        parentVariants: effectiveParentVariants,
         componentGroups,
         hasCompositeGraph,
         // I9 — the same two inputs the Merchant feed supplies, because the page's JSON-LD and the
