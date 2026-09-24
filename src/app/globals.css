@@ -172,6 +172,19 @@ summary:focus-visible {
   outline-offset: 4px;
 }
 
+/*
+ * A filled control's label colour is the wrong colour for its focus ring. The rule above draws the
+ * ring in `currentColor`, which is right for text links and for controls on the dark masthead and
+ * lightbox, but `.btn--primary` and the collection-card CTA set their label to paper, so their ring
+ * -- drawn 4px outside the fill -- came out paper on the paper page: no visible focus at all for a
+ * keyboard user on checkout, the PDP or the account forms. These draw it in the page ink instead,
+ * whatever the label colour. Unlayered and class-qualified, so it outranks `button:focus-visible`.
+ */
+.btn:focus-visible,
+.collection-card-cta:focus-visible {
+  outline-color: var(--focus-ring-color, var(--ink));
+}
+
 .skip-link {
   position: fixed;
   z-index: 100;
