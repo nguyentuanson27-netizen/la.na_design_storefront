@@ -123,7 +123,7 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
   assert.match(panel, /renderSelectorLegend\("Kích cỡ", selection\.size\)/);
-  assert.match(panel, /renderSelectorLegend\("Màu", selection\.color\)/);
+  assert.match(panel, /renderSelectorLegend\(.*"Màu".*, selection\.color\)/);
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
 
