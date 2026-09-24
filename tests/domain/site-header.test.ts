@@ -66,6 +66,33 @@ test("F2a mega-menu: Áo dài and Set đồ have approved children subcategories
   );
 });
 
+test("mega-menu: every top-level category opens a panel, the other primary links do not", () => {
+  type HierarchicalLink = { href: string; label: string; key?: string; children?: readonly HierarchicalLink[] };
+  const primary = NAVIGATION.primary as readonly HierarchicalLink[];
+  const headerSource = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-header.tsx"), "utf8");
+
+  // Owner request 2026-09-24: Váy, đầm and Phụ kiện open panels too. A panel belongs to a primary
+  // link that is a category (it has a key) or has children, so the keyed set is the panel set.
+  assert.match(headerSource, /const hasMenu = hasChildren \|\| Boolean\(item\.key\);/);
+  assert.match(headerSource, /\{hasMenu && isMegaOpen \? \(/);
+  assert.deepEqual(
+    primary.filter((item) => item.key).map((item) => item.label),
+    ["Áo dài", "Set đồ", "Váy, đầm", "Phụ kiện"],
+  );
+  assert.deepEqual(
+    primary.filter((item) => !item.key && !item.children?.length).map((item) => item.label),
+    ["Hàng mới về", "Bộ sưu tập", "Sale"],
+  );
+
+  // A leaf category's panel links to the category itself, named for the category it opens.
+  assert.match(headerSource, /\{hasChildren \? item\.label : "Xem tất cả"\}/);
+  assert.match(headerSource, /<span className="sr-only"> \{item\.label\}<\/span>/);
+
+  // The media is landscape 4:3 and takes two thirds of the panel.
+  assert.match(headerSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
+  assert.match(headerSource, /aspect-\[4\/3\]/);
+});
+
 test("F2a site chrome model: supports category mega media projection", () => {
   const chromeContent = buildSiteChromeContent([
     { categoryKey: "aoDai", imageUrl: "https://example.com/aodai.jpg", altText: "Áo dài La.na" },

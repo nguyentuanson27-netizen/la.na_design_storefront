@@ -240,17 +240,21 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
         {/* Desktop Primary Navigation */}
         <nav className="desktop-nav" aria-label="Điều hướng chính">
           {primary.map((item, index) => {
-            const hasChildren = item.children && item.children.length > 0;
+            const hasChildren = Boolean(item.children && item.children.length > 0);
+            // Every category opens a panel -- the leaf ones (Váy, đầm; Phụ kiện) for their image
+            // and a way in -- while Hàng mới về, Bộ sưu tập and Sale stay plain links.
+            const hasMenu = hasChildren || Boolean(item.key);
             const isMegaOpen = activeMegaMenu === item.href;
             const media = getMegaMedia(item);
             const isSaleItem = index === primary.length - 1;
 
             return (
+              // No `relative` here: the panel anchors to the nav, so a wide panel stays centred on the
+              // page instead of hanging off the edge under the first or last category.
               <div
                 key={item.href}
-                className="relative"
-                onMouseEnter={() => hasChildren && setActiveMegaMenu(item.href)}
-                onMouseLeave={() => hasChildren && setActiveMegaMenu(null)}
+                onMouseEnter={() => hasMenu && setActiveMegaMenu(item.href)}
+                onMouseLeave={() => hasMenu && setActiveMegaMenu(null)}
               >
                 <div className="flex items-center gap-1">
                   <Link
@@ -261,7 +265,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   >
                     {item.label}
                   </Link>
-                  {hasChildren ? (
+                  {hasMenu ? (
                     <button
                       type="button"
                       aria-expanded={isMegaOpen}
@@ -284,46 +288,49 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   ) : null}
                 </div>
 
-                {/* Mega Menu Dropdown */}
-                {hasChildren && isMegaOpen ? (
+                {/* Mega Menu Dropdown: links on the left third, a 4:3 image across the other two. */}
+                {hasMenu && isMegaOpen ? (
                   <div
                     role="region"
                     aria-label={item.label}
-                    className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1 w-[560px] lg:w-[680px] rounded-b-lg border border-[#3B2219]/15 bg-[#FAF7F2] p-6 shadow-xl"
+                    className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1 w-[min(880px,calc(100vw-3rem))] rounded-b-lg border border-[#3B2219]/15 bg-[#FAF7F2] p-6 shadow-xl"
                   >
-                    <div className="grid grid-cols-2 gap-8 items-start">
+                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-8 items-start">
                       <div>
                         <p className="eyebrow text-[#70584B] mb-3">{item.label}</p>
-                        <ul className="space-y-2.5">
-                          {item.children!.map((child) => (
-                            <li key={child.href}>
-                              <Link
-                                href={child.href}
-                                className="block text-sm font-normal normal-case tracking-normal text-[#3B2219] hover:text-[#2A1810] hover:underline underline-offset-4 transition"
-                              >
-                                {child.label}
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="mt-5 border-t border-[#3B2219]/15 pt-3">
+                        {hasChildren ? (
+                          <ul className="space-y-2.5">
+                            {item.children!.map((child) => (
+                              <li key={child.href}>
+                                <Link
+                                  href={child.href}
+                                  className="block text-sm font-normal normal-case tracking-normal text-[#3B2219] hover:text-[#2A1810] hover:underline underline-offset-4 transition"
+                                >
+                                  {child.label}
+                                </Link>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+                        <div className={hasChildren ? "mt-5 border-t border-[#3B2219]/15 pt-3" : ""}>
                           <Link
                             href={item.href}
                             className="inline-flex items-center text-xs font-semibold uppercase tracking-wider text-[#3B2219] hover:text-[#2A1810] hover:underline underline-offset-4"
                           >
-                            {item.label}
+                            {hasChildren ? item.label : "Xem tất cả"}
+                            {hasChildren ? null : <span className="sr-only"> {item.label}</span>}
                           </Link>
                         </div>
                       </div>
 
                       {/* Editorial Media Container */}
-                      <div className="relative aspect-[4/5] overflow-hidden rounded-sm bg-[#3B2219]/5">
+                      <div className="relative aspect-[4/3] overflow-hidden rounded-sm bg-[#3B2219]/5">
                         {media ? (
                           <Image
                             src={media.imageUrl}
                             alt={media.altText || item.label}
                             fill
-                            sizes="300px"
+                            sizes="560px"
                             className="object-cover"
                           />
                         ) : (

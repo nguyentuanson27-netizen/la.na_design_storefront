@@ -86,7 +86,7 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
   ],
   categoryDiscovery: {
     title: "YOUR NEXT FAVOURITE",
-    description: null,
+    description: "You might’ve just found it",
   },
   feedback: {
     title: "Khách hàng & La.na",

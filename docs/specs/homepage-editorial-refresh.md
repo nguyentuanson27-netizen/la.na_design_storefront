@@ -296,6 +296,8 @@ Mobile:
 
 Both: each category name is centred under its photograph (owner request 2026-09-24; pinned in `mobile-storefront-rhythm.spec.ts`).
 
+Owner request 2026-09-24: the section heading and its supporting line sit in a column to the left of the four blocks on desktop (above them on mobile), and the blocks are separated by visible gutters rather than a hairline. Heading and category names use the display face; the supporting line uses the body face.
+
 Presentation should follow the approved Ding Dang section rhythm while preserving La.na typography/color/spacing.
 
 Category images are visual merchandising data. Missing media must not be replaced with invented photography.

@@ -9,7 +9,11 @@ import {
   listRelatedStorefrontProducts,
 } from "./storefront-related-products.ts";
 import { createMerchandisingRepository } from "./merchandising-repository.ts";
-import { categoryListingKeys, type CategoryKey } from "./category-taxonomy.ts";
+import {
+  categoryListingKeys,
+  TOP_LEVEL_CATEGORY_KEYS,
+  type CategoryKey,
+} from "./category-taxonomy.ts";
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
@@ -330,27 +334,18 @@ export type CategoryMegaMediaFacts = Readonly<{
   altText?: string | null;
 }>;
 
+/** The mega-menu image of every top-level category that has one configured, in navigation order. */
 export async function readConfiguredCategoryMegaMedia(): Promise<readonly CategoryMegaMediaFacts[]> {
   try {
     const merchandising = createMerchandisingRepository(prisma);
-    const [aoDai, setDo] = await Promise.all([
-      merchandising.readCategoryEditorialMedia("aoDai"),
-      merchandising.readCategoryEditorialMedia("setDo"),
-    ]);
+    const rows = await Promise.all(
+      TOP_LEVEL_CATEGORY_KEYS.map((categoryKey) => merchandising.readCategoryEditorialMedia(categoryKey)),
+    );
     const items: CategoryMegaMediaFacts[] = [];
-    if (aoDai?.megaMenuImageUrl) {
-      items.push({
-        categoryKey: "aoDai",
-        imageUrl: aoDai.megaMenuImageUrl,
-        altText: null,
-      });
-    }
-    if (setDo?.megaMenuImageUrl) {
-      items.push({
-        categoryKey: "setDo",
-        imageUrl: setDo.megaMenuImageUrl,
-        altText: null,
-      });
+    for (const row of rows) {
+      if (row?.megaMenuImageUrl) {
+        items.push({ categoryKey: row.categoryKey, imageUrl: row.megaMenuImageUrl, altText: null });
+      }
     }
     return Object.freeze(items);
   } catch {
