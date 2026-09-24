@@ -37,7 +37,7 @@ function render(data: ProductRouteData) {
             <Link
               key={collection.slug}
               href={`/collections/${collection.slug}`}
-              className="badge badge--stone transition-colors hover:border-black"
+              className="inline-flex min-h-8 items-center border border-[#3B2219]/25 px-3 text-[11px] font-medium uppercase tracking-[0.16em] text-[#3B2219]/80 transition-colors duration-200 hover:border-[#3B2219] hover:text-[#3B2219]"
             >
               {collection.title}
             </Link>
