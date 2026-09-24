@@ -36,11 +36,11 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  *
  * Master spec §9 / refinement spec "Visual language": the warm brown-on-cream pairing, not the
  * generic pure black/white one, and a focus ring that stays visible on both. The chip is drawn
- * light and compact -- 36px tall, a soft tint at rest, regular weight, a hairline on hover -- so
+ * light and compact -- 32px tall, a soft tint at rest, regular weight, a hairline on hover -- so
  * the one filled chip per group reads as the choice without the whole selector shouting.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-9 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-normal tracking-[0.02em] text-[#3B2219] transition-colors duration-200 hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
+  "flex min-h-8 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-normal tracking-[0.02em] text-[#3B2219] transition-colors duration-200 hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
 
 /** A choice briefly locked while a purchase request is in flight. */
 const DISABLED_CHIP = "peer-disabled:opacity-50";
@@ -418,9 +418,9 @@ export function PurchasePanelView({
     if (!view.hasKindOptions) return null;
 
     return (
-      <fieldset className="mt-6">
+      <fieldset className="mt-5">
         {renderSelectorLegend("Loại", selectedKindLabel)}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.kinds.map((choice) => (
             <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -456,7 +456,7 @@ export function PurchasePanelView({
         tabIndex={surface === "panel" ? -1 : undefined}
         aria-invalid={sizeValidationMessage ? "true" : undefined}
         aria-describedby={sizeDescribedBy}
-        className={`mt-6 rounded-sm ${
+        className={`mt-5 rounded-sm ${
           sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
         }`}
       >
@@ -466,7 +466,7 @@ export function PurchasePanelView({
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.sizes.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input
@@ -504,9 +504,9 @@ export function PurchasePanelView({
     if (!view.hasColorOptions) return null;
 
     return (
-      <fieldset className="mt-6">
+      <fieldset className="mt-5">
         {renderSelectorLegend("Màu", selection.color)}
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-2 flex flex-wrap gap-2">
           {view.colors.map((choice) => (
             <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
               <input

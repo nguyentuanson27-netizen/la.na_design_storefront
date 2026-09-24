@@ -114,10 +114,10 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(page, /<p className="eyebrow hidden lg:block">\{BRAND\.identity\.name\} \/ Sản phẩm<\/p>/);
   assert.match(page, /<h1 className="mt-0[^"]*lg:mt-5/);
 
-  // One compact selector system now spans mobile, desktop and the quick sheet. Chips are 36px tall
-  // (still well above the 24px WCAG 2.5.8 minimum) and 44px wide, while desktop no longer
+  // One compact selector system now spans mobile, desktop and the quick sheet. Chips are 32px tall
+  // (still above the 24px WCAG 2.5.8 minimum) and 44px wide, while desktop no longer
   // re-expands the group spacing.
-  assert.match(panel, /min-h-9 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  assert.match(panel, /min-h-8 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
   assert.doesNotMatch(panel, /lg:mt-7/);
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
