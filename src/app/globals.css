@@ -9,6 +9,19 @@
   --font-display: var(--font-display-face), "Josefin Sans", Arial, sans-serif;
 }
 
+/*
+ * Every button wears the display face by default, so a new control cannot quietly fall back to the
+ * body face. It sits in the base layer, after Tailwind's own `font: inherit` reset, so a utility on
+ * a particular button (`font-sans`) still overrides it.
+ */
+@layer base {
+  button,
+  input[type="button"],
+  input[type="submit"] {
+    font-family: var(--font-display);
+  }
+}
+
 :root {
   --ink: #3b2219;
   --black: #2a1810;
@@ -394,6 +407,7 @@ main nav[aria-label="Breadcrumb"] a {
 }
 
 .footer-nav-list {
+  font-family: var(--font-display);
   font-size: 0.78rem;
   line-height: 1.45;
 }
@@ -1416,6 +1430,7 @@ body:has(.admin-shell) .site-masthead {
 .mobile-menu__sublink {
   display: flex;
   align-items: center;
+  font-family: var(--font-display);
   font-size: 0.85rem;
   color: var(--olive);
 }

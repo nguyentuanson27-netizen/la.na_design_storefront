@@ -166,7 +166,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <Link
                   href="/shop"
                   onClick={onClose}
-                  className="mt-6 inline-flex items-center justify-center border border-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="font-display mt-6 inline-flex items-center justify-center border border-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                 >
                   Tiếp tục mua sắm
                 </Link>
@@ -280,7 +280,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   <Link
                     href="/checkout"
                     onClick={onClose}
-                    className="flex w-full items-center justify-center border border-[#2A1810] bg-[#2A1810] py-3.5 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#3B2219] transition-colors focus-visible:outline-2 focus-visible:outline-[#2A1810]"
+                    className="font-display flex w-full items-center justify-center border border-[#2A1810] bg-[#2A1810] py-3.5 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#3B2219] transition-colors focus-visible:outline-2 focus-visible:outline-[#2A1810]"
                   >
                     Tiến hành đặt hàng
                   </Link>
@@ -293,7 +293,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <Link
                   href="/cart"
                   onClick={onClose}
-                  className="flex w-full items-center justify-center border border-[#3B2219]/25 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-[#3B2219] hover:bg-[#3B2219]/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="font-display flex w-full items-center justify-center border border-[#3B2219]/25 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-[#3B2219] hover:bg-[#3B2219]/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
                 >
                   Xem chi tiết giỏ hàng
                 </Link>

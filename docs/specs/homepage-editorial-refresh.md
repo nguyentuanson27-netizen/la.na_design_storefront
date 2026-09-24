@@ -292,6 +292,8 @@ Mobile:
 
 - 2 × 2 category rhythm.
 
+Both: each category name is centred under its photograph (owner request 2026-09-24; pinned in `mobile-storefront-rhythm.spec.ts`).
+
 Presentation should follow the approved Ding Dang section rhythm while preserving La.na typography/color/spacing.
 
 Category images are visual merchandising data. Missing media must not be replaced with invented photography.

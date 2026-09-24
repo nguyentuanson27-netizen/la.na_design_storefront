@@ -178,7 +178,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                     key={category.key}
                     href={category.href}
                     onClick={onClose}
-                    className="inline-flex items-center rounded-full border border-[#3B2219]/20 bg-white/60 px-4 py-2 text-xs font-medium text-[#3B2219] hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors"
+                    className="font-display inline-flex items-center rounded-full border border-[#3B2219]/20 bg-white/60 px-4 py-2 text-xs font-medium text-[#3B2219] hover:border-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors"
                   >
                     {category.label}
                   </Link>
