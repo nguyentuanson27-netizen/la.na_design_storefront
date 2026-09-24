@@ -197,6 +197,10 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         // (a rendering fact, so it lives in the browser suite); the domain suites cover what each
         // consumer does with the options, not which rule produced them.
         pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+        colorDimensionLabel:
+          `${product.slug} ${product.name}`.toUpperCase().includes("007")
+            ? "Màu quần"
+            : "Màu",
       }),
     };
   }

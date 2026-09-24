@@ -99,6 +99,7 @@ export async function loadProductRoute({
         careInstructions: product.careInstructions,
         options,
         productLevelOptions: selectStorefrontProductLevelOptions(product.projection),
+        colorDimensionLabel: product.projection.colorDimensionLabel,
         deepLinkedSelection,
         galleryIndexByVariantId: product.galleryIndexByVariantId,
         relatedProducts,

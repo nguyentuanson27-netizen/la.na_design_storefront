@@ -279,3 +279,20 @@ test("composite child group validation fails closed for malformed or mixed-role 
   assert.equal(resolveCompositeComponentGroupLabel(["AO-S", null]), null);
   assert.equal(resolveCompositeComponentGroupLabel(["CV-S", "VAY-M", "cv-vay-l"]), "CV LẺ");
 });
+
+test("projection preserves custom colorDimensionLabel when provided or defaults to Màu", () => {
+  const custom = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { color: "Đỏ" })],
+    componentGroups: [],
+    hasCompositeGraph: false,
+    colorDimensionLabel: "Màu quần",
+  });
+  assert.equal(custom.colorDimensionLabel, "Màu quần");
+
+  const fallback = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { color: "Đỏ" })],
+    componentGroups: [],
+    hasCompositeGraph: false,
+  });
+  assert.equal(fallback.colorDimensionLabel, "Màu");
+});

@@ -512,7 +512,7 @@ export function PurchasePanelView({
 
     return (
       <fieldset className="mt-3.5">
-        {renderSelectorLegend("Màu", selection.color)}
+        {renderSelectorLegend(view.colorDimensionLabel ?? "Màu", selection.color)}
         <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.colors.map((choice) => (
             <label key={choice.value} className={choiceTarget(choice.disabled)}>

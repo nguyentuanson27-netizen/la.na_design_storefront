@@ -66,6 +66,7 @@ export type ProductViewModel = Readonly<{
   editorial: ProductEditorial;
   options: readonly StorefrontProjectionOption[];
   productLevelOptions: readonly StorefrontProjectionOption[];
+  colorDimensionLabel?: string;
   deepLinkedSelection: DeepLinkedVariantSelection | null;
   /** Which gallery image to open on, before the shopper touches anything. */
   initialGalleryIndex: number;
@@ -85,6 +86,7 @@ export type ProductViewModelInput = Readonly<{
   careInstructions: string | null;
   options: readonly StorefrontProjectionOption[];
   productLevelOptions: readonly StorefrontProjectionOption[];
+  colorDimensionLabel?: string;
   deepLinkedSelection: DeepLinkedVariantSelection | null;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   relatedProducts: readonly RelatedProduct[];
@@ -146,6 +148,7 @@ export function buildProductViewModel(input: ProductViewModelInput): ProductView
     }),
     options: input.options,
     productLevelOptions: input.productLevelOptions,
+    colorDimensionLabel: input.colorDimensionLabel,
     deepLinkedSelection: input.deepLinkedSelection,
     initialGalleryIndex: resolveInitialGalleryIndex(
       input.deepLinkedSelection,
