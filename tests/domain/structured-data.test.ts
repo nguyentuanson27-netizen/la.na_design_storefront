@@ -451,7 +451,14 @@ test("U32b publishes the approved B2 contact facts on the Organization entity", 
       closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
     },
   });
-  assert.deepEqual(organization.sameAs, [PUBLIC_CONTACT_FACTS.fanpageUrl]);
+  assert.deepEqual(
+    organization.sameAs,
+    [
+      PUBLIC_CONTACT_FACTS.fanpageUrl,
+      PUBLIC_CONTACT_FACTS.instagramUrl,
+      PUBLIC_CONTACT_FACTS.tiktokUrl,
+    ].filter((url) => url !== undefined),
+  );
 });
 
 test("U32b publishes no Organization fact the owner has not approved", () => {

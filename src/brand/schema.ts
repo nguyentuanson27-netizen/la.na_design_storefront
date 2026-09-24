@@ -99,6 +99,13 @@ export type BrandContact = Readonly<{
   telephoneInternational: string;
   email: string;
   fanpageUrl: string;
+  /**
+   * The brand's other public profiles, shown as icons beside the fanpage in the footer. Optional:
+   * a profile nobody has confirmed is left out rather than guessed, and its icon simply does not
+   * render.
+   */
+  instagramUrl?: string;
+  tiktokUrl?: string;
   streetAddress: string;
   addressLocality: string;
   supportHours: SupportHours;

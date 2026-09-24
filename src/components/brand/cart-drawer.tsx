@@ -166,7 +166,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <Link
                   href="/shop"
                   onClick={onClose}
-                  className="font-display mt-6 inline-flex items-center justify-center border border-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] text-[#3B2219] hover:bg-[#3B2219] hover:text-white transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="btn btn--outline mt-6"
                 >
                   Tiếp tục mua sắm
                 </Link>
@@ -280,7 +280,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   <Link
                     href="/checkout"
                     onClick={onClose}
-                    className="font-display flex w-full items-center justify-center border border-[#2A1810] bg-[#2A1810] py-3.5 text-xs font-semibold uppercase tracking-[0.14em] text-white hover:bg-[#3B2219] transition-colors focus-visible:outline-2 focus-visible:outline-[#2A1810]"
+                    className="btn btn--primary w-full"
                   >
                     Tiến hành đặt hàng
                   </Link>
@@ -293,7 +293,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <Link
                   href="/cart"
                   onClick={onClose}
-                  className="font-display flex w-full items-center justify-center border border-[#3B2219]/25 py-2.5 text-xs font-medium uppercase tracking-[0.12em] text-[#3B2219] hover:bg-[#3B2219]/5 transition-colors focus-visible:outline-2 focus-visible:outline-[#3B2219]"
+                  className="btn btn--outline w-full"
                 >
                   Xem chi tiết giỏ hàng
                 </Link>

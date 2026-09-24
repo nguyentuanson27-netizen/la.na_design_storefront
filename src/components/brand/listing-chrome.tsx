@@ -132,7 +132,7 @@ export function ListingEmptyState({
         <div className="mt-6">
           <Link
             href={action.href}
-            className="font-display inline-flex min-h-11 items-center rounded-full border border-[#3B2219] bg-[#3B2219] px-6 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#FAF7F2] transition hover:bg-[#2A1810]"
+            className="btn btn--primary"
           >
             {action.label}
           </Link>

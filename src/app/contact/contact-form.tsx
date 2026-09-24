@@ -178,7 +178,7 @@ export function ContactForm() {
 
         <div>
           <button
-            className="min-h-11 border border-black px-6 py-3 text-sm font-semibold transition hover:bg-black hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn btn--primary"
             disabled={pending}
             type="submit"
           >

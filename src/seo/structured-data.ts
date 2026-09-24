@@ -602,7 +602,12 @@ export function buildSiteStructuredData({
             closes: supportHoursSchemaTime(PUBLIC_CONTACT_FACTS.supportHours.closes),
           },
         },
-        sameAs: [PUBLIC_CONTACT_FACTS.fanpageUrl],
+        sameAs: [
+          PUBLIC_CONTACT_FACTS.fanpageUrl,
+          ...[PUBLIC_CONTACT_FACTS.instagramUrl, PUBLIC_CONTACT_FACTS.tiktokUrl].filter(
+            (url): url is string => url !== undefined,
+          ),
+        ],
       },
       {
         "@type": "WebSite",

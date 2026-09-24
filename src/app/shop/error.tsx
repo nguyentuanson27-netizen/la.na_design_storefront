@@ -15,7 +15,7 @@ export default function ShopError({ reset }: { error: Error & { digest?: string 
           Vui lòng thử lại. Nếu danh mục vừa được cập nhật, sản phẩm mới sẽ xuất hiện khi kết nối ổn định trở lại.
         </p>
         <button
-          className="mt-6 min-h-11 border border-black bg-black px-5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+          className="btn btn--primary mt-6"
           type="button"
           onClick={() => reset()}
         >

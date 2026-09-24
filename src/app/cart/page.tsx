@@ -147,7 +147,7 @@ function render(data: CartViewModel) {
           )}
           {data.canCheckout ? (
             <Link
-              className="mt-7 block border border-black bg-black px-5 py-4 text-center text-sm font-semibold uppercase tracking-[0.14em] text-white underline decoration-transparent underline-offset-4 hover:bg-transparent hover:text-black hover:decoration-black transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+              className="btn btn--primary mt-7 w-full"
               href="/checkout"
             >
               Tiến hành đặt hàng

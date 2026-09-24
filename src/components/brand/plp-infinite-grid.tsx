@@ -107,7 +107,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
           <button
             type="button"
             onClick={() => void loadMore()}
-            className="inline-flex items-center rounded-full border border-[#3B2219]/30 px-8 py-3 text-xs font-semibold uppercase tracking-widest text-[#3B2219] transition hover:border-[#2A1810] hover:bg-[#2A1810] hover:text-[#FAF7F2]"
+            className="btn btn--outline px-8"
           >
             Xem thêm ({products.length}/{totalCount})
           </button>

@@ -10,19 +10,17 @@ import { useAccountAuth } from "@/components/headless/use-account-auth";
  * all three come from `useAccountAuth`, which is where they must stay.
  */
 
-// The storefront's own vocabulary: brand ink rather than pure black, the eyebrow's small caps for
-// field labels, and the same filled / outlined capsule pair the listing and PDP buttons use.
+// The storefront's own vocabulary: brand ink rather than pure black, and the eyebrow's small caps
+// for field labels.
 const labelClassName = "text-xs uppercase tracking-[0.14em] text-[#70584B]";
 
 const inputClassName =
   "account-auth-input w-full border-b border-[#3B2219]/30 bg-transparent px-0 py-3 text-base text-[#2A1810] outline-none transition-colors placeholder:text-[#3B2219]/35 focus-visible:border-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4";
 
-const buttonBaseClassName =
-  "font-display inline-flex min-h-11 items-center justify-center rounded-full border border-[#3B2219] px-7 py-2.5 text-xs font-semibold uppercase tracking-[0.14em] transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-wait disabled:opacity-50";
+// The storefront's shared button pair (`.btn` in globals.css).
+const primaryButtonClassName = "btn btn--primary";
 
-const primaryButtonClassName = `${buttonBaseClassName} bg-[#3B2219] text-[#FAF7F2] hover:border-[#2A1810] hover:bg-[#2A1810]`;
-
-const secondaryButtonClassName = `${buttonBaseClassName} text-[#3B2219] hover:bg-[#3B2219] hover:text-[#FAF7F2]`;
+const secondaryButtonClassName = "btn btn--outline";
 
 const formHeadingClassName = "mt-2 font-display text-2xl font-normal text-[#2A1810]";
 

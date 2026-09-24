@@ -125,6 +125,23 @@ function validateContact(brand: BrandConfig): void {
   }
   if (fanpage.protocol !== "https:") fail("contact.fanpageUrl must use HTTPS");
 
+  for (const [label, value, host] of [
+    ["instagramUrl", contact.instagramUrl, "instagram.com"],
+    ["tiktokUrl", contact.tiktokUrl, "tiktok.com"],
+  ] as const) {
+    if (value === undefined) continue;
+    let profile: URL;
+    try {
+      profile = new URL(value);
+    } catch {
+      fail(`contact.${label} must be an absolute URL`);
+    }
+    if (profile.protocol !== "https:") fail(`contact.${label} must use HTTPS`);
+    if (profile.hostname !== host && !profile.hostname.endsWith(`.${host}`)) {
+      fail(`contact.${label} must point at ${host}`);
+    }
+  }
+
   const { days, opens, closes, utcOffset, utcOffsetLabel } = contact.supportHours;
   if (days.length === 0) fail("contact.supportHours.days must list at least one day");
   for (const [label, value] of Object.entries({ opens, closes, utcOffset, utcOffsetLabel })) {

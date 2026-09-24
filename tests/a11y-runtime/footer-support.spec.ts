@@ -143,11 +143,16 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
     footer.locator(`a[href="tel:${PUBLIC_CONTACT_FACTS.telephoneInternational}"]`),
   ).toBeVisible();
   await expect(footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`)).toBeVisible();
-  await expect(footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`)).toBeVisible();
+  // The fanpage is an icon link now: visible, named for a screen reader, and one tap target tall.
+  const fanpageIcon = footer
+    .getByRole("list", { name: "Mạng xã hội" })
+    .getByRole("link", { name: `Facebook ${BRAND.identity.name}` });
+  await expect(fanpageIcon).toBeVisible();
+  await expect(fanpageIcon).toHaveAttribute("href", PUBLIC_CONTACT_FACTS.fanpageUrl);
+  expect(Math.round((await fanpageIcon.boundingBox())?.height ?? 0)).toBeGreaterThanOrEqual(44);
 
   const persistentFooterLinks = [
     footer.locator(`a[href="mailto:${PUBLIC_CONTACT_FACTS.email}"]`),
-    footer.locator(`a[href="${PUBLIC_CONTACT_FACTS.fanpageUrl}"]`),
   ];
   for (const link of persistentFooterLinks) {
     await expect
@@ -388,8 +393,9 @@ for (const viewport of CONTACT_WIDTHS) {
     const footer = page.locator("footer.site-footer");
     await footer.scrollIntoViewIfNeeded();
 
+    // Four facts; the fanpage moved out of this list into the social icon row beneath it.
     const rows = page.locator(".footer-contact-list > li");
-    await expect(rows).toHaveCount(5);
+    await expect(rows).toHaveCount(4);
 
     // Label and value share one line box. Reading the rendered text is what separates "inline" from
     // "two blocks that happen to look close together": a grid row would put a newline between them.
