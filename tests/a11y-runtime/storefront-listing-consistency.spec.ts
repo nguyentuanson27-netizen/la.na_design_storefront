@@ -657,9 +657,10 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
     const media = imageCard.locator("[data-collection-card-media]");
     await expect(media, `${viewport.name} collection media`).toBeVisible();
 
-    const mediaBox = await media.boundingBox();
-    expect(mediaBox, `${viewport.name} collection media box`).not.toBeNull();
-    expect(mediaBox!.width / mediaBox!.height).toBeCloseTo(16 / 9, 2);
+    const cardBox = await imageCard.boundingBox();
+    expect(cardBox, `${viewport.name} collection card box`).not.toBeNull();
+    expect(cardBox!.width / cardBox!.height).toBeCloseTo(16 / 9, 2);
+    expect(await imageCard.evaluate((element) => getComputedStyle(element).aspectRatio)).toBe("16 / 9");
 
     const image = imageCard.locator("img");
     await expect(image).toHaveCount(1);
