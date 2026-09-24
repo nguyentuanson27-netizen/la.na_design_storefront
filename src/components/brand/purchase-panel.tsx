@@ -580,24 +580,14 @@ export function PurchasePanelView({
         </div>
 
         {/*
-          The panel is the desktop surface, so it keeps the order PR #51 approved and shipped:
-          kind then size then colour where a kind exists, and colour before size where one does
-          not. The mobile sheet below states `kind -> size -> colour` uniformly, which is this
-          spec's contract for the below-`lg` composition only -- rendering that order here would
-          reorder the desktop controls of every product that has no kind.
+          One order on both surfaces, owner request 2026-09-24: kind, then colour, then size. A
+          product without a kind renders no kind fieldset, so it reads colour then size, which is
+          what the desktop panel already showed for those products. The mobile sheet below uses
+          the same order, so the two compositions no longer disagree.
         */}
-        {view.hasKindOptions ? (
-          <>
-            {renderKindFieldset("panel")}
-            {renderSizeFieldset("panel")}
-            {renderColorFieldset("panel")}
-          </>
-        ) : (
-          <>
-            {renderColorFieldset("panel")}
-            {renderSizeFieldset("panel")}
-          </>
-        )}
+        {renderKindFieldset("panel")}
+        {renderColorFieldset("panel")}
+        {renderSizeFieldset("panel")}
 
         <div className="mt-8 grid grid-cols-2 gap-3">
           <button
@@ -697,8 +687,8 @@ export function PurchasePanelView({
 
                 <div className="max-h-[calc(88dvh-9rem)] overflow-y-auto px-5 pb-5">
                   {renderKindFieldset("sheet")}
-                  {renderSizeFieldset("sheet")}
                   {renderColorFieldset("sheet")}
+                  {renderSizeFieldset("sheet")}
 
                   <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
                     {mobilePurchaseStatus}
