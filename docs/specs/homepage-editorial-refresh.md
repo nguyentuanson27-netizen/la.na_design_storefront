@@ -4,6 +4,8 @@ Status: **APPROVED (#60) — implemented in #62; section content pending owner m
 
 Implementation note: the components, fail-closed resolution, `/feedback` route and SEO wiring are built. Until the §17 content is supplied in `src/content/homepage.config.ts` (and category images in `CategoryEditorialMedia`), SPECIAL DEALS, both promo rows and the feedback rail omit themselves and `/feedback` returns 404 and is withheld from the sitemap.
 
+Feedback content supplied (#74): the feedback title, metadata title/description and image set now ship in `src/content/homepage.config.ts`, so the homepage feedback rail renders and `/feedback` is published (200, and in the sitemap under the global indexing gate). The gallery is an uncropped masonry: each photograph keeps its natural `width`/`height` ratio, four columns on desktop and two on mobile. SPECIAL DEALS and both promo rows remain pending as above.
+
 Owner confirmation date: 2026-09-23
 
 ## 0. Authority and precedence
@@ -654,7 +656,8 @@ These values are intentionally supplied later through config and do not block th
 - any manual SPECIAL DEALS product selection is supplied through the existing `HomepageFeaturedProduct` authority, not this config;
 - four collection promo mappings and their homepage-specific images/CTA copy; visible collection titles are derived from `CollectionDefinition.title`;
 - category editorial images;
-- feedback image set + accessible alt decisions;
-- feedback metadata title + description, supplied as approved/config-owned copy before the public route is production-ready.
+- ~~feedback image set~~ — supplied (#74);
+- feedback accessible alt decisions — one manually authored decision per supplied photograph (§7.6);
+- ~~feedback metadata title + description~~ — supplied (#74).
 
 No implementation may invent these values in order to make a screenshot look complete.

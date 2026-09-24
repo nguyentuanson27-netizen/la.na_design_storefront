@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -14,10 +15,11 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  * from the real database rows and the shipped repository config.
  *
  * YOUR NEXT FAVOURITE is DB-owned (`CategoryEditorialMedia`), so it is exercised here in both its
- * complete and fail-closed states. SPECIAL DEALS, the promo rows and the feedback rail depend on
- * owner content the spec leaves pending, so with the shipped config they must be absent -- even
- * though this fixture writes a real `HomepageFeaturedProduct` selection, which proves the manual
- * authority alone cannot publish SPECIAL DEALS without its configured source collection. Their
+ * complete and fail-closed states. SPECIAL DEALS and the promo rows depend on owner content the
+ * spec leaves pending, so with the shipped config they must be absent -- even though this fixture
+ * writes a real `HomepageFeaturedProduct` selection, which proves the manual authority alone cannot
+ * publish SPECIAL DEALS without its configured source collection. The feedback rail's content is
+ * shipped (#74), so it is present and `/feedback` is published. Their
  * selection, reachability and ordering rules are pinned by `tests/domain/home-route-model.test.ts`.
  *
  * The fixtures write the real rows rather than stubbing the reads, so the section order asserted
@@ -291,16 +293,19 @@ test.beforeEach(async ({ page }) => {
 test("the refreshed homepage renders only real content, and none of the retired sections", async ({ page }) => {
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-  // Hero absent (no collection hero media); SPECIAL DEALS, both promo rows and the feedback rail
-  // absent (pending config); YOUR NEXT FAVOURITE present (all four category images configured).
-  expect(await regionOrder(page)).toEqual(["category-discovery"]);
+  // Hero absent (no collection hero media); SPECIAL DEALS and both promo rows absent (pending
+  // config); YOUR NEXT FAVOURITE present (all four category images configured); the feedback rail
+  // present, because its shipped config supplies the image set, title and metadata copy (#74).
+  expect(await regionOrder(page)).toEqual(["category-discovery", "feedback"]);
   for (const region of RETIRED_REGIONS) {
     await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);
   }
   await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Sản phẩm nổi bật" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /F6b Sản phẩm/ })).toHaveCount(0);
-  await expect(page.locator('a[href="/feedback"]')).toHaveCount(0);
+  // The one way to the full gallery is the rail's own `Xem thêm`.
+  await expect(page.locator('a[href="/feedback"]')).toHaveCount(1);
+  await expect(page.locator('[data-homepage-region="feedback"] a[href="/feedback"]')).toHaveCount(1);
 });
 
 test("YOUR NEXT FAVOURITE links the four canonical categories in the approved order", async ({ page }) => {
@@ -393,8 +398,16 @@ test("the refreshed homepage is accessible, keyboard reachable and overflow-free
   expect(consoleErrors).toEqual([]);
 });
 
-test("/feedback is not published while its gallery content is pending", async ({ page }) => {
+test("/feedback is published with every shipped feedback photograph once its content is configured", async ({
+  page,
+}) => {
+  const { feedback } = HOMEPAGE_CONFIG;
   const response = await page.goto(`${BASE_URL}/feedback`, { waitUntil: "networkidle" });
-  expect(response?.status()).toBe(404);
-  await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1, name: feedback.title! })).toBeVisible();
+  await expect(page.locator(".feedback-gallery__item")).toHaveCount(feedback.images.length);
+  // Each photograph carries the alt decision its config entry made, in the configured order.
+  expect(
+    await page.locator(".feedback-gallery img").evaluateAll((images) => images.map((image) => image.getAttribute("alt"))),
+  ).toEqual(feedback.images.map((image) => image.alt.trim()));
 });
