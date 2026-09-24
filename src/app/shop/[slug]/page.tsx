@@ -27,7 +27,7 @@ function render(data: ProductRouteData) {
       <p className="eyebrow hidden lg:block">{BRAND.identity.name} / Sản phẩm</p>
       {/* Master spec §9: the product's name is a heading, so it wears the elegant serif the rest
           of the brand's headings wear rather than the condensed bold sans it used to shout in. */}
-      <h1 className="mt-0 break-words font-serif text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[clamp(2.4rem,5vw,4.5rem)] lg:leading-[1.02] lg:tracking-[-0.035em]">
+      <h1 className="mt-0 break-words font-serif text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[40px] lg:leading-[1.1]">
         {data.name}
       </h1>
 
