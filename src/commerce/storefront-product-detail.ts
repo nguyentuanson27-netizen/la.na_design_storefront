@@ -198,7 +198,11 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         // consumer does with the options, not which rule produced them.
         pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
         colorDimensionLabel:
-          `${product.slug} ${product.name}`.toUpperCase().includes("007")
+          parentRelations.some(
+            (v) =>
+              /SD007|SD023/i.test(v.pancakeDisplayId ?? "") ||
+              /SD007|SD023/i.test(v.sku ?? ""),
+          ) || /007|023/i.test(`${product.slug} ${product.name}`)
             ? "Màu quần"
             : "Màu",
       }),
