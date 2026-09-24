@@ -344,8 +344,10 @@ test("the desktop stage opens on slide 1 for a later-media deep link, then follo
   /*
    * Refinement spec §2, the priority the owner settled.
    *
-   * The deep link preselects the variant -- the panel proves that below -- but the first visible
-   * surface on load is the canonical one, with `u12b-primary.jpg` leading it.
+   * Variants are read in `pancakeVariationId` order, so the gallery is primary, large, medium:
+   * `u12b-medium.jpg` is image 3 and lives on the second page (`2+3`). The deep link still
+   * preselects M -- the panel proves that below -- but the first visible surface on load is the
+   * canonical one, with `u12b-primary.jpg` leading it.
    */
   expect(await activeSlide(), "a deep link does not replace the canonical first surface").toBe(0);
   await expect(
@@ -353,10 +355,15 @@ test("the desktop stage opens on slide 1 for a later-media deep link, then follo
   ).toHaveAttribute("src", /u12b-primary/);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
 
-  // After load, an explicit selection change is what moves the stage: `u12b-large.jpg` is image 3,
-  // which the second page (`2+3`) shows in full.
+  // After load, an explicit selection change is what moves the stage. L's photograph is image 2,
+  // already on the first page, so choosing it leaves the stage where it is...
   await page.getByText("L", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
+  expect(await activeSlide(), "a change to an image on the current page keeps the page").toBe(0);
+
+  // ...and choosing M again is a change to image 3, which moves the stage to the page holding it.
+  await page.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+  await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
   await expect
     .poll(activeSlide, { message: "a post-load variant change syncs to its mapped slide" })
     .toBe(1);
@@ -364,6 +371,6 @@ test("the desktop stage opens on slide 1 for a later-media deep link, then follo
   // ...and the shopper's own navigation then holds until the selection changes again.
   await stage.getByRole("button", { name: "Ảnh trước" }).click();
   expect(await activeSlide()).toBe(0);
-  await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
+  await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
   await expect.poll(activeSlide, { message: "an unchanged selection does not reclaim the frame" }).toBe(0);
 });
