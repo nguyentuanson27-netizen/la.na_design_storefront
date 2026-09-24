@@ -4,26 +4,44 @@ import test from "node:test";
 import {
   buildDesktopProductGallerySlides,
   gallerySlideIndexForImage,
+  gallerySlidePeek,
   resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
 } from "../../src/components/brand/product-gallery-layout.ts";
 
-test("desktop gallery keeps the first image alone then pairs the remainder", () => {
+test("desktop gallery pages two images at a time and always ends on a full pair", () => {
   assert.deepEqual(buildDesktopProductGallerySlides(0), []);
   assert.deepEqual(buildDesktopProductGallerySlides(1), [[0]]);
-  assert.deepEqual(buildDesktopProductGallerySlides(2), [[0], [1]]);
-  assert.deepEqual(buildDesktopProductGallerySlides(3), [[0], [1, 2]]);
-  assert.deepEqual(buildDesktopProductGallerySlides(6), [[0], [1, 2], [3, 4], [5]]);
+  assert.deepEqual(buildDesktopProductGallerySlides(2), [[0, 1]]);
+  assert.deepEqual(buildDesktopProductGallerySlides(3), [[0, 1], [1, 2]]);
+  assert.deepEqual(buildDesktopProductGallerySlides(4), [[0, 1], [2, 3]]);
+  assert.deepEqual(buildDesktopProductGallerySlides(5), [[0, 1], [2, 3], [3, 4]]);
+  assert.deepEqual(buildDesktopProductGallerySlides(6), [[0, 1], [2, 3], [4, 5]]);
+});
+
+test("each page shows a sliver of its neighbour: the next one, or on the last page the previous one", () => {
+  const five = buildDesktopProductGallerySlides(5);
+  assert.deepEqual(gallerySlidePeek(five, 0, 5), { side: "after", image: 2 });
+  assert.deepEqual(gallerySlidePeek(five, 1, 5), { side: "after", image: 4 });
+  assert.deepEqual(gallerySlidePeek(five, 2, 5), { side: "before", image: 2 });
+
+  // A gallery that fits on one page has no neighbour to show.
+  assert.equal(gallerySlidePeek(buildDesktopProductGallerySlides(1), 0, 1), null);
+  assert.equal(gallerySlidePeek(buildDesktopProductGallerySlides(2), 0, 2), null);
+  assert.equal(gallerySlidePeek(five, 7, 5), null);
 });
 
 test("variant/deep-link image resolves to the slide that contains it", () => {
   const slides = buildDesktopProductGallerySlides(6);
   assert.equal(gallerySlideIndexForImage(slides, 0), 0);
-  assert.equal(gallerySlideIndexForImage(slides, 1), 1);
+  assert.equal(gallerySlideIndexForImage(slides, 1), 0);
   assert.equal(gallerySlideIndexForImage(slides, 2), 1);
   assert.equal(gallerySlideIndexForImage(slides, 4), 2);
-  assert.equal(gallerySlideIndexForImage(slides, 5), 3);
+  assert.equal(gallerySlideIndexForImage(slides, 5), 2);
+
+  // An image the final page repeats resolves to the first page that shows it.
+  assert.equal(gallerySlideIndexForImage(buildDesktopProductGallerySlides(5), 3), 1);
 });
 
 test("desktop gallery navigation clamps at both ends instead of looping", () => {
@@ -63,7 +81,7 @@ test("a post-load variant change syncs the gallery to the slide holding its mapp
     galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
   });
 
-  assert.deepEqual(changed, { slide: 3, syncedVariantId: "variant-f" });
+  assert.deepEqual(changed, { slide: 2, syncedVariantId: "variant-f" });
 });
 
 test("a variant with no mapped image leaves the shopper where they are", () => {
@@ -79,28 +97,28 @@ test("a variant with no mapped image leaves the shopper where they are", () => {
 });
 
 test("a manual gallery choice survives every render until the selection itself changes", () => {
-  // The shopper dragged to slide 3 while `variant-a` -- whose mapped image is slide 0 -- stayed
+  // The shopper dragged to slide 2 while `variant-a` -- whose mapped image is slide 0 -- stayed
   // selected. Re-resolving must not drag them back to the variant's photograph.
   const manual = resolveGallerySlideForSelection({
     slides: SLIDES,
-    currentSlide: 3,
+    currentSlide: 2,
     syncedVariantId: "variant-a",
     selectedVariantId: "variant-a",
     galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
   });
 
-  assert.deepEqual(manual, { slide: 3, syncedVariantId: "variant-a" });
+  assert.deepEqual(manual, { slide: 2, syncedVariantId: "variant-a" });
 
   // ...and clearing the selection is a change like any other, but has no mapped image to move to.
   const cleared = resolveGallerySlideForSelection({
     slides: SLIDES,
-    currentSlide: 3,
+    currentSlide: 2,
     syncedVariantId: "variant-a",
     selectedVariantId: null,
     galleryIndexByVariantId: GALLERY_INDEX_BY_VARIANT,
   });
 
-  assert.deepEqual(cleared, { slide: 3, syncedVariantId: null });
+  assert.deepEqual(cleared, { slide: 2, syncedVariantId: null });
 });
 
 test("an out-of-range mapped index is clamped away rather than trusted", () => {

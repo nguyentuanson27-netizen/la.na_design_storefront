@@ -344,17 +344,17 @@ test("the desktop stage opens on slide 1 for a later-media deep link, then follo
   /*
    * Refinement spec §2, the priority the owner settled.
    *
-   * `u12b-medium.jpg` is image 2 of the gallery, so this variant's photograph lives on slide 2.
-   * The deep link still preselects the variant -- the panel proves that below -- but the first
-   * visible surface on load is the canonical one.
+   * The deep link preselects the variant -- the panel proves that below -- but the first visible
+   * surface on load is the canonical one, with `u12b-primary.jpg` leading it.
    */
   expect(await activeSlide(), "a deep link does not replace the canonical first surface").toBe(0);
   await expect(
-    slides.first().locator("img"),
+    slides.first().locator("img").first(),
   ).toHaveAttribute("src", /u12b-primary/);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
 
-  // After load, an explicit selection change is what moves the stage.
+  // After load, an explicit selection change is what moves the stage: `u12b-large.jpg` is image 3,
+  // which the second page (`2+3`) shows in full.
   await page.getByText("L", { exact: true }).click();
   await expect(page.getByRole("radio", { name: "L", exact: true })).toBeChecked();
   await expect
