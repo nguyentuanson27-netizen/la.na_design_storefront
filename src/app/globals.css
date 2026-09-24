@@ -1129,18 +1129,25 @@ main nav[aria-label="Breadcrumb"] a {
   font-weight: 700;
 }
 
+/*
+ * The text under a product photograph: name, price, then availability when there is one, stacked
+ * and centred under the image. It used to be a name-left / price-right row, and its
+ * `font: inherit` reset -- unlayered, so it beat every utility -- pinned both to 0.72rem of the
+ * body face whatever the card asked for. The card now owns its type sizes and faces.
+ */
 .product-meta {
   display: flex;
-  justify-content: space-between;
-  gap: 1rem;
-  padding-top: 0.8rem;
-  font-size: 0.72rem;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding-top: 0.75rem;
+  text-align: center;
 }
 
 .product-meta h2,
+.product-meta h3,
 .product-meta p {
   margin: 0;
-  font: inherit;
 }
 
 .lookbook-grid {
@@ -1253,13 +1260,9 @@ main nav[aria-label="Breadcrumb"] a {
     row-gap: 1.5rem;
   }
 
+  /* The phone grid's rows sit 2px apart, so the card itself keeps its text off the next photograph. */
   .product-meta {
-    flex-direction: column;
-    gap: 0.25rem;
-    padding-top: 0.5rem;
-    padding-left: 0.375rem;
-    padding-right: 0.375rem;
-    font-size: 0.72rem;
+    padding: 0.625rem 0.375rem 1rem;
   }
 
   .product-section {
