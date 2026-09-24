@@ -74,11 +74,11 @@ Desktop (`lg` and above):
 - The first trusted product image remains the first full-bleed PDP surface and the transparent header may continue to overlay it.
 - The media stage is approximately one viewport tall. Use the actual header composition when choosing between `100svh` and `calc(100svh - <occupied masthead>)`; do not hard-code a subtraction that is wrong for overlay mode.
 - ~~Product imagery uses `object-contain`, not `object-cover`, for this stage.~~ ~~Slide 1 contains image 1 alone at full width; subsequent slides group `2+3`, `4+5`, … 50/50; a final single image occupies the full width.~~ Superseded by the owner amendment below.
-- **Owner amendment 2026-09-24 — flush film strip.** Photographs sit edge to edge with no gap, each in a 2:3 cell at the stage's full height (`object-cover`; with 2:3 photography nothing is cropped, and a narrower cell crops only at the sides, never head or hem).
+- **Owner amendment 2026-09-24 (revised) — pairs with a colour field.** Photographs are shown two to a page: the stage splits 50/50 and each photograph is centred in its own half, in a 2:3 cell at the stage's full height (`object-cover`; with 2:3 photography nothing is cropped, and a narrower cell crops only at the sides, never head or hem). No partial view of any other photograph is shown.
   - Pages are pairs in source order, `1+2`, `3+4`, `5+6`, …; an odd count ends on the last two images (repeating one) rather than a lone image. A one-image gallery is a single centred cell.
-  - The width a pair leaves is filled by a partial view of the neighbouring photograph — the next one to the right on every page but the last, the previous one to the left on the last page. The partial view is decorative (empty alt, `aria-hidden`); the same image is shown in full on its own page.
-  - If a pair is wider than the viewport, both cells narrow equally; no cell ever extends past the viewport.
-- Empty space around a single-image gallery uses the La.na cream/stone visual system rather than black bars or arbitrary new colors.
+  - The width a photograph leaves in its half is filled with its own colours: the photographs, heavily blurred, as layers across the stage behind them, the second fading in with a linear mask over the middle so the two palettes blend with no visible seam, under a light cream veil. This field is decorative (empty alt, `aria-hidden`) and reuses the photographs' downloads.
+  - If a half is narrower than a 2:3 cell, the cell narrows; no element extends past the viewport.
+- Where the colour field has not painted yet (or at its blurred rim), the stage shows the La.na stone rather than black bars or arbitrary new colors.
 - Do not add thumbnails, lightbox, zoom, autoplay or pagination machinery beyond what is needed to communicate the current slide accessibly.
 
 Below `lg`:

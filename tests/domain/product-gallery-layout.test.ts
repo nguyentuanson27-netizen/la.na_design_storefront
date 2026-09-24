@@ -4,7 +4,6 @@ import test from "node:test";
 import {
   buildDesktopProductGallerySlides,
   gallerySlideIndexForImage,
-  gallerySlidePeek,
   resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
@@ -18,18 +17,6 @@ test("desktop gallery pages two images at a time and always ends on a full pair"
   assert.deepEqual(buildDesktopProductGallerySlides(4), [[0, 1], [2, 3]]);
   assert.deepEqual(buildDesktopProductGallerySlides(5), [[0, 1], [2, 3], [3, 4]]);
   assert.deepEqual(buildDesktopProductGallerySlides(6), [[0, 1], [2, 3], [4, 5]]);
-});
-
-test("each page shows a sliver of its neighbour: the next one, or on the last page the previous one", () => {
-  const five = buildDesktopProductGallerySlides(5);
-  assert.deepEqual(gallerySlidePeek(five, 0, 5), { side: "after", image: 2 });
-  assert.deepEqual(gallerySlidePeek(five, 1, 5), { side: "after", image: 4 });
-  assert.deepEqual(gallerySlidePeek(five, 2, 5), { side: "before", image: 2 });
-
-  // A gallery that fits on one page has no neighbour to show.
-  assert.equal(gallerySlidePeek(buildDesktopProductGallerySlides(1), 0, 1), null);
-  assert.equal(gallerySlidePeek(buildDesktopProductGallerySlides(2), 0, 2), null);
-  assert.equal(gallerySlidePeek(five, 7, 5), null);
 });
 
 test("variant/deep-link image resolves to the slide that contains it", () => {

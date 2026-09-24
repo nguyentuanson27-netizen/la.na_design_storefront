@@ -351,7 +351,7 @@ test("the desktop stage opens on slide 1 for a later-media deep link, then follo
    */
   expect(await activeSlide(), "a deep link does not replace the canonical first surface").toBe(0);
   await expect(
-    slides.first().locator("img").first(),
+    slides.first().locator(".pdp-stage__cell img").first(),
   ).toHaveAttribute("src", /u12b-primary/);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeChecked();
 

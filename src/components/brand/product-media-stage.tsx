@@ -11,7 +11,6 @@ import {
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import {
   buildDesktopProductGallerySlides,
-  gallerySlidePeek,
   resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
@@ -222,42 +221,39 @@ export function BrandProductMediaStage({
       </div>
 
       <div className="pdp-stage__track hidden lg:block">
-        {slides.map((slideImages, slideIndex) => {
-          const peek = gallerySlidePeek(slides, slideIndex, images.length);
-          /*
-            The neighbour is a teaser, not a photograph of its own: the same image is shown in full
-            on the adjacent page, so here it is decorative -- empty alt, hidden from assistive
-            technology -- and requested with the same `sizes`, so the browser reuses the download.
-          */
-          const peekCell = peek === null ? null : (
-            <div
-              key={`peek-${peek.image}`}
-              className="pdp-stage__cell pdp-stage__cell--peek"
-              data-peek={peek.side}
-              aria-hidden="true"
-            >
-              <Image
-                src={images[peek.image]!.url}
-                alt=""
-                fill
-                sizes="(min-width: 1024px) 50vw, 1px"
-                draggable={false}
-                className={`object-cover ${peek.side === "after" ? "object-left" : "object-right"}`}
-              />
+        {slides.map((slideImages, slideIndex) => (
+          <div
+            key={slideImages.join("-")}
+            className="pdp-stage__slide"
+            data-active={slideIndex === desktopSlide ? "true" : "false"}
+          >
+            {/*
+              The width each photograph leaves in its half is filled with its own colours: the same
+              photographs, heavily blurred, one layer each across the whole stage, the second fading
+              in over the middle so the two fields blend with no seam between the halves. Decorative
+              -- empty alt, hidden from assistive technology -- and requested with the same `sizes` as
+              the photographs in front, so the browser reuses those downloads.
+            */}
+            <div className="pdp-stage__backdrop" aria-hidden="true">
+              {slideImages.map((imageIndex) => (
+                <div key={imageIndex} className="pdp-stage__backdrop-layer">
+                  <Image
+                    src={images[imageIndex]!.url}
+                    alt=""
+                    fill
+                    sizes="(min-width: 1024px) 50vw, 1px"
+                    draggable={false}
+                    className="pdp-stage__backdrop-image object-cover"
+                  />
+                </div>
+              ))}
             </div>
-          );
 
-          return (
-            <div
-              key={slideImages.join("-")}
-              className="pdp-stage__slide"
-              data-active={slideIndex === desktopSlide ? "true" : "false"}
-            >
-              {peek?.side === "before" ? peekCell : null}
-              {slideImages.map((imageIndex) => {
-                const image = images[imageIndex]!;
-                return (
-                  <div key={image.url} className="pdp-stage__cell">
+            {slideImages.map((imageIndex) => {
+              const image = images[imageIndex]!;
+              return (
+                <div key={image.url} className="pdp-stage__half">
+                  <div className="pdp-stage__cell">
                     <Image
                       src={image.url}
                       alt={imageIndex === 0 ? productName : image.alt || `${productName} - Ảnh ${imageIndex + 1}`}
@@ -268,12 +264,11 @@ export function BrandProductMediaStage({
                       className="object-cover"
                     />
                   </div>
-                );
-              })}
-              {peek?.side === "after" ? peekCell : null}
-            </div>
-          );
-        })}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
 
       {hasMultipleDesktopSlides ? (
