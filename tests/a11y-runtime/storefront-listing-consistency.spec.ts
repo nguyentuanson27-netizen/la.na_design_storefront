@@ -302,9 +302,8 @@ test("every listing route draws the same chrome on desktop and mobile", async ({
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
 
-  try {
-    for (const viewport of VIEWPORTS) {
-      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+  for (const viewport of VIEWPORTS) {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height });
 
     for (const route of ROUTES) {
       browserErrors.length = 0;
