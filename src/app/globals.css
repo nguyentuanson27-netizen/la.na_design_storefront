@@ -173,16 +173,20 @@ summary:focus-visible {
 }
 
 /*
- * A filled control's label colour is the wrong colour for its focus ring. The rule above draws the
- * ring in `currentColor`, which is right for text links and for controls on the dark masthead and
- * lightbox, but `.btn--primary` and the collection-card CTA set their label to paper, so their ring
- * -- drawn 4px outside the fill -- came out paper on the paper page: no visible focus at all for a
- * keyboard user on checkout, the PDP or the account forms. These draw it in the page ink instead,
- * whatever the label colour. Unlayered and class-qualified, so it outranks `button:focus-visible`.
+ * The shared buttons' focus indicator is two-tone: a paper band hugging the control, then an ink
+ * ring outside it. The rule above draws a single ring in `currentColor`, which is right for text
+ * links and for controls on the dark masthead and lightbox; but `.btn--primary` and the collection
+ * CTA have a paper label, so that ring was paper on the paper page -- invisible. A single ink ring
+ * fixes the page and fails the other place these sit: the collection CTA over an arbitrary, often
+ * dark hero photograph, where ink on near-black is about 1.4:1. Paper and ink are ~14:1 apart, so
+ * whatever the surface -- paper, a light photo, a dark one -- one of the two tones stands out.
+ * Unlayered and class-qualified, so it outranks `button:focus-visible`.
  */
 .btn:focus-visible,
 .collection-card-cta:focus-visible {
-  outline-color: var(--focus-ring-color, var(--ink));
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--paper);
 }
 
 .skip-link {

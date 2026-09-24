@@ -738,6 +738,132 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
   }
 });
 
+/*
+ * The collection CTA sits in two places: over the card's hero photograph (inside a darkening
+ * vignette) and, with no usable image, on the paper page. A keyboard focus indicator has to show on
+ * both, and on a photograph nobody chose, so this measures rendered pixels instead of assuming the
+ * surface: the hero is served as solid black -- the worst case for an ink ring -- and each CTA is
+ * captured before and after keyboard focus. Somewhere in the band just outside the control, focus
+ * must change a pixel by at least 3:1 (WCAG 2.2 SC 2.4.13's contrast-of-change) on both cards.
+ */
+test("the collection CTA's keyboard focus shows on a dark hero and on the paper page", async ({
+  page,
+}) => {
+  await prisma.collectionDefinition.createMany({
+    data: [
+      {
+        slug: IMAGE_COLLECTION_SLUG,
+        title: IMAGE_COLLECTION_TITLE,
+        description: "Collection index focus fixture over a dark hero.",
+        heroImageUrl: COLLECTION_HERO_URL,
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+      {
+        slug: LONG_COLLECTION_SLUG,
+        title: "Listing Paper Collection",
+        description: "Collection index focus fixture on the paper page.",
+        heroImageUrl: "https://example.com/images/1/2/3/untrusted.jpg",
+        isPublished: true,
+        pancakeCategoryIds: [],
+      },
+    ],
+  });
+  const blackHero = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="9"><rect width="16" height="9" fill="#000"/></svg>';
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/svg+xml", body: blackHero });
+  });
+
+  const BAND = 8;
+  const capture = async (cta: import("@playwright/test").Locator) => {
+    const box = (await cta.boundingBox())!;
+    const clip = {
+      x: Math.max(0, box.x - BAND),
+      y: Math.max(0, box.y - BAND),
+      width: box.width + BAND * 2,
+      height: box.height + BAND * 2,
+    };
+    return { clip, png: (await page.screenshot({ clip, animations: "disabled" })).toString("base64") };
+  };
+
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
+
+    for (const slug of [IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG]) {
+      const card = page
+        .locator("article")
+        .filter({ has: page.locator(`a[href="/collections/${slug}"]`) });
+      const cta = card.getByRole("link", { name: "Khám phá bộ sưu tập ↗", exact: true });
+      await cta.scrollIntoViewIfNeeded();
+      await expect(card.locator("img")).toHaveCount(slug === IMAGE_COLLECTION_SLUG ? 1 : 0);
+
+      await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur());
+      const before = await capture(cta);
+      // Reach it from the keyboard, so `:focus-visible` is what the browser really applies.
+      await cta.focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await expect(cta).toBeFocused();
+      expect(await cta.evaluate((element) => element.matches(":focus-visible"))).toBe(true);
+      const after = await capture(cta);
+
+      const bestChange = await page.evaluate(
+        async ({ beforePng, afterPng, band, clipWidth }) => {
+          const decode = async (png: string) => {
+            const image = new Image();
+            image.src = `data:image/png;base64,${png}`;
+            await image.decode();
+            const canvas = document.createElement("canvas");
+            canvas.width = image.naturalWidth;
+            canvas.height = image.naturalHeight;
+            const context = canvas.getContext("2d")!;
+            context.drawImage(image, 0, 0);
+            return context.getImageData(0, 0, canvas.width, canvas.height);
+          };
+          const luminance = (data: Uint8ClampedArray, index: number) => {
+            const [red, green, blue] = [data[index]!, data[index + 1]!, data[index + 2]!].map(
+              (channel) => {
+                const normalized = channel / 255;
+                return normalized <= 0.04045 ? normalized / 12.92 : ((normalized + 0.055) / 1.055) ** 2.4;
+              },
+            );
+            return 0.2126 * red! + 0.7152 * green! + 0.0722 * blue!;
+          };
+          const [unfocused, focused] = await Promise.all([decode(beforePng), decode(afterPng)]);
+          const { width, height } = focused;
+          // Scale for device pixels: the clip is in CSS pixels, the capture may not be.
+          const scale = width / clipWidth;
+          const inBand = (x: number, y: number) => {
+            const cssX = x / scale;
+            const cssY = y / scale;
+            const insideControl =
+              cssX >= band && cssX < width / scale - band && cssY >= band && cssY < height / scale - band;
+            return !insideControl;
+          };
+          let best = 1;
+          for (let y = 0; y < height; y += 1) {
+            for (let x = 0; x < width; x += 1) {
+              if (!inBand(x, y)) continue;
+              const index = (y * width + x) * 4;
+              const a = luminance(unfocused.data, index);
+              const b = luminance(focused.data, index);
+              best = Math.max(best, (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05));
+            }
+          }
+          return best;
+        },
+        { beforePng: before.png, afterPng: after.png, band: BAND, clipWidth: after.clip.width },
+      );
+      expect(bestChange, `${slug}: focus indicator change of contrast`).toBeGreaterThanOrEqual(3);
+    }
+  } finally {
+    await prisma.collectionDefinition.deleteMany({
+      where: { slug: { in: [IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG] } },
+    });
+  }
+});
+
 test("collections stays an index over real published collections, and lists no products", async ({
   page,
 }) => {
