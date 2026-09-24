@@ -328,18 +328,19 @@ summary:focus-visible {
    * phone actually presses. But a 44px *row* is what made the block twice as tall as it needed to
    * be, and only on the rows that happened to carry a link.
    *
-   * An inline box resolves the two: vertical padding on an inline element paints and takes taps,
-   * but does not grow the line box. So the row stays one line high, the hit area is a full control,
-   * and the gap is set to exactly twice the padding so two neighbouring hit areas meet without ever
-   * overlapping -- an overlap would put the `tel:` and `mailto:` targets on top of each other.
+   * An inline-block with equal padding and negative margin resolves the two: the padding paints and
+   * takes taps, the negative margin hands the same space back, so the row stays one line high and
+   * the hit area is a full control. The gap is set to exactly twice the padding so two neighbouring
+   * hit areas meet without ever overlapping -- an overlap would put the `tel:` and `mailto:`
+   * targets on top of each other.
    *
-   * The value is written out rather than derived from `--control-height`, because an inline box's
-   * own height comes from the font's metrics, not from `line-height`: here that is ~14.7px for
-   * 0.82rem type, so arithmetic against the control height lands the rect at 41px. 0.95rem
-   * measures 45px, just clear of it.
+   * An inline-block's height is its `line-height`, not the font's own ascent and descent, so the
+   * padding can be derived: (control height - line height) / 2 makes the target exactly a control
+   * tall whatever face is loaded. A plain inline box measured the font's metrics instead, and a
+   * change of typeface moved the target by a pixel -- enough to overlap its neighbour.
    */
-  --contact-link-pad: 0.92rem;
-  gap: 1.5rem;
+  --contact-link-pad: calc((var(--control-height) - 1.25rem) / 2);
+  gap: calc(var(--contact-link-pad) * 2);
 }
 
 /*
@@ -384,9 +385,10 @@ main nav[aria-label="Breadcrumb"] a {
   text-underline-offset: 0.3em;
 }
 
-/* Inline padding keeps phone/email practical to tap without turning each fact into a 44px row. */
+/* Padding keeps phone/email practical to tap without turning each fact into a 44px row. */
 .footer-contact-list a {
-  display: inline;
+  display: inline-block;
+  margin-block: calc(var(--contact-link-pad) * -1);
   padding-block: var(--contact-link-pad);
   overflow-wrap: anywhere;
 }
