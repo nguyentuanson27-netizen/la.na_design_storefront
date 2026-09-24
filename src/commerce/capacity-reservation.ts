@@ -24,6 +24,7 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import {
   canTransition,
+  evaluateVariantCapacity,
   reservationHoldsCapacity,
   resolveSellingPolicy,
   type CapacityDecisionReason,
