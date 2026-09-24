@@ -99,7 +99,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
           {/* Header */}
           <div className="flex items-center justify-between border-b border-[#3B2219]/10 px-6 py-5">
             <div className="flex items-baseline gap-3">
-              <h2 className="font-serif text-xl font-bold tracking-tight text-[#2A1810]">
+              <h2 className="font-display text-xl font-bold tracking-tight text-[#2A1810]">
                 Giỏ hàng
               </h2>
               {cart && !cart.isEmpty ? (
@@ -157,7 +157,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     <path d="M16 10a4 4 0 0 1-8 0" />
                   </svg>
                 </div>
-                <h3 className="font-serif text-lg font-medium text-[#2A1810]">
+                <h3 className="font-display text-lg font-medium text-[#2A1810]">
                   Giỏ hàng của bạn đang trống
                 </h3>
                 <p className="mt-2 max-w-xs text-xs text-[#70584B] leading-5">
@@ -199,12 +199,12 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                           <Link
                             href={`/shop/${encodeURIComponent(line.productSlug)}`}
                             onClick={onClose}
-                            className="font-serif text-sm font-medium text-[#2A1810] underline underline-offset-4"
+                            className="font-display text-sm font-medium text-[#2A1810] underline underline-offset-4"
                           >
                             {line.productName}
                           </Link>
                         ) : (
-                          <span className="font-serif text-sm font-medium text-[#2A1810]">
+                          <span className="font-display text-sm font-medium text-[#2A1810]">
                             {line.productName}
                           </span>
                         )}

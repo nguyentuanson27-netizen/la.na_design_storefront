@@ -38,7 +38,7 @@ export function BrandAccountAuthPanel() {
     return (
       <section className="border-t border-black/20 pt-8" aria-labelledby="account-session-title">
         <p className="eyebrow">Signed in</p>
-        <h2 id="account-session-title" className="mt-4 font-serif text-3xl md:text-5xl">
+        <h2 id="account-session-title" className="mt-4 font-display text-3xl md:text-5xl">
           Xin chào, {session.user.name}
         </h2>
         <p className="mt-3 text-sm text-black/60">{session.user.email}</p>
@@ -62,7 +62,7 @@ export function BrandAccountAuthPanel() {
     <section className="border-t border-black/20 pt-8" aria-labelledby="account-access-title">
       <div className="mb-10 max-w-2xl">
         <p className="eyebrow">Optional account</p>
-        <h2 id="account-access-title" className="mt-4 font-serif text-3xl leading-tight md:text-5xl">
+        <h2 id="account-access-title" className="mt-4 font-display text-3xl leading-tight md:text-5xl">
           Theo dõi đơn hàng thuận tiện hơn.
         </h2>
         <p className="mt-4 max-w-xl text-sm leading-6 text-black/70">

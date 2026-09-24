@@ -235,8 +235,8 @@ async function expectListingChrome(
       const style = getComputedStyle(element);
       return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
     });
-  // Master spec §9: elegant serif display, and normal weight rather than the old bold sans.
-  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
+  // Master spec §9 (amended): the Josefin Sans display face, at normal weight rather than bold.
+  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/josefin/);
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
   const breadcrumb = page.getByRole("navigation", { name: "Breadcrumb" });

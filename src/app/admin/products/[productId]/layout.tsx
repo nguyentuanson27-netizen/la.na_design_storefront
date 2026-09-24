@@ -70,7 +70,7 @@ export default async function ProductEditorLayout({
           <p className="eyebrow">Pancake composite · chỉ đọc</p>
           <h2
             id="incoming-composite-references-heading"
-            className="mt-1 font-serif text-3xl tracking-[-0.03em]"
+            className="mt-1 font-display text-3xl tracking-[-0.03em]"
           >
             Sản phẩm set đang tham chiếu
           </h2>

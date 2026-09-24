@@ -82,17 +82,25 @@ test("F1 visual tokens: globals.css declares warm brown and cream palette", () =
   );
 });
 
-test("F1 typography tokens: serif heading and sans-serif body are declared", () => {
+test("F1 typography tokens: display and body faces are declared", () => {
   const css = readFileSync(path.join(REPO_ROOT, "src/app/globals.css"), "utf8");
   const siteDoc = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-document.tsx"), "utf8");
 
-  // Playfair_Display is configured in site-document.tsx as --font-serif
-  assert.ok(siteDoc.includes("Playfair_Display"), "site-document.tsx must use Playfair_Display font");
-  assert.ok(siteDoc.includes("--font-serif"), "site-document.tsx must map to --font-serif variable");
+  // Owner amendment 2026-09-24: Josefin Sans is the display face, Mulish the body face, both with
+  // their Vietnamese subsets, exposed by site-document.tsx as the two face variables.
+  assert.match(siteDoc, /Josefin_Sans\(\{\s*subsets: \["latin", "vietnamese"\],\s*variable: "--font-display-face"/);
+  assert.match(siteDoc, /Mulish\(\{\s*subsets: \["latin", "vietnamese"\],\s*variable: "--font-body-face"/);
 
-  // globals.css must bind --font-serif in @theme
-  assert.ok(css.includes("--font-serif: var(--font-serif)"), "globals.css must configure --font-serif in theme");
-  assert.ok(css.includes("font-family: Arial, Helvetica, sans-serif"), "body font must be clean sans-serif");
+  // globals.css binds the display face to the `font-display` utility and the body face to the body.
+  assert.ok(
+    css.includes('--font-display: var(--font-display-face), "Josefin Sans", Arial, sans-serif;'),
+    "globals.css must configure --font-display in theme",
+  );
+  assert.ok(
+    css.includes('--font-sans: var(--font-body-face), "Mulish", Arial, Helvetica, sans-serif;'),
+    "body font must be the Mulish sans-serif",
+  );
+  assert.match(css, /body \{[^}]*font-family: var\(--font-sans\);/);
 });
 
 test("F1 brand assets: distinct roles for master logo, social card, and favicon", () => {

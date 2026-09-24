@@ -1,7 +1,12 @@
 @import "tailwindcss";
 
+/*
+ * Two typefaces, set up in site-document.tsx. Josefin Sans is the display face -- headings, product
+ * names, category labels, navigation, prices and buttons -- and Mulish carries everything read at
+ * length: descriptions, small print, forms. Both are loaded with their Vietnamese subsets.
+ */
 @theme {
-  --font-serif: var(--font-serif), Georgia, serif;
+  --font-display: var(--font-display-face), "Josefin Sans", Arial, sans-serif;
 }
 
 :root {
@@ -30,7 +35,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -83,7 +88,7 @@ a.collection-card-cta {
   gap: 0.5rem;
   border-radius: 9999px;
   padding: 0.5rem 1.4rem;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: 0.85rem;
   font-weight: 500;
   letter-spacing: 0.05em;
@@ -169,6 +174,7 @@ summary:focus-visible {
   display: flex;
   align-items: center;
   gap: 1.4rem;
+  font-family: var(--font-display);
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.12em;
@@ -228,7 +234,7 @@ summary:focus-visible {
 }
 
 .footer-brand-heading {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(1.55rem, 2.2vw, 2.2rem);
   font-weight: 400;
 }
@@ -298,7 +304,7 @@ summary:focus-visible {
 .footer-copy {
   max-width: 28rem;
   margin-top: var(--space-2);
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(1.15rem, 1.7vw, 1.5rem);
   line-height: 1.35;
 }
@@ -572,6 +578,7 @@ main nav[aria-label="Breadcrumb"] a {
 }
 
 .home-hero__cta-link {
+  font-family: var(--font-display);
   display: inline-flex;
   min-height: var(--control-height);
   align-items: center;
@@ -905,7 +912,7 @@ main nav[aria-label="Breadcrumb"] a {
 .campaign-copy h1,
 .collection-intro h2,
 .lookbook-copy h2 {
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-weight: 400;
   letter-spacing: -0.055em;
 }
@@ -920,7 +927,7 @@ main nav[aria-label="Breadcrumb"] a {
 .lookbook-copy p,
 .collection-intro > p:last-child {
   max-width: 32rem;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(1.1rem, 1.7vw, 1.55rem);
   line-height: 1.45;
 }
@@ -1185,7 +1192,8 @@ main nav[aria-label="Breadcrumb"] a {
 
 /* P8 visual foundation: shared tokens and shell/state primitives. */
 :root {
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: var(--font-body-face), "Mulish", Arial, Helvetica, sans-serif;
+  --font-display: var(--font-display-face), "Josefin Sans", Arial, sans-serif;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
@@ -1369,7 +1377,7 @@ body:has(.admin-shell) .site-masthead {
   display: flex;
   flex: 1;
   align-items: center;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 500;
   color: var(--black);
@@ -1420,6 +1428,7 @@ body:has(.admin-shell) .site-masthead {
   display: flex;
   align-items: center;
   width: 100%;
+  font-family: var(--font-display);
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -1455,7 +1464,7 @@ body:has(.admin-shell) .site-masthead {
 .lookbook-copy p,
 .collection-intro > p:last-child,
 .ui-state__title {
-  font-family: var(--font-serif);
+  font-family: var(--font-display);
 }
 
 .campaign-copy,
@@ -1518,6 +1527,7 @@ body:has(.admin-shell) .site-masthead {
   justify-content: center;
   min-height: var(--control-height, 44px);
   padding: var(--space-3, 0.75rem) var(--space-5, 1.5rem);
+  font-family: var(--font-display);
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -1637,6 +1647,7 @@ body:has(.admin-shell) .site-masthead {
 }
 
 .home-more a {
+  font-family: var(--font-display);
   display: inline-flex;
   align-items: center;
   min-height: var(--control-height);
@@ -1652,7 +1663,7 @@ body:has(.admin-shell) .site-masthead {
 .special-deals__copy {
   max-width: 40rem;
   margin: -1rem 0 2rem;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
   line-height: 1.5;
 }
@@ -1699,7 +1710,7 @@ body:has(.admin-shell) .site-masthead {
 
 .collection-promo__title {
   margin: 0;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(1.75rem, 3.4vw, 3.25rem);
   font-weight: 400;
   line-height: 1.05;
@@ -1707,6 +1718,7 @@ body:has(.admin-shell) .site-masthead {
 }
 
 .collection-promo__cta {
+  font-family: var(--font-display);
   display: inline-flex;
   align-items: center;
   min-height: var(--control-height);
@@ -1738,7 +1750,7 @@ body:has(.admin-shell) .site-masthead {
 .category-discovery__description {
   max-width: 40rem;
   margin: -1rem var(--shell-gutter) 2rem;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: 1.1rem;
   line-height: 1.5;
 }
@@ -1768,7 +1780,7 @@ body:has(.admin-shell) .site-masthead {
   display: block;
   padding: 1rem var(--shell-gutter) 0;
   text-align: center;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(1.25rem, 2vw, 1.75rem);
   font-weight: 400;
   line-height: 1.15;
@@ -1826,7 +1838,7 @@ body:has(.admin-shell) .site-masthead {
 
 .feedback-page__title {
   margin: 0 0 2.5rem;
-  font-family: var(--font-serif), Georgia, serif;
+  font-family: var(--font-display);
   font-size: clamp(2.5rem, 6vw, 4.5rem);
   font-weight: 400;
   line-height: 0.95;

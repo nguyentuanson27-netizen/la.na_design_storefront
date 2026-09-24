@@ -103,7 +103,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
         <Link
           href="/"
           onClick={onClose}
-          className="font-serif text-xl font-bold tracking-wider text-[#2A1810]"
+          className="font-display text-xl font-bold tracking-wider text-[#2A1810]"
         >
           {BRAND.identity.displayNameUpper}
         </Link>
@@ -143,7 +143,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
               maxLength={STOREFRONT_DISCOVERY_LIMITS.query}
               placeholder="Tìm kiếm sản phẩm..."
               aria-label="Nhập từ khóa tìm kiếm"
-              className="w-full bg-transparent py-4 text-xl md:text-3xl font-serif text-[#2A1810] outline-none placeholder:text-[#70584B]"
+              className="w-full bg-transparent py-4 text-xl md:text-3xl font-display text-[#2A1810] outline-none placeholder:text-[#70584B]"
             />
             {query.length > 0 ? (
               <button
@@ -190,7 +190,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
           {/* Search Results / Error / Empty */}
           {result.error && !isLoading ? (
             <div role="alert" className="py-8 text-center">
-              <p className="font-serif text-lg text-[#8A3A35]">
+              <p className="font-display text-lg text-[#8A3A35]">
                 {result.error}
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
@@ -223,7 +223,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                         </div>
                       )}
                     </div>
-                    <span className="font-serif text-sm font-medium text-[#2A1810] group-hover:underline line-clamp-1">
+                    <span className="font-display text-sm font-medium text-[#2A1810] group-hover:underline line-clamp-1">
                       {product.name}
                     </span>
                     {product.priceText ? (
@@ -237,7 +237,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
             </div>
           ) : query.trim().length > 0 && !isLoading ? (
             <div className="py-8 text-center">
-              <p className="font-serif text-lg text-[#2A1810]">
+              <p className="font-display text-lg text-[#2A1810]">
                 Không tìm thấy sản phẩm nào phù hợp với &ldquo;{query.trim()}&rdquo;
               </p>
               <p className="mt-2 text-xs text-[#70584B]">

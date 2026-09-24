@@ -321,7 +321,7 @@ export function GuestCheckoutForm({
       <div className="checkout-receiving-fields space-y-8">
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
-        <h2 className="mt-3 font-serif text-3xl md:text-4xl">Giao hàng COD</h2>
+        <h2 className="mt-3 font-display text-3xl md:text-4xl">Giao hàng COD</h2>
         <p className="mt-3 max-w-2xl text-sm leading-6 text-black/60">
           Không cần đăng ký tài khoản. {BRAND.identity.name} sẽ liên hệ qua số điện thoại để xác nhận đơn trước khi giao.
         </p>

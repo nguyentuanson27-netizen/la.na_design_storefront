@@ -437,7 +437,7 @@ export default async function ProductEditorPage({ params, searchParams }: Produc
           ← Danh sách sản phẩm
         </Link>
         <p className="eyebrow mt-8">Biên tập sản phẩm</p>
-        <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+        <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
           {product.name}
         </h1>
         <p className="mt-4 text-sm text-black/60">/{product.slug}</p>

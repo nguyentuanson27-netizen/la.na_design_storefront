@@ -328,7 +328,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                           />
                         ) : (
                           <div className="flex h-full w-full flex-col justify-end p-4 bg-gradient-to-t from-[#2A1810]/70 to-transparent">
-                            <span className="font-serif text-lg text-white font-medium">
+                            <span className="font-display text-lg text-white font-medium">
                               {item.label}
                             </span>
                             <span className="text-xs text-white/80 tracking-wider uppercase mt-1">

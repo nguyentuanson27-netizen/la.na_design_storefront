@@ -29,7 +29,7 @@ function render(data: SizeGuideViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Thông tin sản phẩm</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Hướng dẫn chọn size
       </h1>
 
@@ -50,7 +50,7 @@ function render(data: SizeGuideViewModel) {
       <div className="mt-16 grid max-w-5xl gap-16">
         {data.charts.map((chart) => (
           <section key={chart.id} aria-labelledby={`chart-${chart.id}-heading`} className="min-w-0">
-            <h2 id={`chart-${chart.id}-heading`} className="font-serif text-3xl tracking-[-0.03em]">
+            <h2 id={`chart-${chart.id}-heading`} className="font-display text-3xl tracking-[-0.03em]">
               {chart.title}
             </h2>
             {data.tolerance === null ? null : (

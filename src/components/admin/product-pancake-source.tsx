@@ -76,7 +76,7 @@ export function ProductPancakeSource({
       <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-4 p-5 focus-visible:outline-2 focus-visible:outline-offset-4 md:p-6">
         <span>
           <span className="eyebrow block">Nguồn Pancake · chỉ đọc</span>
-          <span className="mt-1 block font-serif text-2xl tracking-[-0.03em] md:text-3xl">
+          <span className="mt-1 block font-display text-2xl tracking-[-0.03em] md:text-3xl">
             Dữ liệu nguồn & composite
           </span>
         </span>
@@ -90,7 +90,7 @@ export function ProductPancakeSource({
           <div className="flex flex-col justify-between gap-4 border-b border-black/15 pb-6 md:flex-row md:items-center">
             <div>
               <p className="eyebrow">Nguồn mô tả</p>
-              <h2 id="source-description-heading" className="mt-1 font-serif text-3xl tracking-[-0.03em]">
+              <h2 id="source-description-heading" className="mt-1 font-display text-3xl tracking-[-0.03em]">
                 Nguồn mô tả từ Pancake
               </h2>
             </div>
@@ -219,7 +219,7 @@ export function ProductPancakeSource({
             className="mt-8 border-t border-black/20 pt-8"
           >
             <p className="eyebrow">Pancake composite</p>
-            <h2 id="composite-components-heading" className="mt-1 font-serif text-3xl tracking-[-0.03em]">
+            <h2 id="composite-components-heading" className="mt-1 font-display text-3xl tracking-[-0.03em]">
               Thành phần sản phẩm / Sản phẩm con
             </h2>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-black/70">

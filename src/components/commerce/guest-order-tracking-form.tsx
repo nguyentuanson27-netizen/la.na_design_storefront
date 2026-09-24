@@ -88,7 +88,7 @@ export function GuestOrderTrackingForm() {
           data-ui-state="success"
         >
           <p className="eyebrow">Trạng thái đơn hàng</p>
-          <p className="mt-3 font-serif text-3xl">{statusLabels[state.order.status]}</p>
+          <p className="mt-3 font-display text-3xl">{statusLabels[state.order.status]}</p>
           <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
             <div>
               <dt className="text-black/75">Mã đơn</dt>

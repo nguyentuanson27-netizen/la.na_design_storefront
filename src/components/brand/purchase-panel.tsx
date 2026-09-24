@@ -548,7 +548,7 @@ export function PurchasePanelView({
         className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
         <div className="flex items-baseline justify-between gap-6">
-          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
+          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-display text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
                 <span className="sr-only">Giá gốc </span>
@@ -600,7 +600,7 @@ export function PurchasePanelView({
 
         <div className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="min-h-11 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-medium tracking-[0.04em] text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-[#3B2219] px-4 font-display text-sm font-medium tracking-[0.04em] text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -610,7 +610,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-11 w-full border border-[#3B2219] bg-transparent px-4 text-sm font-medium tracking-[0.04em] text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-transparent px-4 font-display text-sm font-medium tracking-[0.04em] text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
@@ -638,14 +638,14 @@ export function PurchasePanelView({
       >
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold">{priceDisplay.displayText}</p>
+            <p className="truncate font-display text-base font-semibold">{priceDisplay.displayText}</p>
             <p className="mt-0.5 truncate text-xs text-black/60">
               {mobilePresentation.summary || mobilePresentation.actionLabel}
             </p>
           </div>
           <button
             ref={stickyTriggerRef}
-            className="min-h-11 shrink-0 border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="min-h-11 shrink-0 border border-[#3B2219] bg-[#3B2219] px-4 font-display text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
             type="button"
             aria-haspopup={mobilePresentation.readyToAdd ? undefined : "dialog"}
             aria-expanded={mobilePresentation.readyToAdd ? undefined : isSheetOpen}
@@ -707,7 +707,7 @@ export function PurchasePanelView({
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
                   <button
                     type="button"
-                    className="min-h-11 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
+                    className="min-h-11 w-full bg-[#3B2219] px-5 font-display text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
                     disabled={!mobilePresentation.readyToAdd || isPending}
                     aria-busy={isPending}
                     onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}

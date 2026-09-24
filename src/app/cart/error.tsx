@@ -8,7 +8,7 @@ export default function CartError({ reset }: { reset: () => void }) {
         GIỎ HÀNG
       </h1>
       <div className="mt-12 border-t border-black/20 pt-8">
-        <p className="font-serif text-2xl md:text-3xl">Không thể tải giỏ hàng lúc này.</p>
+        <p className="font-display text-2xl md:text-3xl">Không thể tải giỏ hàng lúc này.</p>
         <button
           className="mt-6 min-h-11 border border-black bg-black px-5 text-xs font-semibold uppercase tracking-[0.12em] text-white transition hover:bg-white hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
           type="button"

@@ -593,7 +593,7 @@ export function AdminProductBulkTable({ products, collections }: AdminProductBul
                 </td>
                 <td className="py-3 pr-4">
                   <Link
-                    className="font-serif text-lg leading-tight tracking-[-0.02em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
+                    className="font-display text-lg leading-tight tracking-[-0.02em] underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4"
                     href={`/admin/products/${product.id}`}
                   >
                     {product.name}

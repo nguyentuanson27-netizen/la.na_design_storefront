@@ -26,14 +26,14 @@ function render(data: ShippingViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Chính sách</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Vận chuyển &amp; thanh toán
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">{data.coverage}.</p>
 
       <div className="mt-16 grid max-w-4xl gap-14">
         <section aria-labelledby="delivery-heading">
-          <h2 id="delivery-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="delivery-heading" className="font-display text-3xl tracking-[-0.03em]">
             Giao hàng
           </h2>
           <dl className="mt-6 grid max-w-2xl gap-6 text-base leading-7">
@@ -63,7 +63,7 @@ function render(data: ShippingViewModel) {
         </section>
 
         <section aria-labelledby="fee-heading">
-          <h2 id="fee-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="fee-heading" className="font-display text-3xl tracking-[-0.03em]">
             Phí vận chuyển
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
@@ -73,7 +73,7 @@ function render(data: ShippingViewModel) {
         </section>
 
         <section aria-labelledby="tracking-heading">
-          <h2 id="tracking-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="tracking-heading" className="font-display text-3xl tracking-[-0.03em]">
             Theo dõi đơn hàng
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
@@ -87,7 +87,7 @@ function render(data: ShippingViewModel) {
 
         {/* `thanh-toan` is the anchor the policy hub links to; it is part of the published surface. */}
         <section id="thanh-toan" aria-labelledby="payment-heading">
-          <h2 id="payment-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="payment-heading" className="font-display text-3xl tracking-[-0.03em]">
             Thanh toán
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7">{data.paymentMethod}</p>

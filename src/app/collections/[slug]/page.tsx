@@ -65,7 +65,7 @@ function render(data: CollectionViewModel) {
           ]}
         />
         <ListingHeader title={data.title}>
-          <p className="mt-6 max-w-2xl break-words font-serif text-xl leading-snug text-[#2A1810] md:text-2xl">
+          <p className="mt-6 max-w-2xl break-words font-display text-xl leading-snug text-[#2A1810] md:text-2xl">
             {editorial.story}
           </p>
           {/* Buyer information, not decoration: it sets the expectation that the figures on the

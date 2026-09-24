@@ -15,8 +15,8 @@ This document outlines the minimal, editorial menswear visual system foundation 
 
 ### 2. Typography Hierarchy
 
-- **Editorial Serif (`font-serif`)**: Georgia / Times New Roman serif for major headlines (`clamp(3.5rem, 8vw, 9rem)`), collection statements, and editorial descriptions.
-- **Modern Monospace / Geometric Sans (`font-sans`)**: Clean typography for metadata, prices, navigation items (`letter-spacing: 0.12em` - `0.18em`), and button labels.
+- **Display (`font-display`)**: Josefin Sans for headlines, product names, category labels, navigation, prices and button labels (owner amendment 2026-09-24; previously an editorial serif).
+- **Body (`font-sans`)**: Mulish for descriptions, metadata, small print and forms (previously Arial).
 - **Eyebrow Header (`.eyebrow`)**: Uppercase kicker navigation breadcrumbs (`0.68rem`, tracking `0.18em`).
 
 ### 3. Interactive Component Primitives
