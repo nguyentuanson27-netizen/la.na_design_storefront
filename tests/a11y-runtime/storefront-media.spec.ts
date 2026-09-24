@@ -576,8 +576,7 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
   await expect(stage).toBeVisible();
 
-  // A near-viewport media stage: a flush strip of full-height 2:3 cells, so the garment keeps its
-  // head and hem and the cells meet with no cream between them.
+  // A near-viewport media stage: full-height 2:3 cells, so the garment keeps its head and hem.
   const stageBox = (await stage.boundingBox())!;
   expect(stageBox.height, "the stage is approximately one viewport tall").toBeGreaterThan(900 * 0.8);
   /*
@@ -588,41 +587,41 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   const desktopTrack = stage.locator(".pdp-stage__track");
   expect(
     await desktopTrack
-      .locator("img")
+      .locator(".pdp-stage__cell img")
       .first()
       .evaluate((element) => getComputedStyle(element).objectFit),
   ).toBe("cover");
   await expect(stage.locator(".pdp-mobile-gallery")).toBeHidden();
 
   /*
-   * Three photographs page as `1+2` then `2+3`. Each page is a full pair edge to edge, and the width
-   * the pair leaves is filled by a sliver of the neighbour -- after it on the first page, before it
-   * on the last -- so the strip spans the viewport with no gap anywhere.
+   * Three photographs page as `1+2` then `2+3`. The stage splits 50/50 and each photograph is
+   * centred in its half; the width it leaves is filled by a decorative blur of the pair.
    */
   const slides = stage.locator(".pdp-stage__slide");
   await expect(slides).toHaveCount(2);
-  for (const [slideIndex, peekSide] of [[0, "after"], [1, "before"]] as const) {
-    const cells = await slides
-      .nth(slideIndex)
-      .locator(".pdp-stage__cell")
-      .evaluateAll((elements) =>
-        elements.map((cell) => {
-          const rect = cell.getBoundingClientRect();
-          return { left: rect.left, right: rect.right, peek: cell.getAttribute("data-peek") };
-        }),
-      );
-    expect(cells).toHaveLength(3);
-    expect(cells[peekSide === "after" ? 2 : 0]!.peek).toBe(peekSide);
-    const pair = cells.filter((cell) => cell.peek === null);
+  for (const slideIndex of [0, 1]) {
+    const slide = slides.nth(slideIndex);
+    const cells = await slide.locator(".pdp-stage__cell").evaluateAll((elements) =>
+      elements.map((cell) => {
+        const rect = cell.getBoundingClientRect();
+        return { left: rect.left, right: rect.right };
+      }),
+    );
+    expect(cells).toHaveLength(2);
+    const [first, second] = cells as [{ left: number; right: number }, { left: number; right: number }];
     expect(
-      Math.abs(pair[0]!.right - pair[0]!.left - (pair[1]!.right - pair[1]!.left)),
+      Math.abs(first.right - first.left - (second.right - second.left)),
       "the pair's cells are the same width",
     ).toBeLessThanOrEqual(2);
-    for (let index = 1; index < cells.length; index += 1) {
-      expect(Math.abs(cells[index]!.left - cells[index - 1]!.right), "cells meet with no gap").toBeLessThanOrEqual(1);
-    }
-    expect(Math.round(cells[0]!.left)).toBe(0);
-    expect(Math.round(cells[cells.length - 1]!.right)).toBe(1440);
+    expect(Math.abs((first.left + first.right) / 2 - 360), "image 1 is centred in the left half").toBeLessThanOrEqual(2);
+    expect(Math.abs((second.left + second.right) / 2 - 1080), "image 2 is centred in the right half").toBeLessThanOrEqual(2);
+
+    const backdrop = slide.locator(".pdp-stage__backdrop");
+    await expect(backdrop).toHaveAttribute("aria-hidden", "true");
+    expect(
+      await backdrop.locator("img").evaluateAll((elements) => elements.map((element) => element.getAttribute("alt"))),
+      "the colour field is decorative",
+    ).toEqual(["", ""]);
   }
 
   // The below-`lg` editorial grid is gone entirely; the mobile gallery above replaced it.
@@ -728,7 +727,7 @@ test("only the current slide's photographs are exposed to assistive technology",
   const exposedPhotographs = () =>
     stage.getByRole("img").evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
 
-  // Slide 1 is images 1 and 2, and only they are reachable: the neighbour's sliver is decorative.
+  // Slide 1 is images 1 and 2, and only they are reachable: the colour field behind them is decorative.
   await expect.poll(exposedPhotographs).toEqual([multiName, `${multiName} - Ảnh 2`]);
   await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
   await expect(previous).toBeDisabled();

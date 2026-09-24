@@ -620,11 +620,12 @@ main nav[aria-label="Breadcrumb"] a {
  * page renders exactly the cover-cropped first image it always did and the later slides' lazy
  * `<img>`s are never fetched -- the mobile composition belongs to its own spec, not to this one.
  *
- * From `lg` up the same tree is the gallery: a flush film strip, one viewport tall. Each photograph
- * is a 2:3 portrait cell at the frame's full height, so a standing figure keeps its head and hem;
- * cells sit edge to edge with no gap, and the width a pair leaves is taken by a sliver of the
- * neighbouring photograph rather than by empty cream. If a pair is wider than the viewport, the
- * two cells narrow equally and crop at the sides only.
+ * From `lg` up the same tree is the gallery, one viewport tall: the stage splits into two halves
+ * and each photograph is centred in its own half. Each is a 2:3 portrait cell at the frame's full
+ * height, so a standing figure keeps its head and hem. The width a photograph leaves in its half is
+ * filled by its own colours -- the photographs blurred behind them, blending across the middle --
+ * rather than by flat cream.
+ * If a half is narrower than a 2:3 cell, the cell narrows and crops at the sides only.
  *
  * Slides stack in place rather than sitting side by side on a translated track, which is how
  * `.home-hero__slide` already does this. A track would lay the later slides out past the right
@@ -719,16 +720,25 @@ main nav[aria-label="Breadcrumb"] a {
    */
   .pdp-stage__slide,
   .pdp-stage__slide:first-child {
-    display: flex;
-    justify-content: center;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
     gap: 0;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
   }
 
-  /* Every cell stays inside the slide -- the neighbour absorbs the leftover width and the pair
-     shrinks rather than overflowing -- so nothing in the strip ever has a box past the viewport. */
+  /* One photograph per half, centred in it, over the shared colour field. */
+  .pdp-stage__half {
+    position: relative;
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  /* The cell narrows rather than overflowing its half, so no cell ever has a box past the viewport. */
   .pdp-stage__cell {
     flex: 0 1 auto;
     width: auto;
@@ -737,9 +747,40 @@ main nav[aria-label="Breadcrumb"] a {
     aspect-ratio: var(--media-product-ratio);
   }
 
-  .pdp-stage__cell--peek {
-    flex: 1 1 0;
-    aspect-ratio: auto;
+  /*
+   * The colour field behind the photographs: each photograph, blurred until only its palette is
+   * left, as a layer across the whole stage. The second layer fades in with a linear mask over the
+   * middle of the stage, so the two palettes blend there instead of meeting at a hard line. The
+   * layers are not scaled up to hide the blur's soft rim -- a scaled image would have a box past
+   * the viewport -- so the rim fades into the stone beneath instead, and a light cream veil keeps
+   * the field quieter than the photographs in front of it.
+   */
+  .pdp-stage__backdrop {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: var(--stone);
+  }
+
+  .pdp-stage__backdrop::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(250, 247, 242, 0.18);
+  }
+
+  .pdp-stage__backdrop-layer {
+    position: absolute;
+    inset: 0;
+  }
+
+  .pdp-stage__backdrop-layer + .pdp-stage__backdrop-layer {
+    -webkit-mask-image: linear-gradient(to right, transparent 30%, #000 70%);
+    mask-image: linear-gradient(to right, transparent 30%, #000 70%);
+  }
+
+  .pdp-stage__backdrop-image {
+    filter: blur(64px) saturate(1.05);
   }
 
   /* The transition is declared only here, so a slide fades in as it becomes current and is hidden

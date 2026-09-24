@@ -273,8 +273,8 @@ test("P18 captures representative production performance evidence for home, PLP,
           const visibleProductImages = await page
             .locator(`img[alt^="${productName}"]:visible`)
             .evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
-          // A phone paints image 1 alone; from `lg` up the first page is the pair `1+2` (the
-          // neighbour's sliver beside it has an empty alt, so it is not counted as a photograph).
+          // A phone paints image 1 alone; from `lg` up the first page is the pair `1+2` (the blurred
+          // colour field behind it has an empty alt, so it is not counted as a photograph).
           expect(
             visibleProductImages,
             `${viewport.name}: the first page's product photographs on screen`,
@@ -289,7 +289,7 @@ test("P18 captures representative production performance evidence for home, PLP,
             const activeSlide = stage.locator('.pdp-stage__slide[data-active="true"]');
             await expect(activeSlide).toHaveCount(1);
             await expect(activeSlide.locator('img:not([alt=""])')).toHaveCount(2);
-            await expect(activeSlide.locator("img").first()).toHaveAttribute("alt", productName);
+            await expect(activeSlide.locator(".pdp-stage__cell img").first()).toHaveAttribute("alt", productName);
             await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
           } else {
             // Below `lg` it is the one-image swipe gallery with its current/total indicator.

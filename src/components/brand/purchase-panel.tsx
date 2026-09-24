@@ -548,16 +548,16 @@ export function PurchasePanelView({
         className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
         <div className="flex items-baseline justify-between gap-6">
-          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[1.375rem] font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
+          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
                 <span className="sr-only">Giá gốc </span>
-                <span className="align-baseline text-base text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
+                <span className="align-baseline text-lg text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
                   {priceDisplay.compareAtText}
                 </span>
                 <span className="sr-only">Giá khuyến mãi </span>
                 <span>{priceDisplay.displayText}</span>
-                <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-[11px] font-medium tracking-[0.08em] text-[#3B2219]">
+                <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-xs font-medium tracking-[0.08em] text-[#3B2219]">
                   -{priceDisplay.discountPercent}%
                 </span>
               </>

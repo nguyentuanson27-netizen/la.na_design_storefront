@@ -1,11 +1,11 @@
 /**
  * The desktop PDP media stage's arithmetic, as pure functions.
  *
- * The stage is a flush film strip: photographs sit edge to edge at the stage's full height, two to
- * a page, and whatever width the pair leaves is filled by a sliver of the neighbouring photograph
- * so the strip visibly continues past the frame. Paging, clamping and the canonical first surface
- * under a `?variant=` deep link are decisions, not markup, so they live here where the domain suite
- * can pin them and the component is left rendering.
+ * The stage shows photographs two to a page, each centred in its half of the stage at the stage's
+ * full height, with the width it leaves filled by a blur of its own colours. Paging,
+ * clamping and the canonical first surface under a `?variant=` deep link are decisions, not
+ * markup, so they live here where the domain suite can pin them and the component is left
+ * rendering.
  *
  * Nothing here knows about stock, price or purchasability. The variant-to-image mapping is the
  * server-resolved one the deep link already uses; this module only reads it.
@@ -29,30 +29,6 @@ export function buildDesktopProductGallerySlides(imageCount: number): ProductGal
   }
   slides.push([imageCount - 2, imageCount - 1]);
   return slides;
-}
-
-/**
- * The partially visible neighbour that fills the width a slide's pair leaves.
- *
- * Every page but the last continues to the right with the next photograph; the last page, having
- * nothing after it, is anchored to the right and shows the photograph before it on the left
- * instead. A gallery that fits on one page has no neighbour and is centred.
- */
-export function gallerySlidePeek(
-  slides: readonly ProductGallerySlide[],
-  slideIndex: number,
-  imageCount: number,
-): { side: "before" | "after"; image: number } | null {
-  const slide = slides[slideIndex];
-  if (!slide || slide.length === 0 || slides.length < 2) return null;
-
-  if (slideIndex < slides.length - 1) {
-    const next = slide[slide.length - 1]! + 1;
-    return next < imageCount ? { side: "after", image: next } : null;
-  }
-
-  const previous = slide[0]! - 1;
-  return previous >= 0 ? { side: "before", image: previous } : null;
 }
 
 /** Which slide holds an image, or slide 1 for an index this gallery does not contain. */
