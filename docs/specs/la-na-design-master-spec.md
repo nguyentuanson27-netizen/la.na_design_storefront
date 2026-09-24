@@ -621,7 +621,8 @@ Approved copy:
 ### Desktop header
 
 - Primary nav follows approved order.
-- `Áo dài` and `Set đồ` use mega menus with editorial image + subcategory list.
+- Every top-level category (`Áo dài`, `Set đồ`, `Váy, đầm`, `Phụ kiện`) opens a mega menu from its keyboard-operable disclosure (owner request 2026-09-24). `Áo dài` and `Set đồ` list their subcategories; `Váy, đầm` and `Phụ kiện` have none, so their panel links to the category as "Xem tất cả". `Hàng mới về`, `Bộ sưu tập` and `Sale` stay plain links.
+- The editorial image is landscape 4:3 and takes about two thirds of the panel, with the links in the remaining third; the panel stays inside the viewport.
 - Mega-menu image is manually selected by admin/content manager.
 
 ### Header icons
