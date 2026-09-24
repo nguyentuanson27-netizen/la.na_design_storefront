@@ -11,6 +11,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { deriveCompositeSellableStock } from "./composite-capacity.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -105,22 +106,16 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     const compositeStockByVariantId = new Map<string, number>();
     for (const parent of parentRelations) {
       if (parent.compositeComponents.length > 0) {
-        const capacities = parent.compositeComponents.map((edge) => {
-          const component = edge.componentVariant;
-          if (
-            component.product.pancakeShopId !== shopId ||
-            !component.product.isPresent ||
-            !component.isPresent ||
-            !component.isActive
-          ) {
-            return 0;
-          }
-          const stock = sumWarehouseStocks(component.warehouseStocks);
-          const req = edge.quantity > 0 ? edge.quantity : 1;
-          return Math.floor(Math.max(0, stock) / req);
-        });
-        const derived = capacities.length > 0 ? Math.min(...capacities) : 0;
-        compositeStockByVariantId.set(parent.id, derived);
+        compositeStockByVariantId.set(
+          parent.id,
+          deriveCompositeSellableStock({
+            shopId,
+            components: parent.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+          }),
+        );
       }
 
       for (const edge of parent.compositeComponents) {

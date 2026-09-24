@@ -24,7 +24,6 @@
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import {
   canTransition,
-  evaluateMultiLineReservation,
   reservationHoldsCapacity,
   resolveSellingPolicy,
   type CapacityDecisionReason,
@@ -145,12 +144,41 @@ function earliestObservationStart(stocks: readonly { syncedAt: Date }[]): Date |
 }
 
 export function createCapacityReservationRepository(client: PrismaClient) {
+  const MAX_POSTGRES_INTEGER = 2_147_483_647;
+
+  function sumMirroredStock(stocks: readonly { quantity: number }[]): number {
+    let total = 0;
+    for (const stock of stocks) {
+      if (!Number.isFinite(stock.quantity)) return Number.NaN;
+      total += stock.quantity;
+      if (!Number.isFinite(total)) return Number.NaN;
+    }
+    return total;
+  }
+
+  function multiplyResourceQuantity(lineQuantity: number, requiredQuantity: number): number | null {
+    if (
+      !Number.isSafeInteger(lineQuantity) ||
+      lineQuantity <= 0 ||
+      lineQuantity > MAX_POSTGRES_INTEGER ||
+      !Number.isSafeInteger(requiredQuantity) ||
+      requiredQuantity <= 0 ||
+      requiredQuantity > MAX_POSTGRES_INTEGER
+    ) {
+      return null;
+    }
+    const total = lineQuantity * requiredQuantity;
+    return Number.isSafeInteger(total) && total > 0 && total <= MAX_POSTGRES_INTEGER ? total : null;
+  }
+
   /**
    * Reserve capacity for one order, all lines or none (§31, §7).
    *
-   * Idempotent on the order (§3): a retry that reuses the same `orderId` finds its own rows and
-   * returns them rather than inserting a second set. That is why this order's own holds are excluded
-   * from `activeReservedQuantity` below — counting them would make a retry refuse its own basket.
+   * The ledger remains line-oriented for idempotency/history, while CapacityReservationResource
+   * snapshots the actual stock identities consumed by each line. A standalone line consumes itself;
+   * a composite parent consumes its component variants. All requested line variants and component
+   * resources are locked in one ordered statement, so different FULL SET variants that share one
+   * child serialize on the same always-present VariantMirror row.
    */
   async function reserveOrderCapacity({
     orderId,
@@ -160,10 +188,13 @@ export function createCapacityReservationRepository(client: PrismaClient) {
     lines: readonly ReservationLineRequest[];
   }): Promise<ReservationOutcome> {
     const merged = mergeReservationLines(lines);
-    // An empty basket is not a successful reservation (§7).
     if (merged.length === 0) return { ok: false, reason: "empty-basket", refusedVariantId: null };
     for (const line of merged) {
-      if (!Number.isSafeInteger(line.quantity) || line.quantity <= 0) {
+      if (
+        !Number.isSafeInteger(line.quantity) ||
+        line.quantity <= 0 ||
+        line.quantity > MAX_POSTGRES_INTEGER
+      ) {
         return { ok: false, reason: "invalid-quantity", refusedVariantId: line.variantId };
       }
     }
@@ -172,58 +203,137 @@ export function createCapacityReservationRepository(client: PrismaClient) {
 
     return client.$transaction(
       async (tx) => {
-        // Step 2 — lock an identity that always exists. Ordered by id so every caller acquires the
-        // same variants in the same sequence and no deadlock cycle can form.
         const locked = await tx.$queryRaw<{ id: string }[]>(
-          Prisma.sql`SELECT id FROM "VariantMirror" WHERE id IN (${Prisma.join(variantIds)}) ORDER BY id FOR UPDATE`,
+          Prisma.sql`
+            SELECT "id"
+            FROM "VariantMirror"
+            WHERE "id" IN (${Prisma.join(variantIds)})
+               OR "id" IN (
+                 SELECT "componentVariantId"
+                 FROM "CompositeComponentMirror"
+                 WHERE "parentVariantId" IN (${Prisma.join(variantIds)})
+               )
+               OR "id" IN (
+                 SELECT resource."variantId"
+                 FROM "CapacityReservationResource" resource
+                 JOIN "VariantCapacityReservation" reservation
+                   ON reservation."id" = resource."reservationId"
+                 WHERE reservation."orderId" = ${orderId}
+               )
+            ORDER BY "id"
+            FOR UPDATE
+          `,
         );
+        const lockedIds = locked.map(({ id }) => id);
+        const lockedIdSet = new Set(lockedIds);
 
-        // Step 3 — a missing variant is a fail-closed refusal, never a silently skipped lock.
-        if (locked.length !== variantIds.length) {
-          const found = new Set(locked.map((row) => row.id));
-          const missing = variantIds.find((id) => !found.has(id)) ?? null;
+        const missing = variantIds.find((id) => !lockedIdSet.has(id)) ?? null;
+        if (missing !== null) {
           return { ok: false, reason: "variant-missing", refusedVariantId: missing } as const;
         }
 
-        // Step 4 — read the facts *after* the lock is held. Recomputed here, never carried in from a
-        // read taken before the transaction.
         const variants = await tx.variantMirror.findMany({
           where: { id: { in: variantIds } },
           select: {
             id: true,
-            product: { select: { sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } } } },
-            warehouseStocks: { select: { quantity: true, syncedAt: true } },
-            compositeComponents: { select: { parentVariantId: true }, take: 1 },
+            product: {
+              select: {
+                pancakeShopId: true,
+                sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
+              },
+            },
+            compositeComponents: {
+              orderBy: [{ componentVariantId: "asc" }],
+              select: {
+                quantity: true,
+                componentVariant: {
+                  select: {
+                    id: true,
+                    isPresent: true,
+                    product: {
+                      select: {
+                        pancakeShopId: true,
+                        isPresent: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
           },
         });
-        const observationByVariantId = new Map(
-          variants.map((variant) => [variant.id, earliestObservationStart(variant.warehouseStocks)]),
+        const variantById = new Map(variants.map((variant) => [variant.id, variant]));
+        const absentRequested = variantIds.find((id) => !variantById.has(id)) ?? null;
+        if (absentRequested !== null) {
+          return { ok: false, reason: "variant-missing", refusedVariantId: absentRequested } as const;
+        }
+
+        const lockedFacts = await tx.variantMirror.findMany({
+          where: { id: { in: lockedIds } },
+          select: {
+            id: true,
+            warehouseStocks: { select: { quantity: true, syncedAt: true } },
+          },
+        });
+        const stockByResourceId = new Map(
+          lockedFacts.map((variant) => [variant.id, sumMirroredStock(variant.warehouseStocks)]),
+        );
+        const observationByResourceId = new Map(
+          lockedFacts.map((variant) => [variant.id, earliestObservationStart(variant.warehouseStocks)]),
         );
 
-        // §3 idempotency, and it has to be **exact**, over the **whole order**.
-        //
-        // Two earlier versions got this wrong in opposite directions, and both were capacity bugs
-        // rather than cosmetic ones:
-        //
-        // 1. Comparing only the row COUNT let the same order reserve A×1, retry as A×2, and be told
-        //    it succeeded while the ledger held one unit — and a `RELEASED` row, which holds nothing
-        //    at all, satisfied the count just as well. A caller treating `ok: true` as the capacity
-        //    gate would have shipped past the owner's hard limit on a hold that did not exist.
-        // 2. Scoping this query to the REQUESTED variants let an order holding A + B retry as A
-        //    alone and be told it succeeded, because the query never returned B. B kept holding
-        //    capacity for a basket that no longer contained it, and later legitimate sales would be
-        //    refused against a hold nobody was going to use.
-        //
-        // Hence `where: { orderId }` with no variant filter: the comparison is the order's ENTIRE
-        // reservation set against the merged basket. A retry succeeds only when they are the same
-        // variants at the same quantities with every row still capacity-holding. Anything else is a
-        // conflict the caller must resolve — a changed basket under a reused order id is a new
-        // decision, not a repeat of an old one, and `(orderId, variantId)` leaves no room to hold
-        // both.
-        //
-        // Rows outside `variantIds` are therefore read without holding their variant's lock. That is
-        // sound because they can only produce a REFUSAL: the success branch requires the held set to
-        // equal the requested set, so every row it accepts is one this transaction has locked.
+        type LinePlan = Readonly<{
+          line: ReservationLineRequest;
+          isComposite: boolean;
+          sellingMode: ReturnType<typeof resolveSellingPolicy>["sellingMode"];
+          negativeStockLimit: number;
+          resources: readonly Readonly<{ variantId: string; quantity: number }>[];
+          invalidResource: boolean;
+        }>;
+
+        const linePlans: LinePlan[] = [];
+        for (const line of merged) {
+          const variant = variantById.get(line.variantId)!;
+          const policy = resolveSellingPolicy(variant.product.sellingPolicy);
+          if (variant.compositeComponents.length === 0) {
+            linePlans.push({
+              line,
+              isComposite: false,
+              sellingMode: policy.sellingMode,
+              negativeStockLimit: policy.negativeStockLimit,
+              resources: [{ variantId: line.variantId, quantity: line.quantity }],
+              invalidResource: false,
+            });
+            continue;
+          }
+
+          let invalidResource = false;
+          const resources: { variantId: string; quantity: number }[] = [];
+          for (const edge of variant.compositeComponents) {
+            const component = edge.componentVariant;
+            const quantity = multiplyResourceQuantity(line.quantity, edge.quantity);
+            if (
+              quantity === null ||
+              component.product.pancakeShopId !== variant.product.pancakeShopId ||
+              !component.product.isPresent ||
+              !component.isPresent ||
+              !lockedIdSet.has(component.id)
+            ) {
+              invalidResource = true;
+              continue;
+            }
+            resources.push({ variantId: component.id, quantity });
+          }
+          linePlans.push({
+            line,
+            isComposite: true,
+            sellingMode: policy.sellingMode,
+            negativeStockLimit: policy.negativeStockLimit,
+            resources,
+            invalidResource: invalidResource || resources.length === 0,
+          });
+        }
+
         const own = await tx.variantCapacityReservation.findMany({
           where: { orderId },
           select: {
@@ -233,30 +343,39 @@ export function createCapacityReservationRepository(client: PrismaClient) {
             state: true,
             committedAt: true,
             acceptedPreorderState: true,
+            resources: { select: { variantId: true } },
           },
         });
         if (own.length > 0) {
           const requestedByVariantId = new Map(merged.map((line) => [line.variantId, line.quantity]));
-          // A row for a variant outside the basket has no requested quantity, so `undefined`
-          // compares unequal and it lands here as a mismatch — which is exactly the A + B -> A case.
           const expectedByVariantId = new Map(
             merged
               .filter((line) => line.expectedFulfillmentState !== undefined)
               .map((line) => [line.variantId, line.expectedFulfillmentState!]),
           );
+          const stillHolds = (row: (typeof own)[number]) => {
+            if (row.state !== "COMMITTED") {
+              return reservationHoldsCapacity({
+                state: row.state,
+                committedAt: row.committedAt,
+                stockObservationStartedAt: null,
+              });
+            }
+            const resources = row.resources.length > 0 ? row.resources : [{ variantId: row.variantId }];
+            return resources.some((resource) =>
+              reservationHoldsCapacity({
+                state: row.state,
+                committedAt: row.committedAt,
+                stockObservationStartedAt: observationByResourceId.get(resource.variantId) ?? null,
+              }),
+            );
+          };
           const mismatch = own.find(
             (row) =>
               row.quantity !== requestedByVariantId.get(row.variantId) ||
-              // An existing hold classified differently from what this attempt's buyer was told is
-              // not this basket either. Letting it satisfy the retry would accept an old hold whose
-              // fulfillment state the buyer never acknowledged.
               (expectedByVariantId.has(row.variantId) &&
                 row.acceptedPreorderState !== expectedByVariantId.get(row.variantId)) ||
-              !reservationHoldsCapacity({
-                state: row.state,
-                committedAt: row.committedAt,
-                stockObservationStartedAt: observationByVariantId.get(row.variantId) ?? null,
-              }),
+              !stillHolds(row),
           );
           if (own.length !== variantIds.length || mismatch !== undefined) {
             return {
@@ -274,70 +393,95 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           } as const;
         }
 
-        const heldByVariantId = new Map<string, number>();
-        const reservations = await tx.variantCapacityReservation.findMany({
-          // This order's own rows are excluded: they are the retry's own hold, not a competitor's.
-          // By this point it has none — the branch above answered every case where it did — but the
-          // filter stays, because the reason it is right is the idempotency rule, not the ordering
-          // of statements in this function.
-          where: { variantId: { in: variantIds }, orderId: { not: orderId } },
-          select: { variantId: true, quantity: true, state: true, committedAt: true },
-        });
-        for (const row of reservations) {
-          const holds = reservationHoldsCapacity({
-            state: row.state,
-            committedAt: row.committedAt,
-            stockObservationStartedAt: observationByVariantId.get(row.variantId) ?? null,
+        const resourceVariantIds = [
+          ...new Set(linePlans.flatMap((plan) => plan.resources.map((resource) => resource.variantId))),
+        ];
+        const heldByResourceId = new Map<string, number>();
+        if (resourceVariantIds.length > 0) {
+          const heldResources = await tx.capacityReservationResource.findMany({
+            where: {
+              variantId: { in: resourceVariantIds },
+              reservation: { orderId: { not: orderId } },
+            },
+            select: {
+              variantId: true,
+              quantity: true,
+              reservation: { select: { state: true, committedAt: true } },
+            },
           });
-          if (!holds) continue;
-          heldByVariantId.set(row.variantId, (heldByVariantId.get(row.variantId) ?? 0) + row.quantity);
+          for (const resource of heldResources) {
+            const holds = reservationHoldsCapacity({
+              state: resource.reservation.state,
+              committedAt: resource.reservation.committedAt,
+              stockObservationStartedAt: observationByResourceId.get(resource.variantId) ?? null,
+            });
+            if (!holds) continue;
+            heldByResourceId.set(
+              resource.variantId,
+              (heldByResourceId.get(resource.variantId) ?? 0) + resource.quantity,
+            );
+          }
         }
 
-        const inputByVariantId = new Map<string, VariantCapacityInput>(
-          variants.map((variant) => {
-            const policy = resolveSellingPolicy(variant.product.sellingPolicy);
-            const mirroredStock = variant.warehouseStocks.reduce((sum, row) => sum + row.quantity, 0);
-            return [
-              variant.id,
-              {
-                mirroredStock,
-                activeReservedQuantity: heldByVariantId.get(variant.id) ?? 0,
-                sellingMode: policy.sellingMode,
-                negativeStockLimit: policy.negativeStockLimit,
-                isComposite: variant.compositeComponents.length > 0,
-              },
-            ];
-          }),
-        );
+        const pendingByResourceId = new Map<string, number>();
+        const acceptedStateByVariantId = new Map<string, "READY" | "PREORDER">();
 
-        // Step 5 — every line is evaluated, so one call explains the whole basket, and the order still
-        // fails as a unit.
-        const decision = evaluateMultiLineReservation(
-          merged.map((line) => ({
-            line,
-            quantity: line.quantity,
-            input: inputByVariantId.get(line.variantId)!,
-          })),
-        );
-        if (!decision.allowed) {
-          const refused = decision.decisions.find((entry) => !entry.decision.allowed);
-          return {
-            ok: false,
-            reason: refused?.decision.reason ?? "invalid-quantity",
-            refusedVariantId: decision.refusedLine?.variantId ?? null,
-          } as const;
+        const orderedPlans = [...linePlans].sort((left, right) => {
+          const leftFlexible = !left.isComposite && left.sellingMode !== "STANDARD";
+          const rightFlexible = !right.isComposite && right.sellingMode !== "STANDARD";
+          if (leftFlexible !== rightFlexible) return leftFlexible ? 1 : -1;
+          return left.line.variantId.localeCompare(right.line.variantId);
+        });
+
+        for (const plan of orderedPlans) {
+          if (plan.invalidResource) {
+            return {
+              ok: false,
+              reason: "invalid-stock",
+              refusedVariantId: plan.line.variantId,
+            } as const;
+          }
+
+          let standaloneInput: VariantCapacityInput | null = null;
+          for (const resource of plan.resources) {
+            const input: VariantCapacityInput = {
+              mirroredStock: stockByResourceId.get(resource.variantId) ?? Number.NaN,
+              activeReservedQuantity:
+                (heldByResourceId.get(resource.variantId) ?? 0) +
+                (pendingByResourceId.get(resource.variantId) ?? 0),
+              sellingMode: plan.sellingMode,
+              negativeStockLimit: plan.negativeStockLimit,
+              isComposite: plan.isComposite,
+            };
+            const decision = evaluateVariantCapacity(input, resource.quantity);
+            if (!decision.allowed) {
+              return {
+                ok: false,
+                reason: decision.reason,
+                refusedVariantId: plan.line.variantId,
+              } as const;
+            }
+            if (!plan.isComposite) standaloneInput = input;
+          }
+
+          for (const resource of plan.resources) {
+            pendingByResourceId.set(
+              resource.variantId,
+              (pendingByResourceId.get(resource.variantId) ?? 0) + resource.quantity,
+            );
+          }
+
+          acceptedStateByVariantId.set(
+            plan.line.variantId,
+            plan.isComposite
+              ? "READY"
+              : resolveAcceptedPreorderState(standaloneInput!, plan.line.quantity),
+          );
         }
 
-        // Step 5b — the acknowledgement gate for fulfillment state, under the lock and before any
-        // row exists. This is the first point at which `activeReservedQuantity` is real, so it is
-        // the first point at which a READY line the buyer accepted can be seen to have become a
-        // PREORDER one. Refusing here means no ledger row, no `POS_SUBMITTING` and no external
-        // write happened under a state nobody agreed to.
         const stateMismatch = merged.find((line) => {
           if (line.expectedFulfillmentState === undefined) return false;
-          const input = inputByVariantId.get(line.variantId);
-          if (input === undefined) return false;
-          return resolveAcceptedPreorderState(input, line.quantity) !== line.expectedFulfillmentState;
+          return acceptedStateByVariantId.get(line.variantId) !== line.expectedFulfillmentState;
         });
         if (stateMismatch !== undefined) {
           return {
@@ -347,30 +491,30 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           } as const;
         }
 
-        // Step 6 — all rows or none. The transaction is the atomicity; `createMany` is not relied on
-        // for it beyond being a single statement.
-        // No `skipDuplicates`: the branch above answered every case where this order already had a
-        // row, so a duplicate here is an impossible state, and swallowing it would hide exactly the
-        // quantity mismatch that branch exists to refuse.
         await tx.variantCapacityReservation.createMany({
-          data: merged.map((line) => {
-            const input = inputByVariantId.get(line.variantId)!;
-            return {
-              orderId,
-              variantId: line.variantId,
-              quantity: line.quantity,
-              // This is historical order authority, not a later sellability re-check. If any part
-              // of an accepted PREORDER line exceeds ready stock, the line waits for preparation.
-              // The rule lives in the capacity authority so the state persisted here and the state
-              // the buyer was shown cannot be two different comparisons.
-              acceptedPreorderState: resolveAcceptedPreorderState(input, line.quantity),
-            };
-          }),
+          data: merged.map((line) => ({
+            orderId,
+            variantId: line.variantId,
+            quantity: line.quantity,
+            acceptedPreorderState: acceptedStateByVariantId.get(line.variantId) ?? "READY",
+          })),
         });
         const inserted = await tx.variantCapacityReservation.findMany({
           where: { orderId, variantId: { in: variantIds } },
           select: { id: true, variantId: true, quantity: true, state: true },
         });
+        const planByVariantId = new Map(linePlans.map((plan) => [plan.line.variantId, plan]));
+        const resourceRows = inserted.flatMap((reservation) => {
+          const plan = planByVariantId.get(reservation.variantId);
+          return (plan?.resources ?? []).map((resource) => ({
+            reservationId: reservation.id,
+            variantId: resource.variantId,
+            quantity: resource.quantity,
+          }));
+        });
+        if (resourceRows.length > 0) {
+          await tx.capacityReservationResource.createMany({ data: resourceRows });
+        }
 
         return {
           ok: true,
@@ -378,8 +522,6 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           reservations: inserted.map((row) => Object.freeze({ ...row })),
         } as const;
       },
-      // Concurrent callers queue on the step-2 lock by design, so the wait budget has to allow for
-      // a real queue rather than Prisma's 5s default, which would surface contention as a timeout.
       { timeout: 30_000, maxWait: 30_000 },
     );
   }
@@ -388,22 +530,8 @@ export function createCapacityReservationRepository(client: PrismaClient) {
    * §6.4 — move one reservation, as a compare-and-set.
    *
    * The enum constrains a column's value and the §13 CHECKs are all intra-row, so nothing in SQL
-   * stops an `UPDATE` moving a row `COMMITTED → RESERVED`. The state machine is only real if every
+   * stops an UPDATE moving a row COMMITTED → RESERVED. The state machine is only real if every
    * write carries its expected current state and asserts it moved exactly one row.
-   *
-   * Two different failures, deliberately reported differently, because conflating them is how a
-   * retry loop spins forever:
-   *
-   * - **An illegal transition throws.** `COMMITTED → RESERVED` is not a race anybody can lose; it is
-   *   a caller bug that no amount of re-reading will turn into a success. An earlier version of this
-   *   function left legality to callers and guarded only staleness — which meant a caller passing
-   *   `from: "COMMITTED"` resurrected a terminal row and the guard applied it happily. That is the
-   *   same "reads as enforcement, does not constrain" shape §6.1 warns about, one layer up.
-   * - **A lost compare-and-set returns `false`.** Another worker moved the row first: a real
-   *   conflict, to re-read and decide again, never a no-op to ignore.
-   *
-   * So terminal really is terminal here: `RESERVATION_TRANSITIONS` gives terminal states no
-   * outgoing edges, and every write goes through this function.
    */
   async function transitionReservation({
     id,
@@ -420,9 +548,6 @@ export function createCapacityReservationRepository(client: PrismaClient) {
       throw new Error(`Illegal reservation transition ${from} -> ${to}`);
     }
 
-    // The §13 CHECKs are biconditional, so a terminal state must carry its timestamp and a
-    // non-terminal one must not. Building the payload here keeps a caller from writing a row the
-    // database will reject — or, worse, a stale `committedAt` surviving into a non-terminal row.
     const timestamps =
       to === "COMMITTED"
         ? { committedAt: at, releasedAt: null }
