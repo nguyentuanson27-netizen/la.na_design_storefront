@@ -43,6 +43,21 @@ const PROMO_TITLES: Record<string, string> = {
   [PROMOS[3]]: "Acceptance Công sở",
 };
 const FEEDBACK_ALTS = Array.from({ length: 8 }, (_, index) => `Acceptance feedback ${index + 1}`);
+/**
+ * Natural sizes for the eight fixture photographs: tall full-body, 3:4, square and landscape, as
+ * the shipped feedback set mixes them. The `/feedback` gallery is an uncropped masonry, so each
+ * box must take exactly its own photograph's ratio.
+ */
+const FEEDBACK_SIZES = [
+  { width: 1366, height: 2048 },
+  { width: 1200, height: 2134 },
+  { width: 1080, height: 1080 },
+  { width: 1600, height: 1200 },
+  { width: 960, height: 1280 },
+  { width: 1080, height: 1350 },
+  { width: 1200, height: 800 },
+  { width: 858, height: 1280 },
+] as const;
 
 const MOBILE = { width: 390, height: 844 } as const;
 const DESKTOP = { width: 1440, height: 900 } as const;
@@ -100,7 +115,10 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
     metadataTitle: "Acceptance feedback title",
     metadataDescription: "Acceptance feedback description.",
     images: [
-${FEEDBACK_ALTS.map((alt, index) => `      { src: "${IMAGE(`feedback-${index + 1}`)}", alt: "${alt}" },`).join("\n")}
+${FEEDBACK_ALTS.map(
+  (alt, index) =>
+    `      { src: "${IMAGE(`feedback-${index + 1}`)}", alt: "${alt}", width: ${FEEDBACK_SIZES[index]!.width}, height: ${FEEDBACK_SIZES[index]!.height} },`,
+).join("\n")}
     ],
   },
 };
@@ -337,6 +355,27 @@ const tops = (page: Page, selector: string) =>
     .evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().top)));
 
 /**
+ * Serve each fixture feedback photograph at its own natural ratio, so the browser's intrinsic size
+ * -- not only the width/height attributes -- is what the layout has to honour. Registered after the
+ * `beforeEach` stub, so it takes precedence for the requests it answers.
+ */
+const serveFeedbackAtNaturalSize = (page: Page) =>
+  page.route("**/_next/image**", (route) => {
+    const source = new URL(route.request().url()).searchParams.get("url") ?? "";
+    const index = Number(/refresh-feedback-(\d+)\.jpg/.exec(source)?.[1] ?? 0) - 1;
+    const size = FEEDBACK_SIZES[index];
+    if (!size) {
+      route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+      return;
+    }
+    route.fulfill({
+      status: 200,
+      contentType: "image/svg+xml",
+      body: `<svg xmlns="http://www.w3.org/2000/svg" width="${size.width}" height="${size.height}"><rect width="100%" height="100%" fill="#d4c7b8"/></svg>`,
+    });
+  });
+
+/**
  * CTA names carry the destination in visually hidden text; Chromium's accessible-name computation
  * separates that out-of-flow span with a space, so names are matched whitespace-tolerantly.
  */
@@ -500,6 +539,12 @@ test("the feedback rail scrolls horizontally, is keyboard operable and leads to 
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+    // Every photograph is a zoom button in order, and the one after the last is `Xem thêm`.
+    const zoomButtons = section.locator(".feedback-rail__item button.feedback-zoom");
+    await expect(zoomButtons).toHaveCount(FEEDBACK_ALTS.length);
+    await page.keyboard.press("Tab");
+    await expect(zoomButtons.first()).toBeFocused();
+    await zoomButtons.last().focus();
     await page.keyboard.press("Tab");
     await expect(section.getByRole("link", { name: /^Xem thêm\s*: Acceptance feedback$/ })).toBeFocused();
 
@@ -513,6 +558,111 @@ test("the feedback rail scrolls horizontally, is keyboard operable and leads to 
   expect(await page.locator(".feedback-gallery img").evaluateAll((images) =>
     images.map((image) => image.getAttribute("alt")),
   )).toEqual(FEEDBACK_ALTS);
+});
+
+test("pressing a feedback photograph opens it enlarged in a keyboard-operable viewer", async ({ page }) => {
+  await serveFeedbackAtNaturalSize(page);
+  for (const [path, viewport, list] of [
+    ["/", DESKTOP, '[data-homepage-region="feedback"] .feedback-rail__item'],
+    ["/feedback", MOBILE, ".feedback-gallery__item"],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+
+    const second = page.locator(`${list} button.feedback-zoom`).nth(1);
+    await expect(second).toHaveAccessibleName(`Phóng to ảnh: ${FEEDBACK_ALTS[1]}`);
+    await expect(page.locator(`${list} a`)).toHaveCount(0);
+
+    await second.click();
+    const viewer = page.getByRole("dialog", { name: "Xem ảnh feedback" });
+    await expect(viewer).toBeVisible();
+    const enlarged = viewer.locator("img");
+    await expect(enlarged).toHaveAttribute("alt", FEEDBACK_ALTS[1]!);
+    await expect(viewer.getByText(`2 / ${FEEDBACK_ALTS.length}`)).toBeVisible();
+    // Uncropped: the enlarged photograph keeps its natural ratio and is not covered to a frame.
+    const box = (await enlarged.boundingBox())!;
+    const natural = FEEDBACK_SIZES[1]!.width / FEEDBACK_SIZES[1]!.height;
+    expect(box.width / box.height).toBeCloseTo(natural, 1);
+    expect(await enlarged.evaluate((image) => getComputedStyle(image).objectFit)).not.toBe("cover");
+    expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+    // The page behind stays put while the viewer is open.
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+    await page.mouse.wheel(0, 600);
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+    // Arrow keys and the buttons move through the configured order, wrapping at the ends.
+    await page.keyboard.press("ArrowRight");
+    await expect(enlarged).toHaveAttribute("alt", FEEDBACK_ALTS[2]!);
+    await viewer.getByRole("button", { name: "Ảnh trước" }).click();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect(enlarged).toHaveAttribute("alt", FEEDBACK_ALTS[FEEDBACK_ALTS.length - 1]!);
+    await viewer.getByRole("button", { name: "Ảnh sau" }).click();
+    await expect(enlarged).toHaveAttribute("alt", FEEDBACK_ALTS[0]!);
+
+    // Escape closes it and hands focus back to the photograph that opened it.
+    await page.keyboard.press("Escape");
+    await expect(viewer).toBeHidden();
+    await expect(second).toBeFocused();
+
+    // The close button closes it too.
+    await second.press("Enter");
+    await expect(viewer).toBeVisible();
+    const results = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+    expect(results.violations, JSON.stringify(results.violations, null, 2)).toEqual([]);
+    await viewer.getByRole("button", { name: "Đóng" }).click();
+    await expect(viewer).toBeHidden();
+    await expect(second).toBeFocused();
+  }
+});
+
+test("/feedback is an uncropped masonry: natural ratios, 4 columns on desktop and 2 on a phone", async ({
+  page,
+}) => {
+  await serveFeedbackAtNaturalSize(page);
+
+  for (const [viewport, columns] of [
+    [DESKTOP, 4],
+    [MOBILE, 2],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}/feedback`, { waitUntil: "networkidle" });
+
+    const gallery = page.locator(".feedback-gallery");
+    await expect(gallery.locator(".feedback-photo-uncropped")).toHaveCount(FEEDBACK_SIZES.length);
+    await expect(gallery.locator(".feedback-photo")).toHaveCount(0);
+
+    const boxes = await gallery.locator(".feedback-photo-uncropped").evaluateAll((frames) =>
+      frames.map((frame) => {
+        const image = frame.querySelector("img")!;
+        const frameBox = frame.getBoundingClientRect();
+        const imageBox = image.getBoundingClientRect();
+        return {
+          left: Math.round(frameBox.left),
+          frameRatio: frameBox.width / frameBox.height,
+          imageRatio: imageBox.width / imageBox.height,
+          imageHeight: imageBox.height,
+          frameHeight: frameBox.height,
+          objectFit: getComputedStyle(image).objectFit,
+        };
+      }),
+    );
+    boxes.forEach((box, index) => {
+      const natural = FEEDBACK_SIZES[index]!.width / FEEDBACK_SIZES[index]!.height;
+      // The frame is the photograph: its ratio is the natural one, and nothing is cropped away.
+      expect(box.frameRatio, `${viewport.width}px photo ${index + 1} frame ratio`).toBeCloseTo(natural, 1);
+      expect(box.imageRatio, `${viewport.width}px photo ${index + 1} image ratio`).toBeCloseTo(natural, 1);
+      expect(Math.abs(box.imageHeight - box.frameHeight), `${viewport.width}px photo ${index + 1} clipped`).toBeLessThanOrEqual(1);
+      expect(box.objectFit).not.toBe("cover");
+    });
+
+    expect(new Set(boxes.map((box) => box.left)).size, `${viewport.width}px column count`).toBe(columns);
+    expect(
+      await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
+      `${viewport.width}px horizontal overflow`,
+    ).toBe(true);
+  }
 });
 
 test("the fully populated homepage and /feedback are accessible and overflow-free at both widths", async ({

@@ -1884,6 +1884,7 @@ body:has(.admin-shell) .site-masthead {
 
 .feedback-photo {
   position: relative;
+  display: block;
   aspect-ratio: 3 / 4;
   overflow: hidden;
   background: var(--stone);
@@ -1906,12 +1907,159 @@ body:has(.admin-shell) .site-masthead {
 }
 
 .feedback-gallery {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 2px;
+  column-count: 4;
+  column-gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.feedback-gallery__item,
+.feedback-gallery > li {
+  break-inside: avoid;
+  margin-bottom: 8px;
+}
+
+.feedback-photo-uncropped {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--stone);
+}
+
+.feedback-photo-uncropped__img {
+  width: 100%;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  transition: transform 0.3s ease;
+}
+
+.feedback-photo-uncropped:hover .feedback-photo-uncropped__img {
+  transform: scale(1.02);
+}
+
+/* A feedback photograph is a button that opens it enlarged (owner request 2026-09-24). */
+.feedback-zoom {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.feedback-zoom:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+.feedback-viewer {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: rgb(20 12 8 / 92%);
+  color: var(--white);
+}
+
+.feedback-viewer::backdrop {
+  background: rgb(20 12 8 / 92%);
+}
+
+.feedback-viewer[open] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.feedback-viewer__figure {
+  margin: 0;
+  padding: 3.5rem 4rem;
+  max-width: 100%;
+  max-height: 100%;
+  pointer-events: none;
+}
+
+.feedback-viewer__img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(100%, 72rem);
+  max-height: calc(100dvh - 7rem);
+  object-fit: contain;
+  pointer-events: auto;
+}
+
+.feedback-viewer__close,
+.feedback-viewer__nav {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: var(--control-height);
+  min-height: var(--control-height);
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgb(255 253 250 / 12%);
+  color: var(--white);
+  cursor: pointer;
+}
+
+.feedback-viewer__close:hover,
+.feedback-viewer__nav:hover {
+  background: rgb(255 253 250 / 24%);
+}
+
+.feedback-viewer__close:focus-visible,
+.feedback-viewer__nav:focus-visible {
+  outline: 2px solid var(--white);
+  outline-offset: 2px;
+}
+
+.feedback-viewer__close {
+  top: 0.75rem;
+  right: 0.75rem;
+}
+
+.feedback-viewer__nav {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.feedback-viewer__nav--prev {
+  left: 0.75rem;
+}
+
+.feedback-viewer__nav--next {
+  right: 0.75rem;
+}
+
+.feedback-viewer__count {
+  position: absolute;
+  bottom: 1rem;
+  left: 50%;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: 0.8rem;
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 640px) {
+  .feedback-viewer__figure {
+    padding: 3.5rem 0.5rem;
+  }
+
+  .feedback-viewer__nav {
+    top: auto;
+    bottom: 0.5rem;
+    transform: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -1950,8 +2098,7 @@ body:has(.admin-shell) .site-masthead {
     padding: 2.5rem 0 3rem;
   }
 
-  .category-discovery__grid,
-  .feedback-gallery {
+  .category-discovery__grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1963,6 +2110,16 @@ body:has(.admin-shell) .site-masthead {
 
   .category-discovery__intro {
     padding-bottom: 0;
+  }
+
+  .feedback-gallery {
+    column-count: 2;
+    column-gap: 6px;
+  }
+
+  .feedback-gallery__item,
+  .feedback-gallery > li {
+    margin-bottom: 6px;
   }
 
   .category-discovery__grid {

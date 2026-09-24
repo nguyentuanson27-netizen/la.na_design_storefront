@@ -46,7 +46,12 @@ export function parseConfiguredCopy(raw: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export type FeedbackImage = Readonly<{ src: string; alt: string }>;
+export type FeedbackImage = Readonly<{
+  src: string;
+  alt: string;
+  width: number;
+  height: number;
+}>;
 
 export type FeedbackContent = Readonly<{
   title: string;
@@ -57,11 +62,19 @@ export type FeedbackContent = Readonly<{
   images: readonly FeedbackImage[];
 }>;
 
+const parseImageDimension = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+
 function parseFeedbackImage(image: FeedbackImageConfig): FeedbackImage | null {
   const src = parseHomepageImageSrc(image.src);
   // `""` is a deliberate decorative decision, so it is kept; a missing value is not a decision.
   if (src === null || typeof image.alt !== "string") return null;
-  return Object.freeze({ src, alt: image.alt.trim() });
+  // The gallery is uncropped: without its natural size a photograph cannot take its own ratio, and
+  // quietly cropping it to 3:4 instead would publish a layout nobody approved.
+  const width = parseImageDimension(image.width);
+  const height = parseImageDimension(image.height);
+  if (width === null || height === null) return null;
+  return Object.freeze({ src, alt: image.alt.trim(), width, height });
 }
 
 /**

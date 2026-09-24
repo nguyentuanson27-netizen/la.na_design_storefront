@@ -37,6 +37,12 @@ export type FeedbackImageConfig = Readonly<{
    * an explicit `""` when it is purely decorative. Never generated.
    */
   alt: string;
+  /**
+   * Natural pixel size of the asset. Required: `/feedback` is an uncropped masonry, and these are
+   * what let each tile reserve its photograph's own ratio before it loads.
+   */
+  width: number;
+  height: number;
 }>;
 
 export type HomepageConfig = Readonly<{
@@ -85,8 +91,10 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
     description: "You might’ve just found it",
   },
   feedback: {
-    // Pending (§17): the heading, the metadata copy and the photographs themselves. Until all of
-    // them are supplied the homepage rail omits itself and `/feedback` is not published.
+    // Pending (§17): the heading, the metadata copy and the photographs themselves -- each photograph
+    // with its natural width/height and a manually authored alt decision. Until all of them are
+    // supplied as owner-approved content the homepage rail omits itself and `/feedback` is not
+    // published.
     title: null,
     ctaLabel: "Xem thêm",
     metadataTitle: null,
