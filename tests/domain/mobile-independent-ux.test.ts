@@ -123,7 +123,9 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
   assert.match(panel, /renderSelectorLegend\("Kích cỡ", selection\.size\)/);
-  assert.match(panel, /renderSelectorLegend\("Màu", selection\.color\)/);
+  // The colour legend defaults to "Màu" and takes a product's own dimension label when it has one
+  // (SD007 reads "Màu quần"), so the default is pinned alongside the override that replaces it.
+  assert.match(panel, /renderSelectorLegend\(view\.colorDimensionLabel \?\? "Màu", selection\.color\)/);
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
 
