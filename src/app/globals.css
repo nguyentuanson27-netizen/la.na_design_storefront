@@ -1767,6 +1767,7 @@ body:has(.admin-shell) .site-masthead {
 .category-discovery__label {
   display: block;
   padding: 1rem var(--shell-gutter) 0;
+  text-align: center;
   font-family: var(--font-serif), Georgia, serif;
   font-size: clamp(1.25rem, 2vw, 1.75rem);
   font-weight: 400;
