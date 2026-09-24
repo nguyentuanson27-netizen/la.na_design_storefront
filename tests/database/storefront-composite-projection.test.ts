@@ -184,7 +184,7 @@ test("admin activation converges inactive real parent and child through PDP, car
       {
         variantId: parentVariant.id,
         pancakeWarehouseId: "projection-warehouse-parent",
-        quantity: 2,
+        quantity: 0,
         syncedAt,
       },
       {
@@ -299,6 +299,11 @@ test("admin activation converges inactive real parent and child through PDP, car
     ],
   );
   assert.equal(
+    detail.projection.options.find(({ id }) => id === parentVariant.id)?.purchasable,
+    true,
+    "FULL SET uses component stock even when Pancake reports zero stock on the parent variant",
+  );
+  assert.equal(
     await productRepository.getProductBySlug({ shopId, slug: "projection-shirt-a" }),
     null,
   );
@@ -318,6 +323,16 @@ test("admin activation converges inactive real parent and child through PDP, car
       expiresAt: new Date("2026-08-24T00:00:00.000Z"),
     },
   });
+  const [parentLine] = await createStorefrontCartRepository(prisma).getLines({
+    shopId,
+    items: [{ variantId: parentVariant.id, quantity: 1 }],
+  });
+  assert.equal(
+    parentLine?.available,
+    true,
+    "cart uses the same component-derived FULL SET capacity as the PDP",
+  );
+
   const cartService = createAnonymousCartService(prisma);
   const cartMutation = await cartService.setItemQuantity({
     cartId,
@@ -409,6 +424,11 @@ test("admin activation converges inactive real parent and child through PDP, car
       { id: pantsVariant.id, kindLabel: "QUẦN LẺ" },
       { id: skirtVariant.id, kindLabel: "CV LẺ" },
     ],
+  );
+  assert.equal(
+    afterDeactivation.projection.options.find(({ id }) => id === parentVariant.id)?.purchasable,
+    true,
+    "disabling a child for standalone sale must not remove its stocked units from the FULL SET",
   );
 
   assert.deepEqual(

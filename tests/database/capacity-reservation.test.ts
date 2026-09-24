@@ -482,6 +482,60 @@ test("I6a an unknown variant and an empty basket are fail-closed refusals", asyn
   assert.equal(await prisma.variantCapacityReservation.count({ where: { orderId } }), 0);
 });
 
+test("I6a composite parents and direct child sales share one component capacity", async () => {
+  const child = await seedVariant("composite-shared-child", { stock: 1 });
+  const parentA = await seedVariant("composite-parent-a", { stock: 0 });
+  const parentB = await seedVariant("composite-parent-b", { stock: 0 });
+  await prisma.compositeComponentMirror.createMany({
+    data: [
+      {
+        parentVariantId: parentA,
+        componentVariantId: child,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentB,
+        componentVariantId: child,
+        quantity: 1,
+        syncedAt,
+      },
+    ],
+  });
+
+  const [orderA, orderB] = await Promise.all([
+    seedOrder("composite-parent-a"),
+    seedOrder("composite-parent-b"),
+  ]);
+  const outcomes = await Promise.all([
+    repository.reserveOrderCapacity({
+      orderId: orderA,
+      lines: [{ variantId: parentA, quantity: 1 }],
+    }),
+    repository.reserveOrderCapacity({
+      orderId: orderB,
+      lines: [{ variantId: parentB, quantity: 1 }],
+    }),
+  ]);
+
+  assert.equal(
+    outcomes.filter((outcome) => outcome.ok).length,
+    1,
+    "two different parent variants must serialize on their shared child stock",
+  );
+  const refused = outcomes.find((outcome) => !outcome.ok);
+  assert.equal(refused?.ok, false);
+  assert.equal(refused?.ok === false && refused.reason, "standard-would-go-negative");
+
+  const directOrder = await seedOrder("composite-direct-child");
+  const direct = await repository.reserveOrderCapacity({
+    orderId: directOrder,
+    lines: [{ variantId: child, quantity: 1 }],
+  });
+  assert.equal(direct.ok, false, "a FULL SET hold must also consume capacity seen by the child sale");
+  assert.equal(direct.ok === false && direct.reason, "standard-would-go-negative");
+});
+
 test("I6a every state change is a guarded compare-and-set", async () => {
   // §6.4 — the enum constrains a value and the §13 CHECKs are intra-row, so nothing in SQL stops an
   // UPDATE moving COMMITTED -> RESERVED. The guard is the only thing that does.
