@@ -49,8 +49,8 @@ export function parseConfiguredCopy(raw: unknown): string | null {
 export type FeedbackImage = Readonly<{
   src: string;
   alt: string;
-  width?: number;
-  height?: number;
+  width: number;
+  height: number;
 }>;
 
 export type FeedbackContent = Readonly<{
@@ -62,23 +62,19 @@ export type FeedbackContent = Readonly<{
   images: readonly FeedbackImage[];
 }>;
 
+const parseImageDimension = (value: unknown): number | null =>
+  typeof value === "number" && Number.isInteger(value) && value > 0 ? value : null;
+
 function parseFeedbackImage(image: FeedbackImageConfig): FeedbackImage | null {
   const src = parseHomepageImageSrc(image.src);
   // `""` is a deliberate decorative decision, so it is kept; a missing value is not a decision.
   if (src === null || typeof image.alt !== "string") return null;
-  const width =
-    typeof image.width === "number" && Number.isInteger(image.width) && image.width > 0
-      ? image.width
-      : undefined;
-  const height =
-    typeof image.height === "number" && Number.isInteger(image.height) && image.height > 0
-      ? image.height
-      : undefined;
-  return Object.freeze({
-    src,
-    alt: image.alt.trim(),
-    ...(width !== undefined && height !== undefined ? { width, height } : {}),
-  });
+  // The gallery is uncropped: without its natural size a photograph cannot take its own ratio, and
+  // quietly cropping it to 3:4 instead would publish a layout nobody approved.
+  const width = parseImageDimension(image.width);
+  const height = parseImageDimension(image.height);
+  if (width === null || height === null) return null;
+  return Object.freeze({ src, alt: image.alt.trim(), width, height });
 }
 
 /**

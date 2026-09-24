@@ -32,9 +32,14 @@ const complete = (
   metadataTitle: "Khách hàng",
   metadataDescription: "Ảnh khách hàng mặc La.na.",
   images: [
-    { src: "/feedback/03.webp", alt: "Khách hàng mặc áo dài" },
-    { src: "/feedback/01.webp", alt: "" },
-    { src: "https://content.pancake.vn/1/2/3/4/feedback-02.jpg", alt: "Khách hàng mặc set đồ" },
+    { src: "/feedback/03.webp", alt: "Khách hàng mặc áo dài", width: 1366, height: 2048 },
+    { src: "/feedback/01.webp", alt: "", width: 1080, height: 1080 },
+    {
+      src: "https://content.pancake.vn/1/2/3/4/feedback-02.jpg",
+      alt: "Khách hàng mặc set đồ",
+      width: 1600,
+      height: 1200,
+    },
   ],
   ...overrides,
 });
@@ -54,20 +59,33 @@ test("an explicit decorative alt is kept as a decision, not treated as missing",
   assert.equal(resolveFeedbackContent(complete())?.images[1]?.alt, "");
 });
 
-test("feedback preserves optional width and height dimensions when provided", () => {
-  const content = resolveFeedbackContent(
-    complete({
-      images: [
-        { src: "/feedback/01.webp", alt: "Photo", width: 1200, height: 1600 },
-        { src: "/feedback/02.webp", alt: "" },
-      ],
-    }),
+test("feedback keeps each photograph's natural width and height", () => {
+  assert.deepEqual(
+    resolveFeedbackContent(complete())?.images.map(({ width, height }) => [width, height]),
+    [
+      [1366, 2048],
+      [1080, 1080],
+      [1600, 1200],
+    ],
   );
+});
 
-  assert.equal(content?.images[0]?.width, 1200);
-  assert.equal(content?.images[0]?.height, 1600);
-  assert.equal(content?.images[1]?.width, undefined);
-  assert.equal(content?.images[1]?.height, undefined);
+test("a photograph without a valid natural size closes the gallery rather than cropping it", () => {
+  // The masonry is uncropped, so an entry it cannot size would fall back to a 3:4 crop nobody
+  // approved. It fails the whole feedback content closed instead, like any other invalid entry.
+  const [first, ...rest] = complete().images;
+  for (const size of [
+    { width: undefined, height: 2048 },
+    { width: 1366, height: undefined },
+    { width: 0, height: 2048 },
+    { width: 1366, height: -1 },
+    { width: 1366.5, height: 2048 },
+    { width: "1366", height: 2048 },
+    { width: Number.NaN, height: 2048 },
+  ]) {
+    const broken = { ...first!, ...size } as unknown as (typeof rest)[number];
+    assert.equal(resolveFeedbackContent(complete({ images: [broken, ...rest] })), null, JSON.stringify(size));
+  }
 });
 
 test("feedback content is all-or-nothing while any part is pending", () => {
@@ -84,7 +102,10 @@ test("feedback content is all-or-nothing while any part is pending", () => {
 });
 
 test("one invalid image closes the gallery instead of silently reordering it", () => {
-  const images = [...complete().images, { src: "https://evil.example.com/x.jpg", alt: "" }];
+  const images = [
+    ...complete().images,
+    { src: "https://evil.example.com/x.jpg", alt: "", width: 1200, height: 1600 },
+  ];
   assert.equal(resolveFeedbackContent(complete({ images })), null);
 });
 

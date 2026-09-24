@@ -4,7 +4,7 @@ Status: **APPROVED (#60) — implemented in #62; section content pending owner m
 
 Implementation note: the components, fail-closed resolution, `/feedback` route and SEO wiring are built. Until the §17 content is supplied in `src/content/homepage.config.ts` (and category images in `CategoryEditorialMedia`), SPECIAL DEALS, both promo rows and the feedback rail omit themselves and `/feedback` returns 404 and is withheld from the sitemap.
 
-Feedback (#74): the feedback title and metadata title/description ship in `src/content/homepage.config.ts`, and the `/feedback` gallery is an uncropped masonry — each photograph keeps its natural `width`/`height` ratio, four columns on desktop and two on mobile. The image set itself is still pending, so the feedback rail and `/feedback` stay fail-closed as above until it is supplied.
+Feedback (#74): the `/feedback` gallery is an uncropped masonry — each photograph keeps its natural `width`/`height` ratio, four columns on desktop and two on mobile — and any feedback photograph, on the homepage rail or on `/feedback`, opens enlarged in a viewer when pressed (owner request 2026-09-24). `width`/`height` are required on every configured photograph: an entry without them fails the whole feedback content closed rather than falling back to a cropped tile. The feedback heading, metadata copy and image set are all still pending (§17), so the rail and `/feedback` stay fail-closed as above.
 
 Owner confirmation date: 2026-09-23
 
@@ -343,6 +343,7 @@ Replaces the role previously discussed as the Ding Dang "Muse" area.
 - Desktop users can scroll/drag/use an accessible control path.
 - No autoplay requirement.
 - No image should become a product/category link by default.
+- Pressing a photograph opens it enlarged, uncropped, in an accessible viewer (a modal dialog with close, previous/next, `Escape` and arrow keys, focus returned to the photograph on close). This applies on the homepage rail and on `/feedback` (owner request 2026-09-24). The photograph is a button, never a link.
 - Section title itself is **not a link**.
 - At the end of the section, render `Xem thêm` linking to the dedicated feedback page.
 
@@ -659,6 +660,6 @@ These values are intentionally supplied later through config and do not block th
 - four collection promo mappings and their homepage-specific images/CTA copy; visible collection titles are derived from `CollectionDefinition.title`;
 - category editorial images;
 - feedback image set, each photograph with its natural `width`/`height` and a manually authored accessible alt decision (§7.6);
-- ~~feedback metadata title + description~~ — supplied (#74).
+- feedback heading and metadata title + description, supplied as approved/config-owned copy before the public route is production-ready.
 
 No implementation may invent these values in order to make a screenshot look complete.

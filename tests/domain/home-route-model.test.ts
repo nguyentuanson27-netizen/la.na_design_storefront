@@ -420,7 +420,7 @@ const FEEDBACK: FeedbackContent = {
   ctaLabel: "Xem thêm",
   metadataTitle: "Khách hàng",
   metadataDescription: "Ảnh khách hàng.",
-  images: [{ src: "/feedback/1.webp", alt: "" }],
+  images: [{ src: "/feedback/1.webp", alt: "", width: 1200, height: 1600 }],
 };
 
 const emptyInput = {
@@ -500,9 +500,9 @@ test("promo rows keep their positions around YOUR NEXT FAVOURITE", () => {
 
 test("the feedback section links to /feedback and keeps the configured image order", () => {
   const images = [
-    { src: "/feedback/3.webp", alt: "Ảnh 3" },
-    { src: "/feedback/1.webp", alt: "" },
-    { src: "/feedback/2.webp", alt: "Ảnh 2" },
+    { src: "/feedback/3.webp", alt: "Ảnh 3", width: 1200, height: 1600 },
+    { src: "/feedback/1.webp", alt: "", width: 1200, height: 1600 },
+    { src: "/feedback/2.webp", alt: "Ảnh 2", width: 1200, height: 1600 },
   ];
   const model = buildHomeViewModel({ ...emptyInput, feedback: { ...FEEDBACK, images } });
 
