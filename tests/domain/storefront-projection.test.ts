@@ -148,6 +148,50 @@ test("composite projection exposes real parent and component variants as separat
   assert.equal(shirt.canAdd, true);
 });
 
+test("within a kind, colour is chosen before size and the sizes narrow to that colour", () => {
+  // Owner request 2026-09-24: the pickers read kind, colour, size. The resolution follows the same
+  // order, so a shopper never meets a locked colour row above the size row that unlocks it.
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [
+      variant("set-white-m", "M", { color: "Trắng" }),
+      variant("set-white-l", "L", { color: "Trắng" }),
+      variant("set-blue-m", "M", { color: "Xanh" }),
+    ],
+    componentGroups: [],
+    hasCompositeGraph: true,
+  });
+
+  const kindOnly = deriveStorefrontProjectionSelection(projection.options, {
+    kindKey: "parent",
+    color: null,
+    size: null,
+  });
+  assert.equal(kindOnly.hasColorOptions, true);
+  assert.deepEqual(kindOnly.colors, [
+    { value: "Trắng", disabled: false },
+    { value: "Xanh", disabled: false },
+  ]);
+
+  const blue = deriveStorefrontProjectionSelection(projection.options, {
+    kindKey: "parent",
+    color: "Xanh",
+    size: null,
+  });
+  assert.deepEqual(blue.sizes, [
+    { value: "M", disabled: false },
+    { value: "L", disabled: true },
+  ]);
+  assert.equal(blue.canAdd, false);
+
+  const blueM = deriveStorefrontProjectionSelection(projection.options, {
+    kindKey: "parent",
+    color: "Xanh",
+    size: "M",
+  });
+  assert.equal(blueM.selectedVariantId, "set-blue-m");
+  assert.equal(blueM.canAdd, true);
+});
+
 test("composite projection does not infer or synthesize component identity", () => {
   const projection = buildStorefrontProductProjection({
     parentVariants: [variant("set-m", "M")],
