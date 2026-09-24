@@ -249,8 +249,12 @@ test("composite child SKU classification is case-insensitive and fail-closed", (
   const cases = [
     ["AO-SD441", "ÁO LẺ"],
     ["xxao123", "ÁO LẺ"],
+    ["AD005", "ÁO LẺ"],
+    ["AD002-S", "ÁO LẺ"],
     ["QUAN-QD001", "QUẦN LẺ"],
     ["abc-quan-xl", "QUẦN LẺ"],
+    ["QD001", "QUẦN LẺ"],
+    ["QD002-L", "QUẦN LẺ"],
     ["CV001", "CV LẺ"],
     ["VAY-001", "CV LẺ"],
     ["cv-vay-001", "CV LẺ"],

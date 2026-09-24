@@ -62,6 +62,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               select: {
                 id: true,
                 pancakeVariationId: true,
+                pancakeDisplayId: true,
                 sku: true,
                 color: true,
                 size: true,
@@ -123,7 +124,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           };
           groups.set(component.product.id, group);
         }
-        group.skus.push(component.sku);
+        group.skus.push(component.sku ?? component.pancakeDisplayId);
         if (!group.variants.has(component.id)) {
           group.variants.set(component.id, {
             id: component.id,

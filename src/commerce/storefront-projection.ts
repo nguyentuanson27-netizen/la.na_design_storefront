@@ -38,8 +38,8 @@ export function classifyCompositeComponentSku(
   if (normalized.length === 0) return null;
 
   const matches: CompositeComponentKindLabel[] = [];
-  if (normalized.includes("AO")) matches.push("ÁO LẺ");
-  if (normalized.includes("QUAN")) matches.push("QUẦN LẺ");
+  if (normalized.includes("AO") || /(^|[^A-Z0-9])AD([-_0-9]|$)/.test(normalized) || normalized.startsWith("AD")) matches.push("ÁO LẺ");
+  if (normalized.includes("QUAN") || /(^|[^A-Z0-9])QD([-_0-9]|$)/.test(normalized) || normalized.startsWith("QD")) matches.push("QUẦN LẺ");
   if (normalized.includes("CV") || normalized.includes("VAY")) matches.push("CV LẺ");
 
   return matches.length === 1 ? matches[0] : null;
