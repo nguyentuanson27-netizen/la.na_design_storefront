@@ -421,10 +421,13 @@ test("composite activation opens and closes the real child purchase path while p
    * says so. What must not happen is a shopper reading "this size is gone" from a state that only
    * means "you have not chosen a classification yet".
    */
+  // Owner request 2026-09-24: the sentence is not shown, but it still describes the size group, so
+  // a screen reader meeting the disabled sizes hears why.
   const sizeGroup = page.getByRole("group", { name: "Kích cỡ" });
+  await expect(sizeGroup).toHaveAccessibleDescription("Nàng chọn phân loại trước để xem size còn hàng");
   await expect(
     sizeGroup.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toBeVisible();
+  ).toHaveClass(/\bsr-only\b/);
   await expect(page.getByRole("radio", { name: "M", exact: true })).toBeDisabled();
 
   const unresolvedSize = sizeGroup.getByText("M", { exact: true });
@@ -456,9 +459,9 @@ test("composite activation opens and closes the real child purchase path while p
 
   // Back to the unresolved state the rest of this test drives from.
   await page.reload({ waitUntil: "networkidle" });
-  await expect(
-    page.getByText("Nàng chọn phân loại trước để xem size còn hàng", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole("group", { name: "Kích cỡ" })).toHaveAccessibleDescription(
+    "Nàng chọn phân loại trước để xem size còn hàng",
+  );
 
   const structuredDocuments = (await page
     .locator('script[type="application/ld+json"]')

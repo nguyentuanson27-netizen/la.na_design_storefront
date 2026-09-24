@@ -469,8 +469,14 @@ export function PurchasePanelView({
         }`}
       >
         {renderSelectorLegend("Kích cỡ", selection.size)}
+        {/*
+          Owner request 2026-09-24: the "choose a kind first" sentence is not shown. It stays in
+          the accessibility tree as the size group's description, because the size inputs are
+          disabled until a kind is chosen and a screen reader would otherwise meet locked options
+          with no reason; sighted shoppers get the dashed, unresolved chips as the cue.
+        */}
         {view.kindSelectionGuidance === null ? null : (
-          <p id={kindGuidanceId} className="mt-2 max-w-xs text-sm leading-6 text-[#3B2219]">
+          <p id={kindGuidanceId} className="sr-only">
             {view.kindSelectionGuidance}
           </p>
         )}
