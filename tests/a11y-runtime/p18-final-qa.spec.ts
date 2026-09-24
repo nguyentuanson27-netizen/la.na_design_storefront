@@ -273,21 +273,23 @@ test("P18 captures representative production performance evidence for home, PLP,
           const visibleProductImages = await page
             .locator(`img[alt^="${productName}"]:visible`)
             .evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+          // A phone paints image 1 alone; from `lg` up the first page is the pair `1+2` (the
+          // neighbour's sliver beside it has an empty alt, so it is not counted as a photograph).
           expect(
             visibleProductImages,
-            `${viewport.name}: exactly one product photograph on screen`,
-          ).toEqual([productName]);
+            `${viewport.name}: the first page's product photographs on screen`,
+          ).toEqual(viewport.name === "desktop" ? [productName, `${productName} - Ảnh 2`] : [productName]);
 
           if (viewport.name === "desktop") {
-            // From `lg` up the stage is the gallery: slide 1 is image 1 alone, then the pair.
+            // From `lg` up the stage is the gallery: three photographs page as `1+2`, then `2+3`.
             await expect(stage.locator(".pdp-mobile-gallery")).toBeHidden();
             await expect(stage.locator(".pdp-stage__track")).toBeVisible();
             await expect(stage.locator(".pdp-stage__slide")).toHaveCount(2);
 
             const activeSlide = stage.locator('.pdp-stage__slide[data-active="true"]');
             await expect(activeSlide).toHaveCount(1);
-            await expect(activeSlide.locator("img")).toHaveCount(1);
-            await expect(activeSlide.locator("img")).toHaveAttribute("alt", productName);
+            await expect(activeSlide.locator('img:not([alt=""])')).toHaveCount(2);
+            await expect(activeSlide.locator("img").first()).toHaveAttribute("alt", productName);
             await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
           } else {
             // Below `lg` it is the one-image swipe gallery with its current/total indicator.

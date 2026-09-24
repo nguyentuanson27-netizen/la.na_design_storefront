@@ -576,8 +576,8 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   const stage = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
   await expect(stage).toBeVisible();
 
-  // Refinement spec §1: a near-viewport media stage that contains the garment rather than
-  // cropping it, over the brand's cream rather than black bars.
+  // A near-viewport media stage: a flush strip of full-height 2:3 cells, so the garment keeps its
+  // head and hem and the cells meet with no cream between them.
   const stageBox = (await stage.boundingBox())!;
   expect(stageBox.height, "the stage is approximately one viewport tall").toBeGreaterThan(900 * 0.8);
   /*
@@ -591,18 +591,39 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
       .locator("img")
       .first()
       .evaluate((element) => getComputedStyle(element).objectFit),
-  ).toBe("contain");
+  ).toBe("cover");
   await expect(stage.locator(".pdp-mobile-gallery")).toBeHidden();
 
-  // Slide 1 is image 1 alone at full width; the second slide pairs the remaining two 50/50.
+  /*
+   * Three photographs page as `1+2` then `2+3`. Each page is a full pair edge to edge, and the width
+   * the pair leaves is filled by a sliver of the neighbour -- after it on the first page, before it
+   * on the last -- so the strip spans the viewport with no gap anywhere.
+   */
   const slides = stage.locator(".pdp-stage__slide");
   await expect(slides).toHaveCount(2);
-  const cellWidths = await slides
-    .nth(1)
-    .locator(".pdp-stage__cell")
-    .evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().width)));
-  expect(cellWidths).toHaveLength(2);
-  expect(Math.abs(cellWidths[0]! - cellWidths[1]!), "a two-image slide splits 50/50").toBeLessThanOrEqual(2);
+  for (const [slideIndex, peekSide] of [[0, "after"], [1, "before"]] as const) {
+    const cells = await slides
+      .nth(slideIndex)
+      .locator(".pdp-stage__cell")
+      .evaluateAll((elements) =>
+        elements.map((cell) => {
+          const rect = cell.getBoundingClientRect();
+          return { left: rect.left, right: rect.right, peek: cell.getAttribute("data-peek") };
+        }),
+      );
+    expect(cells).toHaveLength(3);
+    expect(cells[peekSide === "after" ? 2 : 0]!.peek).toBe(peekSide);
+    const pair = cells.filter((cell) => cell.peek === null);
+    expect(
+      Math.abs(pair[0]!.right - pair[0]!.left - (pair[1]!.right - pair[1]!.left)),
+      "the pair's cells are the same width",
+    ).toBeLessThanOrEqual(2);
+    for (let index = 1; index < cells.length; index += 1) {
+      expect(Math.abs(cells[index]!.left - cells[index - 1]!.right), "cells meet with no gap").toBeLessThanOrEqual(1);
+    }
+    expect(Math.round(cells[0]!.left)).toBe(0);
+    expect(Math.round(cells[cells.length - 1]!.right)).toBe(1440);
+  }
 
   // The below-`lg` editorial grid is gone entirely; the mobile gallery above replaced it.
   await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toHaveCount(0);
@@ -707,8 +728,8 @@ test("only the current slide's photographs are exposed to assistive technology",
   const exposedPhotographs = () =>
     stage.getByRole("img").evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
 
-  // Slide 1 is image 1 alone, and it is the only photograph assistive technology can reach.
-  await expect.poll(exposedPhotographs).toEqual([multiName]);
+  // Slide 1 is images 1 and 2, and only they are reachable: the neighbour's sliver is decorative.
+  await expect.poll(exposedPhotographs).toEqual([multiName, `${multiName} - Ảnh 2`]);
   await expect(stage.getByRole("status")).toHaveText("Trang ảnh 1 / 2");
   await expect(previous).toBeDisabled();
   await expect(next).toBeEnabled();
@@ -724,7 +745,7 @@ test("only the current slide's photographs are exposed to assistive technology",
   await expect(next).toBeDisabled();
 
   await previous.click();
-  await expect.poll(exposedPhotographs).toEqual([multiName]);
+  await expect.poll(exposedPhotographs).toEqual([multiName, `${multiName} - Ảnh 2`]);
 
   // The Axe buyer gate still passes over the whole page with the stage in this state.
   await assertPageQuality(page);

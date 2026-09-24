@@ -1,30 +1,58 @@
 /**
  * The desktop PDP media stage's arithmetic, as pure functions.
  *
- * Refinement spec §1/§2 describe the stage in terms the gallery component cannot assert about
- * itself: image 1 stands alone, the rest pair up, the ends do not loop, and the canonical first
- * visible surface survives a `?variant=` deep link. Those are decisions, not markup, so they live
- * here where the domain suite can pin them and the component is left rendering.
+ * The stage is a flush film strip: photographs sit edge to edge at the stage's full height, two to
+ * a page, and whatever width the pair leaves is filled by a sliver of the neighbouring photograph
+ * so the strip visibly continues past the frame. Paging, clamping and the canonical first surface
+ * under a `?variant=` deep link are decisions, not markup, so they live here where the domain suite
+ * can pin them and the component is left rendering.
  *
  * Nothing here knows about stock, price or purchasability. The variant-to-image mapping is the
  * server-resolved one the deep link already uses; this module only reads it.
  */
 
-/** Indices into the trusted gallery, in source order, for one slide. */
+/** Indices into the trusted gallery, in source order, shown in full on one slide. */
 export type ProductGallerySlide = readonly number[];
 
 /**
- * Slide 1 is image 1 alone at full width; everything after it pairs `2+3`, `4+5`, `6+7`, and a
- * final unpaired image keeps the full width rather than being padded with a blank half.
+ * Pages of two, stepping two images at a time: `0+1`, `2+3`, `4+5`. The final page is always a
+ * full pair -- an odd count ends on the last two images, repeating one, rather than a lone
+ * photograph beside an empty frame. A single-image gallery is the only one-image page.
  */
 export function buildDesktopProductGallerySlides(imageCount: number): ProductGallerySlide[] {
   if (!Number.isSafeInteger(imageCount) || imageCount <= 0) return [];
+  if (imageCount === 1) return [[0]];
 
-  const slides: ProductGallerySlide[] = [[0]];
-  for (let index = 1; index < imageCount; index += 2) {
-    slides.push(index + 1 < imageCount ? [index, index + 1] : [index]);
+  const slides: ProductGallerySlide[] = [];
+  for (let start = 0; start < imageCount - 2; start += 2) {
+    slides.push([start, start + 1]);
   }
+  slides.push([imageCount - 2, imageCount - 1]);
   return slides;
+}
+
+/**
+ * The partially visible neighbour that fills the width a slide's pair leaves.
+ *
+ * Every page but the last continues to the right with the next photograph; the last page, having
+ * nothing after it, is anchored to the right and shows the photograph before it on the left
+ * instead. A gallery that fits on one page has no neighbour and is centred.
+ */
+export function gallerySlidePeek(
+  slides: readonly ProductGallerySlide[],
+  slideIndex: number,
+  imageCount: number,
+): { side: "before" | "after"; image: number } | null {
+  const slide = slides[slideIndex];
+  if (!slide || slide.length === 0 || slides.length < 2) return null;
+
+  if (slideIndex < slides.length - 1) {
+    const next = slide[slide.length - 1]! + 1;
+    return next < imageCount ? { side: "after", image: next } : null;
+  }
+
+  const previous = slide[0]! - 1;
+  return previous >= 0 ? { side: "before", image: previous } : null;
 }
 
 /** Which slide holds an image, or slide 1 for an index this gallery does not contain. */
@@ -78,7 +106,8 @@ export function resolveGallerySlideForSelection({
   }
 
   const mappedImage = selectedVariantId === null ? undefined : galleryIndexByVariantId[selectedVariantId];
-  const imageCount = slides.reduce((total, slide) => total + slide.length, 0);
+  // The last page may repeat an image, so the count is the highest index, not the sum of pages.
+  const imageCount = slides.reduce((highest, slide) => Math.max(highest, ...slide.map((image) => image + 1)), 0);
   const isAddressable =
     mappedImage !== undefined && Number.isSafeInteger(mappedImage) && mappedImage >= 0 && mappedImage < imageCount;
 

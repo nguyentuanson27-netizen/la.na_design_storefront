@@ -114,9 +114,11 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(page, /<p className="eyebrow hidden lg:block">\{BRAND\.identity\.name\} \/ Sản phẩm<\/p>/);
   assert.match(page, /<h1 className="mt-0[^"]*lg:mt-5/);
 
-  // One compact selector system now spans mobile, desktop and the quick sheet. Practical touch
-  // targets remain 44px, while desktop no longer re-expands the group spacing.
-  assert.match(panel, /min-h-11 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  // One compact selector system now spans mobile, desktop and the quick sheet. Chips are drawn
+  // 32px tall and 44px wide, and each sits in a label padded to the 44px practical touch target,
+  // while desktop no longer re-expands the group spacing.
+  assert.match(panel, /min-h-8 min-w-11[^"]*bg-\[#3B2219\]\/5[^"]*px-4/);
+  assert.match(panel, /function choiceTarget\(disabled: boolean\) \{\s*return `py-1\.5 /);
   assert.doesNotMatch(panel, /lg:mt-7/);
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);

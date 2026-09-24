@@ -73,12 +73,12 @@ Desktop (`lg` and above):
 - Below `lg`, this refinement intentionally defines no structural mobile/tablet PDP/gallery contract. A dedicated mobile-only follow-up owns that behavior; the only constraint here is that desktop `lg` rules must not leak below the breakpoint.
 - The first trusted product image remains the first full-bleed PDP surface and the transparent header may continue to overlay it.
 - The media stage is approximately one viewport tall. Use the actual header composition when choosing between `100svh` and `calc(100svh - <occupied masthead>)`; do not hard-code a subtraction that is wrong for overlay mode.
-- Product imagery uses `object-contain`, not `object-cover`, for this stage. The complete garment/model silhouette should fit inside the available media area.
-- Empty space caused by `object-contain` uses the La.na cream/stone visual system rather than black bars or arbitrary new colors.
-- Slide 1 contains image 1 alone at full width.
-- Subsequent slides group images in source order as `2+3`, `4+5`, `6+7`, etc.
-- A two-image slide is 50/50.
-- If the final slide has one image, that image occupies the full width.
+- ~~Product imagery uses `object-contain`, not `object-cover`, for this stage.~~ ~~Slide 1 contains image 1 alone at full width; subsequent slides group `2+3`, `4+5`, … 50/50; a final single image occupies the full width.~~ Superseded by the owner amendment below.
+- **Owner amendment 2026-09-24 — flush film strip.** Photographs sit edge to edge with no gap, each in a 2:3 cell at the stage's full height (`object-cover`; with 2:3 photography nothing is cropped, and a narrower cell crops only at the sides, never head or hem).
+  - Pages are pairs in source order, `1+2`, `3+4`, `5+6`, …; an odd count ends on the last two images (repeating one) rather than a lone image. A one-image gallery is a single centred cell.
+  - The width a pair leaves is filled by a partial view of the neighbouring photograph — the next one to the right on every page but the last, the previous one to the left on the last page. The partial view is decorative (empty alt, `aria-hidden`); the same image is shown in full on its own page.
+  - If a pair is wider than the viewport, both cells narrow equally; no cell ever extends past the viewport.
+- Empty space around a single-image gallery uses the La.na cream/stone visual system rather than black bars or arbitrary new colors.
 - Do not add thumbnails, lightbox, zoom, autoplay or pagination machinery beyond what is needed to communicate the current slide accessibly.
 
 Below `lg`:

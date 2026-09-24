@@ -620,9 +620,11 @@ main nav[aria-label="Breadcrumb"] a {
  * page renders exactly the cover-cropped first image it always did and the later slides' lazy
  * `<img>`s are never fetched -- the mobile composition belongs to its own spec, not to this one.
  *
- * From `lg` up the same tree is the gallery: one viewport-tall frame, `object-contain` over cream
- * so a standing figure is not cropped at the head or the hem, and a slide holding two images
- * splits 50/50 by letting the grid divide the row rather than by hard-coded widths.
+ * From `lg` up the same tree is the gallery: a flush film strip, one viewport tall. Each photograph
+ * is a 2:3 portrait cell at the frame's full height, so a standing figure keeps its head and hem;
+ * cells sit edge to edge with no gap, and the width a pair leaves is taken by a sliver of the
+ * neighbouring photograph rather than by empty cream. If a pair is wider than the viewport, the
+ * two cells narrow equally and crop at the sides only.
  *
  * Slides stack in place rather than sitting side by side on a translated track, which is how
  * `.home-hero__slide` already does this. A track would lay the later slides out past the right
@@ -717,13 +719,27 @@ main nav[aria-label="Breadcrumb"] a {
    */
   .pdp-stage__slide,
   .pdp-stage__slide:first-child {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(0, 1fr);
-    gap: 1px;
+    display: flex;
+    justify-content: center;
+    gap: 0;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
+  }
+
+  /* Every cell stays inside the slide -- the neighbour absorbs the leftover width and the pair
+     shrinks rather than overflowing -- so nothing in the strip ever has a box past the viewport. */
+  .pdp-stage__cell {
+    flex: 0 1 auto;
+    width: auto;
+    height: 100%;
+    min-width: 0;
+    aspect-ratio: var(--media-product-ratio);
+  }
+
+  .pdp-stage__cell--peek {
+    flex: 1 1 0;
+    aspect-ratio: auto;
   }
 
   /* The transition is declared only here, so a slide fades in as it becomes current and is hidden

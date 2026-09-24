@@ -11,6 +11,7 @@ import {
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import {
   buildDesktopProductGallerySlides,
+  gallerySlidePeek,
   resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
@@ -221,29 +222,58 @@ export function BrandProductMediaStage({
       </div>
 
       <div className="pdp-stage__track hidden lg:block">
-        {slides.map((slideImages, slideIndex) => (
-          <div
-            key={slideImages.join("-")}
-            className="pdp-stage__slide"
-            data-active={slideIndex === desktopSlide ? "true" : "false"}
-          >
-            {slideImages.map((imageIndex) => {
-              const image = images[imageIndex]!;
-              return (
-                <div key={image.url} className="pdp-stage__cell">
-                  <Image
-                    src={image.url}
-                    alt={imageIndex === 0 ? productName : image.alt || `${productName} - Ảnh ${imageIndex + 1}`}
-                    fill
-                    preload={imageIndex === 0}
-                    sizes={slideImages.length > 1 ? "(min-width: 1024px) 50vw, 1px" : "(min-width: 1024px) 100vw, 1px"}
-                    className="object-contain"
-                  />
-                </div>
-              );
-            })}
-          </div>
-        ))}
+        {slides.map((slideImages, slideIndex) => {
+          const peek = gallerySlidePeek(slides, slideIndex, images.length);
+          /*
+            The neighbour is a teaser, not a photograph of its own: the same image is shown in full
+            on the adjacent page, so here it is decorative -- empty alt, hidden from assistive
+            technology -- and requested with the same `sizes`, so the browser reuses the download.
+          */
+          const peekCell = peek === null ? null : (
+            <div
+              key={`peek-${peek.image}`}
+              className="pdp-stage__cell pdp-stage__cell--peek"
+              data-peek={peek.side}
+              aria-hidden="true"
+            >
+              <Image
+                src={images[peek.image]!.url}
+                alt=""
+                fill
+                sizes="(min-width: 1024px) 50vw, 1px"
+                draggable={false}
+                className={`object-cover ${peek.side === "after" ? "object-left" : "object-right"}`}
+              />
+            </div>
+          );
+
+          return (
+            <div
+              key={slideImages.join("-")}
+              className="pdp-stage__slide"
+              data-active={slideIndex === desktopSlide ? "true" : "false"}
+            >
+              {peek?.side === "before" ? peekCell : null}
+              {slideImages.map((imageIndex) => {
+                const image = images[imageIndex]!;
+                return (
+                  <div key={image.url} className="pdp-stage__cell">
+                    <Image
+                      src={image.url}
+                      alt={imageIndex === 0 ? productName : image.alt || `${productName} - Ảnh ${imageIndex + 1}`}
+                      fill
+                      preload={imageIndex === 0}
+                      sizes="(min-width: 1024px) 50vw, 1px"
+                      draggable={false}
+                      className="object-cover"
+                    />
+                  </div>
+                );
+              })}
+              {peek?.side === "after" ? peekCell : null}
+            </div>
+          );
+        })}
       </div>
 
       {hasMultipleDesktopSlides ? (

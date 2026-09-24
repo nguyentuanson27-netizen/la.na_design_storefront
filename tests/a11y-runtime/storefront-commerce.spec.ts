@@ -471,8 +471,9 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
     );
     expect(marginTop, `${groupName} mobile top spacing`).toBeLessThanOrEqual(16);
 
-    const chipBox = await group.locator("label span").first().boundingBox();
-    expect(chipBox?.height, `${groupName} touch target height`).toBeGreaterThanOrEqual(44);
+    // The touch target is the option's label: the visible chip is 32px, padded to 44px by it.
+    const targetBox = await group.locator("label").first().boundingBox();
+    expect(targetBox?.height, `${groupName} touch target height`).toBeGreaterThanOrEqual(44);
   }
 
   // Nothing chosen yet: the CTA names only the dimensions this product actually has, and says it
@@ -602,8 +603,9 @@ test("variant selectors share compact rectangular presentation across panel and 
       );
       expect(marginTop, `${viewport.name} ${label} group spacing`).toBeLessThanOrEqual(20);
 
-      const chipBox = await group.locator("label span").first().boundingBox();
-      expect(chipBox?.height, `${viewport.name} ${label} option height`).toBeGreaterThanOrEqual(44);
+      // The label is the touch target; the 32px chip inside it is padded to 44px.
+      const targetBox = await group.locator("label").first().boundingBox();
+      expect(targetBox?.height, `${viewport.name} ${label} option touch target`).toBeGreaterThanOrEqual(44);
     }
 
     const defaultChipBackground = await blackChip.evaluate(

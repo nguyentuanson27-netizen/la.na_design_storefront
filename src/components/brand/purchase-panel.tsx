@@ -35,12 +35,61 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  * The selectable chip every variant control wears.
  *
  * Master spec §9 / refinement spec "Visual language": the warm brown-on-cream pairing, not the
- * generic pure black/white one, and a focus ring that stays visible on both.
+ * generic pure black/white one, and a focus ring that stays visible on both. The chip is drawn
+ * light and compact -- 32px tall, a soft tint at rest, regular weight, a hairline on hover -- so
+ * the one filled chip per group reads as the choice without the whole selector shouting.
+ *
+ * The chip is what the shopper sees; the touch target is its `<label>` (`choiceTarget`), which
+ * pads it to the repository's 44px practical target. A block rather than a flex box, so the
+ * sentence-case `::first-letter` rule below can apply to it.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-medium text-[#3B2219] transition-colors peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:font-semibold peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed";
+  "block min-h-8 min-w-11 whitespace-nowrap border border-transparent bg-[#3B2219]/5 px-4 text-center text-sm font-normal leading-[30px] tracking-[0.02em] text-[#3B2219] transition-colors hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
 
+/** A choice briefly locked while a purchase request is in flight. */
 const DISABLED_CHIP = "peer-disabled:opacity-50";
+
+/**
+ * A choice the catalogue says cannot be bought. Struck through rather than only dimmed, so a sold
+ * out option is not mistaken for an unselected one on the tinted chip.
+ */
+const UNAVAILABLE_CHIP = "opacity-50 line-through decoration-1";
+
+/**
+ * Merchant option names arrive in whatever case the back office typed -- often all capitals
+ * ("FULL SET", "ÁO LẺ"). Shown in sentence case for a softer read; applied in CSS only, so the
+ * DOM text, accessible names and every selector keyed on them stay exactly the merchant's.
+ */
+const SENTENCE_CASE = "lowercase first-letter:uppercase";
+
+/** The label around each chip: 6px above and below the 32px chip make a 44px touch target. */
+function choiceTarget(disabled: boolean) {
+  return `py-1.5 ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`;
+}
+
+function chipClass(disabled: boolean) {
+  return `${SELECTABLE_CHIP} ${disabled ? UNAVAILABLE_CHIP : DISABLED_CHIP}`;
+}
+
+function RulerIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <rect x="2.5" y="8" width="19" height="8" rx="1" />
+      <path d="M6 8v3M9.5 8v2M13 8v3M16.5 8v2M20 8v3" />
+    </svg>
+  );
+}
 
 const UNRESOLVED_SIZE_CHIP =
   "border-dashed border-[#3B2219]/35 bg-[#3B2219]/5 text-[#3B2219]/65";
@@ -223,13 +272,15 @@ export function PurchasePanelView({
       : view.kinds.find((choice) => choice.key === selection.kindKey)?.label ?? null;
 
   function renderSelectorLegend(label: string, selectedValue: string | null) {
+    // Sizes are codes ("XL", "2XL") and keep their case; the named axes read as words.
+    const valueCase = label === "Kích cỡ" ? "" : `inline-block ${SENTENCE_CASE}`;
     return (
-      <legend className="text-sm font-medium leading-5 text-[#3B2219]">
+      <legend className="text-sm leading-5 text-[#3B2219]/70">
         <span>{label}</span>
         {selectedValue === null ? null : (
           <span aria-hidden="true">
             {": "}
-            <span className="font-semibold text-[#2A1810]">{selectedValue}</span>
+            <span className={`font-medium text-[#2A1810] ${valueCase}`}>{selectedValue}</span>
           </span>
         )}
       </legend>
@@ -315,14 +366,17 @@ export function PurchasePanelView({
 
     const isPanel = surface === "panel";
     return (
-      <div className="mt-3">
+      <div className="mt-0.5">
         <button
           ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
           type="button"
-          className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-black"
+          className="group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]"
           onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
         >
-          Hướng dẫn chọn size
+          <RulerIcon />
+          <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
+            Hướng dẫn chọn size
+          </span>
         </button>
       </div>
     );
@@ -373,11 +427,11 @@ export function PurchasePanelView({
     if (!view.hasKindOptions) return null;
 
     return (
-      <fieldset className="mt-4">
+      <fieldset className="mt-3.5">
         {renderSelectorLegend("Loại", selectedKindLabel)}
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.kinds.map((choice) => (
-            <label key={choice.key} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <label key={choice.key} className={choiceTarget(choice.disabled)}>
               <input
                 className="peer sr-only"
                 type="radio"
@@ -387,7 +441,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseKind(choice.key)}
               />
-              <span className={`${SELECTABLE_CHIP} ${DISABLED_CHIP}`}>{choice.label}</span>
+              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{choice.label}</span>
             </label>
           ))}
         </div>
@@ -409,7 +463,7 @@ export function PurchasePanelView({
         tabIndex={surface === "panel" ? -1 : undefined}
         aria-invalid={sizeValidationMessage ? "true" : undefined}
         aria-describedby={sizeDescribedBy}
-        className={`mt-4 rounded-sm ${
+        className={`mt-3.5 rounded-sm ${
           sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
         }`}
       >
@@ -419,9 +473,9 @@ export function PurchasePanelView({
             {view.kindSelectionGuidance}
           </p>
         )}
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.sizes.map((choice) => (
-            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <label key={choice.value} className={choiceTarget(choice.disabled)}>
               <input
                 className="peer sr-only"
                 type="radio"
@@ -432,11 +486,11 @@ export function PurchasePanelView({
                 onChange={() => chooseSize(choice.value)}
               />
               <span
-                className={`${SELECTABLE_CHIP} ${
+                className={
                   awaitsKindSelection
-                    ? UNRESOLVED_SIZE_CHIP
-                    : DISABLED_CHIP
-                }`}
+                    ? `${SELECTABLE_CHIP} ${UNRESOLVED_SIZE_CHIP}`
+                    : chipClass(choice.disabled)
+                }
               >
                 {choice.value}
               </span>
@@ -457,11 +511,11 @@ export function PurchasePanelView({
     if (!view.hasColorOptions) return null;
 
     return (
-      <fieldset className="mt-4">
+      <fieldset className="mt-3.5">
         {renderSelectorLegend("Màu", selection.color)}
-        <div className="mt-2 flex flex-wrap gap-2">
+        <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.colors.map((choice) => (
-            <label key={choice.value} className={choice.disabled ? "cursor-not-allowed" : "cursor-pointer"}>
+            <label key={choice.value} className={choiceTarget(choice.disabled)}>
               <input
                 className="peer sr-only"
                 type="radio"
@@ -471,7 +525,7 @@ export function PurchasePanelView({
                 disabled={choice.disabled || isPending}
                 onChange={() => chooseColor(choice.value)}
               />
-              <span className={`${SELECTABLE_CHIP} ${DISABLED_CHIP}`}>{choice.value}</span>
+              <span className={`${chipClass(choice.disabled)} ${SENTENCE_CASE}`}>{choice.value}</span>
             </label>
           ))}
         </div>
@@ -491,19 +545,19 @@ export function PurchasePanelView({
     <>
       <section
         aria-label="Mua sản phẩm"
-        className="mt-5 border-t border-black/20 pt-5 lg:mt-0 lg:border-t-0 lg:pt-0"
+        className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
         <div className="flex items-baseline justify-between gap-6">
-          <p className="flex flex-wrap items-baseline gap-2 text-xl font-medium tracking-[-0.02em]">
+          <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[1.375rem] font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
                 <span className="sr-only">Giá gốc </span>
-                <span className="mr-1 align-baseline text-base font-normal text-black/60 line-through">
+                <span className="align-baseline text-base text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
                   {priceDisplay.compareAtText}
                 </span>
                 <span className="sr-only">Giá khuyến mãi </span>
                 <span>{priceDisplay.displayText}</span>
-                <span className="ml-2 inline-flex items-center bg-[#3B2219] px-2 py-0.5 text-xs font-bold uppercase tracking-[0.1em] text-[#F5F0E8]">
+                <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-[11px] font-medium tracking-[0.08em] text-[#3B2219]">
                   -{priceDisplay.discountPercent}%
                 </span>
               </>
@@ -544,9 +598,9 @@ export function PurchasePanelView({
           </>
         )}
 
-        <div className="mt-8 grid grid-cols-2 gap-2">
+        <div className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-semibold text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-medium tracking-[0.04em] text-[#F5F0E8] hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -556,7 +610,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-[#F5F0E8] px-4 text-sm font-semibold text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-transparent px-4 text-sm font-medium tracking-[0.04em] text-[#3B2219] hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
@@ -566,7 +620,7 @@ export function PurchasePanelView({
           </button>
         </div>
 
-        <p className="mt-3 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
+        <p className="mt-3 min-h-6 text-sm text-[#3B2219]/70" role="status" aria-live="polite">
           {purchaseStatus}
         </p>
 
@@ -653,7 +707,7 @@ export function PurchasePanelView({
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
                   <button
                     type="button"
-                    className="min-h-12 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
+                    className="min-h-11 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
                     disabled={!mobilePresentation.readyToAdd || isPending}
                     aria-busy={isPending}
                     onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}
