@@ -91,6 +91,48 @@ export function ListingHeader({
   );
 }
 
+export type ListingSubnavItem = Readonly<{
+  label: string;
+  /** The accessible name, when the visible label leans on the heading above it for context. */
+  fullLabel?: string;
+  href: string;
+  current?: boolean;
+}>;
+
+/**
+ * The row of sibling listings under a heading: small-caps text tabs, the current one underlined.
+ *
+ * It replaced a wrap of bordered pills that took two rows (~120px) on a 390px phone before the
+ * result count and filters even began. The row is one line at every width: on a phone it scrolls
+ * sideways under a fade that shows there is more, bleeding to the screen edges so the first tab
+ * lines up with the heading; from `md` up it simply wraps, which in practice means it fits.
+ * Colours live in `globals.css` (`.listing-subnav-link`) for the same unlayered-`a` reason as
+ * `.listing-pill`.
+ */
+export function ListingSubnav({
+  label,
+  items,
+}: Readonly<{ label: string; items: readonly ListingSubnavItem[] }>) {
+  return (
+    <nav aria-label={label} className="-mx-6 mt-2 md:mx-0">
+      <ul className="listing-subnav flex gap-x-6 overflow-x-auto px-6 md:flex-wrap md:gap-x-8 md:overflow-visible md:px-0">
+        {items.map((item) => (
+          <li key={item.href} className="shrink-0">
+            <Link
+              href={item.href}
+              aria-current={item.current ? "page" : undefined}
+              aria-label={item.fullLabel && item.fullLabel !== item.label ? item.fullLabel : undefined}
+              className="listing-subnav-link inline-flex min-h-11 items-center whitespace-nowrap font-display text-xs uppercase tracking-[0.14em]"
+            >
+              {item.label}
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </nav>
+  );
+}
+
 /**
  * The product grid: 4 across on desktop and 2 on mobile, as master spec §18 requires, with a
  * 3-column step so the cards do not stretch at tablet widths.

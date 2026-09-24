@@ -89,6 +89,64 @@ a {
 }
 
 /*
+ * The text tabs under a listing heading (`ListingSubnav`). Muted ink at rest, full ink with a hairline
+ * underline when hovered or current -- the breadcrumb's vocabulary rather than a filled pill, so the
+ * row reads as navigation and stays one line tall. On a phone the row scrolls sideways without a
+ * scrollbar and fades at its edges to say there is more; from `md` it wraps and needs neither.
+ */
+.listing-subnav {
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
+}
+
+.listing-subnav::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 48rem) {
+  .listing-subnav {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
+.listing-subnav-link {
+  position: relative;
+  color: var(--olive);
+  transition: color 200ms ease;
+}
+
+.listing-subnav-link::after {
+  content: "";
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0.625rem;
+  height: 1px;
+  background: currentColor;
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.listing-subnav-link:hover,
+.listing-subnav-link[aria-current="page"] {
+  color: var(--black);
+}
+
+.listing-subnav-link:hover::after,
+.listing-subnav-link[aria-current="page"]::after {
+  transform: scaleX(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .listing-subnav-link,
+  .listing-subnav-link::after {
+    transition: none;
+  }
+}
+
+/*
  * Aggregate collections landing page CTA button on 16:9 banner cards.
  * Artistic haute-couture glassmorphic capsule with serif styling.
  */

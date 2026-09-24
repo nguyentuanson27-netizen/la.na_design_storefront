@@ -36,11 +36,19 @@ export type CategoryFacets = Readonly<{
   sizes: readonly string[];
 }>;
 
+/** One tab in the row under a category heading. `fullLabel` is its accessible name. */
+export type CategorySubnavItem = Readonly<{
+  label: string;
+  fullLabel: string;
+  href: string;
+  current: boolean;
+}>;
+
 export type CategoryViewModel = Readonly<{
   destination: CategoryDestination;
   categoryKey: string;
   breadcrumbs: readonly CategoryBreadcrumb[];
-  subcategories: readonly Readonly<{ label: string; href: string }>[];
+  subcategories: readonly CategorySubnavItem[];
   cards: readonly ProductCardModel[];
   totalCount: number;
   totalPages: number;
@@ -59,7 +67,7 @@ export type CategoryViewModelInput = Readonly<{
   destination: CategoryDestination;
   categoryKey: string;
   breadcrumbs: readonly CategoryBreadcrumb[];
-  subcategories: readonly Readonly<{ label: string; href: string }>[];
+  subcategories: readonly CategorySubnavItem[];
   discovery: CategoryDiscoveryQuery;
   products: readonly CategoryProduct[];
   facets: CategoryFacets;

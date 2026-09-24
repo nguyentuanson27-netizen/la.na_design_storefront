@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
@@ -16,6 +15,7 @@ import {
   ListingBreadcrumbs,
   ListingHeader,
   ListingShell,
+  ListingSubnav,
 } from "@/components/brand/listing-chrome";
 import { PlpFilterPanel } from "@/components/brand/plp-filter-panel";
 import { PlpInfiniteGrid } from "@/components/brand/plp-infinite-grid";
@@ -25,6 +25,7 @@ import { resolveCategoryBreadcrumbs } from "./category-breadcrumbs.ts";
 import { CATEGORY_DESTINATIONS, type CategoryDestination } from "./category-destinations.ts";
 import {
   buildCategoryViewModel,
+  type CategorySubnavItem,
   type CategoryViewModel,
 } from "./category-model.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
@@ -50,12 +51,35 @@ export async function loadCategoryRoute(
   const categoryKey = node.key;
   const breadcrumbs = resolveCategoryBreadcrumbs(categoryKey);
 
-  const subcategories = (node.childKeys ?? [])
-    .map((childKey) => {
-      const childNode = categoryByKey(childKey);
-      return childNode ? { label: childNode.label, href: childNode.path } : null;
-    })
-    .filter((item): item is { label: string; href: string } => item !== null);
+  // The row under the heading: the parent's children with "Tất cả" first. A child page draws its
+  // parent's row with itself marked current, so shoppers can move sideways between siblings without
+  // climbing back up the breadcrumb, and the row keeps its place as they do.
+  const parentNode = node.childKeys.length > 0
+    ? node
+    : node.parentKey
+      ? categoryByKey(node.parentKey)
+      : undefined;
+  const subcategories: CategorySubnavItem[] = parentNode
+    ? [
+        {
+          label: "Tất cả",
+          fullLabel: `Tất cả ${parentNode.label.toLocaleLowerCase("vi")}`,
+          href: parentNode.path,
+          current: parentNode.key === node.key,
+        },
+        ...parentNode.childKeys.flatMap((childKey) => {
+          const childNode = categoryByKey(childKey);
+          return childNode
+            ? [{
+                label: shortenChildLabel(childNode.label, parentNode.label),
+                fullLabel: childNode.label,
+                href: childNode.path,
+                current: childNode.key === node.key,
+              }]
+            : [];
+        }),
+      ]
+    : [];
 
   const requestNow = new Date();
   let discovery: ReturnType<typeof parseCategoryDiscoverySearchParams>;
@@ -122,6 +146,18 @@ export async function loadCategoryRoute(
   });
 }
 
+/**
+ * "Áo dài cách tân" under an "Áo dài" heading reads as "Cách tân": the parent's name is already on
+ * screen, and repeating it on every tab is what pushed the row onto a second line on a phone. A
+ * label that does not start with its parent's ("Set váy" under "Set đồ") is kept whole.
+ */
+function shortenChildLabel(label: string, parentLabel: string): string {
+  const prefix = `${parentLabel} `;
+  if (!label.toLocaleLowerCase("vi").startsWith(prefix.toLocaleLowerCase("vi"))) return label;
+  const rest = label.slice(prefix.length).trim();
+  return rest ? rest.charAt(0).toLocaleUpperCase("vi") + rest.slice(1) : label;
+}
+
 export function renderCategoryRoute(data: CategoryViewModel) {
   const {
     destination,
@@ -145,17 +181,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
 
       <ListingHeader eyebrow="Danh mục thiết kế" title={destination.label}>
         {subcategories.length > 0 ? (
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            {subcategories.map((sub) => (
-              <Link
-                key={sub.href}
-                href={sub.href}
-                className="listing-pill inline-flex min-h-11 items-center rounded-full border border-[#3B2219]/20 px-4 py-1.5 text-xs font-medium uppercase tracking-wider transition hover:border-[#2A1810] hover:bg-[#2A1810]"
-              >
-                {sub.label}
-              </Link>
-            ))}
-          </div>
+          <ListingSubnav label="Danh mục con" items={subcategories} />
         ) : null}
       </ListingHeader>
 
