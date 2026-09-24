@@ -1637,7 +1637,13 @@ body:has(.admin-shell) .site-masthead {
     text-transform: uppercase;
     letter-spacing: 0.14em;
     text-decoration: none;
-    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, opacity 150ms ease;
+    /*
+     * Colours ease on hover; `opacity` deliberately does not. A purchase button is disabled while
+     * its request is in flight and re-enabled when it lands, and a transitioned opacity left the
+     * re-enabled label at 45% for a beat -- a 2.65:1 label on a live control, which Axe (rightly)
+     * failed on the PDP.
+     */
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
     cursor: pointer;
   }
 
