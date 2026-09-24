@@ -36,11 +36,11 @@ import type { ProductMappedSizeGuide } from "@/routes/product-model";
  *
  * Master spec §9 / refinement spec "Visual language": the warm brown-on-cream pairing, not the
  * generic pure black/white one, and a focus ring that stays visible on both. The chip is drawn
- * light -- a soft tint at rest, regular weight, a hairline on hover -- so the one filled chip per
- * group reads as the choice without the whole selector shouting.
+ * light and compact -- 36px tall, a soft tint at rest, regular weight, a hairline on hover -- so
+ * the one filled chip per group reads as the choice without the whole selector shouting.
  */
 const SELECTABLE_CHIP =
-  "flex min-h-11 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-normal tracking-[0.02em] text-[#3B2219] transition-colors duration-200 hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
+  "flex min-h-9 min-w-11 items-center justify-center border border-transparent bg-[#3B2219]/5 px-4 text-sm font-normal tracking-[0.02em] text-[#3B2219] transition-colors duration-200 hover:border-[#3B2219]/40 peer-checked:border-[#3B2219] peer-checked:bg-[#3B2219] peer-checked:text-[#F5F0E8] peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219] peer-disabled:cursor-not-allowed peer-disabled:hover:border-transparent";
 
 /** A choice briefly locked while a purchase request is in flight. */
 const DISABLED_CHIP = "peer-disabled:opacity-50";
@@ -595,7 +595,7 @@ export function PurchasePanelView({
 
         <div className="mt-8 grid grid-cols-2 gap-3">
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-medium tracking-[0.04em] text-[#F5F0E8] transition-colors duration-200 hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-[#3B2219] px-4 text-sm font-medium tracking-[0.04em] text-[#F5F0E8] transition-colors duration-200 hover:bg-[#2A1810] hover:border-[#2A1810] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/10 disabled:text-[#3B2219]/45"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
@@ -605,7 +605,7 @@ export function PurchasePanelView({
             {view.addToBagLabel}
           </button>
           <button
-            className="min-h-12 w-full border border-[#3B2219] bg-transparent px-4 text-sm font-medium tracking-[0.04em] text-[#3B2219] transition-colors duration-200 hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
+            className="min-h-11 w-full border border-[#3B2219] bg-transparent px-4 text-sm font-medium tracking-[0.04em] text-[#3B2219] transition-colors duration-200 hover:bg-[#3B2219] hover:text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:border-[#3B2219]/20 disabled:bg-[#3B2219]/5 disabled:text-[#3B2219]/45"
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
@@ -702,7 +702,7 @@ export function PurchasePanelView({
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
                   <button
                     type="button"
-                    className="min-h-12 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
+                    className="min-h-11 w-full bg-[#3B2219] px-5 text-sm font-semibold text-[#F5F0E8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219] disabled:cursor-not-allowed disabled:bg-[#3B2219]/15 disabled:text-[#3B2219]/45"
                     disabled={!mobilePresentation.readyToAdd || isPending}
                     aria-busy={isPending}
                     onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}
