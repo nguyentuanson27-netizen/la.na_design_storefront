@@ -82,7 +82,7 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
   ],
   categoryDiscovery: {
     title: "YOUR NEXT FAVOURITE",
-    description: null,
+    description: "You might’ve just found it",
   },
   feedback: {
     // Pending (§17): the heading, the metadata copy and the photographs themselves. Until all of

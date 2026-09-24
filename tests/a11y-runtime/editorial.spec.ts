@@ -692,6 +692,40 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   }
   await expect(desktopNavigation.getByRole("link", { name: "Cửa hàng", exact: true })).toHaveCount(0);
   await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
+
+  // Mega menus (owner request 2026-09-24): every top-level category opens a panel from its
+  // keyboard-operable disclosure; the three non-category links have none. Leaf categories carry
+  // no subcategory list, so their panel's way in is "Xem tất cả" to the category itself.
+  const megaMenus = [
+    { label: "Áo dài", href: "/ao-dai", children: 5 },
+    { label: "Set đồ", href: "/set-do", children: 2 },
+    { label: "Váy, đầm", href: "/vay-dam", children: 0 },
+    { label: "Phụ kiện", href: "/phu-kien", children: 0 },
+  ] as const;
+  for (const menu of megaMenus) {
+    const disclosure = desktopNavigation.getByRole("button", { name: menu.label, exact: true });
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    await disclosure.focus();
+    await page.keyboard.press("Enter");
+    await expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    const panel = desktopNavigation.getByRole("region", { name: menu.label, exact: true });
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole("listitem")).toHaveCount(menu.children);
+    const wayIn =
+      menu.children > 0
+        ? panel.getByRole("link", { name: menu.label, exact: true })
+        : panel.getByRole("link", { name: `Xem tất cả ${menu.label}`, exact: true });
+    await expect(wayIn).toHaveAttribute("href", menu.href);
+    const panelBox = (await panel.boundingBox())!;
+    expect(panelBox.x).toBeGreaterThanOrEqual(0);
+    expect(panelBox.x + panelBox.width).toBeLessThanOrEqual(1440);
+    await page.keyboard.press("Escape");
+    await expect(panel).toHaveCount(0);
+    await expect(disclosure).toHaveAttribute("aria-expanded", "false");
+  }
+  for (const label of ["Hàng mới về", "Bộ sưu tập", "Sale"]) {
+    await expect(desktopNavigation.getByRole("button", { name: label, exact: true })).toHaveCount(0);
+  }
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });
   await expect(utilityNavigation.getByRole("button", { name: "Tìm kiếm", exact: true })).toBeVisible();
   await expect(utilityNavigation.getByRole("link", { name: "Tài khoản", exact: true })).toBeVisible();
