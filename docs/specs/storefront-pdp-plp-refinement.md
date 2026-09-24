@@ -148,8 +148,8 @@ Do not invent stock quantities, delivery promises, fit claims or policy terms.
 ## Visual language — desktop and mobile
 
 Follow the approved La.na Design design direction rather than introducing a new system:
-- serif for page/section/product headings;
-- sans-serif for price, variants, size guidance, body copy, forms and transactional messages;
+- display face (Josefin Sans; was serif, owner amendment 2026-09-24) for page/section/product headings, prices and purchase CTAs;
+- body face (Mulish) for variants, size guidance, body copy, forms and transactional messages;
 - reduce wide uppercase letter-spacing in small buyer information where it harms readability;
 - use uppercase only where it serves the existing restrained micro-label system;
 - purchase CTAs use the approved warm brown/chocolate + cream system instead of the current generic pure black/white pairing;

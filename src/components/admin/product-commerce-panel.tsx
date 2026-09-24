@@ -177,7 +177,7 @@ export function ProductCommercePanel({
       <p className="eyebrow">Website commerce</p>
       <div className="mt-1 flex min-w-0 flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div className="min-w-0">
-          <h2 id="website-commerce-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="website-commerce-heading" className="font-display text-3xl tracking-[-0.03em]">
             Website commerce
           </h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-black/70">
@@ -329,7 +329,7 @@ export function ProductCommercePanel({
       <div className="mt-7 min-w-0 max-w-full border-t border-black/15 pt-6">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="min-w-0">
-            <h3 className="font-serif text-2xl tracking-[-0.03em]">Biến thể website</h3>
+            <h3 className="font-display text-2xl tracking-[-0.03em]">Biến thể website</h3>
             <p className="mt-1 text-sm text-black/65" aria-live="polite">
               {rangeLabel}
             </p>

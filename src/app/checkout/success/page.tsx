@@ -38,14 +38,14 @@ function render(data: CheckoutSuccessViewModel) {
       <div className="mt-12 max-w-2xl border-t border-black/20 pt-8">
         {data.confirmed && data.orderCode ? (
           <div role="status">
-            <p className="font-serif text-2xl md:text-3xl">Cảm ơn bạn đã đặt hàng.</p>
+            <p className="font-display text-2xl md:text-3xl">Cảm ơn bạn đã đặt hàng.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Mã đơn <strong className="font-semibold text-black">{data.orderCode}</strong>. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
             </p>
           </div>
         ) : (
           <div role="alert" data-ui-state="empty">
-            <p className="font-serif text-2xl md:text-3xl">Không tìm thấy đơn đã xác nhận.</p>
+            <p className="font-display text-2xl md:text-3xl">Không tìm thấy đơn đã xác nhận.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Mã xác nhận không hợp lệ hoặc đơn chưa ở trạng thái hoàn tất. Nếu bạn vừa đặt hàng và chưa chắc trạng thái, vui lòng không gửi lại đơn ngay.
             </p>

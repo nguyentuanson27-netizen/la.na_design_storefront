@@ -20,7 +20,7 @@ function render(data: ReturnsViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Chính sách</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Đổi trả &amp; hoàn tiền
       </h1>
       <p className="mt-6 max-w-2xl text-lg leading-8">
@@ -29,7 +29,7 @@ function render(data: ReturnsViewModel) {
 
       <div className="mt-16 grid max-w-4xl gap-14">
         <section aria-labelledby="conditions-heading">
-          <h2 id="conditions-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="conditions-heading" className="font-display text-3xl tracking-[-0.03em]">
             Điều kiện sản phẩm
           </h2>
           <p className="mt-4 max-w-2xl text-base leading-7 text-black/70">
@@ -43,7 +43,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="cases-heading">
-          <h2 id="cases-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="cases-heading" className="font-display text-3xl tracking-[-0.03em]">
             Trường hợp được hỗ trợ
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
@@ -68,7 +68,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="return-method-heading">
-          <h2 id="return-method-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="return-method-heading" className="font-display text-3xl tracking-[-0.03em]">
             Cách trả hàng
           </h2>
           <ul className="mt-6 max-w-2xl list-disc space-y-2 pl-6 text-base leading-7">
@@ -81,7 +81,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="fees-heading">
-          <h2 id="fees-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="fees-heading" className="font-display text-3xl tracking-[-0.03em]">
             Chi phí đổi trả
           </h2>
           <dl className="mt-6 grid max-w-2xl gap-6 text-base leading-7">
@@ -107,7 +107,7 @@ function render(data: ReturnsViewModel) {
         </section>
 
         <section aria-labelledby="refund-heading">
-          <h2 id="refund-heading" className="font-serif text-3xl tracking-[-0.03em]">
+          <h2 id="refund-heading" className="font-display text-3xl tracking-[-0.03em]">
             Hoàn tiền
           </h2>
           <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">

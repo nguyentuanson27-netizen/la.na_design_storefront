@@ -47,14 +47,14 @@ function render(data: CheckoutViewModel) {
         </h1>
         {data.state === "empty" ? (
           <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-            <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
+            <p className="font-display text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
             <Link className="text-link mt-6 inline-block" href="/shop">
               Tiếp tục mua sắm ↗
             </Link>
           </div>
         ) : (
           <div className="mt-12 max-w-2xl border-t border-black/20 pt-8" data-ui-state="empty">
-            <p className="font-serif text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
+            <p className="font-display text-2xl md:text-3xl">Giỏ hàng cần được kiểm tra lại.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
             </p>

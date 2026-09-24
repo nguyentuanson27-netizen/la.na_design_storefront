@@ -63,7 +63,7 @@ export function ProductSlugEditor({
       className="mt-8 border border-black/20 p-6 md:p-8"
     >
       <p className="eyebrow">Website URL · sở hữu bởi {BRAND.identity.name}</p>
-      <h2 id="product-slug-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+      <h2 id="product-slug-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
         Quản lý URL sản phẩm
       </h2>
       <p className="mt-4 max-w-3xl text-xs leading-5 text-black/55">

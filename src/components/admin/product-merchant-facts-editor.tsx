@@ -102,7 +102,7 @@ export async function ProductMerchantFactsEditor({
       className="mt-8 border border-black/20 p-6 md:p-8"
     >
       <p className="eyebrow">Google Merchant · sở hữu bởi {BRAND.identity.name}</p>
-      <h2 id="product-merchant-facts-heading" className="mt-2 font-serif text-3xl tracking-[-0.03em]">
+      <h2 id="product-merchant-facts-heading" className="mt-2 font-display text-3xl tracking-[-0.03em]">
         Thuộc tính thời trang
       </h2>
       <p className="mt-4 max-w-3xl text-xs leading-5 text-black/55">

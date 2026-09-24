@@ -27,7 +27,7 @@ function render(data: ProductRouteData) {
       <p className="eyebrow hidden lg:block">{BRAND.identity.name} / Sản phẩm</p>
       {/* Master spec §9: the product's name is a heading, so it wears the elegant serif the rest
           of the brand's headings wear rather than the condensed bold sans it used to shout in. */}
-      <h1 className="mt-0 break-words font-serif text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[40px] lg:leading-[1.1]">
+      <h1 className="mt-0 break-words font-display text-[28px] font-normal leading-[1.08] tracking-[-0.03em] sm:text-[30px] lg:mt-5 lg:text-[40px] lg:leading-[1.1]">
         {data.name}
       </h1>
 
@@ -58,7 +58,7 @@ function render(data: ProductRouteData) {
     <section aria-label="Chi tiết sản phẩm" className="border-t border-black/20">
       {editorial.description || editorial.craftDetails.length > 0 ? (
         <section className="border-b border-black/15 py-6" aria-labelledby="pdp-description-title">
-          <h2 id="pdp-description-title" className="font-serif text-xl font-normal tracking-[-0.02em]">
+          <h2 id="pdp-description-title" className="font-display text-xl font-normal tracking-[-0.02em]">
             Mô tả sản phẩm
           </h2>
           {editorial.description ? (
@@ -76,7 +76,7 @@ function render(data: ProductRouteData) {
 
       {editorial.material ? (
         <section className="border-b border-black/15 py-6" aria-labelledby="pdp-material-title">
-          <h2 id="pdp-material-title" className="font-serif text-xl font-normal tracking-[-0.02em]">
+          <h2 id="pdp-material-title" className="font-display text-xl font-normal tracking-[-0.02em]">
             Chất liệu
           </h2>
           <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">{editorial.material}</p>
@@ -91,7 +91,7 @@ function render(data: ProductRouteData) {
 
       {editorial.careInstructions ? (
         <section className="border-b border-black/15 py-6" aria-labelledby="pdp-care-title">
-          <h2 id="pdp-care-title" className="font-serif text-xl font-normal tracking-[-0.02em]">
+          <h2 id="pdp-care-title" className="font-display text-xl font-normal tracking-[-0.02em]">
             Hướng dẫn bảo quản
           </h2>
           <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">
@@ -105,7 +105,7 @@ function render(data: ProductRouteData) {
   const purchaseInformation = (
     <section aria-label="Giao hàng và đổi trả" className="border-t border-black/20">
       <section className="border-b border-black/15 py-6" aria-labelledby="pdp-shipping-title">
-        <h2 id="pdp-shipping-title" className="font-serif text-xl font-normal tracking-[-0.02em]">
+        <h2 id="pdp-shipping-title" className="font-display text-xl font-normal tracking-[-0.02em]">
           Giao hàng
         </h2>
         <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">
@@ -120,7 +120,7 @@ function render(data: ProductRouteData) {
       </section>
 
       <section className="border-b border-black/15 py-6" aria-labelledby="pdp-returns-title">
-        <h2 id="pdp-returns-title" className="font-serif text-xl font-normal tracking-[-0.02em]">
+        <h2 id="pdp-returns-title" className="font-display text-xl font-normal tracking-[-0.02em]">
           Đổi trả
         </h2>
         <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">

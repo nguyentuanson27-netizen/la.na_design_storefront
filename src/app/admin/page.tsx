@@ -175,7 +175,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
       <div className="flex flex-col gap-4 border-b border-black/20 pb-6 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="eyebrow">Nội dung sản phẩm</p>
-          <h1 className="mt-2 font-serif text-4xl leading-none tracking-[-0.04em] md:text-5xl">
+          <h1 className="mt-2 font-display text-4xl leading-none tracking-[-0.04em] md:text-5xl">
             Biên tập catalog
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-black/65">
@@ -335,7 +335,7 @@ export default async function AdminProductsPage({ searchParams }: AdminProductsP
       {products.length === 0 ? (
         <section aria-labelledby="empty-admin-products-title" className="border-t border-black/20 py-16">
           <p className="eyebrow">{filtered ? "Không có kết quả" : "Chưa có dữ liệu"}</p>
-          <h2 className="mt-3 max-w-2xl font-serif text-3xl tracking-[-0.03em]" id="empty-admin-products-title">
+          <h2 className="mt-3 max-w-2xl font-display text-3xl tracking-[-0.03em]" id="empty-admin-products-title">
             {filtered
               ? "Không sản phẩm nào khớp bộ lọc hiện tại."
               : "Catalog mirror chưa có sản phẩm để biên tập."}

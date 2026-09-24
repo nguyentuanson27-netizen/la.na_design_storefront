@@ -83,7 +83,7 @@ function render(data: CollectionsRouteData) {
                   className="hidden"
                 />
                 <div>
-                  <h2 className="max-w-xl break-words font-serif text-2xl font-normal leading-tight text-[#2A1810] sm:text-3xl lg:text-4xl">
+                  <h2 className="max-w-xl break-words font-display text-2xl font-normal leading-tight text-[#2A1810] sm:text-3xl lg:text-4xl">
                     {collection.title}
                   </h2>
                 </div>

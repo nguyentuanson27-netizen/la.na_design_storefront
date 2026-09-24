@@ -320,7 +320,7 @@ test("a collection hero is the first full-bleed surface and the shared listing c
     const style = getComputedStyle(element);
     return { fontFamily: style.fontFamily, fontWeight: style.fontWeight };
   });
-  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/playfair|serif/);
+  expect(headingStyle.fontFamily.toLowerCase()).toMatch(/josefin/);
   expect(Number(headingStyle.fontWeight)).toBeLessThanOrEqual(400);
 
 });

@@ -59,7 +59,7 @@ function render(data: CartViewModel) {
           GIỎ HÀNG
         </h1>
         <div className="mt-12 border-t border-black/20 pt-8" data-ui-state="empty">
-          <p className="font-serif text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
+          <p className="font-display text-2xl md:text-3xl">Giỏ hàng của bạn đang trống.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>

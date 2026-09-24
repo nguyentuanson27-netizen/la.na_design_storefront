@@ -77,7 +77,7 @@ export function ProductCard({
           )}
         </div>
         <div className="product-meta mt-2.5">
-          <h2 className="product-title font-serif text-sm md:text-base font-normal leading-snug text-[#2A1810] line-clamp-2">
+          <h2 className="product-title font-display text-sm md:text-base font-normal leading-snug text-[#2A1810] line-clamp-2">
             {model.name}
           </h2>
           {flashSale ? (

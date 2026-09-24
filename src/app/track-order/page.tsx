@@ -39,7 +39,7 @@ function render() {
 
       <div className="mt-12 grid gap-10 border-t border-black/20 pt-8 lg:grid-cols-[minmax(0,1fr)_minmax(320px,0.65fr)]">
         <div className="max-w-2xl">
-          <p className="font-serif text-2xl md:text-3xl">
+          <p className="font-display text-2xl md:text-3xl">
             Nhập mã đơn và số điện thoại đã dùng khi đặt hàng.
           </p>
           <p className="mt-4 text-sm leading-6 text-black/75">

@@ -35,7 +35,7 @@ function render(data: ContactViewModel) {
   return (
     <div className="mx-auto min-h-[65vh] max-w-[1600px] px-6 py-16 md:py-24">
       <p className="eyebrow">Hỗ trợ</p>
-      <h1 className="mt-3 max-w-4xl font-serif text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
+      <h1 className="mt-3 max-w-4xl font-display text-5xl leading-[0.95] tracking-[-0.05em] md:text-7xl">
         Liên hệ
       </h1>
       <p className="mt-6 max-w-2xl text-base leading-7 text-black/70">
