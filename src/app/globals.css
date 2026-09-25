@@ -1175,19 +1175,61 @@ main nav[aria-label="Breadcrumb"] a {
   color: #fff8f1;
 }
 
+/*
+ * Flash Sale is the one tag meant to shout: a hot amber-to-crimson gradient, a yellow bolt, and a
+ * slow sheen passing over it. The sheen stops for readers who ask for reduced motion.
+ */
 .product-tag--flash {
+  position: relative;
+  overflow: hidden;
   padding-left: 0.4rem;
-  background: #2a1810;
-  color: #f3c969;
+  background: linear-gradient(115deg, #ffb238 0%, #ff6a1a 38%, #e5282f 72%, #b8123f 100%);
+  color: #ffffff;
   font-size: 0.625rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
+  text-shadow: 0 1px 1px rgba(122, 16, 20, 0.45);
+  box-shadow:
+    0 1px 2px rgba(122, 16, 20, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+}
+
+.product-tag--flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.55) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: product-tag-sheen 2.8s ease-in-out infinite;
 }
 
 .product-tag--flash svg {
   width: 0.75rem;
   height: 0.75rem;
   flex: none;
+  color: #fff27a;
+  filter: drop-shadow(0 0 2px rgba(255, 230, 90, 0.8));
+}
+
+@keyframes product-tag-sheen {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-tag--flash::after {
+    display: none;
+  }
 }
 
 .product-tag--new {
