@@ -2,12 +2,13 @@
 
 - Status: **ACCEPTED.** Architecture owner-approved 2026-09-16; §13 persistence separately
   authorized and applied 2026-09-17 (migration `20260917080000_add_atomic_capacity_persistence`).
-  The §4.2 stock-observation marker is enforced. Reservation *writes* remain I6a.
-- Date: 2026-09-17
-- Scope: G5 architecture, plus the §13 persistence it specifies. **No reservation implementation and
-  no Pancake live write** — reservation writes need the §6.2 locking transaction and the §6.4
-  guarded compare-and-set, both of which are I6a. The §12 order/preorder snapshot is I7 and is not
-  authorized here.
+  The §4.2 stock-observation marker is enforced. I6a reservation writes are implemented. The
+  component-resource extension for STANDARD composite capacity is implemented 2026-09-25 by
+  `20260925003000_add_composite_capacity_resources`.
+- Date: 2026-09-17; component-resource amendment 2026-09-25.
+- Scope: the current local capacity authority, including line reservations, component-resource
+  snapshots, locking, and reconciliation. **No Pancake live stock write.** The §12 order/preorder
+  snapshot remains a separate immutable order-history concern.
 - Implements: master spec §27–§31. Feeds I1, I4, I5, I6a, I6b, I7, I8.
 
 ## Context
@@ -22,8 +23,10 @@ authorized test shop:
 - **two concurrent requests at stock 0 were both accepted**;
 - a 1:1 composite fixture decremented its children, and a child sitting at 0 went to **−1**.
 
-Unproven by that run, and therefore not assumed anywhere below: arbitrary composite multipliers, a
-component that starts negative, and multi-component atomicity.
+That Pancake probe did **not** prove arbitrary composite multipliers, a component that starts
+negative, or multi-component atomicity. The local STANDARD reservation implementation now has
+database regressions for a multiplier greater than 1 and for multi-component all-or-none refusal;
+those are local transaction guarantees, not retroactive claims about Pancake's own behaviour.
 
 The load-bearing conclusion is the concurrency one. **Pancake is not a concurrency or negative-limit
 authority.** It will happily accept both halves of a race. So the local database is the only place
@@ -55,9 +58,13 @@ capacity = mirroredStock − activeReservedQuantity
 projectedCapacity = capacity − requestedQuantity
 ```
 
-- `mirroredStock` — `SUM(WarehouseStock.quantity)` for the variant. May already be negative; that is
-  a fact to preserve, never to clamp (master spec §29).
-- `activeReservedQuantity` — the sum of quantities of reservations that still hold (§4).
+- `mirroredStock` — `SUM(WarehouseStock.quantity)` for the **capacity resource**. For a standalone
+  line the resource is the purchased variant itself. For a STANDARD composite line the parent is
+  expanded to each component resource, and the consumed quantity is
+  `lineQuantity × CompositeComponentMirror.quantity`. Parent `WarehouseStock` is never rewritten
+  or substituted as composite capacity.
+- `activeReservedQuantity` — the sum of quantities in `CapacityReservationResource` whose owning
+  reservation still holds (§4).
 
 **The reservation is allowed iff `projectedCapacity >= floor`**, where:
 
@@ -69,7 +76,8 @@ projectedCapacity = capacity − requestedQuantity
 
 `STANDARD` ignores the limit entirely — the limit is an oversell/preorder allowance, not a licence
 for a standard product to go negative. `negativeStockLimit` is configured per product (default
-`−20`) and enforced **independently per variant**.
+`−20`). The floor is enforced independently per capacity resource; for a standalone line that is
+the variant itself, while a STANDARD composite checks every component resource it consumes.
 
 Worked example from the owner, limit `−20`: at stock `−19`, one more unit is allowed and lands at
 exactly `−20`; a second unit is refused. At `−20` nothing more is accepted.
@@ -232,7 +240,8 @@ zero, and standard rules then block new sales until stock is sellable again (§2
 
 ### 5.1 Resolving the policy when no row exists
 
-Almost every product will have no `ProductSellingPolicy` row, because §14 permits no backfill. That
+Almost every product will have no `ProductSellingPolicy` row, because §14 permits no
+`ProductSellingPolicy` backfill. That
 makes the missing-row answer part of the contract, not an edge case — and it is **not** supplied by
 the column defaults in §13.
 
@@ -288,32 +297,38 @@ transactions around a row that **already exists**.
 
 ### 6.2 The rule
 
-Lock an identity that always exists, *then* read the ledger:
+Lock identities that always exist for both the purchased line and the resources it consumes, *then*
+read capacity:
 
 1. One transaction per order commit. `READ COMMITTED` is sufficient; correctness comes from the
-   explicit lock in step 2, not from the isolation level.
-2. Merge the basket to one entry per variant (§7), then take
-   `SELECT id FROM "VariantMirror" WHERE id = ANY($1) ORDER BY id FOR UPDATE`.
-   `VariantMirror` rows always exist for anything reservable — `VariantCapacityReservation.variantId`
-   references them, and §13 makes that reference `onDelete: Restrict`, so there is no variant that
-   can be reserved but not locked.
-3. Assert the lock statement returned **exactly one row per requested `variantId`**. A missing
-   variant is a fail-closed refusal, never a silently skipped lock.
-4. *Now* read and sum the active reservation rows for those variants, inside the same transaction
-   and after the lock is held. Recompute `activeReservedQuantity` here — never from a value read
-   before the transaction.
-5. Evaluate `evaluateMultiLineReservation()`.
-6. Insert all reservation rows, or none.
+   explicit locks, not from the isolation level.
+2. Merge the basket to one entry per purchased variant (§7). Resolve the current resource identities:
+   a standalone line consumes itself; a STANDARD composite consumes each
+   `CompositeComponentMirror.componentVariantId`, multiplied by the positive edge quantity.
+3. In one ordered `SELECT ... FOR UPDATE`, lock the requested `VariantMirror` rows, every component
+   resource row for those requested composite parents, and any resource snapshots already owned by
+   this order for idempotent retry. `VariantMirror` is still the lock target because it exists even
+   when the reservation ledger is empty.
+4. Assert every requested purchased variant exists. Invalid/missing component facts fail closed.
+   After the lock is held, read current component topology for a new reservation, mirrored stock for
+   the locked resources, and competing `CapacityReservationResource` rows joined to reservations
+   that still hold under §4.
+5. Evaluate capacity per resource with `evaluateVariantCapacity()`. For a STANDARD composite, **all**
+   component resources must pass. The parent line itself is not given synthetic stock.
+6. Only after every line/resource decision passes, insert the line-oriented
+   `VariantCapacityReservation` rows and their `CapacityReservationResource` snapshots in the
+   same transaction. A resource snapshot records what that accepted line consumed at the reservation
+   boundary, so later composite-graph sync cannot move an existing hold to different stock.
 
-**Why the invariant now holds under interleaving.** Every caller must hold the `VariantMirror` row
-lock for a variant before it may read or insert that variant's ledger rows. The lock target exists
-unconditionally, so the second transaction genuinely blocks at step 2 — including, and especially,
-when the ledger is empty. It resumes only after the first has committed or rolled back, and under
-`READ COMMITTED` its step-4 read takes a fresh snapshot, so it observes the first transaction's
-inserted holds. No two transactions can both observe the same free unit. The last-unit and
-at-the-limit arithmetic is pinned by `tests/domain/capacity-policy.test.ts`; what this section adds
-is the guarantee that the second caller's `activeReservedQuantity` actually includes the first
-caller's hold.
+**Why the invariant holds under interleaving.** Two different FULL SET parent variants that share a
+child lock the same child `VariantMirror` row, and a direct sale of that child locks that same row.
+The second transaction therefore blocks before reading competing resource holds. Under
+`READ COMMITTED`, its post-lock read sees the first transaction's committed resource snapshot and
+cannot spend the same component units again. The same rule covers edge multipliers because the
+resource quantity persisted for a composite is `lineQuantity × edgeQuantity`.
+
+The database regression suite pins the empty-ledger race, shared-child parent/parent and parent/direct
+contention, an edge multiplier greater than 1, and multi-component all-or-none refusal.
 
 A transaction-level advisory lock (`pg_advisory_xact_lock`) would also work and would not contend
 with catalog sync. It is not chosen because `variantId` is a `cuid` string and advisory locks take a
@@ -369,13 +384,18 @@ entire state machine and is prohibited.
 
 ## 7. Multi-line atomicity
 
-An order reserves **all lines or none** (§31). `evaluateMultiLineReservation()` evaluates every line
-— so one refusal explains the whole basket rather than forcing a retry to discover the next problem
-— and still fails the order as a unit.
+An order reserves **all lines or none** (§31). I6a first merges duplicate purchased variants, then
+builds every line's resource plan and evaluates the complete plan before inserting any reservation
+or resource row. A refusal on one component therefore leaves neither a parent line reservation nor a
+partial hold on components that had room.
 
-**Precondition:** callers pass one entry per *variant*. Two lines for the same variant would each see
-the other excluded from `activeReservedQuantity` and could jointly overshoot, so I6a merges
-duplicate variants before evaluating. The `(orderId, variantId)` uniqueness in §3 is the backstop.
+For standalone lines, one purchased unit consumes one resource unit. For a composite line, each
+resource quantity is `lineQuantity × edgeQuantity`; multiplication must stay a positive PostgreSQL
+integer or the line fails closed.
+
+**Precondition:** callers pass one logical entry per purchased variant; I6a defensively merges
+duplicates before resource planning. The `(orderId, variantId)` uniqueness in §3 remains the
+idempotency backstop.
 
 An empty basket is not a successful reservation.
 
@@ -432,16 +452,28 @@ separate scope and needs its own approval.
 
 ---
 
-## 11. Composite products — v1 restriction
+## 11. Composite products — component-aware STANDARD capacity
 
-`OVERSELL` and `PREORDER` are **disabled for composite parents** until component-aware atomic
-capacity accounting exists and is proven.
+STANDARD composite parents are component-accounted. Their parent `WarehouseStock` remains the
+verbatim Pancake mirror and is **not** the sellable-capacity authority for the FULL SET. Advisory PDP
+and cart capacity are derived from components as:
 
-G2 observed one 1:1 fixture and a child driven to −1. That is not evidence about arbitrary
-multipliers, a child that starts negative, or multi-component atomicity. Selling a composite below
-zero consumes component capacity this model does not track, so it is refused
-(`composite-oversell-unproven`) rather than assumed safe by analogy. Composite in `STANDARD` mode is
-unaffected — it never goes below zero, so no component accounting is needed.
+```text
+parentCapacity = min(floor(max(0, componentStock) / requiredQuantity))
+```
+
+At checkout the authoritative rule is stricter than that advisory scalar: the parent line expands
+into component resources, locks those resources atomically, and persists the exact consumed resource
+quantities in `CapacityReservationResource`. A child disabled for standalone storefront sale may
+still supply a FULL SET when it remains present and stocked; activation controls standalone
+addressability, not whether a present component exists in the set.
+
+The database regressions cover a shared child across different parents/direct sale, a multiplier
+greater than 1, and multi-component all-or-none refusal.
+
+`OVERSELL` and `PREORDER` remain **disabled for composite parents**. Component-aware negative
+capacity semantics are still not approved, so those modes continue to fail with
+`composite-oversell-unproven` rather than extending the STANDARD component accounting by analogy.
 
 ---
 
@@ -509,11 +541,12 @@ the 2026-09-16 five-model merchandising approval, which explicitly did not cover
 Recorded with provenance in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` ›
 Settled decisions.
 
-`src/commerce/capacity-repository.ts` reads the policy, and reads it *through*
-`resolveSellingPolicy()` so the missing-row answer keeps exactly one producer. Reservation **writes**
-are deliberately not shipped: they need the §6.2 locking transaction and the §6.4 guarded
-compare-and-set, both of which belong to I6a, and a naive write would look like the capacity gate
-while enforcing nothing.
+`src/commerce/capacity-repository.ts` reads the policy through `resolveSellingPolicy()`, so the
+missing-row answer keeps exactly one producer. I6a reservation writes are now implemented by
+`src/commerce/capacity-reservation.ts`: §6.2's purchased/resource locking and §6.4's guarded
+compare-and-set are the enforcement boundary. The 2026-09-25 composite extension adds immutable
+`CapacityReservationResource` rows beneath those line reservations; it does not create a second
+capacity authority.
 
 ```prisma
 enum SellingMode {
@@ -540,24 +573,39 @@ model ProductSellingPolicy {
   product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
-/// The capacity ledger. One row per (order, variant).
+/// The line-oriented capacity ledger. One row per (order, purchased variant).
 model VariantCapacityReservation {
   id          String           @id @default(cuid())
   orderId     String
   variantId   String
   quantity    Int
   state       ReservationState @default(RESERVED)
+  acceptedPreorderState OrderPreorderLineState?
   committedAt DateTime?
   releasedAt  DateTime?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  order   OrderMirror   @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  order     OrderMirror                   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant   VariantMirror                 @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  resources CapacityReservationResource[]
 
   @@unique([orderId, variantId])
   @@index([variantId, state])
   @@index([state, updatedAt])
+}
+
+/// Immutable capacity resources consumed by one accepted line reservation.
+model CapacityReservationResource {
+  id            String                     @id @default(cuid())
+  reservationId String
+  variantId     String
+  quantity      Int
+  reservation   VariantCapacityReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  variant       VariantMirror              @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, variantId])
+  @@index([variantId])
 }
 ```
 
@@ -565,8 +613,13 @@ Notes on the shape:
 
 - `@@unique([orderId, variantId])` is the idempotency backstop from §3 and the duplicate-line
   backstop from §7.
-- `@@index([variantId, state])` serves the hot path: summing active holds for one variant under lock.
-- `@@index([state, updatedAt])` serves the reconciliation sweep and the stuck-`UNKNOWN` operator view.
+- `VariantCapacityReservation` stays keyed to the purchased variant for order idempotency and
+  historical READY/PREORDER state.
+- `CapacityReservationResource @@index([variantId])` serves the authoritative shared-resource hot
+  path: competing holds are summed by the stock identity they actually consume, then filtered by the
+  owning reservation state.
+- `@@index([state, updatedAt])` on the line ledger serves the reconciliation sweep and the
+  stuck-`UNKNOWN` operator view.
 - `onDelete: Restrict` on **both** relations is deliberate, and the order side is the one that is
   easy to get wrong. An earlier draft had `Cascade` on the order, reasoning from ownership: a
   reservation belongs to an order, so deleting the order should take its reservations with it. But
@@ -632,19 +685,35 @@ enforced there — stated plainly here rather than claimed as a schema guarantee
 
 ## 14. Migration requirements
 
-Two enums and two tables, all additive, plus back-relations on `ProductMirror`, `OrderMirror` and
-`VariantMirror`. No existing column changes meaning.
+### Original I1 persistence (2026-09-17)
 
-**No backfill**, and the reason is §5.1's resolver, not the column defaults. A default only applies
-to a row being inserted; a product with no `ProductSellingPolicy` row never has one applied. What
-makes "no backfill" safe is that `resolveSellingPolicy()` owns the missing-row answer — `STANDARD`
-at limit `−20`, which is exactly today's behaviour — and every consumer goes through it.
+The original migration added the selling-policy and line-reservation persistence additively. No
+`ProductSellingPolicy` backfill is required: §5.1's `resolveSellingPolicy()` owns the missing-row
+answer (`STANDARD`, limit `−20`). A column default would not create an absent row.
 `CHECK (negativeStockLimit <= 0)` belongs on `ProductSellingPolicy`.
 
-**These were NOT covered by the 2026-09-16 Checkpoint B approval**, which is why they needed their
-own authorization. That was granted on **2026-09-17** and the migration
-(`20260917080000_add_atomic_capacity_persistence`) is applied. Nothing here may be read as extending
-the 2026-09-16 five-model approval, and nothing in either approval authorizes a backfill.
+That migration was separately authorized on **2026-09-17** as
+`20260917080000_add_atomic_capacity_persistence`.
+
+### Composite resource extension (2026-09-25)
+
+`20260925003000_add_composite_capacity_resources` is expand-only: it adds
+`CapacityReservationResource` and does not change or synthesize `WarehouseStock`.
+
+Existing line reservations **are backfilled** into immutable resource snapshots using the durable
+composite graph available at migration time: standalone reservations consume themselves; composite
+reservations consume each component multiplied by the stored edge quantity.
+
+This backfill cannot be rolling-compatible with an old writer that knows only
+`VariantCapacityReservation`: otherwise old code could create a line reservation after the backfill
+but before new code starts, leaving a live hold with no resource snapshot. The production deploy
+therefore quiesces the old `app` container **before** `prisma:migrate:deploy`, runs the backfill with
+no application writer active, and starts the new app only after migration succeeds. If migration
+fails, the stopped pre-release app container is started again; no new image is recreated on that
+failure path.
+
+The deploy-order regression in `tests/domain/vps-deploy-quiesce.test.ts` pins
+`stop old app → migrate → start new app`.
 
 ---
 
@@ -681,12 +750,12 @@ and must not be the rollback path.
 | **I1** | §13 persistence, and §4.2's stock-observation marker before the `COMMITTED` rule is trusted |
 | **I4** | §1 + §5 — one sellability predicate, `capacity-policy.ts` |
 | **I5** | §2 — cart/PDP advisory, commit boundary authoritative |
-| **I6a** | §6 locking + §7 multi-line atomicity |
+| **I6a** | §6 purchased/resource locking + §7 line/resource atomicity |
 | **I6b** | §2 + §9 checkout integration and retry |
 | **I7** | §12 immutable snapshot |
 | **I8** | §10 reconciliation |
 
 ## Out of scope
 
-Durable offline order queue; component-aware composite capacity; changing `WarehouseStock` to an
+Durable offline order queue; composite `OVERSELL`/`PREORDER`; changing `WarehouseStock` to an
 integer quantity; any Pancake live write.
