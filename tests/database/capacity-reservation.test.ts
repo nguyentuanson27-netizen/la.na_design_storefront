@@ -482,6 +482,174 @@ test("I6a an unknown variant and an empty basket are fail-closed refusals", asyn
   assert.equal(await prisma.variantCapacityReservation.count({ where: { orderId } }), 0);
 });
 
+test("I6a composite parents and direct child sales share one component capacity", async () => {
+  const child = await seedVariant("composite-shared-child", { stock: 1 });
+  const parentA = await seedVariant("composite-parent-a", { stock: 0 });
+  const parentB = await seedVariant("composite-parent-b", { stock: 0 });
+  await prisma.compositeComponentMirror.createMany({
+    data: [
+      {
+        parentVariantId: parentA,
+        componentVariantId: child,
+        quantity: 1,
+        syncedAt,
+      },
+      {
+        parentVariantId: parentB,
+        componentVariantId: child,
+        quantity: 1,
+        syncedAt,
+      },
+    ],
+  });
+
+  const [orderA, orderB] = await Promise.all([
+    seedOrder("composite-parent-a"),
+    seedOrder("composite-parent-b"),
+  ]);
+  const outcomes = await Promise.all([
+    repository.reserveOrderCapacity({
+      orderId: orderA,
+      lines: [{ variantId: parentA, quantity: 1 }],
+    }),
+    repository.reserveOrderCapacity({
+      orderId: orderB,
+      lines: [{ variantId: parentB, quantity: 1 }],
+    }),
+  ]);
+
+  assert.equal(
+    outcomes.filter((outcome) => outcome.ok).length,
+    1,
+    "two different parent variants must serialize on their shared child stock",
+  );
+  const refused = outcomes.find((outcome) => !outcome.ok);
+  assert.equal(refused?.ok, false);
+  assert.equal(refused?.ok === false && refused.reason, "standard-would-go-negative");
+
+  const directOrder = await seedOrder("composite-direct-child");
+  const direct = await repository.reserveOrderCapacity({
+    orderId: directOrder,
+    lines: [{ variantId: child, quantity: 1 }],
+  });
+  assert.equal(direct.ok, false, "a FULL SET hold must also consume capacity seen by the child sale");
+  assert.equal(direct.ok === false && direct.reason, "standard-would-go-negative");
+});
+
+test("I6a composite edge multipliers consume the required child units", async () => {
+  const child = await seedVariant("composite-multiplier-child", { stock: 3 });
+  const parent = await seedVariant("composite-multiplier-parent", { stock: 0 });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parent,
+      componentVariantId: child,
+      quantity: 2,
+      syncedAt,
+    },
+  });
+
+  const firstParentOrder = await seedOrder("composite-multiplier-parent-first");
+  const firstParent = await repository.reserveOrderCapacity({
+    orderId: firstParentOrder,
+    lines: [{ variantId: parent, quantity: 1 }],
+  });
+  assert.equal(firstParent.ok, true);
+
+  const parentReservation =
+    firstParent.ok === true ? firstParent.reservations[0] : undefined;
+  assert.ok(parentReservation);
+  const parentResources = await prisma.capacityReservationResource.findMany({
+    where: { reservationId: parentReservation.id },
+    orderBy: { variantId: "asc" },
+  });
+  assert.deepEqual(
+    parentResources.map(({ variantId, quantity }) => ({ variantId, quantity })),
+    [{ variantId: child, quantity: 2 }],
+    "one FULL SET must consume two child units when the composite edge quantity is two",
+  );
+
+  const directOrder = await seedOrder("composite-multiplier-direct");
+  const direct = await repository.reserveOrderCapacity({
+    orderId: directOrder,
+    lines: [{ variantId: child, quantity: 1 }],
+  });
+  assert.equal(direct.ok, true, "the third child unit remains available to a direct sale");
+
+  const secondParentOrder = await seedOrder("composite-multiplier-parent-second");
+  const secondParent = await repository.reserveOrderCapacity({
+    orderId: secondParentOrder,
+    lines: [{ variantId: parent, quantity: 1 }],
+  });
+  assert.equal(secondParent.ok, false, "a second FULL SET would need two units but none remain");
+  assert.equal(secondParent.ok === false && secondParent.reason, "standard-would-go-negative");
+  assert.equal(
+    await prisma.variantCapacityReservation.count({ where: { orderId: secondParentOrder } }),
+    0,
+    "a refused multiplier reservation leaves no line reservation",
+  );
+  assert.equal(
+    await prisma.capacityReservationResource.count({
+      where: { reservation: { orderId: secondParentOrder } },
+    }),
+    0,
+    "a refused multiplier reservation leaves no resource rows",
+  );
+});
+
+test("I6a multi-component composite refusal is atomic and leaves no partial resource holds", async () => {
+  const roomyChild = await seedVariant("composite-multi-roomy", { stock: 4 });
+  const blockedChild = await seedVariant("composite-multi-blocked", { stock: 0 });
+  const parent = await seedVariant("composite-multi-parent", { stock: 0 });
+  await prisma.compositeComponentMirror.createMany({
+    data: [
+      {
+        parentVariantId: parent,
+        componentVariantId: roomyChild,
+        quantity: 2,
+        syncedAt,
+      },
+      {
+        parentVariantId: parent,
+        componentVariantId: blockedChild,
+        quantity: 1,
+        syncedAt,
+      },
+    ],
+  });
+
+  const orderId = await seedOrder("composite-multi-refused");
+  const outcome = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [{ variantId: parent, quantity: 1 }],
+  });
+
+  assert.equal(outcome.ok, false);
+  assert.equal(outcome.ok === false && outcome.reason, "standard-would-go-negative");
+  assert.equal(
+    await prisma.variantCapacityReservation.count({ where: { orderId } }),
+    0,
+    "the parent line is not reserved when any component refuses",
+  );
+  assert.equal(
+    await prisma.capacityReservationResource.count({
+      where: { reservation: { orderId } },
+    }),
+    0,
+    "no roomy component is partially held when another component refuses",
+  );
+
+  const directOrder = await seedOrder("composite-multi-roomy-direct");
+  const direct = await repository.reserveOrderCapacity({
+    orderId: directOrder,
+    lines: [{ variantId: roomyChild, quantity: 4 }],
+  });
+  assert.equal(
+    direct.ok,
+    true,
+    "all roomy-child stock remains available because the failed composite attempt was all-or-none",
+  );
+});
+
 test("I6a every state change is a guarded compare-and-set", async () => {
   // §6.4 — the enum constrains a value and the §13 CHECKs are intra-row, so nothing in SQL stops an
   // UPDATE moving COMMITTED -> RESERVED. The guard is the only thing that does.

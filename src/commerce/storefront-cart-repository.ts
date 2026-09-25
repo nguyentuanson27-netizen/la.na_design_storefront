@@ -4,6 +4,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import { deriveCompositeSellableStock } from "./composite-capacity.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -79,7 +80,27 @@ const productSelection = {
       // Whether this variant is a composite PARENT (it has components), which is the §11
       // restriction's subject — distinct from `compositeParents` below, which asks whether this
       // variant is somebody else's component.
-      compositeComponents: { select: { parentVariantId: true }, take: 1 },
+      compositeComponents: {
+        orderBy: [{ componentVariantId: "asc" as const }],
+        select: {
+          quantity: true,
+          componentVariant: {
+            select: {
+              isPresent: true,
+              product: {
+                select: {
+                  pancakeShopId: true,
+                  isPresent: true,
+                },
+              },
+              warehouseStocks: {
+                orderBy: [{ pancakeWarehouseId: "asc" as const }],
+                select: { quantity: true },
+              },
+            },
+          },
+        },
+      },
       compositeParents: {
         select: {
           parentVariant: {
@@ -102,7 +123,7 @@ const productSelection = {
 
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 
-function toCartProduct(product: SelectedProduct) {
+function toCartProduct(product: SelectedProduct, shopId: number) {
   return {
     slug: product.slug,
     pancakeProductId: product.pancakeProductId,
@@ -130,7 +151,16 @@ function toCartProduct(product: SelectedProduct) {
       ),
       color: variant.color,
       size: variant.size,
-      sellableStock: sumWarehouseStocks(variant.warehouseStocks),
+      sellableStock:
+        variant.compositeComponents.length > 0
+          ? deriveCompositeSellableStock({
+              shopId,
+              components: variant.compositeComponents.map((edge) => ({
+                requiredQuantity: edge.quantity,
+                componentVariant: edge.componentVariant,
+              })),
+            })
+          : sumWarehouseStocks(variant.warehouseStocks),
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
@@ -171,10 +201,11 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     const safeItems = parseItems(items);
     if (safeItems.length === 0) return [];
 
+    const safeShopId = parseShopId(shopId);
     const variantIds = safeItems.map(({ variantId }) => variantId);
     const products = await readClient.productMirror.findMany({
       where: {
-        pancakeShopId: parseShopId(shopId),
+        pancakeShopId: safeShopId,
         variants: {
           some: {
             id: { in: variantIds },
@@ -184,7 +215,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       select: productSelection,
     });
 
-    const cartProducts = products.map(toCartProduct);
+    const cartProducts = products.map((product) => toCartProduct(product, safeShopId));
     const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
       variantIds: cartProducts.flatMap((product) =>
         product.variants.map((variant) => variant.id),

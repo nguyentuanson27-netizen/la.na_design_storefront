@@ -369,6 +369,7 @@ model VariantMirror {
   compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
   promotionTargets                PromotionTarget[]
   capacityReservations            VariantCapacityReservation[]
+  capacityReservationResources    CapacityReservationResource[]
   availabilityCycle               VariantAvailabilityCycle?
 
   @@index([productId])
@@ -690,12 +691,31 @@ model VariantCapacityReservation {
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 
-  order   OrderMirror   @relation(fields: [orderId], references: [id], onDelete: Restrict)
-  variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  order     OrderMirror                    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  variant   VariantMirror                  @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  resources CapacityReservationResource[]
 
   @@unique([orderId, variantId])
   @@index([variantId, state])
   @@index([state, updatedAt])
+}
+
+/// Immutable resource snapshot for one line reservation.
+///
+/// A line reservation keeps the variant the buyer purchased. These rows keep the capacity resources
+/// that line consumed at the reservation boundary. For a standalone line that is the same variant;
+/// for a FULL SET it is each component variant multiplied by the composite edge quantity. Snapshotting
+/// this mapping prevents a later catalog graph change from moving an existing hold to different stock.
+model CapacityReservationResource {
+  id            String                     @id @default(cuid())
+  reservationId String
+  variantId     String
+  quantity      Int
+  reservation   VariantCapacityReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  variant       VariantMirror              @relation(fields: [variantId], references: [id], onDelete: Restrict)
+
+  @@unique([reservationId, variantId], map: "CapacityReservationResource_reservation_variant_key")
+  @@index([variantId], map: "CapacityReservationResource_variant_idx")
 }
 
 /// I9 — one preorder availability cycle per variant (ADR 0011, owner-approved 2026-09-18).
