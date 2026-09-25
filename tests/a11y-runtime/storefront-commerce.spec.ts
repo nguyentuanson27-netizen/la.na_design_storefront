@@ -1033,7 +1033,7 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(smallFormDialog).toBeVisible();
   await expect(smallFormDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-nho");
-  await expectSizeGuideTableFits(page, smallFormDialog, "Set/Váy form nhỏ", "84");
+  await expectSizeGuideTableFits(page, smallFormDialog, "Set/Váy form nhỏ", "84–86");
   await page.keyboard.press("Escape");
 
   await page.goto(`${BASE_URL}/shop/${unmappedProductSlug}`, { waitUntil: "networkidle" });

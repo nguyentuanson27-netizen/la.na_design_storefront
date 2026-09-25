@@ -106,11 +106,11 @@ function productInput(overrides: Partial<ProductViewModelInput> = {}): ProductVi
   };
 }
 
-test("M1 approved size-guide registry contains exactly the three approved guides", () => {
-  const expectedIds = ["ao-dai", "set-vay-form-rong", "set-vay-form-nho"] as const;
+test("M1 approved size-guide registry contains exactly the four approved guides", () => {
+  const expectedIds = ["ao-dai", "set-vay-form-rong", "set-vay-form-vua", "set-vay-form-nho"] as const;
 
   assert.deepEqual([...APPROVED_SIZE_GUIDE_IDS], [...expectedIds]);
-  assert.equal(APPROVED_SIZE_GUIDE_IDS.length, 3);
+  assert.equal(APPROVED_SIZE_GUIDE_IDS.length, 4);
 
   // Every chart in brand config must map to an approved ID
   const chartIds = SIZE_GUIDE.charts.map((chart) => chart.id);
@@ -127,7 +127,7 @@ test("M1 approved size-guide registry contains exactly the three approved guides
 });
 
 test("M1 isApprovedSizeGuideId validates allowlist and rejects unapproved or legacy IDs", () => {
-  for (const id of ["ao-dai", "set-vay-form-rong", "set-vay-form-nho"]) {
+  for (const id of ["ao-dai", "set-vay-form-rong", "set-vay-form-vua", "set-vay-form-nho"]) {
     assert.equal(isApprovedSizeGuideId(id), true, `${id} must be approved`);
   }
 

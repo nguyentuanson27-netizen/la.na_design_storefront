@@ -192,13 +192,14 @@ caught by the brand gate, so navigation activation waits until every destination
 
 ## 6. Size guide → `src/brand/size-guide.config.ts`
 
-Master spec §11. Exactly three approved guides, mapped to a product **manually** — category alone
-must not select a guide, because Set/Váy products may use either wide- or small-form sizing.
+Master spec §11. Exactly four approved guides, mapped to a product **manually** — category alone
+must not select a guide, because Set/Váy products may use wide-, medium- or small-form sizing.
 
 | Guide ID | Title |
 |---|---|
 | `ao-dai` | Áo dài |
 | `set-vay-form-rong` | Set/Váy form rộng |
+| `set-vay-form-vua` | Set/Váy form vừa |
 | `set-vay-form-nho` | Set/Váy form nhỏ |
 
 Semantics, all **approved**:
@@ -209,11 +210,14 @@ Semantics, all **approved**:
   representable in the type rather than encoded as a number.
 - Guidance: the table is indicative and varies with the product's form; the customer should contact
   La.na Design for size advice.
-- `Set/Váy form nhỏ` has **no hip row**, and that is the **approved** shape of the table, not a gap
-  in it. The source chart does not provide hip values; do not invent them and do not leave a hip
-  field waiting to be filled. Master spec §11.3.
+- `Set/Váy form vừa` has **no hip row**, and that is the **approved** shape of the table, not a gap
+  in it. It carries the original small-form chart, whose source does not provide hip values; do not
+  invent them and do not leave a hip field waiting to be filled. Master spec §11.3.
+- Owner decision 2026-09-25: the original small-form numbers became `Set/Váy form vừa`, and
+  `Set/Váy form nhỏ` was re-issued from the owner's "Size chart" image, this time with a hip row.
+  Master spec §11.4.
 
-The exact tables live in master spec §11.1–§11.3 and are transcribed into the config unchanged.
+The exact tables live in master spec §11.1–§11.4 and are transcribed into the config unchanged.
 
 ## 7. Fulfillment → `src/brand/fulfillment.config.ts`
 
@@ -477,7 +481,7 @@ Master spec §47. These are content gaps, not architecture blockers:
 6. A real data source for `Bán chạy`.
 7. Production deployment and search-indexing approval.
 
-The `set-vay-form-nho` hip values are deliberately **not** on this list: §6 records them as absent
+The `set-vay-form-vua` hip values are deliberately **not** on this list: §6 records them as absent
 from the approved table, not as an owner fact still to come.
 
 The `RESERVED` capacity-hold expiry window was briefly on this list during I6b and is **no longer

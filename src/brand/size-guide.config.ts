@@ -4,7 +4,7 @@ import type { SizeGuideConfig } from "./schema.ts";
 const NAME = BRAND.identity.name;
 
 /**
- * Master spec §11 — the three approved La.na Design size guides, transcribed.
+ * Master spec §11 — the four approved La.na Design size guides, transcribed.
  *
  * The semantics travel with the numbers:
  * - `Ngực`, `Eo` and `Mông` are circumferences **of the body**, not of the garment. A shopper
@@ -13,11 +13,13 @@ const NAME = BRAND.identity.name;
  *   own unit, because one chart carries both.
  * - **No fixed manufacturing tolerance applies**, so `tolerance` is `null`. Brand #1's `±3 cm` was
  *   its own fact, and `0` would be a promise of exact measurements rather than the absence of one.
- * - `set-vay-form-nho` has **no hip row**. The source chart does not provide hip values; §11.3 says
- *   not to invent them, so the chart is four rows and that is its approved shape.
+ * - `set-vay-form-vua` has **no hip row**. It carries the original small-form chart, whose source
+ *   does not provide hip values; §11.3 says not to invent them, so four rows is its approved shape.
+ * - `set-vay-form-nho` was re-issued by the owner on 2026-09-25 (chart image "Size chart", note
+ *   "áp dụng với các sản phẩm form nhỏ"), this time with a hip row.
  *
  * A product is mapped to a guide **manually**. Category must not select one, because Set/Váy
- * products may use either the wide-form or the small-form chart; M1 owns that mapping.
+ * products may use the wide-form, medium-form or small-form chart; M1 owns that mapping.
  *
  * No size recommendation, size calculator, fit vocabulary or per-product measurement mapping
  * outside these tables may be authored or inferred.
@@ -57,18 +59,33 @@ export const SIZE_GUIDE: SizeGuideConfig = {
       ],
     },
     {
-      id: "set-vay-form-nho",
-      title: "Set/Váy form nhỏ",
+      id: "set-vay-form-vua",
+      title: "Set/Váy form vừa",
       sizes: ["S", "M", "L", "XL"],
       rows: [
         { parameter: "Ngực (cm)", values: { S: "84", M: "88", L: "92", XL: "96" } },
         { parameter: "Eo (cm)", values: { S: "62–66", M: "66–72", L: "72–76", XL: "76–80" } },
-        // No hip row: §11.3 states the source chart does not provide hip values.
+        // No hip row: this is the former small-form chart, whose source provides no hip values.
         {
           parameter: "Chiều cao (cm)",
           values: { S: "155–168", M: "155–168", L: "155–168", XL: "155–168" },
         },
         { parameter: "Cân nặng (kg)", values: { S: "43–50", M: "50–57", L: "57–64", XL: "64–72" } },
+      ],
+    },
+    {
+      id: "set-vay-form-nho",
+      title: "Set/Váy form nhỏ",
+      sizes: ["S", "M", "L", "XL"],
+      rows: [
+        { parameter: "Ngực (cm)", values: { S: "84–86", M: "86–90", L: "88–92", XL: "90–94" } },
+        { parameter: "Eo (cm)", values: { S: "64–66", M: "70–72", L: "76–78", XL: "80–82" } },
+        { parameter: "Mông (cm)", values: { S: "96", M: "100", L: "104", XL: "108" } },
+        {
+          parameter: "Chiều cao (cm)",
+          values: { S: "153–168", M: "153–168", L: "153–168", XL: "153–168" },
+        },
+        { parameter: "Cân nặng (kg)", values: { S: "43–49", M: "50–55", L: "56–63", XL: "63–72" } },
       ],
     },
   ],
@@ -77,6 +94,7 @@ export const SIZE_GUIDE: SizeGuideConfig = {
 export const APPROVED_SIZE_GUIDE_IDS = [
   "ao-dai",
   "set-vay-form-rong",
+  "set-vay-form-vua",
   "set-vay-form-nho",
 ] as const;
 
