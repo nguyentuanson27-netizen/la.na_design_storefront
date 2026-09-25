@@ -51,6 +51,7 @@ import {
 import {
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
+  type PromotionCampaignKind,
   type PromotionDiscountType,
 } from "./promotion-pricing.ts";
 import {
@@ -582,7 +583,7 @@ export async function endPromotionCampaignEarly({
  */
 export type CampaignPatch = Readonly<{
   name?: string;
-  kind?: "PROMOTION" | "FLASH_SALE";
+  kind?: PromotionCampaignKind;
   discountType?: PromotionDiscountType;
   percentageValue?: number | null;
   fixedPriceVnd?: bigint | null;
@@ -764,7 +765,7 @@ export async function editDraftPromotionCampaign({
 
 export type CreateDraftInput = Readonly<{
   name: string;
-  kind?: "PROMOTION" | "FLASH_SALE";
+  kind?: PromotionCampaignKind;
   discountType?: PromotionDiscountType;
   percentageValue?: number | null;
   fixedPriceVnd?: bigint | null;

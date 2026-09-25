@@ -1,4 +1,5 @@
 import { CATEGORY_NAVIGATION } from "./category.config.ts";
+import { SALE_CHILD_NAVIGATION, SALE_ROOT_NAVIGATION } from "./sale.config.ts";
 import type { NavigationConfig, NavigationLink } from "./schema.ts";
 
 type PrimaryNavigationLink = NavigationLink & Readonly<{
@@ -23,7 +24,12 @@ export const NAVIGATION: NavigationWithPrimaryHierarchy = {
     ...CATEGORY_NAVIGATION,
     { href: "/new-arrivals", label: "Hàng mới về" },
     { href: "/collections", label: "Bộ sưu tập" },
-    { href: "/sale", label: "Sale" },
+    // Sale opens onto its two campaign listings. Only href and label reach the menu: the campaign
+    // kind is route semantics, not navigation.
+    {
+      ...SALE_ROOT_NAVIGATION,
+      children: SALE_CHILD_NAVIGATION.map(({ href, label }) => ({ href, label })),
+    },
   ],
   mobileUtility: [
     { href: "/search", label: "Tìm kiếm" },

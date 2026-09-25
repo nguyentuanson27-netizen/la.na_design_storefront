@@ -17,6 +17,7 @@ import {
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
+import type { PromotionCampaignKind } from "./promotion-pricing.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { defaultStorefrontPricingRule, type StorefrontPricingRule } from "./storefront-product.ts";
 
@@ -28,9 +29,12 @@ type StorefrontPromotionProduct = Readonly<{
 export async function resolveStorefrontPromotionForProducts({
   products,
   now = new Date(),
+  onlyKind,
 }: {
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
+  /** Scopes the displayed discounts to one campaign kind; see `buildPromotionalStorefrontPricing`. */
+  onlyKind?: PromotionCampaignKind;
 }): Promise<Readonly<{ pricingRule: StorefrontPricingRule; refreshAfterMs: number }>> {
   const variantIds = products.flatMap((product) =>
     (product.projection?.options ?? product.variants).map((variant) => variant.id),
@@ -46,7 +50,7 @@ export async function resolveStorefrontPromotionForProducts({
   });
   const campaigns = [...campaignsByVariantId.values()].flat();
   return Object.freeze({
-    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onlyKind }),
     refreshAfterMs: resolveStorefrontPromotionRefreshFromCampaigns({ now, campaigns }).refreshAfterMs,
   });
 }
@@ -54,11 +58,13 @@ export async function resolveStorefrontPromotionForProducts({
 export async function resolveStorefrontPricingRuleForProducts({
   products,
   now = new Date(),
+  onlyKind,
 }: {
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
+  onlyKind?: PromotionCampaignKind;
 }): Promise<StorefrontPricingRule> {
-  return (await resolveStorefrontPromotionForProducts({ products, now })).pricingRule;
+  return (await resolveStorefrontPromotionForProducts({ products, now, onlyKind })).pricingRule;
 }
 
 export async function listConfiguredStorefrontProducts(limit: number) {
@@ -145,10 +151,12 @@ export async function listConfiguredFlashSalePage({
 export async function listConfiguredSalePage({
   discovery,
   pageSize,
+  kind,
   now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
+  kind?: PromotionCampaignKind;
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -156,6 +164,7 @@ export async function listConfiguredSalePage({
     shopId,
     discovery,
     pageSize,
+    kind,
     now,
   });
 }
@@ -164,8 +173,11 @@ export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
   return createFlashSaleCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
 }
 
-export async function readConfiguredNextSaleBoundary(now?: Date) {
-  return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now });
+export async function readConfiguredNextSaleBoundary(
+  now?: Date,
+  kind?: PromotionCampaignKind,
+) {
+  return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now, kind });
 }
 
 export async function listConfiguredCategoryDiscoveryPage({

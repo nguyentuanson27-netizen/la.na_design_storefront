@@ -4,6 +4,7 @@ import { useId, useState, useTransition } from "react";
 import Link from "next/link";
 import { searchPromotionTargetsAction } from "@/app/admin/promotions/actions";
 import { MAX_TARGETS_PER_CAMPAIGN } from "@/commerce/promotion-activation";
+import type { PromotionCampaignKind } from "@/commerce/promotion-pricing";
 
 export type FormTargetItem = Readonly<{
   id: string;
@@ -18,7 +19,7 @@ export type PromotionCampaignFormProps = Readonly<{
   initialData?: {
     id: string;
     name: string;
-    kind: "PROMOTION" | "FLASH_SALE";
+    kind: PromotionCampaignKind;
     discountType: "PERCENTAGE" | "FIXED_PRICE";
     percentageValue: number | null;
     fixedPriceVnd: bigint | null;
@@ -61,7 +62,7 @@ export function PromotionCampaignForm({
   action,
 }: PromotionCampaignFormProps) {
   const formId = useId();
-  const [kind, setKind] = useState<"PROMOTION" | "FLASH_SALE">(
+  const [kind, setKind] = useState<PromotionCampaignKind>(
     initialData?.kind ?? "PROMOTION",
   );
   const [discountType, setDiscountType] = useState<"PERCENTAGE" | "FIXED_PRICE">(
@@ -157,11 +158,12 @@ export function PromotionCampaignForm({
             className={selectClassName}
             id={`${formId}-kind`}
             name="kind"
-            onChange={(e) => setKind(e.target.value as "PROMOTION" | "FLASH_SALE")}
+            onChange={(e) => setKind(e.target.value as PromotionCampaignKind)}
             value={kind}
           >
             <option value="PROMOTION">Khuyến mãi thông thường</option>
             <option value="FLASH_SALE">Flash Sale (yêu cầu khoảng thời gian)</option>
+            <option value="CLEARANCE">Xả hàng lẻ size</option>
           </select>
         </div>
       </div>

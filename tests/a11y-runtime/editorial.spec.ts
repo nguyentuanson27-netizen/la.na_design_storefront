@@ -694,13 +694,15 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   await expect(desktopNavigation.getByRole("link", { name: "Lookbook", exact: true })).toHaveCount(0);
 
   // Mega menus (owner request 2026-09-24): every top-level category opens a panel from its
-  // keyboard-operable disclosure; the three non-category links have none. Leaf categories carry
-  // no subcategory list, so their panel's way in is "Xem tất cả" to the category itself.
+  // keyboard-operable disclosure, and so does Sale for its three sale listings; Hàng mới
+  // về and Bộ sưu tập have none. Leaf categories carry no subcategory list, so their panel's way in
+  // is "Xem tất cả" to the category itself.
   const megaMenus = [
     { label: "Áo dài", href: "/ao-dai", children: 5 },
     { label: "Set đồ", href: "/set-do", children: 2 },
     { label: "Váy, đầm", href: "/vay-dam", children: 0 },
     { label: "Phụ kiện", href: "/phu-kien", children: 0 },
+    { label: "Sale", href: "/sale", children: 3 },
   ] as const;
   for (const menu of megaMenus) {
     const disclosure = desktopNavigation.getByRole("button", { name: menu.label, exact: true });
@@ -723,7 +725,7 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
     await expect(panel).toHaveCount(0);
     await expect(disclosure).toHaveAttribute("aria-expanded", "false");
   }
-  for (const label of ["Hàng mới về", "Bộ sưu tập", "Sale"]) {
+  for (const label of ["Hàng mới về", "Bộ sưu tập"]) {
     await expect(desktopNavigation.getByRole("button", { name: label, exact: true })).toHaveCount(0);
   }
   const utilityNavigation = page.getByRole("navigation", { name: "Tiện ích" });

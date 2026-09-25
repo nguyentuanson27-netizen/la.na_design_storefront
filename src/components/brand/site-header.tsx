@@ -242,7 +242,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
           {primary.map((item, index) => {
             const hasChildren = Boolean(item.children && item.children.length > 0);
             // Every category opens a panel -- the leaf ones (Váy, đầm; Phụ kiện) for their image
-            // and a way in -- while Hàng mới về, Bộ sưu tập and Sale stay plain links.
+            // and a way in -- and so does Sale, for its sale sub-listings. Hàng mới về
+            // and Bộ sưu tập stay plain links.
             const hasMenu = hasChildren || Boolean(item.key);
             const isMegaOpen = activeMegaMenu === item.href;
             const media = getMegaMedia(item);

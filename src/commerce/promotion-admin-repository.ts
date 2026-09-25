@@ -10,6 +10,7 @@
  */
 
 import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { PromotionCampaignKind } from "./promotion-pricing.ts";
 import {
   deriveCampaignLifecycle,
   type CampaignLifecycleStatus,
@@ -31,7 +32,7 @@ const MAX_ADMIN_SEARCH_LENGTH = 120;
 export type AdminPromotionCampaignRow = Readonly<{
   id: string;
   name: string;
-  kind: "PROMOTION" | "FLASH_SALE";
+  kind: PromotionCampaignKind;
   discountType: "PERCENTAGE" | "FIXED_PRICE";
   percentageValue: number | null;
   fixedPriceVnd: bigint | null;
@@ -338,7 +339,7 @@ export type CampaignEditTarget = Readonly<{
 export type CampaignEditData = Readonly<{
   id: string;
   name: string;
-  kind: "PROMOTION" | "FLASH_SALE";
+  kind: PromotionCampaignKind;
   discountType: "PERCENTAGE" | "FIXED_PRICE";
   percentageValue: number | null;
   fixedPriceVnd: bigint | null;
@@ -353,7 +354,7 @@ export type CampaignEditData = Readonly<{
 export type RelatedCampaignSummary = Readonly<{
   id: string;
   name: string;
-  kind: "PROMOTION" | "FLASH_SALE";
+  kind: PromotionCampaignKind;
   status: CampaignLifecycleStatus;
   targetScope: "PRODUCT" | "VARIANT" | "BOTH";
 }>;

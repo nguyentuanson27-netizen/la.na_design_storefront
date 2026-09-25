@@ -11,6 +11,7 @@ import {
 } from "@/commerce/promotion-admin-feedback";
 import { PromotionAdminStatus } from "@/components/admin/promotion-admin-status";
 import { PromotionCampaignForm } from "@/components/admin/promotion-campaign-form";
+import { PROMOTION_CAMPAIGN_KIND_LABELS } from "@/commerce/promotion-pricing";
 import { evaluateCampaignRuntimeHealth } from "@/commerce/promotion-runtime-health";
 import { prisma } from "@/db/prisma";
 
@@ -114,7 +115,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
         <div>
           <h1 className="text-3xl font-semibold tracking-[-0.03em]">Khuyến mãi</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-black/65">
-            Danh sách chiến dịch khuyến mãi và Flash Sale do website sở hữu. Giá hiệu lực, quy tắc
+            Danh sách chiến dịch khuyến mãi, Flash Sale và xả hàng lẻ size do website sở hữu. Giá hiệu lực, quy tắc
             trùng lặp và vòng đời đều do máy chủ quyết định.
           </p>
         </div>
@@ -260,7 +261,7 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
               {campaigns.map((campaign) => (
                 <tr className="border-b border-black/10 align-top" key={campaign.id}>
                   <th className="py-4 pr-4 font-medium" scope="row">{campaign.name}</th>
-                  <td className="py-4 pr-4">{campaign.kind === "FLASH_SALE" ? "Flash Sale" : "Khuyến mãi"}</td>
+                  <td className="py-4 pr-4">{PROMOTION_CAMPAIGN_KIND_LABELS[campaign.kind]}</td>
                   <td className="py-4 pr-4">{describeDiscount(campaign)}</td>
                   <td className="py-4 pr-4">
                     {campaign.startsAt ? dateTime.format(campaign.startsAt) : "Không giới hạn"}

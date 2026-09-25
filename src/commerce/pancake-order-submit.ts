@@ -12,7 +12,11 @@ import type {
   ApplicableCampaignLookup,
   PromotionCandidateReadClient,
 } from "./promotion-candidate-repository.ts";
-import { isUsableBasePriceVnd, resolvePromotionPricing } from "./promotion-pricing.ts";
+import {
+  isUsableBasePriceVnd,
+  resolvePromotionPricing,
+  type PromotionCampaignKind,
+} from "./promotion-pricing.ts";
 import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
 import {
   capacityFloorForMode,
@@ -386,7 +390,7 @@ export function createPancakeOrderSubmissionService(
         baseUnitPriceVnd: bigint | null;
         promotionCampaignId: string | null;
         promotionName: string | null;
-        promotionKind: "PROMOTION" | "FLASH_SALE" | null;
+        promotionKind: PromotionCampaignKind | null;
         promotionDiscountType: "PERCENTAGE" | "FIXED_PRICE" | null;
         promotionPercentageValue: number | null;
         promotionFixedPriceVnd: bigint | null;

@@ -194,3 +194,44 @@ test("U15 the default pricing path is untouched for every other consumer", () =>
   assert.equal(option!.isDiscounted, false);
   assert.equal(option!.basePriceVnd, null);
 });
+
+test("a kind-scoped rule shows only that kind's discounts and never unmasks a conflict", () => {
+  const promotionVariant = variant({ id: "cuid-promo", pancakeVariationId: "pv-promo", size: "M" });
+  const flashVariant = variant({ id: "cuid-flash", pancakeVariationId: "pv-flash", size: "L" });
+  const conflictVariant = variant({ id: "cuid-both", pancakeVariationId: "pv-both", size: "XL" });
+  const promotion = percentage({ id: "promo", kind: "PROMOTION", percentageValue: 20 });
+  const flash = percentage({
+    id: "flash",
+    kind: "FLASH_SALE",
+    percentageValue: 40,
+    startsAt: new Date(NOW.getTime() - 60_000),
+    endsAt: new Date(NOW.getTime() + 3_600_000),
+  });
+  const campaignsByVariantId = new Map([
+    ["cuid-promo", [promotion]],
+    ["cuid-flash", [flash]],
+    ["cuid-both", [promotion, flash]],
+  ]);
+  const variants = [promotionVariant, flashVariant, conflictVariant];
+
+  const scoped = buildStorefrontVariantOptions(
+    variants,
+    buildPromotionalStorefrontPricing({ campaignsByVariantId, now: NOW, onlyKind: "PROMOTION" }),
+  );
+  assert.deepEqual(
+    scoped.map((option) => [option.id, option.price, option.isDiscounted]),
+    [
+      ["cuid-promo", 400_000, true],
+      // The Flash price stays off a Promotion-only listing: shown at base, not at 300k.
+      ["cuid-flash", 500_000, false],
+      // Two active campaigns is a conflict at checkout; scoping must not turn it into a discount.
+      ["cuid-both", 500_000, false],
+    ],
+  );
+
+  const unscoped = buildStorefrontVariantOptions(
+    variants,
+    buildPromotionalStorefrontPricing({ campaignsByVariantId, now: NOW }),
+  );
+  assert.deepEqual(unscoped.map((option) => option.price), [400_000, 300_000, 500_000]);
+});

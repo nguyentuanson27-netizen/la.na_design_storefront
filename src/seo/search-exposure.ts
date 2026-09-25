@@ -1,4 +1,5 @@
 import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
+import { SALE_CHILD_ROUTE_PATHS } from "../brand/sale.config.ts";
 import {
   LEGACY_TEMPORARY_STOREFRONT_HOST,
   OFFICIAL_PRODUCTION_STOREFRONT_HOST,
@@ -28,12 +29,22 @@ const TEMPORARY_PRODUCTION_HOSTS = new Set([LEGACY_TEMPORARY_STOREFRONT_HOST]);
 
 export const CRAWL_BLOCKED_PATHS = ["/api"] as const;
 
+function exactPathPattern(href: string): RegExp {
+  return new RegExp(`^${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`);
+}
+
 // One exact-match pattern per declared category route. Built from the category declaration rather
 // than hand-written alternations: a hand-written one has to be edited in step with the route list,
 // and the failure mode when it is not is a category that silently stops being indexable.
-export const INDEXABLE_CATEGORY_PATH_PATTERNS: readonly RegExp[] = CATEGORY_ROUTE_PATHS.map(
-  (href) => new RegExp(`^${href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`),
-);
+export const INDEXABLE_CATEGORY_PATH_PATTERNS: readonly RegExp[] =
+  CATEGORY_ROUTE_PATHS.map(exactPathPattern);
+
+// The sale sub-listings are paginated projections of the same sale read as `/sale`, so they share
+// its indexing and pagination contract.
+export const SALE_LISTING_PATH_PATTERNS: readonly RegExp[] = [
+  /^\/sale$/,
+  ...SALE_CHILD_ROUTE_PATHS.map(exactPathPattern),
+];
 
 const INDEXABLE_PATH_PATTERNS = [
   /^\/$/,
@@ -43,7 +54,7 @@ const INDEXABLE_PATH_PATTERNS = [
   /^\/collections\/[^/]+$/,
   /^\/new-arrivals$/,
   ...INDEXABLE_CATEGORY_PATH_PATTERNS,
-  /^\/sale$/,
+  ...SALE_LISTING_PATH_PATTERNS,
   /^\/about$/,
   /^\/contact$/,
   /^\/returns$/,
@@ -61,7 +72,7 @@ const INDEXABLE_PATH_PATTERNS = [
 const INDEXABLE_PAGINATION_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/]+$/,
-  /^\/sale$/,
+  ...SALE_LISTING_PATH_PATTERNS,
   /^\/new-arrivals$/,
 ] as const;
 
