@@ -81,7 +81,24 @@ BACKUP_FILE="$BACKUP_DIR/$PROJECT_SLUG-predeploy-${RELEASE_SHA:0:12}-$(date -u +
 chmod 600 "$BACKUP_FILE"
 echo "Created pre-migration database dump: $BACKUP_FILE"
 
-"${compose[@]}" run --rm ops pnpm prisma:migrate:deploy
+# Capacity-resource migrations backfill reservations that already exist. Quiesce the currently
+# serving application before any migration so old code cannot create a reservation after that
+# backfill and before the new application begins writing CapacityReservationResource rows.
+app_was_running=false
+if [[ -n "$("${compose[@]}" ps -q app)" ]]; then
+  app_was_running=true
+  "${compose[@]}" stop app
+fi
+
+if ! "${compose[@]}" run --rm ops pnpm prisma:migrate:deploy; then
+  # `docker compose stop` keeps the previous container. If migration fails, resume that exact
+  # pre-release application rather than recreating it from the newly built image.
+  if [[ "$app_was_running" == "true" ]]; then
+    "${compose[@]}" start app
+  fi
+  exit 1
+fi
+
 "${compose[@]}" up -d --no-build app caddy
 
 for _ in {1..40}; do

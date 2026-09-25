@@ -37,10 +37,11 @@ ALTER TABLE "CapacityReservationResource"
   FOREIGN KEY ("variantId") REFERENCES "VariantMirror"("id")
   ON DELETE RESTRICT ON UPDATE CASCADE;
 
--- Rolling compatibility: snapshot every reservation that predates this migration from the best
--- durable graph available at migration time. Standalone lines consume themselves; composite lines
--- consume each component. Once written, these rows do not follow later CompositeComponentMirror
--- changes.
+-- Backfill every reservation that predates this migration from the best durable graph available at
+-- migration time. The production deploy quiesces the old app before running this migration, so no
+-- legacy writer can create a reservation after this snapshot and before the new app starts writing
+-- resource rows. Standalone lines consume themselves; composite lines consume each component. Once
+-- written, these rows do not follow later CompositeComponentMirror changes.
 INSERT INTO "CapacityReservationResource" ("id", "reservationId", "variantId", "quantity")
 SELECT
   r."id" || ':component:' || c."componentVariantId",
