@@ -116,4 +116,34 @@ test("sale projection includes ordinary Promotion and Flash Sale while excluding
   assert.ok(flashResult);
   assert.equal("flashSale" in promotionResult, false);
   assert.equal("flashSale" in flashResult, true);
+
+  // The Ưu đãi and Flash Sale sub-listings each narrow the same read to one campaign kind.
+  const promotionOnly = await repository.listSalePage({
+    shopId,
+    discovery: parseStorefrontDiscoverySearchParams({}),
+    pageSize: 12,
+    kind: "PROMOTION",
+    now,
+  });
+  assert.deepEqual(promotionOnly.products.map((product) => product.slug), ["sale-promotion-product"]);
+  assert.equal(promotionOnly.totalCount, 1);
+  assert.equal("flashSale" in promotionOnly.products[0]!, false);
+
+  const flashOnly = await repository.listSalePage({
+    shopId,
+    discovery: parseStorefrontDiscoverySearchParams({}),
+    pageSize: 12,
+    kind: "FLASH_SALE",
+    now,
+  });
+  assert.deepEqual(flashOnly.products.map((product) => product.slug), ["sale-flash-product"]);
+  assert.equal(flashOnly.totalCount, 1);
+  assert.equal("flashSale" in flashOnly.products[0]!, true);
+
+  // Each listing refreshes on its own kind's boundary: only the flash campaign has an end.
+  assert.equal(await repository.readNextSaleBoundary({ now, kind: "PROMOTION" }), null);
+  assert.deepEqual(
+    await repository.readNextSaleBoundary({ now, kind: "FLASH_SALE" }),
+    new Date(now.getTime() + 3_600_000),
+  );
 });

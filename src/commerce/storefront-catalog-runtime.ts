@@ -145,10 +145,12 @@ export async function listConfiguredFlashSalePage({
 export async function listConfiguredSalePage({
   discovery,
   pageSize,
+  kind,
   now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
+  kind?: "PROMOTION" | "FLASH_SALE";
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -156,6 +158,7 @@ export async function listConfiguredSalePage({
     shopId,
     discovery,
     pageSize,
+    kind,
     now,
   });
 }
@@ -164,8 +167,11 @@ export async function readConfiguredNextFlashSaleBoundary(now?: Date) {
   return createFlashSaleCatalogRepository(prisma).readNextFlashSaleBoundary({ now });
 }
 
-export async function readConfiguredNextSaleBoundary(now?: Date) {
-  return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now });
+export async function readConfiguredNextSaleBoundary(
+  now?: Date,
+  kind?: "PROMOTION" | "FLASH_SALE",
+) {
+  return createFlashSaleCatalogRepository(prisma).readNextSaleBoundary({ now, kind });
 }
 
 export async function listConfiguredCategoryDiscoveryPage({

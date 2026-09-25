@@ -66,7 +66,7 @@ test("F2a mega-menu: Áo dài and Set đồ have approved children subcategories
   );
 });
 
-test("mega-menu: every top-level category opens a panel, the other primary links do not", () => {
+test("mega-menu: every top-level category and Sale open a panel, the other primary links do not", () => {
   type HierarchicalLink = { href: string; label: string; key?: string; children?: readonly HierarchicalLink[] };
   const primary = NAVIGATION.primary as readonly HierarchicalLink[];
   const headerSource = readFileSync(path.join(REPO_ROOT, "src/components/brand/site-header.tsx"), "utf8");
@@ -81,7 +81,12 @@ test("mega-menu: every top-level category opens a panel, the other primary links
   );
   assert.deepEqual(
     primary.filter((item) => !item.key && !item.children?.length).map((item) => item.label),
-    ["Hàng mới về", "Bộ sưu tập", "Sale"],
+    ["Hàng mới về", "Bộ sưu tập"],
+  );
+  // Sale is not a category, but it opens a panel for its Ưu đãi / Flash Sale listings.
+  assert.deepEqual(
+    primary.find((item) => item.label === "Sale")?.children?.map((child) => child.label),
+    ["Ưu đãi", "Flash Sale"],
   );
 
   // A leaf category's panel links to the category itself, named for the category it opens.

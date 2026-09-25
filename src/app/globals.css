@@ -1123,27 +1123,125 @@ main nav[aria-label="Breadcrumb"] a {
   transform: scale(1.025);
 }
 
+/*
+ * Tags over a product photograph. The old badge was a black box whose CSS `left` fought the card's
+ * `right-3` utility -- this sheet is unlayered, so it wins -- which stretched `-44%` into a bar
+ * across the whole image. Tags now sit in one top-left stack, size to their text, and take their
+ * colour from the brand palette: a brick pill for the discount, espresso and gold for Flash Sale.
+ */
+.product-tags {
+  position: absolute;
+  z-index: 2;
+  top: 0.625rem;
+  left: 0.625rem;
+  right: 0.625rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.product-tag,
+.product-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.375rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgba(42, 24, 16, 0.18);
+}
+
+/* The legacy commerce card places its single badge itself. */
 .product-badge {
   position: absolute;
   z-index: 2;
-  left: 0.75rem;
-  top: 0.75rem;
-  padding: 0.35rem 0.55rem;
-  background: #000000;
-  color: #ffffff;
-  border: none;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  line-height: 1;
+  top: 0.625rem;
+  left: 0.625rem;
+  background: #9a3324;
+  color: #fff8f1;
 }
 
-.product-badge--sale {
-  background: #000000;
-  color: #ffffff;
-  border: none;
-  font-weight: 700;
+.product-tag--sale {
+  background: #9a3324;
+  color: #fff8f1;
+}
+
+.product-tag--flash {
+  padding-left: 0.4rem;
+  background: #2a1810;
+  color: #f3c969;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.product-tag--flash svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+}
+
+.product-tag--new {
+  background: rgba(250, 247, 242, 0.94);
+  color: #2a1810;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-tag--bestseller {
+  background: #70584b;
+  color: #faf7f2;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #9a3324;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-countdown svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+}
+
+@media (min-width: 768px) {
+  .product-tags {
+    top: 0.75rem;
+    left: 0.75rem;
+    right: 0.75rem;
+  }
+
+  .product-tag,
+  .product-badge {
+    height: 1.5rem;
+    padding: 0 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .product-tag--flash,
+  .product-tag--new,
+  .product-tag--bestseller {
+    font-size: 0.6875rem;
+  }
 }
 
 /*

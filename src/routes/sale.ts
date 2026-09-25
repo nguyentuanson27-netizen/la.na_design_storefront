@@ -13,6 +13,7 @@ import { resolveStorefrontPromotionRefresh } from "@/commerce/storefront-promoti
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import { buildFlashSaleViewModel, type FlashSaleViewModel } from "./flash-sale-model.ts";
+import { saleListingByKind, type SaleListingKind } from "../brand/sale.config.ts";
 import { SALE_TITLE } from "./metadata/sale.ts";
 
 export const SALE_PAGE_SIZE = 24;
@@ -20,9 +21,16 @@ export type SaleRouteProps = Readonly<{
   searchParams: Promise<StorefrontDiscoverySearchParams>;
 }>;
 
-export async function loadSaleRoute({
-  searchParams,
-}: SaleRouteProps): Promise<RouteHandle<FlashSaleViewModel>> {
+/**
+ * `/sale` and its sub-listings share this loader. Without `kind` it lists every active discount;
+ * `/sale/uu-dai` passes `PROMOTION` and `/sale/flash-sale` passes `FLASH_SALE`, which narrows the
+ * product read, the refresh boundary and the tracking list to that campaign kind.
+ */
+export async function loadSaleRoute(
+  { searchParams }: SaleRouteProps,
+  kind?: SaleListingKind,
+): Promise<RouteHandle<FlashSaleViewModel>> {
+  const listing = kind ? saleListingByKind(kind) : null;
   await connection();
   const now = new Date();
   let discovery: ReturnType<typeof parseStorefrontDiscoverySearchParams>;
@@ -32,8 +40,8 @@ export async function loadSaleRoute({
   try {
     discovery = parseStorefrontDiscoverySearchParams(await searchParams);
     [page, boundary] = await Promise.all([
-      listConfiguredSalePage({ discovery, pageSize: SALE_PAGE_SIZE, now }),
-      readConfiguredNextSaleBoundary(now),
+      listConfiguredSalePage({ discovery, pageSize: SALE_PAGE_SIZE, kind, now }),
+      readConfiguredNextSaleBoundary(now, kind),
     ]);
   } catch (error) {
     if (error instanceof RangeError) notFound();
@@ -44,13 +52,15 @@ export async function loadSaleRoute({
     Promise.resolve(
       buildProductListTracking({
         products: page.products,
-        list: { listId: "sale", listName: SALE_TITLE },
+        list: listing
+          ? { listId: listing.href.slice(1).replaceAll("/", "-"), listName: listing.label }
+          : { listId: "sale", listName: SALE_TITLE },
       }),
     ),
     resolveStorefrontPricingRuleForProducts({ products: page.products, now }),
   ]);
   const model = buildFlashSaleViewModel({
-    basePath: "/sale",
+    basePath: listing?.href ?? "/sale",
     products: page.products,
     totalCount: page.totalCount,
     totalPages: page.totalPages,

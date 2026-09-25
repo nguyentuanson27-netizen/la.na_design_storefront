@@ -1,4 +1,5 @@
 import { CATEGORY_ROUTE_PATHS } from "../brand/category.config.ts";
+import { SALE_CHILD_ROUTE_PATHS } from "../brand/sale.config.ts";
 
 /**
  * Where every storefront route lives, and where its metadata is declared.
@@ -62,6 +63,13 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
     metadata: "page",
   })),
   { path: "src/app/sale/page.tsx", shell: true, metadata: "page" },
+  // The sale sub-listings (Ưu đãi, Flash Sale), derived from their one declaration for the same
+  // reason the categories are.
+  ...SALE_CHILD_ROUTE_PATHS.map((href): StorefrontRouteEntry => ({
+    path: `src/app${href}/page.tsx`,
+    shell: true,
+    metadata: "page",
+  })),
   { path: "src/app/cart/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/page.tsx", shell: true, metadata: "static" },
   { path: "src/app/checkout/success/page.tsx", shell: true, metadata: "static" },

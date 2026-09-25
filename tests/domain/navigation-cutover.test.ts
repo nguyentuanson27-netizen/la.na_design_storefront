@@ -23,6 +23,7 @@ test("A6 primary navigation has the exact approved order and hierarchy", () => {
   assert.deepEqual(primary.map((item) => item.label), EXPECTED_PRIMARY);
   assert.deepEqual(primary[0]?.children?.map((child) => child.label), EXPECTED_AO_DAI);
   assert.deepEqual(primary[1]?.children?.map((child) => child.label), EXPECTED_SET_DO);
+  assert.deepEqual(primary.at(-1)?.children?.map((child) => child.label), ["Ưu đãi", "Flash Sale"]);
   assert.equal(primary.some((item) => item.href === "/shop" || item.label === "Trang chủ"), false);
 });
 
@@ -38,6 +39,10 @@ test("A8 retires obsolete public routes while keeping sale public and canonical"
   assert.equal(matchesStorefrontRoute("/flash-sale"), false);
   assert.equal(matchesStorefrontRoute("/sale"), true);
   assert.equal(STATIC_CANONICAL_PATHS.includes("/sale"), true);
+  for (const child of ["/sale/uu-dai", "/sale/flash-sale"]) {
+    assert.equal(matchesStorefrontRoute(child), true, `${child} must be a declared route`);
+    assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes(child), true);
+  }
   assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/lookbook"), false);
   assert.equal((STATIC_CANONICAL_PATHS as readonly string[]).includes("/flash-sale"), false);
 });

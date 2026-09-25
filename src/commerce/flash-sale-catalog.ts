@@ -20,8 +20,9 @@ type FlashSaleIdRow = {
   endsAt: Date;
   hasCheaperCurrentVariant: boolean;
 };
+type SaleCampaignKind = "PROMOTION" | "FLASH_SALE";
 type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
-  kind: "PROMOTION" | "FLASH_SALE";
+  kind: SaleCampaignKind;
   endsAt: Date | null;
 };
 
@@ -209,6 +210,22 @@ function buildFlashSaleCte(now: Date) {
   `;
 }
 
+function parseSaleCampaignKind(kind: SaleCampaignKind | undefined): SaleCampaignKind | null {
+  if (kind === undefined) return null;
+  if (kind !== "PROMOTION" && kind !== "FLASH_SALE") {
+    throw new RangeError("Sale campaign kind must be PROMOTION or FLASH_SALE");
+  }
+  return kind;
+}
+
+/**
+ * Narrows `sale_variant` to one campaign kind, or leaves it whole. `sale_variant."kind"` is already
+ * projected as text, so the bound parameter compares without a cast.
+ */
+function saleKindFilter(alias: string, kind: SaleCampaignKind | null) {
+  return kind === null ? Prisma.empty : Prisma.sql`AND ${Prisma.raw(alias)}."kind" = ${kind}`;
+}
+
 function assertProjectedMoney(row: Pick<FlashSaleIdRow, "basePrice" | "sortPrice">) {
   if (
     !Number.isSafeInteger(row.basePrice)
@@ -336,20 +353,28 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     };
   }
 
+  /**
+   * `/sale` and its sub-listings. Without `kind` every active discount is listed; with it, only
+   * products whose discount comes from that campaign kind, and the representative price is chosen
+   * among that kind's variants so the card shows the discount the listing is about.
+   */
   async function listSalePage({
     shopId,
     pageSize,
     discovery,
+    kind,
     now = new Date(),
   }: {
     shopId: number;
     pageSize: number;
     discovery: StorefrontDiscoveryQuery;
+    kind?: SaleCampaignKind;
     now?: Date;
   }) {
     const safeShopId = parseShopId(shopId);
     const safePageSize = parsePageSize(pageSize);
     const offset = parsePageOffset(discovery.page, safePageSize);
+    const safeKind = parseSaleCampaignKind(kind);
     const cte = buildSaleCte(now);
 
     const [countRows, idRows] = await Promise.all([
@@ -361,7 +386,8 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
           AND p."isPresent" = TRUE
           AND p."isActive" = TRUE
           AND EXISTS (
-            SELECT 1 FROM "sale_variant" sv WHERE sv."productId" = p."id"
+            SELECT 1 FROM "sale_variant" sv
+            WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
           )
       `),
       client.$queryRaw<SaleIdRow[]>(Prisma.sql`
@@ -390,7 +416,7 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
                 AND current_variant."resolvedPrice" < sv."resolvedPrice"
             ) AS "hasCheaperCurrentVariant"
           FROM "sale_variant" sv
-          WHERE sv."productId" = p."id"
+          WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
           ORDER BY sv."resolvedPrice" ASC, sv."id" ASC
           LIMIT 1
         ) representative ON TRUE
@@ -463,26 +489,28 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
 
   async function readNextSaleBoundary({
     now = new Date(),
-  }: { now?: Date } = {}): Promise<Date | null> {
+    kind,
+  }: { now?: Date; kind?: SaleCampaignKind } = {}): Promise<Date | null> {
+    const safeKind = parseSaleCampaignKind(kind);
+    const kindFilter = safeKind === null
+      ? Prisma.sql`"kind" IN (
+            'PROMOTION'::"PromotionCampaignKind",
+            'FLASH_SALE'::"PromotionCampaignKind"
+          )`
+      : Prisma.sql`"kind"::text = ${safeKind}`;
     const rows = await client.$queryRaw<FlashSaleBoundaryRow[]>(Prisma.sql`
       SELECT MIN("boundary") AS "boundary" FROM (
         SELECT "startsAt" AS "boundary"
         FROM "PromotionCampaign"
         WHERE "isEnabled" = TRUE
-          AND "kind" IN (
-            'PROMOTION'::"PromotionCampaignKind",
-            'FLASH_SALE'::"PromotionCampaignKind"
-          )
+          AND ${kindFilter}
           AND "startsAt" IS NOT NULL
           AND "startsAt" > ${now}
         UNION ALL
         SELECT "endsAt" AS "boundary"
         FROM "PromotionCampaign"
         WHERE "isEnabled" = TRUE
-          AND "kind" IN (
-            'PROMOTION'::"PromotionCampaignKind",
-            'FLASH_SALE'::"PromotionCampaignKind"
-          )
+          AND ${kindFilter}
           AND "endsAt" IS NOT NULL
           AND "endsAt" > ${now}
       ) boundaries
