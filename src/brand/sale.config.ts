@@ -10,7 +10,7 @@ import type { NavigationLink } from "./schema.ts";
  * `campaignKind` names which promotion campaigns a listing shows. `/sale` itself keeps showing
  * every active discount; each child narrows it to one campaign kind.
  */
-export type SaleListingKind = "PROMOTION" | "FLASH_SALE";
+export type SaleListingKind = "PROMOTION" | "FLASH_SALE" | "CLEARANCE";
 
 export type SaleListingDefinition = NavigationLink & Readonly<{
   campaignKind: SaleListingKind;
@@ -21,6 +21,7 @@ export const SALE_ROOT_NAVIGATION: NavigationLink = { href: "/sale", label: "Sal
 export const SALE_CHILD_NAVIGATION: readonly SaleListingDefinition[] = [
   { href: "/sale/uu-dai", label: "Ưu đãi", campaignKind: "PROMOTION" },
   { href: "/sale/flash-sale", label: "Flash Sale", campaignKind: "FLASH_SALE" },
+  { href: "/sale/xa-hang-le-size", label: "Xả hàng lẻ size", campaignKind: "CLEARANCE" },
 ];
 
 /** Every sale sub-listing route path, in declared order. */

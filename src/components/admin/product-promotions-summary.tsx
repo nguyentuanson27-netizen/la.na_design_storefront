@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { RelatedCampaignSummary } from "@/commerce/promotion-admin-repository";
+import { PROMOTION_CAMPAIGN_KIND_LABELS } from "@/commerce/promotion-pricing";
 
 const STATUS_LABELS: Record<string, string> = {
   DRAFT: "Nháp",
@@ -57,7 +58,7 @@ export function ProductPromotionsSummary({ campaigns }: ProductPromotionsSummary
                     {campaign.name}
                   </Link>
                   <span className="ml-2 text-xs text-neutral-700">
-                    ({campaign.kind === "FLASH_SALE" ? "Flash Sale" : "Khuyến mãi"})
+                    ({PROMOTION_CAMPAIGN_KIND_LABELS[campaign.kind]})
                   </span>
                 </div>
                 <div className="flex items-center gap-3 text-xs text-neutral-800">

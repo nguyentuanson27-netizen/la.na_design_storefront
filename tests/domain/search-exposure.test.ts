@@ -170,7 +170,7 @@ test("category shells keep query state noindex while sale keeps canonical pagina
     assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=1" }), true);
   }
   assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname: "/sale", search: "?page=2" }), false);
-  for (const pathname of ["/sale/uu-dai", "/sale/flash-sale"]) {
+  for (const pathname of ["/sale/uu-dai", "/sale/flash-sale", "/sale/xa-hang-le-size"]) {
     assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "" }), false);
     assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=2" }), false);
     assert.equal(shouldNoIndexRequest({ indexingEnabled: true, pathname, search: "?page=1" }), true);

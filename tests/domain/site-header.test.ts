@@ -83,10 +83,10 @@ test("mega-menu: every top-level category and Sale open a panel, the other prima
     primary.filter((item) => !item.key && !item.children?.length).map((item) => item.label),
     ["Hàng mới về", "Bộ sưu tập"],
   );
-  // Sale is not a category, but it opens a panel for its Ưu đãi / Flash Sale listings.
+  // Sale is not a category, but it opens a panel for its sale sub-listings.
   assert.deepEqual(
     primary.find((item) => item.label === "Sale")?.children?.map((child) => child.label),
-    ["Ưu đãi", "Flash Sale"],
+    ["Ưu đãi", "Flash Sale", "Xả hàng lẻ size"],
   );
 
   // A leaf category's panel links to the category itself, named for the category it opens.

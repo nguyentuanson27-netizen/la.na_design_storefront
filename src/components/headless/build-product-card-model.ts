@@ -69,6 +69,11 @@ export type ProductCardModel = Readonly<{
     discountPercent: number | null;
   }>;
   flashSale: Readonly<{ remainingMs: number; countdownText: string | null }> | null;
+  /**
+   * The card's discount is a "Xả hàng lẻ size" (CLEARANCE) campaign, as decided by the sale read.
+   * Only a sale listing knows the campaign kind; every other surface leaves this false.
+   */
+  isClearance: boolean;
   marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
   availability: "in-stock" | "out-of-stock" | "partial";
   /**
@@ -110,6 +115,7 @@ export type ProductCardModelInput = Readonly<{
    */
   productCapacity?: StorefrontProductCapacity;
   flashSale?: StorefrontFlashSalePresentation;
+  isClearance?: boolean;
   selectEvent?: TrackingEvent | null;
   isNewArrival?: boolean;
   isBestseller?: boolean;
@@ -305,6 +311,9 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           countdownText: describeFlashCountdown(flashSale.remainingMs),
         })
       : null,
+    // Only meaningful alongside a real discount: a clearance tag on a full-price card would promise
+    // a sale the price does not show.
+    isClearance: input.isClearance === true && discountPercent > 0,
     marketingBadge,
     availability,
     isPreorderOnly,

@@ -1,3 +1,8 @@
+import {
+  isPromotionCampaignKind,
+  PROMOTION_CAMPAIGN_KINDS,
+  type PromotionCampaignKind,
+} from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
@@ -20,7 +25,7 @@ type FlashSaleIdRow = {
   endsAt: Date;
   hasCheaperCurrentVariant: boolean;
 };
-type SaleCampaignKind = "PROMOTION" | "FLASH_SALE";
+type SaleCampaignKind = PromotionCampaignKind;
 type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
   kind: SaleCampaignKind;
   endsAt: Date | null;
@@ -188,10 +193,7 @@ function buildSaleCte(now: Date) {
         AND sve."candidateCount" = 1
         AND sve."basePrice" IS NOT NULL
         AND sve."resolvedPrice" < sve."basePrice"::float8
-        AND c."kind" IN (
-          'PROMOTION'::"PromotionCampaignKind",
-          'FLASH_SALE'::"PromotionCampaignKind"
-        )
+        AND c."kind"::text IN (${Prisma.join([...PROMOTION_CAMPAIGN_KINDS])})
     )
   `;
 }
@@ -222,8 +224,8 @@ function buildFlashSaleCte(now: Date) {
 
 function parseSaleCampaignKind(kind: SaleCampaignKind | undefined): SaleCampaignKind | null {
   if (kind === undefined) return null;
-  if (kind !== "PROMOTION" && kind !== "FLASH_SALE") {
-    throw new RangeError("Sale campaign kind must be PROMOTION or FLASH_SALE");
+  if (!isPromotionCampaignKind(kind)) {
+    throw new RangeError(`Sale campaign kind must be one of ${PROMOTION_CAMPAIGN_KINDS.join(", ")}`);
   }
   return kind;
 }
@@ -453,6 +455,7 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
       const base = toFlashProduct(product);
+      if (row.kind === "CLEARANCE") return { ...base, isClearance: true as const };
       if (row.kind !== "FLASH_SALE" || row.endsAt === null || row.endsAt <= now) return base;
       return {
         ...base,
@@ -506,10 +509,7 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
   }: { now?: Date; kind?: SaleCampaignKind } = {}): Promise<Date | null> {
     const safeKind = parseSaleCampaignKind(kind);
     const kindFilter = safeKind === null
-      ? Prisma.sql`"kind" IN (
-            'PROMOTION'::"PromotionCampaignKind",
-            'FLASH_SALE'::"PromotionCampaignKind"
-          )`
+      ? Prisma.sql`"kind"::text IN (${Prisma.join([...PROMOTION_CAMPAIGN_KINDS])})`
       : Prisma.sql`"kind"::text = ${safeKind}`;
     const rows = await client.$queryRaw<FlashSaleBoundaryRow[]>(Prisma.sql`
       SELECT MIN("boundary") AS "boundary" FROM (

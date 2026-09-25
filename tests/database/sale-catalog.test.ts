@@ -24,6 +24,7 @@ const campaignIds = [
   "sale-catalog-flash",
   "sale-catalog-flash-open-start",
   "sale-catalog-flash-no-window",
+  "sale-catalog-clearance",
 ];
 
 async function cleanup() {
@@ -291,4 +292,68 @@ test("Flash Sale sub-listing keeps the Flash window invariant: incomplete window
   // Same answer as the established Flash read for the same rows.
   const established = await repository.listFlashSalePage({ shopId, discovery, pageSize: 12, now });
   assert.equal(established.totalCount, 0);
+});
+
+test("Xả hàng lẻ size lists CLEARANCE campaigns only, marks them, and /sale includes them", async () => {
+  const clearanceProduct = await createProduct("sale-clearance-product", 800_000);
+  const promotionProduct = await createProduct("sale-clearance-neighbour", 500_000);
+
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[4]!,
+      kind: "CLEARANCE",
+      name: "Xả hàng lẻ size",
+      discountType: "PERCENTAGE",
+      percentageValue: 50,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: clearanceProduct.id } },
+    },
+  });
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[0]!,
+      kind: "PROMOTION",
+      name: "Ordinary promotion",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: promotionProduct.id } },
+    },
+  });
+
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const clearance = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(clearance.products.map((listed) => listed.slug), ["sale-clearance-product"]);
+  const listed = clearance.products[0]!;
+  assert.equal("isClearance" in listed && listed.isClearance, true);
+  assert.equal("flashSale" in listed, false);
+
+  const promotionOnly = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "PROMOTION", now });
+  assert.deepEqual(promotionOnly.products.map((product) => product.slug), ["sale-clearance-neighbour"]);
+
+  const all = await repository.listSalePage({ shopId, discovery, pageSize: 12, now });
+  assert.deepEqual(all.products.map((product) => product.slug).sort(), [
+    "sale-clearance-neighbour",
+    "sale-clearance-product",
+  ]);
+
+  // Priced like a Promotion, and the card carries the clearance tag beside its discount.
+  const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+    variantIds: listed.variants.map((variant) => variant.id),
+    client: prisma as unknown as PromotionCandidateReadClient,
+  });
+  const card = buildProductCardModel({
+    slug: listed.slug,
+    name: listed.name,
+    variants: listed.variants,
+    isClearance: true,
+    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onlyKind: "CLEARANCE" }),
+  });
+  assert.match(card.price.displayText, /400\.000/);
+  assert.equal(card.price.discountPercent, 50);
+  assert.equal(card.isClearance, true);
+
+  assert.equal(await repository.readNextSaleBoundary({ now, kind: "CLEARANCE" }), null);
 });

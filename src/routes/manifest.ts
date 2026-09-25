@@ -63,7 +63,7 @@ export const STOREFRONT_ROUTES: readonly StorefrontRouteEntry[] = [
     metadata: "page",
   })),
   { path: "src/app/sale/page.tsx", shell: true, metadata: "page" },
-  // The sale sub-listings (Ưu đãi, Flash Sale), derived from their one declaration for the same
+  // The sale sub-listings (Ưu đãi, Flash Sale, Xả hàng lẻ size), derived from their one declaration for the same
   // reason the categories are.
   ...SALE_CHILD_ROUTE_PATHS.map((href): StorefrontRouteEntry => ({
     path: `src/app${href}/page.tsx`,

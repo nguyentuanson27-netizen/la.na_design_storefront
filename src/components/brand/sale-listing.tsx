@@ -16,7 +16,7 @@ import type { FlashSaleViewModel } from "@/routes/flash-sale-model";
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
-/** Tất cả / Ưu đãi / Flash Sale, with the current listing marked. */
+/** Tất cả, then every sale sub-listing, with the current one marked. */
 export function SaleListingSubnav({ currentHref }: Readonly<{ currentHref: string }>) {
   const items = [
     { label: "Tất cả", fullLabel: "Tất cả sản phẩm Sale", href: SALE_ROOT_NAVIGATION.href },

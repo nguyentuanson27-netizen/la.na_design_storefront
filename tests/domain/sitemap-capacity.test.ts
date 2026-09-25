@@ -7,7 +7,7 @@ import {
 } from "../../src/seo/search-sitemap-repository.ts";
 import { summarizeSitemapCapacity } from "../../src/seo/sitemap-capacity.ts";
 
-const EXPECTED_STATIC_PATHS = 25;
+const EXPECTED_STATIC_PATHS = 26;
 const EXPECTED_DYNAMIC_BUDGET = 50_000 - EXPECTED_STATIC_PATHS;
 
 test("the single-sitemap budget is the dynamic bound plus every static canonical path", () => {

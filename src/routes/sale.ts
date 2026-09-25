@@ -23,7 +23,8 @@ export type SaleRouteProps = Readonly<{
 
 /**
  * `/sale` and its sub-listings share this loader. Without `kind` it lists every active discount;
- * `/sale/uu-dai` passes `PROMOTION` and `/sale/flash-sale` passes `FLASH_SALE`, which narrows the
+ * `/sale/uu-dai` passes `PROMOTION`, `/sale/flash-sale` `FLASH_SALE` and `/sale/xa-hang-le-size`
+ * `CLEARANCE`, which narrows the
  * product read, the refresh boundary and the tracking list to that campaign kind.
  */
 export async function loadSaleRoute(

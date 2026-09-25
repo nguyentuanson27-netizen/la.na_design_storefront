@@ -1232,6 +1232,18 @@ main nav[aria-label="Breadcrumb"] a {
   }
 }
 
+/* Xả hàng lẻ size: a warm sand tag with an espresso outline, so it reads as "last pieces" without
+ * competing with the red discount beside it. Sentence case, because the label is a phrase. */
+.product-tag--clearance {
+  background: #f6e7c8;
+  color: #6b2f14;
+  box-shadow:
+    0 1px 2px rgba(42, 24, 16, 0.18),
+    0 0 0 1px rgba(107, 47, 20, 0.35) inset;
+  font-size: 0.65rem;
+  letter-spacing: 0.01em;
+}
+
 .product-tag--new {
   background: rgba(250, 247, 242, 0.94);
   color: #2a1810;
@@ -1281,7 +1293,8 @@ main nav[aria-label="Breadcrumb"] a {
 
   .product-tag--flash,
   .product-tag--new,
-  .product-tag--bestseller {
+  .product-tag--bestseller,
+  .product-tag--clearance {
     font-size: 0.6875rem;
   }
 }

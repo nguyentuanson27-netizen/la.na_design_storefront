@@ -479,3 +479,25 @@ test("the model is frozen, so a brand component cannot mutate shared state", () 
   }, TypeError);
 });
 
+
+test("the Xả hàng lẻ size tag rides beside a real discount and never on a full-price card", () => {
+  const pricingRule: StorefrontPricingRule = () => ({
+    price: 100_000,
+    basePriceVnd: 200_000,
+    isDiscounted: true,
+  });
+  const clearance = buildProductCardModel({
+    slug: "s",
+    name: "n",
+    variants: [variant({ retailPrice: 200_000, retailPriceAfterDiscount: 200_000 })],
+    pricingRule,
+    isClearance: true,
+  });
+  assert.equal(clearance.isClearance, true);
+  assert.deepEqual(clearance.marketingBadge, { type: "sale", label: "-50%" });
+
+  const fullPrice = buildProductCardModel({ slug: "s", name: "n", variants: [variant()], isClearance: true });
+  assert.equal(fullPrice.isClearance, false);
+
+  assert.equal(buildProductCardModel({ slug: "s", name: "n", variants: [variant()] }).isClearance, false);
+});

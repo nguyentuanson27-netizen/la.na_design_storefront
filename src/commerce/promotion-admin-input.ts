@@ -13,10 +13,11 @@ import {
   MAX_TARGETS_PER_CAMPAIGN,
   type CampaignTargetInput,
 } from "./promotion-activation.ts";
+import { isPromotionCampaignKind, type PromotionCampaignKind } from "./promotion-pricing.ts";
 
 export type CampaignMutationValues = Readonly<{
   name: string;
-  kind: "PROMOTION" | "FLASH_SALE";
+  kind: PromotionCampaignKind;
   discountType: "PERCENTAGE" | "FIXED_PRICE";
   percentageValue: number | null;
   fixedPriceVnd: bigint | null;
@@ -112,10 +113,10 @@ export function parseCampaignFormInput(formData: FormData): ParsedCampaignMutati
   // 1. Kind: strict allowlist
   const rawKind = formData.get("kind");
   const kindStr = typeof rawKind === "string" ? rawKind.trim() : "";
-  if (kindStr !== "PROMOTION" && kindStr !== "FLASH_SALE") {
+  if (!isPromotionCampaignKind(kindStr)) {
     return { ok: false, reason: "INVALID_CAMPAIGN_KIND" };
   }
-  const kind = kindStr as "PROMOTION" | "FLASH_SALE";
+  const kind = kindStr;
 
   // 2. Discount Type: strict allowlist
   const rawDiscountType = formData.get("discountType");

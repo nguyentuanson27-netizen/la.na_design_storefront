@@ -23,6 +23,8 @@ export type FlashSaleProduct = Readonly<{
    */
   productCapacity?: StorefrontProductCapacity;
   flashSale?: StorefrontFlashSalePresentation;
+  /** The sale read chose this card for a "Xả hàng lẻ size" (CLEARANCE) discount. */
+  isClearance?: boolean;
 }>;
 
 export type FlashSaleViewModel = Readonly<{
@@ -69,6 +71,7 @@ export function buildFlashSaleViewModel(input: FlashSaleViewModelInput): FlashSa
             productCapacity: product.productCapacity,
             pricingRule: input.pricingRule,
             flashSale: product.flashSale,
+            isClearance: product.isClearance,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
           }),
         }),

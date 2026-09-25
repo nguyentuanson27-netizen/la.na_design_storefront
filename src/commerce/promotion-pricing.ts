@@ -18,7 +18,27 @@
  * neither sets the effective price nor makes it unresolved.
  */
 
-export type PromotionCampaignKind = "PROMOTION" | "FLASH_SALE";
+/**
+ * Every campaign kind, in admin display order. Mirrors the `PromotionCampaignKind` database enum;
+ * allowlists and SQL kind lists derive from this rather than restating it.
+ *
+ * `CLEARANCE` is "Xả hàng lẻ size": priced exactly like `PROMOTION` (no window required), and kept
+ * as its own kind so the storefront can list and label it separately.
+ */
+export const PROMOTION_CAMPAIGN_KINDS = ["PROMOTION", "FLASH_SALE", "CLEARANCE"] as const;
+
+export type PromotionCampaignKind = (typeof PROMOTION_CAMPAIGN_KINDS)[number];
+
+/** How the admin names each kind. */
+export const PROMOTION_CAMPAIGN_KIND_LABELS: Readonly<Record<PromotionCampaignKind, string>> = {
+  PROMOTION: "Khuyến mãi",
+  FLASH_SALE: "Flash Sale",
+  CLEARANCE: "Xả hàng lẻ size",
+};
+
+export function isPromotionCampaignKind(value: unknown): value is PromotionCampaignKind {
+  return (PROMOTION_CAMPAIGN_KINDS as readonly unknown[]).includes(value);
+}
 
 export type PromotionDiscountType = "PERCENTAGE" | "FIXED_PRICE";
 
