@@ -196,16 +196,26 @@ function buildSaleCte(now: Date) {
   `;
 }
 
+/**
+ * What makes a `sale_variant` row a Flash Sale: the kind and a complete, ordered window. The
+ * promotion contract requires both bounds, so a Flash row missing either fails closed here rather
+ * than being read as unbounded the way the generic active-window check reads it.
+ */
+function flashSaleEligibility(alias: string) {
+  const column = (name: string) => Prisma.raw(`${alias}."${name}"`);
+  return Prisma.sql`${column("kind")} = 'FLASH_SALE'
+        AND ${column("startsAt")} IS NOT NULL
+        AND ${column("endsAt")} IS NOT NULL
+        AND ${column("endsAt")} > ${column("startsAt")}`;
+}
+
 function buildFlashSaleCte(now: Date) {
   return Prisma.sql`
     ${buildSaleCte(now)},
     "flash_sale_variant" AS (
       SELECT *
-      FROM "sale_variant"
-      WHERE "kind" = 'FLASH_SALE'
-        AND "startsAt" IS NOT NULL
-        AND "endsAt" IS NOT NULL
-        AND "endsAt" > "startsAt"
+      FROM "sale_variant" sv
+      WHERE ${flashSaleEligibility("sv")}
     )
   `;
 }
@@ -219,11 +229,14 @@ function parseSaleCampaignKind(kind: SaleCampaignKind | undefined): SaleCampaign
 }
 
 /**
- * Narrows `sale_variant` to one campaign kind, or leaves it whole. `sale_variant."kind"` is already
- * projected as text, so the bound parameter compares without a cast.
+ * Narrows `sale_variant` to one campaign kind, or leaves it whole. Flash Sale reuses the Flash
+ * listing's own eligibility, window invariant included; `sale_variant."kind"` is already projected
+ * as text, so the Promotion parameter compares without a cast.
  */
 function saleKindFilter(alias: string, kind: SaleCampaignKind | null) {
-  return kind === null ? Prisma.empty : Prisma.sql`AND ${Prisma.raw(alias)}."kind" = ${kind}`;
+  if (kind === null) return Prisma.empty;
+  if (kind === "FLASH_SALE") return Prisma.sql`AND ${flashSaleEligibility(alias)}`;
+  return Prisma.sql`AND ${Prisma.raw(alias)}."kind" = ${kind}`;
 }
 
 function assertProjectedMoney(row: Pick<FlashSaleIdRow, "basePrice" | "sortPrice">) {

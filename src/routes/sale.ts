@@ -48,17 +48,20 @@ export async function loadSaleRoute(
     throw error;
   }
 
-  const [tracking, pricingRule] = await Promise.all([
-    Promise.resolve(
-      buildProductListTracking({
-        products: page.products,
-        list: listing
-          ? { listId: listing.href.slice(1).replaceAll("/", "-"), listName: listing.label }
-          : { listId: "sale", listName: SALE_TITLE },
-      }),
-    ),
-    resolveStorefrontPricingRuleForProducts({ products: page.products, now }),
-  ]);
+  // A sub-listing prices its cards -- and reports them -- from its own campaign kind only, so a
+  // product listed on Ưu đãi for its Promotion variant never shows a sibling variant's Flash price.
+  const pricingRule = await resolveStorefrontPricingRuleForProducts({
+    products: page.products,
+    now,
+    onlyKind: kind,
+  });
+  const tracking = buildProductListTracking({
+    products: page.products,
+    list: listing
+      ? { listId: listing.href.slice(1).replaceAll("/", "-"), listName: listing.label }
+      : { listId: "sale", listName: SALE_TITLE },
+    pricingRule,
+  });
   const model = buildFlashSaleViewModel({
     basePath: listing?.href ?? "/sale",
     products: page.products,

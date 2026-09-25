@@ -28,9 +28,12 @@ type StorefrontPromotionProduct = Readonly<{
 export async function resolveStorefrontPromotionForProducts({
   products,
   now = new Date(),
+  onlyKind,
 }: {
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
+  /** Scopes the displayed discounts to one campaign kind; see `buildPromotionalStorefrontPricing`. */
+  onlyKind?: "PROMOTION" | "FLASH_SALE";
 }): Promise<Readonly<{ pricingRule: StorefrontPricingRule; refreshAfterMs: number }>> {
   const variantIds = products.flatMap((product) =>
     (product.projection?.options ?? product.variants).map((variant) => variant.id),
@@ -46,7 +49,7 @@ export async function resolveStorefrontPromotionForProducts({
   });
   const campaigns = [...campaignsByVariantId.values()].flat();
   return Object.freeze({
-    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+    pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onlyKind }),
     refreshAfterMs: resolveStorefrontPromotionRefreshFromCampaigns({ now, campaigns }).refreshAfterMs,
   });
 }
@@ -54,11 +57,13 @@ export async function resolveStorefrontPromotionForProducts({
 export async function resolveStorefrontPricingRuleForProducts({
   products,
   now = new Date(),
+  onlyKind,
 }: {
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
+  onlyKind?: "PROMOTION" | "FLASH_SALE";
 }): Promise<StorefrontPricingRule> {
-  return (await resolveStorefrontPromotionForProducts({ products, now })).pricingRule;
+  return (await resolveStorefrontPromotionForProducts({ products, now, onlyKind })).pricingRule;
 }
 
 export async function listConfiguredStorefrontProducts(limit: number) {

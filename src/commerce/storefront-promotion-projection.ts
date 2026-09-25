@@ -32,6 +32,7 @@
 import {
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
+  type PromotionCampaignKind,
   type PromotionPricingResult,
 } from "./promotion-pricing.ts";
 import type { StorefrontPricingRule } from "./storefront-product.ts";
@@ -40,6 +41,7 @@ export function buildPromotionalStorefrontPricing({
   campaignsByVariantId,
   now,
   onResolved,
+  onlyKind,
 }: Readonly<{
   /** Keyed by internal `VariantMirror.id`, which is how the candidate repository reports them. */
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
@@ -61,6 +63,16 @@ export function buildPromotionalStorefrontPricing({
    * promotion audit quietly went missing. Keep implementations total.
    */
   onResolved?: (variantId: string, pricing: PromotionPricingResult) => void;
+  /**
+   * Show only discounts that come from this campaign kind; any other discount is shown at base.
+   *
+   * For a listing scoped to one kind (`/sale/uu-dai` lists Promotion only), so a variant priced by a
+   * Flash Sale cannot put the Flash price on that listing's card or its tracking. It filters the
+   * resolved answer rather than the campaign list on purpose: dropping a campaign before resolving
+   * could turn a `PROMOTION_CONFLICT` into a discount the cart would never honour. `onResolved`
+   * still observes the unscoped answer.
+   */
+  onlyKind?: PromotionCampaignKind;
 }>): StorefrontPricingRule {
   return (variant) => {
     const pricing = resolvePromotionPricing({
@@ -69,6 +81,14 @@ export function buildPromotionalStorefrontPricing({
       now,
     });
     onResolved?.(variant.id, pricing);
+
+    if (onlyKind !== undefined && pricing.isDiscounted && pricing.promotion?.kind !== onlyKind) {
+      return Object.freeze({
+        price: pricing.basePriceVnd,
+        basePriceVnd: pricing.basePriceVnd,
+        isDiscounted: false,
+      });
+    }
 
     return Object.freeze({
       // `effectivePriceVnd` is base when nothing applies and stays null when the base itself is
