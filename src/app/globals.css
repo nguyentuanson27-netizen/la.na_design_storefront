@@ -2376,6 +2376,7 @@ body:has(.admin-shell) .site-masthead {
 
   .category-discovery__intro {
     padding-bottom: 0;
+    text-align: center;
   }
 
   .feedback-gallery {
