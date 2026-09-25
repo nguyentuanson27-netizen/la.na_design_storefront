@@ -288,14 +288,14 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   ) : null}
                 </div>
 
-                {/* Mega Menu Dropdown: links on the left third, a 4:3 image across the other two. */}
+                {/* Mega Menu Dropdown: a narrow link column on the left, a 16:9 image filling the rest. */}
                 {hasMenu && isMegaOpen ? (
                   <div
                     role="region"
                     aria-label={item.label}
-                    className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1 w-[min(880px,calc(100vw-3rem))] rounded-b-lg border border-[#3B2219]/15 bg-[#FAF7F2] p-6 shadow-xl"
+                    className="absolute left-1/2 -translate-x-1/2 top-full z-50 mt-1 w-[min(880px,calc(100vw-3rem))] rounded-b-lg border border-[#3B2219]/15 bg-[#FAF7F2] px-5 py-6 shadow-xl"
                   >
-                    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)] gap-8 items-start">
+                    <div className="grid grid-cols-[minmax(7.5rem,1fr)_minmax(0,44rem)] gap-4 items-start">
                       <div>
                         <p className="eyebrow text-[#70584B] mb-3">{item.label}</p>
                         {hasChildren ? (
@@ -324,13 +324,13 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                       </div>
 
                       {/* Editorial Media Container */}
-                      <div className="relative aspect-[4/3] overflow-hidden rounded-sm bg-[#3B2219]/5">
+                      <div className="relative aspect-video overflow-hidden rounded-sm bg-[#3B2219]/5">
                         {media ? (
                           <Image
                             src={media.imageUrl}
                             alt={media.altText || item.label}
                             fill
-                            sizes="560px"
+                            sizes="704px"
                             className="object-cover"
                           />
                         ) : (
