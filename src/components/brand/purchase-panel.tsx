@@ -217,9 +217,9 @@ function MappedSizeGuideDialog({
           alt=""
           width={500}
           height={500}
-          sizes="(max-width: 640px) calc(100vw - 1rem), 500px"
+          sizes="(max-width: 640px) calc(100vw - 1rem), (min-width: 1024px) 640px, 500px"
           unoptimized
-          className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)]"
+          className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)] lg:w-[min(40rem,calc(100dvh-2rem))]"
         />
       </div>
     </dialog>
