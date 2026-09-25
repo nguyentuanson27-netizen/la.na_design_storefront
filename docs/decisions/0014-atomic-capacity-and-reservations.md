@@ -240,7 +240,8 @@ zero, and standard rules then block new sales until stock is sellable again (§2
 
 ### 5.1 Resolving the policy when no row exists
 
-Almost every product will have no `ProductSellingPolicy` row, because §14 permits no backfill. That
+Almost every product will have no `ProductSellingPolicy` row, because §14 permits no
+`ProductSellingPolicy` backfill. That
 makes the missing-row answer part of the contract, not an edge case — and it is **not** supplied by
 the column defaults in §13.
 
@@ -540,11 +541,12 @@ the 2026-09-16 five-model merchandising approval, which explicitly did not cover
 Recorded with provenance in `docs/specs/la-na-design-owner-approved-facts-and-decisions.md` ›
 Settled decisions.
 
-`src/commerce/capacity-repository.ts` reads the policy, and reads it *through*
-`resolveSellingPolicy()` so the missing-row answer keeps exactly one producer. Reservation **writes**
-are deliberately not shipped: they need the §6.2 locking transaction and the §6.4 guarded
-compare-and-set, both of which belong to I6a, and a naive write would look like the capacity gate
-while enforcing nothing.
+`src/commerce/capacity-repository.ts` reads the policy through `resolveSellingPolicy()`, so the
+missing-row answer keeps exactly one producer. I6a reservation writes are now implemented by
+`src/commerce/capacity-reservation.ts`: §6.2's purchased/resource locking and §6.4's guarded
+compare-and-set are the enforcement boundary. The 2026-09-25 composite extension adds immutable
+`CapacityReservationResource` rows beneath those line reservations; it does not create a second
+capacity authority.
 
 ```prisma
 enum SellingMode {
