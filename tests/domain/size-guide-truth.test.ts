@@ -13,14 +13,14 @@ import { buildSizeGuideViewModel } from "../../src/routes/evergreen-model.ts";
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 
 /**
- * A4 — the three approved La.na Design size guides, transcribed from master spec §11.
+ * A4 — the four approved La.na Design size guides, transcribed from master spec §11.
  *
  * Invented measurements cause returns, so every value is asserted rather than sampled: the guides'
  * IDs and order, each chart's size scale, and every cell of every row. A transcription slip is the
  * expected failure mode here, and a test that checked a sample would not find one.
  *
  * The other half is what the tables deliberately do **not** say. There is no fixed manufacturing
- * tolerance -- `±3 cm` was Brand #1's, and `0` would be a fake one -- and `set-vay-form-nho` has no
+ * tolerance -- `±3 cm` was Brand #1's, and `0` would be a fake one -- and `set-vay-form-vua` has no
  * hip row at all, which is the approved shape of that chart rather than a value still to come.
  */
 
@@ -58,14 +58,14 @@ const SET_VAY_FORM_RONG = {
   ],
 } as const;
 
-const SET_VAY_FORM_NHO = {
-  id: "set-vay-form-nho",
-  title: "Set/Váy form nhỏ",
+const SET_VAY_FORM_VUA = {
+  id: "set-vay-form-vua",
+  title: "Set/Váy form vừa",
   sizes: ["S", "M", "L", "XL"],
   rows: [
     { parameter: "Ngực (cm)", values: { S: "84", M: "88", L: "92", XL: "96" } },
     { parameter: "Eo (cm)", values: { S: "62–66", M: "66–72", L: "72–76", XL: "76–80" } },
-    // No hip row. The source chart does not provide one, and §11.3 says not to invent it.
+    // No hip row. This is the original small-form chart; its source provides none (§11.3).
     {
       parameter: "Chiều cao (cm)",
       values: { S: "155–168", M: "155–168", L: "155–168", XL: "155–168" },
@@ -74,22 +74,39 @@ const SET_VAY_FORM_NHO = {
   ],
 } as const;
 
-test("A4 the guide declares exactly the three approved charts, in the approved order", () => {
+// Re-issued by the owner on 2026-09-25 from the "Size chart" image for small-form products.
+const SET_VAY_FORM_NHO = {
+  id: "set-vay-form-nho",
+  title: "Set/Váy form nhỏ",
+  sizes: ["S", "M", "L", "XL"],
+  rows: [
+    { parameter: "Ngực (cm)", values: { S: "84–86", M: "86–90", L: "88–92", XL: "90–94" } },
+    { parameter: "Eo (cm)", values: { S: "64–66", M: "70–72", L: "76–78", XL: "80–82" } },
+    { parameter: "Mông (cm)", values: { S: "96", M: "100", L: "104", XL: "108" } },
+    {
+      parameter: "Chiều cao (cm)",
+      values: { S: "153–168", M: "153–168", L: "153–168", XL: "153–168" },
+    },
+    { parameter: "Cân nặng (kg)", values: { S: "43–49", M: "50–55", L: "56–63", XL: "63–72" } },
+  ],
+} as const;
+
+test("A4 the guide declares exactly the four approved charts, in the approved order", () => {
   assert.deepEqual(
     SIZE_GUIDE.charts.map((chart) => chart.id),
-    ["ao-dai", "set-vay-form-rong", "set-vay-form-nho"],
+    ["ao-dai", "set-vay-form-rong", "set-vay-form-vua", "set-vay-form-nho"],
   );
 });
 
 test("A4 every chart matches master spec §11 cell for cell", () => {
   assert.deepEqual(
     SIZE_GUIDE.charts,
-    [AO_DAI, SET_VAY_FORM_RONG, SET_VAY_FORM_NHO],
+    [AO_DAI, SET_VAY_FORM_RONG, SET_VAY_FORM_VUA, SET_VAY_FORM_NHO],
   );
 });
 
-test("A4 set-vay-form-nho has no hip row, which is the approved shape of that chart", () => {
-  const chart = SIZE_GUIDE.charts.find((candidate) => candidate.id === "set-vay-form-nho");
+test("A4 set-vay-form-vua has no hip row, which is the approved shape of that chart", () => {
+  const chart = SIZE_GUIDE.charts.find((candidate) => candidate.id === "set-vay-form-vua");
   assert.ok(chart);
   assert.equal(
     chart.rows.some((row) => row.parameter.startsWith("Mông")),
@@ -98,7 +115,7 @@ test("A4 set-vay-form-nho has no hip row, which is the approved shape of that ch
   );
   // The two charts that do have one still do, so the absence above is specific rather than a
   // hip row dropped from the transcription everywhere.
-  for (const id of ["ao-dai", "set-vay-form-rong"]) {
+  for (const id of ["ao-dai", "set-vay-form-rong", "set-vay-form-nho"]) {
     const other = SIZE_GUIDE.charts.find((candidate) => candidate.id === id);
     assert.ok(other);
     assert.equal(other.rows.some((row) => row.parameter.startsWith("Mông")), true, id);

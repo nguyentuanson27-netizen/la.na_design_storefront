@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -314,6 +315,53 @@ test("U16 price sorting ranks every priceable product on its effective price", a
     "Linen Overshirt",
     "Stone Trouser",
   ]);
+});
+
+test("the default sort orders overlapping categories differently behind their hand-set positions", async () => {
+  // Áo dài, Áo dài cách tân and Áo dài Tết share most of their products; each falls back to a
+  // different order so moving between them does not show the same grid three times.
+  const createdAt = {
+    "t13-linen-overshirt": new Date("2026-08-01T00:00:00.000Z"),
+    "t13-stone-trouser": new Date("2026-08-03T00:00:00.000Z"),
+    "t13-olive-shirt": new Date("2026-08-02T00:00:00.000Z"),
+  };
+  for (const [slug, at] of Object.entries(createdAt)) {
+    await prisma.productMirror.update({ where: { slug }, data: { createdAt: at } });
+  }
+
+  const namesFor = async (categoryKey: string) =>
+    (
+      await repository.listDiscoveryPage({
+        shopId,
+        pageSize: 24,
+        discovery: { ...parseStorefrontDiscoverySearchParams({}), sort: "default", categoryKey },
+      })
+    ).products.map(({ name }) => name);
+
+  assert.deepEqual(await namesFor("aoDai"), ["Stone Trouser", "Olive Shirt", "Linen Overshirt"]);
+  assert.deepEqual(await namesFor("aoDaiCachTan"), ["Linen Overshirt", "Olive Shirt", "Stone Trouser"]);
+
+  // Tết is shuffled: every product once, in an order that is stable between requests and follows
+  // the category-keyed hash rather than any column.
+  const products = await prisma.productMirror.findMany({
+    where: { pancakeShopId: shopId, isActive: true },
+    select: { id: true, name: true },
+  });
+  const md5 = (text: string) => createHash("md5").update(text).digest("hex");
+  const shuffled = products
+    .map((product) => ({ name: product.name, hash: md5(`aoDaiTet:${product.id}`) }))
+    .sort((left, right) => (left.hash < right.hash ? -1 : left.hash > right.hash ? 1 : 0))
+    .map(({ name }) => name);
+  assert.deepEqual(await namesFor("aoDaiTet"), shuffled);
+  assert.deepEqual(await namesFor("aoDaiTet"), shuffled);
+
+  // A hand-set position still leads; the configured order only ranks what is left.
+  const lead = shuffled.at(-1)!;
+  const leadProduct = products.find(({ name }) => name === lead)!;
+  await prisma.categoryProductOrder.create({
+    data: { categoryKey: "aoDaiTet", productId: leadProduct.id, position: 0 },
+  });
+  assert.deepEqual(await namesFor("aoDaiTet"), [lead, ...shuffled.slice(0, -1)]);
 });
 
 test("discovery facets stay scoped to visible products in the configured shop", async () => {

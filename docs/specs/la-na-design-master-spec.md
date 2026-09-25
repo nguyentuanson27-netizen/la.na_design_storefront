@@ -322,13 +322,14 @@ Exact `/ao-dai` title/H1/meta copy beyond the approved homepage metadata is not 
 
 ## 11. Size-guide semantics
 
-There are exactly three approved guides. A product is mapped manually to the correct guide; category alone must **not** determine the guide because Set/Váy products may use either wide-form or small-form sizing.
+There are exactly four approved guides. A product is mapped manually to the correct guide; category alone must **not** determine the guide because Set/Váy products may use wide-form, medium-form or small-form sizing.
 
 Logical IDs:
 
 ```text
 ao-dai
 set-vay-form-rong
+set-vay-form-vua
 set-vay-form-nho
 ```
 
@@ -357,9 +358,9 @@ Rules:
 | L | 94 | 70–82 | 106 | 155–168 | 57–65 |
 | XL | 98 | 74–88 | 110 | 155–168 | 65–75 |
 
-### 11.3 Set/Váy form nhỏ
+### 11.3 Set/Váy form vừa
 
-The source chart does **not** provide hip values; do not invent them.
+These are the original small-form numbers, moved to the medium form by owner decision on 2026-09-25. The source chart does **not** provide hip values; do not invent them.
 
 | Size | Ngực (cm) | Eo (cm) | Chiều cao (cm) | Cân nặng (kg) |
 |---|---:|---:|---:|---:|
@@ -367,6 +368,17 @@ The source chart does **not** provide hip values; do not invent them.
 | M | 88 | 66–72 | 155–168 | 50–57 |
 | L | 92 | 72–76 | 155–168 | 57–64 |
 | XL | 96 | 76–80 | 155–168 | 64–72 |
+
+### 11.4 Set/Váy form nhỏ
+
+Re-issued by the owner on 2026-09-25 from the "Size chart" image ("áp dụng với các sản phẩm form nhỏ").
+
+| Size | Ngực (cm) | Eo (cm) | Mông (cm) | Chiều cao (cm) | Cân nặng (kg) |
+|---|---:|---:|---:|---:|---:|
+| S | 84–86 | 64–66 | 96 | 153–168 | 43–49 |
+| M | 86–90 | 70–72 | 100 | 153–168 | 50–55 |
+| L | 88–92 | 76–78 | 104 | 153–168 | 56–63 |
+| XL | 90–94 | 80–82 | 108 | 153–168 | 63–72 |
 
 ### Integration constraint
 

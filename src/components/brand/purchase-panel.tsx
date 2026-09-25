@@ -104,6 +104,51 @@ const DIALOG_FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+/** The guide's notes and table: visible when there is no artwork, screen-reader-only beside it. */
+function SizeGuideFacts({ guide }: { guide: ProductMappedSizeGuide }) {
+  return (
+    <>
+      <p>{guide.circumferenceSemanticsNote}</p>
+      {guide.tolerance ? (
+        <p>
+          <strong>Dung sai:</strong> {guide.tolerance.note}
+        </p>
+      ) : null}
+      <p>{guide.guidanceNote}</p>
+
+      <table className="mt-2 w-full border-collapse text-left text-sm text-black">
+        <caption className="sr-only">{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
+        <thead>
+          <tr className="border-b border-black/15 bg-black/[0.03]">
+            <th scope="col" className="py-3 pl-3 pr-4 font-semibold">
+              Thông số
+            </th>
+            {guide.chart.sizes.map((size) => (
+              <th key={size} scope="col" className="px-3 py-3 text-right font-semibold">
+                {size}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {guide.chart.rows.map((row) => (
+            <tr key={row.parameter} className="border-b border-black/10">
+              <th scope="row" className="py-3 pl-3 pr-4 font-normal">
+                {row.parameter}
+              </th>
+              {guide.chart.sizes.map((size) => (
+                <td key={size} className="px-3 py-3 text-right tabular-nums">
+                  {row.values[size]}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
+  );
+}
+
 function MappedSizeGuideDialog({
   guide,
   dialogRef,
@@ -173,54 +218,35 @@ function MappedSizeGuideDialog({
           Đóng
         </button>
 
-        {/*
-          The artwork already contains the visible chart title and shopper guidance. Keep the same
-          guidance plus the machine-readable table in the accessibility tree so removing duplicate
-          visual chrome does not turn the image into the only source of those facts.
-        */}
-        <div className="sr-only">
-          <p>{guide.circumferenceSemanticsNote}</p>
-          {guide.tolerance ? (
-            <p>
-              <strong>Dung sai:</strong> {guide.tolerance.note}
-            </p>
-          ) : null}
-          <p>{guide.guidanceNote}</p>
+        {guide.imageUrl ? (
+          <>
+            {/*
+              The artwork already contains the visible chart title and shopper guidance. Keep the
+              same guidance plus the machine-readable table in the accessibility tree so removing
+              duplicate visual chrome does not turn the image into the only source of those facts.
+            */}
+            <div className="sr-only">
+              <SizeGuideFacts guide={guide} />
+            </div>
 
-          <table>
-            <caption>{`Dữ liệu bảng size ${guide.chart.title}`}</caption>
-            <thead>
-              <tr>
-                <th scope="col">Thông số</th>
-                {guide.chart.sizes.map((size) => (
-                  <th key={size} scope="col">
-                    {size}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {guide.chart.rows.map((row) => (
-                <tr key={row.parameter}>
-                  <th scope="row">{row.parameter}</th>
-                  {guide.chart.sizes.map((size) => (
-                    <td key={size}>{row.values[size]}</td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <Image
-          src={`/brand/size-guides/${guide.id}.webp`}
-          alt=""
-          width={500}
-          height={500}
-          sizes="(max-width: 640px) calc(100vw - 1rem), 500px"
-          unoptimized
-          className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)]"
-        />
+            <Image
+              src={guide.imageUrl}
+              alt=""
+              width={1280}
+              height={1280}
+              sizes="(max-width: 640px) calc(100vw - 1rem), (min-width: 1024px) 640px, 500px"
+              className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)] lg:w-[min(40rem,calc(100dvh-2rem))]"
+            />
+          </>
+        ) : (
+          // No artwork set in admin: draw the same guide from its configured data.
+          <div className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto bg-[#FAF7F2] px-5 pb-6 pt-14 sm:max-h-[calc(100dvh-2rem)] sm:px-8">
+            <h2 className="font-display text-2xl tracking-[-0.02em]">{guide.chart.title}</h2>
+            <div className="mt-4 space-y-2 text-sm leading-6 text-black/70">
+              <SizeGuideFacts guide={guide} />
+            </div>
+          </div>
+        )}
       </div>
     </dialog>
   );
