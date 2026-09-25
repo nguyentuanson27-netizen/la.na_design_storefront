@@ -37,7 +37,7 @@ export function ProductCard({
           aria-hidden={primaryImage ? undefined : "true"}
         >
           {flashSale || isClearance || marketingBadge ? (
-            // One top-left stack that sizes to its tags; the styling lives in `globals.css`.
+            // One top-right stack that sizes to its tags; the styling lives in `globals.css`.
             <div className="product-tags">
               {flashSale ? (
                 <span className="product-tag product-tag--flash">

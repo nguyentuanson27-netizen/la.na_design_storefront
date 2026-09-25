@@ -1126,8 +1126,9 @@ main nav[aria-label="Breadcrumb"] a {
 /*
  * Tags over a product photograph. The old badge was a black box whose CSS `left` fought the card's
  * `right-3` utility -- this sheet is unlayered, so it wins -- which stretched `-44%` into a bar
- * across the whole image. Tags now sit in one top-left stack, size to their text, and take their
- * colour from the brand palette: a brick pill for the discount, espresso and gold for Flash Sale.
+ * across the whole image. Tags now sit in one stack anchored top-right (master spec, "Sale display":
+ * badge position is image top-right), size to their text, and take their colour from the brand
+ * palette. The discount sits in the corner; any extra tag lines up to its left, then wraps.
  */
 .product-tags {
   position: absolute;
@@ -1137,6 +1138,7 @@ main nav[aria-label="Breadcrumb"] a {
   right: 0.625rem;
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: 0.3rem;
   pointer-events: none;
@@ -1160,12 +1162,12 @@ main nav[aria-label="Breadcrumb"] a {
   box-shadow: 0 1px 2px rgba(42, 24, 16, 0.18);
 }
 
-/* The legacy commerce card places its single badge itself. */
+/* The legacy commerce card places its single badge itself, in the same top-right corner. */
 .product-badge {
   position: absolute;
   z-index: 2;
   top: 0.625rem;
-  left: 0.625rem;
+  right: 0.625rem;
   background: #9a3324;
   color: #fff8f1;
 }
