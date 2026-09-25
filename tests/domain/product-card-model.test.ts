@@ -547,3 +547,24 @@ test("Lẻ size - Chỉ còn ít never counts a preorder size as a few pieces le
   });
   assert.equal(preorder.lastSizesLeft, false);
 });
+
+test("Lẻ size - Chỉ còn ít decides sold out per size, not per colour × size option", () => {
+  const pricingRule: StorefrontPricingRule = () => ({ price: 100_000, basePriceVnd: 200_000, isDiscounted: true });
+  const option = (color: string, size: string, sellableStock: number) =>
+    variant({ id: `v-${color}-${size}`, pancakeVariationId: `pv-${color}-${size}`, color, size, sellableStock });
+  const card = (variants: ReturnType<typeof option>[]) =>
+    buildProductCardModel({ slug: "s", name: "n", variants, pricingRule, isClearance: true });
+
+  // Đen / S is gone but S still sells in Trắng: no size is missing, so no claim, even with 8 left.
+  assert.equal(card([option("Đen", "S", 0), option("Trắng", "S", 4), option("Đen", "M", 4)]).lastSizesLeft, false);
+
+  // S is gone in every colour: that is a missing size, and 8 left proves "chỉ còn ít".
+  assert.equal(
+    card([option("Đen", "S", 0), option("Trắng", "S", 0), option("Đen", "M", 4), option("Trắng", "M", 4)])
+      .lastSizesLeft,
+    true,
+  );
+
+  // Size labels compare trimmed and case-insensitive, so " s " is still size S.
+  assert.equal(card([option("Đen", "S", 0), option("Trắng", " s ", 3), option("Đen", "M", 4)]).lastSizesLeft, false);
+});

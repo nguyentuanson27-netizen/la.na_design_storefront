@@ -337,7 +337,7 @@ Flash Sale:
 
 Xả hàng lẻ size (`CLEARANCE`):
 - sale treatment and discount badge, exactly as a regular promotion;
-- the `Lẻ size - Chỉ còn ít` tag, **only when stock proves it** (owner decision on PR #79). Campaign membership is necessary but not sufficient. Using the canonical per-variant sellability answer: at least one size is sold out (refused for `OUT_OF_STOCK`, as the `Hết hàng` label reads it), at least one size is still for sale from ready stock with none on `Đặt trước`, and the ready pieces left across the sizes still for sale total fewer than **10**. Otherwise the card shows the discount badge only;
+- the `Lẻ size - Chỉ còn ít` tag, **only when stock proves it** (owner decision on PR #79). Campaign membership is necessary but not sufficient. Using the canonical per-variant sellability answer: at least one size is sold out (every colour of that size refused for `OUT_OF_STOCK`, as the `Hết hàng` label reads it; one sold-out colour of a size that still sells in another colour does not count), at least one size is still for sale from ready stock with none on `Đặt trước`, and the ready pieces left across the sizes still for sale total fewer than **10**. Otherwise the card shows the discount badge only;
 - shown on the sale listings, which know the representative campaign kind; other listings show the discount badge only.
 
 Sale sub-listings (PR #79): `/sale` lists every kind; `/sale/uu-dai`, `/sale/flash-sale` and `/sale/xa-hang-le-size` narrow membership, pricing, tracking and refresh to `PROMOTION`, `FLASH_SALE` (with the full-window invariant below) and `CLEARANCE` respectively. A card on a sub-listing never shows a discount from another kind.

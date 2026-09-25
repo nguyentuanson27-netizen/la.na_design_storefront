@@ -215,21 +215,29 @@ function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): 
 export const LAST_SIZES_TOTAL_STOCK_LIMIT = 10;
 
 /**
- * "Lẻ size - Chỉ còn ít", proved rather than asserted: at least one size is sold out (so what is
+ * "Lẻ size - Chỉ còn ít", proved rather than asserted: at least one **size** is sold out (so what is
  * left really is scattered sizes), something is still for sale from ready stock, and the ready
  * pieces left total fewer than `LAST_SIZES_TOTAL_STOCK_LIMIT`.
  *
- * Both states come from the canonical per-variant answer, never from a stock threshold written here:
- * "sold out" is the same capacity refusal the `Hết hàng` label reads, and a `Đặt trước` size has no
- * ready pieces to count, so a product selling any size on preorder never makes the claim. Stock is
- * read only as a quantity, floored at zero, to count what is physically left.
+ * An option is a colour × size pair, so "sold out" is decided per size, not per option: a size is
+ * gone only when every option of that size is refused for `OUT_OF_STOCK`, the same capacity refusal
+ * the `Hết hàng` label reads. `Đen / S` sold out while `Trắng / S` still sells is not a missing size.
+ *
+ * Both states come from the canonical per-variant answer, never from a stock threshold written here,
+ * and a `Đặt trước` size has no ready pieces to count, so a product selling any size on preorder
+ * never makes the claim. Stock is read only as a quantity, floored at zero.
  */
 function provesLastSizesLeft(options: readonly StorefrontVariantOption[]): boolean {
-  const soldOut = options.some(
-    (option) => !option.purchasable && option.unavailableReason === "OUT_OF_STOCK",
+  const optionsBySize = new Map<string, StorefrontVariantOption[]>();
+  for (const option of options) {
+    const size = option.size?.trim().toLocaleLowerCase("vi") ?? "";
+    optionsBySize.set(size, [...(optionsBySize.get(size) ?? []), option]);
+  }
+  const aSizeIsSoldOut = [...optionsBySize.values()].some((sizeOptions) =>
+    sizeOptions.every((option) => !option.purchasable && option.unavailableReason === "OUT_OF_STOCK"),
   );
   const forSale = options.filter((option) => option.purchasable);
-  if (!soldOut || forSale.length === 0 || forSale.some((option) => option.isPreorderSale)) {
+  if (!aSizeIsSoldOut || forSale.length === 0 || forSale.some((option) => option.isPreorderSale)) {
     return false;
   }
   const piecesLeft = forSale.reduce((total, option) => total + Math.max(0, option.sellableStock), 0);
