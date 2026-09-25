@@ -316,6 +316,39 @@ test("U16 price sorting ranks every priceable product on its effective price", a
   ]);
 });
 
+test("the default sort orders overlapping categories differently behind their hand-set positions", async () => {
+  // Áo dài, Áo dài cách tân and Áo dài Tết share most of their products; each falls back to a
+  // different order so moving between them does not show the same grid three times.
+  const createdAt = {
+    "t13-linen-overshirt": new Date("2026-08-01T00:00:00.000Z"),
+    "t13-stone-trouser": new Date("2026-08-03T00:00:00.000Z"),
+    "t13-olive-shirt": new Date("2026-08-02T00:00:00.000Z"),
+  };
+  for (const [slug, at] of Object.entries(createdAt)) {
+    await prisma.productMirror.update({ where: { slug }, data: { createdAt: at } });
+  }
+
+  const namesFor = async (categoryKey: string) =>
+    (
+      await repository.listDiscoveryPage({
+        shopId,
+        pageSize: 24,
+        discovery: { ...parseStorefrontDiscoverySearchParams({}), sort: "default", categoryKey },
+      })
+    ).products.map(({ name }) => name);
+
+  assert.deepEqual(await namesFor("aoDai"), ["Stone Trouser", "Olive Shirt", "Linen Overshirt"]);
+  assert.deepEqual(await namesFor("aoDaiCachTan"), ["Linen Overshirt", "Olive Shirt", "Stone Trouser"]);
+  assert.deepEqual(await namesFor("aoDaiTet"), ["Olive Shirt", "Linen Overshirt", "Stone Trouser"]);
+
+  // A hand-set position still leads; the configured order only ranks what is left.
+  const stone = await prisma.productMirror.findUniqueOrThrow({ where: { slug: "t13-stone-trouser" } });
+  await prisma.categoryProductOrder.create({
+    data: { categoryKey: "aoDaiTet", productId: stone.id, position: 0 },
+  });
+  assert.deepEqual(await namesFor("aoDaiTet"), ["Stone Trouser", "Olive Shirt", "Linen Overshirt"]);
+});
+
 test("discovery facets stay scoped to visible products in the configured shop", async () => {
   const facets = await repository.listDiscoveryFacets({ shopId });
   assert.deepEqual(facets.colors, ["Black", "Olive", "Stone"]);

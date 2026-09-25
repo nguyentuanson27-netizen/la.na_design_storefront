@@ -11,6 +11,7 @@ import {
   type StorefrontProductMedia,
 } from "./product-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
+import { FLATTENED_CATEGORIES, type CategoryDefaultOrder } from "../brand/category.config.ts";
 
 const MAX_STOREFRONT_PRODUCTS = 48;
 const MAX_STOREFRONT_OFFSET = 50_000;
@@ -500,8 +501,7 @@ function buildDiscoveryOrder(
             WHERE cpo."categoryKey" = ${categoryKey}
               AND cpo."productId" = p."id"
           ) ASC NULLS LAST,
-          p."name" ASC,
-          p."id" ASC
+          ${categoryFallbackOrder(categoryKey)}
         `;
       }
       return Prisma.sql`p."name" ASC, p."id" ASC`;
@@ -512,6 +512,28 @@ function buildDiscoveryOrder(
     case "price-desc":
       return Prisma.sql`"sortPrice" DESC NULLS LAST, p."name" ASC, p."id" ASC`;
     case "name-asc":
+      return Prisma.sql`p."name" ASC, p."id" ASC`;
+  }
+}
+
+const CATEGORY_DEFAULT_ORDERS: ReadonlyMap<string, CategoryDefaultOrder> = new Map(
+  FLATTENED_CATEGORIES.flatMap((category) =>
+    category.defaultOrder ? [[category.key, category.defaultOrder] as const] : [],
+  ),
+);
+
+/**
+ * The order behind the hand-set positions on a category's default sort. Categories that share most
+ * of their products (Áo dài, Áo dài cách tân, Áo dài Tết) each configure a different one, so a
+ * shopper moving between them does not land on the same grid three times.
+ */
+function categoryFallbackOrder(categoryKey: string) {
+  switch (CATEGORY_DEFAULT_ORDERS.get(categoryKey) ?? "name") {
+    case "newest":
+      return Prisma.sql`p."createdAt" DESC, p."id" DESC`;
+    case "price-desc":
+      return Prisma.sql`"sortPrice" DESC NULLS LAST, p."name" ASC, p."id" ASC`;
+    case "name":
       return Prisma.sql`p."name" ASC, p."id" ASC`;
   }
 }

@@ -17,17 +17,27 @@ import type { NavigationLink } from "./schema.ts";
 export type CategoryDefinition = NavigationLink & Readonly<{
   /** Stable code-facing name, so a page module can select its category without repeating the slug. */
   key: string;
+  /**
+   * How the listing orders products that have no hand-set position, when the shopper has not picked
+   * a sort. Defaults to `"name"`. Categories that share most of their products (the parent and its
+   * children) set different values so moving between them visibly changes the grid.
+   */
+  defaultOrder?: CategoryDefaultOrder;
   children?: readonly CategoryDefinition[];
 }>;
+
+/** `"name"` A→Z, `"newest"` latest first, `"price-desc"` highest price first. */
+export type CategoryDefaultOrder = "name" | "newest" | "price-desc";
 
 export const CATEGORY_NAVIGATION: readonly CategoryDefinition[] = [
   {
     key: "aoDai",
     href: "/ao-dai",
     label: "Áo dài",
+    defaultOrder: "newest",
     children: [
       { key: "aoDaiCachTan", href: "/ao-dai/cach-tan", label: "Áo dài cách tân" },
-      { key: "aoDaiTet", href: "/ao-dai/tet", label: "Áo dài Tết" },
+      { key: "aoDaiTet", href: "/ao-dai/tet", label: "Áo dài Tết", defaultOrder: "price-desc" },
       { key: "aoDaiCuoi", href: "/ao-dai/cuoi", label: "Áo dài cưới" },
       { key: "aoDai4Ta", href: "/ao-dai/4-ta", label: "Áo dài 4 tà" },
       { key: "aoDai6Ta", href: "/ao-dai/6-ta", label: "Áo dài 6 tà" },

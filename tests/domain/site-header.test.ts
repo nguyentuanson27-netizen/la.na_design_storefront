@@ -88,9 +88,9 @@ test("mega-menu: every top-level category opens a panel, the other primary links
   assert.match(headerSource, /\{hasChildren \? item\.label : "Xem tất cả"\}/);
   assert.match(headerSource, /<span className="sr-only"> \{item\.label\}<\/span>/);
 
-  // The media is landscape 4:3 and takes two thirds of the panel.
-  assert.match(headerSource, /grid-cols-\[minmax\(0,1fr\)_minmax\(0,2fr\)\]/);
-  assert.match(headerSource, /aspect-\[4\/3\]/);
+  // The media is landscape 16:9, up to 44rem wide, beside a link column no narrower than 7.5rem.
+  assert.match(headerSource, /grid-cols-\[minmax\(7\.5rem,1fr\)_minmax\(0,44rem\)\]/);
+  assert.match(headerSource, /aspect-video/);
 });
 
 test("F2a site chrome model: supports category mega media projection", () => {
