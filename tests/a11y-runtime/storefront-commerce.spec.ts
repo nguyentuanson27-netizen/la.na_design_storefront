@@ -870,7 +870,14 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await page.keyboard.press("Space");
   await expect(size).toBeChecked();
   await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  // The status can render before the Server Action's response has finished streaming the
+  // revalidated page, whose head swap then blanks the title mid-scan. Waiting for the response body
+  // puts that swap before `assertPageQuality`, where the settled-title guard can see it.
+  const addToCartAction = page.waitForRequest(
+    (request) => request.method() === "POST" && request.headers()["next-action"] !== undefined,
+  );
   await addToBag.click();
+  await (await (await addToCartAction).response())?.finished();
   await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
   await assertPageQuality(page);
   expect(browserErrors).toEqual([]);
