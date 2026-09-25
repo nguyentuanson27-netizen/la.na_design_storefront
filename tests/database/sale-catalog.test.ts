@@ -296,6 +296,12 @@ test("Flash Sale sub-listing keeps the Flash window invariant: incomplete window
 
 test("Xả hàng lẻ size lists CLEARANCE campaigns only, marks them, and /sale includes them", async () => {
   const clearanceProduct = await createProduct("sale-clearance-product", 800_000);
+  // A second size that has sold out, so the remaining pieces (2, from createProduct) are "lẻ size".
+  await addVariant(clearanceProduct.id, "sale-clearance-sold-out", "L", 800_000);
+  await prisma.warehouseStock.updateMany({
+    where: { variant: { pancakeVariationId: "sale-clearance-sold-out-variant" } },
+    data: { quantity: 0 },
+  });
   const promotionProduct = await createProduct("sale-clearance-neighbour", 500_000);
 
   await prisma.promotionCampaign.create({
@@ -353,7 +359,7 @@ test("Xả hàng lẻ size lists CLEARANCE campaigns only, marks them, and /sale
   });
   assert.match(card.price.displayText, /400\.000/);
   assert.equal(card.price.discountPercent, 50);
-  assert.equal(card.isClearance, true);
+  assert.equal(card.lastSizesLeft, true, "one size sold out and 2 pieces left proves the tag");
 
   assert.equal(await repository.readNextSaleBoundary({ now, kind: "CLEARANCE" }), null);
 });

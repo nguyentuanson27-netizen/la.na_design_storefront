@@ -70,10 +70,12 @@ export type ProductCardModel = Readonly<{
   }>;
   flashSale: Readonly<{ remainingMs: number; countdownText: string | null }> | null;
   /**
-   * The card's discount is a "Xả hàng lẻ size" (CLEARANCE) campaign, as decided by the sale read.
-   * Only a sale listing knows the campaign kind; every other surface leaves this false.
+   * Whether to show "Lẻ size - Chỉ còn ít". The copy states two stock facts, so both are proved from
+   * the variants' `sellableStock` rather than assumed from the campaign: see `provesLastSizesLeft`.
+   * It also needs a real discount from a "Xả hàng lẻ size" (CLEARANCE) campaign, which only a sale
+   * listing knows about; every other surface leaves this false.
    */
-  isClearance: boolean;
+  lastSizesLeft: boolean;
   marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
   availability: "in-stock" | "out-of-stock" | "partial";
   /**
@@ -115,6 +117,7 @@ export type ProductCardModelInput = Readonly<{
    */
   productCapacity?: StorefrontProductCapacity;
   flashSale?: StorefrontFlashSalePresentation;
+  /** The sale read chose this card for a CLEARANCE discount. Necessary, not sufficient, for the tag. */
   isClearance?: boolean;
   selectEvent?: TrackingEvent | null;
   isNewArrival?: boolean;
@@ -203,6 +206,34 @@ function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): 
   const blockedByCapacity =
     options.length > 0 && options.every((option) => option.unavailableReason === "OUT_OF_STOCK");
   return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
+}
+
+/**
+ * The total remaining stock below which "Chỉ còn ít" is true. Owner decision on #79: fewer than 10
+ * pieces left across every size still in stock.
+ */
+export const LAST_SIZES_TOTAL_STOCK_LIMIT = 10;
+
+/**
+ * "Lẻ size - Chỉ còn ít", proved rather than asserted: at least one size is sold out (so what is
+ * left really is scattered sizes), something is still for sale from ready stock, and the ready
+ * pieces left total fewer than `LAST_SIZES_TOTAL_STOCK_LIMIT`.
+ *
+ * Both states come from the canonical per-variant answer, never from a stock threshold written here:
+ * "sold out" is the same capacity refusal the `Hết hàng` label reads, and a `Đặt trước` size has no
+ * ready pieces to count, so a product selling any size on preorder never makes the claim. Stock is
+ * read only as a quantity, floored at zero, to count what is physically left.
+ */
+function provesLastSizesLeft(options: readonly StorefrontVariantOption[]): boolean {
+  const soldOut = options.some(
+    (option) => !option.purchasable && option.unavailableReason === "OUT_OF_STOCK",
+  );
+  const forSale = options.filter((option) => option.purchasable);
+  if (!soldOut || forSale.length === 0 || forSale.some((option) => option.isPreorderSale)) {
+    return false;
+  }
+  const piecesLeft = forSale.reduce((total, option) => total + Math.max(0, option.sellableStock), 0);
+  return piecesLeft > 0 && piecesLeft < LAST_SIZES_TOTAL_STOCK_LIMIT;
 }
 
 /** Distinct colours in first-seen order, each with the image its variant maps to, when known. */
@@ -311,9 +342,10 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           countdownText: describeFlashCountdown(flashSale.remainingMs),
         })
       : null,
-    // Only meaningful alongside a real discount: a clearance tag on a full-price card would promise
-    // a sale the price does not show.
-    isClearance: input.isClearance === true && discountPercent > 0,
+    // Campaign membership alone is not enough: the copy is a stock claim, so stock must prove it,
+    // and a clearance tag on a full-price card would promise a sale the price does not show.
+    lastSizesLeft:
+      input.isClearance === true && discountPercent > 0 && provesLastSizesLeft(capacityOptions),
     marketingBadge,
     availability,
     isPreorderOnly,

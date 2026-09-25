@@ -21,7 +21,7 @@ export function ProductCard({
   model: ProductCardModel;
   tone: ProductCardTone;
 }) {
-  const { price, primaryImage, hoverImage, flashSale, isClearance, marketingBadge, availabilityLabel } =
+  const { price, primaryImage, hoverImage, flashSale, lastSizesLeft, marketingBadge, availabilityLabel } =
     model;
 
   return (
@@ -36,7 +36,7 @@ export function ProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[2/3] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
-          {flashSale || isClearance || marketingBadge ? (
+          {flashSale || lastSizesLeft || marketingBadge ? (
             // One top-right stack that sizes to its tags; the styling lives in `globals.css`.
             <div className="product-tags">
               {flashSale ? (
@@ -47,7 +47,7 @@ export function ProductCard({
                   FLASH SALE
                 </span>
               ) : null}
-              {isClearance ? (
+              {lastSizesLeft ? (
                 <span className="product-tag product-tag--clearance">Lẻ size - Chỉ còn ít</span>
               ) : null}
               {marketingBadge ? (

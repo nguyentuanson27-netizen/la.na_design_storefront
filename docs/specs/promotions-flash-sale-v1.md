@@ -23,7 +23,7 @@ The feature must not write promotional catalog prices back to Pancake.
 
 ## Campaign model
 A campaign has one shared rule across all targets:
-- kind: `PROMOTION` or `FLASH_SALE`;
+- kind: `PROMOTION`, `FLASH_SALE` or `CLEARANCE`;
 - name;
 - discount type: `PERCENTAGE` or `FIXED_PRICE`;
 - one discount value;
@@ -39,6 +39,12 @@ Target semantics:
 - Different discount values require different campaigns.
 
 Do not materialize PRODUCT coverage into a frozen variant list.
+
+`CLEARANCE` ("Xả hàng lẻ size", owner decision on PR #79):
+- A manual merchandising choice of **which products appear on `/sale/xa-hang-le-size`**. Choosing a product asserts nothing about its stock.
+- Prices, validates, conflicts and audits exactly like `PROMOTION`: no window is required, it takes the same `PERCENTAGE`/`FIXED_PRICE` discount, and it follows the same target rules (PRODUCT and VARIANT targets are both valid). The overlap rule applies across kinds, so a variant covered by a `CLEARANCE` and another campaign is a conflict and resolves to base.
+- It persists through checkout and order provenance as `promotionKind = CLEARANCE`, like the other kinds.
+- It is its own kind only so the storefront can list it separately and consider the stock-proven tag below.
 
 ## Explicit v1 bounds
 These are server-authoritative limits, not UI hints:
@@ -328,6 +334,13 @@ Flash Sale:
 - sale treatment;
 - `FLASH SALE` badge;
 - countdown to `endsAt` while active.
+
+Xả hàng lẻ size (`CLEARANCE`):
+- sale treatment and discount badge, exactly as a regular promotion;
+- the `Lẻ size - Chỉ còn ít` tag, **only when stock proves it** (owner decision on PR #79). Campaign membership is necessary but not sufficient. Using the canonical per-variant sellability answer: at least one size is sold out (refused for `OUT_OF_STOCK`, as the `Hết hàng` label reads it), at least one size is still for sale from ready stock with none on `Đặt trước`, and the ready pieces left across the sizes still for sale total fewer than **10**. Otherwise the card shows the discount badge only;
+- shown on the sale listings, which know the representative campaign kind; other listings show the discount badge only.
+
+Sale sub-listings (PR #79): `/sale` lists every kind; `/sale/uu-dai`, `/sale/flash-sale` and `/sale/xa-hang-le-size` narrow membership, pricing, tracking and refresh to `PROMOTION`, `FLASH_SALE` (with the full-window invariant below) and `CLEARANCE` respectively. A card on a sub-listing never shows a discount from another kind.
 
 Dedicated `/flash-sale`:
 - only products with >=1 currently purchasable variant under valid active `FLASH_SALE`;

@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildProductCardModel } from "../../src/components/headless/build-product-card-model.ts";
-import type { StorefrontPricingRule, StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
+import {
+  buildProductCardModel,
+  LAST_SIZES_TOTAL_STOCK_LIMIT,
+} from "../../src/components/headless/build-product-card-model.ts";
+import {
+  STANDARD_STANDALONE_CAPACITY,
+  type StorefrontPricingRule,
+  type StorefrontVariantFacts,
+} from "../../src/commerce/storefront-product.ts";
 import type { StorefrontProductMedia } from "../../src/commerce/product-media.ts";
 
 /**
@@ -480,24 +487,63 @@ test("the model is frozen, so a brand component cannot mutate shared state", () 
 });
 
 
-test("the Xả hàng lẻ size tag rides beside a real discount and never on a full-price card", () => {
+test("Lẻ size - Chỉ còn ít needs a clearance discount and stock that proves both claims", () => {
   const pricingRule: StorefrontPricingRule = () => ({
     price: 100_000,
     basePriceVnd: 200_000,
     isDiscounted: true,
   });
-  const clearance = buildProductCardModel({
+  const sized = (size: string, sellableStock: number) =>
+    variant({
+      id: `v-${size}`,
+      pancakeVariationId: `pv-${size}`,
+      size,
+      sellableStock,
+      retailPrice: 200_000,
+      retailPriceAfterDiscount: 200_000,
+    });
+  const card = (variants: ReturnType<typeof sized>[], extra: { isClearance?: boolean; discounted?: boolean } = {}) =>
+    buildProductCardModel({
+      slug: "s",
+      name: "n",
+      variants,
+      pricingRule: extra.discounted === false ? undefined : pricingRule,
+      isClearance: extra.isClearance ?? true,
+    });
+
+  // S sold out, 9 pieces left in M and L: both claims hold.
+  const proved = card([sized("S", 0), sized("M", 4), sized("L", 5)]);
+  assert.equal(proved.lastSizesLeft, true);
+  assert.deepEqual(proved.marketingBadge, { type: "sale", label: "-50%" });
+
+  // Exactly 10 left is not "fewer than 10".
+  assert.equal(card([sized("S", 0), sized("M", 5), sized("L", 5)]).lastSizesLeft, false);
+  // Every size still in stock: not "lẻ size", however few remain.
+  assert.equal(card([sized("S", 1), sized("M", 1)]).lastSizesLeft, false);
+  // Nothing left at all: the card says Hết hàng instead.
+  assert.equal(card([sized("S", 0), sized("M", 0)]).lastSizesLeft, false);
+  // Stock proves it, but the campaign is not a clearance one, or there is no discount.
+  assert.equal(card([sized("S", 0), sized("M", 2)], { isClearance: false }).lastSizesLeft, false);
+  assert.equal(card([sized("S", 0), sized("M", 2)], { discounted: false }).lastSizesLeft, false);
+  assert.equal(LAST_SIZES_TOTAL_STOCK_LIMIT, 10);
+});
+
+test("Lẻ size - Chỉ còn ít never counts a preorder size as a few pieces left", () => {
+  const pricingRule: StorefrontPricingRule = () => ({ price: 100_000, basePriceVnd: 200_000, isDiscounted: true });
+  const variants = [
+    variant({ id: "v-s", pancakeVariationId: "pv-s", size: "S", sellableStock: 0 }),
+    variant({ id: "v-m", pancakeVariationId: "pv-m", size: "M", sellableStock: 0 }),
+    variant({ id: "v-l", pancakeVariationId: "pv-l", size: "L", sellableStock: 2 }),
+  ];
+  // Under PREORDER the zero-stock sizes stay purchasable as Đặt trước, so nothing is "sold out" and
+  // supply is not limited: the claim is not proved.
+  const preorder = buildProductCardModel({
     slug: "s",
     name: "n",
-    variants: [variant({ retailPrice: 200_000, retailPriceAfterDiscount: 200_000 })],
+    variants,
     pricingRule,
     isClearance: true,
+    productCapacity: { ...STANDARD_STANDALONE_CAPACITY, sellingMode: "PREORDER" },
   });
-  assert.equal(clearance.isClearance, true);
-  assert.deepEqual(clearance.marketingBadge, { type: "sale", label: "-50%" });
-
-  const fullPrice = buildProductCardModel({ slug: "s", name: "n", variants: [variant()], isClearance: true });
-  assert.equal(fullPrice.isClearance, false);
-
-  assert.equal(buildProductCardModel({ slug: "s", name: "n", variants: [variant()] }).isClearance, false);
+  assert.equal(preorder.lastSizesLeft, false);
 });
