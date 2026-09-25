@@ -533,6 +533,10 @@ function categoryFallbackOrder(categoryKey: string) {
       return Prisma.sql`p."createdAt" DESC, p."id" DESC`;
     case "price-desc":
       return Prisma.sql`"sortPrice" DESC NULLS LAST, p."name" ASC, p."id" ASC`;
+    case "shuffle":
+      // Hashing the product id with the category key mixes the grid without a per-request random
+      // seed, which would reshuffle between the pages of one scroll and repeat or skip products.
+      return Prisma.sql`md5(${categoryKey} || ':' || p."id") ASC, p."id" ASC`;
     case "name":
       return Prisma.sql`p."name" ASC, p."id" ASC`;
   }

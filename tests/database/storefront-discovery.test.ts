@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -339,14 +340,28 @@ test("the default sort orders overlapping categories differently behind their ha
 
   assert.deepEqual(await namesFor("aoDai"), ["Stone Trouser", "Olive Shirt", "Linen Overshirt"]);
   assert.deepEqual(await namesFor("aoDaiCachTan"), ["Linen Overshirt", "Olive Shirt", "Stone Trouser"]);
-  assert.deepEqual(await namesFor("aoDaiTet"), ["Olive Shirt", "Linen Overshirt", "Stone Trouser"]);
+
+  // Tết is shuffled: every product once, in an order that is stable between requests and follows
+  // the category-keyed hash rather than any column.
+  const products = await prisma.productMirror.findMany({
+    where: { pancakeShopId: shopId, isActive: true },
+    select: { id: true, name: true },
+  });
+  const md5 = (text: string) => createHash("md5").update(text).digest("hex");
+  const shuffled = products
+    .map((product) => ({ name: product.name, hash: md5(`aoDaiTet:${product.id}`) }))
+    .sort((left, right) => (left.hash < right.hash ? -1 : left.hash > right.hash ? 1 : 0))
+    .map(({ name }) => name);
+  assert.deepEqual(await namesFor("aoDaiTet"), shuffled);
+  assert.deepEqual(await namesFor("aoDaiTet"), shuffled);
 
   // A hand-set position still leads; the configured order only ranks what is left.
-  const stone = await prisma.productMirror.findUniqueOrThrow({ where: { slug: "t13-stone-trouser" } });
+  const lead = shuffled.at(-1)!;
+  const leadProduct = products.find(({ name }) => name === lead)!;
   await prisma.categoryProductOrder.create({
-    data: { categoryKey: "aoDaiTet", productId: stone.id, position: 0 },
+    data: { categoryKey: "aoDaiTet", productId: leadProduct.id, position: 0 },
   });
-  assert.deepEqual(await namesFor("aoDaiTet"), ["Stone Trouser", "Olive Shirt", "Linen Overshirt"]);
+  assert.deepEqual(await namesFor("aoDaiTet"), [lead, ...shuffled.slice(0, -1)]);
 });
 
 test("discovery facets stay scoped to visible products in the configured shop", async () => {

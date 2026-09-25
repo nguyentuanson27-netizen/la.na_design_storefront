@@ -26,8 +26,11 @@ export type CategoryDefinition = NavigationLink & Readonly<{
   children?: readonly CategoryDefinition[];
 }>;
 
-/** `"name"` A→Z, `"newest"` latest first, `"price-desc"` highest price first. */
-export type CategoryDefaultOrder = "name" | "newest" | "price-desc";
+/**
+ * `"name"` A→Z, `"newest"` latest first, `"price-desc"` highest price first, `"shuffle"` a mixed
+ * order that is fixed per category (the same on every visit, so paging never repeats a product).
+ */
+export type CategoryDefaultOrder = "name" | "newest" | "price-desc" | "shuffle";
 
 export const CATEGORY_NAVIGATION: readonly CategoryDefinition[] = [
   {
@@ -37,7 +40,7 @@ export const CATEGORY_NAVIGATION: readonly CategoryDefinition[] = [
     defaultOrder: "newest",
     children: [
       { key: "aoDaiCachTan", href: "/ao-dai/cach-tan", label: "Áo dài cách tân" },
-      { key: "aoDaiTet", href: "/ao-dai/tet", label: "Áo dài Tết", defaultOrder: "price-desc" },
+      { key: "aoDaiTet", href: "/ao-dai/tet", label: "Áo dài Tết", defaultOrder: "shuffle" },
       { key: "aoDaiCuoi", href: "/ao-dai/cuoi", label: "Áo dài cưới" },
       { key: "aoDai4Ta", href: "/ao-dai/4-ta", label: "Áo dài 4 tà" },
       { key: "aoDai6Ta", href: "/ao-dai/6-ta", label: "Áo dài 6 tà" },
