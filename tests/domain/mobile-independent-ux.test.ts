@@ -131,13 +131,21 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /function renderSizeGuideTrigger\(surface: "panel" \| "sheet"\)/);
   assert.match(panel, /\{renderSizeGuideTrigger\(surface\)\}/);
 
+  const factsStart = panel.indexOf("function SizeGuideFacts");
   const guideStart = panel.indexOf("function MappedSizeGuideDialog");
   const guideEnd = panel.indexOf("export function PurchasePanelView");
+  const facts = panel.slice(factsStart, guideStart);
   const guide = panel.slice(guideStart, guideEnd);
-  assert.doesNotMatch(guide, /<h2|>Hướng dẫn chọn size<\/p>/);
+  assert.match(
+    facts,
+    /guide\.circumferenceSemanticsNote[\s\S]*guide\.tolerance[\s\S]*guide\.guidanceNote[\s\S]*<table/,
+  );
+  // Admin artwork already carries its own title and guidance, so beside it the facts are sr-only;
+  // with no artwork the same facts are the visible dialog under the chart's own heading.
+  assert.doesNotMatch(guide, />Hướng dẫn chọn size<\/p>/);
   assert.match(
     guide,
-    /className="sr-only"[\s\S]*guide\.circumferenceSemanticsNote[\s\S]*guide\.tolerance[\s\S]*guide\.guidanceNote[\s\S]*<table>/,
+    /guide\.imageUrl \?[\s\S]*className="sr-only"[\s\S]*<SizeGuideFacts guide=\{guide\} \/>[\s\S]*src=\{guide\.imageUrl\}[\s\S]*<h2[\s\S]*<SizeGuideFacts guide=\{guide\} \/>/,
   );
   assert.match(guide, /aria-label=\{\`Hướng dẫn chọn size: \$\{guide\.chart\.title\}\`\}/);
   assert.match(guide, /border-0 bg-transparent/);

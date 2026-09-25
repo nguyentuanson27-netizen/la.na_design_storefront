@@ -1,13 +1,16 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
+import { isApprovedSizeGuideId } from "@/brand";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
+import { createSizeGuideMediaRepository } from "@/commerce/size-guide-media";
 import {
   getConfiguredStorefrontProductBySlug,
   listConfiguredRelatedStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
+import { prisma } from "@/db/prisma";
 import {
   resolveDeepLinkedVariantSelection,
   VARIANT_QUERY_PARAM,
@@ -65,7 +68,13 @@ export async function loadProductRoute({
 
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
-  const relatedProducts = await listConfiguredRelatedStorefrontProducts(product);
+  const sizeGuideId = product.sizeGuide;
+  const [relatedProducts, sizeGuideImageUrl] = await Promise.all([
+    listConfiguredRelatedStorefrontProducts(product),
+    isApprovedSizeGuideId(sizeGuideId)
+      ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
+      : null,
+  ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
     now: requestNow,
@@ -96,6 +105,7 @@ export async function loadProductRoute({
         material: product.material,
         craftDetails: product.craftDetails,
         sizeGuide: product.sizeGuide,
+        sizeGuideImageUrl,
         careInstructions: product.careInstructions,
         options,
         productLevelOptions: selectStorefrontProductLevelOptions(product.projection),

@@ -32,6 +32,8 @@ export type ProductMappedSizeGuide = Readonly<{
   tolerance: SizeGuideViewModel["tolerance"];
   circumferenceSemanticsNote: string;
   guidanceNote: string;
+  /** Admin-set artwork for the guide; `null` draws the table from `chart` instead. */
+  imageUrl: string | null;
 }>;
 
 export type ProductEditorial = Readonly<{
@@ -83,6 +85,8 @@ export type ProductViewModelInput = Readonly<{
   material: string | null;
   craftDetails: readonly string[];
   sizeGuide: string | null;
+  /** The mapped guide's admin-set artwork, when it has one. */
+  sizeGuideImageUrl?: string | null;
   careInstructions: string | null;
   options: readonly StorefrontProjectionOption[];
   productLevelOptions: readonly StorefrontProjectionOption[];
@@ -110,6 +114,7 @@ export function resolveInitialGalleryIndex(
 
 export function resolveProductMappedSizeGuide(
   sizeGuideId: string | null,
+  imageUrl: string | null = null,
 ): ProductMappedSizeGuide | null {
   if (!isApprovedSizeGuideId(sizeGuideId)) return null;
 
@@ -123,12 +128,13 @@ export function resolveProductMappedSizeGuide(
     tolerance: publicGuide.tolerance,
     circumferenceSemanticsNote: publicGuide.circumferenceSemanticsNote,
     guidanceNote: publicGuide.guidanceNote,
+    imageUrl,
   });
 }
 
 export function buildProductViewModel(input: ProductViewModelInput): ProductViewModel {
   const craftDetails = input.craftDetails.filter((detail) => detail.trim().length > 0);
-  const sizeGuide = resolveProductMappedSizeGuide(input.sizeGuide);
+  const sizeGuide = resolveProductMappedSizeGuide(input.sizeGuide, input.sizeGuideImageUrl ?? null);
 
   return Object.freeze({
     slug: input.slug,

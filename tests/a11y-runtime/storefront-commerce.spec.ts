@@ -105,18 +105,16 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
 
-async function expectSizeGuideArtworkFits(
+// No size-guide artwork is seeded, so the dialog draws each guide from its configured data. Admin
+// artwork (SizeGuideMedia) replaces that table with an image; this suite covers the fallback.
+async function expectSizeGuideTableFits(
   page: Page,
   dialog: Locator,
-  expectedSrc: string,
   expectedChartTitle: string,
   expectedSmallChest: string,
 ) {
-  const image = dialog.locator("img");
-  await expect(image).toHaveCount(1);
-  await expect(image).toBeVisible();
-  await expect(image).toHaveAttribute("src", expectedSrc);
-  await expect(image).toHaveAttribute("alt", "");
+  await expect(dialog.locator("img")).toHaveCount(0);
+  await expect(dialog.getByRole("heading", { level: 2, name: expectedChartTitle, exact: true })).toBeVisible();
 
   const semanticTable = dialog.getByRole("table", {
     name: `Dữ liệu bảng size ${expectedChartTitle}`,
@@ -144,18 +142,17 @@ async function expectSizeGuideArtworkFits(
     metrics.clientHeight + 1,
   );
 
-  const imageBox = await image.boundingBox();
+  await expect(semanticTable).toBeVisible();
+  const tableBox = await semanticTable.boundingBox();
   const dialogBox = await dialog.boundingBox();
-  if (!imageBox || !dialogBox) throw new Error("Expected size-guide artwork and dialog to be laid out");
+  if (!tableBox || !dialogBox) throw new Error("Expected size-guide table and dialog to be laid out");
 
-  expect(imageBox.x).toBeGreaterThanOrEqual(dialogBox.x - 1);
-  expect(imageBox.y).toBeGreaterThanOrEqual(dialogBox.y - 1);
-  expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
-  expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
-  expect(imageBox.x).toBeGreaterThanOrEqual(-1);
-  expect(imageBox.y).toBeGreaterThanOrEqual(-1);
-  expect(imageBox.x + imageBox.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
-  expect(imageBox.y + imageBox.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
+  expect(tableBox.x).toBeGreaterThanOrEqual(dialogBox.x - 1);
+  expect(tableBox.x + tableBox.width).toBeLessThanOrEqual(dialogBox.x + dialogBox.width + 1);
+  expect(dialogBox.x).toBeGreaterThanOrEqual(-1);
+  expect(dialogBox.y).toBeGreaterThanOrEqual(-1);
+  expect(dialogBox.x + dialogBox.width).toBeLessThanOrEqual(page.viewportSize()!.width + 1);
+  expect(dialogBox.y + dialogBox.height).toBeLessThanOrEqual(page.viewportSize()!.height + 1);
 }
 
 async function assertPageQuality(page: import("@playwright/test").Page) {
@@ -953,24 +950,11 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
   await expect(dialog).toHaveAttribute("data-size-guide-id", "ao-dai");
   await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeFocused();
 
-  // The artwork already contains its own title and guidance. Keep that visible surface clean while
-  // preserving the sr-only semantic table asserted by expectSizeGuideArtworkFits().
-  await expect(dialog.locator("h2:visible")).toHaveCount(0);
-  expect(
-    await dialog.locator("p").evaluateAll(
-      (elements) => elements.filter((element) => element.closest(".sr-only") === null).length,
-    ),
-    "size-guide prose exists only in the nonvisual semantic fallback",
-  ).toBe(0);
-
-  // Removing duplicate visual prose must not make the guidance disappear for screen-reader users.
-  // The image is intentionally decorative (alt=""), so these facts stay in the sr-only semantic
-  // fallback alongside the data table.
-  const semanticOnly = dialog.locator(".sr-only");
-  await expect(semanticOnly).toContainText(SIZE_GUIDE.circumferenceSemanticsNote);
-  await expect(semanticOnly).toContainText(SIZE_GUIDE.guidanceNote);
+  // Without artwork the guidance is visible prose beside the table, not hidden behind an image.
+  await expect(dialog).toContainText(SIZE_GUIDE.circumferenceSemanticsNote);
+  await expect(dialog).toContainText(SIZE_GUIDE.guidanceNote);
   if (SIZE_GUIDE.tolerance !== null) {
-    await expect(semanticOnly).toContainText(SIZE_GUIDE.tolerance.note);
+    await expect(dialog).toContainText(SIZE_GUIDE.tolerance.note);
   }
 
   expect(
@@ -985,13 +969,7 @@ test("F7c mapped size-guide modal uses the exact product mapping and restores fo
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
-    await expectSizeGuideArtworkFits(
-      page,
-      dialog,
-      "/brand/size-guides/ao-dai.webp",
-      "Áo dài",
-      "86",
-    );
+    await expectSizeGuideTableFits(page, dialog, "Áo dài", "86");
   }
 
   for (let index = 0; index < 4; index += 1) {
@@ -1044,13 +1022,7 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(mappedDialog).toBeVisible();
   await expect(mappedDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-rong");
-  await expectSizeGuideArtworkFits(
-    page,
-    mappedDialog,
-    "/brand/size-guides/set-vay-form-rong.webp",
-    "Set/Váy form rộng",
-    "86",
-  );
+  await expectSizeGuideTableFits(page, mappedDialog, "Set/Váy form rộng", "86");
   await page.keyboard.press("Escape");
 
   await page.goto(`${BASE_URL}/shop/${smallFormProductSlug}`, { waitUntil: "networkidle" });
@@ -1061,13 +1033,7 @@ test("F7c different manual mappings stay product-specific and an unmapped same-c
   });
   await expect(smallFormDialog).toBeVisible();
   await expect(smallFormDialog).toHaveAttribute("data-size-guide-id", "set-vay-form-nho");
-  await expectSizeGuideArtworkFits(
-    page,
-    smallFormDialog,
-    "/brand/size-guides/set-vay-form-nho.webp",
-    "Set/Váy form nhỏ",
-    "84",
-  );
+  await expectSizeGuideTableFits(page, smallFormDialog, "Set/Váy form nhỏ", "84");
   await page.keyboard.press("Escape");
 
   await page.goto(`${BASE_URL}/shop/${unmappedProductSlug}`, { waitUntil: "networkidle" });

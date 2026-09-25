@@ -619,6 +619,15 @@ model CategoryEditorialMedia {
   updatedAt        DateTime @updatedAt
 }
 
+/// Size-guide artwork shown in the product page's size-guide dialog, one row per approved guide id
+/// (`src/brand/size-guide.config.ts`). Website-owned and set in admin; an absent row means no
+/// artwork, and the dialog draws the guide's table from its configured data instead.
+model SizeGuideMedia {
+  guideId   String   @id
+  imageUrl  String
+  updatedAt DateTime @updatedAt
+}
+
 /// Manual related-product override — stage 1 of ADR 0013 §7.
 ///
 /// Stages 2–4 need no storage: they are queries over `ProductCategoryMembership`. Self-reference is
