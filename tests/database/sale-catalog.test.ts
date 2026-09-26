@@ -28,6 +28,7 @@ const campaignIds = [
   "sale-catalog-last-sizes-flash",
   "sale-catalog-last-sizes-flash-no-window",
   "sale-catalog-last-sizes-clearance",
+  "sale-catalog-last-sizes-fractional",
 ];
 
 async function cleanup() {
@@ -592,4 +593,39 @@ test("Xả hàng lẻ size keeps the Flash window invariant and never shows a Fl
   assert.equal("isClearance" in listed && listed.isClearance, true);
   assert.equal("admittedFlashVariantIds" in listed, false);
   assert.equal("flashSale" in listed, false);
+});
+
+test("Xả hàng lẻ size reads stock as the capacity authority does: fractional stock proves nothing", async () => {
+  // M's 0.5 is refused as invalid-stock at checkout, so nothing here is actually for sale.
+  const fractionalForSale = await createStockedProduct("last-sizes-fractional-for-sale", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 0 },
+    { color: "Đen", size: "M", quantity: 0.5 },
+  ]);
+  // S's 0.5 is not "sold out" either: it is invalid stock, so no size is proven missing.
+  const fractionalSoldOut = await createStockedProduct("last-sizes-fractional-sold-out", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 0.5 },
+    { color: "Đen", size: "M", quantity: 3 },
+  ]);
+  // A fractional size beside a real sold-out one: admitted on S and M, but the 0.5 size is never
+  // one of the Flash variants the listing may price or show.
+  const fractionalSibling = await createStockedProduct("last-sizes-fractional-sibling", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 0 },
+    { color: "Đen", size: "M", quantity: 3 },
+    { color: "Đen", size: "L", quantity: 0.5 },
+  ]);
+  await flashCampaign("sale-catalog-last-sizes-fractional", [
+    fractionalForSale.product.id,
+    fractionalSoldOut.product.id,
+    fractionalSibling.product.id,
+  ]);
+
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const clearance = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(clearance.products.map((listed) => listed.slug), ["last-sizes-fractional-sibling"]);
+  assert.equal(clearance.totalCount, 1);
+  const listed = clearance.products[0]!;
+  assert.ok("admittedFlashVariantIds" in listed);
+  assert.deepEqual([...listed.admittedFlashVariantIds], [fractionalSibling.variants[1]!.id]);
+  assert.ok("flashSale" in listed && listed.flashSale);
+  assert.equal(listed.flashSale.representativeVariantId, fractionalSibling.variants[1]!.id);
 });

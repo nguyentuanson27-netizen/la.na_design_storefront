@@ -240,45 +240,78 @@ function buildFlashSaleCte(now: Date) {
  * - the ready pieces left across the purchasable options total fewer than
  *   `LAST_SIZES_TOTAL_STOCK_LIMIT`.
  *
+ * Stock is read the way the capacity authority (`evaluateVariantCapacity`) reads it: only a safe
+ * integer counts, and a fractional or out-of-range mirrored sum proves neither "sold out" nor "for
+ * sale", so a product is never admitted on stock commerce itself refuses to sell.
+ *
  * Only a product that sells as `STANDARD` (no stored policy, or a `STANDARD` row) can prove it. Under
  * `OVERSELL` or `PREORDER` a size at zero stock may still be for sale, so stock alone proves nothing
  * and the product stays off this listing.
  */
 function buildClearanceLastSizesCte() {
   return Prisma.sql`,
+    "clearance_variant" AS (
+      SELECT
+        sve.*,
+        -- The capacity authority counts stock only as a safe integer: a fractional or out-of-range
+        -- mirrored sum is refused as invalid-stock, never floored. Neither sold out nor for sale.
+        (
+          sve."sellableStock" IS NOT NULL
+          AND sve."sellableStock" = TRUNC(sve."sellableStock")
+          AND ABS(sve."sellableStock") <= 9007199254740991::float8
+        ) AS "hasCountStock"
+      FROM "sale_variant_eligible" sve
+    ),
+    "clearance_variant_state" AS (
+      SELECT
+        cv.*,
+        -- STANDARD sells one more unit only when at least one whole unit is left.
+        (cv."isPurchasable" AND cv."hasCountStock" AND cv."sellableStock" >= 1) AS "isCountPurchasable"
+      FROM "clearance_variant" cv
+    ),
     "clearance_size_state" AS (
       SELECT
-        sve."productId",
+        cvs."productId",
         BOOL_AND(
-          NULLIF(BTRIM(sve."size"), '') IS NOT NULL
+          NULLIF(BTRIM(cvs."size"), '') IS NOT NULL
           AND (
-            NOT sve."hasColorDimension"
-            OR NULLIF(BTRIM(sve."color"), '') IS NOT NULL
+            NOT cvs."hasColorDimension"
+            OR NULLIF(BTRIM(cvs."color"), '') IS NOT NULL
           )
-          AND sve."optionCount" = 1
-          AND sve."sellableStock" IS NOT NULL
-          AND sve."sellableStock" <= 0
+          AND cvs."optionCount" = 1
+          AND cvs."hasCountStock"
+          AND cvs."sellableStock" <= 0
         ) AS "isSoldOut"
-      FROM "sale_variant_eligible" sve
-      GROUP BY sve."productId", LOWER(BTRIM(COALESCE(sve."size", '')))
+      FROM "clearance_variant_state" cvs
+      GROUP BY cvs."productId", LOWER(BTRIM(COALESCE(cvs."size", '')))
     ),
     "clearance_last_sizes_product" AS (
-      SELECT sve."productId"
-      FROM "sale_variant_eligible" sve
-      LEFT JOIN "ProductSellingPolicy" psp ON psp."productId" = sve."productId"
+      SELECT cvs."productId"
+      FROM "clearance_variant_state" cvs
+      LEFT JOIN "ProductSellingPolicy" psp ON psp."productId" = cvs."productId"
       WHERE psp."productId" IS NULL
         OR psp."sellingMode" = 'STANDARD'::"SellingMode"
-      GROUP BY sve."productId"
-      HAVING BOOL_OR(sve."isPurchasable")
+      GROUP BY cvs."productId"
+      HAVING BOOL_OR(cvs."isCountPurchasable")
         AND SUM(
-          CASE WHEN sve."isPurchasable" THEN GREATEST(sve."sellableStock", 0) ELSE 0 END
+          CASE WHEN cvs."isCountPurchasable" THEN cvs."sellableStock" ELSE 0 END
         ) < ${LAST_SIZES_TOTAL_STOCK_LIMIT}
         AND EXISTS (
           SELECT 1
           FROM "clearance_size_state" css
-          WHERE css."productId" = sve."productId"
+          WHERE css."productId" = cvs."productId"
             AND css."isSoldOut"
         )
+    ),
+    "clearance_admitted_flash_variant" AS (
+      -- The Flash variants that may represent, and be priced on, an admitted product: valid Flash
+      -- Sale rows the capacity authority would actually sell.
+      SELECT sv."id", sv."productId"
+      FROM "sale_variant" sv
+      JOIN "clearance_variant_state" cvs ON cvs."id" = sv."id"
+      WHERE ${flashSaleEligibility("sv")}
+        AND cvs."isCountPurchasable"
+        AND sv."productId" IN (SELECT clsp."productId" FROM "clearance_last_sizes_product" clsp)
     )
   `;
 }
@@ -303,12 +336,7 @@ function saleKindFilter(alias: string, kind: SaleCampaignKind | null) {
     // Needs `buildClearanceLastSizesCte` in the same statement.
     return Prisma.sql`AND (
       ${Prisma.raw(alias)}."kind" = 'CLEARANCE'
-      OR (
-        ${flashSaleEligibility(alias)}
-        AND ${Prisma.raw(alias)}."productId" IN (
-          SELECT clsp."productId" FROM "clearance_last_sizes_product" clsp
-        )
-      )
+      OR ${Prisma.raw(alias)}."id" IN (SELECT cafv."id" FROM "clearance_admitted_flash_variant" cafv)
     )`;
   }
   return Prisma.sql`AND ${Prisma.raw(alias)}."kind" = ${kind}`;
@@ -483,12 +511,10 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
       : buildSaleCte(now);
     const admittedFlashVariantIds = safeKind === "CLEARANCE"
       ? Prisma.sql`ARRAY(
-          SELECT sv."id"
-          FROM "sale_variant" sv
-          WHERE sv."productId" = p."id"
-            AND ${flashSaleEligibility("sv")}
-            AND sv."productId" IN (SELECT clsp."productId" FROM "clearance_last_sizes_product" clsp)
-          ORDER BY sv."id"
+          SELECT cafv."id"
+          FROM "clearance_admitted_flash_variant" cafv
+          WHERE cafv."productId" = p."id"
+          ORDER BY cafv."id"
         )`
       : Prisma.sql`ARRAY[]::text[]`;
 
