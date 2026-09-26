@@ -27,6 +27,12 @@ export type StorefrontCompositeComponentGroup = Readonly<{
   variants: readonly StorefrontVariantFacts[];
 }>;
 
+export type StorefrontCompositeSubSetGroup = Readonly<{
+  label: string;
+  kindKey: string;
+  variants: readonly StorefrontVariantFacts[];
+}>;
+
 export type CompositeComponentKindLabel = "ÁO LẺ" | "QUẦN LẺ" | "CV LẺ";
 
 export function classifyCompositeComponentSku(
@@ -153,14 +159,17 @@ function projectOptions(
 
 export function buildStorefrontProductProjection({
   parentVariants,
+  subSetGroups = [],
   componentGroups,
   hasCompositeGraph,
   pricingRule = defaultStorefrontPricingRule,
   sellingPolicy = STANDARD_STANDALONE_CAPACITY,
   availabilityDates = NO_AVAILABILITY_DATES,
   colorDimensionLabel = "Màu",
+  parentKindLabel,
 }: Readonly<{
   parentVariants: readonly StorefrontVariantFacts[];
+  subSetGroups?: readonly StorefrontCompositeSubSetGroup[];
   componentGroups: readonly StorefrontCompositeComponentGroup[];
   hasCompositeGraph: boolean;
   pricingRule?: StorefrontPricingRule;
@@ -185,6 +194,11 @@ export function buildStorefrontProductProjection({
    * Defaults to "Màu".
    */
   colorDimensionLabel?: string;
+  /**
+   * Optional custom label for the parent set (e.g. "COMBO" when sub-sets exist).
+   * Defaults to "COMBO" when subSetGroups are present, otherwise "FULL SET".
+   */
+  parentKindLabel?: string;
 }>): StorefrontProductProjection {
   const resolvedColorDimensionLabel = colorDimensionLabel ?? "Màu";
   if (!hasCompositeGraph) {
@@ -210,12 +224,15 @@ export function buildStorefrontProductProjection({
     labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
   }
 
+  const resolvedParentLabel =
+    parentKindLabel ?? (subSetGroups.length > 0 ? "COMBO" : "FULL SET");
+
   const options: StorefrontProjectionOption[] = [
     // The parent set is the composite, and the policy passed in is the parent's.
     ...projectOptions(
       parentVariants,
       COMPOSITE_PARENT_KIND_KEY,
-      "FULL SET",
+      resolvedParentLabel,
       null,
       pricingRule,
       sellingPolicy,
@@ -223,6 +240,21 @@ export function buildStorefrontProductProjection({
       availabilityDates,
     ),
   ];
+
+  for (const subSet of subSetGroups) {
+    options.push(
+      ...projectOptions(
+        subSet.variants,
+        subSet.kindKey,
+        subSet.label,
+        null,
+        pricingRule,
+        sellingPolicy,
+        true,
+        availabilityDates,
+      ),
+    );
+  }
 
   componentGroups.forEach((group, index) => {
     const label = normalizeLabel(group.label);

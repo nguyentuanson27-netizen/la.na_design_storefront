@@ -4,6 +4,7 @@ import {
   buildStorefrontProductProjection,
   resolveCompositeComponentGroupLabel,
   type StorefrontCompositeComponentGroup,
+  type StorefrontCompositeSubSetGroup,
 } from "./storefront-projection.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
@@ -169,9 +170,180 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           : [{ label, variants: [...group.variants.values()] }];
       });
 
+    // Discover sibling composite subsets (e.g. Set Váy, Set Quần) sharing components with this combo
+    let subSetGroups: StorefrontCompositeSubSetGroup[] = [];
+    const siblingVariantMpnMap: Record<string, string | null> = {};
+    const siblingVariantSkuMap: Record<string, string | null> = {};
+    const siblingPricedVariantIds: string[] = [];
+
+    const componentProductIds = [...groups.keys()];
+    const componentVariantIds = [
+      ...new Set(
+        parentRelations.flatMap((parent) =>
+          parent.compositeComponents.map((edge) => edge.componentVariant.id),
+        ),
+      ),
+    ];
+
+    if (componentProductIds.length >= 3) {
+      const siblingRelations = await client.variantMirror.findMany({
+        where: {
+          product: {
+            pancakeShopId: shopId,
+            isPresent: true,
+            id: { not: product.id },
+          },
+          isPresent: true,
+          isActive: true,
+          compositeComponents: {
+            some: {
+              componentVariantId: { in: componentVariantIds },
+            },
+          },
+        },
+        orderBy: [{ pancakeVariationId: "asc" }],
+        select: {
+          id: true,
+          pancakeVariationId: true,
+          pancakeDisplayId: true,
+          sku: true,
+          color: true,
+          size: true,
+          pancakeRetailPrice: true,
+          pancakeRetailPriceAfterDiscount: true,
+          product: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          compositeComponents: {
+            orderBy: [{ componentVariantId: "asc" }],
+            select: {
+              quantity: true,
+              componentVariant: {
+                select: {
+                  id: true,
+                  pancakeVariationId: true,
+                  pancakeDisplayId: true,
+                  sku: true,
+                  color: true,
+                  size: true,
+                  isPresent: true,
+                  isActive: true,
+                  pancakeRetailPrice: true,
+                  pancakeRetailPriceAfterDiscount: true,
+                  product: {
+                    select: {
+                      id: true,
+                      name: true,
+                      pancakeShopId: true,
+                      isPresent: true,
+                    },
+                  },
+                  warehouseStocks: {
+                    orderBy: [{ pancakeWarehouseId: "asc" }],
+                    select: { quantity: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const siblingProductMap = new Map<
+        string,
+        {
+          name: string;
+          variants: typeof siblingRelations;
+          usedCompProductIds: Set<string>;
+        }
+      >();
+
+      for (const sib of siblingRelations) {
+        if (sib.compositeComponents.length === 0) continue;
+        let entry = siblingProductMap.get(sib.product.id);
+        if (!entry) {
+          entry = {
+            name: sib.product.name,
+            variants: [],
+            usedCompProductIds: new Set(),
+          };
+          siblingProductMap.set(sib.product.id, entry);
+        }
+        entry.variants.push(sib);
+        for (const edge of sib.compositeComponents) {
+          entry.usedCompProductIds.add(edge.componentVariant.product.id);
+        }
+        siblingVariantMpnMap[sib.id] = sib.pancakeDisplayId;
+        siblingVariantSkuMap[sib.id] = sib.sku;
+        siblingPricedVariantIds.push(sib.id);
+      }
+
+      const candidateSets: {
+        label: string;
+        kindKey: string;
+        order: number;
+        variants: StorefrontVariantFacts[];
+      }[] = [];
+
+      for (const entry of siblingProductMap.values()) {
+        const isStrictSubset =
+          entry.usedCompProductIds.size > 0 &&
+          entry.usedCompProductIds.size < componentProductIds.length &&
+          [...entry.usedCompProductIds].every((cId) => componentProductIds.includes(cId));
+
+        if (!isStrictSubset) continue;
+
+        const n = entry.name.toUpperCase();
+        let label: string | null = null;
+        let kindKey: string | null = null;
+        let order = 99;
+
+        if (n.includes("SET VÁY") || n.includes("SET VAY") || /(^|\s)SV[0-9]/i.test(entry.name)) {
+          label = "SET VÁY";
+          kindKey = "sub-set-vay";
+          order = 1;
+        } else if (n.includes("SET QUẦN") || n.includes("SET SQ") || /(^|\s)SQ[0-9]/i.test(entry.name)) {
+          label = "SET QUẦN";
+          kindKey = "sub-set-quan";
+          order = 2;
+        }
+
+        if (label && kindKey) {
+          const variants: StorefrontVariantFacts[] = entry.variants.map((v) => ({
+            id: v.id,
+            pancakeVariationId: v.pancakeVariationId,
+            color: v.color,
+            size: v.size,
+            sellableStock: deriveCompositeSellableStock({
+              shopId,
+              components: v.compositeComponents.map((edge) => ({
+                requiredQuantity: edge.quantity,
+                componentVariant: edge.componentVariant,
+              })),
+            }),
+            retailPrice: v.pancakeRetailPrice,
+            retailPriceAfterDiscount: v.pancakeRetailPriceAfterDiscount,
+          }));
+
+          candidateSets.push({ label, kindKey, order, variants });
+        }
+      }
+
+      candidateSets.sort((a, b) => a.order - b.order);
+      subSetGroups = candidateSets.map((c) => ({
+        label: c.label,
+        kindKey: c.kindKey,
+        variants: c.variants,
+      }));
+    }
+
     const pricedVariantIds = [
       ...new Set([
         ...effectiveParentVariants.map((variant) => variant.id),
+        ...subSetGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
         ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
       ]),
     ];
@@ -189,21 +361,33 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         ...Object.fromEntries(
           [...compositeStockByVariantId.entries()].map(([id, stock]) => [id, stock > 0]),
         ),
+        ...Object.fromEntries(
+          subSetGroups.flatMap((group) =>
+            group.variants.map((v) => [v.id, (v.sellableStock ?? 0) > 0]),
+          ),
+        ),
       },
       // ADR 0008: the mirrored Pancake `display_id` is the manufacturer MPN authority. Keep this
       // server-only map separate from `projection.options` so the purchase-panel client contract does
       // not grow a Merchant/SEO-only fact just to let JSON-LD identify each variant.
-      variantMpnById: Object.fromEntries(
-        parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
-      ),
+      variantMpnById: {
+        ...Object.fromEntries(
+          parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
+        ),
+        ...siblingVariantMpnMap,
+      },
       // U32a: the website-owned SKU, kept in its own server-only map for the same reason. It rides
       // the select that already read this row, so publishing it costs no additional query. It is a
       // different fact from the MPN above and must never be substituted for it.
-      variantSkuById: Object.fromEntries(
-        parentRelations.map((variant) => [variant.id, variant.sku]),
-      ),
+      variantSkuById: {
+        ...Object.fromEntries(
+          parentRelations.map((variant) => [variant.id, variant.sku]),
+        ),
+        ...siblingVariantSkuMap,
+      },
       projection: buildStorefrontProductProjection({
         parentVariants: effectiveParentVariants,
+        subSetGroups,
         componentGroups,
         hasCompositeGraph,
         // I9 — the same two inputs the Merchant feed supplies, because the page's JSON-LD and the

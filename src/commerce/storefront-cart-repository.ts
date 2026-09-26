@@ -97,6 +97,22 @@ const productSelection = {
                 orderBy: [{ pancakeWarehouseId: "asc" as const }],
                 select: { quantity: true },
               },
+              compositeParents: {
+                select: {
+                  parentVariant: {
+                    select: {
+                      isPresent: true,
+                      isActive: true,
+                      product: {
+                        select: {
+                          isPresent: true,
+                          isActive: true,
+                        },
+                      },
+                    },
+                  },
+                },
+              },
             },
           },
         },
@@ -149,6 +165,17 @@ function toCartProduct(product: SelectedProduct, shopId: number) {
           parentVariant.product.isPresent &&
           parentVariant.product.isActive,
       ),
+      isSubSetAvailable:
+        variant.compositeComponents.length > 0 &&
+        variant.compositeComponents.every(({ componentVariant }) =>
+          componentVariant.compositeParents.some(
+            ({ parentVariant }) =>
+              parentVariant.isPresent &&
+              parentVariant.isActive &&
+              parentVariant.product.isPresent &&
+              parentVariant.product.isActive,
+          ),
+        ),
       color: variant.color,
       size: variant.size,
       sellableStock:
