@@ -246,7 +246,9 @@ function buildFlashSaleCte(now: Date) {
  *
  * Only a product that sells as `STANDARD` (no stored policy, or a `STANDARD` row) can prove it. Under
  * `OVERSELL` or `PREORDER` a size at zero stock may still be for sale, so stock alone proves nothing
- * and the product stays off this listing.
+ * and the product stays off this listing. A composite (FULL SET) product -- any variant with
+ * component rows -- is never admitted this way either: its capacity comes from its components, not
+ * from the parent stock this proof reads. An explicit `CLEARANCE` campaign still lists it.
  */
 function buildClearanceLastSizesCte() {
   return Prisma.sql`,
@@ -289,8 +291,19 @@ function buildClearanceLastSizesCte() {
       SELECT cvs."productId"
       FROM "clearance_variant_state" cvs
       LEFT JOIN "ProductSellingPolicy" psp ON psp."productId" = cvs."productId"
-      WHERE psp."productId" IS NULL
-        OR psp."sellingMode" = 'STANDARD'::"SellingMode"
+      WHERE (
+          psp."productId" IS NULL
+          OR psp."sellingMode" = 'STANDARD'::"SellingMode"
+        )
+        -- A composite (FULL SET) sells from its components' capacity, not the parent rows summed
+        -- here, so parent stock proves nothing about its sizes. Fail closed until this proof reads
+        -- component-derived capacity.
+        AND NOT EXISTS (
+          SELECT 1
+          FROM "CompositeComponentMirror" ccm
+          JOIN "VariantMirror" parent ON parent."id" = ccm."parentVariantId"
+          WHERE parent."productId" = cvs."productId"
+        )
       GROUP BY cvs."productId"
       HAVING BOOL_OR(cvs."isCountPurchasable")
         AND SUM(

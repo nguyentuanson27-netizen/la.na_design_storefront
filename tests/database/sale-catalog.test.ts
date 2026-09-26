@@ -29,6 +29,8 @@ const campaignIds = [
   "sale-catalog-last-sizes-flash-no-window",
   "sale-catalog-last-sizes-clearance",
   "sale-catalog-last-sizes-fractional",
+  "sale-catalog-last-sizes-composite-flash",
+  "sale-catalog-last-sizes-composite-clearance",
 ];
 
 async function cleanup() {
@@ -628,4 +630,81 @@ test("Xả hàng lẻ size reads stock as the capacity authority does: fractiona
   assert.deepEqual([...listed.admittedFlashVariantIds], [fractionalSibling.variants[1]!.id]);
   assert.ok("flashSale" in listed && listed.flashSale);
   assert.equal(listed.flashSale.representativeVariantId, fractionalSibling.variants[1]!.id);
+});
+
+test("Xả hàng lẻ size never auto-admits a composite from its parent stock; an explicit CLEARANCE still lists it", async () => {
+  // Parent rows read as lẻ size (S sold out, 3 left) ...
+  const composite = await createStockedProduct("last-sizes-composite", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 0 },
+    { color: "Đen", size: "M", quantity: 3 },
+  ]);
+  // ... but the FULL SET sells from its components, which still hold plenty of both sizes.
+  const components = await createStockedProduct("last-sizes-composite-component", 400_000, [
+    { color: "Đen", size: "S", quantity: 40 },
+    { color: "Đen", size: "M", quantity: 40 },
+  ]);
+  await prisma.compositeComponentMirror.createMany({
+    data: composite.variants.map((parent, index) => ({
+      parentVariantId: parent.id,
+      componentVariantId: components.variants[index]!.id,
+      quantity: 2,
+      syncedAt: now,
+    })),
+  });
+  await flashCampaign("sale-catalog-last-sizes-composite-flash", [composite.product.id]);
+
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const clearance = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(clearance.products, []);
+  assert.equal(clearance.totalCount, 0);
+
+  // Still a Flash Sale product on its own listing.
+  const flash = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "FLASH_SALE", now });
+  assert.deepEqual(flash.products.map((product) => product.slug), ["last-sizes-composite"]);
+
+  // The same stock proof as a non-composite admits it, so the composite rule is what excluded it.
+  await prisma.compositeComponentMirror.deleteMany({
+    where: { parentVariantId: { in: composite.variants.map((variant) => variant.id) } },
+  });
+  const withoutComponents = await repository.listSalePage({
+    shopId,
+    discovery,
+    pageSize: 12,
+    kind: "CLEARANCE",
+    now,
+  });
+  assert.deepEqual(withoutComponents.products.map((product) => product.slug), ["last-sizes-composite"]);
+
+  // An explicit CLEARANCE campaign is merchandising, not a stock claim: a composite stays listable.
+  const clearanceComposite = await createStockedProduct("last-sizes-composite-clearance", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 5 },
+  ]);
+  const clearanceComponent = await createStockedProduct("last-sizes-composite-clearance-part", 400_000, [
+    { color: "Đen", size: "S", quantity: 40 },
+  ]);
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: clearanceComposite.variants[0]!.id,
+      componentVariantId: clearanceComponent.variants[0]!.id,
+      quantity: 1,
+      syncedAt: now,
+    },
+  });
+  await prisma.promotionCampaign.create({
+    data: {
+      id: "sale-catalog-last-sizes-composite-clearance",
+      kind: "CLEARANCE",
+      name: "Composite clearance",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: clearanceComposite.product.id } },
+    },
+  });
+  const explicit = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(explicit.products.map((product) => product.slug).sort(), [
+    "last-sizes-composite",
+    "last-sizes-composite-clearance",
+  ]);
 });
