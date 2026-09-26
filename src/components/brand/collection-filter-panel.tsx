@@ -76,7 +76,7 @@ export function CollectionFilterPanel({
   const handleSortChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const nextHref = e.target.value;
     startTransition(() => {
-      router.push(nextHref);
+      router.push(nextHref, { scroll: false });
     });
   };
 
@@ -163,6 +163,7 @@ export function CollectionFilterPanel({
               <Link
                 key={opt.value}
                 href={opt.href}
+                scroll={false}
                 aria-current={opt.active ? "true" : undefined}
                 className={`min-w-7 text-center rounded-md border px-2 py-1 font-medium uppercase transition ${
                   opt.active
@@ -180,6 +181,7 @@ export function CollectionFilterPanel({
         {filtered ? (
           <Link
             href={clearFilterHref}
+            scroll={false}
             className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
           >
             Tất cả kích cỡ
@@ -194,6 +196,7 @@ export function CollectionFilterPanel({
             <span>Size: {activeSizeOption.label}</span>
             <Link
               href={clearFilterHref}
+              scroll={false}
               aria-label={`Xóa bộ lọc size ${activeSizeOption.label}`}
               className="hover:text-black"
             >
@@ -248,6 +251,7 @@ export function CollectionFilterPanel({
                     {filtered ? (
                       <Link
                         href={clearFilterHref}
+                        scroll={false}
                         onClick={() => setIsMobileOpen(false)}
                         className="min-w-9 rounded-md border border-[#3B2219]/25 px-3 py-2 text-center text-xs font-medium uppercase text-[#3B2219] transition"
                       >
@@ -258,6 +262,7 @@ export function CollectionFilterPanel({
                       <Link
                         key={opt.value}
                         href={opt.href}
+                        scroll={false}
                         aria-current={opt.active ? "true" : undefined}
                         onClick={() => setIsMobileOpen(false)}
                         className={`min-w-9 rounded-md border px-3 py-2 text-center text-xs font-medium uppercase transition ${
@@ -279,6 +284,7 @@ export function CollectionFilterPanel({
               <div className="grid grid-cols-2 gap-3">
                 <Link
                   href={clearFilterHref}
+                  scroll={false}
                   onClick={() => setIsMobileOpen(false)}
                   className="btn btn--outline px-3"
                 >
