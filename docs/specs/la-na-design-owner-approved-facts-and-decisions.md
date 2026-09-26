@@ -469,6 +469,20 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   in direct answer to the open Checkpoint B row. The earlier credential-exposure follow-up is
   recorded separately in the probe document and is unchanged by this acceptance.
 
+- **Storefront collection display title** — approved by the repository owner on **2026-09-26**
+  ("bỏ chữ BST trước trên mỗi bộ sưu tập"). `CollectionDefinition.title` stays the stored,
+  admin-facing canonical title and admin shows it unchanged. Every public storefront surface reads
+  a **derived** display title instead: `toStorefrontCollectionTitle` in
+  `src/commerce/collection-definition.ts` drops one leading standalone `BST` prefix (any case,
+  optionally followed by `:`, `-`, `–`, `—` or `.`) and keeps the stored title when nothing would
+  remain. It is applied once at the public read boundaries (`listPublished`,
+  `listHomepageMerchandising`, `findPublishedBySlug`, and the product-facing published-collection
+  map), so the H1, collection index, homepage promo rows, product collection facts, breadcrumbs,
+  tracking names and the metadata title fallback all agree. `seoTitle` is not rewritten.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_01Lu1j8w4dFsYPA3mSNYsZZc`](https://claude.ai/code/session_01Lu1j8w4dFsYPA3mSNYsZZc).
+
 ## Still pending — do not invent
 
 Master spec §47. These are content gaps, not architecture blockers:

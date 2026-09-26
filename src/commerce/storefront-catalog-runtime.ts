@@ -18,7 +18,10 @@ import { createStorefrontProductSlugResolver } from "./storefront-product-slug-r
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
 import type { PromotionCampaignKind } from "./promotion-pricing.ts";
-import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
+import {
+  buildPromotionalStorefrontPricing,
+  type StorefrontCampaignKindScope,
+} from "./storefront-promotion-projection.ts";
 import { defaultStorefrontPricingRule, type StorefrontPricingRule } from "./storefront-product.ts";
 
 type StorefrontPromotionProduct = Readonly<{
@@ -34,7 +37,7 @@ export async function resolveStorefrontPromotionForProducts({
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
   /** Scopes the displayed discounts to one campaign kind; see `buildPromotionalStorefrontPricing`. */
-  onlyKind?: PromotionCampaignKind;
+  onlyKind?: StorefrontCampaignKindScope;
 }): Promise<Readonly<{ pricingRule: StorefrontPricingRule; refreshAfterMs: number }>> {
   const variantIds = products.flatMap((product) =>
     (product.projection?.options ?? product.variants).map((variant) => variant.id),
@@ -62,7 +65,7 @@ export async function resolveStorefrontPricingRuleForProducts({
 }: {
   products: readonly StorefrontPromotionProduct[];
   now?: Date;
-  onlyKind?: PromotionCampaignKind;
+  onlyKind?: StorefrontCampaignKindScope;
 }): Promise<StorefrontPricingRule> {
   return (await resolveStorefrontPromotionForProducts({ products, now, onlyKind })).pricingRule;
 }

@@ -3,6 +3,7 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
+import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { resolveVariantAvailabilityFromWarehouseStocks } from "./storefront-product.ts";
 import {
@@ -153,7 +154,9 @@ async function fetchPublishedCollectionMap(
     },
   });
 
-  return new Map(definitions.map((def) => [def.slug, { slug: def.slug, title: def.title }]));
+  return new Map(
+    definitions.map((def) => [def.slug, { slug: def.slug, title: toStorefrontCollectionTitle(def.title) }]),
+  );
 }
 
 export type SelectedStorefrontProductPayload = SelectedProduct;

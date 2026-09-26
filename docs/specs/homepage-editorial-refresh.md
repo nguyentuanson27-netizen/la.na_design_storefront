@@ -222,11 +222,13 @@ No shared section heading.
 Each slot contains:
 
 - homepage-specific editorial image;
-- canonical collection title, derived from the resolved `CollectionDefinition.title`;
+- canonical collection title, derived from the resolved `CollectionDefinition.title` through the storefront display-title rule (below);
 - CTA label;
 - destination collection.
 
 The visible title is the collection's canonical title, **not** a second editorial-title authority. If a future design needs a different marketing headline, that is a separate owner decision and must use a distinctly named field rather than overloading the collection title.
+
+Storefront display-title rule (owner decision 2026-09-26, recorded in `la-na-design-owner-approved-facts-and-decisions.md` › Settled decisions): the stored `CollectionDefinition.title` remains canonical persistence and is shown unchanged in admin; every public surface, this row included, shows `toStorefrontCollectionTitle(CollectionDefinition.title)`, which only drops a leading administrative `BST` prefix. It is a mechanical derivation of the one canonical title, not a second title authority.
 
 The exact two collections are intentionally **pending mapping**.
 

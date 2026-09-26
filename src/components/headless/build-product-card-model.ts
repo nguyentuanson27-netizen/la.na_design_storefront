@@ -7,6 +7,7 @@ import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
+  LAST_SIZES_TOTAL_STOCK_LIMIT,
   STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
   type StorefrontProductCapacity,
@@ -208,11 +209,8 @@ function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): 
   return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
 }
 
-/**
- * The total remaining stock below which "Chỉ còn ít" is true. Owner decision on #79: fewer than 10
- * pieces left across every size still in stock.
- */
-export const LAST_SIZES_TOTAL_STOCK_LIMIT = 10;
+// Defined beside the variant facts so the `/sale/xa-hang-le-size` read proves the same threshold.
+export { LAST_SIZES_TOTAL_STOCK_LIMIT };
 
 /**
  * "Lẻ size - Chỉ còn ít", proved rather than asserted: at least one **size** is sold out (so what is

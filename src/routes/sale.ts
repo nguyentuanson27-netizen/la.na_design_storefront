@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
+import { saleListingCampaignKinds } from "@/commerce/flash-sale-catalog";
 import {
   listConfiguredSalePage,
   readConfiguredNextSaleBoundary,
@@ -51,10 +52,21 @@ export async function loadSaleRoute(
 
   // A sub-listing prices its cards -- and reports them -- from its own campaign kind only, so a
   // product listed on Ưu đãi for its Promotion variant never shows a sibling variant's Flash price.
+  // Xả hàng lẻ size widens that scope to Flash Sale on exactly the Flash variants its read admitted
+  // for proven "lẻ size" stock; everything else there stays Clearance-only.
+  const flashAdmittedVariantIds = new Set(
+    page.products.flatMap((product) =>
+      "admittedFlashVariantIds" in product ? product.admittedFlashVariantIds : [],
+    ),
+  );
   const pricingRule = await resolveStorefrontPricingRuleForProducts({
     products: page.products,
     now,
-    onlyKind: kind,
+    onlyKind:
+      kind === "CLEARANCE"
+        ? (variantId) =>
+            flashAdmittedVariantIds.has(variantId) ? saleListingCampaignKinds(kind) : [kind]
+        : kind,
   });
   const tracking = buildProductListTracking({
     products: page.products,

@@ -4,6 +4,7 @@ import {
   CollectionDefinitionError,
   parseCollectionDefinition,
   parseCollectionSlug,
+  toStorefrontCollectionTitle,
   type CollectionDefinition,
 } from "./collection-definition.ts";
 
@@ -33,6 +34,10 @@ const publicCollectionSelect = {
   videoPosterUrl: true,
   featuredProductSlugs: true,
 } as const;
+
+function withStorefrontTitle<T extends { title: string }>(definition: T): T {
+  return { ...definition, title: toStorefrontCollectionTitle(definition.title) };
+}
 
 function parseCollectionListLimit(limit: number): number {
   if (!Number.isInteger(limit) || limit < 1 || limit > MAX_COLLECTION_LIST) {
@@ -126,16 +131,17 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
   }
 
   async function listPublished(limit: number) {
-    return client.collectionDefinition.findMany({
+    const definitions = await client.collectionDefinition.findMany({
       where: { isPublished: true },
       take: parseCollectionListLimit(limit),
       orderBy: { slug: "asc" },
       select: publicCollectionSelect,
     });
+    return definitions.map(withStorefrontTitle);
   }
 
   async function listHomepageMerchandising() {
-    return client.collectionDefinition.findMany({
+    const definitions = await client.collectionDefinition.findMany({
       where: {
         isPublished: true,
         homepagePosition: { not: null },
@@ -144,17 +150,19 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
       orderBy: { homepagePosition: "asc" },
       select: publicCollectionSelect,
     });
+    return definitions.map(withStorefrontTitle);
   }
 
   async function findPublishedBySlug(slug: unknown) {
     const parsedSlug = parseCollectionSlug(slug);
-    return client.collectionDefinition.findFirst({
+    const definition = await client.collectionDefinition.findFirst({
       where: {
         slug: parsedSlug,
         isPublished: true,
       },
       select: publicCollectionSelect,
     });
+    return definition ? withStorefrontTitle(definition) : null;
   }
 
   async function resolveMembershipSlugs(slugs: string[]): Promise<string[] | null> {
