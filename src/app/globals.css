@@ -1972,7 +1972,8 @@ body:has(.admin-shell) .site-masthead {
   text-align: center;
 }
 
-/* Collection promo rows (§7.3 / §7.5): two 50% tiles at every width.
+/* Collection promo rows (§7.3 / §7.5): two 50% tiles side by side; on a phone (≤640px) the two
+   tiles stack into full-width portrait photographs with centred copy.
    The tile stacks its photograph beneath its copy (`z-index: -1` inside an isolated tile) instead
    of positioning the copy, so the tile -- not the copy box -- is the containing block of the CTA's
    stretched hit area on a phone. */
@@ -2406,5 +2407,30 @@ body:has(.admin-shell) .site-masthead {
   .special-deals__copy {
     margin: -0.5rem auto 1.5rem;
     padding-inline: 1rem;
+  }
+
+  /* Phone: the two promo tiles stack into full-width portrait photographs, copy centred at the
+     foot of each. The CTA keeps its stretched whole-tile hit area from the 900px block. */
+  .collection-promo-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .collection-promo {
+    aspect-ratio: 4 / 5;
+  }
+
+  .collection-promo__copy {
+    align-items: center;
+    gap: 0.375rem;
+    padding: 1.5rem 1.25rem 1.25rem;
+    text-align: center;
+  }
+
+  .collection-promo__title {
+    font-size: clamp(1.75rem, 8vw, 2.25rem);
+  }
+
+  .collection-promo__cta {
+    font-size: 0.75rem;
   }
 }

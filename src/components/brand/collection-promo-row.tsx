@@ -30,7 +30,7 @@ export function CollectionPromoRow({
               src={tile.imageSrc}
               alt=""
               fill
-              sizes="50vw"
+              sizes="(max-width: 640px) 100vw, 50vw"
               className="object-cover"
             />
           </div>
