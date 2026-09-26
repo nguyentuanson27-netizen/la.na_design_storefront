@@ -37,6 +37,7 @@ export default defineConfig({
     "merchant-return-policy.spec.ts",
     "mobile-storefront-rhythm.spec.ts",
     "not-found-recovery.spec.ts",
+    "pancake-chat-admin-isolation.spec.ts",
     "pdp-language.spec.ts",
     "pdp-preorder-availability.spec.ts",
     "pdp-promotion.spec.ts",

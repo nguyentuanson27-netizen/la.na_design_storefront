@@ -1587,9 +1587,11 @@ body:has(.admin-shell) .site-masthead {
   }
 }
 
-/* Nothing to chat about while managing the catalog. */
-body:has(.admin-shell) .messenger-fab {
-  display: none;
+/* Nothing to chat about while managing the catalog. `SiteChatSlot` renders no chat in admin and
+   reloads a document Pancake has run in; this only covers the frame before that reload lands. */
+body:has(.admin-shell) .messenger-fab,
+body:has(.admin-shell) #pancake-chat-plugin-root {
+  display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
