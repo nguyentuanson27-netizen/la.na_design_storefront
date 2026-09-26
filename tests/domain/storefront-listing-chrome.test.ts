@@ -357,6 +357,11 @@ test("collections stays an aggregate index with an honest empty state", () => {
 
   const route = read("src/routes/collections.ts");
   assert.match(route, /listPublished/, "only published collections are listed");
+  assert.match(
+    route,
+    /special-deals/,
+    "special-deals is filtered out from the aggregate collections landing index",
+  );
   assert.ok(
     !/placeholder|sample|demo|fake/i.test(page),
     "no placeholder collection may be rendered",

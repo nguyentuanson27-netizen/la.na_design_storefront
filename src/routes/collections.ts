@@ -10,6 +10,13 @@ import { sealRoute, type RouteHandle } from "./core.tsx";
 
 const MAX_LISTED_COLLECTIONS = 50;
 
+/**
+ * Slugs hidden from the public `/collections` index aggregate page.
+ * Their products still belong to the collection normally, but the collection card
+ * is not rendered in the general collections index.
+ */
+const HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS = new Set(["special-deals"]);
+
 const repository = createCollectionDefinitionRepository(prisma);
 
 export type CollectionsRouteData = Readonly<{
@@ -24,11 +31,14 @@ export type CollectionsRouteData = Readonly<{
 export async function loadCollectionsRoute(): Promise<RouteHandle<CollectionsRouteData>> {
   await connection();
   const collections = await repository.listPublished(MAX_LISTED_COLLECTIONS);
+  const visibleCollections = collections.filter(
+    (collection) => !HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS.has(collection.slug),
+  );
 
   return sealRoute({
     data: {
       collections: Object.freeze(
-        collections.map((collection) =>
+        visibleCollections.map((collection) =>
           Object.freeze({
             slug: collection.slug,
             title: collection.title,
