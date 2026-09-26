@@ -484,6 +484,17 @@ ecommerce chrome — not a UI, colour, copy or layout to clone.
   Provenance: given by the repository owner in Claude Code session
   [`session_01Lu1j8w4dFsYPA3mSNYsZZc`](https://claude.ai/code/session_01Lu1j8w4dFsYPA3mSNYsZZc).
 
+- **Homepage collection promo rows on a phone** — approved by the repository owner on
+  **2026-09-26** ("giao diện mobile: chuyển 2 phần Banner Bộ Sưu Tập (Promo Rows) thành 2 ảnh dọc
+  như dinhdang"). At 640px and narrower each promo row's two tiles stack as full-width 4:5 portrait
+  photographs with centred copy; wider viewports keep the 50/50 side-by-side row. This supersedes
+  `homepage-editorial-refresh.md` §7.3's earlier "two-image rhythm on mobile" rule, and §7.3 now
+  states the phone layout. The link contract (whole tile taps through on mobile, CTA only on
+  desktop) is unchanged.
+
+  Provenance: given by the repository owner in Claude Code session
+  [`session_017vxPKk3MTUMv7D21UQJ7Ms`](https://claude.ai/code/session_017vxPKk3MTUMv7D21UQJ7Ms).
+
 ## Still pending — do not invent
 
 Master spec §47. These are content gaps, not architecture blockers:
