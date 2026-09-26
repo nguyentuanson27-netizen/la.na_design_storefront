@@ -1,13 +1,14 @@
 import { BRAND, messengerUrlFromFanpage } from "@/brand";
 
 /**
- * The floating Messenger chat button, bottom right on every storefront page.
+ * The floating Messenger chat button, bottom right: the chat entry point wherever the Pancake chat
+ * widget does not load (see `SiteChat`).
  *
  * A plain link to the fanpage's `m.me` chat rather than Meta's embedded chat widget: the Customer
  * Chat plugin was retired in 2024, and a link loads no third-party script. On a phone it opens the
  * Messenger app; on a desktop, messenger.com in a new tab. The link is derived from the approved
- * fanpage URL; when no chat link can be derived from it the button does not render. The stylesheet hides it in admin and lifts it above the PDP's mobile
- * purchase bar.
+ * fanpage URL; when no chat link can be derived from it the button does not render. The
+ * stylesheet hides it in admin and lifts it above the PDP's mobile purchase bar.
  *
  * It sits outside the page's other landmarks, so it carries its own: a labelled `aside`, as the
  * masthead's promotion strip does, keeps every piece of page content inside a landmark.

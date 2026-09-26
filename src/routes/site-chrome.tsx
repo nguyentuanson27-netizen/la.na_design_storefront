@@ -13,7 +13,7 @@ import {
   buildSiteChromeContent,
   type SiteChromeContent,
 } from "@/components/headless/site-chrome-model";
-import { readSearchExposure } from "@/seo/search-exposure";
+import { isApprovedPermanentProductionOrigin, readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
 import type { JsonLdEntity } from "./core.tsx";
@@ -42,6 +42,12 @@ export type SiteChromeModel = Readonly<{
    * layer takes props and does not reach into `@/commerce/*` (spec 06).
    */
   content: SiteChromeContent;
+  /**
+   * Whether the page may load the Pancake chat widget: only on the permanent production host, the
+   * one domain registered with Pancake. Anywhere else (staging, CI, local) the widget could only
+   * show Pancake's "domain not set up" screen, so the Messenger link button stands in.
+   */
+  pancakeChatOnPage: boolean;
 }>;
 
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
@@ -60,6 +66,7 @@ export async function loadSiteChrome(): Promise<SiteChromeModel> {
   return {
     structuredData: [buildSiteStructuredData({ origin: exposure.origin })],
     content: buildSiteChromeContent(megaMedia),
+    pancakeChatOnPage: isApprovedPermanentProductionOrigin(exposure.origin),
   };
 }
 
@@ -91,7 +98,7 @@ export function SiteChrome({
       <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
       <main id="main-content">{children}</main>
       <SiteFooter model={model.content.footer} />
-      <SiteChat />
+      <SiteChat pancakeOnPage={model.pancakeChatOnPage} />
       <TrackingPageView />
       <FacebookPixel />
     </SiteDocument>

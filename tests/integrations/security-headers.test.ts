@@ -57,6 +57,19 @@ test("Next.js applies the storefront security-header baseline to every route", a
   assert.doesNotMatch(csp, /'unsafe-eval'/);
 });
 
+test("the Pancake chat widget gets exactly its own origins, no wildcard and no eval", async () => {
+  const csp = await readCsp("?pancake-chat");
+  const directive = (name: string) => csp.match(new RegExp(`${name} ([^;]*)`))?.[1] ?? "";
+
+  assert.match(directive("script-src"), /https:\/\/chat-plugin\.pancake\.vn/);
+  assert.match(directive("style-src"), /https:\/\/fonts\.googleapis\.com/);
+  assert.match(directive("font-src"), /https:\/\/fonts\.gstatic\.com/);
+  assert.match(directive("media-src"), /https:\/\/chat-plugin\.pancake\.vn/);
+  assert.match(directive("connect-src"), /https:\/\/pages\.fm wss:\/\/pages\.fm/);
+  assert.doesNotMatch(csp, /\*/);
+  assert.doesNotMatch(csp, /'unsafe-eval'/);
+});
+
 test("no pixel configured means no third-party origin is allowed", async () => {
   delete process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
   const csp = await readCsp("?no-pixel");
