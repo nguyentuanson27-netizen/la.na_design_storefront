@@ -465,6 +465,70 @@ test("U3 changing Size from page 2 resets pagination and does not carry a stale 
   await expect(page.locator(`a[href*="collection="]`)).toHaveCount(0);
 });
 
+/**
+ * Filtering or re-sorting leaves the shopper where they were. By default a client navigation
+ * whose page segment starts above the viewport scrolls back to that segment's top, which on a
+ * collection read as the page jumping up every time a size was picked.
+ *
+ * The desktop bar keeps both controls inline, so no drawer and no scroll lock are involved. The
+ * link is fired with `dispatchEvent` and the select with `selectOption`, neither of which scrolls
+ * the element into view. Two page styles are switched off for the measurement. Smooth scrolling,
+ * because a jump back to the top would otherwise still be animating when the position is read.
+ * Scroll anchoring, because it is the browser's own correction, not the router's: dropping a
+ * product moves every card after it up a slot, and Chromium shifts the page by a row to keep the
+ * card it anchored on in view. With both off, any movement can only come from the navigation.
+ *
+ * Each path starts from a fresh load, so each one proves its own `scroll: false`.
+ */
+async function openCollectionScrolledDown(page: Page) {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/collections/${pagedSlug}`, { waitUntil: "networkidle" });
+  await expect(page.getByText("25 sản phẩm", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    document.documentElement.style.scrollBehavior = "auto";
+    document.documentElement.style.overflowAnchor = "none";
+    window.scrollTo(0, 800);
+  });
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(800);
+}
+
+async function expectScrollKept(page: Page) {
+  expect(Math.abs((await page.evaluate(() => window.scrollY)) - 800)).toBeLessThan(50);
+}
+
+test("picking a Size on a collection keeps the scroll position", async ({ page }) => {
+  await openCollectionScrolledDown(page);
+
+  // M keeps 24 products, so the page stays tall enough to hold the same offset.
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${pagedSlug}?size=M`),
+    sizes.getByRole("link", { name: "M", exact: true }).dispatchEvent("click"),
+  ]);
+  await expect(page.getByText("24 sản phẩm", { exact: true })).toBeVisible();
+  await expect(sizes.getByRole("link", { name: "M", exact: true })).toHaveAttribute("aria-current", "true");
+  await expectScrollKept(page);
+});
+
+test("changing the sort on a collection keeps the scroll position", async ({ page }) => {
+  await openCollectionScrolledDown(page);
+
+  const sortSelect = page
+    .getByRole("navigation", { name: "Sắp xếp bộ sưu tập" })
+    .getByRole("combobox", { name: "Sắp xếp sản phẩm" });
+  await Promise.all([
+    page.waitForURL(`${BASE_URL}/collections/${pagedSlug}?sort=price-desc`),
+    sortSelect.selectOption({ label: "Giá cao → thấp" }),
+  ]);
+  // The select shows the new value as soon as it is picked; the pager's next link only carries the
+  // sort once the server's page has rendered, and that render is when the router would scroll.
+  await expect(
+    page.getByRole("navigation", { name: "Phân trang bộ sưu tập" }).getByRole("link", { name: "Trang sau →" }),
+  ).toHaveAttribute("href", /sort=price-desc/);
+  await expect(sortSelect).toHaveValue(`/collections/${pagedSlug}?sort=price-desc`);
+  await expectScrollKept(page);
+});
+
 test("draft and unknown collections are not public", async ({ page }) => {
   const draft = await page.goto(`${BASE_URL}/collections/${draftSlug}`, { waitUntil: "networkidle" });
   expect(draft?.status()).toBe(404);
