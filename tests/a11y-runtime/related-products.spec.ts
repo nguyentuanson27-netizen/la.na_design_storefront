@@ -339,6 +339,15 @@ test("F7d/F7e PDP keeps manual related order and renders approved detail/policy 
   await expect(policies.locator('a[href="/shipping"]')).toBeVisible();
   await expect(policies.locator('a[href="/returns"]')).toBeVisible();
 
+  // At this 1440px viewport the two columns fill independently: shipping and returns follow the
+  // purchase panel directly (one 40px row gap), however tall the product information beside them
+  // runs. They used to share its row track and sat far below the panel.
+  const panelBox = (await page.getByRole("region", { name: "Mua sản phẩm" }).boundingBox())!;
+  const policiesBox = (await policies.boundingBox())!;
+  const detailsBox = (await details.boundingBox())!;
+  expect(policiesBox.x).toBeGreaterThan(detailsBox.x + detailsBox.width);
+  expect(policiesBox.y - (panelBox.y + panelBox.height)).toBeLessThanOrEqual(48);
+
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
