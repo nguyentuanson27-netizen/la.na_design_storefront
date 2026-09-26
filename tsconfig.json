@@ -1,11 +1,7 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": [
-      "dom",
-      "dom.iterable",
-      "esnext"
-    ],
+    "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": false,
     "skipLibCheck": true,
     "strict": true,
@@ -17,32 +13,10 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "incremental": true,
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ],
-    "paths": {
-      "@/*": [
-        "./src/*"
-      ]
-    },
+    "plugins": [{ "name": "next" }],
+    "paths": { "@/*": ["./src/*"] },
     "allowImportingTsExtensions": true
   },
-  "include": [
-    "next-env.d.ts",
-    "**/*.ts",
-    "**/*.tsx",
-    ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts",
-    ".next-test/footer-support/types/**/*.ts",
-    ".next-test/footer-support/dev/types/**/*.ts",
-    ".next-test/pancake-chat-isolation/types/**/*.ts",
-    ".next-test/pancake-chat-isolation/dev/types/**/*.ts"
-  ],
-  "exclude": [
-    "node_modules",
-    "tests/a11y-runtime",
-    "tests/fixtures"
-  ]
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": ["node_modules", "tests/a11y-runtime", "tests/fixtures"]
 }
