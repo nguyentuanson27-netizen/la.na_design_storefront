@@ -30,6 +30,7 @@ export type StorefrontCartVariant = {
   isPresent: boolean;
   isActive: boolean;
   isCompositeComponentAvailable?: boolean;
+  isSubSetAvailable?: boolean;
   color: string | null;
   size: string | null;
   sellableStock: number;
@@ -126,7 +127,9 @@ function isCommerceEligibleVariant(
   return (
     variant.isPresent &&
     variant.isActive &&
-    (isPublicOwner(product) || variant.isCompositeComponentAvailable === true)
+    (isPublicOwner(product) ||
+      variant.isCompositeComponentAvailable === true ||
+      variant.isSubSetAvailable === true)
   );
 }
 
@@ -241,7 +244,11 @@ export function buildStorefrontCartLines({
       media,
     };
 
-    if (!isPublicOwner(product) && variant.isCompositeComponentAvailable !== true) {
+    if (
+      !isPublicOwner(product) &&
+      variant.isCompositeComponentAvailable !== true &&
+      variant.isSubSetAvailable !== true
+    ) {
       return {
         ...base,
         price: null,

@@ -4,7 +4,17 @@ import {
   buildStorefrontProductProjection,
   resolveCompositeComponentGroupLabel,
   type StorefrontCompositeComponentGroup,
+  type StorefrontCompositeSubSetGroup,
 } from "./storefront-projection.ts";
+import {
+  COMPOSITE_SUB_SET_KIND_KEYS,
+  COMPOSITE_SUB_SET_ORDER,
+  isThreePieceComboShape,
+  resolveCompositeSubSetAuthority,
+  toCompositeSubSetPiece,
+  type CompositeSubSetComboCandidate,
+  type CompositeSubSetKind,
+} from "./composite-subset-authority.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -169,9 +179,133 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           : [{ label, variants: [...group.variants.values()] }];
       });
 
+    // PR #81 — discover sibling SET VÁY / SET QUẦN composites of this combo. Which siblings are
+    // offered is decided by the shared subset authority, the same one the cart and the checkout
+    // snapshot apply, so the PDP never offers a variant a later boundary would refuse (or the
+    // reverse). Only this product's own active 3-piece parent variants are candidate combos: a
+    // subset of some *other* combo belongs on that combo's page, not this one.
+    let subSetGroups: StorefrontCompositeSubSetGroup[] = [];
+    const siblingVariantMpnMap: Record<string, string | null> = {};
+    const siblingVariantSkuMap: Record<string, string | null> = {};
+
+    const candidateCombos: CompositeSubSetComboCandidate[] = parentRelations
+      .map((parent) => ({
+        variantId: parent.id,
+        // `getProductBySlug` only resolves a present, active product, and `parentRelations` only
+        // reads its present, active variants.
+        isSellable: true,
+        components: parent.compositeComponents.map((edge) =>
+          toCompositeSubSetPiece({
+            componentVariantId: edge.componentVariant.id,
+            quantity: edge.quantity,
+            componentVariant: edge.componentVariant,
+          }),
+        ),
+      }))
+      .filter((combo) => isThreePieceComboShape(combo.components));
+    const comboComponentVariantIds = [
+      ...new Set(
+        candidateCombos.flatMap((combo) =>
+          combo.components.map((piece) => piece.componentVariantId),
+        ),
+      ),
+    ];
+
+    if (comboComponentVariantIds.length > 0) {
+      const siblingRelations = await client.variantMirror.findMany({
+        where: {
+          product: {
+            pancakeShopId: shopId,
+            isPresent: true,
+            id: { not: product.id },
+          },
+          isPresent: true,
+          isActive: true,
+          compositeComponents: {
+            some: {
+              componentVariantId: { in: comboComponentVariantIds },
+            },
+          },
+        },
+        orderBy: [{ pancakeVariationId: "asc" }],
+        select: {
+          id: true,
+          pancakeVariationId: true,
+          pancakeDisplayId: true,
+          sku: true,
+          color: true,
+          size: true,
+          pancakeRetailPrice: true,
+          pancakeRetailPriceAfterDiscount: true,
+          compositeComponents: {
+            orderBy: [{ componentVariantId: "asc" }],
+            select: {
+              quantity: true,
+              componentVariantId: true,
+              componentVariant: {
+                select: {
+                  sku: true,
+                  pancakeDisplayId: true,
+                  isPresent: true,
+                  product: {
+                    select: {
+                      pancakeShopId: true,
+                      isPresent: true,
+                    },
+                  },
+                  warehouseStocks: {
+                    orderBy: [{ pancakeWarehouseId: "asc" }],
+                    select: { quantity: true },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const variantsByKind = new Map<CompositeSubSetKind, StorefrontVariantFacts[]>();
+      for (const sibling of siblingRelations) {
+        const kind = resolveCompositeSubSetAuthority({
+          subSetVariantId: sibling.id,
+          subSetComponents: sibling.compositeComponents.map(toCompositeSubSetPiece),
+          candidateCombos,
+        });
+        if (kind === null) continue;
+
+        const variants = variantsByKind.get(kind) ?? [];
+        variants.push({
+          id: sibling.id,
+          pancakeVariationId: sibling.pancakeVariationId,
+          color: sibling.color,
+          size: sibling.size,
+          sellableStock: deriveCompositeSellableStock({
+            shopId,
+            components: sibling.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+          }),
+          retailPrice: sibling.pancakeRetailPrice,
+          retailPriceAfterDiscount: sibling.pancakeRetailPriceAfterDiscount,
+        });
+        variantsByKind.set(kind, variants);
+        siblingVariantMpnMap[sibling.id] = sibling.pancakeDisplayId;
+        siblingVariantSkuMap[sibling.id] = sibling.sku;
+      }
+
+      subSetGroups = COMPOSITE_SUB_SET_ORDER.flatMap((kind) => {
+        const variants = variantsByKind.get(kind);
+        return variants
+          ? [{ label: kind, kindKey: COMPOSITE_SUB_SET_KIND_KEYS[kind], variants }]
+          : [];
+      });
+    }
+
     const pricedVariantIds = [
       ...new Set([
         ...effectiveParentVariants.map((variant) => variant.id),
+        ...subSetGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
         ...componentGroups.flatMap((group) => group.variants.map((variant) => variant.id)),
       ]),
     ];
@@ -189,21 +323,33 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         ...Object.fromEntries(
           [...compositeStockByVariantId.entries()].map(([id, stock]) => [id, stock > 0]),
         ),
+        ...Object.fromEntries(
+          subSetGroups.flatMap((group) =>
+            group.variants.map((v) => [v.id, (v.sellableStock ?? 0) > 0]),
+          ),
+        ),
       },
       // ADR 0008: the mirrored Pancake `display_id` is the manufacturer MPN authority. Keep this
       // server-only map separate from `projection.options` so the purchase-panel client contract does
       // not grow a Merchant/SEO-only fact just to let JSON-LD identify each variant.
-      variantMpnById: Object.fromEntries(
-        parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
-      ),
+      variantMpnById: {
+        ...Object.fromEntries(
+          parentRelations.map((variant) => [variant.id, variant.pancakeDisplayId]),
+        ),
+        ...siblingVariantMpnMap,
+      },
       // U32a: the website-owned SKU, kept in its own server-only map for the same reason. It rides
       // the select that already read this row, so publishing it costs no additional query. It is a
       // different fact from the MPN above and must never be substituted for it.
-      variantSkuById: Object.fromEntries(
-        parentRelations.map((variant) => [variant.id, variant.sku]),
-      ),
+      variantSkuById: {
+        ...Object.fromEntries(
+          parentRelations.map((variant) => [variant.id, variant.sku]),
+        ),
+        ...siblingVariantSkuMap,
+      },
       projection: buildStorefrontProductProjection({
         parentVariants: effectiveParentVariants,
+        subSetGroups,
         componentGroups,
         hasCompositeGraph,
         // I9 — the same two inputs the Merchant feed supplies, because the page's JSON-LD and the
