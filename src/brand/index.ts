@@ -128,6 +128,7 @@ function validateContact(brand: BrandConfig): void {
   for (const [label, value, host] of [
     ["instagramUrl", contact.instagramUrl, "instagram.com"],
     ["tiktokUrl", contact.tiktokUrl, "tiktok.com"],
+    ["messengerUrl", contact.messengerUrl, "m.me"],
   ] as const) {
     if (value === undefined) continue;
     let profile: URL;

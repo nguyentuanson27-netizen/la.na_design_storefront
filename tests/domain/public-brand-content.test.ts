@@ -67,6 +67,7 @@ test("U32b public contact facts transcribe the approved B2 source exactly", () =
     email: "la.nadesignsince2022@gmail.com",
     fanpageUrl: "https://www.facebook.com/la.nadesign.vn",
     instagramUrl: "https://www.instagram.com/la.nadesign.vn/",
+    messengerUrl: "https://m.me/la.nadesign.vn",
     tiktokUrl: "https://www.tiktok.com/@la.nadesign.vn",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
     addressLocality: "Hà Nội",

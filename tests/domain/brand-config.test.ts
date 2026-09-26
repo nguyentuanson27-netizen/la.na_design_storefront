@@ -129,6 +129,8 @@ test("contact email and fanpage must be well formed", () => {
     ["instagramUrl", "http://www.instagram.com/lana"],
     ["instagramUrl", "https://www.tiktok.com/@lana"],
     ["tiktokUrl", "https://www.instagram.com/lana"],
+    ["messengerUrl", "http://m.me/lana"],
+    ["messengerUrl", "https://www.facebook.com/lana"],
   ] as const) {
     assert.throws(
       withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),
@@ -139,6 +141,7 @@ test("contact email and fanpage must be well formed", () => {
   for (const [field, url] of [
     ["instagramUrl", "https://www.instagram.com/lana"],
     ["tiktokUrl", "https://www.tiktok.com/@lana"],
+    ["messengerUrl", "https://m.me/lana"],
   ] as const) {
     assert.doesNotThrow(
       withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),

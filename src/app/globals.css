@@ -1541,6 +1541,50 @@ body:has(.admin-shell) .site-masthead {
   position: static;
 }
 
+/* Floating Messenger chat button, bottom right on every storefront page. It sits under the
+   dialogs, drawers and sheets (z-index 50), so an open overlay covers it rather than the reverse. */
+.messenger-fab {
+  position: fixed;
+  z-index: 45;
+  right: max(1rem, env(safe-area-inset-right));
+  bottom: max(1.25rem, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  width: 3.5rem;
+  height: 3.5rem;
+  border-radius: 50%;
+  background: var(--white);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  transition: transform 160ms ease;
+}
+
+.messenger-fab:hover {
+  transform: scale(1.06);
+}
+
+.messenger-fab:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+}
+
+/* Below `lg` the PDP pins its purchase bar to the bottom edge; the button rides above it. */
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar]) .messenger-fab {
+    bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* Nothing to chat about while managing the catalog. */
+body:has(.admin-shell) .messenger-fab {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .messenger-fab {
+    transition: none;
+  }
+}
+
 .promotion-shell {
   border-bottom: 1px solid var(--ink);
   background: var(--ink);
