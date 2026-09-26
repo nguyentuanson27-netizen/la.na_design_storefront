@@ -37,6 +37,22 @@ import {
 } from "./promotion-pricing.ts";
 import type { StorefrontPricingRule } from "./storefront-product.ts";
 
+/**
+ * Which campaign kinds' discounts a listing shows: one kind for the whole listing, or -- for a
+ * listing whose scope differs per product -- the kinds allowed for one variant.
+ */
+export type StorefrontCampaignKindScope =
+  | PromotionCampaignKind
+  | ((variantId: string) => readonly PromotionCampaignKind[]);
+
+function allowedKinds(
+  scope: StorefrontCampaignKindScope | undefined,
+  variantId: string,
+): readonly PromotionCampaignKind[] | null {
+  if (scope === undefined) return null;
+  return typeof scope === "function" ? scope(variantId) : [scope];
+}
+
 export function buildPromotionalStorefrontPricing({
   campaignsByVariantId,
   now,
@@ -71,8 +87,11 @@ export function buildPromotionalStorefrontPricing({
    * resolved answer rather than the campaign list on purpose: dropping a campaign before resolving
    * could turn a `PROMOTION_CONFLICT` into a discount the cart would never honour. `onResolved`
    * still observes the unscoped answer.
+   *
+   * `/sale/xa-hang-le-size` passes a per-variant scope: Clearance everywhere, plus Flash Sale on the
+   * products its read admitted for proven "lẻ size" stock.
    */
-  onlyKind?: PromotionCampaignKind;
+  onlyKind?: StorefrontCampaignKindScope;
 }>): StorefrontPricingRule {
   return (variant) => {
     const pricing = resolvePromotionPricing({
@@ -82,7 +101,12 @@ export function buildPromotionalStorefrontPricing({
     });
     onResolved?.(variant.id, pricing);
 
-    if (onlyKind !== undefined && pricing.isDiscounted && pricing.promotion?.kind !== onlyKind) {
+    const kinds = allowedKinds(onlyKind, variant.id);
+    if (
+      kinds !== null
+      && pricing.isDiscounted
+      && (pricing.promotion === null || !kinds.includes(pricing.promotion.kind))
+    ) {
       return Object.freeze({
         price: pricing.basePriceVnd,
         basePriceVnd: pricing.basePriceVnd,

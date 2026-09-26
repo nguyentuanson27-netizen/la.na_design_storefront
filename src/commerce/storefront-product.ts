@@ -260,6 +260,13 @@ export const STANDARD_STANDALONE_CAPACITY: StorefrontProductCapacity = Object.fr
 });
 
 /**
+ * The total remaining stock below which "Lẻ size - Chỉ còn ít" is true. Owner decision on #79: fewer
+ * than 10 pieces left across every size still in stock. The card's tag and the
+ * `/sale/xa-hang-le-size` Flash Sale admission both prove against this one number.
+ */
+export const LAST_SIZES_TOTAL_STOCK_LIMIT = 10;
+
+/**
  * I9 — the persisted preorder availability dates this projection may publish, keyed by variant id,
  * plus the Vietnamese day to judge expiry against.
  *

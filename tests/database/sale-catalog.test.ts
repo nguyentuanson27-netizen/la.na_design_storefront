@@ -25,6 +25,9 @@ const campaignIds = [
   "sale-catalog-flash-open-start",
   "sale-catalog-flash-no-window",
   "sale-catalog-clearance",
+  "sale-catalog-last-sizes-flash",
+  "sale-catalog-last-sizes-flash-no-window",
+  "sale-catalog-last-sizes-clearance",
 ];
 
 async function cleanup() {
@@ -362,4 +365,231 @@ test("Xả hàng lẻ size lists CLEARANCE campaigns only, marks them, and /sale
   assert.equal(card.lastSizesLeft, true, "one size sold out and 2 pieces left proves the tag");
 
   assert.equal(await repository.readNextSaleBoundary({ now, kind: "CLEARANCE" }), null);
+});
+
+/**
+ * A product whose options are exactly `options` (colour × size × pieces in stock), each at `priceVnd`.
+ */
+async function createStockedProduct(
+  slug: string,
+  priceVnd: number,
+  options: readonly Readonly<{ color: string; size: string; quantity: number }>[],
+) {
+  const product = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: `${slug}-external`,
+      slug,
+      name: slug,
+      isPresent: true,
+      isActive: true,
+      syncedAt: now,
+    },
+  });
+  const variants = [];
+  for (const [index, option] of options.entries()) {
+    const variant = await prisma.variantMirror.create({
+      data: {
+        pancakeVariationId: `${slug}-variant-${index}`,
+        productId: product.id,
+        color: option.color,
+        size: option.size,
+        isPresent: true,
+        isActive: true,
+        pancakeRetailPrice: priceVnd,
+        pancakeRetailPriceAfterDiscount: priceVnd,
+        syncedAt: now,
+      },
+    });
+    await prisma.warehouseStock.create({
+      data: {
+        variantId: variant.id,
+        pancakeWarehouseId: `${slug}-warehouse-${index}`,
+        quantity: option.quantity,
+        syncedAt: now,
+      },
+    });
+    variants.push(variant);
+  }
+  return { product, variants };
+}
+
+function flashCampaign(id: string, productIds: readonly string[]) {
+  return prisma.promotionCampaign.create({
+    data: {
+      id,
+      kind: "FLASH_SALE",
+      name: id,
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: new Date(now.getTime() + 3_600_000),
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: productIds.map((productId) => ({ productId })) },
+    },
+  });
+}
+
+test("Xả hàng lẻ size also lists a Flash Sale product only when its stock proves it is lẻ size", async () => {
+  // Proven: size L is sold out, and S + M leave 3 + 4 = 7 pieces, fewer than 10.
+  const proven = await createStockedProduct("last-sizes-proven", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 3 },
+    { color: "Đen", size: "M", quantity: 4 },
+    { color: "Đen", size: "L", quantity: 0 },
+  ]);
+  // Every size still sells: nothing is missing, however little is left.
+  const noMissingSize = await createStockedProduct("last-sizes-no-missing-size", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 1 },
+    { color: "Đen", size: "M", quantity: 1 },
+  ]);
+  // A size is missing, but 6 + 4 = 10 pieces are left: not fewer than 10.
+  const tooMuchStock = await createStockedProduct("last-sizes-too-much-stock", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 6 },
+    { color: "Đen", size: "M", quantity: 4 },
+    { color: "Đen", size: "L", quantity: 0 },
+  ]);
+  // Đen / L is gone but Trắng / L still sells, so size L is not missing.
+  const colourOnly = await createStockedProduct("last-sizes-colour-only", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 2 },
+    { color: "Đen", size: "L", quantity: 0 },
+    { color: "Trắng", size: "L", quantity: 2 },
+  ]);
+  // The same stock as `proven`, but OVERSELL may still sell size L: stock proves nothing.
+  const oversell = await createStockedProduct("last-sizes-oversell", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 3 },
+    { color: "Đen", size: "M", quantity: 4 },
+    { color: "Đen", size: "L", quantity: 0 },
+  ]);
+  await prisma.productSellingPolicy.create({
+    data: { productId: oversell.product.id, sellingMode: "OVERSELL", negativeStockLimit: -20 },
+  });
+
+  await flashCampaign("sale-catalog-last-sizes-flash", [
+    proven.product.id,
+    noMissingSize.product.id,
+    tooMuchStock.product.id,
+    colourOnly.product.id,
+    oversell.product.id,
+  ]);
+
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const clearance = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(clearance.products.map((listed) => listed.slug), ["last-sizes-proven"]);
+  assert.equal(clearance.totalCount, 1);
+
+  // The campaign is still a Flash Sale: the card keeps the Flash price and countdown, and is not
+  // re-labelled as a Clearance product.
+  const listed = clearance.products[0]!;
+  // Admitted on exactly its purchasable Flash variants: S and M. Sold-out L sells nothing.
+  assert.ok("admittedFlashVariantIds" in listed);
+  assert.deepEqual(
+    [...listed.admittedFlashVariantIds].sort(),
+    [proven.variants[0]!.id, proven.variants[1]!.id].sort(),
+  );
+  assert.equal("isClearance" in listed, false);
+  assert.ok("flashSale" in listed && listed.flashSale);
+  assert.equal(listed.flashSale.effectivePriceVnd, 700_000);
+
+  // And it stays on the Flash Sale listing, beside every other Flash product.
+  const flash = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "FLASH_SALE", now });
+  assert.deepEqual(flash.products.map((product) => product.slug).sort(), [
+    "last-sizes-colour-only",
+    "last-sizes-no-missing-size",
+    "last-sizes-oversell",
+    "last-sizes-proven",
+    "last-sizes-too-much-stock",
+  ]);
+  assert.equal(flash.products.some((product) => "admittedFlashVariantIds" in product), false);
+
+  // The Flash window now moves the clearance listing too, so it refreshes on the Flash boundary.
+  assert.deepEqual(
+    await repository.readNextSaleBoundary({ now, kind: "CLEARANCE" }),
+    new Date(now.getTime() + 3_600_000),
+  );
+
+  // The card on Xả hàng lẻ size shows the Flash price under the listing's per-product scope.
+  const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
+    variantIds: listed.variants.map((variant) => variant.id),
+    client: prisma as unknown as PromotionCandidateReadClient,
+  });
+  const admitted = new Set(listed.admittedFlashVariantIds);
+  const pricingRule = buildPromotionalStorefrontPricing({
+    campaignsByVariantId,
+    now,
+    onlyKind: (variantId) => (admitted.has(variantId) ? ["CLEARANCE", "FLASH_SALE"] : ["CLEARANCE"]),
+  });
+  const card = buildProductCardModel({
+    slug: listed.slug,
+    name: listed.name,
+    variants: listed.variants,
+    pricingRule,
+    flashSale: listed.flashSale,
+  });
+  assert.match(card.price.displayText, /700\.000/);
+  assert.equal(card.price.discountPercent, 30);
+  assert.ok(card.flashSale);
+  // Tracking reports the same Flash price the card shows.
+  const [impression] = buildStorefrontProductImpressions({ products: [listed], pricingRule });
+  assert.equal(impression?.exactPriceVnd, 700_000);
+});
+
+test("Xả hàng lẻ size keeps the Flash window invariant and never shows a Flash sibling on a Clearance-only product", async () => {
+  // Lẻ size stock, but its Flash campaign has no window: not a valid Flash Sale, so not admitted.
+  const noWindow = await createStockedProduct("last-sizes-flash-no-window", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 2 },
+    { color: "Đen", size: "L", quantity: 0 },
+  ]);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: "sale-catalog-last-sizes-flash-no-window",
+      kind: "FLASH_SALE",
+      name: "Flash without a window",
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: noWindow.product.id } },
+    },
+  });
+
+  // Clearance on S, Flash on M, with plenty of stock: listed for its Clearance variant only.
+  const split = await createStockedProduct("last-sizes-split", 1_000_000, [
+    { color: "Đen", size: "S", quantity: 20 },
+    { color: "Đen", size: "M", quantity: 20 },
+  ]);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: "sale-catalog-last-sizes-clearance",
+      kind: "CLEARANCE",
+      name: "Clearance on S",
+      discountType: "PERCENTAGE",
+      percentageValue: 10,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { variantId: split.variants[0]!.id } },
+    },
+  });
+  await prisma.promotionCampaign.create({
+    data: {
+      id: "sale-catalog-last-sizes-flash",
+      kind: "FLASH_SALE",
+      name: "Flash on M",
+      discountType: "PERCENTAGE",
+      percentageValue: 40,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: new Date(now.getTime() + 3_600_000),
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { variantId: split.variants[1]!.id } },
+    },
+  });
+
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const clearance = await repository.listSalePage({ shopId, discovery, pageSize: 12, kind: "CLEARANCE", now });
+  assert.deepEqual(clearance.products.map((listed) => listed.slug), ["last-sizes-split"]);
+  const listed = clearance.products[0]!;
+  assert.equal("isClearance" in listed && listed.isClearance, true);
+  assert.equal("admittedFlashVariantIds" in listed, false);
+  assert.equal("flashSale" in listed, false);
 });

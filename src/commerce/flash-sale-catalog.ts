@@ -4,6 +4,7 @@ import {
   type PromotionCampaignKind,
 } from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
+import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
   resolveStorefrontProductMedia,
@@ -29,6 +30,8 @@ type SaleCampaignKind = PromotionCampaignKind;
 type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
   kind: SaleCampaignKind;
   endsAt: Date | null;
+  /** Only on `/sale/xa-hang-le-size`: this product's valid Flash Sale variants, when it was admitted. */
+  admittedFlashVariantIds: string[];
 };
 
 const flashProductSelection = {
@@ -222,6 +225,64 @@ function buildFlashSaleCte(now: Date) {
   `;
 }
 
+/**
+ * `/sale/xa-hang-le-size` also lists a product running a Flash Sale when its stock proves it really
+ * is "lẻ size" (owner decision, 2026-09-26). The Flash campaign is untouched: the product stays on
+ * `/sale/flash-sale` as well, priced and badged as a Flash Sale on both listings.
+ *
+ * The proof is the one the `Lẻ size - Chỉ còn ít` tag makes (`provesLastSizesLeft`), read from the
+ * same projection the sale membership uses:
+ *
+ * - at least one **size** is sold out -- every option of that size is a mapped, unambiguous option
+ *   with no stock left, so a sold-out colour of a size that still sells in another colour does not
+ *   count, and neither does a size that is merely unmapped;
+ * - at least one option is still purchasable;
+ * - the ready pieces left across the purchasable options total fewer than
+ *   `LAST_SIZES_TOTAL_STOCK_LIMIT`.
+ *
+ * Only a product that sells as `STANDARD` (no stored policy, or a `STANDARD` row) can prove it. Under
+ * `OVERSELL` or `PREORDER` a size at zero stock may still be for sale, so stock alone proves nothing
+ * and the product stays off this listing.
+ */
+function buildClearanceLastSizesCte() {
+  return Prisma.sql`,
+    "clearance_size_state" AS (
+      SELECT
+        sve."productId",
+        BOOL_AND(
+          NULLIF(BTRIM(sve."size"), '') IS NOT NULL
+          AND (
+            NOT sve."hasColorDimension"
+            OR NULLIF(BTRIM(sve."color"), '') IS NOT NULL
+          )
+          AND sve."optionCount" = 1
+          AND sve."sellableStock" IS NOT NULL
+          AND sve."sellableStock" <= 0
+        ) AS "isSoldOut"
+      FROM "sale_variant_eligible" sve
+      GROUP BY sve."productId", LOWER(BTRIM(COALESCE(sve."size", '')))
+    ),
+    "clearance_last_sizes_product" AS (
+      SELECT sve."productId"
+      FROM "sale_variant_eligible" sve
+      LEFT JOIN "ProductSellingPolicy" psp ON psp."productId" = sve."productId"
+      WHERE psp."productId" IS NULL
+        OR psp."sellingMode" = 'STANDARD'::"SellingMode"
+      GROUP BY sve."productId"
+      HAVING BOOL_OR(sve."isPurchasable")
+        AND SUM(
+          CASE WHEN sve."isPurchasable" THEN GREATEST(sve."sellableStock", 0) ELSE 0 END
+        ) < ${LAST_SIZES_TOTAL_STOCK_LIMIT}
+        AND EXISTS (
+          SELECT 1
+          FROM "clearance_size_state" css
+          WHERE css."productId" = sve."productId"
+            AND css."isSoldOut"
+        )
+    )
+  `;
+}
+
 function parseSaleCampaignKind(kind: SaleCampaignKind | undefined): SaleCampaignKind | null {
   if (kind === undefined) return null;
   if (!isPromotionCampaignKind(kind)) {
@@ -238,7 +299,28 @@ function parseSaleCampaignKind(kind: SaleCampaignKind | undefined): SaleCampaign
 function saleKindFilter(alias: string, kind: SaleCampaignKind | null) {
   if (kind === null) return Prisma.empty;
   if (kind === "FLASH_SALE") return Prisma.sql`AND ${flashSaleEligibility(alias)}`;
+  if (kind === "CLEARANCE") {
+    // Needs `buildClearanceLastSizesCte` in the same statement.
+    return Prisma.sql`AND (
+      ${Prisma.raw(alias)}."kind" = 'CLEARANCE'
+      OR (
+        ${flashSaleEligibility(alias)}
+        AND ${Prisma.raw(alias)}."productId" IN (
+          SELECT clsp."productId" FROM "clearance_last_sizes_product" clsp
+        )
+      )
+    )`;
+  }
   return Prisma.sql`AND ${Prisma.raw(alias)}."kind" = ${kind}`;
+}
+
+/**
+ * The campaign kinds whose discounts a listing shows. `/sale/xa-hang-le-size` shows Flash Sale too,
+ * but only on the Flash variants of the products `buildClearanceLastSizesCte` admitted; see
+ * `listSalePage`.
+ */
+export function saleListingCampaignKinds(kind: SaleCampaignKind): readonly SaleCampaignKind[] {
+  return kind === "CLEARANCE" ? ["CLEARANCE", "FLASH_SALE"] : [kind];
 }
 
 function assertProjectedMoney(row: Pick<FlashSaleIdRow, "basePrice" | "sortPrice">) {
@@ -372,6 +454,12 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
    * `/sale` and its sub-listings. Without `kind` every active discount is listed; with it, only
    * products whose discount comes from that campaign kind, and the representative price is chosen
    * among that kind's variants so the card shows the discount the listing is about.
+   *
+   * `CLEARANCE` is the one listing that also shows a second kind: a Flash Sale product whose stock
+   * proves it is "lẻ size" (`buildClearanceLastSizesCte`). Such a product carries
+   * `admittedFlashVariantIds` -- exactly its valid Flash Sale variants -- so the route lets those
+   * variants' Flash price, and nothing else, through the listing's pricing scope; a product that is
+   * only on Clearance never shows a Flash sibling's price.
    */
   async function listSalePage({
     shopId,
@@ -390,7 +478,19 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     const safePageSize = parsePageSize(pageSize);
     const offset = parsePageOffset(discovery.page, safePageSize);
     const safeKind = parseSaleCampaignKind(kind);
-    const cte = buildSaleCte(now);
+    const cte = safeKind === "CLEARANCE"
+      ? Prisma.sql`${buildSaleCte(now)}${buildClearanceLastSizesCte()}`
+      : buildSaleCte(now);
+    const admittedFlashVariantIds = safeKind === "CLEARANCE"
+      ? Prisma.sql`ARRAY(
+          SELECT sv."id"
+          FROM "sale_variant" sv
+          WHERE sv."productId" = p."id"
+            AND ${flashSaleEligibility("sv")}
+            AND sv."productId" IN (SELECT clsp."productId" FROM "clearance_last_sizes_product" clsp)
+          ORDER BY sv."id"
+        )`
+      : Prisma.sql`ARRAY[]::text[]`;
 
     const [countRows, idRows] = await Promise.all([
       client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
@@ -414,7 +514,8 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
           representative."sortPrice",
           representative."kind",
           representative."endsAt",
-          representative."hasCheaperCurrentVariant"
+          representative."hasCheaperCurrentVariant",
+          ${admittedFlashVariantIds} AS "admittedFlashVariantIds"
         FROM "ProductMirror" p
         JOIN LATERAL (
           SELECT
@@ -454,7 +555,9 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     const orderedProducts = idRows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
-      const base = toFlashProduct(product);
+      const base = row.admittedFlashVariantIds.length > 0
+        ? { ...toFlashProduct(product), admittedFlashVariantIds: Object.freeze([...row.admittedFlashVariantIds]) }
+        : toFlashProduct(product);
       if (row.kind === "CLEARANCE") return { ...base, isClearance: true as const };
       if (row.kind !== "FLASH_SALE" || row.endsAt === null || row.endsAt <= now) return base;
       return {
@@ -508,9 +611,10 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     kind,
   }: { now?: Date; kind?: SaleCampaignKind } = {}): Promise<Date | null> {
     const safeKind = parseSaleCampaignKind(kind);
-    const kindFilter = safeKind === null
-      ? Prisma.sql`"kind"::text IN (${Prisma.join([...PROMOTION_CAMPAIGN_KINDS])})`
-      : Prisma.sql`"kind"::text = ${safeKind}`;
+    // A listing refreshes on the boundaries of every kind it can show: a Flash window opening or
+    // closing changes `/sale/xa-hang-le-size` as well as `/sale/flash-sale`.
+    const kinds = safeKind === null ? PROMOTION_CAMPAIGN_KINDS : saleListingCampaignKinds(safeKind);
+    const kindFilter = Prisma.sql`"kind"::text IN (${Prisma.join([...kinds])})`;
     const rows = await client.$queryRaw<FlashSaleBoundaryRow[]>(Prisma.sql`
       SELECT MIN("boundary") AS "boundary" FROM (
         SELECT "startsAt" AS "boundary"
