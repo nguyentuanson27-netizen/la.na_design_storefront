@@ -123,7 +123,7 @@ export function PlpFilterPanel({
     const nextSort = e.target.value as CategoryDiscoverySort;
     const href = buildSortChangeHref(categoryPath, activeFilters, nextSort);
     startTransition(() => {
-      router.push(href);
+      router.push(href, { scroll: false });
     });
   };
 
@@ -185,7 +185,7 @@ export function PlpFilterPanel({
     );
 
     startTransition(() => {
-      router.push(href);
+      router.push(href, { scroll: false });
     });
   };
 
@@ -261,6 +261,7 @@ export function PlpFilterPanel({
             return (
               <Link
                 href={saleHref}
+                scroll={false}
                 aria-current={isSaleActive ? "true" : undefined}
                 className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
                   isSaleActive
@@ -285,6 +286,7 @@ export function PlpFilterPanel({
                 <Link
                   key={size}
                   href={sizeHref}
+                  scroll={false}
                   aria-current={isSelected ? "true" : undefined}
                   className={`min-w-7 text-center rounded-md border px-2 py-1 font-medium uppercase transition ${
                     isSelected
@@ -310,6 +312,7 @@ export function PlpFilterPanel({
                 <Link
                   key={color}
                   href={colorHref}
+                  scroll={false}
                   aria-current={isSelected ? "true" : undefined}
                   className={`rounded-md border px-2.5 py-1 font-medium transition ${
                     isSelected
@@ -373,6 +376,7 @@ export function PlpFilterPanel({
         {hasFilters ? (
           <Link
             href={clearHref}
+            scroll={false}
             className="ml-auto font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810]"
           >
             Xóa bộ lọc
@@ -389,7 +393,7 @@ export function PlpFilterPanel({
               {(() => {
                 const href = buildToggleSaleHref(categoryPath, activeFilters);
                 return (
-                  <Link href={href} aria-label="Xóa bộ lọc sale" className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label="Xóa bộ lọc sale" className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -403,7 +407,7 @@ export function PlpFilterPanel({
               {(() => {
                 const href = buildToggleSizeHref(categoryPath, activeFilters, activeFilters.size!);
                 return (
-                  <Link href={href} aria-label={`Xóa bộ lọc size ${activeFilters.size}`} className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label={`Xóa bộ lọc size ${activeFilters.size}`} className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -417,7 +421,7 @@ export function PlpFilterPanel({
               {(() => {
                 const href = buildToggleColorHref(categoryPath, activeFilters, activeFilters.color!);
                 return (
-                  <Link href={href} aria-label={`Xóa bộ lọc màu ${activeFilters.color}`} className="hover:text-black">
+                  <Link href={href} scroll={false} aria-label={`Xóa bộ lọc màu ${activeFilters.color}`} className="hover:text-black">
                     ✕
                   </Link>
                 );
@@ -439,6 +443,7 @@ export function PlpFilterPanel({
               </span>
               <Link
                 href={buildClearPriceHref(categoryPath, activeFilters)}
+                scroll={false}
                 aria-label="Xóa khoảng giá"
                 className="hover:text-black"
               >
@@ -495,6 +500,7 @@ export function PlpFilterPanel({
                   return (
                     <Link
                       href={saleHref}
+                      scroll={false}
                       aria-current={isSaleActive ? "true" : undefined}
                       className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
                         isSaleActive
@@ -522,6 +528,7 @@ export function PlpFilterPanel({
                         <Link
                           key={size}
                           href={sizeHref}
+                          scroll={false}
                           aria-current={isSelected ? "true" : undefined}
                           className={`min-w-9 rounded-md border px-3 py-2 text-center text-xs font-medium uppercase transition ${
                             isSelected
@@ -551,6 +558,7 @@ export function PlpFilterPanel({
                         <Link
                           key={color}
                           href={colorHref}
+                          scroll={false}
                           aria-current={isSelected ? "true" : undefined}
                           className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
                             isSelected
@@ -621,6 +629,7 @@ export function PlpFilterPanel({
               <div className="grid grid-cols-2 gap-3">
                 <Link
                   href={clearHref}
+                  scroll={false}
                   className="btn btn--outline px-3"
                 >
                   Xóa bộ lọc
