@@ -62,7 +62,7 @@ function render(data: ProductRouteData) {
             Mô tả sản phẩm
           </h2>
           {editorial.description ? (
-            <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">{editorial.description}</p>
+            <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">{editorial.description}</p>
           ) : null}
           {editorial.craftDetails.length > 0 ? (
             <ul className="mt-3 max-w-xl list-disc space-y-1 pl-5 text-sm leading-6 text-black/70">
@@ -94,7 +94,7 @@ function render(data: ProductRouteData) {
           <h2 id="pdp-care-title" className="font-display text-xl font-normal tracking-[-0.02em]">
             Hướng dẫn bảo quản
           </h2>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">
+          <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">
             {editorial.careInstructions}
           </p>
         </section>
