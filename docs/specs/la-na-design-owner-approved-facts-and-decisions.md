@@ -123,6 +123,7 @@ identity in §3b, which must not overwrite it.
 | `telephoneInternational` | `+84923159666` | **derived**: the trunk zero is replaced by the Vietnam calling code, no subscriber digit changes. A test pins the derivation against `normalizeVietnamesePhone` |
 | `email` | `la.nadesignsince2022@gmail.com` | **approved.** Customer support address; planned recipient for F9b once real outbound contact delivery exists |
 | `fanpageUrl` | `https://www.facebook.com/la.nadesign.vn` | **approved** |
+| Messenger chat link *(no config field)* | `https://m.me/la.nadesign.vn` | **derived** from `fanpageUrl` by `messengerUrlFromFanpage` in `src/brand/index.ts`: a facebook.com URL whose path is exactly one page username becomes `https://m.me/<username>`; any other shape derives nothing and the floating chat button does not render. Not a second contact fact. The floating Messenger button itself was requested by the repository owner on 2026-09-26 in Claude Code session [`session_017vxPKk3MTUMv7D21UQJ7Ms`](https://claude.ai/code/session_017vxPKk3MTUMv7D21UQJ7Ms) |
 | `streetAddress` | `212 Nguyễn Trãi, Đại Mỗ` | **approved.** Business **and** return address |
 | `addressLocality` | `Hà Nội` | **approved.** The locality half of the same approved address line |
 | `supportHours` | `08:00`–`22:00`, Monday–Sunday, `+07:00` / `UTC+7` | **approved** |

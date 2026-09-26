@@ -7,6 +7,7 @@ import {
   NAVIGATION,
   SIZE_GUIDE,
   loadBrandConfig,
+  messengerUrlFromFanpage,
   type BrandConfig,
   type NavigationConfig,
   type SizeGuideConfig,
@@ -108,6 +109,23 @@ test("the international phone spelling must derive from the approved number", ()
   );
 });
 
+test("the Messenger chat link derives from the approved fanpage and is never guessed", () => {
+  assert.equal(messengerUrlFromFanpage(BRAND.contact.fanpageUrl), "https://m.me/la.nadesign.vn");
+  assert.equal(messengerUrlFromFanpage("https://facebook.com/LAclothing.vn/"), "https://m.me/LAclothing.vn");
+
+  for (const fanpageUrl of [
+    "http://www.facebook.com/la.nadesign.vn",
+    "https://www.facebook.com/profile.php?id=100000000000000",
+    "https://www.facebook.com/pages/la.nadesign.vn/123",
+    "https://www.facebook.com/",
+    "https://notfacebook.com/la.nadesign.vn",
+    "https://www.instagram.com/la.nadesign.vn/",
+    "facebook.com/la.nadesign.vn",
+  ]) {
+    assert.equal(messengerUrlFromFanpage(fanpageUrl), null, `${fanpageUrl} derives no chat link`);
+  }
+});
+
 test("contact email and fanpage must be well formed", () => {
   for (const email of ["laclothing2025", "la clothing@example.com", "a@b"]) {
     assert.throws(
@@ -129,8 +147,6 @@ test("contact email and fanpage must be well formed", () => {
     ["instagramUrl", "http://www.instagram.com/lana"],
     ["instagramUrl", "https://www.tiktok.com/@lana"],
     ["tiktokUrl", "https://www.instagram.com/lana"],
-    ["messengerUrl", "http://m.me/lana"],
-    ["messengerUrl", "https://www.facebook.com/lana"],
   ] as const) {
     assert.throws(
       withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),
@@ -141,7 +157,6 @@ test("contact email and fanpage must be well formed", () => {
   for (const [field, url] of [
     ["instagramUrl", "https://www.instagram.com/lana"],
     ["tiktokUrl", "https://www.tiktok.com/@lana"],
-    ["messengerUrl", "https://m.me/lana"],
   ] as const) {
     assert.doesNotThrow(
       withBrand((draft) => ({ ...draft, contact: { ...draft.contact, [field]: url } })),

@@ -106,11 +106,6 @@ export type BrandContact = Readonly<{
    */
   instagramUrl?: string;
   tiktokUrl?: string;
-  /**
-   * The fanpage's Messenger chat link (`https://m.me/<page>`), behind the floating chat button on
-   * every storefront page. Optional: without it the button does not render.
-   */
-  messengerUrl?: string;
   streetAddress: string;
   addressLocality: string;
   supportHours: SupportHours;

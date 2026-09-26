@@ -57,8 +57,6 @@ export const BRAND: BrandConfig = {
     // Owner-supplied 2026-09-24 for the footer's social icons.
     instagramUrl: "https://www.instagram.com/la.nadesign.vn/",
     tiktokUrl: "https://www.tiktok.com/@la.nadesign.vn",
-    // The fanpage's Messenger chat, behind the floating chat button.
-    messengerUrl: "https://m.me/la.nadesign.vn",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
     addressLocality: "Hà Nội",
     supportHours: {

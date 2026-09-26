@@ -128,7 +128,6 @@ function validateContact(brand: BrandConfig): void {
   for (const [label, value, host] of [
     ["instagramUrl", contact.instagramUrl, "instagram.com"],
     ["tiktokUrl", contact.tiktokUrl, "tiktok.com"],
-    ["messengerUrl", contact.messengerUrl, "m.me"],
   ] as const) {
     if (value === undefined) continue;
     let profile: URL;
@@ -400,6 +399,29 @@ export function loadBrandConfig(
 const loaded = loadBrandConfig();
 
 export const BRAND = loaded.brand;
+
+/**
+ * The fanpage's Messenger chat link, **derived** from the approved `contact.fanpageUrl` (owner-facts
+ * §3), never a second contact fact: a facebook.com URL whose path is exactly one page username
+ * becomes `https://m.me/<username>`. Anything else -- another host, a `profile.php?id=` link, a
+ * nested path -- yields `null`, so no chat link is guessed and the chat button does not render.
+ */
+export function messengerUrlFromFanpage(fanpageUrl: string): string | null {
+  let fanpage: URL;
+  try {
+    fanpage = new URL(fanpageUrl);
+  } catch {
+    return null;
+  }
+  const host = fanpage.hostname;
+  if (fanpage.protocol !== "https:") return null;
+  if (host !== "facebook.com" && !host.endsWith(".facebook.com")) return null;
+  const segments = fanpage.pathname.split("/").filter((segment) => segment.length > 0);
+  if (segments.length !== 1 || fanpage.search !== "") return null;
+  const [username] = segments;
+  if (!/^[A-Za-z0-9.]+$/.test(username!) || username === "profile.php") return null;
+  return `https://m.me/${username}`;
+}
 export const SIZE_GUIDE = loaded.sizeGuide;
 export const NAVIGATION = loaded.navigation;
 export const FULFILLMENT = loaded.fulfillment;
