@@ -22,14 +22,25 @@ const facebookConnectSrc = hasFacebookPixel
   ? " https://www.facebook.com https://connect.facebook.net"
   : "";
 
+// Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
+// installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
+// its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
+// media), and the Roboto face it imports from Google Fonts. The widget only loads on the permanent
+// production host, but Next bakes this policy into the build, so the allowance is unconditional.
+const pancakeChatScriptSrc = " https://chat-plugin.pancake.vn";
+const pancakeChatStyleSrc = " https://fonts.googleapis.com";
+const pancakeChatFontSrc = " https://fonts.gstatic.com";
+const pancakeChatMediaSrc = " https://chat-plugin.pancake.vn";
+const pancakeChatConnectSrc = " https://pages.fm wss://pages.fm";
+
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${facebookScriptSrc};
-  style-src 'self' 'unsafe-inline';
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc};
+  style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
   img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc};
-  media-src 'self' https://content.pancake.vn;
-  font-src 'self';
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${facebookConnectSrc};
+  media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
+  font-src 'self'${pancakeChatFontSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';

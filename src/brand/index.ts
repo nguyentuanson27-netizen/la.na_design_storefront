@@ -142,6 +142,10 @@ function validateContact(brand: BrandConfig): void {
     }
   }
 
+  if (contact.pancakeChatPageId !== undefined && !/^[A-Za-z0-9_]{1,64}$/.test(contact.pancakeChatPageId)) {
+    fail("contact.pancakeChatPageId must be the Pancake Chat Plugin page id (letters, digits, underscore)");
+  }
+
   const { days, opens, closes, utcOffset, utcOffsetLabel } = contact.supportHours;
   if (days.length === 0) fail("contact.supportHours.days must list at least one day");
   for (const [label, value] of Object.entries({ opens, closes, utcOffset, utcOffsetLabel })) {

@@ -1574,9 +1574,24 @@ body:has(.admin-shell) .site-masthead {
   }
 }
 
-/* Nothing to chat about while managing the catalog. */
-body:has(.admin-shell) .messenger-fab {
-  display: none;
+/* Pancake's chat widget (see pancake-chat.tsx) pins its root with an inline z-index of 2^31-1,
+   which would float it over the menu, cart drawer and dialogs. `!important` is the only way past an
+   inline style: it takes the Messenger button's layer instead, under every overlay. */
+#pancake-chat-plugin-root {
+  z-index: 45 !important;
+}
+
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar]) #pancake-chat-plugin-root {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+
+/* Nothing to chat about while managing the catalog. `SiteChatSlot` renders no chat in admin and
+   reloads a document Pancake has run in; this only covers the frame before that reload lands. */
+body:has(.admin-shell) .messenger-fab,
+body:has(.admin-shell) #pancake-chat-plugin-root {
+  display: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {
