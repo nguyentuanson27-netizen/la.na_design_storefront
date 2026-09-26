@@ -87,19 +87,24 @@ async function createVariant({
   });
 }
 
-async function compose(parentVariantId: string, componentVariantIds: readonly string[]) {
+async function compose(
+  parentVariantId: string,
+  componentVariantIds: readonly string[],
+  quantities: readonly number[] = [],
+) {
   await prisma.compositeComponentMirror.createMany({
-    data: componentVariantIds.map((componentVariantId) => ({
+    data: componentVariantIds.map((componentVariantId, index) => ({
       parentVariantId,
       componentVariantId,
-      quantity: 1,
+      quantity: quantities[index] ?? 1,
       syncedAt,
     })),
   });
 }
 
 /**
- * Two public combos (555 and 747), each built from its own inactive Áo, CV and Quần products.
+ * Three public combos (555, 747 and 999), each built from its own inactive Áo, CV and Quần
+ * products; COMBO 999 consumes two Áo, so it is not the 3-piece combo the SET contract names.
  * Sibling composites are kept `isActive = false` on the product, as the unified PDP intends.
  * Composite variants carry zero Pancake stock of their own: capacity comes from components.
  */
@@ -116,6 +121,12 @@ async function seedCatalog() {
   const setQuan555 = await createProduct("sq-555", false);
   const cvOnly555 = await createProduct("cv-only-555", false);
   const crossCombo = await createProduct("cross-combo", false);
+  const aoTwice555 = await createProduct("ao-twice-555", false);
+  const combo999 = await createProduct("combo-999", true);
+  const ao999 = await createProduct("ao-999", false);
+  const cv999 = await createProduct("cv-999", false);
+  const quan999 = await createProduct("quan-999", false);
+  const setVay999 = await createProduct("sv-999", false);
 
   const aoM = await createVariant({ key: "ao-555-m", productId: ao555.id, sku: "AO-555-M", price: 429_000, stock: 4 });
   const cvM = await createVariant({ key: "cv-555-m", productId: cv555.id, sku: "CV-555-M", price: 429_000, stock: 4 });
@@ -130,6 +141,12 @@ async function seedCatalog() {
   const setQuanM = await createVariant({ key: "sq-555-m", productId: setQuan555.id, sku: "SQ555-M", price: 579_000, stock: 0 });
   const cvOnlyM = await createVariant({ key: "cv-only-555-m", productId: cvOnly555.id, sku: "SV555-CV-M", price: 399_000, stock: 0 });
   const crossM = await createVariant({ key: "cross-combo-m", productId: crossCombo.id, sku: "SV-CROSS-M", price: 499_000, stock: 0 });
+  const aoTwiceM = await createVariant({ key: "ao-twice-555-m", productId: aoTwice555.id, sku: "SV555-2AO-M", price: 699_000, stock: 0 });
+  const ao999M = await createVariant({ key: "ao-999-m", productId: ao999.id, sku: "AO-999-M", price: 429_000, stock: 4 });
+  const cv999M = await createVariant({ key: "cv-999-m", productId: cv999.id, sku: "CV-999-M", price: 429_000, stock: 4 });
+  const quan999M = await createVariant({ key: "quan-999-m", productId: quan999.id, sku: "QUAN-999-M", price: 299_000, stock: 4 });
+  const combo999M = await createVariant({ key: "combo-999-m", productId: combo999.id, sku: "COMBO-999-M", price: 999_000, stock: 0 });
+  const setVay999M = await createVariant({ key: "sv-999-m", productId: setVay999.id, sku: "SV999-M", price: 599_000, stock: 0 });
 
   await compose(combo555M.id, [aoM.id, cvM.id, quanM.id]);
   await compose(combo747M.id, [ao747M.id, cv747M.id, quan747M.id]);
@@ -140,8 +157,13 @@ async function seedCatalog() {
   // Áo from active COMBO 555 and Váy from active COMBO 747 — each piece has *some* active combo,
   // but no single combo contains both.
   await compose(crossM.id, [aoM.id, cv747M.id]);
+  // {ÁO x2, CV x1}: SET VÁY roles, but it consumes three physical pieces.
+  await compose(aoTwiceM.id, [aoM.id, cvM.id], [2, 1]);
+  // A parent {ÁO x2, CV x1, QUẦN x1} is not the 3-piece COMBO, so its {ÁO, CV} sibling is no SET.
+  await compose(combo999M.id, [ao999M.id, cv999M.id, quan999M.id], [2, 1, 1]);
+  await compose(setVay999M.id, [ao999M.id, cv999M.id]);
 
-  return { combo555M, aoM, cvM, quanM, setVayM, setQuanM, cvOnlyM, crossM };
+  return { combo555M, aoM, cvM, quanM, setVayM, setQuanM, cvOnlyM, crossM, aoTwiceM, setVay999M };
 }
 
 test("an inactive sibling SET VÁY goes PDP selection → cart → checkout snapshot on one authority", async () => {
@@ -158,6 +180,7 @@ test("an inactive sibling SET VÁY goes PDP selection → cart → checkout snap
   const optionIds = detail.projection.options.map(({ id }) => id);
   assert.ok(!optionIds.includes(catalog.cvOnlyM.id), "a one-piece CV composite is not a SET VÁY");
   assert.ok(!optionIds.includes(catalog.crossM.id), "a cross-combo composite is not a subset");
+  assert.ok(!optionIds.includes(catalog.aoTwiceM.id), "{ÁO x2, CV x1} is not the 2-piece SET VÁY");
   assert.deepEqual(
     detail.projection.options
       .filter(({ kindKey }) => kindKey === "parent" || kindKey?.startsWith("sub-set-"))
@@ -244,7 +267,21 @@ test("composites that are not an exact subset of one active combo fail closed at
     verifyRenderedQuote: acceptAnyRenderedQuote,
   });
 
-  for (const variant of [catalog.crossM, catalog.cvOnlyM]) {
+  const combo999 = await createStorefrontProductDetailRepository(prisma).getProductBySlug({
+    shopId,
+    slug: "combo-subsets-combo-999",
+    now,
+  });
+  assert.ok(combo999);
+  assert.deepEqual(
+    combo999.projection.options
+      .filter(({ kindKey }) => kindKey?.startsWith("sub-set-"))
+      .map(({ id }) => id),
+    [],
+    "a parent {ÁO x2, CV x1, QUẦN x1} offers no SET",
+  );
+
+  for (const variant of [catalog.crossM, catalog.cvOnlyM, catalog.aoTwiceM, catalog.setVay999M]) {
     assert.deepEqual(
       await cartService.addItemUnit({
         cartId,

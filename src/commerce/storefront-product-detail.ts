@@ -197,6 +197,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         components: parent.compositeComponents.map((edge) =>
           toCompositeSubSetPiece({
             componentVariantId: edge.componentVariant.id,
+            quantity: edge.quantity,
             componentVariant: edge.componentVariant,
           }),
         ),

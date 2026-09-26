@@ -15,7 +15,11 @@ import {
  *   `{ÁO, QUẦN}` (SET QUẦN); and
  * - ONE parent variant — present, active, on a present and active product, and not the subset
  *   itself — has exactly three distinct components with roles `{ÁO, CV, QUẦN}` and contains every
- *   component of the subset.
+ *   component of the subset; and
+ * - every edge on both sides has `CompositeComponentMirror.quantity === 1`. Quantity is commerce
+ *   truth (ADR 0014 reserves `lineQuantity × quantity` physical units), so `{ÁO x2, CV x1}` is not
+ *   the 2-piece SET VÁY it would otherwise look like. Multiplier-aware subsets are deliberately not
+ *   modelled: anything other than one unit per piece fails closed.
  *
  * Checking each component against *some* active parent is not enough: Áo could belong to COMBO A
  * and Váy to COMBO B while no single combo contains both, and that pairing is not a subset of
@@ -33,6 +37,8 @@ export const COMPOSITE_SUB_SET_ORDER: readonly CompositeSubSetKind[] = ["SET VÁ
 
 export type CompositeSubSetPiece = Readonly<{
   componentVariantId: string;
+  /** Units of this component the composite consumes (`CompositeComponentMirror.quantity`). */
+  quantity: number;
   /** The component's website SKU, falling back to its Pancake display id, as PDP grouping does. */
   roleSku: string | null;
 }>;
@@ -46,6 +52,7 @@ export type CompositeSubSetComboCandidate = Readonly<{
 function rolesOf(pieces: readonly CompositeSubSetPiece[]): CompositeComponentKindLabel[] | null {
   const ids = new Set(pieces.map((piece) => piece.componentVariantId));
   if (ids.size !== pieces.length) return null;
+  if (!pieces.every((piece) => piece.quantity === 1)) return null;
 
   const roles: CompositeComponentKindLabel[] = [];
   for (const piece of pieces) {
@@ -68,7 +75,7 @@ export function classifyCompositeSubSetShape(
   return null;
 }
 
-/** Whether a component list is exactly one ÁO, one CV and one QUẦN. */
+/** Whether a component list is exactly one unit each of one ÁO, one CV and one QUẦN. */
 export function isThreePieceComboShape(pieces: readonly CompositeSubSetPiece[]): boolean {
   if (pieces.length !== 3) return false;
   const roles = rolesOf(pieces);
@@ -115,6 +122,7 @@ export const compositeSubSetAuthorityComponentSelection = {
   orderBy: [{ componentVariantId: "asc" as const }],
   select: {
     componentVariantId: true,
+    quantity: true,
     componentVariant: {
       select: {
         sku: true,
@@ -130,6 +138,7 @@ export const compositeSubSetAuthorityComponentSelection = {
                 compositeComponents: {
                   select: {
                     componentVariantId: true,
+                    quantity: true,
                     componentVariant: { select: { sku: true, pancakeDisplayId: true } },
                   },
                 },
@@ -144,11 +153,13 @@ export const compositeSubSetAuthorityComponentSelection = {
 
 type RolePieceRow = Readonly<{
   componentVariantId: string;
+  quantity: number;
   componentVariant: Readonly<{ sku: string | null; pancakeDisplayId: string | null }>;
 }>;
 
 type AuthorityComponentRow = Readonly<{
   componentVariantId: string;
+  quantity: number;
   componentVariant: Readonly<{
     sku: string | null;
     pancakeDisplayId: string | null;
@@ -167,6 +178,7 @@ type AuthorityComponentRow = Readonly<{
 export function toCompositeSubSetPiece(row: RolePieceRow): CompositeSubSetPiece {
   return {
     componentVariantId: row.componentVariantId,
+    quantity: row.quantity,
     roleSku: row.componentVariant.sku ?? row.componentVariant.pancakeDisplayId,
   };
 }

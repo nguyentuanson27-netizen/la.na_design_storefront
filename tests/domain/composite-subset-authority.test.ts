@@ -10,9 +10,9 @@ import {
   type CompositeSubSetPiece,
 } from "../../src/commerce/composite-subset-authority.ts";
 
-const ao: CompositeSubSetPiece = { componentVariantId: "ao-m", roleSku: "AO-555-M" };
-const cv: CompositeSubSetPiece = { componentVariantId: "cv-m", roleSku: "CV-555-M" };
-const quan: CompositeSubSetPiece = { componentVariantId: "quan-m", roleSku: "QUAN-555-M" };
+const ao: CompositeSubSetPiece = { componentVariantId: "ao-m", quantity: 1, roleSku: "AO-555-M" };
+const cv: CompositeSubSetPiece = { componentVariantId: "cv-m", quantity: 1, roleSku: "CV-555-M" };
+const quan: CompositeSubSetPiece = { componentVariantId: "quan-m", quantity: 1, roleSku: "QUAN-555-M" };
 
 function combo(
   variantId: string,
@@ -32,16 +32,16 @@ test("subset shape is exactly {ÁO, CV} or {ÁO, QUẦN}", () => {
   assert.equal(classifyCompositeSubSetShape([cv, quan]), null);
   assert.equal(classifyCompositeSubSetShape([ao, cv, quan]), null);
   assert.equal(
-    classifyCompositeSubSetShape([ao, { componentVariantId: "ao-l", roleSku: "AO-555-L" }]),
+    classifyCompositeSubSetShape([ao, { componentVariantId: "ao-l", quantity: 1, roleSku: "AO-555-L" }]),
     null,
   );
   assert.equal(classifyCompositeSubSetShape([ao, ao]), null);
   assert.equal(
-    classifyCompositeSubSetShape([ao, { componentVariantId: "x", roleSku: null }]),
+    classifyCompositeSubSetShape([ao, { componentVariantId: "x", quantity: 1, roleSku: null }]),
     null,
   );
   assert.equal(
-    classifyCompositeSubSetShape([ao, { componentVariantId: "x", roleSku: "AO-QUAN-1" }]),
+    classifyCompositeSubSetShape([ao, { componentVariantId: "x", quantity: 1, roleSku: "AO-QUAN-1" }]),
     null,
   );
 });
@@ -50,11 +50,11 @@ test("combo shape is exactly one ÁO, one CV and one QUẦN", () => {
   assert.equal(isThreePieceComboShape([ao, cv, quan]), true);
   assert.equal(isThreePieceComboShape([ao, cv]), false);
   assert.equal(
-    isThreePieceComboShape([ao, cv, { componentVariantId: "cv-l", roleSku: "CV-555-L" }]),
+    isThreePieceComboShape([ao, cv, { componentVariantId: "cv-l", quantity: 1, roleSku: "CV-555-L" }]),
     false,
   );
   assert.equal(
-    isThreePieceComboShape([ao, cv, quan, { componentVariantId: "x", roleSku: "PHU-KIEN" }]),
+    isThreePieceComboShape([ao, cv, quan, { componentVariantId: "x", quantity: 1, roleSku: "PHU-KIEN" }]),
     false,
   );
 });
@@ -107,9 +107,9 @@ test("a subset is authorized only by one sellable 3-piece combo containing every
 });
 
 test("components spread across different combos do not authorize a subset", () => {
-  const cvB: CompositeSubSetPiece = { componentVariantId: "cv-b-m", roleSku: "CV-747-M" };
-  const aoB: CompositeSubSetPiece = { componentVariantId: "ao-b-m", roleSku: "AO-747-M" };
-  const quanB: CompositeSubSetPiece = { componentVariantId: "quan-b-m", roleSku: "QUAN-747-M" };
+  const cvB: CompositeSubSetPiece = { componentVariantId: "cv-b-m", quantity: 1, roleSku: "CV-747-M" };
+  const aoB: CompositeSubSetPiece = { componentVariantId: "ao-b-m", quantity: 1, roleSku: "AO-747-M" };
+  const quanB: CompositeSubSetPiece = { componentVariantId: "quan-b-m", quantity: 1, roleSku: "QUAN-747-M" };
 
   assert.equal(
     resolveCompositeSubSetAuthority({
@@ -134,12 +134,14 @@ test("row adapter gathers candidate combos from every component's parents", () =
       product: { isPresent: true, isActive: true },
       compositeComponents: pieces.map((piece) => ({
         componentVariantId: piece.componentVariantId,
+        quantity: piece.quantity,
         componentVariant: { sku: piece.roleSku, pancakeDisplayId: null },
       })),
     },
   });
   const row = (piece: CompositeSubSetPiece, parents: ReturnType<typeof parentRow>[]) => ({
     componentVariantId: piece.componentVariantId,
+    quantity: piece.quantity,
     componentVariant: { sku: piece.roleSku, pancakeDisplayId: null, compositeParents: parents },
   });
 
@@ -155,12 +157,12 @@ test("row adapter gathers candidate combos from every component's parents", () =
 
   // Áo is in active COMBO A, Váy is in active COMBO B: each component has *some* active parent,
   // which the previous predicate accepted, but no single combo contains both.
-  const cvB: CompositeSubSetPiece = { componentVariantId: "cv-b-m", roleSku: "CV-747-M" };
+  const cvB: CompositeSubSetPiece = { componentVariantId: "cv-b-m", quantity: 1, roleSku: "CV-747-M" };
   const comboA = parentRow("combo-a-m", [ao, cv, quan]);
   const comboB = parentRow("combo-b-m", [
-    { componentVariantId: "ao-b-m", roleSku: "AO-747-M" },
+    { componentVariantId: "ao-b-m", quantity: 1, roleSku: "AO-747-M" },
     cvB,
-    { componentVariantId: "quan-b-m", roleSku: "QUAN-747-M" },
+    { componentVariantId: "quan-b-m", quantity: 1, roleSku: "QUAN-747-M" },
   ]);
   assert.equal(
     resolveCompositeSubSetAuthorityFromRows({
@@ -177,6 +179,33 @@ test("row adapter gathers candidate combos from every component's parents", () =
         row(ao, [parentRow("combo-m", [ao, cv, quan], false)]),
         row(cv, [parentRow("combo-m", [ao, cv, quan], false)]),
       ],
+    }),
+    null,
+  );
+});
+
+test("every edge must consume exactly one unit on both the subset and the combo", () => {
+  const aoTwice: CompositeSubSetPiece = { ...ao, quantity: 2 };
+
+  // {ÁO x2, CV x1} consumes three physical pieces; it is not the 2-piece SET VÁY.
+  assert.equal(classifyCompositeSubSetShape([aoTwice, cv]), null);
+  assert.equal(classifyCompositeSubSetShape([{ ...ao, quantity: 0 }, cv]), null);
+  assert.equal(
+    resolveCompositeSubSetAuthority({
+      subSetVariantId: "set-vay-m",
+      subSetComponents: [aoTwice, cv],
+      candidateCombos: [combo("combo-m", [ao, cv, quan])],
+    }),
+    null,
+  );
+
+  // A parent {ÁO x2, CV x1, QUẦN x1} is not the 3-piece COMBO and authorizes no SET.
+  assert.equal(isThreePieceComboShape([aoTwice, cv, quan]), false);
+  assert.equal(
+    resolveCompositeSubSetAuthority({
+      subSetVariantId: "set-vay-m",
+      subSetComponents: [ao, cv],
+      candidateCombos: [combo("combo-m", [aoTwice, cv, quan])],
     }),
     null,
   );
