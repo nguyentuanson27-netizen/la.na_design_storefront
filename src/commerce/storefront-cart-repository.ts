@@ -5,6 +5,10 @@ import type { PromotionCandidateReadClient } from "./promotion-candidate-reposit
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import {
+  compositeSubSetAuthorityComponentSelection,
+  resolveCompositeSubSetAuthorityFromRows,
+} from "./composite-subset-authority.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -81,11 +85,15 @@ const productSelection = {
       // restriction's subject — distinct from `compositeParents` below, which asks whether this
       // variant is somebody else's component.
       compositeComponents: {
-        orderBy: [{ componentVariantId: "asc" as const }],
+        ...compositeSubSetAuthorityComponentSelection,
         select: {
+          ...compositeSubSetAuthorityComponentSelection.select,
           quantity: true,
           componentVariant: {
             select: {
+              // PR #81 — SET VÁY / SET QUẦN authority reads each component's combos; the shared
+              // fragment keeps this path, PDP discovery and the checkout snapshot on one rule.
+              ...compositeSubSetAuthorityComponentSelection.select.componentVariant.select,
               isPresent: true,
               product: {
                 select: {
@@ -96,22 +104,6 @@ const productSelection = {
               warehouseStocks: {
                 orderBy: [{ pancakeWarehouseId: "asc" as const }],
                 select: { quantity: true },
-              },
-              compositeParents: {
-                select: {
-                  parentVariant: {
-                    select: {
-                      isPresent: true,
-                      isActive: true,
-                      product: {
-                        select: {
-                          isPresent: true,
-                          isActive: true,
-                        },
-                      },
-                    },
-                  },
-                },
               },
             },
           },
@@ -165,17 +157,14 @@ function toCartProduct(product: SelectedProduct, shopId: number) {
           parentVariant.product.isPresent &&
           parentVariant.product.isActive,
       ),
+      // PR #81 — an inactive SET VÁY / SET QUẦN sibling stays off /shop but is sellable when the
+      // shared authority proves it an exact subset of ONE active 3-piece combo.
       isSubSetAvailable:
-        variant.compositeComponents.length > 0 &&
-        variant.compositeComponents.every(({ componentVariant }) =>
-          componentVariant.compositeParents.some(
-            ({ parentVariant }) =>
-              parentVariant.isPresent &&
-              parentVariant.isActive &&
-              parentVariant.product.isPresent &&
-              parentVariant.product.isActive,
-          ),
-        ),
+        product.isPresent &&
+        resolveCompositeSubSetAuthorityFromRows({
+          subSetVariantId: variant.id,
+          components: variant.compositeComponents,
+        }) !== null,
       color: variant.color,
       size: variant.size,
       sellableStock:

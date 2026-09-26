@@ -6,6 +6,15 @@ import {
   type StorefrontCompositeComponentGroup,
   type StorefrontCompositeSubSetGroup,
 } from "./storefront-projection.ts";
+import {
+  COMPOSITE_SUB_SET_KIND_KEYS,
+  COMPOSITE_SUB_SET_ORDER,
+  isThreePieceComboShape,
+  resolveCompositeSubSetAuthority,
+  toCompositeSubSetPiece,
+  type CompositeSubSetComboCandidate,
+  type CompositeSubSetKind,
+} from "./composite-subset-authority.ts";
 import type { StorefrontVariantFacts } from "./storefront-product.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -170,22 +179,38 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           : [{ label, variants: [...group.variants.values()] }];
       });
 
-    // Discover sibling composite subsets (e.g. Set Váy, Set Quần) sharing components with this combo
+    // PR #81 — discover sibling SET VÁY / SET QUẦN composites of this combo. Which siblings are
+    // offered is decided by the shared subset authority, the same one the cart and the checkout
+    // snapshot apply, so the PDP never offers a variant a later boundary would refuse (or the
+    // reverse). Only this product's own active 3-piece parent variants are candidate combos: a
+    // subset of some *other* combo belongs on that combo's page, not this one.
     let subSetGroups: StorefrontCompositeSubSetGroup[] = [];
     const siblingVariantMpnMap: Record<string, string | null> = {};
     const siblingVariantSkuMap: Record<string, string | null> = {};
-    const siblingPricedVariantIds: string[] = [];
 
-    const componentProductIds = [...groups.keys()];
-    const componentVariantIds = [
+    const candidateCombos: CompositeSubSetComboCandidate[] = parentRelations
+      .map((parent) => ({
+        variantId: parent.id,
+        // `getProductBySlug` only resolves a present, active product, and `parentRelations` only
+        // reads its present, active variants.
+        isSellable: true,
+        components: parent.compositeComponents.map((edge) =>
+          toCompositeSubSetPiece({
+            componentVariantId: edge.componentVariant.id,
+            componentVariant: edge.componentVariant,
+          }),
+        ),
+      }))
+      .filter((combo) => isThreePieceComboShape(combo.components));
+    const comboComponentVariantIds = [
       ...new Set(
-        parentRelations.flatMap((parent) =>
-          parent.compositeComponents.map((edge) => edge.componentVariant.id),
+        candidateCombos.flatMap((combo) =>
+          combo.components.map((piece) => piece.componentVariantId),
         ),
       ),
     ];
 
-    if (componentProductIds.length >= 3) {
+    if (comboComponentVariantIds.length > 0) {
       const siblingRelations = await client.variantMirror.findMany({
         where: {
           product: {
@@ -197,7 +222,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           isActive: true,
           compositeComponents: {
             some: {
-              componentVariantId: { in: componentVariantIds },
+              componentVariantId: { in: comboComponentVariantIds },
             },
           },
         },
@@ -211,32 +236,18 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           size: true,
           pancakeRetailPrice: true,
           pancakeRetailPriceAfterDiscount: true,
-          product: {
-            select: {
-              id: true,
-              name: true,
-            },
-          },
           compositeComponents: {
             orderBy: [{ componentVariantId: "asc" }],
             select: {
               quantity: true,
+              componentVariantId: true,
               componentVariant: {
                 select: {
-                  id: true,
-                  pancakeVariationId: true,
-                  pancakeDisplayId: true,
                   sku: true,
-                  color: true,
-                  size: true,
+                  pancakeDisplayId: true,
                   isPresent: true,
-                  isActive: true,
-                  pancakeRetailPrice: true,
-                  pancakeRetailPriceAfterDiscount: true,
                   product: {
                     select: {
-                      id: true,
-                      name: true,
                       pancakeShopId: true,
                       isPresent: true,
                     },
@@ -252,109 +263,42 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         },
       });
 
-      const siblingProductMap = new Map<
-        string,
-        {
-          name: string;
-          variants: typeof siblingRelations;
-          usedCompProductIds: Set<string>;
-        }
-      >();
+      const variantsByKind = new Map<CompositeSubSetKind, StorefrontVariantFacts[]>();
+      for (const sibling of siblingRelations) {
+        const kind = resolveCompositeSubSetAuthority({
+          subSetVariantId: sibling.id,
+          subSetComponents: sibling.compositeComponents.map(toCompositeSubSetPiece),
+          candidateCombos,
+        });
+        if (kind === null) continue;
 
-      for (const sib of siblingRelations) {
-        if (sib.compositeComponents.length === 0) continue;
-        let entry = siblingProductMap.get(sib.product.id);
-        if (!entry) {
-          entry = {
-            name: sib.product.name,
-            variants: [],
-            usedCompProductIds: new Set(),
-          };
-          siblingProductMap.set(sib.product.id, entry);
-        }
-        entry.variants.push(sib);
-        for (const edge of sib.compositeComponents) {
-          entry.usedCompProductIds.add(edge.componentVariant.product.id);
-        }
-        siblingVariantMpnMap[sib.id] = sib.pancakeDisplayId;
-        siblingVariantSkuMap[sib.id] = sib.sku;
-        siblingPricedVariantIds.push(sib.id);
-      }
-
-      const candidateSets: {
-        label: string;
-        kindKey: string;
-        order: number;
-        variants: StorefrontVariantFacts[];
-      }[] = [];
-
-      for (const entry of siblingProductMap.values()) {
-        const isStrictSubset =
-          entry.usedCompProductIds.size > 0 &&
-          entry.usedCompProductIds.size < componentProductIds.length &&
-          [...entry.usedCompProductIds].every((cId) => componentProductIds.includes(cId));
-
-        if (!isStrictSubset) continue;
-
-        const siblingRoles = new Set(
-          [...entry.usedCompProductIds].map((cId) => {
-            const compGroup = groups.get(cId);
-            return compGroup ? resolveCompositeComponentGroupLabel(compGroup.skus) : null;
+        const variants = variantsByKind.get(kind) ?? [];
+        variants.push({
+          id: sibling.id,
+          pancakeVariationId: sibling.pancakeVariationId,
+          color: sibling.color,
+          size: sibling.size,
+          sellableStock: deriveCompositeSellableStock({
+            shopId,
+            components: sibling.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
           }),
-        );
-
-        let label: string | null = null;
-        let kindKey: string | null = null;
-        let order = 99;
-
-        if (siblingRoles.has("CV LẺ") && !siblingRoles.has("QUẦN LẺ")) {
-          label = "SET VÁY";
-          kindKey = "sub-set-vay";
-          order = 1;
-        } else if (siblingRoles.has("QUẦN LẺ") && !siblingRoles.has("CV LẺ")) {
-          label = "SET QUẦN";
-          kindKey = "sub-set-quan";
-          order = 2;
-        } else {
-          const n = entry.name.toUpperCase();
-          if (n.includes("SET VÁY") || n.includes("SET VAY") || /(^|\s)SV/i.test(entry.name)) {
-            label = "SET VÁY";
-            kindKey = "sub-set-vay";
-            order = 1;
-          } else if (n.includes("SET QUẦN") || n.includes("SET SQ") || /(^|\s)SQ/i.test(entry.name)) {
-            label = "SET QUẦN";
-            kindKey = "sub-set-quan";
-            order = 2;
-          }
-        }
-
-        if (label && kindKey) {
-          const variants: StorefrontVariantFacts[] = entry.variants.map((v) => ({
-            id: v.id,
-            pancakeVariationId: v.pancakeVariationId,
-            color: v.color,
-            size: v.size,
-            sellableStock: deriveCompositeSellableStock({
-              shopId,
-              components: v.compositeComponents.map((edge) => ({
-                requiredQuantity: edge.quantity,
-                componentVariant: edge.componentVariant,
-              })),
-            }),
-            retailPrice: v.pancakeRetailPrice,
-            retailPriceAfterDiscount: v.pancakeRetailPriceAfterDiscount,
-          }));
-
-          candidateSets.push({ label, kindKey, order, variants });
-        }
+          retailPrice: sibling.pancakeRetailPrice,
+          retailPriceAfterDiscount: sibling.pancakeRetailPriceAfterDiscount,
+        });
+        variantsByKind.set(kind, variants);
+        siblingVariantMpnMap[sibling.id] = sibling.pancakeDisplayId;
+        siblingVariantSkuMap[sibling.id] = sibling.sku;
       }
 
-      candidateSets.sort((a, b) => a.order - b.order);
-      subSetGroups = candidateSets.map((c) => ({
-        label: c.label,
-        kindKey: c.kindKey,
-        variants: c.variants,
-      }));
+      subSetGroups = COMPOSITE_SUB_SET_ORDER.flatMap((kind) => {
+        const variants = variantsByKind.get(kind);
+        return variants
+          ? [{ label: kind, kindKey: COMPOSITE_SUB_SET_KIND_KEYS[kind], variants }]
+          : [];
+      });
     }
 
     const pricedVariantIds = [

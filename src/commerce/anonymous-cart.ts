@@ -1,4 +1,8 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
+import {
+  compositeSubSetAuthorityComponentSelection,
+  resolveCompositeSubSetAuthorityFromRows,
+} from "./composite-subset-authority.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 const ANONYMOUS_CART_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -203,7 +207,33 @@ async function isCommerceEligibleVariant(
     },
     select: { id: true },
   });
-  return variant !== null;
+  if (variant !== null) return true;
+
+  // PR #81 — an inactive SET VÁY / SET QUẦN sibling is neither publicly owned nor any combo's
+  // component. It is eligible only when the shared subset authority, which the PDP, the cart
+  // projection and the checkout snapshot also use, proves it an exact subset of ONE active combo.
+  // A relational filter cannot say "the same parent contains every component", so it is read and
+  // decided in code rather than widened into the `OR` above.
+  const subSetCandidate = await client.variantMirror.findFirst({
+    where: {
+      id: variantId,
+      isPresent: true,
+      isActive: true,
+      product: { isPresent: true },
+      compositeComponents: { some: {} },
+    },
+    select: {
+      id: true,
+      compositeComponents: compositeSubSetAuthorityComponentSelection,
+    },
+  });
+  return (
+    subSetCandidate !== null &&
+    resolveCompositeSubSetAuthorityFromRows({
+      subSetVariantId: subSetCandidate.id,
+      components: subSetCandidate.compositeComponents,
+    }) !== null
+  );
 }
 
 export function createAnonymousCartService(client: PrismaClient) {

@@ -2,6 +2,11 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
 import { mergeReservationLines } from "./capacity-reservation.ts";
+import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import {
+  compositeSubSetAuthorityComponentSelection,
+  resolveCompositeSubSetAuthorityFromRows,
+} from "./composite-subset-authority.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
@@ -160,9 +165,29 @@ const productSelection = {
         select: { quantity: true },
       },
       // ADR 0014 §11 disables OVERSELL/PREORDER for a composite parent, and composition is a
-      // variant-level relation. One bounded row per variant answers it at the same granularity
-      // I2's admin boundary and I6a's reservation transaction use.
-      compositeComponents: { take: 1, select: { componentVariantId: true } },
+      // variant-level relation, at the same granularity I2's admin boundary and I6a's reservation
+      // transaction use. PR #81 reads the full edge list rather than one bounded row: the same
+      // rows derive the composite's component-backed stock and decide, through the shared subset
+      // authority, whether an inactive SET VÁY / SET QUẦN sibling is sellable — exactly as the
+      // cart repository does, so a line the cart accepted is not refused here.
+      compositeComponents: {
+        ...compositeSubSetAuthorityComponentSelection,
+        select: {
+          ...compositeSubSetAuthorityComponentSelection.select,
+          quantity: true,
+          componentVariant: {
+            select: {
+              ...compositeSubSetAuthorityComponentSelection.select.componentVariant.select,
+              isPresent: true,
+              product: { select: { pancakeShopId: true, isPresent: true } },
+              warehouseStocks: {
+                orderBy: [{ pancakeWarehouseId: "asc" as const }],
+                select: { quantity: true },
+              },
+            },
+          },
+        },
+      },
       compositeParents: {
         select: {
           parentVariant: {
@@ -325,10 +350,21 @@ export async function requiresFreshGuestCheckoutSnapshot(
   return !activeCheckout || isMutableDraft(activeCheckout);
 }
 
-function toStorefrontProduct(product: SelectedProduct) {
+function toStorefrontProduct(product: SelectedProduct, shopId: number) {
   const variants = [];
   for (const variant of product.variants) {
-    const sellableStock = sumWarehouseStocks(variant.warehouseStocks);
+    // Composite capacity is derived from component stock (ADR 0014, `deriveCompositeSellableStock`),
+    // the same answer the cart and PDP give; the parent's own row is a verbatim Pancake mirror.
+    const sellableStock =
+      variant.compositeComponents.length > 0
+        ? deriveCompositeSellableStock({
+            shopId,
+            components: variant.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+          })
+        : sumWarehouseStocks(variant.warehouseStocks);
     if (sellableStock === null) return null;
     variants.push({
       id: variant.id,
@@ -342,6 +378,14 @@ function toStorefrontProduct(product: SelectedProduct) {
           parentVariant.product.isPresent &&
           parentVariant.product.isActive,
       ),
+      // PR #81 — an inactive SET VÁY / SET QUẦN sibling stays off /shop but is sellable when the
+      // shared authority proves it an exact subset of ONE active 3-piece combo.
+      isSubSetAvailable:
+        product.isPresent &&
+        resolveCompositeSubSetAuthorityFromRows({
+          subSetVariantId: variant.id,
+          components: variant.compositeComponents,
+        }) !== null,
       color: variant.color,
       size: variant.size,
       sellableStock,
@@ -500,7 +544,7 @@ export function createGuestCheckoutSnapshotService(
 
         const storefrontProducts = [];
         for (const product of products) {
-          const storefrontProduct = toStorefrontProduct(product);
+          const storefrontProduct = toStorefrontProduct(product, safeShopId);
           if (!storefrontProduct) {
             return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
           }
