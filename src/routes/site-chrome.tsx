@@ -5,9 +5,9 @@ import { connection } from "next/server";
 import { FacebookPixel } from "@/components/analytics/facebook-pixel";
 import { TrackingBootstrap } from "@/components/analytics/tracking-bootstrap";
 import { TrackingPageView } from "@/components/analytics/tracking-page-view";
+import { SiteChat } from "@/components/brand/site-chat";
 import { SiteDocument } from "@/components/brand/site-document";
 import { SiteFooter } from "@/components/brand/site-footer";
-import { MessengerButton } from "@/components/brand/messenger-button";
 import { SiteMasthead } from "@/components/brand/site-masthead";
 import {
   buildSiteChromeContent,
@@ -91,7 +91,7 @@ export function SiteChrome({
       <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
       <main id="main-content">{children}</main>
       <SiteFooter model={model.content.footer} />
-      <MessengerButton />
+      <SiteChat />
       <TrackingPageView />
       <FacebookPixel />
     </SiteDocument>

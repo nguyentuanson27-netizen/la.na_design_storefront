@@ -57,6 +57,8 @@ export const BRAND: BrandConfig = {
     // Owner-supplied 2026-09-24 for the footer's social icons.
     instagramUrl: "https://www.instagram.com/la.nadesign.vn/",
     tiktokUrl: "https://www.tiktok.com/@la.nadesign.vn",
+    // Owner-supplied 2026-09-26: the Pancake website Chat Plugin replaces the Messenger button.
+    pancakeChatPageId: "web_lanadesign",
     streetAddress: "212 Nguyễn Trãi, Đại Mỗ",
     addressLocality: "Hà Nội",
     supportHours: {

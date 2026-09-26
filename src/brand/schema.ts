@@ -106,6 +106,13 @@ export type BrandContact = Readonly<{
    */
   instagramUrl?: string;
   tiktokUrl?: string;
+  /**
+   * The Pancake website Chat Plugin's page id (Pancake › Chat Plugin › installation code,
+   * `page_id=`). When set, the storefront loads that chat widget in place of the Messenger link
+   * button; messages land in the shop's Pancake inbox. Optional: without it the Messenger button
+   * stays.
+   */
+  pancakeChatPageId?: string;
   streetAddress: string;
   addressLocality: string;
   supportHours: SupportHours;
