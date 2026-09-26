@@ -35,13 +35,44 @@ const runId = `${Date.now()}-${process.pid}`;
 const adminEmail = `pancake-chat-isolation-${runId}@example.invalid`;
 const password = "pancake-chat-isolation-runtime-password-123";
 
+/**
+ * Mirrors the DOM the real Pancake script builds (read off a live run): a root pinned at the maximum
+ * z-index holding a 60px bubble, and a full-screen chat box whose header carries the close button.
+ * Clicking the bubble opens the box (`.pkcp-popup-open`); clicking the close button closes it.
+ */
 const PANCAKE_STUB = `
   window.__pancakeStubRuns = (window.__pancakeStubRuns || 0) + 1;
   window.PancakeChatPlugin = {};
+  var style = document.createElement("style");
+  style.textContent =
+    ".pkcp-button-circle,.pkcp-button-icon{width:60px;height:60px;display:block;border-radius:50%;background:#334ca1}" +
+    ".pkcp-button-icon svg{width:36px;height:36px}" +
+    ".pkcp-popup{display:none}" +
+    ".pkcp-popup.pkcp-popup-open{display:block;position:fixed;inset:0;z-index:2147483645;background:#fff}" +
+    ".set-up-header-x-icon{position:absolute;top:24px;right:24px;width:40px;height:40px}";
+  document.head.appendChild(style);
   var root = document.createElement("div");
   root.id = "pancake-chat-plugin-root";
-  root.style.cssText = "position:fixed;right:20px;bottom:20px;width:60px;height:60px;z-index:2147483647";
+  root.className = "pkcp-parent-container";
+  root.style.cssText = "position:fixed;right:20px;bottom:20px;z-index:2147483647";
+  root.innerHTML =
+    '<div><div id="pkcp" class="pkcp">' +
+    '<div class="pkcp-popup"><div class="pkcp-popup-setup-header">' +
+    '<div class="button-plugin set-up-header-x-icon" role="button" aria-label="Đóng"></div></div></div>' +
+    '<div class="pkcp-button-wrapper"><div id="pkcp-button" class="pkcp-button-circle">' +
+    '<div class="pkcp-button-icon"><svg viewBox="0 0 24 24"></svg></div></div></div>' +
+    "</div></div>";
   document.body.appendChild(root);
+  var popup = root.querySelector(".pkcp-popup");
+  var wrapper = root.querySelector(".pkcp-button-wrapper");
+  root.querySelector("#pkcp-button").addEventListener("click", function () {
+    popup.classList.add("pkcp-popup-open");
+    wrapper.style.display = "none";
+  });
+  root.querySelector(".set-up-header-x-icon").addEventListener("click", function () {
+    popup.classList.remove("pkcp-popup-open");
+    wrapper.style.display = "";
+  });
 `;
 
 let server: ChildProcess | undefined;
@@ -231,4 +262,38 @@ test("on the production host Pancake loads, and a client-side return to admin la
 
   expect(await pancakeFootprint(page)).toEqual(NO_PANCAKE);
   expect(pancakeRequests).toHaveLength(1);
+});
+
+test("the Pancake bubble is 48px, and the open chat's close button sits above the sticky masthead", async ({
+  page,
+  context,
+}) => {
+  await stubPancake(context);
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+
+  // Closed: the bubble is the storefront's 48px, not Pancake's 60px.
+  const bubble = page.locator("#pkcp-button");
+  const bubbleBox = (await bubble.boundingBox())!;
+  expect([Math.round(bubbleBox.width), Math.round(bubbleBox.height)]).toEqual([48, 48]);
+
+  // Open, scrolled so the masthead is stuck over the top of the full-screen chat box: the close
+  // button in the box's header must be the element a tap at its centre lands on, and close the chat.
+  await page.mouse.wheel(0, 800);
+  await bubble.click();
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(1);
+  const close = page.locator(".set-up-header-x-icon");
+  const closeBox = (await close.boundingBox())!;
+  const centre = { x: closeBox.x + closeBox.width / 2, y: closeBox.y + closeBox.height / 2 };
+  const hit = await page.evaluate(
+    ({ x, y }) => document.elementFromPoint(x, y)?.closest(".set-up-header-x-icon") !== null,
+    centre,
+  );
+  expect(hit, "a tap on the close button reaches it, not the masthead above it").toBe(true);
+
+  await page.mouse.click(centre.x, centre.y);
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(0);
+  await expect(bubble).toBeVisible();
 });
