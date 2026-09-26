@@ -296,19 +296,36 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
         if (!isStrictSubset) continue;
 
-        const n = entry.name.toUpperCase();
+        const siblingRoles = new Set(
+          [...entry.usedCompProductIds].map((cId) => {
+            const compGroup = groups.get(cId);
+            return compGroup ? resolveCompositeComponentGroupLabel(compGroup.skus) : null;
+          }),
+        );
+
         let label: string | null = null;
         let kindKey: string | null = null;
         let order = 99;
 
-        if (n.includes("SET VÁY") || n.includes("SET VAY") || /(^|\s)SV[0-9]/i.test(entry.name)) {
+        if (siblingRoles.has("CV LẺ") && !siblingRoles.has("QUẦN LẺ")) {
           label = "SET VÁY";
           kindKey = "sub-set-vay";
           order = 1;
-        } else if (n.includes("SET QUẦN") || n.includes("SET SQ") || /(^|\s)SQ[0-9]/i.test(entry.name)) {
+        } else if (siblingRoles.has("QUẦN LẺ") && !siblingRoles.has("CV LẺ")) {
           label = "SET QUẦN";
           kindKey = "sub-set-quan";
           order = 2;
+        } else {
+          const n = entry.name.toUpperCase();
+          if (n.includes("SET VÁY") || n.includes("SET VAY") || /(^|\s)SV/i.test(entry.name)) {
+            label = "SET VÁY";
+            kindKey = "sub-set-vay";
+            order = 1;
+          } else if (n.includes("SET QUẦN") || n.includes("SET SQ") || /(^|\s)SQ/i.test(entry.name)) {
+            label = "SET QUẦN";
+            kindKey = "sub-set-quan";
+            order = 2;
+          }
         }
 
         if (label && kindKey) {
