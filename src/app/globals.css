@@ -1581,6 +1581,25 @@ body:has(.admin-shell) .site-masthead {
   z-index: 45 !important;
 }
 
+/* Once the chat box is open it is the overlay -- full screen on a phone -- and gets Pancake's own
+   top layer back. Left at 45, the sticky masthead (50) covered the box's header and its close
+   button, so an open chat could not be dismissed. */
+#pancake-chat-plugin-root:has(.pkcp-popup-open) {
+  z-index: 2147483647 !important;
+}
+
+/* The bubble at 48px rather than Pancake's 60px, so it sits lighter over the page. */
+#pancake-chat-plugin-root .pkcp-button-circle,
+#pancake-chat-plugin-root .pkcp-button-icon {
+  width: 48px !important;
+  height: 48px !important;
+}
+
+#pancake-chat-plugin-root .pkcp-button-icon svg {
+  width: 28px !important;
+  height: 28px !important;
+}
+
 @media (max-width: 1023.98px) {
   body:has([data-mobile-purchase-bar]) #pancake-chat-plugin-root {
     bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
