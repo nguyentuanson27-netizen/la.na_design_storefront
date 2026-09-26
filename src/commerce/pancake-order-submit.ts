@@ -611,6 +611,11 @@ export function createPancakeOrderSubmissionService(
       {
         policy: ReturnType<typeof resolveSellingPolicy>;
         isComposite: boolean;
+        components: readonly Readonly<{
+          requiredQuantity: number;
+          pancakeVariationId: string;
+          isUsable: boolean;
+        }>[];
       }
     >;
     try {
@@ -633,7 +638,22 @@ export function createPancakeOrderSubmissionService(
                 },
               },
             },
-            compositeComponents: { select: { parentVariantId: true }, take: 1 },
+            // ADR 0014: a STANDARD composite's capacity is its components' stock, never the
+            // parent's own Pancake row. The edges name which live variations to read and how many
+            // units of each one line consumes.
+            compositeComponents: {
+              orderBy: [{ componentVariantId: "asc" }],
+              select: {
+                quantity: true,
+                componentVariant: {
+                  select: {
+                    pancakeVariationId: true,
+                    isPresent: true,
+                    product: { select: { pancakeShopId: true, isPresent: true } },
+                  },
+                },
+              },
+            },
           },
         }),
       ]);
@@ -644,6 +664,14 @@ export function createPancakeOrderSubmissionService(
           {
             policy: resolveSellingPolicy(v.product?.sellingPolicy),
             isComposite: v.compositeComponents.length > 0,
+            components: v.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              pancakeVariationId: edge.componentVariant.pancakeVariationId,
+              isUsable:
+                edge.componentVariant.isPresent &&
+                edge.componentVariant.product.isPresent &&
+                edge.componentVariant.product.pancakeShopId === persistedShopId,
+            })),
           },
         ]),
       );
@@ -669,6 +697,20 @@ export function createPancakeOrderSubmissionService(
     let provenanceDrifted = false;
     let subtotalVnd = 0;
     let totalQuantity = 0;
+    // Live Pancake units each order line consumes, per physical stock resource. A standalone line
+    // consumes its own variation; a composite line consumes `quantity × edge.quantity` of each
+    // component. Summed across lines so a COMBO and an ÁO LẺ sharing one Áo cannot each pass alone.
+    const demandByResource = new Map<string, { units: number; floor: number }>();
+    function addDemand(pancakeVariationId: string, units: number, floor: number): boolean {
+      const current = demandByResource.get(pancakeVariationId);
+      const total = (current?.units ?? 0) + units;
+      if (!Number.isSafeInteger(total)) return false;
+      demandByResource.set(pancakeVariationId, {
+        units: total,
+        floor: current === undefined ? floor : Math.max(current.floor, floor),
+      });
+      return true;
+    }
 
     for (const line of order.lines) {
       if (
@@ -689,6 +731,7 @@ export function createPancakeOrderSubmissionService(
       const variantMeta = variantMetaById.get(line.variantId) ?? {
         policy: resolveSellingPolicy(null),
         isComposite: false,
+        components: [],
       };
 
       // ADR 0014 §11: Composite products under OVERSELL / PREORDER are disallowed in v1.
@@ -712,15 +755,41 @@ export function createPancakeOrderSubmissionService(
         return reject("PRICE_UNAVAILABLE");
       }
 
-      if (!Number.isFinite(live.sellableStock)) {
-        return reject("STOCK_UNAVAILABLE");
-      }
       const floor = capacityFloorForMode(
         variantMeta.policy.sellingMode,
         variantMeta.policy.negativeStockLimit,
       );
-      if (live.sellableStock - line.quantity < floor) {
-        return reject("STOCK_UNAVAILABLE");
+      if (variantMeta.isComposite) {
+        // PR #81: a composite parent's own Pancake stock is not its capacity (a COMBO or an
+        // inactive SET VÁY sibling is routinely 0 there while its pieces are stocked), so it is not
+        // read. Each component must be a present, same-shop variation that is uniquely live now,
+        // with enough units for this line; the policy is STANDARD here (§11 refused the rest above).
+        for (const component of variantMeta.components) {
+          const units = line.quantity * component.requiredQuantity;
+          const liveComponent = liveByVariationId.get(component.pancakeVariationId);
+          if (
+            !component.isUsable ||
+            !Number.isSafeInteger(component.requiredQuantity) ||
+            component.requiredQuantity <= 0 ||
+            !Number.isSafeInteger(units) ||
+            !liveComponent ||
+            !Number.isFinite(liveComponent.sellableStock) ||
+            liveComponent.sellableStock - units < floor ||
+            !addDemand(component.pancakeVariationId, units, floor)
+          ) {
+            return reject("STOCK_UNAVAILABLE");
+          }
+        }
+      } else {
+        if (!Number.isFinite(live.sellableStock)) {
+          return reject("STOCK_UNAVAILABLE");
+        }
+        if (live.sellableStock - line.quantity < floor) {
+          return reject("STOCK_UNAVAILABLE");
+        }
+        if (!addDemand(line.pancakeVariationId, line.quantity, floor)) {
+          return reject("STOCK_UNAVAILABLE");
+        }
       }
       if (line.unitPriceVnd !== BigInt(freshUnitPriceVnd)) {
         drifted = true;
@@ -761,6 +830,15 @@ export function createPancakeOrderSubmissionService(
         // line the website sold at a discount.
         unitPriceVnd: Number(line.unitPriceVnd),
       });
+    }
+
+    // Each line passed on its own above; this closes lines that share a resource. With no composite
+    // line every resource has exactly one line, so it refuses nothing the per-line check accepted.
+    for (const [pancakeVariationId, demand] of demandByResource) {
+      const liveResource = liveByVariationId.get(pancakeVariationId);
+      if (!liveResource || liveResource.sellableStock - demand.units < demand.floor) {
+        return reject("STOCK_UNAVAILABLE");
+      }
     }
 
     // Before any totals assertion or outbound call: a drifted quote is not an invalid order, and

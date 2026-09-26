@@ -6,10 +6,12 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 import { createCartLineAuthorityResolver } from "../../src/commerce/cart-line-authority.ts";
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
+import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
 import { deriveStorefrontProjectionSelection } from "../../src/commerce/storefront-projection.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
+import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 
 const connectionString = process.env.DATABASE_URL;
@@ -336,4 +338,120 @@ test("composites that are not an exact subset of one active combo fail closed at
     }),
     { ok: false, reason: "VARIANT_UNAVAILABLE" },
   );
+});
+
+function liveVariation(key: string, price: number, stock: number): PancakeCatalogVariation {
+  return {
+    id: `combo-subsets-${key}`,
+    productId: `combo-subsets-live-${key}`,
+    displayId: null,
+    barcode: `barcode-${key}`,
+    fields: [],
+    imageUrls: [],
+    isHidden: false,
+    isLocked: false,
+    retailPrice: price,
+    retailPriceAfterDiscount: price,
+    product: { id: `combo-subsets-live-${key}`, name: `Live ${key}` },
+    warehouseStocks: [{ warehouseId: "combo-subsets-live-wh", remainQuantity: stock }],
+    sellableStock: stock,
+  };
+}
+
+/** Real cart mutation → checkout snapshot, leaving a DRAFT ready for the submit boundary. */
+async function checkoutDraft(publicCode: string, variantIds: readonly string[]) {
+  await prisma.orderMirror.deleteMany({ where: { publicCode: { startsWith: publicCodePrefix } } });
+  await prisma.cart.deleteMany({ where: { id: cartId } });
+  await prisma.cart.create({ data: { id: cartId, expiresAt: new Date("2026-09-27T00:00:00.000Z") } });
+  const cartService = createAnonymousCartService(prisma);
+  for (const variantId of variantIds) {
+    const added = await cartService.addItemUnit({
+      cartId,
+      variantId,
+      now,
+      resolveLine: createCartLineAuthorityResolver({ shopId, now }),
+    });
+    assert.equal(added.ok, true);
+  }
+  const snapshot = await createGuestCheckoutSnapshotService(prisma, {
+    checkoutInputValidated: true,
+    verifyRenderedQuote: acceptAnyRenderedQuote,
+  }).create({ cartId, shopId, publicCode, checkoutInput, now });
+  assert.equal(snapshot.ok, true, snapshot.ok ? undefined : snapshot.reason);
+}
+
+async function submitAgainst(publicCode: string, liveCatalog: readonly PancakeCatalogVariation[]) {
+  const posted: string[][] = [];
+  const result = await createPancakeOrderSubmissionService(
+    prisma,
+    {
+      async fetchCompleteCatalog(requestShopId) {
+        assert.equal(requestShopId, shopId);
+        return liveCatalog;
+      },
+      async createOrder(request) {
+        posted.push(request.items.map((item) => item.variation_id));
+        return { id: 781_001 };
+      },
+    },
+    { now: () => now },
+  ).submit({ publicCode, shopId });
+  return { result, posted };
+}
+
+test("submit validates a SET from its components' live stock, not the parent's own zero row", async () => {
+  const catalog = await seedCatalog();
+  const code = `${publicCodePrefix}-submit`;
+
+  // Pancake reports 0 on the SET VÁY variation itself while Áo and CV are stocked: the case every
+  // inactive sibling SET is in. It must reach the external create call and confirm.
+  await checkoutDraft(code, [catalog.setVayM.id]);
+  const confirmed = await submitAgainst(code, [
+    liveVariation("sv-555-m", 599_000, 0),
+    liveVariation("ao-555-m", 429_000, 4),
+    liveVariation("cv-555-m", 429_000, 4),
+  ]);
+  assert.deepEqual(confirmed.result, { ok: true, state: "CONFIRMED", pancakeOrderId: "781001" });
+  assert.deepEqual(confirmed.posted, [["combo-subsets-sv-555-m"]]);
+
+  // A sold-out component still stops the SET before any external call, however much the parent's
+  // own row claims.
+  await checkoutDraft(code, [catalog.setVayM.id]);
+  const soldOut = await submitAgainst(code, [
+    liveVariation("sv-555-m", 599_000, 50),
+    liveVariation("ao-555-m", 429_000, 4),
+    liveVariation("cv-555-m", 429_000, 0),
+  ]);
+  assert.deepEqual(soldOut.result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.deepEqual(soldOut.posted, []);
+
+  // A component missing from the live catalog is not capacity either.
+  await checkoutDraft(code, [catalog.setVayM.id]);
+  const missing = await submitAgainst(code, [
+    liveVariation("sv-555-m", 599_000, 0),
+    liveVariation("ao-555-m", 429_000, 4),
+  ]);
+  assert.deepEqual(missing.result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.deepEqual(missing.posted, []);
+});
+
+test("submit sums a SET and a single piece that consume the same live component", async () => {
+  const catalog = await seedCatalog();
+  const code = `${publicCodePrefix}-shared`;
+  const liveWithAo = (aoStock: number) => [
+    liveVariation("sv-555-m", 599_000, 0),
+    liveVariation("ao-555-m", 429_000, aoStock),
+    liveVariation("cv-555-m", 429_000, 4),
+  ];
+
+  // SET VÁY (1 Áo + 1 CV) and ÁO LẺ (1 Áo) need two Áo; one on hand passes each line alone.
+  await checkoutDraft(code, [catalog.setVayM.id, catalog.aoM.id]);
+  const short = await submitAgainst(code, liveWithAo(1));
+  assert.deepEqual(short.result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.deepEqual(short.posted, []);
+
+  await checkoutDraft(code, [catalog.setVayM.id, catalog.aoM.id]);
+  const enough = await submitAgainst(code, liveWithAo(2));
+  assert.equal(enough.result.ok, true);
+  assert.equal(enough.posted.length, 1);
 });

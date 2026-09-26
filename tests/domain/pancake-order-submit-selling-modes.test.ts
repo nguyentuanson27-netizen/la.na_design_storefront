@@ -14,6 +14,7 @@ const shopId = 1720000650;
 const variantId = "var-test-01";
 const pancakeVariationId = "pan-var-01";
 const publicCode = "LA-260918-001";
+const componentVariationId = "pan-comp-01";
 
 function buildCatalogVariation(
   id: string,
@@ -148,7 +149,19 @@ function buildMockPrisma({
                 negativeStockLimit,
               },
             },
-            compositeComponents: isComposite ? [{ parentVariantId: variantId }] : [],
+            // One component edge: a STANDARD composite's capacity is its component's live stock.
+            compositeComponents: isComposite
+              ? [
+                  {
+                    quantity: 1,
+                    componentVariant: {
+                      pancakeVariationId: componentVariationId,
+                      isPresent: true,
+                      product: { pancakeShopId: shopId, isPresent: true },
+                    },
+                  },
+                ]
+              : [],
           },
         ];
       },
@@ -356,7 +369,7 @@ test("Malformed stock: rejects with STOCK_UNAVAILABLE when sellableStock is non-
   assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
 });
 
-test("Composite parent: allowed in STANDARD mode when stock is available", async () => {
+test("Composite parent: allowed in STANDARD mode when component stock is available", async () => {
   const prismaMock = buildMockPrisma({
     sellingMode: "STANDARD",
     isComposite: true,
@@ -364,7 +377,11 @@ test("Composite parent: allowed in STANDARD mode when stock is available", async
 
   const gateway = {
     async fetchCompleteCatalog() {
-      return [buildCatalogVariation(pancakeVariationId, 3)];
+      // The parent's own Pancake row is 0, as a COMBO / SET routinely is; its component is stocked.
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, 3),
+      ];
     },
     async createOrder() {
       return { id: 70010 };
@@ -375,6 +392,33 @@ test("Composite parent: allowed in STANDARD mode when stock is available", async
   const result = await service.submit({ publicCode, shopId });
 
   assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70010" });
+});
+
+test("Composite parent: STANDARD capacity is its component's live stock, not the parent row", async () => {
+  const prismaMock = buildMockPrisma({
+    sellingMode: "STANDARD",
+    isComposite: true,
+  });
+  let createCalled = false;
+
+  const gateway = {
+    async fetchCompleteCatalog() {
+      return [
+        buildCatalogVariation(pancakeVariationId, 50),
+        buildCatalogVariation(componentVariationId, 0),
+      ];
+    },
+    async createOrder() {
+      createCalled = true;
+      return { id: 70013 };
+    },
+  };
+
+  const service = createPancakeOrderSubmissionService(prismaMock, gateway);
+  const result = await service.submit({ publicCode, shopId });
+
+  assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.equal(createCalled, false);
 });
 
 test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED under OVERSELL mode", async () => {
