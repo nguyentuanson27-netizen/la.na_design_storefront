@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import {
   INDEXABLE_CATEGORY_PATH_PATTERNS,
   isCanonicalCatalogPaginationRequest,
+  SALE_LISTING_PATH_PATTERNS,
 } from "./search-exposure.ts";
 
 type CatalogListingMetadataInput = Readonly<{
@@ -18,7 +19,7 @@ const CATALOG_LISTING_PATH_PATTERNS = [
   /^\/shop$/,
   /^\/collections\/[^/?#]+$/,
   ...INDEXABLE_CATEGORY_PATH_PATTERNS,
-  /^\/sale$/,
+  ...SALE_LISTING_PATH_PATTERNS,
   /^\/new-arrivals$/,
 ] as const;
 

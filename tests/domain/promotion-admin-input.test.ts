@@ -87,7 +87,7 @@ test("Required 3: parseStrictVietnamDateTime strictly validates calendar correct
 });
 
 test("Required 3: parseCampaignFormInput rejects invalid kind without fail-open coercion", () => {
-  for (const bad of ["HACKED", "PROMO", "promotion", "FLASH", ""]) {
+  for (const bad of ["HACKED", "PROMO", "promotion", "FLASH", "clearance", " CLEARANCE_X", ""]) {
     const formData = new FormData();
     formData.append("kind", bad);
     formData.append("discountType", "PERCENTAGE");
@@ -164,5 +164,22 @@ test("Required 3: parseCampaignFormInput strictly parses valid full campaign for
     assert.equal(res.value.startsAt?.toISOString(), "2026-10-01T02:00:00.000Z");
     assert.equal(res.value.endsAt?.toISOString(), "2026-10-05T14:00:00.000Z");
     assert.equal(res.value.targets.length, 2);
+  }
+});
+
+test("the Xả hàng lẻ size kind parses like a Promotion, with no window required", () => {
+  const formData = new FormData();
+  formData.append("name", "Xả hàng lẻ size");
+  formData.append("kind", " CLEARANCE ");
+  formData.append("discountType", "PERCENTAGE");
+  formData.append("percentageValue", "40");
+  formData.append("targetProductId", "prod-1");
+
+  const res = parseCampaignFormInput(formData);
+  assert.equal(res.ok, true);
+  if (res.ok) {
+    assert.equal(res.value.kind, "CLEARANCE");
+    assert.equal(res.value.startsAt, null);
+    assert.equal(res.value.endsAt, null);
   }
 });

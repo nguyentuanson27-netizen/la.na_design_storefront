@@ -1123,27 +1123,182 @@ main nav[aria-label="Breadcrumb"] a {
   transform: scale(1.025);
 }
 
+/*
+ * Tags over a product photograph. The old badge was a black box whose CSS `left` fought the card's
+ * `right-3` utility -- this sheet is unlayered, so it wins -- which stretched `-44%` into a bar
+ * across the whole image. Tags now sit in one stack anchored top-right (master spec, "Sale display":
+ * badge position is image top-right), size to their text, and take their colour from the brand
+ * palette. The discount sits in the corner; any extra tag lines up to its left, then wraps.
+ */
+.product-tags {
+  position: absolute;
+  z-index: 2;
+  top: 0.625rem;
+  left: 0.625rem;
+  right: 0.625rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.3rem;
+  pointer-events: none;
+}
+
+.product-tag,
+.product-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.375rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 2px rgba(42, 24, 16, 0.18);
+}
+
+/* The legacy commerce card places its single badge itself, in the same top-right corner. */
 .product-badge {
   position: absolute;
   z-index: 2;
-  left: 0.75rem;
-  top: 0.75rem;
-  padding: 0.35rem 0.55rem;
-  background: #000000;
-  color: #ffffff;
-  border: none;
-  font-size: 0.65rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  line-height: 1;
+  top: 0.625rem;
+  right: 0.625rem;
+  background: #9a3324;
+  color: #fff8f1;
 }
 
-.product-badge--sale {
-  background: #000000;
+.product-tag--sale {
+  background: #9a3324;
+  color: #fff8f1;
+}
+
+/*
+ * Flash Sale is the one tag meant to shout: a hot amber-to-crimson gradient, a yellow bolt, and a
+ * slow sheen passing over it. The sheen stops for readers who ask for reduced motion.
+ */
+.product-tag--flash {
+  position: relative;
+  overflow: hidden;
+  padding-left: 0.4rem;
+  background: linear-gradient(115deg, #ffb238 0%, #ff6a1a 38%, #e5282f 72%, #b8123f 100%);
   color: #ffffff;
-  border: none;
-  font-weight: 700;
+  font-size: 0.625rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 1px rgba(122, 16, 20, 0.45);
+  box-shadow:
+    0 1px 2px rgba(122, 16, 20, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset;
+}
+
+.product-tag--flash::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.55) 45%,
+    transparent 70%
+  );
+  transform: translateX(-120%);
+  animation: product-tag-sheen 2.8s ease-in-out infinite;
+}
+
+.product-tag--flash svg {
+  width: 0.75rem;
+  height: 0.75rem;
+  flex: none;
+  color: #fff27a;
+  filter: drop-shadow(0 0 2px rgba(255, 230, 90, 0.8));
+}
+
+@keyframes product-tag-sheen {
+  0%,
+  55% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .product-tag--flash::after {
+    display: none;
+  }
+}
+
+/* Xả hàng lẻ size: a warm sand tag with an espresso outline, so it reads as "last pieces" without
+ * competing with the red discount beside it. Sentence case, because the label is a phrase. */
+.product-tag--clearance {
+  background: #f6e7c8;
+  color: #6b2f14;
+  box-shadow:
+    0 1px 2px rgba(42, 24, 16, 0.18),
+    0 0 0 1px rgba(107, 47, 20, 0.35) inset;
+  font-size: 0.65rem;
+  letter-spacing: 0.01em;
+}
+
+.product-tag--new {
+  background: rgba(250, 247, 242, 0.94);
+  color: #2a1810;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-tag--bestseller {
+  background: #70584b;
+  color: #faf7f2;
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.product-countdown {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #9a3324;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-countdown svg {
+  width: 0.8rem;
+  height: 0.8rem;
+  flex: none;
+}
+
+@media (min-width: 768px) {
+  .product-tags {
+    top: 0.75rem;
+    left: 0.75rem;
+    right: 0.75rem;
+  }
+
+  .product-tag,
+  .product-badge {
+    height: 1.5rem;
+    padding: 0 0.6rem;
+    font-size: 0.75rem;
+  }
+
+  .product-tag--flash,
+  .product-tag--new,
+  .product-tag--bestseller,
+  .product-tag--clearance {
+    font-size: 0.6875rem;
+  }
 }
 
 /*
@@ -1798,12 +1953,23 @@ body:has(.admin-shell) .site-masthead {
   text-underline-offset: 0.45em;
 }
 
+.special-deals .section-heading-row {
+  justify-content: center;
+  text-align: center;
+}
+
+.special-deals .section-heading-row h2 {
+  font-size: clamp(1.15rem, 1rem + 0.8vw, 1.6rem);
+  letter-spacing: 0.2em;
+}
+
 .special-deals__copy {
   max-width: 40rem;
-  margin: -1rem 0 2rem;
+  margin: -1rem auto 2.5rem;
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.5rem);
   line-height: 1.5;
+  text-align: center;
 }
 
 /* Collection promo rows (§7.3 / §7.5): two 50% tiles at every width.
@@ -1901,7 +2067,7 @@ body:has(.admin-shell) .site-masthead {
 .category-discovery__title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.15rem, 1.6vw, 1.5rem);
+  font-size: clamp(1.15rem, 1rem + 0.8vw, 1.6rem);
   font-weight: 500;
   line-height: 1.2;
   letter-spacing: 0.02em;
@@ -1912,7 +2078,7 @@ body:has(.admin-shell) .site-masthead {
   margin: 0.4rem 0 0;
   color: var(--muted-ink);
   font-family: var(--font-sans);
-  font-size: 0.95rem;
+  font-size: clamp(1.2rem, 1.05rem + 0.6vw, 1.5rem);
   line-height: 1.5;
 }
 
@@ -2210,6 +2376,7 @@ body:has(.admin-shell) .site-masthead {
 
   .category-discovery__intro {
     padding-bottom: 0;
+    text-align: center;
   }
 
   .feedback-gallery {
@@ -2237,6 +2404,7 @@ body:has(.admin-shell) .site-masthead {
 
 @media (max-width: 640px) {
   .special-deals__copy {
-    margin: -0.5rem 1rem 1.5rem;
+    margin: -0.5rem auto 1.5rem;
+    padding-inline: 1rem;
   }
 }

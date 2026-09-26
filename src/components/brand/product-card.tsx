@@ -21,7 +21,8 @@ export function ProductCard({
   model: ProductCardModel;
   tone: ProductCardTone;
 }) {
-  const { price, primaryImage, hoverImage, flashSale, marketingBadge, availabilityLabel } = model;
+  const { price, primaryImage, hoverImage, flashSale, lastSizesLeft, marketingBadge, availabilityLabel } =
+    model;
 
   return (
     <article className="group">
@@ -35,18 +36,26 @@ export function ProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[2/3] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
-          {marketingBadge ? (
-            <span
-              className={`product-badge product-badge--${marketingBadge.type} absolute top-3 right-3 z-10 px-2 py-1 text-[0.65rem] font-semibold uppercase tracking-wider ${
-                marketingBadge.type === "sale"
-                  ? "bg-[#3B2219] text-[#FAF7F2]"
-                  : marketingBadge.type === "new"
-                    ? "bg-[#70584B] text-[#FAF7F2]"
-                    : "bg-[#2A1810] text-[#FAF7F2]"
-              }`}
-            >
-              {marketingBadge.label}
-            </span>
+          {flashSale || lastSizesLeft || marketingBadge ? (
+            // One top-right stack that sizes to its tags; the styling lives in `globals.css`.
+            <div className="product-tags">
+              {flashSale ? (
+                <span className="product-tag product-tag--flash">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <path d="M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.8L13.5 2Z" />
+                  </svg>
+                  FLASH SALE
+                </span>
+              ) : null}
+              {lastSizesLeft ? (
+                <span className="product-tag product-tag--clearance">Lẻ size - Chỉ còn ít</span>
+              ) : null}
+              {marketingBadge ? (
+                <span className={`product-tag product-tag--${marketingBadge.type}`}>
+                  {marketingBadge.label}
+                </span>
+              ) : null}
+            </div>
           ) : null}
           {primaryImage ? (
             <>
@@ -82,17 +91,21 @@ export function ProductCard({
           </h2>
           {flashSale ? (
             <>
-              <div className="flex flex-wrap items-center justify-center gap-2 text-[0.68rem] font-semibold uppercase tracking-[0.12em]">
-                <span className="bg-[#2A1810] px-2 py-0.5 text-[#FAF7F2]">FLASH SALE</span>
-                {flashSale.countdownText ? (
-                  <span className="text-[#70584B]">{flashSale.countdownText}</span>
-                ) : null}
-              </div>
+              {/* The FLASH SALE tag rides on the photograph; only the time left stays here. */}
+              {flashSale.countdownText ? (
+                <p className="product-countdown">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                    <circle cx="12" cy="13" r="8" />
+                    <path d="M12 9v4l2.5 2.5M9 2h6" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {flashSale.countdownText}
+                </p>
+              ) : null}
               <p className="product-price font-display flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1 text-[15px] md:text-base">
                 <span className="sr-only">Giá gốc</span>
-                <del className="text-[#70584B] line-through">{price.compareAtText}</del>
+                <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
                 <span className="sr-only">Giá Flash Sale</span>
-                <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
+                <strong className="font-semibold text-[#9A3324]">{price.displayText}</strong>
               </p>
             </>
           ) : price.compareAtText ? (
@@ -100,7 +113,7 @@ export function ProductCard({
               <span className="sr-only">Giá gốc</span>
               <del className="font-normal text-[#70584B] line-through">{price.compareAtText}</del>
               <span className="sr-only">Giá khuyến mãi</span>
-              <strong className="font-semibold text-[#2A1810]">{price.displayText}</strong>
+              <strong className="font-semibold text-[#9A3324]">{price.displayText}</strong>
             </p>
           ) : (
             <p className="product-price font-display text-[15px] font-semibold text-[#3B2219] md:text-base">

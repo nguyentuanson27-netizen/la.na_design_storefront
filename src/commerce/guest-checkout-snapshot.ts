@@ -10,7 +10,7 @@ import type {
   RenderedQuoteProofFacts,
   RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
-import type { PromotionPricingResult } from "./promotion-pricing.ts";
+import type { PromotionCampaignKind, PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 
@@ -548,7 +548,7 @@ export function createGuestCheckoutSnapshotService(
           baseUnitPriceVnd: bigint;
           promotionCampaignId: string | null;
           promotionName: string | null;
-          promotionKind: "PROMOTION" | "FLASH_SALE" | null;
+          promotionKind: PromotionCampaignKind | null;
           promotionDiscountType: "PERCENTAGE" | "FIXED_PRICE" | null;
           promotionPercentageValue: number | null;
           promotionFixedPriceVnd: bigint | null;

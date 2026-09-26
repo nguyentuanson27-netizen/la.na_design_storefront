@@ -20,7 +20,7 @@ import { buildCollectionMetadata } from "@/routes/metadata/collection";
  * Markup only. The definition, its page of products, the filter links, the breadcrumb graph and the
  * refresh window all live in `@/routes/collection`.
  *
- * The editorial half -- hero, story, gallery, video -- is this collection's own and stays. The
+ * The editorial half -- hero, gallery, video -- is this collection's own and stays. The
  * listing half underneath now draws the same chrome as every other listing instead of keeping a
  * second one. The loader still owns every canonical sort/filter href; the client panel consumes
  * those hrefs for its sort options and size links without re-deriving route state.
@@ -64,17 +64,9 @@ function render(data: CollectionViewModel) {
             { label: data.title },
           ]}
         />
-        <ListingHeader title={data.title}>
-          <p className="mt-6 max-w-2xl break-words font-display text-xl leading-snug text-[#2A1810] md:text-2xl">
-            {editorial.story}
-          </p>
-          {/* Buyer information, not decoration: it sets the expectation that the figures on the
-              cards are re-checked at purchase, which is the same promise `/shop` makes. Kept on one
-              source line because the copy inventory reads the promise as a whole string. */}
-          <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70">
-            Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.
-          </p>
-        </ListingHeader>
+        {/* Title only: the owner removed the story line and the buyer notice from this header. The
+            story still feeds the page's metadata; the notice stays on `/shop`. */}
+        <ListingHeader title={data.title} />
 
         {editorial.video ? (
           <div className="mt-12">

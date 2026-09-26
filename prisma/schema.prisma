@@ -63,6 +63,8 @@ enum MerchantCondition {
 enum PromotionCampaignKind {
   PROMOTION
   FLASH_SALE
+  /// "Xả hàng lẻ size": priced like PROMOTION, listed on /sale/xa-hang-le-size.
+  CLEARANCE
 }
 
 enum PromotionDiscountType {

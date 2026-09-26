@@ -32,14 +32,32 @@
 import {
   resolvePromotionPricing,
   type ApplicablePromotionCampaign,
+  type PromotionCampaignKind,
   type PromotionPricingResult,
 } from "./promotion-pricing.ts";
 import type { StorefrontPricingRule } from "./storefront-product.ts";
+
+/**
+ * Which campaign kinds' discounts a listing shows: one kind for the whole listing, or -- for a
+ * listing whose scope differs per product -- the kinds allowed for one variant.
+ */
+export type StorefrontCampaignKindScope =
+  | PromotionCampaignKind
+  | ((variantId: string) => readonly PromotionCampaignKind[]);
+
+function allowedKinds(
+  scope: StorefrontCampaignKindScope | undefined,
+  variantId: string,
+): readonly PromotionCampaignKind[] | null {
+  if (scope === undefined) return null;
+  return typeof scope === "function" ? scope(variantId) : [scope];
+}
 
 export function buildPromotionalStorefrontPricing({
   campaignsByVariantId,
   now,
   onResolved,
+  onlyKind,
 }: Readonly<{
   /** Keyed by internal `VariantMirror.id`, which is how the candidate repository reports them. */
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
@@ -61,6 +79,19 @@ export function buildPromotionalStorefrontPricing({
    * promotion audit quietly went missing. Keep implementations total.
    */
   onResolved?: (variantId: string, pricing: PromotionPricingResult) => void;
+  /**
+   * Show only discounts that come from this campaign kind; any other discount is shown at base.
+   *
+   * For a listing scoped to one kind (`/sale/uu-dai` lists Promotion only), so a variant priced by a
+   * Flash Sale cannot put the Flash price on that listing's card or its tracking. It filters the
+   * resolved answer rather than the campaign list on purpose: dropping a campaign before resolving
+   * could turn a `PROMOTION_CONFLICT` into a discount the cart would never honour. `onResolved`
+   * still observes the unscoped answer.
+   *
+   * `/sale/xa-hang-le-size` passes a per-variant scope: Clearance everywhere, plus Flash Sale on the
+   * products its read admitted for proven "lẻ size" stock.
+   */
+  onlyKind?: StorefrontCampaignKindScope;
 }>): StorefrontPricingRule {
   return (variant) => {
     const pricing = resolvePromotionPricing({
@@ -69,6 +100,19 @@ export function buildPromotionalStorefrontPricing({
       now,
     });
     onResolved?.(variant.id, pricing);
+
+    const kinds = allowedKinds(onlyKind, variant.id);
+    if (
+      kinds !== null
+      && pricing.isDiscounted
+      && (pricing.promotion === null || !kinds.includes(pricing.promotion.kind))
+    ) {
+      return Object.freeze({
+        price: pricing.basePriceVnd,
+        basePriceVnd: pricing.basePriceVnd,
+        isDiscounted: false,
+      });
+    }
 
     return Object.freeze({
       // `effectivePriceVnd` is base when nothing applies and stays null when the base itself is

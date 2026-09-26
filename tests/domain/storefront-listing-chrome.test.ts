@@ -408,7 +408,7 @@ test("a collection hero stays the first full-bleed surface, above the shared lis
 /** The collection detail keeps its editorial half and its featured ordering. */
 test("a collection page keeps its editorial content and featured ordering", () => {
   const page = read("src/app/collections/[slug]/page.tsx");
-  for (const editorial of ["editorial.heroImage", "editorial.story", "editorial.gallery", "editorial.video"]) {
+  for (const editorial of ["editorial.heroImage", "editorial.gallery", "editorial.video"]) {
     assert.ok(page.includes(editorial), `the collection page must keep ${editorial}`);
   }
   assert.match(page, /data\.sortOptions/, "the collection's own sort links stay");
@@ -432,5 +432,21 @@ test("shop keeps its free-text query and collection facet, which the category pa
   assert.ok(
     !page.includes("PlpFilterPanel"),
     "the category filter panel builds hrefs from a taxonomy key /shop does not have",
+  );
+});
+
+/** Master spec, "Sale display": the discount badge sits at the image's top-right. */
+test("product card sale tags are anchored top-right, with the discount in the corner", () => {
+  const css = read("src/app/globals.css");
+  const stack = css.match(/\.product-tags\s*\{([^}]*)\}/)?.[1] ?? "";
+  assert.match(stack, /position:\s*absolute;/);
+  assert.match(stack, /right:\s*0\.625rem;/);
+  assert.match(stack, /justify-content:\s*flex-end;/, "tags pack against the right edge");
+
+  const card = read("src/components/brand/product-card.tsx");
+  const tags = card.slice(card.indexOf('className="product-tags"'));
+  assert.ok(
+    tags.indexOf("product-tag--flash") < tags.indexOf("marketingBadge.label"),
+    "the discount renders last, so it is the tag in the corner",
   );
 });

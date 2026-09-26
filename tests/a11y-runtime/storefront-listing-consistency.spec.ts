@@ -627,7 +627,8 @@ test("a collection keeps its editorial half above the shared listing", async ({ 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`${BASE_URL}/collections/${COLLECTION_SLUG}`, { waitUntil: "networkidle" });
 
-  await expect(page.getByText("Bộ sưu tập kiểm thử bố cục danh sách.", { exact: true })).toBeVisible();
+  // The header is title-only: the collection's story is no longer drawn under the heading.
+  await expect(page.getByText("Bộ sưu tập kiểm thử bố cục danh sách.", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Sắp xếp bộ sưu tập" })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Lọc theo kích cỡ" })).toBeVisible();
 

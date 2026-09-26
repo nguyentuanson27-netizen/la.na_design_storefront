@@ -538,7 +538,7 @@ Hero slider
 - sale price prominent;
 - original price smaller + strikethrough;
 - percentage discount badge;
-- badge position: image top-right.
+- badge position: image top-right. Extra tags (`FLASH SALE`, `Lẻ size - Chỉ còn ít`) line up to the badge's left in the same top-right stack, with the percentage badge in the corner (PR #79).
 
 ### Marketing badge priority
 
@@ -548,7 +548,7 @@ At most one marketing badge:
 Sale > Hàng mới > Bán chạy
 ```
 
-Badges only appear from real authoritative data; never invent marketing status.
+Badges only appear from real authoritative data; never invent marketing status. For example, `Lẻ size - Chỉ còn ít` makes a stock claim, so it shows only when stock proves it (see `promotions-flash-sale-v1.md`, `CLEARANCE`); a campaign alone never earns it.
 
 **Preorder is an availability state, not a marketing badge.** If a product is preorder, `Đặt trước` must remain visible even when the marketing badge slot is occupied; render it in a separate availability/status location.
 
