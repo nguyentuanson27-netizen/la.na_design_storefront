@@ -23,6 +23,7 @@ const pagedSlug = `runtime-paged-${suffix}`;
 const draftSlug = `runtime-draft-${suffix}`;
 const emptySlug = `runtime-empty-${suffix}`;
 const heroSlug = `runtime-hero-${suffix}`;
+const bstSlug = `runtime-bst-${suffix}`;
 const operationalCategoryId = 987_654_321;
 
 let server: ChildProcess | undefined;
@@ -67,7 +68,7 @@ async function stopServer() {
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug] } },
+    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug, bstSlug] } },
   });
 }
 
@@ -154,6 +155,13 @@ test.beforeAll(async () => {
         description: "Published collection with real configured hero media.",
         heroImageUrl: "https://content.pancake.vn/images/1/2/3/collection-hero.jpg",
         heroImageMobileUrl: "https://content.pancake.vn/images/1/2/3/collection-hero-mobile.jpg",
+        isPublished: true,
+      },
+      {
+        slug: bstSlug,
+        // Stored the way merchandisers name collections in admin; the storefront drops the prefix.
+        title: "BST Runtime Diệp Họa",
+        description: "A collection whose stored title carries the administrative BST prefix.",
         isPublished: true,
       },
     ],
@@ -473,4 +481,19 @@ test("published empty collection renders an intentional empty state", async ({ p
   await expect(
     page.getByText("Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.", { exact: true }),
   ).toBeVisible();
+});
+
+test("a stored BST-prefixed title is shown without the prefix on the collection page and the index", async ({
+  page,
+}) => {
+  const response = await page.goto(`${BASE_URL}/collections/${bstSlug}`, { waitUntil: "networkidle" });
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1, name: "Runtime Diệp Họa", exact: true })).toBeVisible();
+  await expect(page.locator("main").getByText("BST Runtime Diệp Họa")).toHaveCount(0);
+
+  await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
+  const card = page
+    .locator("main article")
+    .filter({ has: page.locator(`a[href="/collections/${bstSlug}"]`) });
+  await expect(card.getByRole("heading", { level: 2 })).toHaveText("Runtime Diệp Họa");
 });
