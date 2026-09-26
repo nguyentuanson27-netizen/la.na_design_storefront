@@ -656,6 +656,7 @@ export function PurchasePanelView({
 
       <section
         aria-label="Mua nhanh"
+        data-mobile-purchase-bar=""
         className="fixed inset-x-0 bottom-0 z-40 border-t border-black/20 bg-[#FAF7F2] px-4 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] lg:hidden"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >

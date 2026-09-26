@@ -492,6 +492,23 @@ test("promo tiles: on mobile the whole tile taps through to the same collection 
 
   const tiles = page.locator(".collection-promo");
   await expect(tiles).toHaveCount(4);
+
+  // Owner decision 2026-09-26 (spec §7.3): on a phone each row's two tiles stack as full-width
+  // portrait photographs rather than sitting side by side.
+  for (const region of ["promo-a", "promo-b"] as const) {
+    const rects = await page
+      .locator(`[data-homepage-region="${region}"] .collection-promo`)
+      .evaluateAll((row) =>
+        row.map((tile) => tile.getBoundingClientRect()).map((rect) => [rect.left, rect.right, rect.top, rect.bottom]),
+      );
+    expect(rects).toHaveLength(2);
+    for (const [left, right, top, bottom] of rects) {
+      expect(Math.round(left!)).toBe(0);
+      expect(Math.abs(right! - MOBILE.width)).toBeLessThanOrEqual(1);
+      expect(bottom! - top!).toBeGreaterThan(right! - left!);
+    }
+    expect(rects[1]![2]!).toBeGreaterThanOrEqual(rects[0]![3]!);
+  }
   for (const index of [0, 1, 2, 3]) {
     const tile = tiles.nth(index);
     await tile.scrollIntoViewIfNeeded();
