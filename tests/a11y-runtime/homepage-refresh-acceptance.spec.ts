@@ -387,6 +387,39 @@ const anchorAt = (page: Page, x: number, y: number) =>
     { x, y },
   );
 
+/**
+ * Owner request 2026-09-26 (spec §7.3): every promo tile centres its title and CTA, and a gradient
+ * scrim over the photograph keeps the cream copy legible on pale images without taking clicks.
+ */
+async function expectCentredLegiblePromoCopy(page: Page) {
+  const tiles = await page.locator(".collection-promo").evaluateAll((all) =>
+    all.map((tile) => {
+      const copy = tile.querySelector(".collection-promo__copy")!;
+      const title = tile.querySelector(".collection-promo__title")!.getBoundingClientRect();
+      const tileBox = tile.getBoundingClientRect();
+      const copyStyle = getComputedStyle(copy);
+      const scrim = getComputedStyle(tile.querySelector(".collection-promo__media")!, "::after");
+      return {
+        textAlign: copyStyle.textAlign,
+        alignItems: copyStyle.alignItems,
+        titleOffCentre: Math.abs(title.left + title.width / 2 - (tileBox.left + tileBox.width / 2)),
+        scrimContent: scrim.content,
+        scrimImage: scrim.backgroundImage,
+        scrimPointerEvents: scrim.pointerEvents,
+      };
+    }),
+  );
+  expect(tiles).toHaveLength(4);
+  for (const tile of tiles) {
+    expect(tile.textAlign).toBe("center");
+    expect(tile.alignItems).toBe("center");
+    expect(tile.titleOffCentre).toBeLessThanOrEqual(2);
+    expect(tile.scrimContent).not.toBe("none");
+    expect(tile.scrimImage).toContain("linear-gradient");
+    expect(tile.scrimPointerEvents).toBe("none");
+  }
+}
+
 /* ------------------------------------------------------------------- tests */
 
 test("the unchanged hero is followed by every refreshed section in the approved order", async ({ page }) => {
@@ -484,6 +517,8 @@ test("promo tiles: desktop only the CTA is clickable; the image area is not a li
     .evaluateAll((tiles) => tiles.map((tile) => tile.getBoundingClientRect()).map((rect) => [rect.left, rect.right]));
   expect(Math.round(edges[0]![0]!)).toBe(0);
   expect(Math.abs(edges[1]![1]! - DESKTOP.width)).toBeLessThanOrEqual(1);
+
+  await expectCentredLegiblePromoCopy(page);
 });
 
 test("promo tiles: on mobile the whole tile taps through to the same collection as its CTA", async ({ page }) => {
@@ -509,6 +544,7 @@ test("promo tiles: on mobile the whole tile taps through to the same collection 
     }
     expect(rects[1]![2]!).toBeGreaterThanOrEqual(rects[0]![3]!);
   }
+  await expectCentredLegiblePromoCopy(page);
   for (const index of [0, 1, 2, 3]) {
     const tile = tiles.nth(index);
     await tile.scrollIntoViewIfNeeded();

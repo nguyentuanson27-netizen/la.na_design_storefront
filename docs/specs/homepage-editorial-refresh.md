@@ -239,7 +239,7 @@ The exact two collections are intentionally **pending mapping**.
 - Wider than 640px: the two blocks sit side-by-side and each image owns 50% of the row in the normal two-slot state.
 - Phone (640px and narrower): the two blocks stack, each a full-width 4:5 portrait photograph with its title + CTA centred at the foot (owner decision 2026-09-26, below).
 - No rounded corners.
-- Title + CTA overlay on the image, positioned consistently in the lower editorial area.
+- Title + CTA overlay on the image, positioned consistently in the lower editorial area, centred horizontally at every width over a dark gradient scrim on the lower half of the photograph so the cream copy stays legible on pale photographs (owner request 2026-09-26, Claude Code session [`session_017vxPKk3MTUMv7D21UQJ7Ms`](https://claude.ai/code/session_017vxPKk3MTUMv7D21UQJ7Ms)).
 - Image crop is editorial and fills the tile.
 
 On a phone the row follows the Ding Dang reference's two stacked full-width portrait images — the owner's decision of **2026-09-26** ("chuyển 2 phần Banner Bộ Sưu Tập thành 2 ảnh dọc như dingdang"), recorded in `la-na-design-owner-approved-facts-and-decisions.md` › Settled decisions. It supersedes the earlier rule that the 50/50 rhythm holds on mobile. It is still the same two editorial photographs, not a card design: no card container, no rounded corners, copy overlaid on the image. Provenance: Claude Code session [`session_017vxPKk3MTUMv7D21UQJ7Ms`](https://claude.ai/code/session_017vxPKk3MTUMv7D21UQJ7Ms).
