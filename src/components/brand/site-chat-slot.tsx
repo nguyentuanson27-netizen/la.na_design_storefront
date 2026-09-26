@@ -22,12 +22,12 @@ const readNoHostname = () => null;
  */
 export function SiteChatSlot({
   pancakePageId,
-  pancakeHost,
+  pancakeHosts,
   messengerHref,
   brandName,
 }: Readonly<{
   pancakePageId: string | undefined;
-  pancakeHost: string;
+  pancakeHosts: readonly string[];
   messengerHref: string | null;
   brandName: string;
 }>) {
@@ -38,7 +38,7 @@ export function SiteChatSlot({
     if (isAdminPath(pathname) && pancakeChatHasRun()) window.location.reload();
   }, [pathname]);
 
-  const kind = siteChatFor({ hostname, pathname, pancakePageId, pancakeHost });
+  const kind = siteChatFor({ hostname, pathname, pancakePageId, pancakeHosts });
   if (kind === "pancake" && pancakePageId) return <PancakeChat pageId={pancakePageId} />;
   if (kind === "messenger" && messengerHref) return <MessengerButton href={messengerHref} brandName={brandName} />;
   return null;

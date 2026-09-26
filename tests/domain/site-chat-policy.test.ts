@@ -10,20 +10,21 @@ import {
 const base = {
   pathname: "/",
   pancakePageId: "web_lanadesign",
-  pancakeHost: OFFICIAL_PRODUCTION_STOREFRONT_HOST,
+  pancakeHosts: [OFFICIAL_PRODUCTION_STOREFRONT_HOST, LEGACY_TEMPORARY_STOREFRONT_HOST],
 } as const;
 
-test("the Pancake widget loads only on the exact production host the browser is on", () => {
+test("the Pancake widget loads only on the exact registered hosts the browser is on", () => {
   assert.equal(siteChatFor({ ...base, hostname: OFFICIAL_PRODUCTION_STOREFRONT_HOST }), "pancake");
+  assert.equal(siteChatFor({ ...base, hostname: LEGACY_TEMPORARY_STOREFRONT_HOST }), "pancake");
 
   for (const hostname of [
-    LEGACY_TEMPORARY_STOREFRONT_HOST,
     "lanadesign.vn",
     "127.0.0.1",
     "localhost",
     "staging.lanadesign.vn",
     `${OFFICIAL_PRODUCTION_STOREFRONT_HOST}.example.com`,
     `evil-${OFFICIAL_PRODUCTION_STOREFRONT_HOST}`,
+    `${LEGACY_TEMPORARY_STOREFRONT_HOST}.example.com`,
   ]) {
     assert.equal(siteChatFor({ ...base, hostname }), "messenger", `${hostname} falls back to Messenger`);
   }

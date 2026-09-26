@@ -11,9 +11,9 @@ export function isAdminPath(pathname: string): boolean {
 
 /**
  * - Admin shows no chat at all.
- * - The Pancake widget loads only when the page is actually served on the host registered with
- *   Pancake -- the browser's own `location.hostname`, matched exactly, not the server's configured
- *   domain, so a production container reached through any other host still falls back.
+ * - The Pancake widget loads only when the page is actually served on one of the hosts registered
+ *   with Pancake -- the browser's own `location.hostname`, matched exactly, not the server's
+ *   configured domain, so a production container reached through any other host still falls back.
  * - Everywhere else the Messenger link button stands in.
  * - `hostname` is `null` while rendering on the server and hydrating, when no chat is shown yet.
  */
@@ -21,14 +21,14 @@ export function siteChatFor({
   hostname,
   pathname,
   pancakePageId,
-  pancakeHost,
+  pancakeHosts,
 }: Readonly<{
   hostname: string | null;
   pathname: string;
   pancakePageId: string | undefined;
-  pancakeHost: string;
+  pancakeHosts: readonly string[];
 }>): SiteChatKind {
   if (hostname === null || isAdminPath(pathname)) return "none";
-  if (pancakePageId && hostname === pancakeHost) return "pancake";
+  if (pancakePageId && pancakeHosts.includes(hostname)) return "pancake";
   return "messenger";
 }
