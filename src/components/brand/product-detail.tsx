@@ -82,7 +82,11 @@ export function BrandProductDetail({
           panel spans both content rows of the right column so a long panel cannot push the
           product's own description down past it.
         */}
-        <div className="grid min-w-0 items-start gap-6 lg:mt-7 lg:grid-cols-2 lg:gap-x-16 lg:gap-y-10 lg:border-t lg:border-black/20 lg:pt-8">
+        {/* From `lg` the columns fill independently: the purchase panel spans rows 1-2 and shipping
+            and returns sit in row 3, straight under it, while the product information spans rows
+            2-4 and the trailing `1fr` row absorbs its height. With it in row 2 alone, a long
+            description set row 2's height and pushed shipping far below the panel. */}
+        <div className="grid min-w-0 items-start gap-6 lg:mt-7 lg:grid-cols-2 lg:grid-rows-[auto_auto_auto_1fr] lg:gap-x-16 lg:gap-y-10 lg:border-t lg:border-black/20 lg:pt-8">
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">{identity}</div>
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
@@ -92,7 +96,7 @@ export function BrandProductDetail({
           {/* Omitted entirely rather than rendered empty: a product with no approved editorial
               facts should not contribute a blank cell to the row. */}
           {productInformation === null ? null : (
-            <div className="min-w-0 lg:col-start-1 lg:row-start-2">{productInformation}</div>
+            <div className="min-w-0 lg:col-start-1 lg:row-start-2 lg:row-span-3">{productInformation}</div>
           )}
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-3">{purchaseInformation}</div>
