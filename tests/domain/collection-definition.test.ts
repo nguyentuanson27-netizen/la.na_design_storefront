@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   CollectionDefinitionError,
   parseCollectionDefinition,
+  toStorefrontCollectionTitle,
 } from "../../src/commerce/collection-definition.ts";
 
 test("P7 keeps collection identity and publication state website-owned", () => {
@@ -123,4 +124,16 @@ test("U2 fails closed on homepage merchandising positions outside 1 through 6", 
         error instanceof CollectionDefinitionError && error.reason === "collection-homepage-position",
     );
   }
+});
+
+test("storefront collection titles drop the admin-side BST prefix", () => {
+  assert.equal(toStorefrontCollectionTitle("BST Diệp Họa Thư"), "Diệp Họa Thư");
+  assert.equal(toStorefrontCollectionTitle("bst: Hạ Vy"), "Hạ Vy");
+  assert.equal(toStorefrontCollectionTitle("BST - Thu Đông"), "Thu Đông");
+  // Only a leading, standalone prefix goes.
+  assert.equal(toStorefrontCollectionTitle("BSTyle"), "BSTyle");
+  assert.equal(toStorefrontCollectionTitle("Diệp Họa Thư BST"), "Diệp Họa Thư BST");
+  assert.equal(toStorefrontCollectionTitle("Special Deals"), "Special Deals");
+  // A title that is nothing but the prefix is left alone rather than rendered empty.
+  assert.equal(toStorefrontCollectionTitle("BST"), "BST");
 });

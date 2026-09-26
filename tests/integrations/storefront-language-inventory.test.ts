@@ -371,7 +371,6 @@ test("U1b collection detail uses Vietnamese buyer-functional copy", async () => 
     "Bộ sưu tập này chưa có sản phẩm.",
     "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập.",
     'label="Phân trang bộ sưu tập"',
-    "Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
   ]) {
     assert.equal(source.includes(expected), true, `collection detail missing Vietnamese copy: ${expected}`);
   }

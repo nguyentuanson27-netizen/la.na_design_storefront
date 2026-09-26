@@ -408,7 +408,7 @@ test("a collection hero stays the first full-bleed surface, above the shared lis
 /** The collection detail keeps its editorial half and its featured ordering. */
 test("a collection page keeps its editorial content and featured ordering", () => {
   const page = read("src/app/collections/[slug]/page.tsx");
-  for (const editorial of ["editorial.heroImage", "editorial.story", "editorial.gallery", "editorial.video"]) {
+  for (const editorial of ["editorial.heroImage", "editorial.gallery", "editorial.video"]) {
     assert.ok(page.includes(editorial), `the collection page must keep ${editorial}`);
   }
   assert.match(page, /data\.sortOptions/, "the collection's own sort links stay");

@@ -329,7 +329,8 @@ test("published collection exposes visible copy and deterministic website-owned 
   const response = await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
   await expect(page.getByRole("heading", { level: 1, name: "Runtime City Uniform" })).toBeVisible();
-  await expect(page.getByText("Visible collection copy for a published editorial landing.")).toBeVisible();
+  // The header is title-only: neither the story line nor the buyer notice is drawn under it.
+  await expect(page.getByText("Visible collection copy for a published editorial landing.")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Bộ sưu tập", exact: true })).toBeVisible();
   // The collection detail intentionally omits the visible eyebrow; the masthead and semantic
   // page heading already identify the surface without repeating "Bộ sưu tập" in the body.
@@ -344,7 +345,7 @@ test("published collection exposes visible copy and deterministic website-owned 
       "Khám phá các sản phẩm trong bộ sưu tập này. Giá và tình trạng còn hàng được kiểm tra lại trước khi mua.",
       { exact: true },
     ),
-  ).toBeVisible();
+  ).toHaveCount(0);
 
   const productHeadings = page.locator("article h2");
   await expect(productHeadings).toHaveCount(2);

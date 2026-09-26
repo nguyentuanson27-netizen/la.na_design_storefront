@@ -121,3 +121,13 @@ export function parseCollectionDefinition(input: unknown): CollectionDefinition 
     pancakeCategoryIds: parsePancakeCategoryIds(record.pancakeCategoryIds),
   };
 }
+
+/**
+ * The title a shopper reads. Merchandisers name collections "BST <tên>" (bộ sưu tập) in admin, but
+ * every storefront surface already says it is a collection, so the prefix is dropped on the way
+ * out. Admin keeps the stored title untouched; a title that is only the prefix is kept as is.
+ */
+export function toStorefrontCollectionTitle(title: string): string {
+  const stripped = title.replace(/^\s*BST(?:\s*[:\-–—.]\s*|\s+)/iu, "").trim();
+  return stripped.length > 0 ? stripped : title;
+}
