@@ -333,6 +333,26 @@ test("a collection hero is the first full-bleed surface and the shared listing c
 
 });
 
+test("a collection hero hides the promotion strip at the top and reveals it after scroll", async ({ page }) => {
+  for (const viewport of [
+    { width: 390, height: 844 },
+    { width: 1440, height: 900 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}/collections/${heroSlug}`, { waitUntil: "networkidle" });
+
+    const header = page.locator("header.site-header");
+    const promotion = page.locator(".promotion-shell");
+
+    await expect(header).toHaveAttribute("data-scrolled", "false");
+    await expect(promotion).toBeHidden();
+
+    await page.evaluate(() => window.scrollTo(0, 240));
+    await expect(header).toHaveAttribute("data-scrolled", "true");
+    await expect(promotion).toBeVisible();
+  }
+});
+
 test("published collection exposes visible copy and deterministic website-owned membership", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
   expect(response?.status()).toBe(200);
