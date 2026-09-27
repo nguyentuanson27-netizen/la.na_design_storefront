@@ -21,8 +21,9 @@
  * would count the units nowhere.
  */
 
-import type { Prisma } from "../generated/prisma/client.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { reservationHoldsCapacity } from "./capacity-policy.ts";
+import { CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 
 const HANDOFF_BATCH_SIZE = 1_000;
 
@@ -115,4 +116,47 @@ export async function handOffMirroredCapacity(
   }
 
   return handedOff;
+}
+
+/**
+ * Records every handoff the current mirror already proves, outside a catalog sync.
+ *
+ * The sync is where new evidence arrives, but it is not the only way `COMMITTED` resources can be
+ * left without `mirroredAt` while the mirror already includes their decrement. The supported
+ * rollback keeps the migrated schema, and a release from before the durable handoff retires holds by
+ * its per-read rule without recording them; a roll-forward does not re-run the migration's backfill,
+ * so the new code would count those units again until its first sync. `deploy.sh` runs this after
+ * migrating and before any new writer or Caddy starts, so a release never serves with an unrecorded
+ * handoff.
+ *
+ * The decision is the same `handOffMirroredCapacity()` makes, and it is valid at any time, not only
+ * mid-sync: it compares the stored observation with the commit, and neither moves without a sync.
+ * The variant rows are locked in id order first — the order `reserveOrderCapacity()` locks them in —
+ * so a run that overlaps live traffic still cannot hand off against stock a checkout already read.
+ * Idempotent: a second run finds nothing to do.
+ */
+export async function reconcileMirrorHandoffs(
+  client: PrismaClient,
+  { handedOffAt = new Date() }: Readonly<{ handedOffAt?: Date }> = {},
+): Promise<number> {
+  return client.$transaction(
+    async (tx) => {
+      const pending = await tx.capacityReservationResource.findMany({
+        where: { mirroredAt: null, reservation: { state: "COMMITTED" } },
+        distinct: ["variantId"],
+        select: { variantId: true },
+      });
+      const variantIds = pending.map(({ variantId }) => variantId).sort();
+      if (variantIds.length === 0) return 0;
+
+      await tx.$queryRaw(Prisma.sql`
+        SELECT "id" FROM "VariantMirror"
+        WHERE "id" IN (${Prisma.join(variantIds)})
+        ORDER BY "id"
+        FOR UPDATE
+      `);
+      return handOffMirroredCapacity(tx, { variantIds, handedOffAt });
+    },
+    { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
+  );
 }

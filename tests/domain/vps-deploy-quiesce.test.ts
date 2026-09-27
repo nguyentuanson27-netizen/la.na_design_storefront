@@ -33,6 +33,7 @@ case "$args" in
   *" start "*) service="\${args##* start }"; touch "$FAKE_STATE/\${service%% *}-running" ;;
   *" up -d --no-build "*) for service in \${args##* --no-build }; do touch "$FAKE_STATE/$service-running"; done ;;
   *" pnpm prisma:migrate:deploy "*) exit "\${FAKE_MIGRATE_EXIT:-0}" ;;
+  *" pnpm capacity:handoff:reconcile "*) exit "\${FAKE_RECONCILE_EXIT:-0}" ;;
   *" exec -T postgres "*) echo fake-dump ;;
 esac
 `;
@@ -42,6 +43,7 @@ type Run = { status: number | null; calls: string[]; stderr: string };
 type ScriptRun = {
   running: readonly ("app" | "catalog-sync")[];
   migrateExit?: number;
+  reconcileExit?: number;
   syncHealth?: "healthy" | "unhealthy";
   images?: readonly string[];
 };
@@ -60,7 +62,7 @@ function runRollback(options: ScriptRun): Run {
 function runScript(
   script: "deploy.sh" | "rollback.sh",
   args: readonly string[],
-  { running, migrateExit = 0, syncHealth = "healthy", images = [] }: ScriptRun,
+  { running, migrateExit = 0, reconcileExit = 0, syncHealth = "healthy", images = [] }: ScriptRun,
 ): Run {
   const root = mkdtempSync(join(tmpdir(), "deploy-sequence-"));
   try {
@@ -106,6 +108,7 @@ function runScript(
         CALL_LOG: callLog,
         FAKE_STATE: state,
         FAKE_MIGRATE_EXIT: String(migrateExit),
+        FAKE_RECONCILE_EXIT: String(reconcileExit),
         FAKE_SYNC_HEALTH: syncHealth,
         FAKE_IMAGES: images.join(" "),
         BACKUP_DIR: join(root, "backups"),
@@ -130,6 +133,7 @@ const STOP_APP = "stop app";
 const STOP_SYNC = "stop catalog-sync";
 const MIGRATE = "run --rm ops pnpm prisma:migrate:deploy";
 const START_NEW = "up -d --no-build app caddy catalog-sync";
+const RECONCILE = "run --rm ops pnpm capacity:handoff:reconcile";
 const RESTART_APP = "start app";
 const RESTART_SYNC = "start catalog-sync";
 const RELEASE_CHECK = "run --rm ops pnpm release:check";
@@ -233,4 +237,39 @@ test("rollback refuses before touching any writer when the previous app image is
   assert.notEqual(run.status, 0);
   assert.equal(position(run.calls, STOP_SYNC), -1);
   assert.equal(position(run.calls, ROLLBACK_APP), -1);
+});
+
+test("a release records pending capacity handoffs after migrating and before any new writer serves", () => {
+  // deploy -> rollback to a release that retires holds without recording them -> roll forward: the
+  // migration's backfill does not run again, so this step is what keeps those retired holds from
+  // counting again while the new release waits for its first catalog sync.
+  const packageJson = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")) as {
+    scripts: Record<string, string>;
+  };
+  assert.match(packageJson.scripts["capacity:handoff:reconcile"] ?? "", /capacity-handoff-reconcile\.ts/);
+
+  const run = runDeploy({ running: ["app", "catalog-sync"] });
+  assert.equal(run.status, 0, run.stderr);
+  const migrate = position(run.calls, MIGRATE);
+  const reconcile = position(run.calls, RECONCILE);
+  const start = position(run.calls, START_NEW);
+  assert.ok(reconcile > migrate, "reconciliation reads the migrated schema");
+  assert.ok(position(run.calls, STOP_APP) < reconcile && position(run.calls, STOP_SYNC) < reconcile);
+  assert.ok(start > reconcile, "no new writer or Caddy starts before the handoffs are recorded");
+});
+
+test("a failed handoff reconciliation restores exactly the pre-release writers and starts nothing new", () => {
+  const run = runDeploy({ running: ["app", "catalog-sync"], reconcileExit: 1 });
+  assert.notEqual(run.status, 0);
+  assert.match(run.stderr, /Capacity handoff reconciliation failed/);
+  const reconcile = position(run.calls, RECONCILE);
+  assert.ok(position(run.calls, RESTART_APP) > reconcile);
+  assert.ok(position(run.calls, RESTART_SYNC) > reconcile);
+  assert.equal(position(run.calls, START_NEW), -1);
+});
+
+test("a failed migration never reaches the handoff reconciliation", () => {
+  const run = runDeploy({ running: ["app"], migrateExit: 1 });
+  assert.notEqual(run.status, 0);
+  assert.equal(position(run.calls, RECONCILE), -1);
 });

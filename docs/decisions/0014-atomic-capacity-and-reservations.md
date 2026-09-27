@@ -259,6 +259,15 @@ Two CHECK constraints keep the record honest: both columns are written together 
 the evidence may not postdate the handoff. The migration backfills the handoffs the per-read rule
 had already made, so no retired hold starts counting again on deploy.
 
+**Rollback and roll-forward.** The migration's backfill runs once, but the supported rollback keeps
+the migrated schema, and a release from before this change retires holds by its per-read rule without
+recording them. On roll-forward Prisma does not re-run the backfill, so the new code would count those
+units again until its first catalog sync, and the app starts before that sync. `deploy.sh` therefore
+runs `pnpm capacity:handoff:reconcile` (`reconcileMirrorHandoffs()`) after migrating and before any new
+writer or Caddy starts: the same decision over every pending `COMMITTED` resource, taken under the
+variant locks in id order, idempotent, and a no-op when nothing is pending. If it fails, the
+pre-release writers resume exactly as after a failed migration.
+
 One consequence is deliberate: a line whose `committedAt` is set in the past by reconciliation, after
 a later observation already exists, is handed off at the next sync rather than immediately — at
 most one `CATALOG_SYNC_INTERVAL_SECONDS` of over-holding, the safe direction.

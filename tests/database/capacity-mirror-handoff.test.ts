@@ -8,12 +8,14 @@
  */
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { readAdvisoryHeldQuantities } from "../../src/commerce/capacity-advisory.ts";
+import { reconcileMirrorHandoffs } from "../../src/commerce/capacity-handoff.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { createCatalogMirrorRepository } from "../../src/commerce/catalog-mirror-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
@@ -234,4 +236,50 @@ test("the database refuses a half-recorded or backdated handoff", async () => {
     }),
     "evidence that postdates the handoff",
   );
+});
+
+test("deploy #91 -> rollback #90 -> retire a hold -> roll forward: reconciliation records it before serving", async () => {
+  // Deployed with the durable handoff: the mirror exists and the migration has run.
+  await sync(5, T0);
+  const variantId = await teeVariantId();
+
+  // Rolled back to #90 on the migrated schema. #90 reserves and commits exactly as today, but its
+  // catalog sync only rewrites stock — it retires holds by its per-read rule and never records a
+  // handoff. So one order is retired by a post-commit observation with no `mirroredAt`, and one is
+  // still genuinely held (committed after that observation began).
+  const retiredByOldRelease = await commit("rollback-retired", variantId, 2, COMMITTED_AT);
+  const observedByOldRelease = new Date(COMMITTED_AT.getTime() + 60_000);
+  await prisma.warehouseStock.updateMany({
+    where: { variant: { id: variantId } },
+    data: { quantity: 3, syncedAt: observedByOldRelease },
+  });
+  const stillHeld = await commit(
+    "rollback-held",
+    variantId,
+    1,
+    new Date(observedByOldRelease.getTime() + 60_000),
+  );
+
+  // Rolled forward: the migration does not run again, so without reconciliation #91 would count the
+  // retired order's 2 units a second time (3 mirrored - 2 - 1 = 0 sellable, a false sold-out).
+  assert.equal((await readAdvisoryHeldQuantities(prisma, [variantId])).get(variantId), 3);
+
+  // deploy.sh runs the real entrypoint after migrating and before any new writer starts.
+  const script = spawnSync(
+    process.execPath,
+    ["--experimental-strip-types", new URL("../../scripts/capacity-handoff-reconcile.ts", import.meta.url).pathname],
+    { env: { ...process.env }, encoding: "utf8" },
+  );
+  assert.equal(script.status, 0, script.stderr);
+  assert.match(script.stdout, /capacity handoff reconciled: \d+ holds handed to the mirror/);
+
+  const retired = await resourceOf(retiredByOldRelease);
+  assert.notEqual(retired.mirroredAt, null);
+  assert.deepEqual(retired.mirrorObservationStartedAt, observedByOldRelease);
+  assert.equal((await resourceOf(stillHeld)).mirroredAt, null, "a hold the mirror has not caught up to stays");
+  assert.equal((await readAdvisoryHeldQuantities(prisma, [variantId])).get(variantId), 1);
+
+  // Idempotent: a second run (or the first new catalog sync) finds nothing more to hand off here.
+  assert.equal(await reconcileMirrorHandoffs(prisma), 0);
+  assert.deepEqual((await resourceOf(retiredByOldRelease)).mirrorObservationStartedAt, observedByOldRelease);
 });
