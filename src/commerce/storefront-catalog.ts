@@ -5,6 +5,7 @@ import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { resolveVariantAvailabilityFromWarehouseStocks } from "./storefront-product.ts";
 import {
   resolveStorefrontProductMedia,
@@ -251,6 +252,117 @@ function visibleProductWhere(shopId: number) {
 }
 
 /**
+ * The SQL projection of the advisory capacity read model (`capacity-advisory.ts`), for the surfaces
+ * that must decide availability before they paginate: `/shop`'s in-stock filter and the sale
+ * listings built on `buildVariantStockCte()`. A second implementation is justified only by that
+ * need, the same way the pricing projection below is, and
+ * `tests/database/capacity-advisory-parity.test.ts` pins it to the TypeScript model on shared
+ * fixtures.
+ *
+ * - `capacity_observation`: the earliest `WarehouseStock.syncedAt` per variant — the instant the
+ *   variant's stock observation began (`earliestObservationStart()`).
+ * - `capacity_held`: units per resource variant still held under `reservationHoldsCapacity()`:
+ *   `RESERVED`, `SUBMITTING` and `UNKNOWN` always; `COMMITTED` until an observation that began
+ *   strictly after the commit exists, with a missing commit time or observation keeping the hold.
+ * - `capacity_mirrored`: the summed mirror, 0 with no rows, NULL when any row is non-finite; and
+ *   whether every row is a countable safe integer, which composite derivation requires.
+ * - `capacity_sellable`: a standalone variant offers mirrored minus held (it may be negative, which
+ *   is what `OVERSELL`/`PREORDER` judge); a composite parent offers the fewest whole sets its
+ *   components can supply after their holds, and 0 when any component is from another shop, absent,
+ *   uncountable, or its edge quantity is not a positive INTEGER (`deriveCompositeSellableStock()`).
+ *   The parent's own mirrored stock is never read for a set.
+ */
+const CAPACITY_SELLABLE_CTES = Prisma.sql`
+  "capacity_observation" AS (
+    SELECT ws."variantId", MIN(ws."syncedAt") AS "observedFrom"
+    FROM "WarehouseStock" ws
+    GROUP BY ws."variantId"
+  ),
+  "capacity_held" AS (
+    SELECT res."variantId", SUM(res."quantity")::float8 AS "heldQuantity"
+    FROM "CapacityReservationResource" res
+    JOIN "VariantCapacityReservation" r ON r."id" = res."reservationId"
+    LEFT JOIN "capacity_observation" co ON co."variantId" = res."variantId"
+    WHERE r."state" IN ('RESERVED', 'SUBMITTING', 'UNKNOWN')
+      OR (
+        r."state" = 'COMMITTED'
+        AND (
+          r."committedAt" IS NULL
+          OR co."observedFrom" IS NULL
+          OR co."observedFrom" <= r."committedAt"
+        )
+      )
+    GROUP BY res."variantId"
+  ),
+  "capacity_mirrored" AS (
+    SELECT
+      v."id",
+      CASE
+        WHEN COUNT(ws."id") = 0 THEN 0::float8
+        WHEN BOOL_AND(
+          ws."quantity" <> 'NaN'::float8
+          AND ws."quantity" <> 'Infinity'::float8
+          AND ws."quantity" <> '-Infinity'::float8
+        ) THEN SUM(ws."quantity")
+        ELSE NULL
+      END AS "mirroredStock",
+      COALESCE(
+        BOOL_AND(
+          ws."quantity" <> 'NaN'::float8
+          AND ws."quantity" <> 'Infinity'::float8
+          AND ws."quantity" <> '-Infinity'::float8
+          AND ws."quantity" = TRUNC(ws."quantity")
+          AND ABS(ws."quantity") <= 9007199254740991::float8
+        ),
+        TRUE
+      ) AS "isCountable"
+    FROM "VariantMirror" v
+    LEFT JOIN "WarehouseStock" ws ON ws."variantId" = v."id"
+    GROUP BY v."id"
+  ),
+  "capacity_component" AS (
+    SELECT
+      e."parentVariantId",
+      BOOL_OR(
+        cp."pancakeShopId" <> pp."pancakeShopId"
+        OR NOT cp."isPresent"
+        OR NOT c."isPresent"
+        OR e."quantity" <= 0
+        OR cm."mirroredStock" IS NULL
+        OR NOT cm."isCountable"
+        OR ABS(cm."mirroredStock") > 9007199254740991::float8
+      ) AS "unproven",
+      MIN(
+        FLOOR(
+          GREATEST(cm."mirroredStock" - COALESCE(ch."heldQuantity", 0), 0)
+          / NULLIF(e."quantity", 0)
+        )
+      ) AS "sets"
+    FROM "CompositeComponentMirror" e
+    JOIN "VariantMirror" parent ON parent."id" = e."parentVariantId"
+    JOIN "ProductMirror" pp ON pp."id" = parent."productId"
+    JOIN "VariantMirror" c ON c."id" = e."componentVariantId"
+    JOIN "ProductMirror" cp ON cp."id" = c."productId"
+    LEFT JOIN "capacity_mirrored" cm ON cm."id" = e."componentVariantId"
+    LEFT JOIN "capacity_held" ch ON ch."variantId" = e."componentVariantId"
+    GROUP BY e."parentVariantId"
+  ),
+  "capacity_sellable" AS (
+    SELECT
+      cm."id",
+      CASE
+        WHEN cc."parentVariantId" IS NULL
+          THEN cm."mirroredStock" - COALESCE(ch."heldQuantity", 0)
+        WHEN cc."unproven" THEN 0::float8
+        ELSE COALESCE(cc."sets", 0)::float8
+      END AS "sellableStock"
+    FROM "capacity_mirrored" cm
+    LEFT JOIN "capacity_held" ch ON ch."variantId" = cm."id"
+    LEFT JOIN "capacity_component" cc ON cc."parentVariantId" = cm."id"
+  )
+`;
+
+/**
  * The sanctioned SQL pricing projection.
  *
  * #151 permits exactly one SQL mirror of the pricing contract, and only because `/shop` must filter
@@ -269,7 +381,8 @@ function visibleProductWhere(shopId: number) {
  */
 export function buildVariantStockCte(now: Date) {
   return Prisma.sql`
-  WITH "variant_base" AS (
+  WITH ${CAPACITY_SELLABLE_CTES},
+  "variant_base" AS (
     SELECT
       v."id",
       v."productId",
@@ -286,24 +399,10 @@ export function buildVariantStockCte(now: Date) {
         THEN v."pancakeRetailPrice"::int8::numeric
         ELSE NULL
       END AS "basePrice",
-      CASE
-        WHEN COUNT(ws."id") = 0 THEN 0::float8
-        WHEN BOOL_AND(
-          ws."quantity" <> 'NaN'::float8
-          AND ws."quantity" <> 'Infinity'::float8
-          AND ws."quantity" <> '-Infinity'::float8
-        ) THEN SUM(ws."quantity")
-        ELSE NULL
-      END AS "sellableStock"
+      cs."sellableStock"
     FROM "VariantMirror" v
-    LEFT JOIN "WarehouseStock" ws ON ws."variantId" = v."id"
+    JOIN "capacity_sellable" cs ON cs."id" = v."id"
     WHERE v."isPresent" = TRUE AND v."isActive" = TRUE
-    GROUP BY
-      v."id",
-      v."productId",
-      v."color",
-      v."size",
-      v."pancakeRetailPrice"
   ),
   "variant_campaign" AS (
     SELECT
@@ -554,6 +653,19 @@ function bigintToSafeNumber(value: bigint): number {
 }
 
 export function createStorefrontCatalogRepository(client: PrismaClient) {
+  /**
+   * Every product this repository returns carries the advisory capacity figure rather than raw
+   * mirrored stock (`capacity-advisory.ts`): active reservation holds subtracted, composite parents
+   * derived from their components. A card therefore agrees with the PDP, the cart and the SQL
+   * availability filter about the same variant.
+   */
+  function withAdvisoryStock<P extends ReturnType<typeof toStorefrontProduct>>(
+    shopId: number,
+    products: readonly P[],
+  ): Promise<P[]> {
+    return withAdvisorySellableStock(client, parseShopId(shopId), products);
+  }
+
   async function listProducts({ shopId, limit }: { shopId: number; limit: number }) {
     const products = await client.productMirror.findMany({
       where: visibleProductWhere(shopId),
@@ -567,7 +679,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
-    return products.map((product) => toStorefrontProduct(product, collectionMap));
+    return withAdvisoryStock(
+      shopId,
+      products.map((product) => toStorefrontProduct(product, collectionMap)),
+    );
   }
 
   /**
@@ -598,7 +713,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
-    return products.map((product) => toStorefrontProduct(product, collectionMap));
+    return withAdvisoryStock(
+      shopId,
+      products.map((product) => toStorefrontProduct(product, collectionMap)),
+    );
   }
 
   /**
@@ -643,7 +761,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
     return {
-      products: products.map((product) => toStorefrontProduct(product, collectionMap)),
+      products: await withAdvisoryStock(
+        shopId,
+        products.map((product) => toStorefrontProduct(product, collectionMap)),
+      ),
       page,
       pageSize: safePageSize,
       totalProducts,
@@ -674,9 +795,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
-    const byId = new Map(
-      products.map((product) => [product.id, toStorefrontProduct(product, collectionMap)]),
+    const advised = await withAdvisoryStock(
+      shopId,
+      products.map((product) => toStorefrontProduct(product, collectionMap)),
     );
+    const byId = new Map(advised.map((product) => [product.id, product]));
     return ids.flatMap((id) => {
       const product = byId.get(id);
       return product ? [product] : [];
@@ -712,7 +835,10 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
     return {
-      products: products.map((product) => toStorefrontProduct(product, collectionMap)),
+      products: await withAdvisoryStock(
+        shopId,
+        products.map((product) => toStorefrontProduct(product, collectionMap)),
+      ),
       page,
       pageSize: safePageSize,
       totalProducts,
@@ -805,11 +931,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
 
-    const orderedProducts = ids.map((id) => {
-      const product = byId.get(id);
-      if (!product) throw new Error("Storefront discovery result changed during read");
-      return toStorefrontProduct(product, collectionMap);
-    });
+    const orderedProducts = await withAdvisoryStock(
+      shopId,
+      ids.map((id) => {
+        const product = byId.get(id);
+        if (!product) throw new Error("Storefront discovery result changed during read");
+        return toStorefrontProduct(product, collectionMap);
+      }),
+    );
 
     const pageVariantIds = orderedProducts.flatMap((product) =>
       product.variants.map((variant) => variant.id),
@@ -921,7 +1050,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       : [];
     const collectionMap = await fetchPublishedCollectionMap(client, rawSlugs);
 
-    return toStorefrontProduct(product, collectionMap);
+    const [advised] = await withAdvisoryStock(shopId, [toStorefrontProduct(product, collectionMap)]);
+    return advised!;
   }
 
   return {

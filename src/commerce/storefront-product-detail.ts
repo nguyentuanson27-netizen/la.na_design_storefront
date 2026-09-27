@@ -22,6 +22,7 @@ import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   let total = 0;
@@ -104,6 +105,15 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     const hasCompositeGraph = parentRelations.some(
       (parent) => parent.compositeComponents.length > 0,
     );
+    // The advisory capacity read model (`capacity-advisory.ts`): units other orders still hold on
+    // each component, so a set option and a component option advertise what checkout would accept.
+    // Parent variants already arrive with it from the catalog read.
+    let heldByVariantId = await readAdvisoryHeldQuantities(
+      client,
+      parentRelations.flatMap((parent) =>
+        parent.compositeComponents.map((edge) => edge.componentVariant.id),
+      ),
+    );
     const groups = new Map<
       string,
       {
@@ -114,6 +124,9 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     >();
 
     const compositeStockByVariantId = new Map<string, number>();
+    // Whether the mirror itself can state a set's availability to a vendor: a publication fact about
+    // mirrored rows (`variantAvailabilityResolvedById`), so it is decided without local holds.
+    const compositeResolvedByVariantId = new Map<string, boolean>();
     for (const parent of parentRelations) {
       if (parent.compositeComponents.length > 0) {
         compositeStockByVariantId.set(
@@ -122,9 +135,20 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
             shopId,
             components: parent.compositeComponents.map((edge) => ({
               requiredQuantity: edge.quantity,
+              activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
               componentVariant: edge.componentVariant,
             })),
           }),
+        );
+        compositeResolvedByVariantId.set(
+          parent.id,
+          deriveCompositeSellableStock({
+            shopId,
+            components: parent.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+          }) > 0,
         );
       }
 
@@ -157,7 +181,9 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
             pancakeVariationId: component.pancakeVariationId,
             color: component.color,
             size: component.size,
-            sellableStock: sumWarehouseStocks(component.warehouseStocks),
+            sellableStock:
+              sumWarehouseStocks(component.warehouseStocks) -
+              (heldByVariantId.get(component.id) ?? 0),
             retailPrice: component.pancakeRetailPrice,
             retailPriceAfterDiscount: component.pancakeRetailPriceAfterDiscount,
           });
@@ -244,6 +270,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               componentVariantId: true,
               componentVariant: {
                 select: {
+                  id: true,
                   sku: true,
                   pancakeDisplayId: true,
                   isPresent: true,
@@ -264,6 +291,20 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         },
       });
 
+      // An accepted sibling is an exact subset of one of this product's combos, so its components
+      // are normally already covered; anything not yet read is read once rather than assumed free.
+      const unreadComponentIds = siblingRelations.flatMap((sibling) =>
+        sibling.compositeComponents
+          .map((edge) => edge.componentVariant.id)
+          .filter((id) => !heldByVariantId.has(id)),
+      );
+      if (unreadComponentIds.length > 0) {
+        heldByVariantId = new Map([
+          ...heldByVariantId,
+          ...(await readAdvisoryHeldQuantities(client, unreadComponentIds)),
+        ]);
+      }
+
       const variantsByKind = new Map<CompositeSubSetKind, StorefrontVariantFacts[]>();
       for (const sibling of siblingRelations) {
         const kind = resolveCompositeSubSetAuthority({
@@ -283,12 +324,23 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
             shopId,
             components: sibling.compositeComponents.map((edge) => ({
               requiredQuantity: edge.quantity,
+              activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
               componentVariant: edge.componentVariant,
             })),
           }),
           retailPrice: sibling.pancakeRetailPrice,
           retailPriceAfterDiscount: sibling.pancakeRetailPriceAfterDiscount,
         });
+        compositeResolvedByVariantId.set(
+          sibling.id,
+          deriveCompositeSellableStock({
+            shopId,
+            components: sibling.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+          }) > 0,
+        );
         variantsByKind.set(kind, variants);
         siblingVariantMpnMap[sibling.id] = sibling.pancakeDisplayId;
         siblingVariantSkuMap[sibling.id] = sibling.sku;
@@ -321,11 +373,14 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       variantAvailabilityResolvedById: {
         ...product.variantAvailabilityResolvedById,
         ...Object.fromEntries(
-          [...compositeStockByVariantId.entries()].map(([id, stock]) => [id, stock > 0]),
+          [...compositeStockByVariantId.keys()].map((id) => [
+            id,
+            compositeResolvedByVariantId.get(id) === true,
+          ]),
         ),
         ...Object.fromEntries(
           subSetGroups.flatMap((group) =>
-            group.variants.map((v) => [v.id, (v.sellableStock ?? 0) > 0]),
+            group.variants.map((v) => [v.id, compositeResolvedByVariantId.get(v.id) === true]),
           ),
         ),
       },

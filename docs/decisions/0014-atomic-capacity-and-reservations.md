@@ -96,6 +96,14 @@ Cart and PDP still show sellability (I4/I5) using the same predicate, but that i
 storefront may show a variant as buyable and the commit may still refuse it. The refusal is correct
 and must be surfaced honestly rather than papered over.
 
+Advisory is not the same as blind to holds. Listing cards, the `/shop` and sale SQL filters, PDP
+options and cart lines read the **advisory capacity read model** (`src/commerce/capacity-advisory.ts`
+and its SQL projection in `buildVariantStockCte()`): mirrored stock minus every
+`CapacityReservationResource` that `reservationHoldsCapacity()` still counts, with a FULL SET derived
+from its components' free units. That is the same resource accounting the reservation transaction
+applies, so the only remaining gap between "shown as buyable" and "accepted at commit" is what changed
+in between. The checkout snapshot/quote is not yet on this model.
+
 ---
 
 ## 3. Reservation identity and idempotency

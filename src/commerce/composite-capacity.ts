@@ -2,6 +2,12 @@ const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
 export type CompositeCapacityComponent = Readonly<{
   requiredQuantity: number;
+  /**
+   * Units of this component still held by reservations that count (`reservationHoldsCapacity()`),
+   * from `readAdvisoryHeldQuantities()`. Absent means none are known to the caller, which is the
+   * pre-read-model answer; a surface that shows buyers capacity supplies it.
+   */
+  activeReservedQuantity?: number;
   componentVariant: Readonly<{
     isPresent: boolean;
     product: Readonly<{
@@ -28,6 +34,10 @@ function sumCountableStock(stocks: readonly Readonly<{ quantity: number }>[]): n
  * Parent WarehouseStock stays a verbatim Pancake mirror. Composite capacity is therefore computed
  * from component stock rather than copied into the parent row, which would be overwritten by the
  * next catalog sync and would give different parent variants independent claims on shared stock.
+ *
+ * Units other orders still hold on a component are subtracted before dividing, the same resource
+ * accounting `reserveOrderCapacity()` applies, so a set is never advertised from component units a
+ * concurrent order already owns.
  *
  * Child activation is deliberately not an input. isActive controls whether a child may be sold as
  * its own storefront option; a present child can still be a valid stocked component of a FULL SET.
@@ -58,7 +68,9 @@ export function deriveCompositeSellableStock({
 
     const stock = sumCountableStock(component.warehouseStocks);
     if (stock === null) return 0;
-    const edgeCapacity = Math.floor(Math.max(0, stock) / edge.requiredQuantity);
+    const held = edge.activeReservedQuantity ?? 0;
+    if (!Number.isSafeInteger(held) || held < 0) return 0;
+    const edgeCapacity = Math.floor(Math.max(0, stock - held) / edge.requiredQuantity);
     capacity = Math.min(capacity, edgeCapacity);
   }
 

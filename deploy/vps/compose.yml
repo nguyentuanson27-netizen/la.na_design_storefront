@@ -64,6 +64,9 @@ services:
       - backend
 
   ops:
+    # Tagged by release so `catalog-sync` runs exactly this release's code, and a rollback can start
+    # the previous release's sync from its own image.
+    image: ${PROJECT_SLUG:?set PROJECT_SLUG}-ops:${RELEASE_SHA:?set RELEASE_SHA}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -80,6 +83,41 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - backend
+
+  # The recurring Pancake catalog sync. A COMMITTED capacity reservation stops holding only once a
+  # stock observation that began after the commit has landed (ADR 0014 §4.1), so without this loop
+  # sellable capacity could only fall and a Pancake restock would never reach the storefront. It
+  # writes the database, so deploy.sh stops it with the app before migrations and starts it with the
+  # new release.
+  catalog-sync:
+    image: ${PROJECT_SLUG:?set PROJECT_SLUG}-ops:${RELEASE_SHA:?set RELEASE_SHA}
+    restart: unless-stopped
+    command: ["pnpm", "pancake:catalog:sync", "--loop"]
+    env_file:
+      - .env.production
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+    # A sync is one database transaction of up to 60s; give an in-flight one time to commit on stop.
+    stop_grace_period: 90s
+    # Healthy only while a sync has recently succeeded, not merely while the loop is running: the loop
+    # survives failures by design, so without this a bad Pancake config would look fine forever.
+    # start_period covers the first sync, which starts immediately.
+    healthcheck:
+      test: ["CMD", "node", "--experimental-strip-types", "scripts/catalog-sync-health.ts"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     networks:
       - backend
 

@@ -4,6 +4,7 @@ import {
   type PromotionCampaignKind,
 } from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
+import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
@@ -465,7 +466,9 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     for (const row of idRows) assertProjectedMoney(row);
 
     const byId = await hydrateProducts(safeShopId, idRows);
-    const orderedProducts = idRows.map((row) => {
+    // Cards carry the advisory capacity figure (`capacity-advisory.ts`), the TypeScript side of the
+    // projection that just admitted these products.
+    const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idRows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Flash Sale result changed during read");
       return {
@@ -478,7 +481,7 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
           remainingMs: Math.max(0, row.endsAt.getTime() - now.getTime()),
         }),
       };
-    });
+    }));
 
     return {
       products: orderedProducts,
@@ -591,7 +594,9 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     for (const row of idRows) assertProjectedMoney(row);
 
     const byId = await hydrateProducts(safeShopId, idRows);
-    const orderedProducts = idRows.map((row) => {
+    // Cards carry the advisory capacity figure (`capacity-advisory.ts`), the TypeScript side of the
+    // projection that just admitted these products.
+    const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idRows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
       const base = row.admittedFlashVariantIds.length > 0
@@ -609,7 +614,7 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
           remainingMs: Math.max(0, row.endsAt.getTime() - now.getTime()),
         }),
       };
-    });
+    }));
 
     return {
       products: orderedProducts,
