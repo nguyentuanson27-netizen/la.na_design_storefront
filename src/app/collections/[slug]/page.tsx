@@ -45,6 +45,7 @@ function render(data: CollectionViewModel) {
           className="collection-page-hero"
           aria-label={`Ảnh bìa bộ sưu tập ${data.title}`}
           data-header-overlay-hero=""
+          data-collection-hero=""
         >
           <ArtDirectedHeroImage
             desktopSrc={editorial.heroImage}

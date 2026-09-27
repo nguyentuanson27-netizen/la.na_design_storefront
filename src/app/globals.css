@@ -1507,9 +1507,13 @@ body:has(#main-content [data-header-overlay-hero]) .site-header[data-scrolled="f
 }
 
 /* The promotion strip joins the cream/scrolled state. Reuse the header's existing scroll owner
-   instead of installing a second listener. Homepage keeps the established all-width behavior;
-   the owner asked for the same treatment on the mobile PDP only. */
+   instead of installing a second listener. Homepage and a collection opening on its hero keep the
+   all-width behavior -- both pin the masthead as a fixed overlay, so the strip appearing costs no
+   layout shift; the owner asked for the same treatment on the mobile PDP only. */
 body:has(#main-content [data-homepage-root])
+  .site-masthead:has(.site-header[data-scrolled="false"])
+  .promotion-shell,
+body:has(#main-content [data-collection-hero])
   .site-masthead:has(.site-header[data-scrolled="false"])
   .promotion-shell {
   display: none;
