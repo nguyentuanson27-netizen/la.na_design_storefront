@@ -204,11 +204,6 @@ test("M1 Zero Category Inference Guarantee: storefront catalog assembly and repo
           return [];
         },
       },
-      warehouseStock: {
-        async groupBy() {
-          return [];
-        },
-      },
       capacityReservationResource: {
         async findMany() {
           return [];

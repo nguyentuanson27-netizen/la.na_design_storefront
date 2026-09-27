@@ -2,8 +2,8 @@
  * The scheduled Pancake catalog sync.
  *
  * A `COMMITTED` capacity reservation stops holding only once a stock observation that *began* after
- * the commit has landed in the mirror (ADR 0014 §4.1, `reservationHoldsCapacity()`), and only a
- * catalog sync makes such an observation. Without a recurring sync, every sale would stay locally
+ * the commit has landed in the mirror (ADR 0014 §4.1), and only a catalog sync makes such an
+ * observation and records the handoff (`handOffMirroredCapacity()`). Without a recurring sync, every sale would stay locally
  * held and sellable capacity could only fall, and a restock in Pancake would never reach the
  * storefront. This loop is that recurrence.
  *
@@ -32,7 +32,7 @@ export function parseCatalogSyncIntervalSeconds(raw: string | undefined): number
 }
 
 export type CatalogSyncLoopOptions = Readonly<{
-  sync: () => Promise<Readonly<{ products: number; variations: number }>>;
+  sync: () => Promise<Readonly<{ products: number; variations: number; capacityHandedOff?: number }>>;
   intervalMs: number;
   /** Resolves after `ms`, or early when `signal` aborts. */
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -59,8 +59,13 @@ export async function runCatalogSyncLoop(options: CatalogSyncLoopOptions): Promi
     try {
       const result = await options.sync();
       const finishedAt = now();
+      // The handoff count is the audit trail of capacity leaving the local ledger (ADR 0014 §4.1).
+      const handedOff =
+        result.capacityHandedOff === undefined
+          ? ""
+          : `, ${result.capacityHandedOff} capacity holds handed to the mirror`;
       options.log(
-        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations`,
+        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations${handedOff}`,
       );
       // Outside the sync's own failure handling on purpose: a heartbeat that cannot be written must
       // not turn a good sync into a counted failure, and the health check will report it as stale.

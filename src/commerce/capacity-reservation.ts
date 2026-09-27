@@ -25,7 +25,7 @@ import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import {
   canTransition,
   evaluateVariantCapacity,
-  reservationHoldsCapacity,
+  resourceHoldsCapacity,
   resolveSellingPolicy,
   type CapacityDecisionReason,
   type ReservationState,
@@ -122,26 +122,6 @@ export function mergeReservationLines(
       ? { variantId, quantity }
       : { variantId, quantity, expectedFulfillmentState: expected };
   });
-}
-
-/**
- * The instant the mirror's stock observation for this variant **began** (§4.1, §4.2).
- *
- * The **minimum** across the variant's warehouse rows, not the maximum, and that choice is load
- * bearing. Mirrored stock is the sum over warehouses, so it includes a Pancake decrement only if
- * *every* contributing row was observed after the commit. Taking the newest row would retire a
- * `COMMITTED` hold while some other warehouse's number still predates the order — the units would
- * then be counted by neither side, which is the oversell this ledger exists to prevent.
- *
- * `null` when the variant has no stock rows at all: no observation means no evidence, and
- * `reservationHoldsCapacity()` keeps holding on missing evidence.
- */
-function earliestObservationStart(stocks: readonly { syncedAt: Date }[]): Date | null {
-  let earliest: Date | null = null;
-  for (const stock of stocks) {
-    if (earliest === null || stock.syncedAt.getTime() < earliest.getTime()) earliest = stock.syncedAt;
-  }
-  return earliest;
 }
 
 export function createCapacityReservationRepository(client: PrismaClient) {
@@ -273,14 +253,11 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           where: { id: { in: lockedIds } },
           select: {
             id: true,
-            warehouseStocks: { select: { quantity: true, syncedAt: true } },
+            warehouseStocks: { select: { quantity: true } },
           },
         });
         const stockByResourceId = new Map(
           lockedFacts.map((variant) => [variant.id, sumMirroredStock(variant.warehouseStocks)]),
-        );
-        const observationByResourceId = new Map(
-          lockedFacts.map((variant) => [variant.id, earliestObservationStart(variant.warehouseStocks)]),
         );
 
         type LinePlan = Readonly<{
@@ -342,9 +319,8 @@ export function createCapacityReservationRepository(client: PrismaClient) {
             variantId: true,
             quantity: true,
             state: true,
-            committedAt: true,
             acceptedPreorderState: true,
-            resources: { select: { variantId: true } },
+            resources: { select: { mirroredAt: true } },
           },
         });
         if (own.length > 0) {
@@ -354,21 +330,12 @@ export function createCapacityReservationRepository(client: PrismaClient) {
               .filter((line) => line.expectedFulfillmentState !== undefined)
               .map((line) => [line.variantId, line.expectedFulfillmentState!]),
           );
+          // A line still holds while any resource it consumed has not been handed to the mirror. A
+          // line with no resource rows has had nothing handed off, so it holds.
           const stillHolds = (row: (typeof own)[number]) => {
-            if (row.state !== "COMMITTED") {
-              return reservationHoldsCapacity({
-                state: row.state,
-                committedAt: row.committedAt,
-                stockObservationStartedAt: null,
-              });
-            }
-            const resources = row.resources.length > 0 ? row.resources : [{ variantId: row.variantId }];
+            const resources = row.resources.length > 0 ? row.resources : [{ mirroredAt: null }];
             return resources.some((resource) =>
-              reservationHoldsCapacity({
-                state: row.state,
-                committedAt: row.committedAt,
-                stockObservationStartedAt: observationByResourceId.get(resource.variantId) ?? null,
-              }),
+              resourceHoldsCapacity({ state: row.state, mirroredAt: resource.mirroredAt }),
             );
           };
           const mismatch = own.find(
@@ -399,22 +366,31 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         ];
         const heldByResourceId = new Map<string, number>();
         if (resourceVariantIds.length > 0) {
+          // Read under the variant locks taken above. The catalog sync records a mirror handoff in
+          // the same transaction that writes the stock it relies on, and that transaction locks
+          // these same VariantMirror rows, so this read and the stock read above see one side of a
+          // sync or the other, never new handoffs against old stock. The filter only narrows the
+          // rows; `resourceHoldsCapacity()` decides.
           const heldResources = await tx.capacityReservationResource.findMany({
             where: {
               variantId: { in: resourceVariantIds },
               reservation: { orderId: { not: orderId } },
+              OR: [
+                { reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
+                { reservation: { state: "COMMITTED" }, mirroredAt: null },
+              ],
             },
             select: {
               variantId: true,
               quantity: true,
-              reservation: { select: { state: true, committedAt: true } },
+              mirroredAt: true,
+              reservation: { select: { state: true } },
             },
           });
           for (const resource of heldResources) {
-            const holds = reservationHoldsCapacity({
+            const holds = resourceHoldsCapacity({
               state: resource.reservation.state,
-              committedAt: resource.reservation.committedAt,
-              stockObservationStartedAt: observationByResourceId.get(resource.variantId) ?? null,
+              mirroredAt: resource.mirroredAt,
             });
             if (!holds) continue;
             heldByResourceId.set(

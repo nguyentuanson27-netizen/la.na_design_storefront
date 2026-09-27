@@ -3,7 +3,7 @@ const MAX_POSTGRES_INTEGER = 2_147_483_647;
 export type CompositeCapacityComponent = Readonly<{
   requiredQuantity: number;
   /**
-   * Units of this component still held by reservations that count (`reservationHoldsCapacity()`),
+   * Units of this component still held by reservations that count (`resourceHoldsCapacity()`),
    * from `readAdvisoryHeldQuantities()`. Absent means none are known to the caller, which is the
    * pre-read-model answer; a surface that shows buyers capacity supplies it.
    */

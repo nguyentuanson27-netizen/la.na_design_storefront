@@ -236,7 +236,7 @@ export async function recoverStrandedGuestCheckouts(
     // guard is the state filter itself: `SUBMITTING` is a write that may be in flight and
     // `UNKNOWN` is one that may have landed, and §8 forbids a timer touching either — a timer
     // cannot distinguish slow from landed, and guessing is the oversell G2 proved Pancake will not
-    // prevent. `COMMITTED` retires by the §4.1 mirror rule, not by a clock.
+    // prevent. `COMMITTED` retires by the §4.1 mirror handoff a catalog sync records, not by a clock.
     //
     // Inert until an owner-approved window exists; see `RESERVED_HOLD_WINDOW_MS`.
     const reserved =

@@ -13,6 +13,7 @@ import {
   evaluateVariantCapacity,
   isTerminalReservationState,
   reservationHoldsCapacity,
+  resourceHoldsCapacity,
   resolveSellingPolicy,
   resolveVariantSellability,
   type ReservationState,
@@ -274,6 +275,24 @@ test("G5 a committed reservation holds until the mirror observably includes the 
     }),
     true,
   );
+});
+
+test("G5 a resource holds until its durable mirror handoff, and only a COMMITTED one is handed off", () => {
+  const mirroredAt = new Date("2026-09-27T12:00:00Z");
+
+  // Before the handoff a confirmed order's units are still the ledger's; after it they are the
+  // mirror's, and counting them again would subtract the same units twice.
+  assert.equal(resourceHoldsCapacity({ state: "COMMITTED", mirroredAt: null }), true);
+  assert.equal(resourceHoldsCapacity({ state: "COMMITTED", mirroredAt }), false);
+
+  // Every other state is decided by its state alone: a stray timestamp cannot release an ambiguous
+  // or in-flight hold, and cannot revive a released one.
+  for (const state of ["RESERVED", "SUBMITTING", "UNKNOWN"] as const) {
+    assert.equal(resourceHoldsCapacity({ state, mirroredAt: null }), true, state);
+    assert.equal(resourceHoldsCapacity({ state, mirroredAt }), true, state);
+  }
+  assert.equal(resourceHoldsCapacity({ state: "RELEASED", mirroredAt: null }), false);
+  assert.equal(resourceHoldsCapacity({ state: "RELEASED", mirroredAt }), false);
 });
 
 test("G5 every state's transitions are declared, and no undeclared edge is allowed", () => {

@@ -7,6 +7,7 @@ import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
 import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { handOffMirroredCapacity } from "./capacity-handoff.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -268,7 +269,13 @@ function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptio
   };
 }
 
-export function createCatalogMirrorRepository(client: PrismaClient) {
+export function createCatalogMirrorRepository(
+  client: PrismaClient,
+  {
+    /** When a capacity handoff is recorded (`mirroredAt`). Injectable so tests can pin it. */
+    clock = () => new Date(),
+  }: Readonly<{ clock?: () => Date }> = {},
+) {
   async function syncSnapshot({
     shopId,
     variations,
@@ -643,6 +650,16 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
         });
         await observeVariantAvailabilityCycles(tx, availabilityObservations, safeAvailabilityObservedAt);
 
+        // ADR 0014 §4.1 — the durable mirror handoff. Here, after every stock row above is written
+        // and inside the same transaction, so a COMMITTED hold is handed to the mirror exactly when
+        // the stock that includes its decrement becomes visible, and a sync that rolls back hands
+        // nothing off. Scoped to the variants this sync upserted: those are the VariantMirror rows it
+        // has locked, which is what serializes the handoff against `reserveOrderCapacity()`.
+        const capacityHandedOff = await handOffMirroredCapacity(tx, {
+          variantIds: [...internalVariantIds.values()],
+          handedOffAt: clock(),
+        });
+
         await tx.catalogSyncState.upsert({
           where: { pancakeShopId: safeShopId },
           create: { pancakeShopId: safeShopId, syncedAt: safeSyncedAt },
@@ -652,6 +669,7 @@ export function createCatalogMirrorRepository(client: PrismaClient) {
         return {
           products: productIds.length,
           variations: variationIdList.length,
+          capacityHandedOff,
         };
       },
       { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },

@@ -708,16 +708,26 @@ model VariantCapacityReservation {
 /// that line consumed at the reservation boundary. For a standalone line that is the same variant;
 /// for a FULL SET it is each component variant multiplied by the composite edge quantity. Snapshotting
 /// this mapping prevents a later catalog graph change from moving an existing hold to different stock.
+///
+/// `mirroredAt` is the durable mirror handoff (ADR 0014 §4.1): the instant a catalog sync proved that
+/// this resource's consumption is included in mirrored `WarehouseStock`, because the stock
+/// observation for the variant began (`mirrorObservationStartedAt`) strictly after the line was
+/// `COMMITTED`. From then on the mirror owns the units and the resource stops holding; until then a
+/// `COMMITTED` resource keeps holding. Written once, only by `handOffMirroredCapacity()` inside the
+/// catalog sync transaction, and never cleared.
 model CapacityReservationResource {
-  id            String                     @id @default(cuid())
-  reservationId String
-  variantId     String
-  quantity      Int
-  reservation   VariantCapacityReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  variant       VariantMirror              @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  id                         String                     @id @default(cuid())
+  reservationId              String
+  variantId                  String
+  quantity                   Int
+  mirroredAt                 DateTime?
+  mirrorObservationStartedAt DateTime?
+  reservation                VariantCapacityReservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  variant                    VariantMirror              @relation(fields: [variantId], references: [id], onDelete: Restrict)
 
   @@unique([reservationId, variantId], map: "CapacityReservationResource_reservation_variant_key")
   @@index([variantId], map: "CapacityReservationResource_variant_idx")
+  @@index([variantId, mirroredAt], map: "CapacityReservationResource_variant_mirrored_idx")
 }
 
 /// I9 — one preorder availability cycle per variant (ADR 0011, owner-approved 2026-09-18).

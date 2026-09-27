@@ -26,7 +26,10 @@ async function main(): Promise<void> {
     if (!loop) {
       try {
         const result = await syncConfiguredPancakeCatalog();
-        console.log(`catalog sync ok: ${result.products} products, ${result.variations} variations`);
+        console.log(
+          `catalog sync ok: ${result.products} products, ${result.variations} variations, ` +
+            `${result.capacityHandedOff ?? 0} capacity holds handed to the mirror`,
+        );
       } catch {
         console.error("catalog sync failed");
         process.exitCode = 1;
