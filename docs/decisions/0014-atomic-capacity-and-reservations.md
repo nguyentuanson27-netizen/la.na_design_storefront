@@ -232,6 +232,46 @@ Ties, missing and invalid timestamps resolve to **keep holding**, because the fa
 symmetric: over-holding refuses a sale that could have been made, while under-holding breaches the
 hard limit the owner set. Encoded in `reservationHoldsCapacity()`.
 
+### 4.3 The handoff is a durable event (2026-09-27)
+
+§4.1's test used to be re-evaluated by every capacity read. It is now evaluated **once**, by the
+catalog sync that wrote the observation, and its outcome is stored per resource:
+
+- `CapacityReservationResource.mirroredAt` — when the sync handed the resource's units to the mirror;
+- `CapacityReservationResource.mirrorObservationStartedAt` — the observation that proved it (the
+  earliest `WarehouseStock.syncedAt` of the variant, §4.2).
+
+`handOffMirroredCapacity()` (`src/commerce/capacity-handoff.ts`) makes the decision with
+`reservationHoldsCapacity()` itself, inside the catalog sync transaction, after every stock row is
+written, and only for the variants that sync upserted. Those upserts row-lock exactly the
+`VariantMirror` rows `reserveOrderCapacity()` locks `FOR UPDATE` before reading stock and holds, so a
+reservation sees either the old stock with the resource still holding or the new stock with it
+handed off — never new handoffs against old stock. The operation is idempotent (it only considers
+`mirroredAt IS NULL` and guards each update on it), and `COMMITTED` is terminal, so a handed-off
+resource can never hold again.
+
+Every read then asks one durable fact through `resourceHoldsCapacity()`: `RESERVED`, `SUBMITTING`
+and `UNKNOWN` hold, `RELEASED` does not, and `COMMITTED` holds while `mirroredAt` is null. That is
+the checkout authority, the advisory read model (`capacity-advisory.ts`) and its SQL projection in
+`buildVariantStockCte()`.
+
+Two CHECK constraints keep the record honest: both columns are written together or not at all, and
+the evidence may not postdate the handoff. The migration backfills the handoffs the per-read rule
+had already made, so no retired hold starts counting again on deploy.
+
+**Rollback and roll-forward.** The migration's backfill runs once, but the supported rollback keeps
+the migrated schema, and a release from before this change retires holds by its per-read rule without
+recording them. On roll-forward Prisma does not re-run the backfill, so the new code would count those
+units again until its first catalog sync, and the app starts before that sync. `deploy.sh` therefore
+runs `pnpm capacity:handoff:reconcile` (`reconcileMirrorHandoffs()`) after migrating and before any new
+writer or Caddy starts: the same decision over every pending `COMMITTED` resource, taken under the
+variant locks in id order, idempotent, and a no-op when nothing is pending. If it fails, the
+pre-release writers resume exactly as after a failed migration.
+
+One consequence is deliberate: a line whose `committedAt` is set in the past by reconciliation, after
+a later observation already exists, is handed off at the next sync rather than immediately — at
+most one `CATALOG_SYNC_INTERVAL_SECONDS` of over-holding, the safe direction.
+
 ---
 
 ## 5. Threshold rules by mode

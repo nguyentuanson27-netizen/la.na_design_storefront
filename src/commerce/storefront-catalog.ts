@@ -259,11 +259,9 @@ function visibleProductWhere(shopId: number) {
  * `tests/database/capacity-advisory-parity.test.ts` pins it to the TypeScript model on shared
  * fixtures.
  *
- * - `capacity_observation`: the earliest `WarehouseStock.syncedAt` per variant — the instant the
- *   variant's stock observation began (`earliestObservationStart()`).
- * - `capacity_held`: units per resource variant still held under `reservationHoldsCapacity()`:
- *   `RESERVED`, `SUBMITTING` and `UNKNOWN` always; `COMMITTED` until an observation that began
- *   strictly after the commit exists, with a missing commit time or observation keeping the hold.
+ * - `capacity_held`: units per resource variant still held under `resourceHoldsCapacity()`:
+ *   `RESERVED`, `SUBMITTING` and `UNKNOWN` always; `COMMITTED` until the catalog sync recorded its
+ *   mirror handoff (`mirroredAt`, `handOffMirroredCapacity()`).
  * - `capacity_mirrored`: the summed mirror, 0 with no rows, NULL when any row is non-finite; and
  *   whether every row is a countable safe integer, which composite derivation requires.
  * - `capacity_sellable`: a standalone variant offers mirrored minus held (it may be negative, which
@@ -273,25 +271,12 @@ function visibleProductWhere(shopId: number) {
  *   The parent's own mirrored stock is never read for a set.
  */
 const CAPACITY_SELLABLE_CTES = Prisma.sql`
-  "capacity_observation" AS (
-    SELECT ws."variantId", MIN(ws."syncedAt") AS "observedFrom"
-    FROM "WarehouseStock" ws
-    GROUP BY ws."variantId"
-  ),
   "capacity_held" AS (
     SELECT res."variantId", SUM(res."quantity")::float8 AS "heldQuantity"
     FROM "CapacityReservationResource" res
     JOIN "VariantCapacityReservation" r ON r."id" = res."reservationId"
-    LEFT JOIN "capacity_observation" co ON co."variantId" = res."variantId"
     WHERE r."state" IN ('RESERVED', 'SUBMITTING', 'UNKNOWN')
-      OR (
-        r."state" = 'COMMITTED'
-        AND (
-          r."committedAt" IS NULL
-          OR co."observedFrom" IS NULL
-          OR co."observedFrom" <= r."committedAt"
-        )
-      )
+      OR (r."state" = 'COMMITTED' AND res."mirroredAt" IS NULL)
     GROUP BY res."variantId"
   ),
   "capacity_mirrored" AS (

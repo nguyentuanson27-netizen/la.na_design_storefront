@@ -39,9 +39,9 @@ pnpm release:check
 bash deploy/vps/deploy.sh
 ```
 
-`deploy.sh` loads current project identity, validates Compose, builds exact-SHA images, waits for PostgreSQL, runs the production preflight, creates a pre-migration custom-format dump, stops every running database writer (`app` and `catalog-sync`), deploys Prisma migrations, starts app/Caddy/catalog-sync, waits for `/shop` health and then waits for the catalog sync's first successful run.
+`deploy.sh` loads current project identity, validates Compose, builds exact-SHA images, waits for PostgreSQL, runs the production preflight, creates a pre-migration custom-format dump, stops every running database writer (`app` and `catalog-sync`), deploys Prisma migrations, records any capacity mirror handoffs the mirror already proves (`pnpm capacity:handoff:reconcile`, which covers rows an older release wrote after a rollback), starts app/Caddy/catalog-sync, waits for `/shop` health and then waits for the catalog sync's first successful run.
 
-If the migration fails, only the writers that were running before the release are resumed from their stopped pre-release containers; nothing from the new images starts. A release whose app is healthy but whose catalog sync never succeeds exits non-zero: capacity holds for committed orders only clear, and Pancake restocks only reach the storefront, through a successful sync.
+If the migration or the handoff reconciliation fails, only the writers that were running before the release are resumed from their stopped pre-release containers; nothing from the new images starts. A release whose app is healthy but whose catalog sync never succeeds exits non-zero: capacity holds for committed orders only clear, and Pancake restocks only reach the storefront, through a successful sync.
 
 ## Scheduled catalog sync
 

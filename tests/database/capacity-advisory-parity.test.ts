@@ -14,6 +14,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { withAdvisorySellableStock } from "../../src/commerce/capacity-advisory.ts";
+import { handOffMirroredCapacity } from "../../src/commerce/capacity-handoff.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import { buildVariantStockCte, createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
@@ -189,6 +190,11 @@ test("a unit another order holds is sold out on every surface, as the checkout a
   });
 });
 
+/** What a catalog sync does after writing stock: record the handoffs the new observation proves. */
+async function handOff(variantIds: readonly string[], handedOffAt: Date) {
+  return prisma.$transaction((tx) => handOffMirroredCapacity(tx, { variantIds, handedOffAt }));
+}
+
 test("a COMMITTED hold keeps counting until a stock observation that began after the commit", async () => {
   const product = await seedProduct("dress");
   const variantId = await seedVariant(product.id, "dress-m", [1]);
@@ -205,6 +211,7 @@ test("a COMMITTED hold keeps counting until a stock observation that began after
 
   // A read that began exactly at the commit proves nothing about it (ties keep holding).
   await prisma.warehouseStock.updateMany({ where: { variantId }, data: { syncedAt: committedAt } });
+  assert.equal(await handOff([variantId], NOW), 0);
   assert.equal((await surfaces(product.slug, variantId)).cardStock, 0);
 
   // A sync that began after the commit observed Pancake's decrement: the mirror now owns it, and the
@@ -213,6 +220,7 @@ test("a COMMITTED hold keeps counting until a stock observation that began after
     where: { variantId },
     data: { quantity: 0, syncedAt: new Date(committedAt.getTime() + 1_000) },
   });
+  assert.equal(await handOff([variantId], NOW), 1);
   assert.equal((await surfaces(product.slug, variantId)).cardStock, 0, "no double subtraction");
 
   // A Pancake restock observed by a later sync reaches every surface.
@@ -327,6 +335,7 @@ test("the SQL capacity projection agrees with the TypeScript read model", async 
     where: { variantId: committedStale },
     data: { syncedAt: new Date(committedAt.getTime() + 1_000) },
   });
+  assert.equal(await handOff([committedFresh, committedStale, noRows], NOW), 1);
 
   const ids = [plain, released, unknown, committedFresh, committedStale, noRows, setDouble, setAbsent, setFractional];
   const sqlRows = await prisma.$queryRaw<{ id: string; sellableStock: number | null }[]>(Prisma.sql`

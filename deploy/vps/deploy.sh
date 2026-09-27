@@ -108,6 +108,20 @@ if ! "${compose[@]}" run --rm ops pnpm prisma:migrate:deploy; then
   exit 1
 fi
 
+# Record every capacity mirror handoff the mirror already proves before any new writer serves (ADR
+# 0014 §4.3). A migration's backfill runs once, but the supported rollback keeps the migrated schema,
+# and an older release retires holds by its per-read rule without recording them; on roll-forward the
+# new code would count those units again until its first catalog sync. Idempotent, and a no-op when
+# nothing is pending. On failure the pre-release writers resume exactly as after a failed migration:
+# their release reads the migrated schema, which is what rollback relies on too.
+if ! "${compose[@]}" run --rm ops pnpm capacity:handoff:reconcile; then
+  for writer in ${stopped_writers[@]+"${stopped_writers[@]}"}; do
+    "${compose[@]}" start "$writer"
+  done
+  echo "Capacity handoff reconciliation failed; the pre-release writers that were running were restored" >&2
+  exit 1
+fi
+
 "${compose[@]}" up -d --no-build app caddy catalog-sync
 
 # wait_healthy SERVICE ATTEMPTS DELAY: succeeds once Docker reports SERVICE healthy.

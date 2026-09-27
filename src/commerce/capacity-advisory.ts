@@ -10,15 +10,11 @@
  * the same rule makes "shown as available" and "accepted at checkout" differ only by what changed in
  * between, which is the one gap an advisory read cannot close.
  *
- * The rule is `reservationHoldsCapacity()` itself, not a restatement of it, fed the same inputs the
- * reservation transaction feeds it:
- *
- * - holds are read per **resource** (`CapacityReservationResource`), so a FULL SET's hold lands on
- *   the component variants it actually consumes, exactly as `reserveOrderCapacity()` counts it;
- * - the stock-observation marker for a resource is the **earliest** `WarehouseStock.syncedAt` of
- *   that variant (`earliestObservationStart()` in the reservation module), so a `COMMITTED` hold
- *   stops counting here at the same catalog sync that retires it there — never earlier, which would
- *   advertise units neither side still counts, and never later, which would hide a restock.
+ * The rule is `resourceHoldsCapacity()` itself, the one the reservation transaction applies, read
+ * per **resource** (`CapacityReservationResource`), so a FULL SET's hold lands on the component
+ * variants it actually consumes, exactly as `reserveOrderCapacity()` counts it. A `COMMITTED` hold
+ * stops counting at its durable mirror handoff (`mirroredAt`, written by the catalog sync through
+ * `handOffMirroredCapacity()`), so the surfaces and the authority retire it at the same sync.
  *
  * `buildVariantStockCte()` in `storefront-catalog.ts` is the SQL projection of this model for the
  * listing filters that must decide availability before they paginate; the database parity suite pins
@@ -26,13 +22,10 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
-import { reservationHoldsCapacity } from "./capacity-policy.ts";
+import { resourceHoldsCapacity } from "./capacity-policy.ts";
 import { deriveCompositeSellableStock } from "./composite-capacity.ts";
 
-export type AdvisoryHoldReadClient = Pick<
-  Prisma.TransactionClient,
-  "warehouseStock" | "capacityReservationResource"
->;
+export type AdvisoryHoldReadClient = Pick<Prisma.TransactionClient, "capacityReservationResource">;
 
 export type AdvisoryCapacityReadClient = AdvisoryHoldReadClient &
   Pick<Prisma.TransactionClient, "compositeComponentMirror">;
@@ -41,10 +34,8 @@ export type AdvisoryCapacityReadClient = AdvisoryHoldReadClient &
  * Units of each variant still held by reservations that count, keyed by every requested id (a
  * variant nobody has reserved maps to 0).
  *
- * The database filter is only a safe narrowing of the rows `reservationHoldsCapacity()` then
- * decides on: `RELEASED` never holds, and a `COMMITTED` row committed before the oldest observation
- * among the requested variants is retired for every one of them. A variant with no stock rows has
- * no observation at all, so every `COMMITTED` row on it is kept for the predicate, which holds it.
+ * The database filter only narrows the rows: `RELEASED` never holds and a handed-off `COMMITTED`
+ * resource no longer does. `resourceHoldsCapacity()` makes the decision on what comes back.
  */
 export async function readAdvisoryHeldQuantities(
   client: AdvisoryHoldReadClient,
@@ -54,48 +45,26 @@ export async function readAdvisoryHeldQuantities(
   const held = new Map<string, number>(ids.map((id) => [id, 0]));
   if (ids.length === 0) return held;
 
-  const observations = await client.warehouseStock.groupBy({
-    by: ["variantId"],
-    where: { variantId: { in: ids } },
-    _min: { syncedAt: true },
-  });
-  const observedFromByVariantId = new Map<string, Date>();
-  for (const row of observations) {
-    if (row._min.syncedAt) observedFromByVariantId.set(row.variantId, row._min.syncedAt);
-  }
-  const unobservedIds = ids.filter((id) => !observedFromByVariantId.has(id));
-  let oldestObservation: Date | null = null;
-  for (const observedFrom of observedFromByVariantId.values()) {
-    if (oldestObservation === null || observedFrom.getTime() < oldestObservation.getTime()) {
-      oldestObservation = observedFrom;
-    }
-  }
-
-  const committedFilters: Prisma.VariantCapacityReservationWhereInput[] = [{ committedAt: null }];
-  if (oldestObservation !== null) committedFilters.push({ committedAt: { gte: oldestObservation } });
   const resources = await client.capacityReservationResource.findMany({
     where: {
       variantId: { in: ids },
       OR: [
         { reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
-        { reservation: { state: "COMMITTED", OR: committedFilters } },
-        ...(unobservedIds.length > 0
-          ? [{ variantId: { in: unobservedIds }, reservation: { state: "COMMITTED" as const } }]
-          : []),
+        { reservation: { state: "COMMITTED" }, mirroredAt: null },
       ],
     },
     select: {
       variantId: true,
       quantity: true,
-      reservation: { select: { state: true, committedAt: true } },
+      mirroredAt: true,
+      reservation: { select: { state: true } },
     },
   });
 
   for (const resource of resources) {
-    const holds = reservationHoldsCapacity({
+    const holds = resourceHoldsCapacity({
       state: resource.reservation.state,
-      committedAt: resource.reservation.committedAt,
-      stockObservationStartedAt: observedFromByVariantId.get(resource.variantId) ?? null,
+      mirroredAt: resource.mirroredAt,
     });
     if (!holds) continue;
     held.set(resource.variantId, (held.get(resource.variantId) ?? 0) + resource.quantity);

@@ -15,7 +15,7 @@ type CatalogMirrorWriter = {
     compositeSnapshot: PancakeCompositeSnapshot;
     syncedAt: Date;
     availabilityObservedAt: Date;
-  }): Promise<{ products: number; variations: number }>;
+  }): Promise<{ products: number; variations: number; capacityHandedOff?: number }>;
 };
 
 /**

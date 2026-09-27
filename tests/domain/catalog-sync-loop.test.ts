@@ -62,6 +62,25 @@ test("a failed sync is retried next interval and never logs the error it carried
   assert.match(lines[1]!, /catalog sync ok: 1 products, 1 variations/);
 });
 
+test("each successful sync logs how many capacity holds it handed to the mirror", async () => {
+  const controller = new AbortController();
+  const lines: string[] = [];
+  await runCatalogSyncLoop({
+    sync: async () => {
+      controller.abort();
+      return { products: 3, variations: 7, capacityHandedOff: 2 };
+    },
+    intervalMs: 1,
+    sleep: async () => undefined,
+    signal: controller.signal,
+    log: (line) => lines.push(line),
+    now: () => new Date("2026-09-27T00:00:00.000Z"),
+  });
+  assert.deepEqual(lines, [
+    "2026-09-27T00:00:00.000Z catalog sync ok: 3 products, 7 variations, 2 capacity holds handed to the mirror",
+  ]);
+});
+
 test("a stop during the wait ends the loop without another sync", async () => {
   const controller = new AbortController();
   let calls = 0;

@@ -166,7 +166,8 @@ const SETTLED_SUBMISSION_STATES: readonly ActiveSnapshotState[] = ["CONFIRMED", 
  * scattered through `submit`:
  *
  * - **committed** — Pancake accepted. The hold keeps counting until the mirror observably includes
- *   the decrement (§4.1); it is `reservationHoldsCapacity()` that retires it, not this.
+ *   the decrement (§4.1); the catalog sync records that handoff (`handOffMirroredCapacity()`), not
+ *   this.
  * - **released** — `REJECTED` is a refusal, so nothing landed remotely and the capacity is free.
  * - **unknown** — `SYNC_UNKNOWN` is the ambiguous write. It must **never** be released on a timer
  *   (§8); only reconciliation (§10) can resolve it, and a stuck `UNKNOWN` holding capacity is the

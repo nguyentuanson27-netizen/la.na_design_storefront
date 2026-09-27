@@ -96,7 +96,7 @@ export type VariantCapacityInput = Readonly<{
   /** Mirrored Pancake stock for the variant, summed across warehouses. May already be negative. */
   mirroredStock: number;
   /**
-   * Quantity held by reservations that still count (see `reservationHoldsCapacity`).
+   * Quantity held by reservation resources that still count (see `resourceHoldsCapacity`).
    *
    * Never negative. This is what makes two concurrent checkouts serialize: the second one sees the
    * first one's hold, because I6a computes it inside the same transaction that took the row lock.
@@ -343,6 +343,10 @@ export type ReservationHoldInput = Readonly<{
  * Ties and missing timestamps resolve to *keep holding*, because the failure modes are not
  * symmetric — over-holding refuses a sale that could have been made, while under-holding breaches
  * the hard limit the owner set.
+ *
+ * **This is the handoff decision, not a per-read test.** `handOffMirroredCapacity()` asks it once,
+ * inside the catalog sync that wrote the observation, and records the answer on each resource as
+ * `mirroredAt`; every capacity read then asks `resourceHoldsCapacity()` of that durable fact.
  */
 export function reservationHoldsCapacity(input: ReservationHoldInput): boolean {
   switch (input.state) {
@@ -359,6 +363,40 @@ export function reservationHoldsCapacity(input: ReservationHoldInput): boolean {
       if (Number.isNaN(committedAt.getTime()) || Number.isNaN(observedFrom.getTime())) return true;
       return !(observedFrom.getTime() > committedAt.getTime());
     }
+  }
+}
+
+export type ResourceHoldInput = Readonly<{
+  state: ReservationState;
+  /**
+   * When a catalog sync handed this resource's units to the mirror (`handOffMirroredCapacity()`),
+   * or `null` while the resource still owns them.
+   */
+  mirroredAt: Date | null;
+}>;
+
+/**
+ * Whether one reservation resource still counts against its variant's capacity — the rule every
+ * read asks: the checkout authority, the advisory read model and its SQL projection.
+ *
+ * `RESERVED`, `SUBMITTING` and `UNKNOWN` always hold and `RELEASED` never does, as in
+ * `reservationHoldsCapacity()`. A `COMMITTED` resource holds until its mirror handoff has been
+ * recorded, and not a moment after: the handoff is the durable event that moves the units from the
+ * local ledger to mirrored stock, so counting it after `mirroredAt` would subtract them twice and
+ * dropping it before would count them nowhere.
+ *
+ * `COMMITTED` is terminal, so a handed-off resource can never start holding again.
+ */
+export function resourceHoldsCapacity(input: ResourceHoldInput): boolean {
+  switch (input.state) {
+    case "RESERVED":
+    case "SUBMITTING":
+    case "UNKNOWN":
+      return true;
+    case "RELEASED":
+      return false;
+    case "COMMITTED":
+      return input.mirroredAt === null;
   }
 }
 

@@ -91,9 +91,10 @@ export function createCapacityRepository(
    * inside the transaction that holds the variant lock. It is exposed here for operator views and
    * reconciliation, where an approximate answer is the right kind of answer.
    *
-   * `COMMITTED` is excluded from the cheap SQL filter because whether it still holds depends on the
-   * mirror catching up (§4.1), which is a per-row comparison `reservationHoldsCapacity()` owns —
-   * so this deliberately reports the unambiguous holds only, and says so rather than rounding.
+   * `COMMITTED` is excluded because whether it still holds is a per-resource fact — its durable
+   * mirror handoff (§4.1, `CapacityReservationResource.mirroredAt`), which `resourceHoldsCapacity()`
+   * reads — so this deliberately reports the unambiguous holds only, and says so rather than
+   * rounding. `readAdvisoryHeldQuantities()` is the per-resource answer.
    */
   async function sumUnambiguouslyHeldQuantity(variantId: string): Promise<number> {
     const held = await client.variantCapacityReservation.aggregate({
