@@ -198,6 +198,22 @@ test("M1 Zero Category Inference Guarantee: storefront catalog assembly and repo
           return [];
         },
       },
+      // The advisory capacity read model: no composite edges and no reservation holds.
+      compositeComponentMirror: {
+        async findMany() {
+          return [];
+        },
+      },
+      warehouseStock: {
+        async groupBy() {
+          return [];
+        },
+      },
+      capacityReservationResource: {
+        async findMany() {
+          return [];
+        },
+      },
     } as unknown as PrismaClient;
 
     const repository = createStorefrontCatalogRepository(mockClient);

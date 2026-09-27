@@ -80,10 +80,10 @@ The checked-in deployment architecture targets a self-managed VPS using Docker C
 Repository deployment assets live under `deploy/vps/`:
 
 - `env.example` — placeholder-only production configuration template;
-- `compose.yml` — app/PostgreSQL/Caddy/ops topology;
+- `compose.yml` — app/PostgreSQL/Caddy/ops/catalog-sync topology;
 - `Caddyfile` — TLS reverse proxy and trusted client-IP boundary;
 - `deploy.sh` — exact-SHA preflight, backup, migration, promotion and health flow;
-- `rollback.sh` — application-image rollback only.
+- `rollback.sh` — application and catalog-sync image rollback only (no database rollback).
 
 Operational references:
 

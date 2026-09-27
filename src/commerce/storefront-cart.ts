@@ -286,9 +286,11 @@ export function buildStorefrontCartLines({
     // `OVERSELL` variant sitting at stock 2 even though the owner's −20 allowance covers it, and it
     // agreed with the real rule only because nothing could set a non-`STANDARD` policy yet.
     //
-    // Advisory, per ADR 0014 §2: no reservation is subtracted here, because the authoritative check
-    // runs at the commit boundary inside the reservation transaction. The cart may show a line as
-    // buyable and the commit may still refuse it, and that refusal is correct.
+    // Advisory, per ADR 0014 §2: `variant.sellableStock` already has other orders' active holds
+    // subtracted by the capacity read model (`capacity-advisory.ts`), so `activeReservedQuantity`
+    // stays 0 here rather than subtracting them twice. The authoritative check still runs at the
+    // commit boundary inside the reservation transaction; the cart may show a line as buyable and
+    // the commit may still refuse it when capacity moved in between, and that refusal is correct.
     if (option.purchasable) {
       const capacity = capacityByVariantId.get(item.variantId);
       const decision = evaluateVariantCapacity(

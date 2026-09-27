@@ -307,9 +307,10 @@ export function buildStorefrontVariantOptions(
 
   return normalized.map((variant) => {
     const { price, basePriceVnd, isDiscounted } = pricingRule(variant);
-    // Advisory: ADR 0014 §2 keeps the authoritative check at the commit boundary, so no reservation
-    // quantity is subtracted here. A page cannot bind a decision made later, and trusting it to is
-    // the oversell master spec §31 forbids.
+    // Advisory: ADR 0014 §2 keeps the authoritative check at the commit boundary. Surfaces that show
+    // buyers capacity pass `sellableStock` from the capacity read model (`capacity-advisory.ts`),
+    // which has already subtracted active holds, so none is subtracted again here. A page cannot
+    // bind a decision made later, and trusting it to is the oversell master spec §31 forbids.
     const sellability = resolveVariantSellability({
       mirroredStock: variant.sellableStock,
       activeReservedQuantity: 0,

@@ -10,7 +10,7 @@ Every release uses one reviewed, CI-green, full 40-character Git SHA. `deploy/vp
 
 `DEPLOY_TARGET=production` resolves the application origin from `project.config.json`. `DEPLOY_TARGET=temporary` resolves only to the already-approved `la.lanadesign.vn` temporary host. No arbitrary hostname is accepted, and the temporary host remains fail-closed for indexing.
 
-The current Compose topology expects PostgreSQL, app, ops and Caddy plus an external edge Docker network named by `EDGE_NETWORK_NAME`. Caddy's edge alias is `${COMPOSE_PROJECT_NAME}-caddy`, currently `la-na-design-caddy`. The real trusted proxy range must be supplied through `EDGE_TRUSTED_PROXY_CIDR`; the documentation fallback is not a production value.
+The current Compose topology expects PostgreSQL, app, ops, catalog-sync and Caddy plus an external edge Docker network named by `EDGE_NETWORK_NAME`. Caddy's edge alias is `${COMPOSE_PROJECT_NAME}-caddy`, currently `la-na-design-caddy`. The real trusted proxy range must be supplied through `EDGE_TRUSTED_PROXY_CIDR`; the documentation fallback is not a production value.
 
 If nginx-proxy-manager is the real public edge, verify its actual network, proxy host and certificate before promotion. Never assume the old LA Clothing proxy-host state still exists or is correct for this project.
 
@@ -39,7 +39,13 @@ pnpm release:check
 bash deploy/vps/deploy.sh
 ```
 
-`deploy.sh` loads current project identity, validates Compose, builds exact-SHA images, waits for PostgreSQL, runs the production preflight, creates a pre-migration custom-format dump, deploys Prisma migrations, starts app/Caddy and waits for `/shop` health.
+`deploy.sh` loads current project identity, validates Compose, builds exact-SHA images, waits for PostgreSQL, runs the production preflight, creates a pre-migration custom-format dump, stops every running database writer (`app` and `catalog-sync`), deploys Prisma migrations, starts app/Caddy/catalog-sync, waits for `/shop` health and then waits for the catalog sync's first successful run.
+
+If the migration fails, only the writers that were running before the release are resumed from their stopped pre-release containers; nothing from the new images starts. A release whose app is healthy but whose catalog sync never succeeds exits non-zero: capacity holds for committed orders only clear, and Pancake restocks only reach the storefront, through a successful sync.
+
+## Scheduled catalog sync
+
+`catalog-sync` runs `pnpm pancake:catalog:sync --loop` from the release-tagged ops image (`$PROJECT_SLUG-ops:$RELEASE_SHA`). It syncs immediately, then every `CATALOG_SYNC_INTERVAL_SECONDS` (60-86400, default 300), restarts with the stack, and logs fixed text only. Its health check is healthy only when a sync succeeded within two intervals plus two minutes; a running loop whose every sync fails is reported unhealthy. A one-off sync is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
 
 The default local backup directory is `/var/backups/$PROJECT_SLUG`, currently `/var/backups/la-na-design`. It is not a substitute for off-site backup.
 
@@ -55,7 +61,7 @@ When the previous application remains schema/data compatible and its exact image
 bash deploy/vps/rollback.sh <PREVIOUS_APPROVED_FULL_SHA>
 ```
 
-The helper restores the prior application image and waits for app health. It does **not** roll back database migrations/data, edge configuration, DNS/TLS or Pancake side effects.
+The helper first stops the current `catalog-sync`, so the older app never runs beside newer sync code, then restores the prior application image and waits for app health, then starts that release's own catalog sync from `$PROJECT_SLUG-ops:<SHA>` and waits for a successful sync. A release from before the catalog-sync service has no such image: the helper warns and leaves the sync stopped until the next release, which means committed-order capacity holds stop clearing and restocks stop reaching the storefront. It does **not** roll back database migrations/data, edge configuration, DNS/TLS or Pancake side effects.
 
 After rollback, verify public routing and buyer-critical flows. For ambiguous `SYNC_UNKNOWN` POS outcomes, reconcile the remote state; never issue a blind duplicate create.
 

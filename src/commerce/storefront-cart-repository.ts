@@ -5,6 +5,7 @@ import type { PromotionCandidateReadClient } from "./promotion-candidate-reposit
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import { readAdvisoryHeldQuantities, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
 import {
   compositeSubSetAuthorityComponentSelection,
   resolveCompositeSubSetAuthorityFromRows,
@@ -131,7 +132,25 @@ const productSelection = {
 
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 
-function toCartProduct(product: SelectedProduct, shopId: number) {
+/**
+ * The capacity resources each variant's advisory figure reads: a composite parent its components,
+ * a standalone variant itself — the same resources `reserveOrderCapacity()` would hold.
+ */
+function capacityResourceIds(products: readonly SelectedProduct[]): string[] {
+  return products.flatMap((product) =>
+    product.variants.flatMap((variant) =>
+      variant.compositeComponents.length > 0
+        ? variant.compositeComponents.map((edge) => edge.componentVariantId)
+        : [variant.id],
+    ),
+  );
+}
+
+function toCartProduct(
+  product: SelectedProduct,
+  shopId: number,
+  heldByVariantId: ReadonlyMap<string, number>,
+) {
   return {
     slug: product.slug,
     pancakeProductId: product.pancakeProductId,
@@ -167,16 +186,19 @@ function toCartProduct(product: SelectedProduct, shopId: number) {
         }) !== null,
       color: variant.color,
       size: variant.size,
+      // The advisory capacity read model (`capacity-advisory.ts`): mirrored stock less the units
+      // other orders still hold, so a line the reservation would refuse is not shown as buyable.
       sellableStock:
         variant.compositeComponents.length > 0
           ? deriveCompositeSellableStock({
               shopId,
               components: variant.compositeComponents.map((edge) => ({
                 requiredQuantity: edge.quantity,
+                activeReservedQuantity: heldByVariantId.get(edge.componentVariantId) ?? 0,
                 componentVariant: edge.componentVariant,
               })),
             })
-          : sumWarehouseStocks(variant.warehouseStocks),
+          : sumWarehouseStocks(variant.warehouseStocks) - (heldByVariantId.get(variant.id) ?? 0),
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
@@ -192,6 +214,7 @@ function toCartProduct(product: SelectedProduct, shopId: number) {
  * facts the cart page renders come from one projection, not two that can drift apart.
  */
 export type StorefrontCartReadClient = Pick<Prisma.TransactionClient, "productMirror">
+  & AdvisoryHoldReadClient
   & PromotionCandidateReadClient;
 
 export function createStorefrontCartRepository(client: PrismaClient | StorefrontCartReadClient) {
@@ -231,7 +254,13 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       select: productSelection,
     });
 
-    const cartProducts = products.map((product) => toCartProduct(product, safeShopId));
+    const heldByVariantId = await readAdvisoryHeldQuantities(
+      readClient,
+      capacityResourceIds(products),
+    );
+    const cartProducts = products.map((product) =>
+      toCartProduct(product, safeShopId, heldByVariantId),
+    );
     const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
       variantIds: cartProducts.flatMap((product) =>
         product.variants.map((variant) => variant.id),
