@@ -659,6 +659,13 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
             campaign,
           })),
       },
+      // The advisory capacity read model: no reservation holds on this variant.
+      warehouseStock: {
+        groupBy: async () => [],
+      },
+      capacityReservationResource: {
+        findMany: async () => [],
+      },
     };
 
     return readClient as unknown as Prisma.TransactionClient;
