@@ -339,6 +339,66 @@ test("a composite product keeps kind selection independent of size and colour", 
   assert.equal(view.selectedVariantId, "a");
 });
 
+test("choosing a kind alone switches the price to that kind's price", () => {
+  // Price differs only between kinds; colour and size never change it, so the shopper must not
+  // have to pick them before the price follows the kind.
+  const options = [
+    option({ id: "set-s", kindKey: "set", kindLabel: "Full set", color: "Trắng", size: "S", price: 1_500_000 }),
+    option({ id: "set-m", kindKey: "set", kindLabel: "Full set", color: "Trắng", size: "M", price: 1_500_000 }),
+    option({ id: "pants-s", kindKey: "pants", kindLabel: "Quần lẻ", color: "Trắng", size: "S", price: 999_000 }),
+    option({ id: "pants-m", kindKey: "pants", kindLabel: "Quần lẻ", color: "Trắng", size: "M", price: 999_000 }),
+  ];
+  const productLevelOptions = options.filter((candidate) => candidate.kindKey === "set");
+
+  const unchosen = resolveVariantSelectionView({
+    options,
+    productLevelOptions,
+    selection: { kindKey: null, color: null, size: null },
+  });
+  assert.equal(unchosen.priceDisplay.displayText, vnd("1.500.000"));
+
+  const pants = resolveVariantSelectionView({
+    options,
+    productLevelOptions,
+    selection: { kindKey: "pants", color: null, size: null },
+  });
+  assert.equal(pants.selectedVariantId, null);
+  assert.equal(pants.priceDisplay.displayText, vnd("999.000"));
+
+  const pantsWithColour = resolveVariantSelectionView({
+    options,
+    productLevelOptions,
+    selection: { kindKey: "pants", color: "Trắng", size: null },
+  });
+  assert.equal(pantsWithColour.priceDisplay.displayText, vnd("999.000"));
+});
+
+test("a chosen kind on sale shows its own struck-through price before colour and size", () => {
+  const options = [
+    option({ id: "set-s", kindKey: "set", kindLabel: "Full set", size: "S", price: 1_500_000 }),
+    option({
+      id: "top-s", kindKey: "top", kindLabel: "Áo lẻ", size: "S",
+      price: 600_000, basePriceVnd: 800_000, isDiscounted: true,
+    }),
+    option({
+      id: "top-m", kindKey: "top", kindLabel: "Áo lẻ", size: "M",
+      price: 600_000, basePriceVnd: 800_000, isDiscounted: true,
+    }),
+  ];
+
+  const { priceDisplay } = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options.filter((candidate) => candidate.kindKey === "set"),
+    selection: { kindKey: "top", color: null, size: null },
+  });
+
+  assert.deepEqual(priceDisplay, {
+    displayText: vnd("600.000"),
+    compareAtText: vnd("800.000"),
+    discountPercent: 25,
+  });
+});
+
 /* --------------------------------------------------------------- price display */
 
 test("priceDisplay covers the selected-discount branch", () => {

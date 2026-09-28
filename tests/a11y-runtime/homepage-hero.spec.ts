@@ -434,6 +434,38 @@ test("swipe pauses during interaction, advances, then resumes autoplay", async (
   await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
+test("tapping the right or left half of the image moves to the next or previous slide", async ({
+  page,
+}) => {
+  await clearHeroSlides();
+  await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+  await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
+  await addHeroSlide(3, "https://content.pancake.vn/1/2/3/4/hero-three.jpg");
+
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  const region = hero(page);
+  // The pointer stays over the hero, so autoplay cannot move the slide under the assertions.
+  await region.hover();
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+  await expect(region.getByRole("button")).toHaveCount(0);
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  const track = page.locator(".home-hero__track");
+  const box = await track.boundingBox();
+  if (!box) throw new Error("Expected the hero track to have a layout box");
+  const y = box.y + box.height * 0.3;
+
+  await page.mouse.click(box.x + box.width * 0.8, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}2`);
+
+  await page.mouse.click(box.x + box.width * 0.2, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+
+  // The previous slide of the first one wraps round to the last.
+  await page.mouse.click(box.x + box.width * 0.2, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}3`);
+});
+
 test("reduced motion disables autoplay while keeping swipe manual interaction", async ({ browser }) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
@@ -468,6 +500,63 @@ test("reduced motion disables autoplay while keeping swipe manual interaction", 
       `/collections/${TEST_PREFIX}2`,
     );
     await expect(region).toHaveAttribute("data-autoplaying", "false");
+  } finally {
+    await context.close();
+  }
+});
+
+test("with reduced motion a keyboard user moves between slides with the arrow keys from MUA NGAY", async ({
+  browser,
+}) => {
+  await clearHeroSlides();
+  await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+  await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
+  await addHeroSlide(3, "https://content.pancake.vn/1/2/3/4/hero-three.jpg");
+
+  // Reduced motion turns autoplay off, so without a keyboard path slides 2 and 3 are unreachable:
+  // inactive slides are aria-hidden and their links are out of the tab order.
+  const context = await browser.newContext({ reducedMotion: "reduce", viewport: { width: 390, height: 844 } });
+  const page = await context.newPage();
+  await page.route("**/_next/image**", (route) => {
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
+  });
+
+  try {
+    await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+    const region = hero(page);
+    await expect(region).toHaveAttribute("data-autoplaying", "false");
+
+    const activeCta = region.getByRole("link", { name: "MUA NGAY" });
+    await expect(activeCta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+    await expect(activeCta).toHaveAttribute("aria-keyshortcuts", "ArrowLeft ArrowRight");
+
+    // Reach the link the way a keyboard user does, rather than focusing it from script.
+    for (let presses = 0; presses < 40; presses += 1) {
+      if (await activeCta.evaluate((element) => element === document.activeElement)) break;
+      await page.keyboard.press("Tab");
+    }
+    await expect(activeCta).toBeFocused();
+    const scrollBefore = await page.evaluate(() => window.scrollY);
+
+    await page.keyboard.press("ArrowRight");
+    await expect(activeCta).toHaveAttribute("href", `/collections/${TEST_PREFIX}2`);
+    // Focus moves with the slide: it never stays on the now-hidden link of the previous one.
+    await expect(activeCta).toBeFocused();
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(activeCta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+    await expect(activeCta).toBeFocused();
+
+    await page.keyboard.press("ArrowLeft");
+    await expect(activeCta).toHaveAttribute("href", `/collections/${TEST_PREFIX}3`);
+    await expect(activeCta).toBeFocused();
+    // The arrow keys drive the slider, not the page.
+    expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+
+    await Promise.all([
+      page.waitForURL(`${BASE_URL}/collections/${TEST_PREFIX}3`),
+      page.keyboard.press("Enter"),
+    ]);
   } finally {
     await context.close();
   }

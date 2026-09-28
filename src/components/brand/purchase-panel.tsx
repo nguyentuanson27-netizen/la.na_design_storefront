@@ -164,6 +164,13 @@ function MappedSizeGuideDialog({
     dialogRef.current?.close();
   }
 
+  /*
+   * Below `sm` the artwork is the whole dialog: it spans the phone's full width instead of shrinking
+   * to fit the screen height, and a chart taller than the screen scrolls inside the dialog with the
+   * close button pinned in view. From `sm` up, and for the drawn fallback, the dialog is unchanged.
+   */
+  const hasArtwork = guide.imageUrl !== null;
+
   function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key !== "Tab") return;
 
@@ -204,15 +211,23 @@ function MappedSizeGuideDialog({
       aria-label={`Hướng dẫn chọn size: ${guide.chart.title}`}
       data-size-guide-id={guide.id}
       tabIndex={-1}
-      className="m-auto max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] max-w-2xl overflow-hidden border-0 bg-transparent p-0 text-black shadow-none backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
+      className={`m-auto max-w-2xl border-0 bg-transparent p-0 text-black shadow-none backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)] ${
+        hasArtwork
+          ? "max-h-dvh w-full overflow-y-auto sm:overflow-hidden"
+          : "max-h-[calc(100dvh-1rem)] w-[calc(100%-1rem)] overflow-hidden"
+      }`}
       onClose={onClose}
       onKeyDown={containFocus}
     >
-      <div className="relative flex max-h-[calc(100dvh-1rem)] min-h-0 items-center justify-center sm:max-h-[calc(100dvh-2rem)]">
+      <div
+        className={`relative flex min-h-0 items-center justify-center sm:max-h-[calc(100dvh-2rem)] ${
+          hasArtwork ? "" : "max-h-[calc(100dvh-1rem)]"
+        }`}
+      >
         <button
           ref={closeButtonRef}
           type="button"
-          className="absolute right-2 top-2 z-10 min-h-11 bg-[#FAF7F2] px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+          className={`${hasArtwork ? "fixed sm:absolute" : "absolute"} right-2 top-2 z-10 min-h-11 bg-[#FAF7F2] px-3 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]`}
           onClick={closeDialog}
         >
           Đóng
@@ -234,8 +249,8 @@ function MappedSizeGuideDialog({
               alt=""
               width={1280}
               height={1280}
-              sizes="(max-width: 640px) calc(100vw - 1rem), (min-width: 1024px) 640px, 500px"
-              className="h-auto max-h-[calc(100dvh-1rem)] w-auto max-w-full object-contain sm:max-h-[calc(100dvh-2rem)] lg:w-[min(40rem,calc(100dvh-2rem))]"
+              sizes="(max-width: 640px) 100vw, (min-width: 1024px) 640px, 500px"
+              className="h-auto w-full object-contain sm:max-h-[calc(100dvh-2rem)] sm:w-auto sm:max-w-full lg:w-[min(40rem,calc(100dvh-2rem))]"
             />
           </>
         ) : (

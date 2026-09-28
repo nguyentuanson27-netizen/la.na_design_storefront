@@ -655,6 +655,11 @@ main nav[aria-label="Breadcrumb"] a {
   user-select: none;
 }
 
+/* Tapping either half of a multi-slide hero moves to the previous / next slide. */
+.home-hero--slider .home-hero__track {
+  cursor: pointer;
+}
+
 .home-hero__slide {
   position: absolute;
   inset: 0;

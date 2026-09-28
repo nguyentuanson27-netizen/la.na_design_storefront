@@ -1071,6 +1071,20 @@ test("F7c admin-set size-guide artwork replaces the fallback table and keeps the
     await expect(semanticTable.getByRole("rowheader", { name: "Ngực (cm)", exact: true })).toHaveCount(1);
     await expect(semanticTable.getByRole("cell", { name: "86", exact: true })).toHaveCount(1);
 
+    // On a phone the artwork spans the full screen width rather than sitting inside a margin.
+    for (const viewport of [
+      { width: 320, height: 800 },
+      { width: 390, height: 844 },
+    ]) {
+      await page.setViewportSize(viewport);
+      const imageBox = await image.boundingBox();
+      if (!imageBox) throw new Error("Expected the size-guide artwork to be laid out");
+      expect(Math.abs(imageBox.x), `artwork starts at the left edge at ${viewport.width}px`).toBeLessThanOrEqual(1);
+      expect(Math.abs(imageBox.width - viewport.width), `artwork is full width at ${viewport.width}px`).toBeLessThanOrEqual(1);
+      await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeInViewport();
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+
     await assertPageQuality(page);
     expect(browserErrors).toEqual([]);
     expect(failedResponses).toEqual([]);
