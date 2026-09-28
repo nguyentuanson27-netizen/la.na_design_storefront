@@ -1,14 +1,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { BRAND } from "@/brand";
 
 export const dynamic = "force-static";
 
-const ASSET_PATH = path.join(process.cwd(), "public/brand/la-na-design-social-card.png");
+const ASSET_PATH = path.join(process.cwd(), "public/brand", `${BRAND.identity.socialCardSlug}.png`);
 
-/**
- * Serves the official owner-approved social card asset (1200x675).
- * Baked statically at build time via `dynamic = "force-static"`.
- */
 export function GET() {
   if (existsSync(ASSET_PATH)) {
     const file = readFileSync(ASSET_PATH);
@@ -22,4 +19,3 @@ export function GET() {
 
   return new Response("Not found", { status: 404 });
 }
-
