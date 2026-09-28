@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import { ChatGptAdsEventReporter } from "@/components/analytics/chatgpt-ads-event-reporter";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
 import { FacebookPixelEvent } from "@/components/analytics/facebook-pixel-event";
 import type { FacebookPixelEventParameters } from "@/components/analytics/facebook-pixel-client";
@@ -102,6 +103,7 @@ export function StorefrontRoute<D>({
     <>
       <StorefrontPromotionRefresher refreshAfterMs={payload.refreshAfterMs} />
       <CommerceEventReporter event={payload.trackingEvent} />
+      <ChatGptAdsEventReporter event={payload.trackingEvent} />
       {/*
         One script per document, not one script holding an array. A route that publishes a single
         graph must emit exactly the document search engines already read there; wrapping it in an

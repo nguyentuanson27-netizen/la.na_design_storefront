@@ -15,6 +15,7 @@ import {
 import { submitGuestCheckoutPublicAction } from "./guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
 import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
+import { reportOpenAiAdsPurchaseSafely } from "./openai-ads-purchase-reporting.ts";
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 import { submitGuestCheckoutByCart } from "./guest-checkout-submit-runtime.ts";
 
@@ -50,20 +51,30 @@ async function createGuestCheckoutActionDependencies() {
  * plus the pixel's own `_fbp` / `_fbc` cookies, which are the strongest signal available for a
  * guest who never creates an account.
  */
-async function readMetaRequestContext() {
+async function readMeasurementRequestContexts() {
   const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
 
+  const clientIpAddress = readOptionalTrustedClientIp(requestHeaders, readAuthServerConfig());
+  const clientUserAgent = requestHeaders.get("user-agent");
+  const eventSourceUrl = `${readStorefrontOrigin()}/checkout`;
+
   return {
-    // Only the proxy-owned header the rest of checkout trusts. x-forwarded-for is client-spoofable
-    // and this codebase rejects it as an IP source everywhere else; a wrong address is worse than
-    // none, since it attributes the sale to whoever the buyer claimed to be.
-    clientIpAddress: readOptionalTrustedClientIp(requestHeaders, readAuthServerConfig()),
-    clientUserAgent: requestHeaders.get("user-agent"),
-    fbp: cookieStore.get("_fbp")?.value ?? null,
-    fbc: cookieStore.get("_fbc")?.value ?? null,
-    // The configured canonical origin, not the request's Host header: Host is attacker-controlled
-    // and would otherwise be reported to Meta as where the sale happened.
-    eventSourceUrl: `${readStorefrontOrigin()}/checkout`,
+    meta: {
+      clientIpAddress,
+      clientUserAgent,
+      fbp: cookieStore.get("_fbp")?.value ?? null,
+      fbc: cookieStore.get("_fbc")?.value ?? null,
+      eventSourceUrl,
+    },
+    openAiAds: {
+      clientIpAddress,
+      clientUserAgent,
+      // These are first-party cookies written by the ChatGPT Ads Pixel. The API requires the
+      // original opaque oppref value when present; neither value is parsed or transformed here.
+      oppref: cookieStore.get("__oppref")?.value ?? null,
+      obref: cookieStore.get("__obref")?.value ?? null,
+      eventSourceUrl,
+    },
   };
 }
 
@@ -93,9 +104,14 @@ export async function submitGuestCheckoutAction(
     // The order is already placed here. Nothing about reporting it may throw past this point: the
     // buyer would see a generic failure for a sale that succeeded and would very likely submit it
     // again. readStorefrontOrigin in particular throws on a misconfigured APP_DOMAIN.
-    const metaContext = await readMetaRequestContext().catch(() => null);
-    if (metaContext !== null) {
-      after(() => reportMetaPurchaseSafely(prisma, result.orderCode, metaContext));
+    const measurementContexts = await readMeasurementRequestContexts().catch(() => null);
+    if (measurementContexts !== null) {
+      after(() =>
+        Promise.all([
+          reportMetaPurchaseSafely(prisma, result.orderCode, measurementContexts.meta),
+          reportOpenAiAdsPurchaseSafely(prisma, result.orderCode, measurementContexts.openAiAds),
+        ]).then(() => undefined),
+      );
     }
     redirect(`/checkout/success?order=${encodeURIComponent(result.orderCode)}`);
   }
