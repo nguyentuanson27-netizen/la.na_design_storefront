@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-import type { PurchaseEvent } from "@/tracking/commerce-events";
+import type { CommerceItem, PurchaseEvent, VariantItem } from "@/tracking/commerce-events";
 
 type Oaiq = (
   command: "measure",
@@ -20,7 +20,20 @@ function readOaiq(): Oaiq | null {
   return typeof candidate === "function" ? (candidate as Oaiq) : null;
 }
 
-function buildPixelData(event: PurchaseEvent): Record<string, unknown> {
+function isVariantItem(item: CommerceItem): item is VariantItem {
+  return (
+    "quantity" in item
+    && Number.isSafeInteger(item.quantity)
+    && item.quantity > 0
+    && typeof item.price === "number"
+    && Number.isSafeInteger(item.price)
+    && item.price >= 0
+  );
+}
+
+function buildPixelData(event: PurchaseEvent): Record<string, unknown> | null {
+  if (!event.ecommerce.items.every(isVariantItem)) return null;
+
   return {
     type: "contents",
     amount: event.ecommerce.la_total_vnd,
@@ -51,6 +64,8 @@ export function ChatGptAdsOrderEvent({ event }: { event: PurchaseEvent }) {
 
     const eventId = event.ecommerce.event_id;
     const data = buildPixelData(event);
+    if (data === null) return;
+
     const send = () => {
       const oaiq = readOaiq();
       if (oaiq === null) return false;
