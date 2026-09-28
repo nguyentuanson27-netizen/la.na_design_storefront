@@ -13,6 +13,9 @@ import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
  * Zero slides render nothing. One slide is a static hero. Two or three slides autoplay every three
  * seconds unless reduced motion is requested or the shopper is actively hovering, focusing or
  * dragging. Manual swipe changes the slide but does not permanently take ownership of autoplay.
+ * A tap (a press that does not travel far enough to be a swipe) on the left half of the image goes
+ * to the previous slide and on the right half to the next, so a desktop shopper can move through
+ * the slides without dragging. The hero stays image + CTA: the halves are the image, not buttons.
  */
 const AUTOPLAY_INTERVAL_MS = 3_000;
 /** Below this a drag is a tap or a vertical scroll, not a deliberate swipe. */
@@ -68,7 +71,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
   const [focused, setFocused] = useState(false);
   const [interacting, setInteracting] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();
-  const dragStartX = useRef<number | null>(null);
+  const dragStart = useRef<{ x: number; y: number } | null>(null);
 
   const isSlider = slides.length > 1;
   const autoplaying =
@@ -98,20 +101,26 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
       return;
     }
 
-    dragStartX.current = event.clientX;
+    dragStart.current = { x: event.clientX, y: event.clientY };
     setInteracting(true);
     event.currentTarget.setPointerCapture(event.pointerId);
   }, []);
 
   const finishPointerInteraction = useCallback(
     (event: React.PointerEvent<HTMLDivElement>, cancelled = false) => {
-      const startX = dragStartX.current;
-      dragStartX.current = null;
+      const start = dragStart.current;
+      dragStart.current = null;
       setInteracting(false);
-      if (cancelled || startX === null) return;
-      const delta = event.clientX - startX;
-      if (Math.abs(delta) < SWIPE_THRESHOLD_PX) return;
-      goTo(activeIndex + (delta < 0 ? 1 : -1));
+      if (cancelled || start === null) return;
+      const deltaX = event.clientX - start.x;
+      if (Math.abs(deltaX) >= SWIPE_THRESHOLD_PX) {
+        goTo(activeIndex + (deltaX < 0 ? 1 : -1));
+        return;
+      }
+      // Anything that travelled vertically was a scroll attempt, not a tap.
+      if (Math.abs(event.clientY - start.y) >= SWIPE_THRESHOLD_PX) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      goTo(activeIndex + (event.clientX < bounds.left + bounds.width / 2 ? -1 : 1));
     },
     [activeIndex, goTo],
   );

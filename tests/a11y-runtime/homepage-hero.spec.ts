@@ -434,6 +434,38 @@ test("swipe pauses during interaction, advances, then resumes autoplay", async (
   await expect(region).toHaveAttribute("data-autoplaying", "true");
 });
 
+test("tapping the right or left half of the image moves to the next or previous slide", async ({
+  page,
+}) => {
+  await clearHeroSlides();
+  await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+  await addHeroSlide(2, "https://content.pancake.vn/1/2/3/4/hero-two.jpg");
+  await addHeroSlide(3, "https://content.pancake.vn/1/2/3/4/hero-three.jpg");
+
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  const region = hero(page);
+  // The pointer stays over the hero, so autoplay cannot move the slide under the assertions.
+  await region.hover();
+  await expect(region).toHaveAttribute("data-autoplaying", "false");
+  await expect(region.getByRole("button")).toHaveCount(0);
+
+  const cta = region.getByRole("link", { name: "MUA NGAY" });
+  const track = page.locator(".home-hero__track");
+  const box = await track.boundingBox();
+  if (!box) throw new Error("Expected the hero track to have a layout box");
+  const y = box.y + box.height * 0.3;
+
+  await page.mouse.click(box.x + box.width * 0.8, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}2`);
+
+  await page.mouse.click(box.x + box.width * 0.2, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}1`);
+
+  // The previous slide of the first one wraps round to the last.
+  await page.mouse.click(box.x + box.width * 0.2, y);
+  await expect(cta).toHaveAttribute("href", `/collections/${TEST_PREFIX}3`);
+});
+
 test("reduced motion disables autoplay while keeping swipe manual interaction", async ({ browser }) => {
   await clearHeroSlides();
   await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
