@@ -16,7 +16,10 @@ import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
  * A tap (a press that does not travel far enough to be a swipe) on the left half of the image goes
  * to the previous slide and on the right half to the next, so a desktop shopper can move through
  * the slides without dragging. The hero stays image + CTA: the halves are the image, not buttons.
+ * The keyboard equivalent is ArrowLeft / ArrowRight while focus is on the slider's MUA NGAY link;
+ * focus follows to the new slide's link, since the old one becomes hidden and unfocusable.
  */
+const SLIDE_KEY_SHORTCUTS = "ArrowLeft ArrowRight";
 const AUTOPLAY_INTERVAL_MS = 3_000;
 /** Below this a drag is a tap or a vertical scroll, not a deliberate swipe. */
 const SWIPE_THRESHOLD_PX = 40;
@@ -40,7 +43,13 @@ function HeroSlideFigure({
   slide,
   preload,
   interactive = true,
-}: Readonly<{ slide: HomeHeroSlide; preload: boolean; interactive?: boolean }>) {
+  keyShortcuts,
+}: Readonly<{
+  slide: HomeHeroSlide;
+  preload: boolean;
+  interactive?: boolean;
+  keyShortcuts?: string;
+}>) {
   return (
     <>
       <div className="home-hero__media">
@@ -57,6 +66,7 @@ function HeroSlideFigure({
           className="home-hero__cta-link"
           href={slide.href}
           tabIndex={interactive ? undefined : -1}
+          aria-keyshortcuts={keyShortcuts}
         >
           {HOME_HERO_CTA_LABEL}
         </Link>
@@ -72,6 +82,8 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
   const [interacting, setInteracting] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const focusActiveCtaAfterChange = useRef(false);
 
   const isSlider = slides.length > 1;
   const autoplaying =
@@ -125,6 +137,26 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
     [activeIndex, goTo],
   );
 
+  // A keyboard change hides the slide whose link holds focus, so hand focus to the new active link.
+  useEffect(() => {
+    if (!focusActiveCtaAfterChange.current) return;
+    focusActiveCtaAfterChange.current = false;
+    sectionRef.current
+      ?.querySelector<HTMLElement>('.home-hero__slide[data-active="true"] .home-hero__cta-link')
+      ?.focus();
+  }, [activeIndex]);
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLElement>) => {
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      focusActiveCtaAfterChange.current = true;
+      goTo(activeIndex + (event.key === "ArrowLeft" ? -1 : 1));
+    },
+    [activeIndex, goTo],
+  );
+
   // Zero valid slides means there is no first-surface hero and therefore no header overlay marker.
   if (slides.length === 0) return null;
 
@@ -142,11 +174,13 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
 
   return (
     <section
+      ref={sectionRef}
       className="home-hero home-hero--slider"
       aria-label="Ảnh bìa trang chủ"
       aria-roledescription="carousel"
       data-header-overlay-hero=""
       data-autoplaying={autoplaying ? "true" : "false"}
+      onKeyDown={onKeyDown}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setFocused(true)}
@@ -178,6 +212,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
                 slide={slide}
                 preload={index === 0}
                 interactive={isActive}
+                keyShortcuts={SLIDE_KEY_SHORTCUTS}
               />
             </div>
           );
