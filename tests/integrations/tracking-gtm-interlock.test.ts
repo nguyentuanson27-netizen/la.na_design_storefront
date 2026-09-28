@@ -103,6 +103,11 @@ test("T3 the site chrome mounts the tracking bootstrap before content and keeps 
     1,
     "the direct Meta mount must stay exactly once",
   );
+  assert.equal(
+    chrome.match(/<ChatGptAdsPixel\s*\/>/g)?.length,
+    1,
+    "the ChatGPT Ads Pixel mount must stay exactly once",
+  );
 });
 
 test("T3 the root layout reaches the tracking mounts only through the site chrome", async () => {
