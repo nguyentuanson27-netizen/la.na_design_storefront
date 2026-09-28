@@ -1,4 +1,7 @@
-const TRUSTED_IMAGE_HOSTNAME = "content.pancake.vn";
+const TRUSTED_IMAGE_HOSTNAMES = new Set([
+  "content.pancake.vn",
+  "statics.pancake.vn",
+]);
 const MAX_IMAGE_URL_LENGTH = 4096;
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png", ".webp"]);
@@ -71,14 +74,14 @@ function parseTrustedMediaUrl(
     return null;
   }
 
-  if (parsed.hostname.toLowerCase() !== TRUSTED_IMAGE_HOSTNAME) {
+  if (!TRUSTED_IMAGE_HOSTNAMES.has(parsed.hostname.toLowerCase())) {
     return null;
   }
 
   // Reject custom ports, explicit default ports, or credentials in authority
   const authority = trimmed.slice(8).split("/")[0] ?? "";
   if (
-    authority !== TRUSTED_IMAGE_HOSTNAME ||
+    !TRUSTED_IMAGE_HOSTNAMES.has(authority) ||
     parsed.port !== "" ||
     parsed.username !== "" ||
     parsed.password !== ""
@@ -108,7 +111,7 @@ export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|webp|mp4)$/;
+  /^\/[a-zA-Z0-9_.-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|webp|mp4)$/;
 
 function isValidReviewedMediaPath(
   pathname: string,

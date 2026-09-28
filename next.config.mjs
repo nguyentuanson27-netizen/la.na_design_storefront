@@ -56,8 +56,8 @@ const contentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
-  media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
+  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
+  media-src 'self' https://content.pancake.vn https://statics.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
   connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc};
   object-src 'none';
@@ -129,6 +129,24 @@ const nextConfig = {
       {
         protocol: "https",
         hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.webp",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpg",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.png",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
         port: "",
         pathname: "/*/*/*/*/*.webp",
       },
