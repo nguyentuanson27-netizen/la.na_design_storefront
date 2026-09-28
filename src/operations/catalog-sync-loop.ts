@@ -12,7 +12,11 @@
  * what `deploy.sh` already manages.
  */
 
-export const DEFAULT_CATALOG_SYNC_INTERVAL_SECONDS = 300;
+/**
+ * Hourly: the full catalog reconciliation is the safety net behind the 30-second webhook-driven
+ * inventory batch (`inventory-batch.ts`), not the primary freshness path.
+ */
+export const DEFAULT_CATALOG_SYNC_INTERVAL_SECONDS = 3600;
 const MIN_CATALOG_SYNC_INTERVAL_SECONDS = 60;
 const MAX_CATALOG_SYNC_INTERVAL_SECONDS = 24 * 60 * 60;
 

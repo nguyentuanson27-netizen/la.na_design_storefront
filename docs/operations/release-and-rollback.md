@@ -45,7 +45,14 @@ If the migration or the handoff reconciliation fails, only the writers that were
 
 ## Scheduled catalog sync
 
-`catalog-sync` runs `pnpm pancake:catalog:sync --loop` from the release-tagged ops image (`$PROJECT_SLUG-ops:$RELEASE_SHA`). It syncs immediately, then every `CATALOG_SYNC_INTERVAL_SECONDS` (60-86400, default 300), restarts with the stack, and logs fixed text only. Its health check is healthy only when a sync succeeded within two intervals plus two minutes; a running loop whose every sync fails is reported unhealthy. A one-off sync is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
+`catalog-sync` runs `pnpm pancake:catalog:sync --loop` from the release-tagged ops image (`$PROJECT_SLUG-ops:$RELEASE_SHA`), with two loops in one process, restarting with the stack and logging fixed text only:
+
+- **Webhook-driven inventory batch, every 30 seconds.** Pancake's `variations_warehouses` webhook posts to `/api/pancake/inventory-webhook` (custom header `x-pancake-webhook-secret` = `PANCAKE_WEBHOOK_SECRET`). The endpoint only records a `(variation, warehouse)` marker; duplicates and out-of-order deliveries collapse into one row. Each batch reads the flagged products' authoritative stock from Pancake and applies it through the same guarded write as the full reconciliation (variant locks, availability cycles, durable capacity handoff). A batch with work logs `inventory batch: N webhook events (D deduplicated), … applied, … superseded, … unknown, … failed reads (… retried, … dropped), … capacity holds handed to the mirror`; an idle batch logs nothing. A failed read keeps its marker for up to 5 batches.
+- **Full reconciliation, immediately and then every `CATALOG_SYNC_INTERVAL_SECONDS`** (60-86400, default 3600). It is the safety net: after lost webhooks or downtime, the next reconciliation brings the mirror back to Pancake's state. Its `catalog sync ok` line and the heartbeat file record the last successful reconciliation.
+
+A read never overwrites stock that a later-started read already wrote, whichever path wrote it, so an hourly reconciliation that commits after a newer webhook batch cannot restore pre-order stock under a recorded capacity handoff.
+
+The health check is healthy only when a full reconciliation succeeded within two intervals plus two minutes; a running loop whose every reconciliation fails is reported unhealthy. A one-off reconciliation is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
 
 The default local backup directory is `/var/backups/$PROJECT_SLUG`, currently `/var/backups/la-na-design`. It is not a substitute for off-site backup.
 

@@ -411,6 +411,24 @@ model CatalogSyncState {
   updatedAt     DateTime @updatedAt
 }
 
+/// A pending "this variation's stock in this warehouse changed" marker from a Pancake
+/// `variations_warehouses` webhook. It is a trigger, never a quantity: the batch worker reads the
+/// variation's authoritative stock from Pancake and writes it through the same guarded path as the
+/// catalog sync. One row per (variation, warehouse), so duplicate and out-of-order deliveries collapse
+/// into the latest marker; a row is deleted only once a read that began after `lastReceivedAt` has
+/// been applied, and the hourly reconciliation covers any marker that never arrives.
+model PancakeInventorySignal {
+  pancakeVariationId String
+  pancakeWarehouseId String
+  receivedCount      Int      @default(1)
+  firstReceivedAt    DateTime @default(now())
+  lastReceivedAt     DateTime
+  attempts           Int      @default(0)
+
+  @@id([pancakeVariationId, pancakeWarehouseId])
+  @@index([lastReceivedAt])
+}
+
 model Cart {
   id        String     @id @default(uuid())
   userId    String?

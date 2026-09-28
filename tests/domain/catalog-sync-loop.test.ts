@@ -8,9 +8,9 @@ import {
   runCatalogSyncLoop,
 } from "../../src/operations/catalog-sync-loop.ts";
 
-test("the sync interval defaults to five minutes and refuses values that would hammer or stall", () => {
+test("the full reconciliation defaults to hourly and refuses values that would hammer or stall", () => {
   assert.equal(parseCatalogSyncIntervalSeconds(undefined), DEFAULT_CATALOG_SYNC_INTERVAL_SECONDS);
-  assert.equal(parseCatalogSyncIntervalSeconds(""), 300);
+  assert.equal(parseCatalogSyncIntervalSeconds(""), 3600);
   assert.equal(parseCatalogSyncIntervalSeconds("60"), 60);
   assert.equal(parseCatalogSyncIntervalSeconds(" 900 "), 900);
   for (const raw of ["0", "59", "86401", "-5", "1.5", "5m", "abc"]) {
