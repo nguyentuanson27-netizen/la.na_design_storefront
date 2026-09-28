@@ -22,6 +22,25 @@ const facebookConnectSrc = hasFacebookPixel
   ? " https://www.facebook.com https://connect.facebook.net"
   : "";
 
+// ChatGPT Ads Measurement Pixel. Like Meta, this is a build input because the CSP is baked into
+// the image. Pixel IDs are opaque account configuration, so validate only bounded token syntax
+// documented by our integration rather than guessing a numeric width.
+const configuredOpenAiAdsPixelId = process.env.NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID ?? "";
+if (
+  configuredOpenAiAdsPixelId.length > 0
+  && !/^[A-Za-z0-9_-]{1,128}$/.test(configuredOpenAiAdsPixelId)
+) {
+  throw new Error(
+    "NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID must be the bounded Pixel ID from Ads Manager",
+  );
+}
+const hasOpenAiAdsPixel = configuredOpenAiAdsPixelId.length > 0;
+const openAiAdsScriptSrc = hasOpenAiAdsPixel ? " https://bzrcdn.openai.com" : "";
+const openAiAdsConnectSrc = hasOpenAiAdsPixel
+  ? " https://bzr.openai.com https://bzrcdn.openai.com"
+  : "";
+const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";
+
 // Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
 // installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
 // its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
@@ -35,12 +54,12 @@ const pancakeChatConnectSrc = " https://pages.fm wss://pages.fm";
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc};
+  img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';
@@ -91,6 +110,7 @@ const nextConfig = {
   // the baked policy then blocks. Declaring it here inlines it either way, including as "".
   env: {
     LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
+    LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
   },
   images: {
     remotePatterns: [
