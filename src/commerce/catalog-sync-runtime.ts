@@ -1,7 +1,7 @@
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
-import { fetchPancakeProductVariationStocks } from "../integrations/pancake/variation-stock-read.ts";
+import { fetchPancakeVariationStocks } from "../integrations/pancake/variation-stock-read.ts";
 import { processInventorySignals } from "../operations/inventory-batch.ts";
 import { createCatalogMirrorRepository } from "./catalog-mirror-repository.ts";
 import { syncPancakeCatalog } from "./catalog-sync.ts";
@@ -38,8 +38,8 @@ export async function processConfiguredInventorySignals() {
   return processInventorySignals({
     shopId: config.shopId,
     signals: createInventorySignalRepository(prisma),
-    readProduct: (productId) =>
-      fetchPancakeProductVariationStocks({ client, shopId: config.shopId, productId }),
+    readVariations: (variationIds) =>
+      fetchPancakeVariationStocks({ client, shopId: config.shopId, variationIds }),
     applyVariationStocks: (input) => repository.applyVariationStocks(input),
   });
 }

@@ -29,15 +29,17 @@ export type InventoryBatchDependencies = Readonly<{
   shopId: number;
   signals: Readonly<{
     listPending: (limit: number) => Promise<PendingInventorySignal[]>;
-    productIdsFor: (shopId: number, variationIds: readonly string[]) => Promise<Map<string, string>>;
     resolve: (signals: readonly PendingInventorySignal[], claimedAt: Date) => Promise<number>;
     recordFailure: (
       signals: readonly PendingInventorySignal[],
       maxAttempts: number,
     ) => Promise<{ retried: number; dropped: number }>;
   }>;
-  /** Authoritative stock for every variation of one Pancake product. */
-  readProduct: (pancakeProductId: string) => Promise<Map<string, PancakeCatalogWarehouseStock[]>>;
+  /**
+   * Authoritative stock for up to `readChunkSize` variations (`variation_ids[]` on the reviewed
+   * listing endpoint). A variation Pancake does not return is no longer listed.
+   */
+  readVariations: (variationIds: readonly string[]) => Promise<Map<string, PancakeCatalogWarehouseStock[]>>;
   applyVariationStocks: (input: {
     shopId: number;
     observations: readonly { variationId: string; warehouseStocks: readonly PancakeCatalogWarehouseStock[] }[];
@@ -47,6 +49,7 @@ export type InventoryBatchDependencies = Readonly<{
   clock?: () => Date;
   maxAttempts?: number;
   limit?: number;
+  readChunkSize?: number;
 }>;
 
 export type InventoryBatchResult = Readonly<{
@@ -84,11 +87,12 @@ const EMPTY: InventoryBatchResult = {
 export async function processInventorySignals({
   shopId,
   signals: store,
-  readProduct,
+  readVariations,
   applyVariationStocks,
   clock = () => new Date(),
   maxAttempts = INVENTORY_SIGNAL_MAX_ATTEMPTS,
   limit = INVENTORY_BATCH_LIMIT,
+  readChunkSize = 100,
 }: InventoryBatchDependencies): Promise<InventoryBatchResult> {
   const claimedAt = clock();
   const pending = await store.listPending(limit);
@@ -96,19 +100,21 @@ export async function processInventorySignals({
 
   const events = pending.reduce((total, signal) => total + signal.receivedCount, 0);
   const variationIds = [...new Set(pending.map((signal) => signal.pancakeVariationId))];
-  const productByVariationId = await store.productIdsFor(shopId, variationIds);
 
   // Read-start marker: after the claim, before the first Pancake request (ADR 0014 §4.2).
   const syncedAt = clock();
-  const failedProducts = new Set<string>();
+  const failedVariationIds = new Set<string>();
+  let failedReads = 0;
   const stocksByVariationId = new Map<string, PancakeCatalogWarehouseStock[]>();
-  for (const productId of new Set(productByVariationId.values())) {
+  for (let start = 0; start < variationIds.length; start += readChunkSize) {
+    const chunk = variationIds.slice(start, start + readChunkSize);
     try {
-      for (const [variationId, stocks] of await readProduct(productId)) {
+      for (const [variationId, stocks] of await readVariations(chunk)) {
         stocksByVariationId.set(variationId, stocks);
       }
     } catch {
-      failedProducts.add(productId);
+      failedReads += 1;
+      for (const id of chunk) failedVariationIds.add(id);
     }
   }
   const availabilityObservedAt = clock();
@@ -117,10 +123,6 @@ export async function processInventorySignals({
     const stocks = stocksByVariationId.get(variationId);
     return stocks === undefined ? [] : [{ variationId, warehouseStocks: stocks }];
   });
-  const failed = (signal: PendingInventorySignal) => {
-    const productId = productByVariationId.get(signal.pancakeVariationId);
-    return productId !== undefined && failedProducts.has(productId);
-  };
 
   let applyResult = { applied: 0, unknown: 0, superseded: 0, capacityHandedOff: 0 };
   let applyFailed = false;
@@ -129,21 +131,20 @@ export async function processInventorySignals({
       applyResult = await applyVariationStocks({ shopId, observations, syncedAt, availabilityObservedAt });
     } catch {
       applyFailed = true;
+      failedReads += 1;
     }
   }
 
   // A failed read or write keeps its markers; everything else — written, superseded by a newer
   // read, unknown to this mirror, or no longer listed by Pancake — is covered and cleared.
-  const toRetry = pending.filter((signal) => applyFailed || failed(signal));
-  const covered = pending.filter((signal) => !applyFailed && !failed(signal));
-  await store.resolve(covered, claimedAt);
-  const { retried, dropped } = await store.recordFailure(toRetry, maxAttempts);
+  const keep = (signal: PendingInventorySignal) =>
+    applyFailed || failedVariationIds.has(signal.pancakeVariationId);
+  await store.resolve(pending.filter((signal) => !keep(signal)), claimedAt);
+  const { retried, dropped } = await store.recordFailure(pending.filter(keep), maxAttempts);
 
-  const unknownToMirror = variationIds.filter((id) => !productByVariationId.has(id)).length;
-  const notListedByPancake = variationIds.filter((id) => {
-    const productId = productByVariationId.get(id);
-    return productId !== undefined && !failedProducts.has(productId) && !stocksByVariationId.has(id);
-  }).length;
+  const notListedByPancake = variationIds.filter(
+    (id) => !failedVariationIds.has(id) && !stocksByVariationId.has(id),
+  ).length;
   return {
     events,
     deduplicated: events - pending.length,
@@ -151,8 +152,8 @@ export async function processInventorySignals({
     variations: variationIds.length,
     applied: applyResult.applied,
     superseded: applyResult.superseded,
-    unknown: unknownToMirror + notListedByPancake + applyResult.unknown,
-    failedReads: failedProducts.size + (applyFailed ? 1 : 0),
+    unknown: notListedByPancake + applyResult.unknown,
+    failedReads,
     retried,
     dropped,
     capacityHandedOff: applyResult.capacityHandedOff,

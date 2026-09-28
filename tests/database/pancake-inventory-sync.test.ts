@@ -89,10 +89,10 @@ async function stockOf(pancakeVariationId: string) {
   return rows;
 }
 
-/** Pancake as the batch sees it: a mutable per-product stock table and a call log. */
-function pancake(initial: Record<string, Record<string, Record<string, number>>>) {
+/** Pancake as the batch sees it: a mutable per-variation stock table and a read log. */
+function pancake(initial: Record<string, Record<string, number>>) {
   const state = structuredClone(initial);
-  const reads: string[] = [];
+  const reads: string[][] = [];
   let failNext = 0;
   return {
     state,
@@ -100,17 +100,18 @@ function pancake(initial: Record<string, Record<string, Record<string, number>>>
     failNextReads: (count: number) => {
       failNext = count;
     },
-    readProduct: async (productId: string) => {
-      reads.push(productId);
+    readVariations: async (variationIds: readonly string[]) => {
+      reads.push([...variationIds]);
       if (failNext > 0) {
         failNext -= 1;
         throw new Error("pancake 502");
       }
       return new Map(
-        Object.entries(state[productId] ?? {}).map(([variationId, stocks]) => [
-          variationId,
-          Object.entries(stocks).map(([warehouseId, remainQuantity]) => ({ warehouseId, remainQuantity })),
-        ]),
+        variationIds.flatMap((id) =>
+          state[id] === undefined
+            ? []
+            : [[id, Object.entries(state[id]!).map(([warehouseId, remainQuantity]) => ({ warehouseId, remainQuantity }))]],
+        ),
       ) as Map<string, PancakeCatalogWarehouseStock[]>;
     },
   };
@@ -125,10 +126,15 @@ function batch(source: ReturnType<typeof pancake>, clock: () => Date) {
   return processInventorySignals({
     shopId: SHOP,
     signals,
-    readProduct: source.readProduct,
+    readVariations: source.readVariations,
     applyVariationStocks: (input) => catalog.applyVariationStocks(input),
     clock,
   });
+}
+
+/** One `variations_warehouses` delivery in the OpenAPI `WebhookInventoryResponse` shape. */
+function inventory(variationId: string, warehouseId: string, remainQuantity = 0) {
+  return { data: { record: { variation_id: variationId, warehouse_id: warehouseId, remain_quantity: remainQuantity }, success: true } };
 }
 
 function deliver(body: unknown, at: Date) {
@@ -150,8 +156,8 @@ test("webhooks only mark; duplicates and out-of-order deliveries collapse into o
   // The same change delivered three times, the last one out of order, with a stale quantity.
   for (const at of [later, later, earlier]) {
     assert.equal(
-      (await deliver({ type: "variations_warehouses", data: { variation_id: TEE, warehouse_id: "wh-a", remain_quantity: 99 } }, at)).status,
-      202,
+      (await deliver(inventory(TEE, "wh-a", 99), at)).status,
+      200,
     );
   }
 
@@ -163,15 +169,16 @@ test("webhooks only mark; duplicates and out-of-order deliveries collapse into o
   assert.deepEqual((await stockOf(TEE)).map(({ quantity }) => quantity), [5]);
 });
 
-test("a batch applies Pancake's authoritative stock once per product and clears what it covered", async () => {
+test("a batch applies Pancake's authoritative stock in one read and clears what it covered", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
-  await deliver({ data: [{ variation_id: TEE, warehouse_id: "wh-a" }, { variation_id: TEE, warehouse_id: "wh-a" }] }, new Date(T0.getTime() + 5_000));
-  await deliver({ variation_id: `${P}-never-synced`, warehouse_id: "wh-a" }, new Date(T0.getTime() + 5_000));
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 5_000));
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 5_000));
+  await deliver(inventory(`${P}-never-synced`, "wh-a"), new Date(T0.getTime() + 5_000));
 
-  const source = pancake({ [`${P}-tee`]: { [TEE]: { "wh-a": 3, "wh-b": 1 } } });
+  const source = pancake({ [TEE]: { "wh-a": 3, "wh-b": 1 }, [`${P}-never-synced`]: { "wh-a": 8 } });
   const result = await batch(source, clockFrom(new Date(T0.getTime() + 60_000)));
 
-  assert.deepEqual(source.reads, [`${P}-tee`]);
+  assert.deepEqual(source.reads, [[TEE, `${P}-never-synced`]], "one read for every flagged variation");
   assert.equal(result.events, 3);
   assert.equal(result.deduplicated, 1);
   assert.equal(result.applied, 1);
@@ -187,14 +194,14 @@ test("a batch applies Pancake's authoritative stock once per product and clears 
 
 test("a redelivery that arrives while a batch is reading keeps its marker for the next batch", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
-  await deliver({ variation_id: TEE, warehouse_id: "wh-a" }, new Date(T0.getTime() + 5_000));
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 5_000));
 
-  const source = pancake({ [`${P}-tee`]: { [TEE]: { "wh-a": 4 } } });
-  const original = source.readProduct;
-  source.readProduct = async (productId) => {
+  const source = pancake({ [TEE]: { "wh-a": 4 } });
+  const original = source.readVariations;
+  source.readVariations = async (variationIds) => {
     // Pancake changes again, and says so, after this batch's read began.
-    await deliver({ variation_id: TEE, warehouse_id: "wh-a" }, new Date(T0.getTime() + 3_600_000));
-    return original(productId);
+    await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 3_600_000));
+    return original(variationIds);
   };
   await batch(source, clockFrom(new Date(T0.getTime() + 60_000)));
   assert.equal(await prisma.pancakeInventorySignal.count({ where: { pancakeVariationId: TEE } }), 1);
@@ -202,8 +209,8 @@ test("a redelivery that arrives while a batch is reading keeps its marker for th
 
 test("a failed Pancake read is retried next batch and recovers; a persistent failure is bounded", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
-  await deliver({ variation_id: TEE, warehouse_id: "wh-a" }, new Date(T0.getTime() + 5_000));
-  const source = pancake({ [`${P}-tee`]: { [TEE]: { "wh-a": 1 } } });
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 5_000));
+  const source = pancake({ [TEE]: { "wh-a": 1 } });
 
   source.failNextReads(1);
   const failed = await batch(source, clockFrom(new Date(T0.getTime() + 60_000)));
@@ -218,7 +225,7 @@ test("a failed Pancake read is retried next batch and recovers; a persistent fai
 
   // A variation Pancake keeps failing on is dropped after the attempt bound; the hourly
   // reconciliation, not an ever-growing queue, is what fixes it.
-  await deliver({ variation_id: TEE, warehouse_id: "wh-a" }, new Date(T0.getTime() + 120_000));
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 120_000));
   source.failNextReads(10);
   for (let attempt = 0; attempt < 5; attempt += 1) {
     await batch(source, clockFrom(new Date(T0.getTime() + 150_000 + attempt * 30_000)));
@@ -265,8 +272,8 @@ test("the targeted batch hands a COMMITTED hold to the mirror exactly like a ful
   await reservations.transitionReservation({ id: reservationId, from: "SUBMITTING", to: "COMMITTED", at: committedAt });
 
   // Pancake decrements (5 -> 3) and fires the webhook; the batch reads after the commit.
-  await deliver({ variation_id: TEE, warehouse_id: "wh-a" }, new Date(committedAt.getTime() + 1_000));
-  const source = pancake({ [`${P}-tee`]: { [TEE]: { "wh-a": 3 } } });
+  await deliver(inventory(TEE, "wh-a"), new Date(committedAt.getTime() + 1_000));
+  const source = pancake({ [TEE]: { "wh-a": 3 } });
   const result = await batch(source, clockFrom(new Date(committedAt.getTime() + 30_000)));
 
   assert.equal(result.capacityHandedOff, 1);

@@ -8,12 +8,12 @@
  * are harmless by construction: they collapse into one marker per (variation, warehouse), and the
  * value written is whatever Pancake says when the batch reads it.
  *
- * PAYLOAD CONTRACT — PENDING OPENAPI CONFIRMATION. The reviewed Pancake contract in this repository
- * (`docs/integrations/pancake.md`) does not yet cover webhook payloads. `parseVariationsWarehousesWebhook`
- * accepts the `variations_warehouses` row shape already reviewed for the catalog
- * (`variation_id`/`warehouse_id`), as the body itself, as `data`, or as an array under `data`, and
- * rejects anything else. Anything it rejects is logged and dropped; the hourly reconciliation still
- * converges the mirror, so a contract mismatch degrades freshness, never correctness.
+ * Contract (Pancake POS OpenAPI 3.1.0, schema `WebhookInventoryResponse`): a shop has one
+ * `webhook_url` for every enabled `webhook_types` entry and a free-form `webhook_headers` map, which
+ * is where our secret header is configured. An inventory delivery is
+ * `{ data: { record: { variation_id, warehouse_id, remain_quantity, … }, success } }`; the other
+ * types (orders, customers, products, auto-call) arrive at the same URL with other shapes and are
+ * acknowledged and ignored. `remain_quantity` and the rest of the record are never read.
  */
 
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -26,7 +26,6 @@ export const PANCAKE_WEBHOOK_SECRET_HEADER = "x-pancake-webhook-secret";
 export const PANCAKE_INVENTORY_WEBHOOK_TYPE = "variations_warehouses";
 
 const MAX_BODY_BYTES = 256 * 1024;
-const MAX_EVENTS_PER_PAYLOAD = 1_000;
 const MAX_ID_LENGTH = 512;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
 
@@ -34,7 +33,7 @@ export type InventoryWebhookEvent = Readonly<{ variationId: string; warehouseId:
 
 export type ParsedInventoryWebhook =
   | Readonly<{ ok: true; events: readonly InventoryWebhookEvent[] }>
-  | Readonly<{ ok: false; reason: "malformed" | "too-large" }>;
+  | Readonly<{ ok: false; reason: "malformed" }>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -50,28 +49,20 @@ function boundedId(value: unknown): string | null {
 }
 
 /**
- * Extracts the (variation, warehouse) pairs a payload names. A payload of another webhook type is
- * accepted with no events, so a shared endpoint never makes Pancake retry what it cannot use. Any
- * quantity in the payload is ignored on purpose.
+ * The (variation, warehouse) pair a `variations_warehouses` delivery names. Any other webhook type
+ * sharing the URL yields no events, so Pancake is never made to retry what this endpoint does not
+ * handle; a delivery that is an inventory record but with unusable ids is malformed.
  */
 export function parseVariationsWarehousesWebhook(body: unknown): ParsedInventoryWebhook {
   if (!isRecord(body)) return { ok: false, reason: "malformed" };
-  const type = body.type ?? body.event ?? body.webhook_type;
-  if (type !== undefined && type !== PANCAKE_INVENTORY_WEBHOOK_TYPE) return { ok: true, events: [] };
-
-  const rows = Array.isArray(body.data) ? body.data : isRecord(body.data) ? [body.data] : [body];
-  if (rows.length === 0) return { ok: false, reason: "malformed" };
-  if (rows.length > MAX_EVENTS_PER_PAYLOAD) return { ok: false, reason: "too-large" };
-
-  const events: InventoryWebhookEvent[] = [];
-  for (const row of rows) {
-    if (!isRecord(row)) return { ok: false, reason: "malformed" };
-    const variationId = boundedId(row.variation_id);
-    const warehouseId = boundedId(row.warehouse_id);
-    if (variationId === null || warehouseId === null) return { ok: false, reason: "malformed" };
-    events.push({ variationId, warehouseId });
+  const record = isRecord(body.data) && isRecord(body.data.record) ? body.data.record : null;
+  if (record === null || (!("variation_id" in record) && !("warehouse_id" in record))) {
+    return { ok: true, events: [] };
   }
-  return { ok: true, events };
+  const variationId = boundedId(record.variation_id);
+  const warehouseId = boundedId(record.warehouse_id);
+  if (variationId === null || warehouseId === null) return { ok: false, reason: "malformed" };
+  return { ok: true, events: [{ variationId, warehouseId }] };
 }
 
 function sameSecret(expected: string, presented: string | null): boolean {
@@ -127,9 +118,9 @@ export async function handlePancakeInventoryWebhook(
     const parsed = parseVariationsWarehousesWebhook(body);
     if (!parsed.ok) {
       log(`pancake inventory webhook rejected: ${parsed.reason} payload`);
-      return Response.json({ error: "invalid" }, { status: parsed.reason === "too-large" ? 413 : 400 });
+      return Response.json({ error: "invalid" }, { status: 400 });
     }
-    if (parsed.events.length === 0) return Response.json({ accepted: 0 }, { status: 202 });
+    if (parsed.events.length === 0) return Response.json({ accepted: 0 }, { status: 200 });
 
     try {
       await record(parsed.events, now());
@@ -138,7 +129,7 @@ export async function handlePancakeInventoryWebhook(
       return Response.json({ error: "unavailable" }, { status: 503 });
     }
     log(`pancake inventory webhook accepted: ${parsed.events.length} events`);
-    return Response.json({ accepted: parsed.events.length }, { status: 202 });
+    return Response.json({ accepted: parsed.events.length }, { status: 200 });
   } catch {
     log("pancake inventory webhook failed unexpectedly");
     return Response.json({ error: "unavailable" }, { status: 503 });
@@ -153,7 +144,7 @@ export type PendingInventorySignal = Readonly<{
   attempts: number;
 }>;
 
-type SignalClient = Pick<PrismaClient, "$executeRaw" | "pancakeInventorySignal" | "variantMirror">;
+type SignalClient = Pick<PrismaClient, "$executeRaw" | "pancakeInventorySignal">;
 
 export function createInventorySignalRepository(client: SignalClient) {
   /**
@@ -201,16 +192,6 @@ export function createInventorySignalRepository(client: SignalClient) {
     });
   }
 
-  /** The Pancake product owning each known variation of this shop, for the authoritative read. */
-  async function productIdsFor(shopId: number, variationIds: readonly string[]): Promise<Map<string, string>> {
-    if (variationIds.length === 0) return new Map();
-    const variants = await client.variantMirror.findMany({
-      where: { pancakeVariationId: { in: [...variationIds] }, product: { pancakeShopId: shopId } },
-      select: { pancakeVariationId: true, product: { select: { pancakeProductId: true } } },
-    });
-    return new Map(variants.map((variant) => [variant.pancakeVariationId, variant.product.pancakeProductId]));
-  }
-
   /**
    * Clears markers a read covered. Guarded on `lastReceivedAt`: a delivery that arrived after the
    * batch claimed its markers keeps its row, because the read may have started before that change.
@@ -254,5 +235,5 @@ export function createInventorySignalRepository(client: SignalClient) {
     return { retried: signals.length - dropped, dropped };
   }
 
-  return { record, listPending, productIdsFor, resolve, recordFailure };
+  return { record, listPending, resolve, recordFailure };
 }
