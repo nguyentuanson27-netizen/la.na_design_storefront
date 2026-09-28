@@ -86,9 +86,21 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const hasColorDimension = input.options.some((option) => option.color !== null);
   const hasSizeDimension = input.options.some((option) => option.size !== null);
 
+  /**
+   * The options that speak for the price before a full variant is chosen.
+   *
+   * Price differs only between kinds -- colour and size never change it -- so once a kind is picked
+   * its own options are the price, and the shopper sees it switch without choosing colour and size
+   * first. Before a kind is picked the product-level options still speak for the whole.
+   */
+  const unselectedPriceOptions =
+    selection.hasKindOptions && input.selection.kindKey !== null
+      ? input.options.filter((option) => option.kindKey === input.selection.kindKey)
+      : input.productLevelOptions;
+
   const priceLabel =
     selection.selectedPrice === null
-      ? defaultPriceLabel(input.productLevelOptions)
+      ? defaultPriceLabel(unselectedPriceOptions)
       : currency.format(selection.selectedPrice);
 
   // Base must be strictly greater than price, not merely flagged: a campaign that left the base
@@ -124,6 +136,10 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     selection.hasKindOptions && input.selection.kindKey === null ? KIND_SELECTION_GUIDANCE : null;
 
   const initialDiscount = resolveStorefrontDiscountPresentation(input.productLevelOptions);
+  const unselectedDiscount =
+    unselectedPriceOptions === input.productLevelOptions
+      ? initialDiscount
+      : resolveStorefrontDiscountPresentation(unselectedPriceOptions);
 
   /**
    * One shape for all three price presentations the panel has: a discounted selection, an
@@ -140,11 +156,11 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
             (1 - selection.selectedPrice / selection.selectedBasePriceVnd) * 100,
           ),
         }
-      : selection.selectedPrice === null && initialDiscount
+      : selection.selectedPrice === null && unselectedDiscount
         ? {
-            displayText: `${initialDiscount.hasCheaperCurrentVariant ? "Sale từ " : ""}${currency.format(initialDiscount.effectivePriceVnd)}`,
-            compareAtText: currency.format(initialDiscount.basePriceVnd),
-            discountPercent: initialDiscount.discountPercent,
+            displayText: `${unselectedDiscount.hasCheaperCurrentVariant ? "Sale từ " : ""}${currency.format(unselectedDiscount.effectivePriceVnd)}`,
+            compareAtText: currency.format(unselectedDiscount.basePriceVnd),
+            discountPercent: unselectedDiscount.discountPercent,
           }
         : { displayText: priceLabel, compareAtText: null, discountPercent: null };
 
