@@ -32,8 +32,11 @@ const fontVariables = `${josefin.variable} ${mulish.variable}`;
  * typeface, the language and the stylesheet, which is the whole of what a document contributes.
  */
 export function SiteDocument({ children }: Readonly<{ children: ReactNode }>) {
+  // `globals.css` makes in-page scrolling smooth. Since Next 16 that also animates the jump to the
+  // top of a newly opened page unless this attribute is present, which is what lets the router
+  // switch to an instant scroll for the navigation itself.
   return (
-    <html lang="vi" className={fontVariables}>
+    <html lang="vi" className={fontVariables} data-scroll-behavior="smooth">
       <body className={fontVariables}>{children}</body>
     </html>
   );
