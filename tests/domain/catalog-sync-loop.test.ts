@@ -81,6 +81,25 @@ test("each successful sync logs how many capacity holds it handed to the mirror"
   ]);
 });
 
+test("a sync that quarantined incomplete combos says so in its log line", async () => {
+  const controller = new AbortController();
+  const lines: string[] = [];
+  await runCatalogSyncLoop({
+    sync: async () => {
+      controller.abort();
+      return { products: 3, variations: 7, capacityHandedOff: 0, compositeQuarantined: 2 };
+    },
+    intervalMs: 1,
+    sleep: async () => undefined,
+    signal: controller.signal,
+    log: (line) => lines.push(line),
+    now: () => new Date("2026-09-28T00:00:00.000Z"),
+  });
+  assert.deepEqual(lines, [
+    "2026-09-28T00:00:00.000Z catalog sync ok: 3 products, 7 variations, 0 capacity holds handed to the mirror, 2 incomplete combos quarantined",
+  ]);
+});
+
 test("a stop during the wait ends the loop without another sync", async () => {
   const controller = new AbortController();
   let calls = 0;

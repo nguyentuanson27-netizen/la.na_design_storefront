@@ -63,6 +63,7 @@ test("catalog sync completes catalog and composite traversals before handing one
         parentIdentities: [],
         componentIdentities: [],
         edges: [],
+        quarantinedParentVariationIds: [],
       });
       assert.deepEqual(input.syncedAt, new Date("2026-08-11T00:00:00.000Z"));
       return { products: 0, variations: 0 };

@@ -32,7 +32,14 @@ export function parseCatalogSyncIntervalSeconds(raw: string | undefined): number
 }
 
 export type CatalogSyncLoopOptions = Readonly<{
-  sync: () => Promise<Readonly<{ products: number; variations: number; capacityHandedOff?: number }>>;
+  sync: () => Promise<
+    Readonly<{
+      products: number;
+      variations: number;
+      capacityHandedOff?: number;
+      compositeQuarantined?: number;
+    }>
+  >;
   intervalMs: number;
   /** Resolves after `ms`, or early when `signal` aborts. */
   sleep: (ms: number, signal: AbortSignal) => Promise<void>;
@@ -64,8 +71,13 @@ export async function runCatalogSyncLoop(options: CatalogSyncLoopOptions): Promi
         result.capacityHandedOff === undefined
           ? ""
           : `, ${result.capacityHandedOff} capacity holds handed to the mirror`;
+      // A quarantined combo is hidden from the storefront until Pancake reports it complete again,
+      // so an operator needs to see that it happened.
+      const quarantined = result.compositeQuarantined
+        ? `, ${result.compositeQuarantined} incomplete combos quarantined`
+        : "";
       options.log(
-        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations${handedOff}`,
+        `${finishedAt.toISOString()} catalog sync ok: ${result.products} products, ${result.variations} variations${handedOff}${quarantined}`,
       );
       // Outside the sync's own failure handling on purpose: a heartbeat that cannot be written must
       // not turn a good sync into a counted failure, and the health check will report it as stale.

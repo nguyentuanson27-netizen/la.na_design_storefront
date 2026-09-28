@@ -176,26 +176,82 @@ test("catalog sync persists direct composite edges and replaces stale edges idem
   ]);
 });
 
-test("catalog sync rejects composite edges that are not present in the same catalog snapshot before writes", async () => {
-  await assert.rejects(
-    repository.syncSnapshot({
-      shopId,
-      variations,
-      compositeSnapshot: {
-        parentVariationIds: ["set-m"],
-        componentVariationIds: ["missing-m"],
-        parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
-        componentIdentities: [{ variationId: "missing-m", productId: "missing-product" }],
-        edges: [
-          { parentVariationId: "set-m", componentVariationId: "missing-m", quantity: 1 },
-        ],
-      },
-      syncedAt: new Date("2026-08-22T00:00:00.000Z"),
+test("a combo whose component is missing from the catalog is quarantined, not a failed sync, and heals itself", async () => {
+  // Complete first, and activated by an admin: this is the state a later incomplete report must
+  // neither break nor leave sellable from the parent's own stock.
+  await repository.syncSnapshot({
+    shopId,
+    variations,
+    compositeSnapshot: snapshot([
+      { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
+    ]),
+    syncedAt: new Date("2026-08-22T00:00:00.000Z"),
+  });
+  await prisma.variantMirror.updateMany({
+    where: { pancakeVariationId: "set-m" },
+    data: { isActive: true },
+  });
+
+  // Pancake still lists the combo, but its pants component is hidden/deleted from the catalog.
+  const result = await repository.syncSnapshot({
+    shopId,
+    variations: variations.filter((variation) => variation.id !== "pants-m"),
+    compositeSnapshot: {
+      parentVariationIds: ["set-m"],
+      componentVariationIds: ["pants-m", "shirt-m"],
+      parentIdentities: [{ variationId: "set-m", productId: "set-product" }],
+      componentIdentities: [
+        { variationId: "pants-m", productId: "pants-product" },
+        { variationId: "shirt-m", productId: "shirt-product" },
+      ],
+      edges: [
+        { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
+        { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
+      ],
+    },
+    syncedAt: new Date("2026-08-22T01:00:00.000Z"),
+  });
+
+  assert.equal(result.compositeQuarantined, 1);
+  // No partial graph: the shirt edge is not kept on its own.
+  assert.equal(
+    await prisma.compositeComponentMirror.count({
+      where: { parentVariant: { product: { pancakeShopId: shopId } } },
     }),
-    /composite snapshot/i,
+    0,
+  );
+  const quarantined = await prisma.variantMirror.findUniqueOrThrow({
+    where: { pancakeVariationId: "set-m" },
+    select: { isPresent: true, isActive: true },
+  });
+  assert.deepEqual(quarantined, { isPresent: false, isActive: true }, "hidden, admin activation kept");
+  // Every other variation synced normally.
+  assert.equal(
+    (await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: "shirt-m" } })).isPresent,
+    true,
   );
 
-  assert.equal(await prisma.productMirror.count({ where: { pancakeShopId: shopId } }), 0);
+  // Pancake reports the combo complete again: it comes back present with its full graph.
+  const healed = await repository.syncSnapshot({
+    shopId,
+    variations,
+    compositeSnapshot: snapshot([
+      { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
+      { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
+    ]),
+    syncedAt: new Date("2026-08-22T02:00:00.000Z"),
+  });
+  assert.equal(healed.compositeQuarantined, 0);
+  assert.equal(
+    (await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: "set-m" } })).isPresent,
+    true,
+  );
+  assert.equal(
+    await prisma.compositeComponentMirror.count({
+      where: { parentVariant: { product: { pancakeShopId: shopId } } },
+    }),
+    2,
+  );
 });
 
 test("catalog sync rejects a composite parent whose product identity contradicts the flat catalog before writes", async () => {

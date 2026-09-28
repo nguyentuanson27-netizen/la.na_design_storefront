@@ -25,6 +25,13 @@ export type PancakeCompositeSnapshot = Readonly<{
   parentIdentities: readonly PancakeCompositeVariationIdentity[];
   componentIdentities: readonly PancakeCompositeVariationIdentity[];
   edges: readonly PancakeCompositeEdge[];
+  /**
+   * Combos Pancake reported incompletely: no components, or a component that is missing (hidden,
+   * deleted, or otherwise not resolvable). The whole combo is left out of the graph — a partial
+   * graph would derive set capacity from only some of its components — and its parent variation must
+   * not be sold at all, not even from its own mirrored stock. Absent means none.
+   */
+  quarantinedParentVariationIds?: readonly string[];
 }>;
 
 const CONTRACT_ERROR = "Pancake composite contract is malformed";
@@ -70,6 +77,11 @@ function requirePositiveInteger(value: unknown, maximum: number): number {
   return value;
 }
 
+/** Real Pancake rows report `is_composite: null` for ordinary products; it means "not composite". */
+function isNonComposite(value: unknown): boolean {
+  return value === false || value === null;
+}
+
 function compareStrings(left: string, right: string): number {
   if (left < right) return -1;
   if (left > right) return 1;
@@ -98,6 +110,19 @@ function identitiesFromMap(
     .sort(compareIdentities);
 }
 
+/**
+ * Parses Pancake's parent/children composite listings into one direct, one-level graph.
+ *
+ * Two kinds of bad data are treated differently, on purpose:
+ *
+ * - **Contradictions** fail the whole snapshot: duplicate ids or edges, a non-positive or fractional
+ *   quantity, another shop's edge, an edge that names a different parent, a self-edge, a nested
+ *   composite, a component whose product disagrees with its own row, or a variation in both roles.
+ *   Syncing through those would persist a graph nobody can vouch for.
+ * - **Absence** quarantines only the combo it affects: a combo with no components, or one whose
+ *   component is missing from the children listing. Real catalogs contain these (a hidden or
+ *   deleted component), and one such combo must not stop every other product from syncing.
+ */
 export function parsePancakeCompositeSnapshot({
   shopId,
   parentEntries,
@@ -116,10 +141,12 @@ export function parsePancakeCompositeSnapshot({
   }
 
   const parentProductByVariationId = new Map<string, string>();
+  const quarantinedParentIds = new Set<string>();
   const childProductByVariationId = new Map<string, string>();
   const edgeIds = new Set<string>();
   const edgePairs = new Set<string>();
   const parsedEdges: ParsedCompositeEdge[] = [];
+  let edgeCount = 0;
 
   for (const entryValue of parentEntries) {
     const entry = requireRecord(entryValue);
@@ -129,8 +156,12 @@ export function parsePancakeCompositeSnapshot({
     if (parentProductByVariationId.has(parentVariationId)) fail();
     parentProductByVariationId.set(parentVariationId, parentProductId);
 
-    if (entry.composite_products.length === 0) fail();
-    if (parsedEdges.length + entry.composite_products.length > MAX_COMPOSITE_ENTRIES) fail();
+    if (entry.composite_products.length === 0) {
+      quarantinedParentIds.add(parentVariationId);
+      continue;
+    }
+    edgeCount += entry.composite_products.length;
+    if (edgeCount > MAX_COMPOSITE_ENTRIES) fail();
 
     for (const edgeValue of entry.composite_products) {
       const edge = requireRecord(edgeValue);
@@ -148,7 +179,7 @@ export function parsePancakeCompositeSnapshot({
         edgeParentVariationId !== parentVariationId ||
         edgeShopId !== safeShopId ||
         nestedComponentId !== componentVariationId ||
-        component.is_composite !== false ||
+        !isNonComposite(component.is_composite) ||
         componentVariationId === parentVariationId
       ) {
         fail();
@@ -174,7 +205,7 @@ export function parsePancakeCompositeSnapshot({
     const componentVariationId = requireIdentity(entry, "id");
     const componentProductId = requireIdentity(entry, "product_id");
     if (
-      entry.is_composite !== false ||
+      !isNonComposite(entry.is_composite) ||
       !Array.isArray(entry.composite_products) ||
       entry.composite_products.length !== 0 ||
       childProductByVariationId.has(componentVariationId) ||
@@ -186,25 +217,91 @@ export function parsePancakeCompositeSnapshot({
   }
 
   for (const edge of parsedEdges) {
-    if (childProductByVariationId.get(edge.componentVariationId) !== edge.componentProductId) {
+    const childProductId = childProductByVariationId.get(edge.componentVariationId);
+    if (childProductId === undefined) {
+      quarantinedParentIds.add(edge.parentVariationId);
+    } else if (childProductId !== edge.componentProductId) {
       fail();
     }
   }
 
-  const parentVariationIds = [...parentProductByVariationId.keys()].sort(compareStrings);
-  const componentVariationIds = [...childProductByVariationId.keys()].sort(compareStrings);
+  return buildSnapshot({
+    parentProductByVariationId,
+    childProductByVariationId,
+    edges: parsedEdges,
+    quarantinedParentIds,
+  });
+}
+
+/**
+ * Quarantines every combo whose parent or any component is absent from the flat catalog snapshot
+ * being synced — a hidden or deleted variation Pancake still lists as composite. Identity
+ * contradictions are left in place for the catalog's own strict validation to reject.
+ */
+export function quarantineCompositesOutsideCatalog(
+  snapshot: PancakeCompositeSnapshot,
+  isInCatalog: (variationId: string) => boolean,
+): PancakeCompositeSnapshot {
+  const quarantinedParentIds = new Set(snapshot.quarantinedParentVariationIds ?? []);
+  for (const parentVariationId of snapshot.parentVariationIds) {
+    if (!isInCatalog(parentVariationId)) quarantinedParentIds.add(parentVariationId);
+  }
+  for (const edge of snapshot.edges) {
+    if (!isInCatalog(edge.componentVariationId)) quarantinedParentIds.add(edge.parentVariationId);
+  }
+  if (quarantinedParentIds.size === (snapshot.quarantinedParentVariationIds ?? []).length) {
+    return snapshot;
+  }
+
+  return buildSnapshot({
+    parentProductByVariationId: new Map(
+      snapshot.parentIdentities.map(({ variationId, productId }) => [variationId, productId]),
+    ),
+    childProductByVariationId: new Map(
+      snapshot.componentIdentities.map(({ variationId, productId }) => [variationId, productId]),
+    ),
+    edges: snapshot.edges,
+    quarantinedParentIds,
+  });
+}
+
+/**
+ * The snapshot without its quarantined combos: their parents and edges are dropped entirely, and a
+ * component is listed only when a surviving edge uses it, so a hidden component referenced only by
+ * a quarantined combo cannot fail the catalog-level checks either.
+ */
+function buildSnapshot({
+  parentProductByVariationId,
+  childProductByVariationId,
+  edges,
+  quarantinedParentIds,
+}: {
+  parentProductByVariationId: ReadonlyMap<string, string>;
+  childProductByVariationId: ReadonlyMap<string, string>;
+  edges: readonly PancakeCompositeEdge[];
+  quarantinedParentIds: ReadonlySet<string>;
+}): PancakeCompositeSnapshot {
+  const keptEdges = edges.filter((edge) => !quarantinedParentIds.has(edge.parentVariationId));
+  const keptParents = new Map(
+    [...parentProductByVariationId].filter(([variationId]) => !quarantinedParentIds.has(variationId)),
+  );
+  const usedComponentIds = new Set(keptEdges.map((edge) => edge.componentVariationId));
+  const keptComponents = new Map(
+    [...childProductByVariationId].filter(([variationId]) => usedComponentIds.has(variationId)),
+  );
 
   return {
-    parentVariationIds,
-    componentVariationIds,
-    parentIdentities: identitiesFromMap(parentProductByVariationId),
-    componentIdentities: identitiesFromMap(childProductByVariationId),
-    edges: parsedEdges
+    parentVariationIds: [...keptParents.keys()].sort(compareStrings),
+    componentVariationIds: [...keptComponents.keys()].sort(compareStrings),
+    parentIdentities: identitiesFromMap(keptParents),
+    componentIdentities: identitiesFromMap(keptComponents),
+    edges: keptEdges
       .map(({ parentVariationId, componentVariationId, quantity }) => ({
         parentVariationId,
         componentVariationId,
         quantity,
       }))
       .sort(compareEdges),
+    quarantinedParentVariationIds: [...quarantinedParentIds].sort(compareStrings),
   };
 }

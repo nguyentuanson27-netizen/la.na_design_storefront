@@ -3,7 +3,10 @@ import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
-import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
+import {
+  quarantineCompositesOutsideCatalog,
+  type PancakeCompositeSnapshot,
+} from "../integrations/pancake/composite-contract.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
 import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
@@ -203,6 +206,10 @@ function validateCompositeSnapshotAgainstCatalog(
     validatedComponents.add(identity.variationId);
   }
 
+  for (const id of snapshot.quarantinedParentVariationIds ?? []) {
+    if (!isBoundedCompositeIdentity(id) || parents.has(id) || components.has(id)) fail();
+  }
+
   const pairs = new Set<string>();
   const parentsWithEdges = new Set<string>();
   for (const edge of snapshot.edges) {
@@ -294,8 +301,14 @@ export function createCatalogMirrorRepository(
     const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
     const { productByExternalId, variationIds, productIdByVariationId } =
       validateCatalogSnapshot(variations);
-    if (compositeSnapshot !== undefined) {
-      validateCompositeSnapshotAgainstCatalog(compositeSnapshot, productIdByVariationId);
+    // A combo whose parent or component is not in this catalog snapshot (hidden, deleted) is
+    // quarantined rather than failing the whole sync; identity contradictions still fail below.
+    const resolvedComposite =
+      compositeSnapshot === undefined
+        ? undefined
+        : quarantineCompositesOutsideCatalog(compositeSnapshot, (id) => productIdByVariationId.has(id));
+    if (resolvedComposite !== undefined) {
+      validateCompositeSnapshotAgainstCatalog(resolvedComposite, productIdByVariationId);
     }
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
@@ -530,7 +543,8 @@ export function createCatalogMirrorRepository(
           }
         }
 
-        if (compositeSnapshot !== undefined) {
+        let compositeQuarantined = 0;
+        if (resolvedComposite !== undefined) {
           const shopVariants = await tx.variantMirror.findMany({
             where: { product: { pancakeShopId: safeShopId } },
             select: { id: true },
@@ -547,8 +561,8 @@ export function createCatalogMirrorRepository(
             });
           }
 
-          if (compositeSnapshot.edges.length > 0) {
-            const edgeRows = compositeSnapshot.edges.map((edge) => {
+          if (resolvedComposite.edges.length > 0) {
+            const edgeRows = resolvedComposite.edges.map((edge) => {
               const parentVariantId = internalVariantIds.get(edge.parentVariationId);
               const componentVariantId = internalVariantIds.get(edge.componentVariationId);
               if (!parentVariantId || !componentVariantId) {
@@ -562,6 +576,23 @@ export function createCatalogMirrorRepository(
               };
             });
             await tx.compositeComponentMirror.createMany({ data: edgeRows });
+          }
+
+          // A quarantined combo has no edges now, so its parent would otherwise look like an ordinary
+          // variant and sell from its own mirrored stock, bypassing the components it really spends.
+          // Taking it out of presence hides it from every storefront surface without touching the
+          // admin's activation; the next sync that sees the combo complete upserts it present again.
+          const quarantined = resolvedComposite.quarantinedParentVariationIds ?? [];
+          compositeQuarantined = quarantined.length;
+          const quarantinedVariantIds = quarantined.flatMap((variationId) => {
+            const variantId = internalVariantIds.get(variationId);
+            return variantId === undefined ? [] : [variantId];
+          });
+          if (quarantinedVariantIds.length > 0) {
+            await tx.variantMirror.updateMany({
+              where: { id: { in: quarantinedVariantIds } },
+              data: { isPresent: false },
+            });
           }
         }
 
@@ -670,6 +701,7 @@ export function createCatalogMirrorRepository(
           products: productIds.length,
           variations: variationIdList.length,
           capacityHandedOff,
+          compositeQuarantined,
         };
       },
       { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
