@@ -45,7 +45,24 @@ If the migration or the handoff reconciliation fails, only the writers that were
 
 ## Scheduled catalog sync
 
-`catalog-sync` runs `pnpm pancake:catalog:sync --loop` from the release-tagged ops image (`$PROJECT_SLUG-ops:$RELEASE_SHA`). It syncs immediately, then every `CATALOG_SYNC_INTERVAL_SECONDS` (60-86400, default 300), restarts with the stack, and logs fixed text only. Its health check is healthy only when a sync succeeded within two intervals plus two minutes; a running loop whose every sync fails is reported unhealthy. A one-off sync is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
+`catalog-sync` runs `pnpm pancake:catalog:sync --loop` from the release-tagged ops image (`$PROJECT_SLUG-ops:$RELEASE_SHA`), with two loops in one process, restarting with the stack and logging fixed text only:
+
+- **Webhook-driven inventory batch, every 30 seconds.** Pancake's `variations_warehouses` webhook posts to `/api/pancake/inventory-webhook` (custom header `x-pancake-webhook-secret` = `PANCAKE_WEBHOOK_SECRET`). The endpoint only records a `(variation, warehouse)` marker; duplicates and out-of-order deliveries collapse into one row. Each batch reads the flagged variations' authoritative stock from Pancake (`GET /products/variations` with `variation_ids[]`) and applies it through the same guarded write as the full reconciliation (variant locks, availability cycles, durable capacity handoff). A batch with work logs `inventory batch: N webhook events (D deduplicated), … applied, … superseded, … unknown, … failed reads (… retried, … dropped), … capacity holds handed to the mirror`; an idle batch logs nothing. A failed read keeps its marker for up to 5 batches; a delivery that arrives meanwhile is a new marker version with a fresh budget, so a failing claim never drops or charges it.
+- **Full reconciliation, immediately and then every `CATALOG_SYNC_INTERVAL_SECONDS`** (60-86400, default 3600). It is the safety net: after lost webhooks or downtime, the next reconciliation brings the mirror back to Pancake's state. Its `catalog sync ok` line and the heartbeat file record the last successful reconciliation.
+
+### Rollout: webhook-driven inventory release
+
+`deploy/vps/.env.production` persists across releases and its values override code defaults, so this release does not change production behavior until the file is updated. Before (or with) deploying it, edit `.env.production` on the VPS:
+
+1. set `CATALOG_SYNC_INTERVAL_SECONDS=3600`, replacing any existing value (an older file may still carry `300`, which would keep the full catalog sync running every 5 minutes);
+2. set `PANCAKE_WEBHOOK_SECRET` to a long random value;
+3. in Pancake shop settings, set `webhook_url` to `https://<APP_DOMAIN>/api/pancake/inventory-webhook`, add `variations_warehouses` to `webhook_types`, and add the header `x-pancake-webhook-secret: <PANCAKE_WEBHOOK_SECRET>` to `webhook_headers`.
+
+After `deploy.sh`, confirm with `grep '^CATALOG_SYNC_INTERVAL_SECONDS=' deploy/vps/.env.production` (expect `3600`) and that consecutive `catalog sync ok` lines in the `catalog-sync` logs are about an hour apart.
+
+A read never overwrites stock that a later-started read already wrote, whichever path wrote it and even when that newer read found the variant in no warehouse (the per-variant `stockObservedAt` watermark outlives the deleted rows), so an hourly reconciliation that commits after a newer webhook batch cannot restore pre-order stock under a recorded capacity handoff.
+
+The health check is healthy only when a full reconciliation succeeded within two intervals plus two minutes; a running loop whose every reconciliation fails is reported unhealthy. A one-off reconciliation is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
 
 The default local backup directory is `/var/backups/$PROJECT_SLUG`, currently `/var/backups/la-na-design`. It is not a substitute for off-site backup.
 

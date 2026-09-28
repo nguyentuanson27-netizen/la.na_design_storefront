@@ -249,7 +249,17 @@ These items remain intentionally unverified or separately gated:
 1. Business semantics for optional `cod`; PR #45 omits it rather than guessing.
 2. Correct website-origin/client-reference field and native create-order idempotency or unique-reference behavior.
 3. Business meanings and allowed transition graph for the now-verified Pancake status enum, including any mapping into website `LocalOrderState`.
-4. Webhook event names, payload completeness, authentication/signature, retry, duplicate-delivery, replay protection and ordering guarantees.
+4. Webhook authentication/signature, retry, duplicate-delivery, replay protection and ordering guarantees. The OpenAPI states none of these, so the inventory webhook below assumes none of them.
+
+## Inventory webhook (`variations_warehouses`)
+
+Source: the owner-supplied Pancake POS OpenAPI document, SHA-256 `a3f5aa45ed488ab82fc8f19f006b08516b61a2c67f881078a7ed6b8477fcf044`, 2,878,785 bytes, OpenAPI `3.1.0`, `Pancake POS Open API` `1.0.0`, server `https://pos.pages.fm/api/v1` (a newer revision than the create-order evidence fingerprint above; the raw document is not committed). It establishes:
+
+- **Configuration** (`PUT /shops/{SHOP_ID}`, `shop`): one `webhook_url` for every entry of `webhook_types` (e.g. `["orders", "customers", "variations_warehouses"]`), `webhook_enable`, and a free-form `webhook_headers` map. Our endpoint is `https://<APP_DOMAIN>/api/pancake/inventory-webhook` with the custom header `x-pancake-webhook-secret: <PANCAKE_WEBHOOK_SECRET>`.
+- **Payload** (`WebhookInventoryResponse`): `{ data: { record: { variation_id, warehouse_id, remain_quantity, actual_remain_quantity, change_quantity, is_actual_remain_quantity, inserted_at, type }, success } }`. Other enabled types arrive at the same URL in other shapes (`WebhookProductResponse`, order, customer, auto-call) and are acknowledged with 200 and ignored.
+- **Authoritative targeted read**: the already-reviewed `GET /shops/{SHOP_ID}/products/variations` accepts `variation_ids[]` ("Filter by variation ID"), so a targeted read is parsed by the same reviewed catalog contract as the full reconciliation.
+
+The receiver (`src/commerce/pancake-inventory-signals.ts`) treats a delivery as a trigger only: `remain_quantity` is never read, duplicate and out-of-order deliveries collapse into one `(variation, warehouse)` marker, and the 30-second batch (`src/operations/inventory-batch.ts`) re-reads the variation from Pancake before writing. The targeted read (`src/integrations/pancake/variation-stock-read.ts`) fails closed if Pancake returns a variation that was not requested. The hourly full reconciliation remains the safety net for lost deliveries and downtime.
 5. Controlled live create-order verification against the production shop.
 
 The guest shipping-fee policy is website-owned and was approved separately by the product owner on 2026-08-11: 30,000 VND by default, with free shipping when authoritative merchandise subtotal is over 1,000,000 VND or total product quantity is at least 3. It is not an unverified Pancake API contract.

@@ -1,9 +1,12 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import type {
   PancakeCatalogField,
   PancakeParsedCatalogVariation,
 } from "../integrations/pancake/catalog-contract.ts";
-import type { PancakeCompositeSnapshot } from "../integrations/pancake/composite-contract.ts";
+import {
+  quarantineCompositesOutsideCatalog,
+  type PancakeCompositeSnapshot,
+} from "../integrations/pancake/composite-contract.ts";
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
 import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
@@ -203,6 +206,10 @@ function validateCompositeSnapshotAgainstCatalog(
     validatedComponents.add(identity.variationId);
   }
 
+  for (const id of snapshot.quarantinedParentVariationIds ?? []) {
+    if (!isBoundedCompositeIdentity(id) || parents.has(id) || components.has(id)) fail();
+  }
+
   const pairs = new Set<string>();
   const parentsWithEdges = new Set<string>();
   for (const edge of snapshot.edges) {
@@ -241,6 +248,65 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
     }
   }
   return total;
+}
+
+type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: number }>;
+
+/**
+ * Writes one variant's complete warehouse set from a stock read that began at `observedAt` — the
+ * only way `WarehouseStock` is written, by the full reconciliation and the targeted batch alike.
+ *
+ * A read applies to a variant only if the variant's stock was not already written by a read that
+ * began later: `VariantMirror.stockObservedAt` is that watermark, stamped by every applied write —
+ * including one that observed no warehouse at all, whose deleted rows cannot carry it. Both writers hold the shop's catalog-sync lock, but they read Pancake before taking it, so
+ * an hourly reconciliation that began its read before a targeted read can commit after it. Letting
+ * it overwrite would put pre-order stock back under a newer marker's handoff — the units counted by
+ * neither side (ADR 0014 §4.1). Every write covers the whole variant, so the variant is the exact
+ * granularity: a newer read already stated all of its warehouses. Returns whether it was written.
+ */
+async function writeObservedWarehouseStocks(
+  tx: Prisma.TransactionClient,
+  variantId: string,
+  stocks: readonly ObservedWarehouseStock[],
+  observedAt: Date,
+): Promise<boolean> {
+  // Rows a release without the watermark wrote (after a rollback) still count as observations.
+  const newer = await tx.warehouseStock.count({
+    where: { variantId, syncedAt: { gt: observedAt } },
+  });
+  if (newer > 0) return false;
+  // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
+  const stamped = await tx.variantMirror.updateMany({
+    where: {
+      id: variantId,
+      OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
+    },
+    data: { stockObservedAt: observedAt },
+  });
+  if (stamped.count === 0) return false;
+
+  const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
+  await tx.warehouseStock.deleteMany({
+    where: {
+      variantId,
+      ...(currentWarehouseIds.length > 0 ? { pancakeWarehouseId: { notIn: currentWarehouseIds } } : {}),
+    },
+  });
+  for (const stock of stocks) {
+    await tx.warehouseStock.upsert({
+      where: {
+        variantId_pancakeWarehouseId: { variantId, pancakeWarehouseId: stock.warehouseId },
+      },
+      create: {
+        variantId,
+        pancakeWarehouseId: stock.warehouseId,
+        quantity: stock.remainQuantity,
+        syncedAt: observedAt,
+      },
+      update: { quantity: stock.remainQuantity, syncedAt: observedAt },
+    });
+  }
+  return true;
 }
 
 function normalizedFieldDimension(name: string): "color" | "size" | null {
@@ -294,8 +360,14 @@ export function createCatalogMirrorRepository(
     const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
     const { productByExternalId, variationIds, productIdByVariationId } =
       validateCatalogSnapshot(variations);
-    if (compositeSnapshot !== undefined) {
-      validateCompositeSnapshotAgainstCatalog(compositeSnapshot, productIdByVariationId);
+    // A combo whose parent or component is not in this catalog snapshot (hidden, deleted) is
+    // quarantined rather than failing the whole sync; identity contradictions still fail below.
+    const resolvedComposite =
+      compositeSnapshot === undefined
+        ? undefined
+        : quarantineCompositesOutsideCatalog(compositeSnapshot, (id) => productIdByVariationId.has(id));
+    if (resolvedComposite !== undefined) {
+      validateCompositeSnapshotAgainstCatalog(resolvedComposite, productIdByVariationId);
     }
     const productIds = [...productByExternalId.keys()];
     const variationIdList = [...variationIds];
@@ -453,6 +525,9 @@ export function createCatalogMirrorRepository(
         }
 
         const internalVariantIds = new Map<string, string>();
+        // Variants whose stock a later targeted read already wrote; this snapshot's older numbers
+        // for them are not observations of the current state (see `writeObservedWarehouseStocks`).
+        const newerStockVariationIds = new Set<string>();
         for (const variation of variations) {
           const internalProductId = internalProductIds.get(variation.productId);
           if (!internalProductId) {
@@ -498,39 +573,17 @@ export function createCatalogMirrorRepository(
           });
           internalVariantIds.set(variation.id, mirrored.id);
 
-          const currentWarehouseIds = variation.warehouseStocks.map(({ warehouseId }) => warehouseId);
-          await tx.warehouseStock.deleteMany({
-            where: {
-              variantId: mirrored.id,
-              ...(currentWarehouseIds.length > 0
-                ? { pancakeWarehouseId: { notIn: currentWarehouseIds } }
-                : {}),
-            },
-          });
-
-          for (const stock of variation.warehouseStocks) {
-            await tx.warehouseStock.upsert({
-              where: {
-                variantId_pancakeWarehouseId: {
-                  variantId: mirrored.id,
-                  pancakeWarehouseId: stock.warehouseId,
-                },
-              },
-              create: {
-                variantId: mirrored.id,
-                pancakeWarehouseId: stock.warehouseId,
-                quantity: stock.remainQuantity,
-                syncedAt: safeSyncedAt,
-              },
-              update: {
-                quantity: stock.remainQuantity,
-                syncedAt: safeSyncedAt,
-              },
-            });
-          }
+          const written = await writeObservedWarehouseStocks(
+            tx,
+            mirrored.id,
+            variation.warehouseStocks,
+            safeSyncedAt,
+          );
+          if (!written) newerStockVariationIds.add(variation.id);
         }
 
-        if (compositeSnapshot !== undefined) {
+        let compositeQuarantined = 0;
+        if (resolvedComposite !== undefined) {
           const shopVariants = await tx.variantMirror.findMany({
             where: { product: { pancakeShopId: safeShopId } },
             select: { id: true },
@@ -547,8 +600,8 @@ export function createCatalogMirrorRepository(
             });
           }
 
-          if (compositeSnapshot.edges.length > 0) {
-            const edgeRows = compositeSnapshot.edges.map((edge) => {
+          if (resolvedComposite.edges.length > 0) {
+            const edgeRows = resolvedComposite.edges.map((edge) => {
               const parentVariantId = internalVariantIds.get(edge.parentVariationId);
               const componentVariantId = internalVariantIds.get(edge.componentVariationId);
               if (!parentVariantId || !componentVariantId) {
@@ -562,6 +615,23 @@ export function createCatalogMirrorRepository(
               };
             });
             await tx.compositeComponentMirror.createMany({ data: edgeRows });
+          }
+
+          // A quarantined combo has no edges now, so its parent would otherwise look like an ordinary
+          // variant and sell from its own mirrored stock, bypassing the components it really spends.
+          // Taking it out of presence hides it from every storefront surface without touching the
+          // admin's activation; the next sync that sees the combo complete upserts it present again.
+          const quarantined = resolvedComposite.quarantinedParentVariationIds ?? [];
+          compositeQuarantined = quarantined.length;
+          const quarantinedVariantIds = quarantined.flatMap((variationId) => {
+            const variantId = internalVariantIds.get(variationId);
+            return variantId === undefined ? [] : [variantId];
+          });
+          if (quarantinedVariantIds.length > 0) {
+            await tx.variantMirror.updateMany({
+              where: { id: { in: quarantinedVariantIds } },
+              data: { isPresent: false },
+            });
           }
         }
 
@@ -629,6 +699,7 @@ export function createCatalogMirrorRepository(
         const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
 
         const availabilityObservations = variations.flatMap((variation) => {
+          if (newerStockVariationIds.has(variation.id)) return [];
           const variantId = internalVariantIds.get(variation.id);
           const productId = internalProductIds.get(variation.productId);
           if (variantId === undefined || productId === undefined) return [];
@@ -669,6 +740,136 @@ export function createCatalogMirrorRepository(
         return {
           products: productIds.length,
           variations: variationIdList.length,
+          capacityHandedOff,
+          compositeQuarantined,
+        };
+      },
+      { timeout: CATALOG_SYNC_TRANSACTION_TIMEOUT_MS },
+    );
+  }
+
+  /**
+   * Targeted inventory write for the variations a Pancake webhook flagged, from an authoritative
+   * Pancake read that began at `syncedAt` (sampled before the first request, ADR 0014 §4.2).
+   *
+   * The same invariants as the full reconciliation, on a subset: the shop's catalog-sync lock; the
+   * variants' `VariantMirror` rows locked in id order — the rows `reserveOrderCapacity()` locks — so
+   * a checkout sees this write whole or not at all; the newer-read guard per variant; availability
+   * cycles observed from what was written; and the durable capacity handoff in the same transaction.
+   *
+   * Only known variations are written. A variation this mirror has never seen is left to the next
+   * full reconciliation, which owns catalog shape (products, options, presence, composites); this
+   * path owns stock and nothing else.
+   */
+  async function applyVariationStocks({
+    shopId,
+    observations,
+    syncedAt,
+    availabilityObservedAt = syncedAt,
+  }: {
+    shopId: number;
+    observations: readonly Readonly<{
+      variationId: string;
+      warehouseStocks: readonly ObservedWarehouseStock[];
+    }>[];
+    syncedAt: Date;
+    availabilityObservedAt?: Date;
+  }): Promise<{ applied: number; unknown: number; superseded: number; capacityHandedOff: number }> {
+    const safeShopId = requireShopId(shopId);
+    const safeSyncedAt = requireSyncedAt(syncedAt);
+    const safeAvailabilityObservedAt = requireSyncedAt(availabilityObservedAt);
+    for (const observation of observations) {
+      const warehouseIds = new Set<string>();
+      for (const stock of observation.warehouseStocks) {
+        if (warehouseIds.has(stock.warehouseId) || !Number.isFinite(stock.remainQuantity)) {
+          throw new Error("Targeted inventory observation is malformed");
+        }
+        warehouseIds.add(stock.warehouseId);
+      }
+    }
+    const variationIds = [...new Set(observations.map(({ variationId }) => variationId))];
+    if (variationIds.length !== observations.length) {
+      throw new Error("Targeted inventory observation repeats a variation");
+    }
+    if (variationIds.length === 0) return { applied: 0, unknown: 0, superseded: 0, capacityHandedOff: 0 };
+
+    return client.$transaction(
+      async (tx) => {
+        await acquireCatalogSyncLock(tx, safeShopId);
+
+        const variants = await tx.variantMirror.findMany({
+          where: {
+            pancakeVariationId: { in: variationIds },
+            product: { pancakeShopId: safeShopId },
+          },
+          select: { id: true, pancakeVariationId: true, productId: true },
+        });
+        const variantByVariationId = new Map(variants.map((variant) => [variant.pancakeVariationId, variant]));
+        const lockIds = variants.map(({ id }) => id).sort();
+        if (lockIds.length > 0) {
+          await tx.$queryRaw(Prisma.sql`
+            SELECT "id" FROM "VariantMirror"
+            WHERE "id" IN (${Prisma.join(lockIds)})
+            ORDER BY "id"
+            FOR UPDATE
+          `);
+        }
+
+        const written: { variantId: string; productId: string; stock: number }[] = [];
+        let superseded = 0;
+        for (const observation of observations) {
+          const variant = variantByVariationId.get(observation.variationId);
+          if (variant === undefined) continue;
+          const wrote = await writeObservedWarehouseStocks(
+            tx,
+            variant.id,
+            observation.warehouseStocks,
+            safeSyncedAt,
+          );
+          if (!wrote) {
+            superseded += 1;
+            continue;
+          }
+          written.push({
+            variantId: variant.id,
+            productId: variant.productId,
+            stock: sumWarehouseStocks(
+              observation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+            ),
+          });
+        }
+
+        if (written.length > 0) {
+          const storedPolicies = await tx.productSellingPolicy.findMany({
+            where: { productId: { in: [...new Set(written.map(({ productId }) => productId))] } },
+            select: { productId: true, sellingMode: true, negativeStockLimit: true },
+          });
+          const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
+          // Same rule as the full reconciliation's I9 observation.
+          await observeVariantAvailabilityCycles(
+            tx,
+            written.map(({ variantId, productId, stock }) => ({
+              variantId,
+              stockNonPositive: Number.isFinite(stock) && stock <= 0,
+              isPreorder:
+                resolveSellingPolicy(policyByProductId.get(productId) ?? null).sellingMode === "PREORDER",
+            })),
+            safeAvailabilityObservedAt,
+          );
+        }
+
+        const capacityHandedOff =
+          written.length === 0
+            ? 0
+            : await handOffMirroredCapacity(tx, {
+                variantIds: written.map(({ variantId }) => variantId),
+                handedOffAt: clock(),
+              });
+
+        return {
+          applied: written.length,
+          unknown: variationIds.length - variants.length,
+          superseded,
           capacityHandedOff,
         };
       },
@@ -730,5 +931,5 @@ export function createCatalogMirrorRepository(
     }));
   }
 
-  return { syncSnapshot, listPresentProducts };
+  return { syncSnapshot, applyVariationStocks, listPresentProducts };
 }

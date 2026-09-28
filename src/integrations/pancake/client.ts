@@ -3,7 +3,8 @@ const PANCAKE_API_BASE = new URL(`${PANCAKE_API_BASE_URL}/`);
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_NODE_TIMER_DELAY_MS = 2_147_483_647;
 
-type QueryValue = string | number | boolean;
+/** An array is sent as the key repeated once per item, e.g. `variation_ids[]=a&variation_ids[]=b`. */
+type QueryValue = string | number | boolean | readonly string[];
 type Fetcher = typeof fetch;
 type PostJsonOptions = Readonly<{ expectedStatus?: number | readonly number[] }>;
 
@@ -184,7 +185,12 @@ export class PancakeClient {
       if (key === "api_key") {
         continue;
       }
-      url.searchParams.set(key, String(value));
+      if (Array.isArray(value)) {
+        url.searchParams.delete(key);
+        for (const item of value) url.searchParams.append(key, String(item));
+      } else {
+        url.searchParams.set(key, String(value));
+      }
     }
 
     return url;
