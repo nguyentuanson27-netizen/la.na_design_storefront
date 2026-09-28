@@ -233,6 +233,34 @@ test("a failed Pancake read is retried next batch and recovers; a persistent fai
   assert.equal(await prisma.pancakeInventorySignal.count({ where: { pancakeVariationId: TEE } }), 0);
 });
 
+test("a delivery that arrives during a failing read survives the old claim's last attempt", async () => {
+  await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
+  await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 5_000));
+  await prisma.pancakeInventorySignal.updateMany({ where: { pancakeVariationId: TEE }, data: { attempts: 4 } });
+
+  const source = pancake({ [TEE]: { "wh-a": 2 } });
+  const original = source.readVariations;
+  source.readVariations = async (variationIds) => {
+    // Pancake changes again, and says so, while this batch's last-attempt read is failing.
+    await deliver(inventory(TEE, "wh-a"), new Date(T0.getTime() + 61_500));
+    source.readVariations = original;
+    source.failNextReads(1);
+    return original(variationIds);
+  };
+  const failed = await batch(source, clockFrom(new Date(T0.getTime() + 60_000)));
+  assert.equal(failed.failedReads, 1);
+  assert.equal(failed.dropped, 0, "the claimed marker changed, so the old claim drops nothing");
+
+  const marker = await prisma.pancakeInventorySignal.findFirstOrThrow({ where: { pancakeVariationId: TEE } });
+  assert.equal(marker.attempts, 0, "the new delivery neither inherits nor is charged the old failures");
+  assert.deepEqual(marker.lastReceivedAt, new Date(T0.getTime() + 61_500));
+
+  const next = await batch(source, clockFrom(new Date(T0.getTime() + 90_000)));
+  assert.equal(next.applied, 1);
+  assert.deepEqual((await stockOf(TEE)).map(({ quantity }) => quantity), [2]);
+  assert.equal(await prisma.pancakeInventorySignal.count({ where: { pancakeVariationId: TEE } }), 0);
+});
+
 test("reads never overwrite a newer read, in either order (ADR 0014 §4.1)", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
 

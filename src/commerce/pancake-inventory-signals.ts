@@ -150,7 +150,8 @@ export function createInventorySignalRepository(client: SignalClient) {
   /**
    * Idempotent: one row per (variation, warehouse). A redelivery or a burst for the same key only
    * bumps the count and moves `lastReceivedAt` forward — never backward, whatever order deliveries
-   * arrive in — so the marker always means "changed at or before this instant".
+   * arrive in — so the marker always means "changed at or before this instant". A delivery is a new
+   * version of the marker, so it starts a fresh failure budget.
    */
   async function record(events: readonly InventoryWebhookEvent[], receivedAt: Date): Promise<void> {
     const counts = new Map<string, { event: InventoryWebhookEvent; count: number }>();
@@ -174,7 +175,8 @@ export function createInventorySignalRepository(client: SignalClient) {
           "PancakeInventorySignal"."receivedCount"::bigint + EXCLUDED."receivedCount",
           ${MAX_POSTGRES_INTEGER}
         )::integer,
-        "lastReceivedAt" = GREATEST("PancakeInventorySignal"."lastReceivedAt", EXCLUDED."lastReceivedAt")
+        "lastReceivedAt" = GREATEST("PancakeInventorySignal"."lastReceivedAt", EXCLUDED."lastReceivedAt"),
+        "attempts" = 0
     `);
   }
 
@@ -215,6 +217,10 @@ export function createInventorySignalRepository(client: SignalClient) {
    * Records a failed read. A marker is retried each batch until `maxAttempts`, then dropped: by then
    * the hourly reconciliation is the faster path to the right stock, and a permanently failing
    * variation must not grow the queue forever.
+   *
+   * Version-aware like `resolve()`: only the exact marker the batch claimed is counted or dropped. A
+   * delivery that arrived during the failed read changed the row, so it is left intact, with its own
+   * fresh budget, for the next batch — never deleted or charged by the old claim.
    */
   async function recordFailure(
     signals: readonly PendingInventorySignal[],
@@ -222,14 +228,17 @@ export function createInventorySignalRepository(client: SignalClient) {
   ): Promise<{ retried: number; dropped: number }> {
     let dropped = 0;
     for (const signal of signals) {
-      const key = {
+      const claimed = {
         pancakeVariationId: signal.pancakeVariationId,
         pancakeWarehouseId: signal.pancakeWarehouseId,
+        receivedCount: signal.receivedCount,
+        lastReceivedAt: signal.lastReceivedAt,
+        attempts: signal.attempts,
       };
       if (signal.attempts + 1 >= maxAttempts) {
-        dropped += (await client.pancakeInventorySignal.deleteMany({ where: key })).count;
+        dropped += (await client.pancakeInventorySignal.deleteMany({ where: claimed })).count;
       } else {
-        await client.pancakeInventorySignal.updateMany({ where: key, data: { attempts: { increment: 1 } } });
+        await client.pancakeInventorySignal.updateMany({ where: claimed, data: { attempts: { increment: 1 } } });
       }
     }
     return { retried: signals.length - dropped, dropped };
