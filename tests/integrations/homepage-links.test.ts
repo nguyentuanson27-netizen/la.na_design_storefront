@@ -42,12 +42,15 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
   "/size-guide",
 ]);
 const LOCKED_IMG_SRC =
-  "img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc};";
-// img-src now interpolates the Meta pixel's beacon origin, so pinning the directive alone would
-// no longer pin the hosts it admits. The expression that supplies that origin is locked too, which
-// keeps the guarantee intact: no image origin reaches the policy without editing a locked constant.
+  "img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};";
+// img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would
+// no longer pin the hosts it admits. The expressions that supply those origins are locked too,
+// which keeps the guarantee intact: no image origin reaches the policy without editing a locked
+// constant.
 const LOCKED_FACEBOOK_IMG_SRC =
   'const facebookImgSrc = hasFacebookPixel ? " https://www.facebook.com" : "";';
+const LOCKED_OPENAI_ADS_IMG_SRC =
+  'const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";';
 const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
       {
         protocol: "https",
@@ -154,7 +157,7 @@ test("U2 homepage link guard rejects inert category queries and unapproved suppo
   assert.deepEqual(findU2ForbiddenHomepageLinks(counterexample), ["/faq", "/shop?category=shirts"]);
 });
 
-test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-for-byte locked", async () => {
+test("U2 leaves the reviewed image hosts and CSP img-src boundary byte-for-byte locked", async () => {
   const nextConfig = await readFile(NEXT_CONFIG_SOURCE, "utf8");
   const imgSrc = nextConfig.match(/img-src [^;]+;/)?.[0] ?? null;
   const remotePatterns = nextConfig.match(/remotePatterns: \[\n[\s\S]*?\n    \],/)?.[0] ?? null;
@@ -164,6 +167,10 @@ test("U2 leaves the reviewed Pancake image host and CSP img-src boundary byte-fo
   assert.ok(
     nextConfig.includes(LOCKED_FACEBOOK_IMG_SRC),
     "the Meta beacon origin admitted by img-src must stay byte-for-byte as reviewed",
+  );
+  assert.ok(
+    nextConfig.includes(LOCKED_OPENAI_ADS_IMG_SRC),
+    "the ChatGPT Ads beacon origin admitted by img-src must stay byte-for-byte as reviewed",
   );
 });
 
