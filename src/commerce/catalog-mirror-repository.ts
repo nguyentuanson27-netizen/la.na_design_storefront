@@ -256,8 +256,9 @@ type ObservedWarehouseStock = Readonly<{ warehouseId: string; remainQuantity: nu
  * Writes one variant's complete warehouse set from a stock read that began at `observedAt` — the
  * only way `WarehouseStock` is written, by the full reconciliation and the targeted batch alike.
  *
- * A read applies to a variant only if no row of that variant already comes from a read that began
- * later. Both writers hold the shop's catalog-sync lock, but they read Pancake before taking it, so
+ * A read applies to a variant only if the variant's stock was not already written by a read that
+ * began later: `VariantMirror.stockObservedAt` is that watermark, stamped by every applied write —
+ * including one that observed no warehouse at all, whose deleted rows cannot carry it. Both writers hold the shop's catalog-sync lock, but they read Pancake before taking it, so
  * an hourly reconciliation that began its read before a targeted read can commit after it. Letting
  * it overwrite would put pre-order stock back under a newer marker's handoff — the units counted by
  * neither side (ADR 0014 §4.1). Every write covers the whole variant, so the variant is the exact
@@ -269,10 +270,20 @@ async function writeObservedWarehouseStocks(
   stocks: readonly ObservedWarehouseStock[],
   observedAt: Date,
 ): Promise<boolean> {
+  // Rows a release without the watermark wrote (after a rollback) still count as observations.
   const newer = await tx.warehouseStock.count({
     where: { variantId, syncedAt: { gt: observedAt } },
   });
   if (newer > 0) return false;
+  // The watermark survives an empty warehouse set, which leaves no row to carry the read's start.
+  const stamped = await tx.variantMirror.updateMany({
+    where: {
+      id: variantId,
+      OR: [{ stockObservedAt: null }, { stockObservedAt: { lte: observedAt } }],
+    },
+    data: { stockObservedAt: observedAt },
+  });
+  if (stamped.count === 0) return false;
 
   const currentWarehouseIds = stocks.map(({ warehouseId }) => warehouseId);
   await tx.warehouseStock.deleteMany({

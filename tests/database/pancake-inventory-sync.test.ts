@@ -289,6 +289,37 @@ test("reads never overwrite a newer read, in either order (ADR 0014 §4.1)", asy
   assert.deepEqual((await stockOf(TEE)).map(({ quantity }) => quantity), [4]);
 });
 
+test("a newer read that observed no warehouse keeps winning over an older positive read", async () => {
+  await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
+
+  // A targeted read that began at T0+30s sees the tee in no warehouse at all, and commits first.
+  const emptyStart = new Date(T0.getTime() + 30_000);
+  const emptied = await catalog.applyVariationStocks({
+    shopId: SHOP,
+    observations: [{ variationId: TEE, warehouseStocks: [] }],
+    syncedAt: emptyStart,
+  });
+  assert.equal(emptied.applied, 1);
+  assert.deepEqual(await stockOf(TEE), [], "no row is left to carry the newer read's start");
+
+  // An hourly reconciliation whose read began earlier (T0+10s) commits afterwards with 5 units.
+  await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, new Date(T0.getTime() + 10_000));
+  assert.deepEqual(await stockOf(TEE), [], "sold-out stock is not resurrected by the older read");
+
+  // The same holds for an older targeted read.
+  const stale = await catalog.applyVariationStocks({
+    shopId: SHOP,
+    observations: [{ variationId: TEE, warehouseStocks: [{ warehouseId: "wh-a", remainQuantity: 9 }] }],
+    syncedAt: new Date(T0.getTime() + 20_000),
+  });
+  assert.equal(stale.superseded, 1);
+  assert.deepEqual(await stockOf(TEE), []);
+
+  // A read that began later still applies.
+  await reconcile({ "wh-a": 3 }, { "wh-a": 2 }, new Date(T0.getTime() + 40_000));
+  assert.deepEqual((await stockOf(TEE)).map(({ quantity }) => quantity), [3]);
+});
+
 test("the targeted batch hands a COMMITTED hold to the mirror exactly like a full sync would", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
   const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: TEE }, select: { id: true } });

@@ -362,6 +362,9 @@ model VariantMirror {
   isPresent                       Boolean                    @default(true)
   isActive                        Boolean                    @default(true)
   syncedAt                        DateTime
+  /// Start of the Pancake stock read that last wrote this variant's warehouse set, even an empty
+  /// one. A read that began earlier never overwrites it (newer read wins, ADR 0014 §4.1).
+  stockObservedAt                 DateTime?
   createdAt                       DateTime                   @default(now())
   updatedAt                       DateTime                   @updatedAt
   product                         ProductMirror              @relation(fields: [productId], references: [id], onDelete: Cascade)

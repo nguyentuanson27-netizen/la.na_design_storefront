@@ -60,7 +60,7 @@ If the migration or the handoff reconciliation fails, only the writers that were
 
 After `deploy.sh`, confirm with `grep '^CATALOG_SYNC_INTERVAL_SECONDS=' deploy/vps/.env.production` (expect `3600`) and that consecutive `catalog sync ok` lines in the `catalog-sync` logs are about an hour apart.
 
-A read never overwrites stock that a later-started read already wrote, whichever path wrote it, so an hourly reconciliation that commits after a newer webhook batch cannot restore pre-order stock under a recorded capacity handoff.
+A read never overwrites stock that a later-started read already wrote, whichever path wrote it and even when that newer read found the variant in no warehouse (the per-variant `stockObservedAt` watermark outlives the deleted rows), so an hourly reconciliation that commits after a newer webhook batch cannot restore pre-order stock under a recorded capacity handoff.
 
 The health check is healthy only when a full reconciliation succeeded within two intervals plus two minutes; a running loop whose every reconciliation fails is reported unhealthy. A one-off reconciliation is `docker compose ... run --rm ops pnpm pancake:catalog:sync`.
 
