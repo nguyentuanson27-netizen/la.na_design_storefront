@@ -70,7 +70,10 @@ function render(data: CollectionViewModel) {
         />
         {/* Title only: the owner removed the story line and the buyer notice from this header. The
             story still feeds the page's metadata; the notice stays on `/shop`. */}
-        <div id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : undefined}>
+        <div
+          id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : undefined}
+          className={productsAnchorOnTitle ? "collection-products-anchor" : undefined}
+        >
           <ListingHeader title={data.title} />
         </div>
 
@@ -109,7 +112,7 @@ function render(data: CollectionViewModel) {
 
         <section
           id={productsAnchorOnTitle ? undefined : COLLECTION_PRODUCTS_ANCHOR}
-          className="mt-12"
+          className={productsAnchorOnTitle ? "mt-12" : "collection-products-anchor mt-12"}
           aria-label="Điều khiển bộ sưu tập"
         >
           <CollectionFilterPanel

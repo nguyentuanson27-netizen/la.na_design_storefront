@@ -1543,6 +1543,15 @@ html {
   overflow-x: clip;
 }
 
+/* The hero CTA's `#san-pham` landing. `--masthead-height` is the pinned masthead to within a few
+   pixels, which is fine for the skip link but not for a target whose whole point is to be seen:
+   a collection with a hero pins that masthead as a fixed overlay, and a title or filter row tucked
+   under its bottom edge is the one thing the shopper came for. The margin adds to the padding
+   above, so the target always clears the masthead with a visible gap. */
+.collection-products-anchor {
+  scroll-margin-top: var(--space-5);
+}
+
 /* Admin is a work surface, not a storefront: the promotion strip and shop nav have nothing to
    offer while managing a catalog, and pinning them at z-index 50 would cover the bulk-action
    toolbar that sticks to the top of its own table. */

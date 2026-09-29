@@ -348,6 +348,62 @@ test("MUA NGAY remains pointer-clickable inside the swipe track and follows the 
   await expect(page.locator("[data-collection-hero]")).not.toBeInViewport({ ratio: 0.5 });
 });
 
+for (const viewport of [
+  { name: "mobile", width: 390, height: 844 },
+  { name: "desktop", width: 1440, height: 900 },
+]) {
+  for (const withGallery of [false, true]) {
+    test(`MUA NGAY lands #san-pham clear of the fixed masthead (${viewport.name}, ${
+      withGallery ? "gallery → product controls" : "title"
+    })`, async ({ page }) => {
+      await clearHeroSlides();
+      await addHeroSlide(1, "https://content.pancake.vn/1/2/3/4/hero-one.jpg");
+      if (withGallery) {
+        await prisma.collectionDefinition.update({
+          where: { slug: `${TEST_PREFIX}1` },
+          data: {
+            galleryImageUrls: [
+              "https://content.pancake.vn/1/2/3/4/gallery-one.jpg",
+              "https://content.pancake.vn/1/2/3/4/gallery-two.jpg",
+              "https://content.pancake.vn/1/2/3/4/gallery-three.jpg",
+            ],
+          },
+        });
+      }
+
+      await page.setViewportSize({ width: viewport.width, height: viewport.height });
+      await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+
+      await Promise.all([
+        page.waitForURL(`${BASE_URL}/collections/${TEST_PREFIX}1#san-pham`),
+        hero(page).getByRole("link", { name: "MUA NGAY" }).click(),
+      ]);
+
+      const target = page.locator("#san-pham");
+      await expect(target).toHaveCount(1);
+      if (withGallery) {
+        await expect(target).toHaveAttribute("aria-label", "Điều khiển bộ sưu tập");
+      } else {
+        await expect(target.getByRole("heading", { level: 1, name: "F6a Hero 1" })).toHaveCount(1);
+      }
+
+      // Scrolled past the hero first -- before the jump the target sits below the fold, which
+      // would satisfy the gap check below trivially.
+      await expect(target).toBeInViewport();
+      // `toBeInViewport` alone also passes for a target sitting under the fixed masthead, so
+      // compare the target's top edge with the masthead's actual bottom edge.
+      await expect
+        .poll(async () => {
+          const masthead = await page.locator(".site-masthead").boundingBox();
+          const box = await target.boundingBox();
+          if (!masthead || !box) return Number.NEGATIVE_INFINITY;
+          return box.y - (masthead.y + masthead.height);
+        })
+        .toBeGreaterThanOrEqual(0);
+    });
+  }
+}
+
 test("slider cross-fades slides for 500ms while only the active slide stays interactive", async ({
   page,
 }) => {
