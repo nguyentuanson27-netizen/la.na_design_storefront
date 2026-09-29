@@ -185,7 +185,7 @@ test("STANDARD mode: allows order when stock >= requested quantity", async () =>
   let createdRequest: PancakeCreateOrderRequest | null = null;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder(req: PancakeCreateOrderRequest) {
@@ -208,7 +208,7 @@ test("STANDARD mode: rejects with STOCK_UNAVAILABLE when stock is zero", async (
   let createCalled = false;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 0)];
     },
     async createOrder() {
@@ -231,7 +231,7 @@ test("STANDARD mode: rejects with STOCK_UNAVAILABLE when stock is already negati
   let createCalled = false;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, -1)];
     },
     async createOrder() {
@@ -254,7 +254,7 @@ test("OVERSELL mode: allows order at stock zero within negative limit", async ()
   });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 0)];
     },
     async createOrder() {
@@ -275,7 +275,7 @@ test("OVERSELL mode: allows order at negative stock within limit", async () => {
   });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, -15)];
     },
     async createOrder() {
@@ -297,7 +297,7 @@ test("OVERSELL mode: rejects with STOCK_UNAVAILABLE when projected stock exceeds
   let createCalled = false;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       // Current stock is -20, requested 1 => projected -21 < -20
       return [buildCatalogVariation(pancakeVariationId, -20)];
     },
@@ -321,7 +321,7 @@ test("PREORDER mode: allows order within negative limit and rejects past limit",
   });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, -9)];
     },
     async createOrder() {
@@ -339,7 +339,7 @@ test("PREORDER mode: allows order within negative limit and rejects past limit",
     negativeStockLimit: -10,
   });
   const gatewayPastLimit = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, -10)];
     },
     async createOrder() {
@@ -355,7 +355,7 @@ test("Malformed stock: rejects with STOCK_UNAVAILABLE when sellableStock is non-
   const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, Number.NaN)];
     },
     async createOrder() {
@@ -376,7 +376,7 @@ test("Composite parent: allowed in STANDARD mode when component stock is availab
   });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       // The parent's own Pancake row is 0, as a COMBO / SET routinely is; its component is stocked.
       return [
         buildCatalogVariation(pancakeVariationId, 0),
@@ -394,6 +394,55 @@ test("Composite parent: allowed in STANDARD mode when component stock is availab
   assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70010" });
 });
 
+test("Checkout reads live Pancake rows for the order's own variations and components only", async () => {
+  const prismaMock = buildMockPrisma({ sellingMode: "STANDARD", isComposite: true });
+  const requests: { shopId: number; variationIds: readonly string[] }[] = [];
+
+  const gateway = {
+    async fetchVariations(requestShopId: number, variationIds: readonly string[]) {
+      requests.push({ shopId: requestShopId, variationIds });
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, 3),
+      ];
+    },
+    async createOrder() {
+      return { id: 70012 };
+    },
+  };
+
+  const service = createPancakeOrderSubmissionService(prismaMock, gateway);
+  const result = await service.submit({ publicCode, shopId });
+
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70012" });
+  assert.deepEqual(requests, [
+    { shopId, variationIds: [pancakeVariationId, componentVariationId] },
+  ]);
+});
+
+test("A failed live variation read returns the order to DRAFT with nothing sent", async () => {
+  const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
+  let createCalled = false;
+
+  const gateway = {
+    async fetchVariations(): Promise<PancakeCatalogVariation[]> {
+      throw new PancakeNetworkError("/shops/1/products/variations");
+    },
+    async createOrder() {
+      createCalled = true;
+      return { id: 70013 };
+    },
+  };
+
+  const service = createPancakeOrderSubmissionService(prismaMock, gateway);
+  const result = await service.submit({ publicCode, shopId });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.state, "DRAFT");
+  assert.equal(prismaMock.getOrderState().orderState, "DRAFT");
+  assert.equal(createCalled, false);
+});
+
 test("Composite parent: STANDARD capacity is its component's live stock, not the parent row", async () => {
   const prismaMock = buildMockPrisma({
     sellingMode: "STANDARD",
@@ -402,7 +451,7 @@ test("Composite parent: STANDARD capacity is its component's live stock, not the
   let createCalled = false;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [
         buildCatalogVariation(pancakeVariationId, 50),
         buildCatalogVariation(componentVariationId, 0),
@@ -429,7 +478,7 @@ test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED und
   let createCalled = false;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder() {
@@ -458,7 +507,7 @@ test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED und
   });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder() {
@@ -481,7 +530,7 @@ test("Request embeds canonical [ORDER:publicCode] marker in note and shipping ad
   let capturedRequest: PancakeCreateOrderRequest | null = null;
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder(req: PancakeCreateOrderRequest) {
@@ -504,7 +553,7 @@ test("Definite HTTP 4xx rejection marks order as REJECTED with ORDER_REJECTED", 
     const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
 
     const gateway = {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [buildCatalogVariation(pancakeVariationId, 5)];
       },
       async createOrder() {
@@ -529,7 +578,7 @@ test("Ambiguous write (network error / 5xx) marks order as SYNC_UNKNOWN", async 
   // Case A: Network error
   const prismaNet = buildMockPrisma({ sellingMode: "STANDARD" });
   const gatewayNet = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder() {
@@ -550,7 +599,7 @@ test("Ambiguous write (network error / 5xx) marks order as SYNC_UNKNOWN", async 
   // Case B: 500 server error
   const prisma500 = buildMockPrisma({ sellingMode: "STANDARD" });
   const gateway500 = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder() {
@@ -572,7 +621,7 @@ test("Ambiguous create leaves order in SYNC_UNKNOWN without inline marker search
   const prismaMock = buildMockPrisma({ sellingMode: "STANDARD" });
 
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [buildCatalogVariation(pancakeVariationId, 5)];
     },
     async createOrder() {

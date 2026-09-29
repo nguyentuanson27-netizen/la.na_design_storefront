@@ -3,6 +3,7 @@ import {
   buildHistoricalPreorderPresentation,
   type HistoricalPreorderPresentation,
 } from "./historical-preorder-presentation.ts";
+import { normalizeOrderPublicCodeInput, normalizePhoneForMatch } from "./order-public-code.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 const MAX_PHONE_LENGTH = 64;
@@ -60,9 +61,10 @@ export function parseGuestOrderTrackingInput(
     return { ok: false, reason: "NOT_FOUND" };
   }
 
-  const orderCode = parseBoundedText(input.orderCode, MAX_PUBLIC_CODE_LENGTH);
+  const typedCode = parseBoundedText(input.orderCode, MAX_PUBLIC_CODE_LENGTH);
+  const orderCode = typedCode === null ? null : normalizeOrderPublicCodeInput(typedCode);
   const phone = parseBoundedText(input.phone, MAX_PHONE_LENGTH);
-  if (!orderCode || !phone) {
+  if (!orderCode || !phone || normalizePhoneForMatch(phone).length === 0) {
     return { ok: false, reason: "NOT_FOUND" };
   }
 
@@ -89,14 +91,12 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
     const parsed = parseGuestOrderTrackingInput(input);
     if (!parsed.ok) return parsed;
 
-    const order = await client.orderMirror.findFirst({
-      where: {
-        publicCode: parsed.value.orderCode,
-        guestPhone: parsed.value.phone,
-        userId: null,
-      },
+    const order = await client.orderMirror.findUnique({
+      where: { publicCode: parsed.value.orderCode },
       select: {
         publicCode: true,
+        userId: true,
+        guestPhone: true,
         state: true,
         createdAt: true,
         checkoutSnapshottedAt: true,
@@ -122,8 +122,13 @@ export function createGuestOrderTrackingService(client: PrismaClient) {
       },
     });
 
+    // The phone is matched on its digits so spacing, dots or a +84 prefix typed at lookup do not
+    // turn a real order into "not found". A wrong phone and a missing order still look identical.
     if (
       !order ||
+      order.userId !== null ||
+      order.guestPhone === null ||
+      normalizePhoneForMatch(order.guestPhone) !== normalizePhoneForMatch(parsed.value.phone) ||
       order.checkoutSnapshottedAt === null ||
       order.totalVnd === null ||
       order.totalVnd < BigInt(0)

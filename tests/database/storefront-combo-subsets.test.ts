@@ -385,7 +385,7 @@ async function submitAgainst(publicCode: string, liveCatalog: readonly PancakeCa
   const result = await createPancakeOrderSubmissionService(
     prisma,
     {
-      async fetchCompleteCatalog(requestShopId) {
+      async fetchVariations(requestShopId) {
         assert.equal(requestShopId, shopId);
         return liveCatalog;
       },

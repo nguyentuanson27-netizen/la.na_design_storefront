@@ -1,4 +1,7 @@
-import type { PancakeCatalogWarehouseStock } from "./catalog-contract.ts";
+import type {
+  PancakeCatalogWarehouseStock,
+  PancakeParsedCatalogVariation,
+} from "./catalog-contract.ts";
 import { parsePancakeCatalogVariations } from "./catalog-contract.ts";
 
 /**
@@ -22,7 +25,25 @@ type VariationClient = {
 /** One request per chunk; also the page size, so a chunk is always answered on one page. */
 export const MAX_VARIATIONS_PER_READ = 100;
 
-export async function fetchPancakeVariationStocks({
+/**
+ * Pancake answered a targeted read with something it cannot be tied to: a variation that was not
+ * asked for (the filter was ignored) or more than one page. Its own class so a caller that has a
+ * slower but complete fallback can tell "the filter is not honoured" from a network failure.
+ */
+export class PancakeVariationFilterMismatchError extends Error {
+  constructor() {
+    super("Pancake targeted variation read does not match the requested variations");
+    this.name = "PancakeVariationFilterMismatchError";
+  }
+}
+
+/**
+ * The full parsed variations — price, stock, identity — for at most `MAX_VARIATIONS_PER_READ` ids,
+ * in one request. Same endpoint and contract as the full catalog traversal, so checkout pricing a
+ * handful of cart lines reads exactly what a full read would have said about them, without paging
+ * the whole shop first.
+ */
+export async function fetchPancakeVariationsByIds({
   client,
   shopId,
   variationIds,
@@ -30,12 +51,12 @@ export async function fetchPancakeVariationStocks({
   client: VariationClient;
   shopId: number;
   variationIds: readonly string[];
-}): Promise<Map<string, PancakeCatalogWarehouseStock[]>> {
+}): Promise<PancakeParsedCatalogVariation[]> {
   if (!Number.isSafeInteger(shopId) || shopId <= 0) {
     throw new TypeError("Pancake shop id must be a positive safe integer");
   }
   const requested = [...new Set(variationIds)];
-  if (requested.length === 0) return new Map();
+  if (requested.length === 0) return [];
   if (requested.length > MAX_VARIATIONS_PER_READ) {
     throw new RangeError(`At most ${MAX_VARIATIONS_PER_READ} variations per targeted read`);
   }
@@ -54,7 +75,14 @@ export async function fetchPancakeVariationStocks({
     page.totalEntries > requested.length ||
     page.variations.some((variation) => !wanted.has(variation.id))
   ) {
-    throw new Error("Pancake targeted variation read does not match the requested variations");
+    throw new PancakeVariationFilterMismatchError();
   }
-  return new Map(page.variations.map((variation) => [variation.id, variation.warehouseStocks]));
+  return page.variations;
+}
+
+export async function fetchPancakeVariationStocks(
+  input: Parameters<typeof fetchPancakeVariationsByIds>[0],
+): Promise<Map<string, PancakeCatalogWarehouseStock[]>> {
+  const variations = await fetchPancakeVariationsByIds(input);
+  return new Map(variations.map((variation) => [variation.id, variation.warehouseStocks]));
 }

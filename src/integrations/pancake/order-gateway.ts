@@ -1,5 +1,10 @@
 import type { PancakeCatalogVariation } from "./catalog-contract.ts";
 import { fetchAllPancakeCatalogVariations } from "./catalog-pages.ts";
+import {
+  fetchPancakeVariationsByIds,
+  MAX_VARIATIONS_PER_READ,
+  PancakeVariationFilterMismatchError,
+} from "./variation-stock-read.ts";
 import type { PancakeCreateOrderRequest } from "./order-create.ts";
 import {
   searchOrderByMarker,
@@ -13,7 +18,7 @@ import {
   type PancakeOrderStatus,
 } from "./order-status.ts";
 
-type QueryValue = string | number | boolean;
+type QueryValue = string | number | boolean | readonly string[];
 type PostJsonOptions = Readonly<{ expectedStatus?: number | readonly number[] }>;
 
 export type PancakeOrderGatewayClient = {
@@ -25,6 +30,12 @@ export type PancakeOrderGatewayClient = {
 type FetchCompleteCatalog = (input: {
   client: PancakeOrderGatewayClient;
   shopId: number;
+}) => Promise<readonly PancakeCatalogVariation[]>;
+
+type FetchVariationsByIds = (input: {
+  client: PancakeOrderGatewayClient;
+  shopId: number;
+  variationIds: readonly string[];
 }) => Promise<readonly PancakeCatalogVariation[]>;
 
 function requireShopId(value: number): number {
@@ -44,10 +55,48 @@ function requireOrderId(value: string): string {
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
   fetchCompleteCatalog: FetchCompleteCatalog = fetchAllPancakeCatalogVariations,
+  fetchVariationsByIds: FetchVariationsByIds = fetchPancakeVariationsByIds,
 ) {
   return {
     async fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]> {
       return fetchCompleteCatalog({ client, shopId: requireShopId(shopId) });
+    },
+
+    /**
+     * The live rows for just the variations an order touches — what checkout needs to re-price and
+     * re-check stock. Paging the full catalog for a two-line order costs one sequential request per
+     * hundred variations in the shop, all of it while the buyer waits on "Đang đặt hàng…"; this is
+     * one request per hundred *requested* ids, issued together.
+     *
+     * A requested id Pancake does not return is simply absent, exactly as it would be absent from a
+     * full traversal. If Pancake ever stops honouring the `variation_ids[]` filter the targeted read
+     * fails closed, and this falls back to the full traversal rather than failing every checkout.
+     */
+    async fetchVariations(
+      shopId: number,
+      variationIds: readonly string[],
+    ): Promise<readonly PancakeCatalogVariation[]> {
+      const checkedShopId = requireShopId(shopId);
+      const requested = [...new Set(variationIds)];
+      if (requested.length === 0) return [];
+
+      const chunks: string[][] = [];
+      for (let start = 0; start < requested.length; start += MAX_VARIATIONS_PER_READ) {
+        chunks.push(requested.slice(start, start + MAX_VARIATIONS_PER_READ));
+      }
+      try {
+        const pages = await Promise.all(
+          chunks.map((chunk) =>
+            fetchVariationsByIds({ client, shopId: checkedShopId, variationIds: chunk }),
+          ),
+        );
+        return pages.flat();
+      } catch (error) {
+        if (!(error instanceof PancakeVariationFilterMismatchError)) throw error;
+      }
+      const wanted = new Set(requested);
+      const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
+      return catalog.filter((variation) => wanted.has(variation.id));
     },
 
     async fetchOrderStatus(shopId: number, orderId: string): Promise<PancakeOrderStatus> {

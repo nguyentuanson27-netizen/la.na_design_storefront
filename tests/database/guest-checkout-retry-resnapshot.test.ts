@@ -114,7 +114,7 @@ async function makeRetryableDraft({ suffix, variantId }: { suffix: string; varia
   if (!first.ok) throw new Error("test setup must create the initial checkout snapshot");
 
   const unavailable = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       throw new Error("temporary validation transport failure");
     },
     async createOrder() {
@@ -180,7 +180,7 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
 
   let request: PancakeCreateOrderRequest | undefined;
   const healthy = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [
         liveVariation(variantA.pancakeVariationId, productA.pancakeProductId, 400_000),
         liveVariation(variantB.pancakeVariationId, productB.pancakeProductId, 650_000),
@@ -201,9 +201,19 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
   assert.equal(request.bill_full_name, "Nguyễn Văn B");
   assert.equal(request.bill_phone_number, "0987654321");
   assert.ok(request.shipping_address.address.startsWith("34 Đường Y"));
-  assert.equal(request.shipping_address.province_id, "province-y");
-  assert.equal(request.shipping_address.district_id, "district-y");
-  assert.equal(request.shipping_address.commune_id, "commune-y");
+  // The refreshed draft carries the two-level address, which Pancake takes as new_* ids.
+  assert.deepEqual(
+    {
+      new_province_id: "new_province_id" in request.shipping_address
+        ? request.shipping_address.new_province_id
+        : undefined,
+      new_commune_id: "new_commune_id" in request.shipping_address
+        ? request.shipping_address.new_commune_id
+        : undefined,
+      legacyDistrict: "district_id" in request.shipping_address,
+    },
+    { new_province_id: "province-y", new_commune_id: "commune-y", legacyDistrict: false },
+  );
   assert.ok(request.note?.startsWith("Địa chỉ mới"));
   assert.deepEqual(request.items.map(({ variation_id }) => variation_id), [variantB.pancakeVariationId]);
 });

@@ -7,9 +7,10 @@ function makeFormData() {
   const formData = new FormData();
   formData.set("name", "Nguyễn Văn A");
   formData.set("phone", "0901234567");
-  formData.set("provinceRef", "province-01");
+  formData.set("provinceRef", "84_VN101");
+  // A stale page could still post a district; the two-level address never forwards it.
   formData.set("districtRef", "district-001");
-  formData.set("communeRef", "commune-0001");
+  formData.set("communeRef", "84_VN10105");
   formData.set("detail", "12 Đường A");
   formData.set("note", "Giao giờ hành chính");
   formData.set("cartId", "attacker-cart");
@@ -45,9 +46,8 @@ test("browser checkout uses the HttpOnly cart identity and forwards only allowli
     checkoutInput: {
       name: "Nguyễn Văn A",
       phone: "0901234567",
-      provinceRef: "province-01",
-      districtRef: "district-001",
-      communeRef: "commune-0001",
+      provinceRef: "84_VN101",
+      communeRef: "84_VN10105",
       detail: "12 Đường A",
       note: "Giao giờ hành chính",
     },

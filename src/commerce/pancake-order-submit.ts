@@ -130,7 +130,14 @@ export type PancakeOrderSubmissionResult =
     };
 
 export type PancakeOrderSubmissionGateway = {
-  fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]>;
+  /**
+   * The live Pancake rows for exactly these variation ids. An id Pancake no longer lists is simply
+   * absent from the answer, as it would be from a full catalog read.
+   */
+  fetchVariations(
+    shopId: number,
+    variationIds: readonly string[],
+  ): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
 };
 
@@ -256,7 +263,7 @@ export function createPancakeOrderSubmissionService(
      * The last precondition, evaluated at the write boundary.
      *
      * Everything this service does before calling it is local or read-only against Pancake: the
-     * DRAFT claim, the live catalog fetch, repricing, validation. Those can all end the submission
+     * DRAFT claim, the live variation read, repricing, validation. Those can all end the submission
      * with nothing sent. Only past this point may an order exist in Pancake.
      *
      * So a caller holding a resource *for the write* — I6b's capacity hold (ADR 0014 §4) is the
@@ -564,7 +571,8 @@ export function createPancakeOrderSubmissionService(
       !isNormalizedNonEmptyString(order.guestName) ||
       !isNormalizedNonEmptyString(order.guestPhone) ||
       !isNormalizedNonEmptyString(order.provinceRef) ||
-      !isNormalizedNonEmptyString(order.districtRef) ||
+      // `null` is the two-level address; a legacy three-level draft still carries a district.
+      !(order.districtRef === null || isNormalizedNonEmptyString(order.districtRef)) ||
       !isNormalizedNonEmptyString(order.communeRef) ||
       !isNormalizedNonEmptyString(order.addressDetail) ||
       !isNormalizedOptionalString(order.note) ||
@@ -577,29 +585,7 @@ export function createPancakeOrderSubmissionService(
       return reject("LOCAL_ORDER_INVALID");
     }
 
-    let liveCatalog: readonly PancakeCatalogVariation[];
-    try {
-      liveCatalog = await gateway.fetchCompleteCatalog(persistedShopId);
-    } catch {
-      return resetValidation();
-    }
-
-    const liveByVariationId = new Map<string, PancakeCatalogVariation | null>();
-    for (const variation of liveCatalog) {
-      if (liveByVariationId.has(variation.id)) {
-        liveByVariationId.set(variation.id, null);
-      } else {
-        liveByVariationId.set(variation.id, variation);
-      }
-    }
-
-    // The fresher base is only half the answer. A website sale is `resolvePromotionPricing(base,
-    // campaigns)`, so comparing a promoted DRAFT against raw Pancake retail would refuse every
-    // correctly discounted order; and a percentage campaign against a moved base yields a different
-    // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
-    // one resolver, at one instant.
-    const now = readNow();
-    // Inside the same pre-write recovery boundary as the catalog read above, and for the same
+    // Inside the same pre-write recovery boundary as the live Pancake read below, and for the same
     // reason: the claim has moved the row to `VALIDATING`, but nothing has been sent to Pancake yet.
     // A transient failure resolving promotion candidates is therefore retryable, not fatal. Letting
     // it escape would leave the row `VALIDATING`, which the recovery sweep converts to a terminal
@@ -677,6 +663,50 @@ export function createPancakeOrderSubmissionService(
       );
     } catch {
       return resetValidation();
+    }
+
+    // Only the variations this order can consume: each line's own row, plus every component a
+    // composite line draws on. Read after the local metadata because that is where the component
+    // edges live. Same pre-write recovery boundary as the reads above — nothing has been sent yet.
+    const liveVariationIds = new Set<string>();
+    for (const line of order.lines) {
+      if (isNormalizedNonEmptyString(line.pancakeVariationId)) {
+        liveVariationIds.add(line.pancakeVariationId);
+      }
+    }
+    for (const meta of variantMetaById.values()) {
+      for (const component of meta.components) {
+        if (isNormalizedNonEmptyString(component.pancakeVariationId)) {
+          liveVariationIds.add(component.pancakeVariationId);
+        }
+      }
+    }
+
+    let liveVariations: readonly PancakeCatalogVariation[];
+    try {
+      liveVariations = await gateway.fetchVariations(persistedShopId, [...liveVariationIds]);
+    } catch {
+      return resetValidation();
+    }
+
+    // The fresher base is only half the answer. A website sale is `resolvePromotionPricing(base,
+    // campaigns)`, so comparing a promoted DRAFT against raw Pancake retail would refuse every
+    // correctly discounted order; and a percentage campaign against a moved base yields a different
+    // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
+    // one resolver, at one instant.
+    //
+    // That instant is read only now, after the live Pancake answer is in: a campaign that ends while
+    // the request is in flight must be priced as ended, not by a clock read before it went out.
+    // Campaign *candidates* above are window-independent, so reading them earlier changes nothing.
+    const now = readNow();
+
+    const liveByVariationId = new Map<string, PancakeCatalogVariation | null>();
+    for (const variation of liveVariations) {
+      if (liveByVariationId.has(variation.id)) {
+        liveByVariationId.set(variation.id, null);
+      } else {
+        liveByVariationId.set(variation.id, variation);
+      }
     }
 
     const requestedVariationIds = new Set<string>();

@@ -35,7 +35,9 @@ function formatDate(value: string): string {
   }).format(date);
 }
 
-export function GuestOrderTrackingForm() {
+export function GuestOrderTrackingForm({
+  defaultOrderCode,
+}: Readonly<{ defaultOrderCode?: string | null }>) {
   const [state, action, isPending] = useActionState(lookupGuestOrderAction, null);
 
   return (
@@ -52,8 +54,16 @@ export function GuestOrderTrackingForm() {
             required
             maxLength={128}
             autoComplete="off"
+            autoCapitalize="characters"
+            spellCheck={false}
+            placeholder="VD: LA-7K3M9QXD"
+            aria-describedby="tracking-order-code-hint"
+            defaultValue={defaultOrderCode ?? undefined}
             className={fieldClassName}
           />
+          <p id="tracking-order-code-hint" className="mt-2 text-xs leading-5 text-black/60">
+            Mã gồm 8 ký tự sau “LA-”, có trên trang đặt hàng thành công. Không phân biệt chữ hoa, chữ thường.
+          </p>
         </div>
 
         <div>
@@ -64,6 +74,7 @@ export function GuestOrderTrackingForm() {
             id="tracking-phone"
             name="phone"
             type="tel"
+            inputMode="tel"
             required
             maxLength={64}
             autoComplete="tel"

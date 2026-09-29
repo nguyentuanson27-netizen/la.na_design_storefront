@@ -1,14 +1,8 @@
-import { randomUUID } from "node:crypto";
-
 import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
-import {
-  loadCheckoutCommunes,
-  loadCheckoutDistricts,
-  loadCheckoutProvinces,
-} from "./checkout-geo.ts";
+import { loadCheckoutCommunes, loadCheckoutProvinces } from "./checkout-geo.ts";
 import { createCapacityReservationRepository } from "./capacity-reservation.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
@@ -17,6 +11,7 @@ import {
   type RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
 import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
+import { generateOrderPublicCode } from "./order-public-code.ts";
 import {
   createGuestCheckoutSnapshotService,
   requiresFreshGuestCheckoutSnapshot,
@@ -83,9 +78,7 @@ async function validateCheckoutGeoWithPancake(
   return validateCheckoutGeoSelection(
     {
       loadProvinces: () => loadCheckoutProvinces(client),
-      loadDistricts: (provinceId) => loadCheckoutDistricts(client, provinceId),
-      loadCommunes: (provinceId, districtId) =>
-        loadCheckoutCommunes(client, provinceId, districtId),
+      loadCommunes: (provinceId) => loadCheckoutCommunes(client, provinceId),
     },
     checkoutInput,
   );
@@ -109,7 +102,7 @@ export function createGuestCheckoutSubmitRuntime(
   const recoverStranded =
     options.recoverStranded ??
     (({ cartId, now }) => recoverStrandedGuestCheckoutForCart(prisma, cartId, now));
-  const generatePublicCode = options.generatePublicCode ?? (() => `LA-${randomUUID()}`);
+  const generatePublicCode = options.generatePublicCode ?? generateOrderPublicCode;
   const readQuoteProofSecret =
     options.readQuoteProofSecret ?? (() => readAuthServerConfig().secret);
   const clock = options.clock ?? (() => new Date());
@@ -145,7 +138,7 @@ export function createGuestCheckoutSubmitRuntime(
         return {
           ok: false as const,
           status: "RETRYABLE" as const,
-          reason: "INVALID_INPUT" as const,
+          reason: geoValidation.reason,
         };
       }
       authoritativeCheckoutInput = geoValidation.checkoutInput;

@@ -24,7 +24,6 @@ function checkoutInputFromFormData(formData: FormData) {
     name: formData.get("name"),
     phone: formData.get("phone"),
     provinceRef: formData.get("provinceRef"),
-    districtRef: formData.get("districtRef"),
     communeRef: formData.get("communeRef"),
     detail: formData.get("detail"),
     note: formData.get("note"),

@@ -37,6 +37,7 @@
     "pancake:order:inspect-openapi": "node --experimental-strip-types scripts/pancake-order-openapi-inspect.ts",
     "pancake:order-status:inspect-openapi": "node --experimental-strip-types scripts/pancake-order-status-openapi-inspect.ts",
     "pancake:geo:inspect-openapi": "node --experimental-strip-types scripts/pancake-geo-openapi-inspect.ts",
+    "pancake:geo:probe": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-geo-two-level-probe.ts",
     "pancake:price:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-p10-custom-price-acceptance.ts",
     "pancake:t7:accept": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-t7-confirmed-purchase-acceptance.ts"
   },

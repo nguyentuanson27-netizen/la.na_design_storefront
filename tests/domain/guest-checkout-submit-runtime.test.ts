@@ -9,7 +9,7 @@ const checkoutInput = {
   name: "Nguyễn Văn A",
   phone: "0901234567",
   provinceRef: "province-01",
-  districtRef: "district-001",
+  districtRef: null,
   communeRef: "commune-0001",
   detail: "12 Đường A",
   note: null,

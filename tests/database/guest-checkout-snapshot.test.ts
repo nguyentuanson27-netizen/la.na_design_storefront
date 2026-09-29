@@ -161,7 +161,8 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
   assert.equal(persisted.guestName, "Nguyễn Văn A");
   assert.equal(persisted.guestPhone, "0901234567");
   assert.equal(persisted.provinceRef, "province-01");
-  assert.equal(persisted.districtRef, "district-001");
+  // Two-level address: a district posted by the browser is not part of the snapshot.
+  assert.equal(persisted.districtRef, null);
   assert.equal(persisted.communeRef, "commune-0001");
   assert.equal(persisted.addressDetail, "12 Đường A");
   assert.equal(persisted.note, "Gọi trước khi giao");

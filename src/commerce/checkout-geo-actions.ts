@@ -6,11 +6,6 @@ import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig } from "../integrations/pancake/config.ts";
-import type {
-  PancakeCommune,
-  PancakeDistrict,
-  PancakeProvince,
-} from "../integrations/pancake/geo.ts";
 import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
 import {
@@ -19,8 +14,9 @@ import {
 } from "./checkout-geo-public-actions.ts";
 import {
   loadCheckoutCommunes,
-  loadCheckoutDistricts,
   loadCheckoutProvinces,
+  type CheckoutCommune,
+  type CheckoutProvince,
 } from "./checkout-geo.ts";
 
 const geoRateLimiter = createGuestCheckoutRateLimiter(prisma);
@@ -40,27 +36,17 @@ async function allowGeoRead(): Promise<boolean> {
 const publicActions = createCheckoutGeoPublicActions({
   allowRead: allowGeoRead,
   loadProvinces: () => loadCheckoutProvinces(createServerClient()),
-  loadDistricts: (provinceId) =>
-    loadCheckoutDistricts(createServerClient(), provinceId),
-  loadCommunes: (provinceId, districtId) =>
-    loadCheckoutCommunes(createServerClient(), provinceId, districtId),
+  loadCommunes: (provinceId) => loadCheckoutCommunes(createServerClient(), provinceId),
 });
 
 export async function loadCheckoutProvincesAction(): Promise<
-  CheckoutGeoPublicResult<PancakeProvince>
+  CheckoutGeoPublicResult<CheckoutProvince>
 > {
   return publicActions.provinces();
 }
 
-export async function loadCheckoutDistrictsAction(
-  provinceId: unknown,
-): Promise<CheckoutGeoPublicResult<PancakeDistrict>> {
-  return publicActions.districts(provinceId);
-}
-
 export async function loadCheckoutCommunesAction(
   provinceId: unknown,
-  districtId: unknown,
-): Promise<CheckoutGeoPublicResult<PancakeCommune>> {
-  return publicActions.communes(provinceId, districtId);
+): Promise<CheckoutGeoPublicResult<CheckoutCommune>> {
+  return publicActions.communes(provinceId);
 }

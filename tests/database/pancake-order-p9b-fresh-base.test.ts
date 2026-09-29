@@ -153,7 +153,7 @@ function gatewayWithFreshBase(variationId: string, productId: string, freshBaseV
   return {
     created,
     gateway: {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [liveVariation(variationId, productId, freshBaseVnd)];
       },
       async createOrder(request: unknown) {
@@ -333,7 +333,7 @@ test("P9b the write-back records Pancake's own after-discount, not a copy of the
 
   const created: unknown[] = [];
   const result = await submissionService({
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 600_000, 550_000)];
     },
     async createOrder(request: unknown) {
@@ -551,6 +551,49 @@ test("P9b a campaign ending mid-checkout reprices, while the same quote inside t
   assert.equal(repriced.lines[0]!.baseUnitPriceVnd, BigInt(500_000));
   assert.equal(repriced.merchandiseSubtotalVnd, BigInt(500_000));
   assert.equal(repriced.totalVnd, BigInt(500_000) + repriced.shippingFeeVnd!);
+});
+
+test("P9b a campaign that ends while the live Pancake read is in flight is priced as ended", async () => {
+  // The promotion instant belongs *after* the live read: a sale that closes while Pancake is still
+  // answering must not be honoured on the strength of a clock read before the request went out.
+  const { product, variant } = await seedVariant("ends-in-flight", 500_000);
+  const endsAt = new Date(now.getTime() + 120_000);
+  await seedCampaign(variant.id, {
+    discountType: "PERCENTAGE",
+    percentageValue: 20,
+    startsAt: new Date(now.getTime() - 60_000),
+    endsAt,
+  });
+  const publicCode = `${prefix}-ends-in-flight-order`;
+  await createDraft(variant.id, publicCode);
+
+  // Inside the window when submission starts; the sale ends during the live read.
+  let clock = new Date(endsAt.getTime() - 100);
+  const created: unknown[] = [];
+  const service = createPancakeOrderSubmissionService(
+    prisma,
+    {
+      async fetchVariations() {
+        clock = new Date(endsAt.getTime() + 300);
+        return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 500_000)];
+      },
+      async createOrder(request: unknown) {
+        created.push(request);
+        return { id: 900_002 };
+      },
+    },
+    { now: () => clock },
+  );
+
+  const result = await service.submit({ publicCode, shopId });
+
+  assert.equal(result.ok, false, "a sale that ended mid-read is not honoured");
+  if (result.ok) return;
+  assert.equal(result.state, "DRAFT");
+  assert.equal(result.reason, "PRICE_CHANGED");
+  assert.equal(created.length, 0, "the expired sale price never reaches Pancake");
+  assert.ok("repricedQuote" in result);
+  assert.equal(result.repricedQuote.merchandiseSubtotalVnd, 500_000);
 });
 
 test("P9b a promotion-candidate read failure returns the order to retryable DRAFT, not a stranded claim", async () => {

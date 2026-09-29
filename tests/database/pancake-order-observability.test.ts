@@ -78,7 +78,7 @@ test("submission emits stable lifecycle events without checkout PII or public tr
   const service = createPancakeOrderSubmissionService(
     prisma,
     {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [liveVariation];
       },
       async createOrder() {
@@ -133,7 +133,7 @@ test("ambiguous create emits only a stable unknown outcome and observer failures
   const unknownService = createPancakeOrderSubmissionService(
     prisma,
     {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [liveVariation];
       },
       async createOrder() {
@@ -162,7 +162,7 @@ test("ambiguous create emits only a stable unknown outcome and observer failures
   const resilientService = createPancakeOrderSubmissionService(
     prisma,
     {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [liveVariation];
       },
       async createOrder() {

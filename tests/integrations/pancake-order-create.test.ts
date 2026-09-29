@@ -59,6 +59,33 @@ test("create-order mapper emits only the reviewed server-owned allowlist and omi
   assert.equal("status" in request, false);
 });
 
+test("a two-level address (no district) is sent as Pancake's new_province_id / new_commune_id", () => {
+  const request = buildPancakeCreateOrderRequest({
+    shopId: 920_007,
+    guestName: "Nguyễn Văn A",
+    guestPhone: "0901234567",
+    provinceRef: "84_VN101",
+    districtRef: null,
+    communeRef: "84_VN10105",
+    addressDetail: "12 Đường A",
+    note: null,
+    shippingFeeVnd: 30_000,
+    lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+  });
+
+  assert.deepEqual(request.shipping_address, {
+    full_name: "Nguyễn Văn A",
+    phone_number: "0901234567",
+    address: "12 Đường A",
+    new_province_id: "84_VN101",
+    new_commune_id: "84_VN10105",
+  });
+  // Never a half-old address: no old province/district/commune ids ride along.
+  for (const legacyKey of ["province_id", "district_id", "commune_id"]) {
+    assert.equal(legacyKey in request.shipping_address, false, legacyKey);
+  }
+});
+
 test("create-order mapper omits blank optional note and optional unverified cod", () => {
   const request = buildPancakeCreateOrderRequest({
     shopId: 1,

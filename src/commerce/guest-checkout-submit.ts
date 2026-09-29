@@ -97,6 +97,7 @@ type CapacityReservationService = {
 
 export type GuestCheckoutBrowserReason =
   | "INVALID_INPUT"
+  | "INVALID_PHONE"
   | "CART_UNAVAILABLE"
   | "CART_CHANGED"
   | "SERVICE_UNAVAILABLE"

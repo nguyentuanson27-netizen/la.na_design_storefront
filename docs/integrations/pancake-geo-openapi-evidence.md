@@ -139,4 +139,25 @@ The gateway uses the existing `PancakeClient` read method, which owns the fixed 
 - GREEN gateway implementation: commit `8079813f3ba5c8714642f744b735cfd47c3721c2`, CI **#550 / 31579737424**. Database, all three HTTP smokes, lint, typecheck, full domain/integration tests, production build and admin accessibility all passed.
 - A follow-up regression also verifies that non-boolean province-mode values are rejected at runtime when a JavaScript caller bypasses TypeScript. The final PR-head CI must remain green after that test and this documentation update.
 
-Visible checkout selectors remain a later slice. They should be activated only after the LA Clothing Vietnam old/new administrative policy is explicit.
+## Checkout policy: post-2025 two-level address
+
+The owner has made the old/new policy explicit: checkout offers **only** the post-1 July 2025 units,
+province → ward/commune, then the buyer types the house number and street. There is no district.
+
+What checkout does, and where each part comes from:
+
+- provinces: `GET /geo/provinces?country_code=84&is_new=true` (the documented `is_new` flag);
+- wards/communes: `GET /geo/communes?province_id=<new province id>` with **no** `district_id`. The
+  fingerprinted OpenAPI document above still marks `district_id` as required, so this call is not
+  covered by it; it follows Pancake's observed behaviour (a new-format province id such as
+  `84_VN101` returns two-level rows with `district_id: null`). `listPancakeNewCommunes` fails closed
+  on any row that names a district or a different province;
+- create order: `shipping_address.new_province_id` / `new_commune_id` instead of the
+  `province_id` / `district_id` / `commune_id` triple, which is likewise observed rather than in the
+  reviewed create-order evidence;
+- `OrderMirror.districtRef` is `NULL` for a two-level checkout. A draft snapshotted before the switch
+  still carries its district and is still submitted with the old triple.
+
+Because two of those contracts are observed rather than documented, confirm them on the live shop
+before release: `pnpm pancake:geo:probe` (read-only) must pass, and one real COD test order must
+show the ward/commune correctly in Pancake.

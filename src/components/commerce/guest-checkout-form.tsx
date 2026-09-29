@@ -2,38 +2,83 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useActionState, useCallback, useEffect, useId, useRef, useState, useTransition, type ReactNode } from "react";
+import {
+  useActionState,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  useTransition,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 
 import {
   loadCheckoutCommunesAction,
-  loadCheckoutDistrictsAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
 import { BRAND } from "@/brand";
+import type { CheckoutCommune, CheckoutProvince } from "@/commerce/checkout-geo";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
-import type {
-  PancakeCommune,
-  PancakeDistrict,
-  PancakeProvince,
-} from "@/integrations/pancake/geo";
+import { isVietnamPhone, VIETNAM_PHONE_ERROR } from "@/commerce/vietnam-phone";
 
 type GeoError = Readonly<{
-  level: "provinces" | "districts" | "communes";
+  level: "provinces" | "communes";
   message: string;
 }>;
 
+/** The fields a buyer must fill, in the order the form shows them (and focus moves through). */
+const REQUIRED_FIELDS = ["name", "phone", "province", "commune", "detail"] as const;
+type RequiredField = (typeof REQUIRED_FIELDS)[number];
+
+const FIELD_INPUT_IDS: Record<RequiredField, string> = {
+  name: "checkout-name",
+  phone: "checkout-phone",
+  province: "checkout-province",
+  commune: "checkout-commune",
+  detail: "checkout-detail",
+};
+
+const MISSING_MESSAGES: Record<RequiredField, string> = {
+  name: "Vui lòng nhập họ và tên người nhận.",
+  phone: "Vui lòng nhập số điện thoại.",
+  province: "Vui lòng chọn tỉnh/thành phố.",
+  commune: "Vui lòng chọn phường/xã.",
+  detail: "Vui lòng nhập số nhà, tên đường.",
+};
+
+type FieldValues = Readonly<{
+  name: string;
+  phone: string;
+  province: string;
+  commune: string;
+  detail: string;
+}>;
+
+/**
+ * What is still missing or wrong, per field. The server re-checks all of it — this only lets the
+ * buyer see every problem at once, in their language, before a round trip.
+ */
+function findFieldErrors(values: FieldValues): Partial<Record<RequiredField, string>> {
+  const errors: Partial<Record<RequiredField, string>> = {};
+  for (const field of REQUIRED_FIELDS) {
+    if (values[field].trim().length === 0) errors[field] = MISSING_MESSAGES[field];
+  }
+  if (!errors.phone && !isVietnamPhone(values.phone)) {
+    errors.phone = VIETNAM_PHONE_ERROR;
+  }
+  return errors;
+}
+
 const fieldClassName =
-  "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45";
+  "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
 
 const geoFailures = {
   provinces: {
     level: "provinces",
     message: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
-  },
-  districts: {
-    level: "districts",
-    message: "Chưa tải được danh sách quận/huyện. Vui lòng thử lại.",
   },
   communes: {
     level: "communes",
@@ -60,34 +105,34 @@ export function GuestCheckoutForm({
   );
   const router = useRouter();
   const [isRefreshingQuote, startQuoteRefresh] = useTransition();
-  const [provinces, setProvinces] = useState<PancakeProvince[]>([]);
-  const [districts, setDistricts] = useState<PancakeDistrict[]>([]);
-  const [communes, setCommunes] = useState<PancakeCommune[]>([]);
+  const [provinces, setProvinces] = useState<CheckoutProvince[]>([]);
+  const [communes, setCommunes] = useState<CheckoutCommune[]>([]);
   const [provinceRef, setProvinceRef] = useState("");
-  const [districtRef, setDistrictRef] = useState("");
   const [communeRef, setCommuneRef] = useState("");
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [detail, setDetail] = useState("");
   const [provinceLoading, setProvinceLoading] = useState(true);
-  const [districtLoading, setDistrictLoading] = useState(false);
   const [communeLoading, setCommuneLoading] = useState(false);
   const [geoError, setGeoError] = useState<GeoError | null>(null);
   const [isSummaryOpen, setIsSummaryOpen] = useState(false);
+  // Warnings appear once the buyer has tried to place the order (or left the phone field), then
+  // update live as they fix each field, so a corrected field clears its own message immediately.
+  const [showAllErrors, setShowAllErrors] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const summaryContentId = useId();
+  const errorSummaryRef = useRef<HTMLParagraphElement>(null);
   const provinceRequest = useRef(0);
-  const districtRequest = useRef(0);
   const communeRequest = useRef(0);
 
   const requestProvinces = useCallback(async () => {
     const requestId = ++provinceRequest.current;
-    ++districtRequest.current;
     ++communeRequest.current;
     setProvinceLoading(true);
-    setDistrictLoading(false);
     setCommuneLoading(false);
     setGeoError(null);
     setProvinceRef("");
-    setDistrictRef("");
     setCommuneRef("");
-    setDistricts([]);
     setCommunes([]);
 
     try {
@@ -111,63 +156,31 @@ export function GuestCheckoutForm({
     }
   }, []);
 
-  const requestDistricts = useCallback(async (selectedProvince: string) => {
-    const requestId = ++districtRequest.current;
-    setDistrictLoading(true);
+  const requestCommunes = useCallback(async (selectedProvince: string) => {
+    const requestId = ++communeRequest.current;
+    setCommuneLoading(true);
     setGeoError(null);
 
     try {
-      const result = await loadCheckoutDistrictsAction(selectedProvince);
-      if (requestId !== districtRequest.current) return;
+      const result = await loadCheckoutCommunesAction(selectedProvince);
+      if (requestId !== communeRequest.current) return;
 
       if (!result.ok) {
-        setDistricts([]);
-        setGeoError(geoFailures.districts);
+        setCommunes([]);
+        setGeoError(geoFailures.communes);
         return;
       }
-      setDistricts(result.options);
+      setCommunes(result.options);
     } catch {
-      if (requestId !== districtRequest.current) return;
-      setDistricts([]);
-      setGeoError(geoFailures.districts);
+      if (requestId !== communeRequest.current) return;
+      setCommunes([]);
+      setGeoError(geoFailures.communes);
     } finally {
-      if (requestId === districtRequest.current) {
-        setDistrictLoading(false);
+      if (requestId === communeRequest.current) {
+        setCommuneLoading(false);
       }
     }
   }, []);
-
-  const requestCommunes = useCallback(
-    async (selectedProvince: string, selectedDistrict: string) => {
-      const requestId = ++communeRequest.current;
-      setCommuneLoading(true);
-      setGeoError(null);
-
-      try {
-        const result = await loadCheckoutCommunesAction(
-          selectedProvince,
-          selectedDistrict,
-        );
-        if (requestId !== communeRequest.current) return;
-
-        if (!result.ok) {
-          setCommunes([]);
-          setGeoError(geoFailures.communes);
-          return;
-        }
-        setCommunes(result.options);
-      } catch {
-        if (requestId !== communeRequest.current) return;
-        setCommunes([]);
-        setGeoError(geoFailures.communes);
-      } finally {
-        if (requestId === communeRequest.current) {
-          setCommuneLoading(false);
-        }
-      }
-    },
-    [],
-  );
 
   useEffect(() => {
     const requestId = ++provinceRequest.current;
@@ -225,37 +238,61 @@ export function GuestCheckoutForm({
 
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
-  const geoBusy = provinceLoading || districtLoading || communeLoading;
+  // Missing fields no longer disable the button: pressing it is how the buyer finds out what is
+  // left, so it stays pressable and answers with the warnings below. It is disabled only while a
+  // submission or quote refresh is in flight, after a final outcome, or when the address lists
+  // could not be loaded at all (the retry button is the way forward then).
   const submitDisabled =
-    isSubmitting ||
-    geoBusy ||
-    Boolean(geoError) ||
-    !provinceRef ||
-    !districtRef ||
-    !communeRef ||
-    isRefreshingQuote ||
-    lockSubmission;
+    isSubmitting || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+
+  const fieldErrors = findFieldErrors({
+    name,
+    phone,
+    province: provinceRef,
+    commune: communeRef,
+    detail,
+  });
+  const visibleErrors: Partial<Record<RequiredField, string>> = showAllErrors
+    ? fieldErrors
+    : phoneTouched && phone.trim().length > 0 && fieldErrors.phone
+      ? { phone: fieldErrors.phone }
+      : {};
+  const hasMissingFields = showAllErrors && Object.keys(fieldErrors).length > 0;
+
+  function errorId(field: RequiredField): string {
+    return `${FIELD_INPUT_IDS[field]}-error`;
+  }
+
+  function fieldA11y(field: RequiredField) {
+    return visibleErrors[field]
+      ? { "aria-invalid": true as const, "aria-describedby": errorId(field) }
+      : {};
+  }
+
+  function renderFieldError(field: RequiredField) {
+    const message = visibleErrors[field];
+    return message ? (
+      <span className="mt-2 block text-sm font-normal text-[#b42318]" id={errorId(field)}>
+        {message}
+      </span>
+    ) : null;
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (Object.keys(fieldErrors).length === 0) return;
+    // Stop the Server Action: nothing about this attempt could succeed, and the buyer should see
+    // every missing field at once rather than one server refusal at a time.
+    event.preventDefault();
+    setShowAllErrors(true);
+    const first = REQUIRED_FIELDS.find((field) => fieldErrors[field] !== undefined);
+    requestAnimationFrame(() => {
+      errorSummaryRef.current?.scrollIntoView({ block: "center" });
+      if (first) document.getElementById(FIELD_INPUT_IDS[first])?.focus();
+    });
+  }
 
   function handleProvinceChange(value: string) {
     setProvinceRef(value);
-    setDistrictRef("");
-    setCommuneRef("");
-    setDistricts([]);
-    setCommunes([]);
-    ++communeRequest.current;
-    setCommuneLoading(false);
-    setGeoError(null);
-
-    if (!value) {
-      ++districtRequest.current;
-      setDistrictLoading(false);
-      return;
-    }
-    void requestDistricts(value);
-  }
-
-  function handleDistrictChange(value: string) {
-    setDistrictRef(value);
     setCommuneRef("");
     setCommunes([]);
     setGeoError(null);
@@ -265,7 +302,7 @@ export function GuestCheckoutForm({
       setCommuneLoading(false);
       return;
     }
-    void requestCommunes(provinceRef, value);
+    void requestCommunes(value);
   }
 
   function retryGeoRead() {
@@ -274,12 +311,8 @@ export function GuestCheckoutForm({
       void requestProvinces();
       return;
     }
-    if (geoError.level === "districts" && provinceRef) {
-      void requestDistricts(provinceRef);
-      return;
-    }
-    if (geoError.level === "communes" && provinceRef && districtRef) {
-      void requestCommunes(provinceRef, districtRef);
+    if (geoError.level === "communes" && provinceRef) {
+      void requestCommunes(provinceRef);
     }
   }
 
@@ -291,7 +324,7 @@ export function GuestCheckoutForm({
         : "border-black bg-transparent text-black";
 
   return (
-    <form action={submitAction} className="space-y-8">
+    <form action={submitAction} className="space-y-8" noValidate onSubmit={handleSubmit}>
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
@@ -328,31 +361,45 @@ export function GuestCheckoutForm({
       </div>
 
       <div className="grid gap-5 sm:grid-cols-2">
-        <label className="text-sm font-medium" htmlFor="checkout-name">
-          Họ và tên
-          <input
-            autoComplete="name"
-            className={fieldClassName}
-            id="checkout-name"
-            maxLength={2048}
-            name="name"
-            required
-            type="text"
-          />
-        </label>
-        <label className="text-sm font-medium" htmlFor="checkout-phone">
-          Số điện thoại
-          <input
-            autoComplete="tel"
-            className={fieldClassName}
-            id="checkout-phone"
-            inputMode="tel"
-            maxLength={2048}
-            name="phone"
-            required
-            type="tel"
-          />
-        </label>
+        <div>
+          <label className="block text-sm font-medium" htmlFor="checkout-name">
+            Họ và tên <RequiredMark />
+            <input
+              autoComplete="name"
+              className={fieldClassName}
+              id="checkout-name"
+              maxLength={2048}
+              name="name"
+              onChange={(event) => setName(event.target.value)}
+              required
+              type="text"
+              value={name}
+              {...fieldA11y("name")}
+            />
+          </label>
+          {renderFieldError("name")}
+        </div>
+        <div>
+          <label className="block text-sm font-medium" htmlFor="checkout-phone">
+            Số điện thoại <RequiredMark />
+            <input
+              autoComplete="tel"
+              className={fieldClassName}
+              id="checkout-phone"
+              inputMode="tel"
+              maxLength={32}
+              name="phone"
+              onBlur={() => setPhoneTouched(true)}
+              onChange={(event) => setPhone(event.target.value)}
+              placeholder="VD: 0912 345 678"
+              required
+              type="tel"
+              value={phone}
+              {...fieldA11y("phone")}
+            />
+          </label>
+          {renderFieldError("phone")}
+        </div>
       </div>
 
       <fieldset className="space-y-5" disabled={isSubmitting || lockSubmission}>
@@ -360,78 +407,68 @@ export function GuestCheckoutForm({
           Địa chỉ giao hàng
         </legend>
         <p className="text-sm leading-6 text-black/60">
-          Hãy chọn tỉnh/thành, quận/huyện và phường/xã đúng với thông tin giao hàng của bạn.
+          Địa chỉ theo đơn vị hành chính mới: chọn tỉnh/thành phố, phường/xã, rồi nhập số nhà, tên đường.
         </p>
 
-        <div className="grid gap-5 md:grid-cols-3">
-          <label className="text-sm font-medium" htmlFor="checkout-province">
-            Tỉnh / Thành phố
-            <select
-              className={fieldClassName}
-              disabled={provinceLoading || provinces.length === 0}
-              id="checkout-province"
-              name="provinceRef"
-              onChange={(event) => handleProvinceChange(event.target.value)}
-              required
-              value={provinceRef}
-            >
-              <option value="">
-                {provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành"}
-              </option>
-              {provinces.map((province) => (
-                <option key={province.id} value={province.id}>
-                  {province.name}
+        <div className="grid gap-5 md:grid-cols-2">
+          <div>
+            <label className="block text-sm font-medium" htmlFor="checkout-province">
+              Tỉnh / Thành phố <RequiredMark />
+              <select
+                className={fieldClassName}
+                disabled={provinceLoading || provinces.length === 0}
+                id="checkout-province"
+                name="provinceRef"
+                onChange={(event) => handleProvinceChange(event.target.value)}
+                required
+                value={provinceRef}
+                {...fieldA11y("province")}
+              >
+                <option value="">
+                  {provinceLoading ? "Đang tải tỉnh/thành…" : "Chọn tỉnh/thành phố"}
                 </option>
-              ))}
-            </select>
-          </label>
+                {provinces.map((province) => (
+                  <option key={province.id} value={province.id}>
+                    {province.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {renderFieldError("province")}
+          </div>
 
-          <label className="text-sm font-medium" htmlFor="checkout-district">
-            Quận / Huyện
-            <select
-              className={fieldClassName}
-              disabled={!provinceRef || districtLoading || districts.length === 0}
-              id="checkout-district"
-              name="districtRef"
-              onChange={(event) => handleDistrictChange(event.target.value)}
-              required
-              value={districtRef}
-            >
-              <option value="">
-                {districtLoading ? "Đang tải quận/huyện…" : "Chọn quận/huyện"}
-              </option>
-              {districts.map((district) => (
-                <option key={district.id} value={district.id}>
-                  {district.name}
+          <div>
+            <label className="block text-sm font-medium" htmlFor="checkout-commune">
+              Phường / Xã <RequiredMark />
+              <select
+                className={fieldClassName}
+                disabled={!provinceRef || communeLoading || communes.length === 0}
+                id="checkout-commune"
+                name="communeRef"
+                onChange={(event) => {
+                  setCommuneRef(event.target.value);
+                  setGeoError(null);
+                }}
+                required
+                value={communeRef}
+                {...fieldA11y("commune")}
+              >
+                <option value="">
+                  {communeLoading
+                    ? "Đang tải phường/xã…"
+                    : provinceRef
+                      ? "Chọn phường/xã"
+                      : "Chọn tỉnh/thành phố trước"}
                 </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="text-sm font-medium" htmlFor="checkout-commune">
-            Phường / Xã
-            <select
-              className={fieldClassName}
-              disabled={!districtRef || communeLoading || communes.length === 0}
-              id="checkout-commune"
-              name="communeRef"
-              onChange={(event) => {
-                setCommuneRef(event.target.value);
-                setGeoError(null);
-              }}
-              required
-              value={communeRef}
-            >
-              <option value="">
-                {communeLoading ? "Đang tải phường/xã…" : "Chọn phường/xã"}
-              </option>
-              {communes.map((commune) => (
-                <option key={commune.id} value={commune.id}>
-                  {commune.name}
-                </option>
-              ))}
-            </select>
-          </label>
+                {communes.map((commune) => (
+                  <option key={commune.id} value={commune.id}>
+                    {commune.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {renderFieldError("commune")}
+          </div>
         </div>
 
         {geoError ? (
@@ -450,18 +487,25 @@ export function GuestCheckoutForm({
           </div>
         ) : null}
 
-        <label className="block text-sm font-medium" htmlFor="checkout-detail">
-          Số nhà, tên đường
-          <input
-            autoComplete="street-address"
-            className={fieldClassName}
-            id="checkout-detail"
-            maxLength={2048}
-            name="detail"
-            required
-            type="text"
-          />
-        </label>
+        <div className="block">
+          <label className="block text-sm font-medium" htmlFor="checkout-detail">
+            Số nhà, tên đường <RequiredMark />
+            <input
+              autoComplete="street-address"
+              className={fieldClassName}
+              id="checkout-detail"
+              maxLength={2048}
+              name="detail"
+              onChange={(event) => setDetail(event.target.value)}
+              placeholder="VD: 12 Nguyễn Trãi"
+              required
+              type="text"
+              value={detail}
+              {...fieldA11y("detail")}
+            />
+          </label>
+          {renderFieldError("detail")}
+        </div>
 
         <label className="block text-sm font-medium" htmlFor="checkout-note">
           Ghi chú <span className="font-normal text-black/60">(không bắt buộc)</span>
@@ -497,6 +541,17 @@ export function GuestCheckoutForm({
         </div>
       ) : null}
 
+      {/* One line beside the button; which fields need attention is shown in red on each field above. */}
+      {hasMissingFields ? (
+        <p
+          className="border border-[#b42318] px-5 py-4 text-sm font-semibold text-[#b42318]"
+          ref={errorSummaryRef}
+          role="alert"
+        >
+          Vui lòng điền đầy đủ thông tin.
+        </p>
+      ) : null}
+
       <button
         className="btn btn--primary w-full py-4"
         disabled={submitDisabled}
@@ -509,5 +564,13 @@ export function GuestCheckoutForm({
         Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
     </form>
+  );
+}
+
+function RequiredMark() {
+  return (
+    <span aria-hidden="true" className="text-[#b42318]">
+      *
+    </span>
   );
 }
