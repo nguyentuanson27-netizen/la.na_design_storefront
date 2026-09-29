@@ -266,6 +266,9 @@ test("choosing a size clears only a colour the projection marks disabled", () =>
   });
   assert.equal(view.selectedVariantId, null, "the kept colour resolves to no variant");
   assert.equal(view.canAdd, false);
+  // Kind normalization does not reach a product without kinds: no new message appears here.
+  assert.equal(view.selectedCombinationMissing, false);
+  assert.equal(view.unavailableMessage, "");
 });
 
 test("choosing a size keeps a colour that size still comes in", () => {

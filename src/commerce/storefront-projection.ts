@@ -409,10 +409,9 @@ export function deriveStorefrontProjectionSelection(
       kinds: [] as StorefrontKindChoice[],
       ...standalone,
       resolvedColor: selection.color,
-      selectedCombinationMissing:
-        standalone.selectedVariantId === null &&
-        selection.size !== null &&
-        (!standalone.hasColorOptions || selection.color !== null),
+      // Kind → colour → size normalization is for kind-bearing products only; a product without
+      // kinds keeps its existing selection behaviour unchanged.
+      selectedCombinationMissing: false,
     };
   }
 
