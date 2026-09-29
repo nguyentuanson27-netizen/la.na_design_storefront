@@ -585,12 +585,6 @@ export function createPancakeOrderSubmissionService(
       return reject("LOCAL_ORDER_INVALID");
     }
 
-    // The fresher base is only half the answer. A website sale is `resolvePromotionPricing(base,
-    // campaigns)`, so comparing a promoted DRAFT against raw Pancake retail would refuse every
-    // correctly discounted order; and a percentage campaign against a moved base yields a different
-    // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
-    // one resolver, at one instant.
-    const now = readNow();
     // Inside the same pre-write recovery boundary as the live Pancake read below, and for the same
     // reason: the claim has moved the row to `VALIDATING`, but nothing has been sent to Pancake yet.
     // A transient failure resolving promotion candidates is therefore retryable, not fatal. Letting
@@ -694,6 +688,17 @@ export function createPancakeOrderSubmissionService(
     } catch {
       return resetValidation();
     }
+
+    // The fresher base is only half the answer. A website sale is `resolvePromotionPricing(base,
+    // campaigns)`, so comparing a promoted DRAFT against raw Pancake retail would refuse every
+    // correctly discounted order; and a percentage campaign against a moved base yields a different
+    // number that the buyer has not agreed to. Both sides of the comparison therefore go through the
+    // one resolver, at one instant.
+    //
+    // That instant is read only now, after the live Pancake answer is in: a campaign that ends while
+    // the request is in flight must be priced as ended, not by a clock read before it went out.
+    // Campaign *candidates* above are window-independent, so reading them earlier changes nothing.
+    const now = readNow();
 
     const liveByVariationId = new Map<string, PancakeCatalogVariation | null>();
     for (const variation of liveVariations) {
