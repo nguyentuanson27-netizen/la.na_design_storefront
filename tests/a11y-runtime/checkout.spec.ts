@@ -466,7 +466,7 @@ for (const { name, viewport } of [
     expect(confirmed.guestName).toBe("Nguyễn Văn A");
     expect(confirmed.guestPhone).toBe("0901234567");
     expect(confirmed.addressDetail).toBe("12 Đường A");
-    expect(confirmed.publicCode).toMatch(/^LA-/);
+    expect(confirmed.publicCode).toMatch(/^LA-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
 
     // I7 production seam regression: this checkout reaches the real pancake-order-submit
     // confirmation transaction. A future edit that confirms the order but drops the snapshot call
@@ -485,12 +485,16 @@ for (const { name, viewport } of [
     const trackOrderLink = page.getByRole("link", { name: "Tra cứu đơn hàng" });
     await expect(trackOrderLink).toBeVisible();
     await trackOrderLink.click();
-    await expect(page).toHaveURL(`${BASE_URL}/track-order`);
+    // The confirmation hands its code to the lookup, so the buyer only types their phone number.
+    await expect(page).toHaveURL(
+      `${BASE_URL}/track-order?order=${encodeURIComponent(confirmed.publicCode)}`,
+    );
     await expect(page.getByRole("heading", { level: 1, name: "TRA CỨU ĐƠN HÀNG" })).toBeVisible();
+    await expect(page.getByLabel("Mã đơn hàng")).toHaveValue(confirmed.publicCode);
     await assertCheckoutAccessibility(page);
 
-    await page.getByLabel("Mã đơn hàng").fill(confirmed.publicCode);
-    await page.getByLabel("Số điện thoại").fill("0901234567");
+    // Typed the way people read a number aloud; lookup matches on the digits.
+    await page.getByLabel("Số điện thoại").fill("0901 234 567");
     await page.getByRole("button", { name: "Tra cứu đơn hàng" }).click();
 
     const trackingStatus = page.locator('[data-ui-state="success"]');

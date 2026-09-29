@@ -123,7 +123,14 @@ async function pancakeResponse(url, init) {
   }
 
   if (url.pathname === `${API_PREFIX}/shops/${SHOP_ID}/products/variations`) {
-    if (!queryMatches(url, { page_number: "1", page_size: "100" })) {
+    // Checkout reads only the order's own variations through the `variation_ids[]` filter; the
+    // full-catalog page is still answered for any caller that pages the whole shop.
+    const requestedIds = url.searchParams.getAll("variation_ids[]");
+    const targeted = requestedIds.length > 0;
+    const expectedQuery = targeted
+      ? [["page_number", "1"], ["page_size", "100"], ...requestedIds.map((id) => ["variation_ids[]", id])]
+      : { page_number: "1", page_size: "100" };
+    if (!queryMatches(url, expectedQuery)) {
       return json({ error: "unexpected catalog query" }, 400);
     }
     const productId = process.env.PANCAKE_A11Y_PRODUCT_ID;
@@ -132,13 +139,14 @@ async function pancakeResponse(url, init) {
     if (!productId || !variationId || !warehouseId) {
       return json({ error: "missing checkout fixture identity" }, 500);
     }
+    const listed = !targeted || requestedIds.includes(variationId);
     return json({
       success: true,
       page_number: 1,
       page_size: 100,
-      total_entries: 1,
+      total_entries: listed ? 1 : 0,
       total_pages: 1,
-      data: [
+      data: listed ? [
         {
           id: variationId,
           product_id: productId,
@@ -155,7 +163,7 @@ async function pancakeResponse(url, init) {
             { warehouse_id: warehouseId, remain_quantity: 5 },
           ],
         },
-      ],
+      ] : [],
     });
   }
 
