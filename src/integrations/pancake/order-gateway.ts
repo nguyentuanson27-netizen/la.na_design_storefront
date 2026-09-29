@@ -32,6 +32,12 @@ type FetchCompleteCatalog = (input: {
   shopId: number;
 }) => Promise<readonly PancakeCatalogVariation[]>;
 
+type FetchVariationsByIds = (input: {
+  client: PancakeOrderGatewayClient;
+  shopId: number;
+  variationIds: readonly string[];
+}) => Promise<readonly PancakeCatalogVariation[]>;
+
 function requireShopId(value: number): number {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError("Pancake shop id must be a positive safe integer");
@@ -49,6 +55,7 @@ function requireOrderId(value: string): string {
 export function createPancakeOrderGateway(
   client: PancakeOrderGatewayClient,
   fetchCompleteCatalog: FetchCompleteCatalog = fetchAllPancakeCatalogVariations,
+  fetchVariationsByIds: FetchVariationsByIds = fetchPancakeVariationsByIds,
 ) {
   return {
     async fetchCompleteCatalog(shopId: number): Promise<readonly PancakeCatalogVariation[]> {
@@ -80,7 +87,7 @@ export function createPancakeOrderGateway(
       try {
         const pages = await Promise.all(
           chunks.map((chunk) =>
-            fetchPancakeVariationsByIds({ client, shopId: checkedShopId, variationIds: chunk }),
+            fetchVariationsByIds({ client, shopId: checkedShopId, variationIds: chunk }),
           ),
         );
         return pages.flat();

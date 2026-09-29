@@ -91,10 +91,19 @@ test("undocumented successful-looking 2xx create statuses become SYNC_UNKNOWN an
           });
         },
       });
-      const gateway = createPancakeOrderGateway(client, async ({ shopId: requestedShopId }) => {
-        assert.equal(requestedShopId, shopId);
-        return [liveVariation];
-      });
+      const gateway = createPancakeOrderGateway(
+        client,
+        async ({ shopId: requestedShopId }) => {
+          assert.equal(requestedShopId, shopId);
+          return [liveVariation];
+        },
+        // The targeted live read is injected too, so the fake HTTP client only ever sees the create.
+        async ({ shopId: requestedShopId, variationIds }) => {
+          assert.equal(requestedShopId, shopId);
+          assert.deepEqual(variationIds, [liveVariation.id]);
+          return [liveVariation];
+        },
+      );
       const service = createPancakeOrderSubmissionService(prisma, gateway);
 
       assert.deepEqual(await service.submit({ publicCode: order.publicCode, shopId }), {

@@ -135,10 +135,19 @@ test("create-order redirects cannot escape the validated Pancake origin and are 
         apiKey: "test-api-key",
         fetcher: async (_input, init) => fetch(`http://127.0.0.1:${trustedPort}/orders`, init),
       });
-      const gateway = createPancakeOrderGateway(client, async ({ shopId: requestedShopId }) => {
-        assert.equal(requestedShopId, shopId);
-        return [liveVariation];
-      });
+      const gateway = createPancakeOrderGateway(
+        client,
+        async ({ shopId: requestedShopId }) => {
+          assert.equal(requestedShopId, shopId);
+          return [liveVariation];
+        },
+        // The targeted live read is injected too, so the fake HTTP client only ever sees the create.
+        async ({ shopId: requestedShopId, variationIds }) => {
+          assert.equal(requestedShopId, shopId);
+          assert.deepEqual(variationIds, [liveVariation.id]);
+          return [liveVariation];
+        },
+      );
       const service = createPancakeOrderSubmissionService(prisma, gateway);
 
       assert.deepEqual(await service.submit({ publicCode: order.publicCode, shopId }), {
