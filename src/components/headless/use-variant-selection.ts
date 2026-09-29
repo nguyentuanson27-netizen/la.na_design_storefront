@@ -12,6 +12,8 @@ import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-e
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
 import {
+  resolveSelectionAfterColorChange,
+  resolveSelectionAfterKindChange,
   resolveSelectionAfterSizeChange,
   resolveVariantSelectionView,
   type VariantSelectionState,
@@ -97,13 +99,17 @@ export function useVariantSelection({
   }, [entryPrice, productName, slug]);
 
   function chooseKind(value: string) {
-    // Picking a kind restarts the choice: its sizes and colours are its own.
-    setState({ kindKey: value, color: null, size: null });
+    // A kind's colours and sizes are its own: only what still exists in it carries over.
+    setState((current) =>
+      resolveSelectionAfterKindChange({ options, selection: current, kindKey: value }),
+    );
     setMessage("");
   }
 
   function chooseColor(value: string) {
-    setState((current) => ({ ...current, color: value }));
+    setState((current) =>
+      resolveSelectionAfterColorChange({ options, selection: current, color: value }),
+    );
     setMessage("");
   }
 

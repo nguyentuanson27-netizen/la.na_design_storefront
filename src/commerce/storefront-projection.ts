@@ -218,10 +218,30 @@ export function buildStorefrontProductProjection({
     };
   }
 
-  const labelCounts = new Map<string, number>();
+  /*
+   * One kind per logical role, not per source product. Several Pancake products can each be a
+   * `QUẦN LẺ` (one per pants colour, say); they are one choice for the shopper, so their variants
+   * are aggregated under one kind and projected together. Every option still carries its own real
+   * variant id, so the selection resolves to the source SKU the cart and checkout already trust.
+   *
+   * Aggregating is also what keeps a genuine collision fail-closed: two source variants with the
+   * same colour and size inside one kind are marked `AMBIGUOUS_OPTION` by the shared option rule,
+   * rather than one of them being picked.
+   */
+  const mergedComponentGroups = new Map<
+    string,
+    { label: string; variants: Map<string, StorefrontVariantFacts> }
+  >();
   for (const group of componentGroups) {
     const key = normalizedLabelKey(group.label);
-    labelCounts.set(key, (labelCounts.get(key) ?? 0) + 1);
+    let merged = mergedComponentGroups.get(key);
+    if (!merged) {
+      merged = { label: normalizeLabel(group.label), variants: new Map() };
+      mergedComponentGroups.set(key, merged);
+    }
+    for (const variant of group.variants) {
+      if (!merged.variants.has(variant.id)) merged.variants.set(variant.id, variant);
+    }
   }
 
   const resolvedParentLabel =
@@ -256,15 +276,13 @@ export function buildStorefrontProductProjection({
     );
   }
 
-  componentGroups.forEach((group, index) => {
-    const label = normalizeLabel(group.label);
-    const ambiguousLabel = label.length === 0 || (labelCounts.get(normalizedLabelKey(group.label)) ?? 0) > 1;
+  [...mergedComponentGroups.values()].forEach((group, index) => {
     options.push(
       ...projectOptions(
-        group.variants,
+        [...group.variants.values()],
         `component-${index + 1}`,
-        label,
-        ambiguousLabel ? "AMBIGUOUS_OPTION" : null,
+        group.label,
+        group.label.length === 0 ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
         // Deliberately NOT the parent's policy. A component is its own product with its own
         // `ProductSellingPolicy` row, or none, and none means `STANDARD` — so a component this
@@ -321,6 +339,61 @@ function supportsProjectedSelection(
   return true;
 }
 
+/**
+ * The options a kind-bearing selection resolves within, narrowed kind → colour.
+ *
+ * A kind with exactly one colour resolves to it whatever was chosen; a chosen colour the kind does
+ * not have resolves to none. `sizeOptions` are the options the size choice may land on: the chosen
+ * colour's, or the whole kind's while its colour is still open.
+ */
+function resolveKindScope(
+  options: readonly StorefrontProjectionOption[],
+  selection: StorefrontProjectionSelection,
+) {
+  const kindOptions =
+    selection.kindKey === null
+      ? []
+      : options.filter((option) => option.kindKey === selection.kindKey);
+  const kindColors = uniqueValues(kindOptions, "color");
+  const color =
+    kindColors.length === 1
+      ? kindColors[0]!
+      : selection.color !== null && kindColors.includes(selection.color)
+        ? selection.color
+        : null;
+  const sizeOptions =
+    color === null ? kindOptions : kindOptions.filter((option) => option.color === color);
+  return { kindOptions, kindColors, color, sizeOptions };
+}
+
+/**
+ * The selection after the shopper changes kind or colour.
+ *
+ * Every downstream value that no longer exists under the new upstream choice is cleared, a kind's
+ * only colour is chosen for the shopper, and whatever still exists is kept. Existence, not stock:
+ * a sold-out size that exists stays selected so the shopper is told it is sold out, instead of the
+ * choice silently disappearing. A product without kinds is returned unchanged.
+ */
+export function normalizeStorefrontProjectionSelection(
+  options: readonly StorefrontProjectionOption[],
+  selection: StorefrontProjectionSelection,
+): StorefrontProjectionSelection {
+  if (!options.some((option) => option.kindKey !== null)) return selection;
+  if (
+    selection.kindKey === null ||
+    !options.some((option) => option.kindKey === selection.kindKey)
+  ) {
+    return { kindKey: null, color: null, size: null };
+  }
+
+  const { color, sizeOptions } = resolveKindScope(options, selection);
+  const size =
+    selection.size !== null && sizeOptions.some((option) => option.size === selection.size)
+      ? selection.size
+      : null;
+  return { kindKey: selection.kindKey, color, size };
+}
+
 export function deriveStorefrontProjectionSelection(
   options: readonly StorefrontProjectionOption[],
   selection: StorefrontProjectionSelection,
@@ -335,6 +408,11 @@ export function deriveStorefrontProjectionSelection(
       hasKindOptions: false,
       kinds: [] as StorefrontKindChoice[],
       ...standalone,
+      resolvedColor: selection.color,
+      selectedCombinationMissing:
+        standalone.selectedVariantId === null &&
+        selection.size !== null &&
+        (!standalone.hasColorOptions || selection.color !== null),
     };
   }
 
@@ -352,10 +430,7 @@ export function deriveStorefrontProjectionSelection(
     ),
   }));
 
-  const kindOptions =
-    selection.kindKey === null
-      ? []
-      : options.filter((option) => option.kindKey === selection.kindKey);
+  const { kindOptions, kindColors, color, sizeOptions } = resolveKindScope(options, selection);
 
   /*
    * Within a kind, colour comes before size -- the order the panel draws them in (kind, colour,
@@ -363,11 +438,13 @@ export function deriveStorefrontProjectionSelection(
    * kind has a purchasable option in it, whatever size is chosen; the sizes then narrow to the
    * chosen colour. It used to be the other way round -- colour locked until a size was picked --
    * which, once colour sat above size, would have shown a shopper a locked row first.
+   *
+   * A kind with a single colour offers no choice: that colour is resolved for the shopper and the
+   * selector is not drawn.
    */
-  const hasColorOptions =
-    selection.kindKey !== null && kindOptions.some((option) => option.color !== null);
+  const hasColorOptions = kindColors.length > 1;
   const colors: StorefrontValueChoice[] = hasColorOptions
-    ? uniqueValues(kindOptions, "color").map((value) => ({
+    ? kindColors.map((value) => ({
         value,
         disabled: !kindOptions.some((option) =>
           supportsProjectedSelection(option, {
@@ -379,32 +456,27 @@ export function deriveStorefrontProjectionSelection(
       }))
     : [];
 
+  /*
+   * Only sizes that exist for the chosen kind and colour are offered; a size that exists but cannot
+   * be bought is offered disabled. So "this combination does not exist" and "this SKU is sold out"
+   * never look the same. Before a kind is chosen every size is listed, disabled, as the cue that
+   * the kind decides them.
+   */
   const sizes: StorefrontValueChoice[] = uniqueValues(
-    selection.kindKey === null ? options : kindOptions,
+    selection.kindKey === null ? options : sizeOptions,
     "size",
   ).map((value) => ({
     value,
     disabled:
       selection.kindKey === null ||
-      !kindOptions.some((option) =>
-        supportsProjectedSelection(option, {
-          kindKey: selection.kindKey,
-          color: hasColorOptions ? selection.color : null,
-          size: value,
-        }),
-      ),
+      !sizeOptions.some((option) => option.purchasable && option.size === value),
   }));
 
-  const selected =
-    selection.kindKey !== null &&
-    selection.size !== null &&
-    (!hasColorOptions || selection.color !== null)
-      ? kindOptions.find(
-          (option) =>
-            option.size === selection.size &&
-            (hasColorOptions ? option.color === selection.color : option.color === null),
-        ) ?? null
-      : null;
+  const isSelectionComplete =
+    selection.kindKey !== null && selection.size !== null && (!hasColorOptions || color !== null);
+  const selected = isSelectionComplete
+    ? sizeOptions.find((option) => option.size === selection.size && option.color === color) ?? null
+    : null;
 
   return {
     hasKindOptions: true,
@@ -412,6 +484,10 @@ export function deriveStorefrontProjectionSelection(
     hasColorOptions,
     colors,
     sizes,
+    /** The colour the selection resolves with: the shopper's, or the kind's only one. */
+    resolvedColor: color,
+    /** A complete selection that names no real option, as opposed to a real one that is sold out. */
+    selectedCombinationMissing: isSelectionComplete && selected === null,
     selectedVariantId: selected?.id ?? null,
     selectedPrice: selected?.price ?? null,
     selectedBasePriceVnd: selected?.basePriceVnd ?? null,

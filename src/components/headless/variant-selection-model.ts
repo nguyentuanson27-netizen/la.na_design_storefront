@@ -2,7 +2,9 @@ import { formatVietnamCalendarDate } from "../../commerce/availability-cycle.ts"
 import { PREORDER_LABEL } from "../../commerce/preorder-fulfillment-presentation.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
 import {
+  COMPOSITE_PARENT_KIND_KEY,
   deriveStorefrontProjectionSelection,
+  normalizeStorefrontProjectionSelection,
   type StorefrontProjectionOption,
 } from "../../commerce/storefront-projection.ts";
 import { getStorefrontResolvedPriceRange } from "../../commerce/storefront-product.ts";
@@ -81,6 +83,30 @@ const QUICK_ADD_NAMES = {
  */
 export const KIND_SELECTION_GUIDANCE = "Nàng chọn phân loại trước để xem size còn hàng";
 
+/** A complete selection that names no real option -- distinct from a real option that is sold out. */
+export const MISSING_COMBINATION_MESSAGE = "Không có lựa chọn này. Vui lòng chọn lại.";
+
+const DEFAULT_COLOR_DIMENSION_LABEL = "Màu";
+
+/**
+ * What the colour axis means depends on the kind being bought, not on the product: on the set it
+ * is the pants that come with it, on the loose pants it is the pants themselves, and on any other
+ * kind (a loose top, a skirt) it is never a pants colour. Before a kind is chosen, and on a product
+ * without kinds, the product-level label stands.
+ */
+function resolveColorDimensionLabel(
+  options: readonly StorefrontProjectionOption[],
+  kindKey: string | null,
+  productLabel: string,
+): string {
+  if (kindKey === null) return productLabel;
+  if (kindKey === COMPOSITE_PARENT_KIND_KEY) return "Màu quần đi kèm";
+  const kindLabel = options.find((option) => option.kindKey === kindKey)?.kindLabel ?? "";
+  return kindLabel.normalize("NFC").trim().toLocaleUpperCase("vi") === "QUẦN LẺ"
+    ? "Màu quần"
+    : DEFAULT_COLOR_DIMENSION_LABEL;
+}
+
 export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
   const selection = deriveStorefrontProjectionSelection(input.options, input.selection);
   const hasColorDimension = input.options.some((option) => option.color !== null);
@@ -116,7 +142,9 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
       ? selection.selectedUnavailableReason === "OUT_OF_STOCK"
         ? "Lựa chọn này đã hết hàng."
         : "Lựa chọn này hiện chưa mua được."
-      : "";
+      : selection.selectedCombinationMissing
+        ? MISSING_COMBINATION_MESSAGE
+        : "";
 
   /**
    * F8a / master spec §30 — the preorder facts for the option the shopper has actually selected.
@@ -193,8 +221,12 @@ export function resolveVariantSelectionView(input: VariantSelectionViewInput) {
     initialDiscount,
     /** Lowest resolvable price, for the ViewContent pixel. `null` rather than 0 when unresolved. */
     entryPrice: getStorefrontResolvedPriceRange(input.options)?.minimum ?? null,
-    /** Custom or default label for the color dimension (e.g. "Màu quần" or "Màu"). */
-    colorDimensionLabel: input.colorDimensionLabel ?? "Màu",
+    /** The colour axis label for the chosen kind (e.g. "Màu quần đi kèm", "Màu quần" or "Màu"). */
+    colorDimensionLabel: resolveColorDimensionLabel(
+      input.options,
+      input.selection.kindKey,
+      input.colorDimensionLabel ?? DEFAULT_COLOR_DIMENSION_LABEL,
+    ),
     /**
      * I9 — the selected variant's `Dự kiến có hàng` date as the shopper reads it, or `null`.
      *
@@ -240,6 +272,37 @@ export function resolveSelectionAfterSizeChange(input: {
   });
 }
 
+/**
+ * The selection after the shopper picks a kind: the colour and size carry over only while they
+ * still exist in that kind, and a kind with a single colour has it chosen for the shopper.
+ */
+export function resolveSelectionAfterKindChange(input: {
+  options: readonly StorefrontProjectionOption[];
+  selection: VariantSelectionState;
+  kindKey: string;
+}): VariantSelectionState {
+  return Object.freeze(
+    normalizeStorefrontProjectionSelection(input.options, {
+      ...input.selection,
+      kindKey: input.kindKey,
+    }),
+  );
+}
+
+/** The selection after the shopper picks a colour: a size that colour does not come in is cleared. */
+export function resolveSelectionAfterColorChange(input: {
+  options: readonly StorefrontProjectionOption[];
+  selection: VariantSelectionState;
+  color: string;
+}): VariantSelectionState {
+  return Object.freeze(
+    normalizeStorefrontProjectionSelection(input.options, {
+      ...input.selection,
+      color: input.color,
+    }),
+  );
+}
+
 
 /**
  * Presentation-only state for the below-lg sticky purchase entry point.
@@ -256,9 +319,15 @@ export function resolveMobilePurchasePresentation(
   readyToAdd: boolean;
   unavailableMessage: string;
 }> {
+  // Once a kind is chosen it decides whether a colour is still to pick; before that, the product
+  // shape does.
+  const asksForColor =
+    view.hasKindOptions && selection.kindKey !== null
+      ? view.hasColorOptions
+      : view.hasColorDimension;
   const dimensionLabels = [
     view.hasKindOptions ? "phân loại" : null,
-    view.hasColorDimension ? (view.colorDimensionLabel ? view.colorDimensionLabel.toLowerCase() : "màu") : null,
+    asksForColor ? view.colorDimensionLabel.toLowerCase() : null,
     view.hasSizeDimension ? "size" : null,
   ].filter((value): value is string => value !== null);
 
@@ -269,7 +338,7 @@ export function resolveMobilePurchasePresentation(
 
   const selectedValues = [
     view.hasKindOptions ? selectedKind : null,
-    view.hasColorDimension ? selection.color : null,
+    view.hasColorDimension ? view.resolvedColor : null,
     view.hasSizeDimension ? selection.size : null,
   ].filter((value): value is string => value !== null);
 

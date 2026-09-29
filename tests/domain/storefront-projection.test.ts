@@ -177,10 +177,8 @@ test("within a kind, colour is chosen before size and the sizes narrow to that c
     color: "Xanh",
     size: null,
   });
-  assert.deepEqual(blue.sizes, [
-    { value: "M", disabled: false },
-    { value: "L", disabled: true },
-  ]);
+  // L does not exist in Xanh, so it is not offered at all -- not offered as sold out.
+  assert.deepEqual(blue.sizes, [{ value: "M", disabled: false }]);
   assert.equal(blue.canAdd, false);
 
   const blueM = deriveStorefrontProjectionSelection(projection.options, {
@@ -209,7 +207,7 @@ test("composite projection does not infer or synthesize component identity", () 
   assert.equal(ids.some((id) => id.includes("synthetic")), false);
 });
 
-test("duplicate component labels fail closed instead of presenting indistinguishable purchasable kinds", () => {
+test("component groups sharing a label are one kind, and an indistinguishable pair inside it fails closed", () => {
   const projection = buildStorefrontProductProjection({
     parentVariants: [variant("set-m", "M")],
     componentGroups: [
@@ -221,6 +219,11 @@ test("duplicate component labels fail closed instead of presenting indistinguish
 
   const components = projection.options.filter((option) => option.kindKey !== "parent");
   assert.equal(components.length, 2);
+  assert.deepEqual(
+    [...new Set(components.map((option) => option.kindKey))],
+    ["component-1"],
+    "one kind, not one per source product",
+  );
   assert.equal(components.every((option) => option.purchasable === false), true);
   assert.equal(
     components.every((option) => option.unavailableReason === "AMBIGUOUS_OPTION"),
