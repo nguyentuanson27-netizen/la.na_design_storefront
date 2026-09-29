@@ -25,6 +25,14 @@ import type { TrackingEvent } from "../tracking/commerce-events.ts";
  * hand, must not be able to put an untrusted host in front of a shopper.
  */
 
+/**
+ * The fragment that lands a shopper on a collection's products instead of its full-bleed hero.
+ *
+ * The homepage hero's MUA NGAY link carries it: the shopper has just seen the campaign image, so
+ * arriving on a second screen-filling copy of it before any product would be a wasted scroll.
+ */
+export const COLLECTION_PRODUCTS_ANCHOR = "san-pham";
+
 export type CollectionProduct = Readonly<{
   id: string;
   slug: string;
