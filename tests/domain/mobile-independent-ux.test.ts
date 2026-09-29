@@ -123,8 +123,8 @@ test("mobile independent UX: PDP compact amendment keeps responsive density and 
   assert.match(panel, /function renderSelectorLegend/);
   assert.match(panel, /renderSelectorLegend\("Loại", selectedKindLabel\)/);
   assert.match(panel, /renderSelectorLegend\("Kích cỡ", selection\.size\)/);
-  // The colour legend defaults to "Màu" and takes a product's own dimension label when it has one
-  // (SD007 and SD023 read "Màu quần"). The exact expression is pinned rather than any legend that
+  // The colour legend defaults to "Màu" and takes the view's dimension label, which follows the
+  // chosen kind ("Màu quần đi kèm", "Màu quần"). The exact expression is pinned rather than any legend that
   // mentions "Màu": a literal `renderSelectorLegend("Màu", ...)` would still contain "Màu" and
   // silently drop every product's own label.
   assert.match(panel, /renderSelectorLegend\(view\.colorDimensionLabel \?\? "Màu", selection\.color\)/);

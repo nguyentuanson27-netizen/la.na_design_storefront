@@ -466,10 +466,10 @@ test("a product with kind, colour and size draws them in that order on both surf
   await page.goto(`${BASE_URL}/shop/${colourSetSlug}`, { waitUntil: "networkidle" });
   const panel = page.getByRole("region", { name: "Mua sản phẩm" });
   await panel.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
-  await expect.poll(() => legendsIn(panel)).toEqual(["Loại", "Màu", "Kích cỡ"]);
-  // Colour first, then the sizes that colour comes in.
+  await expect.poll(() => legendsIn(panel)).toEqual(["Loại", "Màu quần đi kèm", "Kích cỡ"]);
+  // Colour first, then only the sizes that colour comes in.
   await panel.getByRole("group", { name: /^Màu/ }).getByText("Xanh", { exact: true }).click();
-  await expect(panel.getByRole("radio", { name: "L", exact: true })).toBeDisabled();
+  await expect(panel.getByRole("radio", { name: "L", exact: true })).toHaveCount(0);
   await panel.getByRole("group", { name: /^Kích cỡ/ }).getByText("M", { exact: true }).click();
   await expect(panel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeEnabled();
 
@@ -479,7 +479,7 @@ test("a product with kind, colour and size draws them in that order on both surf
   const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
   await expect(sheet).toBeVisible();
   await sheet.getByRole("group", { name: "Loại", exact: true }).getByText("FULL SET", { exact: true }).click();
-  await expect.poll(() => legendsIn(sheet)).toEqual(["Loại", "Màu", "Kích cỡ"]);
+  await expect.poll(() => legendsIn(sheet)).toEqual(["Loại", "Màu quần đi kèm", "Kích cỡ"]);
 });
 
 test("composite activation opens and closes the real child purchase path while parent schema stays authoritative", async ({
@@ -601,12 +601,18 @@ test("composite activation opens and closes the real child purchase path while p
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
 
+  const sizeM = page.getByRole("radio", { name: "M", exact: true });
+
   async function selectAndAdd(kindLabel: string, variantId: string, keepInCart = false) {
+    // A size chosen under the previous kind carries over while the new kind still has it.
+    const carriesSize = await sizeM.isChecked();
     await page.getByText(kindLabel, { exact: true }).click();
     await expect(page.getByRole("radio", { name: kindLabel })).toBeChecked();
     await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-    await page.getByText("M", { exact: true }).click();
-    await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
+    if (carriesSize) await expect(sizeM).toBeChecked();
+    // The chip's own label, not page text: the size legend also reads "M" once one is chosen.
+    await page.locator("label").filter({ has: sizeM }).click();
+    await expect(sizeM).toBeChecked();
     await expect(addToBag).toBeEnabled();
     await addToBag.click();
     await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
