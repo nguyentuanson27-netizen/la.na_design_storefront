@@ -601,12 +601,18 @@ test("composite activation opens and closes the real child purchase path while p
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
   await expect(addToBag).toBeDisabled();
 
+  const sizeM = page.getByRole("radio", { name: "M", exact: true });
+
   async function selectAndAdd(kindLabel: string, variantId: string, keepInCart = false) {
+    // A size chosen under the previous kind carries over while the new kind still has it.
+    const carriesSize = await sizeM.isChecked();
     await page.getByText(kindLabel, { exact: true }).click();
     await expect(page.getByRole("radio", { name: kindLabel })).toBeChecked();
     await expect(page.getByRole("group", { name: "Màu" })).toHaveCount(0);
-    await page.getByText("M", { exact: true }).click();
-    await expect(page.getByRole("radio", { name: "M" })).toBeChecked();
+    if (carriesSize) await expect(sizeM).toBeChecked();
+    // The chip's own label, not page text: the size legend also reads "M" once one is chosen.
+    await page.locator("label").filter({ has: sizeM }).click();
+    await expect(sizeM).toBeChecked();
     await expect(addToBag).toBeEnabled();
     await addToBag.click();
     await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
