@@ -127,7 +127,7 @@ function recordingGateway(
   variation: PancakeCatalogVariation | null,
 ) {
   return {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       events.push("catalog");
       if (!variation) throw new Error("catalog unavailable");
       return [variation];

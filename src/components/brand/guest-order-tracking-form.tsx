@@ -14,6 +14,8 @@ import { GuestOrderTrackingForm } from "@/components/commerce/guest-order-tracki
  * brand restyling the lookup should change the shared form's markup rather than fork the workflow.
  */
 
-export function BrandGuestOrderTrackingForm() {
-  return <GuestOrderTrackingForm />;
+export function BrandGuestOrderTrackingForm(
+  props: Readonly<{ defaultOrderCode?: string | null }>,
+) {
+  return <GuestOrderTrackingForm {...props} />;
 }

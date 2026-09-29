@@ -247,7 +247,7 @@ test("P8 retry refresh mutates the same DRAFT identity and atomically replaces s
   const firstOrder = await readDraft(publicCode);
 
   const unavailable = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       throw new Error("temporary validation transport failure");
     },
     async createOrder() {

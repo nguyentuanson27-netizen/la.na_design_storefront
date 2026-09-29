@@ -153,7 +153,7 @@ function gatewayWithFreshBase(variationId: string, productId: string, freshBaseV
   return {
     created,
     gateway: {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         return [liveVariation(variationId, productId, freshBaseVnd)];
       },
       async createOrder(request: unknown) {
@@ -333,7 +333,7 @@ test("P9b the write-back records Pancake's own after-discount, not a copy of the
 
   const created: unknown[] = [];
   const result = await submissionService({
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 600_000, 550_000)];
     },
     async createOrder(request: unknown) {

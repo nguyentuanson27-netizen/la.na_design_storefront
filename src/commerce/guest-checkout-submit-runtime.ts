@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import { readAuthServerConfig } from "../auth/config.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
@@ -17,6 +15,7 @@ import {
   type RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
 import { recoverStrandedGuestCheckoutForCart } from "./guest-checkout-recovery.ts";
+import { generateOrderPublicCode } from "./order-public-code.ts";
 import {
   createGuestCheckoutSnapshotService,
   requiresFreshGuestCheckoutSnapshot,
@@ -109,7 +108,7 @@ export function createGuestCheckoutSubmitRuntime(
   const recoverStranded =
     options.recoverStranded ??
     (({ cartId, now }) => recoverStrandedGuestCheckoutForCart(prisma, cartId, now));
-  const generatePublicCode = options.generatePublicCode ?? (() => `LA-${randomUUID()}`);
+  const generatePublicCode = options.generatePublicCode ?? generateOrderPublicCode;
   const readQuoteProofSecret =
     options.readQuoteProofSecret ?? (() => readAuthServerConfig().secret);
   const clock = options.clock ?? (() => new Date());

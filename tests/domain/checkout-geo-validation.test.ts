@@ -65,20 +65,20 @@ test("checkout geo validation accepts only an exact hierarchy and returns normal
   assert.deepEqual(calls, ["provinces", "districts:101", "communes:101:10113"]);
 });
 
-test("checkout geo validation stops at the first unknown hierarchy level", async () => {
+test("checkout geo validation reads every level together but judges them top-down", async () => {
   const unknownProvince = createDependencies({ provinces: [] });
   assert.deepEqual(
     await validateCheckoutGeoSelection(unknownProvince.dependencies, rawInput),
     { ok: false, reason: "INVALID_INPUT" },
   );
-  assert.deepEqual(unknownProvince.calls, ["provinces"]);
+  assert.deepEqual(unknownProvince.calls, ["provinces", "districts:101", "communes:101:10113"]);
 
   const unknownDistrict = createDependencies({ districts: [] });
   assert.deepEqual(
     await validateCheckoutGeoSelection(unknownDistrict.dependencies, rawInput),
     { ok: false, reason: "INVALID_INPUT" },
   );
-  assert.deepEqual(unknownDistrict.calls, ["provinces", "districts:101"]);
+  assert.deepEqual(unknownDistrict.calls, ["provinces", "districts:101", "communes:101:10113"]);
 
   const unknownCommune = createDependencies({ communes: [] });
   assert.deepEqual(
@@ -116,4 +116,44 @@ test("geo dependency failures propagate instead of being misclassified as invali
     () => validateCheckoutGeoSelection(dependencies, rawInput),
     (error: unknown) => error === outage,
   );
+});
+
+test("an unknown province is invalid input even when reads below it fail", async () => {
+  const dependencies = {
+    async loadProvinces() {
+      return [{ id: "999", name: "Elsewhere" }] as never;
+    },
+    async loadDistricts(): Promise<never> {
+      throw new Error("Pancake refused the unknown province id");
+    },
+    async loadCommunes(): Promise<never> {
+      throw new Error("Pancake refused the unknown district id");
+    },
+  };
+
+  assert.deepEqual(await validateCheckoutGeoSelection(dependencies, rawInput), {
+    ok: false,
+    reason: "INVALID_INPUT",
+  });
+});
+
+test("checkout geo reads run concurrently rather than one after another", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  async function read<T>(value: T): Promise<T> {
+    inFlight += 1;
+    peak = Math.max(peak, inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    inFlight -= 1;
+    return value;
+  }
+  const dependencies = {
+    loadProvinces: () => read([{ id: "101", name: "Hà Nội" }] as never),
+    loadDistricts: () => read([{ id: "10113", name: "Cầu Giấy", provinceId: "101" }] as never),
+    loadCommunes: () =>
+      read([{ id: "1011309", name: "Dịch Vọng", provinceId: "101", districtId: "10113" }] as never),
+  };
+
+  assert.equal((await validateCheckoutGeoSelection(dependencies, rawInput)).ok, true);
+  assert.equal(peak, 3);
 });

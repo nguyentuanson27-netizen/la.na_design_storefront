@@ -96,7 +96,7 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   let createCalls = 0;
 
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog(requestShopId) {
+    async fetchVariations(requestShopId) {
       assert.equal(requestShopId, shopId);
       return [liveVariation()];
     },
@@ -132,7 +132,7 @@ test("submission rejects mismatched or unproven Pancake shop scope before any ex
     let fetchCalls = 0;
     let createCalls = 0;
     const service = createPancakeOrderSubmissionService(prisma, {
-      async fetchCompleteCatalog() {
+      async fetchVariations() {
         fetchCalls += 1;
         return [liveVariation()];
       },
@@ -163,7 +163,7 @@ test("stock drift is rejected outright before Pancake order creation", async () 
   const order = await createDraft(key);
   let createCalls = 0;
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation({ stock: 1 })];
     },
     async createOrder() {
@@ -188,7 +188,7 @@ test("price drift returns the order to a reconfirmable DRAFT instead of killing 
   const order = await createDraft(key);
   let createCalls = 0;
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation({ price: 510_000 })];
     },
     async createOrder() {
@@ -220,7 +220,7 @@ test("pre-write validation transport failure safely returns to DRAFT and may be 
   let createCalls = 0;
 
   const unavailable = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       throw new Error("transport unavailable");
     },
     async createOrder() {
@@ -241,7 +241,7 @@ test("pre-write validation transport failure safely returns to DRAFT and may be 
   assert.equal(afterFailure.syncErrorCode, "VALIDATION_UNAVAILABLE");
 
   const healthy = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation()];
     },
     async createOrder() {
@@ -263,7 +263,7 @@ test("ambiguous POST outcome becomes SYNC_UNKNOWN and is never posted again", as
   const order = await createDraft(key);
   let createCalls = 0;
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation()];
     },
     async createOrder() {
@@ -293,7 +293,7 @@ test("malformed HTTP-success identity becomes SYNC_UNKNOWN without a second POST
   const order = await createDraft(key);
   let createCalls = 0;
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation()];
     },
     async createOrder() {
@@ -322,7 +322,7 @@ test("concurrent submitters cannot issue two Pancake order POSTs", async () => {
   });
 
   const service = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation()];
     },
     async createOrder() {

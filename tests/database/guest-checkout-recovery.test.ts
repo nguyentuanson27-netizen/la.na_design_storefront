@@ -105,7 +105,7 @@ test("stale VALIDATING is rejected, stale POS_SUBMITTING becomes SYNC_UNKNOWN, a
   let fetchCalls = 0;
   let createCalls = 0;
   const submission = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       fetchCalls += 1;
       return [];
     },

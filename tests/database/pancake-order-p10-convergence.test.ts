@@ -172,7 +172,7 @@ test("P10 regression 1: price-change comparison evaluates fresh effective quote 
 
   const createdRequests: unknown[] = [];
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       // Pancake reports raw catalog base 500_000.
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 500_000)];
     },
@@ -217,7 +217,7 @@ test("P10 regression 2: line total, subtotal, shipping and order total derive st
 
   let capturedRequest: PancakeCreateOrderRequest | null = null;
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 550_000, 10)];
     },
     async createOrder(request: unknown) {
@@ -271,7 +271,7 @@ test("P10 regression 3: outbound Pancake request sends finalized effective unitP
   let capturedRequest: PancakeCreateOrderRequest | null = null;
   let createOrderCalls = 0;
   const gateway = {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       // Fresh catalog base = 500_000, sellableStock = 7
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 500_000, 7)];
     },

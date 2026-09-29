@@ -11,9 +11,7 @@ import { buildTrackOrderMetadata } from "@/routes/metadata/track-order";
 
 /** The order-lookup page's markup. The lookup itself is the form's server action. */
 
-// The view model is empty, so the render prop takes nothing: naming an argument it never reads
-// would only invite someone to start reading one.
-function render() {
+function render(data: TrackOrderViewModel) {
   return (
     <PageShell>
       <PageBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Tra cứu đơn hàng" }]} />
@@ -29,7 +27,7 @@ function render() {
           </p>
         </div>
 
-        <BrandGuestOrderTrackingForm />
+        <BrandGuestOrderTrackingForm defaultOrderCode={data.prefilledOrderCode} />
       </div>
     </PageShell>
   );

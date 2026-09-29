@@ -27,7 +27,14 @@ function render(data: CheckoutSuccessViewModel) {
           <div role="status">
             <p className="font-display text-xl md:text-2xl">Cảm ơn bạn đã đặt hàng.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Mã đơn <strong className="font-semibold text-black">{data.orderCode}</strong>. {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
+              Mã đơn{" "}
+              <strong className="whitespace-nowrap text-lg font-semibold tracking-[0.08em] text-black">
+                {data.orderCode}
+              </strong>
+              . {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
+            </p>
+            <p className="mt-2 text-sm leading-6 text-black/75">
+              Bạn có thể tra cứu đơn bất cứ lúc nào bằng mã đơn này và số điện thoại đặt hàng.
             </p>
           </div>
         ) : (
@@ -45,7 +52,14 @@ function render(data: CheckoutSuccessViewModel) {
 
         <div className="mt-8 flex flex-wrap items-center gap-4">
           {data.confirmed ? (
-            <Link className="btn btn--primary" href="/track-order">
+            <Link
+              className="btn btn--primary"
+              href={
+                data.orderCode
+                  ? `/track-order?order=${encodeURIComponent(data.orderCode)}`
+                  : "/track-order"
+              }
+            >
               Tra cứu đơn hàng
             </Link>
           ) : null}

@@ -114,7 +114,7 @@ async function makeRetryableDraft({ suffix, variantId }: { suffix: string; varia
   if (!first.ok) throw new Error("test setup must create the initial checkout snapshot");
 
   const unavailable = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       throw new Error("temporary validation transport failure");
     },
     async createOrder() {
@@ -180,7 +180,7 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
 
   let request: PancakeCreateOrderRequest | undefined;
   const healthy = createPancakeOrderSubmissionService(prisma, {
-    async fetchCompleteCatalog() {
+    async fetchVariations() {
       return [
         liveVariation(variantA.pancakeVariationId, productA.pancakeProductId, 400_000),
         liveVariation(variantB.pancakeVariationId, productB.pancakeProductId, 650_000),
