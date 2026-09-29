@@ -38,7 +38,17 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "error",
       title: "Kiểm tra lại thông tin",
-      message: "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại đầy đủ tỉnh/thành, quận/huyện và phường/xã.",
+      message: "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại tỉnh/thành phố và phường/xã, rồi kiểm tra số nhà, tên đường.",
+      mayRetry: true,
+    },
+  );
+
+  assert.deepEqual(
+    checkoutSubmitFeedback({ ok: false, status: "RETRYABLE", reason: "INVALID_PHONE" }),
+    {
+      tone: "error",
+      title: "Số điện thoại chưa đúng",
+      message: "Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678.",
       mayRetry: true,
     },
   );

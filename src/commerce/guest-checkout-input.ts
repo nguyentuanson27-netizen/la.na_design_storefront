@@ -1,10 +1,17 @@
+import { normalizeVietnamPhone } from "./vietnam-phone.ts";
+
 const MAX_GUEST_CHECKOUT_TEXT_LENGTH = 2_048;
 
 type GuestCheckoutValue = {
   name: string;
+  /** National form, e.g. `0912345678` — see `vietnam-phone.ts`. */
   phone: string;
+  /**
+   * The post-2025 two-level address: a province and a ward/commune inside it, no district. The
+   * field is kept (always `null` for new checkouts) so an order row still says which shape it is.
+   */
   provinceRef: string;
-  districtRef: string;
+  districtRef: null;
   communeRef: string;
   detail: string;
   note: string | null;
@@ -12,7 +19,7 @@ type GuestCheckoutValue = {
 
 type GuestCheckoutInputResult =
   | { ok: true; value: GuestCheckoutValue }
-  | { ok: false; reason: "INVALID_INPUT" };
+  | { ok: false; reason: "INVALID_INPUT" | "INVALID_PHONE" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45,15 +52,18 @@ export function parseGuestCheckoutInput(input: unknown): GuestCheckoutInputResul
   }
 
   const name = parseRequiredText(input.name);
-  const phone = parseRequiredText(input.phone);
+  const typedPhone = parseRequiredText(input.phone);
   const provinceRef = parseRequiredText(input.provinceRef);
-  const districtRef = parseRequiredText(input.districtRef);
   const communeRef = parseRequiredText(input.communeRef);
   const detail = parseRequiredText(input.detail);
   const note = parseOptionalNote(input.note);
 
-  if (!name || !phone || !provinceRef || !districtRef || !communeRef || !detail || !note.ok) {
+  if (!name || !typedPhone || !provinceRef || !communeRef || !detail || !note.ok) {
     return { ok: false, reason: "INVALID_INPUT" };
+  }
+  const phone = normalizeVietnamPhone(typedPhone);
+  if (!phone) {
+    return { ok: false, reason: "INVALID_PHONE" };
   }
 
   return {
@@ -62,7 +72,7 @@ export function parseGuestCheckoutInput(input: unknown): GuestCheckoutInputResul
       name,
       phone,
       provinceRef,
-      districtRef,
+      districtRef: null,
       communeRef,
       detail,
       note: note.value,

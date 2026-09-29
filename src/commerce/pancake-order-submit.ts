@@ -571,7 +571,8 @@ export function createPancakeOrderSubmissionService(
       !isNormalizedNonEmptyString(order.guestName) ||
       !isNormalizedNonEmptyString(order.guestPhone) ||
       !isNormalizedNonEmptyString(order.provinceRef) ||
-      !isNormalizedNonEmptyString(order.districtRef) ||
+      // `null` is the two-level address; a legacy three-level draft still carries a district.
+      !(order.districtRef === null || isNormalizedNonEmptyString(order.districtRef)) ||
       !isNormalizedNonEmptyString(order.communeRef) ||
       !isNormalizedNonEmptyString(order.addressDetail) ||
       !isNormalizedOptionalString(order.note) ||

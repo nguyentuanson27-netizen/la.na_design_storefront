@@ -1,8 +1,4 @@
-import type {
-  PancakeCommune,
-  PancakeDistrict,
-  PancakeProvince,
-} from "../integrations/pancake/geo.ts";
+import type { CheckoutCommune, CheckoutProvince } from "./checkout-geo.ts";
 
 type CheckoutGeoPublicFailure = Readonly<{
   ok: false;
@@ -20,9 +16,8 @@ export type CheckoutGeoPublicResult<T> =
 
 type CheckoutGeoPublicDependencies = Readonly<{
   allowRead(): Promise<boolean>;
-  loadProvinces(): Promise<PancakeProvince[]>;
-  loadDistricts(provinceId: unknown): Promise<PancakeDistrict[]>;
-  loadCommunes(provinceId: unknown, districtId: unknown): Promise<PancakeCommune[]>;
+  loadProvinces(): Promise<CheckoutProvince[]>;
+  loadCommunes(provinceId: unknown): Promise<CheckoutCommune[]>;
 }>;
 
 const GEO_UNAVAILABLE: CheckoutGeoPublicFailure = Object.freeze({
@@ -51,21 +46,11 @@ export function createCheckoutGeoPublicActions(
   dependencies: CheckoutGeoPublicDependencies,
 ) {
   return {
-    provinces(): Promise<CheckoutGeoPublicResult<PancakeProvince>> {
+    provinces(): Promise<CheckoutGeoPublicResult<CheckoutProvince>> {
       return safeRead(dependencies, () => dependencies.loadProvinces());
     },
-    districts(
-      provinceId: unknown,
-    ): Promise<CheckoutGeoPublicResult<PancakeDistrict>> {
-      return safeRead(dependencies, () => dependencies.loadDistricts(provinceId));
-    },
-    communes(
-      provinceId: unknown,
-      districtId: unknown,
-    ): Promise<CheckoutGeoPublicResult<PancakeCommune>> {
-      return safeRead(dependencies, () =>
-        dependencies.loadCommunes(provinceId, districtId),
-      );
+    communes(provinceId: unknown): Promise<CheckoutGeoPublicResult<CheckoutCommune>> {
+      return safeRead(dependencies, () => dependencies.loadCommunes(provinceId));
     },
   };
 }

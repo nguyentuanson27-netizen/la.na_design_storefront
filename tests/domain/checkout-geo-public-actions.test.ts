@@ -4,20 +4,12 @@ import test from "node:test";
 import { createCheckoutGeoPublicActions } from "../../src/commerce/checkout-geo-public-actions.ts";
 
 const provinces = [
-  { id: "101", name: "Hà Nội" },
-  { id: "201", name: "Hà Nội cũ" },
+  { id: "84_VN101", name: "Thành phố Hà Nội" },
+  { id: "84_VN701", name: "Thành phố Hồ Chí Minh" },
 ];
-const districts = [{ id: "10113", name: "Quận Cầu Giấy", provinceId: "101" }];
-const communes = [
-  {
-    id: "1011309",
-    name: "Phường Dịch Vọng",
-    provinceId: "101",
-    districtId: "10113",
-  },
-];
+const communes = [{ id: "84_VN10105", name: "Phường Cầu Giấy", provinceId: "84_VN101" }];
 
-test("checkout geo public actions authorize each read, return allowlisted options, and preserve parent ids", async () => {
+test("checkout geo public actions authorize each read, return allowlisted options, and preserve the parent id", async () => {
   const calls: unknown[] = [];
   const dependencies = {
     allowRead: async () => {
@@ -25,27 +17,16 @@ test("checkout geo public actions authorize each read, return allowlisted option
       return true;
     },
     loadProvinces: async () => provinces,
-    loadDistricts: async (provinceId: unknown) => {
-      calls.push(["districts", provinceId]);
-      return districts;
-    },
-    loadCommunes: async (provinceId: unknown, districtId: unknown) => {
-      calls.push(["communes", provinceId, districtId]);
+    loadCommunes: async (provinceId: unknown) => {
+      calls.push(["communes", provinceId]);
       return communes;
     },
   };
   const actions = createCheckoutGeoPublicActions(dependencies);
 
   assert.deepEqual(await actions.provinces(), { ok: true, options: provinces });
-  assert.deepEqual(await actions.districts("101"), { ok: true, options: districts });
-  assert.deepEqual(await actions.communes("101", "10113"), { ok: true, options: communes });
-  assert.deepEqual(calls, [
-    ["allow"],
-    ["allow"],
-    ["districts", "101"],
-    ["allow"],
-    ["communes", "101", "10113"],
-  ]);
+  assert.deepEqual(await actions.communes("84_VN101"), { ok: true, options: communes });
+  assert.deepEqual(calls, [["allow"], ["allow"], ["communes", "84_VN101"]]);
 });
 
 test("checkout geo public actions fail closed with one fixed browser reason", async () => {
@@ -55,20 +36,13 @@ test("checkout geo public actions fail closed with one fixed browser reason", as
     loadProvinces: async () => {
       throw new Error(`network failed with ${secret}`);
     },
-    loadDistricts: async () => {
-      throw new Error(`bad parent ${secret}`);
-    },
     loadCommunes: async () => {
       throw new Error(`malformed response ${secret}`);
     },
   };
   const actions = createCheckoutGeoPublicActions(dependencies);
 
-  for (const result of [
-    await actions.provinces(),
-    await actions.districts("101"),
-    await actions.communes("101", "10113"),
-  ]) {
+  for (const result of [await actions.provinces(), await actions.communes("84_VN101")]) {
     assert.deepEqual(result, { ok: false, reason: "GEO_UNAVAILABLE" });
     assert.equal(JSON.stringify(result).includes(secret), false);
   }
@@ -82,10 +56,6 @@ test("checkout geo public actions deny rate-limited reads before Pancake loaders
       upstreamCalls += 1;
       return provinces;
     },
-    loadDistricts: async () => {
-      upstreamCalls += 1;
-      return districts;
-    },
     loadCommunes: async () => {
       upstreamCalls += 1;
       return communes;
@@ -94,8 +64,7 @@ test("checkout geo public actions deny rate-limited reads before Pancake loaders
   const actions = createCheckoutGeoPublicActions(dependencies);
 
   assert.deepEqual(await actions.provinces(), { ok: false, reason: "GEO_UNAVAILABLE" });
-  assert.deepEqual(await actions.districts("101"), { ok: false, reason: "GEO_UNAVAILABLE" });
-  assert.deepEqual(await actions.communes("101", "10113"), {
+  assert.deepEqual(await actions.communes("84_VN101"), {
     ok: false,
     reason: "GEO_UNAVAILABLE",
   });

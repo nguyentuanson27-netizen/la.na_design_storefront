@@ -1,12 +1,15 @@
 import {
-  listPancakeCommunes,
-  listPancakeDistricts,
-  listPancakeProvinces,
+  listPancakeNewCommunes,
+  listPancakeNewProvinces,
   PancakeGeoContractError,
-  type PancakeCommune,
-  type PancakeDistrict,
-  type PancakeProvince,
+  type PancakeNewCommune,
+  type PancakeNewProvince,
 } from "../integrations/pancake/geo.ts";
+
+/**
+ * The address hierarchy checkout offers: the post-2025 two levels, province → ward/commune.
+ * The street and house number are typed by the buyer.
+ */
 
 type QueryValue = string | number | boolean;
 
@@ -17,6 +20,9 @@ type CheckoutGeoReadableClient = {
   ): Promise<unknown>;
 };
 
+export type CheckoutProvince = PancakeNewProvince;
+export type CheckoutCommune = PancakeNewCommune;
+
 function requireParentId(value: unknown): string {
   if (typeof value !== "string") {
     throw new PancakeGeoContractError("INVALID_GEO_QUERY");
@@ -26,29 +32,13 @@ function requireParentId(value: unknown): string {
 
 export async function loadCheckoutProvinces(
   client: CheckoutGeoReadableClient,
-): Promise<PancakeProvince[]> {
-  return listPancakeProvinces(client, {
-    countryCode: "84",
-    all: true,
-  });
-}
-
-export async function loadCheckoutDistricts(
-  client: CheckoutGeoReadableClient,
-  provinceId: unknown,
-): Promise<PancakeDistrict[]> {
-  return listPancakeDistricts(client, {
-    provinceId: requireParentId(provinceId),
-  });
+): Promise<CheckoutProvince[]> {
+  return listPancakeNewProvinces(client, { countryCode: "84" });
 }
 
 export async function loadCheckoutCommunes(
   client: CheckoutGeoReadableClient,
   provinceId: unknown,
-  districtId: unknown,
-): Promise<PancakeCommune[]> {
-  return listPancakeCommunes(client, {
-    provinceId: requireParentId(provinceId),
-    districtId: requireParentId(districtId),
-  });
+): Promise<CheckoutCommune[]> {
+  return listPancakeNewCommunes(client, { provinceId: requireParentId(provinceId) });
 }

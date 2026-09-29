@@ -218,3 +218,64 @@ export async function listPancakeCommunes(
     };
   });
 }
+
+/**
+ * The post-2025 two-level hierarchy: province → ward/commune, with no district.
+ *
+ * Vietnam abolished the district level on 1 July 2025 and merged provinces. Pancake serves the new
+ * units from the same geo endpoints: `is_new=true` lists the new provinces, and `/geo/communes`
+ * queried with a new province id (and no `district_id`) lists its wards/communes with no district
+ * parent. Orders then carry `new_province_id` / `new_commune_id` instead of the old triple.
+ *
+ * The published OpenAPI document predates this and still marks `district_id` as required on
+ * `/geo/communes`, so the shape here comes from observed Pancake behaviour; run
+ * `pnpm pancake:geo:probe` with a real key to confirm it against the live shop before relying on it.
+ */
+export type PancakeNewProvince = PancakeProvince;
+
+export type PancakeNewCommune = {
+  id: string;
+  name: string;
+  provinceId: string;
+};
+
+export async function listPancakeNewProvinces(
+  client: PancakeGeoReadableClient,
+  { countryCode }: { countryCode: string },
+): Promise<PancakeNewProvince[]> {
+  return listPancakeProvinces(client, { countryCode, isNew: true });
+}
+
+export async function listPancakeNewCommunes(
+  client: PancakeGeoReadableClient,
+  { provinceId }: { provinceId: string },
+): Promise<PancakeNewCommune[]> {
+  const validatedProvinceId = requireQueryId(provinceId);
+  const entries = requireGeoEntries(
+    await client.getJson("/geo/communes", { province_id: validatedProvinceId }),
+  );
+  const seen = new Set<string>();
+
+  return entries.map((entry) => {
+    if (!isRecord(entry)) {
+      malformedResponse();
+    }
+    const id = requireResponseId(entry.id);
+    // A two-level ward has no district. One that names a district is an old-hierarchy row, which
+    // cannot be submitted as a new-format address, so it fails closed rather than being mixed in.
+    if (entry.district_id !== undefined && entry.district_id !== null && entry.district_id !== "") {
+      malformedResponse();
+    }
+    if (entry.province_id !== undefined && entry.province_id !== null) {
+      if (requireResponseId(entry.province_id) !== validatedProvinceId) {
+        malformedResponse();
+      }
+    }
+    assertUniqueId(id, seen);
+    return {
+      id,
+      name: requireResponseName(entry.name),
+      provinceId: validatedProvinceId,
+    };
+  });
+}

@@ -11,13 +11,39 @@ export type PancakeCreateOrderInput = {
   guestName: string;
   guestPhone: string;
   provinceRef: string;
-  districtRef: string;
+  /**
+   * `null` for the post-2025 two-level address (province → ward/commune), which Pancake takes as
+   * `new_province_id` / `new_commune_id`. A string only for a checkout snapshotted before the
+   * switch, which still carries the old province → district → commune triple.
+   */
+  districtRef: string | null;
   communeRef: string;
   addressDetail: string;
   note: string | null;
   shippingFeeVnd: number;
   lines: readonly PancakeCreateOrderLineInput[];
 };
+
+type PancakeShippingContact = {
+  full_name: string;
+  phone_number: string;
+  address: string;
+};
+
+/** Old three-level address, only for checkouts snapshotted before the two-level switch. */
+type PancakeLegacyShippingAddress = PancakeShippingContact & {
+  province_id: string;
+  district_id: string;
+  commune_id: string;
+};
+
+/** Post-2025 two-level address: no district. */
+type PancakeTwoLevelShippingAddress = PancakeShippingContact & {
+  new_province_id: string;
+  new_commune_id: string;
+};
+
+export type PancakeShippingAddress = PancakeLegacyShippingAddress | PancakeTwoLevelShippingAddress;
 
 export type PancakeCreateOrderRequest = {
   shop_id: number;
@@ -26,14 +52,7 @@ export type PancakeCreateOrderRequest = {
   shipping_fee: number;
   is_free_shipping: boolean;
   received_at_shop: false;
-  shipping_address: {
-    full_name: string;
-    phone_number: string;
-    address: string;
-    province_id: string;
-    district_id: string;
-    commune_id: string;
-  };
+  shipping_address: PancakeShippingAddress;
   items: Array<{
     variation_id: string;
     quantity: number;
@@ -91,7 +110,8 @@ export function buildPancakeCreateOrderRequest(
   const guestName = requireNormalizedNonEmptyString(input.guestName);
   const guestPhone = requireNormalizedNonEmptyString(input.guestPhone);
   const provinceRef = requireNormalizedNonEmptyString(input.provinceRef);
-  const districtRef = requireNormalizedNonEmptyString(input.districtRef);
+  const districtRef =
+    input.districtRef === null ? null : requireNormalizedNonEmptyString(input.districtRef);
   const communeRef = requireNormalizedNonEmptyString(input.communeRef);
   const addressDetail = requireNormalizedNonEmptyString(input.addressDetail);
   const shippingFeeVnd = requireNonNegativeSafeInteger(input.shippingFeeVnd);
@@ -125,14 +145,23 @@ export function buildPancakeCreateOrderRequest(
     shipping_fee: shippingFeeVnd,
     is_free_shipping: shippingFeeVnd === 0,
     received_at_shop: false,
-    shipping_address: {
-      full_name: guestName,
-      phone_number: guestPhone,
-      address: addressDetail,
-      province_id: provinceRef,
-      district_id: districtRef,
-      commune_id: communeRef,
-    },
+    shipping_address:
+      districtRef === null
+        ? {
+            full_name: guestName,
+            phone_number: guestPhone,
+            address: addressDetail,
+            new_province_id: provinceRef,
+            new_commune_id: communeRef,
+          }
+        : {
+            full_name: guestName,
+            phone_number: guestPhone,
+            address: addressDetail,
+            province_id: provinceRef,
+            district_id: districtRef,
+            commune_id: communeRef,
+          },
     items,
     ...(note === undefined ? {} : { note }),
   };

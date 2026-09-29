@@ -1,5 +1,6 @@
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 import { BRAND } from "../brand/index.ts";
+import { VIETNAM_PHONE_ERROR } from "./vietnam-phone.ts";
 
 const vnd = new Intl.NumberFormat("vi-VN", {
   style: "currency",
@@ -62,7 +63,14 @@ export function checkoutSubmitFeedback(
         tone: "error",
         title: "Kiểm tra lại thông tin",
         message:
-          "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại đầy đủ tỉnh/thành, quận/huyện và phường/xã.",
+          "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại tỉnh/thành phố và phường/xã, rồi kiểm tra số nhà, tên đường.",
+        mayRetry: true,
+      };
+    case "INVALID_PHONE":
+      return {
+        tone: "error",
+        title: "Số điện thoại chưa đúng",
+        message: VIETNAM_PHONE_ERROR,
         mayRetry: true,
       };
     case "CART_CHANGED":

@@ -4,14 +4,11 @@ const PANCAKE_ORIGIN = "https://pos.pages.fm";
 const API_PREFIX = "/api/v1";
 const TEST_API_KEY = "checkout-a11y-test-key";
 const SHOP_ID = "920007";
-const PROVINCE_LEGACY = "province-legacy";
-const PROVINCE_CURRENT = "province-current";
-const DISTRICT_LEGACY = "district-legacy";
-const DISTRICT_SLOW = "district-slow";
-const DISTRICT_CURRENT = "district-current";
-const COMMUNE_LEGACY = "commune-legacy";
-const COMMUNE_STALE = "commune-stale";
-const COMMUNE_CURRENT = "commune-current";
+// Post-2025 two-level units: province -> ward/commune, no district.
+const PROVINCE_SLOW = "84_VN901";
+const PROVINCE_CURRENT = "84_VN902";
+const COMMUNE_STALE = "84_VN90101";
+const COMMUNE_CURRENT = "84_VN90201";
 
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
@@ -41,85 +38,41 @@ let nextOrderId = configuredOrderIdSeed;
 
 async function pancakeResponse(url, init) {
   if (url.pathname === `${API_PREFIX}/geo/provinces`) {
-    if (!queryMatches(url, { country_code: "84", all: "true" })) {
+    if (!queryMatches(url, { country_code: "84", is_new: "true" })) {
       return json({ error: "unexpected province query" }, 400);
     }
     return json({
       data: [
-        { id: PROVINCE_LEGACY, name: "Tỉnh Legacy" },
+        { id: PROVINCE_SLOW, name: "Tỉnh Chậm" },
         { id: PROVINCE_CURRENT, name: "Tỉnh Current" },
       ],
     });
   }
 
-  if (url.pathname === `${API_PREFIX}/geo/districts`) {
+  if (url.pathname === `${API_PREFIX}/geo/communes`) {
     const provinceId = url.searchParams.get("province_id");
+    // Two-level lookup: the province alone, never a district.
     if (!queryMatches(url, { province_id: provinceId ?? "" })) {
-      return json({ error: "unexpected district query" }, 400);
+      return json({ error: "unexpected commune query" }, 400);
     }
-    if (provinceId === PROVINCE_LEGACY) {
+    if (provinceId === PROVINCE_SLOW) {
+      // Answers after the buyer has already moved on, to prove a stale list never lands.
+      await sleep(300);
       return json({
         data: [
-          { id: DISTRICT_LEGACY, name: "Huyện Legacy", province_id: PROVINCE_LEGACY },
+          { id: COMMUNE_STALE, name: "Phường Stale", province_id: PROVINCE_SLOW, district_id: null },
         ],
       });
     }
     if (provinceId === PROVINCE_CURRENT) {
+      await sleep(20);
       return json({
         data: [
-          { id: DISTRICT_SLOW, name: "Quận Chậm", province_id: PROVINCE_CURRENT },
-          { id: DISTRICT_CURRENT, name: "Quận Current", province_id: PROVINCE_CURRENT },
+          { id: COMMUNE_CURRENT, name: "Phường Current", province_id: PROVINCE_CURRENT, district_id: null },
         ],
       });
     }
     return json({ error: "unknown province" }, 400);
-  }
-
-  if (url.pathname === `${API_PREFIX}/geo/communes`) {
-    const provinceId = url.searchParams.get("province_id");
-    const districtId = url.searchParams.get("district_id");
-    if (!queryMatches(url, { district_id: districtId ?? "", province_id: provinceId ?? "" })) {
-      return json({ error: "unexpected commune query" }, 400);
-    }
-    if (provinceId === PROVINCE_LEGACY && districtId === DISTRICT_LEGACY) {
-      return json({
-        data: [
-          {
-            id: COMMUNE_LEGACY,
-            name: "Xã Legacy",
-            province_id: PROVINCE_LEGACY,
-            district_id: DISTRICT_LEGACY,
-          },
-        ],
-      });
-    }
-    if (provinceId === PROVINCE_CURRENT && districtId === DISTRICT_SLOW) {
-      await sleep(300);
-      return json({
-        data: [
-          {
-            id: COMMUNE_STALE,
-            name: "Phường Stale",
-            province_id: PROVINCE_CURRENT,
-            district_id: DISTRICT_SLOW,
-          },
-        ],
-      });
-    }
-    if (provinceId === PROVINCE_CURRENT && districtId === DISTRICT_CURRENT) {
-      await sleep(20);
-      return json({
-        data: [
-          {
-            id: COMMUNE_CURRENT,
-            name: "Phường Current",
-            province_id: PROVINCE_CURRENT,
-            district_id: DISTRICT_CURRENT,
-          },
-        ],
-      });
-    }
-    return json({ error: "unknown district" }, 400);
   }
 
   if (url.pathname === `${API_PREFIX}/shops/${SHOP_ID}/products/variations`) {
@@ -183,9 +136,12 @@ async function pancakeResponse(url, init) {
     const variationId = process.env.PANCAKE_A11Y_VARIATION_ID;
     if (
       body?.shop_id !== Number(SHOP_ID) ||
-      body?.shipping_address?.province_id !== PROVINCE_CURRENT ||
-      body?.shipping_address?.district_id !== DISTRICT_CURRENT ||
-      body?.shipping_address?.commune_id !== COMMUNE_CURRENT ||
+      body?.shipping_address?.new_province_id !== PROVINCE_CURRENT ||
+      body?.shipping_address?.new_commune_id !== COMMUNE_CURRENT ||
+      "province_id" in (body?.shipping_address ?? {}) ||
+      "district_id" in (body?.shipping_address ?? {}) ||
+      "commune_id" in (body?.shipping_address ?? {}) ||
+      body?.shipping_address?.phone_number !== "0901234567" ||
       body?.items?.length !== 1 ||
       body.items[0]?.variation_id !== variationId ||
       body.items[0]?.quantity !== 1 ||

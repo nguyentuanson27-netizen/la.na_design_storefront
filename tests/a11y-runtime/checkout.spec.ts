@@ -19,14 +19,11 @@ const PANCAKE_FETCH_FIXTURE = resolve(import.meta.dirname, "pancake-fetch-fixtur
 const SHOP_ID = 920_007;
 const TRUSTED_CLIENT_IP = "203.0.113.44";
 const TEST_API_KEY = "checkout-a11y-test-key";
-const PROVINCE_LEGACY = "province-legacy";
-const PROVINCE_CURRENT = "province-current";
-const DISTRICT_LEGACY = "district-legacy";
-const DISTRICT_SLOW = "district-slow";
-const DISTRICT_CURRENT = "district-current";
-const COMMUNE_LEGACY = "commune-legacy";
-const COMMUNE_STALE = "commune-stale";
-const COMMUNE_CURRENT = "commune-current";
+// Post-2025 two-level units served by pancake-fetch-fixture.cjs.
+const PROVINCE_SLOW = "84_VN901";
+const PROVINCE_CURRENT = "84_VN902";
+const COMMUNE_STALE = "84_VN90101";
+const COMMUNE_CURRENT = "84_VN90201";
 
 const runId = `${Date.now()}-${process.pid}`;
 const productExternalId = `checkout-a11y-product-${runId}`;
@@ -382,42 +379,65 @@ for (const { name, viewport } of [
     await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
     const province = page.getByLabel("Tỉnh / Thành phố");
-    const district = page.getByLabel("Quận / Huyện");
     const commune = page.getByLabel("Phường / Xã");
+    const name = page.getByLabel("Họ và tên");
+    const phone = page.getByLabel("Số điện thoại");
+    const street = page.getByLabel("Số nhà, tên đường");
     const submit = page.getByRole("button", { name: "Đặt hàng COD" });
 
     await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
     await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
     await expect(
-      page.getByText("Hãy chọn tỉnh/thành, quận/huyện và phường/xã đúng với thông tin giao hàng của bạn."),
+      page.getByText(
+        "Địa chỉ theo đơn vị hành chính mới: chọn tỉnh/thành phố, phường/xã, rồi nhập số nhà, tên đường.",
+      ),
     ).toBeVisible();
+    // The post-2025 address has no district level.
+    await expect(page.getByLabel("Quận / Huyện")).toHaveCount(0);
     await expect(page.getByText(/Pancake|máy chủ/i)).toHaveCount(0);
-    await expect(province.locator(`option[value="${PROVINCE_LEGACY}"]`)).toHaveText("Tỉnh Legacy");
+    await expect(province.locator(`option[value="${PROVINCE_SLOW}"]`)).toHaveText("Tỉnh Chậm");
     await expect(province.locator(`option[value="${PROVINCE_CURRENT}"]`)).toHaveText("Tỉnh Current");
-
-    await province.selectOption(PROVINCE_LEGACY);
-    await expect(district.locator(`option[value="${DISTRICT_LEGACY}"]`)).toHaveText("Huyện Legacy");
-    await district.selectOption(DISTRICT_LEGACY);
-    await expect(commune.locator(`option[value="${COMMUNE_LEGACY}"]`)).toHaveText("Xã Legacy");
-    await commune.selectOption(COMMUNE_LEGACY);
-
-    await province.selectOption(PROVINCE_CURRENT);
-    await expect(district).toHaveValue("");
-    await expect(commune).toHaveValue("");
     await expect(commune).toBeDisabled();
-    await expect(district.locator(`option[value="${DISTRICT_SLOW}"]`)).toHaveText("Quận Chậm");
-    await expect(district.locator(`option[value="${DISTRICT_CURRENT}"]`)).toHaveText("Quận Current");
 
-    await district.selectOption(DISTRICT_SLOW);
-    await district.selectOption(DISTRICT_CURRENT);
+    // Pressing order on an empty form lists every missing field instead of doing nothing.
+    await expect(submit).toBeEnabled();
+    await submit.click();
+    const missing = page.getByRole("alert").filter({ hasText: "Vui lòng điền đủ thông tin bắt buộc:" });
+    await expect(missing).toBeVisible();
+    for (const message of [
+      "Vui lòng nhập họ và tên người nhận.",
+      "Vui lòng nhập số điện thoại.",
+      "Vui lòng chọn tỉnh/thành phố.",
+      "Vui lòng chọn phường/xã.",
+      "Vui lòng nhập số nhà, tên đường.",
+    ]) {
+      await expect(missing.getByText(message)).toBeVisible();
+    }
+    await expect(name).toBeFocused();
+    await expect(name).toHaveAttribute("aria-invalid", "true");
+    await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+    await assertCheckoutAccessibility(page);
+
+    // A slow list for a province the buyer already left must never replace the current one.
+    await province.selectOption(PROVINCE_SLOW);
+    await province.selectOption(PROVINCE_CURRENT);
     await expect(commune.locator(`option[value="${COMMUNE_CURRENT}"]`)).toHaveText("Phường Current");
     await page.waitForTimeout(350);
     await expect(commune.locator(`option[value="${COMMUNE_STALE}"]`)).toHaveCount(0);
     await commune.selectOption(COMMUNE_CURRENT);
 
-    await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
-    await page.getByLabel("Số điện thoại").fill("0901234567");
-    await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
+    await name.fill("Nguyễn Văn A");
+    await street.fill("12 Đường A");
+
+    // A number that is not Vietnamese is named as such, and fixing it clears every warning.
+    await phone.fill("12345");
+    await expect(
+      page.getByText("Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678.").first(),
+    ).toBeVisible();
+    await expect(phone).toHaveAttribute("aria-invalid", "true");
+    await phone.fill("0901 234 567");
+    await expect(missing).toHaveCount(0);
+    await expect(phone).not.toHaveAttribute("aria-invalid", "true");
     await expect(submit).toBeEnabled();
 
     await assertCheckoutAccessibility(page);
@@ -461,9 +481,10 @@ for (const { name, viewport } of [
     });
     expect(confirmed.pancakeOrderId).toMatch(/^\d+$/);
     expect(confirmed.provinceRef).toBe(PROVINCE_CURRENT);
-    expect(confirmed.districtRef).toBe(DISTRICT_CURRENT);
+    expect(confirmed.districtRef).toBeNull();
     expect(confirmed.communeRef).toBe(COMMUNE_CURRENT);
     expect(confirmed.guestName).toBe("Nguyễn Văn A");
+    // Stored in one national shape however it was typed.
     expect(confirmed.guestPhone).toBe("0901234567");
     expect(confirmed.addressDetail).toBe("12 Đường A");
     expect(confirmed.publicCode).toMatch(/^LA-[23456789ABCDEFGHJKMNPQRSTVWXYZ]{8}$/);
@@ -659,7 +680,6 @@ test("P9a a price change between render and submit forces an explicit second con
   expect(quotedTotal).not.toEqual("");
 
   await page.getByLabel("Tỉnh / Thành phố").selectOption(PROVINCE_CURRENT);
-  await page.getByLabel("Quận / Huyện").selectOption(DISTRICT_CURRENT);
   await page.getByLabel("Phường / Xã").selectOption(COMMUNE_CURRENT);
   await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
   await page.getByLabel("Số điện thoại").fill("0901234567");
