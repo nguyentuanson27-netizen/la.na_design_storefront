@@ -12,6 +12,7 @@ import { HOMEPAGE_CONFIG } from "@/content/homepage.config";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
 import { sealRoute, type RouteHandle } from "./core.tsx";
+import { COLLECTION_PRODUCTS_ANCHOR } from "./collection-model.ts";
 import { buildHomeHeroSlides, type HomeHeroSlide } from "./home-hero.ts";
 import {
   NEXT_FAVOURITE_CATEGORY_KEYS,
@@ -75,7 +76,8 @@ function toHeroCandidates(
   return collections.map((collection) => ({
     imageUrl: collection.heroImageUrl,
     mobileImageUrl: collection.heroImageMobileUrl ?? null,
-    href: `/collections/${collection.slug}`,
+    // Straight to the products: the collection page opens on the same campaign image the slide showed.
+    href: `/collections/${collection.slug}#${COLLECTION_PRODUCTS_ANCHOR}`,
     label: collection.title,
   }));
 }

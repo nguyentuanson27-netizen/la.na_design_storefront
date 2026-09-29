@@ -12,7 +12,7 @@ import {
   ListingShell,
 } from "@/components/brand/listing-chrome";
 import { loadCollectionRoute, type CollectionRouteProps } from "@/routes/collection";
-import type { CollectionViewModel } from "@/routes/collection-model";
+import { COLLECTION_PRODUCTS_ANCHOR, type CollectionViewModel } from "@/routes/collection-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { buildCollectionMetadata } from "@/routes/metadata/collection";
 
@@ -30,6 +30,9 @@ const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
 
 function render(data: CollectionViewModel) {
   const { editorial } = data;
+  // Where `#san-pham` lands: the title when the product controls follow it directly, otherwise the
+  // controls themselves, so a tall gallery or video never sits between the shopper and the grid.
+  const productsAnchorOnTitle = !editorial.video && editorial.gallery.length === 0;
 
   return (
     <>
@@ -67,7 +70,9 @@ function render(data: CollectionViewModel) {
         />
         {/* Title only: the owner removed the story line and the buyer notice from this header. The
             story still feeds the page's metadata; the notice stays on `/shop`. */}
-        <ListingHeader title={data.title} />
+        <div id={productsAnchorOnTitle ? COLLECTION_PRODUCTS_ANCHOR : undefined}>
+          <ListingHeader title={data.title} />
+        </div>
 
         {editorial.video ? (
           <div className="mt-12">
@@ -103,6 +108,7 @@ function render(data: CollectionViewModel) {
         ) : null}
 
         <section
+          id={productsAnchorOnTitle ? undefined : COLLECTION_PRODUCTS_ANCHOR}
           className="mt-12"
           aria-label="Điều khiển bộ sưu tập"
         >
