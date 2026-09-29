@@ -402,16 +402,19 @@ for (const { name, viewport } of [
     // Pressing order on an empty form lists every missing field instead of doing nothing.
     await expect(submit).toBeEnabled();
     await submit.click();
-    const missing = page.getByRole("alert").filter({ hasText: "Vui lòng điền đủ thông tin bắt buộc:" });
+    // One short line by the button; each missing field is flagged in red where it is.
+    const missing = page.getByRole("alert").filter({ hasText: "Vui lòng điền đầy đủ thông tin." });
     await expect(missing).toBeVisible();
-    for (const message of [
-      "Vui lòng nhập họ và tên người nhận.",
-      "Vui lòng nhập số điện thoại.",
-      "Vui lòng chọn tỉnh/thành phố.",
-      "Vui lòng chọn phường/xã.",
-      "Vui lòng nhập số nhà, tên đường.",
-    ]) {
-      await expect(missing.getByText(message)).toBeVisible();
+    await expect(missing.getByRole("listitem")).toHaveCount(0);
+    for (const [field, message] of [
+      [name, "Vui lòng nhập họ và tên người nhận."],
+      [phone, "Vui lòng nhập số điện thoại."],
+      [province, "Vui lòng chọn tỉnh/thành phố."],
+      [commune, "Vui lòng chọn phường/xã."],
+      [street, "Vui lòng nhập số nhà, tên đường."],
+    ] as const) {
+      await expect(field).toHaveAttribute("aria-invalid", "true");
+      await expect(page.getByText(message, { exact: true })).toBeVisible();
     }
     await expect(name).toBeFocused();
     await expect(name).toHaveAttribute("aria-invalid", "true");
@@ -432,7 +435,7 @@ for (const { name, viewport } of [
     // A number that is not Vietnamese is named as such, and fixing it clears every warning.
     await phone.fill("12345");
     await expect(
-      page.getByText("Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678.").first(),
+      page.getByText("Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678."),
     ).toBeVisible();
     await expect(phone).toHaveAttribute("aria-invalid", "true");
     await phone.fill("0901 234 567");

@@ -121,7 +121,7 @@ export function GuestCheckoutForm({
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const summaryContentId = useId();
-  const errorSummaryRef = useRef<HTMLDivElement>(null);
+  const errorSummaryRef = useRef<HTMLParagraphElement>(null);
   const provinceRequest = useRef(0);
   const communeRequest = useRef(0);
 
@@ -257,9 +257,7 @@ export function GuestCheckoutForm({
     : phoneTouched && phone.trim().length > 0 && fieldErrors.phone
       ? { phone: fieldErrors.phone }
       : {};
-  const summaryErrors = showAllErrors
-    ? REQUIRED_FIELDS.filter((field) => fieldErrors[field] !== undefined)
-    : [];
+  const hasMissingFields = showAllErrors && Object.keys(fieldErrors).length > 0;
 
   function errorId(field: RequiredField): string {
     return `${FIELD_INPUT_IDS[field]}-error`;
@@ -543,23 +541,15 @@ export function GuestCheckoutForm({
         </div>
       ) : null}
 
-      {summaryErrors.length > 0 ? (
-        <div
-          className="border border-[#b42318] px-5 py-4 text-sm text-[#b42318]"
+      {/* One line beside the button; which fields need attention is shown in red on each field above. */}
+      {hasMissingFields ? (
+        <p
+          className="border border-[#b42318] px-5 py-4 text-sm font-semibold text-[#b42318]"
           ref={errorSummaryRef}
           role="alert"
         >
-          <p className="font-semibold">Vui lòng điền đủ thông tin bắt buộc:</p>
-          <ul className="mt-2 list-disc space-y-1 pl-5">
-            {summaryErrors.map((field) => (
-              <li key={field}>
-                <a className="underline underline-offset-4" href={`#${FIELD_INPUT_IDS[field]}`}>
-                  {fieldErrors[field]}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
+          Vui lòng điền đầy đủ thông tin.
+        </p>
       ) : null}
 
       <button
