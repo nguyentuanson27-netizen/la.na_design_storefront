@@ -27,7 +27,7 @@ export type PlpFilterPanelProps = {
   categoryPath: string;
   totalCount: number;
   availableSizes: readonly string[];
-  availableColors: readonly string[];
+  availableColors?: readonly string[];
   activeFilters: PlpFilterState;
 };
 
@@ -43,7 +43,7 @@ export function PlpFilterPanel({
   categoryPath,
   totalCount,
   availableSizes,
-  availableColors,
+  availableColors: _availableColors,
   activeFilters,
 }: PlpFilterPanelProps) {
   const router = useRouter();
@@ -301,31 +301,6 @@ export function PlpFilterPanel({
           </div>
         ) : null}
 
-        {/* Colors */}
-        {availableColors.length > 0 ? (
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Màu:</span>
-            {availableColors.slice(0, 6).map((color) => {
-              const colorHref = buildToggleColorHref(categoryPath, activeFilters, color);
-              const isSelected = activeFilters.color?.toLowerCase() === color.toLowerCase();
-              return (
-                <Link
-                  key={color}
-                  href={colorHref}
-                  scroll={false}
-                  aria-current={isSelected ? "true" : undefined}
-                  className={`rounded-md border px-2.5 py-1 font-medium transition ${
-                    isSelected
-                      ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                      : "border-[#3B2219]/20 hover:border-[#3B2219]"
-                  }`}
-                >
-                  {color}
-                </Link>
-              );
-            })}
-          </div>
-        ) : null}
 
         {/* Desktop Price Range Form */}
         <div>
@@ -544,35 +519,6 @@ export function PlpFilterPanel({
                 </div>
               ) : null}
 
-              {/* Colors */}
-              {availableColors.length > 0 ? (
-                <div>
-                  <span className="block text-xs font-semibold uppercase tracking-wider text-[#70584B] mb-3">
-                    Màu sắc
-                  </span>
-                  <div className="flex flex-wrap gap-2">
-                    {availableColors.map((color) => {
-                      const colorHref = buildToggleColorHref(categoryPath, activeFilters, color);
-                      const isSelected = activeFilters.color?.toLowerCase() === color.toLowerCase();
-                      return (
-                        <Link
-                          key={color}
-                          href={colorHref}
-                          scroll={false}
-                          aria-current={isSelected ? "true" : undefined}
-                          className={`rounded-md border px-3 py-2 text-xs font-medium transition ${
-                            isSelected
-                              ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                              : "border-[#3B2219]/25 text-[#3B2219]"
-                          }`}
-                        >
-                          {color}
-                        </Link>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
 
               {/* Price range form */}
               <div>
