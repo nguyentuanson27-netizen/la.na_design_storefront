@@ -380,7 +380,7 @@ test("I2 a policy write refuses a product that is not a visible product of this 
   assert.equal(await prisma.productSellingPolicy.count({ where: { productId: foreign.productId } }), 1);
 });
 
-test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to STANDARD", async () => {
+test("I2 a composite parent may persist OVERSELL, PREORDER, and STANDARD policies", async () => {
   const parent = await seedProductForShop("composite-parent", testShopId);
   const child = await seedProductForShop("composite-child", testShopId);
   await prisma.compositeComponentMirror.create({
@@ -397,8 +397,8 @@ test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to S
     assert.equal(saved.sellingMode, sellingMode);
   }
 
-  // §11: composite in STANDARD is unaffected — it never goes below zero, so no component
-  // accounting is needed. Refusing it too would be a restriction the ADR does not impose.
+  // STANDARD remains supported as before; flexible modes above are now enforced component-by-component
+  // by the same reservation authority rather than rejected at the policy-write boundary.
   const stored = await repository.saveSellingPolicy({
     shopId: testShopId,
     productId: parent.productId,

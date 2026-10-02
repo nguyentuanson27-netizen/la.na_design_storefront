@@ -650,6 +650,82 @@ test("I6a multi-component composite refusal is atomic and leaves no partial reso
   );
 });
 
+test("I6a PREORDER composite capacity is enforced on the consumed component resource", async () => {
+  const child = await seedVariant("composite-preorder-child", { stock: 0 });
+  const parent = await seedVariant("composite-preorder-parent", {
+    stock: 0,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -2,
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parent,
+      componentVariantId: child,
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const firstOrder = await seedOrder("composite-preorder-first");
+  const accepted = await repository.reserveOrderCapacity({
+    orderId: firstOrder,
+    lines: [{ variantId: parent, quantity: 2, expectedFulfillmentState: "PREORDER" }],
+  });
+  assert.equal(accepted.ok, true);
+
+  const [reservation] = await prisma.variantCapacityReservation.findMany({
+    where: { orderId: firstOrder },
+    select: {
+      acceptedPreorderState: true,
+      resources: { select: { variantId: true, quantity: true } },
+    },
+  });
+  assert.equal(reservation?.acceptedPreorderState, "PREORDER");
+  assert.deepEqual(reservation?.resources, [{ variantId: child, quantity: 2 }]);
+
+  const secondOrder = await seedOrder("composite-preorder-past-floor");
+  const refused = await repository.reserveOrderCapacity({
+    orderId: secondOrder,
+    lines: [{ variantId: parent, quantity: 1 }],
+  });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.ok === false && refused.reason, "negative-limit-reached");
+  assert.equal(await prisma.variantCapacityReservation.count({ where: { orderId: secondOrder } }), 0);
+});
+
+test("I6a STANDARD demand is allocated before a flexible composite sharing the same component", async () => {
+  const child = await seedVariant("mixed-policy-child", { stock: 1 });
+  const parent = await seedVariant("mixed-policy-parent", {
+    stock: 0,
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -20,
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parent,
+      componentVariantId: child,
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const orderId = await seedOrder("mixed-policy-order");
+  const outcome = await repository.reserveOrderCapacity({
+    orderId,
+    lines: [
+      { variantId: parent, quantity: 1 },
+      { variantId: child, quantity: 1 },
+    ],
+  });
+  assert.equal(outcome.ok, true);
+
+  const resources = await prisma.capacityReservationResource.aggregate({
+    where: { variantId: child, reservation: { orderId } },
+    _sum: { quantity: true },
+  });
+  assert.equal(resources._sum.quantity, 2, "ready stock serves STANDARD first and flexible uses -1");
+});
+
 test("I6a every state change is a guarded compare-and-set", async () => {
   // §6.4 — the enum constrains a value and the §13 CHECKs are intra-row, so nothing in SQL stops an
   // UPDATE moving COMMITTED -> RESERVED. The guard is the only thing that does.
