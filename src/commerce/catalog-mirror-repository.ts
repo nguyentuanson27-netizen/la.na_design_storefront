@@ -12,6 +12,7 @@ import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./c
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { deriveCompositeCapacitySnapshot } from "./composite-capacity.ts";
 import { handOffMirroredCapacity } from "./capacity-handoff.ts";
+import { splitTrailingProductCode } from "./product-display-name.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -26,6 +27,7 @@ const MAX_COMPOSITE_ID_LENGTH = 512;
 type CatalogProductSnapshot = {
   pancakeProductId: string;
   name: string;
+  productCode: string | null;
   sourceDescription: string | null;
   primaryImageUrl: string | null;
 };
@@ -73,11 +75,13 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     }
 
     const { sourceDescription, primaryImageUrl } = variation.product;
+    const { name, productCode } = splitTrailingProductCode(variation.product.name);
 
     const existingProduct = productByExternalId.get(variation.productId);
     if (
       existingProduct &&
-      (existingProduct.name !== variation.product.name ||
+      (existingProduct.name !== name ||
+        existingProduct.productCode !== productCode ||
         existingProduct.sourceDescription !== sourceDescription ||
         existingProduct.primaryImageUrl !== primaryImageUrl)
     ) {
@@ -85,7 +89,8 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     }
     productByExternalId.set(variation.productId, {
       pancakeProductId: variation.productId,
-      name: variation.product.name,
+      name,
+      productCode,
       sourceDescription,
       primaryImageUrl,
     });
@@ -431,6 +436,7 @@ export function createCatalogMirrorRepository(
                     data: {
                       pancakeShopId: safeShopId,
                       name: product.name,
+                      productCode: product.productCode,
                       sourceDescription: product.sourceDescription,
                       primaryImageUrl: product.primaryImageUrl,
                       isPresent: true,
@@ -482,6 +488,7 @@ export function createCatalogMirrorRepository(
                     pancakeShopId: safeShopId,
                     slug: readableSlug,
                     name: product.name,
+                    productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,
                     isPresent: true,
@@ -513,6 +520,7 @@ export function createCatalogMirrorRepository(
                     pancakeProductId: product.pancakeProductId,
                     slug,
                     name: product.name,
+                    productCode: product.productCode,
                     sourceDescription: product.sourceDescription,
                     primaryImageUrl: product.primaryImageUrl,
                     isPresent: true,

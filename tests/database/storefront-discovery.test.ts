@@ -217,6 +217,44 @@ test("discovery combines search, same-variant filters and website-owned collecti
   assert.equal(page.hasNext, false);
 });
 
+test("discovery search finds a product by the Pancake product code split off its name", async () => {
+  const set = await seedProduct({
+    id: "dieu-lien-hoa",
+    name: "Set váy Diệu Liên Hoa",
+    color: "White",
+    size: "M",
+    price: 787_000,
+    stock: 1,
+  });
+  await prisma.productMirror.update({ where: { id: set.id }, data: { productCode: "SV605" } });
+  const dress = await seedProduct({
+    id: "hoa-sen",
+    name: "Đầm Hoa Sen",
+    color: "Pink",
+    size: "S",
+    price: 650_000,
+    stock: 1,
+  });
+  await prisma.variantMirror.updateMany({
+    where: { productId: dress.id },
+    data: { pancakeDisplayId: "DH702-HONG-S" },
+  });
+
+  const byCode = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ q: "sv605" }),
+  });
+  assert.deepEqual(byCode.products.map(({ name }) => name), ["Set váy Diệu Liên Hoa"]);
+
+  const byDisplayId = await repository.listDiscoveryPage({
+    shopId,
+    pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ q: "dh702" }),
+  });
+  assert.deepEqual(byDisplayId.products.map(({ name }) => name), ["Đầm Hoa Sen"]);
+});
+
 test("discovery requires color, size, stock and price to match the same live variant", async () => {
   const splitMatchProduct = await seedProduct({
     id: "split-match",

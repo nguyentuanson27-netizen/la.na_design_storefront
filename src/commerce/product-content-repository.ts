@@ -164,6 +164,7 @@ function adminSearchCondition(query: AdminProductDirectoryQuery): Prisma.Sql | n
   return Prisma.sql`(
     p."name" ILIKE ('%' || ${query.query} || '%')
     OR p."slug" ILIKE ('%' || ${query.query} || '%')
+    OR p."productCode" ILIKE ('%' || ${query.query} || '%')
   )`;
 }
 

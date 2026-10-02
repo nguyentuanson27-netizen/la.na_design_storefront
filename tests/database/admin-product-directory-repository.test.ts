@@ -39,6 +39,7 @@ async function cleanup() {
 type SeedProduct = Readonly<{
   key: string;
   name: string;
+  productCode?: string;
   isActive?: boolean;
   syncedAt: string;
   content?: Readonly<{
@@ -54,6 +55,7 @@ async function seed(product: SeedProduct): Promise<string> {
       pancakeProductId: `${externalPrefix}${product.key}`,
       slug: `${externalPrefix}${product.key}`,
       name: product.name,
+      productCode: product.productCode ?? null,
       isActive: product.isActive ?? true,
       syncedAt: new Date(product.syncedAt),
       ...(product.content
@@ -191,6 +193,21 @@ test("directory search matches name and slug case-insensitively; activity narrow
     query: query({ q: "admdirwool-coat", activity: "active" }),
   });
   assert.equal(active.products.length, 0);
+});
+
+test("directory search matches the Pancake product code split off the name", async () => {
+  await seed({
+    key: "dieu-lien-hoa",
+    name: "Set váy Diệu Liên Hoa",
+    productCode: "ADMDIRSV605",
+    syncedAt: "2026-08-01T00:00:00.000Z",
+  });
+
+  const byCode = await repository.listDirectoryPage({ query: query({ q: "admdirsv605" }) });
+  assert.deepEqual(
+    byCode.products.map((p) => p.slug),
+    [`${externalPrefix}dieu-lien-hoa`],
+  );
 });
 
 test("directory pagination clamps out-of-range pages and honors the sort order", async () => {
