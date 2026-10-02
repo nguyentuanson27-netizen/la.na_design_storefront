@@ -25,7 +25,7 @@ Pancake responses are untrusted external inputs. The media resolver enforces str
 7. **Standard Port Only**: Rejects custom ports and explicit default ports in the raw authority.
 8. **Path Traversal Protection**: Rejects traversal before WHATWG normalization. Raw `..` forms and percent-encoded dot forms such as `%2e`, `%2e.`, `.%2e`, and `%2e%2e` fail closed instead of being normalized into a different path.
 9. **Bounded Length**: Maximum 4,096 characters.
-10. **No Server-Side Media Fetcher**: Validation is local and does not issue outbound HTTP requests, avoiding SSRF/open-proxy behavior.
+10. **Resolver vs. Remote Image Fetching**: The resolver itself is local and issues no outbound HTTP requests. Storefront rendering through `next/image` may cause the Next.js Image Optimization layer to retrieve approved remote images on demand; those outbound targets are constrained by the exact `images.remotePatterns` host, extension, and fixed-depth path allowlist above, rather than by an unrestricted remote-image proxy.
 
 ### Video
 
