@@ -289,6 +289,100 @@ test("reads never overwrite a newer read, in either order (ADR 0014 §4.1)", asy
   assert.deepEqual((await stockOf(TEE)).map(({ quantity }) => quantity), [4]);
 });
 
+test("targeted inventory keeps a PREORDER composite cycle aligned with component-ready capacity", async () => {
+  await reconcile({ "wh-a": 5 }, { "wh-a": 0 }, T0);
+
+  const [component, parent] = await prisma.variantMirror.findMany({
+    where: { pancakeVariationId: { in: [TEE, DRESS] } },
+    orderBy: { pancakeVariationId: "asc" },
+    select: { id: true, pancakeVariationId: true, productId: true },
+  });
+  assert.equal(component?.pancakeVariationId, DRESS);
+  assert.equal(parent?.pancakeVariationId, TEE);
+
+  const byVariationId = new Map(
+    [component, parent]
+      .filter((row): row is NonNullable<typeof row> => row !== undefined)
+      .map((row) => [row.pancakeVariationId, row]),
+  );
+  const parentVariant = byVariationId.get(DRESS)!;
+  const componentVariant = byVariationId.get(TEE)!;
+
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parentVariant.id,
+      componentVariantId: componentVariant.id,
+      quantity: 1,
+      syncedAt: T0,
+    },
+  });
+  await prisma.productSellingPolicy.create({
+    data: {
+      productId: parentVariant.productId,
+      sellingMode: "PREORDER",
+      negativeStockLimit: -20,
+    },
+  });
+
+  const parentObservedAt = new Date(T0.getTime() + 30_000);
+  await catalog.applyVariationStocks({
+    shopId: SHOP,
+    observations: [{
+      variationId: DRESS,
+      warehouseStocks: [{ warehouseId: "wh-a", remainQuantity: 0 }],
+    }],
+    syncedAt: parentObservedAt,
+    availabilityObservedAt: parentObservedAt,
+  });
+
+  const ready = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parentVariant.id },
+  });
+  assert.equal(
+    ready.lastStockNonPositive,
+    false,
+    "targeting a zero-stock parent must not open while its component can still make a set",
+  );
+  assert.equal(ready.cycleStartDate, null);
+  assert.equal(ready.availabilityDate, null);
+
+  const soldOutAt = new Date(T0.getTime() + 60_000);
+  await catalog.applyVariationStocks({
+    shopId: SHOP,
+    observations: [{
+      variationId: TEE,
+      warehouseStocks: [{ warehouseId: "wh-a", remainQuantity: 0 }],
+    }],
+    syncedAt: soldOutAt,
+    availabilityObservedAt: soldOutAt,
+  });
+
+  const soldOut = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parentVariant.id },
+  });
+  assert.equal(soldOut.lastStockNonPositive, true);
+  assert.ok(soldOut.cycleStartDate !== null, "component 5 → 0 opens the parent cycle immediately");
+  assert.ok(soldOut.availabilityDate !== null);
+
+  const replenishedAt = new Date(T0.getTime() + 90_000);
+  await catalog.applyVariationStocks({
+    shopId: SHOP,
+    observations: [{
+      variationId: TEE,
+      warehouseStocks: [{ warehouseId: "wh-a", remainQuantity: 5 }],
+    }],
+    syncedAt: replenishedAt,
+    availabilityObservedAt: replenishedAt,
+  });
+
+  const replenished = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parentVariant.id },
+  });
+  assert.equal(replenished.lastStockNonPositive, false);
+  assert.equal(replenished.cycleStartDate, null, "component 0 → 5 closes the parent cycle immediately");
+  assert.equal(replenished.availabilityDate, null);
+});
+
 test("a newer read that observed no warehouse keeps winning over an older positive read", async () => {
   await reconcile({ "wh-a": 5 }, { "wh-a": 2 }, T0);
 
