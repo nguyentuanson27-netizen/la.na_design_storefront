@@ -315,14 +315,15 @@ test("F8a a deep-linked variant renders its own state rather than the product's 
 
 /* ------------------------------------------------------------------------ F8a: composite */
 
-test("F8a a composite parent is never a preorder sale, whatever policy the operator set", () => {
-  // ADR 0014 §11 disables OVERSELL/PREORDER for a composite. The card must agree with the
-  // reservation boundary rather than advertise a state the commit would refuse.
+test("F8a a composite parent can present PREORDER when the shared capacity policy allows it", () => {
+  // Composite flexible modes are now supported. A generic presentation model without a component
+  // snapshot follows the capacity facts it is given; real catalog/PDP reads attach the exact
+  // component-aware snapshot before reaching this presentation layer.
   const model = card([variant("v", 0)], capacity("PREORDER", { isComposite: true }));
 
-  assert.equal(model.isPreorderOnly, false);
-  assert.equal(model.availability, "out-of-stock");
-  assert.equal(model.availabilityLabel, OUT_OF_STOCK_LABEL);
+  assert.equal(model.isPreorderOnly, true);
+  assert.equal(model.availability, "available");
+  assert.equal(model.availabilityLabel, PREORDER_LABEL);
 });
 
 /* ----------------------------------------------- the card's word must match the reason */
