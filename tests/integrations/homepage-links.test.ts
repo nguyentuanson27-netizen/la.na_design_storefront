@@ -43,6 +43,8 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
 ]);
 const LOCKED_IMG_SRC =
   "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};";
+const LOCKED_MEDIA_SRC =
+  "media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};";
 // img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would
 // no longer pin the hosts it admits. The expressions that supply those origins are locked too,
 // which keeps the guarantee intact: no image origin reaches the policy without editing a locked
@@ -154,9 +156,10 @@ test("U2 homepage link guard rejects inert category queries and unapproved suppo
   assert.deepEqual(findU2ForbiddenHomepageLinks(counterexample), ["/faq", "/shop?category=shirts"]);
 });
 
-test("U2 leaves the reviewed image hosts and CSP img-src boundary byte-for-byte locked", async () => {
+test("U2 leaves the reviewed image and media trust boundaries locked", async () => {
   const nextConfig = await readFile(NEXT_CONFIG_SOURCE, "utf8");
   const imgSrc = nextConfig.match(/img-src [^;]+;/)?.[0] ?? null;
+  const mediaSrc = nextConfig.match(/media-src [^;]+;/)?.[0] ?? null;
   const { default: loadedConfig } = (await import(NEXT_CONFIG_SOURCE.href)) as {
     default: { images?: { remotePatterns?: RemotePattern[] } };
   };
@@ -171,6 +174,7 @@ test("U2 leaves the reviewed image hosts and CSP img-src boundary byte-for-byte 
   );
 
   assert.equal(imgSrc, LOCKED_IMG_SRC);
+  assert.equal(mediaSrc, LOCKED_MEDIA_SRC);
   assert.deepEqual(remotePatterns, expectedRemotePatterns);
   assert.ok(
     nextConfig.includes(LOCKED_FACEBOOK_IMG_SRC),
