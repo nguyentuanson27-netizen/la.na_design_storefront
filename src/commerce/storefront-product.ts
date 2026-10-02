@@ -1,4 +1,5 @@
 import type { VietnamCalendarDate } from "./availability-cycle.ts";
+import type { CompositeCapacitySnapshot } from "./composite-capacity.ts";
 import {
   projectExternalAvailability,
   type ExternalAvailability,
@@ -17,6 +18,7 @@ export type StorefrontVariantFacts = {
   color: string | null;
   size: string | null;
   sellableStock: number;
+  compositeCapacity?: CompositeCapacitySnapshot;
   retailPrice: number | null;
   retailPriceAfterDiscount: number | null;
 };
@@ -311,13 +313,23 @@ export function buildStorefrontVariantOptions(
     // buyers capacity pass `sellableStock` from the capacity read model (`capacity-advisory.ts`),
     // which has already subtracted active holds, so none is subtracted again here. A page cannot
     // bind a decision made later, and trusting it to is the oversell master spec §31 forbids.
-    const sellability = resolveVariantSellability({
-      mirroredStock: variant.sellableStock,
-      activeReservedQuantity: 0,
-      sellingMode: productCapacity.sellingMode,
-      negativeStockLimit: productCapacity.negativeStockLimit,
-      isComposite: productCapacity.isComposite,
-    });
+    const compositeCapacity = productCapacity.isComposite ? variant.compositeCapacity : undefined;
+    const sellability = compositeCapacity
+      ? {
+          sellable: compositeCapacity.reservableQuantity > 0,
+          reason: compositeCapacity.reason,
+          isPreorderSale:
+            compositeCapacity.reservableQuantity > 0 &&
+            productCapacity.sellingMode === "PREORDER" &&
+            compositeCapacity.readyQuantity < 1,
+        }
+      : resolveVariantSellability({
+          mirroredStock: variant.sellableStock,
+          activeReservedQuantity: 0,
+          sellingMode: productCapacity.sellingMode,
+          negativeStockLimit: productCapacity.negativeStockLimit,
+          isComposite: productCapacity.isComposite,
+        });
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 
     if (!variant.size || (hasColorDimension && !variant.color)) {

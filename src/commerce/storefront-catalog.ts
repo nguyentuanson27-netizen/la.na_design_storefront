@@ -647,7 +647,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
   function withAdvisoryStock<P extends ReturnType<typeof toStorefrontProduct>>(
     shopId: number,
     products: readonly P[],
-  ): Promise<P[]> {
+  ) {
     return withAdvisorySellableStock(client, parseShopId(shopId), products);
   }
 
