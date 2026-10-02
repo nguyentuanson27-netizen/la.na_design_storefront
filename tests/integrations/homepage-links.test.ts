@@ -51,98 +51,23 @@ const LOCKED_FACEBOOK_IMG_SRC =
   'const facebookImgSrc = hasFacebookPixel ? " https://www.facebook.com" : "";';
 const LOCKED_OPENAI_ADS_IMG_SRC =
   'const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";';
-const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-    ],`;
+const REVIEWED_PANCAKE_IMAGE_HOSTS = [
+  "content.pancake.vn",
+  "statics.pancake.vn",
+  "cdn.pancake.vn",
+] as const;
+const REVIEWED_PANCAKE_IMAGE_PATHS = ["jpg", "jpeg", "png", "webp"].flatMap((extension) => [
+  `/*/*/*/*/*.${extension}`,
+  `/web-media-*/*/*/*/*/*.${extension}`,
+  `/web-media-*/*/*/*/*/*/*.${extension}`,
+]);
+
+type RemotePattern = {
+  protocol?: string;
+  hostname?: string;
+  port?: string;
+  pathname?: string;
+};
 
 type RouteExists = (pathname: string) => Promise<boolean>;
 
@@ -232,10 +157,21 @@ test("U2 homepage link guard rejects inert category queries and unapproved suppo
 test("U2 leaves the reviewed image hosts and CSP img-src boundary byte-for-byte locked", async () => {
   const nextConfig = await readFile(NEXT_CONFIG_SOURCE, "utf8");
   const imgSrc = nextConfig.match(/img-src [^;]+;/)?.[0] ?? null;
-  const remotePatterns = nextConfig.match(/remotePatterns: \[\n[\s\S]*?\n    \],/)?.[0] ?? null;
+  const { default: loadedConfig } = (await import(NEXT_CONFIG_SOURCE.href)) as {
+    default: { images?: { remotePatterns?: RemotePattern[] } };
+  };
+  const remotePatterns = loadedConfig.images?.remotePatterns ?? [];
+  const expectedRemotePatterns = REVIEWED_PANCAKE_IMAGE_HOSTS.flatMap((hostname) =>
+    REVIEWED_PANCAKE_IMAGE_PATHS.map((pathname) => ({
+      protocol: "https",
+      hostname,
+      port: "",
+      pathname,
+    })),
+  );
 
   assert.equal(imgSrc, LOCKED_IMG_SRC);
-  assert.equal(remotePatterns, LOCKED_REMOTE_PATTERNS);
+  assert.deepEqual(remotePatterns, expectedRemotePatterns);
   assert.ok(
     nextConfig.includes(LOCKED_FACEBOOK_IMG_SRC),
     "the Meta beacon origin admitted by img-src must stay byte-for-byte as reviewed",

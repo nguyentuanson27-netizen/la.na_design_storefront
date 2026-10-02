@@ -52,12 +52,32 @@ const pancakeChatFontSrc = " https://fonts.gstatic.com";
 const pancakeChatMediaSrc = " https://chat-plugin.pancake.vn";
 const pancakeChatConnectSrc = " https://pages.fm wss://pages.fm";
 
+const pancakeImageHostnames = [
+  "content.pancake.vn",
+  "statics.pancake.vn",
+  "cdn.pancake.vn",
+];
+const pancakeImageExtensions = ["jpg", "jpeg", "png", "webp"];
+const pancakeImagePathnames = pancakeImageExtensions.flatMap((extension) => [
+  `/*/*/*/*/*.${extension}`,
+  `/web-media-*/*/*/*/*/*.${extension}`,
+  `/web-media-*/*/*/*/*/*/*.${extension}`,
+]);
+const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
+  pancakeImagePathnames.map((pathname) => ({
+    protocol: "https",
+    hostname,
+    port: "",
+    pathname,
+  })),
+);
+
 const contentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
   img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
-  media-src 'self' https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${pancakeChatMediaSrc};
+  media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
   connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc};
   object-src 'none';
@@ -113,99 +133,8 @@ const nextConfig = {
     LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "content.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "statics.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpg",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.jpeg",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.png",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/*/*/*/*/*.webp",
-      },
-      {
-        protocol: "https",
-        hostname: "cdn.pancake.vn",
-        port: "",
-        pathname: "/web-media-*/**",
-      },
-    ],
-  },
+    remotePatterns: pancakeImageRemotePatterns,
+  }, },
   async headers() {
     return [
       {

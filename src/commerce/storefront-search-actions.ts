@@ -69,7 +69,7 @@ export async function searchStorefrontSuggestionsAction(
     const { prisma } = await import("../db/prisma.ts");
     const { readPancakeShopId } = await import("../integrations/pancake/config.ts");
     const shopId = readPancakeShopId();
-    const { parseTrustedProductImageUrl } = await import("./product-media.ts");
+    const { resolveStorefrontProductMedia } = await import("./product-media.ts");
     const records = await prisma.productMirror.findMany({
       where: {
         pancakeShopId: shopId,
@@ -89,7 +89,7 @@ export async function searchStorefrontSuggestionsAction(
         primaryImageUrl: true,
         variants: {
           where: { isPresent: true, isActive: true },
-          take: 1,
+          orderBy: [{ pancakeVariationId: "asc" }],
           select: {
             pancakeRetailPrice: true,
             pancakeRetailPriceAfterDiscount: true,
@@ -103,22 +103,18 @@ export async function searchStorefrontSuggestionsAction(
       const variant = record.variants[0];
       const price =
         variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
-      let primaryImageUrl = parseTrustedProductImageUrl(record.primaryImageUrl);
-      if (!primaryImageUrl && variant?.pancakeImageUrls) {
-        const variantImages = parseJsonStringArray(variant.pancakeImageUrls);
-        for (const candidate of variantImages) {
-          const trusted = parseTrustedProductImageUrl(candidate);
-          if (trusted) {
-            primaryImageUrl = trusted;
-            break;
-          }
-        }
-      }
+      const media = resolveStorefrontProductMedia({
+        productName: record.name,
+        primaryImageUrl: record.primaryImageUrl,
+        variantImageUrls: record.variants.map((item) =>
+          parseJsonStringArray(item.pancakeImageUrls),
+        ),
+      });
       return {
         id: record.id,
         slug: record.slug,
         name: record.name,
-        primaryImageUrl,
+        primaryImageUrl: media.primary?.url ?? null,
         priceText: price !== null ? currency.format(price) : null,
       };
     });

@@ -25,7 +25,7 @@ const JS_TRIM_PATTERN = `^${JS_TRIM_CLASS}+|${JS_TRIM_CLASS}+$`;
 
 /** The reviewed Pancake CDN path shape, mirroring `PANCAKE_MEDIA_PATH_REGEX` and `PANCAKE_WEB_MEDIA_PATH_REGEX`. */
 const PANCAKE_MEDIA_PATH_PATTERN =
-  "^(/[a-zA-Z0-9_.-]+/[0-9]+/[0-9]+/[0-9]+/[a-zA-Z0-9_.-]+\\.(jpg|jpeg|png|webp)|/web-media-[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.:-]+)+\\.(jpg|jpeg|png|webp))$";
+  "^(/[a-zA-Z0-9_.-]+/[0-9]+/[0-9]+/[0-9]+/[a-zA-Z0-9_.-]+\\.(jpg|jpeg|png|webp)|/web-media-[a-zA-Z0-9_.-]+(/[a-zA-Z0-9_.:-]+){4,5}/[a-zA-Z0-9_.:-]+\\.(jpg|jpeg|png|webp))$";
 
 export const TRUSTED_IMAGE_AUTHORITIES = [
   "content.pancake.vn",

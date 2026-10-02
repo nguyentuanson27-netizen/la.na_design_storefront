@@ -3,15 +3,16 @@ const TRUSTED_IMAGE_HOSTNAMES = new Set([
   "statics.pancake.vn",
   "cdn.pancake.vn",
 ]);
+const TRUSTED_VIDEO_HOSTNAMES = new Set(["content.pancake.vn"]);
 const MAX_IMAGE_URL_LENGTH = 4096;
 
 const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 /**
  * Editorial video, held to exactly the image rules with one extension set swapped.
  *
- * The host is the same reviewed Pancake CDN: this adds a media type, not a place media may come
- * from. Anything else -- another host, a custom port, credentials, a path outside the reviewed
- * shape -- is refused here for the same reasons it is for an image.
+ * Video keeps the original reviewed Pancake content host. Image-only CDN hosts are not inherited
+ * by this parser: this adds a media type, not a broader fetch origin. Anything else -- another host,
+ * a custom port, credentials, or a path outside the reviewed shape -- is refused.
  */
 const ALLOWED_VIDEO_EXTENSIONS = new Set([".mp4"]);
 
@@ -39,12 +40,13 @@ export type StorefrontProductMedia = {
  * - Length must be bounded (<= 4096 chars)
  */
 export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
-  return parseTrustedMediaUrl(rawUrl, ALLOWED_IMAGE_EXTENSIONS);
+  return parseTrustedMediaUrl(rawUrl, ALLOWED_IMAGE_EXTENSIONS, TRUSTED_IMAGE_HOSTNAMES);
 }
 
 function parseTrustedMediaUrl(
   rawUrl: unknown,
   allowedExtensions: ReadonlySet<string>,
+  trustedHostnames: ReadonlySet<string>,
 ): string | null {
   if (typeof rawUrl !== "string") {
     return null;
@@ -75,14 +77,14 @@ function parseTrustedMediaUrl(
     return null;
   }
 
-  if (!TRUSTED_IMAGE_HOSTNAMES.has(parsed.hostname.toLowerCase())) {
+  if (!trustedHostnames.has(parsed.hostname.toLowerCase())) {
     return null;
   }
 
   // Reject custom ports, explicit default ports, or credentials in authority
   const authority = trimmed.slice(8).split("/")[0] ?? "";
   if (
-    !TRUSTED_IMAGE_HOSTNAMES.has(authority) ||
+    !trustedHostnames.has(authority) ||
     parsed.port !== "" ||
     parsed.username !== "" ||
     parsed.password !== ""
@@ -108,14 +110,14 @@ function parseTrustedMediaUrl(
  * handed an `.mp4`.
  */
 export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
-  return parseTrustedMediaUrl(rawUrl, ALLOWED_VIDEO_EXTENSIONS);
+  return parseTrustedMediaUrl(rawUrl, ALLOWED_VIDEO_EXTENSIONS, TRUSTED_VIDEO_HOSTNAMES);
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
   /^\/[a-zA-Z0-9_.-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|webp|mp4)$/;
 
 const PANCAKE_WEB_MEDIA_PATH_REGEX =
-  /^\/web-media-[a-zA-Z0-9_.-]+(\/[a-zA-Z0-9_.:-]+)+\.(jpg|jpeg|png|webp|mp4)$/;
+  /^\/web-media-[a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.:-]+){4,5}\/[a-zA-Z0-9_.:-]+\.(jpg|jpeg|png|webp|mp4)$/;
 
 function isValidReviewedMediaPath(
   pathname: string,
@@ -143,14 +145,7 @@ function isValidReviewedMediaPath(
   }
 
   if (PANCAKE_WEB_MEDIA_PATH_REGEX.test(pathname)) {
-    const parts = pathname.split("/");
-    // Expected structure: ["", segment, h1, h2, h3, h4, filename] (7 parts)
-    // or with mime suffix: ["", segment, h1, h2, h3, h4, file-metadata, mime.ext] (8 parts)
-    if (parts.length < 7 || parts.length > 8) {
-      return false;
-    }
-
-    const lastPart = parts[parts.length - 1]!;
+    const lastPart = pathname.slice(pathname.lastIndexOf("/") + 1);
     const lastDotIndex = lastPart.lastIndexOf(".");
     if (lastDotIndex <= 0) {
       return false;
