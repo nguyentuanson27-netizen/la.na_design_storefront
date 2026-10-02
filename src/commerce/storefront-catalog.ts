@@ -111,9 +111,9 @@ const productSelection = {
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
-      // ADR 0014 §11 disables OVERSELL/PREORDER for a composite parent, and composition is a
-      // variant-level relation. One bounded row per variant answers "is this product a composite"
-      // without pulling the component graph a listing has no other use for.
+      // ADR 0014 §11 makes composite capacity component-aware in every selling mode. Composition
+      // is a variant-level relation; one bounded row per variant answers "is this product composite"
+      // so the listing can request the component-aware advisory snapshot without loading that graph here.
       compositeComponents: { take: 1, select: { componentVariantId: true } },
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],

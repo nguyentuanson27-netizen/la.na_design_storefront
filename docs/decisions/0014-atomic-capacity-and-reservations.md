@@ -500,28 +500,33 @@ separate scope and needs its own approval.
 
 ---
 
-## 11. Composite products — component-aware STANDARD capacity
+## 11. Composite products — component-aware capacity
 
-STANDARD composite parents are component-accounted. Their parent `WarehouseStock` remains the
-verbatim Pancake mirror and is **not** the sellable-capacity authority for the FULL SET. Advisory PDP
-and cart capacity are derived from components as:
+Composite parents are component-accounted in every selling mode. Their parent `WarehouseStock`
+remains the verbatim Pancake mirror and is **not** a sellable-capacity authority for the FULL SET.
+Storefront reads instead derive two quantities from the component resources the parent actually
+consumes:
 
-```text
-parentCapacity = min(floor(max(0, componentStock) / requiredQuantity))
-```
+- **ready capacity** — whole parent units that can be assembled while every component remains at or
+  above zero;
+- **reservable capacity** — whole parent units that can be accepted while every component remains at
+  or above the product policy floor: `0` for `STANDARD`, and `negativeStockLimit` for
+  `OVERSELL` / `PREORDER`.
 
-At checkout the authoritative rule is stricter than that advisory scalar: the parent line expands
-into component resources, locks those resources atomically, and persists the exact consumed resource
-quantities in `CapacityReservationResource`. A child disabled for standalone storefront sale may
-still supply a FULL SET when it remains present and stocked; activation controls standalone
-addressability, not whether a present component exists in the set.
+Each component's available units are divided by that edge's `requiredQuantity`; parent capacity is
+the minimum across all required components. Active capacity holds are subtracted on advisory reads,
+so a parent is never advertised from component units another order still owns.
 
-The database regressions cover a shared child across different parents/direct sale, a multiplier
-greater than 1, and multi-component all-or-none refusal.
+At checkout the parent line expands into those same component resources, locks them atomically, and
+enforces the resolved floor independently on every consumed resource before persisting the exact
+quantities in `CapacityReservationResource`. `PREORDER` acceptance is recorded when the accepted
+parent quantity exceeds ready component capacity while remaining within reservable capacity. A child
+disabled for standalone storefront sale may still supply a FULL SET when it remains present and
+stocked; activation controls standalone addressability, not whether a present component exists in
+the set.
 
-`OVERSELL` and `PREORDER` remain **disabled for composite parents**. Component-aware negative
-capacity semantics are still not approved, so those modes continue to fail with
-`composite-oversell-unproven` rather than extending the STANDARD component accounting by analogy.
+The database regressions cover shared components across parent/direct sales, component multipliers,
+multi-component all-or-none refusal, flexible negative floors, and PREORDER fulfillment state.
 
 ---
 
