@@ -47,6 +47,8 @@ test("listing advisory carries component-aware flexible capacity instead of reus
   const variant = product!.variants[0]!;
   assert.equal(variant.sellableStock, 0);
   assert.deepEqual(variant.compositeCapacity, {
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -10,
     readyQuantity: 0,
     reservableQuantity: 0,
     reason: "negative-limit-reached",

@@ -243,7 +243,16 @@ test("component groups sharing a label are one kind, and an indistinguishable pa
  */
 test("an OVERSELL parent policy restricts the set and is not inherited by its components", () => {
   const projection = buildStorefrontProductProjection({
-    parentVariants: [variant("set-m", "M", { sellableStock: -2 })],
+    parentVariants: [variant("set-m", "M", {
+      sellableStock: 0,
+      compositeCapacity: {
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -20,
+        readyQuantity: 0,
+        reservableQuantity: 18,
+        reason: "capacity-available",
+      },
+    })],
     componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M", { sellableStock: -2 })] }],
     hasCompositeGraph: true,
     sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
@@ -290,6 +299,33 @@ test("an OVERSELL parent policy restricts the set and is not inherited by its co
   assert.equal(standalone.options[0]?.purchasable, true);
 });
 
+
+test("a composite sub-set uses the policy captured in its own capacity snapshot", () => {
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("combo-m", "M")],
+    subSetGroups: [{
+      label: "SET QUẦN",
+      kindKey: "sub-set-quan",
+      variants: [variant("subset-m", "M", {
+        sellableStock: 0,
+        compositeCapacity: {
+          sellingMode: "PREORDER",
+          negativeStockLimit: -20,
+          readyQuantity: 0,
+          reservableQuantity: 20,
+          reason: "capacity-available",
+        },
+      })],
+    }],
+    componentGroups: [],
+    hasCompositeGraph: true,
+    sellingPolicy: { sellingMode: "STANDARD", negativeStockLimit: -20 },
+  });
+
+  const subset = projection.options.find((option) => option.id === "subset-m");
+  assert.equal(subset?.purchasable, true);
+  assert.equal(subset?.isPreorderSale, true, "the sibling's PREORDER policy must not become STANDARD");
+});
 
 test("composite child SKU classification is case-insensitive and fail-closed", () => {
   const cases = [

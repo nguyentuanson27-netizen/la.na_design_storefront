@@ -316,10 +316,17 @@ test("F8a a deep-linked variant renders its own state rather than the product's 
 /* ------------------------------------------------------------------------ F8a: composite */
 
 test("F8a a composite parent can present PREORDER when the shared capacity policy allows it", () => {
-  // Composite flexible modes are now supported. A generic presentation model without a component
-  // snapshot follows the capacity facts it is given; real catalog/PDP reads attach the exact
-  // component-aware snapshot before reaching this presentation layer.
-  const model = card([variant("v", 0)], capacity("PREORDER", { isComposite: true }));
+  const model = card([
+    variant("v", 0, {
+      compositeCapacity: {
+        sellingMode: "PREORDER",
+        negativeStockLimit: FLOOR,
+        readyQuantity: 0,
+        reservableQuantity: 20,
+        reason: "capacity-available",
+      },
+    }),
+  ], capacity("PREORDER", { isComposite: true }));
 
   assert.equal(model.isPreorderOnly, true);
   assert.equal(model.availability, "in-stock");

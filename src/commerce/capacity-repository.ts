@@ -126,27 +126,6 @@ export function createCapacityRepository(
   }
 
   /**
-   * ADR 0014 §11 — a composite parent may not be set to `OVERSELL` or `PREORDER`.
-   *
-   * The gate already refuses such a sale (`composite-oversell-unproven`) and I4 already keeps it off
-   * the page, so nothing would oversell if this write were allowed. It is refused anyway, because
-   * *storing* the intent would leave an operator looking at a product configured for preorder that
-   * silently never preorders, with the reason living three modules away. A refusal at the boundary
-   * tells them now.
-   *
-   * A product is a composite parent when any of its variants has components — the same predicate
-   * `countProjectedCompositeParentVariations()` uses.
-   */
-  async function requireCompositeRestrictionSatisfied(
-    _tx: Pick<PrismaClient, "variantMirror">,
-    _productId: string,
-    _sellingMode: SellingMode,
-  ): Promise<void> {
-    // Composite products now support OVERSELL and PREORDER with component-aware accounting.
-    return;
-  }
-
-  /**
    * Set one product's selling policy.
    *
    * An upsert, because `productId` is unique: a second submission for the same product is the
@@ -212,7 +191,6 @@ export function createCapacityRepository(
       async (tx) => {
         await acquireCatalogSyncLock(tx, shopId);
         await requireVisibleProduct(tx, shopId, productId);
-        await requireCompositeRestrictionSatisfied(tx, productId, sellingMode);
 
         const stored = await tx.productSellingPolicy.upsert({
           where: { productId },

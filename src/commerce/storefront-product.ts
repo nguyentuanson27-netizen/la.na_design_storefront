@@ -238,16 +238,12 @@ export function toStorefrontSelectableOptions(
  * The product-level facts the capacity rule needs and a variant row does not carry: the selling
  * policy `resolveSellingPolicy()` returns, plus whether this product is a composite parent.
  *
- * `isComposite` is here rather than hard-coded at the call site because ADR 0014 refuses `OVERSELL`
- * and `PREORDER` for a composite parent until component-aware atomic capacity exists. A display that
- * assumed `false` would offer exactly what the commit boundary is going to refuse — the drift I4
- * exists to remove — and it would do so silently, the moment I2 lets an operator set a policy.
+ * `isComposite` tells the projection that the parent scalar is not sufficient for flexible modes.
+ * A composite snapshot carries the resolved policy of the product that owns that exact variant, so
+ * sibling sets do not accidentally inherit the policy of the product page they were discovered from.
  *
- * Optional, and its default is the approved missing-row answer — `STANDARD` floored at 0, not a
- * composite — so every caller that has not been switched keeps exactly today's behaviour. The
- * default cannot be wrong about `isComposite` today, because the restriction only bites for a
- * non-`STANDARD` mode and the default is `STANDARD`; it is stated rather than omitted so that the
- * caller which does know has somewhere to say it.
+ * The default remains the approved missing-row answer — `STANDARD` floored at 0, not a composite —
+ * so standalone callers that have not opted into component-aware capacity keep existing behaviour.
  */
 export type StorefrontProductCapacity = Readonly<{
   sellingMode: SellingMode;
@@ -314,22 +310,32 @@ export function buildStorefrontVariantOptions(
     // which has already subtracted active holds, so none is subtracted again here. A page cannot
     // bind a decision made later, and trusting it to is the oversell master spec §31 forbids.
     const compositeCapacity = productCapacity.isComposite ? variant.compositeCapacity : undefined;
-    const sellability = compositeCapacity
+    const missingFlexibleCompositeCapacity =
+      productCapacity.isComposite &&
+      productCapacity.sellingMode !== "STANDARD" &&
+      compositeCapacity === undefined;
+    const sellability = missingFlexibleCompositeCapacity
       ? {
-          sellable: compositeCapacity.reservableQuantity > 0,
-          reason: compositeCapacity.reason,
-          isPreorderSale:
-            compositeCapacity.reservableQuantity > 0 &&
-            productCapacity.sellingMode === "PREORDER" &&
-            compositeCapacity.readyQuantity < 1,
+          sellable: false,
+          reason: "composite-capacity-missing" as const,
+          isPreorderSale: false,
         }
-      : resolveVariantSellability({
-          mirroredStock: variant.sellableStock,
-          activeReservedQuantity: 0,
-          sellingMode: productCapacity.sellingMode,
-          negativeStockLimit: productCapacity.negativeStockLimit,
-          isComposite: productCapacity.isComposite,
-        });
+      : compositeCapacity
+        ? {
+            sellable: compositeCapacity.reservableQuantity > 0,
+            reason: compositeCapacity.reason,
+            isPreorderSale:
+              compositeCapacity.reservableQuantity > 0 &&
+              compositeCapacity.sellingMode === "PREORDER" &&
+              compositeCapacity.readyQuantity < 1,
+          }
+        : resolveVariantSellability({
+            mirroredStock: variant.sellableStock,
+            activeReservedQuantity: 0,
+            sellingMode: productCapacity.sellingMode,
+            negativeStockLimit: productCapacity.negativeStockLimit,
+            isComposite: productCapacity.isComposite,
+          });
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 
     if (!variant.size || (hasColorDimension && !variant.color)) {

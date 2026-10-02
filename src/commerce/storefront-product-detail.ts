@@ -287,6 +287,11 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
           size: true,
           pancakeRetailPrice: true,
           pancakeRetailPriceAfterDiscount: true,
+          product: {
+            select: {
+              sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
+            },
+          },
           compositeComponents: {
             orderBy: [{ componentVariantId: "asc" }],
             select: {
@@ -338,6 +343,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         });
         if (kind === null) continue;
 
+        const siblingSellingPolicy = resolveSellingPolicy(sibling.product.sellingPolicy);
         const variants = variantsByKind.get(kind) ?? [];
         variants.push({
           id: sibling.id,
@@ -359,8 +365,8 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
               componentVariant: edge.componentVariant,
             })),
-            sellingMode: sellingPolicy.sellingMode,
-            negativeStockLimit: sellingPolicy.negativeStockLimit,
+            sellingMode: siblingSellingPolicy.sellingMode,
+            negativeStockLimit: siblingSellingPolicy.negativeStockLimit,
           }),
           retailPrice: sibling.pancakeRetailPrice,
           retailPriceAfterDiscount: sibling.pancakeRetailPriceAfterDiscount,

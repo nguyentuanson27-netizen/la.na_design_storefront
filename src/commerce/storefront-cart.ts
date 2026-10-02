@@ -341,7 +341,7 @@ export function buildStorefrontCartLines({
         option.purchasable &&
         capacity !== undefined &&
         (capacity.isComposite && variant.compositeCapacity !== undefined
-          ? capacity.sellingMode === "PREORDER" &&
+          ? variant.compositeCapacity.sellingMode === "PREORDER" &&
             item.quantity > variant.compositeCapacity.readyQuantity
           : resolveAcceptedPreorderState(
               {

@@ -35,16 +35,25 @@ function sumCountableStock(stocks: readonly Readonly<{ quantity: number }>[]): n
 }
 
 export type CompositeCapacitySnapshot = Readonly<{
+  sellingMode: SellingMode;
+  negativeStockLimit: number;
   readyQuantity: number;
   reservableQuantity: number;
   reason: CapacityDecisionReason;
 }>;
 
-const ZERO_INVALID_STOCK_CAPACITY: CompositeCapacitySnapshot = Object.freeze({
-  readyQuantity: 0,
-  reservableQuantity: 0,
-  reason: "invalid-stock",
-});
+function invalidStockCapacity(
+  sellingMode: SellingMode,
+  negativeStockLimit: number,
+): CompositeCapacitySnapshot {
+  return Object.freeze({
+    sellingMode,
+    negativeStockLimit,
+    readyQuantity: 0,
+    reservableQuantity: 0,
+    reason: "invalid-stock",
+  });
+}
 
 /**
  * Component-aware advisory capacity for one composite parent.
@@ -66,15 +75,17 @@ export function deriveCompositeCapacitySnapshot({
 }>): CompositeCapacitySnapshot {
   if (!Number.isSafeInteger(negativeStockLimit) || negativeStockLimit > 0) {
     return Object.freeze({
+      sellingMode,
+      negativeStockLimit,
       readyQuantity: 0,
       reservableQuantity: 0,
       reason: "invalid-limit" as const,
     });
   }
   if (!Number.isSafeInteger(shopId) || shopId <= 0 || shopId > MAX_POSTGRES_INTEGER) {
-    return ZERO_INVALID_STOCK_CAPACITY;
+    return invalidStockCapacity(sellingMode, negativeStockLimit);
   }
-  if (components.length === 0) return ZERO_INVALID_STOCK_CAPACITY;
+  if (components.length === 0) return invalidStockCapacity(sellingMode, negativeStockLimit);
 
   const floor = capacityFloorForMode(sellingMode, negativeStockLimit);
   let readyQuantity = MAX_POSTGRES_INTEGER;
@@ -90,18 +101,18 @@ export function deriveCompositeCapacitySnapshot({
       edge.requiredQuantity <= 0 ||
       edge.requiredQuantity > MAX_POSTGRES_INTEGER
     ) {
-      return ZERO_INVALID_STOCK_CAPACITY;
+      return invalidStockCapacity(sellingMode, negativeStockLimit);
     }
 
     const stock = sumCountableStock(component.warehouseStocks);
-    if (stock === null) return ZERO_INVALID_STOCK_CAPACITY;
+    if (stock === null) return invalidStockCapacity(sellingMode, negativeStockLimit);
     const held = edge.activeReservedQuantity ?? 0;
-    if (!Number.isSafeInteger(held) || held < 0) return ZERO_INVALID_STOCK_CAPACITY;
+    if (!Number.isSafeInteger(held) || held < 0) return invalidStockCapacity(sellingMode, negativeStockLimit);
 
     const available = stock - held;
     const headroom = available - floor;
     if (!Number.isSafeInteger(available) || !Number.isSafeInteger(headroom)) {
-      return ZERO_INVALID_STOCK_CAPACITY;
+      return invalidStockCapacity(sellingMode, negativeStockLimit);
     }
 
     const maxByResourceRow = Math.floor(MAX_POSTGRES_INTEGER / edge.requiredQuantity);
@@ -124,7 +135,13 @@ export function deriveCompositeCapacitySnapshot({
         ? "standard-would-go-negative"
         : "negative-limit-reached";
 
-  return Object.freeze({ readyQuantity, reservableQuantity, reason });
+  return Object.freeze({
+    sellingMode,
+    negativeStockLimit,
+    readyQuantity,
+    reservableQuantity,
+    reason,
+  });
 }
 
 /**

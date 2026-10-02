@@ -277,6 +277,29 @@ test("U27a mirrored inventory can state an availability only when every row is w
   assert.equal(resolve([5, Number.NaN]), false);
 });
 
+test("flexible composite options fail closed when the component-aware snapshot is missing", () => {
+  const [option] = buildStorefrontVariantOptions(
+    [{
+      id: "set-missing",
+      pancakeVariationId: "pancake-set-missing",
+      color: null,
+      size: "M",
+      sellableStock: 0,
+      retailPrice: 790_000,
+      retailPriceAfterDiscount: 790_000,
+    }],
+    undefined,
+    { sellingMode: "PREORDER", negativeStockLimit: -20, isComposite: true },
+  );
+
+  assert.equal(option?.purchasable, false);
+  assert.equal(option?.unavailableReason, "OUT_OF_STOCK");
+  assert.deepEqual(option?.availability, {
+    published: false,
+    reason: "AVAILABILITY_UNRESOLVED",
+  });
+});
+
 test("composite options use component-aware reservable and ready quantities", () => {
   const parent = {
     id: "set-m",
@@ -297,6 +320,8 @@ test("composite options use component-aware reservable and ready quantities", ()
     [{
       ...parent,
       compositeCapacity: {
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -10,
         readyQuantity: 0,
         reservableQuantity: 0,
         reason: "negative-limit-reached",
@@ -312,6 +337,8 @@ test("composite options use component-aware reservable and ready quantities", ()
     [{
       ...parent,
       compositeCapacity: {
+        sellingMode: "PREORDER",
+        negativeStockLimit: -10,
         readyQuantity: 0,
         reservableQuantity: 2,
         reason: "capacity-available",
@@ -328,6 +355,8 @@ test("composite options use component-aware reservable and ready quantities", ()
       ...parent,
       sellableStock: 1,
       compositeCapacity: {
+        sellingMode: "PREORDER",
+        negativeStockLimit: -10,
         readyQuantity: 1,
         reservableQuantity: 11,
         reason: "capacity-available",

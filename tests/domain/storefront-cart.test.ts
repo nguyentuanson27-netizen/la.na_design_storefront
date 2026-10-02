@@ -338,6 +338,8 @@ test("I5 composite cart lines use component-aware headroom and ready quantity", 
         variants: [{
           ...baseVariant,
           compositeCapacity: {
+            sellingMode: "OVERSELL",
+            negativeStockLimit: -10,
             readyQuantity: 0,
             reservableQuantity: 0,
             reason: "negative-limit-reached",
@@ -354,6 +356,8 @@ test("I5 composite cart lines use component-aware headroom and ready quantity", 
     variants: [{
       ...baseVariant,
       compositeCapacity: {
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -20,
         readyQuantity: 0,
         reservableQuantity: 2,
         reason: "capacity-available",
@@ -380,6 +384,8 @@ test("I5 composite cart lines use component-aware headroom and ready quantity", 
       ...baseVariant,
       sellableStock: 1,
       compositeCapacity: {
+        sellingMode: "PREORDER",
+        negativeStockLimit: -20,
         readyQuantity: 1,
         reservableQuantity: 11,
         reason: "capacity-available",

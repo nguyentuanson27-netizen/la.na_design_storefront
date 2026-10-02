@@ -21,6 +21,8 @@ test("composite flexible capacity stops exactly at the component floor", () => {
   });
 
   assert.deepEqual(capacity, {
+    sellingMode: "PREORDER",
+    negativeStockLimit: -10,
     readyQuantity: 0,
     reservableQuantity: 0,
     reason: "negative-limit-reached",
@@ -36,6 +38,8 @@ test("composite capacity accounts for component multipliers without losing ready
   });
 
   assert.deepEqual(capacity, {
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
     readyQuantity: 1,
     reservableQuantity: 11,
     reason: "capacity-available",
