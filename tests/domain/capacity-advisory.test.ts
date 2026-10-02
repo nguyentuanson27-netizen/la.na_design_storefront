@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { withAdvisorySellableStock } from "../../src/commerce/capacity-advisory.ts";
-import { buildStorefrontVariantOptions } from "../../src/commerce/storefront-product.ts";
+import {
+  buildStorefrontVariantOptions,
+  type StorefrontVariantFacts,
+} from "../../src/commerce/storefront-product.ts";
 
 test("listing advisory carries component-aware flexible capacity instead of reusing ready stock", async () => {
   const client = {
@@ -27,17 +30,18 @@ test("listing advisory carries component-aware flexible capacity instead of reus
     },
   };
 
+  const variants: StorefrontVariantFacts[] = [{
+    id: "combo",
+    pancakeVariationId: "pancake-combo",
+    color: null,
+    size: "M",
+    sellableStock: 99,
+    retailPrice: 500_000,
+    retailPriceAfterDiscount: 500_000,
+  }];
   const [product] = await withAdvisorySellableStock(client as never, 1, [{
     productCapacity: { sellingMode: "OVERSELL" as const, negativeStockLimit: -10, isComposite: true },
-    variants: [{
-      id: "combo",
-      pancakeVariationId: "pancake-combo",
-      color: null,
-      size: "M",
-      sellableStock: 99,
-      retailPrice: 500_000,
-      retailPriceAfterDiscount: 500_000,
-    }],
+    variants,
   }]);
 
   const variant = product!.variants[0]!;

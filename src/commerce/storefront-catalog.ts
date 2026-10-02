@@ -6,7 +6,10 @@ import { sortClothingSizes } from "./clothing-size.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
-import { resolveVariantAvailabilityFromWarehouseStocks } from "./storefront-product.ts";
+import {
+  resolveVariantAvailabilityFromWarehouseStocks,
+  type StorefrontVariantFacts,
+} from "./storefront-product.ts";
 import {
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
@@ -182,6 +185,15 @@ export function toStorefrontProduct(
         .map((slug) => collectionMap.get(slug))
         .filter((col): col is StorefrontProductCollection => Boolean(col))
     : [];
+  const variants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
+    id: variant.id,
+    pancakeVariationId: variant.pancakeVariationId,
+    color: variant.color,
+    size: variant.size,
+    retailPrice: variant.pancakeRetailPrice,
+    retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
+    sellableStock: sumWarehouseStocks(variant.warehouseStocks),
+  }));
 
   return {
     // Internal identity, used for joins and admin routes. Not vendor-facing.
@@ -201,15 +213,7 @@ export function toStorefrontProduct(
     seoTitle: publishedContent?.seoTitle ?? null,
     seoDescription: publishedContent?.seoDescription ?? null,
     collections,
-    variants: product.variants.map((variant) => ({
-      id: variant.id,
-      pancakeVariationId: variant.pancakeVariationId,
-      color: variant.color,
-      size: variant.size,
-      retailPrice: variant.pancakeRetailPrice,
-      retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
-      sellableStock: sumWarehouseStocks(variant.warehouseStocks),
-    })),
+    variants,
     // I5/F8a — the capacity every surface must judge this product by, resolved once from the row
     // above. It is product-level because the policy is, and because `isComposite` is decided by
     // whether *any* variant composes others — the same granularity I2's admin boundary and I6a's
@@ -647,7 +651,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
   function withAdvisoryStock<P extends ReturnType<typeof toStorefrontProduct>>(
     shopId: number,
     products: readonly P[],
-  ) {
+  ): Promise<P[]> {
     return withAdvisorySellableStock(client, parseShopId(shopId), products);
   }
 

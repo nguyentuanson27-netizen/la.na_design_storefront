@@ -82,19 +82,13 @@ type AdvisoryStockVariant = Readonly<{
   compositeCapacity?: CompositeCapacitySnapshot;
 }>;
 
-type AdvisoryStockProduct = Readonly<{
-  variants: readonly AdvisoryStockVariant[];
+type AdvisoryStockProduct<V extends AdvisoryStockVariant> = Readonly<{
+  variants: readonly V[];
   productCapacity?: Readonly<{
     sellingMode: SellingMode;
     negativeStockLimit: number;
     isComposite: boolean;
   }>;
-}>;
-
-type AdvisoryStockProductResult<P extends AdvisoryStockProduct> = Omit<P, "variants"> & Readonly<{
-  variants: readonly (
-    P["variants"][number] & Readonly<{ compositeCapacity?: CompositeCapacitySnapshot }>
-  )[];
 }>;
 
 /**
@@ -107,11 +101,10 @@ type AdvisoryStockProductResult<P extends AdvisoryStockProduct> = Omit<P, "varia
  *   (`deriveCompositeSellableStock()`). The parent's own mirrored stock is not what a set sale
  *   spends, so it is not consulted — the same resources `reserveOrderCapacity()` locks.
  */
-export async function withAdvisorySellableStock<P extends AdvisoryStockProduct>(
-  client: AdvisoryCapacityReadClient,
-  shopId: number,
-  products: readonly P[],
-): Promise<AdvisoryStockProductResult<P>[]> {
+export async function withAdvisorySellableStock<
+  V extends AdvisoryStockVariant,
+  P extends AdvisoryStockProduct<V>,
+>(client: AdvisoryCapacityReadClient, shopId: number, products: readonly P[]): Promise<P[]> {
   const variantIds = products.flatMap((product) => product.variants.map(({ id }) => id));
   if (variantIds.length === 0) return [...products];
 
