@@ -1,15 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PrismaPg } from "@prisma/adapter-pg";
-
 import { searchStorefrontSuggestionsAction } from "../../src/commerce/storefront-search-actions.ts";
-import { PrismaClient } from "../../src/generated/prisma/client.ts";
-
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
-
-const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }) });
+import { prisma } from "../../src/db/prisma.ts";
 const shopId = 920_299;
 const syncedAt = new Date("2026-10-02T00:00:00.000Z");
 const pancakeProductId = "pr99-search-media-fallback";
