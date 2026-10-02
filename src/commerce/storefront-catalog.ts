@@ -502,7 +502,20 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
   ];
 
   if (discovery.query) {
-    filters.push(Prisma.sql`POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0`);
+    // The mirrored name drops the Pancake product code ("SV605"), so the code and the variant
+    // display ids are searched too.
+    filters.push(Prisma.sql`(
+      POSITION(LOWER(${discovery.query}) IN LOWER(p."name")) > 0
+      OR POSITION(LOWER(${discovery.query}) IN LOWER(COALESCE(p."productCode", ''))) > 0
+      OR EXISTS (
+        SELECT 1
+        FROM "VariantMirror" vm
+        WHERE vm."productId" = p."id"
+          AND vm."isPresent" = TRUE
+          AND vm."isActive" = TRUE
+          AND POSITION(LOWER(${discovery.query}) IN LOWER(COALESCE(vm."pancakeDisplayId", ''))) > 0
+      )
+    )`);
   }
   if (discovery.categoryListingKeys && discovery.categoryListingKeys.length > 0) {
     filters.push(Prisma.sql`

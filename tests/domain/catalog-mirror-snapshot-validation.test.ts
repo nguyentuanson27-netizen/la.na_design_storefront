@@ -84,6 +84,7 @@ test("validateCatalogSnapshot groups multi-variant products with consistent sour
   assert.deepEqual(product, {
     pancakeProductId: "prod-1",
     name: "Oxford Shirt",
+    productCode: null,
     sourceDescription: "Classic Oxford cotton.",
     primaryImageUrl: "https://content.pancake.vn/images/1/2/3/oxford.jpg",
   });
@@ -96,6 +97,7 @@ test("validateCatalogSnapshot mirrors the Pancake product name without its trail
   ]);
 
   assert.equal(productByExternalId.get("prod-1")?.name, "Set váy Diệu Liên Hoa");
+  assert.equal(productByExternalId.get("prod-1")?.productCode, "SV605");
 });
 
 test("validateCatalogSnapshot rejects inconsistent sourceDescription for the same product", () => {
@@ -167,6 +169,7 @@ test("validateCatalogSnapshot groups multi-variant products with explicit null s
   assert.deepEqual(product, {
     pancakeProductId: "prod-1",
     name: "Oxford Shirt",
+    productCode: null,
     sourceDescription: null,
     primaryImageUrl: null,
   });

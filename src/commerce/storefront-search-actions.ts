@@ -72,7 +72,8 @@ export async function searchStorefrontSuggestionsAction(
         OR: [
           { name: { contains: trimmed, mode: "insensitive" } },
           // The mirrored name drops the Pancake product code ("SV605"), so a shopper who
-          // types the code still finds the product through its variant display ids.
+          // types the code still finds the product through that code or its variant display ids.
+          { productCode: { contains: trimmed, mode: "insensitive" } },
           {
             variants: {
               some: {

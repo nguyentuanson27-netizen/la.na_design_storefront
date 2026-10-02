@@ -187,7 +187,10 @@ model ProductMirror {
   pancakeShopId     Int                  @default(0)
   pancakeProductId  String               @unique
   slug              String               @unique
+  /// Pancake product name without its trailing product code ("Set váy Diệu Liên Hoa").
   name              String
+  /// The trailing product code split off the Pancake name ("SV605"), kept for search.
+  productCode       String?
   sourceDescription String?
   primaryImageUrl   String?
   isPresent         Boolean              @default(true)
