@@ -21,7 +21,11 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
-import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import {
+  deriveCompositeCapacitySnapshot,
+  deriveCompositeSellableStock,
+  type CompositeCapacitySnapshot,
+} from "./composite-capacity.ts";
 import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 
 function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
@@ -55,6 +59,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
       where: { productId: product.id },
       select: { sellingMode: true, negativeStockLimit: true },
     });
+    const sellingPolicy = resolveSellingPolicy(sellingPolicyRow);
 
     const parentRelations = await client.variantMirror.findMany({
       where: {
@@ -124,6 +129,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
     >();
 
     const compositeStockByVariantId = new Map<string, number>();
+    const compositeCapacityByVariantId = new Map<string, CompositeCapacitySnapshot>();
     // Whether the mirror itself can state a set's availability to a vendor: a publication fact about
     // mirrored rows (`variantAvailabilityResolvedById`), so it is decided without local holds.
     const compositeResolvedByVariantId = new Map<string, boolean>();
@@ -138,6 +144,19 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
               componentVariant: edge.componentVariant,
             })),
+          }),
+        );
+        compositeCapacityByVariantId.set(
+          parent.id,
+          deriveCompositeCapacitySnapshot({
+            shopId,
+            components: parent.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
+              componentVariant: edge.componentVariant,
+            })),
+            sellingMode: sellingPolicy.sellingMode,
+            negativeStockLimit: sellingPolicy.negativeStockLimit,
           }),
         );
         compositeResolvedByVariantId.set(
@@ -193,7 +212,12 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
 
     const effectiveParentVariants = product.variants.map((v) => {
       const derived = compositeStockByVariantId.get(v.id);
-      return derived !== undefined ? { ...v, sellableStock: derived } : v;
+      if (derived === undefined) return v;
+      return {
+        ...v,
+        sellableStock: derived,
+        compositeCapacity: compositeCapacityByVariantId.get(v.id),
+      };
     });
 
     const componentGroups: StorefrontCompositeComponentGroup[] = [...groups.values()]
@@ -328,6 +352,16 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
               componentVariant: edge.componentVariant,
             })),
           }),
+          compositeCapacity: deriveCompositeCapacitySnapshot({
+            shopId,
+            components: sibling.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              activeReservedQuantity: heldByVariantId.get(edge.componentVariant.id) ?? 0,
+              componentVariant: edge.componentVariant,
+            })),
+            sellingMode: sellingPolicy.sellingMode,
+            negativeStockLimit: sellingPolicy.negativeStockLimit,
+          }),
           retailPrice: sibling.pancakeRetailPrice,
           retailPriceAfterDiscount: sibling.pancakeRetailPriceAfterDiscount,
         });
@@ -412,7 +446,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         // sold-out variant is a preorder sale at all; the cycle date decides whether that sale is
         // publishable as `backorder`. Reading the dates here is a READ — a page render must never
         // move a cycle, or the published date would depend on who last looked.
-        sellingPolicy: resolveSellingPolicy(sellingPolicyRow),
+        sellingPolicy,
         availabilityDates: {
           byVariantId: await readVariantAvailabilityDates(
             client,
