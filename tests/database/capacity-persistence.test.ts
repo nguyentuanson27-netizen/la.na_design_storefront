@@ -421,6 +421,74 @@ test("I2 a composite parent may persist OVERSELL, PREORDER, and STANDARD policie
   );
 });
 
+test("I9 PREORDER composite cycle follows ready component capacity on policy writes", async () => {
+  const parent = await seedProduct("preorder-composite-cycle-parent");
+  const child = await seedProduct("preorder-composite-cycle-child");
+  await prisma.warehouseStock.createMany({
+    data: [
+      {
+        variantId: parent.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-parent-wh",
+        quantity: 0,
+        syncedAt,
+      },
+      {
+        variantId: child.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-child-wh",
+        quantity: 5,
+        syncedAt,
+      },
+    ],
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parent.variantId,
+      componentVariantId: child.variantId,
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const observedAt = new Date("2026-09-20T03:00:00.000Z");
+  const policy = createCapacityRepository(prisma, () => observedAt);
+  await policy.saveSellingPolicy({
+    shopId: testShopId,
+    productId: parent.productId,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+  });
+
+  const ready = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parent.variantId },
+  });
+  assert.equal(ready.lastStockNonPositive, false, "parent stock 0 must not open while components are ready");
+  assert.equal(ready.cycleStartDate, null);
+  assert.equal(ready.availabilityDate, null);
+
+  await prisma.warehouseStock.update({
+    where: {
+      variantId_pancakeWarehouseId: {
+        variantId: child.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-child-wh",
+      },
+    },
+    data: { quantity: 0 },
+  });
+  await policy.saveSellingPolicy({
+    shopId: testShopId,
+    productId: parent.productId,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+  });
+
+  const soldOut = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parent.variantId },
+  });
+  assert.equal(soldOut.lastStockNonPositive, true);
+  assert.ok(soldOut.cycleStartDate !== null, "cycle opens only when ready component capacity reaches zero");
+  assert.ok(soldOut.availabilityDate !== null);
+});
+
 test("I2 a second write replaces the whole row rather than patching it", async () => {
   const { productId } = await seedProductForShop("upsert", testShopId);
 

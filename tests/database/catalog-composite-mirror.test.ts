@@ -22,10 +22,12 @@ function variation({
   id,
   productId,
   name,
+  stock,
 }: {
   id: string;
   productId: string;
   name: string;
+  stock?: number;
 }): PancakeParsedCatalogVariation {
   return {
     id,
@@ -39,8 +41,11 @@ function variation({
     retailPrice: 500_000,
     retailPriceAfterDiscount: 500_000,
     product: { id: productId, name, sourceDescription: null, primaryImageUrl: null },
-    warehouseStocks: [],
-    sellableStock: 0,
+    warehouseStocks:
+      stock === undefined
+        ? []
+        : [{ warehouseId: `${id}-warehouse`, remainQuantity: stock }],
+    sellableStock: stock ?? 0,
   };
 }
 
@@ -174,6 +179,72 @@ test("catalog sync persists direct composite edges and replaces stale edges idem
   assert.deepEqual(secondEdges, [
     { quantity: 2, componentVariant: { pancakeVariationId: "shirt-m" } },
   ]);
+});
+
+test("PREORDER composite availability cycle opens from component-ready capacity, not parent stock", async () => {
+  const composite = snapshot([
+    { parentVariationId: "set-m", componentVariationId: "shirt-m", quantity: 1 },
+    { parentVariationId: "set-m", componentVariationId: "pants-m", quantity: 1 },
+  ]);
+  const readySnapshot = [
+    variation({ id: "set-m", productId: "set-product", name: "Set A", stock: 0 }),
+    variation({ id: "shirt-m", productId: "shirt-product", name: "Ao A", stock: 5 }),
+    variation({ id: "pants-m", productId: "pants-product", name: "Quan A", stock: 5 }),
+  ];
+
+  await repository.syncSnapshot({
+    shopId,
+    variations: readySnapshot,
+    compositeSnapshot: composite,
+    syncedAt: new Date("2026-09-20T00:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-20T00:00:01.000Z"),
+  });
+  const parentProduct = await prisma.productMirror.findFirstOrThrow({
+    where: { pancakeShopId: shopId, pancakeProductId: "set-product" },
+    include: { variants: true },
+  });
+  await prisma.productSellingPolicy.create({
+    data: {
+      productId: parentProduct.id,
+      sellingMode: "PREORDER",
+      negativeStockLimit: -20,
+    },
+  });
+
+  await repository.syncSnapshot({
+    shopId,
+    variations: readySnapshot,
+    compositeSnapshot: composite,
+    syncedAt: new Date("2026-09-20T01:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-20T01:00:01.000Z"),
+  });
+  const parentVariantId = parentProduct.variants[0]!.id;
+  const ready = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parentVariantId },
+  });
+  assert.equal(ready.lastStockNonPositive, false, "parent stock 0 is not sold out while components make sets");
+  assert.equal(ready.cycleStartDate, null);
+  assert.equal(ready.availabilityDate, null);
+
+  const exhaustedSnapshot = [
+    variation({ id: "set-m", productId: "set-product", name: "Set A", stock: 0 }),
+    variation({ id: "shirt-m", productId: "shirt-product", name: "Ao A", stock: 0 }),
+    variation({ id: "pants-m", productId: "pants-product", name: "Quan A", stock: 5 }),
+  ];
+  await repository.syncSnapshot({
+    shopId,
+    variations: exhaustedSnapshot,
+    compositeSnapshot: composite,
+    syncedAt: new Date("2026-09-20T02:00:00.000Z"),
+    availabilityObservedAt: new Date("2026-09-20T02:00:01.000Z"),
+  });
+
+  const soldOut = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parentVariantId },
+  });
+  assert.equal(soldOut.lastStockNonPositive, true);
+  assert.ok(soldOut.cycleStartDate !== null);
+  assert.ok(soldOut.availabilityDate !== null);
 });
 
 test("a combo whose component is missing from the catalog is quarantined, not a failed sync, and heals itself", async () => {

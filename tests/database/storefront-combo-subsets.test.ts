@@ -260,6 +260,46 @@ test("an inactive sibling SET VÁY goes PDP selection → cart → checkout snap
   );
 });
 
+test("PREORDER sub-set selection carries the sub-set's persisted availability date", async () => {
+  const catalog = await seedCatalog();
+  await prisma.productSellingPolicy.create({
+    data: {
+      productId: catalog.setVayM.productId,
+      sellingMode: "PREORDER",
+      negativeStockLimit: -20,
+    },
+  });
+  await prisma.warehouseStock.updateMany({
+    where: { variantId: { in: [catalog.aoM.id, catalog.cvM.id] } },
+    data: { quantity: 0 },
+  });
+  await prisma.variantAvailabilityCycle.create({
+    data: {
+      variantId: catalog.setVayM.id,
+      cycleStartDate: new Date("2026-09-26T00:00:00.000Z"),
+      availabilityDate: new Date("2026-10-10T00:00:00.000Z"),
+      lastStockNonPositive: true,
+      lastPreorder: true,
+    },
+  });
+
+  const detail = await createStorefrontProductDetailRepository(prisma).getProductBySlug({
+    shopId,
+    slug: "combo-subsets-combo-555",
+    now,
+  });
+  assert.ok(detail);
+
+  const selection = deriveStorefrontProjectionSelection(detail.projection.options, {
+    kindKey: "sub-set-vay",
+    color: null,
+    size: "M",
+  });
+  assert.equal(selection.selectedVariantId, catalog.setVayM.id);
+  assert.equal(selection.selectedIsPreorderSale, true);
+  assert.equal(selection.selectedAvailabilityDate, "2026-10-10");
+});
+
 test("composites that are not an exact subset of one active combo fail closed at cart and checkout", async () => {
   const catalog = await seedCatalog();
   await prisma.cart.create({ data: { id: cartId, expiresAt: new Date("2026-09-27T00:00:00.000Z") } });
