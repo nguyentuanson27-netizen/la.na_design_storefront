@@ -411,6 +411,17 @@ test("an image is not video either: the two extension sets do not overlap", () =
   assert.equal(parseTrustedProductVideoUrl("https://content.pancake.vn/1/2/3/4/photo.png"), null);
 });
 
+test("video trust does not expand to image-only Pancake CDN hosts", () => {
+  assert.equal(
+    parseTrustedProductVideoUrl("https://statics.pancake.vn/1/2/3/4/film.mp4"),
+    null,
+  );
+  assert.equal(
+    parseTrustedProductVideoUrl("https://cdn.pancake.vn/1/2/3/4/film.mp4"),
+    null,
+  );
+});
+
 test("video is held to every rule an image is held to", () => {
   // The same reviewed host and the same reviewed path shape. This adds a media type, not a place
   // media may come from.
