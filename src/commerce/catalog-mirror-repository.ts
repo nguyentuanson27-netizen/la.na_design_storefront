@@ -10,6 +10,7 @@ import {
 import { observeVariantAvailabilityCycles } from "./availability-cycle-repository.ts";
 import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./catalog-sync-lock.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { deriveCompositeCapacitySnapshot } from "./composite-capacity.ts";
 import { handOffMirroredCapacity } from "./capacity-handoff.ts";
 import {
   createBootstrapProductSlug,
@@ -698,19 +699,77 @@ export function createCatalogMirrorRepository(
             : [];
         const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
 
+        const observedVariantIds = variations.flatMap((variation) => {
+          const variantId = internalVariantIds.get(variation.id);
+          return variantId === undefined ? [] : [variantId];
+        });
+        const compositeParents =
+          observedVariantIds.length === 0
+            ? []
+            : await tx.variantMirror.findMany({
+                where: {
+                  id: { in: observedVariantIds },
+                  compositeComponents: { some: {} },
+                },
+                select: {
+                  id: true,
+                  compositeComponents: {
+                    select: {
+                      quantity: true,
+                      componentVariant: {
+                        select: {
+                          isPresent: true,
+                          product: {
+                            select: {
+                              pancakeShopId: true,
+                              isPresent: true,
+                            },
+                          },
+                          warehouseStocks: { select: { quantity: true } },
+                        },
+                      },
+                    },
+                  },
+                },
+              });
+        const compositeStockNonPositiveByVariantId = new Map<string, boolean>();
+        for (const parent of compositeParents) {
+          const readiness = deriveCompositeCapacitySnapshot({
+            shopId: safeShopId,
+            components: parent.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+            sellingMode: "STANDARD",
+            negativeStockLimit: 0,
+          });
+          compositeStockNonPositiveByVariantId.set(
+            parent.id,
+            readiness.reason !== "invalid-stock" &&
+              readiness.reason !== "invalid-limit" &&
+              readiness.readyQuantity <= 0,
+          );
+        }
+
         const availabilityObservations = variations.flatMap((variation) => {
-          if (newerStockVariationIds.has(variation.id)) return [];
           const variantId = internalVariantIds.get(variation.id);
           const productId = internalProductIds.get(variation.productId);
           if (variantId === undefined || productId === undefined) return [];
+          const isCompositeParent = compositeStockNonPositiveByVariantId.has(variantId);
+          if (newerStockVariationIds.has(variation.id) && !isCompositeParent) return [];
           const policy = resolveSellingPolicy(policyByProductId.get(productId) ?? null);
-          const stock = sumWarehouseStocks(
-            variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
-          );
-          // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
-          // sell-out would open a cycle — and publish a date — off a number the catalog could not
-          // read, so it is reported as having stock and the feed's own fail-closed path handles it.
-          const stockNonPositive = Number.isFinite(stock) && stock <= 0;
+          let stockNonPositive: boolean;
+          if (isCompositeParent) {
+            stockNonPositive = compositeStockNonPositiveByVariantId.get(variantId) === true;
+          } else {
+            const stock = sumWarehouseStocks(
+              variation.warehouseStocks.map(({ remainQuantity }) => ({ quantity: remainQuantity })),
+            );
+            // An unreadable total is not an observation of being sold out. Treating `NaN <= 0` as a
+            // sell-out would open a cycle — and publish a date — off a number the catalog could not
+            // read, so it is reported as having stock and the feed's own fail-closed path handles it.
+            stockNonPositive = Number.isFinite(stock) && stock <= 0;
+          }
           return [
             {
               variantId,

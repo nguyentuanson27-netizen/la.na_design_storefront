@@ -454,10 +454,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient) {
         // move a cycle, or the published date would depend on who last looked.
         sellingPolicy,
         availabilityDates: {
-          byVariantId: await readVariantAvailabilityDates(
-            client,
-            product.variants.map((variant) => variant.id),
-          ),
+          byVariantId: await readVariantAvailabilityDates(client, pricedVariantIds),
           today: vietnamCalendarDate(now),
         },
         // The PDP's price authority. Passing the default rule here would quietly un-promote every

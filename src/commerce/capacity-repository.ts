@@ -29,6 +29,7 @@ import {
   type StoredSellingPolicy,
 } from "./capacity-policy.ts";
 import { SellingPolicyError } from "./capacity-policy-input.ts";
+import { deriveCompositeCapacitySnapshot } from "./composite-capacity.ts";
 
 const policySelect = { sellingMode: true, negativeStockLimit: true } as const;
 
@@ -150,25 +151,64 @@ export function createCapacityRepository(
    */
   async function observePolicyChange(
     tx: Prisma.TransactionClient,
+    shopId: number,
     productId: string,
     sellingMode: SellingMode,
     observedAt: Date,
   ): Promise<void> {
     const variants = await tx.variantMirror.findMany({
       where: { productId },
-      select: { id: true, warehouseStocks: { select: { quantity: true } } },
+      select: {
+        id: true,
+        warehouseStocks: { select: { quantity: true } },
+        compositeComponents: {
+          select: {
+            quantity: true,
+            componentVariant: {
+              select: {
+                isPresent: true,
+                product: {
+                  select: {
+                    pancakeShopId: true,
+                    isPresent: true,
+                  },
+                },
+                warehouseStocks: { select: { quantity: true } },
+              },
+            },
+          },
+        },
+      },
     });
     if (variants.length === 0) return;
 
     await observeVariantAvailabilityCycles(
       tx,
       variants.map((variant) => {
-        const stock = variant.warehouseStocks.reduce((total, row) => total + row.quantity, 0);
-        // Same rule as the sync: an unreadable total is not evidence of a sell-out, so it must not
-        // open a cycle and publish a date the catalog cannot support.
+        let stockNonPositive: boolean;
+        if (variant.compositeComponents.length > 0) {
+          const readiness = deriveCompositeCapacitySnapshot({
+            shopId,
+            components: variant.compositeComponents.map((edge) => ({
+              requiredQuantity: edge.quantity,
+              componentVariant: edge.componentVariant,
+            })),
+            sellingMode: "STANDARD",
+            negativeStockLimit: 0,
+          });
+          stockNonPositive =
+            readiness.reason !== "invalid-stock" &&
+            readiness.reason !== "invalid-limit" &&
+            readiness.readyQuantity <= 0;
+        } else {
+          const stock = variant.warehouseStocks.reduce((total, row) => total + row.quantity, 0);
+          // Same rule as the sync: an unreadable total is not evidence of a sell-out, so it must not
+          // open a cycle and publish a date the catalog cannot support.
+          stockNonPositive = Number.isFinite(stock) && stock <= 0;
+        }
         return {
           variantId: variant.id,
-          stockNonPositive: Number.isFinite(stock) && stock <= 0,
+          stockNonPositive,
           isPreorder: sellingMode === "PREORDER",
         };
       }),
@@ -199,7 +239,7 @@ export function createCapacityRepository(
           select: policySelect,
         });
         const resolved = resolveSellingPolicy(stored);
-        await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+        await observePolicyChange(tx, shopId, productId, resolved.sellingMode, clock());
         return resolved;
       },
       { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
@@ -230,7 +270,7 @@ export function createCapacityRepository(
         const resolved = resolveSellingPolicy(null);
         // Clearing the policy returns the product to STANDARD, which ends any open cycle — the same
         // boundary as switching the mode explicitly.
-        await observePolicyChange(tx, productId, resolved.sellingMode, clock());
+        await observePolicyChange(tx, shopId, productId, resolved.sellingMode, clock());
         return resolved;
       },
       { timeout: CATALOG_SYNC_LOCK_WAITER_TIMEOUT_MS },
