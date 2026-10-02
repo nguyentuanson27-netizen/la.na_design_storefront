@@ -85,25 +85,49 @@ test("resolveStorefrontProductMedia gracefully provides empty media for missing 
 test("P3 parseTrustedProductImageUrl and P4 images.remotePatterns maintain identical trust contracts", async () => {
   const { parseTrustedProductImageUrl } = await import("../../src/commerce/product-media.ts");
   const nextConfig = await loadNextConfig();
-  const pancakePatterns = nextConfig.images?.remotePatterns?.filter(
-    (p) => p.hostname === "content.pancake.vn",
-  ) ?? [];
-  assert.equal(pancakePatterns.length, 3);
+  const expectedPathnames = [
+    "/*/*/*/*/*.jpg",
+    "/*/*/*/*/*.jpeg",
+    "/*/*/*/*/*.png",
+    "/*/*/*/*/*.webp",
+    "/web-media-*/*/*/*/*/*.jpg",
+    "/web-media-*/*/*/*/*/*.jpeg",
+    "/web-media-*/*/*/*/*/*.png",
+    "/web-media-*/*/*/*/*/*.webp",
+    "/web-media-*/*/*/*/*/*/*.jpg",
+    "/web-media-*/*/*/*/*/*/*.jpeg",
+    "/web-media-*/*/*/*/*/*/*.png",
+    "/web-media-*/*/*/*/*/*/*.webp",
+  ];
+  for (const hostname of ["content.pancake.vn", "statics.pancake.vn", "cdn.pancake.vn"]) {
+    const pancakePatterns = nextConfig.images?.remotePatterns?.filter(
+      (p) => p.hostname === hostname,
+    ) ?? [];
+    assert.equal(pancakePatterns.length, expectedPathnames.length);
+    assert.deepEqual(
+      pancakePatterns.map((pattern) => pattern.pathname).sort(),
+      [...expectedPathnames].sort(),
+      `${hostname} must expose only the reviewed standard and 7/8-part web-media paths`,
+    );
+    assert.equal(
+      pancakePatterns.some((pattern) => pattern.pathname === "/web-media-*/**"),
+      false,
+      `${hostname} must not expose an unbounded web-media optimizer path`,
+    );
+  }
 
-  const jpgPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.jpg");
-  const pngPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.png");
-  const webpPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.webp");
-  assert.ok(jpgPattern);
-  assert.ok(pngPattern);
-  assert.ok(webpPattern);
-
-  // Lowercase .jpg, .png and .webp are accepted by P3 and match P4 remotePatterns
+  // Lowercase .jpg, .jpeg, .png, .webp and web-media are accepted by P3 and match P4 remotePatterns
   const validJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.jpg";
+  const validJpegUrl = "https://content.pancake.vn/images/1/2/3/photo.jpeg";
   const validPngUrl = "https://content.pancake.vn/images/1/2/3/photo.png";
   const validWebpUrl = "https://content.pancake.vn/images/1/2/3/photo.webp";
+  const validWebMediaUrl =
+    "https://content.pancake.vn/web-media-263/6c/07/3f/33/e9440d484849f70442ba7e7181f54d19a96fd8d7e57ec5c97bbac25c-w:1792-h:2400-l:143040-t:image/jpeg.jpeg";
   assert.notEqual(parseTrustedProductImageUrl(validJpgUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validJpegUrl), null);
   assert.notEqual(parseTrustedProductImageUrl(validPngUrl), null);
   assert.notEqual(parseTrustedProductImageUrl(validWebpUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validWebMediaUrl), null);
 
   // Uppercase .JPG, .PNG and .WEBP are rejected by both P3 and P4 case-sensitive pattern
   const uppercaseJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.JPG";
