@@ -91,6 +91,13 @@ type AdvisoryStockProduct<V extends AdvisoryStockVariant> = Readonly<{
   }>;
 }>;
 
+type AdvisoryStockProductResult<
+  V extends AdvisoryStockVariant,
+  P extends AdvisoryStockProduct<V>,
+> = Omit<P, "variants"> & Readonly<{
+  variants: readonly (V & Readonly<{ compositeCapacity: CompositeCapacitySnapshot | undefined }>)[];
+}>;
+
 /**
  * Replaces each variant's mirrored `sellableStock` with the advisory figure, so a card, a PDP
  * option and a cart line advertise the same number for the same variant:
@@ -104,7 +111,11 @@ type AdvisoryStockProduct<V extends AdvisoryStockVariant> = Readonly<{
 export async function withAdvisorySellableStock<
   V extends AdvisoryStockVariant,
   P extends AdvisoryStockProduct<V>,
->(client: AdvisoryCapacityReadClient, shopId: number, products: readonly P[]) {
+>(
+  client: AdvisoryCapacityReadClient,
+  shopId: number,
+  products: readonly P[],
+): Promise<AdvisoryStockProductResult<V, P>[]> {
   const variantIds = products.flatMap((product) => product.variants.map(({ id }) => id));
   if (variantIds.length === 0) return [...products];
 
