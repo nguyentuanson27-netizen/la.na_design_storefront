@@ -277,56 +277,65 @@ test("U27a mirrored inventory can state an availability only when every row is w
   assert.equal(resolve([5, Number.NaN]), false);
 });
 
-/**
- * Review 5233519975, Required. `buildStorefrontVariantOptions()` passed `isComposite: false` to the
- * capacity rule unconditionally, so a composite parent would have been offered below zero the moment
- * I2 let an operator set `OVERSELL` — while the commit boundary, using the same rule with the real
- * flag, refused it. That is precisely the display/gate drift I4 exists to remove, reintroduced by a
- * hard-coded argument.
- */
-test("a composite parent is unsellable under OVERSELL and PREORDER, and unaffected under STANDARD", () => {
-  const parent = [
-    {
-      id: "set-m",
-      pancakeVariationId: "pancake-set-m",
-      color: null,
-      size: "M",
-      sellableStock: -2,
-      retailPrice: 790_000,
-      retailPriceAfterDiscount: 790_000,
-    },
-  ];
-  const optionFor = (sellingMode: "STANDARD" | "OVERSELL" | "PREORDER", isComposite: boolean) =>
-    buildStorefrontVariantOptions(parent, undefined, {
-      sellingMode,
-      negativeStockLimit: -20,
-      isComposite,
-    })[0]!;
+test("composite options use component-aware reservable and ready quantities", () => {
+  const parent = {
+    id: "set-m",
+    pancakeVariationId: "pancake-set-m",
+    color: null,
+    size: "M",
+    sellableStock: 0,
+    retailPrice: 790_000,
+    retailPriceAfterDiscount: 790_000,
+  };
+  const capacity = (sellingMode: "OVERSELL" | "PREORDER") => ({
+    sellingMode,
+    negativeStockLimit: -10,
+    isComposite: true,
+  } as const);
 
-  // Standalone: the limit does what I4 shipped it to do — −2 is above the −20 floor, so it sells,
-  // and PREORDER carries the §30 marker because ready stock is gone.
-  assert.equal(optionFor("OVERSELL", false).purchasable, true);
-  assert.equal(optionFor("PREORDER", false).purchasable, true);
-  assert.equal(optionFor("PREORDER", false).isPreorderSale, true);
+  const atLimit = buildStorefrontVariantOptions(
+    [{
+      ...parent,
+      compositeCapacity: {
+        readyQuantity: 0,
+        reservableQuantity: 0,
+        reason: "negative-limit-reached",
+      },
+    }],
+    undefined,
+    capacity("OVERSELL"),
+  )[0]!;
+  assert.equal(atLimit.purchasable, false);
+  assert.equal(atLimit.unavailableReason, "OUT_OF_STOCK");
 
-  // Composite: supported now under component-aware accounting
-  assert.equal(optionFor("OVERSELL", true).purchasable, true);
-  assert.equal(optionFor("PREORDER", true).purchasable, true);
-  assert.equal(optionFor("PREORDER", true).isPreorderSale, true);
+  const preorder = buildStorefrontVariantOptions(
+    [{
+      ...parent,
+      compositeCapacity: {
+        readyQuantity: 0,
+        reservableQuantity: 2,
+        reason: "capacity-available",
+      },
+    }],
+    undefined,
+    capacity("PREORDER"),
+  )[0]!;
+  assert.equal(preorder.purchasable, true);
+  assert.equal(preorder.isPreorderSale, true);
 
-  // STANDARD is untouched by the restriction, which only bites for a non-STANDARD mode. Both
-  // directions are asserted so this cannot rot into "composites are never sellable": a composite at
-  // positive stock still sells exactly as it did before I4.
-  assert.equal(optionFor("STANDARD", true).purchasable, false, "−2 is below STANDARD's floor of 0");
-  assert.equal(optionFor("STANDARD", false).purchasable, false);
-  const stockedParent = [{ ...parent[0]!, sellableStock: 4 }];
-  for (const isComposite of [true, false]) {
-    const option = buildStorefrontVariantOptions(stockedParent, undefined, {
-      sellingMode: "STANDARD",
-      negativeStockLimit: -20,
-      isComposite,
-    })[0]!;
-    assert.equal(option.purchasable, true);
-    assert.equal(option.isPreorderSale, false);
-  }
+  const ready = buildStorefrontVariantOptions(
+    [{
+      ...parent,
+      sellableStock: 1,
+      compositeCapacity: {
+        readyQuantity: 1,
+        reservableQuantity: 11,
+        reason: "capacity-available",
+      },
+    }],
+    undefined,
+    capacity("PREORDER"),
+  )[0]!;
+  assert.equal(ready.purchasable, true);
+  assert.equal(ready.isPreorderSale, false);
 });

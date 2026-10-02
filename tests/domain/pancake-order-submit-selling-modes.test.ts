@@ -15,6 +15,7 @@ const variantId = "var-test-01";
 const pancakeVariationId = "pan-var-01";
 const publicCode = "LA-260918-001";
 const componentVariationId = "pan-comp-01";
+const standardVariantId = "var-standard-01";
 
 function buildCatalogVariation(
   id: string,
@@ -43,11 +44,13 @@ function buildMockPrisma({
   sellingMode = "STANDARD",
   negativeStockLimit = -20,
   isComposite = false,
+  sharedStandardAndComposite = false,
 }: {
   initialOrderState?: "DRAFT" | "VALIDATING" | "POS_SUBMITTING" | "CONFIRMED" | "SYNC_UNKNOWN" | "REJECTED";
   sellingMode?: "STANDARD" | "OVERSELL" | "PREORDER";
   negativeStockLimit?: number;
   isComposite?: boolean;
+  sharedStandardAndComposite?: boolean;
 } = {}) {
   let orderState = initialOrderState;
   let pancakeOrderId: string | null = null;
@@ -68,9 +71,9 @@ function buildMockPrisma({
     communeRef: "8050501",
     addressDetail: "123 Test Street",
     note: "Test Order Note",
-    merchandiseSubtotalVnd: BigInt(200_000),
+    merchandiseSubtotalVnd: BigInt(sharedStandardAndComposite ? 400_000 : 200_000),
     shippingFeeVnd: BigInt(30_000),
-    totalVnd: BigInt(230_000),
+    totalVnd: BigInt(sharedStandardAndComposite ? 430_000 : 230_000),
     capacityReservations: [],
     lines: [
       {
@@ -89,6 +92,24 @@ function buildMockPrisma({
         promotionPercentageValue: null,
         promotionFixedPriceVnd: null,
       },
+      ...(sharedStandardAndComposite
+        ? [{
+            id: "line-02",
+            orderId: "order-uuid-01",
+            variantId: standardVariantId,
+            pancakeVariationId: componentVariationId,
+            quantity: 1,
+            unitPriceVnd: BigInt(200_000),
+            lineTotalVnd: BigInt(200_000),
+            baseUnitPriceVnd: BigInt(200_000),
+            promotionCampaignId: null,
+            promotionName: null,
+            promotionKind: null,
+            promotionDiscountType: null,
+            promotionPercentageValue: null,
+            promotionFixedPriceVnd: null,
+          }]
+        : []),
     ],
   };
 
@@ -149,7 +170,6 @@ function buildMockPrisma({
                 negativeStockLimit,
               },
             },
-            // One component edge: a STANDARD composite's capacity is its component's live stock.
             compositeComponents: isComposite
               ? [
                   {
@@ -163,6 +183,19 @@ function buildMockPrisma({
                 ]
               : [],
           },
+          ...(sharedStandardAndComposite
+            ? [{
+                id: standardVariantId,
+                productId: "prod-standard",
+                product: {
+                  sellingPolicy: {
+                    sellingMode: "STANDARD" as const,
+                    negativeStockLimit: -20,
+                  },
+                },
+                compositeComponents: [],
+              }]
+            : []),
         ];
       },
     },
@@ -521,6 +554,91 @@ test("Composite parent: allows order under PREORDER mode when component stock wi
   const result = await service.submit({ publicCode, shopId });
 
   assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70012" });
+});
+
+test("shared component: STANDARD stock is allocated before OVERSELL composite headroom", async () => {
+  const prismaMock = buildMockPrisma({
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -20,
+    isComposite: true,
+    sharedStandardAndComposite: true,
+  });
+  let createCalled = false;
+  const gateway = {
+    async fetchVariations() {
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, 1),
+      ];
+    },
+    async createOrder() {
+      createCalled = true;
+      return { id: 70014 };
+    },
+  };
+
+  const result = await createPancakeOrderSubmissionService(prismaMock, gateway).submit({
+    publicCode,
+    shopId,
+  });
+
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70014" });
+  assert.equal(createCalled, true);
+});
+
+test("shared component: STANDARD stock is allocated before PREORDER composite headroom", async () => {
+  const prismaMock = buildMockPrisma({
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+    isComposite: true,
+    sharedStandardAndComposite: true,
+  });
+  const gateway = {
+    async fetchVariations() {
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, 1),
+      ];
+    },
+    async createOrder() {
+      return { id: 70015 };
+    },
+  };
+
+  const result = await createPancakeOrderSubmissionService(prismaMock, gateway).submit({
+    publicCode,
+    shopId,
+  });
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70015" });
+});
+
+test("shared component: STANDARD line cannot borrow flexible negative allowance", async () => {
+  const prismaMock = buildMockPrisma({
+    sellingMode: "OVERSELL",
+    negativeStockLimit: -20,
+    isComposite: true,
+    sharedStandardAndComposite: true,
+  });
+  let createCalled = false;
+  const gateway = {
+    async fetchVariations() {
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, 0),
+      ];
+    },
+    async createOrder() {
+      createCalled = true;
+      return { id: 70016 };
+    },
+  };
+
+  const result = await createPancakeOrderSubmissionService(prismaMock, gateway).submit({
+    publicCode,
+    shopId,
+  });
+  assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "STOCK_UNAVAILABLE" });
+  assert.equal(createCalled, false);
 });
 
 test("Request embeds canonical [ORDER:publicCode] marker in note and shipping address", async () => {
