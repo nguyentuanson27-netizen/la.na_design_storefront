@@ -89,6 +89,15 @@ test("validateCatalogSnapshot groups multi-variant products with consistent sour
   });
 });
 
+test("validateCatalogSnapshot mirrors the Pancake product name without its trailing product code", () => {
+  const { productByExternalId } = validateCatalogSnapshot([
+    buildVariation({ id: "var-1", productName: "Set váy Diệu Liên Hoa SV605", displayId: "SV605-S" }),
+    buildVariation({ id: "var-2", productName: "Set váy Diệu Liên Hoa SV605", displayId: "SV605-M" }),
+  ]);
+
+  assert.equal(productByExternalId.get("prod-1")?.name, "Set váy Diệu Liên Hoa");
+});
+
 test("validateCatalogSnapshot rejects inconsistent sourceDescription for the same product", () => {
   const variations = [
     buildVariation({

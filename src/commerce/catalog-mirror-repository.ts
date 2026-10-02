@@ -12,6 +12,7 @@ import { acquireCatalogSyncLock, CATALOG_SYNC_TRANSACTION_TIMEOUT_MS } from "./c
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { deriveCompositeCapacitySnapshot } from "./composite-capacity.ts";
 import { handOffMirroredCapacity } from "./capacity-handoff.ts";
+import { stripTrailingProductCode } from "./product-display-name.ts";
 import {
   createBootstrapProductSlug,
   isLegacyOpaqueProductSlug,
@@ -73,11 +74,12 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     }
 
     const { sourceDescription, primaryImageUrl } = variation.product;
+    const name = stripTrailingProductCode(variation.product.name);
 
     const existingProduct = productByExternalId.get(variation.productId);
     if (
       existingProduct &&
-      (existingProduct.name !== variation.product.name ||
+      (existingProduct.name !== name ||
         existingProduct.sourceDescription !== sourceDescription ||
         existingProduct.primaryImageUrl !== primaryImageUrl)
     ) {
@@ -85,7 +87,7 @@ export function validateCatalogSnapshot(variations: readonly PancakeParsedCatalo
     }
     productByExternalId.set(variation.productId, {
       pancakeProductId: variation.productId,
-      name: variation.product.name,
+      name,
       sourceDescription,
       primaryImageUrl,
     });

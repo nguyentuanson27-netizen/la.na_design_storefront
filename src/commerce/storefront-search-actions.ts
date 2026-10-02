@@ -69,10 +69,20 @@ export async function searchStorefrontSuggestionsAction(
         pancakeShopId: shopId,
         isPresent: true,
         isActive: true,
-        name: {
-          contains: trimmed,
-          mode: "insensitive",
-        },
+        OR: [
+          { name: { contains: trimmed, mode: "insensitive" } },
+          // The mirrored name drops the Pancake product code ("SV605"), so a shopper who
+          // types the code still finds the product through its variant display ids.
+          {
+            variants: {
+              some: {
+                isPresent: true,
+                isActive: true,
+                pancakeDisplayId: { contains: trimmed, mode: "insensitive" },
+              },
+            },
+          },
+        ],
       },
       take: 6,
       orderBy: { updatedAt: "desc" },
