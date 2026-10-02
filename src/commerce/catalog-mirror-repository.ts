@@ -814,7 +814,8 @@ export function createCatalogMirrorRepository(
    * The same invariants as the full reconciliation, on a subset: the shop's catalog-sync lock; the
    * variants' `VariantMirror` rows locked in id order — the rows `reserveOrderCapacity()` locks — so
    * a checkout sees this write whole or not at all; the newer-read guard per variant; availability
-   * cycles observed from what was written; and the durable capacity handoff in the same transaction.
+   * cycles observed for the written variants and direct composite parents that consume them; and the
+   * durable capacity handoff in the same transaction.
    *
    * Only known variations are written. A variation this mirror has never seen is left to the next
    * full reconciliation, which owns catalog shape (products, options, presence, composites); this
@@ -899,20 +900,94 @@ export function createCatalogMirrorRepository(
         }
 
         if (written.length > 0) {
+          const writtenByVariantId = new Map(written.map((row) => [row.variantId, row]));
+          const writtenVariantIds = [...writtenByVariantId.keys()];
+          const availabilityVariants = await tx.variantMirror.findMany({
+            where: {
+              product: { pancakeShopId: safeShopId },
+              OR: [
+                { id: { in: writtenVariantIds } },
+                {
+                  compositeComponents: {
+                    some: { componentVariantId: { in: writtenVariantIds } },
+                  },
+                },
+              ],
+            },
+            orderBy: { id: "asc" },
+            select: {
+              id: true,
+              productId: true,
+              compositeComponents: {
+                select: {
+                  quantity: true,
+                  componentVariant: {
+                    select: {
+                      isPresent: true,
+                      product: {
+                        select: {
+                          pancakeShopId: true,
+                          isPresent: true,
+                        },
+                      },
+                      warehouseStocks: { select: { quantity: true } },
+                    },
+                  },
+                },
+              },
+            },
+          });
+
           const storedPolicies = await tx.productSellingPolicy.findMany({
-            where: { productId: { in: [...new Set(written.map(({ productId }) => productId))] } },
+            where: {
+              productId: {
+                in: [...new Set(availabilityVariants.map(({ productId }) => productId))],
+              },
+            },
             select: { productId: true, sellingMode: true, negativeStockLimit: true },
           });
           const policyByProductId = new Map(storedPolicies.map((row) => [row.productId, row]));
-          // Same rule as the full reconciliation's I9 observation.
+
+          const availabilityObservations = availabilityVariants.flatMap((variant) => {
+            const policy = resolveSellingPolicy(policyByProductId.get(variant.productId) ?? null);
+            if (variant.compositeComponents.length > 0) {
+              const readiness = deriveCompositeCapacitySnapshot({
+                shopId: safeShopId,
+                components: variant.compositeComponents.map((edge) => ({
+                  requiredQuantity: edge.quantity,
+                  componentVariant: edge.componentVariant,
+                })),
+                sellingMode: "STANDARD",
+                negativeStockLimit: 0,
+              });
+              return [
+                {
+                  variantId: variant.id,
+                  stockNonPositive:
+                    readiness.reason !== "invalid-stock" &&
+                    readiness.reason !== "invalid-limit" &&
+                    readiness.readyQuantity <= 0,
+                  isPreorder: policy.sellingMode === "PREORDER",
+                },
+              ];
+            }
+
+            const direct = writtenByVariantId.get(variant.id);
+            if (direct === undefined) return [];
+            return [
+              {
+                variantId: variant.id,
+                stockNonPositive: Number.isFinite(direct.stock) && direct.stock <= 0,
+                isPreorder: policy.sellingMode === "PREORDER",
+              },
+            ];
+          });
+
+          // Match full reconciliation semantics, but also re-observe a composite parent whenever a
+          // component that determines its ready capacity was one of the targeted writes.
           await observeVariantAvailabilityCycles(
             tx,
-            written.map(({ variantId, productId, stock }) => ({
-              variantId,
-              stockNonPositive: Number.isFinite(stock) && stock <= 0,
-              isPreorder:
-                resolveSellingPolicy(policyByProductId.get(productId) ?? null).sellingMode === "PREORDER",
-            })),
+            availabilityObservations,
             safeAvailabilityObservedAt,
           );
         }
