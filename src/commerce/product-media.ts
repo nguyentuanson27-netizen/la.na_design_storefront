@@ -57,11 +57,18 @@ function parseTrustedMediaUrl(
     return null;
   }
 
-  // Reject path traversal in raw input before WHATWG URL normalization
+  // Reject path traversal in raw input before WHATWG URL normalization. WHATWG also treats
+  // percent-encoded dot segments such as %2e, %2e. and .%2e as navigation, so inspect the raw
+  // path before parsing instead of letting normalization erase evidence the SQL parity check sees.
+  const authorityAndRest = trimmed.slice(8);
+  const firstSlash = authorityAndRest.indexOf("/");
+  const rawPathAndSuffix = firstSlash >= 0 ? authorityAndRest.slice(firstSlash) : "";
+  const rawPath = rawPathAndSuffix.split(/[?#]/, 1)[0] ?? "";
   if (
     trimmed.includes("/..") ||
     trimmed.includes("../") ||
-    trimmed.toLowerCase().includes("%2e%2e")
+    trimmed.toLowerCase().includes("%2e%2e") ||
+    rawPath.toLowerCase().includes("%2e")
   ) {
     return null;
   }

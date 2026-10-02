@@ -57,11 +57,6 @@ export async function searchStorefrontSuggestionsWithFinder(
   }
 }
 
-function parseJsonStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((v): v is string => typeof v === "string");
-}
-
 export async function searchStorefrontSuggestionsAction(
   query: string,
 ): Promise<SearchSuggestionsResult> {
@@ -70,6 +65,7 @@ export async function searchStorefrontSuggestionsAction(
     const { readPancakeShopId } = await import("../integrations/pancake/config.ts");
     const shopId = readPancakeShopId();
     const { resolveStorefrontProductMedia } = await import("./product-media.ts");
+    const { storefrontSearchMediaCandidatesSql } = await import("./storefront-search-media.ts");
     const records = await prisma.productMirror.findMany({
       where: {
         pancakeShopId: shopId,
@@ -86,18 +82,30 @@ export async function searchStorefrontSuggestionsAction(
         id: true,
         slug: true,
         name: true,
-        primaryImageUrl: true,
         variants: {
           where: { isPresent: true, isActive: true },
           orderBy: [{ pancakeVariationId: "asc" }],
+          take: 1,
           select: {
             pancakeRetailPrice: true,
             pancakeRetailPriceAfterDiscount: true,
-            pancakeImageUrls: true,
           },
         },
       },
     });
+
+    const mediaCandidates =
+      records.length === 0
+        ? []
+        : await prisma.$queryRaw<Array<{ productId: string; url: string }>>(
+            storefrontSearchMediaCandidatesSql(records.map((record) => record.id)),
+          );
+    const mediaCandidatesByProductId = new Map<string, string[]>();
+    for (const candidate of mediaCandidates) {
+      const candidates = mediaCandidatesByProductId.get(candidate.productId) ?? [];
+      candidates.push(candidate.url);
+      mediaCandidatesByProductId.set(candidate.productId, candidates);
+    }
 
     return records.map((record) => {
       const variant = record.variants[0];
@@ -105,10 +113,8 @@ export async function searchStorefrontSuggestionsAction(
         variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
       const media = resolveStorefrontProductMedia({
         productName: record.name,
-        primaryImageUrl: record.primaryImageUrl,
-        variantImageUrls: record.variants.map((item) =>
-          parseJsonStringArray(item.pancakeImageUrls),
-        ),
+        primaryImageUrl: null,
+        variantImageUrls: [mediaCandidatesByProductId.get(record.id) ?? []],
       });
       return {
         id: record.id,

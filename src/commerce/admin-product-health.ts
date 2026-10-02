@@ -77,6 +77,7 @@ const TRUSTED_CANDIDATE_CONDITION = Prisma.sql`
   AND POSITION('/..' IN norm."trimmed") = 0
   AND POSITION('../' IN norm."trimmed") = 0
   AND POSITION('%2e%2e' IN LOWER(norm."trimmed")) = 0
+  AND POSITION('%2e' IN LOWER(norm."pathFinal")) = 0
   AND LOWER(LEFT(norm."trimmed", 8)) = 'https://'
   AND norm."authority" = ANY(ARRAY['content.pancake.vn', 'statics.pancake.vn', 'cdn.pancake.vn'])
   AND POSITION('..' IN norm."pathFinal") = 0
