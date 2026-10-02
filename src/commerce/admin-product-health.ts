@@ -25,9 +25,9 @@ const JS_TRIM_PATTERN = `^${JS_TRIM_CLASS}+|${JS_TRIM_CLASS}+$`;
 
 /** The reviewed Pancake CDN path shape, mirroring `PANCAKE_MEDIA_PATH_REGEX`. */
 const PANCAKE_MEDIA_PATH_PATTERN =
-  "^/[a-zA-Z0-9_.-]+/[0-9]+/[0-9]+/[0-9]+/[a-zA-Z0-9_.-]+\\.(jpg|png|webp)$";
+  "^/[a-zA-Z0-9_-]+/[0-9]+/[0-9]+/[0-9]+/[a-zA-Z0-9_.-]+\\.(jpg|png)$";
 
-const TRUSTED_IMAGE_AUTHORITIES = ["content.pancake.vn", "statics.pancake.vn"];
+const TRUSTED_IMAGE_AUTHORITY = "content.pancake.vn";
 const MAX_IMAGE_URL_LENGTH = 4096;
 
 /**
@@ -74,7 +74,7 @@ const TRUSTED_CANDIDATE_CONDITION = Prisma.sql`
   AND POSITION('../' IN norm."trimmed") = 0
   AND POSITION('%2e%2e' IN LOWER(norm."trimmed")) = 0
   AND LOWER(LEFT(norm."trimmed", 8)) = 'https://'
-  AND norm."authority" = ANY(ARRAY['content.pancake.vn', 'statics.pancake.vn'])
+  AND norm."authority" = ${TRUSTED_IMAGE_AUTHORITY}
   AND POSITION('..' IN norm."pathFinal") = 0
   AND norm."pathFinal" ~ ${PANCAKE_MEDIA_PATH_PATTERN}
 `;

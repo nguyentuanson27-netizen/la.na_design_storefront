@@ -19,7 +19,6 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.
     "https://content.pancake.vn/images/1/2/3/shirt.webp",
     "https://content.pancake.vn/2-2609/2026/9/7/60939f058e4a6add1a156b7d13d6cf1bf2226fbd.png",
     "https://content.pancake.vn/2-2609/2026/9/23/a37fe5e5bf493ae284fa4f8fc22ba9178de76a4f.webp",
-    "https://statics.pancake.vn/user-content.pancake.vn/2023/8/10/45f8e28540c32c3477fe7877b7189f0bf714f457.jpg",
   ];
 
   for (const url of validUrls) {

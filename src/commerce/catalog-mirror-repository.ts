@@ -311,23 +311,8 @@ async function writeObservedWarehouseStocks(
 
 function normalizedFieldDimension(name: string): "color" | "size" | null {
   const normalized = name.trim().toLowerCase();
-  if (normalized === "size" || normalized === "kích thước" || normalized === "kich thuoc") {
-    return "size";
-  }
-  if (
-    normalized === "color" ||
-    normalized === "màu" ||
-    normalized === "màu sắc" ||
-    normalized === "mau sac" ||
-    normalized === "màu quần" ||
-    normalized === "mau quan" ||
-    normalized === "phân loại" ||
-    normalized === "phan loai" ||
-    normalized === "mẫu mã" ||
-    normalized === "mau ma"
-  ) {
-    return "color";
-  }
+  if (normalized === "size") return "size";
+  if (normalized === "color" || normalized === "màu") return "color";
   return null;
 }
 

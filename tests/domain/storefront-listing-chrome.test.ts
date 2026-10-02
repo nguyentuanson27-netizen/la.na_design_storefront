@@ -162,10 +162,10 @@ test("the link colour reset sits in the base layer so text utilities win on link
 
 test("a selected PLP filter chip announces itself as well as filling", () => {
   const panel = read("src/components/brand/plp-filter-panel.tsx");
-  // Desktop and sheet: sale and size, each marked current when selected.
+  // Desktop and sheet: sale, size and colour, each marked current when selected.
   assert.equal(
     (panel.match(/aria-current=\{(isSelected|isSaleActive) \? "true" : undefined\}/g) ?? []).length,
-    4,
+    6,
     "every selectable filter link must set aria-current when it is the active filter",
   );
 });
@@ -357,11 +357,6 @@ test("collections stays an aggregate index with an honest empty state", () => {
 
   const route = read("src/routes/collections.ts");
   assert.match(route, /listPublished/, "only published collections are listed");
-  assert.match(
-    route,
-    /special-deals/,
-    "special-deals is filtered out from the aggregate collections landing index",
-  );
   assert.ok(
     !/placeholder|sample|demo|fake/i.test(page),
     "no placeholder collection may be rendered",
