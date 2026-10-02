@@ -42,7 +42,7 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
   "/size-guide",
 ]);
 const LOCKED_IMG_SRC =
-  "img-src 'self' blob: data: https://content.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};";
+  "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};";
 // img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would
 // no longer pin the hosts it admits. The expressions that supply those origins are locked too,
 // which keeps the guarantee intact: no image origin reaches the policy without editing a locked
@@ -62,6 +62,12 @@ const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
         protocol: "https",
         hostname: "content.pancake.vn",
         port: "",
+        pathname: "/*/*/*/*/*.jpeg",
+      },
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
         pathname: "/*/*/*/*/*.png",
       },
       {
@@ -69,6 +75,72 @@ const LOCKED_REMOTE_PATTERNS = `remotePatterns: [
         hostname: "content.pancake.vn",
         port: "",
         pathname: "/*/*/*/*/*.webp",
+      },
+      {
+        protocol: "https",
+        hostname: "content.pancake.vn",
+        port: "",
+        pathname: "/web-media-*/**",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpg",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpeg",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.png",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.webp",
+      },
+      {
+        protocol: "https",
+        hostname: "statics.pancake.vn",
+        port: "",
+        pathname: "/web-media-*/**",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpg",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.jpeg",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.png",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.pancake.vn",
+        port: "",
+        pathname: "/*/*/*/*/*.webp",
+      },
+      {
+        protocol: "https",
+        hostname: "cdn.pancake.vn",
+        port: "",
+        pathname: "/web-media-*/**",
       },
     ],`;
 

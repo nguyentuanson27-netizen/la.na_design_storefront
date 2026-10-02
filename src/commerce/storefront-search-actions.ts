@@ -57,6 +57,11 @@ export async function searchStorefrontSuggestionsWithFinder(
   }
 }
 
+function parseJsonStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string");
+}
+
 export async function searchStorefrontSuggestionsAction(
   query: string,
 ): Promise<SearchSuggestionsResult> {
@@ -64,6 +69,7 @@ export async function searchStorefrontSuggestionsAction(
     const { prisma } = await import("../db/prisma.ts");
     const { readPancakeShopId } = await import("../integrations/pancake/config.ts");
     const shopId = readPancakeShopId();
+    const { parseTrustedProductImageUrl } = await import("./product-media.ts");
     const records = await prisma.productMirror.findMany({
       where: {
         pancakeShopId: shopId,
@@ -87,6 +93,7 @@ export async function searchStorefrontSuggestionsAction(
           select: {
             pancakeRetailPrice: true,
             pancakeRetailPriceAfterDiscount: true,
+            pancakeImageUrls: true,
           },
         },
       },
@@ -96,11 +103,22 @@ export async function searchStorefrontSuggestionsAction(
       const variant = record.variants[0];
       const price =
         variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
+      let primaryImageUrl = parseTrustedProductImageUrl(record.primaryImageUrl);
+      if (!primaryImageUrl && variant?.pancakeImageUrls) {
+        const variantImages = parseJsonStringArray(variant.pancakeImageUrls);
+        for (const candidate of variantImages) {
+          const trusted = parseTrustedProductImageUrl(candidate);
+          if (trusted) {
+            primaryImageUrl = trusted;
+            break;
+          }
+        }
+      }
       return {
         id: record.id,
         slug: record.slug,
         name: record.name,
-        primaryImageUrl: record.primaryImageUrl ?? null,
+        primaryImageUrl,
         priceText: price !== null ? currency.format(price) : null,
       };
     });

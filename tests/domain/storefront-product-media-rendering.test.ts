@@ -88,22 +88,31 @@ test("P3 parseTrustedProductImageUrl and P4 images.remotePatterns maintain ident
   const pancakePatterns = nextConfig.images?.remotePatterns?.filter(
     (p) => p.hostname === "content.pancake.vn",
   ) ?? [];
-  assert.equal(pancakePatterns.length, 3);
+  assert.equal(pancakePatterns.length, 5);
 
   const jpgPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.jpg");
+  const jpegPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.jpeg");
   const pngPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.png");
   const webpPattern = pancakePatterns.find((p) => p.pathname === "/*/*/*/*/*.webp");
+  const webMediaPattern = pancakePatterns.find((p) => p.pathname === "/web-media-*/**");
   assert.ok(jpgPattern);
+  assert.ok(jpegPattern);
   assert.ok(pngPattern);
   assert.ok(webpPattern);
+  assert.ok(webMediaPattern);
 
-  // Lowercase .jpg, .png and .webp are accepted by P3 and match P4 remotePatterns
+  // Lowercase .jpg, .jpeg, .png, .webp and web-media are accepted by P3 and match P4 remotePatterns
   const validJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.jpg";
+  const validJpegUrl = "https://content.pancake.vn/images/1/2/3/photo.jpeg";
   const validPngUrl = "https://content.pancake.vn/images/1/2/3/photo.png";
   const validWebpUrl = "https://content.pancake.vn/images/1/2/3/photo.webp";
+  const validWebMediaUrl =
+    "https://content.pancake.vn/web-media-263/6c/07/3f/33/e9440d484849f70442ba7e7181f54d19a96fd8d7e57ec5c97bbac25c-w:1792-h:2400-l:143040-t:image/jpeg.jpeg";
   assert.notEqual(parseTrustedProductImageUrl(validJpgUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validJpegUrl), null);
   assert.notEqual(parseTrustedProductImageUrl(validPngUrl), null);
   assert.notEqual(parseTrustedProductImageUrl(validWebpUrl), null);
+  assert.notEqual(parseTrustedProductImageUrl(validWebMediaUrl), null);
 
   // Uppercase .JPG, .PNG and .WEBP are rejected by both P3 and P4 case-sensitive pattern
   const uppercaseJpgUrl = "https://content.pancake.vn/images/1/2/3/photo.JPG";

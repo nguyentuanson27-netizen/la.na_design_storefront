@@ -1,7 +1,11 @@
-const TRUSTED_IMAGE_HOSTNAME = "content.pancake.vn";
+const TRUSTED_IMAGE_HOSTNAMES = new Set([
+  "content.pancake.vn",
+  "statics.pancake.vn",
+  "cdn.pancake.vn",
+]);
 const MAX_IMAGE_URL_LENGTH = 4096;
 
-const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".png", ".webp"]);
+const ALLOWED_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp"]);
 /**
  * Editorial video, held to exactly the image rules with one extension set swapped.
  *
@@ -27,11 +31,11 @@ export type StorefrontProductMedia = {
  *
  * Rules:
  * - Scheme must be strictly HTTPS
- * - Host must exactly match `content.pancake.vn` (no wildcards or IP addresses)
+ * - Host must exactly match reviewed Pancake CDN domains (no wildcards or IP addresses)
  * - Port must be default HTTPS port (no custom ports)
  * - Authority must not contain user credentials
  * - Path must not contain path traversal (`..`)
- * - Path must match exact reviewed shape `/:segment/:id/:id/:id/:file.(jpg|png|webp)`
+ * - Path must match reviewed shapes (standard `/:segment/:id/:id/:id/:file` or modern `/web-media-...`)
  * - Length must be bounded (<= 4096 chars)
  */
 export function parseTrustedProductImageUrl(rawUrl: unknown): string | null {
@@ -71,14 +75,14 @@ function parseTrustedMediaUrl(
     return null;
   }
 
-  if (parsed.hostname.toLowerCase() !== TRUSTED_IMAGE_HOSTNAME) {
+  if (!TRUSTED_IMAGE_HOSTNAMES.has(parsed.hostname.toLowerCase())) {
     return null;
   }
 
   // Reject custom ports, explicit default ports, or credentials in authority
   const authority = trimmed.slice(8).split("/")[0] ?? "";
   if (
-    authority !== TRUSTED_IMAGE_HOSTNAME ||
+    !TRUSTED_IMAGE_HOSTNAMES.has(authority) ||
     parsed.port !== "" ||
     parsed.username !== "" ||
     parsed.password !== ""
@@ -86,7 +90,7 @@ function parseTrustedMediaUrl(
     return null;
   }
 
-  // Enforce reviewed Pancake CDN path shape: /:segment/:id/:id/:id/:file.(jpg|png|mp4)
+  // Enforce reviewed Pancake CDN path shape: standard /:segment/:id/:id/:id/:file or modern /web-media-...
   const pathname = parsed.pathname;
   if (!isValidReviewedMediaPath(pathname, allowedExtensions)) {
     return null;
@@ -108,30 +112,55 @@ export function parseTrustedProductVideoUrl(rawUrl: unknown): string | null {
 }
 
 const PANCAKE_MEDIA_PATH_REGEX =
-  /^\/[a-zA-Z0-9_-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|png|webp|mp4)$/;
+  /^\/[a-zA-Z0-9_.-]+\/\d+\/\d+\/\d+\/[a-zA-Z0-9_.-]+\.(jpg|jpeg|png|webp|mp4)$/;
+
+const PANCAKE_WEB_MEDIA_PATH_REGEX =
+  /^\/web-media-[a-zA-Z0-9_.-]+(\/[a-zA-Z0-9_.:-]+)+\.(jpg|jpeg|png|webp|mp4)$/;
 
 function isValidReviewedMediaPath(
   pathname: string,
   allowedExtensions: ReadonlySet<string>,
 ): boolean {
-  if (!PANCAKE_MEDIA_PATH_REGEX.test(pathname) || pathname.includes("..")) {
+  if (pathname.includes("..")) {
     return false;
   }
 
-  const parts = pathname.split("/");
-  // Expected structure: ["", segment, id1, id2, id3, filename]
-  if (parts.length !== 6) {
-    return false;
+  if (PANCAKE_MEDIA_PATH_REGEX.test(pathname)) {
+    const parts = pathname.split("/");
+    // Expected structure: ["", segment, id1, id2, id3, filename]
+    if (parts.length !== 6) {
+      return false;
+    }
+
+    const filename = parts[5]!;
+    const lastDotIndex = filename.lastIndexOf(".");
+    if (lastDotIndex <= 0) {
+      return false;
+    }
+
+    const extension = filename.slice(lastDotIndex);
+    return allowedExtensions.has(extension);
   }
 
-  const filename = parts[5]!;
-  const lastDotIndex = filename.lastIndexOf(".");
-  if (lastDotIndex <= 0) {
-    return false;
+  if (PANCAKE_WEB_MEDIA_PATH_REGEX.test(pathname)) {
+    const parts = pathname.split("/");
+    // Expected structure: ["", segment, h1, h2, h3, h4, filename] (7 parts)
+    // or with mime suffix: ["", segment, h1, h2, h3, h4, file-metadata, mime.ext] (8 parts)
+    if (parts.length < 7 || parts.length > 8) {
+      return false;
+    }
+
+    const lastPart = parts[parts.length - 1]!;
+    const lastDotIndex = lastPart.lastIndexOf(".");
+    if (lastDotIndex <= 0) {
+      return false;
+    }
+
+    const extension = lastPart.slice(lastDotIndex);
+    return allowedExtensions.has(extension);
   }
 
-  const extension = filename.slice(lastDotIndex);
-  return allowedExtensions.has(extension);
+  return false;
 }
 
 export const MAX_MEDIA_CANDIDATES_SCANNED = 100;

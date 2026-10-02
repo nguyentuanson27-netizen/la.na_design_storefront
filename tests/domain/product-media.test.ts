@@ -9,7 +9,7 @@ import {
   type TrustedProductImage,
 } from "../../src/commerce/product-media.ts";
 
-test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.jpg, .png, and .webp)", () => {
+test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.jpg, .jpeg, .png, and .webp)", () => {
   const validUrls = [
     "https://content.pancake.vn/images/1/2/3/shirt.jpg",
     "https://content.pancake.vn/web_media/12/34/56/shirt.jpg",
@@ -17,8 +17,13 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.
     "https://content.pancake.vn/images/1/2/3/shirt.png",
     "https://content.pancake.vn/web_media/12/34/56/shirt.png",
     "https://content.pancake.vn/images/1/2/3/shirt.webp",
+    "https://content.pancake.vn/images/1/2/3/shirt.jpeg",
     "https://content.pancake.vn/2-2609/2026/9/7/60939f058e4a6add1a156b7d13d6cf1bf2226fbd.png",
     "https://content.pancake.vn/2-2609/2026/9/23/a37fe5e5bf493ae284fa4f8fc22ba9178de76a4f.webp",
+    "https://statics.pancake.vn/user-content.pancake.vn/2023/8/10/45f8e28540c32c3477fe7877b7189f0bf714f457.jpg",
+    "https://cdn.pancake.vn/2/2023/5/13/8bf497694fac109aa56013bfc23dbf69198b269a.jpg",
+    "https://content.pancake.vn/web-media-263/6c/07/3f/33/e9440d484849f70442ba7e7181f54d19a96fd8d7e57ec5c97bbac25c-w:1792-h:2400-l:143040-t:image/jpeg.jpeg",
+    "https://content.pancake.vn/web-media-262/31/df/f2/d5/8611803298e095067c4ea795220f610b212e3db837fe47c4d7f55592-w:768-h:1344-l:1648441-t:image/png.png",
   ];
 
   for (const url of validUrls) {
@@ -27,15 +32,17 @@ test("parseTrustedProductImageUrl accepts reviewed HTTPS Pancake content URLs (.
   }
 });
 
-test("parseTrustedProductImageUrl rejects unreviewed file extensions (.jpeg, .svg, uppercase .JPG/.PNG/.WEBP, etc.)", () => {
+test("parseTrustedProductImageUrl rejects unreviewed file extensions (.svg, .gif, uppercase .JPG/.PNG/.WEBP, etc.)", () => {
   const unreviewedExtensionUrls = [
-    "https://content.pancake.vn/images/1/2/3/shirt.jpeg",
+    "https://content.pancake.vn/images/1/2/3/shirt.gif",
+    "https://content.pancake.vn/images/1/2/3/shirt.bmp",
     "https://content.pancake.vn/images/1/2/3/shirt.JPG",
     "https://content.pancake.vn/images/1/2/3/SHIRT.JPG",
     "https://content.pancake.vn/images/1/2/3/shirt.PNG",
     "https://content.pancake.vn/images/1/2/3/SHIRT.PNG",
     "https://content.pancake.vn/images/1/2/3/shirt.WEBP",
     "https://content.pancake.vn/images/1/2/3/SHIRT.WEBP",
+    "https://content.pancake.vn/images/1/2/3/shirt.JPEG",
     "https://content.pancake.vn/images/1/2/3/vector.svg",
     "https://content.pancake.vn/images/1/2/3/script.js",
     "https://content.pancake.vn/images/1/2/3/doc.html",
