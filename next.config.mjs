@@ -134,7 +134,7 @@ const nextConfig = {
   },
   images: {
     remotePatterns: pancakeImageRemotePatterns,
-  }, },
+  },
   async headers() {
     return [
       {
