@@ -41,12 +41,15 @@ export function storefrontSearchMediaCandidatesSql(
         image."imageRank",
         image."value" #>> '{}' AS "url"
       FROM "VariantMirror" v
-      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(v."pancakeImageUrls")
-        WITH ORDINALITY AS image("value", "imageRank")
+      CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(
+        CASE
+          WHEN JSONB_TYPEOF(v."pancakeImageUrls") = 'array' THEN v."pancakeImageUrls"
+          ELSE '[]'::jsonb
+        END
+      ) WITH ORDINALITY AS image("value", "imageRank")
       WHERE v."productId" = ANY(${[...productIds]}::text[])
         AND v."isPresent" = TRUE
         AND v."isActive" = TRUE
-        AND JSONB_TYPEOF(v."pancakeImageUrls") = 'array'
         AND JSONB_TYPEOF(image."value") = 'string'
     ),
     "ranked_search_media_candidates" AS (
