@@ -1,5 +1,10 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
+import { resolveStorefrontProductMedia } from "./product-media.ts";
 import type { SearchStorefrontFinder } from "./storefront-search-actions.ts";
+import {
+  storefrontSearchMediaCandidatesSql,
+  type StorefrontSearchMediaCandidateRow,
+} from "./storefront-search-media.ts";
 
 const MAX_SUGGESTIONS = 6;
 
@@ -42,9 +47,9 @@ export function createStorefrontSearchSuggestionFinder(
         id: true,
         slug: true,
         name: true,
-        primaryImageUrl: true,
         variants: {
           where: { isPresent: true, isActive: true },
+          orderBy: [{ pancakeVariationId: "asc" }],
           take: 1,
           select: {
             pancakeRetailPrice: true,
@@ -54,15 +59,33 @@ export function createStorefrontSearchSuggestionFinder(
       },
     });
 
+    const mediaCandidates =
+      records.length === 0
+        ? []
+        : await client.$queryRaw<StorefrontSearchMediaCandidateRow[]>(
+            storefrontSearchMediaCandidatesSql(records.map((record) => record.id)),
+          );
+    const mediaCandidatesByProductId = new Map<string, string[]>();
+    for (const candidate of mediaCandidates) {
+      const candidates = mediaCandidatesByProductId.get(candidate.productId) ?? [];
+      candidates.push(candidate.url);
+      mediaCandidatesByProductId.set(candidate.productId, candidates);
+    }
+
     return records.map((record) => {
       const variant = record.variants[0];
       const price =
         variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
+      const media = resolveStorefrontProductMedia({
+        productName: record.name,
+        primaryImageUrl: null,
+        variantImageUrls: [mediaCandidatesByProductId.get(record.id) ?? []],
+      });
       return {
         id: record.id,
         slug: record.slug,
         name: record.name,
-        primaryImageUrl: record.primaryImageUrl ?? null,
+        primaryImageUrl: media.primary?.url ?? null,
         priceText: price !== null ? currency.format(price) : null,
       };
     });
