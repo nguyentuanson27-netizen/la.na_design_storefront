@@ -322,7 +322,7 @@ test("F8a a composite parent can present PREORDER when the shared capacity polic
   const model = card([variant("v", 0)], capacity("PREORDER", { isComposite: true }));
 
   assert.equal(model.isPreorderOnly, true);
-  assert.equal(model.availability, "available");
+  assert.equal(model.availability, "in-stock");
   assert.equal(model.availabilityLabel, PREORDER_LABEL);
 });
 
