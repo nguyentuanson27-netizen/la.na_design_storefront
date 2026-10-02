@@ -65,7 +65,7 @@ function toCycleState(row: PersistedCycleRow | null): AvailabilityCycleState | n
 
 export type VariantAvailabilityObservation = Readonly<{
   variantId: string;
-  /** Ready stock is at or below zero, from mirrored catalog stock. */
+  /** Ready stock is at or below zero; composite parents derive it from mirrored component stock. */
   stockNonPositive: boolean;
   /** The variant's resolved selling mode is `PREORDER`. */
   isPreorder: boolean;

@@ -380,7 +380,7 @@ test("I2 a policy write refuses a product that is not a visible product of this 
   assert.equal(await prisma.productSellingPolicy.count({ where: { productId: foreign.productId } }), 1);
 });
 
-test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to STANDARD", async () => {
+test("I2 a composite parent may persist OVERSELL, PREORDER, and STANDARD policies", async () => {
   const parent = await seedProductForShop("composite-parent", testShopId);
   const child = await seedProductForShop("composite-child", testShopId);
   await prisma.compositeComponentMirror.create({
@@ -388,24 +388,17 @@ test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to S
   });
 
   for (const sellingMode of ["OVERSELL", "PREORDER"] as const) {
-    await assert.rejects(
-      () =>
-        repository.saveSellingPolicy({
-          shopId: testShopId,
-          productId: parent.productId,
-          sellingMode,
-          negativeStockLimit: -5,
-        }),
-      (error: unknown) =>
-        error instanceof SellingPolicyError &&
-        error.reason === "selling-policy-composite-restricted",
-      `${sellingMode} must be refused for a composite parent`,
-    );
+    const saved = await repository.saveSellingPolicy({
+      shopId: testShopId,
+      productId: parent.productId,
+      sellingMode,
+      negativeStockLimit: -5,
+    });
+    assert.equal(saved.sellingMode, sellingMode);
   }
-  assert.equal(await prisma.productSellingPolicy.count({ where: { productId: parent.productId } }), 0);
 
-  // §11: composite in STANDARD is unaffected — it never goes below zero, so no component
-  // accounting is needed. Refusing it too would be a restriction the ADR does not impose.
+  // STANDARD remains supported as before; flexible modes above are now enforced component-by-component
+  // by the same reservation authority rather than rejected at the policy-write boundary.
   const stored = await repository.saveSellingPolicy({
     shopId: testShopId,
     productId: parent.productId,
@@ -426,6 +419,74 @@ test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to S
     ).sellingMode,
     "OVERSELL",
   );
+});
+
+test("I9 PREORDER composite cycle follows ready component capacity on policy writes", async () => {
+  const parent = await seedProduct("preorder-composite-cycle-parent");
+  const child = await seedProduct("preorder-composite-cycle-child");
+  await prisma.warehouseStock.createMany({
+    data: [
+      {
+        variantId: parent.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-parent-wh",
+        quantity: 0,
+        syncedAt,
+      },
+      {
+        variantId: child.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-child-wh",
+        quantity: 5,
+        syncedAt,
+      },
+    ],
+  });
+  await prisma.compositeComponentMirror.create({
+    data: {
+      parentVariantId: parent.variantId,
+      componentVariantId: child.variantId,
+      quantity: 1,
+      syncedAt,
+    },
+  });
+
+  const observedAt = new Date("2026-09-20T03:00:00.000Z");
+  const policy = createCapacityRepository(prisma, () => observedAt);
+  await policy.saveSellingPolicy({
+    shopId: testShopId,
+    productId: parent.productId,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+  });
+
+  const ready = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parent.variantId },
+  });
+  assert.equal(ready.lastStockNonPositive, false, "parent stock 0 must not open while components are ready");
+  assert.equal(ready.cycleStartDate, null);
+  assert.equal(ready.availabilityDate, null);
+
+  await prisma.warehouseStock.update({
+    where: {
+      variantId_pancakeWarehouseId: {
+        variantId: child.variantId,
+        pancakeWarehouseId: "capacity-preorder-composite-child-wh",
+      },
+    },
+    data: { quantity: 0 },
+  });
+  await policy.saveSellingPolicy({
+    shopId: testShopId,
+    productId: parent.productId,
+    sellingMode: "PREORDER",
+    negativeStockLimit: -20,
+  });
+
+  const soldOut = await prisma.variantAvailabilityCycle.findUniqueOrThrow({
+    where: { variantId: parent.variantId },
+  });
+  assert.equal(soldOut.lastStockNonPositive, true);
+  assert.ok(soldOut.cycleStartDate !== null, "cycle opens only when ready component capacity reaches zero");
+  assert.ok(soldOut.availabilityDate !== null);
 });
 
 test("I2 a second write replaces the whole row rather than patching it", async () => {

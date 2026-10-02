@@ -700,10 +700,10 @@ test("B5 a colliding SEO pair warns on a draft and is refused on publish through
  * I3 — the admin surface for ADR 0014 §5's selling mode and negative allowance.
  *
  * Driven through the real form rather than the service, because the thing worth proving here is the
- * one a unit test cannot reach: that an operator's choice actually lands in `ProductSellingPolicy`,
- * and that the §11 composite refusal reaches them as a readable reason instead of a silent no-op.
+ * one a unit test cannot reach: that an operator's choice actually lands in `ProductSellingPolicy`
+ * for both ordinary products and composite parents.
  */
-test("I3 the selling policy editor writes an owner's allowance and refuses it on a set", async ({
+test("I3 the selling policy editor writes an owner's allowance for ordinary and composite products", async ({
   page,
   context,
 }) => {
@@ -758,21 +758,17 @@ test("I3 the selling policy editor writes an owner's allowance and refuses it on
   await expect(page.getByText("Trạng thái: chưa cấu hình (đang dùng mặc định).")).toBeVisible();
   expect(await prisma.productSellingPolicy.count({ where: { productId: policyProductId } })).toBe(0);
 
-  // §11 on the composite parent: the refusal has to arrive as a reason an operator can act on.
-  // Storing intent that silently never takes effect is what I2 refuses, and this is where they see
-  // it happen.
   const parentEditorPath = `/admin/products/${encodeURIComponent(policyParentProductId)}`;
   await page.goto(`${BASE_URL}${parentEditorPath}`, { waitUntil: "networkidle" });
   await page.getByRole("radio", { name: /Đặt trước/ }).check();
   await page.getByRole("button", { name: "Lưu chế độ bán" }).click();
 
-  // Scoped to this editor's own region: the parent's page carries other alerts, and a page-wide
-  // match would both break on strict mode and stop proving WHICH surface reported the refusal.
   const policyRegion = page.getByRole("region", { name: "Chế độ bán và hạn mức âm" });
-  await expect(policyRegion.getByRole("alert")).toContainText("Sản phẩm này là set");
+  await expect(page.getByRole("status")).toContainText("Đã lưu chế độ bán của sản phẩm.");
+  await expect(policyRegion.getByRole("alert")).toHaveCount(0);
   expect(
-    await prisma.productSellingPolicy.count({ where: { productId: policyParentProductId } }),
-  ).toBe(0);
+    await prisma.productSellingPolicy.findUniqueOrThrow({ where: { productId: policyParentProductId } }),
+  ).toMatchObject({ sellingMode: "PREORDER", negativeStockLimit: -20 });
 
   await expectSettledDocumentTitle(page);
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();

@@ -90,7 +90,7 @@ export type CapacityDecisionReason =
   | "invalid-stock"
   | "standard-would-go-negative"
   | "negative-limit-reached"
-  | "composite-oversell-unproven";
+  | "composite-capacity-missing";
 
 export type VariantCapacityInput = Readonly<{
   /** Mirrored Pancake stock for the variant, summed across warehouses. May already be negative. */
@@ -105,7 +105,11 @@ export type VariantCapacityInput = Readonly<{
   sellingMode: SellingMode;
   /** Product-level limit, applied per variant. `STANDARD` ignores it; its floor is always 0. */
   negativeStockLimit: number;
-  /** Composite parents are restricted in v1 — see below. */
+  /**
+   * Whether the requested variant is a composite parent. The scalar predicate cannot derive
+   * component capacity from this flag; flexible composite callers must supply a component-aware
+   * snapshot at the storefront boundary and the reservation path expands the real resources.
+   */
   isComposite: boolean;
 }>;
 
@@ -157,14 +161,6 @@ export function evaluateVariantCapacity(
   if (!Number.isSafeInteger(input.mirroredStock)) return refuse("invalid-stock");
   if (!Number.isSafeInteger(input.activeReservedQuantity) || input.activeReservedQuantity < 0) {
     return refuse("invalid-stock");
-  }
-
-  // Composite v1 restriction. G2 exercised one 1:1 fixture and saw a child driven to -1; it proved
-  // nothing about arbitrary multipliers, a child that starts negative, or multi-component
-  // atomicity. Selling a composite below zero would consume component capacity this predicate does
-  // not model, so it is refused until component-aware accounting exists and is proven by evidence.
-  if (input.isComposite && input.sellingMode !== "STANDARD") {
-    return refuse("composite-oversell-unproven");
   }
 
   if (projectedCapacity < floor) {

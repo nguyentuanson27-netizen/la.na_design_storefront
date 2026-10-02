@@ -243,7 +243,16 @@ test("component groups sharing a label are one kind, and an indistinguishable pa
  */
 test("an OVERSELL parent policy restricts the set and is not inherited by its components", () => {
   const projection = buildStorefrontProductProjection({
-    parentVariants: [variant("set-m", "M", { sellableStock: -2 })],
+    parentVariants: [variant("set-m", "M", {
+      sellableStock: 0,
+      compositeCapacity: {
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -20,
+        readyQuantity: 0,
+        reservableQuantity: 18,
+        reason: "capacity-available",
+      },
+    })],
     componentGroups: [{ label: "Áo", variants: [variant("shirt-m", "M", { sellableStock: -2 })] }],
     hasCompositeGraph: true,
     sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -20 },
@@ -252,9 +261,8 @@ test("an OVERSELL parent policy restricts the set and is not inherited by its co
   const parent = projection.options.find((option) => option.kindKey === "parent");
   const component = projection.options.find((option) => option.kindKey === "component-1");
 
-  // The parent: refused because ADR 0014 disables OVERSELL for a composite, not because of stock.
-  assert.equal(parent?.purchasable, false, "ADR 0014 refuses OVERSELL for a composite parent");
-  assert.equal(parent?.unavailableReason, "OUT_OF_STOCK");
+  // The parent: allowed because composite now supports OVERSELL within negative limit.
+  assert.equal(parent?.purchasable, true, "OVERSELL allowed for a composite parent within limit");
 
   // The component: a different product, with no policy row of its own, so STANDARD floored at 0.
   // −2 is below that floor. It must not ride the parent's −20 allowance.
@@ -291,6 +299,33 @@ test("an OVERSELL parent policy restricts the set and is not inherited by its co
   assert.equal(standalone.options[0]?.purchasable, true);
 });
 
+
+test("a composite sub-set uses the policy captured in its own capacity snapshot", () => {
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("combo-m", "M")],
+    subSetGroups: [{
+      label: "SET QUẦN",
+      kindKey: "sub-set-quan",
+      variants: [variant("subset-m", "M", {
+        sellableStock: 0,
+        compositeCapacity: {
+          sellingMode: "PREORDER",
+          negativeStockLimit: -20,
+          readyQuantity: 0,
+          reservableQuantity: 20,
+          reason: "capacity-available",
+        },
+      })],
+    }],
+    componentGroups: [],
+    hasCompositeGraph: true,
+    sellingPolicy: { sellingMode: "STANDARD", negativeStockLimit: -20 },
+  });
+
+  const subset = projection.options.find((option) => option.id === "subset-m");
+  assert.equal(subset?.purchasable, true);
+  assert.equal(subset?.isPreorderSale, true, "the sibling's PREORDER policy must not become STANDARD");
+});
 
 test("composite child SKU classification is case-insensitive and fail-closed", () => {
   const cases = [

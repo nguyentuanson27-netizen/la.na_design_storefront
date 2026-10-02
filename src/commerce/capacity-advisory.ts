@@ -22,8 +22,12 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
-import { resourceHoldsCapacity } from "./capacity-policy.ts";
-import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import { resourceHoldsCapacity, type SellingMode } from "./capacity-policy.ts";
+import {
+  deriveCompositeCapacitySnapshot,
+  deriveCompositeSellableStock,
+  type CompositeCapacitySnapshot,
+} from "./composite-capacity.ts";
 
 export type AdvisoryHoldReadClient = Pick<Prisma.TransactionClient, "capacityReservationResource">;
 
@@ -72,7 +76,20 @@ export async function readAdvisoryHeldQuantities(
   return held;
 }
 
-type AdvisoryStockVariant = Readonly<{ id: string; sellableStock: number }>;
+type AdvisoryStockVariant = Readonly<{
+  id: string;
+  sellableStock: number;
+  compositeCapacity?: CompositeCapacitySnapshot;
+}>;
+
+type AdvisoryStockProduct<V extends AdvisoryStockVariant> = Readonly<{
+  variants: readonly V[];
+  productCapacity?: Readonly<{
+    sellingMode: SellingMode;
+    negativeStockLimit: number;
+    isComposite: boolean;
+  }>;
+}>;
 
 /**
  * Replaces each variant's mirrored `sellableStock` with the advisory figure, so a card, a PDP
@@ -86,7 +103,7 @@ type AdvisoryStockVariant = Readonly<{ id: string; sellableStock: number }>;
  */
 export async function withAdvisorySellableStock<
   V extends AdvisoryStockVariant,
-  P extends Readonly<{ variants: readonly V[] }>,
+  P extends AdvisoryStockProduct<V>,
 >(client: AdvisoryCapacityReadClient, shopId: number, products: readonly P[]): Promise<P[]> {
   const variantIds = products.flatMap((product) => product.variants.map(({ id }) => id));
   if (variantIds.length === 0) return [...products];
@@ -123,17 +140,24 @@ export async function withAdvisorySellableStock<
     ...product,
     variants: product.variants.map((variant) => {
       const components = edgesByParentId.get(variant.id);
-      const sellableStock = components
-        ? deriveCompositeSellableStock({
-            shopId,
-            components: components.map((edge) => ({
-              requiredQuantity: edge.quantity,
-              activeReservedQuantity: held.get(edge.componentVariant.id) ?? 0,
-              componentVariant: edge.componentVariant,
-            })),
-          })
+      const componentInputs = components?.map((edge) => ({
+        requiredQuantity: edge.quantity,
+        activeReservedQuantity: held.get(edge.componentVariant.id) ?? 0,
+        componentVariant: edge.componentVariant,
+      }));
+      const sellableStock = componentInputs
+        ? deriveCompositeSellableStock({ shopId, components: componentInputs })
         : variant.sellableStock - (held.get(variant.id) ?? 0);
-      return { ...variant, sellableStock };
+      const compositeCapacity =
+        componentInputs && product.productCapacity?.isComposite
+          ? deriveCompositeCapacitySnapshot({
+              shopId,
+              components: componentInputs,
+              sellingMode: product.productCapacity.sellingMode,
+              negativeStockLimit: product.productCapacity.negativeStockLimit,
+            })
+          : undefined;
+      return { ...variant, sellableStock, compositeCapacity };
     }),
   }));
 }

@@ -327,21 +327,82 @@ test("I5 the requested quantity is judged by the capacity rule, not by sellableS
   assert.equal(standardOver?.unavailableReason, "INSUFFICIENT_STOCK");
 });
 
-test("I5 a composite parent is refused an OVERSELL allowance in the cart too", () => {
-  // ADR §11. I2 refuses to store this and I4 keeps it off the PDP; the cart must not be the one
-  // surface that still offers it, or the commit boundary would refuse what the cart accepted.
-  const [line] = buildStorefrontCartLines({
+test("I5 composite cart lines use component-aware headroom and ready quantity", () => {
+  const baseVariant = oversellProduct(0).variants[0]!;
+  const [atLimit] = buildStorefrontCartLines({
     items: [{ variantId: "oversell-variant", quantity: 1 }],
-    products: [oversellProduct(0, { isComposite: true })],
+    products: [
+      oversellProduct(0, {
+        isComposite: true,
+        sellingPolicy: { sellingMode: "OVERSELL", negativeStockLimit: -10 },
+        variants: [{
+          ...baseVariant,
+          compositeCapacity: {
+            sellingMode: "OVERSELL",
+            negativeStockLimit: -10,
+            readyQuantity: 0,
+            reservableQuantity: 0,
+            reason: "negative-limit-reached",
+          },
+        }],
+      }),
+    ],
   });
-  assert.equal(line?.available, false);
-  assert.equal(line?.unavailableReason, "OUT_OF_STOCK");
+  assert.equal(atLimit?.available, false);
+  assert.equal(atLimit?.unavailableReason, "OUT_OF_STOCK");
 
-  // A composite in STANDARD at positive stock is untouched, so this cannot rot into "composites
-  // never sell from the cart".
-  const [stocked] = buildStorefrontCartLines({
-    items: [{ variantId: "oversell-variant", quantity: 1 }],
-    products: [oversellProduct(3, { isComposite: true, sellingPolicy: undefined })],
+  const flexibleProduct = oversellProduct(0, {
+    isComposite: true,
+    variants: [{
+      ...baseVariant,
+      compositeCapacity: {
+        sellingMode: "OVERSELL",
+        negativeStockLimit: -20,
+        readyQuantity: 0,
+        reservableQuantity: 2,
+        reason: "capacity-available",
+      },
+    }],
   });
-  assert.equal(stocked?.available, true);
+  const [withinLimit] = buildStorefrontCartLines({
+    items: [{ variantId: "oversell-variant", quantity: 2 }],
+    products: [flexibleProduct],
+  });
+  assert.equal(withinLimit?.available, true);
+
+  const [pastLimit] = buildStorefrontCartLines({
+    items: [{ variantId: "oversell-variant", quantity: 3 }],
+    products: [flexibleProduct],
+  });
+  assert.equal(pastLimit?.available, false);
+  assert.equal(pastLimit?.unavailableReason, "INSUFFICIENT_STOCK");
+
+  const preorderProduct = oversellProduct(1, {
+    isComposite: true,
+    sellingPolicy: { sellingMode: "PREORDER", negativeStockLimit: -20 },
+    variants: [{
+      ...baseVariant,
+      sellableStock: 1,
+      compositeCapacity: {
+        sellingMode: "PREORDER",
+        negativeStockLimit: -20,
+        readyQuantity: 1,
+        reservableQuantity: 11,
+        reason: "capacity-available",
+      },
+    }],
+  });
+  const [ready] = buildStorefrontCartLines({
+    items: [{ variantId: "oversell-variant", quantity: 1 }],
+    products: [preorderProduct],
+  });
+  assert.equal(ready?.available, true);
+  assert.equal(ready?.isPreorderSale, false);
+
+  const [preorder] = buildStorefrontCartLines({
+    items: [{ variantId: "oversell-variant", quantity: 2 }],
+    products: [preorderProduct],
+  });
+  assert.equal(preorder?.available, true);
+  assert.equal(preorder?.isPreorderSale, true);
 });

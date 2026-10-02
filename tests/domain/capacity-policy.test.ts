@@ -107,20 +107,26 @@ test("G5 two concurrent reservations cannot jointly cross the limit", () => {
   assert.equal(loser.reason, "negative-limit-reached");
 });
 
-test("G5 composite products may not oversell or preorder in v1", () => {
-  // G2 exercised a single 1:1 fixture. That is not evidence about arbitrary multipliers, a child
-  // starting negative, or multi-component atomicity, so the unproven cases are refused.
+test("G5 composite products support oversell and preorder with negative limit", () => {
   for (const mode of ["OVERSELL", "PREORDER"] as const) {
     const decision = evaluateVariantCapacity(
-      variant({ mirroredStock: 5, sellingMode: mode, isComposite: true }),
+      variant({ mirroredStock: 0, sellingMode: mode, negativeStockLimit: -20, isComposite: true }),
       1,
     );
-    assert.equal(decision.allowed, false, `composite ${mode} must be refused in v1`);
-    assert.equal(decision.reason, "composite-oversell-unproven");
+    assert.equal(decision.allowed, true, `composite ${mode} should be allowed within limit`);
   }
 
-  // A composite in STANDARD mode is unaffected: it never goes below zero, so no component
-  // accounting is required.
+  // Past negative limit is refused
+  for (const mode of ["OVERSELL", "PREORDER"] as const) {
+    const decision = evaluateVariantCapacity(
+      variant({ mirroredStock: -20, sellingMode: mode, negativeStockLimit: -20, isComposite: true }),
+      1,
+    );
+    assert.equal(decision.allowed, false);
+    assert.equal(decision.reason, "negative-limit-reached");
+  }
+
+  // A composite in STANDARD mode is unaffected
   assert.equal(
     evaluateVariantCapacity(variant({ mirroredStock: 5, isComposite: true }), 1).allowed,
     true,

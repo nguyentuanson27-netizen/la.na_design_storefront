@@ -109,7 +109,7 @@ test("I9 a catalog that cannot state availability withholds rather than guessing
     assert.equal(projected.reason, "AVAILABILITY_UNRESOLVED");
   }
 
-  for (const capacityReason of ["invalid-stock", "invalid-limit", "composite-oversell-unproven"] as const) {
+  for (const capacityReason of ["invalid-stock", "invalid-limit", "composite-capacity-missing"] as const) {
     const projected = projectExternalAvailability(
       input({ purchasable: false, unavailableReason: "OUT_OF_STOCK", capacityReason }),
     );

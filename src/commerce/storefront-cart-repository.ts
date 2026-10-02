@@ -4,7 +4,11 @@ import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-b
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
-import { deriveCompositeSellableStock } from "./composite-capacity.ts";
+import {
+  deriveCompositeCapacitySnapshot,
+  deriveCompositeSellableStock,
+} from "./composite-capacity.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { readAdvisoryHeldQuantities, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
 import {
   compositeSubSetAuthorityComponentSelection,
@@ -151,6 +155,7 @@ function toCartProduct(
   shopId: number,
   heldByVariantId: ReadonlyMap<string, number>,
 ) {
+  const sellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   return {
     slug: product.slug,
     pancakeProductId: product.pancakeProductId,
@@ -199,6 +204,19 @@ function toCartProduct(
               })),
             })
           : sumWarehouseStocks(variant.warehouseStocks) - (heldByVariantId.get(variant.id) ?? 0),
+      compositeCapacity:
+        variant.compositeComponents.length > 0
+          ? deriveCompositeCapacitySnapshot({
+              shopId,
+              components: variant.compositeComponents.map((edge) => ({
+                requiredQuantity: edge.quantity,
+                activeReservedQuantity: heldByVariantId.get(edge.componentVariantId) ?? 0,
+                componentVariant: edge.componentVariant,
+              })),
+              sellingMode: sellingPolicy.sellingMode,
+              negativeStockLimit: sellingPolicy.negativeStockLimit,
+            })
+          : undefined,
       retailPrice: variant.pancakeRetailPrice,
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       imageUrls: parseJsonStringArray(variant.pancakeImageUrls),

@@ -727,20 +727,19 @@ export function createPancakeOrderSubmissionService(
     let provenanceDrifted = false;
     let subtotalVnd = 0;
     let totalQuantity = 0;
-    // Live Pancake units each order line consumes, per physical stock resource. A standalone line
-    // consumes its own variation; a composite line consumes `quantity × edge.quantity` of each
-    // component. Summed across lines so a COMBO and an ÁO LẺ sharing one Áo cannot each pass alone.
-    const demandByResource = new Map<string, { units: number; floor: number }>();
-    function addDemand(pancakeVariationId: string, units: number, floor: number): boolean {
-      const current = demandByResource.get(pancakeVariationId);
-      const total = (current?.units ?? 0) + units;
-      if (!Number.isSafeInteger(total)) return false;
-      demandByResource.set(pancakeVariationId, {
-        units: total,
-        floor: current === undefined ? floor : Math.max(current.floor, floor),
-      });
-      return true;
-    }
+    // Preserve each line's policy while accumulating shared physical resources. STANDARD demand is
+    // applied first, then flexible demand, matching reserveOrderCapacity(). Collapsing these to one
+    // aggregate floor either rejects a valid flexible tail or lets STANDARD borrow negative headroom.
+    type LiveCapacityPlan = Readonly<{
+      variantId: string;
+      sellingMode: ReturnType<typeof resolveSellingPolicy>["sellingMode"];
+      resources: readonly Readonly<{
+        pancakeVariationId: string;
+        units: number;
+        floor: number;
+      }>[];
+    }>;
+    const liveCapacityPlans: LiveCapacityPlan[] = [];
 
     for (const line of order.lines) {
       if (
@@ -764,10 +763,7 @@ export function createPancakeOrderSubmissionService(
         components: [],
       };
 
-      // ADR 0014 §11: Composite products under OVERSELL / PREORDER are disallowed in v1.
-      if (variantMeta.isComposite && variantMeta.policy.sellingMode !== "STANDARD") {
-        return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
-      }
+      // Composite products now support OVERSELL and PREORDER with component-aware accounting.
 
       // Deliberately `retailPrice` alone, matching the central authority: a lower Pancake
       // after-discount field is an order-level rule there, not a catalog price, so it neither sets
@@ -789,11 +785,16 @@ export function createPancakeOrderSubmissionService(
         variantMeta.policy.sellingMode,
         variantMeta.policy.negativeStockLimit,
       );
+      const lineResources: Array<{
+        pancakeVariationId: string;
+        units: number;
+        floor: number;
+      }> = [];
       if (variantMeta.isComposite) {
         // PR #81: a composite parent's own Pancake stock is not its capacity (a COMBO or an
         // inactive SET VÁY sibling is routinely 0 there while its pieces are stocked), so it is not
         // read. Each component must be a present, same-shop variation that is uniquely live now,
-        // with enough units for this line; the policy is STANDARD here (§11 refused the rest above).
+        // with enough units for this line under this composite product's resolved selling policy.
         for (const component of variantMeta.components) {
           const units = line.quantity * component.requiredQuantity;
           const liveComponent = liveByVariationId.get(component.pancakeVariationId);
@@ -804,11 +805,15 @@ export function createPancakeOrderSubmissionService(
             !Number.isSafeInteger(units) ||
             !liveComponent ||
             !Number.isFinite(liveComponent.sellableStock) ||
-            liveComponent.sellableStock - units < floor ||
-            !addDemand(component.pancakeVariationId, units, floor)
+            liveComponent.sellableStock - units < floor
           ) {
             return reject("STOCK_UNAVAILABLE");
           }
+          lineResources.push({
+            pancakeVariationId: component.pancakeVariationId,
+            units,
+            floor,
+          });
         }
       } else {
         if (!Number.isFinite(live.sellableStock)) {
@@ -817,10 +822,17 @@ export function createPancakeOrderSubmissionService(
         if (live.sellableStock - line.quantity < floor) {
           return reject("STOCK_UNAVAILABLE");
         }
-        if (!addDemand(line.pancakeVariationId, line.quantity, floor)) {
-          return reject("STOCK_UNAVAILABLE");
-        }
+        lineResources.push({
+          pancakeVariationId: line.pancakeVariationId,
+          units: line.quantity,
+          floor,
+        });
       }
+      liveCapacityPlans.push({
+        variantId: line.variantId,
+        sellingMode: variantMeta.policy.sellingMode,
+        resources: lineResources,
+      });
       if (line.unitPriceVnd !== BigInt(freshUnitPriceVnd)) {
         drifted = true;
       } else if (provenanceDiffers(line, buildLineAudit(freshPricing))) {
@@ -862,12 +874,33 @@ export function createPancakeOrderSubmissionService(
       });
     }
 
-    // Each line passed on its own above; this closes lines that share a resource. With no composite
-    // line every resource has exactly one line, so it refuses nothing the per-line check accepted.
-    for (const [pancakeVariationId, demand] of demandByResource) {
-      const liveResource = liveByVariationId.get(pancakeVariationId);
-      if (!liveResource || liveResource.sellableStock - demand.units < demand.floor) {
-        return reject("STOCK_UNAVAILABLE");
+    // Close the shared-resource case with the same deterministic allocation order as reservation.
+    const pendingByResource = new Map<string, number>();
+    const orderedCapacityPlans = [...liveCapacityPlans].sort((left, right) => {
+      const leftFlexible = left.sellingMode !== "STANDARD";
+      const rightFlexible = right.sellingMode !== "STANDARD";
+      if (leftFlexible !== rightFlexible) return leftFlexible ? 1 : -1;
+      return left.variantId.localeCompare(right.variantId);
+    });
+    for (const plan of orderedCapacityPlans) {
+      for (const resource of plan.resources) {
+        const liveResource = liveByVariationId.get(resource.pancakeVariationId);
+        const pending = pendingByResource.get(resource.pancakeVariationId) ?? 0;
+        const total = pending + resource.units;
+        if (
+          !Number.isSafeInteger(total) ||
+          !liveResource ||
+          !Number.isFinite(liveResource.sellableStock) ||
+          liveResource.sellableStock - total < resource.floor
+        ) {
+          return reject("STOCK_UNAVAILABLE");
+        }
+      }
+      for (const resource of plan.resources) {
+        pendingByResource.set(
+          resource.pancakeVariationId,
+          (pendingByResource.get(resource.pancakeVariationId) ?? 0) + resource.units,
+        );
       }
     }
 

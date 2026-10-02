@@ -2,6 +2,7 @@ import {
   resolveStorefrontProductMedia,
   type StorefrontProductMedia,
 } from "./product-media.ts";
+import type { CompositeCapacitySnapshot } from "./composite-capacity.ts";
 import {
   evaluateVariantCapacity,
   resolveAcceptedPreorderState,
@@ -34,6 +35,7 @@ export type StorefrontCartVariant = {
   color: string | null;
   size: string | null;
   sellableStock: number;
+  compositeCapacity?: CompositeCapacitySnapshot;
   retailPrice: number | null;
   retailPriceAfterDiscount: number | null;
   imageUrls?: readonly string[];
@@ -293,18 +295,23 @@ export function buildStorefrontCartLines({
     // the commit may still refuse it when capacity moved in between, and that refusal is correct.
     if (option.purchasable) {
       const capacity = capacityByVariantId.get(item.variantId);
-      const decision = evaluateVariantCapacity(
-        {
-          mirroredStock: variant.sellableStock,
-          activeReservedQuantity: 0,
-          sellingMode: capacity?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
-          negativeStockLimit:
-            capacity?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
-          isComposite: capacity?.isComposite ?? false,
-        } satisfies VariantCapacityInput,
-        item.quantity,
-      );
-      if (!decision.allowed) {
+      const compositeCapacity = capacity?.isComposite ? variant.compositeCapacity : undefined;
+      const quantityAllowed = compositeCapacity
+        ? Number.isSafeInteger(item.quantity) &&
+          item.quantity > 0 &&
+          item.quantity <= compositeCapacity.reservableQuantity
+        : evaluateVariantCapacity(
+            {
+              mirroredStock: variant.sellableStock,
+              activeReservedQuantity: 0,
+              sellingMode: capacity?.sellingMode ?? STANDARD_STANDALONE_CAPACITY.sellingMode,
+              negativeStockLimit:
+                capacity?.negativeStockLimit ?? STANDARD_STANDALONE_CAPACITY.negativeStockLimit,
+              isComposite: capacity?.isComposite ?? false,
+            } satisfies VariantCapacityInput,
+            item.quantity,
+          ).allowed;
+      if (!quantityAllowed) {
         // `purchasable` already established that one unit sells, so the only thing that can have
         // failed here is the requested count — the shopper can still buy fewer, which is what
         // INSUFFICIENT_STOCK tells them. A variant that cannot sell at all falls through to
@@ -333,16 +340,19 @@ export function buildStorefrontCartLines({
       isPreorderSale:
         option.purchasable &&
         capacity !== undefined &&
-        resolveAcceptedPreorderState(
-          {
-            mirroredStock: variant.sellableStock,
-            activeReservedQuantity: 0,
-            sellingMode: capacity.sellingMode,
-            negativeStockLimit: capacity.negativeStockLimit,
-            isComposite: capacity.isComposite,
-          },
-          item.quantity,
-        ) === "PREORDER",
+        (capacity.isComposite && variant.compositeCapacity !== undefined
+          ? variant.compositeCapacity.sellingMode === "PREORDER" &&
+            item.quantity > variant.compositeCapacity.readyQuantity
+          : resolveAcceptedPreorderState(
+              {
+                mirroredStock: variant.sellableStock,
+                activeReservedQuantity: 0,
+                sellingMode: capacity.sellingMode,
+                negativeStockLimit: capacity.negativeStockLimit,
+                isComposite: capacity.isComposite,
+              },
+              item.quantity,
+            ) === "PREORDER"),
       unavailableReason: option.unavailableReason,
     };
   });

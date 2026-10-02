@@ -427,9 +427,7 @@ test("F8b the cart line waits when the requested quantity exceeds ready stock", 
   assert.equal(two?.isPreorderSale, true, "the second unit has to be prepared, so the line waits");
 });
 
-test("I5 a composite parent is refused an oversell allowance the cart read from the database", async () => {
-  // ADR §11, end to end: I2 refuses to store this, but a row written around that boundary (a repair
-  // query, a fixture) must still not sell here. The restriction is the rule's, not the writer's.
+test("I5 a composite parent uses its component-aware OVERSELL allowance from the database", async () => {
   const product = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -464,15 +462,12 @@ test("I5 a composite parent is refused an oversell allowance the cart read from 
     },
   });
 
-  // Before it has components it is an ordinary product, and the allowance applies.
   const [standalone] = await repository.getLines({
     shopId,
     items: [{ variantId: parentVariant.id, quantity: 1 }],
   });
   assert.equal(standalone?.available, true);
 
-  // Giving it a component makes it a composite parent, and the same stored allowance stops applying
-  // — the only change is the graph, which is what proves the restriction is what fired.
   const childProduct = await prisma.productMirror.create({
     data: {
       pancakeShopId: shopId,
@@ -502,10 +497,24 @@ test("I5 a composite parent is refused an oversell allowance the cart read from 
     },
   });
 
-  const [composite] = await repository.getLines({
+  const [withinAllowance] = await repository.getLines({
     shopId,
     items: [{ variantId: parentVariant.id, quantity: 1 }],
   });
-  assert.equal(composite?.available, false, "ADR §11 refuses OVERSELL for a composite parent");
-  assert.equal(composite?.unavailableReason, "OUT_OF_STOCK");
+  assert.equal(withinAllowance?.available, true, "component stock 0 still has the owner's -20 headroom");
+
+  await prisma.warehouseStock.create({
+    data: {
+      variantId: childVariant.id,
+      pancakeWarehouseId: "cart-composite-child-warehouse",
+      quantity: -20,
+      syncedAt,
+    },
+  });
+  const [atFloor] = await repository.getLines({
+    shopId,
+    items: [{ variantId: parentVariant.id, quantity: 1 }],
+  });
+  assert.equal(atFloor?.available, false, "component at -20 must not advertise one more set");
+  assert.equal(atFloor?.unavailableReason, "OUT_OF_STOCK");
 });
