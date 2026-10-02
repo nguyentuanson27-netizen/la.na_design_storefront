@@ -406,6 +406,18 @@ test("an mp4 is video, never an image", () => {
   assert.equal(parseTrustedProductVideoUrl(mp4), mp4);
 });
 
+test("percent-encoded dot path segments are rejected before WHATWG normalization", () => {
+  for (const encodedDotSegment of ["%2e", "%2e.", ".%2e"]) {
+    assert.equal(
+      parseTrustedProductImageUrl(
+        `https://content.pancake.vn/media/1/2/3/x/${encodedDotSegment}/photo.jpg`,
+      ),
+      null,
+      `must reject encoded dot segment ${encodedDotSegment}`,
+    );
+  }
+});
+
 test("an image is not video either: the two extension sets do not overlap", () => {
   assert.equal(parseTrustedProductVideoUrl("https://content.pancake.vn/1/2/3/4/photo.jpg"), null);
   assert.equal(parseTrustedProductVideoUrl("https://content.pancake.vn/1/2/3/4/photo.png"), null);
