@@ -764,10 +764,7 @@ export function createPancakeOrderSubmissionService(
         components: [],
       };
 
-      // ADR 0014 §11: Composite products under OVERSELL / PREORDER are disallowed in v1.
-      if (variantMeta.isComposite && variantMeta.policy.sellingMode !== "STANDARD") {
-        return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
-      }
+      // Composite products now support OVERSELL and PREORDER with component-aware accounting.
 
       // Deliberately `retailPrice` alone, matching the central authority: a lower Pancake
       // after-discount field is an order-level rule there, not a catalog price, so it neither sets

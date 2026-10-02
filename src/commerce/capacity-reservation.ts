@@ -404,8 +404,8 @@ export function createCapacityReservationRepository(client: PrismaClient) {
         const acceptedStateByVariantId = new Map<string, "READY" | "PREORDER">();
 
         const orderedPlans = [...linePlans].sort((left, right) => {
-          const leftFlexible = !left.isComposite && left.sellingMode !== "STANDARD";
-          const rightFlexible = !right.isComposite && right.sellingMode !== "STANDARD";
+          const leftFlexible = left.sellingMode !== "STANDARD";
+          const rightFlexible = right.sellingMode !== "STANDARD";
           if (leftFlexible !== rightFlexible) return leftFlexible ? 1 : -1;
           return left.line.variantId.localeCompare(right.line.variantId);
         });
@@ -420,6 +420,7 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           }
 
           let standaloneInput: VariantCapacityInput | null = null;
+          let compositeIsPreorder = false;
           for (const resource of plan.resources) {
             const input: VariantCapacityInput = {
               mirroredStock: stockByResourceId.get(resource.variantId) ?? Number.NaN,
@@ -438,7 +439,14 @@ export function createCapacityReservationRepository(client: PrismaClient) {
                 refusedVariantId: plan.line.variantId,
               } as const;
             }
-            if (!plan.isComposite) standaloneInput = input;
+            if (!plan.isComposite) {
+              standaloneInput = input;
+            } else if (
+              plan.sellingMode === "PREORDER" &&
+              resolveAcceptedPreorderState(input, resource.quantity) === "PREORDER"
+            ) {
+              compositeIsPreorder = true;
+            }
           }
 
           for (const resource of plan.resources) {
@@ -451,7 +459,7 @@ export function createCapacityReservationRepository(client: PrismaClient) {
           acceptedStateByVariantId.set(
             plan.line.variantId,
             plan.isComposite
-              ? "READY"
+              ? (compositeIsPreorder ? "PREORDER" : "READY")
               : resolveAcceptedPreorderState(standaloneInput!, plan.line.quantity),
           );
         }

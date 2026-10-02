@@ -327,18 +327,15 @@ test("I5 the requested quantity is judged by the capacity rule, not by sellableS
   assert.equal(standardOver?.unavailableReason, "INSUFFICIENT_STOCK");
 });
 
-test("I5 a composite parent is refused an OVERSELL allowance in the cart too", () => {
-  // ADR §11. I2 refuses to store this and I4 keeps it off the PDP; the cart must not be the one
-  // surface that still offers it, or the commit boundary would refuse what the cart accepted.
+test("I5 a composite parent allows an OVERSELL allowance in the cart within limit", () => {
+  // Composite products now support OVERSELL/PREORDER within negative limit.
   const [line] = buildStorefrontCartLines({
     items: [{ variantId: "oversell-variant", quantity: 1 }],
     products: [oversellProduct(0, { isComposite: true })],
   });
-  assert.equal(line?.available, false);
-  assert.equal(line?.unavailableReason, "OUT_OF_STOCK");
+  assert.equal(line?.available, true);
 
-  // A composite in STANDARD at positive stock is untouched, so this cannot rot into "composites
-  // never sell from the cart".
+  // A composite in STANDARD at positive stock is untouched
   const [stocked] = buildStorefrontCartLines({
     items: [{ variantId: "oversell-variant", quantity: 1 }],
     products: [oversellProduct(3, { isComposite: true, sellingPolicy: undefined })],

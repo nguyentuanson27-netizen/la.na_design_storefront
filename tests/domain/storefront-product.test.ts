@@ -309,15 +309,10 @@ test("a composite parent is unsellable under OVERSELL and PREORDER, and unaffect
   assert.equal(optionFor("PREORDER", false).purchasable, true);
   assert.equal(optionFor("PREORDER", false).isPreorderSale, true);
 
-  // Composite: refused, at exactly the same stock and limit. The difference is the flag alone.
-  assert.equal(optionFor("OVERSELL", true).purchasable, false);
-  assert.equal(optionFor("OVERSELL", true).unavailableReason, "OUT_OF_STOCK");
-  assert.equal(optionFor("PREORDER", true).purchasable, false);
-  assert.equal(
-    optionFor("PREORDER", true).isPreorderSale,
-    false,
-    "a marker on something the shopper cannot add is worse than no marker",
-  );
+  // Composite: supported now under component-aware accounting
+  assert.equal(optionFor("OVERSELL", true).purchasable, true);
+  assert.equal(optionFor("PREORDER", true).purchasable, true);
+  assert.equal(optionFor("PREORDER", true).isPreorderSale, true);
 
   // STANDARD is untouched by the restriction, which only bites for a non-STANDARD mode. Both
   // directions are asserted so this cannot rot into "composites are never sellable": a composite at

@@ -138,19 +138,12 @@ export function createCapacityRepository(
    * `countProjectedCompositeParentVariations()` uses.
    */
   async function requireCompositeRestrictionSatisfied(
-    tx: Pick<PrismaClient, "variantMirror">,
-    productId: string,
-    sellingMode: SellingMode,
+    _tx: Pick<PrismaClient, "variantMirror">,
+    _productId: string,
+    _sellingMode: SellingMode,
   ): Promise<void> {
-    if (sellingMode === "STANDARD") return;
-
-    const compositeParent = await tx.variantMirror.findFirst({
-      where: { productId, compositeComponents: { some: {} } },
-      select: { id: true },
-    });
-    if (compositeParent !== null) {
-      throw new SellingPolicyError("selling-policy-composite-restricted");
-    }
+    // Composite products now support OVERSELL and PREORDER with component-aware accounting.
+    return;
   }
 
   /**

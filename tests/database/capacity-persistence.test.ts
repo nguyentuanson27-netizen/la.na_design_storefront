@@ -388,21 +388,14 @@ test("I2 a composite parent is refused OVERSELL and PREORDER but may be set to S
   });
 
   for (const sellingMode of ["OVERSELL", "PREORDER"] as const) {
-    await assert.rejects(
-      () =>
-        repository.saveSellingPolicy({
-          shopId: testShopId,
-          productId: parent.productId,
-          sellingMode,
-          negativeStockLimit: -5,
-        }),
-      (error: unknown) =>
-        error instanceof SellingPolicyError &&
-        error.reason === "selling-policy-composite-restricted",
-      `${sellingMode} must be refused for a composite parent`,
-    );
+    const saved = await repository.saveSellingPolicy({
+      shopId: testShopId,
+      productId: parent.productId,
+      sellingMode,
+      negativeStockLimit: -5,
+    });
+    assert.equal(saved.sellingMode, sellingMode);
   }
-  assert.equal(await prisma.productSellingPolicy.count({ where: { productId: parent.productId } }), 0);
 
   // §11: composite in STANDARD is unaffected — it never goes below zero, so no component
   // accounting is needed. Refusing it too would be a restriction the ADR does not impose.

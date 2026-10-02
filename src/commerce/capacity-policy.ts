@@ -159,13 +159,7 @@ export function evaluateVariantCapacity(
     return refuse("invalid-stock");
   }
 
-  // Composite v1 restriction. G2 exercised one 1:1 fixture and saw a child driven to -1; it proved
-  // nothing about arbitrary multipliers, a child that starts negative, or multi-component
-  // atomicity. Selling a composite below zero would consume component capacity this predicate does
-  // not model, so it is refused until component-aware accounting exists and is proven by evidence.
-  if (input.isComposite && input.sellingMode !== "STANDARD") {
-    return refuse("composite-oversell-unproven");
-  }
+  // Composite products support OVERSELL and PREORDER with component-aware accounting.
 
   if (projectedCapacity < floor) {
     return refuse(

@@ -470,16 +470,20 @@ test("Composite parent: STANDARD capacity is its component's live stock, not the
   assert.equal(createCalled, false);
 });
 
-test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED under OVERSELL mode", async () => {
+test("Composite parent: allows order under OVERSELL mode when component stock within limit", async () => {
   const prismaMock = buildMockPrisma({
     sellingMode: "OVERSELL",
+    negativeStockLimit: -20,
     isComposite: true,
   });
   let createCalled = false;
 
   const gateway = {
     async fetchVariations() {
-      return [buildCatalogVariation(pancakeVariationId, 5)];
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, -5),
+      ];
     },
     async createOrder() {
       createCalled = true;
@@ -490,25 +494,23 @@ test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED und
   const service = createPancakeOrderSubmissionService(prismaMock, gateway);
   const result = await service.submit({ publicCode, shopId });
 
-  assert.deepEqual(result, {
-    ok: false,
-    state: "REJECTED",
-    reason: "COMPOSITE_SELLING_MODE_UNSUPPORTED",
-  });
-  assert.equal(createCalled, false);
-  assert.equal(prismaMock.getOrderState().orderState, "REJECTED");
-  assert.equal(prismaMock.getOrderState().syncErrorCode, "COMPOSITE_SELLING_MODE_UNSUPPORTED");
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70011" });
+  assert.equal(createCalled, true);
 });
 
-test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED under PREORDER mode", async () => {
+test("Composite parent: allows order under PREORDER mode when component stock within limit", async () => {
   const prismaMock = buildMockPrisma({
     sellingMode: "PREORDER",
+    negativeStockLimit: -20,
     isComposite: true,
   });
 
   const gateway = {
     async fetchVariations() {
-      return [buildCatalogVariation(pancakeVariationId, 5)];
+      return [
+        buildCatalogVariation(pancakeVariationId, 0),
+        buildCatalogVariation(componentVariationId, -5),
+      ];
     },
     async createOrder() {
       return { id: 70012 };
@@ -518,11 +520,7 @@ test("Composite parent: fails closed with COMPOSITE_SELLING_MODE_UNSUPPORTED und
   const service = createPancakeOrderSubmissionService(prismaMock, gateway);
   const result = await service.submit({ publicCode, shopId });
 
-  assert.deepEqual(result, {
-    ok: false,
-    state: "REJECTED",
-    reason: "COMPOSITE_SELLING_MODE_UNSUPPORTED",
-  });
+  assert.deepEqual(result, { ok: true, state: "CONFIRMED", pancakeOrderId: "70012" });
 });
 
 test("Request embeds canonical [ORDER:publicCode] marker in note and shipping address", async () => {
