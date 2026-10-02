@@ -5,7 +5,7 @@
 // "-", "_" or "." segments such as "SV605-2"), set off by whitespace or a
 // separator, or wrapped in ()/[]. Vietnamese words never mix ASCII letters with
 // digits, and a pure number ("Thu 2026") is left alone.
-const PRODUCT_CODE = String.raw`#?([A-Za-z]{1,8}\d+[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*)`;
+const PRODUCT_CODE = String.raw`#?([A-Za-z]+\d+[A-Za-z0-9]*(?:[-_.][A-Za-z0-9]+)*)`;
 const SEPARATOR = String.raw`(?:\s+|\s*[-–—|:/]\s*)`;
 const TRAILING_PRODUCT_CODE = new RegExp(
   String.raw`(?:${SEPARATOR}${PRODUCT_CODE}|\s*\(\s*${PRODUCT_CODE}\s*\)|\s*\[\s*${PRODUCT_CODE}\s*\])$`,

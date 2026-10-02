@@ -13,6 +13,8 @@ test("product display name drops the trailing Pancake product code", () => {
   assert.equal(stripTrailingProductCode("Đầm xoè sv605"), "Đầm xoè");
   assert.equal(stripTrailingProductCode("Váy hoa SV605-2"), "Váy hoa");
   assert.equal(stripTrailingProductCode("  Váy hoa   SV605  "), "Váy hoa");
+  // No cap on the letter prefix: any run of ASCII letters followed by digits is a code.
+  assert.equal(stripTrailingProductCode("Váy hoa ABCDEFGHI123"), "Váy hoa");
 });
 
 test("product display name drops a code behind a separator or in brackets", () => {

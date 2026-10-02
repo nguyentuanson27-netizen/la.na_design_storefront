@@ -7,12 +7,6 @@ import {
   type SearchSuggestionsResult,
 } from "../components/headless/search-overlay-model.ts";
 
-const currency = new Intl.NumberFormat("vi-VN", {
-  style: "currency",
-  currency: "VND",
-  maximumFractionDigits: 0,
-});
-
 export type SearchStorefrontFinder = (trimmedQuery: string) => Promise<SearchSuggestionProduct[]>;
 
 export async function searchStorefrontSuggestionsWithFinder(
@@ -63,57 +57,9 @@ export async function searchStorefrontSuggestionsAction(
   return searchStorefrontSuggestionsWithFinder(query, async (trimmed) => {
     const { prisma } = await import("../db/prisma.ts");
     const { readPancakeShopId } = await import("../integrations/pancake/config.ts");
-    const shopId = readPancakeShopId();
-    const records = await prisma.productMirror.findMany({
-      where: {
-        pancakeShopId: shopId,
-        isPresent: true,
-        isActive: true,
-        OR: [
-          { name: { contains: trimmed, mode: "insensitive" } },
-          // The mirrored name drops the Pancake product code ("SV605"), so a shopper who
-          // types the code still finds the product through that code or its variant display ids.
-          { productCode: { contains: trimmed, mode: "insensitive" } },
-          {
-            variants: {
-              some: {
-                isPresent: true,
-                isActive: true,
-                pancakeDisplayId: { contains: trimmed, mode: "insensitive" },
-              },
-            },
-          },
-        ],
-      },
-      take: 6,
-      orderBy: { updatedAt: "desc" },
-      select: {
-        id: true,
-        slug: true,
-        name: true,
-        primaryImageUrl: true,
-        variants: {
-          where: { isPresent: true, isActive: true },
-          take: 1,
-          select: {
-            pancakeRetailPrice: true,
-            pancakeRetailPriceAfterDiscount: true,
-          },
-        },
-      },
-    });
-
-    return records.map((record) => {
-      const variant = record.variants[0];
-      const price =
-        variant?.pancakeRetailPriceAfterDiscount ?? variant?.pancakeRetailPrice ?? null;
-      return {
-        id: record.id,
-        slug: record.slug,
-        name: record.name,
-        primaryImageUrl: record.primaryImageUrl ?? null,
-        priceText: price !== null ? currency.format(price) : null,
-      };
-    });
+    const { createStorefrontSearchSuggestionFinder } = await import(
+      "./storefront-search-repository.ts"
+    );
+    return createStorefrontSearchSuggestionFinder(prisma, readPancakeShopId())(trimmed);
   });
 }
