@@ -6,6 +6,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
+import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -14,10 +15,11 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  * from the real database rows and the shipped repository config.
  *
  * YOUR NEXT FAVOURITE is DB-owned (`CategoryEditorialMedia`), so it is exercised here in both its
- * complete and fail-closed states. SPECIAL DEALS, the promo rows and the feedback rail depend on
- * owner content the spec leaves pending, so with the shipped config they must be absent -- even
- * though this fixture writes a real `HomepageFeaturedProduct` selection, which proves the manual
- * authority alone cannot publish SPECIAL DEALS without its configured source collection. Their
+ * complete and fail-closed states. SPECIAL DEALS and the promo rows point at owner collections this
+ * fixture does not publish, so they must be absent -- even though this fixture writes a real
+ * `HomepageFeaturedProduct` selection, which proves the manual authority alone cannot publish
+ * SPECIAL DEALS without its source collection. The feedback rail and `/feedback` render the
+ * photographs the shipped config supplies. Their
  * selection, reachability and ordering rules are pinned by `tests/domain/home-route-model.test.ts`.
  *
  * The fixtures write the real rows rather than stubbing the reads, so the section order asserted
@@ -291,16 +293,18 @@ test.beforeEach(async ({ page }) => {
 test("the refreshed homepage renders only real content, and none of the retired sections", async ({ page }) => {
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
-  // Hero absent (no collection hero media); SPECIAL DEALS, both promo rows and the feedback rail
-  // absent (pending config); YOUR NEXT FAVOURITE present (all four category images configured).
-  expect(await regionOrder(page)).toEqual(["category-discovery"]);
+  // Hero absent (no collection hero media); SPECIAL DEALS and both promo rows absent (their
+  // collections are not published here); YOUR NEXT FAVOURITE present (all four category images
+  // configured); the feedback rail present (the shipped config supplies its photographs).
+  expect(await regionOrder(page)).toEqual(["category-discovery", "feedback"]);
   for (const region of RETIRED_REGIONS) {
     await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);
   }
   await expect(page.getByRole("heading", { level: 2, name: "Hàng mới về" })).toHaveCount(0);
   await expect(page.getByRole("heading", { level: 2, name: "Sản phẩm nổi bật" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /F6b Sản phẩm/ })).toHaveCount(0);
-  await expect(page.locator('a[href="/feedback"]')).toHaveCount(0);
+  // The rail's own `Xem thêm` is the one way into the gallery.
+  await expect(page.locator('a[href="/feedback"]')).toHaveCount(1);
 });
 
 test("YOUR NEXT FAVOURITE links the four canonical categories in the approved order", async ({ page }) => {
@@ -393,8 +397,9 @@ test("the refreshed homepage is accessible, keyboard reachable and overflow-free
   expect(consoleErrors).toEqual([]);
 });
 
-test("/feedback is not published while its gallery content is pending", async ({ page }) => {
+test("/feedback publishes the shipped gallery", async ({ page }) => {
   const response = await page.goto(`${BASE_URL}/feedback`, { waitUntil: "networkidle" });
-  expect(response?.status()).toBe(404);
-  await expect(page.locator('link[rel="canonical"]')).toHaveCount(0);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { level: 1, name: HOMEPAGE_CONFIG.feedback.title! })).toBeVisible();
+  await expect(page.locator(".feedback-gallery img")).toHaveCount(HOMEPAGE_CONFIG.feedback.images.length);
 });
