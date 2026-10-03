@@ -41,6 +41,28 @@ const openAiAdsConnectSrc = hasOpenAiAdsPixel
   : "";
 const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";
 
+// Zalo Ads Pixel. Same build-time contract as the two above, validated identically to
+// readZaloAdsPixelConfig. Zalo publishes no id format, so only a bounded token is accepted.
+//
+// The loader is not wired yet: Zalo's official snippet (and therefore the exact origins it needs)
+// has not been reviewed -- see docs/integrations/zalo-ads-pixel.md. Until it is, a configured id
+// fails the build instead of producing an image that looks tracked and reports nothing. No Zalo
+// origin enters the policy.
+const configuredZaloAdsPixelId = process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID ?? "";
+if (
+  configuredZaloAdsPixelId.length > 0
+  && !/^[A-Za-z0-9_-]{1,128}$/.test(configuredZaloAdsPixelId)
+) {
+  throw new Error(
+    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID must be the bounded Pixel ID from Zalo Ads (letters, digits, _ or -, at most 128)",
+  );
+}
+if (configuredZaloAdsPixelId.length > 0) {
+  throw new Error(
+    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID is set, but the Zalo Ads Pixel loader has not been reviewed against Zalo's official snippet yet (docs/integrations/zalo-ads-pixel.md). Leave it blank.",
+  );
+}
+
 // Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
 // installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
 // its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
@@ -131,6 +153,7 @@ const nextConfig = {
   env: {
     LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
     LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
+    LA_BUILD_ZALO_ADS_PIXEL_ID: configuredZaloAdsPixelId,
   },
   images: {
     remotePatterns: pancakeImageRemotePatterns,

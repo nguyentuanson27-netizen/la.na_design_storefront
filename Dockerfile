@@ -33,6 +33,9 @@ ENV NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${NEXT_PUBLIC_FACEBOOK_PIXEL_ID}
 # the CSP origins. The Conversions API key remains runtime-only and never enters this image stage.
 ARG NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID=""
 ENV NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID=${NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID}
+# Zalo Ads Pixel: same build-time contract. Left empty the image ships no Zalo script or origin.
+ARG NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=""
+ENV NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=${NEXT_PUBLIC_ZALO_ADS_PIXEL_ID}
 RUN pnpm prisma:generate
 RUN pnpm build
 

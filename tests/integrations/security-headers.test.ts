@@ -96,3 +96,45 @@ test("a configured pixel opens exactly the origins it needs and nothing wider", 
     delete process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
   }
 });
+
+test("no Zalo Ads Pixel configured means no Zalo origin is allowed", async () => {
+  delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+  const csp = await readCsp("?no-zalo-pixel");
+
+  assert.doesNotMatch(csp, /zalo/i);
+  assert.doesNotMatch(csp, /zdn\.vn/i);
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.doesNotMatch(csp, /'unsafe-eval'/);
+  assert.doesNotMatch(csp, /\*/);
+});
+
+test("a configured Zalo Ads Pixel refuses to build until the official loader is reviewed", async () => {
+  // Opening the policy needs the exact origins from Zalo's official snippet, which has not been
+  // reviewed yet. Until then a configured id must stop the build rather than ship a CSP that blocks
+  // a loader nobody can see failing.
+  process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = "zalo_fixture-0123456789";
+  try {
+    await assert.rejects(
+      () => readCsp("?with-zalo-pixel"),
+      /Zalo Ads Pixel loader has not been reviewed/,
+    );
+  } finally {
+    delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+  }
+});
+
+test("a malformed Zalo Ads Pixel id fails the build", async () => {
+  for (const [index, value] of [" 123", "12 34", "x".repeat(129), "id\";"].entries()) {
+    process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = value;
+    try {
+      await assert.rejects(
+        () => readCsp(`?malformed-zalo-pixel-${index}`),
+        /NEXT_PUBLIC_ZALO_ADS_PIXEL_ID must be the bounded Pixel ID/,
+      );
+    } finally {
+      delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+    }
+  }
+});

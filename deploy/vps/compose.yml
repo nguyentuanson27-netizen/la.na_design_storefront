@@ -31,6 +31,7 @@ services:
         # only through .env.production would ship a script the policy then blocks.
         NEXT_PUBLIC_FACEBOOK_PIXEL_ID: ${NEXT_PUBLIC_FACEBOOK_PIXEL_ID:-}
         NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: ${NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID:-}
+        NEXT_PUBLIC_ZALO_ADS_PIXEL_ID: ${NEXT_PUBLIC_ZALO_ADS_PIXEL_ID:-}
     restart: unless-stopped
     env_file:
       - .env.production
