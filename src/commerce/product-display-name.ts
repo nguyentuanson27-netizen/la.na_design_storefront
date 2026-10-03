@@ -12,6 +12,64 @@ const TRAILING_PRODUCT_CODE = new RegExp(
   "u",
 );
 
+// Some Pancake names carry no real name before the code, only the garment type: "SET VÁY SV771",
+// "Set quần SV12". Stripping the code there would leave a bare "SET VÁY" shared by many products,
+// so such names stay whole. Words are matched lower-case, either exactly as listed (with
+// diacritics) or, when typed without diacritics, by their unaccented form ("SET VAY"); a word typed
+// with different diacritics ("đỏ" vs "đồ") is not a garment-type word.
+const GARMENT_TYPE_WORDS = [
+  "set",
+  "bộ",
+  "đồ",
+  "váy",
+  "đầm",
+  "quần",
+  "áo",
+  "chân",
+  "dài",
+  "ngắn",
+  "khoác",
+  "sơ",
+  "mi",
+  "thun",
+  "len",
+  "yếm",
+  "vest",
+  "blazer",
+  "croptop",
+  "jumpsuit",
+  "phụ",
+  "kiện",
+  "túi",
+  "ví",
+  "khăn",
+  "mũ",
+  "nón",
+  "kẹp",
+  "giày",
+  "guốc",
+  "nữ",
+  "và",
+] as const;
+
+function stripDiacritics(word: string): string {
+  return word.normalize("NFD").replace(/\p{M}/gu, "").replace(/đ/g, "d");
+}
+
+const ACCENTED_GARMENT_TYPE_WORDS = new Set<string>(GARMENT_TYPE_WORDS);
+const UNACCENTED_GARMENT_TYPE_WORDS = new Set<string>(GARMENT_TYPE_WORDS.map(stripDiacritics));
+
+function isGarmentTypeWord(word: string): boolean {
+  const lower = word.normalize("NFC").toLowerCase();
+  if (ACCENTED_GARMENT_TYPE_WORDS.has(lower)) return true;
+  return stripDiacritics(lower) === lower && UNACCENTED_GARMENT_TYPE_WORDS.has(lower);
+}
+
+function isOnlyGarmentType(name: string): boolean {
+  const words = name.split(/[\s,&+/]+/u).filter((word) => word.length > 0);
+  return words.length > 0 && words.every(isGarmentTypeWord);
+}
+
 export type ProductDisplayName = {
   name: string;
   productCode: string | null;
@@ -23,7 +81,7 @@ export function splitTrailingProductCode(sourceName: string): ProductDisplayName
   if (!match) return { name: trimmed, productCode: null };
 
   const name = trimmed.slice(0, match.index).trim();
-  if (name.length === 0) return { name: trimmed, productCode: null };
+  if (name.length === 0 || isOnlyGarmentType(name)) return { name: trimmed, productCode: null };
   return { name, productCode: match[1] ?? match[2] ?? match[3] ?? null };
 }
 
