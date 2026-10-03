@@ -6,6 +6,7 @@ import { ChatGptAdsPixel } from "@/components/analytics/chatgpt-ads-pixel";
 import { FacebookPixel } from "@/components/analytics/facebook-pixel";
 import { TrackingBootstrap } from "@/components/analytics/tracking-bootstrap";
 import { TrackingPageView } from "@/components/analytics/tracking-page-view";
+import { ZaloAdsPixel } from "@/components/analytics/zalo-ads-pixel";
 import { SiteChat } from "@/components/brand/site-chat";
 import { SiteDocument } from "@/components/brand/site-document";
 import { SiteFooter } from "@/components/brand/site-footer";
@@ -107,6 +108,7 @@ export function SiteChrome({
       <SiteChat pancakeHosts={PANCAKE_CHAT_HOSTS} />
       <TrackingPageView />
       <FacebookPixel />
+      <ZaloAdsPixel />
     </SiteDocument>
   );
 }

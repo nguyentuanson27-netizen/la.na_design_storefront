@@ -5,7 +5,10 @@ import { pathToFileURL } from "node:url";
 
 type HeaderEntry = { key: string; value: string };
 type HeaderRule = { source: string; headers: HeaderEntry[] };
-type NextConfigLike = { headers?: () => Promise<HeaderRule[]> };
+type NextConfigLike = {
+  headers?: () => Promise<HeaderRule[]>;
+  env?: Record<string, string>;
+};
 
 async function loadHeaderRules(cacheBuster = ""): Promise<HeaderRule[]> {
   // next.config.mjs reads the pixel env at module scope, so a second reading needs a fresh module
@@ -94,5 +97,97 @@ test("a configured pixel opens exactly the origins it needs and nothing wider", 
     assert.doesNotMatch(csp, /\*/);
   } finally {
     delete process.env.NEXT_PUBLIC_FACEBOOK_PIXEL_ID;
+  }
+});
+
+test("no Zalo Ads Pixel configured means no Zalo origin is allowed", async () => {
+  delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+  const csp = await readCsp("?no-zalo-pixel");
+
+  // The exact origins a configured pixel opens, plus Zalo's own domains: none may survive unconfigured.
+  assert.doesNotMatch(csp, /s\.zzcdn\.me/i);
+  assert.doesNotMatch(csp, /log\.adtimaserver\.vn/i);
+  assert.doesNotMatch(csp, /zzcdn|adtimaserver/i);
+  assert.doesNotMatch(csp, /zalo/i);
+  assert.doesNotMatch(csp, /zdn\.vn/i);
+  assert.match(csp, /default-src 'self'/);
+  assert.match(csp, /object-src 'none'/);
+  assert.match(csp, /frame-ancestors 'none'/);
+  assert.doesNotMatch(csp, /'unsafe-eval'/);
+  assert.doesNotMatch(csp, /\*/);
+});
+
+test("a configured Zalo Ads Pixel opens exactly its loader and beacon origins", async () => {
+  process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = "zalo_fixture-0123456789";
+  try {
+    const csp = await readCsp("?with-zalo-pixel");
+    const directive = (name: string) => csp.match(new RegExp(`(?:^|; )${name} ([^;]*)`))?.[1] ?? "";
+    const zaloOrigins = (value: string) =>
+      value.split(" ").filter((token) => /zzcdn|adtimaserver|zalo|zdn\.vn/i.test(token));
+
+    // The loader from the official snippet; beacons (images) and the conversion-rule fetch go to
+    // the one origin ztracker.js reports to. Nothing else, and no other directive changes.
+    assert.deepEqual(zaloOrigins(directive("script-src")), ["https://s.zzcdn.me"]);
+    assert.deepEqual(zaloOrigins(directive("img-src")), ["https://log.adtimaserver.vn"]);
+    assert.deepEqual(zaloOrigins(directive("connect-src")), ["https://log.adtimaserver.vn"]);
+    for (const name of ["default-src", "style-src", "media-src", "font-src", "object-src", "base-uri", "form-action", "frame-ancestors"]) {
+      assert.deepEqual(zaloOrigins(directive(name)), [], `${name} must not admit a Zalo origin`);
+    }
+    assert.doesNotMatch(csp, /za\.zdn\.vn/);
+
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /object-src 'none'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.doesNotMatch(csp, /'unsafe-eval'/);
+    assert.doesNotMatch(csp, /\*/);
+  } finally {
+    delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+  }
+});
+
+test("a malformed Zalo Ads Pixel id fails the build", async () => {
+  for (const [index, value] of [" 123", "12 34", "x".repeat(129), "id\";"].entries()) {
+    process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = value;
+    try {
+      await assert.rejects(
+        () => readCsp(`?malformed-zalo-pixel-${index}`),
+        /NEXT_PUBLIC_ZALO_ADS_PIXEL_ID must be the bounded Pixel ID/,
+      );
+    } finally {
+      delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+    }
+  }
+});
+
+async function loadEnv(cacheBuster: string): Promise<Record<string, string>> {
+  const configUrl = pathToFileURL(resolve("next.config.mjs")).href + cacheBuster;
+  const { default: nextConfig } = (await import(configUrl)) as { default: NextConfigLike };
+  return nextConfig.env ?? {};
+}
+
+test("the Zalo quarantine policy is the header's img-src and connect-src minus Zalo's reporting origin", async () => {
+  delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
+  assert.equal((await loadEnv("?no-zalo-quarantine")).LA_BUILD_ZALO_ADS_QUARANTINE_CSP, "");
+
+  process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = "zalo_fixture-0123456789";
+  try {
+    const csp = await readCsp("?zalo-quarantine-header");
+    const quarantine = (await loadEnv("?zalo-quarantine-env")).LA_BUILD_ZALO_ADS_QUARANTINE_CSP;
+    const directive = (policy: string, name: string) =>
+      policy.split("; ").find((entry) => entry.startsWith(`${name} `));
+
+    const headerImg = directive(csp, "img-src");
+    const headerConnect = directive(csp, "connect-src");
+    assert.ok(headerImg?.includes("https://log.adtimaserver.vn"));
+    assert.ok(headerConnect?.includes("https://log.adtimaserver.vn"));
+
+    // Exactly two directives, each identical to the header's except for the Zalo origin, so adding it
+    // can only ever block Zalo and never anything else the page loads.
+    assert.deepEqual(quarantine.split("; ").map((entry) => entry.split(" ")[0]), ["img-src", "connect-src"]);
+    assert.equal(directive(quarantine, "img-src"), headerImg!.replace(" https://log.adtimaserver.vn", ""));
+    assert.equal(directive(quarantine, "connect-src"), headerConnect!.replace(" https://log.adtimaserver.vn", ""));
+    assert.doesNotMatch(quarantine, /adtimaserver|zzcdn|zalo/i);
+  } finally {
+    delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
   }
 });

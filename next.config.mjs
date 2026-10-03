@@ -41,6 +41,29 @@ const openAiAdsConnectSrc = hasOpenAiAdsPixel
   : "";
 const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";
 
+// Zalo Ads Pixel. Same build-time contract as the two above, validated identically to
+// readZaloAdsPixelConfig. Zalo publishes no id format, so only a bounded token is accepted.
+//
+// The official snippet (docs/integrations/zalo-ads-pixel.md) is one async tag loading
+// https://s.zzcdn.me/ztr/ztracker.js. Zalo does not document where that tracker reports, so the
+// origins below were read off the script itself (ztracker v1.2.0, 2026-10-03): every beacon --
+// /tracklp page views and engagement, /ptrck/log conversions -- is a 1x1 image on
+// log.adtimaserver.vn, and the account's conversion rules are fetched from the same origin
+// (/ptrck/events). Its za.zdn.vn loader is dead code in the web build and stays closed.
+const configuredZaloAdsPixelId = process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID ?? "";
+if (
+  configuredZaloAdsPixelId.length > 0
+  && !/^[A-Za-z0-9_-]{1,128}$/.test(configuredZaloAdsPixelId)
+) {
+  throw new Error(
+    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID must be the bounded Pixel ID from Zalo Ads (letters, digits, _ or -, at most 128)",
+  );
+}
+const hasZaloAdsPixel = configuredZaloAdsPixelId.length > 0;
+const zaloAdsScriptSrc = hasZaloAdsPixel ? " https://s.zzcdn.me" : "";
+const zaloAdsImgSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
+const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
+
 // Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
 // installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
 // its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
@@ -74,12 +97,12 @@ const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
+  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';
@@ -88,6 +111,20 @@ const contentSecurityPolicy = `
 `
   .replace(/\s{2,}/g, " ")
   .trim();
+
+// The Zalo tracker reports the live URL with every beacon, so once loaded it must stop reporting if
+// the app navigates to a URL carrying shopper input (src/integrations/zalo-ads/url-safety.ts). A
+// third-party script cannot be unloaded, but a page can add a stricter CSP: the loader inserts this
+// <meta> policy -- the header's img-src and connect-src minus the Zalo reporting origin -- and the
+// browser blocks every Zalo beacon for the rest of that document. Derived from the header so the two
+// cannot drift.
+const zaloAdsQuarantinePolicy = hasZaloAdsPixel
+  ? contentSecurityPolicy
+    .split("; ")
+    .filter((directive) => /^(img-src|connect-src) /.test(directive))
+    .map((directive) => directive.replaceAll(" https://log.adtimaserver.vn", ""))
+    .join("; ")
+  : "";
 
 const securityHeaders = [
   {
@@ -131,6 +168,8 @@ const nextConfig = {
   env: {
     LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
     LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
+    LA_BUILD_ZALO_ADS_PIXEL_ID: configuredZaloAdsPixelId,
+    LA_BUILD_ZALO_ADS_QUARANTINE_CSP: zaloAdsQuarantinePolicy,
   },
   images: {
     remotePatterns: pancakeImageRemotePatterns,

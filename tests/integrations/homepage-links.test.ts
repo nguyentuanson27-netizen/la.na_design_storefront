@@ -42,7 +42,7 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
   "/size-guide",
 ]);
 const LOCKED_IMG_SRC =
-  "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};";
+  "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};";
 const LOCKED_MEDIA_SRC =
   "media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};";
 // img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would
@@ -53,6 +53,8 @@ const LOCKED_FACEBOOK_IMG_SRC =
   'const facebookImgSrc = hasFacebookPixel ? " https://www.facebook.com" : "";';
 const LOCKED_OPENAI_ADS_IMG_SRC =
   'const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";';
+const LOCKED_ZALO_ADS_IMG_SRC =
+  'const zaloAdsImgSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";';
 const REVIEWED_PANCAKE_IMAGE_HOSTS = [
   "content.pancake.vn",
   "statics.pancake.vn",
@@ -183,6 +185,10 @@ test("U2 leaves the reviewed image and media trust boundaries locked", async () 
   assert.ok(
     nextConfig.includes(LOCKED_OPENAI_ADS_IMG_SRC),
     "the ChatGPT Ads beacon origin admitted by img-src must stay byte-for-byte as reviewed",
+  );
+  assert.ok(
+    nextConfig.includes(LOCKED_ZALO_ADS_IMG_SRC),
+    "the Zalo Ads beacon origin admitted by img-src must stay byte-for-byte as reviewed",
   );
 });
 
