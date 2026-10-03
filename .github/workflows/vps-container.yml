@@ -145,15 +145,20 @@ jobs:
       # and nothing caught it: every other check builds with an empty pixel id, so removing that
       # wiring again would stay green. This builds the way production does — through Compose, with
       # the id supplied the way .env.production supplies it — and asserts the image actually serves
-      # the pixel under a policy that admits it.
-      - name: Verify the Compose build carries the pixel id into the image
+      # the pixel under a policy that admits it. The Zalo Ads Pixel has the same build-time contract
+      # (loader and CSP from one baked id), so the same build carries and asserts its id too.
+      - name: Verify the Compose build carries the pixel ids into the image
         shell: bash
         run: |
           set -euo pipefail
           pixel_id=123456789012345
+          zalo_pixel_id=7242087840828522496
           sed -i "s/^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=.*/NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${pixel_id}/" \
             deploy/vps/.env.production
+          sed -i "s/^NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=.*/NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=${zalo_pixel_id}/" \
+            deploy/vps/.env.production
           grep -q "^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${pixel_id}$" deploy/vps/.env.production
+          grep -q "^NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=${zalo_pixel_id}$" deploy/vps/.env.production
 
           docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml build app
 
@@ -195,8 +200,17 @@ jobs:
           grep -q 'connect\.facebook\.net' <<<"${body}"
           grep -q "${pixel_id}" <<<"${body}"
 
-          # Restore the untracked default so the health smoke below builds as production does today.
+          # Zalo: the loader origin and the tracker's reporting origin in the baked policy, and the
+          # official loader URL with the id handed to the client loader.
+          grep -qi 'content-security-policy:.*script-src[^;]*https://s\.zzcdn\.me' <<<"${headers}"
+          grep -qi 'content-security-policy:.*img-src[^;]*https://log\.adtimaserver\.vn' <<<"${headers}"
+          grep -qi 'content-security-policy:.*connect-src[^;]*https://log\.adtimaserver\.vn' <<<"${headers}"
+          grep -q "s\.zzcdn\.me/ztr/ztracker\.js?id=${zalo_pixel_id}" <<<"${body}"
+
+          # Restore the untracked defaults so the health smoke below builds as production does today.
           sed -i "s/^NEXT_PUBLIC_FACEBOOK_PIXEL_ID=.*/NEXT_PUBLIC_FACEBOOK_PIXEL_ID=/" \
+            deploy/vps/.env.production
+          sed -i "s/^NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=.*/NEXT_PUBLIC_ZALO_ADS_PIXEL_ID=/" \
             deploy/vps/.env.production
 
       - name: Build production runtime image

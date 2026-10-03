@@ -72,9 +72,18 @@ can carry shopper input: the search box writes free text into `/shop?q=`, and or
 order code in `?order=`. The app cannot sanitize a third-party payload, so it controls only whether
 the tracker may run (`src/integrations/zalo-ads/url-safety.ts`):
 
-- A URL is safe only if every query parameter is a reviewed ad-attribution parameter (`zaclid`,
-  `zsrcid`, `utm_ads`, `adtid`, `utm_source|medium|campaign|term|content`) and any fragment is a
-  plain anchor. Anything else is unsafe, including filter parameters (fail-closed).
+- A URL is safe only if everything beyond the path has a contract tight enough to rule out
+  customer data. Anything else is unsafe (fail-closed), including filter parameters:
+  - **Query:** only the four attribution parameters the tracker itself reads (`zaclid`, `zsrcid`,
+    `utm_ads`, `adtid`). Each value must be an opaque token (`[A-Za-z0-9_-]{1,128}`, so no email,
+    space, Vietnamese text or address) that is neither phone-shaped (8–15 digits, optionally `+`
+    or `-`/`_`-separated) nor an order code (`LA-…`). Generic `utm_*` are not allowed, because
+    `utm_term`/`utm_content` are free text. So do not put UTM parameters on Zalo ad URLs.
+  - **Fragment:** only the anchors the site itself links to (`#main-content`, `#thanh-toan` and
+    the `/policies` sections), kept honest by a test that scans the source for in-page links.
+  - Residual: an opaque-looking token cannot be proven not to be, say, an unaccented name typed
+    into `zaclid` by hand. These four parameters are written by Zalo's click redirect or the ad
+    configuration, never by a storefront form.
 - **At load**, the tag is inserted only if the address and a same-origin referrer are both safe.
   Otherwise the tracker never loads in that document.
 - **After load**, every URL change is checked against both the router's target and the live
@@ -83,7 +92,7 @@ the tracker may run (`src/integrations/zalo-ads/url-safety.ts`):
   are watched directly: `hashchange`, `popstate`, and, where the browser has the Navigation API, its
   `navigate` event, which fires before the new URL commits. The first unsafe URL (for example the
   header search's client-side `router.push('/shop?q=…')`, the checkout redirect to
-  `/checkout/success?order=…`, or `location.hash = "<anything but a plain anchor>"`) adds a `<meta>`
+  `/checkout/success?order=…`, or `location.hash = "<anything but a listed anchor>"`) adds a `<meta>`
   CSP. That policy is the header's `img-src` and `connect-src` minus `log.adtimaserver.vn`, derived
   in `next.config.mjs` and shipped as `LA_BUILD_ZALO_ADS_QUARANTINE_CSP`. A page can tighten its CSP
   but never loosen it, so the browser blocks every Zalo beacon for the rest of that document

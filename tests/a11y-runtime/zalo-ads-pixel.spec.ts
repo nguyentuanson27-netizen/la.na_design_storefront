@@ -131,7 +131,7 @@ test.afterAll(async () => {
 
 test("a safe landing loads the official tag once and reports", async ({ page }) => {
   const observed = await observeZalo(page);
-  await page.goto(`${BASE_URL}/contact?zaclid=abc123&utm_source=zalo`, { waitUntil: "load" });
+  await page.goto(`${BASE_URL}/contact?zaclid=abc123&zsrcid=99`, { waitUntil: "load" });
 
   await waitForBeacons(observed, 2);
   expect(await pixelState(page)).toBe("loaded");
@@ -158,18 +158,18 @@ test("safe load, then an unsafe hash mutation: Zalo's reporting origin is blocke
   await expect(page.locator("meta#zalo-ads-pixel-quarantine")).toHaveAttribute("http-equiv", "Content-Security-Policy");
 });
 
-test("a plain in-page anchor keeps tracking", async ({ page }) => {
+test("one of the site's own anchors keeps tracking", async ({ page }) => {
   const observed = await observeZalo(page);
   await page.goto(`${BASE_URL}/contact`, { waitUntil: "load" });
   await waitForBeacons(observed, 2);
 
   await page.evaluate(() => {
-    window.location.hash = "lien-he";
+    window.location.hash = "main-content";
   });
   const before = observed.beacons.length;
   await waitForBeacons(observed, before + 2);
   expect(await pixelState(page)).toBe("loaded");
-  expect(observed.beacons.at(-1)).toContain(encodeURIComponent(`${BASE_URL}/contact#lien-he`));
+  expect(observed.beacons.at(-1)).toContain(encodeURIComponent(`${BASE_URL}/contact#main-content`));
 });
 
 test("a header search after load never reports the search term", async ({ page }) => {
@@ -195,6 +195,14 @@ test("shopper input in the address or a same-origin referrer keeps the tracker o
 
   await page.goto(`${BASE_URL}/track-order?order=LA-TEST123`, { waitUntil: "load" });
   await expect.poll(() => pixelState(page)).toBe("blocked");
+
+  // Attribution-shaped keys and anchor-shaped fragments do not launder customer identifiers.
+  for (const path of ["/contact?utm_term=0900000000", "/contact?zaclid=0900000000", "/contact#0900000000", "/contact#LA-TEST123"]) {
+    // A fresh document each time: a hash-only goto would be a same-document navigation.
+    await page.goto("about:blank");
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "load" });
+    await expect.poll(() => pixelState(page)).toBe("blocked");
+  }
 
   await page.goto(`${BASE_URL}/contact`, {
     waitUntil: "load",
