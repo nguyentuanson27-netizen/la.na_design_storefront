@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildZaloAdsPixelScriptSrc,
   readZaloAdsPixelConfig,
+  readZaloAdsQuarantinePolicy,
   ZALO_ADS_PIXEL_SCRIPT_ORIGIN,
 } from "../../src/integrations/zalo-ads/pixel-config.ts";
 
@@ -75,4 +76,12 @@ test("the loader URL is exactly the official snippet's src with the configured i
   // The id is the only thing the storefront sends: no page, shopper or order data in the URL.
   const src = new URL(buildZaloAdsPixelScriptSrc(config));
   assert.deepEqual([...src.searchParams.keys()], ["id"]);
+});
+
+test("without a build-time quarantine policy the loader has nothing to stop the tracker with", () => {
+  assert.equal(readZaloAdsQuarantinePolicy(undefined), null);
+  assert.equal(readZaloAdsQuarantinePolicy(""), null);
+  assert.equal(readZaloAdsQuarantinePolicy("img-src 'self'; connect-src 'self'"), "img-src 'self'; connect-src 'self'");
+  // This process ran no build, so the inlined constant is absent and the default reads as none.
+  assert.equal(readZaloAdsQuarantinePolicy(), null);
 });

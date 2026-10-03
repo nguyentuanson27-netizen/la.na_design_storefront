@@ -56,12 +56,39 @@ those exact bytes. Re-check it if Zalo ships a new version.
   loudly. Blank means fully disabled: no tag and no Zalo origin in the CSP.
 - `LA_BUILD_ZALO_ADS_PIXEL_ID`: the build-time constant the request path reads. A runtime-only id
   therefore cannot switch the tag on behind a CSP built without it.
-- `src/components/analytics/zalo-ads-pixel.tsx`, mounted once in `SiteChrome`, renders the official
-  tag through `next/script` (`afterInteractive`, async). The id is its only parameter. It has no
-  inline code and nothing waits on it, so a blocked or failed load is a no-op. There is no
-  `<noscript>`, because the official snippet has none.
+- `src/components/analytics/zalo-ads-pixel.tsx`, mounted once in `SiteChrome`, renders
+  `zalo-ads-pixel-loader.tsx`, which inserts the official tag (async, into `<head>`, id as its only
+  parameter) under the privacy boundary below. It has no inline tracking code and nothing waits on
+  it, so a blocked or failed load is a no-op. There is no `<noscript>`, because the official snippet
+  has none.
 - CSP, only when the id is set at build time: `script-src https://s.zzcdn.me`, and
   `img-src` + `connect-src https://log.adtimaserver.vn`.
+
+## Privacy boundary
+
+The tracker builds its own payload: the full current URL with every beacon (including the 5 s
+heartbeat, which reads the *live* URL) and `document.referrer` with its page view. Storefront URLs
+can carry shopper input: the search box writes free text into `/shop?q=`, and order flows put the
+order code in `?order=`. The app cannot sanitize a third-party payload, so it controls only whether
+the tracker may run (`src/integrations/zalo-ads/url-safety.ts`):
+
+- A URL is safe only if every query parameter is a reviewed ad-attribution parameter (`zaclid`,
+  `zsrcid`, `utm_ads`, `adtid`, `utm_source|medium|campaign|term|content`) and any fragment is a
+  plain anchor. Anything else is unsafe, including filter parameters (fail-closed).
+- **At load**, the tag is inserted only if the address and a same-origin referrer are both safe.
+  Otherwise the tracker never loads in that document.
+- **After load**, every App Router navigation is checked. The first one to an unsafe URL (for example
+  the header search's client-side `router.push('/shop?q=…')`, or the checkout redirect to
+  `/checkout/success?order=…`) adds a `<meta>` CSP. That policy is the header's `img-src` and
+  `connect-src` minus `log.adtimaserver.vn`, derived in `next.config.mjs` and shipped as
+  `LA_BUILD_ZALO_ADS_QUARANTINE_CSP`. A page can tighten its CSP but never loosen it, so the browser
+  blocks every Zalo beacon for the rest of that document whatever the tracker does. This runs in a
+  layout effect in the same commit as the router's history update, so no tracker timer reports the
+  new URL in between. Expect CSP violation messages for those blocked beacons in the console.
+- Without a quarantine policy the loader does not run at all.
+
+Effect on measurement: a visit stops reporting to Zalo once the shopper searches, filters, or
+reaches an order page. A new full page load on a safe URL starts it again.
 
 ## Going live
 
@@ -95,7 +122,7 @@ Consequences:
 | `page_view`      | automatic `pageview`         | First page of each visit only |
 | `view_item`      | URL keyword `/shop/`         | Only when a product page is the landing page |
 | `view_cart`, `begin_checkout` | URL keyword `/cart`, `/checkout` | Rarely: these pages are reached by client navigation |
-| `purchase`       | URL keyword `/checkout/success` | **No.** Checkout reaches the confirmation page through a server-action redirect, which is a client navigation. The rule would fire only on a reload or a direct open of the confirmation link, which is exactly the double count to avoid. |
+| `purchase`       | URL keyword `/checkout/success` | **No.** The confirmation URL carries `?order=`, so the privacy boundary keeps the tracker off it at load and quarantines it after the client-side checkout redirect. |
 | `add_to_cart`, `select_item`, `remove_from_cart`, `view_item_list` | none distinguishable | No |
 
 Recommendation: use Zalo for landing-page traffic and engagement, and URL-keyword conversions only
@@ -103,7 +130,8 @@ for landing pages (for example a campaign's product URL). Do **not** configure a
 `/checkout/success` purchase conversion for optimization. Measuring purchases in Zalo would need
 one of these, each a separate decision:
 
-1. Make the post-checkout redirect a full document load (touches checkout).
+1. A confirmation step whose URL carries no order data, reached by a full document load (touches
+   checkout).
 2. Adopt the undocumented `ztrq` API (no contract, no dedupe).
 3. A Zalo server-side API (not requested).
 
@@ -113,9 +141,8 @@ the storefront's buttons carry no stable `id`.
 ## Other limitations
 
 - No event id or dedupe exists in the documented contract.
-- The confirmation URL carries the public order code (`LA-…`). Zalo would only see it on a full
-  load of that page. It is not personal data. No storefront URL carries a name, phone, email,
-  address or account id.
+- Shopper input in URLs (search text, order codes) is kept from Zalo by the privacy boundary above,
+  at load and after client navigation.
 - Consent: the official snippet has no consent switch. The tag follows the storefront's current
   policy, like the Meta pixel.
 - No server-side/CAPI integration.

@@ -112,6 +112,20 @@ const contentSecurityPolicy = `
   .replace(/\s{2,}/g, " ")
   .trim();
 
+// The Zalo tracker reports the live URL with every beacon, so once loaded it must stop reporting if
+// the app navigates to a URL carrying shopper input (src/integrations/zalo-ads/url-safety.ts). A
+// third-party script cannot be unloaded, but a page can add a stricter CSP: the loader inserts this
+// <meta> policy -- the header's img-src and connect-src minus the Zalo reporting origin -- and the
+// browser blocks every Zalo beacon for the rest of that document. Derived from the header so the two
+// cannot drift.
+const zaloAdsQuarantinePolicy = hasZaloAdsPixel
+  ? contentSecurityPolicy
+    .split("; ")
+    .filter((directive) => /^(img-src|connect-src) /.test(directive))
+    .map((directive) => directive.replaceAll(" https://log.adtimaserver.vn", ""))
+    .join("; ")
+  : "";
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -155,6 +169,7 @@ const nextConfig = {
     LA_BUILD_FACEBOOK_PIXEL_ID: configuredFacebookPixelId,
     LA_BUILD_OPENAI_ADS_PIXEL_ID: configuredOpenAiAdsPixelId,
     LA_BUILD_ZALO_ADS_PIXEL_ID: configuredZaloAdsPixelId,
+    LA_BUILD_ZALO_ADS_QUARANTINE_CSP: zaloAdsQuarantinePolicy,
   },
   images: {
     remotePatterns: pancakeImageRemotePatterns,

@@ -26,6 +26,11 @@ const BUILD_TIME_PIXEL_ID = process.env.LA_BUILD_ZALO_ADS_PIXEL_ID;
 // Kept identical to the check in next.config.mjs so the build and the request path agree.
 const PIXEL_ID = /^[A-Za-z0-9_-]{1,128}$/;
 
+// The CSP fragment (img-src + connect-src without Zalo's reporting origin) the loader adds as a
+// <meta> policy when the app navigates to a location the tracker must not observe. next.config.mjs
+// derives it from the header policy, so the two cannot drift.
+const BUILD_TIME_QUARANTINE_POLICY = process.env.LA_BUILD_ZALO_ADS_QUARANTINE_CSP;
+
 /** The loader's origin, from the official snippet. next.config.mjs opens script-src to it. */
 export const ZALO_ADS_PIXEL_SCRIPT_ORIGIN = "https://s.zzcdn.me";
 
@@ -34,6 +39,17 @@ export type ZaloAdsEnvironment = Readonly<Record<string, string | undefined>>;
 export type ZaloAdsPixelConfig = Readonly<{
   pixelId: string;
 }>;
+
+/**
+ * The build-time quarantine policy, or null when there is none -- in which case the loader must not
+ * run, because it could not stop the tracker once the shopper reaches a sensitive URL.
+ */
+export function readZaloAdsQuarantinePolicy(
+  value: string | undefined = BUILD_TIME_QUARANTINE_POLICY,
+): string | null {
+  if (value === undefined || value.length === 0) return null;
+  return value;
+}
 
 /**
  * The live server environment with the pixel id forced to its build-time value -- including when
