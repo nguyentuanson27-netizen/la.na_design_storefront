@@ -45,10 +45,11 @@ const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";
 // readZaloAdsPixelConfig. Zalo publishes no id format, so only a bounded token is accepted.
 //
 // The official snippet (docs/integrations/zalo-ads-pixel.md) is one async tag loading
-// https://s.zzcdn.me/ztr/ztracker.js, so script-src opens to that origin. Where that tracker then
-// reports to is not documented and has not yet been read off the script itself, so the connect and
-// image directives cannot be opened precisely. Until they are, a configured id fails the build
-// instead of producing an image whose tracker loads and has every beacon blocked by this policy.
+// https://s.zzcdn.me/ztr/ztracker.js. Zalo does not document where that tracker reports, so the
+// origins below were read off the script itself (ztracker v1.2.0, 2026-10-03): every beacon --
+// /tracklp page views and engagement, /ptrck/log conversions -- is a 1x1 image on
+// log.adtimaserver.vn, and the account's conversion rules are fetched from the same origin
+// (/ptrck/events). Its za.zdn.vn loader is dead code in the web build and stays closed.
 const configuredZaloAdsPixelId = process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID ?? "";
 if (
   configuredZaloAdsPixelId.length > 0
@@ -59,12 +60,9 @@ if (
   );
 }
 const hasZaloAdsPixel = configuredZaloAdsPixelId.length > 0;
-if (hasZaloAdsPixel) {
-  throw new Error(
-    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID is set, but the Zalo Ads tracker's reporting origins have not been verified for the CSP yet (docs/integrations/zalo-ads-pixel.md). Leave it blank.",
-  );
-}
 const zaloAdsScriptSrc = hasZaloAdsPixel ? " https://s.zzcdn.me" : "";
+const zaloAdsImgSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
+const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 
 // Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
 // installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
@@ -101,10 +99,10 @@ const contentSecurityPolicy = `
   default-src 'self';
   script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
+  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';

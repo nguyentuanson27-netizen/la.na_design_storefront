@@ -110,15 +110,29 @@ test("no Zalo Ads Pixel configured means no Zalo origin is allowed", async () =>
   assert.doesNotMatch(csp, /\*/);
 });
 
-test("a configured Zalo Ads Pixel refuses to build until the tracker's reporting origins are verified", async () => {
-  // script-src is known from the official snippet; where the tracker reports to is not. Until it is,
-  // a configured id must stop the build rather than ship a CSP that blocks every beacon unseen.
+test("a configured Zalo Ads Pixel opens exactly its loader and beacon origins", async () => {
   process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = "zalo_fixture-0123456789";
   try {
-    await assert.rejects(
-      () => readCsp("?with-zalo-pixel"),
-      /reporting origins have not been verified/,
-    );
+    const csp = await readCsp("?with-zalo-pixel");
+    const directive = (name: string) => csp.match(new RegExp(`(?:^|; )${name} ([^;]*)`))?.[1] ?? "";
+    const zaloOrigins = (value: string) =>
+      value.split(" ").filter((token) => /zzcdn|adtimaserver|zalo|zdn\.vn/i.test(token));
+
+    // The loader from the official snippet; beacons (images) and the conversion-rule fetch go to
+    // the one origin ztracker.js reports to. Nothing else, and no other directive changes.
+    assert.deepEqual(zaloOrigins(directive("script-src")), ["https://s.zzcdn.me"]);
+    assert.deepEqual(zaloOrigins(directive("img-src")), ["https://log.adtimaserver.vn"]);
+    assert.deepEqual(zaloOrigins(directive("connect-src")), ["https://log.adtimaserver.vn"]);
+    for (const name of ["default-src", "style-src", "media-src", "font-src", "object-src", "base-uri", "form-action", "frame-ancestors"]) {
+      assert.deepEqual(zaloOrigins(directive(name)), [], `${name} must not admit a Zalo origin`);
+    }
+    assert.doesNotMatch(csp, /za\.zdn\.vn/);
+
+    assert.match(csp, /default-src 'self'/);
+    assert.match(csp, /object-src 'none'/);
+    assert.match(csp, /frame-ancestors 'none'/);
+    assert.doesNotMatch(csp, /'unsafe-eval'/);
+    assert.doesNotMatch(csp, /\*/);
   } finally {
     delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
   }
