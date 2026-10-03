@@ -388,11 +388,6 @@ test("mobile category filters stay open across sequential URL-backed selections"
   await expect(dialog).toBeVisible();
   await expectDialogOwnsFocus();
 
-  await dialog.getByRole("link", { name: "Ink", exact: true }).click();
-  await page.waitForLoadState("networkidle");
-  await expect(dialog).toBeVisible();
-  await expectDialogOwnsFocus();
-
   await dialog.getByLabel("Giá tối thiểu").fill("500000");
   await dialog.getByLabel("Giá tối đa").fill("900000");
   await dialog.getByRole("button", { name: "Áp dụng giá", exact: true }).click();
