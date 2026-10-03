@@ -89,11 +89,18 @@ test("not the storefront, or not a URL at all, is unsafe", () => {
   }
 });
 
-test("a same-origin referrer gets the location rule; another site's referrer is not storefront state", () => {
+test("a same-origin referrer gets the location rule; another site's referrer must be origin-only", () => {
   assert.equal(isZaloSafeReferrer("", ORIGIN), true);
   assert.equal(isZaloSafeReferrer(`${ORIGIN}/shop`, ORIGIN), true);
   assert.equal(isZaloSafeReferrer("https://zalo.me/", ORIGIN), true);
-  assert.equal(isZaloSafeReferrer("https://www.facebook.com/some/path?x=1", ORIGIN), true);
+  assert.equal(isZaloSafeReferrer("https://www.facebook.com/", ORIGIN), true);
+
+  // The referring site's own policy decides what it sends; ours does not limit what arrives.
+  assert.equal(isZaloSafeReferrer("https://other.example/path?email=alice%40example.com", ORIGIN), false);
+  assert.equal(isZaloSafeReferrer("https://other.example/?email=alice%40example.com", ORIGIN), false);
+  assert.equal(isZaloSafeReferrer("https://other.example/profile/0900000000", ORIGIN), false);
+  assert.equal(isZaloSafeReferrer("https://other.example/#alice", ORIGIN), false);
+  assert.equal(isZaloSafeReferrer("https://user:pass@other.example/", ORIGIN), false);
 
   assert.equal(isZaloSafeReferrer(`${ORIGIN}/shop?q=alice%40example.com`, ORIGIN), false);
   assert.equal(isZaloSafeReferrer(`${ORIGIN}/checkout/success?order=LA-ABC123`, ORIGIN), false);

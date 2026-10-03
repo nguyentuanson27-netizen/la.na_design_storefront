@@ -210,6 +210,14 @@ test("shopper input in the address or a same-origin referrer keeps the tracker o
   });
   await expect.poll(() => pixelState(page)).toBe("blocked");
 
+  // Another site may send its full URL as the referrer; only an origin-only one is reportable.
+  await page.goto("about:blank");
+  await page.goto(`${BASE_URL}/contact`, {
+    waitUntil: "load",
+    referer: `https://other.example/path?email=${encodeURIComponent(SECRET)}`,
+  });
+  await expect.poll(() => pixelState(page)).toBe("blocked");
+
   await page.waitForTimeout(HEARTBEAT_MS * 3);
   expect(observed.trackerRequests).toBe(0);
   expect(observed.beacons).toEqual([]);

@@ -84,8 +84,11 @@ the tracker may run (`src/integrations/zalo-ads/url-safety.ts`):
   - Residual: an opaque-looking token cannot be proven not to be, say, an unaccented name typed
     into `zaclid` by hand. These four parameters are written by Zalo's click redirect or the ad
     configuration, never by a storefront form.
-- **At load**, the tag is inserted only if the address and a same-origin referrer are both safe.
-  Otherwise the tracker never loads in that document.
+- **At load**, the tag is inserted only if the address and the referrer are both safe. A
+  same-origin referrer gets the address rule. Another site's referrer must be origin-only (no path,
+  query, fragment or credentials): the referring page's own Referrer-Policy decides how much it
+  sends, and this site's policy has no say over what arrives. Otherwise the tracker never loads in
+  that document.
 - **After load**, every URL change is checked against both the router's target and the live
   address (which carries the fragment). App Router navigations are checked in a layout effect in
   the same commit as the router's history update. Same-document changes the router does not surface

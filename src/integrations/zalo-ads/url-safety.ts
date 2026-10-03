@@ -65,12 +65,20 @@ export function isZaloSafeLocation(href: string, origin: string): boolean {
 
 /**
  * True when the document referrer may be reported. A same-origin referrer is a storefront URL and
- * gets the same rule as the location; another site's URL is not storefront state (and this site's
- * Referrer-Policy already sends other sites only its origin).
+ * gets the same rule as the location. Another site's referrer is safe only when it is origin-only:
+ * the referring page's own Referrer-Policy decides how much it sends (it may send its full URL,
+ * query included), and this site's policy has no say over what arrives.
  */
 export function isZaloSafeReferrer(referrer: string, origin: string): boolean {
   if (referrer === "") return true;
   const url = parse(referrer);
   if (url === null) return false;
-  return url.origin !== origin || isZaloSafeLocation(referrer, origin);
+  if (url.origin === origin) return isZaloSafeLocation(referrer, origin);
+  return (
+    url.username === ""
+    && url.password === ""
+    && url.pathname === "/"
+    && url.search === ""
+    && url.hash === ""
+  );
 }

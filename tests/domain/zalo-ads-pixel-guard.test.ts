@@ -79,6 +79,7 @@ test("an unsafe address, fragment or same-origin referrer keeps the tag out of t
     [`${ORIGIN}/track-order?order=LA-1`, ""],
     [`${ORIGIN}/#alice@example.com`, ""],
     [`${ORIGIN}/shop`, `${ORIGIN}/shop?q=alice%40example.com`],
+    [`${ORIGIN}/shop`, "https://other.example/path?email=alice%40example.com"],
   ]) {
     const dom = fakeDom(href, referrer);
     assert.equal(startZaloAdsPixel(dom.win, dom.doc, SRC), "blocked", `${href} ← ${referrer}`);
