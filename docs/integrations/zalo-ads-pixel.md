@@ -1,85 +1,111 @@
 # Zalo Ads Pixel
 
-## Status: configuration only — loader blocked on the official snippet
+## Official contract
 
-What exists:
+Source: Zalo Ads, [Thiết lập Zalo Ads Pixel](https://ads.zalo.me/business/huong-dan-thiet-lap-zalo-ads-pixel/),
+including its "Hướng dẫn lấy mã pixel" screenshot. Reviewed 2026-10-03.
 
-- `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID`, a public build-time value, validated as a bounded token
-  (`[A-Za-z0-9_-]{1,128}`) in both `next.config.mjs` and
-  `src/integrations/zalo-ads/pixel-config.ts`. Zalo publishes no id format, so no numeric width is
-  guessed.
-- `LA_BUILD_ZALO_ADS_PIXEL_ID`, the build-time constant the request path reads, so a runtime-only
-  id cannot switch the integration on behind a CSP that was built without it (same contract as
-  Meta and ChatGPT Ads).
-- Docker build arg + VPS compose passthrough.
+- Pixel: ad account → **Thư viện → Conversion → Lấy mã pixel**. For a hand-built site, copy the
+  code into `<head>`. The code is exactly one tag:
 
-What does **not** exist yet, deliberately:
+  ```html
+  <script async="" src="https://s.zzcdn.me/ztr/ztracker.js?id=<PIXEL_ID>"></script>
+  ```
 
-- No Zalo script, `<noscript>` beacon, CSP origin or `SiteChrome` mount. The official snippet in
-  Zalo's setup guide could not be read from the build environment (its network policy denies
-  `ads.zalo.me`), and this repository does not ship third-party loaders or CSP holes copied from
-  blogs or guessed from memory.
-- No SPA page-view call and no client conversion events: Zalo has not been confirmed to document a
-  JavaScript API for either.
+  The guide's example ids are 19 digits (`7242087840828522496`), but it publishes no format rule.
+- Conversions: **Tạo conversion** → name, conversion type (for example "Hoàn tất mua hàng"),
+  landing website, then events measured in one of two ways:
+  - **Thêm sự kiện nút bấm**: the HTML `id` of a button on the site, up to 10.
+  - **Thêm sự kiện đường dẫn URL**: keywords that appear in the destination URL, up to 10, at most
+    90 characters each. The event is recorded when any one of the keywords appears in the URL.
+- Campaigns use them under **Chọn nguồn dữ liệu → Pixel của tôi**.
+- Reporting: **Thư viện → Conversion** ("Conversion từ QC" and "Tổng conversion").
 
-Because a pixel that looks installed but reports nothing is worse than none, **a non-blank
-`NEXT_PUBLIC_ZALO_ADS_PIXEL_ID` currently fails the build**. Leave it blank until the loader is
-wired.
+The guide documents **no JavaScript API**: no page-view call, no custom/standard event call, no
+value, no event id, no dedupe. Nothing of that kind is implemented here.
 
-## What Zalo's official guide says (as far as verified)
+## What the storefront does
 
-Source: <https://ads.zalo.me/business/huong-dan-thiet-lap-zalo-ads-pixel/>. Only search-engine
-summaries of this page were available, not the page itself, so treat this as a pointer, not the
-contract:
+- `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID`: public, not secret, build-time. It is validated as a bounded
+  token (`[A-Za-z0-9_-]{1,128}`) identically in `next.config.mjs` and
+  `src/integrations/zalo-ads/pixel-config.ts`. Bad values and leading/trailing whitespace fail
+  loudly. Blank means fully disabled.
+- `LA_BUILD_ZALO_ADS_PIXEL_ID`: the build-time constant the request path reads. A runtime-only id
+  therefore cannot switch the loader on behind a CSP built without it.
+- `src/components/analytics/zalo-ads-pixel.tsx`, mounted once in `SiteChrome`, renders the official
+  tag through `next/script` (`afterInteractive`, async). It has no inline code and nothing waits
+  on it, so a blocked or failed load is a no-op. The only parameter sent is the id. There is no
+  `<noscript>`, because the official snippet has none.
+- CSP: `script-src https://s.zzcdn.me`, opened only when the id is set at build time.
 
-- The pixel is created in the ad account under **Thư viện → Conversion → Lấy mã pixel**.
-- For a hand-built site, the advertiser copies the generated code into the site's `<head>`.
-- Zalo offers a Universal pixel and a Personal pixel.
-- Conversions are created and saved in the Zalo Ads library, then chosen in campaign setup under
-  **Chọn nguồn dữ liệu → Pixel của tôi**.
+## Status: one blocker left before an id can be configured
 
-## Remaining work to finish the integration
+Where `ztracker.js` sends its data is not documented, and the script could not yet be read: the
+build environment's network policy denied `s.zzcdn.me`. Opening only `script-src` would load the
+tracker and then have every beacon blocked by `connect-src`/`img-src`. That is tracking that looks
+installed and reports nothing. So **a non-blank `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID` currently fails the
+build** with a message pointing here.
 
-1. Obtain the exact current snippet, either by allowing `ads.zalo.me` in the build environment's
-   network policy or by pasting the code shown under **Lấy mã pixel** (the id can be redacted).
-2. Read from that snippet: the loader URL, any beacon/XHR endpoints, and whether it exposes a
-   documented call for page views or events.
-3. Add `src/components/analytics/zalo-ads-pixel.tsx` (rendered only when
-   `readZaloAdsPixelConfig()` is non-null, `next/script` `afterInteractive`, load failure a no-op),
-   mount it once in `src/routes/site-chrome.tsx`, open exactly those origins in `next.config.mjs`
-   behind `hasZaloAdsPixel`, and remove the build guard.
-4. Only if Zalo documents it: a route tracker modelled on `FacebookPixelRouteTracker`, and event
-   mappings from the canonical commerce events (value and order code from the canonical event,
-   never recomputed).
-5. Extend `tests/integrations/security-headers.test.ts` (configured → exact origins) and add a
-   browser spec modelled on `tests/a11y-runtime/facebook-pixel*.spec.ts`.
+To finish:
+
+1. Read `https://s.zzcdn.me/ztr/ztracker.js` (allow `s.zzcdn.me` in the environment's network
+   policy) and list every origin it contacts: XHR/fetch/beacon go to `connect-src`, pixels to
+   `img-src`, any further scripts to `script-src`. Also check whether it observes
+   `history.pushState` (relevant to SPA navigations, below).
+2. Add exactly those origins behind `hasZaloAdsPixel` in `next.config.mjs`, remove the build guard,
+   and replace the "refuses to build" test in `tests/integrations/security-headers.test.ts` with a
+   "configured → exact origins" test.
 
 After that, going live is: set `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID`, rebuild the image, redeploy.
 
-## Configuration
+## Going live (once the blocker is cleared)
 
-- `.env.example` / `deploy/vps/env.example`: `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID`. Not a secret, but do
-  not commit a real id. It is a build input: changing it requires rebuilding the image.
+1. Zalo Ads → Thư viện → Conversion → Lấy mã pixel. Copy only the `id=` value.
+2. Set `NEXT_PUBLIC_ZALO_ADS_PIXEL_ID` in `deploy/vps/env.example`'s live counterpart. Compose
+   passes it as a build arg.
+3. Rebuild the image and redeploy. Changing the id later also needs a rebuild, because the CSP is
+   baked into the build.
+4. Verify: open the site, and in DevTools → Network you should see `ztracker.js?id=<id>` load from
+   `s.zzcdn.me` with no CSP violation in the console. Then create the conversions below and check
+   that Thư viện → Conversion → "Tổng conversion" counts a test visit.
 
-## Conversion mapping to configure in Zalo Ads (proposal)
+Never commit a real id.
 
-If Zalo conversions are URL rules configured in the dashboard, these routes are the candidates:
+## Conversions to configure in the Zalo Ads dashboard
 
-| Canonical event   | Route                                       |
-| ----------------- | ------------------------------------------- |
-| `view_item`       | `/shop/<slug>`                              |
-| `view_cart`       | `/cart`                                     |
-| `begin_checkout`  | `/checkout`                                 |
-| `purchase`        | `/checkout/success?order=LA-…`              |
+The storefront emits no client events to Zalo (Zalo documents none). Canonical commerce events
+stay the source of truth for GTM/Meta/ChatGPT Ads; for Zalo, configure URL-keyword conversions:
 
-Known limitations of URL rules here, to confirm against Zalo's behaviour once the snippet is known:
+| Canonical event  | Storefront URL                 | Suggested URL keyword |
+| ---------------- | ------------------------------ | --------------------- |
+| `view_cart`      | `/cart`                        | `/cart`               |
+| `begin_checkout` | `/checkout`                    | `/checkout`           |
+| `purchase`       | `/checkout/success?order=LA-…` | `/checkout/success`   |
 
-- `/checkout/success` also renders the "Chưa thể xác nhận" state for an order that is not
-  confirmed, and every reload re-renders it. A URL rule cannot tell those apart from a confirmed
-  purchase, and the storefront has no documented Zalo dedupe mechanism to offer.
-- Checkout reaches `/checkout/success` through a server-action redirect, which App Router performs
-  as a client-side navigation. A base pixel that only observes full document loads may not see it.
-- The confirmation URL carries the public order code (`LA-…`), which Zalo would receive as part of
-  the page URL. It is not personal data and is already the event id sent to Meta and ChatGPT Ads.
+Notes:
 
-No PII (name, phone, email, address, checkout form data, customer/auth ids) may be sent to Zalo.
+- Matching is by substring, so `/checkout` also matches `/checkout/success`. Treat
+  `begin_checkout` as "reached checkout or beyond", or leave it out.
+- `view_item` (`/shop/<slug>`), `view_item_list`, `select_item`, `add_to_cart` and
+  `remove_from_cart` have no URL that distinguishes them well enough, so none is proposed.
+  `add_to_cart` and `remove_from_cart` are client-side actions on the same URL.
+- Button-id events are **not recommended**. A click on "Đặt hàng COD" is not a confirmed order,
+  and the storefront's buttons carry no stable `id`. None was added, to avoid changing storefront
+  markup for an unconfirmed signal.
+
+## Known limitations
+
+- **Purchase accuracy.** `/checkout/success` also renders the "Chưa thể xác nhận" state for an
+  order that is not confirmed, and every reload renders it again. A URL rule cannot tell these
+  apart from a confirmed purchase. Zalo documents no event id or dedupe, so the storefront has
+  nothing to offer. The exact confirmed-order count stays in GTM/Meta/ChatGPT Ads and Pancake.
+- **SPA navigation.** Checkout reaches `/checkout/success` through a server-action redirect, which
+  App Router performs client-side, and most storefront links are client-side too. Zalo documents no
+  page-view call for this. Whether `ztracker.js` notices URL changes on its own is unverified (step 1
+  above). If it does not, URL conversions only count pages that were loaded as a full document.
+- **Order code in URL.** The confirmation URL carries the public order code (`LA-…`), which Zalo
+  would see as part of the page URL. It is not personal data, and it is already the event id sent
+  to Meta and ChatGPT Ads. No storefront URL carries a name, phone, email, address or account id.
+- **Consent.** The official snippet has no consent switch. The tag follows the storefront's current
+  policy, like the Meta pixel.
+- No server-side/CAPI integration.

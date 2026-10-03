@@ -44,10 +44,11 @@ const openAiAdsImgSrc = hasOpenAiAdsPixel ? " https://bzr.openai.com" : "";
 // Zalo Ads Pixel. Same build-time contract as the two above, validated identically to
 // readZaloAdsPixelConfig. Zalo publishes no id format, so only a bounded token is accepted.
 //
-// The loader is not wired yet: Zalo's official snippet (and therefore the exact origins it needs)
-// has not been reviewed -- see docs/integrations/zalo-ads-pixel.md. Until it is, a configured id
-// fails the build instead of producing an image that looks tracked and reports nothing. No Zalo
-// origin enters the policy.
+// The official snippet (docs/integrations/zalo-ads-pixel.md) is one async tag loading
+// https://s.zzcdn.me/ztr/ztracker.js, so script-src opens to that origin. Where that tracker then
+// reports to is not documented and has not yet been read off the script itself, so the connect and
+// image directives cannot be opened precisely. Until they are, a configured id fails the build
+// instead of producing an image whose tracker loads and has every beacon blocked by this policy.
 const configuredZaloAdsPixelId = process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID ?? "";
 if (
   configuredZaloAdsPixelId.length > 0
@@ -57,11 +58,13 @@ if (
     "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID must be the bounded Pixel ID from Zalo Ads (letters, digits, _ or -, at most 128)",
   );
 }
-if (configuredZaloAdsPixelId.length > 0) {
+const hasZaloAdsPixel = configuredZaloAdsPixelId.length > 0;
+if (hasZaloAdsPixel) {
   throw new Error(
-    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID is set, but the Zalo Ads Pixel loader has not been reviewed against Zalo's official snippet yet (docs/integrations/zalo-ads-pixel.md). Leave it blank.",
+    "NEXT_PUBLIC_ZALO_ADS_PIXEL_ID is set, but the Zalo Ads tracker's reporting origins have not been verified for the CSP yet (docs/integrations/zalo-ads-pixel.md). Leave it blank.",
   );
 }
+const zaloAdsScriptSrc = hasZaloAdsPixel ? " https://s.zzcdn.me" : "";
 
 // Pancake's website Chat Plugin (src/components/brand/pancake-chat.tsx), origins read off its
 // installation script and a browser run of it: the script and its sounds from chat-plugin.pancake.vn,
@@ -96,7 +99,7 @@ const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
   img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};

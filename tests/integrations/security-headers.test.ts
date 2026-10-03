@@ -110,15 +110,14 @@ test("no Zalo Ads Pixel configured means no Zalo origin is allowed", async () =>
   assert.doesNotMatch(csp, /\*/);
 });
 
-test("a configured Zalo Ads Pixel refuses to build until the official loader is reviewed", async () => {
-  // Opening the policy needs the exact origins from Zalo's official snippet, which has not been
-  // reviewed yet. Until then a configured id must stop the build rather than ship a CSP that blocks
-  // a loader nobody can see failing.
+test("a configured Zalo Ads Pixel refuses to build until the tracker's reporting origins are verified", async () => {
+  // script-src is known from the official snippet; where the tracker reports to is not. Until it is,
+  // a configured id must stop the build rather than ship a CSP that blocks every beacon unseen.
   process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = "zalo_fixture-0123456789";
   try {
     await assert.rejects(
       () => readCsp("?with-zalo-pixel"),
-      /Zalo Ads Pixel loader has not been reviewed/,
+      /reporting origins have not been verified/,
     );
   } finally {
     delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;

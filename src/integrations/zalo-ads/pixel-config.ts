@@ -6,10 +6,17 @@
  * value, and Next bakes that policy into the build. A runtime-only id would otherwise render a
  * loader the policy then blocks.
  *
- * Zalo's setup guide (https://ads.zalo.me/business/huong-dan-thiet-lap-zalo-ads-pixel/) hands the
- * id out inside a copy-paste snippet and does not publish a format for it, so only a bounded safe
- * token is accepted here rather than a guessed numeric width. A configured value that is malformed
- * throws, because tracking that silently does nothing is worse than a build that refuses to start.
+ * Contract source: Zalo Ads, "Thiết lập Zalo Ads Pixel" -> "Hướng dẫn lấy mã pixel"
+ * (https://ads.zalo.me/business/huong-dan-thiet-lap-zalo-ads-pixel/, reviewed 2026-10-03). The
+ * manual installation is exactly one tag pasted into <head>:
+ *
+ *   <script async="" src="https://s.zzcdn.me/ztr/ztracker.js?id=<PIXEL_ID>"></script>
+ *
+ * The guide documents no JavaScript API -- no page-view call, no event call, no event id --
+ * conversions are defined in the Zalo Ads dashboard as button-id or URL-keyword rules. The guide's
+ * example ids are 19 digits, but it publishes no format, so only a bounded safe token is accepted
+ * rather than a guessed numeric width. A configured value that is malformed throws, because
+ * tracking that silently does nothing is worse than a build that refuses to start.
  */
 
 // next.config.mjs declares this in `env`, so Next replaces it with a literal at build time -- the
@@ -18,6 +25,9 @@ const BUILD_TIME_PIXEL_ID = process.env.LA_BUILD_ZALO_ADS_PIXEL_ID;
 
 // Kept identical to the check in next.config.mjs so the build and the request path agree.
 const PIXEL_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
+/** The loader's origin, from the official snippet. next.config.mjs opens script-src to it. */
+export const ZALO_ADS_PIXEL_SCRIPT_ORIGIN = "https://s.zzcdn.me";
 
 export type ZaloAdsEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -49,4 +59,9 @@ export function readZaloAdsPixelConfig(
     );
   }
   return Object.freeze({ pixelId: value });
+}
+
+/** The official snippet's `src`, with the configured id as its only parameter. */
+export function buildZaloAdsPixelScriptSrc(config: ZaloAdsPixelConfig): string {
+  return `${ZALO_ADS_PIXEL_SCRIPT_ORIGIN}/ztr/ztracker.js?id=${encodeURIComponent(config.pixelId)}`;
 }

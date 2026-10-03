@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readZaloAdsPixelConfig } from "../../src/integrations/zalo-ads/pixel-config.ts";
+import {
+  buildZaloAdsPixelScriptSrc,
+  readZaloAdsPixelConfig,
+  ZALO_ADS_PIXEL_SCRIPT_ORIGIN,
+} from "../../src/integrations/zalo-ads/pixel-config.ts";
 
 // A fixture, not a real account id. Zalo publishes no id format, so the fixture only exercises the
 // bounded-token contract the config enforces.
@@ -55,4 +59,20 @@ test("a runtime-only id cannot switch the integration on behind a build-time CSP
     if (previous === undefined) delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
     else process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID = previous;
   }
+});
+
+test("the loader URL is exactly the official snippet's src with the configured id", () => {
+  // From Zalo Ads' "Hướng dẫn lấy mã pixel":
+  //   <script async="" src="https://s.zzcdn.me/ztr/ztracker.js?id=<PIXEL_ID>"></script>
+  const config = readZaloAdsPixelConfig({ NEXT_PUBLIC_ZALO_ADS_PIXEL_ID: "7242087840828522496" });
+  assert.ok(config);
+  assert.equal(
+    buildZaloAdsPixelScriptSrc(config),
+    "https://s.zzcdn.me/ztr/ztracker.js?id=7242087840828522496",
+  );
+  assert.equal(ZALO_ADS_PIXEL_SCRIPT_ORIGIN, "https://s.zzcdn.me");
+
+  // The id is the only thing the storefront sends: no page, shopper or order data in the URL.
+  const src = new URL(buildZaloAdsPixelScriptSrc(config));
+  assert.deepEqual([...src.searchParams.keys()], ["id"]);
 });
