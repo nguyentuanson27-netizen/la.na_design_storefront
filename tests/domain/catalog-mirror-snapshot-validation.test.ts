@@ -100,6 +100,15 @@ test("validateCatalogSnapshot mirrors the Pancake product name without its trail
   assert.equal(productByExternalId.get("prod-1")?.productCode, "SV605");
 });
 
+test("validateCatalogSnapshot keeps a garment-type-only name whole but still mirrors its product code", () => {
+  const { productByExternalId } = validateCatalogSnapshot([
+    buildVariation({ id: "var-1", productName: "SET VÁY SV771", displayId: "SV771-S" }),
+  ]);
+
+  assert.equal(productByExternalId.get("prod-1")?.name, "SET VÁY SV771");
+  assert.equal(productByExternalId.get("prod-1")?.productCode, "SV771");
+});
+
 test("validateCatalogSnapshot rejects inconsistent sourceDescription for the same product", () => {
   const variations = [
     buildVariation({

@@ -44,7 +44,11 @@ test("product display name keeps the code when the rest is only the garment type
   assert.equal(stripTrailingProductCode("Áo sơ mi nữ AS7"), "Áo sơ mi nữ AS7");
   assert.deepEqual(splitTrailingProductCode("SET VÁY SV771"), {
     name: "SET VÁY SV771",
-    productCode: null,
+    productCode: "SV771",
+  });
+  assert.deepEqual(splitTrailingProductCode("Váy đầm (VD20)"), {
+    name: "Váy đầm (VD20)",
+    productCode: "VD20",
   });
   // Names as they appear in the Pancake product list.
   for (const name of [

@@ -14,7 +14,7 @@ const TRAILING_PRODUCT_CODE = new RegExp(
 
 // Some Pancake names carry no real name before the code, only the garment type: "SET VÁY SV771",
 // "Set quần SV12". Stripping the code there would leave a bare "SET VÁY" shared by many products,
-// so such names stay whole. Words are matched lower-case, either exactly as listed (with
+// so such names stay whole (the code is still split off into productCode). Words are matched lower-case, either exactly as listed (with
 // diacritics) or, when typed without diacritics, by their unaccented form ("SET VAY"); a word typed
 // with different diacritics ("đỏ" vs "đồ") is not a garment-type word.
 const GARMENT_TYPE_WORDS = [
@@ -81,8 +81,11 @@ export function splitTrailingProductCode(sourceName: string): ProductDisplayName
   if (!match) return { name: trimmed, productCode: null };
 
   const name = trimmed.slice(0, match.index).trim();
-  if (name.length === 0 || isOnlyGarmentType(name)) return { name: trimmed, productCode: null };
-  return { name, productCode: match[1] ?? match[2] ?? match[3] ?? null };
+  if (name.length === 0) return { name: trimmed, productCode: null };
+  const productCode = match[1] ?? match[2] ?? match[3] ?? null;
+  // A garment-type-only name keeps its code on display, but the code is still the product's code.
+  if (isOnlyGarmentType(name)) return { name: trimmed, productCode };
+  return { name, productCode };
 }
 
 export function stripTrailingProductCode(sourceName: string): string {
