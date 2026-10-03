@@ -77,14 +77,20 @@ the tracker may run (`src/integrations/zalo-ads/url-safety.ts`):
   plain anchor. Anything else is unsafe, including filter parameters (fail-closed).
 - **At load**, the tag is inserted only if the address and a same-origin referrer are both safe.
   Otherwise the tracker never loads in that document.
-- **After load**, every App Router navigation is checked. The first one to an unsafe URL (for example
-  the header search's client-side `router.push('/shop?q=…')`, or the checkout redirect to
-  `/checkout/success?order=…`) adds a `<meta>` CSP. That policy is the header's `img-src` and
-  `connect-src` minus `log.adtimaserver.vn`, derived in `next.config.mjs` and shipped as
-  `LA_BUILD_ZALO_ADS_QUARANTINE_CSP`. A page can tighten its CSP but never loosen it, so the browser
-  blocks every Zalo beacon for the rest of that document whatever the tracker does. This runs in a
-  layout effect in the same commit as the router's history update, so no tracker timer reports the
-  new URL in between. Expect CSP violation messages for those blocked beacons in the console.
+- **After load**, every URL change is checked against both the router's target and the live
+  address (which carries the fragment). App Router navigations are checked in a layout effect in
+  the same commit as the router's history update. Same-document changes the router does not surface
+  are watched directly: `hashchange`, `popstate`, and, where the browser has the Navigation API, its
+  `navigate` event, which fires before the new URL commits. The first unsafe URL (for example the
+  header search's client-side `router.push('/shop?q=…')`, the checkout redirect to
+  `/checkout/success?order=…`, or `location.hash = "<anything but a plain anchor>"`) adds a `<meta>`
+  CSP. That policy is the header's `img-src` and `connect-src` minus `log.adtimaserver.vn`, derived
+  in `next.config.mjs` and shipped as `LA_BUILD_ZALO_ADS_QUARANTINE_CSP`. A page can tighten its CSP
+  but never loosen it, so the browser blocks every Zalo beacon for the rest of that document
+  whatever the tracker does. Expect CSP violation messages for those blocked beacons in the console.
+- The DOM logic lives in `src/integrations/zalo-ads/pixel-guard.ts` (unit-tested). The end-to-end
+  behaviour is covered by `tests/a11y-runtime/zalo-ads-pixel.spec.ts`, which stands in for the
+  tracker with a live-URL heartbeat.
 - Without a quarantine policy the loader does not run at all.
 
 Effect on measurement: a visit stops reporting to Zalo once the shopper searches, filters, or
