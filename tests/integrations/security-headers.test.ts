@@ -104,6 +104,10 @@ test("no Zalo Ads Pixel configured means no Zalo origin is allowed", async () =>
   delete process.env.NEXT_PUBLIC_ZALO_ADS_PIXEL_ID;
   const csp = await readCsp("?no-zalo-pixel");
 
+  // The exact origins a configured pixel opens, plus Zalo's own domains: none may survive unconfigured.
+  assert.doesNotMatch(csp, /s\.zzcdn\.me/i);
+  assert.doesNotMatch(csp, /log\.adtimaserver\.vn/i);
+  assert.doesNotMatch(csp, /zzcdn|adtimaserver/i);
   assert.doesNotMatch(csp, /zalo/i);
   assert.doesNotMatch(csp, /zdn\.vn/i);
   assert.match(csp, /default-src 'self'/);
