@@ -10,6 +10,7 @@ import {
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
+import { resolveProductTryOn } from "@/commerce/try-on-runtime";
 import { prisma } from "@/db/prisma";
 import {
   resolveDeepLinkedVariantSelection,
@@ -43,6 +44,12 @@ export type ProductRouteData = ProductViewModel &
     commerceTrackingEnabled: boolean;
     /** The related grid's own `view_item_list`; the shell carries the product view event. */
     relatedListEvent: ReturnType<typeof buildProductListTracking>["listEvent"];
+    /**
+     * Server-decided virtual try-on entry point (`docs/specs/storefront-virtual-try-on.md` §4):
+     * `null` when the feature is off or the product is not eligible, in which case the PDP renders
+     * exactly what it rendered before try-on existed.
+     */
+    tryOn: Readonly<{ productSlug: string }> | null;
     /** Canonical A5 policy projections; the PDP does not restate shipping/returns facts. */
     shipping: ShippingViewModel;
     returns: ReturnsViewModel;
@@ -69,11 +76,12 @@ export async function loadProductRoute({
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl] = await Promise.all([
+  const [relatedProducts, sizeGuideImageUrl, tryOn] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
       : null,
+    resolveProductTryOn(product),
   ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
@@ -117,6 +125,7 @@ export async function loadProductRoute({
         relatedSelectEventBySlug: relatedTracking.selectEventBySlug,
       }),
       commerceTrackingEnabled: isCommerceTrackingEnabled(),
+      tryOn,
       relatedListEvent: relatedTracking.listEvent,
       shipping: buildShippingViewModel({ policy: readGuestShippingPolicy() }),
       returns: buildReturnsViewModel(),

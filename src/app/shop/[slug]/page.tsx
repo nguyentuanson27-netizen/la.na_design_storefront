@@ -151,6 +151,7 @@ function render(data: ProductRouteData) {
         productName={data.name}
         galleryIndexByVariantId={data.galleryIndexByVariantId}
         sizeGuide={editorial.sizeGuide}
+        tryOn={data.tryOn}
         identity={identity}
         productInformation={productInformation}
         purchaseInformation={purchaseInformation}

@@ -6,6 +6,7 @@ import type { StorefrontProductMedia } from "@/commerce/product-media";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
+import { BrandTryOnLauncher } from "@/components/brand/try-on-dialog";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -37,6 +38,8 @@ type BrandProductDetailProps = Readonly<{
   productName: string;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   sizeGuide: ProductMappedSizeGuide | null;
+  /** Server-decided virtual try-on entry point; `null` renders nothing and changes nothing else. */
+  tryOn: Readonly<{ productSlug: string }> | null;
   /** Left column, first: name, collection context. */
   identity: ReactNode;
   /** Left column, below the identity: description, material, care. `null` when none truthfully exists. */
@@ -51,6 +54,7 @@ export function BrandProductDetail({
   productName,
   galleryIndexByVariantId,
   sizeGuide,
+  tryOn,
   identity,
   productInformation,
   purchaseInformation,
@@ -91,6 +95,11 @@ export function BrandProductDetail({
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
             <PurchasePanelView controller={controller} sizeGuide={sizeGuide} />
+            {/* Beside the purchase controls, never inside them: try-on shares no state with the
+                selection or the cart, so it can fail without touching what the shopper buys. */}
+            {tryOn === null ? null : (
+              <BrandTryOnLauncher productSlug={tryOn.productSlug} productName={productName} />
+            )}
           </div>
 
           {/* Omitted entirely rather than rendered empty: a product with no approved editorial
