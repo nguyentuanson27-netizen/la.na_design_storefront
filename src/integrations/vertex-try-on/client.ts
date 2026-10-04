@@ -38,8 +38,9 @@ const PERSON_GENERATION = "allow-all";
 const SAFETY_SETTING = "block-low-and-above";
 
 /**
- * Kept under the 60 s read timeout reverse proxies default to, so a slow prediction ends as a clean
- * TIMEOUT the shopper can retry rather than a proxy-cut connection. Plus the 10 s product-image fetch.
+ * One budget for the whole provider phase (access token + prediction). Kept under the 60 s read
+ * timeout reverse proxies default to, so a slow prediction ends as a clean TIMEOUT the shopper can
+ * retry rather than a proxy-cut connection; the 10 s product-image fetch comes before it.
  */
 const DEFAULT_TIMEOUT_MS = 45_000;
 /** base64 of a ~7 MB image is ~9.5 MB; allow generous headroom for a larger output, but bound it. */
@@ -51,9 +52,23 @@ const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
  * request-validation errors (`invalid safetySetting`), and misreading one of those as a content
  * refusal would clear the shopper's photo and blame their content for an integration fault. A
  * 400 that matches none of these is an ordinary generation failure.
+ *
+ * Google's Responsible AI guide documents a filtered input as an HTTP 400 whose top-level message
+ * says the content "violate[s] Google's Responsible AI practices", with the support code in
+ * `error.details[].detail` rather than in `error.message`. Both places are read, and only those.
  */
-const SAFETY_ERROR_PATTERN =
-  /blocked by (?:the )?safety filters?|safety filter threshold|responsible ai (?:practices )?(?:filtered|blocked)|support codes?: ?\d+/i;
+const SAFETY_ERROR_PATTERN = new RegExp(
+  [
+    "blocked by (?:the )?safety filters?",
+    "safety filter threshold",
+    "violate[sd]? google['\\u2019]s responsible ai practices",
+    "responsible ai (?:practices )?(?:filtered|blocked)",
+    "support codes?: ?\\d+",
+  ].join("|"),
+  "i",
+);
+const MAX_ERROR_DETAILS_READ = 8;
+const MAX_ERROR_TEXT_LENGTH = 4_000;
 
 export type VertexTryOnImage = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
 
@@ -99,6 +114,34 @@ export function buildPredictRequest({
   };
 }
 
+/**
+ * Settles with `work`, or rejects with the signal's reason as soon as the deadline passes. The work
+ * itself cannot be cancelled (the auth library takes no signal), but racing it means a stall costs
+ * the caller at most the deadline, and both branches are observed so a late failure of the
+ * abandoned call is not an unhandled rejection.
+ */
+function raceDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    if (signal.aborted) {
+      work.catch(() => undefined);
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => reject(signal.reason);
+    signal.addEventListener("abort", onAbort, { once: true });
+    work.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
 function isTimeout(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
@@ -121,10 +164,20 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** The upstream error message is inspected for a safety signal and then discarded. */
-function errorMessageSignalsSafetyBlock(body: unknown): boolean {
+/**
+ * The upstream error text is inspected for a safety signal and then discarded. Only the top-level
+ * message and string `detail` fields of the first few `details` entries are read, each bounded.
+ */
+function errorSignalsSafetyBlock(body: unknown): boolean {
   if (!isRecord(body) || !isRecord(body.error)) return false;
-  return typeof body.error.message === "string" && SAFETY_ERROR_PATTERN.test(body.error.message);
+  const texts: string[] = [];
+  if (typeof body.error.message === "string") texts.push(body.error.message);
+  if (Array.isArray(body.error.details)) {
+    for (const entry of body.error.details.slice(0, MAX_ERROR_DETAILS_READ)) {
+      if (isRecord(entry) && typeof entry.detail === "string") texts.push(entry.detail);
+    }
+  }
+  return texts.some((text) => SAFETY_ERROR_PATTERN.test(text.slice(0, MAX_ERROR_TEXT_LENGTH)));
 }
 
 function parsePrediction(body: unknown): VertexTryOnResult {
@@ -163,23 +216,30 @@ export function createVertexTryOnClient({
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   timeoutMs?: number;
 }>) {
-  /** Exactly one provider call per invocation. */
+  /**
+   * Exactly one provider call per invocation, under one deadline.
+   *
+   * The caller holds a generation slot for as long as this runs, so the deadline has to cover
+   * everything that can stall: obtaining the access token (an ADC or service-account refresh is a
+   * network call with no timeout of its own) as well as the prediction. One timer, started first,
+   * so the two phases share a single budget and a stalled token refresh releases the slot on time.
+   */
   async function generate({
     person,
     product,
   }: Readonly<{ person: VertexTryOnImage; product: VertexTryOnImage }>): Promise<VertexTryOnResult> {
-    let token: string;
-    try {
-      token = await getAccessToken();
-    } catch {
-      return failed("AUTH_FAILED");
-    }
-
-    const request = buildPredictRequest({ config, person, product });
     const timeout = createTimeoutSignal(timeoutMs);
     const { signal } = timeout;
 
     try {
+      let token: string;
+      try {
+        token = await raceDeadline(getAccessToken(), signal);
+      } catch (error) {
+        return failed(isTimeout(error) ? "TIMEOUT" : "AUTH_FAILED");
+      }
+
+      const request = buildPredictRequest({ config, person, product });
       const response = await doFetch(request.url, {
         method: "POST",
         redirect: "error",
@@ -201,7 +261,7 @@ export function createVertexTryOnClient({
       }
       if (response.status === 400) {
         const body = await readJson(response, MAX_ERROR_BODY_BYTES);
-        return failed(errorMessageSignalsSafetyBlock(body) ? "SAFETY_BLOCKED" : "GENERATION_FAILED");
+        return failed(errorSignalsSafetyBlock(body) ? "SAFETY_BLOCKED" : "GENERATION_FAILED");
       }
       if (!response.ok) {
         await response.body?.cancel().catch(() => undefined);

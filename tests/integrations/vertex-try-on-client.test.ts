@@ -110,6 +110,54 @@ test("a 400 that is a request-validation error is NOT a safety block (it is an i
   }
 });
 
+test("the documented Responsible AI refusal (message and details[].detail) is a safety block", async () => {
+  const rai = (message: string, details: unknown) =>
+    json(JSON.stringify({ error: { code: 400, message, status: "INVALID_ARGUMENT", details } }), 400);
+  const cases: Array<[string, () => Response]> = [
+    [
+      "official shape: violate-RAI wording in the top-level message, support code only in details",
+      () =>
+        rai(
+          "Image generation failed with the following error: The prompt could not be submitted. This prompt contains sensitive words that violate Google's Responsible AI practices. Try rephrasing the prompt. If you think this was an error, send feedback.",
+          [{ "@type": "type.googleapis.com/google.rpc.DebugInfo", detail: "[ORIGINAL ERROR] generic::invalid_argument: Support codes: 42876398" }],
+        ),
+    ],
+    [
+      "typographic apostrophe in the violate-RAI marker",
+      () => rai("This content contains words that violate Google\u2019s Responsible AI practices.", []),
+    ],
+    [
+      "support code only in details[].detail, with a neutral top-level message",
+      () => rai("Image generation failed.", [{ detail: "filtered. Support codes: 58061214" }]),
+    ],
+  ];
+  for (const [label, respond] of cases) {
+    const { client, calls } = harness(respond);
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" }, label);
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("validation errors stay generation failures even when details are present or hostile", async () => {
+  const bad = (details: unknown) =>
+    json(
+      JSON.stringify({
+        error: { code: 400, message: "Invalid value at 'parameters.safetySetting'", status: "INVALID_ARGUMENT", details },
+      }),
+      400,
+    );
+  for (const details of [
+    [{ "@type": "type.googleapis.com/google.rpc.BadRequest", fieldViolations: [{ field: "parameters.safetySetting", description: "invalid enum value" }] }],
+    [{ detail: "invalid safetySetting" }],
+    [{ detail: 42 }, null, "text", { detail: { nested: "Support codes: 1" } }],
+    "not-an-array",
+    undefined,
+  ]) {
+    const { client } = harness(() => bad(details));
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
+  }
+});
+
 test("known provider refusal markers on a 400 are safety blocks", async () => {
   for (const message of [
     "Image was blocked by safety filters.",
@@ -164,6 +212,60 @@ test("a timeout is TIMEOUT", async () => {
     timeoutMs: 20,
   });
   assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
+});
+
+test("a stalled access-token acquisition is bounded by the same deadline and never reaches Vertex", async () => {
+  const calls: unknown[] = [];
+  const client = createVertexTryOnClient({
+    config,
+    getAccessToken: () => new Promise<string>(() => undefined), // never settles
+    fetch: async (url) => {
+      calls.push(url);
+      return json(okBody());
+    },
+    timeoutMs: 30,
+  });
+  const started = Date.now();
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
+  assert.ok(Date.now() - started < 2_000);
+  assert.equal(calls.length, 0);
+});
+
+test("the deadline is one budget across token acquisition and prediction, not two", async () => {
+  const client = createVertexTryOnClient({
+    config,
+    getAccessToken: () => new Promise<string>((resolve) => setTimeout(() => resolve("t"), 120)),
+    fetch: (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      }),
+    timeoutMs: 200,
+  });
+  const started = Date.now();
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
+  // 120 ms of token + a fresh 200 ms prediction timer would take ~320 ms; one budget ends at ~200.
+  assert.ok(Date.now() - started < 290, `took ${Date.now() - started} ms`);
+});
+
+test("a late token failure after the deadline is not an unhandled rejection", async () => {
+  let rejectLater!: (reason: Error) => void;
+  const client = createVertexTryOnClient({
+    config,
+    getAccessToken: () => new Promise<string>((_resolve, reject) => { rejectLater = reject; }),
+    fetch: async () => json(okBody()),
+    timeoutMs: 20,
+  });
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
+    rejectLater(new Error("late auth failure"));
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
 });
 
 test("a network error is GENERATION_FAILED", async () => {
