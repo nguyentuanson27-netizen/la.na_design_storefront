@@ -10,7 +10,7 @@ how to turn it off, and what is still waiting on a human.
 ```text
 PDP (server)   resolveProductTryOn()        flag on + category (aoDai|setDo|vayDam) + exact first
                                             trusted image is JPEG/PNG  ->  {productSlug} | null
-Browser        BrandTryOnLauncher/useTryOn  multipart POST /api/try-on:
+Browser        BrandTryOnLauncher/useTryOn  form frozen while a request runs; multipart POST /api/try-on:
                                             photo, productSlug, likenessAcknowledged, ageState
 Route          handleTryOnPost()            same-origin (Origin host == Host), multipart only,
                                             Content-Length and streamed-byte cap, 30 s body deadline,
@@ -75,11 +75,16 @@ failure. The upstream body is never returned or logged.
    nudity, no ageing-up of a teen) therefore cannot be expressed to the model; it rests entirely on the
    provider safety filter at `block-low-and-above`, the watermark, and the server-side age and likeness
    gates. Treat the minor-safety live evaluation below as a hard launch criterion, not a formality.
-3. **400 classification is deliberately narrow.** Only known refusal wording (`blocked by safety
-   filters`, `safety filter threshold`, `Responsible AI filtered/blocked`, `Support codes: <n>`) or a
-   `raiFilteredReason` is a safety block, which clears the shopper's photo. A request-validation 400
-   (for example `invalid safetySetting`) is a plain generation failure, so an integration fault is never
-   blamed on the shopper's content. The exact refusal strings are not confirmed against the live API.
+3. **400 classification is deliberately narrow.** A safety block (which clears the shopper's photo and
+   emits `try_on.safety_blocked`) is a prediction carrying `raiFilteredReason`, or an HTTP 400 whose
+   top-level `error.message` or string `error.details[].detail` (first 8 entries, each bounded) contains
+   known refusal wording: Google's documented "violate Google's Responsible AI practices" (straight or
+   typographic apostrophe), `blocked by safety filters`, `safety filter threshold`, `Responsible AI
+   filtered/blocked`, or `Support codes: <n>`. The Responsible AI guide documents the support code as
+   living in `details[].detail`, so both places are read. A request-validation 400 (for example
+   `invalid safetySetting`) is a plain generation failure, so an integration fault is never blamed on the
+   shopper's content. These strings come from Google's documentation and have not been confirmed against
+   the live endpoint.
 
 ### How this was verified (and what was not)
 
@@ -135,7 +140,7 @@ zero-data-retention posture before enabling (spec §12).
 | Shopper photo | exactly one JPEG/PNG, ≤ 7 MB, signature must match declared type | `try-on-request.ts` |
 | Request body | ≤ 7 MB + 256 KB, enforced on bytes read | `try-on-endpoint.ts` |
 | Product image | trusted-media URL only, HTTPS, ≤ 10 s, ≤ 7 MB, ≤ 2 trusted redirects, JPEG/PNG signature | `product-image.ts` |
-| Vertex call | one per accepted request, 45 s timeout (under the 60 s proxy read timeout), no retry | `client.ts` |
+| Provider phase | one Vertex call per accepted request; **one 45 s deadline covers the access-token acquisition and the prediction** (under the 60 s proxy read timeout), so a stalled token refresh cannot pin a generation slot; the auth transport also has a 15 s timeout so an abandoned token request closes; no retry | `client.ts`, `google-auth.ts` |
 | Per client | 6 attempts / 10 minutes (counted before the body is read) — **provisional** | `try-on-rate-limit.ts` |
 | Uploads in flight | 4 bodies being received/parsed at once, taken before the body is read and released after the photo is validated; 30 s body-read deadline | `try-on-rate-limit.ts`, `try-on-endpoint.ts` |
 | Generations in flight | 3 (outbound image fetch + Vertex only) — **provisional** | `try-on-rate-limit.ts` |
