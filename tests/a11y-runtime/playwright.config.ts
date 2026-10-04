@@ -47,6 +47,7 @@ export default defineConfig({
     "storefront-composite.spec.ts",
     "storefront-media.spec.ts",
     "tracking.spec.ts",
+    "try-on.spec.ts",
     "variant-deep-link.spec.ts",
     "zalo-ads-pixel.spec.ts",
   ],
