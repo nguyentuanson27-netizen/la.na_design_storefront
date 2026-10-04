@@ -1,41 +1,30 @@
 # Spec: Storefront Virtual Try-on with GPT Image 2
 
-Status: **Proposed for owner review — 2026-10-04. No implementation is approved by this document until the owner approves this spec and a separate implementation plan.**
+Status: **Proposed for owner review — 2026-10-04. Spec only; implementation requires a separate reviewed plan.**
 
-This spec defines an MVP virtual try-on experience integrated directly into the La.na Design product detail page (PDP). It is intentionally narrow: one customer photo, one product reference image, one generated result, no durable customer-image storage, and no virtual-try-on history.
+This spec defines the MVP virtual try-on experience for La.na Design product detail pages (PDPs).
 
 ## 1. Objective
 
-Let a shopper visualize a wearable La.na Design product on their own front-facing photo before purchase.
+Let a shopper upload one photo of themselves and see one AI-generated visualization of the current garment on that photo.
 
-The MVP flow is:
+Confirmed owner decisions:
 
-1. The shopper opens an eligible PDP.
-2. The shopper selects **Thử đồ**.
-3. The shopper uploads exactly one front-facing photo of themselves.
-4. The server uses the PDP's first trusted product image as the garment/reference image.
-5. The server sends the shopper image plus product reference image to OpenAI GPT Image 2.
-6. The request returns exactly one generated try-on image.
-7. The shopper can view and download the result.
-8. The storefront does not persist the uploaded shopper image or generated image in its database or durable object storage.
+1. The shopper uploads **one photo**.
+2. The UI asks for a **front-facing photo**.
+3. The garment reference is the PDP's **first trusted product image**.
+4. One accepted request returns **one generated result**.
+5. Multiple outputs may be added later, but are not part of MVP.
+6. La.na Design does **not persist** the uploaded or generated image in its own durable storage.
+7. The feature is for **apparel worn on the body**; accessories are excluded.
 
-Success means the feature helps a shopper visualize the garment without changing any catalog, variant, price, stock, cart, checkout, order, or recommendation authority.
+Important distinction: “front-facing” is buyer guidance in MVP, not a promise that the application will run pose/face classification. The server validates that one supported image was uploaded; it does not build a separate computer-vision gate.
 
-## 2. Confirmed owner decisions
+Success means try-on helps visualization without changing price, variant, stock, cart, checkout, order, or recommendation truth.
 
-Confirmed in the owner interview on 2026-10-04:
+## 2. Current repository context
 
-1. **Customer input:** exactly one shopper image.
-2. **Pose:** the requested input is one front-facing photo.
-3. **Product reference:** use the product's first storefront image, normally the first image shown on the PDP.
-4. **Output count:** MVP returns exactly one generated image per successful request.
-5. **Future output:** multiple generated alternatives may be added later, but are out of scope for MVP.
-6. **Application storage:** shopper input and generated output are not stored long-term by the storefront.
-7. **Eligibility:** enable virtual try-on only for apparel worn on the body; accessories are excluded.
-
-## 3. Current repository context
-
-Repository stack on the base commit:
+Base stack:
 
 - Next.js 16.3.3
 - React / React DOM 19.2.0
@@ -45,245 +34,209 @@ Repository stack on the base commit:
 - pnpm 11.4.0
 - Node >= 22.14.0
 
-Relevant current ownership:
+Relevant existing authorities:
 
-- src/components/brand/product-detail.tsx coordinates the PDP media and purchase surfaces.
-- src/commerce/product-media.ts owns trusted product-image validation and resolves the canonical first storefront image.
-- StorefrontProductMedia.primary and gallery[0] represent the same first trusted image when media exists.
-- src/brand/category.config.ts declares the current category vocabulary.
-- src/commerce/category-taxonomy.ts owns category identity and persisted category membership semantics.
-- tests/domain and tests/a11y-runtime are the existing domain/browser regression surfaces.
+- `src/components/brand/product-detail.tsx` coordinates PDP presentation.
+- `src/commerce/product-media.ts` validates product media and resolves the canonical first trusted image.
+- `src/brand/category.config.ts` declares the category vocabulary.
+- `src/commerce/category-taxonomy.ts` owns category identity/membership rules.
+- `tests/domain` and `tests/a11y-runtime` are the existing unit/domain and browser regression surfaces.
 
-Current top-level storefront categories are:
+Current top-level category trees:
 
-- aoDai — Áo dài
-- setDo — Set đồ
-- vayDam — Váy, đầm
-- phuKien — Phụ kiện
+- `aoDai` — Áo dài
+- `setDo` — Set đồ
+- `vayDam` — Váy, đầm
+- `phuKien` — Phụ kiện
 
-For this MVP, the first three top-level trees are wearable and eligible. phuKien is excluded.
+For MVP, `aoDai`, `setDo`, and `vayDam` are eligible apparel trees. `phuKien` is excluded.
 
-## 4. OpenAI contract verified for this spec
+## 3. OpenAI contract
 
-Official OpenAI documentation was reviewed on 2026-10-04.
+Official OpenAI documentation was re-checked on 2026-10-04.
 
-The owner requested “ChatGPT image-2”. The corresponding API model identifier is:
+The requested API model is:
 
-- model: gpt-image-2
+- `gpt-image-2`
 
-The current OpenAI image API supports gpt-image-2 for both image generation and image editing/reference-image workflows. The image edits endpoint can generate a new image using one or more reference images.
+Normative MVP integration:
 
-Normative MVP choice:
+- use `POST /v1/images/edits` / the equivalent official SDK image-edit call;
+- provide two image references:
+  1. shopper photo;
+  2. first trusted product image;
+- set `n = 1`;
+- do not set `input_fidelity` for `gpt-image-2`; current docs state image inputs are already processed at high fidelity;
+- do not silently upgrade or fall back to another image model.
 
-- use the Images API image-edit workflow;
-- use model gpt-image-2;
-- provide the shopper photo and the product's first trusted image as the two image references;
-- request one output only;
-- do not silently upgrade to GPT Image 2.5 or chatgpt-image-latest.
+OpenAI currently documents that the image edit workflow can use one or more reference images and that GPT Image responses return base64 image data.
 
-Official sources:
+Authoritative references:
 
 - https://developers.openai.com/api/docs/models/gpt-image-2
 - https://developers.openai.com/api/docs/guides/image-generation
 - https://developers.openai.com/api/docs/guides/image-prompting
 - https://developers.openai.com/api/docs/guides/your-data
 
-The build phase must re-check those official sources before writing the integration because the API is version-sensitive.
+Because the API is version-sensitive, the implementation PR must re-check the official docs before coding against it.
 
-## 5. PDP eligibility
+## 4. Eligibility and runtime availability
 
-A product is eligible only when all of the following are true:
+### Product eligibility
 
-1. It belongs to one current wearable top-level category tree:
-   - aoDai
-   - setDo
-   - vayDam
-2. It does not belong to phuKien.
-3. The PDP has a trusted first product image from the existing StorefrontProductMedia authority.
-4. The feature kill switch is enabled.
-5. The server has valid OpenAI credentials.
+A product is eligible when:
 
-The implementation must derive category eligibility from the existing category authority. It must not infer apparel from product names, collection names, image content, SKU text, or free-form heuristics.
+1. its current category membership belongs to one of the approved apparel trees:
+   - `aoDai`
+   - `setDo`
+   - `vayDam`
+2. it has a trusted first storefront image from the existing product-media authority.
 
-If a product has no category membership or no trusted first image, the try-on entry point is absent rather than guessing.
+Do not infer eligibility from product names, collection names, SKU text, image recognition, or free-form heuristics.
 
-This feature does not add admin eligibility fields or a new database table in MVP.
+A product with missing/unknown category membership or no trusted first image is not eligible.
 
-## 6. Product image authority
+MVP adds no admin field, database table, or per-product try-on toggle.
 
-The reference garment image is the exact first trusted storefront image already resolved by src/commerce/product-media.ts.
+### Runtime availability
 
-The client must not submit an arbitrary product-image URL as authority.
+Runtime enablement is separate from product eligibility.
 
-The server must re-resolve or receive a server-authoritative product identity and use the existing trusted media contract to obtain the reference image.
+The entry point is available only when the server-side feature switch is enabled and required OpenAI server configuration is present. Missing configuration fails closed and must not break the PDP.
 
-This preserves the current media security boundary:
+## 5. Product image authority
 
-- HTTPS only;
-- reviewed Pancake CDN hosts only;
-- reviewed path shapes only;
-- no credentials/custom ports/path traversal;
-- existing deduplication/ordering rules.
+The garment reference is the exact first trusted image already resolved by `src/commerce/product-media.ts`.
 
-Try-on must not introduce a second product-media parser.
+The client must not choose or submit an arbitrary product-image URL.
 
-## 7. User experience
+The server receives a product identity, re-resolves the product, verifies try-on eligibility, and obtains the first image through the existing trusted-media contract.
 
-### 7.1 Entry point
+Do not create a second product-media parser.
 
-On an eligible PDP, render a buyer-facing **Thử đồ** action integrated with the product purchase experience.
+## 6. Buyer experience
 
-The exact visual placement belongs to the implementation plan, but it must be part of the PDP and must not replace or obstruct:
+On an eligible PDP, expose a **Thử đồ** action near the purchase experience without obscuring price, variants, size guide, add-to-cart/preorder, or shipping/returns.
 
-- price;
-- variant selection;
-- size guide;
-- add-to-cart / preorder controls;
-- shipping and returns facts.
+Opening try-on shows an accessible dialog/sheet or equivalent contained PDP interaction with:
 
-### 7.2 Try-on surface
-
-Activating the action opens an accessible dialog/sheet or equivalent contained PDP interaction.
-
-The surface includes:
-
-- short explanation of the feature;
-- one image-upload control;
-- front-facing photo guidance;
-- local preview of the selected shopper image;
-- **Tạo ảnh thử đồ** action;
-- loading/progress state;
-- generated result;
-- retry;
-- download result;
+- a short explanation;
+- one image upload control;
+- front-facing-photo guidance;
+- a local preview;
+- **Tạo ảnh thử đồ**;
+- loading state;
+- one generated result;
+- **Tạo lại**;
+- **Tải ảnh**;
 - close/dismiss.
 
-Suggested buyer guidance:
+Suggested guidance:
 
 - dùng ảnh chính diện;
-- thấy rõ người và trang phục hiện tại;
+- thấy rõ người;
 - ảnh đủ sáng;
 - tránh ảnh quá nhỏ hoặc bị che nhiều.
 
-The MVP does not run a separate pose/face-quality classifier merely to prove that the photo is front-facing. This is guidance, not a new computer-vision subsystem.
+The UI must state that the result is an AI visualization, not a guarantee of size, fit, fabric behavior, exact color, or final real-world appearance.
 
-### 7.3 Truthful disclosure
+MVP does not provide body measurement or size recommendations.
 
-The UI must state that the generated image is an AI visualization and is not an exact guarantee of:
+## 7. Request lifecycle
 
-- fit;
-- sizing;
-- fabric behavior;
-- color under real lighting;
-- final appearance on the shopper.
+Use the simplest request/response flow that works within the deployed runtime:
 
-The feature must not make body-measurement or fit recommendations in MVP.
+1. client sends one shopper image plus product identity;
+2. server validates the request;
+3. server re-resolves product/category/media authority;
+4. server obtains the first trusted product image;
+5. server calls `gpt-image-2` image edit with the two image inputs and a server-owned prompt;
+6. server returns one generated image to the current request;
+7. client renders/downloads it;
+8. request-local image buffers are released.
 
-## 8. Request lifecycle
-
-The simplest supported lifecycle is synchronous request/response:
-
-1. Client validates basic upload shape.
-2. Client sends the shopper image plus product identity to the storefront server.
-3. Server re-validates the upload.
-4. Server authorizes the product as try-on eligible.
-5. Server resolves the first trusted product image.
-6. Server fetches that image through the reviewed media boundary with bounded response size/time.
-7. Server submits the two image references and a fixed server-owned prompt to OpenAI gpt-image-2.
-8. Server receives one base64 image result.
-9. Server returns the result to the current shopper request.
-10. Client renders the result and may create a browser-local download.
-11. Request-local buffers/references are released.
-
-MVP does not require:
+MVP does **not** introduce:
 
 - background jobs;
 - polling;
-- queue infrastructure;
+- queues;
 - durable generation records;
 - object storage;
-- generation history.
+- try-on history.
 
-If runtime limits make a synchronous request infeasible, stop and revise this spec before introducing queues or persistence.
+If synchronous request/response proves incompatible with actual production runtime limits, stop and revise the plan/spec before adding infrastructure.
 
-## 9. OpenAI request contract
+## 8. Prompt contract
 
-The integration is server-only.
+The prompt is server-owned and versioned in source. Shoppers do not edit it.
 
-Required behavior:
+The prompt should:
 
-- OpenAI API key never enters client bundles or public environment variables.
-- Model is gpt-image-2.
-- Use an image-edit/reference workflow rather than text-only generation.
-- Input 1 is the shopper photo.
-- Input 2 is the first trusted product image.
-- n = 1.
-- Do not expose prompt editing to shoppers.
-- Do not fall back to a different image model without reviewed approval.
-- For gpt-image-2, do not set input_fidelity; current official documentation states image inputs are processed at high fidelity automatically.
+- identify image 1 as the shopper/subject reference;
+- identify image 2 as the garment/design reference;
+- place the referenced garment naturally on the shopper;
+- preserve identity, pose, body proportions, skin tone, framing, and background as much as practical;
+- preserve garment silhouette, color, pattern, and visible design details as much as practical;
+- avoid unrelated accessories or identity/body changes;
+- produce a realistic fashion visualization.
 
-Exact output size, quality and format are implementation-plan decisions after a small cost/latency/quality evaluation. The output must be portrait-capable. OpenAI currently supports portrait sizes such as 1024x1536, but this spec does not require that exact resolution.
+These are quality targets, not guarantees.
 
-## 10. Prompt contract
+Prompt changes that materially change the buyer-facing result should be evaluated against the same representative test set used for launch acceptance.
 
-The prompt is server-owned and versioned in source.
+## 9. Upload, security, and cost boundaries
 
-Its goal is to create a realistic fashion visualization while preserving the shopper as much as practical.
+The feature handles untrusted uploads and a paid external API.
 
-It must instruct the model to:
+### Upload
 
-- treat the shopper photo as the subject identity/pose reference;
-- treat the product image as the garment/design reference;
-- dress the subject in the referenced product;
-- preserve face, skin tone, body proportions, pose and background as much as practical;
-- preserve garment silhouette, color, pattern and visible design details as much as practical;
-- avoid adding unrelated accessories or changing identity;
-- avoid sexualizing or materially changing the shopper's body;
-- produce a natural fashion-photo result.
+MVP accepts one:
 
-The prompt must not claim that the model can preserve every physical detail exactly.
+- JPEG/JPG;
+- PNG;
+- WebP.
 
-Prompt revisions that materially change the product promise require test/evaluation evidence.
+Server controls:
 
-## 11. Upload validation
-
-The server is the final authority.
-
-Accepted image formats for MVP:
-
-- JPEG/JPG
-- PNG
-- WebP
-
-Required controls:
-
-- exactly one shopper file;
-- bounded raw upload size;
-- bounded decoded image dimensions/pixels;
-- actual image decoding/validation, not extension-only trust;
-- reject malformed/polyglot/non-image input;
-- no arbitrary archive/document upload;
-- bounded request body;
+- exactly one file;
+- bounded request/file size;
+- content type plus basic file-signature validation; do not trust filename/extension alone;
+- reject malformed/unsupported input before paid generation where practical;
 - generic safe errors.
 
-Proposed starting upload cap: **10 MiB**. This value is not yet owner-approved and may be adjusted in the implementation plan based on runtime and OpenAI constraints.
+Do not add a dedicated image-decoding/CV dependency solely to prove “front-facing” or to perform pixel-level analysis unless implementation evidence shows it is necessary.
 
-Client-side validation is convenience only and must not replace server validation.
+Proposed starting upload cap: **10 MiB**. This remains an owner-review item.
 
-## 12. Privacy and data handling
+### External boundary
 
-### 12.1 Storefront application
+- `OPENAI_API_KEY` is server-only.
+- Never expose the key in client/public env.
+- Never log raw shopper/generated images.
+- Never send checkout/contact PII with the request.
+- Never trust a client-supplied remote product-image URL.
+- Product-image fetching must remain inside the reviewed trusted-media allowlist and use bounded timeout/redirect behavior.
+- Map upstream errors to safe buyer-facing errors.
 
-The storefront must not persist:
+### Cost/abuse
 
-- shopper image bytes;
-- generated image bytes;
-- face embeddings;
-- body measurements;
-- image hashes intended to identify a person;
-- durable try-on history.
+MVP requires bounded rate/concurrency control because each accepted request has external cost.
 
-Do not write these images to:
+Do not design a distributed abuse platform by default. The implementation plan should choose the smallest control compatible with the current single-app production topology and the guest/login decision.
+
+Cost remains bounded by:
+
+- `n = 1`;
+- no automatic regeneration;
+- no catalog pre-generation;
+- no hidden background generation;
+- no durable history.
+
+## 10. Privacy and data handling
+
+### La.na Design application
+
+The storefront must not persist shopper or output image bytes to:
 
 - Prisma/database tables;
 - durable filesystem paths;
@@ -291,325 +244,283 @@ Do not write these images to:
 - analytics payloads;
 - application logs.
 
-Temporary in-memory/request-scoped processing is allowed.
+MVP should use request-scoped/in-memory handling only.
 
-Avoid the OpenAI Files API for MVP because the direct Images edit endpoint supports image inputs and does not require creating a durable File object.
+Do not use OpenAI Files API just to stage these images when the direct image-edit endpoint can accept image inputs.
 
-### 12.2 OpenAI API boundary
+### OpenAI processing boundary
 
-The buyer-facing privacy copy must be accurate about the external processor.
+Buyer-facing privacy copy must distinguish application storage from OpenAI processing.
 
 Current OpenAI API documentation states:
 
 - API data is not used to train OpenAI models unless the API customer explicitly opts in;
-- the Images generation/edit endpoints have no application-state retention;
+- `/v1/images/edits` has no application-state retention;
 - default abuse-monitoring logs may retain customer content for up to 30 days;
-- eligible organizations can use approved Zero Data Retention controls, subject to OpenAI requirements and exceptions.
+- image endpoints are eligible for Zero Data Retention for approved organizations, subject to documented limitations.
 
-Therefore the storefront must **not** promise “your photo is deleted immediately everywhere”.
+Therefore the product must **not** promise that the photo is “deleted immediately everywhere”.
 
-The truthful MVP promise is:
+The minimum truthful disclosure is:
 
-- La.na Design does not save the uploaded or generated image to its own durable storage;
-- the photo is sent to OpenAI to generate the result;
-- OpenAI processing/retention follows the configured OpenAI API data controls.
+- La.na Design does not save the uploaded or generated image in its own durable storage;
+- the uploaded photo is sent to OpenAI to generate the result;
+- OpenAI processing/retention follows the OpenAI API data controls configured for the account.
 
-Final buyer-facing privacy wording is an owner/legal copy decision before production enablement.
+Zero Data Retention is an optional operational improvement, not an MVP architecture requirement.
 
-## 13. Security and abuse controls
+## 11. Failure behavior
 
-The feature handles untrusted image uploads and a paid external API, so implementation must include:
+Try-on is an optional enhancement.
 
-- server-only OPENAI_API_KEY;
-- bounded upload and response sizes;
-- image content/type validation;
-- product identity re-resolution server-side;
-- no arbitrary client-provided remote URL fetching;
-- trusted product-media allowlist reuse;
-- fetch timeout and redirect policy for the product reference image;
-- upstream timeout;
-- bounded concurrency;
-- rate/cost limiting;
-- safe upstream error mapping;
-- no raw image/prompt logging;
-- no API key or upstream internals in buyer-facing errors.
+A failure must never alter or block:
 
-Exact request quota is unresolved and must be approved in the implementation plan. Do not build an elaborate distributed abuse platform for MVP unless production topology requires it.
+- variant selection;
+- cart state;
+- add-to-cart/preorder;
+- checkout/order flow;
+- ordinary PDP rendering.
 
-## 14. Failure behavior
-
-Try-on is optional enhancement only.
-
-If any stage fails:
-
-- PDP remains usable;
-- cart/checkout state is unchanged;
-- variant selection is unchanged;
-- no purchase operation is blocked;
-- user sees a concise retryable error where appropriate.
-
-Expected error classes:
+Expected safe failure classes:
 
 - unsupported product;
-- invalid image;
-- upload too large;
+- invalid/oversized image;
 - product reference unavailable;
-- upstream timeout;
-- OpenAI rate limit;
-- OpenAI safety/refusal;
+- rate/concurrency limit;
+- upstream timeout/rate limit;
+- upstream safety/refusal;
 - generation failure;
-- temporary service unavailable.
+- service temporarily unavailable.
 
-Do not fall back to a lower-quality model or an undocumented API automatically.
+Where retry is reasonable, keep the shopper in the same try-on surface and allow retry.
 
-## 15. Cost controls
+Do not silently fall back to another model.
 
-MVP cost is intentionally bounded:
+## 12. Accessibility
 
-- one generation per accepted request;
-- n = 1;
-- no automatic regeneration;
-- no hidden background generation;
-- no pre-generation for catalog products;
-- no saved history thumbnails;
-- rate/concurrency limit required.
-
-Before production enablement, the implementation PR must record a measured representative cost and latency sample for the chosen output quality/size.
-
-## 16. Analytics and observability
-
-Operational telemetry may record non-image facts such as:
-
-- try-on opened;
-- upload rejected by reason class;
-- generation started;
-- generation succeeded;
-- generation failed by safe reason class;
-- total server latency;
-- upstream latency;
-- rate-limit rejection.
-
-Never include:
-
-- raw image data;
-- generated image data;
-- customer name/email/phone;
-- prompt with customer data;
-- arbitrary URL/query contents.
-
-Existing marketing commerce-event contracts are unchanged. Try-on events are product/operational analytics only and must not redefine purchase attribution.
-
-## 17. Accessibility
-
-The feature must preserve the repository's accessibility bar:
+Preserve the repository accessibility bar:
 
 - native button/input semantics;
+- labeled upload control;
 - keyboard-operable open/close/upload/generate/download;
 - dialog focus management if a dialog is used;
 - visible focus;
-- labeled file input;
-- loading state announced with a polite status region;
-- specific validation/error text;
-- generated image has useful alt text such as “Ảnh thử đồ AI cho <product name>”;
+- polite loading/status announcements;
+- specific validation/error messages;
+- generated-image alt text;
 - no keyboard trap;
-- touch controls remain practical on mobile.
+- practical mobile touch targets.
 
-## 18. Testing strategy
+## 13. Observability
 
-### Domain tests
+Record only non-image operational facts needed to operate the feature:
+
+- try-on opened;
+- upload rejected by safe reason class;
+- generation started/succeeded/failed;
+- total/upstream latency;
+- rate-limit rejection.
+
+Do not record raw image bytes, generated images, shopper PII, or arbitrary URL/query contents.
+
+Existing marketing commerce-event contracts remain unchanged.
+
+## 14. Testing strategy
+
+CI must stub/mock OpenAI and must not spend live API credits.
+
+### Domain/integration
 
 Cover:
 
-- category eligibility:
-  - aoDai tree eligible;
-  - setDo tree eligible;
-  - vayDam eligible;
-  - phuKien excluded;
-  - missing/unknown membership excluded;
-- product without trusted primary media excluded;
-- upload schema/type/size validation;
-- OpenAI request builder pins gpt-image-2 and one output;
-- prompt builder assigns subject/product roles without shopper PII;
-- safe error mapping;
-- rate/concurrency boundary logic if represented as pure code.
+- apparel category trees eligible; `phuKien` excluded;
+- missing/unknown membership excluded;
+- missing trusted first media excluded;
+- unsupported/oversized upload rejected;
+- server ignores/rejects arbitrary client product-image URLs;
+- request pins `gpt-image-2` and one output;
+- successful orchestration sends shopper + first trusted product image;
+- upstream failure maps safely and does not change commerce state;
+- no durable image persistence path is introduced;
+- API key is server-only.
 
-### Integration tests
+### Browser
 
-With a mocked OpenAI boundary:
+Cover representative desktop/mobile flows:
 
-- server rejects forged/non-eligible product identity;
-- server does not trust client product-image URL;
-- server uses the first existing trusted product image;
-- invalid upload never reaches OpenAI;
-- successful request sends two image references and receives one result;
-- upstream failure does not alter commerce state;
-- no persistence call is made for input/output images;
-- API key never appears in public configuration.
+- eligible PDP shows **Thử đồ**;
+- accessory/non-eligible PDP does not;
+- upload preview;
+- loading;
+- exactly one success result;
+- download;
+- failure + retry;
+- purchase UI still works after a try-on failure;
+- keyboard/focus behavior;
+- existing accessibility gate remains green.
 
-### Browser tests
+### Manual quality acceptance
 
-At representative desktop and mobile widths:
-
-- eligible PDP shows Thử đồ;
-- accessory PDP does not;
-- open/close is keyboard accessible;
-- upload preview works;
-- invalid file shows an error;
-- generate enters a clear loading state;
-- success shows exactly one output;
-- download action works;
-- upstream failure allows retry;
-- PDP purchase flow remains usable after try-on failure;
-- no unexpected console errors;
-- existing Axe gate remains green.
-
-CI must stub OpenAI. CI must not spend live API credits.
-
-### Manual/API acceptance
-
-Before production enablement, run a small controlled evaluation with consented/non-customer test photos and representative products from:
+Before production enablement, run a small controlled evaluation using consented test photos and representative:
 
 - Áo dài;
 - Set đồ;
 - Váy/đầm.
 
-Record:
+Record enough evidence to decide:
 
 - garment similarity;
-- subject identity preservation;
-- body/pose stability;
+- identity preservation;
 - obvious artifacts;
-- generation latency;
+- latency;
 - approximate cost.
 
-A technically successful API response is not enough to declare try-on quality acceptable.
+A HTTP 200 alone is not quality acceptance.
 
-## 19. Configuration and rollout
+## 15. Repository commands
 
-Expected server configuration:
+Use the repository's existing commands:
 
-- OPENAI_API_KEY — secret, server only.
-- a server-side try-on enable/kill switch.
+```bash
+corepack enable
+pnpm install --frozen-lockfile
+pnpm lint
+pnpm typecheck
+pnpm test:domain
+pnpm test
+pnpm build
+```
 
-The exact variable name for the kill switch belongs to the plan.
+For the browser slice, add the try-on spec to the existing `tests/a11y-runtime/playwright.config.ts` suite and run the existing Playwright harness; do not create a second browser-test framework.
 
-No database migration is expected for MVP.
+## 16. Implementation shape / code style
 
-Rollout order:
+Prefer existing boundaries:
 
-1. disabled by default until implementation verification is complete;
-2. staging/internal validation;
-3. owner quality review with controlled photos;
+- PDP brand components own presentation;
+- commerce/category/media modules remain product truth;
+- a new OpenAI image client, if needed, belongs under the existing `src/integrations/*` external-integration boundary;
+- orchestration should be server-only and should consume canonical product facts rather than re-derive them in the UI;
+- tests should exercise pure policy separately from external I/O where useful.
+
+No new dependency is assumed by this spec. Adding one requires review.
+
+Do not turn MVP into a general image-generation framework.
+
+## 17. Rollout
+
+Use a server-side feature/kill switch.
+
+Rollout sequence:
+
+1. implementation verified with feature off by default;
+2. staging/internal quality check;
+3. owner review with controlled photos;
 4. limited production enablement;
-5. monitor latency/errors/cost;
-6. widen only if stable.
+5. monitor latency/error/cost;
+6. widen if stable.
 
-Turning off the feature must remove/disable the entry point without affecting PDP commerce.
+Turning the switch off must leave normal PDP commerce unchanged.
 
-## 20. Boundaries
+## 18. Boundaries
 
 ### Always
 
-- reuse current product category and trusted-media authorities;
-- re-resolve product authority on the server;
+- use current category and trusted-media authorities;
+- re-resolve product authority server-side;
 - keep OpenAI secret server-only;
-- use gpt-image-2 unless this spec is amended;
-- send one shopper image + one first product image;
-- return one output;
+- use `gpt-image-2`;
+- send one shopper image + first trusted product image;
+- request one output;
+- keep input/output images out of durable app storage;
 - keep try-on failure isolated from commerce;
-- avoid durable app storage for input/output images;
-- keep truthful AI/privacy disclosure;
-- add runtime/browser verification.
+- use truthful AI/privacy disclosure;
+- verify browser behavior before production enablement.
 
 ### Ask first
 
 - requiring login/account;
-- changing the eligible category set;
-- changing from the first product image to selected-variant imagery;
-- storing uploaded/generated images;
-- adding generation history;
-- switching model from gpt-image-2;
-- adding a queue/background job;
-- adding object storage;
-- adding a new database table;
+- changing eligible category trees;
+- using selected-variant imagery instead of the first product image;
+- storing any shopper/generated image;
+- adding history/object storage/database tables;
+- adding queue/background jobs;
+- switching image model;
 - adding a new third-party service;
-- adding body/face analysis;
+- adding face/body/pose analysis;
 - generating more than one result;
-- using shopper images for any purpose beyond the requested generation.
+- using shopper images for any purpose beyond the requested try-on.
 
 ### Never
 
-- expose OPENAI_API_KEY to the browser;
-- let the client choose an arbitrary remote product-image URL;
-- infer product eligibility from product-name keywords;
-- send checkout/contact PII with image requests;
-- log raw shopper images;
-- claim AI output proves real fit or size;
-- silently store try-on images;
-- silently upgrade/fallback to another image model;
-- let try-on failure block add-to-cart or checkout.
+- expose `OPENAI_API_KEY` to the browser;
+- trust client product-image URLs;
+- infer eligibility from product-name keywords;
+- log shopper images;
+- claim the generated image proves fit or size;
+- silently persist try-on images;
+- silently upgrade/fallback models;
+- let try-on failure block purchase flows.
 
-## 21. Open questions for owner review
+## 19. Open questions for owner review
 
-These are intentionally left open in this spec PR rather than guessed:
+These remain open rather than being guessed:
 
-1. **Guest vs login:** may anonymous shoppers generate, or must they sign in?
-   - Current product recommendation for MVP: allow guests, protected by a bounded rate/cost limit.
+1. **Guest or login required?**
+   - Suggested MVP default: guests allowed, with bounded rate/cost control.
 
-2. **Rate limit:** what production quota is acceptable per visitor/IP/session and per time window?
-   - Exact numbers should be chosen from cost/traffic expectations.
+2. **Rate limit / concurrency values?**
+   - Choose in the implementation plan from expected traffic and measured generation cost.
 
-3. **Upload cap:** approve or change the proposed 10 MiB limit.
+3. **Upload cap**
+   - Approve or change the proposed 10 MiB.
 
-4. **Generation quality/size:** choose the default after a short gpt-image-2 quality/cost/latency evaluation.
+4. **Output quality/size**
+   - Choose after a small `gpt-image-2` latency/cost/quality comparison; portrait output is preferred.
 
-5. **UI placement:** exact position inside the current PDP purchase composition.
+5. **Exact PDP placement**
+   - Decide during UI planning against the current purchase composition.
 
-6. **Buyer-facing privacy copy:** approve wording that distinguishes La.na Design non-persistence from OpenAI API processing/retention.
+6. **Buyer-facing privacy copy**
+   - Approve final Vietnamese wording before production enablement.
 
-7. **Feature flag rollout:** whether first production release is all eligible products or an internal/limited gate.
+7. **Initial rollout scope**
+   - All eligible products at once or a limited production gate.
 
-These questions may be resolved during PR review. They must be closed before the corresponding implementation choice is considered approved.
+## 20. Acceptance criteria
 
-## 22. Success criteria
+Implementation is acceptable when:
 
-The feature implementation may be considered complete only when:
-
-- [ ] Try-on appears only for the approved wearable category trees.
-- [ ] The shopper uploads exactly one front-facing photo.
-- [ ] The server uses the existing first trusted product image.
-- [ ] The OpenAI request uses gpt-image-2 with the two image references.
-- [ ] Each accepted request produces at most one result.
-- [ ] Shopper and output image bytes are not persisted by the storefront.
+- [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
+- [ ] UI requests one front-facing shopper photo; server accepts exactly one supported image without adding pose classification.
+- [ ] Server re-resolves the product and uses the existing first trusted product image.
+- [ ] The external request uses `gpt-image-2`, two image references, and one output.
+- [ ] One accepted request renders at most one result.
+- [ ] La.na Design does not durably persist input/output image bytes.
 - [ ] Privacy copy accurately describes the OpenAI processing boundary.
-- [ ] Invalid/untrusted inputs fail closed before paid generation.
-- [ ] Paid usage has bounded rate/concurrency controls.
-- [ ] Upstream failure never breaks PDP/cart/checkout.
-- [ ] Browser flow is keyboard accessible and passes existing accessibility gates.
-- [ ] Live API quality/cost/latency evidence is recorded before production enablement.
-- [ ] Lint, typecheck, domain/integration tests, build, and relevant browser tests pass.
-- [ ] No unrelated commerce/catalog refactor is mixed into the implementation.
-- [ ] Definition of Done in 05_SHARED_REFERENCES.md is satisfied.
+- [ ] Invalid/untrusted requests fail closed before paid generation where practical.
+- [ ] Usage has bounded rate/concurrency controls.
+- [ ] Try-on errors never break PDP/cart/checkout.
+- [ ] Browser flow is accessible and covered by the existing Playwright suite.
+- [ ] Controlled live quality/cost/latency evidence is reviewed before production enablement.
+- [ ] Repository lint/typecheck/tests/build pass.
+- [ ] No unrelated catalog/commerce refactor is mixed in.
 
-## 23. Explicit non-goals
+## 21. Explicit non-goals
 
 MVP does not include:
 
 - multiple shopper photos;
+- automatic front-pose/face/body classification;
 - side/back pose inputs;
 - multi-output generation;
-- virtual try-on history;
-- account-linked image library;
+- history/account image library;
 - persistent generated URLs;
-- social sharing backend;
-- accessory try-on;
-- shoes/jewelry/bags;
-- size recommendation;
-- body measurement;
+- accessory/shoe/jewelry/bag try-on;
+- size recommendation/body measurement;
 - avatar creation;
-- selected-color/selected-variant-specific reference images;
+- selected-variant-specific garment imagery;
 - prompt editing;
-- background jobs/queues;
+- background jobs/queues by default;
 - admin try-on management;
-- server-side caching of customer generations;
 - automatic model upgrades.
