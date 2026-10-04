@@ -58,7 +58,9 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
   IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.",
   NOT_ELIGIBLE: "Sản phẩm này hiện chưa hỗ trợ thử đồ.",
   PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Vui lòng thử lại sau.",
-  RATE_LIMITED: "Bạn đã thử nhiều lần liên tiếp. Vui lòng thử lại sau ít phút.",
+  RATE_LIMITED: "Bạn vừa thử đồ xong. Vui lòng chờ khoảng 1 phút rồi thử lại.",
+  LOGIN_REQUIRED: "Bạn đã dùng hết 5 lượt thử đồ không cần đăng nhập. Vui lòng đăng nhập để tiếp tục thử đồ.",
+  DAILY_LIMIT_REACHED: "Bạn đã dùng hết lượt thử đồ hôm nay. Vui lòng quay lại vào ngày mai.",
   BUSY: "Hệ thống đang có nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
   SAFETY_BLOCKED:
     "Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác: chính diện, rõ người, đủ sáng.",
@@ -68,6 +70,16 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
 };
 
 export const TRY_ON_NETWORK_FAILURE_MESSAGE = "Không kết nối được. Vui lòng kiểm tra mạng và thử lại.";
+
+/** The reason if it is one the server can send, else `null`. */
+export function parseTryOnFailureReason(reason: unknown): TryOnFailureReason | null {
+  return typeof reason === "string" && reason in FAILURE_COPY ? (reason as TryOnFailureReason) : null;
+}
+
+/** A guest who has used its allowance continues by signing in. */
+export function isLoginRequired(reason: TryOnFailureReason | null): boolean {
+  return reason === "LOGIN_REQUIRED";
+}
 
 /** An unrecognised or missing reason is shown as a plain generation failure. */
 export function tryOnFailureMessage(reason: unknown): string {

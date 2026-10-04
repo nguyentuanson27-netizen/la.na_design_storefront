@@ -9,9 +9,11 @@ import {
   isTeenAgeState,
   isTryOnAgeAllowed,
   missingTryOnSteps,
+  parseTryOnFailureReason,
   tryOnFailureMessage,
   validateTryOnFile,
   type TryOnAgeState,
+  type TryOnFailureReason,
 } from "./try-on-model.ts";
 
 /**
@@ -60,6 +62,7 @@ export function useTryOn({
   const [ageState, setAgeState] = useState<TryOnAgeState | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorReason, setErrorReason] = useState<TryOnFailureReason | null>(null);
   const [result, setResult] = useState<TryOnResult | null>(null);
 
   // Object URLs are revoked when replaced and on unmount, so no image outlives its use.
@@ -97,6 +100,7 @@ export function useTryOn({
     setAgeState(null);
     setPhase("idle");
     setErrorMessage(null);
+    setErrorReason(null);
     setResult(null);
     clearFileInput();
   }
@@ -106,6 +110,7 @@ export function useTryOn({
     const next = event.target.files?.[0] ?? null;
     setResult(null);
     setErrorMessage(null);
+    setErrorReason(null);
     setPhase("idle");
     if (next === null) {
       setFile(null);
@@ -134,6 +139,7 @@ export function useTryOn({
     abortRef.current = controller;
     setPhase("loading");
     setErrorMessage(null);
+    setErrorReason(null);
     setResult(null);
 
     const body = new FormData();
@@ -157,6 +163,7 @@ export function useTryOn({
         setPhase("success");
       } else {
         setErrorMessage(tryOnFailureMessage(record.reason));
+        setErrorReason(parseTryOnFailureReason(record.reason));
         setPhase("error");
         if (isFinalForPhoto(record.reason)) {
           setFile(null);
@@ -201,6 +208,7 @@ export function useTryOn({
     isBlockedAge: isBlockedAgeState(ageState),
     phase,
     errorMessage,
+    errorReason,
     result,
     canGenerate,
     missingSteps: missingTryOnSteps({ hasPhoto: file !== null, ageState, acknowledged }),

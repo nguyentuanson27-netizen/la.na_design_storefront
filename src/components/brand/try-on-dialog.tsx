@@ -5,6 +5,7 @@ import { useId, useRef, type KeyboardEvent } from "react";
 import { BRAND } from "@/brand";
 import {
   TRY_ON_AGE_OPTIONS,
+  isLoginRequired,
   TRY_ON_BLOCKED_AGE_MESSAGE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
   TRY_ON_TEEN_DISCLOSURE,
@@ -246,6 +247,11 @@ export function BrandTryOnLauncher({
             <p role="alert" className={`mt-1 text-sm font-semibold ${ERROR_TEXT}`}>
               {tryOn.errorMessage}
             </p>
+          ) : null}
+          {phase === "error" && isLoginRequired(tryOn.errorReason) ? (
+            <a href="/login" className="btn btn--primary mt-3 w-full px-4">
+              Đăng nhập
+            </a>
           ) : null}
 
           {phase === "success" && result ? (

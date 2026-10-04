@@ -34,6 +34,7 @@ const runId = `${Date.now()}-${process.pid}`;
 const syncedAt = new Date("2026-10-04T00:00:00.000Z");
 
 const PRODUCT_NAME = `Váy thử đồ ${runId}`;
+const memberEmail = `try-on-member-${runId}@example.test`;
 const slugs = {
   eligible: `try-on-vay-${runId}`,
   accessory: `try-on-phu-kien-${runId}`,
@@ -124,6 +125,7 @@ async function stopServers() {
 }
 
 async function cleanup() {
+  await prisma.user.deleteMany({ where: { email: { startsWith: "try-on-member-" } } });
   await prisma.cartItem.deleteMany({ where: { variant: { product: { pancakeShopId: SHOP_ID } } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
 }
@@ -329,6 +331,15 @@ async function addToBagAndExpectConfirmation(page: Page) {
   await panel.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
   await panel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true }).click();
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.", { exact: true })).toBeVisible();
+}
+
+/**
+ * A guest gets one attempt a minute, so a test that generates twice presents as a new visitor for
+ * the second. Quota behaviour itself is tested below, through the endpoint, not through this.
+ */
+async function asNewGuest(page: Page) {
+  clientCounter += 1;
+  await page.context().setExtraHTTPHeaders({ "x-ci-client-ip": `198.51.100.${clientCounter}` });
 }
 
 function triggerOf(page: Page) {
@@ -641,6 +652,7 @@ test("an adult generation shows loading, exactly one result, a download, and req
   await expect(generate).toHaveText("Tạo lại");
   await expect(generate).toBeDisabled();
   await acknowledge.check();
+  await asNewGuest(page);
   await generate.click();
   await expect(status).toContainText("Đã tạo xong ảnh thử đồ.");
   await expect(dialog.getByRole("img", { name: /Ảnh thử đồ do AI tạo/ })).toHaveCount(1);
@@ -788,6 +800,7 @@ test("a provider safety block fails closed: safe copy, the photo is dropped, and
   // A different photo is the way forward.
   await photo.setInputFiles(jpegPhoto("ok"));
   await acknowledge.check();
+  await asNewGuest(page);
   await generate.click();
   await expect(parts(dialog).result).toBeVisible();
   expect(predictCalls()).toHaveLength(2);
@@ -896,17 +909,71 @@ test.describe("the endpoint enforces the gates itself", () => {
     expect(predictCalls()).toHaveLength(0);
   });
 
-  test("a client is rate limited after its attempts, and another client is not", async ({ request }) => {
-    const ip = "198.51.100.160";
-    const statuses: number[] = [];
-    for (let attempt = 0; attempt < 7; attempt += 1) {
-      statuses.push((await post(request, form(), ip)).status());
-    }
-    expect(statuses.slice(0, 6)).toEqual([200, 200, 200, 200, 200, 200]);
-    expect(statuses[6]).toBe(429);
-    expect(predictCalls()).toHaveLength(6);
+  test("a guest gets one attempt a minute; another visitor is unaffected", async ({ request }) => {
+    const first = await post(request, form(), "198.51.100.160");
+    expect(first.status()).toBe(200);
+    const second = await post(request, form(), "198.51.100.160");
+    expect(second.status()).toBe(429);
+    expect(await second.json()).toEqual({ ok: false, reason: "RATE_LIMITED" });
+    // The refused attempt reached neither the product fetch nor Vertex.
+    expect(predictCalls()).toHaveLength(1);
 
     const other = await post(request, form(), "198.51.100.161");
     expect(other.status()).toBe(200);
   });
+
+  test("a signed-in member has their own, larger quota: two a minute, independent of the address", async ({
+    request,
+  }) => {
+    const ip = "198.51.100.170";
+    // As a guest the address is spent after one attempt.
+    expect((await post(request, form(), ip)).status()).toBe(200);
+    expect((await post(request, form(), ip)).status()).toBe(429);
+
+    // Signing in switches to the account's allowance, from the very same address.
+    const signUp = await request.post(`${ENABLED_URL}/api/auth/sign-up/email`, {
+      headers: { origin: ENABLED_URL, "x-ci-client-ip": ip },
+      data: { name: "Try On Member", email: memberEmail, password: "try-on-member-password-1" },
+    });
+    expect(signUp.ok(), await signUp.text()).toBe(true);
+
+    expect((await post(request, form(), ip)).status()).toBe(200);
+    expect((await post(request, form(), ip)).status()).toBe(200);
+    const third = await post(request, form(), ip);
+    expect(third.status()).toBe(429);
+    expect(await third.json()).toEqual({ ok: false, reason: "RATE_LIMITED" });
+    expect(predictCalls()).toHaveLength(3);
+  });
+});
+
+test("a guest told to log in sees the sign-in link, and the dialog still closes cleanly", async ({ page }) => {
+  // The sixth guest attempt needs five spaced minutes of real time, so the server's answer is
+  // stubbed here; the quota logic that produces it is covered by the limiter and service tests.
+  await page.route("**/api/try-on", (route) =>
+    route.fulfill({
+      status: 401,
+      contentType: "application/json",
+      body: JSON.stringify({ ok: false, reason: "LOGIN_REQUIRED" }),
+    }),
+  );
+  const watched = watch(page);
+  const dialog = await openTryOn(page);
+  const { photo, adult, acknowledge, generate, alert } = parts(dialog);
+  await photo.setInputFiles(jpegPhoto());
+  await adult.check();
+  await acknowledge.check();
+  await generate.click();
+
+  await expect(alert).toContainText("5 lượt thử đồ");
+  await expect(alert).toContainText("đăng nhập");
+  const signIn = dialog.getByRole("link", { name: "Đăng nhập" });
+  await expect(signIn).toBeVisible();
+  await expect(signIn).toHaveAttribute("href", "/login");
+  await assertPageQuality(page);
+
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await addToBagAndExpectConfirmation(page);
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched, { allowTryOnFailure: true })).toEqual([]);
 });
