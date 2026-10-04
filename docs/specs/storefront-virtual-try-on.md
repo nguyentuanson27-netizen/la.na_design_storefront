@@ -251,16 +251,29 @@ Therefore:
 - a missing acknowledgement fails before the OpenAI call;
 - MVP does not attempt to verify identity or persist a consent record.
 
-### Minor policy — blocking owner decision
+### Minor policy — owner decision: support minors
 
-Whether this product serves people under 18 is **not yet approved**.
+Owner decision on 2026-10-04: the MVP supports minors, but keeps the child-data path narrow.
 
-This is a blocking product/privacy decision, not an implementation detail. Production try-on must remain disabled until the owner chooses one of these policies:
+MVP age contract:
 
-1. **18+ only** — simplest MVP. Add age eligibility/acknowledgement appropriate to the approved policy; do not build a general age-verification platform unless legally required.
-2. **Support minors** — implementation must follow the current OpenAI Under-18 API Guidance and applicable law. In particular, OpenAI states that personal data of children under 13 or the applicable age of digital consent must not be processed without first implementing Zero Data Retention, and applications serving minors require additional age-appropriate safeguards.
+- **13–17 years old:** supported only with parent/legal-guardian permission.
+- **18+:** supported normally under the likeness-rights acknowledgement.
+- **Under 13, or below the applicable age of digital consent where higher:** not supported in MVP.
 
-The implementation team must not silently choose either policy.
+This boundary follows the current OpenAI Services Agreement requirement that minors use the Services only with parent/guardian consent, while avoiding a separate under-digital-consent processing path that would require Zero Data Retention before personal data may be sent to OpenAI.
+
+The UI must ask the shopper to choose one age group before generation:
+
+1. **Từ 18 tuổi trở lên**
+2. **Từ 13 đến 17 tuổi — tôi có sự cho phép của cha/mẹ hoặc người giám hộ**
+3. **Dưới 13 tuổi / dưới ngưỡng đồng ý số áp dụng — không thể dùng tính năng này**
+
+The server must enforce the submitted age-group contract; client-only hiding/disabled state is not sufficient.
+
+This is an age/self-attestation gate, not identity or document verification. MVP does not build an age-verification platform.
+
+If a future version needs to serve children below the applicable digital-consent threshold, that requires a separate reviewed amendment covering Zero Data Retention, applicable child-privacy law, and any additional age-assurance/safety requirements before implementation.
 
 ## 11. Privacy and data handling
 
@@ -297,7 +310,7 @@ The minimum truthful disclosure is:
 - the uploaded photo is sent to OpenAI to generate the result;
 - OpenAI processing/retention follows the OpenAI API data controls configured for the account.
 
-Zero Data Retention is optional for the default adult-only/non-minor path. If the owner chooses to support minors in a way covered by OpenAI's Under-18 guidance, any ZDR requirement in that guidance becomes mandatory for the affected users before production enablement.
+The approved MVP does not process children below 13 or the applicable age of digital consent, so Zero Data Retention is not required solely by this feature's minor path. If that younger-child boundary changes later, OpenAI's current Under-18 guidance requires Zero Data Retention before their personal data is processed.
 
 ## 12. Failure behavior
 
@@ -371,6 +384,9 @@ Cover:
 - request pins `gpt-image-2` and one output;
 - successful orchestration sends shopper + first trusted product image;
 - missing likeness-rights acknowledgement is rejected before the OpenAI call;
+- missing age-group attestation is rejected before the OpenAI call;
+- a 13–17 attestation without parent/guardian permission is rejected before the OpenAI call;
+- the under-13/applicable-digital-consent-age group is rejected before the OpenAI call;
 - upstream failure maps safely and does not change commerce state;
 - no durable image persistence path is introduced;
 - API key is server-only.
@@ -382,7 +398,9 @@ Cover representative desktop/mobile flows:
 - eligible PDP shows **Thử đồ**;
 - accessory/non-eligible PDP does not;
 - upload preview;
-- generation stays unavailable until the likeness-rights acknowledgement is checked;
+- generation stays unavailable until likeness-rights acknowledgement and an allowed age-group attestation are complete;
+- the 13–17 path explicitly requires parent/guardian permission;
+- the under-13/applicable-digital-consent-age path cannot generate;
 - loading;
 - exactly one success result;
 - download;
@@ -498,29 +516,25 @@ Turning the switch off must leave normal PDP commerce unchanged.
 
 These remain open rather than being guessed:
 
-1. **Minor policy — BLOCKING**
-   - Choose **18+ only** or **support minors** before approving production implementation.
-   - Suggested simplest MVP: 18+ only, without building a general age-verification platform unless required.
-
-2. **Guest or login required?**
+1. **Guest or login required?**
    - Suggested MVP default: guests allowed, with bounded rate/cost control.
 
-3. **Rate limit / concurrency values?**
+2. **Rate limit / concurrency values?**
    - Choose in the implementation plan from expected traffic and measured generation cost.
 
-4. **Upload cap**
+3. **Upload cap**
    - Approve or change the proposed 10 MiB.
 
-5. **Output quality/size**
+4. **Output quality/size**
    - Choose after a small `gpt-image-2` latency/cost/quality comparison; portrait output is preferred.
 
-6. **Exact PDP placement**
+5. **Exact PDP placement**
    - Decide during UI planning against the current purchase composition.
 
-7. **Buyer-facing privacy copy**
+6. **Buyer-facing privacy copy**
    - Approve final Vietnamese wording before production enablement.
 
-8. **Initial rollout scope**
+7. **Initial rollout scope**
    - All eligible products at once or a limited production gate.
 
 ## 21. Acceptance criteria
@@ -530,7 +544,8 @@ Implementation is acceptable when:
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
 - [ ] UI requests one front-facing shopper photo; server accepts exactly one supported image without adding pose classification.
 - [ ] Each generation request requires an explicit likeness-rights acknowledgement and rejects missing acknowledgement before the OpenAI call.
-- [ ] The owner-approved minor policy is implemented; production remains disabled while that decision is unresolved.
+- [ ] Age-group self-attestation is required server-side: 18+ allowed; 13–17 allowed only with parent/legal-guardian permission; under 13/applicable digital-consent age is rejected in MVP.
+- [ ] No document/identity/age-verification platform is added solely for MVP.
 - [ ] Server re-resolves the product and uses the existing first trusted product image.
 - [ ] The external request uses `gpt-image-2`, two image references, and one output.
 - [ ] One accepted request renders at most one result.
@@ -550,7 +565,8 @@ MVP does not include:
 
 - multiple shopper photos;
 - automatic front-pose/face/body classification;
-- identity verification or a durable consent ledger;
+- identity/document age verification or a durable consent ledger;
+- processing try-on photos for children under 13 or below the applicable digital-consent age;
 - side/back pose inputs;
 - multi-output generation;
 - history/account image library;
