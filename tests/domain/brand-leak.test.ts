@@ -26,6 +26,10 @@ const SCANNED_ROOTS = ["src"] as const;
  * - the Merchant apparel vocabulary defines Google's controlled values ("male", "adult"). Those are
  *   the vocabulary a brand *picks from*, not brand strings, and the module that declares the list is
  *   their source in the same way `src/brand` is the source of brand truth.
+ * - the virtual try-on policy declares the age-state wire vocabulary the storefront and Vertex AI
+ *   flow share (`adult`, `teen_eligible_with_guardian`, `below_digital_consent_age`). `adult` there
+ *   is a policy enum value, not a brand fact, and the file is its single declaration; nothing else
+ *   in the try-on code spells it.
  */
 const IGNORED = [
   "src/brand",
@@ -33,6 +37,7 @@ const IGNORED = [
   "src/components/admin",
   "src/generated",
   "src/commerce/merchant-apparel-facts.ts",
+  "src/commerce/try-on-policy.ts",
 ] as const;
 
 /** Short enough to appear legitimately in unrelated words; declared needles cover the rest. */
