@@ -598,9 +598,11 @@ These remain open rather than being guessed:
 
 1. **Guest or login required?**
    - Suggested MVP default: guests allowed, with bounded rate/cost control.
+   - **Decided 2026-10-04 (owner):** guests are allowed for their first five attempts; from the sixth, login is required.
 
 2. **Rate limit / concurrency values?**
    - Choose in the implementation plan from expected traffic and measured Vertex cost/latency.
+   - **Decided 2026-10-04 (owner):** guest — 1 attempt per minute, 5 in total, then login; member (signed in) — 2 attempts per minute, 10 per day. Implementation reading: "5 in total" is per 24 hours (see `docs/integrations/vertex-virtual-try-on.md`), and every submitted attempt counts. These are cost quotas; they were set without live cost or latency data and can be revised once it exists.
 
 3. **Exact PDP placement**
    - Decide during UI planning against the current purchase composition.

@@ -11,10 +11,10 @@ Dependency order (each slice was written test-first and left green):
    client product URL has no field to travel in.
 3. **Vertex boundary** — config/kill switch, request builder pinned by test, response validation,
    safety fail-closed, no retry; trusted product-image fetch (redirect-safe, bounded).
-4. **Service + limiter + telemetry** — the one ordering of gates; in-process attempt window, an upload
-   concurrency cap (resource bound) and a generation cap (cost bound); allow-listed signals. The
-   guest-vs-login decision and the quota *values* are **open owner decisions** (spec §21): the numbers in
-   the code are provisional defaults, not approved limits.
+4. **Service + limiter + telemetry** — the one ordering of gates; the owner-approved quotas (guest 1/min
+   and 5 in total then login; member 2/min and 10/day), an upload concurrency cap and a generation cap
+   (resource bounds); allow-listed signals. Guest-vs-login and the quota values were decided by the
+   owner on 2026-10-04 (spec §21).
 5. **Endpoint + PDP wiring** — same-origin, bounded body, status mapping; server-decided PDP prop.
 6. **UI** — headless `useTryOn` + brand dialog (existing token set, native `<dialog>`).
 7. **Browser coverage** — `tests/a11y-runtime/try-on.spec.ts` with a hermetic outbound fixture.

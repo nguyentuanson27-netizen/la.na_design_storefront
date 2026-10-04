@@ -9,11 +9,11 @@
 - [x] T6 PDP dialog UI (headless hook + brand markup).
 - [x] T7 Playwright coverage at phone and desktop widths, axe clean, no console errors.
 - [x] T8 Lint, typecheck, domain/integration tests, production build, self-review, simplification pass.
-- [ ] **Owner decision (spec §21, review of #105 finding 3):** guest access or login-required, and the
-  quotas. The code currently ships **provisional** values — guests allowed, 6 attempts / 10 min / client,
-  3 generations in flight — chosen as engineering defaults, with no live cost/latency data and no owner
-  approval. Record the approved decision (or the changed values) here and in the spec before any
-  production enablement. The 4-concurrent-upload cap is a container resource bound, not a quota.
+- [x] **Owner decision (spec §21), 2026-10-04:** guests allowed — 1 attempt per minute, 5 in total, login
+  required from the 6th; members (signed in) — 2 per minute, 10 per day. Implemented in
+  `try-on-rate-limit.ts` and recorded in the spec. Reading choices (guest "5 in total" is per 24 h; every
+  submitted attempt counts) are in the integration doc. Set without live cost/latency data; revisit once
+  measured.
 - [ ] **Human gate:** read the official Google REST/model pages (blocked in the build sandbox) once and
   confirm the hyphenated enum values now sent, the absence of a prompt field, and the refusal wording the
   400 classifier matches (integration doc, "Notes on the request").

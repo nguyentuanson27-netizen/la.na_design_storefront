@@ -15,7 +15,7 @@ Browser        BrandTryOnLauncher/useTryOn  form frozen while a request runs; mu
 Route          handleTryOnPost()            same-origin (Origin host == Host), multipart only,
                                             Content-Length and streamed-byte cap, 30 s body deadline,
                                             client key
-Service        createTryOnService()         flag -> per-client attempt -> upload slot -> read body ->
+Service        createTryOnService()         flag -> guest|member quota -> upload slot -> read body ->
                                             validate request -> release upload slot -> re-resolve
                                             product -> eligibility -> generation slot -> trusted
                                             product image -> Vertex (once)
@@ -141,22 +141,34 @@ zero-data-retention posture before enabling (spec §12).
 | Request body | ≤ 7 MB + 256 KB, enforced on bytes read | `try-on-endpoint.ts` |
 | Product image | trusted-media URL only, HTTPS, ≤ 10 s, ≤ 7 MB, ≤ 2 trusted redirects, JPEG/PNG signature | `product-image.ts` |
 | Provider phase | one Vertex call per accepted request; **one 45 s deadline covers the access-token acquisition and the prediction** (under the 60 s proxy read timeout), so a stalled token refresh cannot pin a generation slot; the auth transport also has a 15 s timeout so an abandoned token request closes; no retry | `client.ts`, `google-auth.ts` |
-| Per client | 6 attempts / 10 minutes (counted before the body is read) — **provisional** | `try-on-rate-limit.ts` |
+| Guest quota | 1 attempt per minute, 5 in total (24 h window); from the 6th, `LOGIN_REQUIRED` (401) and the dialog offers sign-in. Owner decision 2026-10-04. Counted before the body is read | `try-on-rate-limit.ts` |
+| Member quota | 2 attempts per minute, 10 per day (24 h window); over the day, `DAILY_LIMIT_REACHED` (429). Any signed-in account is a member. Owner decision 2026-10-04 | `try-on-rate-limit.ts` |
 | Uploads in flight | 4 bodies being received/parsed at once, taken before the body is read and released after the photo is validated; 30 s body-read deadline | `try-on-rate-limit.ts`, `try-on-endpoint.ts` |
-| Generations in flight | 3 (outbound image fetch + Vertex only) — **provisional** | `try-on-rate-limit.ts` |
+| Generations in flight | 3 (outbound image fetch + Vertex only) — provisional resource bound | `try-on-rate-limit.ts` |
 | Same-origin | `Origin` host must equal `Host` (or the first `X-Forwarded-Host`) | `try-on-endpoint.ts` |
 
 The upload cap is a resource bound for the container (a request in the upload phase holds roughly
 three copies of a ≤ 7 MB body, so four bound that phase to the order of 100 MB), not a traffic or cost
 quota; it is separate from the generation cap so a slow upload can never occupy a Vertex slot. The
-per-client window and the generation cap, by contrast, **are cost limits whose values the spec leaves
-to the owner (§21) and which have not been measured against live Vertex cost or latency**. They are
-provisional engineering defaults awaiting owner approval, along with the guest-access decision — see
-`tasks/storefront-virtual-try-on-todo.md`. Do not enable try-on in production before they are approved.
+generation cap of 3 is likewise a provisional resource bound that no live measurement has tuned.
+
+The guest and member quotas are the owner's decision (spec §21, 2026-10-04), made without live Vertex
+cost or latency data. Reading choices to be aware of, each easy to change in `try-on-rate-limit.ts`:
+
+- **"5 in total" for a guest is per 24 hours, not for life.** A lifetime count would need durable
+  per-visitor state (a database row or a long-lived cookie), which this MVP deliberately does not keep.
+  A guest is identified by the trusted proxy's client address, so people behind one shared address
+  share one allowance, and a guest who changes address starts a fresh one.
+- **The member "10 a day" is a 24 h window from the first attempt,** not a calendar day in Vietnam time.
+- **Every submitted attempt counts,** including one that later fails (a provider error, a timeout, a
+  safety block). A refused attempt (rate-limited, login-required, over the daily limit) does not.
+- **A member is any signed-in account** and is keyed by account id, independent of address. If the
+  session lookup fails the request is treated as a guest, never as a member, so a fault can only make
+  the limit stricter.
 
 The limiter is **in-process**. Production is one app container on one VPS (ADR 0002), so this is the
 whole fleet. If the app is scaled to more than one instance the limits become per-instance and must be
-revisited. Counters reset on restart. The client key is the same pseudonymous HMAC the checkout limiters
+revisited. Counters reset on restart, which for the daily allowances means a restart gives everyone a fresh day. The client key is the same pseudonymous HMAC the checkout limiters
 use and needs `BETTER_AUTH_IP_HEADER` in production; without a derivable key the endpoint fails closed.
 
 ## Observability
