@@ -1,4 +1,4 @@
-# Spec: Storefront Virtual Try-on with GPT Image 2
+# Spec: Storefront Virtual Try-on with Vertex AI
 
 Status: **Proposed for owner review — 2026-10-04. Spec only; implementation requires a separate reviewed plan.**
 
@@ -17,8 +17,10 @@ Confirmed owner decisions:
 5. Multiple outputs may be added later, but are not part of MVP.
 6. La.na Design does **not persist** the uploaded or generated image in its own durable storage.
 7. The feature is for **apparel worn on the body**; accessories are excluded.
+8. The provider is **Google Cloud Vertex AI** using the dedicated **`virtual-try-on-001`** model.
+9. MVP supports eligible minors under the age policy in §10.
 
-Important distinction: “front-facing” is buyer guidance in MVP, not a promise that the application will run pose/face classification. The server validates that one supported image was uploaded; it does not build a separate computer-vision gate.
+“Front-facing” is buyer guidance, not a promise that the application will run pose/face classification.
 
 Success means try-on helps visualization without changing price, variant, stock, cart, checkout, order, or recommendation truth.
 
@@ -36,11 +38,11 @@ Base stack:
 
 Relevant existing authorities:
 
-- `src/components/brand/product-detail.tsx` coordinates PDP presentation.
-- `src/commerce/product-media.ts` validates product media and resolves the canonical first trusted image.
-- `src/brand/category.config.ts` declares the category vocabulary.
-- `src/commerce/category-taxonomy.ts` owns category identity/membership rules.
-- `tests/domain` and `tests/a11y-runtime` are the existing unit/domain and browser regression surfaces.
+- `src/components/brand/product-detail.tsx` — PDP presentation coordinator.
+- `src/commerce/product-media.ts` — trusted product-image validation and canonical first image.
+- `src/brand/category.config.ts` — category vocabulary.
+- `src/commerce/category-taxonomy.ts` — category identity/membership.
+- `tests/domain` and `tests/a11y-runtime` — current domain/browser regression surfaces.
 
 Current top-level category trees:
 
@@ -51,79 +53,125 @@ Current top-level category trees:
 
 For MVP, `aoDai`, `setDo`, and `vayDam` are eligible apparel trees. `phuKien` is excluded.
 
-## 3. OpenAI contract
+## 3. Vertex AI contract
 
-Official OpenAI documentation was re-checked on 2026-10-04.
+Official Google Cloud documentation was re-checked on 2026-10-04.
 
-The requested API model is:
+Normative model:
 
-- `gpt-image-2`
+- provider: Google Cloud Vertex AI;
+- model: `virtual-try-on-001`;
+- launch stage: GA;
+- default region: `asia-southeast1`;
+- request surface: Vertex AI publisher-model `:predict`;
+- one person image + one product image;
+- one output.
 
-Normative MVP integration:
+The REST target is conceptually:
 
-- use `POST /v1/images/edits` / the equivalent official SDK image-edit call;
-- provide two image references:
-  1. shopper photo;
-  2. first trusted product image;
-- set `n = 1`;
-- do not set `input_fidelity` for `gpt-image-2`; current docs state image inputs are already processed at high fidelity;
-- do not silently upgrade or fall back to another image model.
+```text
+POST https://asia-southeast1-aiplatform.googleapis.com/v1/
+  projects/<project>/locations/asia-southeast1/
+  publishers/google/models/virtual-try-on-001:predict
+```
 
-OpenAI currently documents that the image edit workflow can use one or more reference images and that GPT Image responses return base64 image data.
+The implementation must use the current official request schema at build time. The required MVP facts are:
+
+- `personImage` = shopper image;
+- first `productImages[]` item = first trusted product image;
+- `sampleCount = 1`;
+- `personGeneration = "allow-all"` so the approved teen path is not blocked by the provider's adult-only default;
+- `safetySetting = "block-low-and-above"` unless current official documentation removes or renames that option;
+- `addWatermark = true`;
+- omit `storageUri` so generation does not intentionally write output to Cloud Storage.
+
+MVP must not lower the safety threshold or disable the watermark merely to increase success rate.
+
+Current model limits relevant to this feature:
+
+- maximum images per prompt: 2;
+- supported input MIME types: `image/jpeg`, `image/png`;
+- maximum inline/direct-upload file size: 7 MB per image;
+- maximum output count: 4, but MVP pins 1;
+- output aspect ratio/resolution follow the input image.
+
+The model is currently published with a retirement date of **2027-03-15**. Before implementation and again before production enablement, re-check the model page for a successor/migration notice. Do not build a general provider framework for this; keep the Vertex call isolated enough that a reviewed model migration is local.
 
 Authoritative references:
 
-- https://developers.openai.com/api/docs/models/gpt-image-2
-- https://developers.openai.com/api/docs/guides/image-generation
-- https://developers.openai.com/api/docs/guides/image-prompting
-- https://developers.openai.com/api/docs/guides/your-data
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/vto/virtual-try-on-001
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/Shared.Types/VirtualTryOnModelInstance
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/Shared.Types/VirtualTryOnModelParams
+- https://cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.endpoints/predict
+- https://docs.cloud.google.com/vertex-ai/generative-ai/docs/vertex-ai-zero-data-retention
 
-Because the API is version-sensitive, the implementation PR must re-check the official docs before coding against it.
-
-## 4. Eligibility and runtime availability
+## 4. Product eligibility and runtime availability
 
 ### Product eligibility
 
-A product is eligible when:
+A product is eligible when all of the following are true:
 
-1. its current category membership belongs to one of the approved apparel trees:
-   - `aoDai`
-   - `setDo`
-   - `vayDam`
-2. it has a trusted first storefront image from the existing product-media authority.
+1. its current category membership belongs to:
+   - `aoDai`;
+   - `setDo`;
+   - `vayDam`;
+2. it has a first trusted storefront image from the existing media authority;
+3. that exact first image is JPEG/JPG or PNG and can be supplied within Vertex AI's 7 MB input limit.
 
-Do not infer eligibility from product names, collection names, SKU text, image recognition, or free-form heuristics.
+Do not:
 
-A product with missing/unknown category membership or no trusted first image is not eligible.
+- infer eligibility from product names, collections, SKU text, or image recognition;
+- fall through to the second product image if the first image is unsupported;
+- add WebP conversion solely for MVP.
 
-MVP adds no admin field, database table, or per-product try-on toggle.
+A product with missing/unknown category membership, no trusted first image, a first image in unsupported format, or an oversized first image is not eligible.
+
+This keeps the owner's “first image” rule exact and avoids adding an image-conversion dependency.
+
+MVP adds no admin eligibility field or database table.
 
 ### Runtime availability
 
 Runtime enablement is separate from product eligibility.
 
-The entry point is available only when the server-side feature switch is enabled and required OpenAI server configuration is present. Missing configuration fails closed and must not break the PDP.
+The try-on entry point is available only when:
+
+- the server-side feature switch is enabled;
+- required Google Cloud project/location configuration is present;
+- server-side Google Cloud credentials are available.
+
+Missing provider configuration fails closed and must not break the PDP.
 
 ## 5. Product image authority
 
-The garment reference is the exact first trusted image already resolved by `src/commerce/product-media.ts`.
+The garment reference is the exact first trusted image resolved by `src/commerce/product-media.ts`.
 
-The client must not choose or submit an arbitrary product-image URL.
+The client must not choose or submit a product-image URL.
 
-The server receives a product identity, re-resolves the product, verifies try-on eligibility, and obtains the first image through the existing trusted-media contract.
+The server receives product identity, re-resolves the product, verifies try-on eligibility, and obtains the first image through the existing trusted-media contract.
 
-Do not create a second product-media parser.
+For the outbound product-image fetch:
+
+- reuse the current trusted host/path authority;
+- use HTTPS only;
+- reject redirects outside the trusted boundary;
+- bound timeout and response bytes;
+- verify JPEG/PNG content type/signature before sending to Vertex AI.
+
+Do not create a second product-media authority.
 
 ## 6. Buyer experience
 
 On an eligible PDP, expose a **Thử đồ** action near the purchase experience without obscuring price, variants, size guide, add-to-cart/preorder, or shipping/returns.
 
-Opening try-on shows an accessible dialog/sheet or equivalent contained PDP interaction with:
+Opening try-on shows an accessible dialog/sheet or equivalent PDP interaction with:
 
-- a short explanation;
+- short explanation;
 - one image upload control;
 - front-facing-photo guidance;
-- a local preview;
+- local preview;
+- likeness-rights acknowledgement;
+- age-state selection;
 - **Tạo ảnh thử đồ**;
 - loading state;
 - one generated result;
@@ -131,37 +179,36 @@ Opening try-on shows an accessible dialog/sheet or equivalent contained PDP inte
 - **Tải ảnh**;
 - close/dismiss.
 
-Suggested guidance:
+Suggested photo guidance:
 
 - dùng ảnh chính diện;
 - thấy rõ người;
 - ảnh đủ sáng;
 - tránh ảnh quá nhỏ hoặc bị che nhiều.
 
-The UI must state that the result is an AI visualization, not a guarantee of size, fit, fabric behavior, exact color, or final real-world appearance.
+The UI must state that the result is AI-generated and is **not** a guarantee of size, fit, fabric behavior, exact color, or final real-world appearance.
 
-For the supported 13–17 path, the same disclosure must be presented in plain, age-appropriate language before generation. It must make clear that the image is AI-generated, may be inaccurate, and must not be used to judge the shopper's body or determine clothing size.
+For the teen path, use plain age-appropriate language and state that the generated image may be inaccurate and should not be used to judge the shopper's body or determine clothing size.
 
-Before generation, the shopper must explicitly confirm:
+Before each generation, the shopper must confirm:
 
 > Tôi xác nhận đây là ảnh của tôi hoặc tôi có sự đồng ý rõ ràng và các quyền cần thiết để sử dụng hình ảnh của người trong ảnh cho tính năng thử đồ này.
 
-This acknowledgement is required per generation request. It is a rights/consent representation, not identity verification: MVP does not build face recognition, identity verification, or a durable consent ledger. The server must require the acknowledgement in the generation request rather than relying on a client-only disabled button.
-
-MVP does not provide body measurement or size recommendations.
+This is a rights/consent representation, not identity verification. MVP does not build face recognition, identity verification, or a durable consent ledger.
 
 ## 7. Request lifecycle
 
-Use the simplest request/response flow that works within the deployed runtime:
+Use the simplest synchronous request/response flow that works within the deployed runtime:
 
-1. client sends one shopper image plus product identity;
+1. client sends one shopper image, product identity, likeness acknowledgement, and age state;
 2. server validates the request;
 3. server re-resolves product/category/media authority;
-4. server obtains the first trusted product image;
-5. server calls `gpt-image-2` image edit with the two image inputs and a server-owned prompt;
-6. server returns one generated image to the current request;
-7. client renders/downloads it;
-8. request-local image buffers are released.
+4. server obtains and validates the first trusted product image;
+5. server calls Vertex AI `virtual-try-on-001`;
+6. server receives one inline generated image;
+7. server returns the result to the current shopper request;
+8. client renders/downloads it;
+9. request-local image buffers are released.
 
 MVP does **not** introduce:
 
@@ -169,125 +216,124 @@ MVP does **not** introduce:
 - polling;
 - queues;
 - durable generation records;
+- Cloud Storage output;
 - object storage;
 - try-on history.
 
-If synchronous request/response proves incompatible with actual production runtime limits, stop and revise the plan/spec before adding infrastructure.
+If synchronous request/response proves incompatible with production runtime limits, revise the plan/spec before adding infrastructure.
 
-## 8. Prompt contract
+## 8. Vertex request and safety configuration
 
-The prompt is server-owned and versioned in source. Shoppers do not edit it.
+The request is server-owned. Shoppers do not provide a free-form generation prompt.
 
-The prompt should:
+Where the current `VirtualTryOnModelInstance` schema requires a prompt, use one fixed server-owned prompt whose intent is:
 
-- identify image 1 as the shopper/subject reference;
-- identify image 2 as the garment/design reference;
-- place the referenced garment naturally on the shopper;
-- preserve identity, pose, body proportions, skin tone, framing, and background as much as practical;
+- place the supplied garment naturally on the supplied person;
+- preserve identity, pose, body proportions, skin tone, framing, and apparent age as much as practical;
 - preserve garment silhouette, color, pattern, and visible design details as much as practical;
-- avoid unrelated accessories or identity/body changes;
-- never sexualize the subject or create nudity, sexualized presentation, or sexualized body changes;
-- for a teen input, do not age the subject up or make them appear adult;
-- produce a realistic, age-appropriate fashion visualization.
+- do not add unrelated accessories;
+- do not sexualize the subject;
+- do not create nudity or sexualized body changes;
+- do not age-up a teen subject into an adult-looking subject;
+- produce an age-appropriate fashion visualization.
 
-These are quality targets, not guarantees.
+Prompt wording is **not** the safety boundary. Provider safety controls and server-side age/consent gates remain authoritative.
 
-Prompt changes that materially change the buyer-facing result should be evaluated against the same representative test set used for launch acceptance.
+Required provider controls for MVP:
 
-## 9. Upload, security, and cost boundaries
+- `sampleCount = 1`;
+- `personGeneration = "allow-all"`;
+- `safetySetting = "block-low-and-above"`;
+- `addWatermark = true`;
+- no `storageUri`.
 
-The feature handles untrusted uploads and a paid external API.
+If Vertex rejects an input/output for safety reasons, fail closed. Do not retry with a weaker safety setting, different model, or weakened age rule.
 
-### Upload
+## 9. Upload and cost boundaries
 
-MVP accepts one:
+### Shopper upload
+
+MVP accepts exactly one:
 
 - JPEG/JPG;
-- PNG;
-- WebP.
+- PNG.
+
+Each image sent to Vertex AI must be **<= 7 MB**.
 
 Server controls:
 
-- exactly one file;
-- bounded request/file size;
-- content type plus basic file-signature validation; do not trust filename/extension alone;
+- exactly one shopper file;
+- bounded total request size;
+- allowed MIME type;
+- basic file-signature validation;
 - reject malformed/unsupported input before paid generation where practical;
-- generic safe errors.
+- generic safe buyer-facing errors.
 
-Do not add a dedicated image-decoding/CV dependency solely to prove “front-facing” or to perform pixel-level analysis unless implementation evidence shows it is necessary.
+Client-side validation is convenience only.
 
-Proposed starting upload cap: **10 MiB**. This remains an owner-review item.
-
-### External boundary
-
-- `OPENAI_API_KEY` is server-only.
-- Never expose the key in client/public env.
-- Never log raw shopper/generated images.
-- Never send checkout/contact PII with the request.
-- Never trust a client-supplied remote product-image URL.
-- Product-image fetching must remain inside the reviewed trusted-media allowlist and use bounded timeout/redirect behavior.
-- Map upstream errors to safe buyer-facing errors.
+Do not add a dedicated image-decoding/CV dependency solely to prove “front-facing”.
 
 ### Cost/abuse
 
 MVP requires bounded rate/concurrency control because each accepted request has external cost.
 
-Do not design a distributed abuse platform by default. The implementation plan should choose the smallest control compatible with the current single-app production topology and the guest/login decision.
+Do not design a distributed abuse platform by default. The implementation plan should choose the smallest control compatible with current production topology and the guest/login decision.
 
 Cost remains bounded by:
 
-- `n = 1`;
+- one Vertex prediction per accepted action;
+- `sampleCount = 1`;
 - no automatic regeneration;
 - no catalog pre-generation;
 - no hidden background generation;
-- no durable history.
+- no stored history.
 
-## 10. Privacy, likeness consent, and minors
+## 10. Likeness and minor policy
 
-### Likeness consent
+### Likeness
 
-OpenAI's current Service Terms require express consent and all necessary rights to reproduce a person's likeness.
+Application policy requires that try-on use:
 
-Therefore:
+- the shopper's own photo; or
+- a photo for which the shopper has clear consent and necessary rights.
 
-- try-on may be used only with the shopper's own photo or a photo for which the shopper has express consent and the necessary rights;
-- each generation request requires the acknowledgement defined in §6;
-- a missing acknowledgement fails before the OpenAI call;
-- MVP does not attempt to verify identity or persist a consent record.
+The server must require the acknowledgement in §6 before contacting Vertex AI.
 
 ### Minor policy — owner decision: support minors
 
-Owner decision on 2026-10-04: the MVP supports minors, but keeps the child-data path narrow.
+Owner decision on 2026-10-04: MVP supports eligible minors.
 
-MVP age contract:
-
-- **18+:** supported normally under the likeness-rights acknowledgement.
-- **13–17 years old:** supported only when the shopper also attests that they have reached the minimum/applicable digital-consent age where they live **and** have parent/legal-guardian permission.
-- **Under 13, or any shopper who has not reached the applicable digital-consent age:** not supported in MVP.
-
-This removes the jurisdiction overlap without adding geolocation or an age-verification service. The storefront does not calculate the jurisdictional threshold; it relies on a server-enforced self-attestation contract.
-
-The request must carry exactly one age-state value:
+The request carries exactly one server-enforced age state:
 
 - `adult`
 - `teen_eligible_with_guardian`
 - `below_digital_consent_age`
 
-Only `adult` and `teen_eligible_with_guardian` may reach OpenAI.
+Rules:
 
-The UI must map those states to clear choices before generation:
+- `adult`: allowed.
+- `teen_eligible_with_guardian`: allowed only for a 13–17 shopper who attests that they have reached the applicable digital-consent age where they live **and** have permission from a parent/legal guardian.
+- `below_digital_consent_age`: blocked before any provider call.
 
-1. **Từ 18 tuổi trở lên**
-2. **Từ 13 đến 17 tuổi — tôi đã đạt ngưỡng đồng ý số áp dụng tại nơi tôi sống và có sự cho phép của cha/mẹ hoặc người giám hộ**
-3. **Tôi dưới 13 tuổi hoặc chưa đạt ngưỡng đồng ý số áp dụng — không thể dùng tính năng này**
+The storefront does not calculate jurisdiction or age from location. This is self-attestation, not geolocation, document verification, or identity verification.
 
-The server must enforce the submitted age-state contract; client-only hiding/disabled state is not sufficient.
+This age boundary is a La.na Design product/privacy policy for MVP; do not represent it as a Vertex AI platform requirement.
 
-This is an age/self-attestation gate, not identity, document, jurisdiction, or age verification. MVP does not build an age-verification or geolocation platform.
+## 11. Google Cloud authentication and secrets
 
-If a future version needs to serve children below the applicable digital-consent threshold, that requires a separate reviewed amendment covering Zero Data Retention, applicable child-privacy law, and any additional age-assurance/safety requirements before implementation.
+Vertex AI access is server-only.
 
-## 11. Privacy and data handling
+Requirements:
+
+- no Google credential is exposed to the browser;
+- use server-side Google Cloud authentication such as Application Default Credentials or another reviewed service-account mechanism;
+- grant the runtime principal only the permissions needed to invoke the model (the Vertex predict surface requires prediction permission);
+- do not commit service-account JSON, access tokens, or private keys;
+- do not log credentials or authorization headers.
+
+Exact credential delivery for the VPS is a planning/deployment decision. Do not add a public API key to the client as a shortcut.
+
+## 12. Privacy and data handling
 
 ### La.na Design application
 
@@ -295,36 +341,30 @@ The storefront must not persist shopper or output image bytes to:
 
 - Prisma/database tables;
 - durable filesystem paths;
-- object storage;
+- Cloud Storage;
+- other object storage;
 - analytics payloads;
 - application logs.
 
-MVP should use request-scoped/in-memory handling only.
+MVP uses request-scoped/in-memory handling only.
 
-Do not use OpenAI Files API just to stage these images when the direct image-edit endpoint can accept image inputs.
+### Google Cloud processing boundary
 
-### OpenAI processing boundary
+Buyer-facing privacy copy must distinguish La.na Design storage from Google Cloud processing.
 
-Buyer-facing privacy copy must distinguish application storage from OpenAI processing.
+Current Google Cloud documentation states that Google does not use Customer Data to train or fine-tune AI/ML models without the customer's prior permission or instruction. Google Cloud also documents retention/caching and abuse-monitoring cases that can apply depending on service/account configuration.
 
-Current OpenAI API documentation states:
+Therefore the product must **not** promise that the image is “deleted immediately everywhere”.
 
-- API data is not used to train OpenAI models unless the API customer explicitly opts in;
-- `/v1/images/edits` has no application-state retention;
-- default abuse-monitoring logs may retain customer content for up to 30 days;
-- image endpoints are eligible for Zero Data Retention for approved organizations, subject to documented limitations.
-
-Therefore the product must **not** promise that the photo is “deleted immediately everywhere”.
-
-The minimum truthful disclosure is:
+Minimum truthful disclosure:
 
 - La.na Design does not save the uploaded or generated image in its own durable storage;
-- the uploaded photo is sent to OpenAI to generate the result;
-- OpenAI processing/retention follows the OpenAI API data controls configured for the account.
+- the shopper photo and garment image are sent to Google Cloud Vertex AI to create the result;
+- Google Cloud processing/retention follows the configured Google Cloud data controls and applicable service terms.
 
-The approved MVP does not process children below 13 or the applicable age of digital consent, so Zero Data Retention is not required solely by this feature's minor path. If that younger-child boundary changes later, OpenAI's current Under-18 guidance requires Zero Data Retention before their personal data is processed.
+The implementation must omit `storageUri` so the try-on call does not intentionally persist output to a Cloud Storage bucket.
 
-## 12. Failure behavior
+## 13. Failure behavior
 
 Try-on is an optional enhancement.
 
@@ -338,22 +378,22 @@ A failure must never alter or block:
 
 Expected safe failure classes:
 
-- unsupported product;
-- invalid/oversized image;
+- unsupported/non-eligible product;
+- invalid/oversized/unsupported image;
+- consent/age gate rejected;
 - product reference unavailable;
 - rate/concurrency limit;
+- Vertex authentication/authorization failure;
 - upstream timeout/rate limit;
-- upstream safety/refusal;
+- provider safety block;
 - generation failure;
 - service temporarily unavailable.
 
-Where retry is reasonable, keep the shopper in the same try-on surface and allow retry.
+Where retry is reasonable, keep the shopper in the same try-on surface.
 
-An upstream safety/refusal response fails closed. Do not retry it with a weaker prompt, weaker age safeguard, or different model merely to obtain an image.
+A provider safety block is not automatically retryable with different settings.
 
-Do not silently fall back to another model.
-
-## 13. Accessibility
+## 14. Accessibility
 
 Preserve the repository accessibility bar:
 
@@ -368,46 +408,51 @@ Preserve the repository accessibility bar:
 - no keyboard trap;
 - practical mobile touch targets.
 
-## 14. Observability
+## 15. Observability
 
 Record only non-image operational facts needed to operate the feature:
 
 - try-on opened;
 - upload rejected by safe reason class;
 - generation started/succeeded/failed;
-- upstream safety/refusal count by safe reason class;
+- provider safety-block count by safe reason class;
 - total/upstream latency;
 - rate-limit rejection.
 
-A sustained spike in safety/refusal failures is a reason to disable try-on with the existing kill switch and investigate using non-image telemetry. This does not require storing shopper images or building a moderation dashboard.
+Do not record:
 
-Do not record raw image bytes, generated images, shopper PII, or arbitrary URL/query contents.
+- shopper/generated image bytes;
+- image base64;
+- buyer PII;
+- Google credentials/tokens;
+- arbitrary URL/query contents.
 
-Existing marketing commerce-event contracts remain unchanged.
+A sustained spike in provider safety blocks or failures is a reason to disable try-on with the feature switch and investigate using non-image telemetry. No moderation dashboard is required for MVP.
 
-## 15. Testing strategy
+## 16. Testing strategy
 
-CI must stub/mock OpenAI and must not spend live API credits.
+CI must stub/mock Vertex AI and must not spend live Google Cloud credits.
 
 ### Domain/integration
 
 Cover:
 
-- apparel category trees eligible; `phuKien` excluded;
+- `aoDai`, `setDo`, `vayDam` eligible; `phuKien` excluded;
 - missing/unknown membership excluded;
 - missing trusted first media excluded;
-- unsupported/oversized upload rejected;
+- first product image WebP excluded rather than converted or replaced by image 2;
+- unsupported/oversized shopper image rejected;
 - server ignores/rejects arbitrary client product-image URLs;
-- request pins `gpt-image-2` and one output;
-- successful orchestration sends shopper + first trusted product image;
-- missing likeness-rights acknowledgement is rejected before the OpenAI call;
-- missing/unknown age-state is rejected before the OpenAI call;
-- `teen_eligible_with_guardian` is the only allowed 13–17 state and represents both applicable digital-consent-age eligibility and parent/guardian permission;
-- `below_digital_consent_age` is rejected before the OpenAI call;
-- upstream safety/refusal fails closed and cannot trigger a weakened retry;
-- upstream failure maps safely and does not change commerce state;
+- request pins `virtual-try-on-001`;
+- request uses one person image + first trusted product image;
+- request pins `sampleCount=1`, `personGeneration=allow-all`, strongest reviewed safety setting, watermark enabled, no `storageUri`;
+- missing likeness acknowledgement rejected before Vertex;
+- missing/unknown age state rejected before Vertex;
+- `below_digital_consent_age` rejected before Vertex;
+- provider safety block fails closed and cannot trigger a weakened retry;
+- upstream failure does not change commerce state;
 - no durable image persistence path is introduced;
-- API key is server-only.
+- Google credentials remain server-only.
 
 ### Browser
 
@@ -416,15 +461,16 @@ Cover representative desktop/mobile flows:
 - eligible PDP shows **Thử đồ**;
 - accessory/non-eligible PDP does not;
 - upload preview;
-- generation stays unavailable until likeness-rights acknowledgement and an allowed age-state are complete;
-- the 13–17 path explicitly states both applicable digital-consent-age eligibility and parent/guardian permission;
-- the under-13/not-yet-digital-consent-age path cannot generate;
-- the teen path shows the age-appropriate AI disclosure before generation;
+- JPEG/PNG accepted, unsupported format rejected;
+- generation stays unavailable until likeness acknowledgement and allowed age state are complete;
+- teen path explicitly includes digital-consent-age + guardian attestation;
+- blocked age path cannot generate;
+- teen path shows age-appropriate AI disclosure;
 - loading;
 - exactly one success result;
 - download;
-- failure + retry;
-- purchase UI still works after a try-on failure;
+- failure + retry where appropriate;
+- purchase UI still works after try-on failure;
 - keyboard/focus behavior;
 - existing accessibility gate remains green.
 
@@ -436,20 +482,21 @@ Before production enablement, run a small controlled evaluation using consented 
 - Set đồ;
 - Váy/đầm.
 
-Record enough evidence to decide:
+Record:
 
 - garment similarity;
-- identity preservation;
+- identity/body/pose preservation;
 - obvious artifacts;
 - latency;
 - approximate cost;
-- minor-safe output: at least one consented 13–17 test case with parent/legal-guardian permission produces an age-appropriate result with no nudity, sexualization, sexualized body changes, or age-up treatment.
+- provider safety-block behavior;
+- at least one consented 13–17 test case with parent/legal-guardian permission and an age-appropriate, non-sexualized result.
 
-The minor-safe evaluation image must follow the same non-persistence rule as every other try-on image.
+Evaluation images follow the same non-persistence rule as shopper try-on images.
 
-A HTTP 200 alone is not quality acceptance.
+An HTTP 200 alone is not quality acceptance.
 
-## 16. Repository commands
+## 17. Repository commands
 
 Use the repository's existing commands:
 
@@ -463,47 +510,52 @@ pnpm test
 pnpm build
 ```
 
-For the browser slice, add the try-on spec to the existing `tests/a11y-runtime/playwright.config.ts` suite and run the existing Playwright harness; do not create a second browser-test framework.
+For browser coverage, use the existing `tests/a11y-runtime/playwright.config.ts` harness; do not create another browser-test framework.
 
-## 17. Implementation shape / code style
+## 18. Implementation shape / code style
 
 Prefer existing boundaries:
 
 - PDP brand components own presentation;
 - commerce/category/media modules remain product truth;
-- a new OpenAI image client, if needed, belongs under the existing `src/integrations/*` external-integration boundary;
-- orchestration should be server-only and should consume canonical product facts rather than re-derive them in the UI;
-- tests should exercise pure policy separately from external I/O where useful.
+- Vertex integration belongs in one server-only external-integration module under the existing `src/integrations/*` convention;
+- orchestration consumes canonical product facts rather than re-deriving them in the UI;
+- provider output is untrusted and validated before returning it to the browser.
 
-No new dependency is assumed by this spec. Adding one requires review.
+Do not create a provider abstraction/framework merely because the provider changed during specification. One focused Vertex integration boundary is enough.
 
-Do not turn MVP into a general image-generation framework.
+No new dependency is assumed by this spec. If implementation needs a Google auth/client package, add only the smallest reviewed dependency and keep credential handling server-only.
 
-## 18. Rollout
+## 19. Rollout
 
 Use a server-side feature/kill switch.
 
 Rollout sequence:
 
 1. implementation verified with feature off by default;
-2. staging/internal quality check;
-3. owner review with controlled photos;
-4. limited production enablement;
-5. monitor latency/error/cost;
-6. widen if stable.
+2. staging/internal validation;
+3. owner quality review with controlled photos;
+4. verify current `virtual-try-on-001` lifecycle/successor status;
+5. limited production enablement;
+6. monitor latency/error/safety-block/cost;
+7. widen if stable.
 
 Turning the switch off must leave normal PDP commerce unchanged.
 
-## 19. Boundaries
+## 20. Boundaries
 
 ### Always
 
 - use current category and trusted-media authorities;
 - re-resolve product authority server-side;
-- keep OpenAI secret server-only;
-- use `gpt-image-2`;
-- send one shopper image + first trusted product image;
+- use the exact first trusted product image;
+- use Vertex AI `virtual-try-on-001`;
+- use `asia-southeast1` unless a reviewed deployment requirement changes it;
+- keep Google Cloud credentials server-only;
+- send one shopper image + one product image;
 - request one output;
+- keep provider safety filtering enabled at the strongest reviewed setting;
+- keep provider watermark enabled;
 - keep input/output images out of durable app storage;
 - keep try-on failure isolated from commerce;
 - use truthful AI/privacy disclosure;
@@ -511,30 +563,34 @@ Turning the switch off must leave normal PDP commerce unchanged.
 
 ### Ask first
 
-- requiring login/account;
+- changing provider/model;
 - changing eligible category trees;
-- using selected-variant imagery instead of the first product image;
+- using selected-variant imagery instead of first product image;
+- adding image conversion;
 - storing any shopper/generated image;
 - adding history/object storage/database tables;
 - adding queue/background jobs;
-- switching image model;
 - adding a new third-party service;
 - adding face/body/pose analysis;
 - generating more than one result;
-- using shopper images for any purpose beyond the requested try-on.
+- weakening Vertex safety settings;
+- processing blocked-age users;
+- using shopper images for any purpose beyond requested try-on.
 
 ### Never
 
-- expose `OPENAI_API_KEY` to the browser;
+- expose Google credentials to the browser;
 - trust client product-image URLs;
 - infer eligibility from product-name keywords;
-- log shopper images;
+- log shopper images/base64;
+- send images to Cloud Storage in MVP;
 - claim the generated image proves fit or size;
 - silently persist try-on images;
-- silently upgrade/fallback models;
+- silently switch/fallback models;
+- weaken a safety block to force output;
 - let try-on failure block purchase flows.
 
-## 20. Open questions for owner review
+## 21. Open questions for owner review
 
 These remain open rather than being guessed:
 
@@ -542,65 +598,63 @@ These remain open rather than being guessed:
    - Suggested MVP default: guests allowed, with bounded rate/cost control.
 
 2. **Rate limit / concurrency values?**
-   - Choose in the implementation plan from expected traffic and measured generation cost.
+   - Choose in the implementation plan from expected traffic and measured Vertex cost/latency.
 
-3. **Upload cap**
-   - Approve or change the proposed 10 MiB.
-
-4. **Output quality/size**
-   - Choose after a small `gpt-image-2` latency/cost/quality comparison; portrait output is preferred.
-
-5. **Exact PDP placement**
+3. **Exact PDP placement**
    - Decide during UI planning against the current purchase composition.
 
-6. **Buyer-facing privacy copy**
+4. **Buyer-facing privacy copy**
    - Approve final Vietnamese wording before production enablement.
 
-7. **Initial rollout scope**
+5. **Initial rollout scope**
    - All eligible products at once or a limited production gate.
 
-## 21. Acceptance criteria
+## 22. Acceptance criteria
 
 Implementation is acceptable when:
 
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
-- [ ] UI requests one front-facing shopper photo; server accepts exactly one supported image without adding pose classification.
-- [ ] Each generation request requires an explicit likeness-rights acknowledgement and rejects missing acknowledgement before the OpenAI call.
-- [ ] Server-enforced age-state is non-overlapping: `adult` allowed; `teen_eligible_with_guardian` allowed only for a 13–17 shopper who attests they have reached the applicable digital-consent age and have parent/legal-guardian permission; `below_digital_consent_age` rejected.
-- [ ] The teen path presents an age-appropriate AI disclosure before generation.
-- [ ] Prompt and refusal handling prohibit sexualization/nudity/sexualized body changes and age-up treatment for teen inputs.
-- [ ] Launch evidence includes at least one consented teen-path safety case.
-- [ ] No document/identity/jurisdiction/age-verification or geolocation platform is added solely for MVP.
-- [ ] Server re-resolves the product and uses the existing first trusted product image.
-- [ ] The external request uses `gpt-image-2`, two image references, and one output.
+- [ ] The exact first trusted product image is used; unsupported first-image format disables try-on rather than falling through or converting.
+- [ ] Shopper input accepts exactly one JPEG/PNG image within the provider limit.
+- [ ] Each request requires likeness-rights acknowledgement.
+- [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
+- [ ] Teen flow shows age-appropriate AI disclosure.
+- [ ] Vertex request uses `virtual-try-on-001`, one person image, one product image, `sampleCount=1`, `personGeneration=allow-all`, strongest reviewed safety filtering, watermark enabled, and no `storageUri`.
+- [ ] Provider safety blocks fail closed without weaker retry/fallback.
 - [ ] One accepted request renders at most one result.
 - [ ] La.na Design does not durably persist input/output image bytes.
-- [ ] Privacy copy accurately describes the OpenAI processing boundary.
-- [ ] Invalid/untrusted requests fail closed before paid generation where practical.
+- [ ] Privacy copy accurately describes the Google Cloud processing boundary.
+- [ ] Invalid/untrusted requests fail closed before paid prediction where practical.
 - [ ] Usage has bounded rate/concurrency controls.
 - [ ] Try-on errors never break PDP/cart/checkout.
 - [ ] Browser flow is accessible and covered by the existing Playwright suite.
-- [ ] Controlled live quality/cost/latency evidence is reviewed before production enablement.
+- [ ] Controlled live quality/cost/latency/minor-safety evidence is reviewed before production enablement.
+- [ ] Current model lifecycle is re-checked before launch.
 - [ ] Repository lint/typecheck/tests/build pass.
 - [ ] No unrelated catalog/commerce refactor is mixed in.
 
-## 22. Explicit non-goals
+## 23. Explicit non-goals
 
 MVP does not include:
 
+- Nano Banana Pro / `gemini-3-pro-image` as the try-on model;
 - multiple shopper photos;
 - automatic front-pose/face/body classification;
-- identity/document age verification or a durable consent ledger;
-- processing try-on photos for children under 13 or below the applicable digital-consent age;
+- identity/document/jurisdiction/age verification;
+- geolocation for age-policy resolution;
+- durable consent ledger;
+- processing the blocked age state;
+- WebP conversion;
 - side/back pose inputs;
 - multi-output generation;
 - history/account image library;
 - persistent generated URLs;
+- Cloud Storage output;
 - accessory/shoe/jewelry/bag try-on;
 - size recommendation/body measurement;
 - avatar creation;
 - selected-variant-specific garment imagery;
-- prompt editing;
+- user-editable prompts;
 - background jobs/queues by default;
 - admin try-on management;
-- automatic model upgrades.
+- automatic provider/model fallback.
