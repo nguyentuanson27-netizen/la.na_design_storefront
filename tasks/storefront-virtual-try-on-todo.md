@@ -9,8 +9,14 @@
 - [x] T6 PDP dialog UI (headless hook + brand markup).
 - [x] T7 Playwright coverage at phone and desktop widths, axe clean, no console errors.
 - [x] T8 Lint, typecheck, domain/integration tests, production build, self-review, simplification pass.
-- [ ] **Human gate:** read the official Google REST/model pages (blocked in the build sandbox) and confirm
-  the enum spellings and "no prompt" noted in the integration doc.
+- [ ] **Owner decision (spec §21, review of #105 finding 3):** guest access or login-required, and the
+  quotas. The code currently ships **provisional** values — guests allowed, 6 attempts / 10 min / client,
+  3 generations in flight — chosen as engineering defaults, with no live cost/latency data and no owner
+  approval. Record the approved decision (or the changed values) here and in the spec before any
+  production enablement. The 4-concurrent-upload cap is a container resource bound, not a quota.
+- [ ] **Human gate:** read the official Google REST/model pages (blocked in the build sandbox) once and
+  confirm the hyphenated enum values now sent, the absence of a prompt field, and the refusal wording the
+  400 classifier matches (integration doc, "Notes on the request").
 - [ ] **Human gate:** live non-production Vertex smoke test per category: latency, cost, quality.
 - [ ] **Human gate (launch criterion):** consented 13–17 test image with guardian permission — result
   age-appropriate and non-sexualised.

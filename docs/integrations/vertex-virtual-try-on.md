@@ -13,10 +13,12 @@ PDP (server)   resolveProductTryOn()        flag on + category (aoDai|setDo|vayD
 Browser        BrandTryOnLauncher/useTryOn  multipart POST /api/try-on:
                                             photo, productSlug, likenessAcknowledged, ageState
 Route          handleTryOnPost()            same-origin (Origin host == Host), multipart only,
-                                            Content-Length and streamed-byte cap, client key
-Service        createTryOnService()         flag -> per-client attempt -> read body -> validate
-                                            request -> re-resolve product -> eligibility ->
-                                            in-flight slot -> trusted product image -> Vertex (once)
+                                            Content-Length and streamed-byte cap, 30 s body deadline,
+                                            client key
+Service        createTryOnService()         flag -> per-client attempt -> upload slot -> read body ->
+                                            validate request -> release upload slot -> re-resolve
+                                            product -> eligibility -> generation slot -> trusted
+                                            product image -> Vertex (once)
 Vertex         createVertexTryOnClient()    one :predict, one candidate, response validated
 Browser        <img src=blob:> + download   nothing stored; closing the dialog drops and revokes it
 ```
@@ -43,8 +45,8 @@ setting; raising it for a 7 MB photo would raise it for every action on the site
   ],
   "parameters": {
     "sampleCount": 1,
-    "personGeneration": "allow_all",
-    "safetySetting": "block_low_and_above",
+    "personGeneration": "allow-all",
+    "safetySetting": "block-low-and-above",
     "addWatermark": true
   }
 }
@@ -58,30 +60,36 @@ signature matches its declared `mimeType`; a prediction carrying `raiFilteredRea
 message signals a safety/blocked/filtered result, is a safety block. Anything else is a generic
 failure. The upstream body is never returned or logged.
 
-### Differences from the merged spec — read before enabling
+### Notes on the request
 
-1. **Enum spelling.** The spec writes `personGeneration = "allow-all"` and
-   `safetySetting = "block-low-and-above"` (hyphens). The code sends `allow_all` and
-   `block_low_and_above` (underscores), the spelling Google's REST reference uses for the Imagen /
-   virtual-try-on parameter family and the same values as Google's SDK enums (`ALLOW_ALL`,
-   `BLOCK_LOW_AND_ABOVE`). Semantics are identical. **Both constants live at the top of
-   `src/integrations/vertex-try-on/client.ts`, so correcting either is a one-line change once the live
-   smoke test (below) shows what the endpoint accepts.**
+1. **Enum spelling is the documented REST value.** The official `VirtualTryOnModelParams` reference
+   documents the hyphenated values — `personGeneration`: `dont-allow` / `allow-adult` / `allow-all`;
+   `safetySetting`: `block-low-and-above` / `block-medium-and-above` / … — and that is what is sent. An
+   earlier revision of this code sent underscore forms on the strength of Google's SDK; that was wrong:
+   the SDK's enums (`ALLOW_ALL`, `BLOCK_LOW_AND_ABOVE`) are passed through unconverted and are not
+   evidence for the wire value. A test pins the exact strings, but a test cannot show the live endpoint
+   accepts them — that is what the live smoke test below is for.
 2. **No prompt.** The spec says to use a fixed server-owned prompt "where the current schema requires
    one". It does not: Google's SDK documents the `prompt` field as *"Not supported for Virtual
    Try-On"*, so none is sent. The spec's safety intent (preserve apparent age, no sexualisation, no
    nudity, no ageing-up of a teen) therefore cannot be expressed to the model; it rests entirely on the
-   provider safety filter at `block_low_and_above`, the watermark, and the server-side age and likeness
+   provider safety filter at `block-low-and-above`, the watermark, and the server-side age and likeness
    gates. Treat the minor-safety live evaluation below as a hard launch criterion, not a formality.
+3. **400 classification is deliberately narrow.** Only known refusal wording (`blocked by safety
+   filters`, `safety filter threshold`, `Responsible AI filtered/blocked`, `Support codes: <n>`) or a
+   `raiFilteredReason` is a safety block, which clears the shopper's photo. A request-validation 400
+   (for example `invalid safetySetting`) is a plain generation failure, so an integration fault is never
+   blamed on the shopper's content. The exact refusal strings are not confirmed against the live API.
 
 ### How this was verified (and what was not)
 
 The sandbox this was built in blocks `docs.cloud.google.com` (network policy), so the official REST
-reference pages named in the spec **could not be read**. The request shape above was taken from the
-published `@google/genai` 2.27.0 SDK source (`recontextImage` → `:predict`), which is Google's own
-implementation of this exact endpoint. That is strong evidence for field names and nesting and weaker
-evidence for enum spelling and defaults. **A human must re-read the official pages once before
-enabling** (spec §3 references, including the model lifecycle page).
+reference pages named in the spec **could not be read by the author**. The request shape above was
+taken from the published `@google/genai` 2.27.0 SDK source (`recontextImage` → `:predict`), which is
+Google's own implementation of this endpoint: good evidence for field names and nesting, none for enum
+spelling (see note 1, corrected in review against the official parameters page). **A human must
+re-read the official pages once before enabling** (spec §3 references, including the model lifecycle
+page).
 
 The model is published with a retirement date of **2027-03-15**; re-check for a successor before
 production enablement and again before that date.
@@ -128,9 +136,18 @@ zero-data-retention posture before enabling (spec §12).
 | Request body | ≤ 7 MB + 256 KB, enforced on bytes read | `try-on-endpoint.ts` |
 | Product image | trusted-media URL only, HTTPS, ≤ 10 s, ≤ 7 MB, ≤ 2 trusted redirects, JPEG/PNG signature | `product-image.ts` |
 | Vertex call | one per accepted request, 45 s timeout (under the 60 s proxy read timeout), no retry | `client.ts` |
-| Per client | 6 attempts / 10 minutes (counted before the body is read) | `try-on-rate-limit.ts` |
-| Global | 3 generations in flight | `try-on-rate-limit.ts` |
+| Per client | 6 attempts / 10 minutes (counted before the body is read) — **provisional** | `try-on-rate-limit.ts` |
+| Uploads in flight | 4 bodies being received/parsed at once, taken before the body is read and released after the photo is validated; 30 s body-read deadline | `try-on-rate-limit.ts`, `try-on-endpoint.ts` |
+| Generations in flight | 3 (outbound image fetch + Vertex only) — **provisional** | `try-on-rate-limit.ts` |
 | Same-origin | `Origin` host must equal `Host` (or the first `X-Forwarded-Host`) | `try-on-endpoint.ts` |
+
+The upload cap is a resource bound for the container (a request in the upload phase holds roughly
+three copies of a ≤ 7 MB body, so four bound that phase to the order of 100 MB), not a traffic or cost
+quota; it is separate from the generation cap so a slow upload can never occupy a Vertex slot. The
+per-client window and the generation cap, by contrast, **are cost limits whose values the spec leaves
+to the owner (§21) and which have not been measured against live Vertex cost or latency**. They are
+provisional engineering defaults awaiting owner approval, along with the guest-access decision — see
+`tasks/storefront-virtual-try-on-todo.md`. Do not enable try-on in production before they are approved.
 
 The limiter is **in-process**. Production is one app container on one VPS (ADR 0002), so this is the
 whole fleet. If the app is scaled to more than one instance the limits become per-instance and must be
