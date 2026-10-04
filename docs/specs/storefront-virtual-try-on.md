@@ -140,6 +140,8 @@ Suggested guidance:
 
 The UI must state that the result is an AI visualization, not a guarantee of size, fit, fabric behavior, exact color, or final real-world appearance.
 
+For the supported 13–17 path, the same disclosure must be presented in plain, age-appropriate language before generation. It must make clear that the image is AI-generated, may be inaccurate, and must not be used to judge the shopper's body or determine clothing size.
+
 Before generation, the shopper must explicitly confirm:
 
 > Tôi xác nhận đây là ảnh của tôi hoặc tôi có sự đồng ý rõ ràng và các quyền cần thiết để sử dụng hình ảnh của người trong ảnh cho tính năng thử đồ này.
@@ -184,7 +186,9 @@ The prompt should:
 - preserve identity, pose, body proportions, skin tone, framing, and background as much as practical;
 - preserve garment silhouette, color, pattern, and visible design details as much as practical;
 - avoid unrelated accessories or identity/body changes;
-- produce a realistic fashion visualization.
+- never sexualize the subject or create nudity, sexualized presentation, or sexualized body changes;
+- for a teen input, do not age the subject up or make them appear adult;
+- produce a realistic, age-appropriate fashion visualization.
 
 These are quality targets, not guarantees.
 
@@ -257,21 +261,29 @@ Owner decision on 2026-10-04: the MVP supports minors, but keeps the child-data 
 
 MVP age contract:
 
-- **13–17 years old:** supported only with parent/legal-guardian permission.
 - **18+:** supported normally under the likeness-rights acknowledgement.
-- **Under 13, or below the applicable age of digital consent where higher:** not supported in MVP.
+- **13–17 years old:** supported only when the shopper also attests that they have reached the minimum/applicable digital-consent age where they live **and** have parent/legal-guardian permission.
+- **Under 13, or any shopper who has not reached the applicable digital-consent age:** not supported in MVP.
 
-This boundary follows the current OpenAI Services Agreement requirement that minors use the Services only with parent/guardian consent, while avoiding a separate under-digital-consent processing path that would require Zero Data Retention before personal data may be sent to OpenAI.
+This removes the jurisdiction overlap without adding geolocation or an age-verification service. The storefront does not calculate the jurisdictional threshold; it relies on a server-enforced self-attestation contract.
 
-The UI must ask the shopper to choose one age group before generation:
+The request must carry exactly one age-state value:
+
+- `adult`
+- `teen_eligible_with_guardian`
+- `below_digital_consent_age`
+
+Only `adult` and `teen_eligible_with_guardian` may reach OpenAI.
+
+The UI must map those states to clear choices before generation:
 
 1. **Từ 18 tuổi trở lên**
-2. **Từ 13 đến 17 tuổi — tôi có sự cho phép của cha/mẹ hoặc người giám hộ**
-3. **Dưới 13 tuổi / dưới ngưỡng đồng ý số áp dụng — không thể dùng tính năng này**
+2. **Từ 13 đến 17 tuổi — tôi đã đạt ngưỡng đồng ý số áp dụng tại nơi tôi sống và có sự cho phép của cha/mẹ hoặc người giám hộ**
+3. **Tôi dưới 13 tuổi hoặc chưa đạt ngưỡng đồng ý số áp dụng — không thể dùng tính năng này**
 
-The server must enforce the submitted age-group contract; client-only hiding/disabled state is not sufficient.
+The server must enforce the submitted age-state contract; client-only hiding/disabled state is not sufficient.
 
-This is an age/self-attestation gate, not identity or document verification. MVP does not build an age-verification platform.
+This is an age/self-attestation gate, not identity, document, jurisdiction, or age verification. MVP does not build an age-verification or geolocation platform.
 
 If a future version needs to serve children below the applicable digital-consent threshold, that requires a separate reviewed amendment covering Zero Data Retention, applicable child-privacy law, and any additional age-assurance/safety requirements before implementation.
 
@@ -337,6 +349,8 @@ Expected safe failure classes:
 
 Where retry is reasonable, keep the shopper in the same try-on surface and allow retry.
 
+An upstream safety/refusal response fails closed. Do not retry it with a weaker prompt, weaker age safeguard, or different model merely to obtain an image.
+
 Do not silently fall back to another model.
 
 ## 13. Accessibility
@@ -361,8 +375,11 @@ Record only non-image operational facts needed to operate the feature:
 - try-on opened;
 - upload rejected by safe reason class;
 - generation started/succeeded/failed;
+- upstream safety/refusal count by safe reason class;
 - total/upstream latency;
 - rate-limit rejection.
+
+A sustained spike in safety/refusal failures is a reason to disable try-on with the existing kill switch and investigate using non-image telemetry. This does not require storing shopper images or building a moderation dashboard.
 
 Do not record raw image bytes, generated images, shopper PII, or arbitrary URL/query contents.
 
@@ -384,9 +401,10 @@ Cover:
 - request pins `gpt-image-2` and one output;
 - successful orchestration sends shopper + first trusted product image;
 - missing likeness-rights acknowledgement is rejected before the OpenAI call;
-- missing age-group attestation is rejected before the OpenAI call;
-- a 13–17 attestation without parent/guardian permission is rejected before the OpenAI call;
-- the under-13/applicable-digital-consent-age group is rejected before the OpenAI call;
+- missing/unknown age-state is rejected before the OpenAI call;
+- `teen_eligible_with_guardian` is the only allowed 13–17 state and represents both applicable digital-consent-age eligibility and parent/guardian permission;
+- `below_digital_consent_age` is rejected before the OpenAI call;
+- upstream safety/refusal fails closed and cannot trigger a weakened retry;
 - upstream failure maps safely and does not change commerce state;
 - no durable image persistence path is introduced;
 - API key is server-only.
@@ -398,9 +416,10 @@ Cover representative desktop/mobile flows:
 - eligible PDP shows **Thử đồ**;
 - accessory/non-eligible PDP does not;
 - upload preview;
-- generation stays unavailable until likeness-rights acknowledgement and an allowed age-group attestation are complete;
-- the 13–17 path explicitly requires parent/guardian permission;
-- the under-13/applicable-digital-consent-age path cannot generate;
+- generation stays unavailable until likeness-rights acknowledgement and an allowed age-state are complete;
+- the 13–17 path explicitly states both applicable digital-consent-age eligibility and parent/guardian permission;
+- the under-13/not-yet-digital-consent-age path cannot generate;
+- the teen path shows the age-appropriate AI disclosure before generation;
 - loading;
 - exactly one success result;
 - download;
@@ -423,7 +442,10 @@ Record enough evidence to decide:
 - identity preservation;
 - obvious artifacts;
 - latency;
-- approximate cost.
+- approximate cost;
+- minor-safe output: at least one consented 13–17 test case with parent/legal-guardian permission produces an age-appropriate result with no nudity, sexualization, sexualized body changes, or age-up treatment.
+
+The minor-safe evaluation image must follow the same non-persistence rule as every other try-on image.
 
 A HTTP 200 alone is not quality acceptance.
 
@@ -544,8 +566,11 @@ Implementation is acceptable when:
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
 - [ ] UI requests one front-facing shopper photo; server accepts exactly one supported image without adding pose classification.
 - [ ] Each generation request requires an explicit likeness-rights acknowledgement and rejects missing acknowledgement before the OpenAI call.
-- [ ] Age-group self-attestation is required server-side: 18+ allowed; 13–17 allowed only with parent/legal-guardian permission; under 13/applicable digital-consent age is rejected in MVP.
-- [ ] No document/identity/age-verification platform is added solely for MVP.
+- [ ] Server-enforced age-state is non-overlapping: `adult` allowed; `teen_eligible_with_guardian` allowed only for a 13–17 shopper who attests they have reached the applicable digital-consent age and have parent/legal-guardian permission; `below_digital_consent_age` rejected.
+- [ ] The teen path presents an age-appropriate AI disclosure before generation.
+- [ ] Prompt and refusal handling prohibit sexualization/nudity/sexualized body changes and age-up treatment for teen inputs.
+- [ ] Launch evidence includes at least one consented teen-path safety case.
+- [ ] No document/identity/jurisdiction/age-verification or geolocation platform is added solely for MVP.
 - [ ] Server re-resolves the product and uses the existing first trusted product image.
 - [ ] The external request uses `gpt-image-2`, two image references, and one output.
 - [ ] One accepted request renders at most one result.
