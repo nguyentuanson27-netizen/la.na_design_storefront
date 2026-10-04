@@ -116,7 +116,7 @@ A product is eligible when all of the following are true:
    - `setDo`;
    - `vayDam`;
 2. it has a first trusted storefront image from the existing media authority;
-3. that exact first image is JPEG/JPG or PNG and can be supplied within Vertex AI's 7 MB input limit.
+3. that exact first image is JPEG/JPG or PNG.
 
 Do not:
 
@@ -124,7 +124,9 @@ Do not:
 - fall through to the second product image if the first image is unsupported;
 - add WebP conversion solely for MVP.
 
-A product with missing/unknown category membership, no trusted first image, a first image in unsupported format, or an oversized first image is not eligible.
+A product with missing/unknown category membership, no trusted first image, or a first image in unsupported format is not eligible.
+
+The product image's actual byte size is checked only when generation begins. If the trusted JPEG/PNG fetch exceeds Vertex AI's 7 MB per-image limit, fail that generation with a safe message. Do not add a PDP-time network probe merely to decide whether the button should render.
 
 This keeps the owner's “first image” rule exact and avoids adding an image-conversion dependency.
 
@@ -616,6 +618,7 @@ Implementation is acceptable when:
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
 - [ ] The exact first trusted product image is used; unsupported first-image format disables try-on rather than falling through or converting.
 - [ ] Shopper input accepts exactly one JPEG/PNG image within the provider limit.
+- [ ] Product-image byte size is enforced during the generation fetch; PDP rendering does not add a remote size probe.
 - [ ] Each request requires likeness-rights acknowledgement.
 - [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
 - [ ] Teen flow shows age-appropriate AI disclosure.
