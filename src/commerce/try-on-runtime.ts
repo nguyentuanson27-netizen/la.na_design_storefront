@@ -1,4 +1,5 @@
 import { readAuthServerConfig } from "../auth/config.ts";
+import { auth } from "../auth/server.ts";
 import { prisma } from "../db/prisma.ts";
 import { readTryOnConfig } from "../integrations/vertex-try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
@@ -10,7 +11,7 @@ import { createMerchandisingRepository } from "./merchandising-repository.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import { getConfiguredStorefrontProductBySlug } from "./storefront-catalog-runtime.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
-import { createTryOnRateLimiter } from "./try-on-rate-limit.ts";
+import { createTryOnRateLimiter, type TryOnIdentity } from "./try-on-rate-limit.ts";
 import { createTryOnService } from "./try-on-service.ts";
 
 /**
@@ -45,13 +46,36 @@ export const tryOnService = createTryOnService({
   emit: (signal) => emitTryOnSignal(signal),
 });
 
-/** Same trusted-proxy-header identity the checkout limiters use; `null` fails the request closed. */
-export function resolveTryOnClientKey(headers: Headers): string | null {
+/** Same trusted-proxy-header identity the checkout limiters use; `null` when none can be derived. */
+function resolveTryOnClientKey(headers: Headers): string | null {
   try {
     return deriveGuestCheckoutClientKey(headers, readAuthServerConfig());
   } catch {
     return null;
   }
+}
+
+/** Account ids are short opaque strings; anything else is not trusted as a rate-limit key. */
+const MEMBER_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+
+/**
+ * A signed-in shopper is a member with their own, larger quota; everyone else is a guest keyed by
+ * client address. Any account counts — the quota is about cost, not about who the account is.
+ *
+ * A session lookup that fails (database down, malformed cookie) falls back to guest, never to
+ * member, so a fault can only make the limit stricter. With neither a session nor a derivable
+ * client address there is no identity to meter, and the request fails closed.
+ */
+export async function resolveTryOnIdentity(headers: Headers): Promise<TryOnIdentity | null> {
+  try {
+    const session = await auth.api.getSession({ headers });
+    const id = session?.user?.id;
+    if (typeof id === "string" && MEMBER_ID_PATTERN.test(id)) return { kind: "member", key: id };
+  } catch {
+    // Fall through to guest.
+  }
+  const clientKey = resolveTryOnClientKey(headers);
+  return clientKey === null ? null : { kind: "guest", key: clientKey };
 }
 
 /**

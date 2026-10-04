@@ -1,7 +1,12 @@
 import type { TryOnSignalInput } from "../operations/try-on-observability.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
-import type { TryOnGenerationSlot, TryOnUploadSlot } from "./try-on-rate-limit.ts";
+import type {
+  TryOnAttemptDecision,
+  TryOnGenerationSlot,
+  TryOnIdentity,
+  TryOnUploadSlot,
+} from "./try-on-rate-limit.ts";
 import { parseTryOnRequest } from "./try-on-request.ts";
 import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts";
 
@@ -10,7 +15,7 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts"
  *
  * This is the only place that sequences the gates, and the order is the safety argument:
  *
- *   feature switch → per-client attempt → upload slot → read body → validate request (likeness, age,
+ *   feature switch → per-identity attempt (guest or member quota) → upload slot → read body → validate request (likeness, age,
  *   photo) → release upload slot → re-resolve product from the server → eligibility → generation
  *   slot → trusted product image → Vertex AI (once) → validated result
  *
@@ -30,7 +35,7 @@ type AvailableConfig = Readonly<{ available: true; projectId: string; location: 
 export type TryOnServiceDependencies = Readonly<{
   readConfig: () => AvailableConfig | Readonly<{ available: false }>;
   limiter: Readonly<{
-    consumeAttempt: (clientKey: string) => boolean;
+    consumeAttempt: (identity: TryOnIdentity) => TryOnAttemptDecision;
     startUpload: () => TryOnUploadSlot;
     startGeneration: () => TryOnGenerationSlot;
   }>;
@@ -58,8 +63,8 @@ export type TryOnServiceResult =
   | Readonly<{ ok: false; reason: TryOnFailureReason }>;
 
 export type TryOnServiceInput = Readonly<{
-  /** Pseudonymous client key (`v1:<hmac>`), never a raw IP. */
-  clientKey: string;
+  /** A signed-in member (account id) or a guest (pseudonymous client key, never a raw IP). */
+  identity: TryOnIdentity;
   /** Reads the request body. Not called when the request is refused earlier. */
   readForm: () => Promise<FormData | "TOO_LARGE" | "INVALID">;
 }>;
@@ -67,7 +72,7 @@ export type TryOnServiceInput = Readonly<{
 export function createTryOnService(deps: TryOnServiceDependencies) {
   const now = deps.now ?? Date.now;
 
-  async function handle({ clientKey, readForm }: TryOnServiceInput): Promise<TryOnServiceResult> {
+  async function handle({ identity, readForm }: TryOnServiceInput): Promise<TryOnServiceResult> {
     const startedAt = now();
     let productSlug: string | undefined;
     let releaseSlot: (() => void) | undefined;
@@ -81,9 +86,10 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
       const config = deps.readConfig();
       if (!config.available) return { ok: false, reason: "UNAVAILABLE" };
 
-      if (!deps.limiter.consumeAttempt(clientKey)) {
-        deps.emit({ name: "try_on.rate_limited", reason: "RATE_LIMITED" });
-        return { ok: false, reason: "RATE_LIMITED" };
+      const attempt = deps.limiter.consumeAttempt(identity);
+      if (!attempt.ok) {
+        deps.emit({ name: "try_on.rate_limited", reason: attempt.reason });
+        return { ok: false, reason: attempt.reason };
       }
 
       // The upload slot spans receiving and validating the body and nothing after it: that is the

@@ -1,5 +1,6 @@
 import { readBoundedBody } from "./try-on-image.ts";
 import { TRY_ON_MAX_IMAGE_BYTES, type TryOnFailureReason } from "./try-on-policy.ts";
+import type { TryOnIdentity } from "./try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "./try-on-service.ts";
 
 /**
@@ -39,12 +40,17 @@ const STATUS_BY_REASON: Readonly<Record<TryOnFailureReason, number>> = {
   AUTH_FAILED: 503,
   TIMEOUT: 504,
   GENERATION_FAILED: 502,
+  LOGIN_REQUIRED: 401,
+  DAILY_LIMIT_REACHED: 429,
 };
 
 export type TryOnEndpointDependencies = Readonly<{
   service: Readonly<{ handle: (input: TryOnServiceInput) => Promise<TryOnServiceResult> }>;
-  /** Pseudonymous client key from trusted proxy headers, or `null` when none can be derived. */
-  resolveClientKey: (headers: Headers) => string | null;
+  /**
+   * Who is asking: the signed-in member, else a guest keyed by the trusted proxy's client address.
+   * `null` when neither can be established, which fails the request closed.
+   */
+  resolveIdentity: (headers: Headers) => Promise<TryOnIdentity | null>;
   /** Overridable for tests only; production uses `TRY_ON_BODY_READ_TIMEOUT_MS`. */
   bodyReadTimeoutMs?: number;
 }>;
@@ -78,7 +84,7 @@ function isSameOrigin(headers: Headers): boolean {
 
 export async function handleTryOnPost(
   request: Request,
-  { service, resolveClientKey, bodyReadTimeoutMs = TRY_ON_BODY_READ_TIMEOUT_MS }: TryOnEndpointDependencies,
+  { service, resolveIdentity, bodyReadTimeoutMs = TRY_ON_BODY_READ_TIMEOUT_MS }: TryOnEndpointDependencies,
 ): Promise<Response> {
   if (!isSameOrigin(request.headers)) return Response.json({ ok: false }, { status: 403, headers: NO_STORE });
 
@@ -90,12 +96,12 @@ export async function handleTryOnPost(
     return failure("IMAGE_TOO_LARGE");
   }
 
-  const clientKey = resolveClientKey(request.headers);
-  if (clientKey === null) return failure("UNAVAILABLE");
-
   try {
+    const identity = await resolveIdentity(request.headers);
+    if (identity === null) return failure("UNAVAILABLE");
+
     const result = await service.handle({
-      clientKey,
+      identity,
       readForm: async () => {
         // A Content-Length can be absent or wrong, so the size bound is enforced on the bytes read,
         // and a deadline bounds how long a slow or stalled sender may take to deliver them.

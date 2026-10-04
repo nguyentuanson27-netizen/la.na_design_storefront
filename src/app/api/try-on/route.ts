@@ -1,5 +1,5 @@
 import { handleTryOnPost } from "@/commerce/try-on-endpoint";
-import { resolveTryOnClientKey, tryOnService } from "@/commerce/try-on-runtime";
+import { resolveTryOnIdentity, tryOnService } from "@/commerce/try-on-runtime";
 
 /**
  * Virtual try-on generation. All logic is in `@/commerce/try-on-endpoint` and
@@ -7,5 +7,5 @@ import { resolveTryOnClientKey, tryOnService } from "@/commerce/try-on-runtime";
  * other method with 405.
  */
 export async function POST(request: Request) {
-  return handleTryOnPost(request, { service: tryOnService, resolveClientKey: resolveTryOnClientKey });
+  return handleTryOnPost(request, { service: tryOnService, resolveIdentity: resolveTryOnIdentity });
 }

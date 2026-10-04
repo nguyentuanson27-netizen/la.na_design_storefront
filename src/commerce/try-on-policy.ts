@@ -63,5 +63,9 @@ export const TRY_ON_FAILURE_REASONS = [
   "AUTH_FAILED",
   "TIMEOUT",
   "GENERATION_FAILED",
+  /** A guest has used its allowance; signing in continues it. */
+  "LOGIN_REQUIRED",
+  /** A signed-in member has used today's allowance. */
+  "DAILY_LIMIT_REACHED",
 ] as const;
 export type TryOnFailureReason = (typeof TRY_ON_FAILURE_REASONS)[number];

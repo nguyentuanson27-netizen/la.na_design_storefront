@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { TRY_ON_MAX_REQUEST_BYTES, handleTryOnPost } from "../../src/commerce/try-on-endpoint.ts";
+import type { TryOnIdentity } from "../../src/commerce/try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "../../src/commerce/try-on-service.ts";
 import { JPEG_BYTES, PNG_BYTES, tryOnForm } from "../support/try-on-fixtures.ts";
 
@@ -26,7 +27,7 @@ function endpoint(result: TryOnServiceResult = { ok: true, image: { bytes: PNG_B
         return result;
       },
     },
-    resolveClientKey: (): string | null => "v1:" + "a".repeat(64),
+    resolveIdentity: async (): Promise<TryOnIdentity | null> => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
   };
   return { deps, calls, forms };
 }
@@ -42,7 +43,7 @@ test("a success returns the image as JSON with no-store caching", async () => {
     imageBase64: Buffer.from(PNG_BYTES).toString("base64"),
   });
   assert.equal(calls.length, 1);
-  assert.equal(calls[0]!.clientKey, "v1:" + "a".repeat(64));
+  assert.deepEqual(calls[0]!.identity, { kind: "guest", key: "v1:" + "a".repeat(64) });
 });
 
 test("the service sees the parsed multipart form, including the photo bytes", async () => {
@@ -71,6 +72,8 @@ test("every failure reason maps to a status and a body that is only the reason",
     AUTH_FAILED: 503,
     TIMEOUT: 504,
     GENERATION_FAILED: 502,
+    LOGIN_REQUIRED: 401,
+    DAILY_LIMIT_REACHED: 429,
   };
   for (const [reason, status] of Object.entries(expected)) {
     const { deps } = endpoint({ ok: false, reason: reason as never });
@@ -207,10 +210,17 @@ test("a malformed multipart body reaches the service as INVALID", async () => {
 
 test("an unresolvable client identity fails closed", async () => {
   const { deps, calls } = endpoint();
-  const response = await handleTryOnPost(post(tryOnForm()), { ...deps, resolveClientKey: () => null });
+  const response = await handleTryOnPost(post(tryOnForm()), { ...deps, resolveIdentity: async () => null });
   assert.equal(response.status, 503);
   assert.deepEqual(await response.json(), { ok: false, reason: "UNAVAILABLE" });
   assert.equal(calls.length, 0);
+});
+
+test("a signed-in member is passed to the service as a member identity", async () => {
+  const { deps, calls } = endpoint();
+  const member: TryOnIdentity = { kind: "member", key: "member:user-1" };
+  await handleTryOnPost(post(tryOnForm()), { ...deps, resolveIdentity: async () => member });
+  assert.deepEqual(calls[0]!.identity, member);
 });
 
 test("a service that throws still answers a safe 5xx, never the error", async () => {
@@ -220,7 +230,7 @@ test("a service that throws still answers a safe 5xx, never the error", async ()
         throw new Error("internal secret");
       },
     },
-    resolveClientKey: () => "v1:" + "a".repeat(64),
+    resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
   });
   assert.equal(response.status, 502);
   assert.doesNotMatch(await response.text(), /secret/);

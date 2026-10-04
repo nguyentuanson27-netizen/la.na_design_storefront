@@ -8,6 +8,9 @@ import type { TryOnSignalInput } from "../../src/operations/try-on-observability
 import { JPEG_BYTES, PNG_BYTES, tryOnForm } from "../support/try-on-fixtures.ts";
 
 const CLIENT = "v1:" + "a".repeat(64);
+const GUEST = { kind: "guest", key: CLIENT } as const;
+/** Quotas wide enough that a test about something else never trips them. */
+const OPEN = { guest: { perMinute: 100, perDay: 100 }, member: { perMinute: 100, perDay: 100 } } as const;
 const FIRST_IMAGE = "https://content.pancake.vn/images/1/2/3/first.jpg";
 const SECOND_IMAGE = "https://content.pancake.vn/images/1/2/3/second.png";
 const CONFIG = { available: true, projectId: "lana-design-prod", location: "asia-southeast1" } as const;
@@ -64,7 +67,7 @@ function build(overrides: Partial<TryOnServiceDependencies> = {}) {
   const service = createTryOnService(deps);
   const run = (form: FormData | "TOO_LARGE" | "INVALID" = tryOnForm()) =>
     service.handle({
-      clientKey: CLIENT,
+      identity: GUEST,
       readForm: async () => {
         probe.readForm += 1;
         return form;
@@ -213,18 +216,54 @@ test("a failing product lookup is UNAVAILABLE, not a thrown error", async () => 
   assert.deepEqual(await run(), { ok: false, reason: "UNAVAILABLE" });
 });
 
-test("the per-client window rejects before the body is read", async () => {
-  const limiter = createTryOnRateLimiter({ maxPerWindow: 1 });
+test("the guest quota rejects before the body is read: one a minute, then wait", async () => {
+  const limiter = createTryOnRateLimiter();
   const { run, probe } = build({ limiter });
   assert.equal((await run()).ok, true);
   assert.deepEqual(await run(), { ok: false, reason: "RATE_LIMITED" });
   assert.equal(probe.readForm, 1);
   assert.equal(probe.generate.length, 1);
   assert.equal(probe.signals.at(-1)?.name, "try_on.rate_limited");
+  assert.equal(probe.signals.at(-1)?.reason, "RATE_LIMITED");
+});
+
+test("a guest out of attempts is told to log in, and nothing downstream runs", async () => {
+  const limiter = createTryOnRateLimiter({ guest: { perMinute: 100, perDay: 1 }, member: OPEN.member });
+  const { run, probe } = build({ limiter });
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(await run(), { ok: false, reason: "LOGIN_REQUIRED" });
+  assert.equal(probe.readForm, 1);
+  assert.equal(probe.loadProduct.length, 1);
+  assert.equal(probe.generate.length, 1);
+  assert.equal(probe.signals.at(-1)?.name, "try_on.rate_limited");
+  assert.equal(probe.signals.at(-1)?.reason, "LOGIN_REQUIRED");
+});
+
+test("a member is limited per minute and per day, never asked to log in", async () => {
+  const limiter = createTryOnRateLimiter({ guest: OPEN.guest, member: { perMinute: 100, perDay: 1 } });
+  const probe = { readForm: 0 };
+  const service = createTryOnService({
+    readConfig: () => CONFIG,
+    limiter,
+    loadProduct: async () => product(),
+    fetchProductImage: async () => ({ ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }),
+    generate: async () => ({ ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }),
+    emit: () => undefined,
+  });
+  const input = {
+    identity: { kind: "member", key: "member:user-1" } as const,
+    readForm: async () => {
+      probe.readForm += 1;
+      return tryOnForm();
+    },
+  };
+  assert.equal((await service.handle(input)).ok, true);
+  assert.deepEqual(await service.handle(input), { ok: false, reason: "DAILY_LIMIT_REACHED" });
+  assert.equal(probe.readForm, 1);
 });
 
 test("the global in-flight cap answers BUSY, and the slot is released after success and failure", async () => {
-  const limiter = createTryOnRateLimiter({ maxConcurrent: 1, maxPerWindow: 100 });
+  const limiter = createTryOnRateLimiter({ maxConcurrent: 1, ...OPEN });
   const held = limiter.startGeneration();
   assert.equal(held.ok, true);
 
@@ -265,7 +304,7 @@ test("signals are non-sensitive: no image bytes, no client key, and the slug is 
 });
 
 test("an upload slot is taken before the body is read: saturated, the body is never read", async () => {
-  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, ...OPEN });
   const held = limiter.startUpload();
   assert.equal(held.ok, true);
 
@@ -281,7 +320,7 @@ test("an upload slot is taken before the body is read: saturated, the body is ne
 });
 
 test("the upload slot is held for the whole body read, so concurrent uploads are bounded", async () => {
-  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, ...OPEN });
   const service = createTryOnService({
     readConfig: () => CONFIG,
     limiter,
@@ -297,7 +336,7 @@ test("the upload slot is held for the whole body read, so concurrent uploads are
   });
   // A slow upload: the body arrives only when the gate opens.
   const slowUpload = service.handle({
-    clientKey: CLIENT,
+    identity: GUEST,
     readForm: async () => {
       await bodyGate;
       return tryOnForm();
@@ -307,7 +346,7 @@ test("the upload slot is held for the whole body read, so concurrent uploads are
 
   let secondRead = 0;
   const refused = await service.handle({
-    clientKey: "v1:" + "b".repeat(64),
+    identity: { kind: "guest", key: "v1:" + "b".repeat(64) },
     readForm: async () => {
       secondRead += 1;
       return tryOnForm();
@@ -320,14 +359,14 @@ test("the upload slot is held for the whole body read, so concurrent uploads are
   assert.equal((await slowUpload).ok, true);
   // Finished, so the slot is free again.
   const after = await service.handle({
-    clientKey: "v1:" + "c".repeat(64),
+    identity: { kind: "guest", key: "v1:" + "c".repeat(64) },
     readForm: async () => tryOnForm(),
   });
   assert.equal(after.ok, true);
 });
 
 test("the upload slot is released after a failed read and before the product lookup and Vertex call", async () => {
-  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, ...OPEN });
 
   const broken = createTryOnService({
     readConfig: () => CONFIG,
@@ -338,7 +377,7 @@ test("the upload slot is released after a failed read and before the product loo
     emit: () => undefined,
   });
   const failed = await broken.handle({
-    clientKey: CLIENT,
+    identity: GUEST,
     readForm: async () => {
       throw new Error("socket hang up");
     },
@@ -363,6 +402,6 @@ test("the upload slot is released after a failed read and before the product loo
     },
     emit: () => undefined,
   });
-  assert.equal((await service.handle({ clientKey: CLIENT, readForm: async () => tryOnForm() })).ok, true);
+  assert.equal((await service.handle({ identity: GUEST, readForm: async () => tryOnForm() })).ok, true);
   assert.equal(uploadFreeDuringGenerate, true);
 });

@@ -56,6 +56,13 @@ test("every server failure reason has a safe Vietnamese message with no upstream
   assert.equal(tryOnFailureMessage(undefined), tryOnFailureMessage("GENERATION_FAILED"));
 });
 
+test("login-required tells a guest to sign in; the daily limit tells a member to come back tomorrow", () => {
+  assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /đăng nhập/);
+  assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /5 lượt/);
+  assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /hôm nay|ngày mai/);
+  assert.match(tryOnFailureMessage("RATE_LIMITED"), /1 phút/);
+});
+
 test("only a safety block makes the photo final", () => {
   assert.equal(isFinalForPhoto("SAFETY_BLOCKED"), true);
   for (const reason of TRY_ON_FAILURE_REASONS.filter((value) => value !== "SAFETY_BLOCKED")) {
