@@ -22,6 +22,24 @@ test("readBoundedBody returns the bytes within the limit and null beyond it", as
   assert.equal((await readBoundedBody(null, 10))?.byteLength, 0);
 });
 
+test("readBoundedBody gives up when its signal aborts, and never returns the partial bytes", async () => {
+  const controller = new AbortController();
+  let cancelled = false;
+  const stalled = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new Uint8Array(4));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const pending = readBoundedBody(stalled, 1024, { signal: controller.signal });
+  await new Promise((resolve) => setImmediate(resolve));
+  controller.abort(new DOMException("timed out", "TimeoutError"));
+  await assert.rejects(pending, { name: "TimeoutError" });
+  assert.equal(cancelled, true);
+});
+
 test("a valid request parses to the slug, age state and photo bytes", async () => {
   const result = await parseTryOnRequest(tryOnForm());
   assert.equal(result.ok, true);

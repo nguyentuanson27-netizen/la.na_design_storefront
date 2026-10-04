@@ -10,29 +10,46 @@
  * restart is rare and operator-initiated. Nothing here stores an image, an IP or any buyer data;
  * keys are the same pseudonymous HMAC client keys the checkout limiters use.
  *
- * Two independent controls, deliberately separate:
+ * Three independent controls, deliberately separate:
  * - `consumeAttempt` is a per-client window, spent *before* the request body is read, so it bounds
- *   everything a client can make the server do;
+ *   how often one client can start anything;
+ * - `startUpload` is a global cap on request bodies being received and parsed at once. It is taken
+ *   before the body is read and released once the photo is validated, so it bounds the memory and
+ *   CPU an untrusted ~7 MB upload costs, however many clients send one together;
  * - `startGeneration` is a global in-flight cap held only around the outbound image fetch and the
- *   Vertex call, so a slow upload cannot occupy a slot and starve other shoppers.
+ *   Vertex call, so a slow upload cannot occupy a slot and starve other shoppers of Vertex capacity.
+ *
+ * The numeric values below are provisional engineering defaults, not an approved quota: the spec
+ * leaves the cost limits to the owner (§21), and none has been measured against live Vertex cost.
+ * They are recorded as such in `tasks/storefront-virtual-try-on-todo.md`.
  */
 
 const DEFAULT_MAX_PER_WINDOW = 6;
 const DEFAULT_WINDOW_MS = 10 * 60 * 1_000;
 /** Vertex VTO takes several seconds per prediction; this caps spend and memory in flight. */
 const DEFAULT_MAX_CONCURRENT = 3;
+/**
+ * A request in the upload phase holds roughly three copies of a <= 7 MB body (the buffer, the parsed
+ * multipart, the photo bytes), so this bounds that phase to the order of 100 MB. It is a resource
+ * bound for the container, not a traffic or cost quota.
+ */
+const DEFAULT_MAX_CONCURRENT_UPLOADS = 4;
 const DEFAULT_MAX_TRACKED_CLIENTS = 10_000;
 
 export type TryOnRateLimiterOptions = Readonly<{
   maxPerWindow?: number;
   windowMs?: number;
   maxConcurrent?: number;
+  maxConcurrentUploads?: number;
   maxTrackedClients?: number;
 }>;
 
 export type TryOnGenerationSlot =
   | Readonly<{ ok: true; release: () => void }>
   | Readonly<{ ok: false; reason: "BUSY" }>;
+
+/** Same shape as a generation slot: an upload slot is released exactly once, however it ends. */
+export type TryOnUploadSlot = TryOnGenerationSlot;
 
 function positiveInteger(value: number | undefined, fallback: number, label: string): number {
   const resolved = value ?? fallback;
@@ -46,6 +63,11 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
   const maxPerWindow = positiveInteger(options.maxPerWindow, DEFAULT_MAX_PER_WINDOW, "Try-on max per window");
   const windowMs = positiveInteger(options.windowMs, DEFAULT_WINDOW_MS, "Try-on window");
   const maxConcurrent = positiveInteger(options.maxConcurrent, DEFAULT_MAX_CONCURRENT, "Try-on max concurrent");
+  const maxConcurrentUploads = positiveInteger(
+    options.maxConcurrentUploads,
+    DEFAULT_MAX_CONCURRENT_UPLOADS,
+    "Try-on max concurrent uploads",
+  );
   const maxTrackedClients = positiveInteger(
     options.maxTrackedClients,
     DEFAULT_MAX_TRACKED_CLIENTS,
@@ -54,6 +76,7 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
 
   const windows = new Map<string, { startedAt: number; count: number }>();
   let inFlight = 0;
+  let uploading = 0;
 
   function purgeExpired(nowMs: number): void {
     for (const [key, entry] of windows) {
@@ -80,6 +103,21 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     return true;
   }
 
+  /** Reserves one of the global upload slots, or reports the service as busy. */
+  function startUpload(): TryOnUploadSlot {
+    if (uploading >= maxConcurrentUploads) return { ok: false, reason: "BUSY" };
+    uploading += 1;
+    let released = false;
+    return {
+      ok: true,
+      release: () => {
+        if (released) return;
+        released = true;
+        uploading -= 1;
+      },
+    };
+  }
+
   /** Reserves one of the global in-flight slots, or reports the service as busy. */
   function startGeneration(): TryOnGenerationSlot {
     if (inFlight >= maxConcurrent) return { ok: false, reason: "BUSY" };
@@ -95,5 +133,5 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     };
   }
 
-  return { consumeAttempt, startGeneration };
+  return { consumeAttempt, startUpload, startGeneration };
 }

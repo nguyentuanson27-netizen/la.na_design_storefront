@@ -1,7 +1,7 @@
 import type { TryOnSignalInput } from "../operations/try-on-observability.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
-import type { TryOnGenerationSlot } from "./try-on-rate-limit.ts";
+import type { TryOnGenerationSlot, TryOnUploadSlot } from "./try-on-rate-limit.ts";
 import { parseTryOnRequest } from "./try-on-request.ts";
 import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts";
 
@@ -10,9 +10,9 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts"
  *
  * This is the only place that sequences the gates, and the order is the safety argument:
  *
- *   feature switch → per-client attempt → read body → validate request (likeness, age, photo) →
- *   re-resolve product from the server → eligibility → in-flight slot → trusted product image →
- *   Vertex AI (once) → validated result
+ *   feature switch → per-client attempt → upload slot → read body → validate request (likeness, age,
+ *   photo) → release upload slot → re-resolve product from the server → eligibility → generation
+ *   slot → trusted product image → Vertex AI (once) → validated result
  *
  * Every step that can reject runs before the next costlier one, and nothing before the last step can
  * reach Vertex. The service is I/O-free: product lookup, the image fetch, the provider call, the
@@ -31,6 +31,7 @@ export type TryOnServiceDependencies = Readonly<{
   readConfig: () => AvailableConfig | Readonly<{ available: false }>;
   limiter: Readonly<{
     consumeAttempt: (clientKey: string) => boolean;
+    startUpload: () => TryOnUploadSlot;
     startGeneration: () => TryOnGenerationSlot;
   }>;
   /** Re-resolves the product from the server's own data. `null` when the slug is not a live product. */
@@ -85,11 +86,23 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
         return { ok: false, reason: "RATE_LIMITED" };
       }
 
-      const form = await readForm();
-      if (form === "TOO_LARGE") return fail("IMAGE_TOO_LARGE");
-      if (form === "INVALID") return fail("INVALID_REQUEST");
-
-      const request = await parseTryOnRequest(form);
+      // The upload slot spans receiving and validating the body and nothing after it: that is the
+      // phase whose memory and CPU an untrusted upload costs, and holding it through the slower
+      // product lookup and Vertex call would let those starve new uploads.
+      const upload = deps.limiter.startUpload();
+      if (!upload.ok) {
+        deps.emit({ name: "try_on.rate_limited", reason: "BUSY" });
+        return { ok: false, reason: "BUSY" };
+      }
+      let request: Awaited<ReturnType<typeof parseTryOnRequest>>;
+      try {
+        const form = await readForm();
+        if (form === "TOO_LARGE") return fail("IMAGE_TOO_LARGE");
+        if (form === "INVALID") return fail("INVALID_REQUEST");
+        request = await parseTryOnRequest(form);
+      } finally {
+        upload.release();
+      }
       if (!request.ok) return fail(request.reason);
 
       const product = await deps.loadProduct(request.value.productSlug);

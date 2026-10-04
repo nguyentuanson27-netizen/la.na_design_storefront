@@ -16,6 +16,13 @@ import type { TryOnServiceInput, TryOnServiceResult } from "./try-on-service.ts"
 /** One 7 MB photo plus multipart framing and the few small text fields. */
 export const TRY_ON_MAX_REQUEST_BYTES = TRY_ON_MAX_IMAGE_BYTES + 256 * 1024;
 
+/**
+ * How long the body may take to arrive. A client that stops sending would otherwise hold its upload
+ * slot indefinitely. 30 s moves a 7 MB photo at roughly 2 Mbit/s, comfortably inside the 60 s a
+ * typical reverse proxy waits.
+ */
+export const TRY_ON_BODY_READ_TIMEOUT_MS = 30_000;
+
 const STATUS_BY_REASON: Readonly<Record<TryOnFailureReason, number>> = {
   UNAVAILABLE: 503,
   INVALID_REQUEST: 400,
@@ -38,6 +45,8 @@ export type TryOnEndpointDependencies = Readonly<{
   service: Readonly<{ handle: (input: TryOnServiceInput) => Promise<TryOnServiceResult> }>;
   /** Pseudonymous client key from trusted proxy headers, or `null` when none can be derived. */
   resolveClientKey: (headers: Headers) => string | null;
+  /** Overridable for tests only; production uses `TRY_ON_BODY_READ_TIMEOUT_MS`. */
+  bodyReadTimeoutMs?: number;
 }>;
 
 // Responses are per-shopper and may carry a generated image of them: never cacheable.
@@ -69,7 +78,7 @@ function isSameOrigin(headers: Headers): boolean {
 
 export async function handleTryOnPost(
   request: Request,
-  { service, resolveClientKey }: TryOnEndpointDependencies,
+  { service, resolveClientKey, bodyReadTimeoutMs = TRY_ON_BODY_READ_TIMEOUT_MS }: TryOnEndpointDependencies,
 ): Promise<Response> {
   if (!isSameOrigin(request.headers)) return Response.json({ ok: false }, { status: 403, headers: NO_STORE });
 
@@ -88,13 +97,23 @@ export async function handleTryOnPost(
     const result = await service.handle({
       clientKey,
       readForm: async () => {
-        // A Content-Length can be absent or wrong, so the bound is enforced on the bytes read.
-        const bytes = await readBoundedBody(request.body, TRY_ON_MAX_REQUEST_BYTES);
-        if (bytes === null) return "TOO_LARGE";
+        // A Content-Length can be absent or wrong, so the size bound is enforced on the bytes read,
+        // and a deadline bounds how long a slow or stalled sender may take to deliver them.
+        const timer = new AbortController();
+        const timeout = setTimeout(
+          () => timer.abort(new DOMException("The upload timed out", "TimeoutError")),
+          bodyReadTimeoutMs,
+        );
         try {
+          const bytes = await readBoundedBody(request.body, TRY_ON_MAX_REQUEST_BYTES, {
+            signal: timer.signal,
+          });
+          if (bytes === null) return "TOO_LARGE";
           return await new Response(bytes, { headers: { "content-type": contentType } }).formData();
         } catch {
           return "INVALID";
+        } finally {
+          clearTimeout(timeout);
         }
       },
     });

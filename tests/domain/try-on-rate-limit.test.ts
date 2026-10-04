@@ -35,6 +35,24 @@ test("concurrent generations are bounded and a released slot frees capacity", ()
   assert.deepEqual(limiter.startGeneration(), { ok: false, reason: "BUSY" });
 });
 
+test("uploads in flight are capped separately from generations, and a released slot frees capacity", () => {
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 2, maxConcurrent: 1 });
+  const first = limiter.startUpload();
+  const second = limiter.startUpload();
+  assert.equal(first.ok && second.ok, true);
+  assert.deepEqual(limiter.startUpload(), { ok: false, reason: "BUSY" });
+  // Uploads never occupy a generation slot, so slow uploads cannot starve Vertex capacity.
+  const generation = limiter.startGeneration();
+  assert.equal(generation.ok, true);
+  assert.deepEqual(limiter.startGeneration(), { ok: false, reason: "BUSY" });
+  if (first.ok) {
+    first.release();
+    first.release(); // idempotent
+  }
+  assert.equal(limiter.startUpload().ok, true);
+  assert.deepEqual(limiter.startUpload(), { ok: false, reason: "BUSY" });
+});
+
 test("tracking is bounded: when the table is full of live clients, new ones fail closed", () => {
   const limiter = createTryOnRateLimiter({ maxPerWindow: 5, windowMs: 60_000, maxTrackedClients: 2 });
   assert.equal(limiter.consumeAttempt(A, 0), true);
@@ -51,4 +69,5 @@ test("invalid configuration is rejected", () => {
   assert.throws(() => createTryOnRateLimiter({ maxPerWindow: 0 }), TypeError);
   assert.throws(() => createTryOnRateLimiter({ windowMs: -1 }), TypeError);
   assert.throws(() => createTryOnRateLimiter({ maxConcurrent: 1.5 }), TypeError);
+  assert.throws(() => createTryOnRateLimiter({ maxConcurrentUploads: 0 }), TypeError);
 });

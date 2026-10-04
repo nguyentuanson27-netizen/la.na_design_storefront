@@ -263,3 +263,106 @@ test("signals are non-sensitive: no image bytes, no client key, and the slug is 
   assert.equal(typeof succeeded.latencyMs, "number");
   assert.equal(typeof succeeded.upstreamLatencyMs, "number");
 });
+
+test("an upload slot is taken before the body is read: saturated, the body is never read", async () => {
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+  const held = limiter.startUpload();
+  assert.equal(held.ok, true);
+
+  const { run, probe } = build({ limiter });
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.equal(probe.readForm, 0);
+  assert.equal(probe.loadProduct.length, 0);
+  assert.equal(probe.signals.at(-1)?.name, "try_on.rate_limited");
+  assert.equal(probe.signals.at(-1)?.reason, "BUSY");
+
+  if (held.ok) held.release();
+  assert.equal((await run()).ok, true);
+});
+
+test("the upload slot is held for the whole body read, so concurrent uploads are bounded", async () => {
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+  const service = createTryOnService({
+    readConfig: () => CONFIG,
+    limiter,
+    loadProduct: async () => product(),
+    fetchProductImage: async () => ({ ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }),
+    generate: async () => ({ ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }),
+    emit: () => undefined,
+  });
+
+  let openBody!: () => void;
+  const bodyGate = new Promise<void>((resolve) => {
+    openBody = resolve;
+  });
+  // A slow upload: the body arrives only when the gate opens.
+  const slowUpload = service.handle({
+    clientKey: CLIENT,
+    readForm: async () => {
+      await bodyGate;
+      return tryOnForm();
+    },
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+
+  let secondRead = 0;
+  const refused = await service.handle({
+    clientKey: "v1:" + "b".repeat(64),
+    readForm: async () => {
+      secondRead += 1;
+      return tryOnForm();
+    },
+  });
+  assert.deepEqual(refused, { ok: false, reason: "BUSY" });
+  assert.equal(secondRead, 0);
+
+  openBody();
+  assert.equal((await slowUpload).ok, true);
+  // Finished, so the slot is free again.
+  const after = await service.handle({
+    clientKey: "v1:" + "c".repeat(64),
+    readForm: async () => tryOnForm(),
+  });
+  assert.equal(after.ok, true);
+});
+
+test("the upload slot is released after a failed read and before the product lookup and Vertex call", async () => {
+  const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, maxPerWindow: 100 });
+
+  const broken = createTryOnService({
+    readConfig: () => CONFIG,
+    limiter,
+    loadProduct: async () => product(),
+    fetchProductImage: async () => ({ ok: false, reason: "FETCH_FAILED" }),
+    generate: async () => ({ ok: false, reason: "GENERATION_FAILED" }),
+    emit: () => undefined,
+  });
+  const failed = await broken.handle({
+    clientKey: CLIENT,
+    readForm: async () => {
+      throw new Error("socket hang up");
+    },
+  });
+  assert.equal(failed.ok, false);
+  const afterFailure = limiter.startUpload();
+  assert.equal(afterFailure.ok, true);
+  if (afterFailure.ok) afterFailure.release();
+
+  // Slow downstream work (product lookup, Vertex) must not keep an upload slot occupied.
+  let uploadFreeDuringGenerate: boolean | undefined;
+  const service = createTryOnService({
+    readConfig: () => CONFIG,
+    limiter,
+    loadProduct: async () => product(),
+    fetchProductImage: async () => ({ ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }),
+    generate: async () => {
+      const slot = limiter.startUpload();
+      uploadFreeDuringGenerate = slot.ok;
+      if (slot.ok) slot.release();
+      return { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } };
+    },
+    emit: () => undefined,
+  });
+  assert.equal((await service.handle({ clientKey: CLIENT, readForm: async () => tryOnForm() })).ok, true);
+  assert.equal(uploadFreeDuringGenerate, true);
+});

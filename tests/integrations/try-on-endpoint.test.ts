@@ -166,6 +166,30 @@ test("a body that streams past the cap without a Content-Length is cut off, not 
   assert.ok(sent <= TRY_ON_MAX_REQUEST_BYTES + 2 * chunk.byteLength, `read ${sent} bytes`);
 });
 
+test("a body that stalls is cut off by the read timeout instead of holding an upload slot", async () => {
+  const { deps, forms } = endpoint({ ok: false, reason: "INVALID_REQUEST" });
+  let cancelled = false;
+  const stalled = new ReadableStream<Uint8Array>({
+    start(stream) {
+      stream.enqueue(new Uint8Array(16));
+    },
+    cancel() {
+      cancelled = true;
+    },
+  });
+  const request = new Request(`https://${HOST}/api/try-on`, {
+    method: "POST",
+    headers: { origin: `https://${HOST}`, host: HOST, "content-type": "multipart/form-data; boundary=slow" },
+    body: stalled,
+    duplex: "half",
+  } as RequestInit);
+  const started = Date.now();
+  await handleTryOnPost(request, { ...deps, bodyReadTimeoutMs: 50 });
+  assert.deepEqual(forms, ["INVALID"]);
+  assert.equal(cancelled, true);
+  assert.ok(Date.now() - started < 5_000);
+});
+
 test("a malformed multipart body reaches the service as INVALID", async () => {
   const { deps, forms } = endpoint({ ok: false, reason: "INVALID_REQUEST" });
   const request = new Request(`https://${HOST}/api/try-on`, {
