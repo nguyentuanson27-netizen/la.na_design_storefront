@@ -297,9 +297,9 @@ The minimum truthful disclosure is:
 - the uploaded photo is sent to OpenAI to generate the result;
 - OpenAI processing/retention follows the OpenAI API data controls configured for the account.
 
-Zero Data Retention is an optional operational improvement, not an MVP architecture requirement.
+Zero Data Retention is optional for the default adult-only/non-minor path. If the owner chooses to support minors in a way covered by OpenAI's Under-18 guidance, any ZDR requirement in that guidance becomes mandatory for the affected users before production enablement.
 
-## 11. Failure behavior
+## 12. Failure behavior
 
 Try-on is an optional enhancement.
 
@@ -326,7 +326,7 @@ Where retry is reasonable, keep the shopper in the same try-on surface and allow
 
 Do not silently fall back to another model.
 
-## 12. Accessibility
+## 13. Accessibility
 
 Preserve the repository accessibility bar:
 
@@ -341,7 +341,7 @@ Preserve the repository accessibility bar:
 - no keyboard trap;
 - practical mobile touch targets.
 
-## 13. Observability
+## 14. Observability
 
 Record only non-image operational facts needed to operate the feature:
 
@@ -355,7 +355,7 @@ Do not record raw image bytes, generated images, shopper PII, or arbitrary URL/q
 
 Existing marketing commerce-event contracts remain unchanged.
 
-## 14. Testing strategy
+## 15. Testing strategy
 
 CI must stub/mock OpenAI and must not spend live API credits.
 
