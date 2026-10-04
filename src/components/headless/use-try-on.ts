@@ -23,6 +23,12 @@ import {
  * photo and the result only as in-memory blob URLs, revokes them when replaced, and `reset()` drops
  * everything when the dialog closes — nothing is written to browser storage.
  *
+ * Everything the request is built from is frozen while it runs. The photo, the age attestation and
+ * the acknowledgement are snapshotted into the `FormData` when the request starts; if they could
+ * change before it settles, the result would arrive beside a preview and a teen disclosure that no
+ * longer describe the photo and attestation it was made from. `locked` disables the controls, and
+ * the setters below ignore changes as well, so the guarantee does not depend on markup alone.
+ *
  * It submits the photo, the product slug, the acknowledgement and the age state, and nothing else:
  * in particular no product image URL, because the server chooses the garment image itself.
  */
@@ -69,8 +75,9 @@ export function useTryOn({
   }, [result]);
   useEffect(() => () => abortRef.current?.abort(), []);
 
+  const locked = phase === "loading";
   const canGenerate =
-    phase !== "loading" &&
+    !locked &&
     file !== null &&
     fileError === null &&
     acknowledged &&
@@ -95,6 +102,7 @@ export function useTryOn({
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
+    if (locked || abortRef.current !== null) return;
     const next = event.target.files?.[0] ?? null;
     setResult(null);
     setErrorMessage(null);
@@ -170,14 +178,25 @@ export function useTryOn({
     }
   }
 
+  function chooseAge(value: TryOnAgeState) {
+    if (locked || abortRef.current !== null) return;
+    setAgeState(value);
+  }
+
+  function chooseAcknowledged(value: boolean) {
+    if (locked || abortRef.current !== null) return;
+    setAcknowledged(value);
+  }
+
   return {
+    locked,
     fileName: file?.name ?? null,
     previewUrl,
     fileError,
     acknowledged,
-    setAcknowledged,
+    setAcknowledged: chooseAcknowledged,
     ageState,
-    setAgeState,
+    setAgeState: chooseAge,
     isTeen: isTeenAgeState(ageState),
     isBlockedAge: isBlockedAgeState(ageState),
     phase,

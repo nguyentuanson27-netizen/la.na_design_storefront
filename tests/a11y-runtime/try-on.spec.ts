@@ -667,6 +667,58 @@ test("an adult generation shows loading, exactly one result, a download, and req
   await assertPageQuality(page);
 });
 
+test("the form is frozen while a generation runs, so a late result can never disagree with it", async ({ page }) => {
+  const watched = watch(page);
+  const dialog = await openTryOn(page);
+  const { photo, adult, teen, below, acknowledge, generate, result, status } = parts(dialog);
+  const disclosure = dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/);
+  const preview = dialog.getByRole("img", { name: "Ảnh bạn đã chọn" });
+
+  await photo.setInputFiles(jpegPhoto("slow"));
+  await teen.check();
+  await acknowledge.check();
+  await expect(disclosure).toBeVisible();
+  await generate.click();
+  await expect(status).toContainText("Đang tạo ảnh thử đồ");
+
+  // Everything the request was built from is locked until it settles: the photo, the age
+  // attestation and the acknowledgement cannot change underneath a request already in flight.
+  await expect(photo).toBeDisabled();
+  await expect(adult).toBeDisabled();
+  await expect(teen).toBeDisabled();
+  await expect(below).toBeDisabled();
+  await expect(acknowledge).toBeDisabled();
+  await expect(teen).toBeChecked();
+  await expect(disclosure).toBeVisible();
+  await expect(preview).toBeVisible();
+  // The visible "Chọn ảnh" button is the label of the disabled input, so it cannot reopen the picker.
+  const chooser = await Promise.race([
+    page.waitForEvent("filechooser").then(() => "opened"),
+    dialog.getByText("Chọn ảnh", { exact: true }).click({ force: true }).then(() => delay(300)).then(() => "none"),
+  ]);
+  expect(chooser).toBe("none");
+  await expect(teen).toBeChecked();
+
+  await expect(result).toBeVisible();
+  // The result belongs to exactly the state that is still on screen.
+  await expect(teen).toBeChecked();
+  await expect(disclosure).toBeVisible();
+  await expect(preview).toBeVisible();
+  expect(predictCalls()).toHaveLength(1);
+  expect(predictCalls()[0]).toMatchObject({ personGeneration: "allow-all" });
+
+  // Unlocked again once settled.
+  await expect(photo).toBeEnabled();
+  await expect(adult).toBeEnabled();
+  await expect(acknowledge).toBeEnabled();
+  await adult.check();
+  await expect(disclosure).toHaveCount(0);
+
+  await assertPageQuality(page);
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
 test("a PNG upload generates a result at desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const dialog = await openTryOn(page);

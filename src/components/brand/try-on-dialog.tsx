@@ -145,13 +145,14 @@ export function BrandTryOnLauncher({
                 type="file"
                 accept="image/jpeg,image/png"
                 className="peer sr-only"
+                disabled={tryOn.locked}
                 aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
                 aria-invalid={tryOn.fileError ? "true" : undefined}
                 onChange={tryOn.chooseFile}
               />
               <label
                 htmlFor={`${ids}-photo`}
-                className="btn btn--outline shrink-0 cursor-pointer px-4 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]"
+                className="btn btn--outline shrink-0 cursor-pointer px-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-45 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]"
               >
                 Chọn ảnh
               </label>
@@ -182,6 +183,7 @@ export function BrandTryOnLauncher({
                     name={`${ids}-age`}
                     value={option.value}
                     checked={tryOn.ageState === option.value}
+                    disabled={tryOn.locked}
                     className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
                     onChange={() => tryOn.setAgeState(option.value)}
                   />
@@ -205,6 +207,7 @@ export function BrandTryOnLauncher({
             <input
               type="checkbox"
               checked={tryOn.acknowledged}
+              disabled={tryOn.locked}
               className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
               onChange={(event) => tryOn.setAcknowledged(event.target.checked)}
             />
