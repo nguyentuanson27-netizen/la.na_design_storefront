@@ -1,6 +1,6 @@
 # Spec: Storefront Virtual Try-on with Vertex AI
 
-Status: **Proposed for owner review — 2026-10-04. Spec only; implementation requires a separate reviewed plan.**
+Status: **Approved and merged 2026-10-04. MVP implemented behind a server kill switch (off by default); see [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md) for the operational contract, the two implementation differences from §3/§8, and the live checks still owed before enablement.**
 
 This spec defines the MVP virtual try-on experience for La.na Design product detail pages (PDPs).
 
