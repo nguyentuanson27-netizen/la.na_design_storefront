@@ -140,6 +140,12 @@ Suggested guidance:
 
 The UI must state that the result is an AI visualization, not a guarantee of size, fit, fabric behavior, exact color, or final real-world appearance.
 
+Before generation, the shopper must explicitly confirm:
+
+> Tôi xác nhận đây là ảnh của tôi hoặc tôi có sự đồng ý rõ ràng và các quyền cần thiết để sử dụng hình ảnh của người trong ảnh cho tính năng thử đồ này.
+
+This acknowledgement is required per generation request. It is a rights/consent representation, not identity verification: MVP does not build face recognition, identity verification, or a durable consent ledger. The server must require the acknowledgement in the generation request rather than relying on a client-only disabled button.
+
 MVP does not provide body measurement or size recommendations.
 
 ## 7. Request lifecycle
@@ -232,7 +238,31 @@ Cost remains bounded by:
 - no hidden background generation;
 - no durable history.
 
-## 10. Privacy and data handling
+## 10. Privacy, likeness consent, and minors
+
+### Likeness consent
+
+OpenAI's current Service Terms require express consent and all necessary rights to reproduce a person's likeness.
+
+Therefore:
+
+- try-on may be used only with the shopper's own photo or a photo for which the shopper has express consent and the necessary rights;
+- each generation request requires the acknowledgement defined in §6;
+- a missing acknowledgement fails before the OpenAI call;
+- MVP does not attempt to verify identity or persist a consent record.
+
+### Minor policy — blocking owner decision
+
+Whether this product serves people under 18 is **not yet approved**.
+
+This is a blocking product/privacy decision, not an implementation detail. Production try-on must remain disabled until the owner chooses one of these policies:
+
+1. **18+ only** — simplest MVP. Add age eligibility/acknowledgement appropriate to the approved policy; do not build a general age-verification platform unless legally required.
+2. **Support minors** — implementation must follow the current OpenAI Under-18 API Guidance and applicable law. In particular, OpenAI states that personal data of children under 13 or the applicable age of digital consent must not be processed without first implementing Zero Data Retention, and applications serving minors require additional age-appropriate safeguards.
+
+The implementation team must not silently choose either policy.
+
+## 11. Privacy and data handling
 
 ### La.na Design application
 
@@ -340,6 +370,7 @@ Cover:
 - server ignores/rejects arbitrary client product-image URLs;
 - request pins `gpt-image-2` and one output;
 - successful orchestration sends shopper + first trusted product image;
+- missing likeness-rights acknowledgement is rejected before the OpenAI call;
 - upstream failure maps safely and does not change commerce state;
 - no durable image persistence path is introduced;
 - API key is server-only.
@@ -351,6 +382,7 @@ Cover representative desktop/mobile flows:
 - eligible PDP shows **Thử đồ**;
 - accessory/non-eligible PDP does not;
 - upload preview;
+- generation stays unavailable until the likeness-rights acknowledgement is checked;
 - loading;
 - exactly one success result;
 - download;
@@ -377,7 +409,7 @@ Record enough evidence to decide:
 
 A HTTP 200 alone is not quality acceptance.
 
-## 15. Repository commands
+## 16. Repository commands
 
 Use the repository's existing commands:
 
@@ -393,7 +425,7 @@ pnpm build
 
 For the browser slice, add the try-on spec to the existing `tests/a11y-runtime/playwright.config.ts` suite and run the existing Playwright harness; do not create a second browser-test framework.
 
-## 16. Implementation shape / code style
+## 17. Implementation shape / code style
 
 Prefer existing boundaries:
 
@@ -407,7 +439,7 @@ No new dependency is assumed by this spec. Adding one requires review.
 
 Do not turn MVP into a general image-generation framework.
 
-## 17. Rollout
+## 18. Rollout
 
 Use a server-side feature/kill switch.
 
@@ -422,7 +454,7 @@ Rollout sequence:
 
 Turning the switch off must leave normal PDP commerce unchanged.
 
-## 18. Boundaries
+## 19. Boundaries
 
 ### Always
 
@@ -462,37 +494,43 @@ Turning the switch off must leave normal PDP commerce unchanged.
 - silently upgrade/fallback models;
 - let try-on failure block purchase flows.
 
-## 19. Open questions for owner review
+## 20. Open questions for owner review
 
 These remain open rather than being guessed:
 
-1. **Guest or login required?**
+1. **Minor policy — BLOCKING**
+   - Choose **18+ only** or **support minors** before approving production implementation.
+   - Suggested simplest MVP: 18+ only, without building a general age-verification platform unless required.
+
+2. **Guest or login required?**
    - Suggested MVP default: guests allowed, with bounded rate/cost control.
 
-2. **Rate limit / concurrency values?**
+3. **Rate limit / concurrency values?**
    - Choose in the implementation plan from expected traffic and measured generation cost.
 
-3. **Upload cap**
+4. **Upload cap**
    - Approve or change the proposed 10 MiB.
 
-4. **Output quality/size**
+5. **Output quality/size**
    - Choose after a small `gpt-image-2` latency/cost/quality comparison; portrait output is preferred.
 
-5. **Exact PDP placement**
+6. **Exact PDP placement**
    - Decide during UI planning against the current purchase composition.
 
-6. **Buyer-facing privacy copy**
+7. **Buyer-facing privacy copy**
    - Approve final Vietnamese wording before production enablement.
 
-7. **Initial rollout scope**
+8. **Initial rollout scope**
    - All eligible products at once or a limited production gate.
 
-## 20. Acceptance criteria
+## 21. Acceptance criteria
 
 Implementation is acceptable when:
 
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
 - [ ] UI requests one front-facing shopper photo; server accepts exactly one supported image without adding pose classification.
+- [ ] Each generation request requires an explicit likeness-rights acknowledgement and rejects missing acknowledgement before the OpenAI call.
+- [ ] The owner-approved minor policy is implemented; production remains disabled while that decision is unresolved.
 - [ ] Server re-resolves the product and uses the existing first trusted product image.
 - [ ] The external request uses `gpt-image-2`, two image references, and one output.
 - [ ] One accepted request renders at most one result.
@@ -506,12 +544,13 @@ Implementation is acceptable when:
 - [ ] Repository lint/typecheck/tests/build pass.
 - [ ] No unrelated catalog/commerce refactor is mixed in.
 
-## 21. Explicit non-goals
+## 22. Explicit non-goals
 
 MVP does not include:
 
 - multiple shopper photos;
 - automatic front-pose/face/body classification;
+- identity verification or a durable consent ledger;
 - side/back pose inputs;
 - multi-output generation;
 - history/account image library;
