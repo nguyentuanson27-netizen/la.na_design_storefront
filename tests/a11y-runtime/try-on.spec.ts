@@ -569,8 +569,8 @@ test("the teen path states the digital-consent-age and guardian attestation and 
 
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
-  // `allow_all` is what lets the approved teen path through; the strict safety filter stays on.
-  expect(calls[0]).toMatchObject({ personGeneration: "allow_all", safetySetting: "block_low_and_above" });
+  // `allow-all` is what lets the approved teen path through; the strict safety filter stays on.
+  expect(calls[0]).toMatchObject({ personGeneration: "allow-all", safetySetting: "block-low-and-above" });
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
 });
 
@@ -629,8 +629,8 @@ test("an adult generation shows loading, exactly one result, a download, and req
     productImages: 1,
     garmentIsTrustedProduct: true,
     sampleCount: 1,
-    personGeneration: "allow_all",
-    safetySetting: "block_low_and_above",
+    personGeneration: "allow-all",
+    safetySetting: "block-low-and-above",
     addWatermark: true,
     hasStorageUri: false,
   });
@@ -731,7 +731,7 @@ test("a provider safety block fails closed: safe copy, the photo is dropped, and
   await delay(500);
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ safetySetting: "block_low_and_above", addWatermark: true });
+  expect(calls[0]).toMatchObject({ safetySetting: "block-low-and-above", addWatermark: true });
 
   // A different photo is the way forward.
   await photo.setInputFiles(jpegPhoto("ok"));

@@ -25,12 +25,17 @@ export const TRY_ON_MODEL = "virtual-try-on-001";
 /** One candidate per explicit shopper action. */
 const SAMPLE_COUNT = 1;
 /**
- * `allow_all` is required so the approved teen path is not blocked by the model's adult-only
+ * `allow-all` is required so the approved teen path is not blocked by the model's adult-only
  * default. Minor safety therefore rests on `safetySetting` below plus the server-side age gate.
+ *
+ * Spelling: the official `VirtualTryOnModelParams` REST reference documents the hyphenated values
+ * (`dont-allow` / `allow-adult` / `allow-all`, `block-low-and-above` / ...). Note that Google's SDK
+ * enums are `ALLOW_ALL` / `BLOCK_LOW_AND_ABOVE` and pass through unconverted, so they are not
+ * evidence for the wire value. A test pins these exact strings; a live smoke test is still owed.
  */
-const PERSON_GENERATION = "allow_all";
+const PERSON_GENERATION = "allow-all";
 /** The strictest documented threshold. Never lowered to raise the success rate. */
-const SAFETY_SETTING = "block_low_and_above";
+const SAFETY_SETTING = "block-low-and-above";
 
 /**
  * Kept under the 60 s read timeout reverse proxies default to, so a slow prediction ends as a clean
@@ -41,7 +46,14 @@ const DEFAULT_TIMEOUT_MS = 45_000;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-const SAFETY_ERROR_PATTERN = /safety|blocked|responsible ai|filtered|policy/i;
+/**
+ * Known provider refusal wording only. Bare words such as "safety" or "policy" also appear in
+ * request-validation errors (`invalid safetySetting`), and misreading one of those as a content
+ * refusal would clear the shopper's photo and blame their content for an integration fault. A
+ * 400 that matches none of these is an ordinary generation failure.
+ */
+const SAFETY_ERROR_PATTERN =
+  /blocked by (?:the )?safety filters?|safety filter threshold|responsible ai (?:practices )?(?:filtered|blocked)|support codes?: ?\d+/i;
 
 export type VertexTryOnImage = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
 

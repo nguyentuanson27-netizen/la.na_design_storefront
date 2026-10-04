@@ -51,8 +51,8 @@ test("the request pins the model, region, one person image, one product image an
     ],
     parameters: {
       sampleCount: 1,
-      personGeneration: "allow_all",
-      safetySetting: "block_low_and_above",
+      personGeneration: "allow-all",
+      safetySetting: "block-low-and-above",
       addWatermark: true,
     },
   });
@@ -94,6 +94,30 @@ test("a provider safety refusal fails closed after exactly one attempt (no weake
     const { client, calls } = harness(respond);
     assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" });
     assert.equal(calls.length, 1);
+  }
+});
+
+test("a 400 that is a request-validation error is NOT a safety block (it is an integration fault)", async () => {
+  for (const message of [
+    "Invalid value at 'parameters.safetySetting' (type.googleapis.com/google.cloud.aiplatform.v1.Value): \"block_low_and_above\"",
+    "Invalid personGeneration value. Supported policy values: dont-allow, allow-adult, allow-all.",
+    "Request contains an invalid argument: unsupported filtered field.",
+    "Unable to parse instances[0].personImage",
+  ]) {
+    const { client, calls } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" }, message);
+    assert.equal(calls.length, 1);
+  }
+});
+
+test("known provider refusal markers on a 400 are safety blocks", async () => {
+  for (const message of [
+    "Image was blocked by safety filters.",
+    "Responsible AI filtered the output.",
+    "Your current safety filter threshold filtered out 1 generated images. Support codes: 29310472",
+  ]) {
+    const { client } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" }, message);
   }
 });
 
