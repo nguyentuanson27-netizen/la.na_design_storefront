@@ -10,6 +10,9 @@ import {
   isTeenAgeState,
   isTryOnAgeAllowed,
   missingTryOnSteps,
+  nextTryOnStep,
+  tryOnStepNumber,
+  TRY_ON_TEEN_ATTESTATION_LEAD,
   tryOnFailureMessage,
   validateTryOnFile,
 } from "../../src/components/headless/try-on-model.ts";
@@ -89,4 +92,37 @@ test("the missing-steps hint lists what remains in fill-in order", () => {
     "xác nhận quyền sử dụng hình ảnh",
   ]);
   assert.deepEqual(missingTryOnSteps({ hasPhoto: true, ageState: "adult", acknowledged: true }), []);
+});
+
+test("each age option has a short chip label next to its full statement", () => {
+  assert.deepEqual(
+    TRY_ON_AGE_OPTIONS.map((option) => option.shortLabel),
+    ["Từ 18 tuổi", "13–17 tuổi", "Chưa đủ tuổi"],
+  );
+  // The chip is only a label: the full statement stays the thing the shopper attests to.
+  for (const option of TRY_ON_AGE_OPTIONS) assert.ok(option.label.length > option.shortLabel.length);
+  assert.match(TRY_ON_TEEN_ATTESTATION_LEAD, /xác nhận/);
+});
+
+test("the three wizard steps are numbered 1 to 3", () => {
+  assert.equal(tryOnStepNumber("photo"), 1);
+  assert.equal(tryOnStepNumber("confirm"), 2);
+  assert.equal(tryOnStepNumber("result"), 3);
+});
+
+test("step transitions: forward through the wizard, back where it is safe, photo on a final refusal", () => {
+  assert.equal(nextTryOnStep("photo", "continue"), "confirm");
+  assert.equal(nextTryOnStep("confirm", "generate"), "result");
+  assert.equal(nextTryOnStep("confirm", "change-photo"), "photo");
+  assert.equal(nextTryOnStep("result", "back"), "confirm");
+  assert.equal(nextTryOnStep("result", "change-photo"), "photo");
+  // A photo the provider refused is dropped wherever the shopper is, and they go back to choose another.
+  for (const step of ["photo", "confirm", "result"] as const) {
+    assert.equal(nextTryOnStep(step, "photo-dropped"), "photo");
+  }
+  // Events that make no sense for a step leave it where it is (no skipping the confirmation step).
+  assert.equal(nextTryOnStep("photo", "generate"), "photo");
+  assert.equal(nextTryOnStep("photo", "back"), "photo");
+  assert.equal(nextTryOnStep("confirm", "continue"), "confirm");
+  assert.equal(nextTryOnStep("result", "continue"), "result");
 });

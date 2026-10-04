@@ -1,27 +1,35 @@
 "use client";
 
-import { useId, useRef, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from "react";
 
 import { BRAND } from "@/brand";
 import {
   TRY_ON_AGE_OPTIONS,
-  isLoginRequired,
   TRY_ON_BLOCKED_AGE_MESSAGE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
+  TRY_ON_STEP_COUNT,
+  TRY_ON_TEEN_ATTESTATION_LEAD,
   TRY_ON_TEEN_DISCLOSURE,
+  isLoginRequired,
 } from "@/components/headless/try-on-model";
 import { useTryOn } from "@/components/headless/use-try-on";
 
 /**
  * Virtual try-on on the PDP (`docs/specs/storefront-virtual-try-on.md` §6, §13, §14).
  *
- * Markup and focus only. The photo, the attestations, the request and the result are
+ * Markup and focus only. The photo, the attestations, the steps, the request and the result are
  * `useTryOn`'s; this file decides how they look. It shares nothing with the purchase panel, so the
  * dialog can fail or be dismissed without touching the cart or the variant selection.
  *
- * A native modal `<dialog>` supplies the focus trap, the inert page behind it and Escape; closing it
- * by any route runs one handler that drops the photo and the result and returns focus to the
- * trigger.
+ * The entry point and the dialog are separate components. The trigger is a text link that sits on
+ * the same line as the size guide, inside the purchase panel; the dialog is a native modal `<dialog>`
+ * rendered beside it by the coordinator, which owns the one `open` flag and the trigger ref. The
+ * native dialog supplies the focus trap, the inert page behind it and Escape; closing it by any
+ * route drops the photo and the result and returns focus to the trigger.
+ *
+ * A bottom sheet below `sm`, a centred 440 px modal from `sm` up. Three short steps — photo, age and
+ * confirmation, result — so no step needs scrolling on a phone but the teen path, and the result is
+ * the whole of the last step instead of something below a long form.
  */
 
 const FOCUSABLE_SELECTOR = [
@@ -34,26 +42,99 @@ const FOCUSABLE_SELECTOR = [
 ].join(",");
 
 const ERROR_TEXT = "text-[#8a1c1c]";
+const FOCUS_RING =
+  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]";
+const PEER_FOCUS_RING =
+  "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]";
+const TEXT_BUTTON = `min-h-11 text-sm font-semibold underline underline-offset-4 ${FOCUS_RING}`;
 
-export function BrandTryOnLauncher({
+function PersonIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.25"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <circle cx="12" cy="7.5" r="3.5" />
+      <path d="M5 20.5c.6-3.8 3.4-6 7-6s6.4 2.2 7 6" />
+    </svg>
+  );
+}
+
+/** The entry point: a text link that sits on the size-guide line, so it adds no row of its own. */
+export function BrandTryOnTrigger({
+  onOpen,
+  triggerRef,
+}: Readonly<{ onOpen: () => void; triggerRef: RefObject<HTMLButtonElement | null> }>) {
+  return (
+    <button
+      ref={triggerRef}
+      type="button"
+      className={`group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] ${FOCUS_RING} focus-visible:outline-offset-4`}
+      aria-haspopup="dialog"
+      onClick={onOpen}
+    >
+      <PersonIcon />
+      <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
+        Thử đồ<span className="hidden sm:inline"> bằng ảnh của bạn</span>
+      </span>
+    </button>
+  );
+}
+
+export function BrandTryOnDialog({
   productSlug,
   productName,
-}: Readonly<{ productSlug: string; productName: string }>) {
+  open,
+  onOpenChange,
+  returnFocusRef,
+}: Readonly<{
+  productSlug: string;
+  productName: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  returnFocusRef: RefObject<HTMLElement | null>;
+}>) {
   const ids = useId();
   const dialogRef = useRef<HTMLDialogElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const shownStepRef = useRef<number | null>(null);
   const tryOn = useTryOn({ productSlug, fileInputRef });
+  const { step, phase, result } = tryOn;
 
-  function openDialog() {
+  // The coordinator owns `open`; the native dialog is brought in line with it.
+  useEffect(() => {
     const dialog = dialogRef.current;
-    if (dialog && !dialog.open) dialog.showModal();
-  }
+    if (!dialog) return;
+    if (open && !dialog.open) dialog.showModal();
+    if (!open && dialog.open) dialog.close();
+  }, [open]);
+
+  // Moving between steps replaces the content under the shopper's focus, so focus follows to the new
+  // step's heading. The first step is not announced this way: the dialog's own opening focus does it.
+  useEffect(() => {
+    if (!open) {
+      shownStepRef.current = null;
+      return;
+    }
+    const previous = shownStepRef.current;
+    shownStepRef.current = tryOn.stepNumber;
+    if (previous !== null && previous !== tryOn.stepNumber) headingRef.current?.focus();
+  }, [open, tryOn.stepNumber]);
 
   // Runs for Escape, the close button and `dialog.close()` alike.
   function handleClosed() {
     tryOn.reset();
-    triggerRef.current?.focus();
+    onOpenChange(false);
+    returnFocusRef.current?.focus();
   }
 
   function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
@@ -83,196 +164,314 @@ export function BrandTryOnLauncher({
   const titleId = `${ids}-title`;
   const fileHelpId = `${ids}-file-help`;
   const fileErrorId = `${ids}-file-error`;
+  const attestationId = `${ids}-attestation`;
   const hintId = `${ids}-hint`;
-  const { phase, result } = tryOn;
-  const showHint = !tryOn.canGenerate && !tryOn.isBlockedAge && phase !== "loading";
+  const showHint = !tryOn.canGenerate && !tryOn.isBlockedAge;
 
-  return (
-    <div className="mt-3">
-      <button
-        ref={triggerRef}
-        type="button"
-        className="btn btn--outline w-full px-4"
-        aria-haspopup="dialog"
-        onClick={openDialog}
-      >
-        Thử đồ
-      </button>
+  const headingClass = "mb-3 text-base font-semibold outline-none";
 
-      <dialog
-        ref={dialogRef}
-        aria-labelledby={titleId}
-        tabIndex={-1}
-        className="m-auto max-h-dvh w-full max-w-xl overflow-y-auto border-0 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100%-2rem)]"
-        onClose={handleClosed}
-        onKeyDown={containFocus}
-      >
-        <div className="px-5 pb-6 pt-4 sm:px-8">
-          <div className="flex items-start justify-between gap-4">
-            <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
-              Thử đồ
-            </h2>
-            <button
-              type="button"
-              className="min-h-11 shrink-0 px-2 text-sm font-semibold underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
-              onClick={() => dialogRef.current?.close()}
-            >
-              Đóng
-            </button>
-          </div>
+  function renderProgress() {
+    return (
+      <div className="mb-3 flex items-center gap-1.5 text-xs text-black/60">
+        {Array.from({ length: TRY_ON_STEP_COUNT }, (_, index) => (
+          <span
+            key={index}
+            aria-hidden="true"
+            className={`h-1 w-6 rounded-full ${index < tryOn.stepNumber ? "bg-[#3B2219]" : "bg-black/15"}`}
+          />
+        ))}
+        <span className="ml-1.5">
+          Bước {tryOn.stepNumber}/{TRY_ON_STEP_COUNT}
+        </span>
+      </div>
+    );
+  }
 
-          <p className="mt-2 text-sm leading-6 text-black/70">
-            Tải lên một ảnh của bạn để xem {productName} trên ảnh đó.
+  function renderPhotoStep() {
+    return (
+      <>
+        <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
+          Chọn ảnh của bạn
+        </h3>
+        {phase === "error" && tryOn.errorMessage ? (
+          <p role="alert" className={`mb-3 text-sm font-semibold ${ERROR_TEXT}`}>
+            {tryOn.errorMessage}
           </p>
-          <p className="mt-2 text-sm leading-6 text-black/70">
-            Ảnh do AI tạo ra chỉ mang tính tham khảo, không đảm bảo kích cỡ, độ vừa vặn, chất liệu,
-            màu sắc chính xác hay hình ảnh thực tế của sản phẩm. Hãy xem bảng size để chọn kích cỡ.
-          </p>
-
-          <div className="mt-5">
-            <label htmlFor={`${ids}-photo`} className="block text-sm font-semibold">
-              Ảnh của bạn (JPG hoặc PNG, tối đa 7 MB)
-            </label>
-            <p id={fileHelpId} className="mt-1 text-sm text-black/65">
-              Dùng ảnh chính diện, thấy rõ người, đủ sáng; tránh ảnh quá nhỏ hoặc bị che nhiều.
-            </p>
-            {/* The native control reads "Choose File / No file chosen" in the browser's language, so
-                it is kept for keyboard, screen-reader and file-picker behaviour but hidden, and a
-                Vietnamese label draws the button. `peer` carries its focus ring onto that label. */}
-            <div className="mt-2 flex min-h-11 items-center gap-3">
-              <input
-                ref={fileInputRef}
-                id={`${ids}-photo`}
-                type="file"
-                accept="image/jpeg,image/png"
-                className="peer sr-only"
-                disabled={tryOn.locked}
-                aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
-                aria-invalid={tryOn.fileError ? "true" : undefined}
-                onChange={tryOn.chooseFile}
+        ) : null}
+        {/* The native control reads "Choose File / No file chosen" in the browser's language, so it is
+            kept for keyboard, screen-reader and file-picker behaviour but hidden, and the Vietnamese
+            tile below is its label. `peer` carries its focus ring onto that tile. */}
+        <input
+          ref={fileInputRef}
+          id={`${ids}-photo`}
+          type="file"
+          accept="image/jpeg,image/png"
+          className="peer sr-only"
+          aria-label="Ảnh của bạn (JPG hoặc PNG, tối đa 7 MB)"
+          aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
+          aria-invalid={tryOn.fileError ? "true" : undefined}
+          onChange={tryOn.chooseFile}
+        />
+        <label
+          htmlFor={`${ids}-photo`}
+          className={`flex h-56 cursor-pointer flex-col items-center justify-center gap-1.5 overflow-hidden rounded-[10px] border-2 border-dashed border-[#a79a8c] bg-white/40 text-[#6b5f52] ${PEER_FOCUS_RING}`}
+        >
+          {tryOn.previewUrl ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it. */}
+              <img
+                src={tryOn.previewUrl}
+                alt="Ảnh bạn đã chọn"
+                className="max-h-44 w-auto max-w-full object-contain"
               />
-              <label
-                htmlFor={`${ids}-photo`}
-                className="btn btn--outline shrink-0 cursor-pointer px-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-45 peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]"
-              >
-                Chọn ảnh
-              </label>
-              <span className="min-w-0 truncate text-sm text-black/70">{tryOn.fileName ?? "Chưa chọn ảnh"}</span>
-            </div>
-            {tryOn.fileError ? (
-              <p id={fileErrorId} role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
-                {tryOn.fileError}
-              </p>
-            ) : null}
+              <span className="text-sm font-semibold underline underline-offset-4">Đổi ảnh</span>
+            </>
+          ) : (
+            <>
+              <span aria-hidden="true" className="text-3xl leading-none">
+                +
+              </span>
+              <span className="text-sm font-semibold">Chọn ảnh</span>
+              <span className="text-xs">JPG hoặc PNG, tối đa 7 MB</span>
+            </>
+          )}
+        </label>
+        {tryOn.fileError ? (
+          <p id={fileErrorId} role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
+            {tryOn.fileError}
+          </p>
+        ) : null}
+        <ul id={fileHelpId} className="mt-3 list-disc space-y-0.5 pl-5 text-sm text-black/65">
+          <li>Ảnh chính diện, thấy rõ người</li>
+          <li>Đủ sáng, không bị che nhiều</li>
+        </ul>
+        <button
+          type="button"
+          className="btn btn--primary mt-4 w-full px-4"
+          disabled={!tryOn.canContinue}
+          onClick={tryOn.continueToConfirm}
+        >
+          Tiếp tục
+        </button>
+      </>
+    );
+  }
+
+  function renderConfirmStep() {
+    return (
+      <>
+        <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
+          Độ tuổi và xác nhận
+        </h3>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-black/15 bg-white/50 px-3 py-2 text-sm">
+          <span className="flex min-w-0 items-center gap-2.5">
             {tryOn.previewUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it.
               <img
                 src={tryOn.previewUrl}
                 alt="Ảnh bạn đã chọn"
-                className="mt-3 max-h-64 w-auto max-w-full border border-black/15 object-contain"
+                className="h-10 w-8 shrink-0 rounded-[3px] border border-black/15 object-cover"
               />
             ) : null}
-          </div>
+            <span className="truncate">Ảnh đã chọn</span>
+          </span>
+          <button type="button" className={TEXT_BUTTON} onClick={tryOn.changePhoto}>
+            Đổi
+          </button>
+        </div>
 
-          <fieldset className="mt-5">
-            <legend className="text-sm font-semibold">Độ tuổi của bạn</legend>
-            <div className="mt-2 space-y-1">
-              {TRY_ON_AGE_OPTIONS.map((option) => (
-                <label key={option.value} className="flex min-h-11 items-start gap-3 py-2 text-sm leading-5">
+        <fieldset className="mt-4">
+          <legend className="text-sm font-semibold">Độ tuổi của bạn</legend>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {TRY_ON_AGE_OPTIONS.map((option) => {
+              const selected = tryOn.ageState === option.value;
+              return (
+                <label key={option.value} className="relative">
                   <input
                     type="radio"
                     name={`${ids}-age`}
                     value={option.value}
-                    checked={tryOn.ageState === option.value}
-                    disabled={tryOn.locked}
-                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
+                    checked={selected}
+                    className="peer sr-only"
+                    aria-describedby={selected && tryOn.isTeen ? attestationId : undefined}
                     onChange={() => tryOn.setAgeState(option.value)}
                   />
-                  <span>{option.label}</span>
+                  <span
+                    className={`flex min-h-11 cursor-pointer items-center rounded-full border border-[#3B2219] px-3.5 text-[13px] ${PEER_FOCUS_RING} peer-checked:bg-[#3B2219] peer-checked:text-[#FAF7F2]`}
+                  >
+                    {option.shortLabel}
+                  </span>
                 </label>
-              ))}
+              );
+            })}
+          </div>
+          {tryOn.isBlockedAge ? (
+            <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
+              {TRY_ON_BLOCKED_AGE_MESSAGE}
+            </p>
+          ) : null}
+          {tryOn.isTeen ? (
+            <div id={attestationId} className="mt-3 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
+              <p className="font-semibold">{TRY_ON_TEEN_ATTESTATION_LEAD}</p>
+              <p className="mt-1">
+                {TRY_ON_AGE_OPTIONS.find((option) => option.value === tryOn.ageState)?.label}
+              </p>
+              <p className="mt-2">{TRY_ON_TEEN_DISCLOSURE}</p>
             </div>
-            {tryOn.isBlockedAge ? (
-              <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
-                {TRY_ON_BLOCKED_AGE_MESSAGE}
-              </p>
-            ) : null}
-            {tryOn.isTeen ? (
-              <p className="mt-2 border-l-2 border-[#3B2219] pl-3 text-sm leading-6 text-black/75">
-                {TRY_ON_TEEN_DISCLOSURE}
-              </p>
-            ) : null}
-          </fieldset>
+          ) : null}
+        </fieldset>
 
-          <label className="mt-4 flex min-h-11 items-start gap-3 py-2 text-sm leading-5">
-            <input
-              type="checkbox"
-              checked={tryOn.acknowledged}
-              disabled={tryOn.locked}
-              className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
-              onChange={(event) => tryOn.setAcknowledged(event.target.checked)}
-            />
-            <span>{TRY_ON_LIKENESS_ACKNOWLEDGEMENT}</span>
-          </label>
+        <label className="mt-4 flex min-h-11 items-start gap-3 py-1.5 text-[13px] leading-5">
+          <input
+            type="checkbox"
+            checked={tryOn.acknowledged}
+            className="mt-0.5 h-5 w-5 shrink-0 accent-[#3B2219]"
+            onChange={(event) => tryOn.setAcknowledged(event.target.checked)}
+          />
+          <span>{TRY_ON_LIKENESS_ACKNOWLEDGEMENT}</span>
+        </label>
 
-          <p className="mt-3 text-xs leading-5 text-black/60">
+        <p className="mt-2 text-xs leading-5 text-black/60">
+          {BRAND.identity.name} không lưu ảnh trong hệ thống của mình; ảnh được gửi tới Google Cloud
+          Vertex AI để tạo kết quả.
+        </p>
+        <details className="text-xs leading-5 text-black/60">
+          <summary className={`inline-block min-h-6 cursor-pointer underline underline-offset-2 ${FOCUS_RING}`}>
+            Chi tiết
+          </summary>
+          <p className="mt-1">
             {BRAND.identity.name} không lưu ảnh bạn tải lên hay ảnh được tạo trong hệ thống của chúng
             tôi. Ảnh của bạn và ảnh sản phẩm được gửi tới Google Cloud Vertex AI để tạo kết quả; việc xử
             lý và lưu giữ tại Google Cloud tuân theo các thiết lập kiểm soát dữ liệu và điều khoản dịch
             vụ áp dụng.
           </p>
+        </details>
 
-          <button
-            type="button"
-            className="btn btn--primary mt-4 w-full px-4"
-            disabled={!tryOn.canGenerate}
-            aria-busy={phase === "loading"}
-            aria-describedby={showHint ? hintId : undefined}
-            onClick={tryOn.generate}
-          >
-            {phase === "success" ? "Tạo lại" : "Tạo ảnh thử đồ"}
-          </button>
-          {showHint ? (
-            <p id={hintId} className="mt-2 text-xs text-black/60">
-              Để tạo ảnh, hãy {tryOn.missingSteps.join(", ")}.
-            </p>
-          ) : null}
+        <button
+          type="button"
+          className="btn btn--primary mt-4 w-full px-4"
+          disabled={!tryOn.canGenerate}
+          aria-describedby={showHint ? hintId : undefined}
+          onClick={tryOn.generate}
+        >
+          Tạo ảnh thử đồ
+        </button>
+        {showHint ? (
+          <p id={hintId} className="mt-2 text-xs text-black/60">
+            Để tạo ảnh, hãy {tryOn.missingSteps.join(", ")}.
+          </p>
+        ) : null}
+      </>
+    );
+  }
 
-          <div className="mt-3 min-h-6" role="status" aria-live="polite">
-            {phase === "loading" ? "Đang tạo ảnh thử đồ, vui lòng chờ trong giây lát…" : null}
-            {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
-          </div>
+  function renderResultStep() {
+    return (
+      <>
+        <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
+          {phase === "loading" ? "Đang tạo ảnh" : phase === "error" ? "Chưa tạo được ảnh" : "Ảnh thử đồ"}
+        </h3>
+        <div role="status" aria-live="polite" className="min-h-6 text-sm">
+          {phase === "loading" ? "Đang tạo ảnh thử đồ, vui lòng chờ trong giây lát…" : null}
+          {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
+        </div>
 
-          {phase === "error" && tryOn.errorMessage ? (
-            <p role="alert" className={`mt-1 text-sm font-semibold ${ERROR_TEXT}`}>
-              {tryOn.errorMessage}
-            </p>
-          ) : null}
-          {phase === "error" && isLoginRequired(tryOn.errorReason) ? (
-            <a href="/login" className="btn btn--primary mt-3 w-full px-4">
-              Đăng nhập
-            </a>
-          ) : null}
+        {phase === "loading" ? (
+          <div
+            aria-busy="true"
+            className="mt-2 h-72 animate-pulse rounded-lg border border-black/10 bg-black/5"
+          />
+        ) : null}
 
-          {phase === "success" && result ? (
-            <div className="mt-4">
-              {/* eslint-disable-next-line @next/next/no-img-element -- a generated blob; next/image cannot optimise it. */}
-              <img
-                src={result.url}
-                alt={`Ảnh thử đồ do AI tạo cho ${productName}, chỉ mang tính tham khảo`}
-                className="max-h-[28rem] w-auto max-w-full border border-black/15 object-contain"
-              />
+        {phase === "success" && result ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- a generated blob; next/image cannot optimise it. */}
+            <img
+              src={result.url}
+              alt={`Ảnh thử đồ do AI tạo cho ${productName}, chỉ mang tính tham khảo`}
+              className="mx-auto mt-2 max-h-[22rem] w-auto max-w-full border border-black/15 object-contain"
+            />
+            <div className="mt-3 grid grid-cols-2 gap-2">
               <a
                 href={result.url}
                 download={`thu-do-${productSlug}.${result.mimeType === "image/png" ? "png" : "jpg"}`}
-                className="btn btn--outline mt-3 w-full px-4"
+                className="btn btn--primary px-4"
               >
                 Tải ảnh
               </a>
+              <button type="button" className="btn btn--outline px-4" onClick={tryOn.backToConfirm}>
+                Tạo lại
+              </button>
             </div>
-          ) : null}
+            <p className="mt-3 text-xs leading-5 text-black/65">
+              Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay
+              màu sắc thật.
+            </p>
+            {tryOn.isTeen ? (
+              <p className="mt-2 border-l-[3px] border-[#3B2219] pl-3 text-xs leading-5 text-black/75">
+                {TRY_ON_TEEN_DISCLOSURE}
+              </p>
+            ) : null}
+            <div className="mt-2 text-center">
+              <button type="button" className={TEXT_BUTTON} onClick={tryOn.changePhoto}>
+                Dùng ảnh khác
+              </button>
+            </div>
+          </>
+        ) : null}
+
+        {phase === "error" && tryOn.errorMessage ? (
+          <>
+            <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
+              {tryOn.errorMessage}
+            </p>
+            {isLoginRequired(tryOn.errorReason) ? (
+              <a href="/login" className="btn btn--primary mt-4 w-full px-4">
+                Đăng nhập
+              </a>
+            ) : (
+              <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={tryOn.backToConfirm}>
+                Quay lại
+              </button>
+            )}
+          </>
+        ) : null}
+      </>
+    );
+  }
+
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-labelledby={titleId}
+      tabIndex={-1}
+      className="m-0 mt-auto max-h-[92dvh] w-full max-w-none overflow-y-auto rounded-t-2xl border-0 bg-[#FAF7F2] p-0 text-black shadow-2xl backdrop:bg-black/45 sm:m-auto sm:max-h-[calc(100dvh-2rem)] sm:max-w-[440px] sm:rounded-lg"
+      onClose={handleClosed}
+      onKeyDown={containFocus}
+    >
+      <div className="px-5 pb-5 pt-4">
+        <div className="flex items-start justify-between gap-4">
+          <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
+            Thử đồ
+          </h2>
+          <button
+            type="button"
+            className={`shrink-0 px-2 ${TEXT_BUTTON}`}
+            onClick={() => dialogRef.current?.close()}
+          >
+            Đóng
+          </button>
         </div>
-      </dialog>
-    </div>
+        <p className="mb-3 text-xs leading-5 text-black/60">
+          Xem {productName} trên ảnh của bạn. Kết quả do AI tạo, chỉ mang tính tham khảo.
+        </p>
+        {renderProgress()}
+        <div className="min-h-[24rem]">
+          {step === "photo" ? renderPhotoStep() : null}
+          {step === "confirm" ? renderConfirmStep() : null}
+          {step === "result" ? renderResultStep() : null}
+        </div>
+      </div>
+    </dialog>
   );
 }

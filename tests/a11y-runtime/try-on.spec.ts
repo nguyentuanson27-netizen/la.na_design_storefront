@@ -154,7 +154,11 @@ async function seedProduct({
       isActive: true,
       syncedAt,
       content: {
-        create: { status: "PUBLISHED", editorialDescription: "Sản phẩm thử nghiệm cho thử đồ." },
+        create: {
+          status: "PUBLISHED",
+          editorialDescription: "Sản phẩm thử nghiệm cho thử đồ.",
+          sizeGuide: "ao-dai",
+        },
       },
     },
   });
@@ -343,7 +347,8 @@ async function asNewGuest(page: Page) {
 }
 
 function triggerOf(page: Page) {
-  return page.getByRole("button", { name: "Thử đồ", exact: true });
+  // "Thử đồ" on a phone, "Thử đồ bằng ảnh của bạn" from the `sm` breakpoint up.
+  return page.getByRole("button", { name: /^Thử đồ/ });
 }
 function dialogOf(page: Page) {
   return page.getByRole("dialog", { name: "Thử đồ" });
@@ -359,29 +364,73 @@ async function openTryOn(page: Page, baseUrl = ENABLED_URL, slug = slugs.eligibl
 
 function parts(dialog: Locator) {
   return {
-    photo: dialog.getByLabel(/Ảnh của bạn/),
-    adult: dialog.getByRole("radio", { name: /từ 18 tuổi trở lên/ }),
-    teen: dialog.getByRole("radio", { name: /từ 13 đến 17 tuổi/ }),
-    below: dialog.getByRole("radio", { name: /chưa đủ tuổi đồng ý/ }),
+    // Step 1
+    photo: dialog.getByLabel(/ảnh của bạn/i),
+    next: dialog.getByRole("button", { name: "Tiếp tục", exact: true }),
+    preview: dialog.getByRole("img", { name: "Ảnh bạn đã chọn" }),
+    // Step 2
+    adult: dialog.getByRole("radio", { name: "Từ 18 tuổi" }),
+    teen: dialog.getByRole("radio", { name: "13–17 tuổi" }),
+    below: dialog.getByRole("radio", { name: "Chưa đủ tuổi" }),
     acknowledge: dialog.getByRole("checkbox", { name: /Tôi xác nhận đây là ảnh của tôi/ }),
-    generate: dialog.getByRole("button", { name: /^(Tạo ảnh thử đồ|Tạo lại)$/ }),
+    generate: dialog.getByRole("button", { name: "Tạo ảnh thử đồ", exact: true }),
+    changePhoto: dialog.getByRole("button", { name: "Đổi", exact: true }),
+    // Step 3
+    retry: dialog.getByRole("button", { name: "Tạo lại", exact: true }),
+    back: dialog.getByRole("button", { name: "Quay lại", exact: true }),
+    otherPhoto: dialog.getByRole("button", { name: "Dùng ảnh khác", exact: true }),
     result: dialog.getByRole("img", { name: /Ảnh thử đồ do AI tạo/ }),
     status: dialog.getByRole("status"),
     alert: dialog.getByRole("alert"),
+    attestation: dialog.getByText("Tôi từ 13 đến 17 tuổi, đã đủ tuổi đồng ý xử lý dữ liệu số theo quy định nơi tôi sống và có sự cho phép của cha mẹ hoặc người giám hộ hợp pháp."),
+    disclosure: dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/),
   };
+}
+
+/** Step 1 to step 2: choose the photo and continue. */
+async function choosePhotoAndContinue(dialog: Locator, photo = jpegPhoto()) {
+  const { photo: input, next } = parts(dialog);
+  await input.setInputFiles(photo);
+  await next.click();
+}
+
+/** The age chips are visually hidden radios, so a click lands on the chip drawn over them. */
+async function chooseAge(dialog: Locator, age: "adult" | "teen" | "below") {
+  await parts(dialog)[age].check({ force: true });
+}
+
+/** Steps 1 and 2 up to, but not including, the generate button. */
+async function fillThroughConfirmation(
+  dialog: Locator,
+  { photo = jpegPhoto(), age = "adult" }: { photo?: ReturnType<typeof jpegPhoto>; age?: "adult" | "teen" } = {},
+) {
+  await choosePhotoAndContinue(dialog, photo);
+  await chooseAge(dialog, age);
+  await parts(dialog).acknowledge.check();
 }
 
 // --- eligibility ------------------------------------------------------------------------------
 
-test("an eligible apparel PDP offers Thử đồ at phone and desktop widths", async ({ page }) => {
+test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, on the size-guide line", async ({ page }) => {
   const watched = watch(page);
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
-  await expect(triggerOf(page)).toBeVisible();
+  const sizeGuide = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
+
+  async function expectOnSizeGuideLine() {
+    await expect(triggerOf(page)).toBeVisible();
+    await expect(sizeGuide).toBeVisible();
+    const [trigger, guide] = await Promise.all([triggerOf(page).boundingBox(), sizeGuide.boundingBox()]);
+    // Same line: the try-on entry point adds no row of its own to the purchase panel.
+    expect(Math.abs(trigger!.y + trigger!.height / 2 - (guide!.y + guide!.height / 2))).toBeLessThan(8);
+    expect(trigger!.x).toBeGreaterThan(guide!.x + guide!.width);
+  }
+
+  await expectOnSizeGuideLine();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeEnabled();
   await assertPageQuality(page);
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(triggerOf(page)).toBeVisible();
+  await expectOnSizeGuideLine();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeVisible();
   await assertPageQuality(page);
 
@@ -430,22 +479,28 @@ test("with the kill switch off the PDP is unchanged, shows no Thử đồ, and t
 test("the dialog opens, traps keyboard focus, closes with Escape and returns focus to Thử đồ", async ({ page }) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, generate } = parts(dialog);
+  const { photo, next } = parts(dialog);
   const closeButton = dialog.getByRole("button", { name: "Đóng", exact: true });
 
-  // Keyboard-only: Tab walks the dialog's own controls in reading order and never leaves it.
+  // It is a bottom sheet on a phone and the first step is showing.
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(dialog.getByText("Bước 1/3")).toBeVisible();
+  await expect(next).toBeDisabled();
+  const box = (await dialog.boundingBox())!;
+  const viewport = page.viewportSize()!;
+  expect(box.width).toBeGreaterThanOrEqual(viewport.width - 1);
+  expect(box.y + box.height).toBeGreaterThanOrEqual(viewport.height - 1);
+
+  // Keyboard-only: Tab walks the dialog's own controls and never leaves it.
   await closeButton.focus();
   await page.keyboard.press("Tab");
   await expect(photo).toBeFocused();
-  await page.keyboard.press("Tab");
-  expect(await page.evaluate(() => (document.activeElement as HTMLInputElement | null)?.type)).toBe("radio");
-  for (let step = 0; step < 12; step += 1) {
+  for (let step = 0; step < 8; step += 1) {
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.closest("dialog") !== null)).toBe(true);
   }
   await page.keyboard.press("Shift+Tab");
   expect(await page.evaluate(() => document.activeElement?.closest("dialog") !== null)).toBe(true);
-  await expect(generate).toBeDisabled();
 
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
@@ -462,21 +517,42 @@ test("the dialog opens, traps keyboard focus, closes with Escape and returns foc
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
 });
 
+test("moving between steps moves focus to the new step's heading, and the steps keep what was chosen", async ({
+  page,
+}) => {
+  const dialog = await openTryOn(page);
+  const { photo, preview, next, adult, acknowledge, changePhoto } = parts(dialog);
+
+  await photo.setInputFiles(jpegPhoto());
+  await next.click();
+  const confirmHeading = dialog.getByRole("heading", { name: "Độ tuổi và xác nhận" });
+  await expect(confirmHeading).toBeFocused();
+  await expect(dialog.getByText("Bước 2/3")).toBeVisible();
+
+  await chooseAge(dialog, "adult");
+  await acknowledge.check();
+  await changePhoto.click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeFocused();
+  // Going back keeps the photo; coming forward again keeps the age.
+  await expect(preview).toBeVisible();
+  await next.click();
+  await expect(adult).toBeChecked();
+});
+
 test("closing discards the photo, the choices and the result", async ({ page }) => {
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, result } = parts(dialog);
-  await photo.setInputFiles(jpegPhoto());
-  await adult.check();
-  await acknowledge.check();
+  const { result, preview, next, generate } = parts(dialog);
+  await fillThroughConfirmation(dialog);
   await generate.click();
   await expect(result).toBeVisible();
 
   await page.keyboard.press("Escape");
   await triggerOf(page).click();
-  await expect(dialog.getByRole("img")).toHaveCount(0);
-  await expect(adult).not.toBeChecked();
-  await expect(acknowledge).not.toBeChecked();
-  await expect(generate).toBeDisabled();
+  // Back at step 1 with nothing carried over.
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(preview).toHaveCount(0);
+  await expect(result).toHaveCount(0);
+  await expect(next).toBeDisabled();
 });
 
 // --- upload ------------------------------------------------------------------------------------
@@ -484,20 +560,22 @@ test("closing discards the photo, the choices and the result", async ({ page }) 
 test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image files are refused", async ({ page }) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, alert } = parts(dialog);
-  const preview = dialog.getByRole("img", { name: "Ảnh bạn đã chọn" });
+  const { photo, preview, next, alert } = parts(dialog);
 
   await photo.setInputFiles(jpegPhoto());
   await expect(preview).toBeVisible();
   await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   expect(await preview.getAttribute("src")).toMatch(/^blob:/);
+  await expect(next).toBeEnabled();
 
   await photo.setInputFiles(pngPhoto());
   await expect(preview).toBeVisible();
+  await expect(next).toBeEnabled();
 
   await photo.setInputFiles({ name: "toi.webp", mimeType: "image/webp", buffer: Buffer.from("RIFFxxxxWEBPVP8 ") });
   await expect(alert).toHaveText("Ảnh phải là tệp JPG hoặc PNG hợp lệ.");
   await expect(preview).toHaveCount(0);
+  await expect(next).toBeDisabled();
 
   await photo.setInputFiles({ name: "toi.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
   await expect(alert).toHaveText("Ảnh phải là tệp JPG hoặc PNG hợp lệ.");
@@ -509,6 +587,7 @@ test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image 
   });
   await expect(alert).toHaveText("Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.");
   await expect(preview).toHaveCount(0);
+  await expect(next).toBeDisabled();
 
   await assertPageQuality(page);
   expect(watched.tryOnPosts).toHaveLength(0);
@@ -522,15 +601,16 @@ test("generation stays unavailable until a photo, an allowed age and the acknowl
 }) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate } = parts(dialog);
+  const { next, acknowledge, generate } = parts(dialog);
 
-  await expect(generate).toBeDisabled();
-  await photo.setInputFiles(jpegPhoto());
+  // Step 2 cannot even be reached without a photo.
+  await expect(next).toBeDisabled();
+  await choosePhotoAndContinue(dialog);
   await expect(generate).toBeDisabled();
   await acknowledge.check();
   await expect(generate).toBeDisabled();
   await expect(dialog.getByText(/hãy chọn độ tuổi/)).toBeVisible();
-  await adult.check();
+  await chooseAge(dialog, "adult");
   await expect(generate).toBeEnabled();
   await acknowledge.uncheck();
   await expect(generate).toBeDisabled();
@@ -540,11 +620,11 @@ test("generation stays unavailable until a photo, an allowed age and the acknowl
 test("the blocked age state cannot generate and sends nothing", async ({ page }) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, below, acknowledge, generate, alert } = parts(dialog);
+  const { acknowledge, generate, alert } = parts(dialog);
 
-  await photo.setInputFiles(jpegPhoto());
+  await choosePhotoAndContinue(dialog);
   await acknowledge.check();
-  await below.check();
+  await chooseAge(dialog, "below");
   await expect(generate).toBeDisabled();
   await expect(alert).toContainText("Tính năng thử đồ chưa dành cho bạn");
   await assertPageQuality(page);
@@ -553,30 +633,33 @@ test("the blocked age state cannot generate and sends nothing", async ({ page })
   expect(predictCalls()).toHaveLength(0);
 });
 
-test("the teen path states the digital-consent-age and guardian attestation and shows the AI disclosure", async ({
+test("the teen path states the full attestation under a short chip and shows the AI disclosure, also with the result", async ({
   page,
 }) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, teen, adult, acknowledge, generate, result } = parts(dialog);
+  const { generate, result, attestation, disclosure, acknowledge } = parts(dialog);
 
-  await expect(dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/)).toHaveCount(0);
-  await expect(teen).toBeVisible();
-  const label = (await dialog.getByText(/từ 13 đến 17 tuổi/).textContent()) ?? "";
-  expect(label).toContain("đã đủ tuổi đồng ý xử lý dữ liệu số theo quy định nơi tôi sống");
-  expect(label).toContain("sự cho phép của cha mẹ hoặc người giám hộ hợp pháp");
-
-  await adult.check();
-  await expect(dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/)).toHaveCount(0);
-  await teen.check();
-  await expect(dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/)).toBeVisible();
-  await expect(dialog.getByText(/không dùng ảnh này để đánh giá cơ thể|Đừng dùng ảnh này để đánh giá cơ thể/)).toBeVisible();
+  await choosePhotoAndContinue(dialog);
+  // Nothing about teens until the teen chip is chosen, and the chip itself is only a short label.
+  await expect(attestation).toHaveCount(0);
+  await expect(disclosure).toHaveCount(0);
+  await chooseAge(dialog, "adult");
+  await expect(attestation).toHaveCount(0);
+  await chooseAge(dialog, "teen");
+  await expect(dialog.getByText("Khi chọn mục này, bạn xác nhận:")).toBeVisible();
+  await expect(attestation).toBeVisible();
+  await expect(disclosure).toBeVisible();
+  const teenText = await attestation.textContent();
+  expect(teenText).toContain("đã đủ tuổi đồng ý xử lý dữ liệu số theo quy định nơi tôi sống");
+  expect(teenText).toContain("sự cho phép của cha mẹ hoặc người giám hộ hợp pháp");
   await assertPageQuality(page);
 
-  await photo.setInputFiles(jpegPhoto());
   await acknowledge.check();
   await generate.click();
   await expect(result).toBeVisible();
+  // The disclosure is still with the image it is about.
+  await expect(disclosure).toBeVisible();
 
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
@@ -587,7 +670,7 @@ test("the teen path states the digital-consent-age and guardian attestation and 
 
 // --- generation ---------------------------------------------------------------------------------
 
-test("an adult generation shows loading, exactly one result, a download, and requires a fresh acknowledgement to retry", async ({
+test("an adult generation shows loading, exactly one result, a download, and requires a fresh acknowledgement to run again", async ({
   page,
 }) => {
   const watched = watch(page);
@@ -605,16 +688,17 @@ test("an adult generation shows loading, exactly one result, a download, and req
     };
   });
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, result, status } = parts(dialog);
+  const { adult, acknowledge, generate, retry, result, status } = parts(dialog);
 
-  await photo.setInputFiles(jpegPhoto("slow"));
-  await adult.check();
-  await acknowledge.check();
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("slow") });
   await generate.click();
 
+  // Step 3, loading: the form is gone, so there is nothing to edit while the request runs.
+  await expect(dialog.getByText("Bước 3/3")).toBeVisible();
   await expect(status).toContainText("Đang tạo ảnh thử đồ");
-  await expect(generate).toBeDisabled();
-  await expect(generate).toHaveAttribute("aria-busy", "true");
+  await expect(adult).toHaveCount(0);
+  await expect(acknowledge).toHaveCount(0);
+  await expect(generate).toHaveCount(0);
   await assertPageQuality(page);
 
   await expect(result).toBeVisible();
@@ -622,7 +706,7 @@ test("an adult generation shows loading, exactly one result, a download, and req
   await expect(status).toContainText("Đã tạo xong ảnh thử đồ.");
   await expect.poll(() => result.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   expect(await result.getAttribute("alt")).toContain(PRODUCT_NAME);
-  await expect(dialog.getByText(/chỉ mang tính tham khảo, không đảm bảo kích cỡ/)).toBeVisible();
+  await expect(dialog.getByText(/chỉ mang tính tham khảo — không đảm bảo kích cỡ/)).toBeVisible();
 
   const download = dialog.getByRole("link", { name: "Tải ảnh" });
   await expect(download).toHaveAttribute("download", `thu-do-${slugs.eligible}.png`);
@@ -647,9 +731,12 @@ test("an adult generation shows loading, exactly one result, a download, and req
   });
   expect(tryOnProductFetches()).toHaveLength(1);
 
-  // The acknowledgement is asked for again before every generation.
+  // Running again goes back to the confirmation step with the age kept and the acknowledgement
+  // asked for afresh, before every generation.
+  await retry.click();
+  await expect(dialog.getByRole("heading", { name: "Độ tuổi và xác nhận" })).toBeFocused();
+  await expect(adult).toBeChecked();
   await expect(acknowledge).not.toBeChecked();
-  await expect(generate).toHaveText("Tạo lại");
   await expect(generate).toBeDisabled();
   await acknowledge.check();
   await asNewGuest(page);
@@ -679,52 +766,44 @@ test("an adult generation shows loading, exactly one result, a download, and req
   await assertPageQuality(page);
 });
 
-test("the form is frozen while a generation runs, so a late result can never disagree with it", async ({ page }) => {
+test("while a generation runs the form is off screen and cannot change, so a late result matches what was sent", async ({
+  page,
+}) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, adult, teen, below, acknowledge, generate, result, status } = parts(dialog);
-  const disclosure = dialog.getByText(/Ảnh này do AI tạo ra nên có thể chưa chính xác/);
-  const preview = dialog.getByRole("img", { name: "Ảnh bạn đã chọn" });
+  const { photo, next, adult, teen, below, acknowledge, generate, retry, result, status, otherPhoto, preview } =
+    parts(dialog);
 
-  await photo.setInputFiles(jpegPhoto("slow"));
-  await teen.check();
-  await acknowledge.check();
-  await expect(disclosure).toBeVisible();
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("slow"), age: "teen" });
   await generate.click();
   await expect(status).toContainText("Đang tạo ảnh thử đồ");
 
-  // Everything the request was built from is locked until it settles: the photo, the age
-  // attestation and the acknowledgement cannot change underneath a request already in flight.
-  await expect(photo).toBeDisabled();
-  await expect(adult).toBeDisabled();
-  await expect(teen).toBeDisabled();
-  await expect(below).toBeDisabled();
-  await expect(acknowledge).toBeDisabled();
-  await expect(teen).toBeChecked();
-  await expect(disclosure).toBeVisible();
-  await expect(preview).toBeVisible();
-  // The visible "Chọn ảnh" button is the label of the disabled input, so it cannot reopen the picker.
-  const chooser = await Promise.race([
-    page.waitForEvent("filechooser").then(() => "opened"),
-    dialog.getByText("Chọn ảnh", { exact: true }).click({ force: true }).then(() => delay(300)).then(() => "none"),
-  ]);
-  expect(chooser).toBe("none");
-  await expect(teen).toBeChecked();
+  // None of the controls the request was built from is on screen, and there is no way back to them
+  // until it settles; only "Đóng" remains.
+  for (const control of [photo, next, adult, teen, below, acknowledge, generate, retry, otherPhoto, preview]) {
+    await expect(control).toHaveCount(0);
+  }
+  await expect(dialog.getByRole("button", { name: "Đóng", exact: true })).toBeVisible();
 
   await expect(result).toBeVisible();
-  // The result belongs to exactly the state that is still on screen.
-  await expect(teen).toBeChecked();
-  await expect(disclosure).toBeVisible();
-  await expect(preview).toBeVisible();
   expect(predictCalls()).toHaveLength(1);
   expect(predictCalls()[0]).toMatchObject({ personGeneration: "allow-all" });
 
-  // Unlocked again once settled.
-  await expect(photo).toBeEnabled();
-  await expect(adult).toBeEnabled();
-  await expect(acknowledge).toBeEnabled();
-  await adult.check();
-  await expect(disclosure).toHaveCount(0);
+  // The result is for the teen attestation that was sent, and going back finds it unchanged.
+  await expect(parts(dialog).disclosure).toBeVisible();
+  await retry.click();
+  await expect(teen).toBeChecked();
+  await expect(parts(dialog).attestation).toBeVisible();
+  await expect(acknowledge).not.toBeChecked();
+
+  // "Dùng ảnh khác" from a result goes back to choosing a photo, with the current one still shown.
+  await acknowledge.check();
+  await asNewGuest(page);
+  await generate.click();
+  await expect(result).toBeVisible();
+  await otherPhoto.click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeFocused();
+  await expect(preview).toBeVisible();
 
   await assertPageQuality(page);
   expect(watched.pageErrors).toEqual([]);
@@ -734,31 +813,37 @@ test("the form is frozen while a generation runs, so a late result can never dis
 test("a PNG upload generates a result at desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, result } = parts(dialog);
-  await photo.setInputFiles(pngPhoto());
-  await adult.check();
-  await acknowledge.check();
+  const { generate, result } = parts(dialog);
+
+  // From the `sm` breakpoint up it is a centred modal, not a bottom sheet.
+  const box = (await dialog.boundingBox())!;
+  expect(box.width).toBeLessThanOrEqual(441);
+  expect(box.x).toBeGreaterThan(100);
+
+  await fillThroughConfirmation(dialog, { photo: pngPhoto() });
   await generate.click();
   await expect(result).toBeVisible();
   await assertPageQuality(page);
 });
 
-test("a provider failure shows a safe, retryable message and purchase still works afterwards", async ({ page }) => {
+test("a provider failure shows a safe message, goes back to confirm with nothing lost, and purchase still works afterwards", async ({
+  page,
+}) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, alert } = parts(dialog);
+  const { adult, acknowledge, generate, back, alert, preview } = parts(dialog);
 
-  await photo.setInputFiles(jpegPhoto("fail"));
-  await adult.check();
-  await acknowledge.check();
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("fail") });
   await generate.click();
 
+  await expect(dialog.getByRole("heading", { name: "Chưa tạo được ảnh" })).toBeVisible();
   await expect(alert).toHaveText("Chưa tạo được ảnh thử đồ. Vui lòng thử lại.");
   await expect(alert).not.toContainText(/fixture|upstream|500|projects\//i);
   await assertPageQuality(page);
 
-  // Retry stays in the same surface: the photo and age remain, only the acknowledgement is asked again.
-  await expect(dialog.getByRole("img", { name: "Ảnh bạn đã chọn" })).toBeVisible();
+  // Going back stays in the same surface: the photo and age remain, only the acknowledgement is asked again.
+  await back.click();
+  await expect(preview).toBeVisible();
   await expect(adult).toBeChecked();
   await expect(acknowledge).not.toBeChecked();
   await acknowledge.check();
@@ -775,20 +860,22 @@ test("a provider failure shows a safe, retryable message and purchase still work
   expect(unexpectedConsoleErrors(watched, { allowTryOnFailure: true })).toEqual([]);
 });
 
-test("a provider safety block fails closed: safe copy, the photo is dropped, and nothing is retried", async ({ page }) => {
+test("a provider safety block fails closed: safe copy on the photo step, the photo is dropped, and nothing is retried", async ({
+  page,
+}) => {
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, alert } = parts(dialog);
+  const { adult, acknowledge, generate, alert, preview, next } = parts(dialog);
 
-  await photo.setInputFiles(jpegPhoto("safety"));
-  await adult.check();
-  await acknowledge.check();
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("safety") });
   await generate.click();
 
+  // Back at choosing a photo, with the explanation showing and the refused photo gone.
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
   await expect(alert).toContainText("Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác");
   await expect(alert).not.toContainText(/an toàn|safety|rai|filter|00000000/i);
-  await expect(dialog.getByRole("img", { name: "Ảnh bạn đã chọn" })).toHaveCount(0);
-  await expect(generate).toBeDisabled();
+  await expect(preview).toHaveCount(0);
+  await expect(next).toBeDisabled();
   await assertPageQuality(page);
 
   // One attempt only: no automatic retry, no weaker settings.
@@ -797,8 +884,10 @@ test("a provider safety block fails closed: safe copy, the photo is dropped, and
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({ safetySetting: "block-low-and-above", addWatermark: true });
 
-  // A different photo is the way forward.
-  await photo.setInputFiles(jpegPhoto("ok"));
+  // A different photo is the way forward; the age is kept, the acknowledgement is asked again.
+  await choosePhotoAndContinue(dialog, jpegPhoto("ok"));
+  await expect(adult).toBeChecked();
+  await expect(acknowledge).not.toBeChecked();
   await acknowledge.check();
   await asNewGuest(page);
   await generate.click();
@@ -946,7 +1035,9 @@ test.describe("the endpoint enforces the gates itself", () => {
   });
 });
 
-test("a guest told to log in sees the sign-in link, and the dialog still closes cleanly", async ({ page }) => {
+test("a guest told to log in sees the sign-in link on the result step, and the dialog still closes cleanly", async ({
+  page,
+}) => {
   // The sixth guest attempt needs five spaced minutes of real time, so the server's answer is
   // stubbed here; the quota logic that produces it is covered by the limiter and service tests.
   await page.route("**/api/try-on", (route) =>
@@ -958,10 +1049,8 @@ test("a guest told to log in sees the sign-in link, and the dialog still closes 
   );
   const watched = watch(page);
   const dialog = await openTryOn(page);
-  const { photo, adult, acknowledge, generate, alert } = parts(dialog);
-  await photo.setInputFiles(jpegPhoto());
-  await adult.check();
-  await acknowledge.check();
+  const { generate, alert } = parts(dialog);
+  await fillThroughConfirmation(dialog);
   await generate.click();
 
   await expect(alert).toContainText("5 lượt thử đồ");

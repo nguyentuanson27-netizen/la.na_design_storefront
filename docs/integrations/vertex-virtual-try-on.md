@@ -10,8 +10,10 @@ how to turn it off, and what is still waiting on a human.
 ```text
 PDP (server)   resolveProductTryOn()        flag on + category (aoDai|setDo|vayDam) + exact first
                                             trusted image is JPEG/PNG  ->  {productSlug} | null
-Browser        BrandTryOnLauncher/useTryOn  form frozen while a request runs; multipart POST /api/try-on:
-                                            photo, productSlug, likenessAcknowledged, ageState
+Browser        BrandTryOnTrigger +          "Thử đồ" link on the size-guide line opens a 3-step dialog;
+               BrandTryOnDialog/useTryOn    the form is not on screen while a request runs; multipart
+                                            POST /api/try-on: photo, productSlug, likenessAcknowledged,
+                                            ageState
 Route          handleTryOnPost()            same-origin (Origin host == Host), multipart only,
                                             Content-Length and streamed-byte cap, 30 s body deadline,
                                             client key
@@ -27,6 +29,18 @@ Files: `src/commerce/try-on-*.ts` (policy, eligibility, request, service, endpoi
 runtime wiring), `src/integrations/vertex-try-on/*` (the only Vertex/Google code),
 `src/operations/try-on-observability.ts`, `src/app/api/try-on/route.ts`,
 `src/components/headless/{use-try-on,try-on-model}.ts`, `src/components/brand/try-on-dialog.tsx`.
+
+### Dialog
+
+The entry point is a text link ("Thử đồ", with " bằng ảnh của bạn" from the `sm` breakpoint up) on the
+same line as "Hướng dẫn chọn size", so the purchase panel gains no row. The dialog is a bottom sheet on
+phones and a 440 px modal from `sm`, in three steps: (1) choose a photo, (2) age and confirmation
+(age chips, the full teen attestation under a short chip, the exact likeness acknowledgement, privacy
+line), (3) result. Loading, success and failure are all step 3, so nothing the request was built from
+can be edited while it runs. "Tạo lại" returns to step 2 with the age kept and the acknowledgement asked
+again; a provider safety block drops the photo and returns to step 1 with the explanation. Moving
+between steps moves focus to the new step's heading. Step logic lives in `try-on-model.ts`
+(`nextTryOnStep`) and is unit-tested; the server gates are unchanged by the layout.
 
 A route handler is used instead of a Server Action because a Server Action's body limit is a global
 setting; raising it for a 7 MB photo would raise it for every action on the site.

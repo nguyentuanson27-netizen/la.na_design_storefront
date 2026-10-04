@@ -1,12 +1,12 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, useState, type ReactNode } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
-import { BrandTryOnLauncher } from "@/components/brand/try-on-dialog";
+import { BrandTryOnDialog, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -60,6 +60,10 @@ export function BrandProductDetail({
   purchaseInformation,
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
+  // Virtual try-on is only a link on the size-guide line and a dialog: it shares no state with the
+  // selection above, so opening, failing or dismissing it cannot change what the shopper buys.
+  const [tryOnOpen, setTryOnOpen] = useState(false);
+  const tryOnTriggerRef = useRef<HTMLButtonElement | null>(null);
 
   return (
     <>
@@ -94,12 +98,15 @@ export function BrandProductDetail({
           <div className="min-w-0 lg:col-start-1 lg:row-start-1">{identity}</div>
 
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
-            <PurchasePanelView controller={controller} sizeGuide={sizeGuide} />
-            {/* Beside the purchase controls, never inside them: try-on shares no state with the
-                selection or the cart, so it can fail without touching what the shopper buys. */}
-            {tryOn === null ? null : (
-              <BrandTryOnLauncher productSlug={tryOn.productSlug} productName={productName} />
-            )}
+            <PurchasePanelView
+              controller={controller}
+              sizeGuide={sizeGuide}
+              tryOnTrigger={
+                tryOn === null ? null : (
+                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => setTryOnOpen(true)} />
+                )
+              }
+            />
           </div>
 
           {/* Omitted entirely rather than rendered empty: a product with no approved editorial
@@ -112,6 +119,16 @@ export function BrandProductDetail({
 
         </div>
       </div>
+
+      {tryOn === null ? null : (
+        <BrandTryOnDialog
+          productSlug={tryOn.productSlug}
+          productName={productName}
+          open={tryOnOpen}
+          onOpenChange={setTryOnOpen}
+          returnFocusRef={tryOnTriggerRef}
+        />
+      )}
     </>
   );
 }

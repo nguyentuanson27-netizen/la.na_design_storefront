@@ -9,11 +9,14 @@ import {
   isTeenAgeState,
   isTryOnAgeAllowed,
   missingTryOnSteps,
+  nextTryOnStep,
   parseTryOnFailureReason,
+  tryOnStepNumber,
   tryOnFailureMessage,
   validateTryOnFile,
   type TryOnAgeState,
   type TryOnFailureReason,
+  type TryOnStep,
 } from "./try-on-model.ts";
 
 /**
@@ -25,11 +28,14 @@ import {
  * photo and the result only as in-memory blob URLs, revokes them when replaced, and `reset()` drops
  * everything when the dialog closes — nothing is written to browser storage.
  *
- * Everything the request is built from is frozen while it runs. The photo, the age attestation and
- * the acknowledgement are snapshotted into the `FormData` when the request starts; if they could
- * change before it settles, the result would arrive beside a preview and a teen disclosure that no
- * longer describe the photo and attestation it was made from. `locked` disables the controls, and
- * the setters below ignore changes as well, so the guarantee does not depend on markup alone.
+ * The dialog is a three-step wizard (`step`): photo, age and confirmation, result. Loading, success
+ * and failure are all the result step, so the form is not on screen while a request is in flight.
+ *
+ * Everything the request is built from is also frozen while it runs, in the hook and not only in the
+ * markup. The photo, the age attestation and the acknowledgement are snapshotted into the `FormData`
+ * when the request starts; if they could change before it settles, the result would arrive beside a
+ * preview and a teen disclosure that no longer describe the photo and attestation it was made from.
+ * The setters below ignore changes while `locked`, whatever the markup does.
  *
  * It submits the photo, the product slug, the acknowledgement and the age state, and nothing else:
  * in particular no product image URL, because the server chooses the garment image itself.
@@ -55,6 +61,7 @@ export function useTryOn({
 }>) {
   const abortRef = useRef<AbortController | null>(null);
 
+  const [step, setStep] = useState<TryOnStep>("photo");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -93,6 +100,7 @@ export function useTryOn({
   function reset() {
     abortRef.current?.abort();
     abortRef.current = null;
+    setStep("photo");
     setFile(null);
     setPreviewUrl(null);
     setFileError(null);
@@ -130,6 +138,33 @@ export function useTryOn({
     setPreviewUrl(URL.createObjectURL(next));
   }
 
+  const canContinue = !locked && file !== null && fileError === null;
+
+  function continueToConfirm() {
+    if (!canContinue) return;
+    setStep((current) => nextTryOnStep(current, "continue"));
+  }
+
+  /** Back to choosing a photo. The current one stays until another replaces it. */
+  function changePhoto() {
+    if (locked || abortRef.current !== null) return;
+    setResult(null);
+    setErrorMessage(null);
+    setErrorReason(null);
+    setPhase("idle");
+    setStep((current) => nextTryOnStep(current, "change-photo"));
+  }
+
+  /** Back to the confirmation step to run again; the acknowledgement is asked afresh. */
+  function backToConfirm() {
+    if (locked || abortRef.current !== null) return;
+    setResult(null);
+    setErrorMessage(null);
+    setErrorReason(null);
+    setPhase("idle");
+    setStep((current) => nextTryOnStep(current, "back"));
+  }
+
   async function generate() {
     // `abortRef` is set synchronously, so a second click in the same frame cannot start a second
     // generation before `phase` has re-rendered.
@@ -137,6 +172,7 @@ export function useTryOn({
 
     const controller = new AbortController();
     abortRef.current = controller;
+    setStep((current) => nextTryOnStep(current, "generate"));
     setPhase("loading");
     setErrorMessage(null);
     setErrorReason(null);
@@ -166,9 +202,12 @@ export function useTryOn({
         setErrorReason(parseTryOnFailureReason(record.reason));
         setPhase("error");
         if (isFinalForPhoto(record.reason)) {
+          // The provider refused this photo for good. It is dropped, and the shopper is sent back to
+          // choose another, with the explanation still showing there.
           setFile(null);
           setPreviewUrl(null);
           clearFileInput();
+          setStep((current) => nextTryOnStep(current, "photo-dropped"));
         }
       }
     } catch (error) {
@@ -196,6 +235,12 @@ export function useTryOn({
   }
 
   return {
+    step,
+    stepNumber: tryOnStepNumber(step),
+    canContinue,
+    continueToConfirm,
+    changePhoto,
+    backToConfirm,
     locked,
     fileName: file?.name ?? null,
     previewUrl,

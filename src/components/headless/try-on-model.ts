@@ -21,7 +21,13 @@ import {
 export { TRY_ON_LIKENESS_ACKNOWLEDGEMENT } from "../../commerce/try-on-policy.ts";
 export type { TryOnAgeState, TryOnFailureReason } from "../../commerce/try-on-policy.ts";
 
-export type TryOnAgeOption = Readonly<{ value: TryOnAgeState; label: string }>;
+export type TryOnAgeOption = Readonly<{
+  value: TryOnAgeState;
+  /** The full statement the shopper is attesting to. */
+  label: string;
+  /** The compact chip text; it labels the choice but is never the thing attested to. */
+  shortLabel: string;
+}>;
 
 /**
  * The teen option names all three attestations the spec requires — the age range, the digital
@@ -29,17 +35,58 @@ export type TryOnAgeOption = Readonly<{ value: TryOnAgeState; label: string }>;
  * of them can be ticked without the others.
  */
 export const TRY_ON_AGE_OPTIONS: readonly TryOnAgeOption[] = [
-  { value: TRY_ON_AGE_ADULT, label: "Tôi từ 18 tuổi trở lên." },
+  { value: TRY_ON_AGE_ADULT, label: "Tôi từ 18 tuổi trở lên.", shortLabel: "Từ 18 tuổi" },
   {
     value: TRY_ON_AGE_TEEN_WITH_GUARDIAN,
     label:
       "Tôi từ 13 đến 17 tuổi, đã đủ tuổi đồng ý xử lý dữ liệu số theo quy định nơi tôi sống và có sự cho phép của cha mẹ hoặc người giám hộ hợp pháp.",
+    shortLabel: "13–17 tuổi",
   },
   {
     value: TRY_ON_AGE_BELOW_CONSENT_AGE,
     label: "Tôi chưa đủ tuổi đồng ý xử lý dữ liệu số tại nơi tôi sống.",
+    shortLabel: "Chưa đủ tuổi",
   },
 ];
+
+/**
+ * Shown above the teen statement so a short chip is never mistaken for the attestation: choosing it
+ * means the shopper is making the full statement beneath.
+ */
+export const TRY_ON_TEEN_ATTESTATION_LEAD = "Khi chọn mục này, bạn xác nhận:";
+
+/**
+ * The wizard's three steps: choose the photo, state age and confirm rights, see the result. Loading,
+ * success and failure are all the `result` step, so the form behind it is not on screen — and not
+ * editable — while a request is in flight.
+ */
+export type TryOnStep = "photo" | "confirm" | "result";
+export type TryOnStepEvent = "continue" | "change-photo" | "generate" | "back" | "photo-dropped";
+
+export const TRY_ON_STEP_COUNT = 3;
+
+export function tryOnStepNumber(step: TryOnStep): 1 | 2 | 3 {
+  return step === "photo" ? 1 : step === "confirm" ? 2 : 3;
+}
+
+/**
+ * Where an event takes the shopper. Anything that does not make sense for the current step leaves it
+ * unchanged, so the confirmation step cannot be skipped. A photo the provider refused is dropped
+ * wherever the shopper is and sends them back to choose another.
+ */
+export function nextTryOnStep(step: TryOnStep, event: TryOnStepEvent): TryOnStep {
+  if (event === "photo-dropped") return "photo";
+  switch (step) {
+    case "photo":
+      return event === "continue" ? "confirm" : step;
+    case "confirm":
+      if (event === "generate") return "result";
+      return event === "change-photo" ? "photo" : step;
+    case "result":
+      if (event === "back") return "confirm";
+      return event === "change-photo" ? "photo" : step;
+  }
+}
 
 export const TRY_ON_TEEN_DISCLOSURE =
   "Ảnh này do AI tạo ra nên có thể chưa chính xác. Đừng dùng ảnh này để đánh giá cơ thể của bạn hay để chọn size quần áo — hãy xem bảng size của sản phẩm.";
