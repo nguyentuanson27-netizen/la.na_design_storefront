@@ -68,7 +68,7 @@ export type HomepageConfig = Readonly<{
     ctaLabel: string;
     metadataTitle: string | null;
     metadataDescription: string | null;
-    /** Reviewed fallback + natural dimensions for mirrored feedback URLs. Dynamic order comes from ANH-FEEDBACK-* variants. */
+    /** Natural-dimension registry for mirrored feedback URLs. Selection/order come only from ANH-FEEDBACK-* variants. */
     images: readonly FeedbackImageConfig[];
   }>;
 }>;
