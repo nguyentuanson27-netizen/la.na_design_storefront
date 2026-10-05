@@ -73,7 +73,7 @@ test("no try-on code has a durable persistence path", () => {
   }
 });
 
-test("Flow worker persistence is request-scoped; only the signed-in browser profile is durable", () => {
+test("Flow app-managed persistence is request-scoped; Chrome profile remains a separate durable boundary", () => {
   const worker = code("services/flow-worker/flow_worker/server.py");
   const dockerfile = source("services/flow-worker/Dockerfile");
   const compose = source("deploy/vps/compose.yml");
@@ -84,7 +84,8 @@ test("Flow worker persistence is request-scoped; only the signed-in browser prof
   assert.doesNotMatch(worker, /GFLOW_HOME\s*\/\s*["']gflow\.db["']/);
 
   // Non-generation gflow commands (auth status/login) also default to container-local /tmp,
-  // never the persistent Chrome-profile volume.
+  // so the gflow SQLite catalog never uses the persistent Chrome-profile volume. This intentionally
+  // makes no claim about Chrome-managed browser storage inside that profile.
   assert.match(dockerfile, /GFLOW_CLI_DB_PATH=\/tmp\/gflow-auth\.db/);
   assert.doesNotMatch(compose, /GFLOW_CLI_DB_PATH:\s*\/data\/gflow/);
 });
