@@ -89,9 +89,10 @@ auto-upgraded just because Google's apt repository publishes a newer stable buil
 
 ## One-time Google login
 
-The Chrome profile lives in the Compose volume `flow_gflow_data`. Treat that volume as a
-credential: it contains a live Google session and must never be copied into Git, CI artifacts,
-backups shared outside the production trust boundary, or logs.
+The Chrome profile lives in the Compose volume `flow_gflow_data`. Treat that entire volume as
+sensitive persistent browser state: it contains the live Google session and can also contain
+Chrome-managed cookies, local storage, cache or other origin state. It must never be copied into
+Git, CI artifacts, backups shared outside the production trust boundary, or logs.
 
 The first login is interactive and needs a display that the container can reach. On a Linux host
 with an X display, a typical bootstrap is:
@@ -196,12 +197,17 @@ gflow itself maintains a SQLite operation catalog. For generation commands the w
 `GFLOW_CLI_DB_PATH` to `<request-temp>/gflow.db`, so gflow's operation/media IDs, prompt hashes,
 generated-file path/hash/byte metadata and related provenance disappear with the same request temp
 directory. Authentication/status commands default to a container-local `/tmp/gflow-auth.db`.
-The persistent `flow_gflow_data` volume therefore holds the signed-in Chrome profile/session, not
-the generation catalog.
+The gflow generation catalog therefore does not persist in `flow_gflow_data`. The volume still
+contains the persistent Chrome user-data directory used by Playwright/gflow. Chrome can persist
+browser-origin state there, so this integration does **not** claim that the volume contains only
+authentication/session material or that shopper/generated media can never reach browser storage or
+cache.
 
-That is **not** a zero-retention statement about Google Flow. Uploaded/generated media can appear in
-Flow project/history semantics. This integration currently does not claim immediate deletion from
-Google's systems. Buyer-facing privacy copy must reflect this before public enablement.
+This is also **not** a zero-retention statement about Google Flow. Uploaded/generated media can
+appear in Flow project/history semantics. Before public enablement, inspect the persistent profile
+after representative live generations and approve an explicit retention/cleanup policy plus
+buyer-facing privacy wording. Until that evidence exists, treat both Chrome browser storage and
+Google Flow project/history as unresolved retention boundaries.
 
 ## Rollback
 
@@ -238,6 +244,8 @@ actual production-like Flow account/profile:
 - [ ] Worker timeout does not leave a second automatic generation running.
 - [ ] Identity and garment fidelity are reviewed on representative áo dài/set/váy examples.
 - [ ] The existing consented-minor acceptance case is re-run for Flow.
+- [ ] Persistent Chrome profile is inspected after representative generation for browser-managed
+      storage/cache behavior; retention/cleanup policy is approved.
 - [ ] Flow project/history behavior and buyer-facing privacy wording are approved.
 - [ ] Operator confirms rollback to Vertex or feature-off works.
 - [ ] Owner confirms use of unofficial Flow browser automation is acceptable for the Google account
