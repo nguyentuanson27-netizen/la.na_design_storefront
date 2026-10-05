@@ -19,13 +19,13 @@ export function resolveTryOnPrivacyDisclosure(
   if (provider === "flow") {
     return {
       summary:
-        `${brandName} không lưu ảnh trong hệ thống của mình; ảnh được gửi tới Google Flow để tạo kết quả.`,
+        `${brandName} không ghi ảnh thử đồ vào database hay kho ảnh riêng; ảnh được xử lý qua Google Flow bằng một hồ sơ Chrome được lưu lâu dài.`,
       detail:
-        `${brandName} không lưu ảnh bạn tải lên hay ảnh được tạo trong hệ thống của chúng tôi. ` +
-        "Ảnh của bạn và ảnh sản phẩm được gửi tới Google Flow để tạo kết quả. " +
-        "Google Flow có cơ chế dự án/lịch sử; nội dung đã tải lên hoặc tạo ra có thể xuất hiện " +
-        "trong dự án hoặc lịch sử của tài khoản Google vận hành tính năng. Việc xử lý và lưu giữ " +
-        "tại Google tuân theo điều khoản dịch vụ áp dụng.",
+        `${brandName} dùng file tạm cho ảnh bạn tải lên, ảnh sản phẩm và kết quả; các file tạm này được xóa sau request và không được ghi vào database hay object storage của cửa hàng. ` +
+        "Google Flow được vận hành bằng một hồ sơ Chrome persistent để giữ phiên đăng nhập; " +
+        "browser storage/cache của hồ sơ này và dự án/lịch sử Google Flow có thể giữ lại dữ liệu " +
+        "theo hành vi của Chrome và Google. Vì vậy tính năng này không cam kết zero-retention đối " +
+        "với dữ liệu do trình duyệt hoặc Google quản lý.",
     };
   }
 
