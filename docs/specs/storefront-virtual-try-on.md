@@ -1,6 +1,6 @@
 # Spec: Storefront Virtual Try-on with Vertex AI Nano Banana Pro
 
-Status: **Approved and merged 2026-10-04. MVP implemented behind a server kill switch (off by default); see [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md) for the operational contract, the two implementation differences from §3/§8, and the live checks still owed before enablement.**
+Status: **Approved 2026-10-04; amended 2026-10-05 to replace the dedicated Vertex VTO model with Nano Banana Pro (`gemini-3-pro-image`) after observed output quality was insufficient. The server kill switch remains off by default; live quality acceptance is still required before enablement. See [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md).**
 
 This spec defines the MVP virtual try-on experience for La.na Design product detail pages (PDPs).
 
