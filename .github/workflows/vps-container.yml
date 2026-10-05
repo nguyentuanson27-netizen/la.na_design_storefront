@@ -57,6 +57,8 @@ jobs:
           set -euo pipefail
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -c \
             "import importlib.metadata as m; assert m.version('gflow-cli') == '0.82.1'"
+          docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -c \
+            "from gflow_cli.config import get_settings; assert str(get_settings().resolved_db_path()) == '/tmp/gflow-auth.db'"
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
           chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
           grep -Fq "154.0.8037.97" <<<"$chrome_version"
