@@ -4,6 +4,8 @@ import { readTryOnConfig as readVertexTryOnConfig } from "../vertex-try-on/confi
 type TryOnEnvironment = Readonly<Record<string, string | undefined>>;
 
 const FLOW_TOKEN_MIN_LENGTH = 32;
+/** Never send the shared worker bearer token to an arbitrary operator-configured public host. */
+const FLOW_WORKER_HOSTS = new Set(["flow-worker", "localhost", "127.0.0.1"]);
 
 function parseWorkerUrl(value: string | undefined): string | null {
   if (value === undefined) return null;
@@ -12,7 +14,7 @@ function parseWorkerUrl(value: string | undefined): string | null {
     if (url.protocol !== "http:" && url.protocol !== "https:") return null;
     if (url.username !== "" || url.password !== "") return null;
     if (url.pathname !== "/" || url.search !== "" || url.hash !== "") return null;
-    if (url.hostname.length === 0) return null;
+    if (!FLOW_WORKER_HOSTS.has(url.hostname)) return null;
     return url.origin;
   } catch {
     return null;
