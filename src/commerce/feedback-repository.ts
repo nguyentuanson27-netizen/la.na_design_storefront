@@ -49,8 +49,8 @@ function isFeedbackVariant(variant: FeedbackVariantRow): boolean {
  *
  * The uncropped gallery requires truthful natural dimensions. Pancake's mirrored image list only
  * contains URLs, so a newly synced URL is publishable only after its natural dimensions have been
- * calibrated in repository config. Until then the whole dynamic set falls back to the last reviewed
- * static gallery rather than inventing an aspect ratio or silently dropping an image.
+ * calibrated in repository config. Until then the dynamic gallery fails closed instead of
+ * inventing an aspect ratio or publishing images from another source.
  */
 export function mapFeedbackVariantsToImages(
   variants: readonly FeedbackVariantRow[],
