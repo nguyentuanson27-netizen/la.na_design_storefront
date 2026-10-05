@@ -48,11 +48,12 @@ async function generate(url, init) {
     inputImages: imageParts.length,
     garmentIsTrustedProduct: garment.equals(PRODUCT_JPEG),
     candidateCount: generationConfig.candidateCount,
+    mediaResolution: generationConfig.mediaResolution,
     imageSize: imageConfig.imageSize,
     personGeneration: imageConfig.personGeneration,
     responseModalities: generationConfig.responseModalities,
     safetyThresholds: safetySettings.map((setting) => setting.threshold),
-    hasPrompt: prompt.toLowerCase().includes("virtual try-on"),
+    hasPrompt: prompt.toLowerCase().includes("photorealistic try-on"),
     hasStorageUri: /storageUri|gcsUri|fileUri/.test(JSON.stringify(body)),
   });
 
