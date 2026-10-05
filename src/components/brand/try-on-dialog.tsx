@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from "react";
 
 import { BRAND } from "@/brand";
-import { resolveTryOnPrivacyDisclosure } from "@/commerce/try-on-disclosure";
+import { resolveTryOnPrivacyDisclosure } from "@/components/headless/try-on-disclosure";
 import type { TryOnProvider } from "@/commerce/try-on-provider";
 import {
   TRY_ON_AGE_OPTIONS,
