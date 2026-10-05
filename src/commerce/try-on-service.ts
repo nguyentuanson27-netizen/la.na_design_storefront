@@ -1,5 +1,6 @@
 import type { TryOnSignalInput } from "../operations/try-on-observability.ts";
-import type { StorefrontProductMedia } from "./product-media.ts";\nimport type { AvailableTryOnRuntimeConfig, TryOnRuntimeConfig } from "./try-on-provider.ts";
+import type { StorefrontProductMedia } from "./product-media.ts";
+import type { AvailableTryOnRuntimeConfig, TryOnRuntimeConfig } from "./try-on-provider.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
 import type {
   TryOnAttemptDecision,
