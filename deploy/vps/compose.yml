@@ -33,6 +33,8 @@ services:
         NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID: ${NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID:-}
         NEXT_PUBLIC_ZALO_ADS_PIXEL_ID: ${NEXT_PUBLIC_ZALO_ADS_PIXEL_ID:-}
     restart: unless-stopped
+    volumes:
+      - /opt/lana-credentials/vertex-ai.json:/app/credentials/vertex-ai.json:ro
     env_file:
       - .env.production
     environment:
