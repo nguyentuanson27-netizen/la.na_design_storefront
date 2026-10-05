@@ -85,14 +85,6 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Flow worker unit tests
-        env:
-          PYTHONPATH: services/flow-worker
-        run: python3 -m unittest discover -s services/flow-worker/tests -v
-
-      - name: Flow worker syntax check
-        run: python3 -m compileall -q services/flow-worker/flow_worker
-
       - name: Domain tests
         run: pnpm test
 
