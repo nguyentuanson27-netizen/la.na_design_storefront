@@ -28,6 +28,7 @@ const CLIENT_TRY_ON_FILES = [
   "src/components/brand/try-on-dialog.tsx",
   "src/components/headless/use-try-on.ts",
   "src/components/headless/try-on-model.ts",
+  "src/components/headless/try-on-disclosure.ts",
 ];
 const ALL_TRY_ON_FILES = [...SERVER_TRY_ON_FILES, ...CLIENT_TRY_ON_FILES];
 
