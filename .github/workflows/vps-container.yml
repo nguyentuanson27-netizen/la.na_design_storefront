@@ -51,13 +51,15 @@ jobs:
       - name: Build Flow worker image
         run: docker build --tag "$PROJECT_SLUG:flow-worker-ci" services/flow-worker
 
-      - name: Verify pinned gflow and real Chrome
+      - name: Verify frozen gflow closure and pinned real Chrome
         shell: bash
         run: |
           set -euo pipefail
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -c \
             "import importlib.metadata as m; assert m.version('gflow-cli') == '0.82.1'"
-          docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version
+          docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
+          chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
+          grep -Fq "154.0.8037.97" <<<"$chrome_version"
 
   verify-vps-container:
     needs: identity
