@@ -89,6 +89,25 @@ test("Flow worker persistence is request-scoped; only the signed-in browser prof
   assert.doesNotMatch(compose, /GFLOW_CLI_DB_PATH:\s*\/data\/gflow/);
 });
 
+test("Flow worker dependency boundary is frozen instead of resolving mutable latest versions", () => {
+  const dockerfile = source("services/flow-worker/Dockerfile");
+  const lock = source("services/flow-worker/gflow-lock/uv.lock");
+  const lockProject = source("services/flow-worker/gflow-lock/pyproject.toml");
+
+  assert.match(dockerfile, /python:3\.13\.14-slim@sha256:[a-f0-9]{64}/);
+  assert.match(dockerfile, /COPY gflow-lock\/pyproject\.toml gflow-lock\/uv\.lock/);
+  assert.match(dockerfile, /uv export[\s\\]+--frozen/);
+  assert.match(dockerfile, /pip install --no-cache-dir --require-hashes -r \/tmp\/gflow-runtime\.txt/);
+  assert.match(dockerfile, /gflow-cli==0\.82\.1 --hash=sha256:[a-f0-9]{64}/);
+  assert.match(dockerfile, /GOOGLE_CHROME_VERSION=154\.0\.8037\.97-1/);
+  assert.match(dockerfile, /google-chrome-stable=\$\{GOOGLE_CHROME_VERSION\}/);
+  assert.doesNotMatch(dockerfile, /pip install[^\n]*gflow-cli==0\.82\.1(?![^\n]*--hash)/);
+
+  assert.match(lockProject, /^version = "0\.82\.1"$/m);
+  assert.match(lock, /^name = "gflow-cli"$/m);
+  assert.match(lock, /^version = "0\.82\.1"$/m);
+});
+
 test("the runtime wiring only reads the catalog: no write call on any Prisma model", () => {
   assert.doesNotMatch(
     code("src/commerce/try-on-runtime.ts"),
