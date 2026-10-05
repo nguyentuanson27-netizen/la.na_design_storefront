@@ -340,7 +340,8 @@ Replaces the role previously discussed as the Ding Dang "Muse" area.
 
 - Shows **images only** visually.
 - No customer name, product name, quote or caption is rendered on the homepage.
-- Images are manually selected and ordered in repository config.
+- **Owner amendment 2026-10-05:** feedback selection/order comes from the configured Pancake shop's mirrored variants whose `pancakeDisplayId` starts exactly with `ANH-FEEDBACK-`. Product-name matches, substring matches and other shops are not feedback authority.
+- Repository config remains the reviewed fallback and the natural-dimension authority for feedback URLs. A mirrored image URL without calibrated natural `width`/`height` must not be published with guessed dimensions; until calibrated, dynamic resolution falls back to the reviewed static gallery.
 - Horizontal rail/carousel rhythm similar to the approved reference.
 - Touch users can swipe horizontally.
 - Desktop users can scroll/drag/use an accessible control path.
@@ -356,7 +357,7 @@ Accessibility does not mean adding visible captions the owner did not request. E
 
 Create a simple La.na feedback-gallery page at `/feedback`:
 
-- shows the full configured feedback image collection;
+- shows the full resolved feedback image collection from the approved Pancake mirror source, with repository-config fallback;
 - no CMS/admin requirement;
 - no quotes/captions are required by this spec;
 - use the site's normal page chrome and La.na visual language;
