@@ -49,6 +49,7 @@ function build(overrides: Partial<TryOnServiceDependencies> = {}) {
       return { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } };
     },
     generate: async ({ config, person, product: garment }) => {
+      if (config.provider !== "vertex") throw new Error("unexpected Flow config in Vertex fixture");
       probe.generate.push({
         person: person.bytes,
         product: garment.bytes,
