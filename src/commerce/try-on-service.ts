@@ -1,5 +1,5 @@
 import type { TryOnSignalInput } from "../operations/try-on-observability.ts";
-import type { StorefrontProductMedia } from "./product-media.ts";
+import type { StorefrontProductMedia } from "./product-media.ts";\nimport type { AvailableTryOnRuntimeConfig, TryOnRuntimeConfig } from "./try-on-provider.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
 import type {
   TryOnAttemptDecision,
@@ -17,10 +17,10 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts"
  *
  *   feature switch → per-identity attempt (guest or member quota) → upload slot → read body → validate request (likeness, age,
  *   photo) → release upload slot → re-resolve product from the server → eligibility → generation
- *   slot → trusted product image → Vertex AI (once) → validated result
+ *   slot → trusted product image → configured provider (once, except the Flow model fallback owned by its worker) → validated result
  *
  * Every step that can reject runs before the next costlier one, and nothing before the last step can
- * reach Vertex. The service is I/O-free: product lookup, the image fetch, the provider call, the
+ * reach the provider. The service is I/O-free: product lookup, the image fetch, the provider call, the
  * limiter and telemetry are all injected, so the whole contract is pinned by tests with no network
  * and no database. It takes no commerce dependency at all — it cannot touch a cart, a variant or an
  * order — and it never throws: a failure is a `{ ok: false, reason }` the shopper can be told about.
@@ -33,7 +33,7 @@ type Image = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
 type AvailableConfig = Readonly<{ available: true; projectId: string; location: string }>;
 
 export type TryOnServiceDependencies = Readonly<{
-  readConfig: () => AvailableConfig | Readonly<{ available: false }>;
+  readConfig: () => TryOnRuntimeConfig;
   limiter: Readonly<{
     consumeAttempt: (identity: TryOnIdentity) => TryOnAttemptDecision;
     startUpload: () => TryOnUploadSlot;
@@ -50,7 +50,7 @@ export type TryOnServiceDependencies = Readonly<{
   ) => Promise<
     Readonly<{ ok: true; image: Image }> | Readonly<{ ok: false; reason: "UNTRUSTED_URL" | "TOO_LARGE" | "FETCH_FAILED" }>
   >;
-  generate: (input: Readonly<{ config: AvailableConfig; person: Image; product: Image }>) => Promise<
+  generate: (input: Readonly<{ config: AvailableTryOnRuntimeConfig; person: Image; product: Image }>) => Promise<
     | Readonly<{ ok: true; image: Image }>
     | Readonly<{ ok: false; reason: "SAFETY_BLOCKED" | "AUTH_FAILED" | "BUSY" | "TIMEOUT" | "GENERATION_FAILED" }>
   >;
@@ -94,7 +94,7 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
 
       // The upload slot spans receiving and validating the body and nothing after it: that is the
       // phase whose memory and CPU an untrusted upload costs, and holding it through the slower
-      // product lookup and Vertex call would let those starve new uploads.
+      // product lookup and provider call would let those starve new uploads.
       const upload = deps.limiter.startUpload();
       if (!upload.ok) {
         deps.emit({ name: "try_on.rate_limited", reason: "BUSY" });
