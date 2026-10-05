@@ -132,12 +132,22 @@ LA_TRY_ON_ENABLED=true
 LA_TRY_ON_PROVIDER=flow
 ```
 
-Set `RELEASE_SHA` to the approved commit as usual and run the normal VPS deploy script. When Flow
-is active, deploy automatically includes the `flow-try-on` Compose profile, builds/starts the
-worker, waits for its health check and then runs `gflow auth status` inside it.
+Set `RELEASE_SHA` to the approved commit as usual and run the normal VPS deploy script. Production
+Flow configuration must use `LA_TRY_ON_FLOW_URL=http://flow-worker:8787`.
 
-The worker accepts one generation at a time per Google profile. Extra simultaneous calls fail
-closed as `BUSY`; it never opens two Chrome generation runs against one profile.
+When Flow is active, deploy:
+
+1. builds the worker;
+2. verifies the worker token shape and performs a read-only `gflow auth status` **before** database
+   migration or app cutover;
+3. after migration, starts the private worker and proves its Docker health/session again;
+4. only then starts the new app/Caddy/catalog-sync release.
+
+A dead Flow session therefore blocks cutover rather than exposing a broken Try-On entry point.
+
+The worker accepts one generation at a time per Google profile. The storefront also reserves only
+one Flow generation slot, so extra simultaneous calls fail `BUSY` before another large provider
+request is sent. It never opens two Chrome generation runs against one profile.
 
 ## Failure semantics
 
@@ -151,7 +161,13 @@ profile paths, prompt output and CLI stdout/stderr are not returned to shoppers.
 - `GENERATION_FAILED`: all other provider/integration failures.
 
 The worker's generation watchdog is shorter than the storefront's HTTP deadline so the worker
-releases the profile lock before the caller gives up. A timeout must not trigger another model.
+releases the profile lock before the caller gives up. On a watchdog expiry the worker terminates
+the gflow/Chrome process group so an orphan browser cannot keep the profile locked. A timeout must
+not trigger another model.
+
+Worker logs are intentionally sparse: only safe event/model/failure-class metadata is emitted.
+Prompts, image bytes, bearer tokens, Google cookies, account identifiers and raw provider error
+detail are not logged.
 
 ## Privacy and retention
 
@@ -200,5 +216,7 @@ actual production-like Flow account/profile:
 - [ ] The existing consented-minor acceptance case is re-run for Flow.
 - [ ] Flow project/history behavior and buyer-facing privacy wording are approved.
 - [ ] Operator confirms rollback to Vertex or feature-off works.
+- [ ] Owner confirms use of unofficial Flow browser automation is acceptable for the Google account
+      and operating context.
 
 Until these are complete, keep `LA_TRY_ON_ENABLED=false` for public traffic.
