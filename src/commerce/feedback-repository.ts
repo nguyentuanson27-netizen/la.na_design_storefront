@@ -1,6 +1,5 @@
 import {
   parseHomepageImageSrc,
-  readFeedbackContent,
   resolveFeedbackContentWithImages,
   type FeedbackContent,
   type FeedbackImage,
@@ -58,7 +57,7 @@ export function mapFeedbackVariantsToImages(
 ): readonly FeedbackImage[] {
   const scopedVariants = variants.filter(isFeedbackVariant);
   if (scopedVariants.length === 0) {
-    return HOMEPAGE_CONFIG.feedback.images;
+    return Object.freeze([]);
   }
 
   const sorted = [...scopedVariants].sort((a, b) => {
@@ -82,7 +81,7 @@ export function mapFeedbackVariantsToImages(
 
       const knownDimension = KNOWN_FEEDBACK_IMAGE_DIMENSIONS.get(src);
       if (!knownDimension) {
-        return HOMEPAGE_CONFIG.feedback.images;
+        return Object.freeze([]);
       }
 
       seen.add(src);
@@ -97,7 +96,7 @@ export function mapFeedbackVariantsToImages(
     }
   }
 
-  return images.length > 0 ? Object.freeze(images) : HOMEPAGE_CONFIG.feedback.images;
+  return Object.freeze(images);
 }
 
 export function createFeedbackRepository(client: FeedbackReadClient) {
@@ -136,7 +135,7 @@ export async function readDynamicFeedbackContent(
       return resolveFeedbackContentWithImages(images);
     }
   } catch {
-    // Database/config may be unavailable in unit tests or offline build environments.
+    // The mirror is the only feedback-selection authority. Fail closed if it is unavailable.
   }
-  return readFeedbackContent();
+  return null;
 }
