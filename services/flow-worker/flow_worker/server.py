@@ -138,7 +138,7 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         return
     try:
         os.killpg(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
+    except OSError:
         return
     try:
         process.wait(timeout=2)
@@ -147,9 +147,12 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
+    except OSError:
         return
-    process.wait(timeout=2)
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        return
 
 
 def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[int, str]:
@@ -303,7 +306,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"ok": False, "reason": "GENERATION_FAILED"})
                 return
             finally:
-                self.connection.settimeout(None)
+                try:
+                    self.connection.settimeout(None)
+                except OSError:
+                    pass
 
             try:
                 model, image, mime = _generate(person, person_mime, product, product_mime)
