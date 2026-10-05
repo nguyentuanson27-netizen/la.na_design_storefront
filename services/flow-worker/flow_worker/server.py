@@ -10,6 +10,7 @@ import signal
 import subprocess
 import tempfile
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -22,7 +23,7 @@ TOKEN = os.environ.get("FLOW_WORKER_TOKEN", "")
 PROFILE = os.environ.get("GFLOW_CLI_PROFILE", "default")
 GFLOW_HOME = Path(os.environ.get("GFLOW_CLI_HOME", "/data/gflow"))
 PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
-COMMAND_TIMEOUT_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
+GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
 REQUEST_READ_TIMEOUT_SECONDS = int(os.environ.get("FLOW_REQUEST_READ_TIMEOUT_SECONDS", "15"))
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
@@ -155,7 +156,15 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         return
 
 
-def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[int, str]:
+def _run_model(
+    model: str,
+    person: Path,
+    product: Path,
+    output: Path,
+    timeout_seconds: float,
+) -> tuple[int, str]:
+    if timeout_seconds <= 0:
+        return WORKER_TIMEOUT_EXIT_CODE, ""
     try:
         process = subprocess.Popen(
             _command(model, person, product, output),
@@ -170,7 +179,7 @@ def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[i
         return 1, ""
 
     try:
-        stdout, _ = process.communicate(timeout=COMMAND_TIMEOUT_SECONDS)
+        stdout, _ = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
         return WORKER_TIMEOUT_EXIT_CODE, ""
@@ -194,6 +203,11 @@ def _failure_reason(exit_code: int) -> tuple[int, str]:
 
 def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str) -> tuple[str, bytes, str]:
     suffix = {"image/jpeg": ".jpg", "image/png": ".png"}
+    deadline = time.monotonic() + GENERATION_BUDGET_SECONDS
+
+    def remaining_budget() -> float:
+        return max(0.0, deadline - time.monotonic())
+
     with tempfile.TemporaryDirectory(prefix="flow-try-on-") as temp:
         root = Path(temp)
         person_path = root / f"person{suffix[person_mime]}"
@@ -203,12 +217,12 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         product_path.write_bytes(product)
 
         _event("flow_try_on.model_attempt", model="nano-banana-pro")
-        exit_code, output = _run_model("nano-pro", person_path, product_path, output_path)
+        exit_code, output = _run_model("nano-pro", person_path, product_path, output_path, remaining_budget())
         model = "nano-banana-pro"
         if exit_code != 0 and should_fallback_to_nano2(exit_code, output):
             _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2")
             output_path.unlink(missing_ok=True)
-            exit_code, output = _run_model("nano2", person_path, product_path, output_path)
+            exit_code, output = _run_model("nano2", person_path, product_path, output_path, remaining_budget())
             model = "nano-banana-2"
 
         if exit_code != 0:
