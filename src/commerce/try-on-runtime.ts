@@ -97,12 +97,13 @@ export async function resolveTryOnIdentity(headers: Headers): Promise<TryOnIdent
  */
 export async function resolveProductTryOn(
   product: Readonly<{ id: string; slug: string; media: StorefrontProductMedia }>,
-): Promise<Readonly<{ productSlug: string }> | null> {
-  if (!readTryOnRuntimeConfig().available) return null;
+): Promise<Readonly<{ productSlug: string; provider: "vertex" | "flow" }> | null> {
+  const config = readTryOnRuntimeConfig();
+  if (!config.available) return null;
   try {
     const categoryKeys = await createMerchandisingRepository(prisma).readCategoryMembership(product.id);
     const eligibility = resolveTryOnEligibility({ categoryKeys, media: product.media });
-    return eligibility.eligible ? { productSlug: product.slug } : null;
+    return eligibility.eligible ? { productSlug: product.slug, provider: config.provider } : null;
   } catch {
     return null;
   }
