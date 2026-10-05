@@ -13,6 +13,7 @@ export type FlowTryOnRuntimeConfig = Readonly<{
 }>;
 
 export type AvailableTryOnRuntimeConfig = VertexTryOnRuntimeConfig | FlowTryOnRuntimeConfig;
+export type TryOnProvider = AvailableTryOnRuntimeConfig["provider"];
 
 export type TryOnRuntimeConfig =
   | AvailableTryOnRuntimeConfig
