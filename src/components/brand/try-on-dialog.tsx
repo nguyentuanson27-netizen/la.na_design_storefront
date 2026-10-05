@@ -3,8 +3,10 @@
 import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from "react";
 
 import { BRAND } from "@/brand";
-import { resolveTryOnPrivacyDisclosure } from "@/components/headless/try-on-disclosure";
-import type { TryOnProvider } from "@/commerce/try-on-provider";
+import {
+  resolveTryOnPrivacyDisclosure,
+  type TryOnDisclosureProvider,
+} from "@/components/headless/try-on-disclosure";
 import {
   TRY_ON_AGE_OPTIONS,
   TRY_ON_BLOCKED_AGE_MESSAGE,
@@ -101,7 +103,7 @@ export function BrandTryOnDialog({
 }: Readonly<{
   productSlug: string;
   productName: string;
-  provider: TryOnProvider;
+  provider: TryOnDisclosureProvider;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   returnFocusRef: RefObject<HTMLElement | null>;
