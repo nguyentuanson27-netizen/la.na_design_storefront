@@ -23,6 +23,9 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
 # Load only RELEASE_SHA for the exact-checkout invariant. Do not echo env contents.
 RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_PROVIDER="${TRY_ON_PROVIDER:-vertex}"
 if [[ -z "$RELEASE_SHA" || "$RELEASE_SHA" == "replace-with-approved-git-sha" ]]; then
   echo "RELEASE_SHA must be set in $ENV_FILE" >&2
   exit 1
@@ -40,9 +43,17 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+flow_services=()
+if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" ]]; then
+  compose+=(--profile flow-try-on)
+  flow_services+=(flow-worker)
+elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
+  echo "LA_TRY_ON_PROVIDER must be vertex or flow when try-on is enabled" >&2
+  exit 1
+fi
 
 "${compose[@]}" config --quiet
-"${compose[@]}" build app ops
+"${compose[@]}" build app ops "${flow_services[@]}"
 "${compose[@]}" up -d postgres
 
 for _ in {1..30}; do
@@ -122,7 +133,7 @@ if ! "${compose[@]}" run --rm ops pnpm capacity:handoff:reconcile; then
   exit 1
 fi
 
-"${compose[@]}" up -d --no-build app caddy catalog-sync
+"${compose[@]}" up -d --no-build app caddy catalog-sync "${flow_services[@]}"
 
 # wait_healthy SERVICE ATTEMPTS DELAY: succeeds once Docker reports SERVICE healthy.
 wait_healthy() {
@@ -147,6 +158,15 @@ if ! wait_healthy app 40 3; then
   exit 1
 fi
 echo "Application container is healthy at release $RELEASE_SHA"
+
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  if ! wait_healthy flow-worker 20 3; then
+    "${compose[@]}" logs --tail=100 flow-worker
+    echo "Flow try-on worker is not healthy; verify its persistent Google session before enabling try-on" >&2
+    exit 1
+  fi
+  echo "Flow try-on worker is healthy at release $RELEASE_SHA"
+fi
 
 # The release is not done until the catalog sync has actually succeeded once: a running loop whose
 # every sync fails would otherwise leave COMMITTED capacity holds uncleared and restocks unsellable
