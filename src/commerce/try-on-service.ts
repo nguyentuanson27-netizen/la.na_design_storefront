@@ -30,7 +30,6 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "./try-on-policy.ts"
 
 type Image = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
 
-type AvailableConfig = Readonly<{ available: true; projectId: string; location: string }>;
 
 export type TryOnServiceDependencies = Readonly<{
   readConfig: () => TryOnRuntimeConfig;
