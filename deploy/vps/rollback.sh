@@ -36,6 +36,10 @@ fi
 
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
+# A previous storefront release may not know how to use the Flow worker. Stop the current worker
+# first so a rollback never leaves a signed-in Google session process running orphaned on the VPS.
+"${compose[@]}" --profile flow-try-on stop flow-worker >/dev/null 2>&1 || true
+
 # App and catalog-sync are both database writers and must belong to the same release. Quiesce the
 # current sync *before* the previous app starts, so there is no window where the older app serves
 # while newer sync code is still writing; `stop` waits out an in-flight sync (90s grace).
