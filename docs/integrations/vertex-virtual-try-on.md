@@ -15,6 +15,7 @@ storefront therefore uses **Nano Banana Pro / Gemini 3 Pro Image** as a multi-im
 - two inline references: shopper first, exact trusted garment second;
 - one fixed server-owned fidelity prompt;
 - one candidate;
+- input `mediaResolution=MEDIA_RESOLUTION_LOW` to reduce image-input tokenization;
 - PNG output at 2K;
 - no forced aspect ratio, so the model can choose from the supplied references;
 - no retry and no fallback model.
@@ -57,6 +58,7 @@ Conceptual body (base64 shortened):
   }],
   "generationConfig": {
     "candidateCount": 1,
+    "mediaResolution": "MEDIA_RESOLUTION_LOW",
     "responseModalities": ["TEXT", "IMAGE"],
     "imageConfig": {
       "imageSize": "2K",
@@ -79,8 +81,24 @@ the garment's silhouette, cut, length, color, pattern, texture, seams, trim and 
 explicitly disallows body reshaping, face retouching, unrelated accessory changes, sexualisation,
 nudity, age changes, collages, extra people and visible text.
 
-Prompt text is not a permission boundary. Server-side likeness/age gates and provider safety settings
-remain authoritative.
+Prompt text is intentionally compact to reduce text-input overhead, but it preserves the same
+person/garment fidelity constraints. Prompt text is not a permission boundary. Server-side
+likeness/age gates and provider safety settings remain authoritative.
+
+### Token/cost tuning
+
+Google documents Gemini 3 media resolution as a tokenization control: LOW uses fewer image-input
+tokens than MEDIUM/HIGH. The request now explicitly uses `MEDIA_RESOLUTION_LOW` for both references.
+This is a deliberate cost/quality trade-off and must be included in the live fidelity evaluation.
+
+Do **not** lower 2K output to 1K for token savings: Google documents both 1K and 2K Nano Banana Pro
+outputs at 1,120 image-output tokens; 4K rises to 2,000. The model also requires
+`responseModalities=["TEXT","IMAGE"]`, so image-only response mode is not a supported optimization.
+Gemini 3 Pro Image supports only HIGH thinking level, so reasoning cannot be lowered through
+`thinking_level`.
+
+Exact realized token/billing savings are not claimed until observed from a live request or Count
+Tokens/usage metadata; CI fixtures cannot measure provider billing.
 
 ## Response trust boundary
 
