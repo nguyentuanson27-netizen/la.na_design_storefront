@@ -25,6 +25,7 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
 TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_FLOW_URL="$(grep -E '^LA_TRY_ON_FLOW_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="${TRY_ON_PROVIDER:-vertex}"
 if [[ -z "$RELEASE_SHA" || "$RELEASE_SHA" == "replace-with-approved-git-sha" ]]; then
   echo "RELEASE_SHA must be set in $ENV_FILE" >&2
@@ -45,6 +46,10 @@ fi
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 flow_services=()
 if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" ]]; then
+  if [[ "$TRY_ON_FLOW_URL" != "http://flow-worker:8787" ]]; then
+    echo "Flow try-on requires LA_TRY_ON_FLOW_URL=http://flow-worker:8787 on VPS" >&2
+    exit 1
+  fi
   compose+=(--profile flow-try-on)
   flow_services+=(flow-worker)
 elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
@@ -60,6 +65,7 @@ fi
 if [[ "${#flow_services[@]}" -gt 0 ]]; then
   if ! "${compose[@]}" run --rm --no-deps flow-worker sh -ec '
     test "${#FLOW_WORKER_TOKEN}" -ge 32
+    test "$FLOW_WORKER_TOKEN" = "$(printf %s "$FLOW_WORKER_TOKEN" | tr -d "[:space:]")"
     gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
   '; then
     echo "Flow try-on preflight failed: check worker token and refresh the Google session before deploy" >&2
