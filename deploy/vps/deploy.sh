@@ -66,7 +66,7 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
   if ! "${compose[@]}" run --rm --no-deps flow-worker sh -ec '
     test "${#FLOW_WORKER_TOKEN}" -ge 32
     test "$FLOW_WORKER_TOKEN" = "$(printf %s "$FLOW_WORKER_TOKEN" | tr -d "[:space:]")"
-    gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
+    env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
   '; then
     echo "Flow try-on preflight failed: check worker token and refresh the Google session before deploy" >&2
     exit 1
@@ -179,7 +179,7 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
     echo "Flow try-on worker did not become healthy; app cutover was not started" >&2
     exit 1
   fi
-  if ! "${compose[@]}" exec -T flow-worker sh -ec 'gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
+  if ! "${compose[@]}" exec -T flow-worker sh -ec 'env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
     echo "Flow try-on Google session became unavailable before app cutover" >&2
     exit 1
   fi
