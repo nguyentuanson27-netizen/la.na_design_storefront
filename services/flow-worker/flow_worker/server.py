@@ -23,6 +23,7 @@ PROFILE = os.environ.get("GFLOW_CLI_PROFILE", "default")
 GFLOW_HOME = Path(os.environ.get("GFLOW_CLI_HOME", "/data/gflow"))
 PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
 COMMAND_TIMEOUT_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
+REQUEST_READ_TIMEOUT_SECONDS = int(os.environ.get("FLOW_REQUEST_READ_TIMEOUT_SECONDS", "15"))
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_ERROR_DETAIL_CHARS = 4 * 1024
@@ -42,6 +43,11 @@ _generation_lock = threading.Lock()
 
 class RequestError(ValueError):
     pass
+
+
+def _event(name: str, **fields: str) -> None:
+    """Emit only bounded operational metadata; never prompts, bytes, tokens or provider detail."""
+    print(json.dumps({"event": name, **fields}, separators=(",", ":")), flush=True)
 
 
 def _sniff_mime(data: bytes) -> str | None:
@@ -193,15 +199,18 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         person_path.write_bytes(person)
         product_path.write_bytes(product)
 
+        _event("flow_try_on.model_attempt", model="nano-banana-pro")
         exit_code, output = _run_model("nano-pro", person_path, product_path, output_path)
         model = "nano-banana-pro"
         if exit_code != 0 and should_fallback_to_nano2(exit_code, output):
+            _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2")
             output_path.unlink(missing_ok=True)
             exit_code, output = _run_model("nano2", person_path, product_path, output_path)
             model = "nano-banana-2"
 
         if exit_code != 0:
             status, reason = _failure_reason(exit_code)
+            _event("flow_try_on.generation_failed", model=model, reason=reason)
             raise WorkerGenerationError(status, reason)
 
         if not output_path.is_file():
@@ -209,7 +218,9 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         data = output_path.read_bytes()
         mime = _sniff_mime(data)
         if mime is None or not data or len(data) > MAX_OUTPUT_BYTES:
+            _event("flow_try_on.generation_failed", model=model, reason="GENERATION_FAILED")
             raise WorkerGenerationError(502, "GENERATION_FAILED")
+        _event("flow_try_on.generation_succeeded", model=model)
         return model, data, mime
 
 
@@ -278,14 +289,21 @@ class Handler(BaseHTTPRequestHandler):
 
         try:
             try:
-                body = json.loads(self.rfile.read(length))
+                self.connection.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
+                raw_body = self.rfile.read(length)
+                self.connection.settimeout(None)
+                if len(raw_body) != length:
+                    raise RequestError("incomplete request")
+                body = json.loads(raw_body)
                 if not isinstance(body, dict) or set(body) != {"person", "product"}:
                     raise RequestError("invalid request")
                 person, person_mime = _decode_image(body["person"])
                 product, product_mime = _decode_image(body["product"])
-            except (json.JSONDecodeError, UnicodeDecodeError, RequestError):
+            except (json.JSONDecodeError, UnicodeDecodeError, RequestError, TimeoutError, OSError):
                 self._json(400, {"ok": False, "reason": "GENERATION_FAILED"})
                 return
+            finally:
+                self.connection.settimeout(None)
 
             try:
                 model, image, mime = _generate(person, person_mime, product, product_mime)
