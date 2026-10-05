@@ -72,6 +72,28 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(raised.exception.status, 429)
         self.assertEqual(raised.exception.reason, "BUSY")
 
+    def test_machine_error_detail_reads_detail_not_generic_remediation(self):
+        stdout = """{
+          "status": "fail",
+          "error": {
+            "detail": "You have reached the daily limit for Nano Banana Pro.",
+            "remediation_hint": "Daily or per-minute model quota reached; try another model"
+          }
+        }"""
+        detail = server._machine_error_detail(stdout)
+        self.assertEqual(detail, "You have reached the daily limit for Nano Banana Pro.")
+        self.assertTrue(server.should_fallback_to_nano2(4, detail))
+
+    def test_verified_gflow_exit_codes_map_without_scraping_error_text(self):
+        self.assertEqual(server._failure_reason(3), (401, "AUTH_FAILED"))
+        self.assertEqual(server._failure_reason(8), (401, "AUTH_FAILED"))
+        self.assertEqual(server._failure_reason(4), (429, "BUSY"))
+        self.assertEqual(server._failure_reason(5), (422, "SAFETY_BLOCKED"))
+        self.assertEqual(server._failure_reason(9), (504, "TIMEOUT"))
+        self.assertEqual(server._failure_reason(server.WORKER_TIMEOUT_EXIT_CODE), (504, "TIMEOUT"))
+        self.assertEqual(server._failure_reason(10), (502, "GENERATION_FAILED"))
+        self.assertEqual(server._failure_reason(23), (502, "GENERATION_FAILED"))
+
     def test_command_pins_two_refs_one_output_and_requested_model(self):
         command = server._command(
             "nano-pro",
