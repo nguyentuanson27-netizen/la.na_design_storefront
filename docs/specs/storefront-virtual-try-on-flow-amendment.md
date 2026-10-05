@@ -73,9 +73,14 @@ directory for every generation, so Flow operation/media IDs, prompt hashes, loca
 byte counts recorded by gflow do not land in the persistent Chrome-profile volume. The whole
 request directory is deleted after every request.
 
-The persistent `flow_gflow_data` volume is reserved for the signed-in Chrome profile/session.
-Non-generation gflow commands use an ephemeral container-local DB path rather than the persistent
-profile volume.
+The persistent `flow_gflow_data` volume holds the signed-in Chrome profile used by gflow.
+Non-generation gflow commands use an ephemeral container-local DB path rather than placing the
+gflow SQLite catalog in that volume.
+
+That Chrome profile is a browser-managed persistent storage boundary, not merely an auth-token
+file. The integration does not currently prove that Chrome/Flow browser storage or cache contains
+no shopper/generated media or derived data. Absence of such data from the persistent profile is
+therefore **not** part of the implementation guarantee and remains a live retention/cleanup gate.
 
 ## Authentication and secrets
 
@@ -92,15 +97,16 @@ The worker port is reachable only on the Compose backend network and is never pu
 
 ## Privacy difference from the Vertex contract
 
-La.na Design still does not durably persist shopper/generated image bytes or gflow generation
-catalog records in Prisma, app filesystem, object storage, analytics, logs, or the persistent Flow
-profile volume.
+La.na Design does not durably persist shopper/generated image bytes through its application-managed
+Prisma tables, object storage, analytics, logs, request temp files, or gflow SQLite generation
+catalog. Request temp files and the generation catalog are deleted after the call.
 
-However Google Flow is a consumer web application with project/history semantics. Even though the
-worker deletes its local temporary files, the implementation **must not claim** that uploaded or
-generated assets are immediately removed from Google's systems. Production enablement is blocked
-until the owner approves buyer-facing copy that accurately describes Google Flow processing/history
-and the operator verifies what cleanup the live Flow surface actually provides.
+The signed-in Chrome profile is intentionally persistent and is managed by Chrome/Playwright. This
+code does not control or prove the absence of shopper/generated media or derived data in that
+profile's browser storage/cache. Google Flow is also a consumer web application with project/history
+semantics. The implementation therefore **must not claim zero retention** across the persistent
+Chrome profile or Google's systems. Production enablement is blocked until the owner approves
+buyer-facing copy and the operator records live profile inspection plus a retention/cleanup policy.
 
 This replaces the original spec's Vertex-specific Google Cloud retention wording for requests routed
 through `flow`.
@@ -131,7 +137,9 @@ Vertex fallback.
 - [ ] Worker accepts at most one in-flight generation per Google profile.
 - [ ] Worker request/response bodies, Google cookies/profile data and bearer token are never logged.
 - [ ] Worker local input/output files and gflow SQLite generation catalog are request-scoped and
-      removed after the call; only the signed-in Chrome profile/session is persistent.
+      removed after the call.
+- [ ] The persistent Chrome profile is treated as an unresolved browser-storage retention boundary;
+      no claim is made that it contains only auth/session material.
 - [ ] Provider output is bounded and JPEG/PNG signature-validated by the storefront.
 - [ ] Vertex remains available as a manual rollback provider.
 - [ ] Existing try-on domain/endpoint/browser regressions stay green.
@@ -139,8 +147,9 @@ Vertex fallback.
       hashes; the Python base image is digest-pinned and Chrome is version-pinned with an explicit
       review/live-smoke update policy.
 - [ ] Lint, typecheck, tests and build pass.
-- [ ] Live Flow generation, Pro-quota -> Nano2 fallback, privacy/cleanup behavior and minor safety are
-      recorded as human/operator gates before production enablement.
+- [ ] Live Flow generation, Pro-quota -> Nano2 fallback, persistent-profile inspection/cleanup,
+      Google Flow privacy behavior and minor safety are recorded as human/operator gates before
+      production enablement.
 
 ## Explicitly not in this slice
 
