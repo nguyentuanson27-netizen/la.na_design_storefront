@@ -9,7 +9,6 @@ import {
   type FeedbackVariantRow,
 } from "../../src/commerce/feedback-repository.ts";
 import {
-  readFeedbackContent,
   resolveFeedbackContentWithImages,
 } from "../../src/content/homepage-content.ts";
 import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
@@ -18,9 +17,9 @@ const KNOWN_IMG_1 = HOMEPAGE_CONFIG.feedback.images[0]!;
 const KNOWN_IMG_2 = HOMEPAGE_CONFIG.feedback.images[1]!;
 const NEW_IMG_URL = "https://content.pancake.vn/2-2610/2026/10/2/test-photo-new-01.jpg";
 
-test("mapFeedbackVariantsToImages falls back to static config when variants are empty", () => {
+test("mapFeedbackVariantsToImages publishes nothing when no ANH-FEEDBACK variants exist", () => {
   const images = mapFeedbackVariantsToImages([]);
-  assert.equal(images, HOMEPAGE_CONFIG.feedback.images);
+  assert.deepEqual(images, []);
 });
 
 test("mapFeedbackVariantsToImages naturally sorts ANH-FEEDBACK variants by display ID", () => {
@@ -107,7 +106,7 @@ test("mapFeedbackVariantsToImages preserves calibrated natural dimensions", () =
   assert.equal(images[0]?.height, KNOWN_IMG_1.height);
 });
 
-test("mapFeedbackVariantsToImages falls back instead of inventing dimensions for a new image", () => {
+test("mapFeedbackVariantsToImages fails closed instead of inventing dimensions for a new image", () => {
   const variants: FeedbackVariantRow[] = [
     {
       id: "var-1",
@@ -117,7 +116,7 @@ test("mapFeedbackVariantsToImages falls back instead of inventing dimensions for
   ];
 
   const images = mapFeedbackVariantsToImages(variants);
-  assert.equal(images, HOMEPAGE_CONFIG.feedback.images);
+  assert.deepEqual(images, []);
 });
 
 test("mapFeedbackVariantsToImages filters untrusted or invalid URLs", () => {
@@ -194,7 +193,7 @@ test("resolveFeedbackContentWithImages joins images with config copy", () => {
   assert.equal(content?.images[0]?.src, KNOWN_IMG_1.src);
 });
 
-test("readDynamicFeedbackContent falls back to readFeedbackContent if client throws", async () => {
+test("readDynamicFeedbackContent fails closed if the mirror cannot be read", async () => {
   const failingClient: FeedbackReadClient = {
     variantMirror: {
       async findMany() {
@@ -204,9 +203,5 @@ test("readDynamicFeedbackContent falls back to readFeedbackContent if client thr
   };
 
   const content = await readDynamicFeedbackContent({ client: failingClient, shopId: 123 });
-  const staticContent = readFeedbackContent();
-
-  assert.notEqual(content, null);
-  assert.deepEqual(content?.title, staticContent?.title);
-  assert.equal(content?.images.length, staticContent?.images.length);
+  assert.equal(content, null);
 });
