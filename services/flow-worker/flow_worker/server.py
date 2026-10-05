@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,13 @@ _generation_lock = threading.Lock()
 
 class RequestError(ValueError):
     pass
+
+
+@dataclass(frozen=True, slots=True)
+class GflowMachineError:
+    detail: str = ""
+    error_class: str = ""
+    problem_type: str = ""
 
 
 def _event(name: str, **fields: str) -> None:
@@ -108,19 +116,26 @@ def _command(model: str, person: Path, product: Path, output: Path) -> list[str]
     return args
 
 
-def _machine_error_detail(stdout: str) -> str:
-    """Read only gflow's stable --json problem detail; ignore human/log stderr completely."""
+def _machine_error(stdout: str) -> GflowMachineError:
+    """Parse only gflow's stable --json error envelope; never scrape human/log stderr."""
     try:
         payload = json.loads(stdout)
     except (json.JSONDecodeError, TypeError):
-        return ""
+        return GflowMachineError()
     if not isinstance(payload, dict) or payload.get("status") != "fail":
-        return ""
+        return GflowMachineError()
     error = payload.get("error")
     if not isinstance(error, dict):
-        return ""
+        return GflowMachineError()
+
     detail = error.get("detail")
-    return detail[:MAX_ERROR_DETAIL_CHARS] if isinstance(detail, str) else ""
+    error_class = error.get("class")
+    problem_type = error.get("type")
+    return GflowMachineError(
+        detail=detail[:MAX_ERROR_DETAIL_CHARS] if isinstance(detail, str) else "",
+        error_class=error_class if isinstance(error_class, str) else "",
+        problem_type=problem_type if isinstance(problem_type, str) else "",
+    )
 
 
 def _gflow_env(db_path: Path) -> dict[str, str]:
@@ -167,9 +182,9 @@ def _run_model(
     output: Path,
     timeout_seconds: float,
     db_path: Path,
-) -> tuple[int, str]:
+) -> tuple[int, GflowMachineError]:
     if timeout_seconds <= 0:
-        return WORKER_TIMEOUT_EXIT_CODE, ""
+        return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
     try:
         process = subprocess.Popen(
             _command(model, person, product, output),
@@ -181,22 +196,32 @@ def _run_model(
             env=_gflow_env(db_path),
         )
     except OSError:
-        return 1, ""
+        return 1, GflowMachineError()
 
     try:
         stdout, _ = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
-        return WORKER_TIMEOUT_EXIT_CODE, ""
+        return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
 
-    return process.returncode, _machine_error_detail(stdout or "")
+    return process.returncode, _machine_error(stdout or "")
 
 
-def _failure_reason(exit_code: int) -> tuple[int, str]:
+def _failure_reason(
+    exit_code: int,
+    error: GflowMachineError | None = None,
+) -> tuple[int, str]:
     # gflow-cli 0.82.1 EXIT_CODE_MAP. Keep failure mapping structural; never infer safety/auth from
     # arbitrary provider text. The only text-sensitive branch is the narrowly tested Pro daily quota.
     if exit_code in (3, 8):
         return 401, "AUTH_FAILED"
+    if (
+        exit_code == 11
+        and error is not None
+        and error.error_class == "ProfileLockedError"
+        and error.problem_type == "https://gflow-cli.dev/errors/profile-locked"
+    ):
+        return 409, "BUSY"
     if exit_code == 4:
         return 429, "BUSY"
     if exit_code == 5:
@@ -223,7 +248,7 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         product_path.write_bytes(product)
 
         _event("flow_try_on.model_attempt", model="nano-banana-pro")
-        exit_code, output = _run_model(
+        exit_code, error = _run_model(
             "nano-pro",
             person_path,
             product_path,
@@ -232,10 +257,10 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             db_path,
         )
         model = "nano-banana-pro"
-        if exit_code != 0 and should_fallback_to_nano2(exit_code, output):
+        if exit_code != 0 and should_fallback_to_nano2(exit_code, error.detail):
             _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2")
             output_path.unlink(missing_ok=True)
-            exit_code, output = _run_model(
+            exit_code, error = _run_model(
                 "nano2",
                 person_path,
                 product_path,
@@ -246,7 +271,7 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             model = "nano-banana-2"
 
         if exit_code != 0:
-            status, reason = _failure_reason(exit_code)
+            status, reason = _failure_reason(exit_code, error)
             _event("flow_try_on.generation_failed", model=model, reason=reason)
             raise WorkerGenerationError(status, reason)
 
