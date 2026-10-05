@@ -123,13 +123,17 @@ def _machine_error_detail(stdout: str) -> str:
     return detail[:MAX_ERROR_DETAIL_CHARS] if isinstance(detail, str) else ""
 
 
-def _gflow_env() -> dict[str, str]:
+def _gflow_env(db_path: Path) -> dict[str, str]:
     env = dict(os.environ)
     # The worker bearer token authenticates storefront -> worker only. gflow/Chrome never need it.
     env.pop("FLOW_WORKER_TOKEN", None)
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
+    # gflow records every generation in a local SQLite catalog. Keep that catalog inside the
+    # request tempdir so operation/media IDs, hashes, local paths and byte counts disappear with
+    # the request instead of landing beside the persistent signed-in Chrome profile.
+    env["GFLOW_CLI_DB_PATH"] = str(db_path)
     return env
 
 
@@ -162,6 +166,7 @@ def _run_model(
     product: Path,
     output: Path,
     timeout_seconds: float,
+    db_path: Path,
 ) -> tuple[int, str]:
     if timeout_seconds <= 0:
         return WORKER_TIMEOUT_EXIT_CODE, ""
@@ -173,7 +178,7 @@ def _run_model(
             stderr=subprocess.DEVNULL,
             text=True,
             start_new_session=True,
-            env=_gflow_env(),
+            env=_gflow_env(db_path),
         )
     except OSError:
         return 1, ""
@@ -213,16 +218,31 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         person_path = root / f"person{suffix[person_mime]}"
         product_path = root / f"garment{suffix[product_mime]}"
         output_path = root / "result.png"
+        db_path = root / "gflow.db"
         person_path.write_bytes(person)
         product_path.write_bytes(product)
 
         _event("flow_try_on.model_attempt", model="nano-banana-pro")
-        exit_code, output = _run_model("nano-pro", person_path, product_path, output_path, remaining_budget())
+        exit_code, output = _run_model(
+            "nano-pro",
+            person_path,
+            product_path,
+            output_path,
+            remaining_budget(),
+            db_path,
+        )
         model = "nano-banana-pro"
         if exit_code != 0 and should_fallback_to_nano2(exit_code, output):
             _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2")
             output_path.unlink(missing_ok=True)
-            exit_code, output = _run_model("nano2", person_path, product_path, output_path, remaining_budget())
+            exit_code, output = _run_model(
+                "nano2",
+                person_path,
+                product_path,
+                output_path,
+                remaining_budget(),
+                db_path,
+            )
             model = "nano-banana-2"
 
         if exit_code != 0:
