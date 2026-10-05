@@ -68,7 +68,7 @@ export type HomepageConfig = Readonly<{
     ctaLabel: string;
     metadataTitle: string | null;
     metadataDescription: string | null;
-    /** Manually selected and ordered. The homepage rail and `/feedback` show them in this order. */
+    /** Reviewed fallback + natural dimensions for mirrored feedback URLs. Dynamic order comes from ANH-FEEDBACK-* variants. */
     images: readonly FeedbackImageConfig[];
   }>;
 }>;
