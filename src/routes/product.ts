@@ -49,7 +49,7 @@ export type ProductRouteData = ProductViewModel &
      * `null` when the feature is off or the product is not eligible, in which case the PDP renders
      * exactly what it rendered before try-on existed.
      */
-    tryOn: Readonly<{ productSlug: string }> | null;
+    tryOn: Awaited<ReturnType<typeof resolveProductTryOn>>;
     /** Canonical A5 policy projections; the PDP does not restate shipping/returns facts. */
     shipping: ShippingViewModel;
     returns: ReturnsViewModel;
