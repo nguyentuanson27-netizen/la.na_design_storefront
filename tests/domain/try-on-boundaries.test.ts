@@ -21,6 +21,8 @@ function files(directory: string, keep: (name: string) => boolean = () => true):
 const SERVER_TRY_ON_FILES = [
   ...files("src/commerce", (name) => name.startsWith("try-on-")),
   ...files("src/integrations/vertex-try-on"),
+  ...files("src/integrations/google-flow-try-on"),
+  "src/integrations/try-on/config.ts",
   "src/operations/try-on-observability.ts",
   "src/app/api/try-on/route.ts",
 ];
@@ -28,6 +30,11 @@ const CLIENT_TRY_ON_FILES = [
   "src/components/brand/try-on-dialog.tsx",
   "src/components/headless/use-try-on.ts",
   "src/components/headless/try-on-model.ts",
+  "src/components/headless/try-on-disclosure.ts",
+];
+const FLOW_WORKER_FILES = [
+  "services/flow-worker/flow_worker/policy.py",
+  "services/flow-worker/flow_worker/server.py",
 ];
 const ALL_TRY_ON_FILES = [...SERVER_TRY_ON_FILES, ...CLIENT_TRY_ON_FILES];
 
@@ -43,7 +50,8 @@ function code(path: string): string {
 }
 
 test("the scan covers the try-on files (guards against a silently empty glob)", () => {
-  assert.ok(SERVER_TRY_ON_FILES.length >= 10, SERVER_TRY_ON_FILES.join(","));
+  assert.ok(SERVER_TRY_ON_FILES.length >= 12, SERVER_TRY_ON_FILES.join(","));
+  assert.equal(FLOW_WORKER_FILES.length, 2);
 });
 
 test("no try-on code has a durable persistence path", () => {
@@ -63,6 +71,42 @@ test("no try-on code has a durable persistence path", () => {
       assert.doesNotMatch(code(path), pattern, `${path} must not use ${label}`);
     }
   }
+});
+
+test("Flow app-managed persistence is request-scoped; Chrome profile remains a separate durable boundary", () => {
+  const worker = code("services/flow-worker/flow_worker/server.py");
+  const dockerfile = source("services/flow-worker/Dockerfile");
+  const compose = source("deploy/vps/compose.yml");
+
+  assert.match(worker, /TemporaryDirectory\(prefix="flow-try-on-"\)/);
+  assert.match(worker, /db_path = root \/ "gflow\.db"/);
+  assert.match(worker, /env\["GFLOW_CLI_DB_PATH"\] = str\(db_path\)/);
+  assert.doesNotMatch(worker, /GFLOW_HOME\s*\/\s*["']gflow\.db["']/);
+
+  // Non-generation gflow commands (auth status/login) also default to container-local /tmp,
+  // so the gflow SQLite catalog never uses the persistent Chrome-profile volume. This intentionally
+  // makes no claim about Chrome-managed browser storage inside that profile.
+  assert.match(dockerfile, /GFLOW_CLI_DB_PATH=\/tmp\/gflow-auth\.db/);
+  assert.doesNotMatch(compose, /GFLOW_CLI_DB_PATH:\s*\/data\/gflow/);
+});
+
+test("Flow worker dependency boundary is frozen instead of resolving mutable latest versions", () => {
+  const dockerfile = source("services/flow-worker/Dockerfile");
+  const lock = source("services/flow-worker/gflow-lock/uv.lock");
+  const lockProject = source("services/flow-worker/gflow-lock/pyproject.toml");
+
+  assert.match(dockerfile, /python:3\.13\.14-slim@sha256:[a-f0-9]{64}/);
+  assert.match(dockerfile, /COPY gflow-lock\/pyproject\.toml gflow-lock\/uv\.lock/);
+  assert.match(dockerfile, /uv export[\s\\]+--frozen/);
+  assert.match(dockerfile, /pip install --no-cache-dir --require-hashes -r \/tmp\/gflow-runtime\.txt/);
+  assert.match(dockerfile, /gflow-cli==0\.82\.1 --hash=sha256:[a-f0-9]{64}/);
+  assert.match(dockerfile, /GOOGLE_CHROME_VERSION=154\.0\.8037\.97-1/);
+  assert.match(dockerfile, /google-chrome-stable=\$\{GOOGLE_CHROME_VERSION\}/);
+  assert.doesNotMatch(dockerfile, /pip install[^\n]*gflow-cli==0\.82\.1(?![^\n]*--hash)/);
+
+  assert.match(lockProject, /^version = "0\.82\.1"$/m);
+  assert.match(lock, /^name = "gflow-cli"$/m);
+  assert.match(lock, /^version = "0\.82\.1"$/m);
 });
 
 test("the runtime wiring only reads the catalog: no write call on any Prisma model", () => {

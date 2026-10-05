@@ -1,7 +1,8 @@
 import { readAuthServerConfig } from "../auth/config.ts";
 import { auth } from "../auth/server.ts";
 import { prisma } from "../db/prisma.ts";
-import { readTryOnConfig } from "../integrations/vertex-try-on/config.ts";
+import { createGoogleFlowTryOnClient } from "../integrations/google-flow-try-on/client.ts";
+import { readTryOnRuntimeConfig } from "../integrations/try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
 import { getGoogleAccessToken } from "../integrations/vertex-try-on/google-auth.ts";
 import { fetchTrustedProductImage } from "../integrations/vertex-try-on/product-image.ts";
@@ -15,12 +16,18 @@ import { createTryOnRateLimiter, type TryOnIdentity } from "./try-on-rate-limit.
 import { createTryOnService } from "./try-on-service.ts";
 
 /**
- * The production wiring of virtual try-on: the real catalog, the real limiter, the real Vertex
- * client. Everything with logic lives in the modules this composes; this file only connects them.
+ * The production wiring of virtual try-on: the real catalog, limiter and selected provider.
+ * Everything with logic lives in the modules this composes; this file only connects them.
  */
 
 // One limiter per process. Production is a single app container (see `try-on-rate-limit.ts`).
-const limiter = createTryOnRateLimiter();
+// A Flow profile can drive only one Chrome generation at a time. Reserve that constraint in the
+// storefront too, so concurrent shoppers fail BUSY before product-image fetch/base64 work reaches
+// the worker. Vertex keeps the existing concurrency of three.
+const startupTryOnConfig = readTryOnRuntimeConfig();
+const limiter = createTryOnRateLimiter(
+  startupTryOnConfig.available && startupTryOnConfig.provider === "flow" ? { maxConcurrent: 1 } : {},
+);
 
 async function loadProduct(slug: string) {
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
@@ -37,12 +44,14 @@ async function loadProduct(slug: string) {
 }
 
 export const tryOnService = createTryOnService({
-  readConfig: () => readTryOnConfig(),
+  readConfig: () => readTryOnRuntimeConfig(),
   limiter,
   loadProduct,
   fetchProductImage: (url) => fetchTrustedProductImage(url),
   generate: ({ config, person, product }) =>
-    createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
+    config.provider === "flow"
+      ? createGoogleFlowTryOnClient({ config }).generate({ person, product })
+      : createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
   emit: (signal) => emitTryOnSignal(signal),
 });
 
@@ -88,12 +97,13 @@ export async function resolveTryOnIdentity(headers: Headers): Promise<TryOnIdent
  */
 export async function resolveProductTryOn(
   product: Readonly<{ id: string; slug: string; media: StorefrontProductMedia }>,
-): Promise<Readonly<{ productSlug: string }> | null> {
-  if (!readTryOnConfig().available) return null;
+): Promise<Readonly<{ productSlug: string; provider: "vertex" | "flow" }> | null> {
+  const config = readTryOnRuntimeConfig();
+  if (!config.available) return null;
   try {
     const categoryKeys = await createMerchandisingRepository(prisma).readCategoryMembership(product.id);
     const eligibility = resolveTryOnEligibility({ categoryKeys, media: product.media });
-    return eligibility.eligible ? { productSlug: product.slug } : null;
+    return eligibility.eligible ? { productSlug: product.slug, provider: config.provider } : null;
   } catch {
     return null;
   }

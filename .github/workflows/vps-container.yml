@@ -10,6 +10,7 @@ on:
       - pnpm-lock.yaml
       - prisma/**
       - src/**
+      - services/flow-worker/**
       - next.config.mjs
   push:
     branches:
@@ -22,6 +23,7 @@ on:
       - pnpm-lock.yaml
       - prisma/**
       - src/**
+      - services/flow-worker/**
       - next.config.mjs
   workflow_dispatch:
 
@@ -35,6 +37,31 @@ concurrency:
 jobs:
   identity:
     uses: ./.github/workflows/project-identity.yml
+
+  verify-flow-worker-image:
+    needs: identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PROJECT_SLUG: ${{ needs.identity.outputs.project-slug }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # releases-v5
+
+      - name: Build Flow worker image
+        run: docker build --tag "$PROJECT_SLUG:flow-worker-ci" services/flow-worker
+
+      - name: Verify frozen gflow closure and pinned real Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -c \
+            "import importlib.metadata as m; assert m.version('gflow-cli') == '0.82.1'"
+          docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -c \
+            "from gflow_cli.config import get_settings; assert str(get_settings().resolved_db_path()) == '/tmp/gflow-auth.db'"
+          docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
+          chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
+          grep -Fq "154.0.8037.97" <<<"$chrome_version"
 
   verify-vps-container:
     needs: identity

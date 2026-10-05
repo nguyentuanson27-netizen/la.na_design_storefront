@@ -23,6 +23,10 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
 # Load only RELEASE_SHA for the exact-checkout invariant. Do not echo env contents.
 RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
+TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_FLOW_URL="$(grep -E '^LA_TRY_ON_FLOW_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_PROVIDER="${TRY_ON_PROVIDER:-vertex}"
 if [[ -z "$RELEASE_SHA" || "$RELEASE_SHA" == "replace-with-approved-git-sha" ]]; then
   echo "RELEASE_SHA must be set in $ENV_FILE" >&2
   exit 1
@@ -40,9 +44,36 @@ if [[ -n "$(git status --porcelain)" ]]; then
 fi
 
 compose=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
+flow_services=()
+if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" ]]; then
+  if [[ "$TRY_ON_FLOW_URL" != "http://flow-worker:8787" ]]; then
+    echo "Flow try-on requires LA_TRY_ON_FLOW_URL=http://flow-worker:8787 on VPS" >&2
+    exit 1
+  fi
+  compose+=(--profile flow-try-on)
+  flow_services+=(flow-worker)
+elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
+  echo "LA_TRY_ON_PROVIDER must be vertex or flow when try-on is enabled" >&2
+  exit 1
+fi
 
 "${compose[@]}" config --quiet
-"${compose[@]}" build app ops
+"${compose[@]}" build app ops "${flow_services[@]}"
+
+# Fail before any database change or app cutover when Flow was explicitly enabled but its server
+# secret/session is unusable. Output is discarded because auth status can include the Google email.
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  if ! "${compose[@]}" run --rm --no-deps flow-worker sh -ec '
+    test "${#FLOW_WORKER_TOKEN}" -ge 32
+    test "$FLOW_WORKER_TOKEN" = "$(printf %s "$FLOW_WORKER_TOKEN" | tr -d "[:space:]")"
+    env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
+  '; then
+    echo "Flow try-on preflight failed: check worker token and refresh the Google session before deploy" >&2
+    exit 1
+  fi
+  echo "Flow try-on preflight verified the saved Google session"
+fi
+
 "${compose[@]}" up -d postgres
 
 for _ in {1..30}; do
@@ -122,8 +153,6 @@ if ! "${compose[@]}" run --rm ops pnpm capacity:handoff:reconcile; then
   exit 1
 fi
 
-"${compose[@]}" up -d --no-build app caddy catalog-sync
-
 # wait_healthy SERVICE ATTEMPTS DELAY: succeeds once Docker reports SERVICE healthy.
 wait_healthy() {
   local service="$1" attempts="$2" delay="$3" container health
@@ -140,6 +169,24 @@ wait_healthy() {
   done
   return 1
 }
+
+# Bring the private Flow dependency up and prove it before the app can expose a Flow-backed entry
+# point. The preflight above proved the saved session; this proves the actual long-lived worker.
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  "${compose[@]}" up -d --no-build flow-worker
+  if ! wait_healthy flow-worker 20 3; then
+    "${compose[@]}" logs --tail=100 flow-worker
+    echo "Flow try-on worker did not become healthy; app cutover was not started" >&2
+    exit 1
+  fi
+  if ! "${compose[@]}" exec -T flow-worker sh -ec 'env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
+    echo "Flow try-on Google session became unavailable before app cutover" >&2
+    exit 1
+  fi
+  echo "Flow try-on worker and Google session are healthy at release $RELEASE_SHA"
+fi
+
+"${compose[@]}" up -d --no-build app caddy catalog-sync
 
 if ! wait_healthy app 40 3; then
   "${compose[@]}" logs --tail=200 app
