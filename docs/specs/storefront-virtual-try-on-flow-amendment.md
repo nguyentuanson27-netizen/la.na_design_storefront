@@ -67,8 +67,15 @@ The worker is a separate Compose service. It is not exposed on the public/edge n
 Google profile is serialized to one generation at a time. If the profile is already in use, the
 worker fails fast as busy instead of launching a second browser on the same profile.
 
-The worker uses a request-scoped temporary directory for the two input files and generated download;
-that directory is deleted after every request.
+The worker uses a request-scoped temporary directory for the two input files, generated download,
+and gflow's local SQLite operation catalog. `GFLOW_CLI_DB_PATH` is overridden to that temp
+directory for every generation, so Flow operation/media IDs, prompt hashes, local paths, hashes and
+byte counts recorded by gflow do not land in the persistent Chrome-profile volume. The whole
+request directory is deleted after every request.
+
+The persistent `flow_gflow_data` volume is reserved for the signed-in Chrome profile/session.
+Non-generation gflow commands use an ephemeral container-local DB path rather than the persistent
+profile volume.
 
 ## Authentication and secrets
 
@@ -85,8 +92,9 @@ The worker port is reachable only on the Compose backend network and is never pu
 
 ## Privacy difference from the Vertex contract
 
-La.na Design still does not durably persist shopper or generated image bytes in Prisma, app
-filesystem, object storage, analytics, or logs.
+La.na Design still does not durably persist shopper/generated image bytes or gflow generation
+catalog records in Prisma, app filesystem, object storage, analytics, logs, or the persistent Flow
+profile volume.
 
 However Google Flow is a consumer web application with project/history semantics. Even though the
 worker deletes its local temporary files, the implementation **must not claim** that uploaded or
@@ -122,10 +130,14 @@ Vertex fallback.
 - [ ] There is never an automatic Flow -> Vertex fallback.
 - [ ] Worker accepts at most one in-flight generation per Google profile.
 - [ ] Worker request/response bodies, Google cookies/profile data and bearer token are never logged.
-- [ ] Worker local input/output files are request-scoped and removed after the call.
+- [ ] Worker local input/output files and gflow SQLite generation catalog are request-scoped and
+      removed after the call; only the signed-in Chrome profile/session is persistent.
 - [ ] Provider output is bounded and JPEG/PNG signature-validated by the storefront.
 - [ ] Vertex remains available as a manual rollback provider.
 - [ ] Existing try-on domain/endpoint/browser regressions stay green.
+- [ ] Worker Python runtime dependencies are installed from the checked-in gflow v0.82.1 lock with
+      hashes; the Python base image is digest-pinned and Chrome is version-pinned with an explicit
+      review/live-smoke update policy.
 - [ ] Lint, typecheck, tests and build pass.
 - [ ] Live Flow generation, Pro-quota -> Nano2 fallback, privacy/cleanup behavior and minor safety are
       recorded as human/operator gates before production enablement.
