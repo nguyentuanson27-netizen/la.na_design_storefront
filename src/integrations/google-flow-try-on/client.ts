@@ -3,15 +3,14 @@ import type { TryOnFailureReason, TryOnImageMimeType } from "../../commerce/try-
 import type { FlowTryOnRuntimeConfig } from "../../commerce/try-on-provider.ts";
 
 type Image = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
+type FlowFailureReason = Extract<
+  TryOnFailureReason,
+  "SAFETY_BLOCKED" | "AUTH_FAILED" | "BUSY" | "TIMEOUT" | "GENERATION_FAILED"
+>;
+
 type GenerateResult =
   | Readonly<{ ok: true; image: Image }>
-  | Readonly<{
-      ok: false;
-      reason: Extract<
-        TryOnFailureReason,
-        "SAFETY_BLOCKED" | "AUTH_FAILED" | "BUSY" | "TIMEOUT" | "GENERATION_FAILED"
-      >;
-    }>;
+  | Readonly<{ ok: false; reason: FlowFailureReason }>;
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -27,7 +26,7 @@ const ALLOWED_FAILURES = new Set([
   "GENERATION_FAILED",
 ]);
 
-function failed(reason: GenerateResult extends { ok: false; reason: infer R } ? R : never): GenerateResult {
+function failed(reason: FlowFailureReason): GenerateResult {
   return { ok: false, reason };
 }
 
@@ -43,7 +42,7 @@ function parseFailure(status: number, body: unknown): GenerateResult {
     typeof body.reason === "string" &&
     ALLOWED_FAILURES.has(body.reason)
   ) {
-    return failed(body.reason as Extract<GenerateResult, { ok: false }>["reason"]);
+    return failed(body.reason as FlowFailureReason);
   }
 
   if (status === 401 || status === 403) return failed("AUTH_FAILED");
