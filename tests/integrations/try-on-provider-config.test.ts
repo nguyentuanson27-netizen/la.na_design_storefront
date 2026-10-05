@@ -73,6 +73,8 @@ test("flow config rejects URL credentials, non-http schemes and extra path/query
     "http://flow-worker:8787/path",
     "http://flow-worker:8787/?debug=1",
     "http://flow-worker:8787/#debug",
+    "https://example.com",
+    "http://10.0.0.8:8787",
     "not-a-url",
   ]) {
     assert.deepEqual(
