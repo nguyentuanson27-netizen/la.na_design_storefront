@@ -75,6 +75,7 @@ Current provider contract, checked against Google Cloud documentation on 2026-10
 Required generation controls:
 
 - `candidateCount = 1`;
+- `mediaResolution = "MEDIA_RESOLUTION_LOW"` for both input references;
 - `responseModalities = ["TEXT", "IMAGE"]`;
 - `imageConfig.imageSize = "2K"`;
 - `imageConfig.imageOutputOptions.mimeType = "image/png"`;
@@ -435,7 +436,7 @@ Cover:
 - server ignores/rejects arbitrary client product-image URLs;
 - request pins `gemini-3-pro-image`;
 - request uses one person image + first trusted product image;
-- request pins one candidate, `personGeneration=allow_all`, 2K PNG output, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and no provider storage URI;
+- request pins one candidate, low input media resolution, `personGeneration=allow_all`, 2K PNG output, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and no provider storage URI;
 - missing likeness acknowledgement rejected before Vertex;
 - missing/unknown age state rejected before Vertex;
 - `below_digital_consent_age` rejected before Vertex;
@@ -612,7 +613,7 @@ Implementation is acceptable when:
 - [ ] Each request requires likeness-rights acknowledgement.
 - [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
 - [ ] Teen flow shows age-appropriate AI disclosure.
-- [ ] Vertex request uses `gemini-3-pro-image` at `global`, two inline reference images, one candidate, 2K PNG output, `personGeneration=allow_all`, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and the fixed server-owned fidelity prompt.
+- [ ] Vertex request uses `gemini-3-pro-image` at `global`, two inline reference images at `MEDIA_RESOLUTION_LOW`, one candidate, 2K PNG output, `personGeneration=allow_all`, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and the compact fixed server-owned fidelity prompt.
 - [ ] Provider safety blocks fail closed without weaker retry/fallback.
 - [ ] One accepted request renders at most one result.
 - [ ] La.na Design does not durably persist input/output image bytes.
