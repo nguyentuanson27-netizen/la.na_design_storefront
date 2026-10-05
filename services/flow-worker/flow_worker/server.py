@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import threading
@@ -115,27 +116,57 @@ def _machine_error_detail(stdout: str) -> str:
     return detail[:MAX_ERROR_DETAIL_CHARS] if isinstance(detail, str) else ""
 
 
+def _gflow_env() -> dict[str, str]:
+    env = dict(os.environ)
+    # The worker bearer token authenticates storefront -> worker only. gflow/Chrome never need it.
+    env.pop("FLOW_WORKER_TOKEN", None)
+    env["GFLOW_CLI_HEADLESS"] = "false"
+    env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
+    env["GFLOW_CLI_UPDATE_CHECK"] = "false"
+    return env
+
+
+def _terminate_process_group(process: subprocess.Popen[str]) -> None:
+    """Best-effort cleanup for gflow plus Chrome descendants after the watchdog expires."""
+    if process.poll() is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    try:
+        process.wait(timeout=2)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        return
+    process.wait(timeout=2)
+
+
 def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[int, str]:
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             _command(model, person, product, output),
-            capture_output=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
-            timeout=COMMAND_TIMEOUT_SECONDS,
-            check=False,
-            env={
-                **os.environ,
-                "GFLOW_CLI_HEADLESS": "false",
-                "GFLOW_CLI_HISTORY_PROMPTS": "redacted",
-                "GFLOW_CLI_UPDATE_CHECK": "false",
-            },
+            start_new_session=True,
+            env=_gflow_env(),
         )
-    except subprocess.TimeoutExpired:
-        return WORKER_TIMEOUT_EXIT_CODE, ""
     except OSError:
         return 1, ""
 
-    return completed.returncode, _machine_error_detail(completed.stdout or "")
+    try:
+        stdout, _ = process.communicate(timeout=COMMAND_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        _terminate_process_group(process)
+        return WORKER_TIMEOUT_EXIT_CODE, ""
+
+    return process.returncode, _machine_error_detail(stdout or "")
 
 
 def _failure_reason(exit_code: int) -> tuple[int, str]:
