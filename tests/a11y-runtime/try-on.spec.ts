@@ -193,6 +193,7 @@ type PredictLogEntry = {
   inputImages: number;
   garmentIsTrustedProduct: boolean;
   candidateCount: number;
+  mediaResolution: string;
   imageSize: string;
   personGeneration: string;
   responseModalities: string[];
@@ -733,6 +734,7 @@ test("an adult generation shows loading, exactly one result, a download, and req
     inputImages: 2,
     garmentIsTrustedProduct: true,
     candidateCount: 1,
+    mediaResolution: "MEDIA_RESOLUTION_LOW",
     imageSize: "2K",
     personGeneration: "allow_all",
     responseModalities: ["TEXT", "IMAGE"],
