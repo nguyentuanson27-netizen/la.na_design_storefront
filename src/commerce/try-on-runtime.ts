@@ -21,7 +21,13 @@ import { createTryOnService } from "./try-on-service.ts";
  */
 
 // One limiter per process. Production is a single app container (see `try-on-rate-limit.ts`).
-const limiter = createTryOnRateLimiter();
+// A Flow profile can drive only one Chrome generation at a time. Reserve that constraint in the
+// storefront too, so concurrent shoppers fail BUSY before product-image fetch/base64 work reaches
+// the worker. Vertex keeps the existing concurrency of three.
+const startupTryOnConfig = readTryOnRuntimeConfig();
+const limiter = createTryOnRateLimiter(
+  startupTryOnConfig.available && startupTryOnConfig.provider === "flow" ? { maxConcurrent: 1 } : {},
+);
 
 async function loadProduct(slug: string) {
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
