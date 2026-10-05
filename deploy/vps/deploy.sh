@@ -54,6 +54,20 @@ fi
 
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops "${flow_services[@]}"
+
+# Fail before any database change or app cutover when Flow was explicitly enabled but its server
+# secret/session is unusable. Output is discarded because auth status can include the Google email.
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  if ! "${compose[@]}" run --rm --no-deps flow-worker sh -ec '
+    test "${#FLOW_WORKER_TOKEN}" -ge 32
+    gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
+  '; then
+    echo "Flow try-on preflight failed: check worker token and refresh the Google session before deploy" >&2
+    exit 1
+  fi
+  echo "Flow try-on preflight verified the saved Google session"
+fi
+
 "${compose[@]}" up -d postgres
 
 for _ in {1..30}; do
@@ -133,8 +147,6 @@ if ! "${compose[@]}" run --rm ops pnpm capacity:handoff:reconcile; then
   exit 1
 fi
 
-"${compose[@]}" up -d --no-build app caddy catalog-sync "${flow_services[@]}"
-
 # wait_healthy SERVICE ATTEMPTS DELAY: succeeds once Docker reports SERVICE healthy.
 wait_healthy() {
   local service="$1" attempts="$2" delay="$3" container health
@@ -152,28 +164,30 @@ wait_healthy() {
   return 1
 }
 
+# Bring the private Flow dependency up and prove it before the app can expose a Flow-backed entry
+# point. The preflight above proved the saved session; this proves the actual long-lived worker.
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  "${compose[@]}" up -d --no-build flow-worker
+  if ! wait_healthy flow-worker 20 3; then
+    "${compose[@]}" logs --tail=100 flow-worker
+    echo "Flow try-on worker did not become healthy; app cutover was not started" >&2
+    exit 1
+  fi
+  if ! "${compose[@]}" exec -T flow-worker sh -ec 'gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
+    echo "Flow try-on Google session became unavailable before app cutover" >&2
+    exit 1
+  fi
+  echo "Flow try-on worker and Google session are healthy at release $RELEASE_SHA"
+fi
+
+"${compose[@]}" up -d --no-build app caddy catalog-sync
+
 if ! wait_healthy app 40 3; then
   "${compose[@]}" logs --tail=200 app
   echo "Application did not become healthy at release $RELEASE_SHA" >&2
   exit 1
 fi
 echo "Application container is healthy at release $RELEASE_SHA"
-
-if [[ "${#flow_services[@]}" -gt 0 ]]; then
-  if ! wait_healthy flow-worker 20 3; then
-    "${compose[@]}" logs --tail=100 flow-worker
-    echo "Flow try-on worker is not healthy; verify its persistent Google session before enabling try-on" >&2
-    exit 1
-  fi
-  echo "Flow try-on worker is healthy at release $RELEASE_SHA"
-  # Profile files are not proof that the Google session is alive. gflow auth status performs a
-  # read-only live probe; discard its output so a Google account identifier never enters deploy logs.
-  if ! "${compose[@]}" exec -T flow-worker sh -ec 'gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
-    echo "Flow try-on Google session is missing or expired; refresh it before enabling try-on" >&2
-    exit 1
-  fi
-  echo "Flow try-on Google session verified"
-fi
 
 # The release is not done until the catalog sync has actually succeeded once: a running loop whose
 # every sync fails would otherwise leave COMMITTED capacity holds uncleared and restocks unsellable
