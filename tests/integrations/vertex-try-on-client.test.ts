@@ -62,11 +62,13 @@ test("request pins Nano Banana Pro, global generateContent, two references and q
   assert.equal(inline.length, 2);
   assert.deepEqual(inline[0], { inlineData: { mimeType: "image/jpeg", data: b64(JPEG_BYTES) } });
   assert.deepEqual(inline[1], { inlineData: { mimeType: "image/png", data: b64(PNG_BYTES) } });
-  assert.match(TRY_ON_PROMPT, /preserving the shopper's recognizable identity/i);
-  assert.match(TRY_ON_PROMPT, /preserve the garment's silhouette/i);
+  assert.match(TRY_ON_PROMPT, /preserve shopper identity/i);
+  assert.match(TRY_ON_PROMPT, /preserve garment silhouette/i);
+  assert.ok(TRY_ON_PROMPT.length < 700, "keep the fixed prompt compact to reduce text input tokens");
 
   assert.deepEqual(request.body.generationConfig, {
     candidateCount: 1,
+    mediaResolution: "MEDIA_RESOLUTION_LOW",
     responseModalities: ["TEXT", "IMAGE"],
     imageConfig: {
       imageSize: "2K",
