@@ -15,34 +15,58 @@ import {
 import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 
 const KNOWN_IMG_1 = HOMEPAGE_CONFIG.feedback.images[0]!;
-const NEW_IMG_URL_1 = "https://content.pancake.vn/2-2610/2026/10/2/test-photo-new-01.jpg";
-const NEW_IMG_URL_2 = "https://content.pancake.vn/2-2610/2026/10/2/test-photo-new-02.jpg";
+const KNOWN_IMG_2 = HOMEPAGE_CONFIG.feedback.images[1]!;
+const NEW_IMG_URL = "https://content.pancake.vn/2-2610/2026/10/2/test-photo-new-01.jpg";
 
 test("mapFeedbackVariantsToImages falls back to static config when variants are empty", () => {
   const images = mapFeedbackVariantsToImages([]);
   assert.equal(images, HOMEPAGE_CONFIG.feedback.images);
 });
 
-test("mapFeedbackVariantsToImages naturally sorts variants by display ID / SKU", () => {
+test("mapFeedbackVariantsToImages naturally sorts ANH-FEEDBACK variants by display ID", () => {
   const variants: FeedbackVariantRow[] = [
     {
       id: "var-2",
       pancakeDisplayId: "ANH-FEEDBACK-02",
-      sku: "ANH-FEEDBACK-02",
-      pancakeImageUrls: [NEW_IMG_URL_2],
+      pancakeImageUrls: [KNOWN_IMG_2.src],
     },
     {
       id: "var-1",
       pancakeDisplayId: "ANH-FEEDBACK-01",
-      sku: "ANH-FEEDBACK-01",
-      pancakeImageUrls: [NEW_IMG_URL_1],
+      pancakeImageUrls: [KNOWN_IMG_1.src],
     },
   ];
 
   const images = mapFeedbackVariantsToImages(variants);
   assert.equal(images.length, 2);
-  assert.equal(images[0]?.src, NEW_IMG_URL_1);
-  assert.equal(images[1]?.src, NEW_IMG_URL_2);
+  assert.equal(images[0]?.src, KNOWN_IMG_1.src);
+  assert.equal(images[1]?.src, KNOWN_IMG_2.src);
+});
+
+test("mapFeedbackVariantsToImages ignores variants outside the exact ANH-FEEDBACK- namespace", () => {
+  const variants: FeedbackVariantRow[] = [
+    {
+      id: "wrong-prefix",
+      pancakeDisplayId: "PROMO-FEEDBACK-01",
+      pancakeImageUrls: [KNOWN_IMG_1.src],
+    },
+    {
+      id: "substring-only",
+      pancakeDisplayId: "NOT-ANH-FEEDBACK-02",
+      pancakeImageUrls: [KNOWN_IMG_1.src],
+    },
+    {
+      id: "valid",
+      pancakeDisplayId: "ANH-FEEDBACK-03",
+      pancakeImageUrls: [KNOWN_IMG_2.src],
+    },
+  ];
+
+  const images = mapFeedbackVariantsToImages(variants);
+  assert.deepEqual(
+    images.map((image) => image.src),
+    [KNOWN_IMG_2.src],
+  );
 });
 
 test("mapFeedbackVariantsToImages deduplicates repeated URLs across variants", () => {
@@ -50,48 +74,50 @@ test("mapFeedbackVariantsToImages deduplicates repeated URLs across variants", (
     {
       id: "var-1",
       pancakeDisplayId: "ANH-FEEDBACK-01",
-      sku: "ANH-FEEDBACK-01",
-      pancakeImageUrls: [NEW_IMG_URL_1, NEW_IMG_URL_1, NEW_IMG_URL_2],
+      pancakeImageUrls: [KNOWN_IMG_1.src, KNOWN_IMG_1.src, KNOWN_IMG_2.src],
     },
     {
       id: "var-2",
       pancakeDisplayId: "ANH-FEEDBACK-02",
-      sku: "ANH-FEEDBACK-02",
-      pancakeImageUrls: [NEW_IMG_URL_2, NEW_IMG_URL_1],
+      pancakeImageUrls: [KNOWN_IMG_2.src, KNOWN_IMG_1.src],
     },
   ];
 
   const images = mapFeedbackVariantsToImages(variants);
   assert.equal(images.length, 2);
   assert.deepEqual(
-    images.map((img) => img.src),
-    [NEW_IMG_URL_1, NEW_IMG_URL_2],
+    images.map((image) => image.src),
+    [KNOWN_IMG_1.src, KNOWN_IMG_2.src],
   );
 });
 
-test("mapFeedbackVariantsToImages preserves known dimensions and applies 1536x2048 fallback for new images", () => {
+test("mapFeedbackVariantsToImages preserves calibrated natural dimensions", () => {
   const variants: FeedbackVariantRow[] = [
     {
       id: "var-1",
       pancakeDisplayId: "ANH-FEEDBACK-01",
-      sku: "ANH-FEEDBACK-01",
-      pancakeImageUrls: [KNOWN_IMG_1.src, NEW_IMG_URL_1],
+      pancakeImageUrls: [KNOWN_IMG_1.src],
     },
   ];
 
   const images = mapFeedbackVariantsToImages(variants);
-  assert.equal(images.length, 2);
-
-  // Known image preserves calibrated width/height from config
+  assert.equal(images.length, 1);
   assert.equal(images[0]?.src, KNOWN_IMG_1.src);
   assert.equal(images[0]?.width, KNOWN_IMG_1.width);
   assert.equal(images[0]?.height, KNOWN_IMG_1.height);
+});
 
-  // Newly synced image receives standard portrait fallback
-  assert.equal(images[1]?.src, NEW_IMG_URL_1);
-  assert.equal(images[1]?.width, 1536);
-  assert.equal(images[1]?.height, 2048);
-  assert.equal(images[1]?.alt, "");
+test("mapFeedbackVariantsToImages falls back instead of inventing dimensions for a new image", () => {
+  const variants: FeedbackVariantRow[] = [
+    {
+      id: "var-1",
+      pancakeDisplayId: "ANH-FEEDBACK-01",
+      pancakeImageUrls: [NEW_IMG_URL],
+    },
+  ];
+
+  const images = mapFeedbackVariantsToImages(variants);
+  assert.equal(images, HOMEPAGE_CONFIG.feedback.images);
 });
 
 test("mapFeedbackVariantsToImages filters untrusted or invalid URLs", () => {
@@ -99,22 +125,21 @@ test("mapFeedbackVariantsToImages filters untrusted or invalid URLs", () => {
     {
       id: "var-1",
       pancakeDisplayId: "ANH-FEEDBACK-01",
-      sku: null,
       pancakeImageUrls: [
         "https://evil.example.com/malicious.jpg",
         "http://content.pancake.vn/insecure.jpg",
         "not-a-valid-url",
-        NEW_IMG_URL_1,
+        KNOWN_IMG_1.src,
       ],
     },
   ];
 
   const images = mapFeedbackVariantsToImages(variants);
   assert.equal(images.length, 1);
-  assert.equal(images[0]?.src, NEW_IMG_URL_1);
+  assert.equal(images[0]?.src, KNOWN_IMG_1.src);
 });
 
-test("createFeedbackRepository queries VariantMirror with proper filters", async () => {
+test("createFeedbackRepository scopes reads to configured shop and exact ANH-FEEDBACK- prefix", async () => {
   let capturedArgs: unknown = null;
   const mockClient: FeedbackReadClient = {
     variantMirror: {
@@ -124,8 +149,7 @@ test("createFeedbackRepository queries VariantMirror with proper filters", async
           {
             id: "var-1",
             pancakeDisplayId: "ANH-FEEDBACK-01",
-            sku: null,
-            pancakeImageUrls: [NEW_IMG_URL_1],
+            pancakeImageUrls: [KNOWN_IMG_1.src],
           },
         ];
       },
@@ -133,18 +157,32 @@ test("createFeedbackRepository queries VariantMirror with proper filters", async
   };
 
   const repository = createFeedbackRepository(mockClient);
-  const images = await repository.listFeedbackImages();
+  const images = await repository.listFeedbackImages({ shopId: 123 });
 
   assert.equal(images.length, 1);
-  assert.equal(images[0]?.src, NEW_IMG_URL_1);
+  assert.equal(images[0]?.src, KNOWN_IMG_1.src);
   assert.ok(capturedArgs !== null);
-  const where = (capturedArgs as { where: { isPresent: boolean } }).where;
+
+  const where = (
+    capturedArgs as {
+      where: {
+        isPresent: boolean;
+        pancakeDisplayId: { startsWith: string };
+        product: { pancakeShopId: number };
+        OR?: unknown;
+      };
+    }
+  ).where;
+
   assert.equal(where.isPresent, true);
+  assert.equal(where.pancakeDisplayId.startsWith, "ANH-FEEDBACK-");
+  assert.equal(where.product.pancakeShopId, 123);
+  assert.equal(where.OR, undefined);
 });
 
 test("resolveFeedbackContentWithImages joins images with config copy", () => {
   const content = resolveFeedbackContentWithImages([
-    { src: NEW_IMG_URL_1, alt: "", width: 1536, height: 2048 },
+    { src: KNOWN_IMG_1.src, alt: "", width: KNOWN_IMG_1.width, height: KNOWN_IMG_1.height },
   ]);
 
   assert.notEqual(content, null);
@@ -153,7 +191,7 @@ test("resolveFeedbackContentWithImages joins images with config copy", () => {
   assert.equal(content?.metadataTitle, HOMEPAGE_CONFIG.feedback.metadataTitle);
   assert.equal(content?.metadataDescription, HOMEPAGE_CONFIG.feedback.metadataDescription);
   assert.equal(content?.images.length, 1);
-  assert.equal(content?.images[0]?.src, NEW_IMG_URL_1);
+  assert.equal(content?.images[0]?.src, KNOWN_IMG_1.src);
 });
 
 test("readDynamicFeedbackContent falls back to readFeedbackContent if client throws", async () => {
@@ -165,7 +203,7 @@ test("readDynamicFeedbackContent falls back to readFeedbackContent if client thr
     },
   };
 
-  const content = await readDynamicFeedbackContent(failingClient);
+  const content = await readDynamicFeedbackContent({ client: failingClient, shopId: 123 });
   const staticContent = readFeedbackContent();
 
   assert.notEqual(content, null);
