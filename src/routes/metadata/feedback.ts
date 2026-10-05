@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
-import { FEEDBACK_PATH, readFeedbackContent } from "@/content/homepage-content";
+import { readDynamicFeedbackContent } from "@/commerce/feedback-repository";
+import { FEEDBACK_PATH } from "@/content/homepage-content";
 
 import { buildEvergreenPageMetadata, type StaticPageMetadataProps } from "./static-page.ts";
 
@@ -15,7 +16,7 @@ import { buildEvergreenPageMetadata, type StaticPageMetadataProps } from "./stat
 export type FeedbackMetadataProps = StaticPageMetadataProps;
 
 export async function buildFeedbackMetadata(props: FeedbackMetadataProps): Promise<Metadata> {
-  const content = readFeedbackContent();
+  const content = await readDynamicFeedbackContent();
   if (content === null) return {};
 
   return buildEvergreenPageMetadata({

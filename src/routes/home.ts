@@ -7,7 +7,7 @@ import {
   readConfiguredCategoryHeroMedia,
 } from "@/commerce/storefront-catalog-runtime";
 import { buildProductListTracking } from "@/components/analytics/product-list-tracking";
-import { readFeedbackContent } from "@/content/homepage-content";
+import { readDynamicFeedbackContent } from "@/commerce/feedback-repository";
 import { HOMEPAGE_CONFIG } from "@/content/homepage.config";
 import { prisma } from "@/db/prisma";
 import { PancakeConfigError } from "@/integrations/pancake/config";
@@ -111,11 +111,12 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
   // One instant for the whole request, so counting, ordering and card pricing cannot disagree.
   const requestNow = new Date();
 
-  const [specialDeals, heroCollections, promoCollections, storedCategoryMedia] = await Promise.all([
+  const [specialDeals, heroCollections, promoCollections, storedCategoryMedia, feedbackContent] = await Promise.all([
     loadSpecialDealsSection(requestNow),
     collectionRepository.listHomepageMerchandising(),
     loadPromoCollections(),
     readConfiguredCategoryHeroMedia([...NEXT_FAVOURITE_CATEGORY_KEYS]),
+    readDynamicFeedbackContent(),
   ]);
 
   // Built from the exact four products the section renders, in render order, so impression and
@@ -139,7 +140,7 @@ export async function loadHomeRoute(): Promise<RouteHandle<HomeRouteData>> {
           resolveCollectionPromoRow(HOMEPAGE_CONFIG.promoRows[1], promoCollections),
         ],
         categoryTiles: resolveCategoryDiscovery(storedCategoryMedia),
-        feedback: readFeedbackContent(),
+        feedback: feedbackContent,
       }),
       heroSlides: buildHomeHeroSlides(toHeroCandidates(heroCollections)),
     },

@@ -183,8 +183,9 @@ test("positioned collections no longer publish the retired homepage collection r
   await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
 
   // No collection here publishes hero media, so the unchanged hero stays absent (master spec §17).
-  // Of the refreshed sections only the feedback rail has real content: its photographs ship in the
-  // config, while the collection-backed sections have no published owner collection here.
+  // No refreshed section has real content here: the feedback rail reads the configured shop's
+  // mirrored ANH-FEEDBACK photographs (this server has no PANCAKE_SHOP_ID, so it fails closed), and
+  // the collection-backed sections have no published owner collection.
   await expect(page.getByRole("region", { name: "Ảnh bìa trang chủ" })).toHaveCount(0);
   await expectRetiredSectionsAbsent(page);
   for (const title of [
@@ -199,5 +200,5 @@ test("positioned collections no longer publish the retired homepage collection r
     await page.locator("[data-homepage-region]").evaluateAll((regions) =>
       regions.map((region) => region.getAttribute("data-homepage-region")),
     ),
-  ).toEqual(["feedback"]);
+  ).toEqual([]);
 });

@@ -1,16 +1,17 @@
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 
-import { readFeedbackContent, type FeedbackImage } from "@/content/homepage-content";
+import { readDynamicFeedbackContent } from "@/commerce/feedback-repository";
+import type { FeedbackImage } from "@/content/homepage-content";
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
 /**
  * `/feedback`'s loader: the full configured feedback gallery (spec §7.6).
  *
- * The content is repository config, validated at `homepage-content.ts`. Until the owner supplies the
- * heading, the metadata copy and the photographs, there is no page to publish -- inventing any of
- * them is exactly what the spec forbids -- so the route 404s, as the collection route does for a
- * collection with no story, and the homepage's `Xem thêm` link is absent for the same reason.
+ * The content is dynamically read from the database mirror (with fallback to repository config),
+ * validated at `homepage-content.ts`. Until the heading, metadata copy and photographs are present,
+ * the route 404s, as the collection route does for a collection with no story.
  */
 
 export type FeedbackViewModel = Readonly<{
@@ -23,7 +24,8 @@ export type FeedbackRouteProps = Readonly<{
 }>;
 
 export async function loadFeedbackRoute(): Promise<RouteHandle<FeedbackViewModel>> {
-  const content = readFeedbackContent();
+  await connection();
+  const content = await readDynamicFeedbackContent();
   if (content === null) notFound();
 
   return sealRoute({
@@ -35,3 +37,4 @@ export async function loadFeedbackRoute(): Promise<RouteHandle<FeedbackViewModel
     pixelEvents: [],
   });
 }
+

@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 import { connection } from "next/server";
 
-import { readFeedbackContent } from "@/content/homepage-content";
+import { readDynamicFeedbackContent } from "@/commerce/feedback-repository";
 import { prisma } from "@/db/prisma";
 import { readPancakeShopId } from "@/integrations/pancake/config";
 import { readSearchExposure } from "@/seo/search-exposure";
@@ -22,8 +22,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     shopId: readPancakeShopId(),
   });
 
+  const feedbackContent = await readDynamicFeedbackContent();
   const staticPaths = listStaticCanonicalPaths({
-    feedbackPublished: readFeedbackContent() !== null,
+    feedbackPublished: feedbackContent !== null,
   });
 
   return [...staticPaths, ...dynamicPaths].map((pathname) => ({
