@@ -2,6 +2,7 @@ FROM python:3.13-slim
 
 ENV PYTHONUNBUFFERED=1 \
     GFLOW_CLI_HOME=/data/gflow \
+    GFLOW_CLI_DB_PATH=/tmp/gflow-auth.db \
     GFLOW_CLI_HEADLESS=false \
     GFLOW_CLI_HISTORY_PROMPTS=redacted \
     GFLOW_CLI_UPDATE_CHECK=false \
