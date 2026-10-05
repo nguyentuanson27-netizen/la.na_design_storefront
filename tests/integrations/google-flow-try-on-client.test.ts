@@ -5,6 +5,8 @@ import { createGoogleFlowTryOnClient } from "../../src/integrations/google-flow-
 import { JPEG_BYTES, PNG_BYTES, WEBP_BYTES } from "../support/try-on-fixtures.ts";
 
 const config = {
+  available: true,
+  provider: "flow",
   workerUrl: "http://flow-worker:8787",
   workerToken: "t".repeat(64),
 } as const;
