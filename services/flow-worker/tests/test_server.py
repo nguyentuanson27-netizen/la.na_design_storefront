@@ -37,7 +37,9 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
             calls.append(model)
             db_paths.append(db_path)
             if model == "nano-pro":
-                return 4, server.GflowMachineError(detail="You have reached the daily limit for Nano Banana Pro.")
+                return 4, server.GflowMachineError(
+                    detail="You have reached the daily limit for Nano Banana Pro."
+                )
             output.write_bytes(PNG)
             return 0, server.GflowMachineError()
 
@@ -61,7 +63,9 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         def run(model, _person, _product, output, timeout, _db_path):
             timeouts.append((model, timeout))
             if model == "nano-pro":
-                return 4, server.GflowMachineError(detail="You have reached the daily limit for Nano Banana Pro.")
+                return 4, server.GflowMachineError(
+                    detail="You have reached the daily limit for Nano Banana Pro."
+                )
             output.write_bytes(PNG)
             return 0, server.GflowMachineError()
 
@@ -148,21 +152,39 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(error.problem_type, "https://gflow-cli.dev/errors/rate-limit")
         self.assertTrue(server.should_fallback_to_nano2(4, error.detail))
 
-    def test_profile_locked_error_maps_to_busy_but_other_exit_11_does_not(self):
-        locked = server.GflowMachineError(
-            detail="profile is in use",
-            error_class="ProfileLockedError",
-            problem_type="https://gflow-cli.dev/errors/profile-locked",
+    def test_profile_locked_json_maps_to_busy_but_other_exit_11_does_not(self):
+        locked = server._machine_error(
+            """{
+              "status": "fail",
+              "error": {
+                "type": "https://gflow-cli.dev/errors/profile-locked",
+                "class": "ProfileLockedError",
+                "exit_code": 11,
+                "detail": "profile is in use"
+              }
+            }"""
         )
-        generic_config = server.GflowMachineError(
-            detail="bad configuration",
-            error_class="ConfigurationError",
-            problem_type="https://gflow-cli.dev/errors/configuration",
+        generic_config = server._machine_error(
+            """{
+              "status": "fail",
+              "error": {
+                "type": "https://gflow-cli.dev/errors/configuration",
+                "class": "ConfigurationError",
+                "exit_code": 11,
+                "detail": "bad configuration"
+              }
+            }"""
         )
-        wrong_type = server.GflowMachineError(
-            detail="profile is in use",
-            error_class="ProfileLockedError",
-            problem_type="https://gflow-cli.dev/errors/configuration",
+        wrong_type = server._machine_error(
+            """{
+              "status": "fail",
+              "error": {
+                "type": "https://gflow-cli.dev/errors/configuration",
+                "class": "ProfileLockedError",
+                "exit_code": 11,
+                "detail": "profile is in use"
+              }
+            }"""
         )
 
         self.assertEqual(server._failure_reason(11, locked), (409, "BUSY"))
