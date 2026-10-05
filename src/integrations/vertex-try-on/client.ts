@@ -12,13 +12,10 @@ import { createTimeoutSignal } from "./timeout.ts";
 export const TRY_ON_MODEL = "gemini-3-pro-image";
 export const TRY_ON_OUTPUT_IMAGE_SIZE = "2K";
 export const TRY_ON_PROMPT =
-  "Create one photorealistic virtual try-on image. " +
-  "Reference image 1 is the shopper. Reference image 2 is the exact garment to put on the shopper. " +
-  "Dress the shopper in exactly that garment while preserving the shopper's recognizable identity, face, hair, apparent age, skin tone, body proportions, pose, hands, framing, camera perspective, background and lighting. " +
-  "Preserve the garment's silhouette, cut, length, color, pattern, texture, seams, trim, logos, graphics and visible design details. " +
-  "Make only the clothing change needed for a physically plausible fit. Do not reshape the body, retouch the face, add or remove accessories, sexualize the subject, create nudity, or change apparent age. " +
-  "Do not invent conspicuous garment details that are not visible in the reference. " +
-  "Return one high-fidelity fashion visualization with no text, collage, split-screen or extra people.";
+  "Create one photorealistic try-on. Image 1=shopper; image 2=exact garment. " +
+  "Put only that garment on the shopper. Preserve shopper identity, face, hair, apparent age, skin tone, body proportions, pose, hands, framing, background, perspective and lighting. " +
+  "Preserve garment silhouette, cut, length, color, pattern, texture, seams, trim, logos and graphics. " +
+  "Change only garment fit. No body/face retouching, age or accessory changes, sexualization, nudity, invented garment details, text, extra people, collage or split-screen.";
 
 const SAFETY_THRESHOLD = "BLOCK_LOW_AND_ABOVE";
 const SAFETY_SETTINGS = [
@@ -91,6 +88,7 @@ export function buildGenerateContentRequest({
       ],
       generationConfig: {
         candidateCount: 1,
+        mediaResolution: "MEDIA_RESOLUTION_LOW",
         responseModalities: ["TEXT", "IMAGE"],
         imageConfig: {
           imageSize: TRY_ON_OUTPUT_IMAGE_SIZE,
