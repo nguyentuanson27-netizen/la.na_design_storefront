@@ -6,11 +6,13 @@ import {
   type FeedbackImage,
 } from "../content/homepage-content.ts";
 import { HOMEPAGE_CONFIG } from "../content/homepage.config.ts";
+import { readPancakeShopId } from "../integrations/pancake/config.ts";
+
+const FEEDBACK_DISPLAY_ID_PREFIX = "ANH-FEEDBACK-";
 
 export type FeedbackVariantRow = Readonly<{
   id: string;
   pancakeDisplayId: string | null;
-  sku: string | null;
   pancakeImageUrls: unknown;
 }>;
 
@@ -19,16 +21,12 @@ export type FeedbackReadClient = {
     findMany(args: {
       where: {
         isPresent: boolean;
-        OR: [
-          { pancakeDisplayId: { contains: string; mode: "insensitive" } },
-          { sku: { contains: string; mode: "insensitive" } },
-          { product: { name: { contains: string; mode: "insensitive" } } },
-        ];
+        pancakeDisplayId: { startsWith: string };
+        product: { pancakeShopId: number };
       };
       select: {
         id: true;
         pancakeDisplayId: true;
-        sku: true;
         pancakeImageUrls: true;
       };
       orderBy?: Array<{ pancakeDisplayId?: "asc" | "desc"; id?: "asc" | "desc" }>;
@@ -36,30 +34,36 @@ export type FeedbackReadClient = {
   };
 };
 
-/**
- * Pre-calibrated natural dimensions for editorial feedback images shipped in the config.
- */
 const KNOWN_FEEDBACK_IMAGE_DIMENSIONS = new Map<string, { width: number; height: number }>(
-  HOMEPAGE_CONFIG.feedback.images.map((img) => [img.src, { width: img.width, height: img.height }]),
+  HOMEPAGE_CONFIG.feedback.images.map((image) => [
+    image.src,
+    { width: image.width, height: image.height },
+  ]),
 );
 
+function isFeedbackVariant(variant: FeedbackVariantRow): boolean {
+  return variant.pancakeDisplayId?.startsWith(FEEDBACK_DISPLAY_ID_PREFIX) === true;
+}
+
 /**
- * Maps database variants (e.g. `ANH-FEEDBACK-01`, `ANH-FEEDBACK-02`) to a validated,
- * deduplicated list of FeedbackImage items ordered naturally by variant SKU/displayId.
+ * Maps mirrored ANH-FEEDBACK-* variants to the feedback gallery.
  *
- * If the database has no feedback rows or valid images, falls back to `HOMEPAGE_CONFIG.feedback.images`.
+ * The uncropped gallery requires truthful natural dimensions. Pancake's mirrored image list only
+ * contains URLs, so a newly synced URL is publishable only after its natural dimensions have been
+ * calibrated in repository config. Until then the whole dynamic set falls back to the last reviewed
+ * static gallery rather than inventing an aspect ratio or silently dropping an image.
  */
 export function mapFeedbackVariantsToImages(
   variants: readonly FeedbackVariantRow[],
 ): readonly FeedbackImage[] {
-  if (variants.length === 0) {
+  const scopedVariants = variants.filter(isFeedbackVariant);
+  if (scopedVariants.length === 0) {
     return HOMEPAGE_CONFIG.feedback.images;
   }
 
-  // Sort variants naturally by display ID / SKU (e.g. ANH-FEEDBACK-01 before ANH-FEEDBACK-02)
-  const sorted = [...variants].sort((a, b) => {
-    const keyA = (a.pancakeDisplayId || a.sku || a.id).trim();
-    const keyB = (b.pancakeDisplayId || b.sku || b.id).trim();
+  const sorted = [...scopedVariants].sort((a, b) => {
+    const keyA = (a.pancakeDisplayId || a.id).trim();
+    const keyB = (b.pancakeDisplayId || b.id).trim();
     return keyA.localeCompare(keyB, undefined, { numeric: true, sensitivity: "base" });
   });
 
@@ -75,16 +79,19 @@ export function mapFeedbackVariantsToImages(
       if (typeof raw !== "string") continue;
       const src = parseHomepageImageSrc(raw);
       if (!src || seen.has(src)) continue;
-      seen.add(src);
 
-      const knownDim = KNOWN_FEEDBACK_IMAGE_DIMENSIONS.get(src);
-      // Canonical 3:4 portrait ratio (1536x2048) as fallback for new photos without measured size
+      const knownDimension = KNOWN_FEEDBACK_IMAGE_DIMENSIONS.get(src);
+      if (!knownDimension) {
+        return HOMEPAGE_CONFIG.feedback.images;
+      }
+
+      seen.add(src);
       images.push(
         Object.freeze({
           src,
           alt: "",
-          width: knownDim?.width ?? 1536,
-          height: knownDim?.height ?? 2048,
+          width: knownDimension.width,
+          height: knownDimension.height,
         }),
       );
     }
@@ -95,20 +102,16 @@ export function mapFeedbackVariantsToImages(
 
 export function createFeedbackRepository(client: FeedbackReadClient) {
   return {
-    async listFeedbackImages(): Promise<readonly FeedbackImage[]> {
+    async listFeedbackImages({ shopId }: { shopId: number }): Promise<readonly FeedbackImage[]> {
       const variants = await client.variantMirror.findMany({
         where: {
           isPresent: true,
-          OR: [
-            { pancakeDisplayId: { contains: "FEEDBACK", mode: "insensitive" } },
-            { sku: { contains: "FEEDBACK", mode: "insensitive" } },
-            { product: { name: { contains: "feedback", mode: "insensitive" } } },
-          ],
+          pancakeDisplayId: { startsWith: FEEDBACK_DISPLAY_ID_PREFIX },
+          product: { pancakeShopId: shopId },
         },
         select: {
           id: true,
           pancakeDisplayId: true,
-          sku: true,
           pancakeImageUrls: true,
         },
         orderBy: [{ pancakeDisplayId: "asc" }, { id: "asc" }],
@@ -119,22 +122,21 @@ export function createFeedbackRepository(client: FeedbackReadClient) {
   };
 }
 
-/**
- * Loads feedback content dynamically from the product mirror in the database.
- * Falls back to static repository config if database query fails or yields no images.
- */
 export async function readDynamicFeedbackContent(
-  client?: FeedbackReadClient,
+  options: Readonly<{ client?: FeedbackReadClient; shopId?: number }> = {},
 ): Promise<FeedbackContent | null> {
   try {
-    const dbClient = client ?? ((await import("../db/prisma.ts")).prisma as unknown as FeedbackReadClient);
+    const shopId = options.shopId ?? readPancakeShopId();
+    const dbClient =
+      options.client
+      ?? ((await import("../db/prisma.ts")).prisma as unknown as FeedbackReadClient);
     const repository = createFeedbackRepository(dbClient);
-    const images = await repository.listFeedbackImages();
+    const images = await repository.listFeedbackImages({ shopId });
     if (images.length > 0) {
       return resolveFeedbackContentWithImages(images);
     }
   } catch {
-    // Database may be unavailable in unit tests or offline build environments
+    // Database/config may be unavailable in unit tests or offline build environments.
   }
   return readFeedbackContent();
 }
