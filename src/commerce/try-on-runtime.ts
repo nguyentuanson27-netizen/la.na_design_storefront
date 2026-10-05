@@ -15,8 +15,8 @@ import { createTryOnRateLimiter, type TryOnIdentity } from "./try-on-rate-limit.
 import { createTryOnService } from "./try-on-service.ts";
 
 /**
- * The production wiring of virtual try-on: the real catalog, the real limiter, the real Vertex
- * client. Everything with logic lives in the modules this composes; this file only connects them.
+ * The production wiring of virtual try-on: the real catalog, limiter and selected provider.
+ * Everything with logic lives in the modules this composes; this file only connects them.
  */
 
 // One limiter per process. Production is a single app container (see `try-on-rate-limit.ts`).
@@ -42,7 +42,9 @@ export const tryOnService = createTryOnService({
   loadProduct,
   fetchProductImage: (url) => fetchTrustedProductImage(url),
   generate: ({ config, person, product }) =>
-    createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
+    config.provider === "flow"
+      ? createGoogleFlowTryOnClient({ config }).generate({ person, product })
+      : createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
   emit: (signal) => emitTryOnSignal(signal),
 });
 
