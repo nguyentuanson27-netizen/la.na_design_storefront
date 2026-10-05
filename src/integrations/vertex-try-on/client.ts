@@ -3,60 +3,34 @@ import type { TryOnImageMimeType } from "../../commerce/try-on-policy.ts";
 import { createTimeoutSignal } from "./timeout.ts";
 
 /**
- * The one Vertex AI boundary for virtual try-on (spec §3, §8).
+ * One Vertex AI boundary for virtual try-on.
  *
- * Deliberately not a provider framework: one model, one request shape, one response shape. A model
- * migration is a reviewed edit to this file. It never retries, never relaxes a provider control and
- * never falls back to another model — a safety refusal is final.
- *
- * Wire format: Vertex AI publisher-model `:predict` for `virtual-try-on-001`, as implemented by
- * Google's own SDK (`recontextImage`): `instances[0].personImage.image` and
- * `instances[0].productImages[].image` carry `bytesBase64Encoded`; `parameters` carries
- * `sampleCount`, `personGeneration`, `safetySetting`, `addWatermark`. The model exposes no prompt
- * (the SDK documents `prompt` as "Not supported for Virtual Try-On"), so none is sent: provider
- * safety filtering and the server-side age/likeness gates are the whole safety boundary.
- *
- * Images are held in memory for the life of one request. Nothing here writes them anywhere, and
- * `storageUri` is deliberately never set, so Vertex does not write output to Cloud Storage.
+ * Nano Banana Pro is Gemini 3 Pro Image. The app sends two inline references and a fixed
+ * server-owned prompt to generateContent. There is no model fallback, automatic retry, shopper
+ * prompt, or provider storage URI.
  */
+export const TRY_ON_MODEL = "gemini-3-pro-image";
+export const TRY_ON_OUTPUT_IMAGE_SIZE = "2K";
+export const TRY_ON_PROMPT =
+  "Create one photorealistic virtual try-on image. " +
+  "Reference image 1 is the shopper. Reference image 2 is the exact garment to put on the shopper. " +
+  "Dress the shopper in exactly that garment while preserving the shopper's recognizable identity, face, hair, apparent age, skin tone, body proportions, pose, hands, framing, camera perspective, background and lighting. " +
+  "Preserve the garment's silhouette, cut, length, color, pattern, texture, seams, trim, logos, graphics and visible design details. " +
+  "Make only the clothing change needed for a physically plausible fit. Do not reshape the body, retouch the face, add or remove accessories, sexualize the subject, create nudity, or change apparent age. " +
+  "Do not invent conspicuous garment details that are not visible in the reference. " +
+  "Return one high-fidelity fashion visualization with no text, collage, split-screen or extra people.";
 
-export const TRY_ON_MODEL = "virtual-try-on-001";
-
-/** One candidate per explicit shopper action. */
-const SAMPLE_COUNT = 1;
-/**
- * `allow-all` is required so the approved teen path is not blocked by the model's adult-only
- * default. Minor safety therefore rests on `safetySetting` below plus the server-side age gate.
- *
- * Spelling: the official `VirtualTryOnModelParams` REST reference documents the hyphenated values
- * (`dont-allow` / `allow-adult` / `allow-all`, `block-low-and-above` / ...). Note that Google's SDK
- * enums are `ALLOW_ALL` / `BLOCK_LOW_AND_ABOVE` and pass through unconverted, so they are not
- * evidence for the wire value. A test pins these exact strings; a live smoke test is still owed.
- */
-const PERSON_GENERATION = "allow-all";
-/** The strictest documented threshold. Never lowered to raise the success rate. */
-const SAFETY_SETTING = "block-low-and-above";
-
-/**
- * One budget for the whole provider phase (access token + prediction). Kept under the 60 s read
- * timeout reverse proxies default to, so a slow prediction ends as a clean TIMEOUT the shopper can
- * retry rather than a proxy-cut connection; the 10 s product-image fetch comes before it.
- */
+const SAFETY_THRESHOLD = "BLOCK_LOW_AND_ABOVE";
+const SAFETY_SETTINGS = [
+  { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: SAFETY_THRESHOLD },
+  { category: "HARM_CATEGORY_HARASSMENT", threshold: SAFETY_THRESHOLD },
+  { category: "HARM_CATEGORY_HATE_SPEECH", threshold: SAFETY_THRESHOLD },
+  { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: SAFETY_THRESHOLD },
+] as const;
 const DEFAULT_TIMEOUT_MS = 45_000;
-/** base64 of a ~7 MB image is ~9.5 MB; allow generous headroom for a larger output, but bound it. */
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-/**
- * Known provider refusal wording only. Bare words such as "safety" or "policy" also appear in
- * request-validation errors (`invalid safetySetting`), and misreading one of those as a content
- * refusal would clear the shopper's photo and blame their content for an integration fault. A
- * 400 that matches none of these is an ordinary generation failure.
- *
- * Google's Responsible AI guide documents a filtered input as an HTTP 400 whose top-level message
- * says the content "violate[s] Google's Responsible AI practices", with the support code in
- * `error.details[].detail` rather than in `error.message`. Both places are read, and only those.
- */
 const SAFETY_ERROR_PATTERN = new RegExp(
   [
     "blocked by (?:the )?safety filters?",
@@ -67,59 +41,68 @@ const SAFETY_ERROR_PATTERN = new RegExp(
   ].join("|"),
   "i",
 );
+const SAFETY_BLOCK_REASONS = new Set(["SAFETY", "IMAGE_SAFETY", "PROHIBITED_CONTENT", "BLOCKLIST"]);
 const MAX_ERROR_DETAILS_READ = 8;
 const MAX_ERROR_TEXT_LENGTH = 4_000;
 
 export type VertexTryOnImage = Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }>;
-
 export type VertexTryOnFailureReason =
   | "SAFETY_BLOCKED"
   | "AUTH_FAILED"
   | "BUSY"
   | "TIMEOUT"
   | "GENERATION_FAILED";
-
 export type VertexTryOnResult =
   | Readonly<{ ok: true; image: VertexTryOnImage }>
   | Readonly<{ ok: false; reason: VertexTryOnFailureReason }>;
-
 type VertexLocation = Readonly<{ projectId: string; location: string }>;
 
 function toBase64(image: VertexTryOnImage): string {
   return Buffer.from(image.bytes).toString("base64");
 }
 
-export function buildPredictRequest({
+export function buildGenerateContentRequest({
   config,
   person,
   product,
 }: Readonly<{ config: VertexLocation; person: VertexTryOnImage; product: VertexTryOnImage }>) {
   const { projectId, location } = config;
   return {
-    url: `https://${location}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${location}/publishers/google/models/${TRY_ON_MODEL}:predict`,
+    url:
+      "https://aiplatform.googleapis.com/v1/projects/" +
+      projectId +
+      "/locations/" +
+      location +
+      "/publishers/google/models/" +
+      TRY_ON_MODEL +
+      ":generateContent",
     body: {
-      instances: [
+      contents: [
         {
-          personImage: { image: { bytesBase64Encoded: toBase64(person) } },
-          productImages: [{ image: { bytesBase64Encoded: toBase64(product) } }],
+          role: "user",
+          parts: [
+            { text: "Reference image 1: shopper." },
+            { inlineData: { mimeType: person.mimeType, data: toBase64(person) } },
+            { text: "Reference image 2: garment." },
+            { inlineData: { mimeType: product.mimeType, data: toBase64(product) } },
+            { text: TRY_ON_PROMPT },
+          ],
         },
       ],
-      parameters: {
-        sampleCount: SAMPLE_COUNT,
-        personGeneration: PERSON_GENERATION,
-        safetySetting: SAFETY_SETTING,
-        addWatermark: true,
+      generationConfig: {
+        candidateCount: 1,
+        responseModalities: ["TEXT", "IMAGE"],
+        imageConfig: {
+          imageSize: TRY_ON_OUTPUT_IMAGE_SIZE,
+          imageOutputOptions: { mimeType: "image/png" },
+          personGeneration: "allow_all",
+        },
       },
+      safetySettings: SAFETY_SETTINGS,
     },
   };
 }
 
-/**
- * Settles with `work`, or rejects with the signal's reason as soon as the deadline passes. The work
- * itself cannot be cancelled (the auth library takes no signal), but racing it means a stall costs
- * the caller at most the deadline, and both branches are observed so a late failure of the
- * abandoned call is not an unhandled rejection.
- */
 function raceDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     if (signal.aborted) {
@@ -145,11 +128,9 @@ function raceDeadline<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 function isTimeout(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
-
 function failed(reason: VertexTryOnFailureReason): VertexTryOnResult {
   return { ok: false, reason };
 }
-
 async function readJson(response: Response, maxBytes: number): Promise<unknown> {
   const bytes = await readBoundedBody(response.body, maxBytes);
   if (bytes === null) return undefined;
@@ -159,15 +140,9 @@ async function readJson(response: Response, maxBytes: number): Promise<unknown> 
     return undefined;
   }
 }
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
-/**
- * The upstream error text is inspected for a safety signal and then discarded. Only the top-level
- * message and string `detail` fields of the first few `details` entries are read, each bounded.
- */
 function errorSignalsSafetyBlock(body: unknown): boolean {
   if (!isRecord(body) || !isRecord(body.error)) return false;
   const texts: string[] = [];
@@ -179,28 +154,48 @@ function errorSignalsSafetyBlock(body: unknown): boolean {
   }
   return texts.some((text) => SAFETY_ERROR_PATTERN.test(text.slice(0, MAX_ERROR_TEXT_LENGTH)));
 }
-
-function parsePrediction(body: unknown): VertexTryOnResult {
-  if (!isRecord(body) || !Array.isArray(body.predictions) || body.predictions.length !== 1) {
+function hasSafetyBlock(body: Record<string, unknown>): boolean {
+  if (isRecord(body.promptFeedback)) {
+    const reason = body.promptFeedback.blockReason;
+    if (typeof reason === "string" && SAFETY_BLOCK_REASONS.has(reason)) return true;
+  }
+  if (!Array.isArray(body.candidates)) return false;
+  return body.candidates.some((candidate) => {
+    if (!isRecord(candidate)) return false;
+    if (typeof candidate.finishReason === "string" && SAFETY_BLOCK_REASONS.has(candidate.finishReason)) {
+      return true;
+    }
+    return (
+      Array.isArray(candidate.safetyRatings) &&
+      candidate.safetyRatings.some((rating) => isRecord(rating) && rating.blocked === true)
+    );
+  });
+}
+function parseGeneratedImage(body: unknown): VertexTryOnResult {
+  if (!isRecord(body)) return failed("GENERATION_FAILED");
+  if (hasSafetyBlock(body)) return failed("SAFETY_BLOCKED");
+  if (!Array.isArray(body.candidates) || body.candidates.length !== 1) {
     return failed("GENERATION_FAILED");
   }
-  const prediction: unknown = body.predictions[0];
-  if (!isRecord(prediction)) return failed("GENERATION_FAILED");
 
-  if (prediction.raiFilteredReason !== undefined) return failed("SAFETY_BLOCKED");
-
-  const { bytesBase64Encoded, mimeType } = prediction;
-  if (
-    typeof bytesBase64Encoded !== "string" ||
-    bytesBase64Encoded.length % 4 !== 0 ||
-    !BASE64_PATTERN.test(bytesBase64Encoded)
-  ) {
+  const candidate = body.candidates[0];
+  if (!isRecord(candidate) || !isRecord(candidate.content) || !Array.isArray(candidate.content.parts)) {
     return failed("GENERATION_FAILED");
   }
 
-  const bytes = new Uint8Array(Buffer.from(bytesBase64Encoded, "base64"));
+  const images: Array<{ data: string; mimeType: string }> = [];
+  for (const part of candidate.content.parts) {
+    if (!isRecord(part) || !isRecord(part.inlineData)) continue;
+    const { data, mimeType } = part.inlineData;
+    if (typeof data === "string" && typeof mimeType === "string") images.push({ data, mimeType });
+  }
+  if (images.length !== 1) return failed("GENERATION_FAILED");
+
+  const { data, mimeType } = images[0]!;
+  if (data.length % 4 !== 0 || !BASE64_PATTERN.test(data)) return failed("GENERATION_FAILED");
+
+  const bytes = new Uint8Array(Buffer.from(data, "base64"));
   const sniffed = sniffImageMime(bytes);
-  // The bytes decide, and the provider's own label must agree with them.
   if (sniffed === null || mimeType !== sniffed) return failed("GENERATION_FAILED");
   return { ok: true, image: { bytes, mimeType: sniffed } };
 }
@@ -216,14 +211,6 @@ export function createVertexTryOnClient({
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   timeoutMs?: number;
 }>) {
-  /**
-   * Exactly one provider call per invocation, under one deadline.
-   *
-   * The caller holds a generation slot for as long as this runs, so the deadline has to cover
-   * everything that can stall: obtaining the access token (an ADC or service-account refresh is a
-   * network call with no timeout of its own) as well as the prediction. One timer, started first,
-   * so the two phases share a single budget and a stalled token refresh releases the slot on time.
-   */
   async function generate({
     person,
     product,
@@ -239,7 +226,7 @@ export function createVertexTryOnClient({
         return failed(isTimeout(error) ? "TIMEOUT" : "AUTH_FAILED");
       }
 
-      const request = buildPredictRequest({ config, person, product });
+      const request = buildGenerateContentRequest({ config, person, product });
       const response = await doFetch(request.url, {
         method: "POST",
         redirect: "error",
@@ -267,8 +254,7 @@ export function createVertexTryOnClient({
         await response.body?.cancel().catch(() => undefined);
         return failed("GENERATION_FAILED");
       }
-
-      return parsePrediction(await readJson(response, MAX_RESPONSE_BYTES));
+      return parseGeneratedImage(await readJson(response, MAX_RESPONSE_BYTES));
     } catch (error) {
       return failed(isTimeout(error) ? "TIMEOUT" : "GENERATION_FAILED");
     } finally {
