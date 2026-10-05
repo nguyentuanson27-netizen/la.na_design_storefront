@@ -69,9 +69,23 @@ docker compose \
   build flow-worker
 ```
 
-The image pins `gflow-cli==0.82.1`, installs real Google Chrome and runs generation headed under
-Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that changes the browser mode gflow relies on for
-Flow/reCAPTCHA.
+The image is intentionally reproducible at the credential-bearing boundary:
+
+- Python is pinned to `python:3.13.14-slim` by image digest.
+- The exact upstream `gflow-cli v0.82.1` `pyproject.toml` + `uv.lock` are checked in under
+  `services/flow-worker/gflow-lock/`.
+- The build exports that lock with `uv export --frozen`, installs the resolved runtime with
+  `pip --require-hashes`, and pins the gflow 0.82.1 wheel by SHA-256.
+- Google Chrome is pinned to `154.0.8037.97-1`; a missing apt version fails the build instead of
+  silently moving the session-bearing worker to a new browser.
+
+The worker runs real Chrome headed under Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that
+changes the browser mode gflow relies on for Flow/reCAPTCHA.
+
+Dependency/browser updates are deliberate maintenance work: replace the lock files from the exact
+upstream gflow release tag, review the lock diff, update the gflow wheel hash and/or Chrome pin, run
+CI image verification, then live-smoke one Flow generation before production rollout. Chrome is not
+auto-upgraded just because Google's apt repository publishes a newer stable build.
 
 ## One-time Google login
 
@@ -177,6 +191,13 @@ detail are not logged.
 The storefront continues to avoid writing shopper/generated image bytes to Prisma, object storage,
 analytics or its own durable filesystem. Worker input/output files live in a request-scoped temp
 directory and are removed after the call.
+
+gflow itself maintains a SQLite operation catalog. For generation commands the worker overrides
+`GFLOW_CLI_DB_PATH` to `<request-temp>/gflow.db`, so gflow's operation/media IDs, prompt hashes,
+generated-file path/hash/byte metadata and related provenance disappear with the same request temp
+directory. Authentication/status commands default to a container-local `/tmp/gflow-auth.db`.
+The persistent `flow_gflow_data` volume therefore holds the signed-in Chrome profile/session, not
+the generation catalog.
 
 That is **not** a zero-retention statement about Google Flow. Uploaded/generated media can appear in
 Flow project/history semantics. This integration currently does not claim immediate deletion from
