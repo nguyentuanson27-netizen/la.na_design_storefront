@@ -14,7 +14,12 @@ type GenerateResult =
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
-const DEFAULT_TIMEOUT_MS = 50_000;
+/**
+ * The worker's per-generation watchdog is 50 s. Keep the caller slightly above it so the worker
+ * reports a typed timeout and releases its Chrome/profile lock before the HTTP caller gives up.
+ * This stays under the existing storefront's roughly minute-sized synchronous provider budget.
+ */
+const DEFAULT_TIMEOUT_MS = 58_000;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
 const ALLOWED_MODELS = new Set(["nano-banana-pro", "nano-banana-2"]);
