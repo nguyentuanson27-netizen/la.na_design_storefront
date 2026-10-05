@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
   type RefObject,
 } from "react";
 
@@ -270,9 +271,15 @@ function MappedSizeGuideDialog({
 export function PurchasePanelView({
   controller,
   sizeGuide,
+  tryOnTrigger = null,
 }: Readonly<{
   controller: VariantSelectionController;
   sizeGuide: ProductMappedSizeGuide | null;
+  /**
+   * Optional entry point that shares the size guide's line (virtual try-on). It opens its own dialog
+   * elsewhere and shares no state with this panel; it appears on the panel only, not in the options sheet.
+   */
+  tryOnTrigger?: ReactNode;
 }>) {
   const {
     view,
@@ -404,22 +411,26 @@ export function PurchasePanelView({
   }
 
   function renderSizeGuideTrigger(surface: "panel" | "sheet") {
-    if (sizeGuide === null) return null;
-
     const isPanel = surface === "panel";
+    const extra = isPanel ? tryOnTrigger : null;
+    if (sizeGuide === null && extra === null) return null;
+
     return (
-      <div className="mt-0.5">
-        <button
-          ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
-          type="button"
-          className="group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]"
-          onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
-        >
-          <RulerIcon />
-          <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
-            Hướng dẫn chọn size
-          </span>
-        </button>
+      <div className="mt-0.5 flex flex-wrap items-center gap-x-6">
+        {sizeGuide === null ? null : (
+          <button
+            ref={isPanel ? mainSizeGuideTriggerRef : sheetSizeGuideTriggerRef}
+            type="button"
+            className="group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]"
+            onClick={isPanel ? showMainSizeGuide : showSheetSizeGuide}
+          >
+            <RulerIcon />
+            <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
+              Hướng dẫn chọn size
+            </span>
+          </button>
+        )}
+        {extra}
       </div>
     );
   }
