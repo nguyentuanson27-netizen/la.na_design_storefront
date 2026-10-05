@@ -166,6 +166,13 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
     exit 1
   fi
   echo "Flow try-on worker is healthy at release $RELEASE_SHA"
+  # Profile files are not proof that the Google session is alive. gflow auth status performs a
+  # read-only live probe; discard its output so a Google account identifier never enters deploy logs.
+  if ! "${compose[@]}" exec -T flow-worker sh -ec 'gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
+    echo "Flow try-on Google session is missing or expired; refresh it before enabling try-on" >&2
+    exit 1
+  fi
+  echo "Flow try-on Google session verified"
 fi
 
 # The release is not done until the catalog sync has actually succeeded once: a running loop whose
