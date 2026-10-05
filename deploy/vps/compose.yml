@@ -131,8 +131,8 @@ services:
       context: ../../services/flow-worker
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file:
-      - .env.production
+    # Do not inherit .env.production: this worker needs no database, auth, Pancake or email secrets.
+    # Compose interpolation reads the deploy env file on the host and injects only these Flow values.
     environment:
       FLOW_WORKER_TOKEN: ${LA_TRY_ON_FLOW_TOKEN:-}
       GFLOW_CLI_PROFILE: ${LA_TRY_ON_FLOW_PROFILE:-default}
