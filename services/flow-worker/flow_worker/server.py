@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+import secrets
 import signal
 import subprocess
 import tempfile
@@ -240,8 +241,12 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
 
     with tempfile.TemporaryDirectory(prefix="flow-try-on-") as temp:
         root = Path(temp)
-        person_path = root / f"person{suffix[person_mime]}"
-        product_path = root / f"garment{suffix[product_mime]}"
+        # gflow dedupes local --ref files by exact filename within a Flow project, so a fixed basename
+        # would reuse a previous request's shopper/garment. Keep the id random, PII-free, and shared by
+        # the Pro -> Nano2 fallback of this request so the fallback reuses this request's refs.
+        ref_id = secrets.token_hex(16)
+        person_path = root / f"person-{ref_id}{suffix[person_mime]}"
+        product_path = root / f"garment-{ref_id}{suffix[product_mime]}"
         output_path = root / "result.png"
         db_path = root / "gflow.db"
         person_path.write_bytes(person)

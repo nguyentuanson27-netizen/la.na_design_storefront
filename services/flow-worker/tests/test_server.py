@@ -57,6 +57,35 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
 
+    def test_ref_filenames_are_unique_per_request_and_stable_across_fallback(self):
+        refs = []
+
+        def run(model, person, product, output, _timeout, _db_path):
+            refs.append((model, person.name, product.name))
+            if model == "nano-pro" and len(refs) == 1:
+                return 4, server.GflowMachineError(
+                    detail="You have reached the daily limit for Nano Banana Pro."
+                )
+            output.write_bytes(PNG)
+            return 0, server.GflowMachineError()
+
+        with patch.object(server, "_run_model", side_effect=run):
+            for _ in range(2):
+                server._generate(
+                    b"\xff\xd8\xffperson",
+                    "image/jpeg",
+                    b"\x89PNG\r\n\x1a\ngarment",
+                    "image/png",
+                )
+
+        # Request 1: Pro -> Nano2 fallback keeps the same ref filenames. Request 2: Pro only.
+        self.assertEqual([r[0] for r in refs], ["nano-pro", "nano2", "nano-pro"])
+        self.assertEqual(refs[0][1:], refs[1][1:])
+        self.assertNotEqual(refs[0][1], refs[2][1])
+        self.assertNotEqual(refs[0][2], refs[2][2])
+        self.assertRegex(refs[0][1], r"^person-[0-9a-f]{32}\.jpg$")
+        self.assertRegex(refs[0][2], r"^garment-[0-9a-f]{32}\.png$")
+
     def test_pro_and_nano2_share_one_generation_budget(self):
         timeouts = []
 
