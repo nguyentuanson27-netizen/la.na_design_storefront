@@ -11,7 +11,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
     def test_pro_success_does_not_touch_nano2(self):
         calls = []
 
-        def run(model, _person, _product, output):
+        def run(model, _person, _product, output, _timeout):
             calls.append(model)
             output.write_bytes(PNG)
             return 0, ""
@@ -32,7 +32,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
     def test_daily_pro_quota_exhaustion_falls_back_exactly_once_to_nano2(self):
         calls = []
 
-        def run(model, _person, _product, output):
+        def run(model, _person, _product, output, _timeout):
             calls.append(model)
             if model == "nano-pro":
                 return 4, "You have reached the daily limit for Nano Banana Pro."
@@ -52,10 +52,34 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
 
+    def test_pro_and_nano2_share_one_generation_budget(self):
+        timeouts = []
+
+        def run(model, _person, _product, output, timeout):
+            timeouts.append((model, timeout))
+            if model == "nano-pro":
+                return 4, "You have reached the daily limit for Nano Banana Pro."
+            output.write_bytes(PNG)
+            return 0, ""
+
+        with (
+            patch.object(server, "_run_model", side_effect=run),
+            patch.object(server.time, "monotonic", side_effect=[100.0, 101.0, 120.0]),
+        ):
+            result = server._generate(
+                b"\xff\xd8\xffperson",
+                "image/jpeg",
+                b"\xff\xd8\xffgarment",
+                "image/jpeg",
+            )
+
+        self.assertEqual(result[0], "nano-banana-2")
+        self.assertEqual(timeouts, [("nano-pro", 49.0), ("nano2", 30.0)])
+
     def test_generic_rate_limit_does_not_fallback(self):
         calls = []
 
-        def run(model, _person, _product, _output):
+        def run(model, _person, _product, _output, _timeout):
             calls.append(model)
             return 4, "Rate limit or quota hit"
 
