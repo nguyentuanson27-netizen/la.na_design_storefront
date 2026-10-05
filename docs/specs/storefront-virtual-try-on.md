@@ -272,7 +272,7 @@ Do not design a distributed abuse platform by default. The implementation plan s
 Cost remains bounded by:
 
 - one Vertex prediction per accepted action;
-- `sampleCount = 1`;
+- one candidate per accepted action;
 - no automatic regeneration;
 - no catalog pre-generation;
 - no hidden background generation;
@@ -352,7 +352,7 @@ Minimum truthful disclosure:
 - the shopper photo and garment image are sent to Google Cloud Vertex AI to create the result;
 - Google Cloud processing/retention follows the configured Google Cloud data controls and applicable service terms.
 
-The implementation must omit `storageUri` so the try-on call does not intentionally persist output to a Cloud Storage bucket.
+The implementation must use inline image inputs/outputs and must not introduce a Cloud Storage input or output URI.
 
 ## 13. Failure behavior
 
