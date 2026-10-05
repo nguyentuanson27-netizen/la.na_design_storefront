@@ -11,7 +11,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
     def test_pro_success_does_not_touch_nano2(self):
         calls = []
 
-        def run(model, _person, _product, output, _timeout):
+        def run(model, _person, _product, output, _timeout, _db_path):
             calls.append(model)
             output.write_bytes(PNG)
             return 0, ""
@@ -31,9 +31,11 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
 
     def test_daily_pro_quota_exhaustion_falls_back_exactly_once_to_nano2(self):
         calls = []
+        db_paths = []
 
-        def run(model, _person, _product, output, _timeout):
+        def run(model, _person, _product, output, _timeout, db_path):
             calls.append(model)
+            db_paths.append(db_path)
             if model == "nano-pro":
                 return 4, "You have reached the daily limit for Nano Banana Pro."
             output.write_bytes(PNG)
@@ -48,6 +50,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
             )
 
         self.assertEqual(calls, ["nano-pro", "nano2"])
+        self.assertEqual(db_paths[0], db_paths[1])
         self.assertEqual(model, "nano-banana-2")
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
@@ -55,7 +58,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
     def test_pro_and_nano2_share_one_generation_budget(self):
         timeouts = []
 
-        def run(model, _person, _product, output, timeout):
+        def run(model, _person, _product, output, timeout, _db_path):
             timeouts.append((model, timeout))
             if model == "nano-pro":
                 return 4, "You have reached the daily limit for Nano Banana Pro."
@@ -79,7 +82,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
     def test_generic_rate_limit_does_not_fallback(self):
         calls = []
 
-        def run(model, _person, _product, _output, _timeout):
+        def run(model, _person, _product, _output, _timeout, _db_path):
             calls.append(model)
             return 4, "Rate limit or quota hit"
 
@@ -96,13 +99,38 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(raised.exception.status, 429)
         self.assertEqual(raised.exception.reason, "BUSY")
 
-    def test_gflow_child_environment_drops_worker_bearer_token(self):
+    def test_gflow_child_environment_drops_worker_bearer_token_and_scopes_catalog(self):
+        db_path = server.Path("/tmp/flow-try-on-request/gflow.db")
         with patch.dict(server.os.environ, {"FLOW_WORKER_TOKEN": "worker-secret", "PATH": "/usr/bin"}, clear=True):
-            env = server._gflow_env()
+            env = server._gflow_env(db_path)
         self.assertNotIn("FLOW_WORKER_TOKEN", env)
         self.assertEqual(env["PATH"], "/usr/bin")
         self.assertEqual(env["GFLOW_CLI_HEADLESS"], "false")
         self.assertEqual(env["GFLOW_CLI_HISTORY_PROMPTS"], "redacted")
+        self.assertEqual(env["GFLOW_CLI_DB_PATH"], str(db_path))
+        self.assertNotEqual(env["GFLOW_CLI_DB_PATH"], "/data/gflow/gflow.db")
+
+    def test_generation_catalog_lives_in_request_tempdir_and_is_removed(self):
+        db_paths = []
+
+        def run(_model, _person, _product, output, _timeout, db_path):
+            db_paths.append(db_path)
+            output.write_bytes(PNG)
+            return 0, ""
+
+        with patch.object(server, "_run_model", side_effect=run):
+            result = server._generate(
+                b"\xff\xd8\xffperson",
+                "image/jpeg",
+                b"\xff\xd8\xffgarment",
+                "image/jpeg",
+            )
+
+        self.assertEqual(result[0], "nano-banana-pro")
+        self.assertEqual(len(db_paths), 1)
+        self.assertEqual(db_paths[0].name, "gflow.db")
+        self.assertIn("flow-try-on-", db_paths[0].parent.name)
+        self.assertFalse(db_paths[0].parent.exists())
 
     def test_machine_error_detail_reads_detail_not_generic_remediation(self):
         stdout = """{
