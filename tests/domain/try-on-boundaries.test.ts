@@ -21,6 +21,8 @@ function files(directory: string, keep: (name: string) => boolean = () => true):
 const SERVER_TRY_ON_FILES = [
   ...files("src/commerce", (name) => name.startsWith("try-on-")),
   ...files("src/integrations/vertex-try-on"),
+  ...files("src/integrations/google-flow-try-on"),
+  "src/integrations/try-on/config.ts",
   "src/operations/try-on-observability.ts",
   "src/app/api/try-on/route.ts",
 ];
@@ -29,6 +31,10 @@ const CLIENT_TRY_ON_FILES = [
   "src/components/headless/use-try-on.ts",
   "src/components/headless/try-on-model.ts",
   "src/components/headless/try-on-disclosure.ts",
+];
+const FLOW_WORKER_FILES = [
+  "services/flow-worker/flow_worker/policy.py",
+  "services/flow-worker/flow_worker/server.py",
 ];
 const ALL_TRY_ON_FILES = [...SERVER_TRY_ON_FILES, ...CLIENT_TRY_ON_FILES];
 
@@ -44,7 +50,8 @@ function code(path: string): string {
 }
 
 test("the scan covers the try-on files (guards against a silently empty glob)", () => {
-  assert.ok(SERVER_TRY_ON_FILES.length >= 10, SERVER_TRY_ON_FILES.join(","));
+  assert.ok(SERVER_TRY_ON_FILES.length >= 12, SERVER_TRY_ON_FILES.join(","));
+  assert.equal(FLOW_WORKER_FILES.length, 2);
 });
 
 test("no try-on code has a durable persistence path", () => {
@@ -64,6 +71,22 @@ test("no try-on code has a durable persistence path", () => {
       assert.doesNotMatch(code(path), pattern, `${path} must not use ${label}`);
     }
   }
+});
+
+test("Flow worker persistence is request-scoped; only the signed-in browser profile is durable", () => {
+  const worker = code("services/flow-worker/flow_worker/server.py");
+  const dockerfile = source("services/flow-worker/Dockerfile");
+  const compose = source("deploy/vps/compose.yml");
+
+  assert.match(worker, /TemporaryDirectory\(prefix="flow-try-on-"\)/);
+  assert.match(worker, /db_path = root \/ "gflow\.db"/);
+  assert.match(worker, /env\["GFLOW_CLI_DB_PATH"\] = str\(db_path\)/);
+  assert.doesNotMatch(worker, /GFLOW_HOME\s*\/\s*["']gflow\.db["']/);
+
+  // Non-generation gflow commands (auth status/login) also default to container-local /tmp,
+  // never the persistent Chrome-profile volume.
+  assert.match(dockerfile, /GFLOW_CLI_DB_PATH=\/tmp\/gflow-auth\.db/);
+  assert.doesNotMatch(compose, /GFLOW_CLI_DB_PATH:\s*\/data\/gflow/);
 });
 
 test("the runtime wiring only reads the catalog: no write call on any Prisma model", () => {
