@@ -90,6 +90,7 @@ docker compose \
   --profile flow-try-on \
   run --rm \
   -e DISPLAY="$DISPLAY" \
+  -e FLOW_WORKER_TOKEN= \
   -v /tmp/.X11-unix:/tmp/.X11-unix \
   flow-worker \
   gflow auth login --browser chrome --profile default
@@ -106,7 +107,9 @@ docker compose \
   --env-file deploy/vps/.env.production \
   -f deploy/vps/compose.yml \
   --profile flow-try-on \
-  run --rm flow-worker \
+  run --rm \
+  -e FLOW_WORKER_TOKEN= \
+  flow-worker \
   gflow auth status --profile default
 ```
 
