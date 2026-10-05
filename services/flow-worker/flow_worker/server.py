@@ -24,7 +24,8 @@ PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
 COMMAND_TIMEOUT_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
-MAX_CLI_CAPTURE_CHARS = 64 * 1024
+MAX_ERROR_DETAIL_CHARS = 4 * 1024
+WORKER_TIMEOUT_EXIT_CODE = 124
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
@@ -99,6 +100,21 @@ def _command(model: str, person: Path, product: Path, output: Path) -> list[str]
     return args
 
 
+def _machine_error_detail(stdout: str) -> str:
+    """Read only gflow's stable --json problem detail; ignore human/log stderr completely."""
+    try:
+        payload = json.loads(stdout)
+    except (json.JSONDecodeError, TypeError):
+        return ""
+    if not isinstance(payload, dict) or payload.get("status") != "fail":
+        return ""
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        return ""
+    detail = error.get("detail")
+    return detail[:MAX_ERROR_DETAIL_CHARS] if isinstance(detail, str) else ""
+
+
 def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[int, str]:
     try:
         completed = subprocess.run(
@@ -115,23 +131,23 @@ def _run_model(model: str, person: Path, product: Path, output: Path) -> tuple[i
             },
         )
     except subprocess.TimeoutExpired:
-        return 8, "Transport timeout"
+        return WORKER_TIMEOUT_EXIT_CODE, ""
     except OSError:
-        return 1, "gflow unavailable"
+        return 1, ""
 
-    combined = (completed.stdout or "") + "\n" + (completed.stderr or "")
-    return completed.returncode, combined[-MAX_CLI_CAPTURE_CHARS:]
+    return completed.returncode, _machine_error_detail(completed.stdout or "")
 
 
-def _failure_reason(exit_code: int, output: str) -> tuple[int, str]:
-    lowered = output.lower()
-    if exit_code == 3 or "not_signed_in" in lowered or "auth expired" in lowered:
+def _failure_reason(exit_code: int) -> tuple[int, str]:
+    # gflow-cli 0.82.1 EXIT_CODE_MAP. Keep failure mapping structural; never infer safety/auth from
+    # arbitrary provider text. The only text-sensitive branch is the narrowly tested Pro daily quota.
+    if exit_code in (3, 8):
         return 401, "AUTH_FAILED"
-    if exit_code == 5 or "content policy" in lowered or "safety" in lowered:
-        return 422, "SAFETY_BLOCKED"
     if exit_code == 4:
         return 429, "BUSY"
-    if exit_code == 8 or "timeout" in lowered:
+    if exit_code == 5:
+        return 422, "SAFETY_BLOCKED"
+    if exit_code in (9, WORKER_TIMEOUT_EXIT_CODE):
         return 504, "TIMEOUT"
     return 502, "GENERATION_FAILED"
 
@@ -154,7 +170,7 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             model = "nano-banana-2"
 
         if exit_code != 0:
-            status, reason = _failure_reason(exit_code, output)
+            status, reason = _failure_reason(exit_code)
             raise WorkerGenerationError(status, reason)
 
         if not output_path.is_file():
