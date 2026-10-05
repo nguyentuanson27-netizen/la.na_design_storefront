@@ -82,6 +82,8 @@ services:
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
       # release:check compares this against project.config.json before any migration runs.
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:?set COMPOSE_PROJECT_NAME}
+      # ops never calls Flow; override the env_file secret to keep it out of this container.
+      LA_TRY_ON_FLOW_TOKEN: ""
     depends_on:
       postgres:
         condition: service_healthy
@@ -102,6 +104,8 @@ services:
     environment:
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+      # catalog-sync never calls Flow; do not inherit the app->worker bearer token.
+      LA_TRY_ON_FLOW_TOKEN: ""
     # A sync is one database transaction of up to 60s; give an in-flight one time to commit on stop.
     stop_grace_period: 90s
     # Healthy only while a sync has recently succeeded, not merely while the loop is running: the loop
