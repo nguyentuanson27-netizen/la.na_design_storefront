@@ -13,6 +13,9 @@ class FallbackPolicyTest(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertTrue(should_fallback_to_nano2(4, text))
 
+    def test_ambiguous_daily_quota_without_pro_model_name_does_not_fall_back(self):
+        self.assertFalse(should_fallback_to_nano2(4, "Daily generation quota reached"))
+
     def test_per_minute_rate_limit_does_not_fall_back(self):
         self.assertFalse(
             should_fallback_to_nano2(
