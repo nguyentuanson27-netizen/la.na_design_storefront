@@ -6,8 +6,10 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { seedFeedbackMirror } from "./feedback-mirror-fixture";
 
 const HOST = "127.0.0.1";
 const PORT = 3312;
@@ -272,6 +274,11 @@ test.beforeAll(async () => {
       pancakeRetailPriceAfterDiscount: 1_290_000,
       syncedAt,
     },
+  });
+  await seedFeedbackMirror(prisma, {
+    shopId: SHOP_ID,
+    runId,
+    urls: HOMEPAGE_CONFIG.feedback.images.map((image) => image.src),
   });
   await prisma.warehouseStock.create({
     data: {
@@ -980,7 +987,7 @@ test("homepage carries only the refreshed composition while retired Lookbook and
   // The refreshed sections are fail-closed on content this fixture lacks: SPECIAL DEALS and the
   // promo rows point at owner collections that are not published here, so neither renders a
   // placeholder. YOUR NEXT FAVOURITE is DB-owned and this fixture configures all four of its
-  // images, and the feedback rail renders the photographs the shipped config supplies.
+  // images, and the feedback rail renders the mirrored ANH-FEEDBACK photographs seeded above.
   expect(
     await page
       .locator("[data-homepage-region]")

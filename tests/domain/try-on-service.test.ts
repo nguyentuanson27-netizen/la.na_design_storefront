@@ -13,7 +13,7 @@ const GUEST = { kind: "guest", key: CLIENT } as const;
 const OPEN = { guest: { perMinute: 100, perDay: 100 }, member: { perMinute: 100, perDay: 100 } } as const;
 const FIRST_IMAGE = "https://content.pancake.vn/images/1/2/3/first.jpg";
 const SECOND_IMAGE = "https://content.pancake.vn/images/1/2/3/second.png";
-const CONFIG = { available: true, projectId: "lana-design-prod", location: "asia-southeast1" } as const;
+const CONFIG = { available: true, provider: "vertex", projectId: "lana-design-prod", location: "global" } as const;
 
 function product(overrides: { categoryKeys?: string[]; primary?: string | null; variants?: string[][] } = {}) {
   return {
@@ -49,6 +49,7 @@ function build(overrides: Partial<TryOnServiceDependencies> = {}) {
       return { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } };
     },
     generate: async ({ config, person, product: garment }) => {
+      if (config.provider !== "vertex") throw new Error("unexpected Flow config in Vertex fixture");
       probe.generate.push({
         person: person.bytes,
         product: garment.bytes,
@@ -86,7 +87,7 @@ test("feature off: unavailable, and nothing downstream is touched", async () => 
   }
 });
 
-test("a successful request makes exactly one Vertex call with the shopper photo and the trusted first image", async () => {
+test("a successful request makes exactly one provider call with the shopper photo and the trusted first image", async () => {
   const { run, probe } = build();
   const result = await run();
 
@@ -98,7 +99,7 @@ test("a successful request makes exactly one Vertex call with the shopper photo 
   assert.deepEqual([...probe.generate[0]!.person], [...JPEG_BYTES]);
   assert.deepEqual([...probe.generate[0]!.product], [...PNG_BYTES]);
   assert.equal(probe.generate[0]!.projectId, "lana-design-prod");
-  assert.equal(probe.generate[0]!.location, "asia-southeast1");
+  assert.equal(probe.generate[0]!.location, "global");
 });
 
 test("a forged client product-image URL is ignored: only the server-resolved first image is fetched", async () => {
@@ -163,14 +164,14 @@ test("request gates reject before the product is even loaded, and never call Ver
   }
 });
 
-test("teen_eligible_with_guardian is allowed through to Vertex", async () => {
+test("teen_eligible_with_guardian is allowed through to the provider", async () => {
   const { run, probe } = build();
   const result = await run(tryOnForm({ ageState: "teen_eligible_with_guardian" }));
   assert.equal(result.ok, true);
   assert.equal(probe.generate.length, 1);
 });
 
-test("a product image that cannot be fetched or is too large fails safely before Vertex", async () => {
+test("a product image that cannot be fetched or is too large fails safely before the provider", async () => {
   for (const reason of ["TOO_LARGE", "FETCH_FAILED", "UNTRUSTED_URL"] as const) {
     const { run, probe } = build({ fetchProductImage: async () => ({ ok: false, reason }) });
     assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE" });
@@ -365,7 +366,7 @@ test("the upload slot is held for the whole body read, so concurrent uploads are
   assert.equal(after.ok, true);
 });
 
-test("the upload slot is released after a failed read and before the product lookup and Vertex call", async () => {
+test("the upload slot is released after a failed read and before the product lookup and provider call", async () => {
   const limiter = createTryOnRateLimiter({ maxConcurrentUploads: 1, ...OPEN });
 
   const broken = createTryOnService({

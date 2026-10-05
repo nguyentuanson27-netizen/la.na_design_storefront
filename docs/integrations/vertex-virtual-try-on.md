@@ -1,6 +1,6 @@
 # Vertex AI virtual try-on — Nano Banana Pro
 
-Status: **implemented as a replacement for `virtual-try-on-001`; server kill switch remains off by default.**
+Status: **implemented as the manual rollback provider (`LA_TRY_ON_PROVIDER=vertex`) behind the primary Google Flow provider; it replaces the removed `virtual-try-on-001` model. Server kill switch remains off by default.** See [Google Flow runbook](google-flow-virtual-try-on.md).
 
 Product contract: [storefront virtual try-on spec](../specs/storefront-virtual-try-on.md).
 

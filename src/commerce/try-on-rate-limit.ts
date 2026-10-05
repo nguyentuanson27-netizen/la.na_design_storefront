@@ -38,7 +38,7 @@ export type TryOnQuota = Readonly<{ perMinute: number; perDay: number }>;
 
 const DEFAULT_GUEST_QUOTA: TryOnQuota = Object.freeze({ perMinute: 1, perDay: 5 });
 const DEFAULT_MEMBER_QUOTA: TryOnQuota = Object.freeze({ perMinute: 2, perDay: 10 });
-/** Vertex VTO takes several seconds per prediction; this caps spend and memory in flight. */
+/** Image generation takes several seconds per request; this caps spend and memory in flight. */
 const DEFAULT_MAX_CONCURRENT = 3;
 /**
  * A request in the upload phase holds roughly three copies of a <= 7 MB body (the buffer, the parsed

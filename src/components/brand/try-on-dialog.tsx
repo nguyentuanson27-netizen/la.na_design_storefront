@@ -4,6 +4,10 @@ import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from "re
 
 import { BRAND } from "@/brand";
 import {
+  resolveTryOnPrivacyDisclosure,
+  type TryOnDisclosureProvider,
+} from "@/components/headless/try-on-disclosure";
+import {
   TRY_ON_AGE_OPTIONS,
   TRY_ON_BLOCKED_AGE_MESSAGE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
@@ -92,12 +96,14 @@ export function BrandTryOnTrigger({
 export function BrandTryOnDialog({
   productSlug,
   productName,
+  provider,
   open,
   onOpenChange,
   returnFocusRef,
 }: Readonly<{
   productSlug: string;
   productName: string;
+  provider: TryOnDisclosureProvider;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   returnFocusRef: RefObject<HTMLElement | null>;
@@ -109,6 +115,7 @@ export function BrandTryOnDialog({
   const shownStepRef = useRef<number | null>(null);
   const tryOn = useTryOn({ productSlug, fileInputRef });
   const { step, phase, result } = tryOn;
+  const privacyDisclosure = resolveTryOnPrivacyDisclosure(provider, BRAND.identity.name);
 
   // The coordinator owns `open`; the native dialog is brought in line with it.
   useEffect(() => {
@@ -331,20 +338,12 @@ export function BrandTryOnDialog({
           <span>{TRY_ON_LIKENESS_ACKNOWLEDGEMENT}</span>
         </label>
 
-        <p className="mt-2 text-xs leading-5 text-black/60">
-          {BRAND.identity.name} không lưu ảnh trong hệ thống của mình; ảnh được gửi tới Google Cloud
-          Vertex AI để tạo kết quả.
-        </p>
+        <p className="mt-2 text-xs leading-5 text-black/60">{privacyDisclosure.summary}</p>
         <details className="text-xs leading-5 text-black/60">
           <summary className={`inline-block min-h-6 cursor-pointer underline underline-offset-2 ${FOCUS_RING}`}>
             Chi tiết
           </summary>
-          <p className="mt-1">
-            {BRAND.identity.name} không lưu ảnh bạn tải lên hay ảnh được tạo trong hệ thống của chúng
-            tôi. Ảnh của bạn và ảnh sản phẩm được gửi tới Google Cloud Vertex AI để tạo kết quả; việc xử
-            lý và lưu giữ tại Google Cloud tuân theo các thiết lập kiểm soát dữ liệu và điều khoản dịch
-            vụ áp dụng.
-          </p>
+          <p className="mt-1">{privacyDisclosure.detail}</p>
         </details>
 
         <button

@@ -116,3 +116,28 @@ export function resolveFeedbackContent(
 export function readFeedbackContent(): FeedbackContent | null {
   return resolveFeedbackContent(HOMEPAGE_CONFIG.feedback);
 }
+
+/**
+ * Resolves feedback content using a dynamically provided image list (e.g. from database),
+ * paired with the owner-approved copy from the config.
+ */
+export function resolveFeedbackContentWithImages(
+  images: readonly FeedbackImage[],
+  feedback: HomepageConfig["feedback"] = HOMEPAGE_CONFIG.feedback,
+): FeedbackContent | null {
+  const title = parseConfiguredCopy(feedback.title);
+  const ctaLabel = parseConfiguredCopy(feedback.ctaLabel);
+  const metadataTitle = parseConfiguredCopy(feedback.metadataTitle);
+  const metadataDescription = parseConfiguredCopy(feedback.metadataDescription);
+  if (!title || !ctaLabel || !metadataTitle || !metadataDescription) return null;
+  if (images.length === 0) return null;
+
+  return Object.freeze({
+    title,
+    ctaLabel,
+    metadataTitle,
+    metadataDescription,
+    images: Object.freeze([...images]),
+  });
+}
+

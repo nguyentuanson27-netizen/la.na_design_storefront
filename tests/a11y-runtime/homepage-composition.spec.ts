@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { HOMEPAGE_CONFIG } from "../../src/content/homepage.config.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { seedFeedbackMirror } from "./feedback-mirror-fixture";
 
 /**
  * The homepage editorial refresh (docs/specs/homepage-editorial-refresh.md) as a shopper gets it
@@ -19,7 +20,7 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  * fixture does not publish, so they must be absent -- even though this fixture writes a real
  * `HomepageFeaturedProduct` selection, which proves the manual authority alone cannot publish
  * SPECIAL DEALS without its source collection. The feedback rail and `/feedback` render the
- * photographs the shipped config supplies. Their
+ * mirrored `ANH-FEEDBACK-*` photographs this fixture seeds (natural sizes come from the shipped config). Their
  * selection, reachability and ordering rules are pinned by `tests/domain/home-route-model.test.ts`.
  *
  * The fixtures write the real rows rather than stubbing the reads, so the section order asserted
@@ -253,6 +254,11 @@ test.beforeAll(async () => {
   // A real manual selection. With no configured SPECIAL DEALS source collection it must not
   // publish anything -- and the retired Featured grid must not come back to show it.
   await prisma.homepageFeaturedProduct.create({ data: { productId: first.id, position: 1 } });
+  await seedFeedbackMirror(prisma, {
+    shopId: SHOP_ID,
+    runId,
+    urls: HOMEPAGE_CONFIG.feedback.images.map((image) => image.src),
+  });
 
   await parkCategoryMedia();
 
@@ -295,7 +301,7 @@ test("the refreshed homepage renders only real content, and none of the retired 
 
   // Hero absent (no collection hero media); SPECIAL DEALS and both promo rows absent (their
   // collections are not published here); YOUR NEXT FAVOURITE present (all four category images
-  // configured); the feedback rail present (the shipped config supplies its photographs).
+  // configured); the feedback rail present (seeded ANH-FEEDBACK mirror rows).
   expect(await regionOrder(page)).toEqual(["category-discovery", "feedback"]);
   for (const region of RETIRED_REGIONS) {
     await expect(page.locator(`[data-homepage-region="${region}"]`)).toHaveCount(0);

@@ -9,6 +9,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { seedFeedbackMirror } from "./feedback-mirror-fixture";
 
 /**
  * Positive browser acceptance for the homepage editorial refresh
@@ -42,7 +43,10 @@ const PROMO_TITLES: Record<string, string> = {
   [PROMOS[2]]: "Acceptance Tiệc",
   [PROMOS[3]]: "Acceptance Công sở",
 };
-const FEEDBACK_ALTS = Array.from({ length: 8 }, (_, index) => `Acceptance feedback ${index + 1}`);
+const FEEDBACK_COUNT = 8;
+// Mirrored ANH-FEEDBACK photographs carry no alt text (decorative), so the viewer and the zoom
+// buttons fall back to position-based names.
+const FEEDBACK_ALTS = Array.from({ length: FEEDBACK_COUNT }, () => "");
 /**
  * Natural sizes for the eight fixture photographs: tall full-body, 3:4, square and landscape, as
  * the shipped feedback set mixes them. The `/feedback` gallery is an uncropped masonry, so each
@@ -289,6 +293,12 @@ test.beforeAll(async () => {
   await parkCollections();
   productSlugs = [];
   for (let index = 1; index <= 6; index += 1) productSlugs.push(await addProduct(index));
+  // The rail's photographs come from the mirror; the fixture config only supplies their sizes.
+  await seedFeedbackMirror(prisma, {
+    shopId: SHOP_ID,
+    runId,
+    urls: FEEDBACK_ALTS.map((_, index) => IMAGE(`feedback-${index + 1}`)),
+  });
 
   for (const [slug, title] of [[SOURCE, "Acceptance nguồn"], ...Object.entries(PROMO_TITLES)] as const) {
     await prisma.collectionDefinition.create({
@@ -623,7 +633,7 @@ test("pressing a feedback photograph opens it enlarged in a keyboard-operable vi
     await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
 
     const second = page.locator(`${list} button.feedback-zoom`).nth(1);
-    await expect(second).toHaveAccessibleName(`Phóng to ảnh: ${FEEDBACK_ALTS[1]}`);
+    await expect(second).toHaveAccessibleName(`Phóng to ảnh 2 trên ${FEEDBACK_ALTS.length}`);
     await expect(page.locator(`${list} a`)).toHaveCount(0);
 
     await second.click();
