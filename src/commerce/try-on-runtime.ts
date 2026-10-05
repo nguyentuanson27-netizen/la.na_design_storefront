@@ -1,7 +1,7 @@
 import { readAuthServerConfig } from "../auth/config.ts";
 import { auth } from "../auth/server.ts";
 import { prisma } from "../db/prisma.ts";
-import { readTryOnConfig } from "../integrations/vertex-try-on/config.ts";
+import { createGoogleFlowTryOnClient } from "../integrations/google-flow-try-on/client.ts";\nimport { readTryOnRuntimeConfig } from "../integrations/try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
 import { getGoogleAccessToken } from "../integrations/vertex-try-on/google-auth.ts";
 import { fetchTrustedProductImage } from "../integrations/vertex-try-on/product-image.ts";
@@ -37,7 +37,7 @@ async function loadProduct(slug: string) {
 }
 
 export const tryOnService = createTryOnService({
-  readConfig: () => readTryOnConfig(),
+  readConfig: () => readTryOnRuntimeConfig(),
   limiter,
   loadProduct,
   fetchProductImage: (url) => fetchTrustedProductImage(url),
@@ -89,7 +89,7 @@ export async function resolveTryOnIdentity(headers: Headers): Promise<TryOnIdent
 export async function resolveProductTryOn(
   product: Readonly<{ id: string; slug: string; media: StorefrontProductMedia }>,
 ): Promise<Readonly<{ productSlug: string }> | null> {
-  if (!readTryOnConfig().available) return null;
+  if (!readTryOnRuntimeConfig().available) return null;
   try {
     const categoryKeys = await createMerchandisingRepository(prisma).readCategoryMembership(product.id);
     const eligibility = resolveTryOnEligibility({ categoryKeys, media: product.media });
