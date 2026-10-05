@@ -72,6 +72,14 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(raised.exception.status, 429)
         self.assertEqual(raised.exception.reason, "BUSY")
 
+    def test_gflow_child_environment_drops_worker_bearer_token(self):
+        with patch.dict(server.os.environ, {"FLOW_WORKER_TOKEN": "worker-secret", "PATH": "/usr/bin"}, clear=True):
+            env = server._gflow_env()
+        self.assertNotIn("FLOW_WORKER_TOKEN", env)
+        self.assertEqual(env["PATH"], "/usr/bin")
+        self.assertEqual(env["GFLOW_CLI_HEADLESS"], "false")
+        self.assertEqual(env["GFLOW_CLI_HISTORY_PROMPTS"], "redacted")
+
     def test_machine_error_detail_reads_detail_not_generic_remediation(self):
         stdout = """{
           "status": "fail",
