@@ -14,7 +14,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         def run(model, _person, _product, output, _timeout, _db_path):
             calls.append(model)
             output.write_bytes(PNG)
-            return 0, ""
+            return 0, server.GflowMachineError()
 
         with patch.object(server, "_run_model", side_effect=run):
             model, image, mime = server._generate(
@@ -37,9 +37,9 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
             calls.append(model)
             db_paths.append(db_path)
             if model == "nano-pro":
-                return 4, "You have reached the daily limit for Nano Banana Pro."
+                return 4, server.GflowMachineError(detail="You have reached the daily limit for Nano Banana Pro.")
             output.write_bytes(PNG)
-            return 0, ""
+            return 0, server.GflowMachineError()
 
         with patch.object(server, "_run_model", side_effect=run):
             model, image, mime = server._generate(
@@ -61,9 +61,9 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         def run(model, _person, _product, output, timeout, _db_path):
             timeouts.append((model, timeout))
             if model == "nano-pro":
-                return 4, "You have reached the daily limit for Nano Banana Pro."
+                return 4, server.GflowMachineError(detail="You have reached the daily limit for Nano Banana Pro.")
             output.write_bytes(PNG)
-            return 0, ""
+            return 0, server.GflowMachineError()
 
         with (
             patch.object(server, "_run_model", side_effect=run),
@@ -84,7 +84,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
 
         def run(model, _person, _product, _output, _timeout, _db_path):
             calls.append(model)
-            return 4, "Rate limit or quota hit"
+            return 4, server.GflowMachineError(detail="Rate limit or quota hit")
 
         with patch.object(server, "_run_model", side_effect=run):
             with self.assertRaises(server.WorkerGenerationError) as raised:
@@ -116,7 +116,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         def run(_model, _person, _product, output, _timeout, db_path):
             db_paths.append(db_path)
             output.write_bytes(PNG)
-            return 0, ""
+            return 0, server.GflowMachineError()
 
         with patch.object(server, "_run_model", side_effect=run):
             result = server._generate(
@@ -132,17 +132,42 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertIn("flow-try-on-", db_paths[0].parent.name)
         self.assertFalse(db_paths[0].parent.exists())
 
-    def test_machine_error_detail_reads_detail_not_generic_remediation(self):
+    def test_machine_error_parses_stable_json_identity_not_generic_remediation(self):
         stdout = """{
           "status": "fail",
           "error": {
+            "type": "https://gflow-cli.dev/errors/rate-limit",
+            "class": "RateLimitError",
             "detail": "You have reached the daily limit for Nano Banana Pro.",
             "remediation_hint": "Daily or per-minute model quota reached; try another model"
           }
         }"""
-        detail = server._machine_error_detail(stdout)
-        self.assertEqual(detail, "You have reached the daily limit for Nano Banana Pro.")
-        self.assertTrue(server.should_fallback_to_nano2(4, detail))
+        error = server._machine_error(stdout)
+        self.assertEqual(error.detail, "You have reached the daily limit for Nano Banana Pro.")
+        self.assertEqual(error.error_class, "RateLimitError")
+        self.assertEqual(error.problem_type, "https://gflow-cli.dev/errors/rate-limit")
+        self.assertTrue(server.should_fallback_to_nano2(4, error.detail))
+
+    def test_profile_locked_error_maps_to_busy_but_other_exit_11_does_not(self):
+        locked = server.GflowMachineError(
+            detail="profile is in use",
+            error_class="ProfileLockedError",
+            problem_type="https://gflow-cli.dev/errors/profile-locked",
+        )
+        generic_config = server.GflowMachineError(
+            detail="bad configuration",
+            error_class="ConfigurationError",
+            problem_type="https://gflow-cli.dev/errors/configuration",
+        )
+        wrong_type = server.GflowMachineError(
+            detail="profile is in use",
+            error_class="ProfileLockedError",
+            problem_type="https://gflow-cli.dev/errors/configuration",
+        )
+
+        self.assertEqual(server._failure_reason(11, locked), (409, "BUSY"))
+        self.assertEqual(server._failure_reason(11, generic_config), (502, "GENERATION_FAILED"))
+        self.assertEqual(server._failure_reason(11, wrong_type), (502, "GENERATION_FAILED"))
 
     def test_verified_gflow_exit_codes_map_without_scraping_error_text(self):
         self.assertEqual(server._failure_reason(3), (401, "AUTH_FAILED"))
@@ -152,6 +177,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(server._failure_reason(9), (504, "TIMEOUT"))
         self.assertEqual(server._failure_reason(server.WORKER_TIMEOUT_EXIT_CODE), (504, "TIMEOUT"))
         self.assertEqual(server._failure_reason(10), (502, "GENERATION_FAILED"))
+        self.assertEqual(server._failure_reason(11), (502, "GENERATION_FAILED"))
         self.assertEqual(server._failure_reason(23), (502, "GENERATION_FAILED"))
 
     def test_command_pins_two_refs_one_output_and_requested_model(self):
