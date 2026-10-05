@@ -96,6 +96,14 @@ jobs:
       - name: Domain tests
         run: pnpm test
 
+      - name: Flow worker unit tests
+        env:
+          PYTHONPATH: services/flow-worker
+        run: |
+          python3 --version
+          python3 -m unittest discover -s services/flow-worker/tests -v
+          python3 -m compileall -q services/flow-worker/flow_worker
+
       - name: Build
         env:
           LA_SHIPPING_FEE_VND: "17000"
