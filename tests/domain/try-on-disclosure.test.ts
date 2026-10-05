@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveTryOnPrivacyDisclosure } from "../../src/commerce/try-on-disclosure.ts";
+import { resolveTryOnPrivacyDisclosure } from "../../src/components/headless/try-on-disclosure.ts";
 
 test("Vertex disclosure preserves the existing Google Cloud boundary", () => {
   const copy = resolveTryOnPrivacyDisclosure("vertex", "La.na Design");
