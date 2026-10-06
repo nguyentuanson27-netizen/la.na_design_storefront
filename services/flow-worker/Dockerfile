@@ -47,8 +47,11 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY --chown=flow:flow flow_worker ./flow_worker
+COPY --chown=flow:flow entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 USER flow
 EXPOSE 8787
 
-CMD ["xvfb-run", "-a", "python", "-m", "flow_worker.server"]
+ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["python", "-m", "flow_worker.server"]

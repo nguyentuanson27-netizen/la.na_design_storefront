@@ -134,10 +134,6 @@ services:
     build:
       context: ../../services/flow-worker
       dockerfile: Dockerfile
-    entrypoint:
-      - /bin/sh
-      - -c
-      - "Xvfb :99 -screen 0 1280x1024x24 -nolisten tcp >/dev/null 2>&1 & sleep 1; export DISPLAY=:99; exec python -m flow_worker.server"
     restart: unless-stopped
     # Do not inherit .env.production: this worker needs no database, auth, Pancake or email secrets.
     # Compose interpolation reads the deploy env file on the host and injects only these Flow values.
