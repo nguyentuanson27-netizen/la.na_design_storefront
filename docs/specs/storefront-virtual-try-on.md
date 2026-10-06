@@ -1,6 +1,6 @@
-# Spec: Storefront Virtual Try-on with Vertex AI
+# Spec: Storefront Virtual Try-on with Vertex AI Nano Banana Pro
 
-Status: **Approved and merged 2026-10-04. MVP implemented behind a server kill switch (off by default); see [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md) for the operational contract, the two implementation differences from §3/§8, and the live checks still owed before enablement.**
+Status: **Approved 2026-10-04; amended 2026-10-05 to replace the dedicated Vertex VTO model with Nano Banana Pro (`gemini-3-pro-image`) after observed output quality was insufficient. The server kill switch remains off by default; live quality acceptance is still required before enablement. See [`docs/integrations/vertex-virtual-try-on.md`](../integrations/vertex-virtual-try-on.md).**
 
 This spec defines the MVP virtual try-on experience for La.na Design product detail pages (PDPs).
 
@@ -17,7 +17,7 @@ Confirmed owner decisions:
 5. Multiple outputs may be added later, but are not part of MVP.
 6. La.na Design does **not persist** the uploaded or generated image in its own durable storage.
 7. The feature is for **apparel worn on the body**; accessories are excluded.
-8. The provider is **Google Cloud Vertex AI** using the dedicated **`virtual-try-on-001`** model.
+8. The provider is **Google Cloud Vertex AI** using **Nano Banana Pro / `gemini-3-pro-image`** as a multi-image editing model.
 9. MVP supports eligible minors under the age policy in §10.
 
 “Front-facing” is buyer guidance, not a promise that the application will run pose/face classification.
@@ -55,55 +55,48 @@ For MVP, `aoDai`, `setDo`, and `vayDam` are eligible apparel trees. `phuKien` is
 
 ## 3. Vertex AI contract
 
-Official Google Cloud documentation was re-checked on 2026-10-04.
+Owner amendment, 2026-10-05: replace the dedicated `gemini-3-pro-image` model because observed
+output quality is insufficient.
 
-Normative model:
+Current provider contract, checked against Google Cloud documentation on 2026-10-05:
 
 - provider: Google Cloud Vertex AI;
-- model: `virtual-try-on-001`;
+- model: Nano Banana Pro / Gemini 3 Pro Image;
+- model id: `gemini-3-pro-image`;
 - launch stage: GA;
-- default region: `asia-southeast1`;
-- request surface: Vertex AI publisher-model `:predict`;
-- one person image + one product image;
-- one output.
+- location: `global` only;
+- request surface: publisher-model `:generateContent`;
+- inputs: shopper image + exact trusted garment image as two inline references;
+- instruction: one fixed server-owned fidelity/safety prompt;
+- output: one candidate, PNG, 2K;
+- no forced aspect ratio;
+- no model fallback or automatic retry.
 
-The REST target is conceptually:
+Required generation controls:
 
-```text
-POST https://asia-southeast1-aiplatform.googleapis.com/v1/
-  projects/<project>/locations/asia-southeast1/
-  publishers/google/models/virtual-try-on-001:predict
-```
+- `candidateCount = 1`;
+- `mediaResolution = "MEDIA_RESOLUTION_LOW"` for both input references;
+- `responseModalities = ["TEXT", "IMAGE"]`;
+- `imageConfig.imageSize = "2K"`;
+- `imageConfig.imageOutputOptions.mimeType = "image/png"`;
+- `imageConfig.personGeneration = "allow_all"`;
+- dangerous content, harassment, hate speech and sexually explicit categories use
+  `BLOCK_LOW_AND_ABOVE`.
 
-The implementation must use the current official request schema at build time. The required MVP facts are:
+Google documents up to 14 reference images and a 7 MB maximum per inline image for this model. The
+storefront intentionally keeps its stricter existing JPEG/PNG + 7 MB input contract.
 
-- `personImage` = shopper image;
-- first `productImages[]` item = first trusted product image;
-- `sampleCount = 1`;
-- `personGeneration = "allow-all"` so the approved teen path is not blocked by the provider's adult-only default;
-- `safetySetting = "block-low-and-above"` unless current official documentation removes or renames that option;
-- `addWatermark = true`;
-- omit `storageUri` so generation does not intentionally write output to Cloud Storage.
+Important: the model page marks dedicated **Virtual try-on** capability as unsupported. This
+implementation uses Gemini image editing for the try-on use case, so garment/person fidelity must be
+proven by the controlled live quality gate; it is not guaranteed by a dedicated VTO API contract.
 
-MVP must not lower the safety threshold or disable the watermark merely to increase success rate.
-
-Current model limits relevant to this feature:
-
-- maximum images per prompt: 2;
-- supported input MIME types: `image/jpeg`, `image/png`;
-- maximum inline/direct-upload file size: 7 MB per image;
-- maximum output count: 4, but MVP pins 1;
-- output aspect ratio/resolution follow the input image.
-
-The model is currently published with a retirement date of **2027-03-15**. Before implementation and again before production enablement, re-check the model page for a successor/migration notice. Do not build a general provider framework for this; keep the Vertex call isolated enough that a reviewed model migration is local.
+The model page lists retirement on **2027-05-28 or later**. Re-check lifecycle before launch.
 
 Authoritative references:
 
-- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/vto/virtual-try-on-001
-- https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/Shared.Types/VirtualTryOnModelInstance
-- https://docs.cloud.google.com/gemini-enterprise-agent-platform/reference/rest/Shared.Types/VirtualTryOnModelParams
-- https://cloud.google.com/vertex-ai/generative-ai/docs/reference/rest/v1/projects.locations.endpoints/predict
-- https://docs.cloud.google.com/vertex-ai/generative-ai/docs/vertex-ai-zero-data-retention
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/3-pro-image
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/capabilities/gemini-edit-images
+- https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/start
 
 ## 4. Product eligibility and runtime availability
 
@@ -206,7 +199,7 @@ Use the simplest synchronous request/response flow that works within the deploye
 2. server validates the request;
 3. server re-resolves product/category/media authority;
 4. server obtains and validates the first trusted product image;
-5. server calls Vertex AI `virtual-try-on-001`;
+5. server calls Vertex AI `gemini-3-pro-image`;
 6. server receives one inline generated image;
 7. server returns the result to the current shopper request;
 8. client renders/downloads it;
@@ -226,30 +219,26 @@ If synchronous request/response proves incompatible with production runtime limi
 
 ## 8. Vertex request and safety configuration
 
-The request is server-owned. Shoppers do not provide a free-form generation prompt.
+Shoppers do not provide a generation prompt. The server owns one fixed instruction that identifies
+reference 1 as the shopper and reference 2 as the garment, then asks the model to:
 
-Where the current `VirtualTryOnModelInstance` schema requires a prompt, use one fixed server-owned prompt whose intent is:
+- put exactly that garment on the shopper;
+- preserve recognizable identity, face, hair, apparent age, skin tone, body proportions, pose,
+  hands, framing, camera perspective, background and lighting;
+- preserve garment silhouette, cut, length, color, pattern, texture, seams, trim, logos/graphics and
+  visible design details;
+- make only the clothing change needed for a physically plausible fit;
+- avoid body reshaping, face retouching, unrelated accessory changes, sexualisation, nudity and age
+  changes;
+- return one high-fidelity fashion visualization, not a collage/split-screen/text image.
 
-- place the supplied garment naturally on the supplied person;
-- preserve identity, pose, body proportions, skin tone, framing, and apparent age as much as practical;
-- preserve garment silhouette, color, pattern, and visible design details as much as practical;
-- do not add unrelated accessories;
-- do not sexualize the subject;
-- do not create nudity or sexualized body changes;
-- do not age-up a teen subject into an adult-looking subject;
-- produce an age-appropriate fashion visualization.
+Prompt wording is **not** the safety boundary. Provider safety controls and server-side age/consent
+gates remain authoritative.
 
-Prompt wording is **not** the safety boundary. Provider safety controls and server-side age/consent gates remain authoritative.
-
-Required provider controls for MVP:
-
-- `sampleCount = 1`;
-- `personGeneration = "allow-all"`;
-- `safetySetting = "block-low-and-above"`;
-- `addWatermark = true`;
-- no `storageUri`.
-
-If Vertex rejects an input/output for safety reasons, fail closed. Do not retry with a weaker safety setting, different model, or weakened age rule.
+The response may contain text/thought parts, but the application accepts exactly one validated
+inline JPEG/PNG image from exactly one candidate. Explicit provider safety blocks fail closed.
+Malformed output, extra images, invalid base64, unsupported formats or MIME/signature mismatch are
+generic generation failures. No weaker retry or fallback is allowed.
 
 ## 9. Upload and cost boundaries
 
@@ -284,7 +273,7 @@ Do not design a distributed abuse platform by default. The implementation plan s
 Cost remains bounded by:
 
 - one Vertex prediction per accepted action;
-- `sampleCount = 1`;
+- one candidate per accepted action;
 - no automatic regeneration;
 - no catalog pre-generation;
 - no hidden background generation;
@@ -364,7 +353,7 @@ Minimum truthful disclosure:
 - the shopper photo and garment image are sent to Google Cloud Vertex AI to create the result;
 - Google Cloud processing/retention follows the configured Google Cloud data controls and applicable service terms.
 
-The implementation must omit `storageUri` so the try-on call does not intentionally persist output to a Cloud Storage bucket.
+The implementation must use inline image inputs/outputs and must not introduce a Cloud Storage input or output URI.
 
 ## 13. Failure behavior
 
@@ -445,9 +434,9 @@ Cover:
 - first product image WebP excluded rather than converted or replaced by image 2;
 - unsupported/oversized shopper image rejected;
 - server ignores/rejects arbitrary client product-image URLs;
-- request pins `virtual-try-on-001`;
+- request pins `gemini-3-pro-image`;
 - request uses one person image + first trusted product image;
-- request pins `sampleCount=1`, `personGeneration=allow-all`, strongest reviewed safety setting, watermark enabled, no `storageUri`;
+- request pins one candidate, low input media resolution, `personGeneration=allow_all`, 2K PNG output, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and no provider storage URI;
 - missing likeness acknowledgement rejected before Vertex;
 - missing/unknown age state rejected before Vertex;
 - `below_digital_consent_age` rejected before Vertex;
@@ -537,7 +526,7 @@ Rollout sequence:
 1. implementation verified with feature off by default;
 2. staging/internal validation;
 3. owner quality review with controlled photos;
-4. verify current `virtual-try-on-001` lifecycle/successor status;
+4. verify current `gemini-3-pro-image` lifecycle/successor status;
 5. limited production enablement;
 6. monitor latency/error/safety-block/cost;
 7. widen if stable.
@@ -551,8 +540,8 @@ Turning the switch off must leave normal PDP commerce unchanged.
 - use current category and trusted-media authorities;
 - re-resolve product authority server-side;
 - use the exact first trusted product image;
-- use Vertex AI `virtual-try-on-001`;
-- use `asia-southeast1` unless a reviewed deployment requirement changes it;
+- use Vertex AI `gemini-3-pro-image`;
+- use `global` unless a reviewed deployment requirement changes it;
 - keep Google Cloud credentials server-only;
 - send one shopper image + one product image;
 - request one output;
@@ -624,7 +613,7 @@ Implementation is acceptable when:
 - [ ] Each request requires likeness-rights acknowledgement.
 - [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
 - [ ] Teen flow shows age-appropriate AI disclosure.
-- [ ] Vertex request uses `virtual-try-on-001`, one person image, one product image, `sampleCount=1`, `personGeneration=allow-all`, strongest reviewed safety filtering, watermark enabled, and no `storageUri`.
+- [ ] Vertex request uses `gemini-3-pro-image` at `global`, two inline reference images at `MEDIA_RESOLUTION_LOW`, one candidate, 2K PNG output, `personGeneration=allow_all`, the four reviewed safety categories at `BLOCK_LOW_AND_ABOVE`, and the compact fixed server-owned fidelity prompt.
 - [ ] Provider safety blocks fail closed without weaker retry/fallback.
 - [ ] One accepted request renders at most one result.
 - [ ] La.na Design does not durably persist input/output image bytes.
@@ -642,7 +631,6 @@ Implementation is acceptable when:
 
 MVP does not include:
 
-- Nano Banana Pro / `gemini-3-pro-image` as the try-on model;
 - multiple shopper photos;
 - automatic front-pose/face/body classification;
 - identity/document/jurisdiction/age verification;

@@ -16,7 +16,7 @@ export const TRY_ON_ELIGIBLE_TOP_LEVEL_CATEGORY_KEYS: readonly string[] = Object
   "vayDam",
 ]);
 
-/** Vertex AI `virtual-try-on-001` reads JPEG and PNG only; WebP is not converted for MVP. */
+/** The try-on providers accept JPEG and PNG only; WebP is not converted for MVP. */
 const SUPPORTED_EXTENSIONS: ReadonlySet<string> = new Set([".jpg", ".jpeg", ".png"]);
 
 export type TryOnIneligibleReason =

@@ -3,14 +3,16 @@ import test from "node:test";
 
 import {
   TRY_ON_MODEL,
-  buildPredictRequest,
+  TRY_ON_OUTPUT_IMAGE_SIZE,
+  TRY_ON_PROMPT,
+  buildGenerateContentRequest,
   createVertexTryOnClient,
 } from "../../src/integrations/vertex-try-on/client.ts";
 import { JPEG_BYTES, PNG_BYTES, WEBP_BYTES } from "../support/try-on-fixtures.ts";
 
 const person = { bytes: JPEG_BYTES, mimeType: "image/jpeg" } as const;
 const product = { bytes: PNG_BYTES, mimeType: "image/png" } as const;
-const config = { projectId: "lana-design-prod", location: "asia-southeast1" };
+const config = { projectId: "lana-design-prod", location: "global" };
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 type Call = { url: string; init: RequestInit };
@@ -29,45 +31,72 @@ function harness(respond: () => Response | Promise<Response>, token: () => Promi
   return { client, calls };
 }
 
-const okBody = (image: Uint8Array = PNG_BYTES, extra: Record<string, unknown> = {}) =>
-  JSON.stringify({ predictions: [{ bytesBase64Encoded: b64(image), mimeType: "image/png", ...extra }] });
+const okBody = (image: Uint8Array = PNG_BYTES, mimeType = "image/png") =>
+  JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: {
+        role: "model",
+        parts: [
+          { text: "Generated virtual try-on." },
+          { inlineData: { data: b64(image), mimeType } },
+        ],
+      },
+    }],
+  });
 const json = (body: string, status = 200) =>
   new Response(body, { status, headers: { "content-type": "application/json" } });
 
-test("the request pins the model, region, one person image, one product image and every provider control", () => {
-  const request = buildPredictRequest({ config, person, product });
+test("request pins Nano Banana Pro, global generateContent, two references and quality controls", () => {
+  const request = buildGenerateContentRequest({ config, person, product });
 
-  assert.equal(TRY_ON_MODEL, "virtual-try-on-001");
+  assert.equal(TRY_ON_MODEL, "gemini-3-pro-image");
+  assert.equal(TRY_ON_OUTPUT_IMAGE_SIZE, "2K");
   assert.equal(
     request.url,
-    "https://asia-southeast1-aiplatform.googleapis.com/v1/projects/lana-design-prod/locations/asia-southeast1/publishers/google/models/virtual-try-on-001:predict",
+    "https://aiplatform.googleapis.com/v1/projects/lana-design-prod/locations/global/publishers/google/models/gemini-3-pro-image:generateContent",
   );
-  assert.deepEqual(request.body, {
-    instances: [
-      {
-        personImage: { image: { bytesBase64Encoded: b64(JPEG_BYTES) } },
-        productImages: [{ image: { bytesBase64Encoded: b64(PNG_BYTES) } }],
-      },
-    ],
-    parameters: {
-      sampleCount: 1,
-      personGeneration: "allow-all",
-      safetySetting: "block-low-and-above",
-      addWatermark: true,
+
+  const parts = request.body.contents[0]!.parts;
+  const inline = parts.filter((part) => "inlineData" in part);
+  assert.equal(inline.length, 2);
+  assert.deepEqual(inline[0], { inlineData: { mimeType: "image/jpeg", data: b64(JPEG_BYTES) } });
+  assert.deepEqual(inline[1], { inlineData: { mimeType: "image/png", data: b64(PNG_BYTES) } });
+  assert.match(TRY_ON_PROMPT, /preserve shopper identity/i);
+  assert.match(TRY_ON_PROMPT, /preserve garment silhouette/i);
+  assert.ok(TRY_ON_PROMPT.length < 700, "keep the fixed prompt compact to reduce text input tokens");
+
+  assert.deepEqual(request.body.generationConfig, {
+    candidateCount: 1,
+    mediaResolution: "MEDIA_RESOLUTION_LOW",
+    responseModalities: ["TEXT", "IMAGE"],
+    imageConfig: {
+      imageSize: "2K",
+      imageOutputOptions: { mimeType: "image/png" },
+      personGeneration: "allow_all",
     },
   });
+  assert.deepEqual(
+    request.body.safetySettings.map(({ category, threshold }) => [category, threshold]),
+    [
+      ["HARM_CATEGORY_DANGEROUS_CONTENT", "BLOCK_LOW_AND_ABOVE"],
+      ["HARM_CATEGORY_HARASSMENT", "BLOCK_LOW_AND_ABOVE"],
+      ["HARM_CATEGORY_HATE_SPEECH", "BLOCK_LOW_AND_ABOVE"],
+      ["HARM_CATEGORY_SEXUALLY_EXPLICIT", "BLOCK_LOW_AND_ABOVE"],
+    ],
+  );
 });
 
-test("the request never carries storageUri, a prompt, or a second product image", () => {
-  const serialized = JSON.stringify(buildPredictRequest({ config, person, product }).body);
-  assert.doesNotMatch(serialized, /storageUri|gcsUri|prompt|seed/);
-  const body = buildPredictRequest({ config, person, product }).body;
-  assert.equal(body.instances.length, 1);
-  assert.equal(body.instances[0]!.productImages.length, 1);
-  assert.equal(body.parameters.sampleCount, 1);
+test("request has no persistence target, user prompt field, or third input image", () => {
+  const request = buildGenerateContentRequest({ config, person, product });
+  const serialized = JSON.stringify(request.body);
+  assert.doesNotMatch(serialized, /storageUri|gcsUri|fileUri/);
+  assert.equal(request.body.contents.length, 1);
+  assert.equal(request.body.contents[0]!.parts.filter((part) => "inlineData" in part).length, 2);
+  assert.equal(request.body.generationConfig.candidateCount, 1);
 });
 
-test("generate posts once with a bearer token and returns the single validated image", async () => {
+test("generate posts once with bearer auth and returns the single validated image", async () => {
   const { client, calls } = harness(() => json(okBody()));
   const result = await client.generate({ person, product });
 
@@ -84,92 +113,53 @@ test("generate posts once with a bearer token and returns the single validated i
   assert.equal(calls[0]!.init.redirect, "error");
 });
 
-test("a provider safety refusal fails closed after exactly one attempt (no weaker retry)", async () => {
-  for (const respond of [
-    () => json(JSON.stringify({ predictions: [{ raiFilteredReason: "Support codes: 58061214" }] })),
-    () => json(JSON.stringify({ error: { code: 400, message: "Image was blocked by safety filters." } }), 400),
-    () =>
-      json(JSON.stringify({ error: { code: 400, message: "Responsible AI filtered the output." } }), 400),
-  ]) {
-    const { client, calls } = harness(respond);
+test("provider safety signals fail closed after exactly one attempt", async () => {
+  const bodies = [
+    { promptFeedback: { blockReason: "IMAGE_SAFETY" } },
+    { candidates: [{ finishReason: "SAFETY", safetyRatings: [{ blocked: true }] }] },
+    { candidates: [{ finishReason: "IMAGE_SAFETY" }] },
+  ];
+  for (const body of bodies) {
+    const { client, calls } = harness(() => json(JSON.stringify(body)));
     assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" });
     assert.equal(calls.length, 1);
   }
 });
 
-test("a 400 that is a request-validation error is NOT a safety block (it is an integration fault)", async () => {
+test("safety 400s are safety blocks but validation 400s are integration failures", async () => {
   for (const message of [
-    "Invalid value at 'parameters.safetySetting' (type.googleapis.com/google.cloud.aiplatform.v1.Value): \"block_low_and_above\"",
-    "Invalid personGeneration value. Supported policy values: dont-allow, allow-adult, allow-all.",
-    "Request contains an invalid argument: unsupported filtered field.",
-    "Unable to parse instances[0].personImage",
+    "Image was blocked by safety filters.",
+    "Responsible AI filtered the output.",
+    "This content contains words that violate Google's Responsible AI practices.",
   ]) {
-    const { client, calls } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
-    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" }, message);
-    assert.equal(calls.length, 1);
+    const { client } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
+    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" });
   }
-});
 
-test("the documented Responsible AI refusal (message and details[].detail) is a safety block", async () => {
-  const rai = (message: string, details: unknown) =>
-    json(JSON.stringify({ error: { code: 400, message, status: "INVALID_ARGUMENT", details } }), 400);
-  const cases: Array<[string, () => Response]> = [
-    [
-      "official shape: violate-RAI wording in the top-level message, support code only in details",
-      () =>
-        rai(
-          "Image generation failed with the following error: The prompt could not be submitted. This prompt contains sensitive words that violate Google's Responsible AI practices. Try rephrasing the prompt. If you think this was an error, send feedback.",
-          [{ "@type": "type.googleapis.com/google.rpc.DebugInfo", detail: "[ORIGINAL ERROR] generic::invalid_argument: Support codes: 42876398" }],
-        ),
-    ],
-    [
-      "typographic apostrophe in the violate-RAI marker",
-      () => rai("This content contains words that violate Google\u2019s Responsible AI practices.", []),
-    ],
-    [
-      "support code only in details[].detail, with a neutral top-level message",
-      () => rai("Image generation failed.", [{ detail: "filtered. Support codes: 58061214" }]),
-    ],
-  ];
-  for (const [label, respond] of cases) {
-    const { client, calls } = harness(respond);
-    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" }, label);
-    assert.equal(calls.length, 1);
-  }
-});
-
-test("validation errors stay generation failures even when details are present or hostile", async () => {
-  const bad = (details: unknown) =>
-    json(
-      JSON.stringify({
-        error: { code: 400, message: "Invalid value at 'parameters.safetySetting'", status: "INVALID_ARGUMENT", details },
-      }),
-      400,
-    );
-  for (const details of [
-    [{ "@type": "type.googleapis.com/google.rpc.BadRequest", fieldViolations: [{ field: "parameters.safetySetting", description: "invalid enum value" }] }],
-    [{ detail: "invalid safetySetting" }],
-    [{ detail: 42 }, null, "text", { detail: { nested: "Support codes: 1" } }],
-    "not-an-array",
-    undefined,
+  for (const message of [
+    "Invalid value at 'generationConfig.imageConfig.personGeneration'",
+    "Request contains an invalid argument: unsupported imageSize",
+    "Unable to parse contents[0].parts[1].inlineData",
   ]) {
-    const { client } = harness(() => bad(details));
+    const { client } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
     assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
   }
 });
 
-test("known provider refusal markers on a 400 are safety blocks", async () => {
-  for (const message of [
-    "Image was blocked by safety filters.",
-    "Responsible AI filtered the output.",
-    "Your current safety filter threshold filtered out 1 generated images. Support codes: 29310472",
-  ]) {
-    const { client } = harness(() => json(JSON.stringify({ error: { code: 400, message } }), 400));
-    assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" }, message);
-  }
+test("a support code in bounded error details is a safety block", async () => {
+  const { client } = harness(() =>
+    json(JSON.stringify({
+      error: {
+        code: 400,
+        message: "Image generation failed.",
+        details: [{ detail: "filtered. Support codes: 58061214" }],
+      },
+    }), 400),
+  );
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "SAFETY_BLOCKED" });
 });
 
-test("upstream failures map to safe reason classes and never echo the upstream body", async () => {
+test("upstream failures map to safe reason classes and never echo provider detail", async () => {
   const secret = "projects/lana-design-prod INTERNAL-DETAIL";
   const cases: Array<[() => Response, string]> = [
     [() => json(JSON.stringify({ error: { message: secret } }), 401), "AUTH_FAILED"],
@@ -189,19 +179,16 @@ test("upstream failures map to safe reason classes and never echo the upstream b
   }
 });
 
-test("an access-token failure is AUTH_FAILED and the provider is never called", async () => {
+test("access-token failure is AUTH_FAILED and provider is never called", async () => {
   const { client, calls } = harness(
     () => json(okBody()),
-    async () => {
-      throw new Error("could not load credentials /secret/path.json");
-    },
+    async () => { throw new Error("could not load credentials /secret/path.json"); },
   );
-  const result = await client.generate({ person, product });
-  assert.deepEqual(result, { ok: false, reason: "AUTH_FAILED" });
+  assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "AUTH_FAILED" });
   assert.equal(calls.length, 0);
 });
 
-test("a timeout is TIMEOUT", async () => {
+test("provider timeout is TIMEOUT", async () => {
   const client = createVertexTryOnClient({
     config,
     getAccessToken: async () => "t",
@@ -214,11 +201,11 @@ test("a timeout is TIMEOUT", async () => {
   assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
 });
 
-test("a stalled access-token acquisition is bounded by the same deadline and never reaches Vertex", async () => {
+test("stalled token acquisition shares the deadline and never reaches Vertex", async () => {
   const calls: unknown[] = [];
   const client = createVertexTryOnClient({
     config,
-    getAccessToken: () => new Promise<string>(() => undefined), // never settles
+    getAccessToken: () => new Promise<string>(() => undefined),
     fetch: async (url) => {
       calls.push(url);
       return json(okBody());
@@ -231,7 +218,7 @@ test("a stalled access-token acquisition is bounded by the same deadline and nev
   assert.equal(calls.length, 0);
 });
 
-test("the deadline is one budget across token acquisition and prediction, not two", async () => {
+test("deadline is one budget across token acquisition and generation", async () => {
   const client = createVertexTryOnClient({
     config,
     getAccessToken: () => new Promise<string>((resolve) => setTimeout(() => resolve("t"), 120)),
@@ -243,11 +230,10 @@ test("the deadline is one budget across token acquisition and prediction, not tw
   });
   const started = Date.now();
   assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "TIMEOUT" });
-  // 120 ms of token + a fresh 200 ms prediction timer would take ~320 ms; one budget ends at ~200.
-  assert.ok(Date.now() - started < 290, `took ${Date.now() - started} ms`);
+  assert.ok(Date.now() - started < 290, "provider deadline was reset after auth");
 });
 
-test("a late token failure after the deadline is not an unhandled rejection", async () => {
+test("late token failure after deadline is not an unhandled rejection", async () => {
   let rejectLater!: (reason: Error) => void;
   const client = createVertexTryOnClient({
     config,
@@ -268,47 +254,63 @@ test("a late token failure after the deadline is not an unhandled rejection", as
   }
 });
 
-test("a network error is GENERATION_FAILED", async () => {
+test("network error is GENERATION_FAILED", async () => {
   const client = createVertexTryOnClient({
     config,
     getAccessToken: async () => "t",
-    fetch: async () => {
-      throw new TypeError("fetch failed");
-    },
+    fetch: async () => { throw new TypeError("fetch failed"); },
     timeoutMs: 1_000,
   });
   assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
 });
 
-test("untrusted provider output is validated: shape, count, encoding, signature and declared type", async () => {
+test("untrusted output validates candidate count, image count, encoding, signature and MIME", async () => {
+  const candidate = (parts: unknown[]) => ({
+    candidates: [{ finishReason: "STOP", content: { role: "model", parts } }],
+  });
+  const imagePart = (bytes: Uint8Array, mimeType = "image/png") => ({
+    inlineData: { data: b64(bytes), mimeType },
+  });
+
   const bad: Array<() => Response> = [
     () => json(JSON.stringify({})),
-    () => json(JSON.stringify({ predictions: [] })),
-    () => json(JSON.stringify({ predictions: "x" })),
-    () => json(JSON.stringify({ predictions: [{}] })),
-    () => json(JSON.stringify({ predictions: [{ bytesBase64Encoded: 42, mimeType: "image/png" }] })),
-    () => json(JSON.stringify({ predictions: [{ bytesBase64Encoded: "!!!not base64!!!", mimeType: "image/png" }] })),
-    // One candidate is requested, so more than one is a contract violation.
-    () =>
-      json(
-        JSON.stringify({
-          predictions: [
-            { bytesBase64Encoded: b64(PNG_BYTES), mimeType: "image/png" },
-            { bytesBase64Encoded: b64(PNG_BYTES), mimeType: "image/png" },
-          ],
-        }),
-      ),
-    // Bytes that are not an allowed image, however they are labelled.
-    () => json(okBody(WEBP_BYTES)),
-    () => json(okBody(new TextEncoder().encode("<script>alert(1)</script>"))),
-    // Declared type disagrees with the bytes.
-    () => json(JSON.stringify({ predictions: [{ bytesBase64Encoded: b64(PNG_BYTES), mimeType: "image/jpeg" }] })),
-    () => json(JSON.stringify({ predictions: [{ bytesBase64Encoded: b64(PNG_BYTES), mimeType: "text/html" }] })),
+    () => json(JSON.stringify({ candidates: [] })),
+    () => json(JSON.stringify({ candidates: "x" })),
+    () => json(JSON.stringify({ candidates: [{ finishReason: "STOP", content: { parts: [] } }] })),
+    () => json(JSON.stringify(candidate([{ inlineData: { data: 42, mimeType: "image/png" } }]))),
+    () => json(JSON.stringify(candidate([{ inlineData: { data: "!!!not base64!!!", mimeType: "image/png" } }]))),
+    () => json(JSON.stringify({ candidates: [
+      { finishReason: "STOP", content: { parts: [imagePart(PNG_BYTES)] } },
+      { finishReason: "STOP", content: { parts: [imagePart(PNG_BYTES)] } },
+    ] })),
+    () => json(JSON.stringify(candidate([imagePart(PNG_BYTES), imagePart(PNG_BYTES)]))),
+    () => json(JSON.stringify(candidate([imagePart(WEBP_BYTES)]))),
+    () => json(JSON.stringify(candidate([imagePart(new TextEncoder().encode("<script>alert(1)</script>"))]))),
+    () => json(JSON.stringify(candidate([imagePart(PNG_BYTES, "image/jpeg")]))),
+    () => json(JSON.stringify(candidate([imagePart(PNG_BYTES, "text/html")]))),
   ];
   for (const respond of bad) {
     const { client } = harness(respond);
     assert.deepEqual(await client.generate({ person, product }), { ok: false, reason: "GENERATION_FAILED" });
   }
+});
+
+test("text and thought parts are ignored when exactly one validated image is present", async () => {
+  const body = JSON.stringify({
+    candidates: [{
+      finishReason: "STOP",
+      content: {
+        role: "model",
+        parts: [
+          { thought: true, text: "internal reasoning placeholder" },
+          { text: "Here is the result." },
+          { inlineData: { data: b64(PNG_BYTES), mimeType: "image/png" } },
+        ],
+      },
+    }],
+  });
+  const { client } = harness(() => json(body));
+  assert.equal((await client.generate({ person, product })).ok, true);
 });
 
 test("an absurdly large provider response is rejected rather than buffered", async () => {

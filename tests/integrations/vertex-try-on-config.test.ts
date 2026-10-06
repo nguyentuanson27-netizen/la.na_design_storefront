@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { readTryOnConfig } from "../../src/integrations/vertex-try-on/config.ts";
+import { TRY_ON_LOCATION, readTryOnConfig } from "../../src/integrations/vertex-try-on/config.ts";
 
 const ready = {
   LA_TRY_ON_ENABLED: "true",
@@ -9,7 +9,7 @@ const ready = {
   GOOGLE_APPLICATION_CREDENTIALS: "/run/secrets/google-credentials.json",
 };
 
-test("try-on is off unless the server switch is exactly 'true' (feature flag off path)", () => {
+test("try-on is off unless the server switch is exactly 'true'", () => {
   for (const LA_TRY_ON_ENABLED of [undefined, "", "false", "1", "TRUE", "yes", " true"]) {
     assert.deepEqual(readTryOnConfig({ ...ready, LA_TRY_ON_ENABLED }), {
       available: false,
@@ -19,17 +19,27 @@ test("try-on is off unless the server switch is exactly 'true' (feature flag off
   assert.deepEqual(readTryOnConfig({}), { available: false, reason: "DISABLED" });
 });
 
-test("a ready environment is available with the default asia-southeast1 region", () => {
+test("Nano Banana Pro is pinned to the Vertex global location", () => {
+  assert.equal(TRY_ON_LOCATION, "global");
   assert.deepEqual(readTryOnConfig(ready), {
     available: true,
     projectId: "lana-design-prod",
-    location: "asia-southeast1",
+    location: "global",
+  });
+  assert.deepEqual(readTryOnConfig({ ...ready, LA_TRY_ON_GCP_LOCATION: "global" }), {
+    available: true,
+    projectId: "lana-design-prod",
+    location: "global",
   });
 });
 
-test("the region can be overridden by a reviewed deployment", () => {
-  const config = readTryOnConfig({ ...ready, LA_TRY_ON_GCP_LOCATION: "us-central1" });
-  assert.deepEqual(config, { available: true, projectId: "lana-design-prod", location: "us-central1" });
+test("a stale regional location fails closed instead of calling an unsupported endpoint", () => {
+  for (const LA_TRY_ON_GCP_LOCATION of ["asia-southeast1", "us-central1", "evil.com/x", " global "]) {
+    assert.deepEqual(readTryOnConfig({ ...ready, LA_TRY_ON_GCP_LOCATION }), {
+      available: false,
+      reason: "NOT_CONFIGURED",
+    });
+  }
 });
 
 test("missing provider configuration fails closed without throwing", () => {
@@ -47,12 +57,9 @@ test("missing provider configuration fails closed without throwing", () => {
   });
 });
 
-test("a malformed project or region is unavailable, never interpolated into a hostname", () => {
+test("a malformed project id is unavailable, never interpolated into the endpoint", () => {
   for (const LA_TRY_ON_GCP_PROJECT_ID of ["Bad_Project", "a", "x/../y", "proj.evil.com", "-lead"]) {
     assert.equal(readTryOnConfig({ ...ready, LA_TRY_ON_GCP_PROJECT_ID }).available, false);
-  }
-  for (const LA_TRY_ON_GCP_LOCATION of ["evil.com/x", "asia-southeast1.evil.com", "A B", "a@b"]) {
-    assert.equal(readTryOnConfig({ ...ready, LA_TRY_ON_GCP_LOCATION }).available, false);
   }
 });
 

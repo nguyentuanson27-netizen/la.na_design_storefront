@@ -13,8 +13,9 @@ commerce isolation.
 
 The storefront may use either provider, selected only by server configuration:
 
-- `vertex` — the existing `virtual-try-on-001` integration, retained as an operator rollback path.
-- `flow` — a private Google Flow worker that drives a signed-in, headed Chrome session.
+- `flow` — the primary provider: a private Google Flow worker that drives a signed-in, headed Chrome session.
+- `vertex` — Vertex AI Nano Banana Pro (`gemini-3-pro-image`, location `global`), retained as the manual
+  operator rollback path. The dedicated `virtual-try-on-001` VTO model has been removed.
 
 There is **no automatic Flow -> Vertex fallback**. One shopper action must never silently spend both
 provider allowances.
@@ -113,7 +114,7 @@ through `flow`.
 
 ## Safety difference from the Vertex contract
 
-The existing Vertex request pins dedicated VTO safety controls. The Flow image composer does not
+The Vertex rollback request pins explicit harm-category safety controls and `personGeneration`. The Flow image composer does not
 expose the same `personGeneration`, `safetySetting`, or watermark contract through this
 integration.
 

@@ -7,7 +7,6 @@ const VERTEX = {
   LA_TRY_ON_ENABLED: "true",
   LA_TRY_ON_PROVIDER: "vertex",
   LA_TRY_ON_GCP_PROJECT_ID: "lana-design-prod",
-  LA_TRY_ON_GCP_LOCATION: "asia-southeast1",
   GOOGLE_APPLICATION_CREDENTIALS: "/run/secrets/google.json",
 } as const;
 
@@ -24,7 +23,7 @@ test("vertex remains the backward-compatible provider when LA_TRY_ON_PROVIDER is
     available: true,
     provider: "vertex",
     projectId: "lana-design-prod",
-    location: "asia-southeast1",
+    location: "global",
   });
 });
 

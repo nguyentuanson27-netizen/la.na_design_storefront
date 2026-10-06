@@ -189,13 +189,16 @@ type PredictLogEntry = {
   kind: "predict";
   pathOk: boolean;
   authorized: boolean;
-  instances: number;
-  productImages: number;
+  contents: number;
+  inputImages: number;
   garmentIsTrustedProduct: boolean;
-  sampleCount: number;
+  candidateCount: number;
+  mediaResolution: string;
+  imageSize: string;
   personGeneration: string;
-  safetySetting: string;
-  addWatermark: boolean;
+  responseModalities: string[];
+  safetyThresholds: string[];
+  hasPrompt: boolean;
   hasStorageUri: boolean;
 };
 
@@ -663,8 +666,15 @@ test("the teen path states the full attestation under a short chip and shows the
 
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
-  // `allow-all` is what lets the approved teen path through; the strict safety filter stays on.
-  expect(calls[0]).toMatchObject({ personGeneration: "allow-all", safetySetting: "block-low-and-above" });
+  expect(calls[0]).toMatchObject({
+    personGeneration: "allow_all",
+    safetyThresholds: [
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+    ],
+  });
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
 });
 
@@ -713,20 +723,28 @@ test("an adult generation shows loading, exactly one result, a download, and req
   const [downloaded] = await Promise.all([page.waitForEvent("download"), download.click()]);
   expect(downloaded.suggestedFilename()).toBe(`thu-do-${slugs.eligible}.png`);
 
-  // One explicit action produced exactly one Vertex prediction with the spec's required contract,
-  // and the garment sent was the server-resolved trusted product image.
+  // One explicit action produced exactly one Nano Banana Pro generation using the shopper and the
+  // exact trusted garment as the two reference images.
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
   expect(calls[0]).toMatchObject({
     pathOk: true,
     authorized: true,
-    instances: 1,
-    productImages: 1,
+    contents: 1,
+    inputImages: 2,
     garmentIsTrustedProduct: true,
-    sampleCount: 1,
-    personGeneration: "allow-all",
-    safetySetting: "block-low-and-above",
-    addWatermark: true,
+    candidateCount: 1,
+    mediaResolution: "MEDIA_RESOLUTION_LOW",
+    imageSize: "2K",
+    personGeneration: "allow_all",
+    responseModalities: ["TEXT", "IMAGE"],
+    safetyThresholds: [
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+    ],
+    hasPrompt: true,
     hasStorageUri: false,
   });
   expect(tryOnProductFetches()).toHaveLength(1);
@@ -787,7 +805,7 @@ test("while a generation runs the form is off screen and cannot change, so a lat
 
   await expect(result).toBeVisible();
   expect(predictCalls()).toHaveLength(1);
-  expect(predictCalls()[0]).toMatchObject({ personGeneration: "allow-all" });
+  expect(predictCalls()[0]).toMatchObject({ personGeneration: "allow_all" });
 
   // The result is for the teen attestation that was sent, and going back finds it unchanged.
   await expect(parts(dialog).disclosure).toBeVisible();
@@ -882,7 +900,15 @@ test("a provider safety block fails closed: safe copy on the photo step, the pho
   await delay(500);
   const calls = predictCalls();
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ safetySetting: "block-low-and-above", addWatermark: true });
+  expect(calls[0]).toMatchObject({
+    imageSize: "2K",
+    safetyThresholds: [
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+      "BLOCK_LOW_AND_ABOVE",
+    ],
+  });
 
   // A different photo is the way forward; the age is kept, the acknowledgement is asked again.
   await choosePhotoAndContinue(dialog, jpegPhoto("ok"));

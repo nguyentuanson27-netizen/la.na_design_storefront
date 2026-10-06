@@ -13,7 +13,7 @@ const GUEST = { kind: "guest", key: CLIENT } as const;
 const OPEN = { guest: { perMinute: 100, perDay: 100 }, member: { perMinute: 100, perDay: 100 } } as const;
 const FIRST_IMAGE = "https://content.pancake.vn/images/1/2/3/first.jpg";
 const SECOND_IMAGE = "https://content.pancake.vn/images/1/2/3/second.png";
-const CONFIG = { available: true, provider: "vertex", projectId: "lana-design-prod", location: "asia-southeast1" } as const;
+const CONFIG = { available: true, provider: "vertex", projectId: "lana-design-prod", location: "global" } as const;
 
 function product(overrides: { categoryKeys?: string[]; primary?: string | null; variants?: string[][] } = {}) {
   return {
@@ -99,7 +99,7 @@ test("a successful request makes exactly one provider call with the shopper phot
   assert.deepEqual([...probe.generate[0]!.person], [...JPEG_BYTES]);
   assert.deepEqual([...probe.generate[0]!.product], [...PNG_BYTES]);
   assert.equal(probe.generate[0]!.projectId, "lana-design-prod");
-  assert.equal(probe.generate[0]!.location, "asia-southeast1");
+  assert.equal(probe.generate[0]!.location, "global");
 });
 
 test("a forged client product-image URL is ignored: only the server-resolved first image is fetched", async () => {

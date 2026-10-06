@@ -4,7 +4,9 @@ This document is the deployment/operations companion to
 [`storefront-virtual-try-on-flow-amendment.md`](../specs/storefront-virtual-try-on-flow-amendment.md).
 
 Google Flow is an unofficial browser-automation provider in this integration. The storefront keeps
-Vertex `virtual-try-on-001` as the manual rollback provider. Do not treat Flow as production-ready
+Vertex AI Nano Banana Pro (`gemini-3-pro-image`, see
+[`vertex-virtual-try-on.md`](vertex-virtual-try-on.md)) as the manual rollback provider; the dedicated
+`virtual-try-on-001` VTO model is no longer used. Do not treat Flow as production-ready
 until the live gates at the end of this document are recorded.
 
 ## Runtime shape
@@ -217,7 +219,7 @@ Fastest kill switch:
 LA_TRY_ON_ENABLED=false
 ```
 
-or switch the provider back to the existing Vertex integration:
+or switch the provider to the Vertex Nano Banana Pro rollback integration:
 
 ```dotenv
 LA_TRY_ON_PROVIDER=vertex
