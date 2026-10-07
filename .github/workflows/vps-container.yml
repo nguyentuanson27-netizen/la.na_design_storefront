@@ -63,6 +63,15 @@ jobs:
           chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
           grep -Fq "155.0.8059.39" <<<"$chrome_version"
 
+      - name: Flow worker tests against the image's gflow and Chrome
+        run: |
+          docker run --rm --entrypoint python \
+            -e PYTHONDONTWRITEBYTECODE=1 \
+            -e FLOW_REQUIRE_BROWSER_TESTS=1 \
+            -e FLOW_TEST_CHROME=/opt/google/chrome/chrome \
+            -v "$PWD/services/flow-worker/tests:/app/tests:ro" \
+            "$PROJECT_SLUG:flow-worker-ci" -m unittest discover -s /app/tests -v
+
   verify-vps-container:
     needs: identity
     runs-on: ubuntu-latest

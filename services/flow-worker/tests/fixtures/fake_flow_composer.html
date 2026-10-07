@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>fake flow composer</title>
+<style>
+  body { font: 14px sans-serif; margin: 24px; }
+  [contenteditable] { border: 1px solid #888; min-height: 80px; padding: 8px; white-space: pre-wrap; }
+  .mention-chip { background: #ddd; border-radius: 4px; padding: 0 4px; }
+  .cdk-overlay-pane { position: absolute; top: 140px; left: 24px; background: #fff; border: 1px solid #444; }
+  button { margin-top: 12px; }
+</style>
+</head>
+<body>
+<!--
+  Test double for the flow.google.com image composer, limited to the contract gflow-cli 0.82.1
+  drives in migrated_composer.py: a [contenteditable='true'] prompt, an "@" mention picker of
+  button.asset-item[role=option] committed with Enter into a .mention-chip, and an arrow_forward
+  submit that POSTs batchexecute?rpcids=ogiZ0b carrying the composer text and the chip media ids.
+
+  ?focus=lost models the picker teardown taking focus and caret out of the composer after a commit.
+  ?input=ignored models an editor that drops programmatic insertText input.
+  ?wire=drop-prompt models a submit that leaves the composer prompt out of the request.
+-->
+<div id="composer" contenteditable="true"></div>
+<button id="submit"><mat-icon>arrow_forward</mat-icon></button>
+<script>
+const params = new URLSearchParams(location.search);
+const ASSETS = JSON.parse(params.get("assets") || "{}");  // display name -> media id
+const FOCUS = params.get("focus") || "kept";
+const INPUT = params.get("input") || "accepted";
+const WIRE = params.get("wire") || "composer";
+const composer = document.getElementById("composer");
+let picker = null;
+let query = null;
+window.__submits = [];
+
+function closePicker() {
+  if (picker) picker.remove();
+  picker = null;
+  query = null;
+}
+
+function renderPicker() {
+  if (!picker) {
+    picker = document.createElement("div");
+    picker.className = "cdk-overlay-pane";
+    document.body.appendChild(picker);
+  }
+  picker.innerHTML = "";
+  for (const name of Object.keys(ASSETS)) {
+    if (query && !name.includes(query)) continue;
+    const option = document.createElement("button");
+    option.className = "asset-item";
+    option.setAttribute("role", "option");
+    option.textContent = name;
+    picker.appendChild(option);
+  }
+}
+
+composer.addEventListener("keydown", (event) => {
+  if (event.key === "@") {
+    query = "";
+    setTimeout(renderPicker, 0);
+    return;
+  }
+  if (event.key === "Enter" && picker) {
+    event.preventDefault();
+    const name = Object.keys(ASSETS).find((candidate) => query && candidate.includes(query));
+    const selection = window.getSelection();
+    const node = selection.anchorNode;
+    if (name && node && node.nodeType === Node.TEXT_NODE) {
+      const offset = selection.anchorOffset;
+      const start = node.data.lastIndexOf("@", offset);
+      const after = node.splitText(start);
+      after.data = after.data.slice(offset - start);
+      const chip = document.createElement("span");
+      chip.className = "mention-chip";
+      chip.contentEditable = "false";
+      chip.dataset.referenceType = "media";
+      chip.dataset.entityId = "";
+      chip.dataset.mediaId = ASSETS[name];
+      chip.textContent = name;
+      node.parentNode.insertBefore(chip, after);
+      const range = document.createRange();
+      range.setStart(after, 0);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
+    closePicker();
+    if (FOCUS === "lost") {
+      composer.blur();
+      window.getSelection().removeAllRanges();
+    }
+  }
+});
+
+composer.addEventListener("beforeinput", (event) => {
+  if (INPUT === "ignored" && event.inputType === "insertText" && event.data && event.data.length > 1) {
+    event.preventDefault();
+  }
+});
+
+composer.addEventListener("input", () => {
+  if (query === null) return;
+  const selection = window.getSelection();
+  const node = selection.anchorNode;
+  if (!node || node.nodeType !== Node.TEXT_NODE) return;
+  const at = node.data.lastIndexOf("@", selection.anchorOffset);
+  if (at < 0) { closePicker(); return; }
+  query = node.data.slice(at + 1, selection.anchorOffset);
+  renderPicker();
+});
+
+function promptText() {
+  if (WIRE === "drop-prompt") return "";
+  const clone = composer.cloneNode(true);
+  clone.querySelectorAll(".mention-chip").forEach((chip) => chip.remove());
+  clone.querySelectorAll("br").forEach((br) => br.replaceWith("\n"));
+  return clone.textContent.trim();
+}
+
+document.getElementById("submit").addEventListener("click", async () => {
+  const references = [...composer.querySelectorAll(".mention-chip")].map((chip) => chip.dataset.mediaId);
+  const inner = JSON.stringify([[promptText(), references.map((id) => [[null, 1, id]])], "GEM_PIX_2"]);
+  const freq = JSON.stringify([[["ogiZ0b", inner, null, "generic"]]]);
+  window.__submits.push({ prompt: promptText(), references });
+  await fetch("/_/FlowUi/data/batchexecute?rpcids=ogiZ0b", {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded;charset=UTF-8" },
+    body: "f.req=" + encodeURIComponent(freq) + "&at=token",
+  });
+});
+</script>
+</body>
+</html>
