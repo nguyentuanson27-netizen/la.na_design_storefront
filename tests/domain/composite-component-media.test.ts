@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   extractCompositeComponentImageUrls,
   buildCompositeVariantGalleryTargets,
+  remainingComponentCandidateBudget,
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
   MAX_STOREFRONT_GALLERY_IMAGES,
@@ -333,4 +334,76 @@ test("composite gallery adheres to MAX_STOREFRONT_GALLERY_IMAGES = 12 cap", () =
   assert.equal(media.gallery[9]?.url, "https://content.pancake.vn/images/1/2/3/child_1.jpg");
   assert.equal(media.gallery[10]?.url, "https://content.pancake.vn/images/1/2/3/child_2.jpg");
   assert.equal(media.gallery[11]?.url, "https://content.pancake.vn/images/1/2/3/child_3.jpg");
+});
+
+test("extractCompositeComponentImageUrls stops traversing once the candidate budget is spent", () => {
+  let touchedAfterBudget = false;
+  const hugeList = new Proxy(
+    Array.from({ length: 10_000 }, (_, index) => `https://content.pancake.vn/images/1/2/3/${index}.jpg`),
+    {
+      get(target, prop, receiver) {
+        if (typeof prop === "string" && /^\d+$/.test(prop) && Number(prop) >= 5) {
+          touchedAfterBudget = true;
+        }
+        return Reflect.get(target, prop, receiver);
+      },
+    },
+  );
+  const result = extractCompositeComponentImageUrls(
+    [
+      {
+        compositeComponents: [
+          { componentVariant: { id: "big", pancakeImageUrls: hugeList } },
+          { componentVariant: { id: "later", pancakeImageUrls: ["https://content.pancake.vn/images/1/2/3/later.jpg"] } },
+        ],
+      },
+    ],
+    5,
+  );
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0]!.length, 5);
+  assert.equal(touchedAfterBudget, false);
+});
+
+test("extractCompositeComponentImageUrls spends a shared component's budget once across parents", () => {
+  const shared = {
+    id: "shared",
+    pancakeImageUrls: Array.from({ length: 60 }, (_, i) => `https://content.pancake.vn/images/1/2/3/s${i}.jpg`),
+  };
+  const valid = {
+    id: "valid",
+    pancakeImageUrls: ["https://content.pancake.vn/images/1/2/3/valid.jpg"],
+  };
+  const parent = { compositeComponents: [{ componentVariant: shared }, { componentVariant: valid }] };
+  const result = extractCompositeComponentImageUrls([parent, parent, parent]);
+
+  assert.deepEqual(result.map((list) => list.length), [60, 1]);
+});
+
+test("remainingComponentCandidateBudget subtracts primary and parent candidates", () => {
+  assert.equal(remainingComponentCandidateBudget({ variantImageUrls: [] }), 100);
+  assert.equal(
+    remainingComponentCandidateBudget({ primaryImageUrl: "x", variantImageUrls: [["a", "b"], ["c"]] }),
+    96,
+  );
+  assert.equal(
+    remainingComponentCandidateBudget({ variantImageUrls: [Array.from({ length: 150 }, () => "a")] }),
+    0,
+  );
+});
+
+test("buildCompositeVariantGalleryTargets bounds every target to the candidate budget", () => {
+  const big = Array.from({ length: 500 }, (_, i) => `https://content.pancake.vn/images/1/2/3/b${i}.jpg`);
+  const targets = buildCompositeVariantGalleryTargets([
+    {
+      id: "parent",
+      pancakeImageUrls: big,
+      compositeComponents: [{ componentVariant: { id: "child", pancakeImageUrls: big } }],
+    },
+  ]);
+
+  for (const target of targets) {
+    assert.ok(target.imageUrls.length <= 100);
+  }
 });

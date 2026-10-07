@@ -11,9 +11,11 @@ import {
   type StorefrontVariantFacts,
 } from "./storefront-product.ts";
 import {
+  MAX_MEDIA_CANDIDATES_SCANNED,
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
   extractCompositeComponentImageUrls,
+  remainingComponentCandidateBudget,
   buildCompositeVariantGalleryTargets,
   type StorefrontProductMedia,
 } from "./product-media.ts";
@@ -117,6 +119,7 @@ const productSelection = {
       // is a variant-level relation; child component photography is aggregated into composite parent galleries.
       compositeComponents: {
         orderBy: [{ componentVariantId: "asc" }],
+        take: MAX_MEDIA_CANDIDATES_SCANNED,
         select: {
           componentVariantId: true,
           componentVariant: {
@@ -186,7 +189,13 @@ export function toStorefrontProduct(
   const parentVariantImageUrls = product.variants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
-  const componentVariantImageUrls = extractCompositeComponentImageUrls(product.variants);
+  const componentVariantImageUrls = extractCompositeComponentImageUrls(
+    product.variants,
+    remainingComponentCandidateBudget({
+      primaryImageUrl: product.primaryImageUrl,
+      variantImageUrls: parentVariantImageUrls,
+    }),
+  );
 
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,

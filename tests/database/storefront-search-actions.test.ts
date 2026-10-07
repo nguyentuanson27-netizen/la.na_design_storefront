@@ -15,8 +15,12 @@ const searchToken = "pr99searchmediafallback";
 const trustedFallback =
   "https://content.pancake.vn/web-media-263/aa/bb/cc/dd/photo.jpeg";
 
+const componentPancakeProductId = "pr111-search-media-components";
+
 async function cleanup() {
-  await prisma.productMirror.deleteMany({ where: { pancakeProductId } });
+  await prisma.productMirror.deleteMany({
+    where: { pancakeProductId: { in: [pancakeProductId, componentPancakeProductId] } },
+  });
 }
 
 test.beforeEach(cleanup);
@@ -78,6 +82,89 @@ test("search media candidates are bounded at the database boundary in determinis
   assert.equal(rows[61]?.url, secondVariantImages[0]);
   assert.equal(rows[99]?.url, secondVariantImages[38]);
   assert.equal(rows.some((row) => row.url === secondVariantImages[39]), false);
+});
+
+test("search media dedupes shared component variants before they consume the candidate budget", async () => {
+  const parentProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId,
+      slug: "pr111-search-media-composite",
+      name: searchToken,
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  const componentProduct = await prisma.productMirror.create({
+    data: {
+      pancakeShopId: shopId,
+      pancakeProductId: componentPancakeProductId,
+      slug: "pr111-search-media-components",
+      name: "pr111 components",
+      isPresent: true,
+      isActive: true,
+      syncedAt,
+    },
+  });
+  const duplicateImages = Array.from(
+    { length: 60 },
+    (_, index) => `https://evil.example.com/shared-${String(index).padStart(3, "0")}.jpg`,
+  );
+  const parentIds = ["pr111-parent-l", "pr111-parent-m", "pr111-parent-s"];
+  await prisma.variantMirror.createMany({
+    data: [
+      ...parentIds.map((id) => ({
+        id,
+        pancakeVariationId: id,
+        productId: parentProduct.id,
+        pancakeImageUrls: [],
+        isPresent: true,
+        isActive: true,
+        syncedAt,
+      })),
+      {
+        id: "pr111-component-a-shared",
+        pancakeVariationId: "pr111-component-a-shared",
+        productId: componentProduct.id,
+        pancakeImageUrls: duplicateImages,
+        isPresent: true,
+        isActive: true,
+        syncedAt,
+      },
+      {
+        id: "pr111-component-b-valid",
+        pancakeVariationId: "pr111-component-b-valid",
+        productId: componentProduct.id,
+        pancakeImageUrls: [trustedFallback],
+        isPresent: true,
+        isActive: true,
+        syncedAt,
+      },
+    ],
+  });
+  await prisma.compositeComponentMirror.createMany({
+    data: parentIds.flatMap((parentVariantId) =>
+      ["pr111-component-a-shared", "pr111-component-b-valid"].map((componentVariantId) => ({
+        parentVariantId,
+        componentVariantId,
+        quantity: 1,
+        syncedAt,
+      })),
+    ),
+  });
+
+  const rows = await prisma.$queryRaw<StorefrontSearchMediaCandidateRow[]>(
+    storefrontSearchMediaCandidatesSql([parentProduct.id]),
+  );
+
+  // 60 shared images once (not 3x = 180 > budget), then the later valid component image.
+  assert.equal(rows.length, 61);
+  assert.deepEqual(
+    rows.slice(0, 60).map((row) => row.url),
+    duplicateImages,
+  );
+  assert.equal(rows[60]?.url, trustedFallback);
 });
 
 test("search suggestions scan active variants in deterministic media order for the first trusted image", async () => {

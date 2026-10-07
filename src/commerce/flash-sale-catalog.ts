@@ -8,8 +8,10 @@ import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
+  MAX_MEDIA_CANDIDATES_SCANNED,
   resolveStorefrontProductMedia,
   extractCompositeComponentImageUrls,
+  remainingComponentCandidateBudget,
   type StorefrontProductMedia,
 } from "./product-media.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
@@ -55,6 +57,7 @@ const flashProductSelection = {
       pancakeImageUrls: true,
       compositeComponents: {
         orderBy: [{ componentVariantId: "asc" }],
+        take: MAX_MEDIA_CANDIDATES_SCANNED,
         select: {
           componentVariantId: true,
           componentVariant: {
@@ -128,7 +131,13 @@ function toFlashProduct(product: SelectedFlashProduct) {
   const parentVariantImageUrls = product.variants.map((variant) =>
     parseJsonStringArray(variant.pancakeImageUrls),
   );
-  const componentVariantImageUrls = extractCompositeComponentImageUrls(product.variants);
+  const componentVariantImageUrls = extractCompositeComponentImageUrls(
+    product.variants,
+    remainingComponentCandidateBudget({
+      primaryImageUrl: product.primaryImageUrl,
+      variantImageUrls: parentVariantImageUrls,
+    }),
+  );
 
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,
