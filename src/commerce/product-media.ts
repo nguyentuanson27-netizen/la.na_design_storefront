@@ -308,8 +308,30 @@ export type CompositeComponentVariantCandidate = Readonly<{
 }>;
 
 export type CompositeEdgeCandidate = Readonly<{
+  componentVariantId?: string;
   componentVariant?: CompositeComponentVariantCandidate | null;
 }>;
+
+/**
+ * Component photography already bounded at the database boundary
+ * (`storefront-component-media.ts`), keyed by component variant id. Edges that carry only a
+ * `componentVariantId` resolve their images here, so the raw JSON arrays never reach the app.
+ */
+export type ComponentImageUrlsById = ReadonlyMap<string, readonly string[]>;
+
+function resolveComponentVariant(
+  edge: CompositeEdgeCandidate,
+  componentImageUrlsById: ComponentImageUrlsById | undefined,
+): CompositeComponentVariantCandidate | null {
+  if (edge.componentVariant) {
+    return isUsableComponentVariant(edge.componentVariant) ? edge.componentVariant : null;
+  }
+  if (!edge.componentVariantId || !componentImageUrlsById) return null;
+  return {
+    id: edge.componentVariantId,
+    pancakeImageUrls: componentImageUrlsById.get(edge.componentVariantId) ?? [],
+  };
+}
 
 export type CompositeVariantCandidate = Readonly<{
   compositeComponents?: readonly CompositeEdgeCandidate[] | null;
@@ -349,6 +371,7 @@ function isUsableComponentVariant(
 export function extractCompositeComponentImageUrls(
   variants: readonly CompositeVariantCandidate[],
   maxCandidates: number = MAX_MEDIA_CANDIDATES_SCANNED,
+  componentImageUrlsById?: ComponentImageUrlsById,
 ): (readonly string[])[] {
   const seenComponentVariantIds = new Set<string>();
   const componentVariantImageUrls: (readonly string[])[] = [];
@@ -359,8 +382,8 @@ export function extractCompositeComponentImageUrls(
     if (!variant.compositeComponents) continue;
     for (const comp of variant.compositeComponents) {
       if (remaining <= 0) break;
-      const compVar = comp.componentVariant;
-      if (!isUsableComponentVariant(compVar) || seenComponentVariantIds.has(compVar.id)) continue;
+      const compVar = resolveComponentVariant(comp, componentImageUrlsById);
+      if (!compVar || seenComponentVariantIds.has(compVar.id)) continue;
       seenComponentVariantIds.add(compVar.id);
       const urls: string[] = [];
       appendBoundedStringCandidates(compVar.pancakeImageUrls, urls, remaining);
@@ -409,6 +432,7 @@ export function buildCompositeVariantGalleryTargets(
     readonly pancakeImageUrls?: unknown;
     readonly compositeComponents?: readonly CompositeEdgeCandidate[] | null;
   }[],
+  componentImageUrlsById?: ComponentImageUrlsById,
 ): { readonly id: string; readonly imageUrls: readonly unknown[] }[] {
   const parentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
   const componentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
@@ -421,8 +445,8 @@ export function buildCompositeVariantGalleryTargets(
 
     if (variant.compositeComponents) {
       for (const comp of variant.compositeComponents) {
-        const compVar = comp.componentVariant;
-        if (!isUsableComponentVariant(compVar)) continue;
+        const compVar = resolveComponentVariant(comp, componentImageUrlsById);
+        if (!compVar) continue;
         const wantsFallback = imageUrls.length < MAX_MEDIA_CANDIDATES_SCANNED;
         const needsTarget = !seenComponentIds.has(compVar.id);
         if (!wantsFallback && !needsTarget) continue;
