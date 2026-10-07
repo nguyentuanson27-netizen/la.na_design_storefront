@@ -32,7 +32,7 @@ test("only the finite responsive width set is accepted", () => {
   for (const width of PDP_IMAGE_ALLOWED_WIDTHS) {
     assert.equal(parsePdpImageWidth(String(width)), width);
   }
-  for (const value of [null, "", "0", "-1", "1080.5", "1234", "999999999", "abc"]) {
+  for (const value of [null, "", "0", "-1", "16", "1080.5", "1234", "999999999", "abc"]) {
     assert.equal(parsePdpImageWidth(value), null);
   }
 });
