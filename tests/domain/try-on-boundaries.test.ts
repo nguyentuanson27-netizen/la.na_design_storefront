@@ -90,6 +90,24 @@ test("Flow app-managed persistence is request-scoped; Chrome profile remains a s
   assert.doesNotMatch(compose, /GFLOW_CLI_DB_PATH:\s*\/data\/gflow/);
 });
 
+test("Flow worker keeps exit statuses and compensates for Chrome running without its sandbox", () => {
+  const worker = code("services/flow-worker/flow_worker/server.py");
+  const dockerfile = source("services/flow-worker/Dockerfile");
+  const compose = source("deploy/vps/compose.yml");
+  const flowService = compose.slice(compose.indexOf("\n  flow-worker:"), compose.indexOf("\n  caddy:"));
+
+  // Ignoring SIGCHLD makes Popen.returncode 0 for failed gflow runs; Compose `init: true` reaps.
+  assert.doesNotMatch(worker, /SIGCHLD/);
+  assert.match(flowService, /^\s+init: true$/m);
+
+  assert.match(dockerfile, /exec \/opt\/google\/chrome\/chrome-orig --no-sandbox/);
+  assert.match(flowService, /no-new-privileges:true/);
+  assert.match(flowService, /cap_drop:\s*\n\s+- ALL/);
+  assert.match(flowService, /pids_limit: \d+/);
+  assert.doesNotMatch(flowService, /^\s+ports:/m);
+  assert.doesNotMatch(flowService, /- edge$/m);
+});
+
 test("Flow worker dependency boundary is frozen instead of resolving mutable latest versions", () => {
   const dockerfile = source("services/flow-worker/Dockerfile");
   const lock = source("services/flow-worker/gflow-lock/uv.lock");
@@ -100,7 +118,7 @@ test("Flow worker dependency boundary is frozen instead of resolving mutable lat
   assert.match(dockerfile, /uv export[\s\\]+--frozen/);
   assert.match(dockerfile, /pip install --no-cache-dir --require-hashes -r \/tmp\/gflow-runtime\.txt/);
   assert.match(dockerfile, /gflow-cli==0\.82\.1 --hash=sha256:[a-f0-9]{64}/);
-  assert.match(dockerfile, /GOOGLE_CHROME_VERSION=154\.0\.8037\.97-1/);
+  assert.match(dockerfile, /GOOGLE_CHROME_VERSION=155\.0\.8059\.39-1/);
   assert.match(dockerfile, /google-chrome-stable=\$\{GOOGLE_CHROME_VERSION\}/);
   assert.doesNotMatch(dockerfile, /pip install[^\n]*gflow-cli==0\.82\.1(?![^\n]*--hash)/);
 

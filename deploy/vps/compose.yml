@@ -142,6 +142,8 @@ services:
       GFLOW_CLI_PROFILE: ${LA_TRY_ON_FLOW_PROFILE:-default}
       FLOW_PROJECT_ID: ${LA_TRY_ON_FLOW_PROJECT_ID:-}
       GFLOW_CLI_HOME: /data/gflow
+      FLOW_COMMAND_TIMEOUT_SECONDS: "120"
+    init: true
     volumes:
       - flow_gflow_data:/data/gflow
     shm_size: "1gb"
@@ -153,12 +155,18 @@ services:
           "-c",
           "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/health', timeout=3).read()",
         ]
-      interval: 30s
+      interval: 10s
       timeout: 5s
       retries: 3
-      start_period: 20s
+      start_period: 5s
+    # Chrome runs with --no-sandbox in this image (see the Dockerfile). These limits are the
+    # compensating container isolation: no capabilities to regain, no setuid escalation, and a
+    # bounded process count for a compromised renderer.
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
     networks:
       - backend
 

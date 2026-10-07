@@ -61,7 +61,7 @@ jobs:
             "from gflow_cli.config import get_settings; assert str(get_settings().resolved_db_path()) == '/tmp/gflow-auth.db'"
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
           chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
-          grep -Fq "154.0.8037.97" <<<"$chrome_version"
+          grep -Fq "155.0.8059.39" <<<"$chrome_version"
 
   verify-vps-container:
     needs: identity

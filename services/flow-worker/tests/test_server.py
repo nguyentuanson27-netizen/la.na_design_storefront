@@ -1,4 +1,8 @@
+import os
+import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 
 from flow_worker import server
@@ -110,7 +114,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
             )
 
         self.assertEqual(result[0], "nano-banana-2")
-        self.assertEqual(timeouts, [("nano-pro", 49.0), ("nano2", 30.0)])
+        self.assertEqual(timeouts, [("nano-pro", 119.0), ("nano2", 100.0)])
 
     def test_generic_rate_limit_does_not_fallback(self):
         calls = []
@@ -254,6 +258,113 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
                     "imageBase64": "iVBORw0KGgp0ZXN0",
                 }
             )
+
+
+
+class GflowExitStatusTest(unittest.TestCase):
+    def test_non_zero_gflow_exit_status_reaches_failure_mapping(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with patch.object(server, "_command", return_value=[sys.executable, "-c", "raise SystemExit(5)"]):
+                exit_code, _ = server._run_model(
+                    "nano-pro",
+                    root / "person.jpg",
+                    root / "garment.jpg",
+                    root / "result.png",
+                    10,
+                    root / "gflow.db",
+                )
+
+        self.assertEqual(exit_code, 5)
+        self.assertEqual(server._failure_reason(exit_code), (422, "SAFETY_BLOCKED"))
+
+
+class FakeLease:
+    def __init__(self):
+        self.released = False
+
+    def release(self):
+        self.released = True
+
+
+class StaleProfileLockCleanupTest(unittest.TestCase):
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name)
+        self.profile_dir = self.home / "profile_default"
+        self.profile_dir.mkdir()
+        for name in server.CHROME_SINGLETON_NAMES:
+            os.symlink("old-container-41", self.profile_dir / name)
+        (self.profile_dir / "SingletonUnrelated").write_text("keep")
+        for target in (
+            patch.object(server, "GFLOW_HOME", self.home),
+            patch.object(server, "PROFILE", "default"),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
+
+    def remaining_links(self):
+        return [name for name in server.CHROME_SINGLETON_NAMES if (self.profile_dir / name).is_symlink()]
+
+    def test_removes_only_chrome_singleton_links_when_profile_is_provably_unused(self):
+        lease = FakeLease()
+        with (
+            patch.object(server, "_acquire_profile_lease", return_value=lease),
+            patch.object(server, "_chrome_uses_profile", return_value=False),
+        ):
+            server._clean_stale_profile_locks()
+
+        self.assertEqual(self.remaining_links(), [])
+        self.assertTrue((self.profile_dir / "SingletonUnrelated").is_file())
+        self.assertTrue(lease.released)
+
+    def test_keeps_links_while_another_gflow_holds_the_profile_lease(self):
+        with (
+            patch.object(server, "_acquire_profile_lease", return_value=None),
+            patch.object(server, "_chrome_uses_profile", return_value=False),
+        ):
+            server._clean_stale_profile_locks()
+
+        self.assertEqual(self.remaining_links(), list(server.CHROME_SINGLETON_NAMES))
+
+    def test_keeps_links_while_a_chrome_process_still_runs_on_the_profile(self):
+        lease = FakeLease()
+        with (
+            patch.object(server, "_acquire_profile_lease", return_value=lease),
+            patch.object(server, "_chrome_uses_profile", return_value=True),
+        ):
+            server._clean_stale_profile_locks()
+
+        self.assertEqual(self.remaining_links(), list(server.CHROME_SINGLETON_NAMES))
+        self.assertTrue(lease.released)
+
+    def test_invalid_profile_name_has_no_side_effects(self):
+        with (
+            patch.object(server, "PROFILE", "../default"),
+            patch.object(server, "_acquire_profile_lease") as acquire,
+        ):
+            server._clean_stale_profile_locks()
+
+        acquire.assert_not_called()
+        self.assertEqual(self.remaining_links(), list(server.CHROME_SINGLETON_NAMES))
+
+    def test_detects_chrome_by_user_data_dir_argument(self):
+        with tempfile.TemporaryDirectory() as proc_root:
+            proc = Path(proc_root)
+            (proc / "17").mkdir()
+            (proc / "17" / "cmdline").write_bytes(
+                b"/opt/google/chrome/chrome-orig\0--user-data-dir=" + str(self.profile_dir).encode() + b"\0"
+            )
+            real_path = server.Path
+
+            def fake_path(value, *rest):
+                return proc if value == "/proc" and not rest else real_path(value, *rest)
+
+            with patch.object(server, "Path", side_effect=fake_path):
+                self.assertTrue(server._chrome_uses_profile(self.profile_dir))
+                (proc / "17" / "cmdline").write_bytes(b"/usr/bin/python3\0-m\0flow_worker.server\0")
+                self.assertFalse(server._chrome_uses_profile(self.profile_dir))
 
 
 if __name__ == "__main__":

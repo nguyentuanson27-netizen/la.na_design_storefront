@@ -25,7 +25,7 @@ TOKEN = os.environ.get("FLOW_WORKER_TOKEN", "")
 PROFILE = os.environ.get("GFLOW_CLI_PROFILE", "default")
 GFLOW_HOME = Path(os.environ.get("GFLOW_CLI_HOME", "/data/gflow"))
 PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
-GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
+GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "120"))
 REQUEST_READ_TIMEOUT_SECONDS = int(os.environ.get("FLOW_REQUEST_READ_TIMEOUT_SECONDS", "15"))
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
@@ -86,8 +86,15 @@ def _decode_image(value: Any) -> tuple[bytes, str]:
     return data, mime
 
 
+def _profile_dir() -> Path | None:
+    if PROFILE_PATTERN.fullmatch(PROFILE) is None:
+        return None
+    return GFLOW_HOME / f"profile_{PROFILE}"
+
+
 def _profile_present() -> bool:
-    return PROFILE_PATTERN.fullmatch(PROFILE) is not None and (GFLOW_HOME / f"profile_{PROFILE}").is_dir()
+    profile_dir = _profile_dir()
+    return profile_dir is not None and profile_dir.is_dir()
 
 
 def _command(model: str, person: Path, product: Path, output: Path) -> list[str]:
@@ -143,6 +150,7 @@ def _gflow_env(db_path: Path) -> dict[str, str]:
     env = dict(os.environ)
     # The worker bearer token authenticates storefront -> worker only. gflow/Chrome never need it.
     env.pop("FLOW_WORKER_TOKEN", None)
+    env["DISPLAY"] = os.environ.get("DISPLAY", ":99")
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
@@ -176,6 +184,81 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         return
 
 
+# Chrome's ProcessSingleton artifacts. Each is a symlink: SingletonLock -> "<hostname>-<pid>",
+# SingletonCookie -> random token, SingletonSocket -> socket under the creating container's /tmp.
+CHROME_SINGLETON_NAMES = ("SingletonLock", "SingletonCookie", "SingletonSocket")
+
+
+def _chrome_uses_profile(profile_dir: Path) -> bool:
+    """True when any process in this PID namespace runs Chrome on *profile_dir*.
+
+    Fails closed: without a readable /proc nothing can be proven, so the profile counts as in use.
+    """
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return True
+    targets = {str(profile_dir), str(profile_dir.resolve())}
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue
+        for arg in argv:
+            if arg.startswith(b"--user-data-dir=") and arg[16:].decode(errors="replace") in targets:
+                return True
+    return False
+
+
+def _acquire_profile_lease(profile_dir: Path) -> Any | None:
+    """Take gflow's own cross-process profile lease (flock under GFLOW_CLI_HOME/locks).
+
+    Every gflow command holds this lease for as long as it drives Chrome, from this container or
+    from a one-off `compose run` sharing the volume. Returns None when it is held or unavailable.
+    """
+    try:
+        from gflow_cli.profile_lease import ProfileLease
+    except ImportError:
+        return None
+    lease = ProfileLease(profile_dir)
+    try:
+        return lease if lease.try_acquire() else None
+    except Exception:
+        return None
+
+
+def _clean_stale_profile_locks() -> None:
+    """Remove Chrome singleton links left by a Chrome that no longer exists.
+
+    A recreated container gets a new hostname, and Chrome refuses a SingletonLock naming another
+    host even when that Chrome is long dead. The links are removed only while (1) the profile name
+    is valid, (2) this process holds gflow's profile lease, so no gflow run anywhere is using the
+    profile, and (3) no Chrome in this container still runs on the profile directory.
+    """
+    profile_dir = _profile_dir()
+    if profile_dir is None or not profile_dir.is_dir():
+        return
+    links = [profile_dir / name for name in CHROME_SINGLETON_NAMES]
+    if not any(link.is_symlink() for link in links):
+        return
+    lease = _acquire_profile_lease(profile_dir)
+    if lease is None:
+        return
+    try:
+        if _chrome_uses_profile(profile_dir):
+            return
+        for link in links:
+            if link.is_symlink():
+                try:
+                    link.unlink()
+                except OSError:
+                    pass
+        _event("flow_try_on.stale_profile_locks_removed")
+    finally:
+        lease.release()
+
+
 def _run_model(
     model: str,
     person: Path,
@@ -186,6 +269,7 @@ def _run_model(
 ) -> tuple[int, GflowMachineError]:
     if timeout_seconds <= 0:
         return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+    _clean_stale_profile_locks()
     try:
         process = subprocess.Popen(
             _command(model, person, product, output),
@@ -280,9 +364,16 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             _event("flow_try_on.generation_failed", model=model, reason=reason)
             raise WorkerGenerationError(status, reason)
 
-        if not output_path.is_file():
+        output_candidates = (
+            output_path,
+            root / f"{output_path.stem}.jpg",
+            root / f"{output_path.stem}.jpeg",
+            root / f"{output_path.stem}.png",
+        )
+        output_file = next((p for p in output_candidates if p.is_file()), None)
+        if output_file is None:
             raise WorkerGenerationError(502, "GENERATION_FAILED")
-        data = output_path.read_bytes()
+        data = output_file.read_bytes()
         mime = _sniff_mime(data)
         if mime is None or not data or len(data) > MAX_OUTPUT_BYTES:
             _event("flow_try_on.generation_failed", model=model, reason="GENERATION_FAILED")
@@ -402,6 +493,7 @@ def main() -> None:
         raise SystemExit("FLOW_WORKER_TOKEN must contain at least 32 characters")
     if PROFILE_PATTERN.fullmatch(PROFILE) is None:
         raise SystemExit("GFLOW_CLI_PROFILE contains unsupported characters")
+    _clean_stale_profile_locks()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 
