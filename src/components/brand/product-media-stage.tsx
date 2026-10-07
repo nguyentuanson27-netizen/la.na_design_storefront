@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
-import { pdpProductImageLoader } from "@/components/brand/pdp-image-loader";
+import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 import {
   buildDesktopProductGallerySlides,
   resolveGalleryImageForSelection,
