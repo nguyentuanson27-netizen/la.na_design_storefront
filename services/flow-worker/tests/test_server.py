@@ -286,7 +286,7 @@ class GflowExitStatusTest(unittest.TestCase):
         )
         script = (
             "import sys; "
-            `print(${machine_stdout!r}); `
+            f"print({machine_stdout!r}); "
             "print('stderr-secret-token', file=sys.stderr); "
             "raise SystemExit(32)"
         )
