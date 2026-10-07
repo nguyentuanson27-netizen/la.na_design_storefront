@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 
+import { pdpProductImageLoader } from "@/components/brand/pdp-image-loader";
+
 import {
   resolveGalleryModel,
   type GalleryModelInput,
@@ -44,6 +46,7 @@ export function BrandProductGallery({ preloadFirstImage = true, ...props }: Bran
       <div className="min-w-0">
         <div className="product-visual product-visual--stone relative aspect-[3/4] overflow-hidden">
           <Image
+            loader={pdpProductImageLoader}
             src={image.url}
             alt={image.alt}
             fill
@@ -72,6 +75,7 @@ export function BrandProductGallery({ preloadFirstImage = true, ...props }: Bran
           className="product-visual product-visual--stone relative aspect-[3/4] min-w-0 overflow-hidden"
         >
           <Image
+            loader={pdpProductImageLoader}
             src={image.url}
             alt={image.alt || `${props.productName} - Ảnh ${model.images.indexOf(image) + 1}`}
             fill
