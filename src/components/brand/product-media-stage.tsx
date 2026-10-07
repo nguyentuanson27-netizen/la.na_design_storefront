@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
+import { pdpProductImageLoader } from "@/components/brand/pdp-image-loader";
 import {
   buildDesktopProductGallerySlides,
   resolveGalleryImageForSelection,
@@ -200,6 +201,7 @@ export function BrandProductMediaStage({
           }}
         >
           <Image
+            loader={pdpProductImageLoader}
             src={currentMobileImage.url}
             alt={mobileImage === 0 ? productName : currentMobileImage.alt || `${productName} - Ảnh ${mobileImage + 1}`}
             fill
@@ -238,6 +240,7 @@ export function BrandProductMediaStage({
               {slideImages.map((imageIndex) => (
                 <div key={imageIndex} className="pdp-stage__backdrop-layer">
                   <Image
+                    loader={pdpProductImageLoader}
                     src={images[imageIndex]!.url}
                     alt=""
                     fill
@@ -255,6 +258,7 @@ export function BrandProductMediaStage({
                 <div key={image.url} className="pdp-stage__half">
                   <div className="pdp-stage__cell">
                     <Image
+                      loader={pdpProductImageLoader}
                       src={image.url}
                       alt={imageIndex === 0 ? productName : image.alt || `${productName} - Ảnh ${imageIndex + 1}`}
                       fill
@@ -348,6 +352,7 @@ export function BrandProductMediaStage({
             }}
           >
             <Image
+              loader={pdpProductImageLoader}
               src={currentLightboxImage.url}
               alt={currentLightboxImage.alt || `${productName} - Ảnh ${lightboxImage + 1}`}
               fill
