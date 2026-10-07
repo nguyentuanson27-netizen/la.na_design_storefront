@@ -41,17 +41,20 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : null;
 
   const data = buildCheckoutViewModel({ lines, totals, quoteProof });
+  const contentIds = checkoutPixelContentIds(lines);
 
   // Both are emitted only once the quote gate has passed, which is what establishes that every line
   // resolved, priced and had sufficient stock. Analytics never gates checkout itself: an
   // unavailable cart suppresses them and changes nothing else.
   const pixelEvents: readonly RoutePixelEvent[] =
-    data.state === "ready" && totals
+    data.state === "ready" && totals && contentIds
       ? [
           {
             name: "InitiateCheckout",
+            capiPath: "/checkout",
             parameters: {
-              content_ids: checkoutPixelContentIds(lines),
+              content_ids: contentIds,
+              contents: lines.map((line, index) => ({ id: contentIds[index]!, quantity: line.quantity, item_price: line.price! })),
               content_type: "product",
               currency: "VND",
               value: totals.totalVnd,

@@ -23,6 +23,8 @@
 
 import type { CommerceVariantItemFacts } from "../tracking/commerce-events.ts";
 import { toPublicCartAnalyticsItemFacts } from "./cart-analytics-facts.ts";
+import { buildCommittedMetaAddToCart } from "./meta-pixel-parameters.ts";
+import type { CommittedMetaEvent } from "./meta-event-reporting.ts";
 
 const MAX_VARIANT_ID_LENGTH = 128;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -54,6 +56,7 @@ export type StorefrontCartUpdateResult =
       transition?: Readonly<{ previousQuantity: number; quantity: number }>;
       analytics?: CartMutationAnalytics;
       analyticsUnavailable?: true;
+      metaEvent?: CommittedMetaEvent;
     }>
   | Readonly<{ ok: false; reason: "INVALID_INPUT" | "LINE_UNAVAILABLE" | "UPDATE_FAILED" }>;
 
@@ -167,12 +170,15 @@ export function createStorefrontCartPublicActions({
       ? quantity - previousQuantity
       : previousQuantity - quantity;
     const item = toPublicCartAnalyticsItemFacts(readSnapshotItem(result.snapshot), delta);
+    const metaEvent = quantity > previousQuantity ? buildCommittedMetaAddToCart(result.snapshot, delta) : undefined;
+    const metaFacts = metaEvent ? { metaEvent } : {};
 
     return item === null
-      ? Object.freeze({ ok: true as const, transition, analyticsUnavailable: true as const })
+      ? Object.freeze({ ok: true as const, transition, ...metaFacts, analyticsUnavailable: true as const })
       : Object.freeze({
           ok: true as const,
           transition,
+          ...metaFacts,
           analytics: Object.freeze({
             event: quantity > previousQuantity
               ? ("add_to_cart" as const)

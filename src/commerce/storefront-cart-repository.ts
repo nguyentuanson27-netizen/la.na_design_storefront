@@ -20,6 +20,7 @@ const MAX_POSTGRES_INTEGER = 2_147_483_647;
 type CartItemIdentity = {
   variantId: string;
   quantity: number;
+  sourceProductSlug?: string | null;
 };
 
 function parseShopId(shopId: number): number {

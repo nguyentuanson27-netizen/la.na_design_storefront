@@ -76,12 +76,13 @@ export type CheckoutViewModel = Readonly<{
 /**
  * What the pixel is told this checkout contains.
  *
- * Every line gets an id, falling back to the variant when a product mirror has since gone: dropping
- * a line here while `value` and `num_items` still count it would report an item list that
- * contradicts its own totals.
+ * Every line must have a proven public PDP identity. An unresolved identity suppresses the whole Meta event,
+ * because dropping an item while totals still count it would contradict the reported value.
  */
-export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): readonly string[] {
-  return lines.map((line) => line.productSlug ?? line.variantId);
+export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): readonly string[] | null {
+  // Preserve the existing slug scheme. Never substitute an internal ID or guess a catalog ID.
+  if (lines.some((line) => !(line.metaContentId ?? line.productSlug))) return null;
+  return lines.map((line) => (line.metaContentId ?? line.productSlug)!);
 }
 
 export function buildCheckoutViewModel(

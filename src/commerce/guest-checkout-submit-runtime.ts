@@ -1,4 +1,5 @@
 import { readAuthServerConfig } from "../auth/config.ts";
+import { saveMetaPurchaseContextSafely, type MetaPurchaseRequestContext } from "./meta-purchase-reporting.ts";
 import { prisma } from "../db/prisma.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
@@ -118,10 +119,12 @@ export function createGuestCheckoutSubmitRuntime(
     cartId,
     checkoutInput,
     quoteProof,
+    metaContext,
   }: {
     cartId: string;
     checkoutInput: unknown;
     quoteProof: unknown;
+    metaContext?: MetaPurchaseRequestContext | null;
   }) {
     const now = clock();
     await recoverStranded({ cartId, now });
@@ -148,17 +151,24 @@ export function createGuestCheckoutSubmitRuntime(
     // The cart id comes from the HttpOnly cookie the server just read, never from the request
     // body, so binding the proof to it here is what makes a token minted for another cart useless.
     const quoteProofSecret = readQuoteProofSecret();
+    const snapshot = createSnapshot({
+      checkoutInputValidated,
+      verifyRenderedQuote: (currentQuote) =>
+        verifyRenderedQuoteProof({
+          proof: quoteProof,
+          cartId,
+          currentQuote,
+          secret: quoteProofSecret,
+        }),
+    });
     const service = createGuestCheckoutSubmitService({
-      snapshot: createSnapshot({
-        checkoutInputValidated,
-        verifyRenderedQuote: (currentQuote) =>
-          verifyRenderedQuoteProof({
-            proof: quoteProof,
-            cartId,
-            currentQuote,
-            secret: quoteProofSecret,
-          }),
-      }),
+      snapshot: {
+        async create(input) {
+          const result = await snapshot.create(input);
+          if (result.ok && metaContext) await saveMetaPurchaseContextSafely(prisma, result.order.publicCode, metaContext);
+          return result;
+        },
+      },
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
       onQuoteProofRejection,
@@ -185,6 +195,7 @@ export async function submitGuestCheckoutByCart(input: {
   cartId: string;
   checkoutInput: unknown;
   quoteProof: unknown;
+  metaContext?: MetaPurchaseRequestContext | null;
 }) {
   return createGuestCheckoutSubmitRuntime().submit(input);
 }

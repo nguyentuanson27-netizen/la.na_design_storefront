@@ -1,5 +1,7 @@
 # Marketing analytics & Google Shopping — implementation plan
 
+**Meta amendment (2026-10-07, PR #110):** [ADR 0015](../docs/decisions/0015-direct-meta-capi.md) governs the direct five-event Pixel/CAPI contract, signed shared IDs, committed positive cart deltas, persisted verified PDP provenance, reconciliation Purchase and bounded attribution retention. This extends the implementation; it does not activate Meta accounts or change Catalog ID semantics. [Audit/tests](../docs/audits/meta-ads-2026-10-07.md).
+
 Status: **T1–T7, M1, M2, M3 and M4 IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. T8 and M5/V1 remain proposed and require human approval before `/build`.**
 
 T1–T3 (PR #157), T4 (PR #164 + #165), T5/T6 (PR #186), M2 (U12 / PR #180), T7 (U24 / PR #193), and M1 (PR #175 durability + PR #194 read-only audit + exact-SHA operational closure) are delivered. See `tasks/marketing-analytics-shopping-todo.md` for per-item state. **Checkpoint D is GREEN / PASSED** and **Checkpoint E is GREEN / PASSED** (M4 delivered by U26 / PR #198). T8, M5 and V1 are not implemented and still need approval before `/build`. No GTM loader exists in the repository: T8 owns the first actual GTM load and CSP opening.
@@ -219,7 +221,7 @@ The same transaction must also capture/resolve a bounded non-PII event item snap
 
 The browser builds canonical `add_to_cart` only from this success payload and reports `quantity = addedQuantity`, never from stale `selection.selectedPrice`, rendered quantity, or a client-side assumption that success means +1.
 
-If the cart mutation succeeds but a safe analytics snapshot cannot be produced, commerce remains successful and canonical analytics fails closed: emit no new vendor event and never fall back to stale browser facts. Existing direct Meta event name/content-ID/direct-delivery architecture remains unchanged; any Meta value-source correction must use server truth and have dedicated regression coverage.
+If the cart mutation succeeds but a safe analytics snapshot cannot be produced, commerce remains successful and canonical analytics fails closed: emit no new vendor event and never fall back to stale browser facts. Meta remains direct with existing public PDP slug semantics; ADR 0015 extends twins and fixes their authority/delivery boundaries with regression coverage.
 
 ### 3.9 Cart mutation and cart/checkout analytics use authoritative complete projections
 
@@ -567,7 +569,7 @@ Do not enable Cache Components merely to implement M4. If the source-verified ch
 ## 9. Explicitly deferred
 
 - Meta migration into GTM.
-- Meta CAPI replacement/content-ID redesign.
+- Meta delivery-system migration / Catalog-specific ID redesign without verified Catalog/Pixel/feed evidence. Direct funnel CAPI is implemented under ADR 0015.
 - TikTok Events API.
 - Google Enhanced Conversions / hashed customer PII.
 - Merchant API realtime sync.

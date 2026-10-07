@@ -21,6 +21,8 @@ import {
 export type StorefrontCartItem = {
   variantId: string;
   quantity: number;
+  /** Server-validated PDP of the committed add; never supplied by a cart quantity request. */
+  sourceProductSlug?: string | null;
 };
 
 export type StorefrontCartVariant = {
@@ -91,6 +93,7 @@ export type StorefrontCartLine = {
    */
   pancakeProductId: string | null;
   productSlug: string | null;
+  metaContentId?: string | null;
   productName: string | null;
   color: string | null;
   size: string | null;
@@ -239,6 +242,7 @@ export function buildStorefrontCartLines({
       pancakeVariationId: variant.pancakeVariationId,
       pancakeProductId: isPublicOwner(product) ? product.pancakeProductId : null,
       productSlug: isPublicOwner(product) ? product.slug : null,
+      metaContentId: item.sourceProductSlug ?? (isPublicOwner(product) ? product.slug : null),
       productName: product.name,
       color: normalizedOptionValue(variant.color),
       size: normalizedOptionValue(variant.size),

@@ -40,7 +40,7 @@ The storefront and order system remain the source of truth. Tracking/catalog ven
 
 ### Existing Meta
 
-The repository already has direct browser Meta Pixel, App Router PageView handling, server Meta CAPI, confirmed-order Purchase, browser/server dedup using order code, and failure-safe delivery.
+PR #110 / [ADR 0015](../decisions/0015-direct-meta-capi.md) extends the direct integration to PageView, ViewContent, AddToCart, InitiateCheckout and Purchase. Browser occurrence signals carry only a path/UUID or a signed receipt. Prices/items remain server-owned. ViewContent/InitiateCheckout IDs are signed by the server; AddToCart IDs and deltas come from committed mutations; confirmed Purchase retains `publicCode`, its original POS submission instant and frozen payload, including reconciliation. Receipts bind occurrence IDs and the existing DB limiter bounds endpoint abuse. Acknowledgement or replay expiry removes stored attribution, retaining browser business facts. This supersedes the earlier CAPI-extension deferral; real account activation remains unverified.
 
 Compatibility constraints:
 
@@ -72,7 +72,7 @@ For Merchant v1 this complexity is resolved conservatively: **all composite proj
 
 ### Purchase snapshot
 
-`OrderLineSnapshot` preserves purchased `pancakeVariationId`, product name, color, size, quantity, unit price and line total. It does not guarantee SKU, product slug, Merchant item ID or composite projection context.
+`OrderLineSnapshot` preserves purchased `pancakeVariationId`, product name, color, size, quantity, unit price and line total. New rows also freeze `metaContentId` from the committed add's public PDP slug (`CartItem.sourceProductSlug`), verified through the complete server PDP projection. Components bought through a parent retain that parent even when their owner is public; cart quantity edits do not guess another parent. Legacy private lines without provenance suppress Meta tracking. This does not establish SKU, Merchant family identity or an actual Meta Catalog mapping.
 
 Immutable Purchase facts come from the snapshot. Current catalog enrichment is optional and must not override immutable price/quantity facts.
 
@@ -454,7 +454,7 @@ Implementation is ready for live activation only when:
 ## 10. Explicitly out of scope / deferred
 
 - Meta Pixel migration into GTM.
-- Meta CAPI replacement/content-ID redesign.
+- Meta migration to another delivery system and Catalog-specific content-ID redesign without verified Catalog/Pixel/feed evidence. Direct funnel CAPI correctness and extension are covered by ADR 0015.
 - TikTok Events API.
 - Google Enhanced Conversions / hashed customer PII.
 - Merchant API realtime sync.

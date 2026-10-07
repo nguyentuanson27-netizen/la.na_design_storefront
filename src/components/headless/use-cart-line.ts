@@ -9,6 +9,7 @@ import {
 } from "@/commerce/storefront-cart-actions";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
+import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 
 import {
   CART_LINE_MAX_QUANTITY,
@@ -89,11 +90,9 @@ export function useCartLine({
 
     startTransition(async () => {
       try {
-        apply(
-          resolveCartLineUpdateOutcome(
-            await updateStorefrontCartLine({ variantId, quantity: parsed.value }),
-          ),
-        );
+        const result = await updateStorefrontCartLine({ variantId, quantity: parsed.value });
+        if (result.ok) trackCommittedMetaAddToCart(result.metaEvent);
+        apply(resolveCartLineUpdateOutcome(result));
       } catch {
         apply(resolveCartLineThrownOutcome("update"));
       }

@@ -16,6 +16,7 @@ const cartSelection = {
     select: {
       variantId: true,
       quantity: true,
+      sourceProductSlug: true,
     },
     orderBy: {
       createdAt: "asc" as const,
@@ -53,8 +54,8 @@ type SetItemResult =
  */
 export type CartLineAuthorityResolver<TSnapshot> = (
   tx: Prisma.TransactionClient,
-  input: { variantId: string; quantity: number },
-) => Promise<{ available: boolean; snapshot: TSnapshot | null }>;
+  input: { variantId: string; quantity: number; sourceProductSlug?: string | null },
+) => Promise<{ available: boolean; snapshot: TSnapshot | null; sourceProductSlug?: string | null }>;
 
 type UpdateExistingItemResult<TSnapshot> =
   | {
@@ -322,7 +323,7 @@ export function createAnonymousCartService(client: PrismaClient) {
         select: { id: true, expiresAt: true },
       });
       await tx.cartItem.create({
-        data: { cartId: cart.id, variantId, quantity: 1 },
+        data: { cartId: cart.id, variantId, quantity: 1, sourceProductSlug: authority.sourceProductSlug },
         select: { variantId: true },
       });
 
@@ -368,7 +369,7 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       const existingItem = await tx.cartItem.findUnique({
         where: { cartId_variantId: { cartId, variantId } },
-        select: { quantity: true },
+        select: { quantity: true, sourceProductSlug: true },
       });
 
       if (!existingItem) {
@@ -392,15 +393,15 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       // Authorization is on the prospective total, not on the single added unit: one more unit of
       // something with one left in stock is not sellable just because the increment is small.
-      const authority = await resolveLine(tx, { variantId, quantity: prospectiveQuantity });
+      const authority = await resolveLine(tx, { variantId, quantity: prospectiveQuantity, sourceProductSlug: existingItem?.sourceProductSlug });
       if (!authority.available) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
       }
 
       await tx.cartItem.upsert({
         where: { cartId_variantId: { cartId, variantId } },
-        create: { cartId, variantId, quantity: prospectiveQuantity },
-        update: { quantity: prospectiveQuantity },
+        create: { cartId, variantId, quantity: prospectiveQuantity, sourceProductSlug: authority.sourceProductSlug },
+        update: { quantity: prospectiveQuantity, sourceProductSlug: authority.sourceProductSlug },
         select: { variantId: true },
       });
 
@@ -520,7 +521,7 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       const existingItem = await tx.cartItem.findUnique({
         where: { cartId_variantId: { cartId, variantId } },
-        select: { quantity: true },
+        select: { quantity: true, sourceProductSlug: true },
       });
 
       if (!existingItem) {
@@ -536,7 +537,7 @@ export function createAnonymousCartService(client: PrismaClient) {
         return { ok: false, reason: "INVALID_QUANTITY" };
       }
 
-      const authority = await resolveLine(tx, { variantId, quantity });
+      const authority = await resolveLine(tx, { variantId, quantity, sourceProductSlug: existingItem.sourceProductSlug });
       if (!authority.available) {
         return { ok: false, reason: "VARIANT_UNAVAILABLE" };
       }
@@ -580,7 +581,7 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       const existingItem = await tx.cartItem.findUnique({
         where: { cartId_variantId: { cartId, variantId } },
-        select: { quantity: true },
+        select: { quantity: true, sourceProductSlug: true },
       });
 
       // Nothing to remove is a successful no-op, not a removal. Reporting a RemoveFromCart here
@@ -591,7 +592,7 @@ export function createAnonymousCartService(client: PrismaClient) {
 
       const removedQuantity = existingItem.quantity;
       const snapshot = isPositiveDatabaseInteger(removedQuantity)
-        ? (await resolveLine(tx, { variantId, quantity: removedQuantity })).snapshot
+        ? (await resolveLine(tx, { variantId, quantity: removedQuantity, sourceProductSlug: existingItem.sourceProductSlug })).snapshot
         : null;
 
       await tx.cartItem.deleteMany({

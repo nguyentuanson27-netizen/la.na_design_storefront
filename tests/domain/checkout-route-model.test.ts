@@ -149,13 +149,14 @@ test("totals come from the quote, never recomputed from the lines", () => {
 
 /* -------------------------------------------------------------------- pixel content */
 
-test("every line contributes an id, so the item list cannot contradict the totals", () => {
+test("missing catalog identity suppresses Meta checkout rather than leaking internal IDs", () => {
   const ids = checkoutPixelContentIds([
     line({ productSlug: "ao-so-mi" }),
     line({ variantId: "variant-2", productSlug: null }),
   ]);
 
-  assert.deepEqual(ids, ["ao-so-mi", "variant-2"]);
+  assert.equal(ids, null);
+  assert.deepEqual(checkoutPixelContentIds([line({ productSlug: "ao-so-mi" })]), ["ao-so-mi"]);
 });
 
 /* ------------------------------------------------------------------- order code */

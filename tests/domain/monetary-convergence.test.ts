@@ -541,6 +541,7 @@ describe("U39 / G1: Confirmed Purchase Immutability & Event ID Alignment", () =>
       {
         variantId: "local-cuid-1",
         pancakeVariationId: "pan-var-101",
+        metaContentId: "ao-thun-cotton",
         productName: "Áo Thun Cotton",
         color: "Trắng",
         size: "M",
@@ -785,6 +786,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
         {
           variantId: "local-cuid-1",
           pancakeVariationId: "pan-var-101",
+          metaContentId: "ao-thun-cotton",
           productName: "Áo Thun Cotton",
           color: "Trắng",
           size: "M",
@@ -867,7 +869,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
     assert.equal(browserPixelParams.contents[0]!.quantity, customData.contents[0]!.quantity);
   });
 
-  it("Purchase: falls back to pancakeVariationId when product mirror unlinked, never leaks CUID", async () => {
+  it("Purchase: preserves frozen slug when product mirror is unlinked and never guesses a fallback", async () => {
     const unlinkedOrder = {
       publicCode: "LA-2026-0908-02",
       state: "CONFIRMED" as const,
@@ -876,6 +878,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
         {
           variantId: "local-cuid-orphan",
           pancakeVariationId: "pan-var-orphan-999",
+          metaContentId: "ao-thun-cotton",
           quantity: 1,
           unitPriceVnd: BigInt(500_000),
           fulfillmentState: "READY" as const,
@@ -890,16 +893,18 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
 
     const snapshot = await readMetaPurchaseSnapshot(unlinkedClient as unknown as Parameters<typeof readMetaPurchaseSnapshot>[0], "LA-2026-0908-02");
     assert.ok(snapshot);
-    assert.equal(snapshot.contents[0]!.id, "pan-var-orphan-999", "Must fall back to pancakeVariationId");
+    assert.equal(snapshot.contents[0]!.id, "ao-thun-cotton", "Must preserve the snapshotted slug");
     assert.equal(JSON.stringify(snapshot).includes("local-cuid-orphan"), false, "Must never leak CUID");
 
     const unlinkedBrowserParams = buildMetaPurchasePixelParameters(snapshot);
     assert.equal(unlinkedBrowserParams.value, 500_000);
     assert.equal(unlinkedBrowserParams.currency, "VND");
-    assert.equal(unlinkedBrowserParams.contents![0]!.id, "pan-var-orphan-999");
+    assert.equal(unlinkedBrowserParams.contents![0]!.id, "ao-thun-cotton");
     assert.equal(unlinkedBrowserParams.contents![0]!.item_price, 500_000);
     assert.equal(unlinkedBrowserParams.contents![0]!.quantity, 1);
     assert.equal(JSON.stringify(unlinkedBrowserParams).includes("local-cuid-orphan"), false);
+    unlinkedOrder.lines[0]!.metaContentId = "";
+    assert.equal(await readMetaPurchaseSnapshot(unlinkedClient as unknown as Parameters<typeof readMetaPurchaseSnapshot>[0], "LA-2026-0908-02"), null);
   });
 
   it("Purchase: suppresses both browser pixel and CAPI for all pre-confirmation states", async () => {

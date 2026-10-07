@@ -145,7 +145,7 @@ test("the shell renders JSON-LD through the canonical serializer and defines non
   // A second escaping implementation is the failure mode that matters: it would pass every JSON-LD
   // test here while diverging from the hardened one the rest of the app uses.
   assert.equal(
-    collect(core, (n) => ts.isCallExpression(n) && n.expression.getText(core) === "JSON.stringify")
+    collect(shell, (n) => ts.isCallExpression(n) && n.expression.getText(core) === "JSON.stringify")
       .length,
     0,
     "the shell must not stringify JSON-LD itself",

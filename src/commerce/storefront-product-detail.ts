@@ -1,4 +1,4 @@
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import {
   buildStorefrontProductProjection,
@@ -42,7 +42,7 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
-export function createStorefrontProductDetailRepository(client: PrismaClient) {
+export function createStorefrontProductDetailRepository(client: PrismaClient | Prisma.TransactionClient) {
   const catalog = createStorefrontCatalogRepository(client);
 
   async function getProductBySlug({

@@ -9,6 +9,9 @@ import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-che
 import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
+import { buildCommittedMetaAddToCart } from "../../src/commerce/meta-pixel-parameters.ts";
+import { readMetaPurchaseSnapshot } from "../../src/commerce/meta-purchase-snapshot.ts";
+import { checkoutPixelContentIds } from "../../src/routes/checkout-model.ts";
 import { deriveStorefrontProjectionSelection } from "../../src/commerce/storefront-projection.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
@@ -167,6 +170,91 @@ async function seedCatalog() {
 
   return { combo555M, aoM, cvM, quanM, setVayM, setQuanM, cvOnlyM, crossM, aoTwiceM, setVay999M };
 }
+
+test("Meta preserves the committed public PDP through component/subset cart edits, checkout and frozen Purchase", async () => {
+  const catalog = await seedCatalog();
+  const slug = "combo-subsets-combo-555";
+  await prisma.cart.create({ data: { id: cartId, expiresAt: new Date(now.getTime() + 86400_000) } });
+  const carts = createAnonymousCartService(prisma);
+  for (const variant of [catalog.combo555M, catalog.aoM, catalog.setVayM]) {
+    const added = await carts.addItemUnit({ cartId, variantId: variant.id, now,
+      resolveLine: createCartLineAuthorityResolver({ shopId, now, pdpSlug: slug }) });
+    assert.ok(added.ok);
+    const event = buildCommittedMetaAddToCart(added.snapshot, 1)!;
+    assert.deepEqual(event.parameters.content_ids, [slug]);
+    assert.equal(event.parameters.content_name, "Product combo-555");
+    assert.equal(event.parameters.num_items, 1);
+    assert.equal(event.parameters.value, added.snapshot?.unitPriceVnd);
+  }
+  const updated = await carts.updateExistingItemQuantity({ cartId, variantId: catalog.aoM.id, quantity: 2, now,
+    resolveLine: createCartLineAuthorityResolver({ shopId, now }) });
+  assert.ok(updated.ok);
+  assert.deepEqual(buildCommittedMetaAddToCart(updated.snapshot, updated.item.quantity - updated.previousQuantity)?.parameters.content_ids, [slug]);
+  assert.equal(Object.hasOwn(buildCommittedMetaAddToCart(updated.snapshot, 1)!.parameters, "content_name"), false,
+    "quantity edits retain the proven parent ID without substituting the private component's name");
+  const cart = await carts.get({ cartId, now });
+  assert.ok(cart);
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId, now, items: cart.items });
+  assert.equal(lines.find(({ variantId }) => variantId === catalog.aoM.id)?.productSlug, null);
+  assert.equal(lines.find(({ variantId }) => variantId === catalog.setVayM.id)?.productSlug, null);
+  assert.deepEqual(checkoutPixelContentIds(lines), [slug, slug, slug]);
+  const publicCode = `${publicCodePrefix}-meta`;
+  const result = await createGuestCheckoutSnapshotService(prisma, { checkoutInputValidated: true, verifyRenderedQuote: acceptAnyRenderedQuote })
+    .create({ cartId, shopId, publicCode, checkoutInput, now });
+  assert.ok(result.ok);
+  await prisma.orderMirror.update({ where: { publicCode }, data: { state: "CONFIRMED" } });
+  const snapshot = await readMetaPurchaseSnapshot(prisma, publicCode);
+  assert.equal(snapshot?.contents.length, 3);
+  assert.ok(snapshot?.contents.every(({ id }) => id === slug));
+  await prisma.productMirror.updateMany({ where: { slug }, data: { slug: `${slug}-renamed` } });
+  assert.deepEqual(await readMetaPurchaseSnapshot(prisma, publicCode), snapshot);
+});
+
+test("a public component added via a parent PDP keeps that parent, rather than its standalone owner's slug", async () => {
+  const catalog = await seedCatalog();
+  await prisma.productMirror.update({ where: { id: catalog.aoM.productId }, data: { isActive: true } });
+  const result = await createAnonymousCartService(prisma).createWithUnit({ variantId: catalog.aoM.id, now,
+    resolveLine: createCartLineAuthorityResolver({ shopId, now, pdpSlug: "combo-subsets-combo-555" }) });
+  assert.ok(result.ok);
+  try {
+    assert.deepEqual(buildCommittedMetaAddToCart(result.snapshot, 1)?.parameters.content_ids, ["combo-subsets-combo-555"]);
+    assert.equal(buildCommittedMetaAddToCart(result.snapshot, 1)?.parameters.content_name, "Product combo-555");
+    const updated = await createAnonymousCartService(prisma).updateExistingItemQuantity({
+      cartId: result.cart.id, variantId: catalog.aoM.id, quantity: 2, now,
+      resolveLine: createCartLineAuthorityResolver({ shopId, now }),
+    });
+    assert.ok(updated.ok);
+    const updateEvent = buildCommittedMetaAddToCart(updated.snapshot, 1)!;
+    assert.deepEqual(updateEvent.parameters.content_ids, ["combo-subsets-combo-555"]);
+    assert.equal(Object.hasOwn(updateEvent.parameters, "content_name"), false,
+      "a public component owner still does not prove the parent name");
+    const cart = await createAnonymousCartService(prisma).get({ cartId: result.cart.id, now });
+    const [line] = await createStorefrontCartRepository(prisma).getLines({ shopId, now, items: cart!.items });
+    assert.equal(line?.productSlug, "combo-subsets-ao-555");
+    assert.equal(line?.metaContentId, "combo-subsets-combo-555");
+  } finally { await prisma.cart.delete({ where: { id: result.cart.id } }); }
+});
+
+test("legacy private lines and PDP groups with conflicting roles do not infer a public Meta parent", async () => {
+  const catalog = await seedCatalog();
+  const [legacy] = await createStorefrontCartRepository(prisma).getLines({ shopId, now, items: [{ variantId: catalog.aoM.id, quantity: 1 }] });
+  assert.equal(legacy?.available, true);
+  assert.equal(legacy?.metaContentId, null);
+  assert.equal(checkoutPixelContentIds([legacy!]), null);
+  const conflicting = await createVariant({ key: "ao-owner-cv", productId: catalog.aoM.productId, sku: "CV-555-L", price: 429_000, stock: 4 });
+  await prisma.variantMirror.update({ where: { id: conflicting.id }, data: { size: "L" } });
+  await compose(catalog.combo555M.id, [conflicting.id]);
+  const detail = await createStorefrontProductDetailRepository(prisma).getProductBySlug({ shopId, slug: "combo-subsets-combo-555", now });
+  assert.ok(detail);
+  assert.equal(detail.projection.options.some(({ id }) => id === catalog.aoM.id), false);
+  const result = await createAnonymousCartService(prisma).createWithUnit({ variantId: catalog.aoM.id, now,
+    resolveLine: createCartLineAuthorityResolver({ shopId, now, pdpSlug: "combo-subsets-combo-555" }) });
+  assert.ok(result.ok, "tracking identity failure does not fail available commerce");
+  try {
+    assert.equal(buildCommittedMetaAddToCart(result.snapshot, 1), undefined);
+    assert.equal((await prisma.cartItem.findFirst({ where: { cartId: result.cart.id } }))?.sourceProductSlug, null);
+  } finally { await prisma.cart.delete({ where: { id: result.cart.id } }); }
+});
 
 test("an inactive sibling SET VÁY goes PDP selection → cart → checkout snapshot on one authority", async () => {
   const catalog = await seedCatalog();

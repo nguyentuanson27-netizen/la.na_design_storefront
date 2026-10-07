@@ -19,7 +19,7 @@ export type MetaPurchaseSnapshot = Readonly<{
   contents: readonly MetaPurchaseContent[];
 }>;
 
-type OrderClient = Pick<PrismaClient, "orderMirror" | "variantMirror">;
+type OrderClient = Pick<PrismaClient, "orderMirror">;
 
 /** VND amounts are stored as BigInt; a total past Number's exact range is not reportable. */
 function toSafeNumber(value: bigint | null): number | null {
@@ -37,10 +37,11 @@ export async function readMetaPurchaseSnapshot(
     select: {
       state: true,
       totalVnd: true,
+      metaPurchasePayload: true,
       lines: {
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: {
-          variantId: true,
-          pancakeVariationId: true,
+          metaContentId: true,
           quantity: true,
           unitPriceVnd: true,
         },
@@ -51,27 +52,37 @@ export async function readMetaPurchaseSnapshot(
   // Only a confirmed order is a sale. Anything else would report revenue that does not exist.
   if (order === null || order.state !== "CONFIRMED") return null;
 
+  // The serialized event is the replay authority after first reporting. Only non-PII business
+  // facts leave this reader; the attribution stored beside them is never returned to a client.
+  if (order.metaPurchasePayload) {
+    try {
+      const event = JSON.parse(order.metaPurchasePayload);
+      if (event.event_name !== "Purchase" || event.event_id !== orderCode) return null;
+      const data = event.custom_data;
+      if (!Number.isSafeInteger(data.value) || data.value < 0 || !Array.isArray(data.contents) || !data.contents.length) return null;
+      const contents: MetaPurchaseContent[] = [];
+      for (const line of data.contents) {
+        if (typeof line.id !== "string" || !line.id || !Number.isSafeInteger(line.quantity) || line.quantity <= 0
+          || !Number.isSafeInteger(line.item_price) || line.item_price < 0) return null;
+        contents.push({ id: line.id, quantity: line.quantity, itemPrice: line.item_price });
+      }
+      return Object.freeze({ valueVnd: data.value, contents: Object.freeze(contents) });
+    } catch { return null; }
+  }
+
   const valueVnd = toSafeNumber(order.totalVnd);
   if (valueVnd === null) return null;
 
-  // OrderLineSnapshot carries no relation to the variant, so the catalog identity the pixel
-  // reports has to be looked up separately.
-  const variants = await client.variantMirror.findMany({
-    where: { id: { in: order.lines.map((line) => line.variantId) } },
-    select: { id: true, product: { select: { slug: true } } },
-  });
-  const slugByVariantId = new Map(variants.map((variant) => [variant.id, variant.product.slug]));
-
+  if (order.lines.length === 0) return null;
   const contents: MetaPurchaseContent[] = [];
   for (const line of order.lines) {
     const itemPrice = toSafeNumber(line.unitPriceVnd);
     // Dropping the line while valueVnd still counts it would report an item list that contradicts
     // its own total. An order that cannot be described exactly is not reported at all.
-    if (itemPrice === null) return null;
+    if (itemPrice === null || !line.metaContentId || !Number.isSafeInteger(line.quantity) || line.quantity <= 0) return null;
     contents.push({
-      // Falls back to the POS variation id so a line whose product mirror has since been removed
-      // is still counted rather than silently dropped from the sale.
-      id: slugByVariantId.get(line.variantId) ?? line.pancakeVariationId,
+      // No catalog read or identity fallback. Historical rows need explicit evidence, not a guess.
+      id: line.metaContentId,
       quantity: line.quantity,
       itemPrice,
     });

@@ -1,6 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { resolve } from "node:path";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test, type Page, type Route } from "@playwright/test";
@@ -33,7 +36,10 @@ const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const SHOP_ID = 920_022;
 const PIXEL_ID = "123456789012345";
+// This standalone test server has no proxy; model its trusted header explicitly in both environments.
+test.use({ extraHTTPHeaders: { "x-ci-client-ip": "203.0.113.77" } });
 const runId = `${Date.now()}-${process.pid}`;
+const captureFile = join(mkdtempSync(join(tmpdir(), "la-meta-test-")), "events.jsonl");
 const syncedAt = new Date("2026-08-29T04:00:00.000Z");
 
 const productSlug = `pixel-shirt-${runId}`;
@@ -185,6 +191,20 @@ function findEvent(calls: PixelCall[], name: string): PixelCall | undefined {
   return calls.find((call) => call[0] === "track" && call[1] === name);
 }
 
+function readServerEvents(): Array<Record<string, unknown>> {
+  return existsSync(captureFile) ? readFileSync(captureFile, "utf8").trim().split("\n").filter(Boolean).map((line) => JSON.parse(line)) : [];
+}
+
+async function waitForTwin(call: PixelCall) {
+  const id = (call[3] as { eventID: string }).eventID;
+  expect(id).toMatch(/^[0-9a-f-]{36}$/i);
+  await expect.poll(() => readServerEvents().some((event) => event.event_id === id && event.event_name === call[1])).toBe(true);
+  const twin = readServerEvents().find((event) => event.event_id === id)!;
+  if (call[2]) expect(twin.custom_data).toEqual(call[2]);
+  expect(String(twin.event_source_url)).not.toContain("?");
+  return twin;
+}
+
 async function waitForEvent(page: Page, name: string, timeoutMs = 15_000): Promise<PixelCall> {
   await expect
     .poll(async () => trackedEventNames(await readCalls(page)).includes(name), {
@@ -290,6 +310,7 @@ test.beforeAll(async () => {
       variantId: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
       productName,
+      metaContentId: productSlug,
       color: "Ink",
       size: "M",
       quantity: 2,
@@ -309,6 +330,11 @@ test.beforeAll(async () => {
       NEXT_DIST_DIR: ".next-test/facebook-pixel",
       // The whole point of this spec: the rest of CI builds without one.
       NEXT_PUBLIC_FACEBOOK_PIXEL_ID: PIXEL_ID,
+      FACEBOOK_CAPI_ACCESS_TOKEN: "synthetic-meta-test-token",
+      FACEBOOK_GRAPH_API_VERSION: "v26.0",
+      FACEBOOK_CAPI_TEST_EVENT_CODE: "",
+      META_TEST_CAPTURE_FILE: captureFile,
+      NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(resolve(import.meta.dirname, "meta-capi.stub.mjs")).href}`,
       // Both destinations observable on one server, so a test can prove they succeed and fail
       // independently rather than assuming it from two separately-passing specs. Publishing the
       // dataLayer still loads no container: that interlock is separate and still closed.
@@ -316,6 +342,7 @@ test.beforeAll(async () => {
       LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
+      BETTER_AUTH_IP_HEADER: "x-ci-client-ip",
       APP_DOMAIN: `${HOST}:${PORT}`,
       NEXT_TELEMETRY_DISABLED: "1",
     },
@@ -332,11 +359,15 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+test.beforeEach(async () => {
+  await prisma.rateLimit.deleteMany({ where: { id: { startsWith: "meta-signal:" } } });
+});
+
 test("a configured pixel initialises once and reports the first page view", async ({ page }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
 
-  await waitForEvent(page, "PageView");
+  await waitForTwin(await waitForEvent(page, "PageView"));
   const calls = await readCalls(page);
 
   expect(calls.filter((call) => call[0] === "init")).toEqual([["init", PIXEL_ID]]);
@@ -369,6 +400,15 @@ test("a client-side navigation reports its own page view without repeating the f
   expect(trackedEventNames(await readCalls(page)).filter((n) => n === "PageView")).toHaveLength(2);
 });
 
+test("login does not emit a Meta PageView on either side", async ({ page }) => {
+  const start = readServerEvents().length;
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/login`, { waitUntil: "networkidle" });
+  await delay(500);
+  expect(trackedEventNames(await readCalls(page))).not.toContain("PageView");
+  expect(readServerEvents()).toHaveLength(start);
+});
+
 test("the product page reports ViewContent, and adding to the bag reports AddToCart", async ({
   page,
 }) => {
@@ -376,6 +416,7 @@ test("the product page reports ViewContent, and adding to the bag reports AddToC
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
 
   const viewContent = await waitForEvent(page, "ViewContent");
+  await waitForTwin(viewContent);
   expect(viewContent[2]).toMatchObject({
     content_ids: [productSlug],
     content_name: productName,
@@ -392,6 +433,7 @@ test("the product page reports ViewContent, and adding to the bag reports AddToC
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
 
   const addToCart = await waitForEvent(page, "AddToCart");
+  await waitForTwin(addToCart);
   expect(addToCart[2]).toMatchObject({
     content_ids: [productSlug],
     currency: "VND",
@@ -517,6 +559,7 @@ test("checkout reports InitiateCheckout with the totals the buyer is shown", asy
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
   const initiateCheckout = await waitForEvent(page, "InitiateCheckout");
+  await waitForTwin(initiateCheckout);
   expect(initiateCheckout[2]).toMatchObject({
     content_ids: [productSlug],
     content_type: "product",
@@ -560,6 +603,124 @@ test("an unknown order reports no revenue", async ({ page }) => {
   await waitForEvent(page, "PageView");
   await delay(1_000);
   expect(trackedEventNames(await readCalls(page))).not.toContain("Purchase");
+});
+
+test("server render/prefetch emits nothing; blocked Pixel still produces browser-signaled CAPI twins", async ({ page, context }) => {
+  const start = readServerEvents().length;
+  await page.request.get(`${BASE_URL}/shop/${productSlug}`, { headers: { "next-router-prefetch": "1" } });
+  await delay(750);
+  expect(readServerEvents()).toHaveLength(start);
+  await context.addCookies([{ name: "_fbp", value: "fb.1.1700000000000.12345", url: BASE_URL }]);
+  await installPixelStub(page, null);
+  await page.goto(`${BASE_URL}/shop/${productSlug}?fbclid=SyntheticClick_123`, { waitUntil: "networkidle" });
+  await expect.poll(() => readServerEvents().slice(start).filter((event) => event.event_name === "ViewContent").length).toBe(1);
+  const emitted = readServerEvents().slice(start);
+  expect(emitted.map((event) => event.event_name).sort()).toEqual(["PageView", "ViewContent"]);
+  for (const event of emitted) {
+    expect(event.user_data).toMatchObject({ fbp: "fb.1.1700000000000.12345" });
+    expect((event.user_data as Record<string, unknown>).fbc).toMatch(/^fb\.1\.[0-9]{13}\.SyntheticClick_123$/);
+    expect(String(event.event_source_url)).not.toContain("?");
+  }
+});
+
+test("cart page and drawer report only positive committed quantity deltas with shared IDs", async ({ page }) => {
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await page.getByText("Ink", { exact: true }).click();
+  await page.getByText("M", { exact: true }).click();
+  await page.getByRole("button", { name: "Thêm vào giỏ hàng" }).click();
+  await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  await page.getByLabel("Số lượng", { exact: true }).fill("3");
+  await page.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  const delta = await waitForEvent(page, "AddToCart");
+  expect(delta[2]).toMatchObject({ value: UNIT_PRICE * 2, num_items: 2,
+    contents: [{ id: productSlug, quantity: 2, item_price: UNIT_PRICE }] });
+  await waitForTwin(delta);
+  await page.getByLabel("Số lượng", { exact: true }).fill("2");
+  await page.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await expect(page.getByLabel("Số lượng", { exact: true })).toHaveValue("2");
+  await delay(500);
+  expect(trackedEventNames(await readCalls(page)).filter((name) => name === "AddToCart")).toHaveLength(1);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^Giỏ hàng/ }).click();
+  const drawer = page.getByRole("dialog", { name: "Giỏ hàng", exact: true });
+  await drawer.getByRole("button", { name: `Tăng số lượng ${productName}`, exact: true }).click();
+  const drawerDelta = await waitForEvent(page, "AddToCart");
+  expect(drawerDelta[2]).toMatchObject({ value: UNIT_PRICE, num_items: 1 });
+  await waitForTwin(drawerDelta);
+  await drawer.getByRole("button", { name: `Giảm số lượng ${productName}`, exact: true }).click();
+  await delay(750);
+  expect(trackedEventNames(await readCalls(page)).filter((name) => name === "AddToCart")).toHaveLength(1);
+});
+
+test("the occurrence endpoint rejects arbitrary Meta fields, forged rendered facts, oversized bodies and foreign origins", async ({ page }) => {
+  const signals: Array<{ eventId: string; receipt?: string }> = [];
+  page.on("request", (request) => {
+    if (request.url() === `${BASE_URL}/api/meta/events`) signals.push(request.postDataJSON());
+  });
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await waitForTwin(await waitForEvent(page, "ViewContent"));
+  const receipt = signals.find((signal) => signal.receipt)!.receipt!;
+  const start = readServerEvents().length;
+  await page.request.post(`${BASE_URL}/api/meta/events`, {
+    headers: { origin: BASE_URL, "x-ci-client-ip": "" }, data: { receipt },
+  });
+  const id = "12345678-1234-4123-8123-123456789abc";
+  for (const body of [
+    { eventId: id, event_name: "Purchase", custom_data: { value: 1 } },
+    { eventId: id, path: "/shop", custom_data: { value: 1 } },
+    { eventId: id, receipt: `x${receipt}` },
+    { eventId: id, receipt }, // Fresh UUID must never change the signed occurrence identity.
+    { receipt: `x${receipt}` },
+    { eventId: id, path: "/checkout?phone=0912345678" },
+    { eventId: id, receipt: "x".repeat(30_000) },
+  ]) {
+    const response = await page.request.post(`${BASE_URL}/api/meta/events`, {
+      headers: { origin: BASE_URL, "content-type": "application/json" }, data: body,
+    });
+    expect(response.status()).toBe(204);
+  }
+  await page.request.post(`${BASE_URL}/api/meta/events`, {
+    headers: { origin: "https://foreign.invalid", "content-type": "application/json" }, data: { eventId: id, receipt },
+  });
+  await delay(500);
+  expect(readServerEvents()).toHaveLength(start);
+  expect(await page.locator("body").innerText()).not.toContain("synthetic-meta-test-token");
+  expect(JSON.stringify(await page.evaluate(() => (window as { dataLayer?: unknown }).dataLayer))).not.toContain("synthetic-meta-test-token");
+});
+
+test("receipt replay retains its signed event ID; cached browser back navigation creates a fresh pair", async ({ page }) => {
+  const signals: Array<{ receipt?: string }> = [];
+  page.on("request", (request) => { if (request.url() === `${BASE_URL}/api/meta/events`) signals.push(request.postDataJSON()); });
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const first = await waitForEvent(page, "ViewContent");
+  await waitForTwin(first);
+  const id = (first[3] as { eventID: string }).eventID;
+  const receipt = signals.find((signal) => signal.receipt)!.receipt!;
+  const before = readServerEvents().filter((event) => event.event_id === id).length;
+  await page.request.post(`${BASE_URL}/api/meta/events`, { headers: { origin: BASE_URL }, data: { receipt } });
+  await expect.poll(() => readServerEvents().filter((event) => event.event_id === id).length).toBe(before + 1);
+  expect(new Set(readServerEvents().filter((event) => event.event_name === "ViewContent").slice(-2).map((event) => event.event_id)).size).toBe(1);
+  await page.locator("header a[href='/']").first().click();
+  await expect(page).toHaveURL(BASE_URL + "/");
+  await page.goBack({ waitUntil: "networkidle" });
+  await expect.poll(async () => (await readCalls(page)).filter((call) => call[0] === "track" && call[1] === "ViewContent").length).toBe(2);
+  const second = (await readCalls(page)).filter((call) => call[0] === "track" && call[1] === "ViewContent")[1]!;
+  expect(second[3]).not.toEqual(first[3]);
+  await waitForTwin(second);
+});
+
+test("PageView abuse stops at the shared endpoint budget without breaking storefront responses", async ({ page }) => {
+  const before = readServerEvents().length;
+  for (let i = 0; i < 65; i++) {
+    const eventId = `12345678-1234-4123-8123-${i.toString(16).padStart(12, "0")}`;
+    expect((await page.request.post(`${BASE_URL}/api/meta/events`, { headers: { origin: BASE_URL }, data: { eventId, path: "/shop" } })).status()).toBe(204);
+  }
+  await expect.poll(() => readServerEvents().length - before).toBe(60);
+  expect((await page.request.get(`${BASE_URL}/shop`)).status()).toBe(200);
 });
 
 test("events raised before the pixel library arrives are kept and flushed in order", async ({

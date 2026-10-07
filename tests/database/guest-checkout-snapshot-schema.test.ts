@@ -35,6 +35,10 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
         'addressDetail',
         'note',
         'pancakeShopId',
+        'purchaseOccurredAt',
+        'metaPurchaseContext',
+        'metaPurchasePayload',
+        'metaPurchaseSentAt',
         'merchandiseSubtotalVnd',
         'shippingFeeVnd',
         'totalVnd'
@@ -50,9 +54,13 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "guestName", data_type: "text" },
     { column_name: "guestPhone", data_type: "text" },
     { column_name: "merchandiseSubtotalVnd", data_type: "bigint" },
+    { column_name: "metaPurchaseContext", data_type: "text" },
+    { column_name: "metaPurchasePayload", data_type: "text" },
+    { column_name: "metaPurchaseSentAt", data_type: "timestamp without time zone" },
     { column_name: "note", data_type: "text" },
     { column_name: "pancakeShopId", data_type: "integer" },
     { column_name: "provinceRef", data_type: "text" },
+    { column_name: "purchaseOccurredAt", data_type: "timestamp without time zone" },
     { column_name: "shippingFeeVnd", data_type: "bigint" },
     { column_name: "totalVnd", data_type: "bigint" },
   ]);
@@ -90,5 +98,6 @@ test("deployed schema stores the immutable guest checkout snapshot fields", asyn
     { column_name: "promotionDiscountType", data_type: "USER-DEFINED", is_nullable: "YES" },
     { column_name: "promotionPercentageValue", data_type: "integer", is_nullable: "YES" },
     { column_name: "promotionFixedPriceVnd", data_type: "bigint", is_nullable: "YES" },
+    { column_name: "metaContentId", data_type: "text", is_nullable: "YES" },
   ]);
 });

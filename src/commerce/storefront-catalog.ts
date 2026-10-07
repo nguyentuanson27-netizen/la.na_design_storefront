@@ -150,7 +150,7 @@ function parseJsonStringArray(value: Prisma.JsonValue): readonly string[] {
 }
 
 async function fetchPublishedCollectionMap(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   slugs: readonly string[],
 ): Promise<Map<string, StorefrontProductCollection>> {
   const uniqueSlugs = [...new Set(slugs.filter(Boolean))];
@@ -672,7 +672,7 @@ function bigintToSafeNumber(value: bigint): number {
   return parsed;
 }
 
-export function createStorefrontCatalogRepository(client: PrismaClient) {
+export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.TransactionClient) {
   /**
    * Every product this repository returns carries the advisory capacity figure rather than raw
    * mirrored stock (`capacity-advisory.ts`): active reservation holds subtracted, composite parents

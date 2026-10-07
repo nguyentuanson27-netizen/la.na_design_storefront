@@ -140,6 +140,7 @@ const snapshotOrderSelection = {
 
 const productSelection = {
   name: true,
+  slug: true,
   pancakeProductId: true,
   isPresent: true,
   isActive: true,
@@ -394,9 +395,8 @@ function toStorefrontProduct(product: SelectedProduct, shopId: number) {
     });
   }
   return {
-    // Checkout never renders a public product link, so the slug is a placeholder rather than a
-    // public fact. The external product identity is real and comes straight from the mirror.
-    slug: "checkout-snapshot",
+    // Freeze the same Meta slug the cart rendered, rather than looking it up after conversion.
+    slug: product.slug,
     pancakeProductId: product.pancakeProductId,
     name: product.name,
     isPresent: product.isPresent,
@@ -481,7 +481,7 @@ export function createGuestCheckoutSnapshotService(
         const items = await tx.cartItem.findMany({
           where: { cartId },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          select: { variantId: true, quantity: true },
+          select: { variantId: true, quantity: true, sourceProductSlug: true },
         });
         if (items.length === 0) {
           return { ok: false, reason: "CART_EMPTY" };
@@ -583,6 +583,7 @@ export function createGuestCheckoutSnapshotService(
         const snapshots: Array<{
           variantId: string;
           pancakeVariationId: string;
+          metaContentId: string | null;
           productName: string;
           color: string | null;
           size: string;
@@ -652,6 +653,7 @@ export function createGuestCheckoutSnapshotService(
           snapshots.push({
             variantId: line.variantId,
             pancakeVariationId,
+            metaContentId: line.metaContentId ?? null,
             productName: line.productName,
             color: line.color,
             size: line.size,

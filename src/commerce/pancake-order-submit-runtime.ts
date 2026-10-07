@@ -1,4 +1,5 @@
 import { prisma } from "../db/prisma.ts";
+import { scheduleMetaPurchaseSafely } from "./meta-request-context.ts";
 import { PancakeClient } from "../integrations/pancake/client.ts";
 import { readPancakeConfig, type PancakeConfig } from "../integrations/pancake/config.ts";
 import { createPancakeOrderGateway } from "../integrations/pancake/order-gateway.ts";
@@ -16,6 +17,7 @@ export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const gateway = createPancakeOrderGateway(client);
   return createPancakeOrderSubmissionService(prisma, gateway, {
     onEvent: writePancakeOrderSubmissionEvent,
+    async onConfirmed(code) { await scheduleMetaPurchaseSafely(prisma, code); },
   });
 }
 

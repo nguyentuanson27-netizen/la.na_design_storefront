@@ -158,6 +158,8 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
 
   assert.equal(persisted.pancakeShopId, shopId);
   assert.equal(persisted.checkoutSnapshottedAt?.toISOString(), now.toISOString());
+  assert.equal(persisted.purchaseOccurredAt, null, "a draft is not yet a conversion");
+  assert.equal(persisted.lines[0]?.metaContentId, product.slug);
   assert.equal(persisted.guestName, "Nguyễn Văn A");
   assert.equal(persisted.guestPhone, "0901234567");
   assert.equal(persisted.provinceRef, "province-01");
@@ -196,7 +198,7 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
 
   await prisma.productMirror.update({
     where: { id: product.id },
-    data: { name: "Changed after snapshot" },
+    data: { name: "Changed after snapshot", slug: `renamed-${key}` },
   });
   await prisma.variantMirror.update({
     where: { id: variant.id },
@@ -214,6 +216,7 @@ test("checkout snapshot persists server-authoritative lines, shop scope, and the
   assert.equal(unchanged.lines[0]?.productName, `Checkout Product ${key}`);
   assert.equal(unchanged.lines[0]?.color, "Black");
   assert.equal(unchanged.lines[0]?.unitPriceVnd, BigInt(500_000));
+  assert.equal(unchanged.lines[0]?.metaContentId, product.slug);
 
   await cleanup(key);
 });

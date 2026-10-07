@@ -453,6 +453,8 @@ model CartItem {
   cartId    String
   variantId String
   quantity  Int
+  // Public PDP validated by the committed add; independent of a component's owner.
+  sourceProductSlug String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   cart      Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)
@@ -475,6 +477,12 @@ model OrderMirror {
   state                  LocalOrderState     @default(DRAFT)
   syncErrorCode          String?
   checkoutSnapshottedAt  DateTime?
+  /// Original accepted POS submission instant; reconciliation must not move conversion time.
+  purchaseOccurredAt     DateTime?
+  /// Server-only attribution and immutable serialized event for reconciliation/replay.
+  metaPurchaseContext    String?
+  metaPurchasePayload    String?
+  metaPurchaseSentAt     DateTime?
   guestName              String?
   guestPhone             String?
   provinceRef            String?
@@ -508,6 +516,8 @@ model OrderLineSnapshot {
   orderId                  String
   variantId                String
   pancakeVariationId       String
+  /// Frozen existing Meta slug identity. Null means historical identity is not known.
+  metaContentId            String?
   productName              String
   color                    String?
   size                     String
