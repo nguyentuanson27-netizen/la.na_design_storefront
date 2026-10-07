@@ -9,7 +9,6 @@ export const PDP_IMAGE_MAX_OUTPUT_HEIGHT = 3_200;
  * set prevents an attacker from manufacturing an unbounded cache/transcode keyspace.
  */
 export const PDP_IMAGE_ALLOWED_WIDTHS = Object.freeze([
-  16,
   32,
   48,
   64,
