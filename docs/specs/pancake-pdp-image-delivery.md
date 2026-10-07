@@ -31,7 +31,7 @@ pnpm build
 - `src/commerce/product-image-delivery.ts`: pure byte/width policy and bounded retry schedule
 - `src/integrations/pancake/product-image-delivery.ts`: trusted fetch + Sharp transcode
 - `src/app/api/product-image/route.ts`: thin same-origin GET binding
-- `src/components/brand/pdp-image-loader.ts`: `next/image` custom loader URL builder
+- `src/components/headless/pdp-image-loader.ts`: `next/image` custom loader URL builder behind the brand/headless seam
 - `src/components/brand/product-media-stage.tsx`, `product-gallery.tsx`: PDP-only wiring
 - `tests/domain/product-image-delivery.test.ts`: pure contract tests
 - `tests/integrations/pancake-product-image-delivery.test.ts`: trust/fetch/transcode tests
