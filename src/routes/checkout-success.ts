@@ -62,8 +62,8 @@ export async function loadCheckoutSuccessRoute({
       ? await readCanonicalPurchaseSnapshotSafely(prisma, data.orderCode)
       : null;
 
-  // The Conversions API reports this same sale from the server action that placed it. Both carry
-  // the order code as the event id, so Meta collapses them into a single Purchase.
+  // Submission and reconciliation report the same frozen sale through CAPI. Both halves carry
+  // the public order code as event_id, so Meta can pair them.
   let pixelEvents: readonly RoutePixelEvent[] = [];
   if (data.confirmed && data.orderCode) {
     try {

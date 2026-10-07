@@ -25,7 +25,8 @@ const TEST_EVENT_CODE = /^TEST[0-9]{1,20}$/;
 
 // Pinned so a Graph API release cannot change the payload contract underneath a running deploy.
 // Override with FACEBOOK_GRAPH_API_VERSION and confirm against Events Manager before moving it.
-export const DEFAULT_GRAPH_API_VERSION = "v21.0";
+// Meta's official Node Business SDK 26.0.2 pins v26.0 (verified 2026-10-07).
+export const DEFAULT_GRAPH_API_VERSION = "v26.0";
 
 export type MetaEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -82,7 +83,7 @@ export function readMetaConversionsConfig(
 
   const graphApiVersion = readOptionalValue(env, "FACEBOOK_GRAPH_API_VERSION") ?? DEFAULT_GRAPH_API_VERSION;
   if (!GRAPH_API_VERSION.test(graphApiVersion)) {
-    throw new RangeError("FACEBOOK_GRAPH_API_VERSION must look like v21.0");
+    throw new RangeError("FACEBOOK_GRAPH_API_VERSION must look like v26.0");
   }
 
   const testEventCode = readOptionalValue(env, "FACEBOOK_CAPI_TEST_EVENT_CODE");

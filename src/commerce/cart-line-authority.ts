@@ -45,6 +45,9 @@ export type CommittedCartLineFacts = Readonly<{
   unitPriceVnd: number | null;
   /** The complete canonical item, or `null` when one cannot be produced safely. */
   analyticsItem: CommerceVariantItemFacts | null;
+  /** Existing Meta identity, captured by the same locked resolver as the price. */
+  metaContentId?: string | null;
+  metaContentName?: string | null;
 }>;
 
 const NO_COMMITTED_FACTS: CommittedCartLineFacts = Object.freeze({
@@ -98,6 +101,8 @@ export function createCartLineAuthorityResolver({
       available: line.available,
       snapshot: Object.freeze({
         unitPriceVnd: committedUnitPriceVnd(line.price),
+        metaContentId: line.productSlug,
+        metaContentName: line.productName,
         analyticsItem: buildCartAnalyticsItemFacts({
           line: toCartAnalyticsLineFacts(line),
           quantity,

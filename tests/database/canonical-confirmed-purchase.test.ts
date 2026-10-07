@@ -112,6 +112,7 @@ async function seedConfirmedOrderFixture(options?: {
       orderId: order.id,
       variantId: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
+      metaContentId: product.slug,
       productName: "Áo Sơ Mi Linen Premium",
       color: "Xanh Navy",
       size: "L",
@@ -326,4 +327,3 @@ test("Regression H: database confirmed order with malformed catalog pancakeProdu
   assert.equal(item.item_id, "canonical-variation-001");
   assert.equal("item_group_id" in item, false);
 });
-

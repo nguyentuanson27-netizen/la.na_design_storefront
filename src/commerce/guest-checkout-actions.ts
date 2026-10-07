@@ -14,12 +14,12 @@ import {
 } from "./guest-checkout-client-identity.ts";
 import { submitGuestCheckoutPublicAction } from "./guest-checkout-public-actions.ts";
 import { createGuestCheckoutRateLimiter } from "./guest-checkout-rate-limit.ts";
-import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
+import type { MetaPurchaseRequestContext } from "./meta-purchase-reporting.ts";
 import { reportOpenAiAdsPurchaseSafely } from "./openai-ads-purchase-reporting.ts";
 import type { GuestCheckoutSubmitResult } from "./guest-checkout-submit.ts";
 import { submitGuestCheckoutByCart } from "./guest-checkout-submit-runtime.ts";
 
-async function createGuestCheckoutActionDependencies() {
+async function createGuestCheckoutActionDependencies(metaContext: MetaPurchaseRequestContext | null) {
   const [cookieStore, requestHeaders] = await Promise.all([cookies(), headers()]);
   const authConfig = readAuthServerConfig();
   const clientKey = deriveGuestCheckoutClientKey(requestHeaders, authConfig);
@@ -42,7 +42,7 @@ async function createGuestCheckoutActionDependencies() {
       }
       return rateLimiter.consume({ cartId, now });
     },
-    submitCheckout: submitGuestCheckoutByCart,
+    submitCheckout: (input: Parameters<typeof submitGuestCheckoutByCart>[0]) => submitGuestCheckoutByCart({ ...input, metaContext }),
   };
 }
 
@@ -83,9 +83,10 @@ export async function submitGuestCheckoutAction(
   formData: FormData,
 ): Promise<GuestCheckoutSubmitResult> {
   let result: GuestCheckoutSubmitResult;
+  const measurementContexts = await readMeasurementRequestContexts().catch(() => null);
   try {
     result = await submitGuestCheckoutPublicAction(
-      await createGuestCheckoutActionDependencies(),
+      await createGuestCheckoutActionDependencies(measurementContexts?.meta ?? null),
       formData,
     );
   } catch {
@@ -104,11 +105,9 @@ export async function submitGuestCheckoutAction(
     // The order is already placed here. Nothing about reporting it may throw past this point: the
     // buyer would see a generic failure for a sale that succeeded and would very likely submit it
     // again. readStorefrontOrigin in particular throws on a misconfigured APP_DOMAIN.
-    const measurementContexts = await readMeasurementRequestContexts().catch(() => null);
     if (measurementContexts !== null) {
       after(() =>
         Promise.all([
-          reportMetaPurchaseSafely(prisma, result.orderCode, measurementContexts.meta),
           reportOpenAiAdsPurchaseSafely(prisma, result.orderCode, measurementContexts.openAiAds),
         ]).then(() => undefined),
       );

@@ -10,6 +10,7 @@ import { resolveAnonymousCartRequest } from "./anonymous-cart-request.ts";
 import { createCartLineAuthorityResolver } from "./cart-line-authority.ts";
 import { createStorefrontCartPublicActions } from "./storefront-cart-public-actions.ts";
 import { createStorefrontCartRepository } from "./storefront-cart-repository.ts";
+import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
 
 async function createActionRuntime() {
   const cookieStore = await cookies();
@@ -67,10 +68,11 @@ export async function getStorefrontCartLines() {
 }
 
 export async function updateStorefrontCartLine(input: unknown) {
-  return (await createActionRuntime()).update(input);
+  const result = await (await createActionRuntime()).update(input);
+  if (result.ok) await scheduleMetaAddToCartSafely(result.metaEvent, "/cart");
+  return result;
 }
 
 export async function removeStorefrontCartLine(input: unknown) {
   return (await createActionRuntime()).remove(input);
 }
-

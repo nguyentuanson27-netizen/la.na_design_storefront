@@ -8,6 +8,7 @@ import {
   updateStorefrontCartLine,
 } from "@/commerce/storefront-cart-actions";
 import { buildCartViewModel, type CartViewModel } from "@/routes/cart-model";
+import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 
 export function useCartDrawer(isOpen: boolean) {
   const [cart, setCart] = useState<CartViewModel | null>(null);
@@ -73,6 +74,7 @@ export function useCartDrawer(isOpen: boolean) {
           try {
             const result = await updateStorefrontCartLine({ variantId, quantity });
             if (result.ok) {
+              trackCommittedMetaAddToCart(result.metaEvent);
               const lines = await getStorefrontCartLines();
               setCart(buildCartViewModel({ lines, commerceTrackingEnabled: false }));
               resolve(true);

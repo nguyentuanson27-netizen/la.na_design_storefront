@@ -1,5 +1,6 @@
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
+import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
 import type {
   MarkerSearchResult,
   OrderSearchOptions,
@@ -20,6 +21,7 @@ export type PancakeOrderReconciliationDependencies = {
   absenceConfirmationAttempts?: number;
   absenceConfirmationDelayMs?: number;
   sleep?: (ms: number) => Promise<void>;
+  onConfirmed?: (publicCode: string) => Promise<void>;
 };
 
 export type OrderReconciliationResult =
@@ -48,6 +50,7 @@ export function createPancakeOrderReconciliationService({
   absenceConfirmationAttempts = 5,
   absenceConfirmationDelayMs = 1000,
   sleep = (ms) => new Promise<void>((resolve) => setTimeout(resolve, ms)),
+  onConfirmed = (code) => reportMetaPurchaseSafely(client, code),
 }: PancakeOrderReconciliationDependencies) {
   if (!Number.isSafeInteger(absenceConfirmationAttempts) || absenceConfirmationAttempts < 1) {
     throw new TypeError("Absence confirmation attempts must be a positive safe integer");
@@ -300,7 +303,7 @@ export function createPancakeOrderReconciliationService({
     let ambiguous = 0;
 
     for (const order of orders) {
-      const result = await reconcileOrder(order.publicCode);
+      const result = await reconcileAndReport(order.publicCode);
       if (result.ok && result.state === "CONFIRMED") {
         confirmed += 1;
       } else if (!result.ok && result.state === "REJECTED") {
@@ -318,8 +321,17 @@ export function createPancakeOrderReconciliationService({
     };
   }
 
+  async function reconcileAndReport(publicCode: string): Promise<OrderReconciliationResult> {
+    const result = await reconcileOrder(publicCode);
+    if (result.ok) {
+      try { await onConfirmed(publicCode); }
+      catch { console.warn(JSON.stringify({ name: "meta_conversions.purchase_failed", reason: "SCHEDULING_FAILED" })); }
+    }
+    return result;
+  }
+
   return {
-    reconcileOrder,
+    reconcileOrder: reconcileAndReport,
     reconcileAllUnknownOrders,
   };
 }

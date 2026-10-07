@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 
-import { buildMetaAddToCartPixelParameters } from "@/commerce/meta-pixel-parameters";
 import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import type { StorefrontProjectionOption } from "@/commerce/storefront-projection";
 import type { DeepLinkedVariantSelection } from "@/commerce/storefront-variant-deep-link";
-import { trackFacebookPixelEvent } from "@/components/analytics/facebook-pixel-client";
+import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
@@ -59,7 +58,6 @@ export type VariantSelectionController = ReturnType<typeof useVariantSelection>;
 
 export function useVariantSelection({
   slug,
-  productName,
   options,
   productLevelOptions,
   initialSelection = null,
@@ -86,17 +84,6 @@ export function useVariantSelection({
       }),
     [options, productLevelOptions, state, colorDimensionLabel],
   );
-
-  const entryPrice = view.entryPrice;
-  useEffect(() => {
-    trackFacebookPixelEvent("ViewContent", {
-      content_ids: [slug],
-      content_name: productName,
-      content_type: "product",
-      currency: "VND",
-      ...(entryPrice === null ? {} : { value: entryPrice }),
-    });
-  }, [entryPrice, productName, slug]);
 
   function chooseKind(value: string) {
     // A kind's colours and sizes are its own: only what still exists in it carries over.
@@ -130,11 +117,8 @@ export function useVariantSelection({
    *
    * The two destinations fail independently, because they always have.
    *
-   * Meta reports on every accepted add, as it did before this unit existed. Its value now comes
-   * from `committedUnitPriceVnd` instead of the rendered price, and is omitted when the server has
-   * no usable price — which is exactly the shape the previous code had for an unresolved price.
-   * Making Meta's delivery depend on the newer canonical item would silently narrow a success
-   * boundary that is not this unit's to change.
+   * Meta uses the committed mutation's own event ID, product slug and unit price. Missing Meta
+   * facts suppress measurement independently of whether the canonical item can be described.
    *
    * The canonical event needs the complete item — identity, name, options, money — so it is the one
    * that goes silent when `analyticsItem` is absent. No fallback: the cart is correct either way.
@@ -142,14 +126,7 @@ export function useVariantSelection({
   function reportAcceptedAdd(result: Awaited<ReturnType<typeof addStorefrontItemToBag>>) {
     if (!result.ok) return;
 
-    trackFacebookPixelEvent(
-      "AddToCart",
-      buildMetaAddToCartPixelParameters({
-        slug,
-        productName,
-        committedUnitPriceVnd: result.committedUnitPriceVnd,
-      }),
-    );
+    trackCommittedMetaAddToCart(result.metaEvent);
 
     const committed = result.analyticsItem;
     if (!commerceTrackingEnabled || committed === undefined) return;

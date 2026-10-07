@@ -25,6 +25,8 @@
 
 import type { CommerceVariantItemFacts } from "../tracking/commerce-events.ts";
 import { toPublicCartAnalyticsItemFacts } from "./cart-analytics-facts.ts";
+import { buildCommittedMetaAddToCart } from "./meta-pixel-parameters.ts";
+import type { CommittedMetaEvent } from "./meta-event-reporting.ts";
 
 type StorefrontPurchaseInput = {
   slug: string;
@@ -46,6 +48,7 @@ export type StorefrontPublicPurchaseResult =
       committedUnitPriceVnd?: number;
       analyticsItem?: CommerceVariantItemFacts;
       analyticsUnavailable?: true;
+      metaEvent?: CommittedMetaEvent;
     }>
   | Readonly<{
       ok: false;
@@ -93,10 +96,12 @@ function toPublicPurchaseResult(result: unknown): StorefrontPublicPurchaseResult
     const committedUnitPriceVnd = readCommittedPrice(snapshot.unitPriceVnd);
     // The canonical event reports the committed delta: exactly the one unit this click added.
     const analyticsItem = toPublicCartAnalyticsItemFacts(snapshot.analyticsItem, 1);
+    const metaEvent = buildCommittedMetaAddToCart(snapshot, 1);
 
     return Object.freeze({
       ok: true as const,
       transition,
+      ...(metaEvent ? { metaEvent } : {}),
       ...(committedUnitPriceVnd === null ? {} : { committedUnitPriceVnd }),
       ...(analyticsItem === null
         ? { analyticsUnavailable: true as const }

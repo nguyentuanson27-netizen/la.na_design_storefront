@@ -18,6 +18,7 @@ import {
   type PromotionCampaignKind,
 } from "./promotion-pricing.ts";
 import { createPreorderSnapshotAtConfirmation } from "./preorder-order-snapshot-repository.ts";
+import { reportMetaPurchaseSafely } from "./meta-purchase-reporting.ts";
 import {
   capacityFloorForMode,
   resolveSellingPolicy,
@@ -143,6 +144,7 @@ export type PancakeOrderSubmissionGateway = {
 
 export type PancakeOrderSubmissionOptions = {
   onEvent?: (event: PancakeOrderSubmissionEvent) => void;
+  onConfirmed?: (publicCode: string) => Promise<void>;
   /**
    * The instant every campaign window is evaluated against for this submission.
    *
@@ -967,7 +969,7 @@ export function createPancakeOrderSubmissionService(
 
     const submitting = await client.orderMirror.updateMany({
       where: { id: order.id, state: "VALIDATING" },
-      data: { state: "POS_SUBMITTING", syncErrorCode: null },
+      data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow() },
     });
     if (submitting.count !== 1) {
       const current = await client.orderMirror.findUniqueOrThrow({
@@ -1073,5 +1075,14 @@ export function createPancakeOrderSubmissionService(
     return { ok: true, state: "CONFIRMED", pancakeOrderId };
   }
 
-  return { submit };
+  return {
+    async submit(input: Parameters<typeof submit>[0]) {
+      const result = await submit(input);
+      if (result.ok) {
+        try { await (options.onConfirmed ?? ((code) => reportMetaPurchaseSafely(client, code)))(input.publicCode); }
+        catch { console.warn(JSON.stringify({ name: "meta_conversions.purchase_failed", reason: "SCHEDULING_FAILED" })); }
+      }
+      return result;
+    },
+  };
 }

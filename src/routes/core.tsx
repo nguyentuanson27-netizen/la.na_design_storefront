@@ -1,4 +1,7 @@
 import type { ReactNode } from "react";
+import { readAuthServerConfig } from "@/auth/config";
+import { issueMetaBrowserReceipt } from "@/commerce/meta-browser-receipt";
+import { readMetaConversionsConfig } from "@/integrations/meta/pixel-config";
 
 import { ChatGptAdsEventReporter } from "@/components/analytics/chatgpt-ads-event-reporter";
 import { CommerceEventReporter } from "@/components/analytics/commerce-event-reporter";
@@ -31,6 +34,9 @@ export type RoutePixelEvent = Readonly<{
   eventId?: string;
   /** Report at most once per browser, keyed by `eventId`. */
   once?: boolean;
+  /** Server-owned path and signed rendered facts; only the receipt crosses the signal endpoint. */
+  capiPath?: string;
+  capiReceipt?: string;
 }>;
 
 /**
@@ -69,7 +75,20 @@ export type RouteHandle<D> = { readonly [PAYLOAD]: RoutePayload<D> };
 
 /** Called by route loaders to hand a loaded route to the shell. */
 export function sealRoute<D>(payload: RoutePayload<D>): RouteHandle<D> {
-  return { [PAYLOAD]: payload };
+  const pixelEvents = payload.pixelEvents.map((event) => {
+    if (!event.capiPath || !event.parameters
+      || (event.name !== "ViewContent" && event.name !== "InitiateCheckout")) return event;
+    try {
+      if (!readMetaConversionsConfig()) return event;
+      return { ...event, capiReceipt: issueMetaBrowserReceipt({
+        name: event.name, path: event.capiPath, parameters: event.parameters,
+      }, readAuthServerConfig().secret, new Date()) };
+    } catch {
+      console.warn(JSON.stringify({ name: "meta_conversions.receipt_failed", event: event.name }));
+      return event;
+    }
+  });
+  return { [PAYLOAD]: { ...payload, pixelEvents } };
 }
 
 /**
@@ -123,6 +142,7 @@ export function StorefrontRoute<D>({
           parameters={event.parameters}
           eventId={event.eventId}
           once={event.once}
+          capiReceipt={event.capiReceipt}
         />
       ))}
       {children(payload.data)}

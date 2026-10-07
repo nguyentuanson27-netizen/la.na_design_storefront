@@ -10,6 +10,7 @@ import {
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
+import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
 import { resolveProductTryOn } from "@/commerce/try-on-runtime";
 import { prisma } from "@/db/prisma";
 import {
@@ -97,6 +98,7 @@ export async function loadProductRoute({
   });
 
   const options = product.projection.options;
+  const metaEntryPrice = getStorefrontResolvedPriceRange(options)?.minimum ?? null;
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
     projection: product.projection,
     variantQuery: typeof query[VARIANT_QUERY_PARAM] === "string" ? query[VARIANT_QUERY_PARAM] : null,
@@ -142,6 +144,14 @@ export async function loadProductRoute({
     structuredData: [
       buildStorefrontProductStructuredData({ origin: readSearchExposure().origin, product }),
     ],
-    pixelEvents: [],
+    pixelEvents: [{
+      name: "ViewContent",
+      capiPath: `/shop/${product.slug}`,
+      parameters: {
+        content_ids: [product.slug], content_name: product.name, content_type: "product",
+        currency: "VND",
+        ...(metaEntryPrice === null ? {} : { value: metaEntryPrice }),
+      },
+    }],
   });
 }

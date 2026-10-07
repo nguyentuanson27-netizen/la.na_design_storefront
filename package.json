@@ -21,6 +21,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "release:check": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/release-readiness.ts",
     "money:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/mirrored-money-audit.ts",
+    "meta:purchase:retry": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/meta-purchase-retry.ts",
     "sitemap:capacity:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/sitemap-capacity-audit.ts",
     "merchant:identity:audit": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/merchant-identity-audit.ts",
     "merchant:durability:evidence": "node --env-file-if-exists=.env.local --experimental-strip-types scripts/pancake-durability-evidence.ts",

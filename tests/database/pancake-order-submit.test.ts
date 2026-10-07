@@ -94,6 +94,7 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   const key = "success";
   const order = await createDraft(key);
   let createCalls = 0;
+  let conversionTime: string | undefined;
 
   const service = createPancakeOrderSubmissionService(prisma, {
     async fetchVariations(requestShopId) {
@@ -104,6 +105,8 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
       createCalls += 1;
       const persisted = await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } });
       assert.equal(persisted.state, "POS_SUBMITTING");
+      conversionTime = persisted.purchaseOccurredAt?.toISOString();
+      assert.ok(conversionTime, "persist conversion time before an ambiguous external write is possible");
       assert.equal(request.shop_id, shopId);
       assert.equal(request.items[0]?.variation_id, "order-variation-001");
       assert.equal(request.items[0]?.variation_info.retail_price, 500_000);
@@ -120,6 +123,7 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   assert.equal(persisted.state, "CONFIRMED");
   assert.equal(persisted.pancakeOrderId, "700001");
   assert.equal(persisted.syncErrorCode, null);
+  assert.equal(persisted.purchaseOccurredAt?.toISOString(), conversionTime);
   await cleanup(key);
 });
 
@@ -278,6 +282,8 @@ test("ambiguous POST outcome becomes SYNC_UNKNOWN and is never posted again", as
     reason: "CREATE_OUTCOME_UNKNOWN",
   });
   assert.equal(createCalls, 1);
+  const occurredAt = (await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } })).purchaseOccurredAt?.toISOString();
+  assert.ok(occurredAt);
 
   assert.deepEqual(await service.submit({ publicCode: order.publicCode, shopId }), {
     ok: false,
@@ -285,6 +291,7 @@ test("ambiguous POST outcome becomes SYNC_UNKNOWN and is never posted again", as
     reason: "CREATE_OUTCOME_UNKNOWN",
   });
   assert.equal(createCalls, 1);
+  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } })).purchaseOccurredAt?.toISOString(), occurredAt);
   await cleanup(key);
 });
 

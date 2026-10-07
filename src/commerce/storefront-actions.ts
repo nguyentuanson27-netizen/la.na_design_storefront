@@ -10,6 +10,7 @@ import { createStorefrontPurchasePublicActions } from "./storefront-purchase-pub
 import { createStorefrontPurchaseService } from "./storefront-purchase.ts";
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
+import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
 
 const publicActions = createStorefrontPurchasePublicActions({
   async purchase({ slug, variantId }) {
@@ -46,5 +47,10 @@ const publicActions = createStorefrontPurchasePublicActions({
 });
 
 export async function addStorefrontItemToBag(input: unknown) {
-  return publicActions.add(input);
+  const result = await publicActions.add(input);
+  if (result.ok) {
+    const slug = result.metaEvent?.parameters.content_ids?.[0];
+    if (slug) await scheduleMetaAddToCartSafely(result.metaEvent, `/shop/${slug}`);
+  }
+  return result;
 }

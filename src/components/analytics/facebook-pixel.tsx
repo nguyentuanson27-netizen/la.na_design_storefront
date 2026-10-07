@@ -9,8 +9,7 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * Meta's standard base snippet. Rendered only when a pixel id is configured, so an unconfigured
  * environment ships no third-party script and the CSP stays closed around it.
  *
- * The snippet's own `fbq('track', 'PageView')` only fires on a full document load. App Router
- * navigations never reload it, so FacebookPixelRouteTracker reports the ones that follow.
+ * The route tracker owns both document and SPA PageView so it can share one event ID with CAPI.
  *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
@@ -33,20 +32,8 @@ t.onload=function(){t.dataset.laMetaPixelStatus=typeof f.fbq==='function'&&typeo
 t.onerror=function(){t.dataset.laMetaPixelStatus='unavailable'};
 s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', ${JSON.stringify(config.pixelId)});
-fbq('track', 'PageView');`}
+fbq('init', ${JSON.stringify(config.pixelId)});`}
       </Script>
-      <noscript>
-        {/* eslint-disable-next-line @next/next/no-img-element -- a tracking beacon, not content:
-            it must reach Meta's origin unrewritten, and next/image cannot render inside noscript. */}
-        <img
-          height="1"
-          width="1"
-          style={{ display: "none" }}
-          alt=""
-          src={`https://www.facebook.com/tr?id=${encodeURIComponent(config.pixelId)}&ev=PageView&noscript=1`}
-        />
-      </noscript>
       {/* The tracker reads search params, which opts its subtree out of static rendering; the
           boundary keeps that confined to a component that renders nothing. */}
       <Suspense fallback={null}>
