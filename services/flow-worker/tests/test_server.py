@@ -277,6 +277,58 @@ class GflowExitStatusTest(unittest.TestCase):
         self.assertEqual(exit_code, 5)
         self.assertEqual(server._failure_reason(exit_code), (422, "SAFETY_BLOCKED"))
 
+    def test_non_zero_gflow_does_not_log_raw_stderr_or_provider_detail(self):
+        machine_stdout = (
+            '{"status":"fail","error":{'
+            '"type":"https://gflow-cli.dev/errors/reference-not-found",'
+            '"class":"ReferenceNotFoundError",'
+            '"detail":"provider-secret-detail"}}'
+        )
+        script = (
+            "import sys; "
+            `print(${machine_stdout!r}); `
+            "print('stderr-secret-token', file=sys.stderr); "
+            "raise SystemExit(32)"
+        )
+        events = []
+
+        def capture(name, **fields):
+            events.append((name, fields))
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            with (
+                patch.object(server, "_command", return_value=[sys.executable, "-c", script]),
+                patch.object(server, "_event", side_effect=capture),
+            ):
+                exit_code, error = server._run_model(
+                    "nano-pro",
+                    root / "person.jpg",
+                    root / "garment.jpg",
+                    root / "result.png",
+                    10,
+                    root / "gflow.db",
+                )
+
+        self.assertEqual(exit_code, 32)
+        self.assertEqual(error.error_class, "ReferenceNotFoundError")
+        self.assertEqual(
+            events,
+            [
+                (
+                    "flow_try_on.process_error",
+                    {
+                        "model": "nano-pro",
+                        "exit_code": "32",
+                        "error_class": "ReferenceNotFoundError",
+                    },
+                )
+            ],
+        )
+        rendered_events = repr(events)
+        self.assertNotIn("stderr-secret-token", rendered_events)
+        self.assertNotIn("provider-secret-detail", rendered_events)
+
 
 class FakeLease:
     def __init__(self):
