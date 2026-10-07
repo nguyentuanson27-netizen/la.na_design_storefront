@@ -393,20 +393,19 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   ref={cartTriggerRef}
                   type="button"
                   onClick={() => setCartDrawerOpen(true)}
-                  aria-label={item.label}
+                  aria-label={
+                    cartSummary.count > 0
+                      ? `${item.label}, ${cartSummary.count} sản phẩm trong giỏ`
+                      : item.label
+                  }
                   aria-haspopup="dialog"
                   className="relative"
                 >
                   <UtilityIcon href={item.href} />
                   <span className="sr-only">{item.label}</span>
                   {cartSummary.count > 0 ? (
-                    <span
-                      key={cartSummary.count}
-                      data-cart-badge=""
-                      className="cart-badge"
-                    >
-                      <span aria-hidden="true">{cartSummary.count > 99 ? "99+" : cartSummary.count}</span>
-                      <span className="sr-only">{`, ${cartSummary.count} sản phẩm trong giỏ`}</span>
+                    <span key={cartSummary.count} data-cart-badge="" className="cart-badge" aria-hidden="true">
+                      {cartSummary.count > 99 ? "99+" : cartSummary.count}
                     </span>
                   ) : null}
                 </button>

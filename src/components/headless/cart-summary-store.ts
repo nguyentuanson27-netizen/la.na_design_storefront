@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from "react";
 
 import { getStorefrontCartLines } from "@/commerce/storefront-cart-actions";
+import { createCartSummaryStore } from "@/components/headless/cart-summary-store-core";
 import {
   buildCartViewModel,
   EMPTY_CART_SUMMARY,
@@ -16,48 +17,16 @@ import {
  *
  * The cart itself stays server-authoritative: this only mirrors what the last server read said, so
  * the chrome can reassure the shopper after the drawer closes. It is a presentation hint and never
- * gates a purchase.
+ * gates a purchase. The ordering rules live in `cart-summary-store-core.ts`.
  */
-let snapshot: CartSummary = EMPTY_CART_SUMMARY;
-const listeners = new Set<() => void>();
-// A late response from an earlier read must not overwrite a newer one.
-let latestRead = 0;
+const store = createCartSummaryStore(async () => {
+  const lines = await getStorefrontCartLines();
+  return summarizeCartViewModel(buildCartViewModel({ lines, commerceTrackingEnabled: false }));
+});
 
-function subscribe(listener: () => void) {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
-function getSnapshot() {
-  return snapshot;
-}
-
-function getServerSnapshot() {
-  return EMPTY_CART_SUMMARY;
-}
-
-export function publishCartSummary(next: CartSummary) {
-  if (next.count === snapshot.count && next.totalText === snapshot.totalText) return;
-  snapshot = next;
-  for (const listener of listeners) listener();
-}
-
-/** Re-reads the cart from the server and publishes the result. A failed read leaves the last one. */
-export async function refreshCartSummary() {
-  const read = ++latestRead;
-  try {
-    const lines = await getStorefrontCartLines();
-    if (read !== latestRead) return;
-    publishCartSummary(
-      summarizeCartViewModel(buildCartViewModel({ lines, commerceTrackingEnabled: false })),
-    );
-  } catch {
-    // The badge is a courtesy; the cart route and drawer report their own load failures.
-  }
-}
+export const publishCartSummary = store.publish;
+export const refreshCartSummary = store.refresh;
 
 export function useCartSummary(): CartSummary {
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  return useSyncExternalStore(store.subscribe, store.getSnapshot, () => EMPTY_CART_SUMMARY);
 }
