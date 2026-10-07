@@ -9,7 +9,7 @@ import { fetchAndCompressPancakeProductImage } from "../../src/integrations/panc
 
 const URL_OK = "https://content.pancake.vn/images/1/2/3/dress.png";
 const TINY_PNG = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WlFJZsAAAAASUVORK5CYII=",
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   "base64",
 );
 
