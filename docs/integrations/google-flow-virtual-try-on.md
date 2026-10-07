@@ -206,6 +206,14 @@ profile paths, prompt output and CLI stdout/stderr are not returned to shoppers.
 - `TIMEOUT`: generation watchdog expired.
 - `GENERATION_FAILED`: all other provider/integration failures.
 
+The worker runs gflow through `flow_worker.gflow_launcher`, which installs a prompt guard for the
+gflow-cli 0.82.1 image-to-image path (`flow_worker/gflow_prompt_guard.py`). After both reference
+mentions are attached it places the caret at the end of the composer, inserts `TRY_ON_PROMPT`, and
+reads the composer back: the full prompt must be present and both mention chips kept, otherwise
+the run fails before submit. The `ogiZ0b` submit is also aborted before it reaches Flow unless its
+body carries both reference ids and the prompt. Either refusal is `GENERATION_FAILED` and never
+falls back to another model. The guard refuses to load on any other gflow-cli version.
+
 The worker's generation budget (120 s for the Pro attempt plus any Nano 2 fallback) is shorter than
 the storefront's 130 s HTTP deadline so the worker releases the profile lock before the caller
 gives up. On a watchdog expiry the worker terminates

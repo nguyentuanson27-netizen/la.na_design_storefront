@@ -9,6 +9,7 @@ import re
 import secrets
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -33,6 +34,7 @@ MAX_ERROR_DETAIL_CHARS = 4 * 1024
 WORKER_TIMEOUT_EXIT_CODE = 124
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+WORKER_ROOT = Path(__file__).resolve().parent.parent
 
 TRY_ON_PROMPT = """Use the first reference image as the person and the second reference image as the garment.
 Dress the person naturally in the exact referenced garment.
@@ -98,8 +100,11 @@ def _profile_present() -> bool:
 
 
 def _command(model: str, person: Path, product: Path, output: Path) -> list[str]:
+    # The launcher runs the gflow CLI with the prompt guard installed (see gflow_prompt_guard).
     args = [
-        "gflow",
+        sys.executable,
+        "-m",
+        "flow_worker.gflow_launcher",
         "image",
         "i2i",
         TRY_ON_PROMPT,
@@ -154,6 +159,7 @@ def _gflow_env(db_path: Path) -> dict[str, str]:
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(WORKER_ROOT), env.get("PYTHONPATH"))))
     # gflow records every generation in a local SQLite catalog. Keep that catalog inside the
     # request tempdir so operation/media IDs, hashes, local paths and byte counts disappear with
     # the request instead of landing beside the persistent signed-in Chrome profile.

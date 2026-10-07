@@ -242,7 +242,8 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
             server.Path("/tmp/garment.png"),
             server.Path("/tmp/result.png"),
         )
-        self.assertEqual(command[:3], ["gflow", "image", "i2i"])
+        self.assertEqual(command[:5], [sys.executable, "-m", "flow_worker.gflow_launcher", "image", "i2i"])
+        self.assertEqual(command[command.index("i2i") + 1], server.TRY_ON_PROMPT)
         self.assertEqual(command.count("--ref"), 2)
         self.assertIn("nano-pro", command)
         self.assertIn("--count", command)
