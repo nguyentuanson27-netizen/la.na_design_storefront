@@ -424,12 +424,23 @@ export function BrandTryOnDialog({
             <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
               {tryOn.errorMessage}
             </p>
-            {isLoginRequired(tryOn.errorReason) ? (
+            {tryOn.quotaUpsell ? (
+              <div className="mt-4 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
+                <p className="font-semibold">{tryOn.quotaUpsell.title}</p>
+                <p className="mt-1">{tryOn.quotaUpsell.body}</p>
+              </div>
+            ) : null}
+            {isLoginRequired(tryOn.errorReason) || tryOn.quotaUpsell ? (
               <a href="/login" className="btn btn--primary mt-4 w-full px-4">
-                Đăng nhập
+                Đăng ký hoặc đăng nhập
               </a>
-            ) : (
-              <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={tryOn.backToConfirm}>
+            ) : null}
+            {isLoginRequired(tryOn.errorReason) ? null : (
+              <button
+                type="button"
+                className={`btn btn--outline w-full px-4 ${tryOn.quotaUpsell ? "mt-3" : "mt-4"}`}
+                onClick={tryOn.backToConfirm}
+              >
                 Quay lại
               </button>
             )}

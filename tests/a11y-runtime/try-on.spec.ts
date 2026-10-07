@@ -1081,7 +1081,8 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
 
   await expect(alert).toContainText("5 lượt thử đồ");
   await expect(alert).toContainText("đăng nhập");
-  const signIn = dialog.getByRole("link", { name: "Đăng nhập" });
+  await expect(dialog).toContainText("Đăng ký tài khoản miễn phí");
+  const signIn = dialog.getByRole("link", { name: "Đăng ký hoặc đăng nhập" });
   await expect(signIn).toBeVisible();
   await expect(signIn).toHaveAttribute("href", "/login");
   await assertPageQuality(page);

@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
+import { authClient } from "@/auth/client";
+
 import {
   TRY_ON_NETWORK_FAILURE_MESSAGE,
   isBlockedAgeState,
@@ -13,6 +15,7 @@ import {
   parseTryOnFailureReason,
   tryOnStepNumber,
   tryOnFailureMessage,
+  tryOnQuotaUpsell,
   validateTryOnFile,
   type TryOnAgeState,
   type TryOnFailureReason,
@@ -60,6 +63,8 @@ export function useTryOn({
   fileInputRef: RefObject<HTMLInputElement | null>;
 }>) {
   const abortRef = useRef<AbortController | null>(null);
+  // Only decides whether a limit message also offers an account. The server still decides the limit.
+  const { data: session } = authClient.useSession();
 
   const [step, setStep] = useState<TryOnStep>("photo");
   const [file, setFile] = useState<File | null>(null);
@@ -254,6 +259,7 @@ export function useTryOn({
     phase,
     errorMessage,
     errorReason,
+    quotaUpsell: tryOnQuotaUpsell(errorReason, Boolean(session)),
     result,
     canGenerate,
     missingSteps: missingTryOnSteps({ hasPhoto: file !== null, ageState, acknowledged }),

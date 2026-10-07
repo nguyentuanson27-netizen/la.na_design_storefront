@@ -31,13 +31,15 @@
  * engineering defaults that no live measurement has tuned.
  */
 
+import { TRY_ON_GUEST_QUOTA, TRY_ON_MEMBER_QUOTA } from "./try-on-policy.ts";
+
 const MINUTE_MS = 60 * 1_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
 export type TryOnQuota = Readonly<{ perMinute: number; perDay: number }>;
 
-const DEFAULT_GUEST_QUOTA: TryOnQuota = Object.freeze({ perMinute: 1, perDay: 5 });
-const DEFAULT_MEMBER_QUOTA: TryOnQuota = Object.freeze({ perMinute: 2, perDay: 10 });
+const DEFAULT_GUEST_QUOTA: TryOnQuota = TRY_ON_GUEST_QUOTA;
+const DEFAULT_MEMBER_QUOTA: TryOnQuota = TRY_ON_MEMBER_QUOTA;
 /** Image generation takes several seconds per request; this caps spend and memory in flight. */
 const DEFAULT_MAX_CONCURRENT = 3;
 /**

@@ -3,7 +3,9 @@ import {
   TRY_ON_AGE_BELOW_CONSENT_AGE,
   TRY_ON_AGE_TEEN_WITH_GUARDIAN,
   TRY_ON_ALLOWED_IMAGE_MIME_TYPES,
+  TRY_ON_GUEST_QUOTA,
   TRY_ON_MAX_IMAGE_BYTES,
+  TRY_ON_MEMBER_QUOTA,
   type TryOnAgeState,
   type TryOnFailureReason,
 } from "../../commerce/try-on-policy.ts";
@@ -105,9 +107,9 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
   IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.",
   NOT_ELIGIBLE: "Sản phẩm này hiện chưa hỗ trợ thử đồ.",
   PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Vui lòng thử lại sau.",
-  RATE_LIMITED: "Bạn vừa thử đồ xong. Vui lòng chờ khoảng 1 phút rồi thử lại.",
-  LOGIN_REQUIRED: "Bạn đã dùng hết 5 lượt thử đồ không cần đăng nhập. Vui lòng đăng nhập để tiếp tục thử đồ.",
-  DAILY_LIMIT_REACHED: "Bạn đã dùng hết lượt thử đồ hôm nay. Vui lòng quay lại vào ngày mai.",
+  RATE_LIMITED: "Bạn vừa thử đồ xong. Mỗi lượt thử đồ cách nhau khoảng 1 phút — vui lòng chờ rồi thử lại.",
+  LOGIN_REQUIRED: `Bạn đã dùng hết ${TRY_ON_GUEST_QUOTA.perDay} lượt thử đồ miễn phí hôm nay. Đăng ký tài khoản hoặc đăng nhập để thử tiếp.`,
+  DAILY_LIMIT_REACHED: `Bạn đã dùng hết ${TRY_ON_MEMBER_QUOTA.perDay} lượt thử đồ hôm nay. Lượt thử được làm mới sau 24 giờ kể từ lượt đầu tiên — mời bạn quay lại sau.`,
   BUSY: "Hệ thống đang có nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
   SAFETY_BLOCKED:
     "Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác: chính diện, rõ người, đủ sáng.",
@@ -126,6 +128,24 @@ export function parseTryOnFailureReason(reason: unknown): TryOnFailureReason | n
 /** A guest who has used its allowance continues by signing in. */
 export function isLoginRequired(reason: TryOnFailureReason | null): boolean {
   return reason === "LOGIN_REQUIRED";
+}
+
+export type TryOnQuotaUpsell = Readonly<{ title: string; body: string }>;
+
+/**
+ * What a guest who hit a limit is offered: a free account has a bigger allowance. Only a guest is
+ * ever offered it — a signed-in shopper already has the account's allowance, and a limit that is
+ * not about the allowance (busy, bad photo) has nothing to upsell.
+ */
+export function tryOnQuotaUpsell(
+  reason: TryOnFailureReason | null,
+  signedIn: boolean,
+): TryOnQuotaUpsell | null {
+  if (signedIn || (reason !== "RATE_LIMITED" && reason !== "LOGIN_REQUIRED")) return null;
+  return {
+    title: "Đăng ký tài khoản miễn phí để thử đồ nhiều hơn",
+    body: `Khách chưa đăng nhập được ${TRY_ON_GUEST_QUOTA.perDay} lượt mỗi ngày, mỗi lượt cách nhau ${TRY_ON_GUEST_QUOTA.perMinute === 1 ? "1 phút" : `${TRY_ON_GUEST_QUOTA.perMinute} lượt/phút`}. Có tài khoản, bạn được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày và thử liên tiếp ${TRY_ON_MEMBER_QUOTA.perMinute} lượt mỗi phút.`,
+  };
 }
 
 /** An unrecognised or missing reason is shown as a plain generation failure. */

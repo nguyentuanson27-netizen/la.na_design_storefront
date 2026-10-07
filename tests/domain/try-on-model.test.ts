@@ -14,6 +14,7 @@ import {
   tryOnStepNumber,
   TRY_ON_TEEN_ATTESTATION_LEAD,
   tryOnFailureMessage,
+  tryOnQuotaUpsell,
   validateTryOnFile,
 } from "../../src/components/headless/try-on-model.ts";
 
@@ -64,6 +65,19 @@ test("login-required tells a guest to sign in; the daily limit tells a member to
   assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /5 lượt/);
   assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /hôm nay|ngày mai/);
   assert.match(tryOnFailureMessage("RATE_LIMITED"), /1 phút/);
+});
+
+test("only a guest who hit an allowance limit is offered an account, and the copy states both allowances", () => {
+  for (const reason of ["RATE_LIMITED", "LOGIN_REQUIRED"] as const) {
+    const upsell = tryOnQuotaUpsell(reason, false);
+    assert.ok(upsell, reason);
+    assert.match(upsell.body, /5 lượt/);
+    assert.match(upsell.body, /10 lượt/);
+    assert.equal(tryOnQuotaUpsell(reason, true), null, `${reason} signed in`);
+  }
+  for (const reason of [null, "BUSY", "DAILY_LIMIT_REACHED", "GENERATION_FAILED"] as const) {
+    assert.equal(tryOnQuotaUpsell(reason, false), null, String(reason));
+  }
 });
 
 test("only a safety block makes the photo final", () => {
