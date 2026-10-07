@@ -51,18 +51,21 @@ Any change to one of these boundaries must update the parity tests in the same c
 [`resolveStorefrontProductMedia`](../../src/commerce/product-media.ts) collects and deduplicates images deterministically in stable order:
 
 1. Candidate 1: Product `primaryImageUrl` (if valid and trusted).
-2. Candidate 2+: Variation image URLs in sequence.
+2. Candidate 2+: Parent variation image URLs in sequence.
+3. Candidate 3+: Child component variation image URLs in sequence (for composite products, extracted via `extractCompositeComponentImageUrls`).
 
 ### Bounds & Protection Against Untrusted External Payloads
 
-- **Candidate Scan Budget (`MAX_MEDIA_CANDIDATES_SCANNED = 100`)**: Bounds the total number of candidate URLs processed across product and variations.
-- **Search Read Boundary**: Search suggestions apply the same 100-candidate budget inside the per-product database read, so unbounded variant JSON arrays are not materialized into application memory before the resolver cap is applied.
+- **Candidate Scan Budget (`MAX_MEDIA_CANDIDATES_SCANNED = 100`)**: Bounds the total number of candidate URLs processed across product, parent variants, and child component variants.
+- **Search Read Boundary**: Search suggestions apply the same 100-candidate budget inside the per-product database read across product primary, parent variants (sourceRank 1), and component variants (sourceRank 2), so unbounded variant JSON arrays are not materialized into application memory before the resolver cap is applied. Each active component variant is expanded once, at its first parent, so shared S/M/L components cannot exhaust the budget with duplicates.
+- **Catalog Component Read Boundary**: Catalog and Flash Sale reads load composite component photography through a bounded per-product query (`storefrontComponentMediaSql`, 100 candidates, same dedupe and ordering as search) instead of selecting component JSON arrays through Prisma; the relation select carries only component ids. Application-side extraction additionally stops at the budget left after the product primary and parent variant images.
 - **Gallery Output Cap (`MAX_STOREFRONT_GALLERY_IMAGES = 12`)**: Caps the maximum number of unique trusted images returned to 12, preserving deterministic first-N order while bounding DOM nodes, network payload, and downstream rendering costs.
 
 ### Deduplication Rules
 
 - If a variation image matches the product primary image, it is not repeated in the gallery.
-- If multiple variations reference the same image URL, only the first occurrence is retained.
+- If multiple variations (or shared component variants across parent sizes) reference the same image URL, only the first occurrence is retained.
+- For composite products, parent variants with no images of their own fall back to their component variant images for PDP variant selection (`buildCompositeVariantGalleryTargets`).
 - Untrusted, malformed, or missing URLs are silently filtered out without failing the entire product view.
 - If no images are trusted/present, the resolver safely returns `primary: null, gallery: []`.
 

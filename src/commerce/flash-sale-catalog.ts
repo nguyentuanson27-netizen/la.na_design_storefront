@@ -9,8 +9,14 @@ import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
   resolveStorefrontProductMedia,
+  extractCompositeComponentImageUrls,
+  remainingComponentCandidateBudget,
   type StorefrontProductMedia,
 } from "./product-media.ts";
+import {
+  fetchComponentMediaForProducts,
+  type ComponentMediaByProduct,
+} from "./storefront-component-media.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_FLASH_SALE_PAGE_SIZE = 48;
@@ -52,6 +58,10 @@ const flashProductSelection = {
       pancakeRetailPrice: true,
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
+      compositeComponents: {
+        orderBy: [{ componentVariantId: "asc" }],
+        select: { componentVariantId: true },
+      },
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
@@ -109,13 +119,24 @@ function sumWarehouseStocks(stocks: readonly { quantity: number }[]): number {
   return total;
 }
 
-function toFlashProduct(product: SelectedFlashProduct) {
+function toFlashProduct(product: SelectedFlashProduct, componentMedia?: ComponentMediaByProduct) {
+  const componentImageUrlsById = componentMedia?.get(product.id);
+  const parentVariantImageUrls = product.variants.map((variant) =>
+    parseJsonStringArray(variant.pancakeImageUrls),
+  );
+  const componentVariantImageUrls = extractCompositeComponentImageUrls(
+    product.variants,
+    remainingComponentCandidateBudget({
+      primaryImageUrl: product.primaryImageUrl,
+      variantImageUrls: parentVariantImageUrls,
+    }),
+    componentImageUrlsById,
+  );
+
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
-    variantImageUrls: product.variants.map((variant) =>
-      parseJsonStringArray(variant.pancakeImageUrls),
-    ),
+    variantImageUrls: [...parentVariantImageUrls, ...componentVariantImageUrls],
   });
 
   return {
@@ -391,7 +412,11 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
           },
           select: flashProductSelection,
         });
-    return new Map(products.map((product) => [product.id, product]));
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
+    return {
+      byId: new Map(products.map((product) => [product.id, product])),
+      componentMedia,
+    };
   }
 
   async function listFlashSalePage({
@@ -465,14 +490,14 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     }
     for (const row of idRows) assertProjectedMoney(row);
 
-    const byId = await hydrateProducts(safeShopId, idRows);
+    const { byId, componentMedia } = await hydrateProducts(safeShopId, idRows);
     // Cards carry the advisory capacity figure (`capacity-advisory.ts`), the TypeScript side of the
     // projection that just admitted these products.
     const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idRows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Flash Sale result changed during read");
       return {
-        ...toFlashProduct(product),
+        ...toFlashProduct(product, componentMedia),
         flashSale: Object.freeze({
           representativeVariantId: row.representativeVariantId,
           basePriceVnd: row.basePrice,
@@ -593,15 +618,15 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
     }
     for (const row of idRows) assertProjectedMoney(row);
 
-    const byId = await hydrateProducts(safeShopId, idRows);
+    const { byId, componentMedia } = await hydrateProducts(safeShopId, idRows);
     // Cards carry the advisory capacity figure (`capacity-advisory.ts`), the TypeScript side of the
     // projection that just admitted these products.
     const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idRows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
       const base = row.admittedFlashVariantIds.length > 0
-        ? { ...toFlashProduct(product), admittedFlashVariantIds: Object.freeze([...row.admittedFlashVariantIds]) }
-        : toFlashProduct(product);
+        ? { ...toFlashProduct(product, componentMedia), admittedFlashVariantIds: Object.freeze([...row.admittedFlashVariantIds]) }
+        : toFlashProduct(product, componentMedia);
       if (row.kind === "CLEARANCE") return { ...base, isClearance: true as const };
       if (row.kind !== "FLASH_SALE" || row.endsAt === null || row.endsAt <= now) return base;
       return {

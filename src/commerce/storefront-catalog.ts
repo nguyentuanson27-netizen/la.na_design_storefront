@@ -13,8 +13,15 @@ import {
 import {
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
+  extractCompositeComponentImageUrls,
+  remainingComponentCandidateBudget,
+  buildCompositeVariantGalleryTargets,
   type StorefrontProductMedia,
 } from "./product-media.ts";
+import {
+  fetchComponentMediaForProducts,
+  type ComponentMediaByProduct,
+} from "./storefront-component-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import { FLATTENED_CATEGORIES, type CategoryDefaultOrder } from "../brand/category.config.ts";
 
@@ -112,9 +119,11 @@ const productSelection = {
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
       // ADR 0014 §11 makes composite capacity component-aware in every selling mode. Composition
-      // is a variant-level relation; one bounded row per variant answers "is this product composite"
-      // so the listing can request the component-aware advisory snapshot without loading that graph here.
-      compositeComponents: { take: 1, select: { componentVariantId: true } },
+      // is a variant-level relation; child component photography is aggregated into composite parent galleries.
+      compositeComponents: {
+        orderBy: [{ componentVariantId: "asc" }],
+        select: { componentVariantId: true },
+      },
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
@@ -168,13 +177,25 @@ export type SelectedStorefrontProductPayload = SelectedProduct;
 export function toStorefrontProduct(
   product: SelectedProduct,
   collectionMap?: ReadonlyMap<string, StorefrontProductCollection>,
+  componentMedia?: ComponentMediaByProduct,
 ) {
+  const componentImageUrlsById = componentMedia?.get(product.id);
+  const parentVariantImageUrls = product.variants.map((variant) =>
+    parseJsonStringArray(variant.pancakeImageUrls),
+  );
+  const componentVariantImageUrls = extractCompositeComponentImageUrls(
+    product.variants,
+    remainingComponentCandidateBudget({
+      primaryImageUrl: product.primaryImageUrl,
+      variantImageUrls: parentVariantImageUrls,
+    }),
+    componentImageUrlsById,
+  );
+
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
-    variantImageUrls: product.variants.map((variant) =>
-      parseJsonStringArray(variant.pancakeImageUrls),
-    ),
+    variantImageUrls: [...parentVariantImageUrls, ...componentVariantImageUrls],
   });
   const publishedContent = product.content?.status === "PUBLISHED" ? product.content : null;
   const rawCollectionSlugs = product.content
@@ -238,10 +259,7 @@ export function toStorefrontProduct(
     galleryIndexByVariantId: Object.fromEntries(
       resolveVariantGalleryIndexes({
         gallery: media.gallery,
-        variants: product.variants.map((variant) => ({
-          id: variant.id,
-          imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
-        })),
+        variants: buildCompositeVariantGalleryTargets(product.variants, componentImageUrlsById),
       }),
     ),
   };
@@ -680,10 +698,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     return withAdvisoryStock(
       shopId,
-      products.map((product) => toStorefrontProduct(product, collectionMap)),
+      products.map((product) => toStorefrontProduct(product, collectionMap, componentMedia)),
     );
   }
 
@@ -714,10 +733,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     return withAdvisoryStock(
       shopId,
-      products.map((product) => toStorefrontProduct(product, collectionMap)),
+      products.map((product) => toStorefrontProduct(product, collectionMap, componentMedia)),
     );
   }
 
@@ -761,11 +781,12 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     return {
       products: await withAdvisoryStock(
         shopId,
-        products.map((product) => toStorefrontProduct(product, collectionMap)),
+        products.map((product) => toStorefrontProduct(product, collectionMap, componentMedia)),
       ),
       page,
       pageSize: safePageSize,
@@ -796,10 +817,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     const advised = await withAdvisoryStock(
       shopId,
-      products.map((product) => toStorefrontProduct(product, collectionMap)),
+      products.map((product) => toStorefrontProduct(product, collectionMap, componentMedia)),
     );
     const byId = new Map(advised.map((product) => [product.id, product]));
     return ids.flatMap((id) => {
@@ -835,11 +857,12 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     return {
       products: await withAdvisoryStock(
         shopId,
-        products.map((product) => toStorefrontProduct(product, collectionMap)),
+        products.map((product) => toStorefrontProduct(product, collectionMap, componentMedia)),
       ),
       page,
       pageSize: safePageSize,
@@ -932,13 +955,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       p.content ? parseJsonStringArray(p.content.collectionSlugs) : [],
     );
     const collectionMap = await fetchPublishedCollectionMap(client, allSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, products);
 
     const orderedProducts = await withAdvisoryStock(
       shopId,
       ids.map((id) => {
         const product = byId.get(id);
         if (!product) throw new Error("Storefront discovery result changed during read");
-        return toStorefrontProduct(product, collectionMap);
+        return toStorefrontProduct(product, collectionMap, componentMedia);
       }),
     );
 
@@ -1051,8 +1075,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient) {
       ? parseJsonStringArray(product.content.collectionSlugs)
       : [];
     const collectionMap = await fetchPublishedCollectionMap(client, rawSlugs);
+    const componentMedia = await fetchComponentMediaForProducts(client, [product]);
 
-    const [advised] = await withAdvisoryStock(shopId, [toStorefrontProduct(product, collectionMap)]);
+    const [advised] = await withAdvisoryStock(shopId, [
+      toStorefrontProduct(product, collectionMap, componentMedia),
+    ]);
     return advised!;
   }
 

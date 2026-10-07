@@ -299,3 +299,177 @@ export function resolveVariantGalleryIndexes({
 
   return indexByVariantId;
 }
+
+export type CompositeComponentVariantCandidate = Readonly<{
+  id: string;
+  isPresent?: boolean | null;
+  isActive?: boolean | null;
+  pancakeImageUrls?: unknown;
+}>;
+
+export type CompositeEdgeCandidate = Readonly<{
+  componentVariantId?: string;
+  componentVariant?: CompositeComponentVariantCandidate | null;
+}>;
+
+/**
+ * Component photography already bounded at the database boundary
+ * (`storefront-component-media.ts`), keyed by component variant id. Edges that carry only a
+ * `componentVariantId` resolve their images here, so the raw JSON arrays never reach the app.
+ */
+export type ComponentImageUrlsById = ReadonlyMap<string, readonly string[]>;
+
+function resolveComponentVariant(
+  edge: CompositeEdgeCandidate,
+  componentImageUrlsById: ComponentImageUrlsById | undefined,
+): CompositeComponentVariantCandidate | null {
+  if (edge.componentVariant) {
+    return isUsableComponentVariant(edge.componentVariant) ? edge.componentVariant : null;
+  }
+  if (!edge.componentVariantId || !componentImageUrlsById) return null;
+  return {
+    id: edge.componentVariantId,
+    pancakeImageUrls: componentImageUrlsById.get(edge.componentVariantId) ?? [],
+  };
+}
+
+export type CompositeVariantCandidate = Readonly<{
+  compositeComponents?: readonly CompositeEdgeCandidate[] | null;
+}>;
+
+/**
+ * Appends non-blank string entries from a raw JSON image list to `out`, stopping as soon as `out`
+ * holds `limit` entries. Walks at most as many entries as it needs, so a hostile oversized list
+ * costs a bounded amount of work instead of a full filter/copy.
+ */
+function appendBoundedStringCandidates(raw: unknown, out: string[], limit: number): void {
+  if (!Array.isArray(raw)) return;
+  for (let index = 0; index < raw.length && out.length < limit; index++) {
+    const item: unknown = raw[index];
+    if (typeof item === "string" && item.trim().length > 0) out.push(item);
+  }
+}
+
+function isUsableComponentVariant(
+  compVar: CompositeComponentVariantCandidate | null | undefined,
+): compVar is CompositeComponentVariantCandidate {
+  return Boolean(compVar) && compVar!.isPresent !== false && compVar!.isActive !== false;
+}
+
+/**
+ * Extracts deduplicated photography candidate URLs from component variants of composite products.
+ *
+ * Iterates through variants in order, and their composite components in order.
+ * Deduplicates by component variant ID to avoid repeating identical child variant URLs across
+ * multiple parent variants (e.g. sizes S, M, L).
+ * Excludes components that are explicitly marked inactive or deleted (isPresent=false or isActive=false).
+ *
+ * `maxCandidates` is the raw-candidate budget the resolver has left for component photography
+ * (default: the whole MAX_MEDIA_CANDIDATES_SCANNED). Traversal stops once that many raw URLs are
+ * collected, so work stays bounded before the resolver's own scan cap applies.
+ */
+export function extractCompositeComponentImageUrls(
+  variants: readonly CompositeVariantCandidate[],
+  maxCandidates: number = MAX_MEDIA_CANDIDATES_SCANNED,
+  componentImageUrlsById?: ComponentImageUrlsById,
+): (readonly string[])[] {
+  const seenComponentVariantIds = new Set<string>();
+  const componentVariantImageUrls: (readonly string[])[] = [];
+  let remaining = Math.max(0, maxCandidates);
+
+  for (const variant of variants) {
+    if (remaining <= 0) break;
+    if (!variant.compositeComponents) continue;
+    for (const comp of variant.compositeComponents) {
+      if (remaining <= 0) break;
+      const compVar = resolveComponentVariant(comp, componentImageUrlsById);
+      if (!compVar || seenComponentVariantIds.has(compVar.id)) continue;
+      seenComponentVariantIds.add(compVar.id);
+      const urls: string[] = [];
+      appendBoundedStringCandidates(compVar.pancakeImageUrls, urls, remaining);
+      if (urls.length > 0) {
+        remaining -= urls.length;
+        componentVariantImageUrls.push(urls);
+      }
+    }
+  }
+
+  return componentVariantImageUrls;
+}
+
+/**
+ * Raw candidate budget left for component photography once the product primary image and the
+ * parent variants' own image lists have been counted, mirroring the resolver's scan order.
+ */
+export function remainingComponentCandidateBudget({
+  primaryImageUrl,
+  variantImageUrls,
+}: Readonly<{
+  primaryImageUrl?: string | null;
+  variantImageUrls: readonly (readonly unknown[])[];
+}>): number {
+  let used = primaryImageUrl ? 1 : 0;
+  for (const list of variantImageUrls) {
+    used += list.length;
+    if (used >= MAX_MEDIA_CANDIDATES_SCANNED) return 0;
+  }
+  return MAX_MEDIA_CANDIDATES_SCANNED - used;
+}
+
+/**
+ * Builds gallery index resolution targets for parent variants and their child components.
+ *
+ * Parent variant images take precedence so variant selection maps to the parent's own photo.
+ * If a parent variant has no photo of its own, child component photos serve as fallback.
+ * Child component variants are also mapped so component-level lookups resolve directly.
+ *
+ * Only the first MAX_MEDIA_CANDIDATES_SCANNED URLs of any list can ever reach the capped gallery,
+ * so each target is bounded to that many candidates instead of copying whole raw arrays.
+ */
+export function buildCompositeVariantGalleryTargets(
+  variants: readonly {
+    readonly id: string;
+    readonly pancakeImageUrls?: unknown;
+    readonly compositeComponents?: readonly CompositeEdgeCandidate[] | null;
+  }[],
+  componentImageUrlsById?: ComponentImageUrlsById,
+): { readonly id: string; readonly imageUrls: readonly unknown[] }[] {
+  const parentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
+  const componentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
+  const seenComponentIds = new Set<string>();
+
+  for (const variant of variants) {
+    const parentUrls: string[] = [];
+    appendBoundedStringCandidates(variant.pancakeImageUrls, parentUrls, MAX_MEDIA_CANDIDATES_SCANNED);
+    const imageUrls = [...parentUrls];
+
+    if (variant.compositeComponents) {
+      for (const comp of variant.compositeComponents) {
+        const compVar = resolveComponentVariant(comp, componentImageUrlsById);
+        if (!compVar) continue;
+        const wantsFallback = imageUrls.length < MAX_MEDIA_CANDIDATES_SCANNED;
+        const needsTarget = !seenComponentIds.has(compVar.id);
+        if (!wantsFallback && !needsTarget) continue;
+
+        const raw: string[] = [];
+        appendBoundedStringCandidates(
+          compVar.pancakeImageUrls,
+          raw,
+          MAX_MEDIA_CANDIDATES_SCANNED,
+        );
+        for (const url of raw) {
+          if (imageUrls.length >= MAX_MEDIA_CANDIDATES_SCANNED) break;
+          imageUrls.push(url);
+        }
+        if (needsTarget) {
+          seenComponentIds.add(compVar.id);
+          componentTargets.push({ id: compVar.id, imageUrls: raw });
+        }
+      }
+    }
+
+    parentTargets.push({ id: variant.id, imageUrls });
+  }
+
+  return [...parentTargets, ...componentTargets];
+}
