@@ -143,6 +143,7 @@ def _gflow_env(db_path: Path) -> dict[str, str]:
     env = dict(os.environ)
     # The worker bearer token authenticates storefront -> worker only. gflow/Chrome never need it.
     env.pop("FLOW_WORKER_TOKEN", None)
+    env["DISPLAY"] = os.environ.get("DISPLAY", ":99")
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
@@ -179,11 +180,12 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
 def _clean_stale_profile_locks() -> None:
     profile_dir = GFLOW_HOME / f"profile_{PROFILE}"
     if profile_dir.is_dir():
-        for item in profile_dir.glob("Singleton*"):
-            try:
-                item.unlink(missing_ok=True)
-            except OSError:
-                pass
+        for item in profile_dir.iterdir():
+            if item.name.startswith("Singleton"):
+                try:
+                    item.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
 
 def _run_model(

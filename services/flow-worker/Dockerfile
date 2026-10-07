@@ -19,6 +19,7 @@ FROM ${PYTHON_IMAGE}
 ARG GOOGLE_CHROME_VERSION=155.0.8059.39-1
 
 ENV PYTHONUNBUFFERED=1 \
+    DISPLAY=:99 \
     GFLOW_CLI_HOME=/data/gflow \
     GFLOW_CLI_DB_PATH=/tmp/gflow-auth.db \
     GFLOW_CLI_HEADLESS=false \
@@ -42,6 +43,7 @@ RUN apt-get update \
  && chmod +x /opt/google/chrome/chrome \
  && pip install --no-cache-dir --require-hashes -r /tmp/gflow-runtime.txt \
  && python -m pip check \
+ && python3 -c 'path="/usr/local/lib/python3.13/site-packages/gflow_cli/api/client.py"; c=open(path,encoding="utf-8").read(); t="    async def _preread_flow_session_cookies(self) -> None:\n"; r="    async def _preread_flow_session_cookies(self) -> None:\n        import sys\n        if sys.platform != \"darwin\":\n            return\n"; assert t in c, "target not found"; open(path,"w",encoding="utf-8").write(c.replace(t, r, 1))' \
  && rm -f /tmp/gflow-runtime.txt \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --create-home --uid 10001 flow \
