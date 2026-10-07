@@ -6,7 +6,6 @@ import hmac
 import json
 import os
 import re
-import secrets
 import signal
 import subprocess
 import sys
@@ -281,7 +280,7 @@ def _run_model(
             _command(model, person, product, output),
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
             env=_gflow_env(db_path),
@@ -290,10 +289,13 @@ def _run_model(
         return 1, GflowMachineError()
 
     try:
-        stdout, _ = process.communicate(timeout=timeout_seconds)
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
         return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+
+    if process.returncode != 0 and stderr:
+        _event("flow_try_on.process_error", model=model, exit_code=process.returncode, stderr=stderr.strip()[:1000])
 
     return process.returncode, _machine_error(stdout or "")
 
@@ -331,12 +333,11 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
 
     with tempfile.TemporaryDirectory(prefix="flow-try-on-") as temp:
         root = Path(temp)
-        # gflow dedupes local --ref files by exact filename within a Flow project, so a fixed basename
-        # would reuse a previous request's shopper/garment. Keep the id random, PII-free, and shared by
-        # the Pro -> Nano2 fallback of this request so the fallback reuses this request's refs.
-        ref_id = secrets.token_hex(16)
-        person_path = root / f"person-{ref_id}{suffix[person_mime]}"
-        product_path = root / f"garment-{ref_id}{suffix[product_mime]}"
+        # gflow appends a unique 8-char hex suffix to uploaded asset names inside Flow
+        # (_unique_display_name). Using short basenames avoids exceeding the Flow mention picker
+        # search query length, which causes mention matching failures and ReferenceNotFoundError.
+        person_path = root / f"person{suffix[person_mime]}"
+        product_path = root / f"garment{suffix[product_mime]}"
         output_path = root / "result.png"
         db_path = root / "gflow.db"
         person_path.write_bytes(person)

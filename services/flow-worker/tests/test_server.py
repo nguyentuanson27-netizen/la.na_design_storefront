@@ -61,7 +61,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
 
-    def test_ref_filenames_are_unique_per_request_and_stable_across_fallback(self):
+    def test_ref_filenames_are_short_and_stable_across_fallback(self):
         refs = []
 
         def run(model, person, product, output, _timeout, _db_path):
@@ -85,10 +85,8 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         # Request 1: Pro -> Nano2 fallback keeps the same ref filenames. Request 2: Pro only.
         self.assertEqual([r[0] for r in refs], ["nano-pro", "nano2", "nano-pro"])
         self.assertEqual(refs[0][1:], refs[1][1:])
-        self.assertNotEqual(refs[0][1], refs[2][1])
-        self.assertNotEqual(refs[0][2], refs[2][2])
-        self.assertRegex(refs[0][1], r"^person-[0-9a-f]{32}\.jpg$")
-        self.assertRegex(refs[0][2], r"^garment-[0-9a-f]{32}\.png$")
+        self.assertEqual(refs[0][1], "person.jpg")
+        self.assertEqual(refs[0][2], "garment.png")
 
     def test_pro_and_nano2_share_one_generation_budget(self):
         timeouts = []
@@ -248,7 +246,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertIn("nano-pro", command)
         self.assertIn("--count", command)
         self.assertEqual(command[command.index("--count") + 1], "1")
-        self.assertEqual(command[command.index("--output") + 1], "/tmp/result.png")
+        self.assertEqual(command[command.index("--output") + 1], str(server.Path("/tmp/result.png")))
         self.assertNotIn("nano2-lite", command)
 
     def test_image_boundary_rejects_declared_mime_mismatch(self):
@@ -288,6 +286,7 @@ class FakeLease:
         self.released = True
 
 
+@unittest.skipIf(sys.platform == "win32", "os.symlink requires SeCreateSymbolicLinkPrivilege on Windows")
 class StaleProfileLockCleanupTest(unittest.TestCase):
     def setUp(self):
         temp = tempfile.TemporaryDirectory()
