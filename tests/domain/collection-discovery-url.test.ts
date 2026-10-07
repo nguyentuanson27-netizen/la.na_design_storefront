@@ -121,3 +121,39 @@ test("U3 control changes reset pagination while preserving the other active cont
     "/collections/city-uniform?sort=price-desc",
   );
 });
+
+test("collection parser and serializer honour collection-specific default sort for xa-hang-chao-thu", () => {
+  assert.equal(
+    parseCollectionDiscoverySearchParams("xa-hang-chao-thu", {}).sort,
+    "price-asc",
+  );
+  assert.equal(
+    parseCollectionDiscoverySearchParams("xa-hang-chao-thu", { sort: "name-desc" }).sort,
+    "name-desc",
+  );
+  assert.equal(
+    buildCollectionDiscoveryHref("xa-hang-chao-thu", {
+      size: null,
+      sort: "price-asc",
+      page: 1,
+    }),
+    "/collections/xa-hang-chao-thu",
+  );
+  assert.equal(
+    buildCollectionDiscoveryHref("xa-hang-chao-thu", {
+      size: null,
+      sort: "name-asc",
+      page: 1,
+    }),
+    "/collections/xa-hang-chao-thu?sort=name-asc",
+  );
+  assert.equal(
+    buildCollectionDiscoveryHref("xa-hang-chao-thu", {
+      size: "M",
+      sort: "price-asc",
+      page: 2,
+    }),
+    "/collections/xa-hang-chao-thu?size=M&page=2",
+  );
+});
+
