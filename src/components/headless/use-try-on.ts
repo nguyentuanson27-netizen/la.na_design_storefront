@@ -2,8 +2,6 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
-import { authClient } from "@/auth/client";
-
 import {
   TRY_ON_NETWORK_FAILURE_MESSAGE,
   isBlockedAgeState,
@@ -13,12 +11,16 @@ import {
   missingTryOnSteps,
   nextTryOnStep,
   parseTryOnFailureReason,
+  parseTryOnQuota,
+  tryOnLoginHref,
+  tryOnQuotaLine,
   tryOnStepNumber,
   tryOnFailureMessage,
   tryOnQuotaUpsell,
   validateTryOnFile,
   type TryOnAgeState,
   type TryOnFailureReason,
+  type TryOnQuotaView,
   type TryOnStep,
 } from "./try-on-model.ts";
 
@@ -63,8 +65,6 @@ export function useTryOn({
   fileInputRef: RefObject<HTMLInputElement | null>;
 }>) {
   const abortRef = useRef<AbortController | null>(null);
-  // Only decides whether a limit message also offers an account. The server still decides the limit.
-  const { data: session } = authClient.useSession();
 
   const [step, setStep] = useState<TryOnStep>("photo");
   const [file, setFile] = useState<File | null>(null);
@@ -76,6 +76,8 @@ export function useTryOn({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorReason, setErrorReason] = useState<TryOnFailureReason | null>(null);
   const [result, setResult] = useState<TryOnResult | null>(null);
+  // What is left today, as the server says. Display only: the server enforces the limit on its own.
+  const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
 
   // Object URLs are revoked when replaced and on unmount, so no image outlives its use.
   useEffect(() => {
@@ -100,6 +102,17 @@ export function useTryOn({
 
   function clearFileInput() {
     if (fileInputRef.current) fileInputRef.current.value = "";
+  }
+
+  /** Asks the server what is left today. A failed lookup leaves the last answer, or none, in place. */
+  async function refreshQuota() {
+    try {
+      const response = await fetch("/api/try-on", { method: "GET", cache: "no-store" });
+      const next = parseTryOnQuota(await response.json().catch(() => null));
+      if (next !== null) setQuota(next);
+    } catch {
+      // Offline or blocked: the dialog works without the number.
+    }
   }
 
   function reset() {
@@ -225,7 +238,11 @@ export function useTryOn({
       if (abortRef.current === controller) abortRef.current = null;
       // The acknowledgement is a representation about one photo for one generation. Asking again
       // for the next attempt is deliberate (spec §6), and the server demands it regardless.
-      if (!controller.signal.aborted) setAcknowledged(false);
+      if (!controller.signal.aborted) {
+        setAcknowledged(false);
+        // Every submitted attempt counts, so the number has moved whatever the outcome was.
+        void refreshQuota();
+      }
     }
   }
 
@@ -259,7 +276,11 @@ export function useTryOn({
     phase,
     errorMessage,
     errorReason,
-    quotaUpsell: tryOnQuotaUpsell(errorReason, Boolean(session)),
+    quota,
+    quotaLine: tryOnQuotaLine(quota),
+    quotaUpsell: tryOnQuotaUpsell(errorReason, quota?.audience ?? null),
+    loginHref: tryOnLoginHref(productSlug),
+    refreshQuota,
     result,
     canGenerate,
     missingSteps: missingTryOnSteps({ hasPhoto: file !== null, ageState, acknowledged }),

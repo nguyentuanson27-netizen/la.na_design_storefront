@@ -4,13 +4,20 @@ import test from "node:test";
 import { TRY_ON_FAILURE_REASONS } from "../../src/commerce/try-on-policy.ts";
 import {
   TRY_ON_AGE_OPTIONS,
+  TRY_ON_BETA_NOTE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
+  TRY_ON_PHOTO_DONTS,
+  TRY_ON_PHOTO_DOS,
+  TRY_ON_WAIT_NOTE,
   isBlockedAgeState,
   isFinalForPhoto,
   isTeenAgeState,
   isTryOnAgeAllowed,
   missingTryOnSteps,
   nextTryOnStep,
+  parseTryOnQuota,
+  tryOnLoginHref,
+  tryOnQuotaLine,
   tryOnStepNumber,
   TRY_ON_TEEN_ATTESTATION_LEAD,
   tryOnFailureMessage,
@@ -63,21 +70,73 @@ test("every server failure reason has a safe Vietnamese message with no upstream
 test("login-required tells a guest to sign in; the daily limit tells a member to come back tomorrow", () => {
   assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /đăng nhập/);
   assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /5 lượt/);
-  assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /hôm nay|ngày mai/);
+  assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /hôm nay|ngày mai/i);
   assert.match(tryOnFailureMessage("RATE_LIMITED"), /1 phút/);
 });
 
+test("the limit messages are gentle, state the numbers, and say what to do next", () => {
+  assert.match(tryOnFailureMessage("RATE_LIMITED"), /nhé/);
+  assert.match(tryOnFailureMessage("LOGIN_REQUIRED"), /Tạo tài khoản hoặc đăng nhập/);
+  assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /10 lượt/);
+  assert.match(tryOnFailureMessage("DAILY_LIMIT_REACHED"), /24 giờ/);
+});
+
 test("only a guest who hit an allowance limit is offered an account, and the copy states both allowances", () => {
-  for (const reason of ["RATE_LIMITED", "LOGIN_REQUIRED"] as const) {
-    const upsell = tryOnQuotaUpsell(reason, false);
-    assert.ok(upsell, reason);
+  for (const [reason, audience] of [
+    ["LOGIN_REQUIRED", null],
+    ["LOGIN_REQUIRED", "guest"],
+    ["RATE_LIMITED", "guest"],
+  ] as const) {
+    const upsell = tryOnQuotaUpsell(reason, audience);
+    assert.ok(upsell, `${reason}/${audience}`);
     assert.match(upsell.body, /5 lượt/);
     assert.match(upsell.body, /10 lượt/);
-    assert.equal(tryOnQuotaUpsell(reason, true), null, `${reason} signed in`);
   }
+  // A signed-in shopper is never told to sign up; "too soon" is not offered until the server has said who asks.
+  assert.equal(tryOnQuotaUpsell("RATE_LIMITED", "member"), null);
+  assert.equal(tryOnQuotaUpsell("LOGIN_REQUIRED", "member"), null);
+  assert.equal(tryOnQuotaUpsell("RATE_LIMITED", null), null);
   for (const reason of [null, "BUSY", "DAILY_LIMIT_REACHED", "GENERATION_FAILED"] as const) {
-    assert.equal(tryOnQuotaUpsell(reason, false), null, String(reason));
+    assert.equal(tryOnQuotaUpsell(reason, "guest"), null, String(reason));
   }
+});
+
+test("the quota body from the server is read strictly; anything else shows no number", () => {
+  assert.deepEqual(parseTryOnQuota({ ok: true, audience: "guest", limit: 5, remaining: 3 }), {
+    audience: "guest",
+    limit: 5,
+    remaining: 3,
+  });
+  for (const bad of [
+    null,
+    "x",
+    {},
+    { ok: false },
+    { ok: true, audience: "admin", limit: 5, remaining: 3 },
+    { ok: true, audience: "guest", limit: "5", remaining: 3 },
+    { ok: true, audience: "guest", limit: 5, remaining: -1 },
+    { ok: true, audience: "guest", limit: 5.5, remaining: 1 },
+  ]) {
+    assert.equal(parseTryOnQuota(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("the first-step quota line: a guest is told what an account adds, a member just what is left", () => {
+  assert.equal(tryOnQuotaLine(null), null);
+  assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 5 })!, /còn 5\/5 lượt thử đồ miễn phí/);
+  assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 5 })!, /10 lượt mỗi ngày/);
+  assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 0 })!, /đã dùng hết/);
+  assert.equal(tryOnQuotaLine({ audience: "member", limit: 10, remaining: 8 }), "Hôm nay bạn còn 8/10 lượt thử đồ.");
+});
+
+test("the sign-in link returns to this product and nowhere else", () => {
+  assert.equal(tryOnLoginHref("set-quan-ha-lam"), "/login?next=%2Fshop%2Fset-quan-ha-lam");
+});
+
+test("the wait and in-development notices say what the shopper needs to know", () => {
+  assert.match(TRY_ON_WAIT_NOTE, /15–30 giây/);
+  assert.match(TRY_ON_BETA_NOTE, /đang được .*hoàn thiện/);
+  assert.ok(TRY_ON_PHOTO_DOS.length > 0 && TRY_ON_PHOTO_DONTS.length > 0);
 });
 
 test("only a safety block makes the photo final", () => {

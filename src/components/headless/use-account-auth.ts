@@ -1,9 +1,11 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { type FormEvent, useState } from "react";
 
 import { submitEmailSignIn, submitEmailSignUp } from "@/auth/account-auth";
 import { authClient } from "@/auth/client";
+import { resolveSafeReturnPath } from "@/auth/return-path";
 
 import {
   ACCOUNT_AUTH_COPY,
@@ -24,6 +26,7 @@ import {
  */
 
 export function useAccountAuth() {
+  const router = useRouter();
   const { data: session, isPending: sessionPending, refetch } = authClient.useSession();
   const [pendingAction, setPendingAction] = useState<AccountPendingAction>(null);
   const [feedback, setFeedback] = useState<AccountAuthFeedback>(null);
@@ -58,6 +61,12 @@ export function useAccountAuth() {
       message: action === "sign-in" ? ACCOUNT_AUTH_COPY.signedIn : ACCOUNT_AUTH_COPY.signedUp,
     });
     setPendingAction(null);
+
+    // Read at the moment it is needed rather than through `useSearchParams`, which would make the
+    // otherwise static login page bail out of prerendering. A shopper sent here from a product page
+    // goes back to it; a missing or unsafe `next` leaves them on the account view.
+    const returnTo = resolveSafeReturnPath(new URLSearchParams(window.location.search).get("next"));
+    if (returnTo !== null) router.push(returnTo);
   }
 
   function handleSignIn(event: FormEvent<HTMLFormElement>) {

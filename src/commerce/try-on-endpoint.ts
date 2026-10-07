@@ -1,6 +1,6 @@
 import { readBoundedBody } from "./try-on-image.ts";
 import { TRY_ON_MAX_IMAGE_BYTES, type TryOnFailureReason } from "./try-on-policy.ts";
-import type { TryOnIdentity } from "./try-on-rate-limit.ts";
+import type { TryOnIdentity, TryOnQuotaStatus } from "./try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "./try-on-service.ts";
 
 /**
@@ -135,5 +135,29 @@ export async function handleTryOnPost(
     );
   } catch {
     return failure("GENERATION_FAILED");
+  }
+}
+
+export type TryOnQuotaEndpointDependencies = Readonly<{
+  resolveIdentity: (headers: Headers) => Promise<TryOnIdentity | null>;
+  peekQuota: (identity: TryOnIdentity) => TryOnQuotaStatus;
+}>;
+
+/**
+ * How many attempts the caller has left today, so the dialog can say so before they spend one. It
+ * reads and spends nothing, and the answer is about the caller alone, hence `no-store`. Unlike the
+ * POST it needs no origin check: a cross-site page can neither read the response nor change state.
+ */
+export async function handleTryOnQuotaGet(
+  request: Request,
+  { resolveIdentity, peekQuota }: TryOnQuotaEndpointDependencies,
+): Promise<Response> {
+  try {
+    const identity = await resolveIdentity(request.headers);
+    if (identity === null) return Response.json({ ok: false }, { status: 503, headers: NO_STORE });
+    const { audience, limit, remaining } = peekQuota(identity);
+    return Response.json({ ok: true, audience, limit, remaining }, { headers: NO_STORE });
+  } catch {
+    return Response.json({ ok: false }, { status: 503, headers: NO_STORE });
   }
 }

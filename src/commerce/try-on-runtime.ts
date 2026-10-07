@@ -43,6 +43,9 @@ async function loadProduct(slug: string) {
   return { slug: product.slug, categoryKeys, media: product.media };
 }
 
+/** Today's remaining attempts for an identity, from the same limiter the service spends. */
+export const peekTryOnQuota = (identity: TryOnIdentity) => limiter.peekQuota(identity);
+
 export const tryOnService = createTryOnService({
   readConfig: () => readTryOnRuntimeConfig(),
   limiter,

@@ -65,6 +65,13 @@ export type TryOnAttemptDecision =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: "RATE_LIMITED" | "LOGIN_REQUIRED" | "DAILY_LIMIT_REACHED" }>;
 
+/** Today's allowance for one identity, for display. `limit` is the per-day figure of its own kind. */
+export type TryOnQuotaStatus = Readonly<{
+  audience: TryOnIdentity["kind"];
+  limit: number;
+  remaining: number;
+}>;
+
 export type TryOnGenerationSlot =
   | Readonly<{ ok: true; release: () => void }>
   | Readonly<{ ok: false; reason: "BUSY" }>;
@@ -170,6 +177,20 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     return { ok: true };
   }
 
+  /**
+   * What `identity` has left today, without spending anything. Read-only, so showing it to a shopper
+   * cannot change what they are allowed.
+   */
+  function peekQuota(identity: TryOnIdentity, nowMs: number = Date.now()): TryOnQuotaStatus {
+    const quota = identity.kind === "member" ? memberQuota : guestQuota;
+    const day = liveWindow(dayWindows, `${identity.kind}:${identity.key}`, DAY_MS, nowMs);
+    return {
+      audience: identity.kind,
+      limit: quota.perDay,
+      remaining: Math.max(0, quota.perDay - (day?.count ?? 0)),
+    };
+  }
+
   /** Reserves one of the global upload slots, or reports the service as busy. */
   function startUpload(): TryOnUploadSlot {
     if (uploading >= maxConcurrentUploads) return { ok: false, reason: "BUSY" };
@@ -200,5 +221,5 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     };
   }
 
-  return { consumeAttempt, startUpload, startGeneration };
+  return { consumeAttempt, peekQuota, startUpload, startGeneration };
 }

@@ -1066,12 +1066,15 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
 }) => {
   // The sixth guest attempt needs five spaced minutes of real time, so the server's answer is
   // stubbed here; the quota logic that produces it is covered by the limiter and service tests.
+  // Only the generation request is stubbed; the dialog's own quota lookup (GET) still reaches the server.
   await page.route("**/api/try-on", (route) =>
-    route.fulfill({
-      status: 401,
-      contentType: "application/json",
-      body: JSON.stringify({ ok: false, reason: "LOGIN_REQUIRED" }),
-    }),
+    route.request().method() !== "POST"
+      ? route.fallback()
+      : route.fulfill({
+          status: 401,
+          contentType: "application/json",
+          body: JSON.stringify({ ok: false, reason: "LOGIN_REQUIRED" }),
+        }),
   );
   const watched = watch(page);
   const dialog = await openTryOn(page);
@@ -1084,7 +1087,8 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
   await expect(dialog).toContainText("Đăng ký tài khoản miễn phí");
   const signIn = dialog.getByRole("link", { name: "Đăng ký hoặc đăng nhập" });
   await expect(signIn).toBeVisible();
-  await expect(signIn).toHaveAttribute("href", "/login");
+  // It sends the shopper back to this very product once they have signed in.
+  await expect(signIn).toHaveAttribute("href", `/login?next=${encodeURIComponent(`/shop/${slugs.eligible}`)}`);
   await assertPageQuality(page);
 
   await page.keyboard.press("Escape");

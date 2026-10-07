@@ -1,13 +1,13 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import type { TryOnProvider } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
-import { BrandTryOnDialog, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
+import { BrandTryOnDialog, BrandTryOnNudge, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -65,6 +65,21 @@ export function BrandProductDetail({
   // selection above, so opening, failing or dismissing it cannot change what the shopper buys.
   const [tryOnOpen, setTryOnOpen] = useState(false);
   const tryOnTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // The phone-only reminder appears once the shopper has scrolled *past* the entry point (it is
+  // above the viewport), not while it is still ahead of them, and can be put away for this visit.
+  const [scrolledPastTryOn, setScrolledPastTryOn] = useState(false);
+  const [tryOnNudgeDismissed, setTryOnNudgeDismissed] = useState(false);
+  const hasTryOn = tryOn !== null;
+
+  useEffect(() => {
+    const trigger = tryOnTriggerRef.current;
+    if (!hasTryOn || trigger === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry) setScrolledPastTryOn(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    });
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [hasTryOn]);
 
   return (
     <>
@@ -102,6 +117,14 @@ export function BrandProductDetail({
             <PurchasePanelView
               controller={controller}
               sizeGuide={sizeGuide}
+              mobileNudge={
+                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed && !tryOnOpen ? (
+                  <BrandTryOnNudge
+                    onOpen={() => setTryOnOpen(true)}
+                    onDismiss={() => setTryOnNudgeDismissed(true)}
+                  />
+                ) : null
+              }
               tryOnTrigger={
                 tryOn === null ? null : (
                   <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => setTryOnOpen(true)} />
