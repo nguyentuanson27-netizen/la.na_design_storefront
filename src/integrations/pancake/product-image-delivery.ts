@@ -54,7 +54,7 @@ export async function fetchAndCompressPancakeProductImage(
         method: "GET",
         redirect: "manual",
         credentials: "omit",
-        headers: { accept: "image/avif,image/webp,image/png,image/jpeg" },
+        headers: { accept: "image/webp,image/png,image/jpeg" },
         signal: timeout.signal,
       });
 
