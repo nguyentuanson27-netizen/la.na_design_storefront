@@ -7,7 +7,8 @@ import {
   removeStorefrontCartLine,
   updateStorefrontCartLine,
 } from "@/commerce/storefront-cart-actions";
-import { buildCartViewModel, type CartViewModel } from "@/routes/cart-model";
+import { publishCartSummary } from "@/components/headless/cart-summary-store";
+import { buildCartViewModel, summarizeCartViewModel, type CartViewModel } from "@/routes/cart-model";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 
 export function useCartDrawer(isOpen: boolean) {
@@ -15,6 +16,12 @@ export function useCartDrawer(isOpen: boolean) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // The drawer is where quantities change and lines are removed, so it keeps the chrome's cart
+  // summary (header badge, mobile purchase bar) in step with what it just rendered.
+  useEffect(() => {
+    if (cart) publishCartSummary(summarizeCartViewModel(cart));
+  }, [cart]);
 
   const [prevIsOpen, setPrevIsOpen] = useState(isOpen);
   if (isOpen && !prevIsOpen) {

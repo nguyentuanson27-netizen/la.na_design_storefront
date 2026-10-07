@@ -11,6 +11,7 @@ import { CartDrawer } from "@/components/brand/cart-drawer";
 import { SearchOverlay } from "@/components/brand/search-overlay";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { STOREFRONT_CART_DRAWER_OPEN_EVENT } from "@/components/headless/cart-drawer-events";
+import { refreshCartSummary, useCartSummary } from "@/components/headless/cart-summary-store";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { SiteHeaderModel } from "@/components/headless/site-chrome-model";
 import { useAccountAuth } from "@/components/headless/use-account-auth";
@@ -59,6 +60,7 @@ function UtilityIcon({ href }: { href: string }) {
 export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
   const pathname = usePathname();
   const { session } = useAccountAuth();
+  const cartSummary = useCartSummary();
   const [isScrolled, setIsScrolled] = useState(false);
   const [activeMegaMenu, setActiveMegaMenu] = useState<string | null>(null);
   const [cartDrawerOpen, setCartDrawerOpen] = useState(false);
@@ -88,6 +90,11 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
     const openRequestedCart = () => setCartDrawerOpen(true);
     window.addEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
     return () => window.removeEventListener(STOREFRONT_CART_DRAWER_OPEN_EVENT, openRequestedCart);
+  }, []);
+
+  // One read per full page load: later changes arrive from the purchase panel and the drawer.
+  useEffect(() => {
+    void refreshCartSummary();
   }, []);
 
   const openSearch = (trigger?: HTMLButtonElement | null) => {
@@ -388,9 +395,20 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                   onClick={() => setCartDrawerOpen(true)}
                   aria-label={item.label}
                   aria-haspopup="dialog"
+                  className="relative"
                 >
                   <UtilityIcon href={item.href} />
                   <span className="sr-only">{item.label}</span>
+                  {cartSummary.count > 0 ? (
+                    <span
+                      key={cartSummary.count}
+                      data-cart-badge=""
+                      className="cart-badge"
+                    >
+                      <span aria-hidden="true">{cartSummary.count > 99 ? "99+" : cartSummary.count}</span>
+                      <span className="sr-only">{`, ${cartSummary.count} sản phẩm trong giỏ`}</span>
+                    </span>
+                  ) : null}
                 </button>
               );
             }

@@ -1,12 +1,14 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { createPortal } from "react-dom";
 import {
   useEffect,
   useRef,
   useState,
   type KeyboardEvent,
+  type MouseEvent,
   type ReactNode,
   type RefObject,
 } from "react";
@@ -20,6 +22,7 @@ import {
 } from "@/components/headless/use-variant-selection";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
+import { useCartSummary } from "@/components/headless/cart-summary-store";
 import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
@@ -296,6 +299,7 @@ export function PurchasePanelView({
   } = controller;
   const { priceDisplay, availabilityDateLabel } = view;
   const mobilePresentation = resolveMobilePurchasePresentation(view, selection);
+  const cartSummary = useCartSummary();
 
   const sizeSelectorRef = useRef<HTMLFieldSetElement | null>(null);
   const stickyTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -452,6 +456,13 @@ export function PurchasePanelView({
     window.requestAnimationFrame(() => {
       requestStorefrontCartDrawerOpen();
     });
+  }
+
+  function handleCartSummaryClick(event: MouseEvent<HTMLAnchorElement>) {
+    // Leave "open in new tab" and friends to the browser; a plain tap opens the existing drawer.
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    requestStorefrontCartDrawerOpen();
   }
 
   function handleStickyAction() {
@@ -687,12 +698,39 @@ export function PurchasePanelView({
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="truncate font-display text-base font-semibold">{priceDisplay.displayText}</p>
-            <p className="mt-0.5 truncate text-xs text-black/60">
-              {mobilePresentation.summary || mobilePresentation.actionLabel}
-            </p>
-          </div>
+          {cartSummary.count > 0 ? (
+            /*
+             * The cart is the more useful fact once it has something in it, so it takes the bar's
+             * left half and the price/selection summary steps aside. It is a link rather than a
+             * button -- real `/cart` for a new tab or no script -- so this region keeps the one
+             * button, the add action, that the purchase flow and its tests address.
+             */
+            <Link
+              href="/cart"
+              data-mobile-cart-summary=""
+              className="flex min-h-11 min-w-0 flex-1 items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+              onClick={handleCartSummaryClick}
+            >
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-display text-base font-semibold">
+                  {`Giỏ hàng (${cartSummary.count})`}
+                </span>
+                <span className="mt-0.5 block truncate text-xs text-black/60">
+                  {cartSummary.totalText}
+                </span>
+              </span>
+              <span className="inline-flex min-h-9 shrink-0 items-center border border-[#3B2219] px-3 text-sm font-semibold text-[#3B2219]">
+                Xem giỏ
+              </span>
+            </Link>
+          ) : (
+            <div className="min-w-0 flex-1">
+              <p className="truncate font-display text-base font-semibold">{priceDisplay.displayText}</p>
+              <p className="mt-0.5 truncate text-xs text-black/60">
+                {mobilePresentation.summary || mobilePresentation.actionLabel}
+              </p>
+            </div>
+          )}
           <button
             ref={stickyTriggerRef}
             className="btn btn--primary shrink-0 px-4"

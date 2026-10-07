@@ -143,3 +143,26 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
   });
 }
+
+/**
+ * What the chrome needs to say "your cart has something in it": how many pieces and what they come to.
+ *
+ * Deliberately smaller than {@link CartViewModel}. The header badge and the mobile purchase bar read
+ * it on every page, so it carries no lines and no tracking facts, and it is built from the same
+ * view model the drawer renders -- the two can never disagree about the total.
+ */
+export type CartSummary = Readonly<{
+  /** Total pieces across every line, unavailable ones included: they are still in the cart. */
+  count: number;
+  /** The view model's subtotal text; only meaningful when `count` is above zero. */
+  totalText: string;
+}>;
+
+export const EMPTY_CART_SUMMARY: CartSummary = Object.freeze({ count: 0, totalText: "" });
+
+export function summarizeCartViewModel(model: CartViewModel): CartSummary {
+  if (model.isEmpty) return EMPTY_CART_SUMMARY;
+  const count = model.lines.reduce((sum, line) => sum + line.quantity, 0);
+  if (!Number.isFinite(count) || count < 1) return EMPTY_CART_SUMMARY;
+  return Object.freeze({ count, totalText: model.subtotalText });
+}
