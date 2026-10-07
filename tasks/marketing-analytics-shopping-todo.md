@@ -1,5 +1,7 @@
 # Marketing analytics & Google Shopping — task checklist
 
+**Meta amendment (2026-10-07, PR #110):** [ADR 0015](../docs/decisions/0015-direct-meta-capi.md) governs the direct five-event Pixel/CAPI contract, signed shared IDs, committed positive cart deltas, persisted verified PDP provenance, reconciliation Purchase and bounded attribution retention. This extends the implementation; it does not activate Meta accounts or change Catalog ID semantics. [Audit/tests](../docs/audits/meta-ads-2026-10-07.md).
+
 Status: **PR-A (T1–T3), T4, T5, T6, M2, T7 (U24 / PR #193), M1 (PR #175 + PR #194 + operational closure), M3 (U25), and M4 (U26 / PR #198) IMPLEMENTED; Checkpoint D PASSED and Checkpoint E PASSED. U27a closed the availability divergence; **PR #214 implemented the approved Merchant↔JSON-LD one-survivor convergence contract and PR #216 completed its proof set, closing the feed↔JSON-LD convergence gate as of #216**. O1 is resolved as merchandise-only and O2 is resolved as Vietnam / `vi` / `VND`; PR #226 (`403671ec5d0bff890a8d69fd26626df03d7ad7dc`) wired and verified the trusted server-owned O2 runtime authority, so the public Merchant route now serves the configured feed while activation remains blocked on the remaining M5/Gate M operations. T8 remains blocked on O4, M5 operational activation is not complete, and V1 remains proposed.**
 
 Delivered slices: **T1–T3** (U2, PR #157 — still loads no GTM in any mode), **T4** (U8, PR #164 resolved cart lines
@@ -311,7 +313,7 @@ can be identified from a real artifact.
 
 - [ ] TikTok Events API.
 - [ ] Meta Pixel migration into GTM.
-- [ ] Meta CAPI replacement/content-ID redesign.
+- [ ] Meta delivery-system migration / Catalog-specific ID redesign without verified Catalog/Pixel/feed evidence. Direct funnel CAPI is implemented under ADR 0015.
 - [ ] Google Enhanced Conversions / hashed customer PII.
 - [ ] Merchant API realtime sync.
 - [ ] Composite Merchant offer / `item_group_id` design.

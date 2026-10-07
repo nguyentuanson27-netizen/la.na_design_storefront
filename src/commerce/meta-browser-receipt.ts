@@ -5,6 +5,7 @@ import { readMetaPagePath } from "../integrations/meta/page-source.ts";
 export { readMetaPagePath } from "../integrations/meta/page-source.ts";
 
 export type MetaBrowserReceiptFacts = Readonly<{
+  eventId: string;
   name: "ViewContent" | "InitiateCheckout";
   path: string;
   parameters: FacebookPixelEventParameters;
@@ -14,11 +15,12 @@ const MAX_RECEIPT_BYTES = 24_000;
 const RECEIPT_LIFETIME_MS = 15 * 60_000;
 
 function signature(body: string, secret: string): Buffer {
-  return createHmac("sha256", secret).update("meta-browser-receipt:v1\0").update(body).digest();
+  return createHmac("sha256", secret).update("meta-browser-receipt:v2\0").update(body).digest();
 }
 
 /** Non-PII rendered facts, signed by the server; this receipt never contains user_data or secrets. */
 export function issueMetaBrowserReceipt(facts: MetaBrowserReceiptFacts, secret: string, now: Date): string {
+  if (!META_BROWSER_EVENT_ID.test(facts.eventId)) throw new TypeError("Meta receipt needs a server occurrence UUID");
   const body = Buffer.from(JSON.stringify({ ...facts, issuedAt: now.getTime() })).toString("base64url");
   const receipt = `${body}.${signature(body, secret).toString("base64url")}`;
   if (receipt.length > MAX_RECEIPT_BYTES) throw new RangeError("Meta receipt exceeds its size bound");
@@ -34,12 +36,13 @@ export function verifyMetaBrowserReceipt(receipt: unknown, secret: string, now: 
     const expected = signature(body, secret);
     if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return null;
     const facts = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
-    if ((facts.name !== "ViewContent" && facts.name !== "InitiateCheckout")
+    if (typeof facts.eventId !== "string" || !META_BROWSER_EVENT_ID.test(facts.eventId)
+      || (facts.name !== "ViewContent" && facts.name !== "InitiateCheckout")
       || typeof facts.issuedAt !== "number" || facts.issuedAt > now.getTime()
       || now.getTime() - facts.issuedAt > RECEIPT_LIFETIME_MS
       || readMetaPagePath(facts.path) === null
       || typeof facts.parameters !== "object" || facts.parameters === null) return null;
-    return { name: facts.name, path: facts.path, parameters: facts.parameters };
+    return { eventId: facts.eventId, name: facts.name, path: facts.path, parameters: facts.parameters };
   } catch {
     return null;
   }

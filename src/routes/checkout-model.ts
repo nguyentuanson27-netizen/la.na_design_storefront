@@ -76,13 +76,13 @@ export type CheckoutViewModel = Readonly<{
 /**
  * What the pixel is told this checkout contains.
  *
- * Every line must have its product slug. An unresolved identity suppresses the whole Meta event,
+ * Every line must have a proven public PDP identity. An unresolved identity suppresses the whole Meta event,
  * because dropping an item while totals still count it would contradict the reported value.
  */
 export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): readonly string[] | null {
   // Preserve the existing slug scheme. Never substitute an internal ID or guess a catalog ID.
-  if (lines.some((line) => !line.productSlug)) return null;
-  return lines.map((line) => line.productSlug!);
+  if (lines.some((line) => !(line.metaContentId ?? line.productSlug))) return null;
+  return lines.map((line) => (line.metaContentId ?? line.productSlug)!);
 }
 
 export function buildCheckoutViewModel(

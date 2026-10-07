@@ -26,6 +26,7 @@
 
 import type { Prisma } from "../generated/prisma/client.ts";
 import type { CommerceVariantItemFacts } from "../tracking/commerce-events.ts";
+import { createStorefrontProductDetailRepository } from "./storefront-product-detail.ts";
 import type { CartLineAuthorityResolver } from "./anonymous-cart.ts";
 import {
   buildCartAnalyticsItemFacts,
@@ -69,11 +70,13 @@ function committedUnitPriceVnd(price: number | null): number | null {
 export function createCartLineAuthorityResolver({
   shopId,
   now,
+  pdpSlug,
 }: Readonly<{
   shopId: number;
   now: Date;
+  pdpSlug?: string;
 }>): CartLineAuthorityResolver<CommittedCartLineFacts> {
-  return async (tx: Prisma.TransactionClient, { variantId, quantity }) => {
+  return async (tx: Prisma.TransactionClient, { variantId, quantity, sourceProductSlug }) => {
     const repository = createStorefrontCartRepository(
       tx as unknown as StorefrontCartReadClient,
     );
@@ -82,7 +85,7 @@ export function createCartLineAuthorityResolver({
     try {
       const [resolved] = await repository.getLines({
         shopId,
-        items: [{ variantId, quantity }],
+        items: [{ variantId, quantity, sourceProductSlug }],
         now,
       });
       line = resolved;
@@ -97,11 +100,27 @@ export function createCartLineAuthorityResolver({
       return { available: false, snapshot: NO_COMMITTED_FACTS };
     }
 
+    // Preserve the actual public source rather than inferring a parent from component relations.
+    // Reuse the complete PDP projection, including group-role rules, under the cart transaction.
+    let committedSource = sourceProductSlug;
+    if (pdpSlug !== undefined) {
+      committedSource = null;
+      try {
+        const detail = await createStorefrontProductDetailRepository(tx).getProductBySlug({ shopId, slug: pdpSlug, now });
+        if (detail?.projection.options.some((option) => option.id === variantId && option.purchasable)) {
+          committedSource = pdpSlug;
+        }
+      } catch {
+        // A tracking identity failure must not turn an available cart write into a failure.
+      }
+    }
+    const metaContentId = pdpSlug !== undefined ? committedSource : line.metaContentId;
     return {
+      sourceProductSlug: committedSource,
       available: line.available,
       snapshot: Object.freeze({
         unitPriceVnd: committedUnitPriceVnd(line.price),
-        metaContentId: line.productSlug,
+        metaContentId,
         metaContentName: line.productName,
         analyticsItem: buildCartAnalyticsItemFacts({
           line: toCartAnalyticsLineFacts(line),

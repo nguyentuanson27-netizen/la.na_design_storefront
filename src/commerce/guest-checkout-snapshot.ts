@@ -481,7 +481,7 @@ export function createGuestCheckoutSnapshotService(
         const items = await tx.cartItem.findMany({
           where: { cartId },
           orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-          select: { variantId: true, quantity: true },
+          select: { variantId: true, quantity: true, sourceProductSlug: true },
         });
         if (items.length === 0) {
           return { ok: false, reason: "CART_EMPTY" };
@@ -653,7 +653,7 @@ export function createGuestCheckoutSnapshotService(
           snapshots.push({
             variantId: line.variantId,
             pancakeVariationId,
-            metaContentId: line.productSlug,
+            metaContentId: line.metaContentId ?? null,
             productName: line.productName,
             color: line.color,
             size: line.size,

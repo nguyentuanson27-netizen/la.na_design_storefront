@@ -29,7 +29,7 @@ const publicActions = createStorefrontPurchasePublicActions({
         cookieStore.set(cookie);
       },
     });
-    const resolveLine = createCartLineAuthorityResolver({ shopId, now });
+    const resolveLine = createCartLineAuthorityResolver({ shopId, now, pdpSlug: slug });
 
     const purchase = createStorefrontPurchaseService({
       catalog,

@@ -356,6 +356,10 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
+test.beforeEach(async () => {
+  await prisma.rateLimit.deleteMany({ where: { id: { startsWith: "meta-signal:" } } });
+});
+
 test("a configured pixel initialises once and reports the first page view", async ({ page }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
@@ -662,6 +666,8 @@ test("the occurrence endpoint rejects arbitrary Meta fields, forged rendered fac
     { eventId: id, event_name: "Purchase", custom_data: { value: 1 } },
     { eventId: id, path: "/shop", custom_data: { value: 1 } },
     { eventId: id, receipt: `x${receipt}` },
+    { eventId: id, receipt }, // Fresh UUID must never change the signed occurrence identity.
+    { receipt: `x${receipt}` },
     { eventId: id, path: "/checkout?phone=0912345678" },
     { eventId: id, receipt: "x".repeat(30_000) },
   ]) {
@@ -677,6 +683,38 @@ test("the occurrence endpoint rejects arbitrary Meta fields, forged rendered fac
   expect(readServerEvents()).toHaveLength(start);
   expect(await page.locator("body").innerText()).not.toContain("synthetic-meta-test-token");
   expect(JSON.stringify(await page.evaluate(() => (window as { dataLayer?: unknown }).dataLayer))).not.toContain("synthetic-meta-test-token");
+});
+
+test("receipt replay retains its signed event ID; cached browser back navigation creates a fresh pair", async ({ page }) => {
+  const signals: Array<{ receipt?: string }> = [];
+  page.on("request", (request) => { if (request.url() === `${BASE_URL}/api/meta/events`) signals.push(request.postDataJSON()); });
+  await installPixelStub(page);
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  const first = await waitForEvent(page, "ViewContent");
+  await waitForTwin(first);
+  const id = (first[3] as { eventID: string }).eventID;
+  const receipt = signals.find((signal) => signal.receipt)!.receipt!;
+  const before = readServerEvents().filter((event) => event.event_id === id).length;
+  await page.request.post(`${BASE_URL}/api/meta/events`, { headers: { origin: BASE_URL }, data: { receipt } });
+  await expect.poll(() => readServerEvents().filter((event) => event.event_id === id).length).toBe(before + 1);
+  expect(new Set(readServerEvents().filter((event) => event.event_name === "ViewContent").slice(-2).map((event) => event.event_id)).size).toBe(1);
+  await page.locator("header a[href='/']").first().click();
+  await expect(page).toHaveURL(BASE_URL + "/");
+  await page.goBack({ waitUntil: "networkidle" });
+  await expect.poll(async () => (await readCalls(page)).filter((call) => call[0] === "track" && call[1] === "ViewContent").length).toBe(2);
+  const second = (await readCalls(page)).filter((call) => call[0] === "track" && call[1] === "ViewContent")[1]!;
+  expect(second[3]).not.toEqual(first[3]);
+  await waitForTwin(second);
+});
+
+test("PageView abuse stops at the shared endpoint budget without breaking storefront responses", async ({ page }) => {
+  const before = readServerEvents().length;
+  for (let i = 0; i < 65; i++) {
+    const eventId = `12345678-1234-4123-8123-${i.toString(16).padStart(12, "0")}`;
+    expect((await page.request.post(`${BASE_URL}/api/meta/events`, { headers: { origin: BASE_URL }, data: { eventId, path: "/shop" } })).status()).toBe(204);
+  }
+  await expect.poll(() => readServerEvents().length - before).toBe(60);
+  expect((await page.request.get(`${BASE_URL}/shop`)).status()).toBe(200);
 });
 
 test("events raised before the pixel library arrives are kept and flushed in order", async ({

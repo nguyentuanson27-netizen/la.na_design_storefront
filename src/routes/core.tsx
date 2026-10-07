@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { randomUUID } from "node:crypto";
 import { readAuthServerConfig } from "@/auth/config";
 import { issueMetaBrowserReceipt } from "@/commerce/meta-browser-receipt";
 import { readMetaConversionsConfig } from "@/integrations/meta/pixel-config";
@@ -80,8 +81,9 @@ export function sealRoute<D>(payload: RoutePayload<D>): RouteHandle<D> {
       || (event.name !== "ViewContent" && event.name !== "InitiateCheckout")) return event;
     try {
       if (!readMetaConversionsConfig()) return event;
-      return { ...event, capiReceipt: issueMetaBrowserReceipt({
-        name: event.name, path: event.capiPath, parameters: event.parameters,
+      const eventId = randomUUID();
+      return { ...event, eventId, capiReceipt: issueMetaBrowserReceipt({
+        eventId, name: event.name, path: event.capiPath, parameters: event.parameters,
       }, readAuthServerConfig().secret, new Date()) };
     } catch {
       console.warn(JSON.stringify({ name: "meta_conversions.receipt_failed", event: event.name }));

@@ -6,14 +6,14 @@ import { createStorefrontCartPublicActions } from "../../src/commerce/storefront
 
 const secret = "synthetic-meta-test-secret-32-characters";
 const now = new Date("2026-10-07T03:00:00Z");
-const facts = { name: "InitiateCheckout" as const, path: "/checkout",
+const facts = { eventId: "12345678-1234-4123-8123-123456789abc", name: "InitiateCheckout" as const, path: "/checkout",
   parameters: { content_ids: ["ao-dai"], currency: "VND" as const, value: 99_000 } };
 
 test("rendered facts survive a valid receipt; changing name/items/price invalidates it", () => {
   const receipt = issueMetaBrowserReceipt(facts, secret, now);
   assert.deepEqual(verifyMetaBrowserReceipt(receipt, secret, now), facts);
   const [body, sig] = receipt.split(".");
-  for (const tamper of [{ name: "Purchase" }, { parameters: { value: 1 } }, { path: "/admin" }]) {
+  for (const tamper of [{ name: "Purchase" }, { eventId: "87654321-1234-4123-8123-123456789abc" }, { parameters: { value: 1 } }, { path: "/admin" }]) {
     const decoded = JSON.parse(Buffer.from(body!, "base64url").toString());
     const changed = Buffer.from(JSON.stringify({ ...decoded, ...tamper })).toString("base64url");
     assert.equal(verifyMetaBrowserReceipt(`${changed}.${sig}`, secret, now), null);

@@ -54,7 +54,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
             capiPath: "/checkout",
             parameters: {
               content_ids: contentIds,
-              contents: lines.map((line) => ({ id: line.productSlug!, quantity: line.quantity, item_price: line.price! })),
+              contents: lines.map((line, index) => ({ id: contentIds[index]!, quantity: line.quantity, item_price: line.price! })),
               content_type: "product",
               currency: "VND",
               value: totals.totalVnd,

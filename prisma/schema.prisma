@@ -453,6 +453,8 @@ model CartItem {
   cartId    String
   variantId String
   quantity  Int
+  // Public PDP validated by the committed add; independent of a component's owner.
+  sourceProductSlug String?
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
   cart      Cart          @relation(fields: [cartId], references: [id], onDelete: Cascade)

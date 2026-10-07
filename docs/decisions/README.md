@@ -17,4 +17,6 @@
 | [0013](./0013-website-owned-merchandising-persistence.md) | **Accepted** | G4 website-owned merchandising: category identity stays in code, membership becomes data, five additive models approved for Checkpoint B |
 | [0014](./0014-atomic-capacity-and-reservations.md) | **Accepted (architecture); persistence pending authorization** | G5 atomic capacity: the local reservation ledger is the authoritative gate, Pancake is not trusted for concurrency or negative limits |
 
+| [0015](./0015-direct-meta-capi.md) | **Accepted implementation; activation unverified** | Direct Meta funnel CAPI, server authority, shared IDs, PDP provenance and bounded attribution retention |
+
 ADR files are retained as historical records when superseded or amended. The newest accepted ADR governs where decisions overlap, including repository workflow policy documented by ADR 0005, Merchant domain authority documented by ADR 0010, Merchant apparel-fact policy documented by ADR 0007, and Merchant manufacturer-MPN source/ownership semantics documented by ADR 0008.

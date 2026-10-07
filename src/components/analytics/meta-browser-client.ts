@@ -7,9 +7,10 @@ import { readMetaPagePath } from "@/integrations/meta/page-source";
 const CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
 let observedUrl: string | null = null;
 const observedEvents = new Set<string>();
+const reportedReceiptIds = new Set<string>();
 
 export function trackMetaBrowserEvent(name: "PageView" | "ViewContent" | "InitiateCheckout",
-  parameters?: FacebookPixelEventParameters, receipt?: string): void {
+  parameters?: FacebookPixelEventParameters, receipt?: string, serverEventId?: string): "refresh" | void {
   if (!CONFIGURED || typeof window === "undefined") return;
   try {
     const url = `${window.location.pathname}${window.location.search}`;
@@ -19,11 +20,18 @@ export function trackMetaBrowserEvent(name: "PageView" | "ViewContent" | "Initia
     // Child effects can run before the layout tracker. Preserve document event order in both twins.
     if (name !== "PageView" && !observedEvents.has("PageView")) trackMetaBrowserEvent("PageView");
     if (observedEvents.has(name)) return;
+    // Back navigation can restore an RSC receipt. Refresh server facts before a new occurrence;
+    // replaying that old receipt must retain its signed ID rather than inflate Meta conversions.
+    if (receipt && serverEventId && reportedReceiptIds.has(serverEventId)) return "refresh";
     observedEvents.add(name);
-    const eventId = crypto.randomUUID();
+    const eventId = serverEventId ?? crypto.randomUUID();
+    if (receipt && serverEventId) {
+      reportedReceiptIds.add(serverEventId);
+      if (reportedReceiptIds.size > 200) reportedReceiptIds.delete(reportedReceiptIds.values().next().value!);
+    }
     trackFacebookPixelEvent(name, parameters, eventId);
     const signal = name === "PageView" ? { eventId, path }
-      : receipt ? { eventId, receipt } : null;
+      : receipt ? { receipt } : null;
     // Browser occurrence and Pixel delivery are independent: blockers must not silence CAPI.
     if (signal) void fetch("/api/meta/events", {
       method: "POST", headers: { "content-type": "application/json" },

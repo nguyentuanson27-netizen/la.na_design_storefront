@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { trackMetaBrowserEvent } from "./meta-browser-client";
 
 import {
@@ -50,20 +51,26 @@ function markReported(storageKey: string): void {
  */
 export function FacebookPixelEvent({ name, parameters, eventId, once, capiReceipt }: FacebookPixelEventProps) {
   const hasReported = useRef(false);
+  const refreshedReceipt = useRef<string | undefined>(undefined);
+  const router = useRouter();
 
   useEffect(() => {
+    if (name === "ViewContent" || name === "InitiateCheckout") {
+      if (trackMetaBrowserEvent(name, parameters, capiReceipt, eventId) === "refresh"
+        && refreshedReceipt.current !== eventId) {
+        refreshedReceipt.current = eventId;
+        router.refresh();
+      }
+      return;
+    }
+
     if (hasReported.current) return;
-    hasReported.current = true;
 
     const storageKey =
       once === true && eventId !== undefined ? `${REPORTED_STORAGE_PREFIX}${eventId}` : null;
     if (storageKey !== null && hasAlreadyReported(storageKey)) return;
 
-    if (name === "ViewContent" || name === "InitiateCheckout") {
-      trackMetaBrowserEvent(name, parameters, capiReceipt);
-      return;
-    }
-
+    hasReported.current = true;
     trackMetaBrowserEvent("PageView");
 
     // Recorded only once the loaded pixel has taken the event. Marking it up front would suppress
@@ -72,7 +79,7 @@ export function FacebookPixelEvent({ name, parameters, eventId, once, capiReceip
     trackFacebookPixelEvent(name, parameters, eventId, () => {
       if (storageKey !== null) markReported(storageKey);
     });
-  }, [capiReceipt, eventId, name, once, parameters]);
+  }, [capiReceipt, eventId, name, once, parameters, router]);
 
   return null;
 }

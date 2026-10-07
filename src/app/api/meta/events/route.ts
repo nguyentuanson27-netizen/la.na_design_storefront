@@ -1,8 +1,12 @@
 import { after } from "next/server";
 
 import { readAuthServerConfig } from "@/auth/config";
+import { deriveGuestCheckoutClientKey } from "@/commerce/guest-checkout-client-identity";
+import { consumeMetaBrowserRateLimit } from "@/commerce/meta-browser-rate-limit";
+import { prisma } from "@/db/prisma";
 import { META_BROWSER_EVENT_ID, readMetaPagePath, verifyMetaBrowserReceipt } from "@/commerce/meta-browser-receipt";
 import { reportMetaEventSafely } from "@/commerce/meta-event-reporting";
+import { cleanupMetaPurchaseAttributionSafely } from "@/commerce/meta-purchase-reporting";
 import { readMetaRequestContext } from "@/commerce/meta-request-context";
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 import { readMetaConversionsConfig } from "@/integrations/meta/pixel-config";
@@ -15,6 +19,8 @@ export async function POST(request: Request): Promise<Response> {
     if (request.headers.get("origin") !== readStorefrontOrigin()
       || request.headers.get("content-type") !== "application/json"
       || Number(request.headers.get("content-length") ?? 0) > 25_000) return empty();
+    const auth = readAuthServerConfig();
+    if (!await consumeMetaBrowserRateLimit(prisma, deriveGuestCheckoutClientKey(request.headers, auth))) return empty();
     // Bound actual bytes too: a missing/lying Content-Length does not bypass this boundary.
     const reader = request.body?.getReader();
     if (!reader) return empty();
@@ -28,20 +34,23 @@ export async function POST(request: Request): Promise<Response> {
       chunks.push(value);
     }
     const input = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-    if (typeof input !== "object" || input === null || Array.isArray(input)
-      || typeof input.eventId !== "string" || !META_BROWSER_EVENT_ID.test(input.eventId)) return empty();
+    if (typeof input !== "object" || input === null || Array.isArray(input)) return empty();
     const keys = Object.keys(input).sort().join(",");
     const occurredAt = new Date();
     if (keys === "eventId,path") {
+      if (typeof input.eventId !== "string" || !META_BROWSER_EVENT_ID.test(input.eventId)) return empty();
       const path = readMetaPagePath(input.path);
       if (!path) return empty();
       const context = await readMetaRequestContext(path);
-      after(() => reportMetaEventSafely({ name: "PageView", eventId: input.eventId, occurredAt, context }));
-    } else if (keys === "eventId,receipt") {
-      const facts = verifyMetaBrowserReceipt(input.receipt, readAuthServerConfig().secret, occurredAt);
+      after(async () => {
+        await reportMetaEventSafely({ name: "PageView", eventId: input.eventId, occurredAt, context });
+        await cleanupMetaPurchaseAttributionSafely(prisma, occurredAt);
+      });
+    } else if (keys === "receipt") {
+      const facts = verifyMetaBrowserReceipt(input.receipt, auth.secret, occurredAt);
       if (!facts) return empty();
       const context = await readMetaRequestContext(facts.path);
-      after(() => reportMetaEventSafely({ ...facts, eventId: input.eventId, occurredAt, context }));
+      after(() => reportMetaEventSafely({ ...facts, occurredAt, context }));
     }
   } catch {
     // An unavailable measurement endpoint must never affect the rendered page or checkout.

@@ -12,7 +12,7 @@ import { PrismaClient } from "../../src/generated/prisma/client.ts";
 // so it is set here and the reporting module is pulled in afterwards. This is the key next.config
 // inlines at build time, which is what the config module actually reads.
 process.env.LA_BUILD_FACEBOOK_PIXEL_ID = "123456789012345";
-const { reportMetaPurchase, reportMetaPurchaseSafely, saveMetaPurchaseContextSafely } = await import(
+const { reportMetaPurchase, reportMetaPurchaseSafely, saveMetaPurchaseContextSafely, cleanupMetaPurchaseAttributionSafely } = await import(
   "../../src/commerce/meta-purchase-reporting.ts"
 );
 const { createPancakeOrderReconciliationService } = await import("../../src/commerce/pancake-order-reconciliation.ts");
@@ -192,6 +192,13 @@ test("the server event carries hashed identity and the order code as its dedup i
   const serialized = JSON.stringify(body);
   assert.equal(serialized.includes("0912345678"), false);
   assert.equal(serialized.includes("Nguyễn"), false);
+  const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.equal(stored.metaPurchaseContext, null);
+  assert.equal(JSON.parse(stored.metaPurchasePayload!).user_data, undefined);
+  assert.equal(JSON.parse(stored.metaPurchasePayload!).event_source_url, undefined);
+  assert.deepEqual(await readMetaPurchaseSnapshot(prisma, orderCode), {
+    valueVnd: 928_000, contents: [{ id: "meta-linen-shirt", quantity: 2, itemPrice: 449_000 }],
+  });
 });
 
 test("nothing is sent when the Conversions API has no access token", async () => {
@@ -226,7 +233,7 @@ test("SYNC_UNKNOWN reconciliation reports Purchase after commit with the origina
   await seedConfirmedOrder("DRAFT");
   const events: Array<Record<string, unknown>> = [];
   await withConversionsEnv(async () => {
-    await saveMetaPurchaseContextSafely(prisma, orderCode, requestContext);
+    await saveMetaPurchaseContextSafely(prisma, orderCode, requestContext, reportedAt);
     await prisma.orderMirror.update({ where: { publicCode: orderCode }, data: { state: "SYNC_UNKNOWN" } });
     const service = createPancakeOrderReconciliationService({
       client: prisma, clock: () => reportedAt,
@@ -277,6 +284,11 @@ test("retry and browser readback reuse immutable Purchase bytes after catalog, o
   });
   assert.equal(bodies.length, 2);
   assert.equal(bodies[0], bodies[1]);
+  assert.deepEqual(await readMetaPurchaseSnapshot(prisma, orderCode), { valueVnd: 928_000,
+    contents: [{ id: "meta-linen-shirt", quantity: 2, itemPrice: 449_000 }] });
+  const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.equal(stored.metaPurchaseContext, null);
+  assert.equal(stored.metaPurchasePayload!.includes('"user_data"'), false);
 });
 
 test("concurrent Purchase reports select one payload even with different request contexts", async () => {
@@ -293,6 +305,47 @@ test("concurrent Purchase reports select one payload even with different request
   });
   assert.ok(bodies.length >= 1);
   assert.equal(new Set(bodies).size, 1);
+  const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.equal(stored.metaPurchaseContext, null);
+  assert.equal(stored.metaPurchasePayload!.includes('"user_data"'), false);
+});
+
+test("maintenance redacts expired/acknowledged attribution without sending or changing immutable browser facts", async () => {
+  await seedConfirmedOrder("DRAFT");
+  await withConversionsEnv(async () => {
+    await saveMetaPurchaseContextSafely(prisma, orderCode, requestContext, reportedAt);
+    await prisma.orderMirror.update({ where: { publicCode: orderCode }, data: { state: "CONFIRMED" } });
+    await reportMetaPurchase(prisma, orderCode, null, { now: reportedAt, fetchImpl: async () => Response.json({ error: { code: 190 } }, { status: 400 }) });
+  });
+  const snapshot = await readMetaPurchaseSnapshot(prisma, orderCode);
+  const before = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.ok(before.metaPurchaseContext);
+  assert.ok(JSON.parse(before.metaPurchasePayload!).user_data.fbp);
+  await cleanupMetaPurchaseAttributionSafely(prisma, new Date(syncedAt.getTime() + 7 * 86400_000 - 1));
+  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } })).metaPurchasePayload, before.metaPurchasePayload);
+  await cleanupMetaPurchaseAttributionSafely(prisma, new Date(syncedAt.getTime() + 7 * 86400_000));
+  const after = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.equal(after.metaPurchaseContext, null);
+  assert.equal(JSON.parse(after.metaPurchasePayload!).user_data, undefined);
+  assert.equal(JSON.parse(after.metaPurchasePayload!).event_source_url, undefined);
+  assert.equal(after.metaPurchaseSentAt, null);
+  assert.deepEqual(await readMetaPurchaseSnapshot(prisma, orderCode), snapshot);
+  let sent = false;
+  await withConversionsEnv(() => reportMetaPurchase(prisma, orderCode, requestContext, {
+    now: new Date(syncedAt.getTime() + 7 * 86400_000), fetchImpl: async () => { sent = true; return Response.json({ events_received: 1 }); },
+  }));
+  assert.equal(sent, false);
+});
+
+test("expired ambiguous submissions lose saved attribution even without a confirmation callback", async () => {
+  await seedConfirmedOrder("SYNC_UNKNOWN");
+  await withConversionsEnv(() => saveMetaPurchaseContextSafely(prisma, orderCode, requestContext, reportedAt));
+  await cleanupMetaPurchaseAttributionSafely(prisma, new Date(syncedAt.getTime() + 8 * 86400_000));
+  const order = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+  assert.equal(order.metaPurchaseContext, null);
+  assert.equal(order.state, "SYNC_UNKNOWN");
+  await withConversionsEnv(() => saveMetaPurchaseContextSafely(prisma, orderCode, requestContext, new Date(syncedAt.getTime() + 8 * 86400_000)));
+  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } })).metaPurchaseContext, null);
 });
 
 test("historical missing identity/time and expired conversions are not fabricated", async () => {
