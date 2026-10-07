@@ -58,6 +58,30 @@ export function storefrontSearchMediaCandidatesSql(
           AND v."isPresent" = TRUE
           AND v."isActive" = TRUE
           AND JSONB_TYPEOF(image."value") = 'string'
+
+        UNION ALL
+
+        SELECT
+          2 AS "sourceRank",
+          v."pancakeVariationId" AS "variantRank",
+          cv."id" AS "variantIdRank",
+          image."imageRank",
+          image."value" #>> '{}' AS "url"
+        FROM "VariantMirror" v
+        JOIN "CompositeComponentMirror" ccm ON ccm."parentVariantId" = v.id
+        JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv.id
+        CROSS JOIN LATERAL JSONB_ARRAY_ELEMENTS(
+          CASE
+            WHEN JSONB_TYPEOF(cv."pancakeImageUrls") = 'array' THEN cv."pancakeImageUrls"
+            ELSE '[]'::jsonb
+          END
+        ) WITH ORDINALITY AS image("value", "imageRank")
+        WHERE v."productId" = p."id"
+          AND v."isPresent" = TRUE
+          AND v."isActive" = TRUE
+          AND cv."isPresent" = TRUE
+          AND cv."isActive" = TRUE
+          AND JSONB_TYPEOF(image."value") = 'string'
       ) candidate
       ORDER BY
         candidate."sourceRank" ASC,

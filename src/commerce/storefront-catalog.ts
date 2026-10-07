@@ -13,6 +13,8 @@ import {
 import {
   resolveStorefrontProductMedia,
   resolveVariantGalleryIndexes,
+  extractCompositeComponentImageUrls,
+  buildCompositeVariantGalleryTargets,
   type StorefrontProductMedia,
 } from "./product-media.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
@@ -112,9 +114,21 @@ const productSelection = {
       pancakeRetailPriceAfterDiscount: true,
       pancakeImageUrls: true,
       // ADR 0014 §11 makes composite capacity component-aware in every selling mode. Composition
-      // is a variant-level relation; one bounded row per variant answers "is this product composite"
-      // so the listing can request the component-aware advisory snapshot without loading that graph here.
-      compositeComponents: { take: 1, select: { componentVariantId: true } },
+      // is a variant-level relation; child component photography is aggregated into composite parent galleries.
+      compositeComponents: {
+        orderBy: [{ componentVariantId: "asc" }],
+        select: {
+          componentVariantId: true,
+          componentVariant: {
+            select: {
+              id: true,
+              isPresent: true,
+              isActive: true,
+              pancakeImageUrls: true,
+            },
+          },
+        },
+      },
       warehouseStocks: {
         orderBy: [{ pancakeWarehouseId: "asc" }],
         select: { quantity: true },
@@ -169,12 +183,15 @@ export function toStorefrontProduct(
   product: SelectedProduct,
   collectionMap?: ReadonlyMap<string, StorefrontProductCollection>,
 ) {
+  const parentVariantImageUrls = product.variants.map((variant) =>
+    parseJsonStringArray(variant.pancakeImageUrls),
+  );
+  const componentVariantImageUrls = extractCompositeComponentImageUrls(product.variants);
+
   const media: StorefrontProductMedia = resolveStorefrontProductMedia({
     productName: product.name,
     primaryImageUrl: product.primaryImageUrl,
-    variantImageUrls: product.variants.map((variant) =>
-      parseJsonStringArray(variant.pancakeImageUrls),
-    ),
+    variantImageUrls: [...parentVariantImageUrls, ...componentVariantImageUrls],
   });
   const publishedContent = product.content?.status === "PUBLISHED" ? product.content : null;
   const rawCollectionSlugs = product.content
@@ -238,10 +255,7 @@ export function toStorefrontProduct(
     galleryIndexByVariantId: Object.fromEntries(
       resolveVariantGalleryIndexes({
         gallery: media.gallery,
-        variants: product.variants.map((variant) => ({
-          id: variant.id,
-          imageUrls: parseJsonStringArray(variant.pancakeImageUrls),
-        })),
+        variants: buildCompositeVariantGalleryTargets(product.variants),
       }),
     ),
   };

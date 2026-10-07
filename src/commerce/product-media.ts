@@ -299,3 +299,115 @@ export function resolveVariantGalleryIndexes({
 
   return indexByVariantId;
 }
+
+export type CompositeComponentVariantCandidate = Readonly<{
+  id: string;
+  isPresent?: boolean | null;
+  isActive?: boolean | null;
+  pancakeImageUrls?: unknown;
+}>;
+
+export type CompositeEdgeCandidate = Readonly<{
+  componentVariant?: CompositeComponentVariantCandidate | null;
+}>;
+
+export type CompositeVariantCandidate = Readonly<{
+  compositeComponents?: readonly CompositeEdgeCandidate[] | null;
+}>;
+
+/**
+ * Extracts deduplicated photography candidate URLs from component variants of composite products.
+ *
+ * Iterates through variants in order, and their composite components in order.
+ * Deduplicates by component variant ID to avoid repeating identical child variant URLs across
+ * multiple parent variants (e.g. sizes S, M, L).
+ * Excludes components that are explicitly marked inactive or deleted (isPresent=false or isActive=false).
+ */
+export function extractCompositeComponentImageUrls(
+  variants: readonly CompositeVariantCandidate[],
+): (readonly string[])[] {
+  const seenComponentVariantIds = new Set<string>();
+  const componentVariantImageUrls: (readonly string[])[] = [];
+
+  for (const variant of variants) {
+    if (!variant.compositeComponents) continue;
+    for (const comp of variant.compositeComponents) {
+      const compVar = comp.componentVariant;
+      if (
+        compVar &&
+        compVar.isPresent !== false &&
+        compVar.isActive !== false &&
+        !seenComponentVariantIds.has(compVar.id)
+      ) {
+        seenComponentVariantIds.add(compVar.id);
+        const rawUrls = compVar.pancakeImageUrls;
+        const urls = Array.isArray(rawUrls)
+          ? rawUrls.filter(
+              (item): item is string => typeof item === "string" && item.trim().length > 0,
+            )
+          : [];
+        if (urls.length > 0) {
+          componentVariantImageUrls.push(urls);
+        }
+      }
+    }
+  }
+
+  return componentVariantImageUrls;
+}
+
+/**
+ * Builds gallery index resolution targets for parent variants and their child components.
+ *
+ * Parent variant images take precedence so variant selection maps to the parent's own photo.
+ * If a parent variant has no photo of its own, child component photos serve as fallback.
+ * Child component variants are also mapped so component-level lookups resolve directly.
+ */
+export function buildCompositeVariantGalleryTargets(
+  variants: readonly {
+    readonly id: string;
+    readonly pancakeImageUrls?: unknown;
+    readonly compositeComponents?: readonly CompositeEdgeCandidate[] | null;
+  }[],
+): { readonly id: string; readonly imageUrls: readonly unknown[] }[] {
+  const parentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
+  const componentTargets: { readonly id: string; readonly imageUrls: readonly unknown[] }[] = [];
+  const seenComponentIds = new Set<string>();
+
+  for (const variant of variants) {
+    const parentUrls = Array.isArray(variant.pancakeImageUrls)
+      ? variant.pancakeImageUrls.filter(
+          (item): item is string => typeof item === "string" && item.trim().length > 0,
+        )
+      : [];
+    const compUrls: unknown[] = [];
+
+    if (variant.compositeComponents) {
+      for (const comp of variant.compositeComponents) {
+        const compVar = comp.componentVariant;
+        if (compVar && compVar.isPresent !== false && compVar.isActive !== false) {
+          const raw = Array.isArray(compVar.pancakeImageUrls)
+            ? compVar.pancakeImageUrls.filter(
+                (item): item is string => typeof item === "string" && item.trim().length > 0,
+              )
+            : [];
+          compUrls.push(...raw);
+          if (!seenComponentIds.has(compVar.id)) {
+            seenComponentIds.add(compVar.id);
+            componentTargets.push({
+              id: compVar.id,
+              imageUrls: raw,
+            });
+          }
+        }
+      }
+    }
+
+    parentTargets.push({
+      id: variant.id,
+      imageUrls: [...parentUrls, ...compUrls],
+    });
+  }
+
+  return [...parentTargets, ...componentTargets];
+}
