@@ -42,7 +42,10 @@ export async function GET(request: Request): Promise<Response> {
     }
   }
 
-  return new Response(result.image.bytes, {
+  const body = new ArrayBuffer(result.image.bytes.byteLength);
+  new Uint8Array(body).set(result.image.bytes);
+
+  return new Response(body, {
     status: 200,
     headers: {
       "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
