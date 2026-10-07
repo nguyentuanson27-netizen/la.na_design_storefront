@@ -7,6 +7,7 @@ import { addStorefrontItemToBag } from "@/commerce/storefront-actions";
 import type { StorefrontProjectionOption } from "@/commerce/storefront-projection";
 import type { DeepLinkedVariantSelection } from "@/commerce/storefront-variant-deep-link";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
+import { refreshCartSummary } from "@/components/headless/cart-summary-store";
 import { buildCommerceItemsEvent, buildVariantItem } from "@/tracking/commerce-events";
 import { publishBrowserTrackingEvent } from "@/tracking/data-layer";
 
@@ -165,6 +166,7 @@ export function useVariantSelection({
         const result = await addStorefrontItemToBag({ slug, variantId });
         if (result.ok) {
           reportAcceptedAdd(result);
+          void refreshCartSummary();
           if (navigateToCheckout) {
             router.push("/checkout");
           } else {

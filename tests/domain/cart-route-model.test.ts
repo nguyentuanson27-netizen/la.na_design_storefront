@@ -6,6 +6,8 @@ import {
   buildCartViewModel,
   cartAvailableSubtotal,
   cartUnavailableLabel,
+  EMPTY_CART_SUMMARY,
+  summarizeCartViewModel,
 } from "../../src/routes/cart-model.ts";
 
 /** The cart route's own decisions, held to the behaviour the page had before it was migrated. */
@@ -144,4 +146,32 @@ test("the view model is frozen so markup cannot mutate a decision it was handed"
 
   assert.equal(Object.isFrozen(model), true);
   assert.equal(Object.isFrozen(model.lines), true);
+});
+
+/* --------------------------------------------------------------------- cart summary */
+
+test("an empty cart summarises to the shared empty summary", () => {
+  assert.equal(summarizeCartViewModel(build([])), EMPTY_CART_SUMMARY);
+});
+
+test("the summary counts pieces, not lines, and reuses the view model's subtotal", () => {
+  const model = build([
+    line({ variantId: "a", quantity: 2, price: 100_000 }),
+    line({ variantId: "b", quantity: 1, price: 50_000 }),
+  ]);
+  assert.deepEqual(summarizeCartViewModel(model), {
+    count: 3,
+    totalText: vnd("250.000"),
+  });
+});
+
+test("an unavailable line still counts as being in the cart but not toward the total", () => {
+  const model = build([
+    line({ variantId: "a", quantity: 1, price: 100_000 }),
+    line({ variantId: "b", quantity: 2, available: false, unavailableReason: "OUT_OF_STOCK" }),
+  ]);
+  assert.deepEqual(summarizeCartViewModel(model), {
+    count: 3,
+    totalText: vnd("100.000"),
+  });
 });
