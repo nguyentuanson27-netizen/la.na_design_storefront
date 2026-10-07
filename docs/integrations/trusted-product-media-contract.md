@@ -25,7 +25,7 @@ Pancake responses are untrusted external inputs. The media resolver enforces str
 7. **Standard Port Only**: Rejects custom ports and explicit default ports in the raw authority.
 8. **Path Traversal Protection**: Rejects traversal before WHATWG normalization. Raw `..` forms and percent-encoded dot forms such as `%2e`, `%2e.`, `.%2e`, and `%2e%2e` fail closed instead of being normalized into a different path.
 9. **Bounded Length**: Maximum 4,096 characters.
-10. **Resolver vs. Remote Image Fetching**: The resolver itself is local and issues no outbound HTTP requests. Storefront rendering through `next/image` may cause the Next.js Image Optimization layer to retrieve approved remote images on demand; those outbound targets are constrained by the exact `images.remotePatterns` host, extension, and fixed-depth path allowlist above, rather than by an unrestricted remote-image proxy.
+10. **Resolver vs. Remote Image Fetching**: The resolver itself is local and issues no outbound HTTP requests. General storefront rendering through `next/image` may cause the Next.js Image Optimization layer to retrieve approved remote images on demand; PDP product photography instead uses the same-origin `/api/product-image` delivery boundary described below. Both paths remain constrained to URLs accepted by the canonical trusted-image parser / mirrored `remotePatterns`, rather than exposing an unrestricted remote-image proxy.
 
 ### Video
 
@@ -45,6 +45,21 @@ The trust decision is intentionally duplicated only at boundaries that need an i
 - CSP `img-src` contains the three reviewed image hosts, while `media-src` keeps only the reviewed video host.
 
 Any change to one of these boundaries must update the parity tests in the same change.
+
+### PDP Delivery Byte Boundary
+
+Product-detail photography keeps the trusted Pancake URL as its source-of-truth, but the browser-facing PDP stage/gallery does not request that source directly. Its custom `next/image` loader emits a same-origin `/api/product-image?src=...&w=...` URL.
+
+That endpoint:
+
+- re-runs `parseTrustedProductImageUrl` before the first fetch and after every bounded manual redirect;
+- accepts only the finite reviewed responsive width set;
+- caps source response bytes and decoded input pixels before expensive work can grow without bound;
+- transcodes to WebP through a fixed quality/resize schedule;
+- returns a success only when the final body is strictly below **3,000,000 bytes**;
+- fails closed when the source is untrusted/malformed/oversized or no bounded compression attempt satisfies the limit;
+- does not rewrite ProductMirror, Merchant/feed image URLs, try-on source selection, or the original trusted media model.
+
 
 ## Deterministic Selection & Deduplication
 
