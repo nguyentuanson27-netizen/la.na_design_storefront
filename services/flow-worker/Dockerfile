@@ -30,6 +30,12 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY --from=lock-export /tmp/gflow-runtime.txt /tmp/gflow-runtime.txt
 
+# Chrome runs with --no-sandbox (accepted risk, see docs/integrations/google-flow-virtual-try-on.md
+# "Chrome sandbox"). Neither Chrome sandbox can start here: the setuid helper is disabled by
+# `no-new-privileges`, and Docker's default seccomp profile denies the unprivileged user namespaces
+# the namespace sandbox needs. Compose compensates with a non-root user, no capabilities, no
+# privilege escalation and a process cap. The wrapper keeps every launcher (gflow/Playwright,
+# `gflow auth login`) on the same flags instead of relying on each one to pass --no-sandbox.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends xvfb xauth ca-certificates curl gnupg \
  && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \

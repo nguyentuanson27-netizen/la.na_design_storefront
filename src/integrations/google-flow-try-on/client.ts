@@ -15,9 +15,9 @@ type GenerateResult =
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 /**
- * The worker's per-generation watchdog is 50 s. Keep the caller slightly above it so the worker
- * reports a typed timeout and releases its Chrome/profile lock before the HTTP caller gives up.
- * This stays under the existing storefront's roughly minute-sized synchronous provider budget.
+ * The worker's per-request generation budget is 120 s (FLOW_COMMAND_TIMEOUT_SECONDS), shared by
+ * the Pro attempt and any Nano 2 fallback. Keep the caller slightly above it so the worker reports
+ * a typed timeout and releases its Chrome/profile lock before the HTTP caller gives up.
  */
 const DEFAULT_TIMEOUT_MS = 130_000;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;

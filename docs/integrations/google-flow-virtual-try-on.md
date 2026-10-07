@@ -78,7 +78,7 @@ The image is intentionally reproducible at the credential-bearing boundary:
   `services/flow-worker/gflow-lock/`.
 - The build exports that lock with `uv export --frozen`, installs the resolved runtime with
   `pip --require-hashes`, and pins the gflow 0.82.1 wheel by SHA-256.
-- Google Chrome is pinned to `154.0.8037.97-1`; a missing apt version fails the build instead of
+- Google Chrome is pinned to `155.0.8059.39-1`; a missing apt version fails the build instead of
   silently moving the session-bearing worker to a new browser.
 
 The worker runs real Chrome headed under Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that
@@ -88,6 +88,32 @@ Dependency/browser updates are deliberate maintenance work: replace the lock fil
 upstream gflow release tag, review the lock diff, update the gflow wheel hash and/or Chrome pin, run
 CI image verification, then live-smoke one Flow generation before production rollout. Chrome is not
 auto-upgraded just because Google's apt repository publishes a newer stable build.
+
+## Chrome sandbox (accepted risk)
+
+The worker image wraps `/opt/google/chrome/chrome` so every launch passes `--no-sandbox`. Chrome's
+sandbox cannot start inside this container: its setuid helper is disabled by
+`no-new-privileges`, and Docker's default seccomp profile blocks the unprivileged user namespaces
+the namespace sandbox needs. Re-enabling it would mean either a custom seccomp profile that allows
+user namespaces or giving up `no-new-privileges`, both of which widen the container boundary.
+
+Without the sandbox, a Chrome renderer compromise runs with the full rights of the worker user.
+That user can read the signed-in Google profile in `flow_gflow_data`, so such a compromise equals a
+stolen Flow session. Chrome loads Google Flow pages; shopper photos are only uploaded as
+references, after the worker validated their size and JPEG/PNG signature.
+
+Compensating isolation (Dockerfile user, `deploy/vps/compose.yml` limits, operator account policy):
+
+- non-root user (uid 10001) with `cap_drop: ALL` and `no-new-privileges`;
+- `pids_limit` caps runaway process creation;
+- the worker gets only its Flow variables, never `.env.production`, database or app secrets;
+- the worker publishes no host port, joins only the private `backend` network (never `edge`) and
+  requires a bearer token;
+- the Google account used for the profile must be a dedicated Flow account, never a personal or
+  Workspace admin account, so a stolen session exposes only Flow.
+
+Revisit this decision when the VPS can run the worker with a seccomp profile that permits Chrome's
+namespace sandbox; the wrapper is then removed and the CI image check keeps the Chrome pin.
 
 ## One-time Google login
 
@@ -180,8 +206,9 @@ profile paths, prompt output and CLI stdout/stderr are not returned to shoppers.
 - `TIMEOUT`: generation watchdog expired.
 - `GENERATION_FAILED`: all other provider/integration failures.
 
-The worker's generation watchdog is shorter than the storefront's HTTP deadline so the worker
-releases the profile lock before the caller gives up. On a watchdog expiry the worker terminates
+The worker's generation budget (120 s for the Pro attempt plus any Nano 2 fallback) is shorter than
+the storefront's 130 s HTTP deadline so the worker releases the profile lock before the caller
+gives up. On a watchdog expiry the worker terminates
 the gflow/Chrome process group so an orphan browser cannot keep the profile locked. A timeout must
 not trigger another model.
 

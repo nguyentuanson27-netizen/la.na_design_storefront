@@ -159,8 +159,14 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+    # Chrome runs with --no-sandbox in this image (see the Dockerfile). These limits are the
+    # compensating container isolation: no capabilities to regain, no setuid escalation, and a
+    # bounded process count for a compromised renderer.
     security_opt:
       - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 512
     networks:
       - backend
 
