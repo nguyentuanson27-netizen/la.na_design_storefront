@@ -36,6 +36,8 @@ const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
 const SHOP_ID = 920_022;
 const PIXEL_ID = "123456789012345";
+// This standalone test server has no proxy; model its trusted header explicitly in both environments.
+test.use({ extraHTTPHeaders: { "x-ci-client-ip": "203.0.113.77" } });
 const runId = `${Date.now()}-${process.pid}`;
 const captureFile = join(mkdtempSync(join(tmpdir(), "la-meta-test-")), "events.jsonl");
 const syncedAt = new Date("2026-08-29T04:00:00.000Z");
@@ -340,6 +342,7 @@ test.beforeAll(async () => {
       LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
+      BETTER_AUTH_IP_HEADER: "x-ci-client-ip",
       APP_DOMAIN: `${HOST}:${PORT}`,
       NEXT_TELEMETRY_DISABLED: "1",
     },
@@ -661,6 +664,9 @@ test("the occurrence endpoint rejects arbitrary Meta fields, forged rendered fac
   await waitForTwin(await waitForEvent(page, "ViewContent"));
   const receipt = signals.find((signal) => signal.receipt)!.receipt!;
   const start = readServerEvents().length;
+  await page.request.post(`${BASE_URL}/api/meta/events`, {
+    headers: { origin: BASE_URL, "x-ci-client-ip": "" }, data: { receipt },
+  });
   const id = "12345678-1234-4123-8123-123456789abc";
   for (const body of [
     { eventId: id, event_name: "Purchase", custom_data: { value: 1 } },
