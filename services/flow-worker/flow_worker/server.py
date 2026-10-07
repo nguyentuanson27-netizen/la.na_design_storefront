@@ -289,15 +289,21 @@ def _run_model(
         return 1, GflowMachineError()
 
     try:
-        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        stdout, _stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
         return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
 
-    if process.returncode != 0 and stderr:
-        _event("flow_try_on.process_error", model=model, exit_code=process.returncode, stderr=stderr.strip()[:1000])
+    error = _machine_error(stdout or "")
+    if process.returncode != 0:
+        fields = {
+            "model": model,
+            "exit_code": str(process.returncode),
+            "error_class": error.error_class or "unknown",
+        }
+        _event("flow_try_on.process_error", **fields)
 
-    return process.returncode, _machine_error(stdout or "")
+    return process.returncode, error
 
 
 def _failure_reason(
