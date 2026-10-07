@@ -37,6 +37,9 @@ RUN apt-get update \
     > /etc/apt/sources.list.d/google-chrome.list \
  && apt-get update \
  && apt-get install -y --no-install-recommends "google-chrome-stable=${GOOGLE_CHROME_VERSION}" \
+ && mv /opt/google/chrome/chrome /opt/google/chrome/chrome-orig \
+ && printf '#!/bin/bash\nexec /opt/google/chrome/chrome-orig --no-sandbox "$@"\n' > /opt/google/chrome/chrome \
+ && chmod +x /opt/google/chrome/chrome \
  && pip install --no-cache-dir --require-hashes -r /tmp/gflow-runtime.txt \
  && python -m pip check \
  && rm -f /tmp/gflow-runtime.txt \

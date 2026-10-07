@@ -25,7 +25,7 @@ TOKEN = os.environ.get("FLOW_WORKER_TOKEN", "")
 PROFILE = os.environ.get("GFLOW_CLI_PROFILE", "default")
 GFLOW_HOME = Path(os.environ.get("GFLOW_CLI_HOME", "/data/gflow"))
 PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
-GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "50"))
+GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "120"))
 REQUEST_READ_TIMEOUT_SECONDS = int(os.environ.get("FLOW_REQUEST_READ_TIMEOUT_SECONDS", "15"))
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
@@ -176,6 +176,16 @@ def _terminate_process_group(process: subprocess.Popen[str]) -> None:
         return
 
 
+def _clean_stale_profile_locks() -> None:
+    profile_dir = GFLOW_HOME / f"profile_{PROFILE}"
+    if profile_dir.is_dir():
+        for item in profile_dir.glob("Singleton*"):
+            try:
+                item.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def _run_model(
     model: str,
     person: Path,
@@ -186,6 +196,7 @@ def _run_model(
 ) -> tuple[int, GflowMachineError]:
     if timeout_seconds <= 0:
         return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+    _clean_stale_profile_locks()
     try:
         process = subprocess.Popen(
             _command(model, person, product, output),
@@ -280,9 +291,16 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             _event("flow_try_on.generation_failed", model=model, reason=reason)
             raise WorkerGenerationError(status, reason)
 
-        if not output_path.is_file():
+        output_candidates = (
+            output_path,
+            root / f"{output_path.stem}.jpg",
+            root / f"{output_path.stem}.jpeg",
+            root / f"{output_path.stem}.png",
+        )
+        output_file = next((p for p in output_candidates if p.is_file()), None)
+        if output_file is None:
             raise WorkerGenerationError(502, "GENERATION_FAILED")
-        data = output_path.read_bytes()
+        data = output_file.read_bytes()
         mime = _sniff_mime(data)
         if mime is None or not data or len(data) > MAX_OUTPUT_BYTES:
             _event("flow_try_on.generation_failed", model=model, reason="GENERATION_FAILED")
@@ -398,6 +416,11 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    try:
+        signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    except Exception:
+        pass
+    _clean_stale_profile_locks()
     if len(TOKEN) < 32:
         raise SystemExit("FLOW_WORKER_TOKEN must contain at least 32 characters")
     if PROFILE_PATTERN.fullmatch(PROFILE) is None:
