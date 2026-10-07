@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 
-import { pdpProductImageLoader } from "@/components/brand/pdp-image-loader";
+import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
 
 import {
   resolveGalleryModel,
