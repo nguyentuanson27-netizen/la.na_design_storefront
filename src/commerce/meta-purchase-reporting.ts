@@ -26,7 +26,7 @@ function withoutAttribution(payload: string | null): string | null {
   } catch { return null; }
 }
 
-/** Bounded maintenance on existing PageView/retry paths; no new worker or commerce state change. */
+/** Bounded maintenance for the existing manual retry command; never a PageView table scan. */
 export async function cleanupMetaPurchaseAttributionSafely(client: ReportClient, now = new Date()): Promise<void> {
   try {
     const eligibility = { OR: [

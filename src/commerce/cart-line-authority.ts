@@ -103,12 +103,16 @@ export function createCartLineAuthorityResolver({
     // Preserve the actual public source rather than inferring a parent from component relations.
     // Reuse the complete PDP projection, including group-role rules, under the cart transaction.
     let committedSource = sourceProductSlug;
+    // A stored parent slug does not prove that the component owner's name names that parent.
+    let metaContentName = line.metaContentId === line.productSlug ? line.productName : null;
     if (pdpSlug !== undefined) {
       committedSource = null;
+      metaContentName = null;
       try {
         const detail = await createStorefrontProductDetailRepository(tx).getProductBySlug({ shopId, slug: pdpSlug, now });
         if (detail?.projection.options.some((option) => option.id === variantId && option.purchasable)) {
           committedSource = pdpSlug;
+          metaContentName = detail.name;
         }
       } catch {
         // A tracking identity failure must not turn an available cart write into a failure.
@@ -121,7 +125,7 @@ export function createCartLineAuthorityResolver({
       snapshot: Object.freeze({
         unitPriceVnd: committedUnitPriceVnd(line.price),
         metaContentId,
-        metaContentName: line.productName,
+        metaContentName,
         analyticsItem: buildCartAnalyticsItemFacts({
           line: toCartAnalyticsLineFacts(line),
           quantity,

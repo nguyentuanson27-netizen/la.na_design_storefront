@@ -182,6 +182,7 @@ test("Meta preserves the committed public PDP through component/subset cart edit
     assert.ok(added.ok);
     const event = buildCommittedMetaAddToCart(added.snapshot, 1)!;
     assert.deepEqual(event.parameters.content_ids, [slug]);
+    assert.equal(event.parameters.content_name, "Product combo-555");
     assert.equal(event.parameters.num_items, 1);
     assert.equal(event.parameters.value, added.snapshot?.unitPriceVnd);
   }
@@ -189,6 +190,8 @@ test("Meta preserves the committed public PDP through component/subset cart edit
     resolveLine: createCartLineAuthorityResolver({ shopId, now }) });
   assert.ok(updated.ok);
   assert.deepEqual(buildCommittedMetaAddToCart(updated.snapshot, updated.item.quantity - updated.previousQuantity)?.parameters.content_ids, [slug]);
+  assert.equal(Object.hasOwn(buildCommittedMetaAddToCart(updated.snapshot, 1)!.parameters, "content_name"), false,
+    "quantity edits retain the proven parent ID without substituting the private component's name");
   const cart = await carts.get({ cartId, now });
   assert.ok(cart);
   const lines = await createStorefrontCartRepository(prisma).getLines({ shopId, now, items: cart.items });
@@ -215,6 +218,16 @@ test("a public component added via a parent PDP keeps that parent, rather than i
   assert.ok(result.ok);
   try {
     assert.deepEqual(buildCommittedMetaAddToCart(result.snapshot, 1)?.parameters.content_ids, ["combo-subsets-combo-555"]);
+    assert.equal(buildCommittedMetaAddToCart(result.snapshot, 1)?.parameters.content_name, "Product combo-555");
+    const updated = await createAnonymousCartService(prisma).updateExistingItemQuantity({
+      cartId: result.cart.id, variantId: catalog.aoM.id, quantity: 2, now,
+      resolveLine: createCartLineAuthorityResolver({ shopId, now }),
+    });
+    assert.ok(updated.ok);
+    const updateEvent = buildCommittedMetaAddToCart(updated.snapshot, 1)!;
+    assert.deepEqual(updateEvent.parameters.content_ids, ["combo-subsets-combo-555"]);
+    assert.equal(Object.hasOwn(updateEvent.parameters, "content_name"), false,
+      "a public component owner still does not prove the parent name");
     const cart = await createAnonymousCartService(prisma).get({ cartId: result.cart.id, now });
     const [line] = await createStorefrontCartRepository(prisma).getLines({ shopId, now, items: cart!.items });
     assert.equal(line?.productSlug, "combo-subsets-ao-555");

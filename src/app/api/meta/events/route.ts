@@ -6,7 +6,6 @@ import { consumeMetaBrowserRateLimit } from "@/commerce/meta-browser-rate-limit"
 import { prisma } from "@/db/prisma";
 import { META_BROWSER_EVENT_ID, readMetaPagePath, verifyMetaBrowserReceipt } from "@/commerce/meta-browser-receipt";
 import { reportMetaEventSafely } from "@/commerce/meta-event-reporting";
-import { cleanupMetaPurchaseAttributionSafely } from "@/commerce/meta-purchase-reporting";
 import { readMetaRequestContext } from "@/commerce/meta-request-context";
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 import { readMetaConversionsConfig } from "@/integrations/meta/pixel-config";
@@ -42,10 +41,7 @@ export async function POST(request: Request): Promise<Response> {
       const path = readMetaPagePath(input.path);
       if (!path) return empty();
       const context = await readMetaRequestContext(path);
-      after(async () => {
-        await reportMetaEventSafely({ name: "PageView", eventId: input.eventId, occurredAt, context });
-        await cleanupMetaPurchaseAttributionSafely(prisma, occurredAt);
-      });
+      after(() => reportMetaEventSafely({ name: "PageView", eventId: input.eventId, occurredAt, context }));
     } else if (keys === "receipt") {
       const facts = verifyMetaBrowserReceipt(input.receipt, auth.secret, occurredAt);
       if (!facts) return empty();

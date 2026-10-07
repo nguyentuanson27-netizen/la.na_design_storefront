@@ -12,7 +12,7 @@ import type { CommittedMetaEvent } from "./meta-event-reporting.ts";
 
 export type MetaAddToCartParametersInput = Readonly<{
   slug: string;
-  productName: string;
+  productName?: string;
   committedUnitPriceVnd?: number | null;
   quantity?: number;
 }>;
@@ -22,7 +22,7 @@ export function buildMetaAddToCartPixelParameters(
 ): FacebookPixelEventParameters {
   const parameters: FacebookPixelEventParameters = {
     content_ids: [input.slug],
-    content_name: input.productName,
+    ...(input.productName ? { content_name: input.productName } : {}),
     content_type: "product",
     currency: "VND",
     ...(typeof input.committedUnitPriceVnd === "number"
@@ -46,8 +46,8 @@ export function buildCommittedMetaAddToCart(snapshot: unknown, delta: number): C
   if (typeof facts.metaContentId !== "string" || !/^[a-z0-9-]{1,160}$/.test(facts.metaContentId)) return undefined;
   const price = facts.unitPriceVnd;
   if (typeof price !== "number" || !Number.isSafeInteger(price) || price < 0 || !Number.isSafeInteger(price * delta)) return undefined;
-  const name = typeof facts.metaContentName === "string" && facts.metaContentName.length <= 500
-    ? facts.metaContentName : "";
+  const name = typeof facts.metaContentName === "string" && facts.metaContentName.trim().length > 0 && facts.metaContentName.length <= 500
+    ? facts.metaContentName : undefined;
   try {
     return Object.freeze({
       eventId: crypto.randomUUID(),

@@ -36,9 +36,19 @@ test("a committed Meta add reports delta money and quantities without internal i
   const event = buildCommittedMetaAddToCart({ unitPriceVnd: 350_000, metaContentId: "ao-dai", metaContentName: "Áo dài" }, 3)!;
   assert.equal(event.parameters.value, 1_050_000);
   assert.equal(event.parameters.num_items, 3);
+  assert.equal(event.parameters.content_name, "Áo dài");
   assert.deepEqual(event.parameters.contents, [{ id: "ao-dai", quantity: 3, item_price: 350_000 }]);
   assert.equal(buildCommittedMetaAddToCart({ unitPriceVnd: 350_000 }, 3), undefined);
   assert.equal(buildCommittedMetaAddToCart({ unitPriceVnd: 350_000, metaContentId: "ao-dai" }, 0), undefined);
+});
+
+test("a proven committed Meta ID/value remains reportable without an unproven content name", () => {
+  for (const metaContentName of [undefined, null, "", "   ", "x".repeat(501)]) {
+    const event = buildCommittedMetaAddToCart({ unitPriceVnd: 350_000, metaContentId: "parent-pdp", metaContentName }, 2)!;
+    assert.deepEqual(event.parameters.content_ids, ["parent-pdp"]);
+    assert.equal(event.parameters.value, 700_000);
+    assert.equal(Object.hasOwn(event.parameters, "content_name"), false);
+  }
 });
 
 test("absolute cart edits report Meta only for positive server deltas, independent of canonical item availability", async () => {
