@@ -279,6 +279,54 @@ class ServerWarmIntegrationTest(unittest.TestCase):
             server._run_gflow([sys.executable, "-c", "pass"], 10, self.root / "db")
         self.assertEqual(runner.state, warm.COLD)
 
+    def test_a_failed_warm_start_leaves_the_fallback_only_what_is_left_of_the_request_budget(self):
+        runner = make_runner(self)
+        clock = FakeClock()
+        gflow_timeouts = []
+
+        def warm_start_fails_after_90_seconds(_job, _budget):
+            clock.now += 90
+            return warm.WarmOutcome("unavailable")
+
+        def run_gflow(_args, timeout, _db):
+            gflow_timeouts.append(timeout)
+            return 5, ""
+
+        with (
+            patch.object(server, "_warm_runner", runner),
+            patch.object(server, "_monotonic", clock),
+            patch.object(runner, "run", side_effect=warm_start_fails_after_90_seconds),
+            patch.object(server, "_run_gflow", side_effect=run_gflow),
+        ):
+            exit_code, _error = server._run_model(
+                "nano-pro", self.root / "p.jpg", self.root / "g.jpg", self.root / "r.png", 120, self.root / "db"
+            )
+
+        # 120 s was available; the warm start spent 90 of them; the per-request gflow gets the other 30.
+        self.assertEqual(gflow_timeouts, [30])
+        self.assertEqual(exit_code, 5)
+
+    def test_when_the_warm_start_used_the_whole_budget_no_second_generation_is_launched(self):
+        runner = make_runner(self)
+        clock = FakeClock()
+
+        def warm_start_fails_at_the_deadline(_job, _budget):
+            clock.now += 120
+            return warm.WarmOutcome("unavailable")
+
+        with (
+            patch.object(server, "_warm_runner", runner),
+            patch.object(server, "_monotonic", clock),
+            patch.object(runner, "run", side_effect=warm_start_fails_at_the_deadline),
+            patch.object(server, "_run_gflow", side_effect=AssertionError("must not launch gflow")),
+        ):
+            exit_code, _error = server._run_model(
+                "nano-pro", self.root / "p.jpg", self.root / "g.jpg", self.root / "r.png", 120, self.root / "db"
+            )
+
+        self.assertEqual(exit_code, server.WORKER_TIMEOUT_EXIT_CODE)
+        self.assertEqual(server._failure_reason(exit_code, server.GflowMachineError()), (504, "TIMEOUT"))
+
     def test_the_job_carries_the_project_and_files_but_no_token(self):
         runner = make_runner(self)
         seen = {}

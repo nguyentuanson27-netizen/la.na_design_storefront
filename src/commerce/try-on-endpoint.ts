@@ -142,8 +142,9 @@ export type TryOnQuotaEndpointDependencies = Readonly<{
   resolveIdentity: (headers: Headers) => Promise<TryOnIdentity | null>;
   peekQuota: (identity: TryOnIdentity) => TryOnQuotaStatus;
   /**
-   * Called when a shopper who still has attempts asks for their quota, which the dialog does as it
-   * opens: the moment to get a slow provider ready. A hint; whatever it does or throws changes nothing.
+   * Called when a shopper who still has attempts asks for their quota from this site's own page, which
+   * the dialog does as it opens: the moment to get a slow provider ready. A hint; whatever it does or
+   * throws changes nothing. Never called for a request that is not provably same-origin.
    */
   onAttemptsAvailable?: () => void;
 }>;
@@ -151,7 +152,11 @@ export type TryOnQuotaEndpointDependencies = Readonly<{
 /**
  * How many attempts the caller has left today, so the dialog can say so before they spend one. It
  * reads and spends nothing, and the answer is about the caller alone, hence `no-store`. Unlike the
- * POST it needs no origin check: a cross-site page can neither read the response nor change state.
+ * POST it needs no origin check for the answer: a cross-site page can neither read the response nor
+ * change state with it. The one side effect, the provider warm-up hint, is the exception: a foreign
+ * page can make a browser send this GET (an `<img src>` is enough), so the hint runs only when the
+ * browser itself says the request came from this site (`Sec-Fetch-Site: same-origin`, which a page
+ * cannot set or forge). A missing header, as on an old browser, means no hint: it fails closed.
  */
 export async function handleTryOnQuotaGet(
   request: Request,
@@ -161,7 +166,7 @@ export async function handleTryOnQuotaGet(
     const identity = await resolveIdentity(request.headers);
     if (identity === null) return Response.json({ ok: false }, { status: 503, headers: NO_STORE });
     const { audience, limit, remaining } = peekQuota(identity);
-    if (remaining > 0) {
+    if (remaining > 0 && request.headers.get("sec-fetch-site") === "same-origin") {
       try {
         onAttemptsAvailable?.();
       } catch {

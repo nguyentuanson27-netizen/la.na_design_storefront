@@ -210,7 +210,11 @@ rủi ro lẫn dữ liệu giữa các khách.
   vào `_run_model`, thêm `POST /v1/warm`, `POST /v1/cool`, `warm` trong `/health`, tắt sạch khi
   SIGTERM. Mọi `_run_gflow` (đường cũ, `_ensure_project`) nhả trình duyệt warm trước khi chạy.
 - Storefront: `GET /api/try-on` (hộp thoại gọi khi mở) gọi `warmFlowWorker` nếu khách còn lượt và
-  provider là Flow. Không chờ, không bao giờ làm hỏng câu trả lời.
+  provider là Flow, **và chỉ khi trình duyệt tự gắn `Sec-Fetch-Site: same-origin`** (trang của site
+  khác có thể khiến trình duyệt gửi GET này, ví dụ qua `<img src>`, nhưng không thể giả header đó;
+  thiếu header thì không warm). Không chờ, không bao giờ làm hỏng câu trả lời.
+- Ngân sách một request dùng chung cho đường warm và đường lui: nếu warm tốn thời gian rồi báo
+  không dùng được, gflow theo request chỉ nhận phần còn lại của hạn chót, và không chạy nếu đã hết.
 - Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.
 - Sai khác nhỏ so với bản thiết kế: tái chế sau lượt lỗi (thay vì thử lại một lần trong cùng client);
   không có `ping` trước mỗi lượt, vì lượt nào gặp trình duyệt chết trước khi gửi sẽ chạy bằng đường cũ.

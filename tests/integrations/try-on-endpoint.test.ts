@@ -269,23 +269,27 @@ test("GET fails closed with a bare 503 when no identity can be derived or the lo
   assert.equal(throwing.headers.get("cache-control"), "no-store");
 });
 
-test("GET asks the provider to get ready only for a shopper who still has attempts, and a failing hint changes nothing", async () => {
+test("GET asks the provider to get ready only for a same-origin shopper who still has attempts, and a failing hint changes nothing", async () => {
   let warmed = 0;
-  const ask = (remaining: number, onAttemptsAvailable: () => void) =>
-    handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
-      resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
-      peekQuota: () => ({ audience: "guest", limit: 5, remaining }),
-      onAttemptsAvailable,
-    });
-
-  await ask(3, () => {
+  const ask = (remaining: number, onAttemptsAvailable: () => void, fetchSite: string | null = "same-origin") =>
+    handleTryOnQuotaGet(
+      new Request(`https://${HOST}/api/try-on`, {
+        headers: fetchSite === null ? {} : { "sec-fetch-site": fetchSite },
+      }),
+      {
+        resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
+        peekQuota: () => ({ audience: "guest", limit: 5, remaining }),
+        onAttemptsAvailable,
+      },
+    );
+  const warm = () => {
     warmed += 1;
-  });
+  };
+
+  await ask(3, warm);
   assert.equal(warmed, 1);
 
-  await ask(0, () => {
-    warmed += 1;
-  });
+  await ask(0, warm);
   assert.equal(warmed, 1);
 
   const response = await ask(3, () => {
@@ -300,4 +304,23 @@ test("GET asks the provider to get ready only for a shopper who still has attemp
     onAttemptsAvailable: () => assert.fail("must not warm without an identity"),
   });
   assert.equal(noIdentity.status, 503);
+});
+
+test("GET never warms the provider for a request that is not provably same-origin, yet still answers the quota", async () => {
+  // A foreign page can make a browser send this GET (e.g. <img src>) with a valid guest key and attempts
+  // left. The browser labels it, and the hint must not run.
+  for (const fetchSite of ["cross-site", "same-site", "none", "", null]) {
+    const response = await handleTryOnQuotaGet(
+      new Request(`https://${HOST}/api/try-on`, {
+        headers: fetchSite === null ? {} : { "sec-fetch-site": fetchSite },
+      }),
+      {
+        resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
+        peekQuota: () => ({ audience: "guest", limit: 5, remaining: 5 }),
+        onAttemptsAvailable: () => assert.fail(`must not warm for Sec-Fetch-Site ${JSON.stringify(fetchSite)}`),
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { ok: true, audience: "guest", limit: 5, remaining: 5 });
+  }
 });

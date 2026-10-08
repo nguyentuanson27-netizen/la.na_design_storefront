@@ -71,6 +71,8 @@ Do not add unrelated clothing or accessories. Do not alter body shape. Do not se
 Produce one realistic, age-appropriate fashion try-on image."""
 
 _generation_lock = threading.Lock()
+# The clock a request's deadline is measured on; a seam so tests can move time.
+_monotonic = time.monotonic
 # The warm browser, when FLOW_WARM_BROWSER is on (created in main()); None means every request starts
 # gflow as its own process, as before.
 _warm_runner: WarmRunner | None = None
@@ -396,13 +398,19 @@ def _run_model(
 ) -> tuple[int, GflowMachineError]:
     if _project_id is None:
         return 1, GflowMachineError()
+    deadline = _monotonic() + timeout_seconds
     warm = _run_model_warm(model, person, product, output, timeout_seconds)
     if warm is not None:
         returncode, error = warm
         if returncode == WORKER_TIMEOUT_EXIT_CODE:
             return returncode, GflowMachineError()
     else:
-        returncode, stdout = _run_gflow(_command(model, person, product, output), timeout_seconds, db_path)
+        # A warm browser that failed to start may have used much of the budget. The request has one
+        # deadline, so the per-request gflow gets only what is left of it, and nothing when it is gone.
+        remaining = deadline - _monotonic()
+        if remaining <= 0:
+            return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+        returncode, stdout = _run_gflow(_command(model, person, product, output), remaining, db_path)
         if returncode == WORKER_TIMEOUT_EXIT_CODE:
             return returncode, GflowMachineError()
         error = _machine_error(stdout)
