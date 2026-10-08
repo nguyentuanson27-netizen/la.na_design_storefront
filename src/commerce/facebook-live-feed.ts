@@ -114,6 +114,11 @@ export function buildFacebookLiveItems(
       a.id.localeCompare(b.id, "en"),
     );
     const chosen = ranked[0]!;
+    // The no-`?variant` landing page labels an unselected product "Từ <lowest price across all
+    // priced sizes>" (getStorefrontResolvedPriceRange), sold-out sizes included. Advertise that
+    // same floor so the feed and the page the link opens never disagree; availability, image and
+    // copy still come from the representative (best-stock) offer.
+    const priceVnd = Math.min(...variants.map((offer) => offer.priceVnd));
     const availability: FacebookLiveAvailability =
       chosen.availability === "in_stock"
         ? "in stock"
@@ -129,7 +134,7 @@ export function buildFacebookLiveItems(
       imageLink: chosen.imageLink,
       additionalImageLinks: chosen.additionalImageLinks,
       availability,
-      priceVnd: chosen.priceVnd,
+      priceVnd,
       brand: chosen.brand,
       condition: chosen.condition,
       gender: chosen.gender,

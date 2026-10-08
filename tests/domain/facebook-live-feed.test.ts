@@ -8,6 +8,7 @@ import {
   buildFacebookLiveItems,
   serializeFacebookLiveFeed,
 } from "../../src/commerce/facebook-live-feed.ts";
+import { getStorefrontResolvedPriceRange } from "../../src/commerce/storefront-product.ts";
 
 const ORIGIN = "https://www.lanadesign.vn";
 const MARKET: MerchantMarketPolicy = { targetCountry: "VN", contentLanguage: "vi", currency: "VND" };
@@ -54,7 +55,7 @@ test("three SD1701 sizes produce one parent item while another product remains i
   assert.equal((first.body.match(/<item>/g) ?? []).length, 2);
   assert.match(first.body, /<g:id>product-sd1701<\/g:id>/);
   assert.match(first.body, /<g:link>https:\/\/www\.lanadesign\.vn\/shop\/ao-dai-dan-hoa-sd1701<\/g:link>/);
-  assert.match(first.body, /<g:price>899000 VND<\/g:price>/);
+  assert.match(first.body, /<g:price>849000 VND<\/g:price>/);
   assert.match(first.body, /<g:availability>in stock<\/g:availability>/);
   assert.match(first.body, /Áo dài &amp; thiết kế &lt;La\.na&gt;/);
   assert.doesNotMatch(first.body, /<g:(?:size|color|mpn|item_group_id)>/);
@@ -63,16 +64,33 @@ test("three SD1701 sizes produce one parent item while another product remains i
   assert.equal(first.byteLength, new TextEncoder().encode(first.body).byteLength);
 });
 
-test("representative image and price are deterministic within the best sellable stock class", () => {
+test("representative image and availability come from the best stock class while price is the cross-size floor the PDP shows", () => {
   const items = buildFacebookLiveItems([
     offer({ id: "sd1701-l", size: "L", availability: "out_of_stock", priceVnd: 699_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-l` }),
     offer({ id: "sd1701-m", size: "M", availability: "in_stock", priceVnd: 929_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-m` }),
     offer({ id: "sd1701-s", availability: "in_stock", priceVnd: 899_000 }),
   ], ORIGIN);
   assert.equal(items.length, 1);
-  assert.equal(items[0]?.priceVnd, 899_000);
+  assert.equal(items[0]?.priceVnd, 699_000);
   assert.equal(items[0]?.imageLink, "https://content.pancake.vn/web-media/img-s.jpg");
   assert.equal(items[0]?.availability, "in stock");
+});
+
+test("advertised price matches the unselected PDP 'Từ' floor even when the cheapest size is sold out or backordered", () => {
+  const soldOutCheaper = [
+    offer({ id: "sd1701-s", priceVnd: 899_000 }),
+    offer({ id: "sd1701-l", size: "L", availability: "out_of_stock", priceVnd: 849_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-l` }),
+  ];
+  const backorderCheaper = [
+    offer({ id: "sd1701-s", priceVnd: 899_000 }),
+    offer({ id: "sd1701-m", size: "M", availability: "backorder", priceVnd: 829_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-m` }),
+  ];
+  for (const offers of [soldOutCheaper, backorderCheaper]) {
+    const floor = getStorefrontResolvedPriceRange(offers.map((o) => ({ price: o.priceVnd })))!.minimum;
+    const [item] = buildFacebookLiveItems(offers, ORIGIN);
+    assert.equal(item?.priceVnd, floor);
+    assert.equal(item?.availability, "in stock");
+  }
 });
 
 test("backorder-only groups retain orderable status; sold-out groups are not shown as stocked", () => {
