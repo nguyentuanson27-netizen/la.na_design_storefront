@@ -343,7 +343,7 @@ export function BrandTryOnDialog({
           </div>
         </div>
         <p className="mt-3 text-xs leading-5 text-black/60">
-          Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 15–30 giây.
+          Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 30–60 giây.
         </p>
         {tryOn.quotaLine ? (
           <p className="mt-3 border-t border-black/10 pt-3 text-[13px] leading-5 text-black/75">
@@ -592,7 +592,7 @@ export function BrandTryOnDialog({
           Xem {productName} trên ảnh của bạn. Kết quả do AI tạo, chỉ mang tính tham khảo.
         </p>
         {step === "photo" ? (
-          <p className="mb-3 border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">
+          <p className="mb-3 whitespace-pre-line border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">
             {TRY_ON_BETA_NOTE}
           </p>
         ) : null}
