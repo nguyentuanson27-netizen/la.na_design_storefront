@@ -14,6 +14,7 @@ const PORT = 3325;
 const BASE_URL = `http://${HOST}:${PORT}`;
 const APP_ROOT = resolve(import.meta.dirname, "../..");
 const NEXT_CLI = resolve(APP_ROOT, "node_modules/next/dist/bin/next");
+const PRODUCT_IMAGE_FETCH_FIXTURE = resolve(import.meta.dirname, "product-image-fetch-fixture.cjs");
 const SHOP_ID = 920_018;
 const runId = `${Date.now()}-${process.pid}`;
 const syncedAt = new Date("2026-08-23T00:00:00.000Z");
@@ -229,6 +230,10 @@ test.beforeAll(async () => {
       PANCAKE_SHOP_ID: String(SHOP_ID),
       SEARCH_INDEXING_ENABLED: "false",
       NEXT_TELEMETRY_DISABLED: "1",
+      // Controlled trusted upstream for the /api/product-image production smoke below.
+      NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${PRODUCT_IMAGE_FETCH_FIXTURE}`]
+        .filter(Boolean)
+        .join(" "),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -445,4 +450,55 @@ test("P18 inspects staging-safe metadata, robots, sitemap, and parent Product sc
   } finally {
     await context.close();
   }
+});
+
+test("P18 production server streams /api/product-image completely and survives a mid-stream cancel", async () => {
+  // No page.route here: this goes through the real Next production server, the streamed
+  // Response, and the HTTP adapter, with only the Pancake upstream replaced by a fixture.
+  const imageUrl = (width: number) =>
+    `${BASE_URL}/api/product-image?src=${encodeURIComponent(trustedImages[0])}&w=${width}`;
+
+  // 1. A slow reader still receives the whole body, consistent with Content-Length.
+  const complete = await fetch(imageUrl(1080));
+  expect(complete.status).toBe(200);
+  expect(complete.headers.get("content-type")).toBe("image/webp");
+  const declared = Number(complete.headers.get("content-length"));
+  expect(declared).toBeGreaterThan(64 * 1024);
+  expect(declared).toBeLessThan(3_000_000);
+  const reader = complete.body!.getReader();
+  const received: Buffer[] = [];
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received.push(Buffer.from(value));
+    await delay(20);
+  }
+  const body = Buffer.concat(received);
+  expect(received.length).toBeGreaterThan(1);
+  expect(body.byteLength).toBe(declared);
+  expect(body.subarray(0, 4).toString("latin1")).toBe("RIFF");
+  expect(body.subarray(8, 12).toString("latin1")).toBe("WEBP");
+
+  // 2. A client that goes away mid-stream does not wedge or crash the server.
+  const abandoned = await fetch(imageUrl(828));
+  expect(abandoned.status).toBe(200);
+  const abandonedReader = abandoned.body!.getReader();
+  await abandonedReader.read();
+  await abandonedReader.cancel();
+  await delay(250);
+
+  const afterCancel = await fetch(imageUrl(828));
+  expect(afterCancel.status).toBe(200);
+  expect((await afterCancel.arrayBuffer()).byteLength).toBe(
+    Number(afterCancel.headers.get("content-length")),
+  );
+
+  // 3. Policy still holds over real HTTP: variants of the source never reach the upstream.
+  const fragment = await fetch(
+    `${BASE_URL}/api/product-image?src=${encodeURIComponent(`${trustedImages[0]}?v=1`)}&w=1080`,
+  );
+  expect(fragment.status).toBe(400);
+  expect(fragment.headers.get("cache-control")).toBe("no-store");
+
+  expect(serverOutput).not.toMatch(/⨯|Unhandled|TypeError|ERR_/);
 });

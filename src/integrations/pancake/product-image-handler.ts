@@ -25,8 +25,16 @@ export const PRODUCT_IMAGE_MAX_FOLLOWERS = 16;
  * are shared by all of its responses, so the cost per response is only its stream state.
  */
 export const PRODUCT_IMAGE_MAX_PENDING = 128;
-/** Longest a response may hold an admission slot before the transfer is cut off. */
-export const PRODUCT_IMAGE_HOLD_MS = 30_000;
+/**
+ * A response that makes no progress (the client stops pulling) for this long is cut off. The timer
+ * restarts on every chunk the client takes, so a slow but moving transfer is never truncated.
+ */
+export const PRODUCT_IMAGE_IDLE_MS = 15_000;
+/**
+ * Hard ceiling on one transfer, so a client trickling just fast enough to stay "active" cannot hold
+ * a slot indefinitely. A body is under 3 MB, so 120 s still admits clients down to ~25 KB/s.
+ */
+export const PRODUCT_IMAGE_MAX_TRANSFER_MS = 120_000;
 const BODY_CHUNK_BYTES = 64 * 1024;
 
 const inFlight = new Map<string, Readonly<{ run: Promise<DeliveryResult>; followers: { count: number } }>>();
@@ -55,40 +63,51 @@ async function runLimited(
 
 /**
  * Streams shared bytes one chunk per consumer pull (no queueing ahead of the client), calling
- * `release` exactly once when the transfer finishes, is cancelled, or outlives `holdMs`.
+ * `release` exactly once when the transfer finishes, is cancelled, goes idle for `idleMs` without
+ * the client taking a chunk, or exceeds `maxTransferMs` in total.
  */
 function streamHoldingSlot(
   bytes: Uint8Array,
-  holdMs: number,
+  limits: Readonly<{ idleMs: number; maxTransferMs: number; chunkBytes: number }>,
   release: () => void,
 ): ReadableStream<Uint8Array> {
   let offset = 0;
   let released = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  let totalTimer: ReturnType<typeof setTimeout> | undefined;
   let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
   const finish = () => {
     if (released) return;
     released = true;
-    if (timer !== undefined) clearTimeout(timer);
+    clearTimeout(idleTimer);
+    clearTimeout(totalTimer);
     release();
+  };
+  const abort = (reason: string) => () => {
+    try {
+      controller?.error(new Error(reason));
+    } catch {
+      // already closed or cancelled
+    }
+    finish();
+  };
+  const armIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(abort("response idle timeout"), limits.idleMs);
+    idleTimer.unref?.();
   };
   return new ReadableStream<Uint8Array>(
     {
       start(c) {
         controller = c;
-        timer = setTimeout(() => {
-          try {
-            controller?.error(new Error("response hold timeout"));
-          } catch {
-            // already closed
-          }
-          finish();
-        }, holdMs);
-        timer.unref?.();
+        armIdle();
+        totalTimer = setTimeout(abort("response transfer timeout"), limits.maxTransferMs);
+        totalTimer.unref?.();
       },
       pull(c) {
-        c.enqueue(bytes.subarray(offset, offset + BODY_CHUNK_BYTES));
-        offset += BODY_CHUNK_BYTES;
+        armIdle();
+        c.enqueue(bytes.subarray(offset, offset + limits.chunkBytes));
+        offset += limits.chunkBytes;
         if (offset >= bytes.byteLength) {
           c.close();
           finish();
@@ -129,7 +148,7 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number; holdMs?: number }> = {},
+  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number; idleMs?: number; maxTransferMs?: number; chunkBytes?: number }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
@@ -203,7 +222,15 @@ export async function handleProductImageRequest(
     }
   }
 
-  const body = streamHoldingSlot(result.image.bytes, options.holdMs ?? PRODUCT_IMAGE_HOLD_MS, release);
+  const body = streamHoldingSlot(
+    result.image.bytes,
+    {
+      idleMs: options.idleMs ?? PRODUCT_IMAGE_IDLE_MS,
+      maxTransferMs: options.maxTransferMs ?? PRODUCT_IMAGE_MAX_TRANSFER_MS,
+      chunkBytes: options.chunkBytes ?? BODY_CHUNK_BYTES,
+    },
+    release,
+  );
   return new Response(body, {
     status: 200,
     headers: {

@@ -187,7 +187,7 @@ test("identical concurrent requests share one fetch and do not consume extra slo
 
 test("an admitted response holds its slot until its body is consumed, so a second wave cannot bypass the budget", async () => {
   const upstream = async () => new Response(TINY_PNG, { status: 200 });
-  const limits = { fetch: upstream, maxPending: 2, holdMs: 5_000 };
+  const limits = { fetch: upstream, maxPending: 2, idleMs: 5_000 };
   const srcFor = (n: number) => `https://content.pancake.vn/images/1/2/3/slow-${n}.png`;
 
   // First wave completes its transcode but its clients are slow: bodies stay unread.
@@ -203,9 +203,9 @@ test("an admitted response holds its slot until its body is consumed, so a secon
   await ok(await handleProductImageRequest(request(srcFor(3)), limits));
 });
 
-test("a client that never reads is cut off after the hold timeout and its slot returns", async () => {
+test("a client that never reads is cut off after the idle timeout and its slot returns", async () => {
   const upstream = async () => new Response(TINY_PNG, { status: 200 });
-  const limits = { fetch: upstream, maxPending: 1, holdMs: 30 };
+  const limits = { fetch: upstream, maxPending: 1, idleMs: 30 };
   const stalled = await handleProductImageRequest(request(SRC), limits);
   assert.equal(stalled.status, 200);
   assert.equal((await handleProductImageRequest(request(SRC), limits)).status, 503);
@@ -213,4 +213,51 @@ test("a client that never reads is cut off after the hold timeout and its slot r
   await new Promise((resolve) => setTimeout(resolve, 80));
   await ok(await handleProductImageRequest(request(SRC), limits));
   await assert.rejects(() => stalled.arrayBuffer());
+});
+
+test("a slow but progressing transfer outlives the idle threshold and completes; a stalled one is cut off", async () => {
+  const upstream = async () => new Response(TINY_PNG, { status: 200 });
+  const limits = { fetch: upstream, maxPending: 1, idleMs: 120, chunkBytes: 16 };
+
+  const slow = await handleProductImageRequest(request(SRC), limits);
+  assert.equal(slow.status, 200);
+  const declared = Number(slow.headers.get("content-length"));
+  const reader = slow.body!.getReader();
+  let received = 0;
+  let chunks = 0;
+  const started = Date.now();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    chunks += 1;
+    await new Promise((resolve) => setTimeout(resolve, 70)); // every gap is under idleMs
+  }
+  assert.ok(chunks >= 3, "the body must span several chunks for this to prove anything");
+  assert.ok(Date.now() - started > 120, "the whole transfer must outlast the idle threshold");
+  assert.equal(received, declared, "a progressing client gets the complete body");
+
+  // A client that takes one chunk and then stalls is cut off, and its slot returns.
+  const stalled = await handleProductImageRequest(request(SRC), limits);
+  const stalledReader = stalled.body!.getReader();
+  await stalledReader.read();
+  assert.equal((await handleProductImageRequest(request(SRC), limits)).status, 503);
+  await new Promise((resolve) => setTimeout(resolve, 250));
+  await assert.rejects(() => stalledReader.read());
+  await ok(await handleProductImageRequest(request(SRC), limits));
+});
+
+test("the total transfer ceiling cuts off a client that trickles forever", async () => {
+  const upstream = async () => new Response(TINY_PNG, { status: 200 });
+  const limits = { fetch: upstream, maxPending: 1, idleMs: 1_000, maxTransferMs: 100, chunkBytes: 16 };
+  const response = await handleProductImageRequest(request(SRC), limits);
+  const reader = response.body!.getReader();
+  await assert.rejects(async () => {
+    for (;;) {
+      const { done } = await reader.read();
+      if (done) return;
+      await new Promise((resolve) => setTimeout(resolve, 60));
+    }
+  });
+  await ok(await handleProductImageRequest(request(SRC), limits));
 });
