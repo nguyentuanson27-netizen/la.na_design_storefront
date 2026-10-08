@@ -275,6 +275,7 @@ export function PurchasePanelView({
   controller,
   sizeGuide,
   tryOnTrigger = null,
+  mobileNudge = null,
 }: Readonly<{
   controller: VariantSelectionController;
   sizeGuide: ProductMappedSizeGuide | null;
@@ -283,6 +284,8 @@ export function PurchasePanelView({
    * elsewhere and shares no state with this panel; it appears on the panel only, not in the options sheet.
    */
   tryOnTrigger?: ReactNode;
+  /** Floats just above the phone purchase bar (e.g. a reminder of try-on); absolutely placed, so it never resizes the bar. */
+  mobileNudge?: ReactNode;
 }>) {
   const {
     view,
@@ -697,6 +700,7 @@ export function PurchasePanelView({
         className="fixed inset-x-0 bottom-0 z-40 border-t border-black/20 bg-[#FAF7F2] px-4 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] lg:hidden"
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
+        {mobileNudge}
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
           {cartSummary.count > 0 ? (
             /*

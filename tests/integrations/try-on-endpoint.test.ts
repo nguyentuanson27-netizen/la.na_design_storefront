@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { TRY_ON_MAX_REQUEST_BYTES, handleTryOnPost } from "../../src/commerce/try-on-endpoint.ts";
+import { TRY_ON_MAX_REQUEST_BYTES, handleTryOnPost, handleTryOnQuotaGet } from "../../src/commerce/try-on-endpoint.ts";
 import type { TryOnIdentity } from "../../src/commerce/try-on-rate-limit.ts";
 import type { TryOnServiceInput, TryOnServiceResult } from "../../src/commerce/try-on-service.ts";
 import { JPEG_BYTES, PNG_BYTES, tryOnForm } from "../support/try-on-fixtures.ts";
@@ -234,4 +234,37 @@ test("a service that throws still answers a safe 5xx, never the error", async ()
   });
   assert.equal(response.status, 502);
   assert.doesNotMatch(await response.text(), /secret/);
+});
+
+test("GET reports the caller's remaining attempts, no-store, and spends nothing", async () => {
+  const peeked: TryOnIdentity[] = [];
+  const response = await handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
+    resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
+    peekQuota: (identity) => {
+      peeked.push(identity);
+      return { audience: identity.kind, limit: 5, remaining: 4 };
+    },
+  });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await response.json(), { ok: true, audience: "guest", limit: 5, remaining: 4 });
+  assert.equal(peeked.length, 1);
+});
+
+test("GET fails closed with a bare 503 when no identity can be derived or the lookup throws", async () => {
+  const noIdentity = await handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
+    resolveIdentity: async () => null,
+    peekQuota: () => assert.fail("must not be reached"),
+  });
+  assert.equal(noIdentity.status, 503);
+  assert.deepEqual(await noIdentity.json(), { ok: false });
+
+  const throwing = await handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
+    resolveIdentity: async () => {
+      throw new Error("db down");
+    },
+    peekQuota: () => assert.fail("must not be reached"),
+  });
+  assert.equal(throwing.status, 503);
+  assert.equal(throwing.headers.get("cache-control"), "no-store");
 });

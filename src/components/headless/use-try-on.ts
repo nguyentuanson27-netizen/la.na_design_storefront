@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
+import { createTryOnQuotaLoader } from "./try-on-quota.ts";
 import {
   TRY_ON_NETWORK_FAILURE_MESSAGE,
   isBlockedAgeState,
@@ -11,11 +12,15 @@ import {
   missingTryOnSteps,
   nextTryOnStep,
   parseTryOnFailureReason,
+  tryOnLoginHref,
+  tryOnQuotaLine,
   tryOnStepNumber,
   tryOnFailureMessage,
+  tryOnQuotaUpsell,
   validateTryOnFile,
   type TryOnAgeState,
   type TryOnFailureReason,
+  type TryOnQuotaView,
   type TryOnStep,
 } from "./try-on-model.ts";
 
@@ -71,6 +76,17 @@ export function useTryOn({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorReason, setErrorReason] = useState<TryOnFailureReason | null>(null);
   const [result, setResult] = useState<TryOnResult | null>(null);
+  // What is left today, as the server says. Display only: the server enforces the limit on its own.
+  // `quotaCurrent` is false from the moment a refresh starts until it answers, so a number that may
+  // be out of date is never shown; the audience it carries survives that wait (it only decides
+  // whether an account is offered) but is dropped when a refresh fails or the dialog resets.
+  const [quota, setQuota] = useState<TryOnQuotaView | null>(null);
+  const [quotaCurrent, setQuotaCurrent] = useState(false);
+  const quotaLoaderRef = useRef<ReturnType<typeof createTryOnQuotaLoader> | null>(null);
+  quotaLoaderRef.current ??= createTryOnQuotaLoader(async (signal) => {
+    const response = await fetch("/api/try-on", { method: "GET", cache: "no-store", signal });
+    return response.json();
+  });
 
   // Object URLs are revoked when replaced and on unmount, so no image outlives its use.
   useEffect(() => {
@@ -84,6 +100,10 @@ export function useTryOn({
     };
   }, [result]);
   useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => {
+    const loader = quotaLoaderRef.current;
+    return () => loader?.cancel();
+  }, []);
 
   const locked = phase === "loading";
   const canGenerate =
@@ -97,7 +117,19 @@ export function useTryOn({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
+  /** Asks the server what is left today. Only the latest answer is applied; a failure shows no number. */
+  async function refreshQuota() {
+    setQuotaCurrent(false);
+    const outcome = await quotaLoaderRef.current!.load();
+    if (outcome.kind === "superseded") return;
+    setQuota(outcome.kind === "known" ? outcome.quota : null);
+    setQuotaCurrent(outcome.kind === "known");
+  }
+
   function reset() {
+    quotaLoaderRef.current?.cancel();
+    setQuota(null);
+    setQuotaCurrent(false);
     abortRef.current?.abort();
     abortRef.current = null;
     setStep("photo");
@@ -220,7 +252,11 @@ export function useTryOn({
       if (abortRef.current === controller) abortRef.current = null;
       // The acknowledgement is a representation about one photo for one generation. Asking again
       // for the next attempt is deliberate (spec §6), and the server demands it regardless.
-      if (!controller.signal.aborted) setAcknowledged(false);
+      if (!controller.signal.aborted) {
+        setAcknowledged(false);
+        // Every submitted attempt counts, so the number has moved whatever the outcome was.
+        void refreshQuota();
+      }
     }
   }
 
@@ -254,6 +290,11 @@ export function useTryOn({
     phase,
     errorMessage,
     errorReason,
+    quota,
+    quotaLine: quotaCurrent ? tryOnQuotaLine(quota) : null,
+    quotaUpsell: tryOnQuotaUpsell(errorReason, quota?.audience ?? null),
+    loginHref: tryOnLoginHref(productSlug),
+    refreshQuota,
     result,
     canGenerate,
     missingSteps: missingTryOnSteps({ hasPhoto: file !== null, ageState, acknowledged }),

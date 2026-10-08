@@ -9,11 +9,16 @@ import {
 } from "@/components/headless/try-on-disclosure";
 import {
   TRY_ON_AGE_OPTIONS,
+  TRY_ON_BETA_BADGE,
+  TRY_ON_BETA_NOTE,
   TRY_ON_BLOCKED_AGE_MESSAGE,
   TRY_ON_LIKENESS_ACKNOWLEDGEMENT,
+  TRY_ON_PHOTO_DONTS,
+  TRY_ON_PHOTO_DOS,
   TRY_ON_STEP_COUNT,
   TRY_ON_TEEN_ATTESTATION_LEAD,
   TRY_ON_TEEN_DISCLOSURE,
+  TRY_ON_WAIT_NOTE,
   isLoginRequired,
 } from "@/components/headless/try-on-model";
 import { useTryOn } from "@/components/headless/use-try-on";
@@ -72,7 +77,11 @@ function PersonIcon() {
   );
 }
 
-/** The entry point: a text link that sits on the size-guide line, so it adds no row of its own. */
+/**
+ * The entry point. It was a text link on the size-guide line, which is easy to read past, so it is
+ * now a quiet outlined row of its own under it: what it does in one line, and a small mark that it
+ * is AI and still in development. Its name still begins "Thử đồ".
+ */
 export function BrandTryOnTrigger({
   onOpen,
   triggerRef,
@@ -81,15 +90,67 @@ export function BrandTryOnTrigger({
     <button
       ref={triggerRef}
       type="button"
-      className={`group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] ${FOCUS_RING} focus-visible:outline-offset-4`}
+      className={`group mt-1 flex min-h-14 w-full items-center gap-3 border border-[#3B2219] px-4 py-2.5 text-left text-[#3B2219] transition-colors hover:bg-[#3B2219]/5 ${FOCUS_RING} focus-visible:outline-offset-4`}
       aria-haspopup="dialog"
       onClick={onOpen}
     >
       <PersonIcon />
-      <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
-        Thử đồ<span className="hidden sm:inline"> bằng ảnh của bạn</span>
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <span className="text-sm font-semibold">Thử đồ bằng ảnh của bạn</span>
+          <span className="border border-[#3B2219]/60 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.12em]">
+            AI · Beta
+          </span>
+        </span>
+        <span className="mt-0.5 block text-xs leading-5 text-black/65">
+          Xem sản phẩm trên chính bạn, hoàn toàn miễn phí
+        </span>
+      </span>
+      <span aria-hidden="true" className="shrink-0 text-lg leading-none transition-transform group-hover:translate-x-0.5">
+        →
       </span>
     </button>
+  );
+}
+
+/**
+ * A small prompt that floats just above the phone's purchase bar once the shopper has scrolled past
+ * the entry point, so a shopper who read the description is reminded without the page gaining a
+ * banner. It leaves the right edge free for the chat button, and can be put away.
+ */
+export function BrandTryOnNudge({
+  onOpen,
+  onDismiss,
+  openRef,
+}: Readonly<{
+  onOpen: () => void;
+  onDismiss: () => void;
+  /** The coordinator's handle on the button that opens the dialog, so focus can come back to it. */
+  openRef: RefObject<HTMLButtonElement | null>;
+}>) {
+  return (
+    <div className="absolute bottom-full left-4 mb-2 flex max-w-[calc(100%-5.5rem)] items-stretch border border-[#3B2219] bg-[#FAF7F2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
+      <button
+        ref={openRef}
+        type="button"
+        className={`flex min-h-11 min-w-0 items-center gap-2 px-3 text-left text-[13px] leading-4 text-[#3B2219] ${FOCUS_RING}`}
+        aria-haspopup="dialog"
+        onClick={onOpen}
+      >
+        <PersonIcon />
+        <span>
+          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">Thử đồ bằng ảnh của bạn</span>
+        </span>
+      </button>
+      <button
+        type="button"
+        aria-label="Ẩn gợi ý thử đồ"
+        className={`min-h-11 min-w-11 shrink-0 border-l border-[#3B2219]/20 text-lg leading-none text-[#3B2219]/70 ${FOCUS_RING}`}
+        onClick={onDismiss}
+      >
+        <span aria-hidden="true">×</span>
+      </button>
+    </div>
   );
 }
 
@@ -106,6 +167,7 @@ export function BrandTryOnDialog({
   provider: TryOnDisclosureProvider;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Whatever opened the dialog: focus goes back there, so it must be the control the shopper used. */
   returnFocusRef: RefObject<HTMLElement | null>;
 }>) {
   const ids = useId();
@@ -125,6 +187,14 @@ export function BrandTryOnDialog({
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
+  // What is left today is asked for each time the dialog opens, so it is never a stale number.
+  const { refreshQuota } = tryOn;
+  useEffect(() => {
+    if (open) void refreshQuota();
+    // `refreshQuota` is recreated every render; only opening should ask again.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
   // Moving between steps replaces the content under the shopper's focus, so focus follows to the new
   // step's heading. The first step is not announced this way: the dialog's own opening focus does it.
   useEffect(() => {
@@ -141,7 +211,7 @@ export function BrandTryOnDialog({
   function handleClosed() {
     tryOn.reset();
     onOpenChange(false);
-    returnFocusRef.current?.focus();
+    returnFocusRef.current?.focus({ preventScroll: true });
   }
 
   function containFocus(event: KeyboardEvent<HTMLDialogElement>) {
@@ -248,10 +318,50 @@ export function BrandTryOnDialog({
             {tryOn.fileError}
           </p>
         ) : null}
-        <ul id={fileHelpId} className="mt-3 list-disc space-y-0.5 pl-5 text-sm text-black/65">
-          <li>Ảnh chính diện, thấy rõ người</li>
-          <li>Đủ sáng, không bị che nhiều</li>
-        </ul>
+        <div id={fileHelpId} className="mt-3 grid grid-cols-2 gap-x-4 text-[13px] leading-5">
+          <div>
+            <p className="font-semibold">Nên chọn</p>
+            <ul className="mt-1 space-y-1 text-black/70">
+              {TRY_ON_PHOTO_DOS.map((tip) => (
+                <li key={tip} className="flex gap-1.5">
+                  <span aria-hidden="true" className="text-[#3B2219]">
+                    ✓
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <p className="font-semibold">Nên tránh</p>
+            <ul className="mt-1 space-y-1 text-black/70">
+              {TRY_ON_PHOTO_DONTS.map((tip) => (
+                <li key={tip} className="flex gap-1.5">
+                  <span aria-hidden="true" className={ERROR_TEXT}>
+                    ✕
+                  </span>
+                  <span>{tip}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="mt-3 text-xs leading-5 text-black/60">
+          Chỉ 3 bước nhẹ nhàng: chọn ảnh, xác nhận, nhận ảnh thử đồ sau khoảng 15–30 giây.
+        </p>
+        {tryOn.quotaLine ? (
+          <p className="mt-3 border-t border-black/10 pt-3 text-[13px] leading-5 text-black/75">
+            {tryOn.quotaLine}
+            {tryOn.quota?.audience === "guest" ? (
+              <>
+                {" "}
+                <a href={tryOn.loginHref} className={`font-semibold underline underline-offset-4 ${FOCUS_RING}`}>
+                  Tạo tài khoản
+                </a>
+              </>
+            ) : null}
+          </p>
+        ) : null}
         <button
           type="button"
           className="btn btn--primary mt-4 w-full px-4"
@@ -371,7 +481,12 @@ export function BrandTryOnDialog({
           {phase === "loading" ? "Đang tạo ảnh" : phase === "error" ? "Chưa tạo được ảnh" : "Ảnh thử đồ"}
         </h3>
         <div role="status" aria-live="polite" className="min-h-6 text-sm">
-          {phase === "loading" ? "Đang tạo ảnh thử đồ, vui lòng chờ trong giây lát…" : null}
+          {phase === "loading" ? (
+            <>
+              <p>Đang tạo ảnh thử đồ cho bạn…</p>
+              <p className="mt-1 text-black/70">{TRY_ON_WAIT_NOTE}</p>
+            </>
+          ) : null}
           {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
         </div>
 
@@ -424,12 +539,23 @@ export function BrandTryOnDialog({
             <p role="alert" className={`mt-2 text-sm font-semibold ${ERROR_TEXT}`}>
               {tryOn.errorMessage}
             </p>
-            {isLoginRequired(tryOn.errorReason) ? (
-              <a href="/login" className="btn btn--primary mt-4 w-full px-4">
-                Đăng nhập
+            {tryOn.quotaUpsell ? (
+              <div className="mt-4 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
+                <p className="font-semibold">{tryOn.quotaUpsell.title}</p>
+                <p className="mt-1">{tryOn.quotaUpsell.body}</p>
+              </div>
+            ) : null}
+            {isLoginRequired(tryOn.errorReason) || tryOn.quotaUpsell ? (
+              <a href={tryOn.loginHref} className="btn btn--primary mt-4 w-full px-4">
+                Đăng ký hoặc đăng nhập
               </a>
-            ) : (
-              <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={tryOn.backToConfirm}>
+            ) : null}
+            {isLoginRequired(tryOn.errorReason) ? null : (
+              <button
+                type="button"
+                className={`btn btn--outline w-full px-4 ${tryOn.quotaUpsell ? "mt-3" : "mt-4"}`}
+                onClick={tryOn.backToConfirm}
+              >
                 Quay lại
               </button>
             )}
@@ -450,9 +576,14 @@ export function BrandTryOnDialog({
     >
       <div className="px-5 pb-5 pt-4">
         <div className="flex items-start justify-between gap-4">
-          <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
-            Thử đồ
-          </h2>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h2 id={titleId} className="font-display text-2xl font-normal tracking-[-0.02em]">
+              Thử đồ
+            </h2>
+            <span className="border border-[#3B2219]/50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-[#3B2219]">
+              {TRY_ON_BETA_BADGE}
+            </span>
+          </div>
           <button
             type="button"
             className={`shrink-0 px-2 ${TEXT_BUTTON}`}
@@ -464,6 +595,11 @@ export function BrandTryOnDialog({
         <p className="mb-3 text-xs leading-5 text-black/60">
           Xem {productName} trên ảnh của bạn. Kết quả do AI tạo, chỉ mang tính tham khảo.
         </p>
+        {step === "photo" ? (
+          <p className="mb-3 border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">
+            {TRY_ON_BETA_NOTE}
+          </p>
+        ) : null}
         {renderProgress()}
         <div className="min-h-[24rem]">
           {step === "photo" ? renderPhotoStep() : null}

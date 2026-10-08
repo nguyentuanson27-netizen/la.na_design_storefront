@@ -47,6 +47,13 @@ export function parseTryOnAgeState(value: unknown): TryOnAgeState | null {
  * Every reason the try-on endpoint can answer with. The browser maps these to Vietnamese copy; the
  * server logs the same class and nothing more specific.
  */
+/**
+ * The per-identity attempt allowances (owner decision of 2026-10-04, spec §21). They live here so the
+ * limiter that enforces them and the copy that tells a shopper about them cannot drift apart.
+ */
+export const TRY_ON_GUEST_QUOTA = Object.freeze({ perMinute: 1, perDay: 5 });
+export const TRY_ON_MEMBER_QUOTA = Object.freeze({ perMinute: 2, perDay: 10 });
+
 export const TRY_ON_FAILURE_REASONS = [
   "UNAVAILABLE",
   "INVALID_REQUEST",

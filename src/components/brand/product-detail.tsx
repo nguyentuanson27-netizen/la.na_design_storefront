@@ -1,13 +1,13 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import type { TryOnProvider } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
-import { BrandTryOnDialog, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
+import { BrandTryOnDialog, BrandTryOnNudge, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -65,6 +65,42 @@ export function BrandProductDetail({
   // selection above, so opening, failing or dismissing it cannot change what the shopper buys.
   const [tryOnOpen, setTryOnOpen] = useState(false);
   const tryOnTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Focus returns to whichever control opened the dialog. That is not always the entry point: when
+  // the phone reminder opened it, the entry point is by definition above the viewport, and focusing
+  // it would leave focus on a control the shopper cannot see.
+  const tryOnNudgeOpenRef = useRef<HTMLButtonElement | null>(null);
+  const tryOnReturnFocusRef = useRef<HTMLElement | null>(null);
+  // The phone-only reminder appears once the shopper has scrolled *past* the entry point (it is
+  // above the viewport), not while it is still ahead of them, and can be put away for this visit.
+  const [scrolledPastTryOn, setScrolledPastTryOn] = useState(false);
+  const [tryOnNudgeDismissed, setTryOnNudgeDismissed] = useState(false);
+  const hasTryOn = tryOn !== null;
+
+  useEffect(() => {
+    const trigger = tryOnTriggerRef.current;
+    if (!hasTryOn || trigger === null || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry) setScrolledPastTryOn(!entry.isIntersecting && entry.boundingClientRect.top < 0);
+    });
+    observer.observe(trigger);
+    return () => observer.disconnect();
+  }, [hasTryOn]);
+
+  function openTryOnFrom(opener: HTMLElement | null) {
+    tryOnReturnFocusRef.current = opener;
+    setTryOnOpen(true);
+  }
+
+  function handleTryOnOpenChange(open: boolean) {
+    if (!open) {
+      // The dialog moves focus right after this call. If the opener has since gone (the reminder
+      // unmounts, or the phone bar is hidden by a resize) fall back to the entry point.
+      const opener = tryOnReturnFocusRef.current;
+      const usable = opener !== null && opener.isConnected && opener.getClientRects().length > 0;
+      if (!usable) tryOnReturnFocusRef.current = tryOnTriggerRef.current;
+    }
+    setTryOnOpen(open);
+  }
 
   return (
     <>
@@ -102,9 +138,20 @@ export function BrandProductDetail({
             <PurchasePanelView
               controller={controller}
               sizeGuide={sizeGuide}
+              mobileNudge={
+                // Stays mounted while the dialog is open (the native modal makes it inert), so the
+                // button that opened the dialog still exists when focus is given back to it.
+                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed ? (
+                  <BrandTryOnNudge
+                    openRef={tryOnNudgeOpenRef}
+                    onOpen={() => openTryOnFrom(tryOnNudgeOpenRef.current)}
+                    onDismiss={() => setTryOnNudgeDismissed(true)}
+                  />
+                ) : null
+              }
               tryOnTrigger={
                 tryOn === null ? null : (
-                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => setTryOnOpen(true)} />
+                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => openTryOnFrom(tryOnTriggerRef.current)} />
                 )
               }
             />
@@ -127,8 +174,8 @@ export function BrandProductDetail({
           productName={productName}
           provider={tryOn.provider}
           open={tryOnOpen}
-          onOpenChange={setTryOnOpen}
-          returnFocusRef={tryOnTriggerRef}
+          onOpenChange={handleTryOnOpenChange}
+          returnFocusRef={tryOnReturnFocusRef}
         />
       )}
     </>
