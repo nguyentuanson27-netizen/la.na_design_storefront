@@ -3,7 +3,6 @@ import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-co
 import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
-  STOREFRONT_ORDER_SOURCE_ID,
   type PancakeCreateOrderRequest,
 } from "../integrations/pancake/order-create.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
@@ -153,6 +152,8 @@ export type PancakeOrderSubmissionOptions = {
    * boundary and price two lines of the same order against different instants.
    */
   now?: () => Date;
+  /** Pancake POS order source ID stamped on every created order; omitted when not configured. */
+  orderSourceId?: number;
 };
 
 function emitSafely(
@@ -950,7 +951,7 @@ export function createPancakeOrderSubmissionService(
 
     const request = buildPancakeCreateOrderRequest({
       shopId: persistedShopId,
-      orderSourceId: STOREFRONT_ORDER_SOURCE_ID,
+      ...(options.orderSourceId === undefined ? {} : { orderSourceId: options.orderSourceId }),
       guestName: order.guestName,
       guestPhone: order.guestPhone,
       provinceRef: order.provinceRef,

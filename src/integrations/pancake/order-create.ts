@@ -6,12 +6,6 @@ export type PancakeCreateOrderLineInput = {
   unitPriceVnd: number;
 };
 
-/**
- * The Pancake POS order source ("Nguồn đơn") dedicated to this storefront. Sent as the create-order
- * `account` field (documented as "Order source ID") so web orders are tagged in the POS.
- */
-export const STOREFRONT_ORDER_SOURCE_ID = 922_027_175;
-
 export type PancakeCreateOrderInput = {
   shopId: number;
   /** Pancake order source ID, sent as `account`. Omitted from the request when absent. */
