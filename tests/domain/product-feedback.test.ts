@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  createProductFeedbackRepository,
   mapFeedbackVariantsToImages,
   parseFeedbackProductCode,
   PRODUCT_FEEDBACK_IMAGE_LIMIT,
@@ -68,15 +69,20 @@ test("an uncalibrated brand photograph still fails the gallery closed", () => {
   assert.deepEqual(images, []);
 });
 
+const brandOf = (variants: readonly FeedbackVariantRow[]) => mapFeedbackVariantsToImages(variants);
+const BRAND_VARIANTS = [row("ANH-FEEDBACK-02", [KNOWN_2.src]), row("ANH-FEEDBACK-01", [KNOWN_1.src])];
+
 test("a product with tagged photographs shows only its own, sizes unknown until calibrated", () => {
-  const feedback = selectProductFeedback(
-    [
-      row("ANH-FEEDBACK-01", [KNOWN_1.src]),
+  const feedback = selectProductFeedback({
+    productCode: "sv605",
+    productCodeOwnerCount: 1,
+    taggedVariants: [
       row("ANH-FEEDBACK-SV605", [UNCALIBRATED, KNOWN_3.src, UNCALIBRATED]),
+      // A row the read should not have returned is still ignored: only the exact code counts.
       row("ANH-FEEDBACK-SV700", [UNCALIBRATED_2]),
     ],
-    "sv605",
-  );
+    brandImages: brandOf(BRAND_VARIANTS),
+  });
 
   assert.equal(feedback?.scope, "product");
   assert.equal(feedback?.hasBrandGallery, true);
@@ -86,14 +92,28 @@ test("a product with tagged photographs shows only its own, sizes unknown until 
   ]);
 });
 
+test("a product code shared by two present products is ambiguous and falls back to the brand gallery", () => {
+  const input = {
+    productCode: "SV605",
+    taggedVariants: [row("ANH-FEEDBACK-SV605", [UNCALIBRATED])],
+    brandImages: brandOf(BRAND_VARIANTS),
+  };
+  for (const productCodeOwnerCount of [0, 2, 3]) {
+    const feedback = selectProductFeedback({ ...input, productCodeOwnerCount });
+    assert.equal(feedback?.scope, "brand", `owners: ${productCodeOwnerCount}`);
+    assert.deepEqual(feedback?.images.map((image) => image.src), [KNOWN_1.src, KNOWN_2.src]);
+  }
+  assert.equal(selectProductFeedback({ ...input, productCodeOwnerCount: 1 })?.scope, "product");
+});
+
 test("a product without tagged photographs falls back to the brand gallery", () => {
-  const variants = [
-    row("ANH-FEEDBACK-02", [KNOWN_2.src]),
-    row("ANH-FEEDBACK-01", [KNOWN_1.src]),
-    row("ANH-FEEDBACK-SV700", [UNCALIBRATED]),
-  ];
   for (const productCode of ["SV605", null]) {
-    const feedback = selectProductFeedback(variants, productCode);
+    const feedback = selectProductFeedback({
+      productCode,
+      productCodeOwnerCount: productCode === null ? 0 : 1,
+      taggedVariants: [],
+      brandImages: brandOf(BRAND_VARIANTS),
+    });
     assert.equal(feedback?.scope, "brand");
     assert.deepEqual(feedback?.images.map((image) => image.src), [KNOWN_1.src, KNOWN_2.src]);
   }
@@ -103,54 +123,144 @@ test("the product page rail is capped, and absent when there is nothing to show"
   const many = HOMEPAGE_CONFIG.feedback.images.map((image, index) =>
     row(`ANH-FEEDBACK-${String(index + 1).padStart(2, "0")}`, [image.src]),
   );
-  const feedback = selectProductFeedback(many, null);
+  const feedback = selectProductFeedback({
+    productCode: null,
+    productCodeOwnerCount: 0,
+    taggedVariants: [],
+    brandImages: brandOf(many),
+  });
   assert.equal(
     feedback?.images.length,
     Math.min(PRODUCT_FEEDBACK_IMAGE_LIMIT, HOMEPAGE_CONFIG.feedback.images.length),
   );
 
-  assert.equal(selectProductFeedback([], "SV605"), null);
-  assert.equal(selectProductFeedback([row("ANH-FEEDBACK-SV700", [UNCALIBRATED])], "SV605"), null);
+  const empty = { productCodeOwnerCount: 1, brandImages: [] };
+  assert.equal(selectProductFeedback({ ...empty, productCode: "SV605", taggedVariants: [] }), null);
 });
 
-test("readProductFeedback scopes both reads to the shop and the product", async () => {
-  const calls: unknown[] = [];
-  const client: ProductFeedbackReadClient = {
+test("many tagged variants and URLs still yield at most the cap, de-duplicated, in display-ID order", () => {
+  const taggedVariants = Array.from({ length: 200 }, (_, variant) =>
+    row("ANH-FEEDBACK-SV605", Array.from({ length: 10 }, (_, url) =>
+      `https://content.pancake.vn/2-2610/2026/10/8/sv605-${(variant * 10 + url) % 1500}.jpg`)),
+  );
+  const feedback = selectProductFeedback({
+    productCode: "SV605",
+    productCodeOwnerCount: 1,
+    taggedVariants,
+    brandImages: [],
+  });
+  assert.equal(feedback?.images.length, PRODUCT_FEEDBACK_IMAGE_LIMIT);
+  assert.equal(new Set(feedback?.images.map((image) => image.src)).size, PRODUCT_FEEDBACK_IMAGE_LIMIT);
+});
+
+type Call = Readonly<{ method: string; where: unknown }>;
+
+function fakeClient(
+  calls: Call[],
+  { productCode = "SV605", owners = 1, failBrand = false }: { productCode?: string | null; owners?: number; failBrand?: boolean } = {},
+): ProductFeedbackReadClient {
+  return {
     variantMirror: {
       async findMany(args) {
-        calls.push(args.where);
-        return [row("ANH-FEEDBACK-01", [KNOWN_1.src]), row("ANH-FEEDBACK-SV605", [UNCALIBRATED])];
+        calls.push({ method: "variantMirror.findMany", where: args.where });
+        if ("startsWith" in args.where.pancakeDisplayId) {
+          if (failBrand) throw new Error("connection reset");
+          return [row("ANH-FEEDBACK-01", [KNOWN_1.src])];
+        }
+        return [row("ANH-FEEDBACK-SV605", [UNCALIBRATED])];
       },
     },
     productMirror: {
       async findFirst(args) {
-        calls.push(args.where);
-        return { productCode: "SV605" };
+        calls.push({ method: "productMirror.findFirst", where: args.where });
+        return { productCode };
+      },
+      async count(args) {
+        calls.push({ method: "productMirror.count", where: args.where });
+        return owners;
       },
     },
   };
+}
 
-  const feedback = await readProductFeedback({ client, shopId: 7, productId: "prod-1" });
+test("readProductFeedback reads only the product's own tag and counts who else carries its code", async () => {
+  const calls: Call[] = [];
+  const feedback = await readProductFeedback({ client: fakeClient(calls), shopId: 7, productId: "prod-1" });
+
   assert.equal(feedback?.scope, "product");
-  assert.deepEqual(calls, [
+  assert.deepEqual(
+    calls.map((call) => call.method).sort(),
+    ["productMirror.count", "productMirror.findFirst", "variantMirror.findMany", "variantMirror.findMany"],
+  );
+  assert.deepEqual(calls.find((call) => call.method === "productMirror.findFirst")?.where, { id: "prod-1", pancakeShopId: 7 });
+  assert.deepEqual(calls.find((call) => call.method === "productMirror.count")?.where, {
+    pancakeShopId: 7,
+    isPresent: true,
+    productCode: { equals: "SV605", mode: "insensitive" },
+  });
+  const variantReads = calls.filter((call) => call.method === "variantMirror.findMany").map((call) => call.where);
+  assert.deepEqual(variantReads, [
     { isPresent: true, pancakeDisplayId: { startsWith: "ANH-FEEDBACK-" }, product: { pancakeShopId: 7 } },
-    { id: "prod-1", pancakeShopId: 7 },
+    { isPresent: true, pancakeDisplayId: { equals: "ANH-FEEDBACK-SV605", mode: "insensitive" }, product: { pancakeShopId: 7 } },
   ]);
 });
 
-test("readProductFeedback fails closed rather than failing the product page", async () => {
-  const client: ProductFeedbackReadClient = {
+test("readProductFeedback falls back to the brand gallery when the code is ambiguous in the shop", async () => {
+  const feedback = await readProductFeedback({ client: fakeClient([], { owners: 2 }), shopId: 7, productId: "prod-1" });
+  assert.equal(feedback?.scope, "brand");
+  assert.deepEqual(feedback?.images.map((image) => image.src), [KNOWN_1.src]);
+});
+
+test("a product without a code makes no tag read at all", async () => {
+  const calls: Call[] = [];
+  const feedback = await readProductFeedback({ client: fakeClient(calls, { productCode: null }), shopId: 7, productId: "p" });
+  assert.equal(feedback?.scope, "brand");
+  assert.deepEqual(calls.map((call) => call.method).sort(), ["productMirror.findFirst", "variantMirror.findMany"]);
+});
+
+test("the brand gallery read is shared across product pages per shop until its TTL", async () => {
+  const calls: Call[] = [];
+  let clock = 1_000;
+  const repository = createProductFeedbackRepository(fakeClient(calls), { now: () => clock, ttlMs: 60_000 });
+  const brandReads = () =>
+    calls.filter((call) => call.method === "variantMirror.findMany" && JSON.stringify(call.where).includes("startsWith")).length;
+
+  await Promise.all([
+    repository.readProductFeedback({ shopId: 7, productId: "a" }),
+    repository.readProductFeedback({ shopId: 7, productId: "b" }),
+  ]);
+  await repository.readProductFeedback({ shopId: 7, productId: "c" });
+  assert.equal(brandReads(), 1);
+
+  await repository.readProductFeedback({ shopId: 8, productId: "a" });
+  assert.equal(brandReads(), 2, "another shop has its own entry");
+
+  clock += 60_001;
+  await repository.readProductFeedback({ shopId: 7, productId: "a" });
+  assert.equal(brandReads(), 3, "expired entries are re-read");
+});
+
+test("a failed brand read is not cached", async () => {
+  const calls: Call[] = [];
+  let failBrand = true;
+  const client = fakeClient(calls);
+  const flaky: ProductFeedbackReadClient = {
+    ...client,
     variantMirror: {
-      async findMany() {
-        throw new Error("connection reset");
-      },
-    },
-    productMirror: {
-      async findFirst() {
-        return null;
+      async findMany(args) {
+        if (failBrand && "startsWith" in args.where.pancakeDisplayId) throw new Error("connection reset");
+        return client.variantMirror.findMany(args);
       },
     },
   };
+  const repository = createProductFeedbackRepository(flaky, { now: () => 0 });
+  await assert.rejects(repository.readProductFeedback({ shopId: 7, productId: "a" }));
+  failBrand = false;
+  assert.equal((await repository.readProductFeedback({ shopId: 7, productId: "a" }))?.scope, "product");
+});
+
+test("readProductFeedback fails closed rather than failing the product page", async () => {
+  const client = fakeClient([], { failBrand: true });
   assert.equal(await readProductFeedback({ client, shopId: 7, productId: "prod-1" }), null);
 });
 
