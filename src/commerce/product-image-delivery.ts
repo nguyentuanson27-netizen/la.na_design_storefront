@@ -58,6 +58,18 @@ export function parsePdpImageWidth(raw: string | null): number | null {
   return Number.isSafeInteger(parsed) && allowedWidths.has(parsed) ? parsed : null;
 }
 
+/**
+ * Rounds an arbitrary requested width up to the reviewed responsive set, capping at its largest
+ * member. `next/image` is free to hand a custom loader widths outside the set (in development it
+ * probes the loader with 400 to check that it honours width), and a loader that throws would take
+ * the whole PDP render down with it.
+ */
+export function snapPdpImageWidth(width: number): number {
+  const widths = PDP_IMAGE_ALLOWED_WIDTHS;
+  if (!Number.isFinite(width)) return widths[widths.length - 1]!;
+  return widths.find((allowed) => allowed >= width) ?? widths[widths.length - 1]!;
+}
+
 export function buildPdpImageDeliveryUrl({
   src,
   width,

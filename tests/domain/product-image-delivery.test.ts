@@ -7,6 +7,7 @@ import {
   buildPdpImageDeliveryUrl,
   compressProductImageUnderLimit,
   parsePdpImageWidth,
+  snapPdpImageWidth,
 } from "../../src/commerce/product-image-delivery.ts";
 
 const TRUSTED =
@@ -66,4 +67,16 @@ test("compression fails closed when every bounded attempt remains too large", as
 
   assert.equal(result, null);
   assert.ok(attempts > 0 && attempts <= 8);
+});
+
+test("any width next/image hands the loader snaps into the reviewed set instead of throwing", () => {
+  // Next's development probe calls a custom loader with 400, which is not in the set.
+  assert.equal(snapPdpImageWidth(400), 640);
+  assert.equal(snapPdpImageWidth(16), 32);
+  assert.equal(snapPdpImageWidth(1080), 1080);
+  assert.equal(snapPdpImageWidth(99_999), 3840);
+  assert.equal(snapPdpImageWidth(Number.NaN), 3840);
+  for (const width of [1, 400, 777, 3000, 5000]) {
+    assert.notEqual(parsePdpImageWidth(String(snapPdpImageWidth(width))), null);
+  }
 });
