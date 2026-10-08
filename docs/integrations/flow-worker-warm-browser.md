@@ -225,6 +225,11 @@ rủi ro lẫn dữ liệu giữa các khách.
   `FLOW_WARM_BROWSER` tắt, không có gì thay đổi (khoảng trống cũ giữa deploy và lưu lượng vẫn như trước). Mọi gflow theo request cũng giữ trình duyệt warm
   tắt suốt thời gian nó chạy (`WarmRunner.exclusive`). `deploy.sh` dừng deploy nếu một worker đang chạy
   mà không cool được (404 = worker bản cũ, bỏ qua).
+- Dọn tiến trình (sửa theo review): `WarmRunner._kill` diệt cả **nhóm tiến trình** (SIGTERM rồi SIGKILL)
+  bất kể tiến trình đứng đầu còn sống hay không, và chỉ coi là xong khi nhóm không còn tiến trình sống
+  nào (đọc `/proc`, bỏ qua zombie). Nhóm nào không dọn được bị ghi nhớ: `cool` trả `409` và không mở
+  Chrome mới cho tới khi nhóm đó hết. `deploy.sh` bật lại worker (`/v1/resume`) ngay sau mỗi lần kiểm
+  tra, kể cả khi thất bại.
 - Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.
 - Sai khác nhỏ so với bản thiết kế: tái chế sau lượt lỗi (thay vì thử lại một lần trong cùng client);
   không có `ping` trước mỗi lượt, vì lượt nào gặp trình duyệt chết trước khi gửi sẽ chạy bằng đường cũ.

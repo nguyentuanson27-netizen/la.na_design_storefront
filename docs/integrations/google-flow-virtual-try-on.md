@@ -121,7 +121,8 @@ profile must **not** be assumed free. Retry in a few seconds.
 
 `deploy.sh` does this itself around its `gflow auth status` checks. It skips a worker that is not
 running or has no warm browser, retries on `409`, and **stops the deploy** if a running worker cannot
-be cooled. It calls `POST /v1/resume` after the post-start check.
+be cooled. It calls `POST /v1/resume` as soon as each check is over, whether it passed or failed, so
+shoppers are refused (BUSY) only while a check needs the profile.
 
 ## Production environment
 

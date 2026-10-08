@@ -1,5 +1,6 @@
 import http.client
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,20 @@ FAKE_CHILD = textwrap.dedent(
         sys.stdout.write(json.dumps(message) + "\\n")
         sys.stdout.flush()
 
+    # A descendant (standing in for Chrome) that stays in this process group and has its stdio
+    # redirected, so the protocol pipe still reaches EOF when this process exits.
+    spawn = os.environ.get("FAKE_SPAWN_ORPHAN")
+    if spawn:
+        import subprocess
+        code = "import time; time.sleep(60)"
+        if spawn == "ignore_term":
+            code = "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+        descendant = subprocess.Popen(
+            [sys.executable, "-c", code],
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        with open(os.environ["FAKE_ORPHAN_PIDFILE"], "w") as handle:
+            handle.write(str(descendant.pid))
     if os.environ.get("FAKE_NEVER_READY"):
         time.sleep(60)
     if os.environ.get("FAKE_EXIT_BEFORE_READY"):
@@ -229,6 +244,88 @@ class WarmRunnerTest(unittest.TestCase):
         while warm.process_tree_rss_mb(process.pid) <= 1.0 and time.monotonic() < deadline:
             time.sleep(0.05)
         self.assertGreater(warm.process_tree_rss_mb(process.pid), 1.0)
+
+
+def process_alive(pid):
+    """Whether *pid* is a live process; a zombie awaiting its reaper does not count."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii", errors="replace") as handle:
+            return handle.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except (OSError, IndexError):
+        return False
+
+
+class ProcessGroupCleanupTest(unittest.TestCase):
+    """A crashed child leaves its descendants (Chrome) in its process group; they must not survive."""
+
+    def runner_with_orphan(self, spawn, **env):
+        pidfile = Path(tempfile.mkdtemp(prefix="orphan-pid-")) / "pid"
+        runner = make_runner(self, env={"FAKE_SPAWN_ORPHAN": spawn, "FAKE_ORPHAN_PIDFILE": str(pidfile), **env})
+
+        def descendant_pid():
+            deadline = time.monotonic() + 5
+            while not pidfile.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            return int(pidfile.read_text())
+
+        def cleanup():
+            if pidfile.exists():
+                try:
+                    os.kill(int(pidfile.read_text()), 9)
+                except OSError:
+                    pass
+
+        self.addCleanup(cleanup)
+        runner.descendant_pid = descendant_pid
+        return runner
+
+    def test_a_descendant_of_a_child_that_exits_before_ready_does_not_survive(self):
+        runner = self.runner_with_orphan("plain", FAKE_EXIT_BEFORE_READY="1")
+        self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
+        self.assertFalse(process_alive(runner.descendant_pid()))
+        self.assertEqual(runner.spawned[0].returncode, 3)  # the leader had already exited on its own
+
+    def test_a_descendant_of_a_child_that_dies_after_the_submit_does_not_survive(self):
+        runner = self.runner_with_orphan("plain")
+        outcome = runner.run(job("die_after_submit"), 10)
+        # No double submit: the death after the submit is still reported as a failure, not retried.
+        self.assertEqual((outcome.kind, outcome.exit_code, outcome.submitted), ("done", 1, True))
+        self.assertFalse(process_alive(runner.descendant_pid()))
+        self.assertEqual(runner.state, warm.COLD)
+
+    def test_a_descendant_that_ignores_sigterm_is_killed_after_the_leader_stopped_cleanly(self):
+        runner = self.runner_with_orphan("ignore_term")
+        self.assertEqual(runner.run(job("ok"), 10).kind, "done")
+        pid = runner.descendant_pid()
+        self.assertTrue(process_alive(pid))
+
+        with patch.object(warm, "_KILL_WAIT_SECONDS", 0.5):
+            runner.stop("test")  # the leader exits on the stop message; the descendant ignores SIGTERM
+
+        self.assertFalse(process_alive(pid))
+
+    def test_cool_does_not_report_the_profile_free_while_a_group_process_survives(self):
+        runner = make_runner(self)
+        runner.run(job("ok"), 10)
+        with (
+            patch.object(warm, "_KILL_WAIT_SECONDS", 0.1),
+            patch.object(warm, "_group_members", return_value=[4242]),
+        ):
+            self.assertFalse(runner.cool(timeout=5))
+            # ...and it stays unreleased on the next cool, even though no child is tracked any more.
+            self.assertEqual(runner.state, warm.COLD)
+            self.assertFalse(runner.cool(timeout=5))
+        self.assertIn(("flow_warm.kill_incomplete", {}), runner.events)
+        # Once the survivors are gone, cool succeeds again.
+        self.assertTrue(runner.cool(timeout=5))
+
+    def test_no_new_browser_starts_while_an_earlier_one_still_holds_the_profile(self):
+        runner = make_runner(self, cool_pause_seconds=0.0)
+        runner._leaked = [4242]
+        with patch.object(warm, "_group_members", return_value=[4242]):
+            self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
+        self.assertEqual(runner.spawned, [])
+        self.assertIn(("flow_warm.start_failed", {"reason": "profile_held"}), runner.events)
 
 
 class CoolBarrierTest(unittest.TestCase):

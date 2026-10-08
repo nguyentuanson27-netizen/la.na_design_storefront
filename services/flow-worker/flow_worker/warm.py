@@ -38,6 +38,8 @@ WARM = "warm"
 
 TIMEOUT_EXIT_CODE = 124
 _GRACEFUL_STOP_SECONDS = 10.0
+# How long each signal (SIGTERM, then SIGKILL) is given to take the whole process group down.
+_KILL_WAIT_SECONDS = 3.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +106,35 @@ def process_tree_rss_mb(root_pid: int) -> float:
                 members.add(pid)
                 changed = True
     return sum(_statm_rss_mb(pid, page_size) for pid in members)
+
+
+def _group_members(pgid: int) -> list[int]:
+    """Live (not zombie) processes in process group *pgid*, whether or not its leader is still there.
+
+    A process group outlives its leader: when the warm child crashes, the gflow/Playwright/Chrome
+    processes it started stay in the group and can keep holding the Chrome profile. Without /proc the
+    group's existence is the best answer there is.
+    """
+    proc = "/proc"
+    if not os.path.isdir(proc):
+        try:
+            os.killpg(pgid, 0)
+        except OSError:
+            return []
+        return [pgid]
+    members: list[int] = []
+    for name in os.listdir(proc):
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"{proc}/{name}/stat", encoding="ascii", errors="replace") as handle:
+                fields = handle.read().rsplit(")", 1)[1].split()
+        except (OSError, IndexError):
+            continue
+        # After the command name: state, ppid, pgrp, ...
+        if len(fields) > 2 and fields[2] == str(pgid) and fields[0] != "Z":
+            members.append(int(name))
+    return members
 
 
 class _Child:
@@ -178,6 +209,8 @@ class WarmRunner:
         self._epoch = 0
         self._paused_until = 0.0
         self._exclusive = 0
+        # Process groups whose kill did not finish: Chrome may still hold the profile in them.
+        self._leaked: list[int] = []
 
     # -- state ---------------------------------------------------------------------------------
 
@@ -201,6 +234,11 @@ class WarmRunner:
 
     # -- starting and stopping (the caller holds the lock) -------------------------------------
 
+    def _leaked_alive(self) -> bool:
+        """Whether a process group that a kill failed to clear still has live members."""
+        self._leaked = [pgid for pgid in self._leaked if _group_members(pgid)]
+        return bool(self._leaked)
+
     def _blocked(self, epoch: int) -> bool:
         """Whether a start under *epoch* must not begin or go on: cooled, paused or exclusive since."""
         with self._guard:
@@ -208,6 +246,10 @@ class WarmRunner:
 
     def _start_locked(self, deadline: float, epoch: int) -> bool:
         if self._blocked(epoch):
+            return False
+        if self._leaked_alive():
+            # An earlier browser's processes are still running and may hold the profile.
+            self._event("flow_warm.start_failed", reason="profile_held")
             return False
         self._last_start_attempt = self._clock()
         scratch = tempfile.mkdtemp(prefix="flow-warm-")
@@ -250,19 +292,35 @@ class WarmRunner:
         self._event("flow_warm.started", startup_ms=str(int((self._clock() - child.started_at) * 1000)))
         return True
 
-    def _kill(self, child: _Child) -> None:
+    def _kill(self, child: _Child) -> bool:
+        """Take down the child's whole process group; ``True`` once no live process is left in it.
+
+        Independent of whether the group leader is still running: a crashed leader leaves its
+        descendants (Chrome) behind in the group, and those hold the profile. SIGTERM first, then
+        SIGKILL for whatever is still there, checking the group's membership (not just the leader)
+        after each.
+        """
         process = child.process
-        if process.poll() is None:
-            for sig in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.killpg(process.pid, sig)
-                except OSError:
+        pgid = process.pid
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            process.poll()  # reap the leader if it has exited, so it is not mistaken for a member
+            if process.returncode is not None and not _group_members(pgid):
+                break
+            try:
+                os.killpg(pgid, sig)
+            except OSError:
+                pass  # the group is already gone
+            deadline = time.monotonic() + _KILL_WAIT_SECONDS
+            while time.monotonic() < deadline:
+                process.poll()
+                if not _group_members(pgid):
                     break
-                try:
-                    process.wait(timeout=3)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
+                time.sleep(0.05)
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            pass
+        released = not _group_members(pgid)
         for stream in (process.stdin, process.stdout):
             try:
                 if stream is not None:
@@ -270,20 +328,26 @@ class WarmRunner:
             except (OSError, ValueError):
                 pass
         shutil.rmtree(child.scratch, ignore_errors=True)
+        if not released:
+            self._leaked.append(pgid)
+            self._event("flow_warm.kill_incomplete")
+        return released
 
-    def _stop_locked(self, reason: str) -> None:
+    def _stop_locked(self, reason: str) -> bool:
+        """Release the browser. ``False`` when processes of its group survived (the profile may be held)."""
         child = self._child
         self._child = None
         self._recycle_reason = None
         if child is None:
-            return
+            return not self._leaked_alive()
         if child.alive() and child.send({"op": "stop"}):
             try:
                 child.process.wait(timeout=_GRACEFUL_STOP_SECONDS)
             except subprocess.TimeoutExpired:
                 pass
-        self._kill(child)
+        released = self._kill(child)
         self._event("flow_warm.stopped", reason=reason, jobs=str(self._jobs))
+        return released and not self._leaked_alive()
 
     def shutdown(self) -> None:
         """Kill the browser at once, without waiting for a running job. For process exit."""
@@ -312,10 +376,9 @@ class WarmRunner:
         if not self._lock.acquire(timeout=timeout):
             return False
         try:
-            self._stop_locked("cool")
+            return self._stop_locked("cool")
         finally:
             self._lock.release()
-        return True
 
     def paused(self) -> bool:
         """Whether a cool is in effect: the operator has the Chrome profile, and nothing may use it."""

@@ -121,9 +121,13 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
     test "$FLOW_WORKER_TOKEN" = "$(printf %s "$FLOW_WORKER_TOKEN" | tr -d "[:space:]")"
     env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1
   '; then
+    resume_flow_worker
     echo "Flow try-on preflight failed: check worker token and refresh the Google session before deploy" >&2
     exit 1
   fi
+  # The worker is only closed to try-ons while a check needs the profile: reopen it as soon as the
+  # check is over (pass or fail), not after the database and app steps that follow.
+  resume_flow_worker
   echo "Flow try-on preflight verified the saved Google session"
 fi
 
@@ -234,6 +238,7 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
   fi
   cool_flow_worker
   if ! "${compose[@]}" exec -T flow-worker sh -ec 'env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
+    resume_flow_worker
     echo "Flow try-on Google session became unavailable before app cutover" >&2
     exit 1
   fi
