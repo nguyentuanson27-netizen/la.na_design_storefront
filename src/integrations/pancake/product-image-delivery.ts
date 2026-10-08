@@ -7,7 +7,6 @@ import {
   canonicalizePancakeProductImageSource,
   compressProductImageUnderLimit,
 } from "../../commerce/product-image-delivery.ts";
-import { parseTrustedProductImageUrl } from "../../commerce/product-media.ts";
 import { readBoundedBody } from "../../commerce/try-on-image.ts";
 import { createTimeoutSignal } from "../vertex-try-on/timeout.ts";
 
@@ -67,7 +66,8 @@ export async function fetchAndCompressPancakeProductImage(
         if (location === null) return FETCH_FAILED;
         let next: string | null;
         try {
-          next = parseTrustedProductImageUrl(new URL(location, current).toString());
+          // Same policy as the first hop: a redirect must not smuggle in a query or fragment.
+          next = canonicalizePancakeProductImageSource(new URL(location, current).toString());
         } catch {
           return FETCH_FAILED;
         }

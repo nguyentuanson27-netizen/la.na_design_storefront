@@ -104,3 +104,22 @@ test("an upstream 404 is reported as an upstream failure", async () => {
   const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
   assert.deepEqual(result, { ok: false, reason: "FETCH_FAILED" });
 });
+
+test("a same-host redirect that adds a query or fragment is refused with no second fetch", async () => {
+  for (const location of [`${URL_OK}?v=1`, `${URL_OK}#nonce`, "https://content.pancake.vn/images/1/2/3/other.png?x"]) {
+    const mocked = fetcher(new Response(null, { status: 302, headers: { location } }));
+    const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
+    assert.deepEqual(result, { ok: false, reason: "FETCH_FAILED" }, location);
+    assert.equal(mocked.calls.length, 1, location);
+  }
+});
+
+test("a clean same-host redirect is still followed", async () => {
+  const mocked = fetcher(
+    new Response(null, { status: 302, headers: { location: "/images/1/2/3/other.png" } }),
+    new Response(TINY_PNG, { status: 200 }),
+  );
+  const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
+  assert.equal(result.ok, true);
+  assert.equal(mocked.calls.length, 2);
+});

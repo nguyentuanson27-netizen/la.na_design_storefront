@@ -5,6 +5,28 @@ import {
 import { fetchAndCompressPancakeProductImage } from "./product-image-delivery.ts";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+type DeliveryResult = Awaited<ReturnType<typeof fetchAndCompressPancakeProductImage>>;
+
+/**
+ * Each admitted request may buffer up to 32 MB and run several Sharp encodes, so the number that
+ * can be in flight at once is capped for the whole process. Identical `src` + `w` requests share
+ * one run and do not consume a slot, which also absorbs a burst on a single popular image.
+ */
+export const PRODUCT_IMAGE_MAX_CONCURRENT = 4;
+
+const inFlight = new Map<string, Promise<DeliveryResult>>();
+let activeRuns = 0;
+
+function busyResponse(): Response {
+  return new Response(null, {
+    status: 503,
+    headers: {
+      "Cache-Control": "no-store",
+      "Retry-After": "2",
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+}
 
 function errorResponse(status: number): Response {
   return new Response(null, {
@@ -22,7 +44,7 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike }> = {},
+  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
@@ -40,9 +62,18 @@ export async function handleProductImageRequest(
   const src = canonicalizePancakeProductImageSource(searchParams.get("src"));
   if (src === null || width === null) return errorResponse(400);
 
-  const result = await fetchAndCompressPancakeProductImage(src, width, {
-    fetch: options.fetch,
-  });
+  const key = `${width}|${src}`;
+  let run = inFlight.get(key);
+  if (run === undefined) {
+    if (activeRuns >= (options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT)) return busyResponse();
+    activeRuns += 1;
+    run = fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch }).finally(() => {
+      activeRuns -= 1;
+      inFlight.delete(key);
+    });
+    inFlight.set(key, run);
+  }
+  const result = await run;
   if (!result.ok) {
     switch (result.reason) {
       case "UNTRUSTED_URL":
