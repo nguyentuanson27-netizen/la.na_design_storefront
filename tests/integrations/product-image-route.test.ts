@@ -114,6 +114,54 @@ test("only an overflowing queue is shed with 503, before fetch or Sharp", async 
   assert.equal((await handleProductImageRequest(request(srcFor(5)), { ...limits, fetch: later.fn })).status, 200);
 });
 
+test("duplicate followers of one in-flight key are bounded and the excess is shed", async () => {
+  let started = 0;
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  const gated = async () => {
+    started += 1;
+    await gate;
+    return new Response(TINY_PNG, { status: 200 });
+  };
+  const limits = { fetch: gated, maxFollowers: 3 };
+  const src = "https://content.pancake.vn/images/1/2/3/follow.png";
+
+  const admitted = Array.from({ length: 4 }, () => handleProductImageRequest(request(src), limits));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  const excess = await Promise.all(
+    Array.from({ length: 5 }, () => handleProductImageRequest(request(src), limits)),
+  );
+  for (const response of excess) {
+    assert.equal(response.status, 503);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+  }
+
+  open();
+  for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  assert.equal(started, 1, "followers share the leader's single upstream fetch");
+});
+
+test("the global pending budget sheds requests across keys once it is spent", async () => {
+  let open!: () => void;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  const gated = async () => {
+    await gate;
+    return new Response(TINY_PNG, { status: 200 });
+  };
+  const limits = { fetch: gated, maxPending: 3 };
+  const srcFor = (n: number) => `https://content.pancake.vn/images/1/2/3/pend-${n}.png`;
+
+  const admitted = [0, 1, 2].map((n) => handleProductImageRequest(request(srcFor(n)), limits));
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal((await handleProductImageRequest(request(srcFor(3)), limits)).status, 503);
+  assert.equal((await handleProductImageRequest(request(srcFor(0)), limits)).status, 503);
+
+  open();
+  for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  // Budget is returned once the requests settle.
+  assert.equal((await handleProductImageRequest(request(srcFor(3)), { ...limits, fetch: async () => new Response(TINY_PNG) })).status, 200);
+});
+
 test("identical concurrent requests share one fetch and do not consume extra slots", async () => {
   let started = 0;
   let open!: () => void;

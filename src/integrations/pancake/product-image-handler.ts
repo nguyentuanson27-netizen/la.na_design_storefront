@@ -16,8 +16,16 @@ type DeliveryResult = Awaited<ReturnType<typeof fetchAndCompressPancakeProductIm
  */
 export const PRODUCT_IMAGE_MAX_CONCURRENT = 4;
 export const PRODUCT_IMAGE_MAX_QUEUED = 64;
+/** Requests that may be waiting on one `src` + `w` run besides its leader. */
+export const PRODUCT_IMAGE_MAX_FOLLOWERS = 16;
+/**
+ * Every request that is waiting on a run, leader or follower. Each one materializes its own copy of
+ * the body (just under 3 MB) when the run settles, so this bounds memory and egress as well as CPU.
+ */
+export const PRODUCT_IMAGE_MAX_PENDING = 128;
 
-const inFlight = new Map<string, Promise<DeliveryResult>>();
+const inFlight = new Map<string, Readonly<{ run: Promise<DeliveryResult>; followers: { count: number } }>>();
+let pendingRequests = 0;
 const waiters: Array<() => void> = [];
 let activeRuns = 0;
 
@@ -67,7 +75,7 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number }> = {},
+  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
@@ -87,22 +95,37 @@ export async function handleProductImageRequest(
 
   const key = `${width}|${src}`;
   const maxConcurrent = options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT;
-  let run = inFlight.get(key);
-  if (run === undefined) {
+  if (pendingRequests >= (options.maxPending ?? PRODUCT_IMAGE_MAX_PENDING)) return busyResponse();
+
+  let entry = inFlight.get(key);
+  if (entry !== undefined) {
+    if (entry.followers.count >= (options.maxFollowers ?? PRODUCT_IMAGE_MAX_FOLLOWERS)) {
+      return busyResponse();
+    }
+    entry.followers.count += 1;
+  } else {
     if (
       activeRuns >= maxConcurrent &&
       waiters.length >= (options.maxQueued ?? PRODUCT_IMAGE_MAX_QUEUED)
     ) {
       return busyResponse();
     }
-    run = runLimited({ maxConcurrent }, () =>
+    const run = runLimited({ maxConcurrent }, () =>
       fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch }),
     ).finally(() => {
       inFlight.delete(key);
     });
-    inFlight.set(key, run);
+    entry = { run, followers: { count: 0 } };
+    inFlight.set(key, entry);
   }
-  const result = await run;
+
+  pendingRequests += 1;
+  let result: DeliveryResult;
+  try {
+    result = await entry.run;
+  } finally {
+    pendingRequests -= 1;
+  }
   if (!result.ok) {
     switch (result.reason) {
       case "UNTRUSTED_URL":
