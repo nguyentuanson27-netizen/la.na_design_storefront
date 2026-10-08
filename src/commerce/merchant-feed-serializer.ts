@@ -27,7 +27,7 @@ function assertXmlText(value: string): void {
   }
 }
 
-function xml(value: string): string {
+export function xml(value: string): string {
   assertXmlText(value);
   return value
     .replaceAll("&", "&amp;")
@@ -37,7 +37,7 @@ function xml(value: string): string {
     .replaceAll("'", "&apos;");
 }
 
-class BoundedXmlWriter {
+export class BoundedXmlWriter {
   readonly #chunks: string[] = [];
   readonly #maxBytes: number;
   #byteLength = 0;
