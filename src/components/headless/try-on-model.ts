@@ -189,13 +189,13 @@ export function tryOnLoginHref(productSlug: string): string {
 
 /** Said once the shopper has pressed the button; the real time is a few tens of seconds. */
 export const TRY_ON_WAIT_NOTE =
-  "Ảnh thường mất khoảng 15–30 giây để hoàn thành. Bạn giữ nguyên cửa sổ này và chờ chúng mình một chút nhé.";
+  "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Bạn giữ nguyên cửa sổ này và chờ chúng mình một chút nhé.";
 
 export const TRY_ON_BETA_BADGE = "Đang phát triển";
 
 /** The feature is young; say so plainly and kindly, without promising what it cannot yet do. */
 export const TRY_ON_BETA_NOTE =
-  "Thử đồ bằng AI là tính năng mới, vẫn đang được chúng mình hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn bạn đã thử cùng chúng mình.";
+  "Thử đồ bằng AI là tính năng mới, vẫn đang được La.na hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn nàng đã thử cùng La.na.\nMọi ý kiến đóng góp vui lòng nhắn trực tiếp cho La.na qua messenger hoặc zalo";
 
 /** What makes a photo work, in the order a shopper decides: what to choose, then what to avoid. */
 export const TRY_ON_PHOTO_DOS: readonly string[] = [

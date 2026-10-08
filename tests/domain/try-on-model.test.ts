@@ -134,7 +134,7 @@ test("the sign-in link returns to this product and nowhere else", () => {
 });
 
 test("the wait and in-development notices say what the shopper needs to know", () => {
-  assert.match(TRY_ON_WAIT_NOTE, /15–30 giây/);
+  assert.match(TRY_ON_WAIT_NOTE, /30–60 giây/);
   assert.match(TRY_ON_BETA_NOTE, /đang được .*hoàn thiện/);
   assert.ok(TRY_ON_PHOTO_DOS.length > 0 && TRY_ON_PHOTO_DONTS.length > 0);
 });
