@@ -8,11 +8,12 @@
 import type { MerchantMarketPolicy, MerchantOffer } from "./merchant-offer-mapper.ts";
 import {
   BoundedXmlWriter,
+  MerchantFeedOfferOverflowError,
   MerchantFeedSerializationError,
   assertMerchantOfferCount,
   xml,
 } from "./merchant-feed-serializer.ts";
-import { MAX_MERCHANT_FEED_BYTES } from "./merchant-feed-limits.ts";
+import { MAX_MERCHANT_CANDIDATE_VARIANTS, MAX_MERCHANT_FEED_BYTES } from "./merchant-feed-limits.ts";
 import { BRAND } from "../brand/index.ts";
 
 export type FacebookLiveAvailability = "in stock" | "available for order" | "out of stock";
@@ -68,7 +69,13 @@ export function buildFacebookLiveItems(
   offers: readonly MerchantOffer[],
   origin: string,
 ): readonly FacebookLiveItem[] {
-  assertMerchantOfferCount(offers.length);
+  // A 7,000-variation catalog can collapse to fewer than 5,000 Live parent items.
+  // Enforce the input candidate cap here; the output offer cap is checked after grouping.
+  if (offers.length > MAX_MERCHANT_CANDIDATE_VARIANTS) {
+    throw new MerchantFeedOfferOverflowError(
+      `Facebook Live feed exceeds the ${MAX_MERCHANT_CANDIDATE_VARIANTS} source-variant ceiling`,
+    );
+  }
   const trustedOrigin = new URL(origin);
   const groups = new Map<string, MerchantOffer[]>();
 
