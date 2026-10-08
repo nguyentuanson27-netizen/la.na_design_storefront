@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 import tempfile
@@ -9,9 +10,23 @@ from flow_worker import server
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"test-image"
+PROJECT_ID = "66666666-6666-4666-8666-666666666666"
+
+
+def with_project(test_case):
+    """Resolve the fixed try-on project for this test without running gflow."""
+    for target in (
+        patch.object(server, "_project_id", PROJECT_ID),
+        patch.object(server, "_ensure_project", return_value=(0, server.GflowMachineError())),
+    ):
+        target.start()
+        test_case.addCleanup(target.stop)
 
 
 class WorkerGenerationPolicyTest(unittest.TestCase):
+    def setUp(self):
+        with_project(self)
+
     def test_pro_success_does_not_touch_nano2(self):
         calls = []
 
@@ -33,7 +48,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
 
-    def test_daily_pro_quota_exhaustion_falls_back_exactly_once_to_nano2(self):
+    def test_daily_pro_quota_exhaustion_falls_back_exactly_once_to_nano_banana_2_1(self):
         calls = []
         db_paths = []
 
@@ -57,7 +72,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
 
         self.assertEqual(calls, ["nano-pro", "nano2"])
         self.assertEqual(db_paths[0], db_paths[1])
-        self.assertEqual(model, "nano-banana-2")
+        self.assertEqual(model, "nano-banana-2.1")
         self.assertEqual(image, PNG)
         self.assertEqual(mime, "image/png")
 
@@ -102,7 +117,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
 
         with (
             patch.object(server, "_run_model", side_effect=run),
-            patch.object(server.time, "monotonic", side_effect=[100.0, 101.0, 120.0]),
+            patch.object(server.time, "monotonic", side_effect=[100.0, 100.5, 101.0, 120.0]),
         ):
             result = server._generate(
                 b"\xff\xd8\xffperson",
@@ -111,7 +126,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
                 "image/jpeg",
             )
 
-        self.assertEqual(result[0], "nano-banana-2")
+        self.assertEqual(result[0], "nano-banana-2.1")
         self.assertEqual(timeouts, [("nano-pro", 119.0), ("nano2", 100.0)])
 
     def test_generic_rate_limit_does_not_fallback(self):
@@ -181,7 +196,7 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(error.detail, "You have reached the daily limit for Nano Banana Pro.")
         self.assertEqual(error.error_class, "RateLimitError")
         self.assertEqual(error.problem_type, "https://gflow-cli.dev/errors/rate-limit")
-        self.assertTrue(server.should_fallback_to_nano2(4, error.detail))
+        self.assertTrue(server.should_fallback_from_pro(4, error.detail))
 
     def test_profile_locked_json_maps_to_busy_but_other_exit_11_does_not(self):
         locked = server._machine_error(
@@ -247,7 +262,17 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertIn("--count", command)
         self.assertEqual(command[command.index("--count") + 1], "1")
         self.assertEqual(command[command.index("--output") + 1], str(server.Path("/tmp/result.png")))
+        self.assertEqual(command[command.index("--project") + 1], PROJECT_ID)
         self.assertNotIn("nano2-lite", command)
+
+    def test_command_refuses_to_run_without_the_fixed_project(self):
+        with patch.object(server, "_project_id", None):
+            with self.assertRaises(ValueError):
+                server._command("nano-pro", Path("/tmp/p.jpg"), Path("/tmp/g.jpg"), Path("/tmp/o.png"))
+            self.assertEqual(
+                server._run_model("nano-pro", Path("/tmp/p.jpg"), Path("/tmp/g.jpg"), Path("/tmp/o.png"), 10, Path("/tmp/db")),
+                (1, server.GflowMachineError()),
+            )
 
     def test_image_boundary_rejects_declared_mime_mismatch(self):
         with self.assertRaises(server.RequestError):
@@ -261,6 +286,9 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
 
 
 class GflowExitStatusTest(unittest.TestCase):
+    def setUp(self):
+        with_project(self)
+
     def test_non_zero_gflow_exit_status_reaches_failure_mapping(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -328,6 +356,77 @@ class GflowExitStatusTest(unittest.TestCase):
         rendered_events = repr(events)
         self.assertNotIn("stderr-secret-token", rendered_events)
         self.assertNotIn("provider-secret-detail", rendered_events)
+
+
+class FixedProjectTest(unittest.TestCase):
+    """gflow creates a scratch Flow project for every i2i run without --project."""
+
+    def setUp(self):
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name)
+        self.db = self.home / "gflow.db"
+        self.events = []
+        for target in (
+            patch.object(server, "GFLOW_HOME", self.home),
+            patch.object(server, "_project_id", None),
+            patch.object(server, "_event", side_effect=lambda name, **fields: self.events.append(name)),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
+
+    def created(self, stdout, returncode=0):
+        return patch.object(server, "_run_gflow", return_value=(returncode, stdout))
+
+    def test_first_request_creates_one_project_and_records_it_in_the_gflow_volume(self):
+        reply = json.dumps({"status": "ok", "project_id": PROJECT_ID, "title": "LA try-on"})
+        with self.created(reply) as run:
+            self.assertEqual(server._ensure_project(30, self.db), (0, server.GflowMachineError()))
+            self.assertEqual(server._ensure_project(30, self.db), (0, server.GflowMachineError()))
+
+        self.assertEqual(run.call_count, 1)
+        args = run.call_args.args[0]
+        self.assertEqual(args[3:6], ["project", "create", "--title"])
+        self.assertEqual(server._project_id, PROJECT_ID)
+        stored = json.loads((self.home / server.PROJECT_STATE_FILE).read_text())
+        self.assertEqual(stored["projectId"], PROJECT_ID)
+        self.assertEqual(self.events, ["flow_try_on.project_created"])
+
+    def test_a_restarted_worker_reuses_the_recorded_project_without_creating_another(self):
+        (self.home / server.PROJECT_STATE_FILE).write_text(json.dumps({"projectId": PROJECT_ID}))
+        with self.created("") as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 0)
+
+        run.assert_not_called()
+        self.assertEqual(server._project_id, PROJECT_ID)
+
+    def test_configured_project_is_used_as_is(self):
+        with patch.object(server, "_project_id", "configured-project-1"), self.created("") as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 0)
+            self.assertEqual(server._project_id, "configured-project-1")
+        run.assert_not_called()
+
+    def test_failed_creation_records_nothing_and_blocks_generation(self):
+        failure = json.dumps({"status": "fail", "error": {"class": "AuthMissingError", "detail": "x"}})
+        with self.created(failure, returncode=8):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 8)
+        self.assertIsNone(server._project_id)
+        self.assertFalse((self.home / server.PROJECT_STATE_FILE).exists())
+
+        with (
+            self.created(failure, returncode=8),
+            patch.object(server, "_run_model") as run_model,
+        ):
+            with self.assertRaises(server.WorkerGenerationError) as raised:
+                server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+        run_model.assert_not_called()
+        self.assertEqual(raised.exception.reason, "AUTH_FAILED")
+
+    def test_unusable_records_or_replies_are_never_used_as_a_project(self):
+        (self.home / server.PROJECT_STATE_FILE).write_text('{"projectId": "../../etc"}')
+        with self.created(json.dumps({"status": "ok", "project_id": "bad id!"})):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        self.assertIsNone(server._project_id)
 
 
 class FakeLease:

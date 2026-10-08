@@ -23,11 +23,12 @@ provider allowances.
 For the Flow provider, the model policy is explicit:
 
 1. attempt **Nano Banana Pro** (`nano-pro`) first;
-2. only when that attempt is rejected because Nano Banana Pro's **daily image quota is exhausted**,
-   attempt **Nano Banana 2** (`nano2`) once;
+2. only when that attempt is rejected because Nano Banana Pro's **image quota or Flow credits are
+   exhausted**, attempt **Nano Banana 2.1** once (gflow `nano2`, which the worker's launcher pins to
+   Flow's "Nano Banana 2.1" menu entry);
 3. do not fall back for authentication failures, safety/content refusals, WAF/reCAPTCHA unusual
    activity, generic network/provider failures, selector drift, timeout, or per-minute throttling;
-4. never fall back to Nano Banana 2 Lite or a video model.
+4. never fall back to Nano Banana 2, Nano Banana 2 Lite or a video model.
 
 The fallback is deliberate product behavior, not a hidden "try another model" retry.
 
@@ -122,8 +123,8 @@ Therefore Flow is **not** treated as safety-equivalent merely because it returns
 existing server-side likeness and age gates remain mandatory, and production enablement requires
 controlled live quality/safety review, including the already-required consented minor test.
 
-A Flow content/safety refusal is final for that shopper action. It must not trigger Nano Banana 2 or
-Vertex fallback.
+A Flow content/safety refusal is final for that shopper action. It must not trigger Nano Banana 2.1
+or Vertex fallback.
 
 ## Acceptance criteria added/replaced by this amendment
 
@@ -131,7 +132,7 @@ Vertex fallback.
 - [ ] Flow configuration fails closed when worker URL/token are missing or malformed.
 - [ ] Storefront sends only validated person/product images to the private worker.
 - [ ] Worker selects Nano Banana Pro first.
-- [ ] A documented daily-quota exhaustion on Pro causes exactly one Nano Banana 2 attempt.
+- [ ] A Pro quota or credit exhaustion causes exactly one Nano Banana 2.1 attempt.
 - [ ] Per-minute throttling, WAF/reCAPTCHA, auth, safety, timeout, selector drift and generic failures
       do **not** trigger model fallback.
 - [ ] There is never an automatic Flow -> Vertex fallback.

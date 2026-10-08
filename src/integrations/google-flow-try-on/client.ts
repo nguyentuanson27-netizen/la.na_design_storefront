@@ -22,7 +22,7 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 const DEFAULT_TIMEOUT_MS = 130_000;
 const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
 const BASE64_PATTERN = /^[A-Za-z0-9+/]+={0,2}$/;
-const ALLOWED_MODELS = new Set(["nano-banana-pro", "nano-banana-2"]);
+const ALLOWED_MODELS = new Set(["nano-banana-pro", "nano-banana-2.1", "nano-banana-2"]);
 const ALLOWED_FAILURES = new Set([
   "SAFETY_BLOCKED",
   "AUTH_FAILED",
