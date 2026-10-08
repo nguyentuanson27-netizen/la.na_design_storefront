@@ -23,11 +23,12 @@ provider allowances.
 For the Flow provider, the model policy is explicit:
 
 1. attempt **Nano Banana Pro** (`nano-pro`) first;
-2. only when that attempt is rejected because Nano Banana Pro's **daily image quota (proven by the
-   refusal itself) or Flow credits are exhausted**, attempt **Nano Banana 2.1** once (gflow `nano2`, which the worker's launcher pins to
+2. only when that attempt is rejected for **any quota, rate-limit (HTTP 429, RESOURCE_EXHAUSTED,
+   including per-minute or unspecified limits) or Flow credit refusal**, attempt **Nano Banana 2.1**
+   once (gflow `nano2`, which the worker's launcher pins to
    Flow's "Nano Banana 2.1" menu entry);
 3. do not fall back for authentication failures, safety/content refusals, WAF/reCAPTCHA unusual
-   activity, generic network/provider failures, selector drift, timeout, or per-minute throttling;
+   activity, generic network/provider failures, selector drift or timeout;
 4. never fall back to Nano Banana 2, Nano Banana 2 Lite or a video model.
 
 The fallback is deliberate product behavior, not a hidden "try another model" retry.
@@ -132,11 +133,11 @@ or Vertex fallback.
 - [ ] Flow configuration fails closed when worker URL/token are missing or malformed.
 - [ ] Storefront sends only validated person/product images to the private worker.
 - [ ] Worker selects Nano Banana Pro first.
-- [ ] A proven Pro daily-quota or credit exhaustion causes exactly one Nano Banana 2.1 attempt;
-      an undifferentiated RESOURCE_EXHAUSTED or HTTP 429 does not.
+- [ ] Any Pro quota, rate-limit (incl. per-minute, HTTP 429, unspecified RESOURCE_EXHAUSTED) or credit
+      refusal causes exactly one Nano Banana 2.1 attempt.
 - [ ] A Nano Banana 2.1 submit is accepted only with its live-captured wire model key configured.
-- [ ] Per-minute throttling, WAF/reCAPTCHA, auth, safety, timeout, selector drift and generic failures
-      do **not** trigger model fallback.
+- [ ] WAF/reCAPTCHA, auth, safety, timeout, selector drift and generic failures do **not** trigger
+      model fallback.
 - [ ] There is never an automatic Flow -> Vertex fallback.
 - [ ] Worker accepts at most one in-flight generation per Google profile.
 - [ ] Worker request/response bodies, Google cookies/profile data and bearer token are never logged.

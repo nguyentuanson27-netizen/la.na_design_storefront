@@ -129,12 +129,12 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(result[0], "nano-banana-2.1")
         self.assertEqual(timeouts, [("nano-pro", 119.0), ("nano2", 100.0)])
 
-    def test_generic_rate_limit_does_not_fallback(self):
+    def test_any_rate_limit_falls_back_once_and_a_limited_2_1_reports_busy(self):
         calls = []
 
         def run(model, _person, _product, _output, _timeout, _db_path):
             calls.append(model)
-            return 4, server.GflowMachineError(detail="Rate limit or quota hit")
+            return 4, server.GflowMachineError(detail="Rate limit or quota hit: per-minute")
 
         with patch.object(server, "_run_model", side_effect=run):
             with self.assertRaises(server.WorkerGenerationError) as raised:
@@ -145,9 +145,23 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
                     "image/jpeg",
                 )
 
-        self.assertEqual(calls, ["nano-pro"])
+        self.assertEqual(calls, ["nano-pro", "nano2"])
         self.assertEqual(raised.exception.status, 429)
         self.assertEqual(raised.exception.reason, "BUSY")
+
+    def test_safety_refusal_never_falls_back(self):
+        calls = []
+
+        def run(model, _person, _product, _output, _timeout, _db_path):
+            calls.append(model)
+            return 5, server.GflowMachineError(detail="Content policy blocked this image")
+
+        with patch.object(server, "_run_model", side_effect=run):
+            with self.assertRaises(server.WorkerGenerationError) as raised:
+                server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+
+        self.assertEqual(calls, ["nano-pro"])
+        self.assertEqual(raised.exception.reason, "SAFETY_BLOCKED")
 
     def test_gflow_child_environment_drops_worker_bearer_token_and_scopes_catalog(self):
         db_path = server.Path("/tmp/flow-try-on-request/gflow.db")

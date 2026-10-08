@@ -53,13 +53,12 @@ class ModelKeyAndQuotaDetailTest(unittest.TestCase):
             with patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": value}):
                 self.assertEqual(gflow_models.configured_model_key(), expected)
 
-    def test_resource_exhausted_falls_back_only_with_daily_evidence(self):
-        undifferentiated = gflow_models.quota_refusal_detail("ogiZ0b", 8, ("PUBLIC_ERROR_QUOTA",))
-        self.assertIn(QUOTA_EXHAUSTED_MARKER, undifferentiated)
-        self.assertFalse(should_fallback_from_pro(7, undifferentiated))
-        self.assertFalse(should_fallback_from_pro(7, gflow_models.quota_refusal_detail("ogiZ0b", 8, ())))
-        daily = gflow_models.quota_refusal_detail("ogiZ0b", 8, ("PUBLIC_ERROR_DAILY_IMAGE_QUOTA",))
-        self.assertTrue(should_fallback_from_pro(7, daily))
+    def test_any_resource_exhausted_image_submit_falls_back(self):
+        for reasons in ((), ("PUBLIC_ERROR_QUOTA",), ("PUBLIC_ERROR_PER_MINUTE_LIMIT",), ("PUBLIC_ERROR_DAILY_QUOTA",)):
+            with self.subTest(reasons=reasons):
+                detail = gflow_models.quota_refusal_detail("ogiZ0b", 8, reasons)
+                self.assertIn(QUOTA_EXHAUSTED_MARKER, detail)
+                self.assertTrue(should_fallback_from_pro(7, detail))
         self.assertIsNone(gflow_models.quota_refusal_detail("ogiZ0b", 7, ("PUBLIC_ERROR_UNUSUAL_ACTIVITY",)))
         self.assertIsNone(gflow_models.quota_refusal_detail("MZZa6b", 8, ()))
 
@@ -94,7 +93,7 @@ class GflowModelPatchTest(unittest.TestCase):
         self.assertTrue(should_fallback_from_pro(7, refusal.detail))
 
         undifferentiated = mc._submit_refusal(refusal_reply(8, "PUBLIC_ERROR_IMAGE_QUOTA"), ("ogiZ0b",))
-        self.assertFalse(should_fallback_from_pro(7, undifferentiated.detail))
+        self.assertTrue(should_fallback_from_pro(7, undifferentiated.detail))
 
         unusual = mc._submit_refusal(refusal_reply(7, "PUBLIC_ERROR_UNUSUAL_ACTIVITY"), ("ogiZ0b",))
         self.assertIsInstance(unusual, WafRejectionError)

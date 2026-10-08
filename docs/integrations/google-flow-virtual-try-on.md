@@ -32,18 +32,18 @@ The app sends only the two already-approved images. Prompt and model policy are 
 Every request is:
 
 1. Nano Banana Pro (`nano-pro`) first.
-2. If and only if the Pro attempt fails for a **proven daily quota or credit exhaustion**, retry
-   exactly once with **Nano Banana 2.1** (released 2026-10-06). The fallback signals are:
-   - flow.google.com refuses the `ogiZ0b` image submit with gRPC `RESOURCE_EXHAUSTED` **and** a
-     refusal reason naming `DAILY` (and not per-minute);
-   - Flow replaces the submit control with its insufficient-credits warning (gflow exit 37);
-   - on labs.google, gflow's rate-limit error names Nano Banana Pro's daily limit.
+2. If the Pro attempt fails for **any quota, rate-limit or credit refusal**, retry exactly once with
+   **Nano Banana 2.1** (released 2026-10-06). Owner decision: this deliberately includes refusals
+   that do not say which limit ran out. The fallback signals are:
+   - flow.google.com refuses the `ogiZ0b` image submit with gRPC `RESOURCE_EXHAUSTED`, with any
+     reason or none (daily, per-minute or unspecified);
+   - the image submit answers HTTP 429;
+   - gflow's rate-limit error (exit 4), including per-minute limits;
+   - Flow replaces the submit control with its insufficient-credits warning (gflow exit 37).
 
-   `RESOURCE_EXHAUSTED` without a daily reason, and any HTTP 429, fail closed: they may be a
-   per-minute or global throttle. The worker logs the refusal reasons as `quota_reasons` on
-   `flow_try_on.process_error`, so the rule can be checked against Flow's real reasons.
-3. Do not fall back on per-minute throttling, WAF/reCAPTCHA unusual activity, auth/session failures,
-   safety/content refusal, timeout, selector drift, network failure or generic provider errors.
+   The worker logs the refusal reasons as `quota_reasons` on `flow_try_on.process_error`.
+3. Do not fall back on WAF/reCAPTCHA unusual activity, auth/session failures, safety/content
+   refusal, timeout, selector drift, network failure or generic provider errors.
 4. Never fall back automatically to Vertex, Nano Banana 2, Nano Banana 2 Lite or a video model.
 
 gflow-cli 0.82.1 predates Nano Banana 2.1 and reports a quota refusal on flow.google.com as a generic
@@ -245,7 +245,7 @@ The storefront exposes only existing safe try-on failure classes. Worker/Google 
 profile paths, prompt output and CLI stdout/stderr are not returned to shoppers.
 
 - `AUTH_FAILED`: session missing/expired or worker authentication failure.
-- `BUSY`: profile already generating or upstream rate limit without proven Pro daily exhaustion.
+- `BUSY`: profile already generating, or a rate limit that also hit the Nano Banana 2.1 fallback.
 - `SAFETY_BLOCKED`: content/safety refusal; final, no model fallback.
 - `TIMEOUT`: generation watchdog expired.
 - `GENERATION_FAILED`: all other provider/integration failures.
@@ -317,9 +317,8 @@ actual production-like Flow account/profile:
 - [ ] `gflow auth status` verifies the saved session.
 - [ ] One shopper + garment request succeeds on Nano Banana Pro.
 - [ ] The returned file passes JPEG/PNG signature validation in the storefront.
-- [ ] A real Pro daily-quota exhaustion is observed to return a model-named daily-quota error and
-      causes exactly one Nano Banana 2 attempt.
-- [ ] Per-minute throttling does not cause model fallback.
+- [ ] A real Pro quota refusal (its `quota_reasons` recorded) causes exactly one Nano Banana 2.1
+      attempt, with `LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY` captured and set.
 - [ ] Safety/content refusal does not cause model fallback.
 - [ ] WAF/reCAPTCHA unusual activity does not cause model fallback.
 - [ ] Worker timeout does not leave a second automatic generation running.

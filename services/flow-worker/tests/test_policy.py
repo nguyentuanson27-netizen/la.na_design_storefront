@@ -2,72 +2,43 @@ import unittest
 
 from flow_worker.policy import QUOTA_EXHAUSTED_MARKER, should_fallback_from_pro
 
+RESOURCE_EXHAUSTED = f"{QUOTA_EXHAUSTED_MARKER}: Flow refused the image submit with RESOURCE_EXHAUSTED"
+
 
 class FallbackPolicyTest(unittest.TestCase):
-    def test_daily_pro_quota_exhaustion_falls_back(self):
-        for text in (
-            "You have reached the daily limit for Nano Banana Pro.",
-            "Daily generation quota reached for Nano Banana Pro",
-            '{"status":429,"title":"Rate limit or quota hit","detail":"daily limit for Nano Banana Pro"}',
+    def test_every_quota_rate_limit_or_credit_refusal_falls_back(self):
+        for code, text in (
+            (4, "You have reached the daily limit for Nano Banana Pro."),
+            (4, "Rate limit or quota hit"),
+            (4, "Rate limit or quota hit: per-minute model quota reached; retry later"),
+            (4, "HTTP 429 — rate limit hit"),
+            (7, f"{RESOURCE_EXHAUSTED} (PUBLIC_ERROR_DAILY_QUOTA)"),
+            (7, f"{RESOURCE_EXHAUSTED} (NO_REASON)"),
+            (7, f"{RESOURCE_EXHAUSTED} (PUBLIC_ERROR_QUOTA)"),
+            (7, f"{RESOURCE_EXHAUSTED} (PUBLIC_ERROR_PER_MINUTE_LIMIT)"),
+            (7, "migrated image submit answered HTTP 429"),
+            (37, "migrated host: Flow replaced the submit control with its insufficient-credits warning"),
         ):
-            with self.subTest(text=text):
-                self.assertTrue(should_fallback_from_pro(4, text))
-
-    def test_ambiguous_daily_quota_without_pro_model_name_does_not_fall_back(self):
-        self.assertFalse(should_fallback_from_pro(4, "Daily generation quota reached"))
-
-    def test_per_minute_rate_limit_does_not_fall_back(self):
-        self.assertFalse(
-            should_fallback_from_pro(
-                4,
-                "Rate limit or quota hit: per-minute model quota reached; retry later",
-            )
-        )
+            with self.subTest(code=code, text=text):
+                self.assertTrue(should_fallback_from_pro(code, text))
 
     def test_non_quota_failures_never_fall_back(self):
         for code, text in (
             (1, "PUBLIC_ERROR_UNUSUAL_ACTIVITY"),
+            (10, "Flow refused the submit: PUBLIC_ERROR_UNUSUAL_ACTIVITY (gRPC 7)"),
             (1, "reCAPTCHA token rejected"),
             (3, "NOT_SIGNED_IN"),
             (5, "Content policy blocked this image"),
             (8, "Transport timeout"),
+            (9, "no ogiZ0b image result within 180s"),
             (6, "Network error"),
+            (7, "migrated image submit answered HTTP 500"),
+            (7, "migrated image submit returned no ogiZ0b frame"),
             (23, "Flow setting selector drift"),
             (1, "unknown provider error"),
         ):
             with self.subTest(code=code, text=text):
                 self.assertFalse(should_fallback_from_pro(code, text))
-
-    def test_flow_google_com_daily_quota_and_credit_exhaustion_fall_back(self):
-        for code, text in (
-            (7, f"{QUOTA_EXHAUSTED_MARKER}: Flow refused the image submit with RESOURCE_EXHAUSTED (PUBLIC_ERROR_DAILY_QUOTA)"),
-            (37, "migrated host: Flow replaced the submit control with its insufficient-credits warning"),
-        ):
-            with self.subTest(code=code):
-                self.assertTrue(should_fallback_from_pro(code, text))
-
-    def test_quota_signals_without_daily_evidence_fail_closed(self):
-        # RESOURCE_EXHAUSTED or HTTP 429 alone may be a per-minute or global throttle.
-        for code, text in (
-            (7, f"{QUOTA_EXHAUSTED_MARKER}: Flow refused the image submit with RESOURCE_EXHAUSTED (NO_REASON)"),
-            (7, f"{QUOTA_EXHAUSTED_MARKER}: Flow refused the image submit with RESOURCE_EXHAUSTED (PUBLIC_ERROR_QUOTA)"),
-            (7, "migrated image submit answered HTTP 429"),
-            (4, "HTTP 429 — rate limit hit"),
-        ):
-            with self.subTest(text=text):
-                self.assertFalse(should_fallback_from_pro(code, text))
-
-    def test_per_minute_quota_never_falls_back_even_when_marked(self):
-        for reason in ("PUBLIC_ERROR_PER_MINUTE_LIMIT", "PUBLIC_ERROR_DAILY_PER_MINUTE"):
-            with self.subTest(reason=reason):
-                self.assertFalse(
-                    should_fallback_from_pro(
-                        7, f"{QUOTA_EXHAUSTED_MARKER}: Flow refused the image submit with RESOURCE_EXHAUSTED ({reason})"
-                    )
-                )
-
-    def test_rate_limit_exit_code_without_daily_evidence_is_not_enough(self):
-        self.assertFalse(should_fallback_from_pro(4, "Rate limit or quota hit"))
 
 
 if __name__ == "__main__":
