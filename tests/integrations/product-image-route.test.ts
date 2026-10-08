@@ -54,7 +54,31 @@ test("upstream failure maps to 502, bad query shape to 400, undecodable image to
   assert.equal((await handleProductImageRequest(request(SRC, "w=1080&x=1"))).status, 400);
 });
 
-test("excess concurrent distinct requests are shed with 503 before fetch or Sharp", async () => {
+test("a full gallery burst queues behind the concurrency cap instead of being shed", async () => {
+  let running = 0;
+  let peak = 0;
+  let started = 0;
+  const upstream = async () => {
+    started += 1;
+    running += 1;
+    peak = Math.max(peak, running);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    running -= 1;
+    return new Response(TINY_PNG, { status: 200 });
+  };
+  // 12 distinct gallery images plus the mobile/lightbox widths of a few of them.
+  const burst = Array.from({ length: 20 }, (_, n) =>
+    handleProductImageRequest(
+      request(`https://content.pancake.vn/images/1/2/3/gallery-${n}.png`, n % 2 === 0 ? "w=828" : "w=1200"),
+      { fetch: upstream },
+    ),
+  );
+  for (const response of await Promise.all(burst)) assert.equal(response.status, 200);
+  assert.equal(started, 20);
+  assert.ok(peak <= 4, `at most 4 may run at once, saw ${peak}`);
+});
+
+test("only an overflowing queue is shed with 503, before fetch or Sharp", async () => {
   const release: Array<() => void> = [];
   let started = 0;
   const gated = async () => {
@@ -62,29 +86,32 @@ test("excess concurrent distinct requests are shed with 503 before fetch or Shar
     await new Promise<void>((resolve) => release.push(resolve));
     return new Response(TINY_PNG, { status: 200 });
   };
-  const srcFor = (n: number) => `https://content.pancake.vn/images/1/2/3/img-${n}.png`;
+  const srcFor = (n: number) => `https://content.pancake.vn/images/1/2/3/q-${n}.png`;
+  const limits = { fetch: gated, maxConcurrent: 2, maxQueued: 2 };
 
-  const admitted = [0, 1].map((n) =>
-    handleProductImageRequest(request(srcFor(n)), { fetch: gated, maxConcurrent: 2 }),
-  );
+  // 2 run, 2 wait in the queue.
+  const admitted = [0, 1, 2, 3].map((n) => handleProductImageRequest(request(srcFor(n)), limits));
   await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(started, 2);
+  assert.equal(started, 2, "queued requests must not reach the upstream yet");
 
-  const shed = await handleProductImageRequest(request(srcFor(2)), { fetch: gated, maxConcurrent: 2 });
+  const shed = await handleProductImageRequest(request(srcFor(4)), limits);
   assert.equal(shed.status, 503);
   assert.equal(shed.headers.get("cache-control"), "no-store");
   assert.ok(shed.headers.get("retry-after"));
   assert.equal(started, 2, "a shed request must not reach the upstream");
 
-  release.forEach((r) => r());
+  // Draining lets the queued requests run in turn.
+  while (admitted.length > 0 && started < 4) {
+    release.splice(0).forEach((r) => r());
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  release.splice(0).forEach((r) => r());
   for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  assert.equal(started, 4);
 
-  // Slots are returned: the same request is admitted again once the earlier ones settle.
+  // Slots are returned: a new request is admitted once the earlier ones settle.
   const later = counting(() => new Response(TINY_PNG, { status: 200 }));
-  assert.equal(
-    (await handleProductImageRequest(request(srcFor(2)), { fetch: later.fn, maxConcurrent: 2 })).status,
-    200,
-  );
+  assert.equal((await handleProductImageRequest(request(srcFor(5)), { ...limits, fetch: later.fn })).status, 200);
 });
 
 test("identical concurrent requests share one fetch and do not consume extra slots", async () => {

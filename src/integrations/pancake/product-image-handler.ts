@@ -9,13 +9,36 @@ type DeliveryResult = Awaited<ReturnType<typeof fetchAndCompressPancakeProductIm
 
 /**
  * Each admitted request may buffer up to 32 MB and run several Sharp encodes, so the number that
- * can be in flight at once is capped for the whole process. Identical `src` + `w` requests share
- * one run and do not consume a slot, which also absorbs a burst on a single popular image.
+ * can run at once is capped for the whole process. A PDP legitimately asks for many distinct
+ * images at the same moment (up to 12 gallery images, with lazy slides still laid out), so excess
+ * requests wait in a bounded queue instead of being refused; only when that queue is also full is
+ * a request shed with 503. Identical `src` + `w` requests share one run and take no extra slot.
  */
 export const PRODUCT_IMAGE_MAX_CONCURRENT = 4;
+export const PRODUCT_IMAGE_MAX_QUEUED = 64;
 
 const inFlight = new Map<string, Promise<DeliveryResult>>();
+const waiters: Array<() => void> = [];
 let activeRuns = 0;
+
+function releaseSlot(): void {
+  const next = waiters.shift();
+  if (next !== undefined) next();
+  else activeRuns -= 1;
+}
+
+async function runLimited(
+  limits: Readonly<{ maxConcurrent: number }>,
+  work: () => Promise<DeliveryResult>,
+): Promise<DeliveryResult> {
+  if (activeRuns < limits.maxConcurrent) activeRuns += 1;
+  else await new Promise<void>((resolve) => waiters.push(resolve));
+  try {
+    return await work();
+  } finally {
+    releaseSlot();
+  }
+}
 
 function busyResponse(): Response {
   return new Response(null, {
@@ -44,7 +67,7 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number }> = {},
+  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
@@ -63,12 +86,18 @@ export async function handleProductImageRequest(
   if (src === null || width === null) return errorResponse(400);
 
   const key = `${width}|${src}`;
+  const maxConcurrent = options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT;
   let run = inFlight.get(key);
   if (run === undefined) {
-    if (activeRuns >= (options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT)) return busyResponse();
-    activeRuns += 1;
-    run = fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch }).finally(() => {
-      activeRuns -= 1;
+    if (
+      activeRuns >= maxConcurrent &&
+      waiters.length >= (options.maxQueued ?? PRODUCT_IMAGE_MAX_QUEUED)
+    ) {
+      return busyResponse();
+    }
+    run = runLimited({ maxConcurrent }, () =>
+      fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch }),
+    ).finally(() => {
       inFlight.delete(key);
     });
     inFlight.set(key, run);
