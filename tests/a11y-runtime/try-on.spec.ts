@@ -414,26 +414,33 @@ async function fillThroughConfirmation(
 
 // --- eligibility ------------------------------------------------------------------------------
 
-test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, on the size-guide line", async ({ page }) => {
+test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, in its own row under the size guide", async ({
+  page,
+}) => {
   const watched = watch(page);
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
   const sizeGuide = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
 
-  async function expectOnSizeGuideLine() {
+  async function expectOwnRowUnderSizeGuide() {
     await expect(triggerOf(page)).toBeVisible();
     await expect(sizeGuide).toBeVisible();
     const [trigger, guide] = await Promise.all([triggerOf(page).boundingBox(), sizeGuide.boundingBox()]);
-    // Same line: the try-on entry point adds no row of its own to the purchase panel.
-    expect(Math.abs(trigger!.y + trigger!.height / 2 - (guide!.y + guide!.height / 2))).toBeLessThan(8);
-    expect(trigger!.x).toBeGreaterThan(guide!.x + guide!.width);
+    // Its own row, directly beneath the size-guide link and starting at the same left edge, so it
+    // is noticed without displacing the add-to-bag controls from the panel.
+    expect(trigger!.y).toBeGreaterThanOrEqual(guide!.y + guide!.height - 1);
+    expect(trigger!.y - (guide!.y + guide!.height)).toBeLessThan(24);
+    expect(Math.abs(trigger!.x - guide!.x)).toBeLessThan(8);
+    // It says what it is: AI, still in development, and free.
+    await expect(triggerOf(page)).toContainText("AI · Beta");
+    await expect(triggerOf(page)).toContainText("miễn phí");
   }
 
-  await expectOnSizeGuideLine();
+  await expectOwnRowUnderSizeGuide();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeEnabled();
   await assertPageQuality(page);
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expectOnSizeGuideLine();
+  await expectOwnRowUnderSizeGuide();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeVisible();
   await assertPageQuality(page);
 
@@ -1084,7 +1091,7 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
 
   await expect(alert).toContainText("5 lượt thử đồ");
   await expect(alert).toContainText("đăng nhập");
-  await expect(dialog).toContainText("Đăng ký tài khoản miễn phí");
+  await expect(dialog).toContainText("Tạo tài khoản để thử đồ thoải mái hơn");
   const signIn = dialog.getByRole("link", { name: "Đăng ký hoặc đăng nhập" });
   await expect(signIn).toBeVisible();
   // It sends the shopper back to this very product once they have signed in.
