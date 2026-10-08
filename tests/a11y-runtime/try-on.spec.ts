@@ -11,6 +11,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
 
 /**
  * Virtual try-on on the PDP (docs/specs/storefront-virtual-try-on.md §16 Browser).
@@ -302,6 +303,11 @@ function watch(page: Page): Watched {
     if (message.type() === "error") watched.consoleErrors.push(message.text());
   });
   page.on("pageerror", (error) => watched.pageErrors.push(error.message));
+  // The PDP gallery loads through /api/product-image, which would otherwise fetch the fixture's
+  // product photographs on the server and be counted as try-on garment fetches in the fixture log.
+  void page.route(OPTIMIZED_IMAGE_ROUTE, (route) =>
+    route.fulfill({ status: 200, contentType: "image/jpeg", body: Buffer.from(JPEG_BASE64, "base64") }),
+  );
   page.on("response", (response) => {
     if (response.status() >= 400) watched.failedResponses.push(`${response.status()} ${response.url()}`);
   });
