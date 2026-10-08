@@ -323,9 +323,83 @@ class ProcessGroupCleanupTest(unittest.TestCase):
         runner = make_runner(self, cool_pause_seconds=0.0)
         runner._leaked = [4242]
         with patch.object(warm, "_group_members", return_value=[4242]):
-            self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
+            # Not a safe "unavailable": the caller must not start anything else against the profile.
+            self.assertEqual(runner.run(job("ok"), 10).kind, "held")
         self.assertEqual(runner.spawned, [])
         self.assertIn(("flow_warm.start_failed", {"reason": "profile_held"}), runner.events)
+
+
+class ProfileHeldFallbackTest(unittest.TestCase):
+    """Leftover processes of an earlier browser may hold the profile: no gflow of any kind may start."""
+
+    def setUp(self):
+        for target in (
+            patch.object(server, "_project_id", PROJECT_ID),
+            patch.object(server, "_command", return_value=[sys.executable, "-c", "raise SystemExit(5)"]),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
+        self.root = Path(tempfile.mkdtemp(prefix="profile-held-"))
+        self.runner = make_runner(self)
+        self.runner._leaked = [4242]
+
+    def no_gflow(self):
+        return (
+            patch.object(server, "_warm_runner", self.runner),
+            patch.object(warm, "_group_members", return_value=[4242]),  # the leaked group is still alive
+            patch.object(server.subprocess, "Popen", side_effect=AssertionError("must not start gflow")),
+        )
+
+    def run_model(self):
+        return server._run_model(
+            "nano-pro", self.root / "p.jpg", self.root / "g.jpg", self.root / "r.png", 10, self.root / "db"
+        )
+
+    def test_a_request_is_refused_busy_and_no_legacy_gflow_is_started(self):
+        a, b, c = self.no_gflow()
+        with a, b, c:
+            exit_code, error = self.run_model()
+        self.assertEqual(exit_code, server.PROFILE_HELD_EXIT_CODE)
+        self.assertEqual(server._failure_reason(exit_code, error), (409, "BUSY"))
+        self.assertEqual(self.runner.spawned, [])
+
+    def test_it_is_not_retried_on_another_model(self):
+        models = []
+        real = server._run_model
+
+        def record(model, *args):
+            models.append(model)
+            return real(model, *args)
+
+        a, b, c = self.no_gflow()
+        with a, b, c, patch.object(server, "_run_model", side_effect=record):
+            with self.assertRaises(server.WorkerGenerationError) as raised:
+                server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+        self.assertEqual((raised.exception.status, raised.exception.reason), (409, "BUSY"))
+        self.assertEqual(models, ["nano-pro"])  # no fall back to Nano Banana 2.1
+
+    def test_run_gflow_honours_a_failed_release_of_the_warm_browser(self):
+        # A warm browser whose processes cannot be cleared: the per-request gflow must not launch.
+        runner = make_runner(self)
+        runner.run(job("ok"), 10)
+        self.assertEqual(runner.state, warm.WARM)
+        with (
+            patch.object(server, "_warm_runner", runner),
+            patch.object(warm, "_KILL_WAIT_SECONDS", 0.1),
+            patch.object(warm, "_group_members", return_value=[4242]),
+            patch.object(server.subprocess, "Popen", side_effect=AssertionError("must not start gflow")),
+            patch.object(server, "_clean_stale_profile_locks"),
+        ):
+            code, stdout = server._run_gflow([sys.executable, "-c", "pass"], 10, self.root / "db")
+        self.assertEqual((code, stdout), (server.PROFILE_HELD_EXIT_CODE, ""))
+
+    def test_a_held_profile_never_reached_flow_so_the_project_marker_is_withdrawn(self):
+        self.assertTrue(server._failed_before_flow(server.PROFILE_HELD_EXIT_CODE, server.GflowMachineError()))
+
+    def test_once_the_leftovers_are_gone_requests_are_served_by_the_warm_browser_again(self):
+        with patch.object(warm, "_group_members", return_value=[]):
+            self.assertEqual(self.runner.run(job("ok"), 10).kind, "done")
+        self.assertEqual(len(self.runner.spawned), 1)
 
 
 class CoolBarrierTest(unittest.TestCase):

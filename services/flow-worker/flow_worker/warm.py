@@ -56,11 +56,13 @@ class WarmConfig:
 
 @dataclass(frozen=True, slots=True)
 class WarmOutcome:
-    """What one job came to. ``kind`` is ``done``, ``unavailable`` or ``timeout``.
+    """What one job came to. ``kind`` is ``done``, ``unavailable``, ``held`` or ``timeout``.
 
     ``unavailable`` means the browser could not be started, or died before the image submit went out:
     nothing was spent, so the caller may run the request the old way. ``done`` carries gflow's exit
-    code and ``--json`` stdout. ``timeout`` is the request budget running out, and ``submitted`` tells
+    code and ``--json`` stdout. ``held`` means processes of an earlier browser are still running and
+    may hold the Chrome profile: nothing may start against it, not even the per-request fallback.
+    ``timeout`` is the request budget running out, and ``submitted`` tells
     the caller whether the submit had already gone out when the browser died or timed out.
     """
 
@@ -391,17 +393,20 @@ class WarmRunner:
             self._paused_until = 0.0
 
     @contextmanager
-    def exclusive(self) -> Iterator[None]:
+    def exclusive(self) -> Iterator[bool]:
         """Hold the browser down while something else (a per-request gflow) uses the Chrome profile.
 
         Releases the browser, cancels any start in progress and refuses new ones until the block ends.
+        Yields whether the profile is actually free: ``False`` when processes of the browser survived
+        their kill, in which case the caller must not start anything against the profile.
         """
         with self._guard:
             self._epoch += 1
             self._exclusive += 1
         try:
-            self.stop("subprocess")
-            yield
+            with self._lock:
+                released = self._stop_locked("subprocess")
+            yield released
         finally:
             with self._guard:
                 self._exclusive -= 1
@@ -426,10 +431,14 @@ class WarmRunner:
             self._stop_locked("died")
             child = None
         if child is None:
+            if self._leaked_alive():
+                # An earlier browser's processes survived their kill and may hold the profile.
+                self._event("flow_warm.start_failed", reason="profile_held")
+                return WarmOutcome("held")
             with self._guard:
                 epoch = self._epoch
             if not self._start_locked(deadline, epoch):
-                return WarmOutcome("unavailable")
+                return WarmOutcome("held") if self._leaked_alive() else WarmOutcome("unavailable")
             child = self._child
         assert child is not None
 

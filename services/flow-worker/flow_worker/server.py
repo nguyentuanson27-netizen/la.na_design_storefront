@@ -57,6 +57,9 @@ MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_ERROR_DETAIL_CHARS = 4 * 1024
 WORKER_TIMEOUT_EXIT_CODE = 124
+# Not a gflow exit code: processes of an earlier warm browser may still hold the Chrome profile, so no
+# gflow was started. Reported as BUSY, never retried on another model.
+PROFILE_HELD_EXIT_CODE = 125
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # gflow-cli 0.82.1's --project allowlist.
@@ -318,7 +321,10 @@ def _run_gflow(args: list[str], timeout_seconds: float, db_path: Path) -> tuple[
         return WORKER_TIMEOUT_EXIT_CODE, ""
     # The warm browser holds gflow's profile lease, and a second gflow could not start beside it. So it
     # is released first and kept from starting (even by a pre-warm hint) until this run is over.
-    with _warm_runner.exclusive() if _warm_runner is not None else nullcontext():
+    with _warm_runner.exclusive() if _warm_runner is not None else nullcontext(True) as profile_free:
+        if profile_free is False:
+            # The warm browser's processes survived their kill and may hold the profile.
+            return PROFILE_HELD_EXIT_CODE, ""
         _clean_stale_profile_locks()
         try:
             process = subprocess.Popen(
@@ -386,6 +392,10 @@ def _run_model_warm(
     if outcome.kind == "unavailable":
         _event("flow_try_on.warm_unavailable", model=model)
         return None
+    if outcome.kind == "held":
+        # Fail closed: a per-request gflow would try to take the profile the leftovers may still hold.
+        _event("flow_try_on.profile_held", model=model)
+        return PROFILE_HELD_EXIT_CODE, GflowMachineError()
     if outcome.kind == "timeout":
         return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
     return outcome.exit_code, _machine_error(outcome.stdout)
@@ -475,7 +485,7 @@ def _store_project_id(project_id: str) -> None:
 
 # gflow exits that end before Flow is asked to create anything: no session (3, 8) or the profile
 # lease held by another run. Only after these may the pending marker be withdrawn.
-_PRE_FLOW_EXIT_CODES = (3, 8)
+_PRE_FLOW_EXIT_CODES = (3, 8, PROFILE_HELD_EXIT_CODE)
 
 
 def _failed_before_flow(returncode: int, error: GflowMachineError) -> bool:
@@ -568,6 +578,8 @@ def _failure_reason(
         return 409, "BUSY"
     if exit_code == 4:
         return 429, "BUSY"
+    if exit_code == PROFILE_HELD_EXIT_CODE:
+        return 409, "BUSY"
     # flow.google.com quota refusals arrive as exit 7 (WireFormatError); only the verified quota
     # signals are BUSY, every other wire error stays GENERATION_FAILED.
     if error is not None and is_flow_quota_refusal(exit_code, error.detail):

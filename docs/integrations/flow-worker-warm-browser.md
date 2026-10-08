@@ -228,7 +228,9 @@ rủi ro lẫn dữ liệu giữa các khách.
 - Dọn tiến trình (sửa theo review): `WarmRunner._kill` diệt cả **nhóm tiến trình** (SIGTERM rồi SIGKILL)
   bất kể tiến trình đứng đầu còn sống hay không, và chỉ coi là xong khi nhóm không còn tiến trình sống
   nào (đọc `/proc`, bỏ qua zombie). Nhóm nào không dọn được bị ghi nhớ: `cool` trả `409` và không mở
-  Chrome mới cho tới khi nhóm đó hết. `deploy.sh` bật lại worker (`/v1/resume`) ngay sau mỗi lần kiểm
+  Chrome mới cho tới khi nhóm đó hết; **cả đường gflow theo request cũng bị chặn** (request nhận
+  `409 BUSY`, mã nội bộ `PROFILE_HELD_EXIT_CODE = 125`, không thử model khác, không gây dấu "đang tạo
+  project" treo), vì gflow riêng sẽ tranh đúng profile mà tiến trình sót còn giữ. `deploy.sh` bật lại worker (`/v1/resume`) ngay sau mỗi lần kiểm
   tra, kể cả khi thất bại.
 - Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.
 - Sai khác nhỏ so với bản thiết kế: tái chế sau lượt lỗi (thay vì thử lại một lần trong cùng client);
