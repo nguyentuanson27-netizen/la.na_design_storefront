@@ -3,6 +3,7 @@ import { POLICY_CONTENT, type PolicyContentSection } from "../brand/policy.confi
 import type { SizeChart } from "../brand/schema.ts";
 import {
   describeGuestShippingPromotion,
+  describeGuestShippingPromotionHeadline,
   type GuestShippingPolicy,
 } from "../commerce/guest-shipping-policy.ts";
 import {
@@ -169,6 +170,45 @@ export function buildShippingViewModel(
     serverVerification: brandFacts.serverVerification,
     refundChannelNote: PUBLIC_RETURNS_POLICY.refundChannelNote,
   });
+}
+
+/* -------------------------------------------------------------- purchase assurance */
+
+export type PurchaseAssuranceItem = Readonly<{
+  key: "cod" | "returns" | "free-shipping";
+  label: string;
+  /** The policy page that states the fact in full, or `null` when it needs none. */
+  href: string | null;
+}>;
+
+/**
+ * The three buying facts the product page repeats right under its purchase buttons, where the
+ * decision is made: pay on delivery, the return window, and the free-shipping threshold.
+ *
+ * Every label is derived from the authority that owns the fact -- the payment note, the return
+ * window and the configured shipping policy -- the same derivations the homepage strip and the
+ * masthead use, so the product page cannot promise something `/returns` or checkout does not.
+ */
+export function buildPurchaseAssuranceViewModel(
+  input: Readonly<{ policy: GuestShippingPolicy }>,
+): readonly PurchaseAssuranceItem[] {
+  return Object.freeze([
+    Object.freeze({
+      key: "cod",
+      label: FULFILLMENT.payment.codNote.replace(/\.$/u, ""),
+      href: null,
+    }),
+    Object.freeze({
+      key: "returns",
+      label: `Đổi trả trong ${FULFILLMENT.returns.windowDays} ngày`,
+      href: "/returns",
+    }),
+    Object.freeze({
+      key: "free-shipping",
+      label: describeGuestShippingPromotionHeadline(input.policy),
+      href: "/shipping",
+    }),
+  ] satisfies PurchaseAssuranceItem[]);
 }
 
 /* ---------------------------------------------------------------------------- returns */

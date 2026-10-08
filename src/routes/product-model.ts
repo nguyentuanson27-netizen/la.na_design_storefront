@@ -3,6 +3,7 @@ import {
   type ApprovedSizeGuideId,
 } from "../brand/size-guide.config.ts";
 import type { SizeChart } from "../brand/schema.ts";
+import type { ProductFeedback, ProductFeedbackImage } from "../commerce/feedback-repository.ts";
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
 import type { StorefrontProjectionOption } from "../commerce/storefront-projection.ts";
 import type {
@@ -15,6 +16,8 @@ import {
   buildProductCardModel,
   type ProductCardModel,
 } from "../components/headless/build-product-card-model.ts";
+import { FEEDBACK_PATH, parseConfiguredCopy } from "../content/homepage-content.ts";
+import type { HomepageConfig } from "../content/homepage.config.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 import { buildSizeGuideViewModel, type SizeGuideViewModel } from "./evergreen-model.ts";
 
@@ -177,5 +180,49 @@ export function buildProductViewModel(input: ProductViewModelInput): ProductView
         }),
       ),
     ),
+  });
+}
+
+/** The product page's customer-photograph rail. */
+export type ProductFeedbackSection = Readonly<{
+  title: string;
+  /** Whose photographs these are: this product's own, or the brand gallery standing in. */
+  scope: ProductFeedback["scope"];
+  /** `/feedback`, when that gallery is published; `null` renders no link. */
+  href: string | null;
+  ctaLabel: string;
+  images: readonly ProductFeedbackImage[];
+}>;
+
+/**
+ * The rail, or `null` when there is nothing truthful to show under a heading.
+ *
+ * The heading says whose photographs these are: the product's own tagged photographs read
+ * `productPageTitle`, the brand fallback reads the brand gallery's own title. A missing heading for
+ * the scope at hand omits the rail rather than borrowing the other one.
+ */
+export function buildProductFeedbackSection(
+  feedback: ProductFeedback | null,
+  config: HomepageConfig["feedback"],
+): ProductFeedbackSection | null {
+  if (feedback === null || feedback.images.length === 0) return null;
+  const title = parseConfiguredCopy(
+    feedback.scope === "product" ? config.productPageTitle : config.title,
+  );
+  const ctaLabel = parseConfiguredCopy(config.ctaLabel);
+  if (title === null || ctaLabel === null) return null;
+
+  const galleryPublished =
+    feedback.hasBrandGallery
+    && parseConfiguredCopy(config.title) !== null
+    && parseConfiguredCopy(config.metadataTitle) !== null
+    && parseConfiguredCopy(config.metadataDescription) !== null;
+
+  return Object.freeze({
+    title,
+    scope: feedback.scope,
+    href: galleryPublished ? FEEDBACK_PATH : null,
+    ctaLabel,
+    images: feedback.images,
   });
 }

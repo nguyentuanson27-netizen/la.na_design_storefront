@@ -65,6 +65,11 @@ export type HomepageConfig = Readonly<{
   feedback: Readonly<{
     /** Section heading on the homepage and the `/feedback` page heading. */
     title: string | null;
+    /**
+     * Product page heading over that product's own tagged photographs. A product without any shows
+     * the brand photographs under `title` instead.
+     */
+    productPageTitle: string | null;
     ctaLabel: string;
     metadataTitle: string | null;
     metadataDescription: string | null;
@@ -115,6 +120,8 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
   },
   feedback: {
     title: "Khách hàng & La.na",
+    // Owner request 2026-10-08: customer photographs on the product page.
+    productPageTitle: "Khách hàng diện mẫu này",
     ctaLabel: "Xem thêm",
     metadataTitle: "Khách hàng & La.na | Feedback",
     metadataDescription: "Khoảnh khắc và hình ảnh chân thực từ khách hàng diện trang phục thiết kế La.na.",

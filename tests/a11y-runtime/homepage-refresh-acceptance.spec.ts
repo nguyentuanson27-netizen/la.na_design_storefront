@@ -115,6 +115,7 @@ export const HOMEPAGE_CONFIG: HomepageConfig = {
   },
   feedback: {
     title: "Acceptance feedback",
+    productPageTitle: null,
     ctaLabel: "Xem thêm",
     metadataTitle: "Acceptance feedback title",
     metadataDescription: "Acceptance feedback description.",

@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
 import { isApprovedSizeGuideId } from "@/brand";
+import { readProductFeedback } from "@/commerce/feedback-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { createSizeGuideMediaRepository } from "@/commerce/size-guide-media";
 import {
@@ -12,6 +13,7 @@ import {
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
 import { resolveProductTryOn } from "@/commerce/try-on-runtime";
+import { HOMEPAGE_CONFIG } from "@/content/homepage.config";
 import { prisma } from "@/db/prisma";
 import {
   resolveDeepLinkedVariantSelection,
@@ -25,12 +27,19 @@ import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-s
 
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import {
+  buildPurchaseAssuranceViewModel,
   buildReturnsViewModel,
   buildShippingViewModel,
+  type PurchaseAssuranceItem,
   type ReturnsViewModel,
   type ShippingViewModel,
 } from "./evergreen-model.ts";
-import { buildProductViewModel, type ProductViewModel } from "./product-model.ts";
+import {
+  buildProductFeedbackSection,
+  buildProductViewModel,
+  type ProductFeedbackSection,
+  type ProductViewModel,
+} from "./product-model.ts";
 
 /** The product page's loader: the product, its related grid, the deep link, and the JSON-LD. */
 
@@ -54,6 +63,10 @@ export type ProductRouteData = ProductViewModel &
     /** Canonical A5 policy projections; the PDP does not restate shipping/returns facts. */
     shipping: ShippingViewModel;
     returns: ReturnsViewModel;
+    /** The buying facts repeated under the purchase buttons. */
+    purchaseAssurance: readonly PurchaseAssuranceItem[];
+    /** Customer photographs: this product's own, else the brand's; `null` renders nothing. */
+    feedback: ProductFeedbackSection | null;
   }>;
 
 export async function loadProductRoute({
@@ -77,12 +90,13 @@ export async function loadProductRoute({
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl, tryOn] = await Promise.all([
+  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
       : null,
     resolveProductTryOn(product),
+    readProductFeedback({ productId: product.id }),
   ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
@@ -97,6 +111,7 @@ export async function loadProductRoute({
     pricingRule: promotion.pricingRule,
   });
 
+  const shippingPolicy = readGuestShippingPolicy();
   const options = product.projection.options;
   const metaEntryPrice = getStorefrontResolvedPriceRange(options)?.minimum ?? null;
   const deepLinkedSelection = resolveDeepLinkedVariantSelection({
@@ -129,8 +144,10 @@ export async function loadProductRoute({
       commerceTrackingEnabled: isCommerceTrackingEnabled(),
       tryOn,
       relatedListEvent: relatedTracking.listEvent,
-      shipping: buildShippingViewModel({ policy: readGuestShippingPolicy() }),
+      shipping: buildShippingViewModel({ policy: shippingPolicy }),
       returns: buildReturnsViewModel(),
+      purchaseAssurance: buildPurchaseAssuranceViewModel({ policy: shippingPolicy }),
+      feedback: buildProductFeedbackSection(feedback, HOMEPAGE_CONFIG.feedback),
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({

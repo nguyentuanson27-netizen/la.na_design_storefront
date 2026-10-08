@@ -276,6 +276,8 @@ export function PurchasePanelView({
   sizeGuide,
   tryOnTrigger = null,
   mobileNudge = null,
+  sizeHelp = null,
+  assurance = null,
 }: Readonly<{
   controller: VariantSelectionController;
   sizeGuide: ProductMappedSizeGuide | null;
@@ -286,6 +288,10 @@ export function PurchasePanelView({
   tryOnTrigger?: ReactNode;
   /** Floats just above the phone purchase bar (e.g. a reminder of try-on); absolutely placed, so it never resizes the bar. */
   mobileNudge?: ReactNode;
+  /** Server-built ways to ask the shop about size (chat links), under the size guide on the panel only. */
+  sizeHelp?: ReactNode;
+  /** Server-built buying facts (payment, returns, shipping), directly under the purchase buttons. */
+  assurance?: ReactNode;
 }>) {
   const {
     view,
@@ -571,6 +577,8 @@ export function PurchasePanelView({
           ))}
         </div>
         {renderSizeGuideTrigger(surface)}
+        {/* Wrapped: a server-built slot placed straight among sibling children reads as an unkeyed list item. */}
+        {surface === "panel" && sizeHelp !== null ? <div>{sizeHelp}</div> : null}
         {sizeValidationMessage ? (
           <p id={sizeErrorId} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
             {sizeValidationMessage}
@@ -692,6 +700,8 @@ export function PurchasePanelView({
             Dự kiến có hàng: {availabilityDateLabel}
           </p>
         )}
+
+        {assurance === null ? null : <div>{assurance}</div>}
       </section>
 
       <section
