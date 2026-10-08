@@ -297,7 +297,7 @@ type Watched = {
   tryOnPosts: string[];
 };
 
-function watch(page: Page): Watched {
+async function watch(page: Page): Promise<Watched> {
   const watched: Watched = { consoleErrors: [], pageErrors: [], failedResponses: [], hosts: new Set(), tryOnPosts: [] };
   page.on("console", (message) => {
     if (message.type() === "error") watched.consoleErrors.push(message.text());
@@ -305,7 +305,8 @@ function watch(page: Page): Watched {
   page.on("pageerror", (error) => watched.pageErrors.push(error.message));
   // The PDP gallery loads through /api/product-image, which would otherwise fetch the fixture's
   // product photographs on the server and be counted as try-on garment fetches in the fixture log.
-  void page.route(OPTIMIZED_IMAGE_ROUTE, (route) =>
+  // Awaited so the stub is installed before any navigation the caller starts next.
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) =>
     route.fulfill({ status: 200, contentType: "image/jpeg", body: Buffer.from(JPEG_BASE64, "base64") }),
   );
   page.on("response", (response) => {
@@ -423,7 +424,7 @@ async function fillThroughConfirmation(
 test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, in its own row under the size guide", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
   const sizeGuide = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
 
@@ -522,7 +523,7 @@ test("with the kill switch off the PDP is unchanged, shows no Thử đồ, and t
 // --- dialog behaviour ------------------------------------------------------------------------
 
 test("the dialog opens, traps keyboard focus, closes with Escape and returns focus to Thử đồ", async ({ page }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { photo, next } = parts(dialog);
   const closeButton = dialog.getByRole("button", { name: "Đóng", exact: true });
@@ -603,7 +604,7 @@ test("closing discards the photo, the choices and the result", async ({ page }) 
 // --- upload ------------------------------------------------------------------------------------
 
 test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image files are refused", async ({ page }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { photo, preview, next, alert } = parts(dialog);
 
@@ -644,7 +645,7 @@ test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image 
 test("generation stays unavailable until a photo, an allowed age and the acknowledgement are all present", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { next, acknowledge, generate } = parts(dialog);
 
@@ -663,7 +664,7 @@ test("generation stays unavailable until a photo, an allowed age and the acknowl
 });
 
 test("the blocked age state cannot generate and sends nothing", async ({ page }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { acknowledge, generate, alert } = parts(dialog);
 
@@ -681,7 +682,7 @@ test("the blocked age state cannot generate and sends nothing", async ({ page })
 test("the teen path states the full attestation under a short chip and shows the AI disclosure, also with the result", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { generate, result, attestation, disclosure, acknowledge } = parts(dialog);
 
@@ -725,7 +726,7 @@ test("the teen path states the full attestation under a short chip and shows the
 test("an adult generation shows loading, exactly one result, a download, and requires a fresh acknowledgement to run again", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   // Playwright cannot read a multipart body that carries a file, so record what the page submits.
   await page.addInitScript(() => {
     const original = window.fetch;
@@ -829,7 +830,7 @@ test("an adult generation shows loading, exactly one result, a download, and req
 test("while a generation runs the form is off screen and cannot change, so a late result matches what was sent", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { photo, next, adult, teen, below, acknowledge, generate, retry, result, status, otherPhoto, preview } =
     parts(dialog);
@@ -889,7 +890,7 @@ test("a PNG upload generates a result at desktop width", async ({ page }) => {
 test("a provider failure shows a safe message, goes back to confirm with nothing lost, and purchase still works afterwards", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { adult, acknowledge, generate, back, alert, preview } = parts(dialog);
 
@@ -923,7 +924,7 @@ test("a provider failure shows a safe message, goes back to confirm with nothing
 test("a provider safety block fails closed: safe copy on the photo step, the photo is dropped, and nothing is retried", async ({
   page,
 }) => {
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { adult, acknowledge, generate, alert, preview, next } = parts(dialog);
 
@@ -1179,7 +1180,7 @@ test("a guest told to log in sees the sign-in link on the result step, and the d
           body: JSON.stringify({ ok: false, reason: "LOGIN_REQUIRED" }),
         }),
   );
-  const watched = watch(page);
+  const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { generate, alert } = parts(dialog);
   await fillThroughConfirmation(dialog);
