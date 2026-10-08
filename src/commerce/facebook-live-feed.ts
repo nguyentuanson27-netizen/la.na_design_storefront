@@ -5,7 +5,11 @@
  * The Google Merchant offer mapper remains the fact authority; this module only collapses its
  * reviewed offers for a separate link-out catalog. It does not alter per-variant commerce rules.
  */
-import type { MerchantMarketPolicy, MerchantOffer } from "./merchant-offer-mapper.ts";
+import type {
+  MerchantExcludedCandidate,
+  MerchantMarketPolicy,
+  MerchantOffer,
+} from "./merchant-offer-mapper.ts";
 import {
   BoundedXmlWriter,
   MerchantFeedOfferOverflowError,
@@ -68,6 +72,7 @@ function orderRank(availability: MerchantOffer["availability"]): number {
 export function buildFacebookLiveItems(
   offers: readonly MerchantOffer[],
   origin: string,
+  excluded: readonly MerchantExcludedCandidate[],
 ): readonly FacebookLiveItem[] {
   // A 7,000-variation catalog can collapse to fewer than 5,000 Live parent items.
   // Enforce the input candidate cap here; the output offer cap is checked after grouping.
@@ -77,11 +82,20 @@ export function buildFacebookLiveItems(
     );
   }
   const trustedOrigin = new URL(origin);
+  // The unselected PDP prices and stocks a product from *every* priced size, while `offers` holds
+  // only the sizes Merchant validated. A product with any size the mapper excluded (missing MPN,
+  // unresolved media, duplicate identity, ...) therefore cannot be summarised from its surviving
+  // offers without risking a price/availability the page contradicts. Withhold the whole parent
+  // instead of guessing; the per-size Google feed is unaffected.
+  const incompleteProducts = new Set<string>();
+  for (const candidate of excluded) {
+    if (candidate.itemGroupId !== null) incompleteProducts.add(candidate.itemGroupId);
+  }
   const groups = new Map<string, MerchantOffer[]>();
 
   for (const offer of offers) {
     const id = offer.itemGroupId;
-    if (id.length === 0 || id.length > PRODUCT_ID_MAX_LENGTH) continue;
+    if (id.length === 0 || id.length > PRODUCT_ID_MAX_LENGTH || incompleteProducts.has(id)) continue;
     const group = groups.get(id);
     if (group === undefined) groups.set(id, [offer]);
     else group.push(offer);
@@ -149,11 +163,13 @@ export function buildFacebookLiveItems(
 /** RSS XML for a dedicated Meta Live catalog. No variant-level identity/size claims are emitted. */
 export function serializeFacebookLiveFeed({
   offers,
+  excluded,
   market,
   origin,
   maxBytes = MAX_MERCHANT_FEED_BYTES,
 }: Readonly<{
   offers: readonly MerchantOffer[];
+  excluded: readonly MerchantExcludedCandidate[];
   market: MerchantMarketPolicy;
   origin: string;
   maxBytes?: number;
@@ -162,7 +178,7 @@ export function serializeFacebookLiveFeed({
     throw new MerchantFeedSerializationError("Facebook Live feed byte budget is invalid");
   }
 
-  const items = buildFacebookLiveItems(offers, origin);
+  const items = buildFacebookLiveItems(offers, origin, excluded);
   const writer = new BoundedXmlWriter(maxBytes);
   writer.append('<?xml version="1.0" encoding="UTF-8"?>\n');
   writer.append('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0"><channel>\n');

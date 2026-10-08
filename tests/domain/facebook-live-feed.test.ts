@@ -9,6 +9,10 @@ import {
   serializeFacebookLiveFeed,
 } from "../../src/commerce/facebook-live-feed.ts";
 import { getStorefrontResolvedPriceRange } from "../../src/commerce/storefront-product.ts";
+import { mapMerchantOffers, type MerchantCandidateProduct } from "../../src/commerce/merchant-offer-mapper.ts";
+import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
+import type { StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
+import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 
 const ORIGIN = "https://www.lanadesign.vn";
 const MARKET: MerchantMarketPolicy = { targetCountry: "VN", contentLanguage: "vi", currency: "VND" };
@@ -47,8 +51,8 @@ test("three SD1701 sizes produce one parent item while another product remains i
     link: `${ORIGIN}/shop/ao-dai-hoa-vi?variant=other-s`,
   });
 
-  const first = serializeFacebookLiveFeed({ offers: [another, ...sizes], market: MARKET, origin: ORIGIN });
-  const reversed = serializeFacebookLiveFeed({ offers: [...sizes].reverse().concat(another), market: MARKET, origin: ORIGIN });
+  const first = serializeFacebookLiveFeed({ offers: [another, ...sizes], excluded: [], market: MARKET, origin: ORIGIN });
+  const reversed = serializeFacebookLiveFeed({ offers: [...sizes].reverse().concat(another), excluded: [], market: MARKET, origin: ORIGIN });
 
   assert.equal(first.body, reversed.body);
   assert.equal(first.offerCount, 2);
@@ -69,7 +73,7 @@ test("representative image and availability come from the best stock class while
     offer({ id: "sd1701-l", size: "L", availability: "out_of_stock", priceVnd: 699_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-l` }),
     offer({ id: "sd1701-m", size: "M", availability: "in_stock", priceVnd: 929_000, link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-m` }),
     offer({ id: "sd1701-s", availability: "in_stock", priceVnd: 899_000 }),
-  ], ORIGIN);
+  ], ORIGIN, []);
   assert.equal(items.length, 1);
   assert.equal(items[0]?.priceVnd, 699_000);
   assert.equal(items[0]?.imageLink, "https://content.pancake.vn/web-media/img-s.jpg");
@@ -87,7 +91,7 @@ test("advertised price matches the unselected PDP 'Từ' floor even when the che
   ];
   for (const offers of [soldOutCheaper, backorderCheaper]) {
     const floor = getStorefrontResolvedPriceRange(offers.map((o) => ({ price: o.priceVnd })))!.minimum;
-    const [item] = buildFacebookLiveItems(offers, ORIGIN);
+    const [item] = buildFacebookLiveItems(offers, ORIGIN, []);
     assert.equal(item?.priceVnd, floor);
     assert.equal(item?.availability, "in stock");
   }
@@ -97,8 +101,8 @@ test("backorder-only groups retain orderable status; sold-out groups are not sho
   const backorder = buildFacebookLiveItems([
     offer({ id: "sd1701-s", availability: "backorder", availabilityDate: "2026-11-15" }),
     offer({ id: "sd1701-m", size: "M", availability: "out_of_stock", link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-m` }),
-  ], ORIGIN);
-  const soldOut = buildFacebookLiveItems([offer({ availability: "out_of_stock" })], ORIGIN);
+  ], ORIGIN, []);
+  const soldOut = buildFacebookLiveItems([offer({ availability: "out_of_stock" })], ORIGIN, []);
   assert.equal(backorder[0]?.availability, "available for order");
   assert.equal(soldOut[0]?.availability, "out of stock");
 });
@@ -108,14 +112,14 @@ test("ambiguous product identities and unsafe landing paths are excluded instead
     offer(),
     offer({ id: "other-variant", link: `${ORIGIN}/shop/another-product?variant=other-variant` }),
   ];
-  assert.equal(buildFacebookLiveItems(conflicting, ORIGIN).length, 0);
-  assert.equal(buildFacebookLiveItems([offer({ link: "https://evil.example/shop/ao-dai?variant=sd1701-s" })], ORIGIN).length, 0);
-  assert.equal(buildFacebookLiveItems([offer({ itemGroupId: "" })], ORIGIN).length, 0);
-  assert.equal(buildFacebookLiveItems([offer({ link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-s&campaign=1` })], ORIGIN).length, 0);
+  assert.equal(buildFacebookLiveItems(conflicting, ORIGIN, []).length, 0);
+  assert.equal(buildFacebookLiveItems([offer({ link: "https://evil.example/shop/ao-dai?variant=sd1701-s" })], ORIGIN, []).length, 0);
+  assert.equal(buildFacebookLiveItems([offer({ itemGroupId: "" })], ORIGIN, []).length, 0);
+  assert.equal(buildFacebookLiveItems([offer({ link: `${ORIGIN}/shop/ao-dai-dan-hoa-sd1701?variant=sd1701-s&campaign=1` })], ORIGIN, []).length, 0);
 });
 
 test("XML encoding is bounded and invalid control characters fail rather than enter the feed", () => {
-  const data = { offers: [offer()], market: MARKET, origin: ORIGIN };
+  const data = { offers: [offer()], excluded: [], market: MARKET, origin: ORIGIN };
   assert.throws(() => serializeFacebookLiveFeed({ ...data, maxBytes: 40 }), MerchantFeedByteOverflowError);
   assert.throws(
     () => serializeFacebookLiveFeed({ ...data, offers: [offer({ title: "Unsafe\u0000title" })] }),
@@ -144,7 +148,7 @@ test("many size offers remain within the source candidate ceiling when they coll
   assert.equal(variants.length, 5_100);
   assert.ok(variants.length > MAX_MERCHANT_OFFERS);
   assert.ok(variants.length <= MAX_MERCHANT_CANDIDATE_VARIANTS);
-  const feed = serializeFacebookLiveFeed({ offers: variants, market: MARKET, origin: ORIGIN });
+  const feed = serializeFacebookLiveFeed({ offers: variants, excluded: [], market: MARKET, origin: ORIGIN });
   assert.equal(feed.offerCount, 1_700);
   assert.equal((feed.body.match(/<item>/g) ?? []).length, 1_700);
 });
@@ -155,7 +159,7 @@ test("the Live feed still rejects excess source candidates and excess distinct p
     () => offer(),
   );
   assert.throws(
-    () => buildFacebookLiveItems(tooManyCandidates, ORIGIN),
+    () => buildFacebookLiveItems(tooManyCandidates, ORIGIN, []),
     MerchantFeedOfferOverflowError,
   );
 
@@ -170,7 +174,73 @@ test("the Live feed still rejects excess source candidates and excess distinct p
     });
   });
   assert.throws(
-    () => buildFacebookLiveItems(tooManyParents, ORIGIN),
+    () => buildFacebookLiveItems(tooManyParents, ORIGIN, []),
     MerchantFeedOfferOverflowError,
   );
+});
+
+// Real mapper -> PDP boundary: the unselected PDP floors across every priced projection option,
+// but Merchant only emits validated sizes. A size the mapper excludes must not be silently dropped
+// from the parent's price/availability summary.
+function projectionOption(overrides: Partial<StorefrontProjectionOption>): StorefrontProjectionOption {
+  return withFixtureAvailability({
+    id: "variant-s", pancakeVariationId: "pv-s", color: "Den", size: "S", price: 799_000,
+    basePriceVnd: 799_000, isDiscounted: false, purchasable: true, isPreorderSale: false,
+    unavailableReason: null, kindKey: null, kindLabel: null,
+    ...overrides,
+  });
+}
+
+function mapperProduct(pancakeDisplayIdOfS: string | null): MerchantCandidateProduct {
+  const primary = "https://content.pancake.vn/web-media/1/2/3/primary.jpg";
+  return {
+    pancakeProductId: "pp-1",
+    slug: "ao-so-mi-oxford",
+    name: "Ao so mi Oxford",
+    publishedDescription: "Ao so mi vai cotton, dang suong.",
+    media: resolveStorefrontProductMedia({ productName: "Ao so mi Oxford", primaryImageUrl: primary, variantImageUrls: [[]] }),
+    galleryIndexByVariantId: new Map(),
+    projection: {
+      mode: "standalone",
+      options: [
+        projectionOption({}),
+        projectionOption({
+          id: "variant-l", pancakeVariationId: "pv-l", size: "L", price: 899_000, basePriceVnd: 899_000,
+          purchasable: false, unavailableReason: "OUT_OF_STOCK",
+        }),
+      ],
+    },
+    apparelOverrides: { gender: null, ageGroup: null, condition: null },
+    variations: [
+      { variantId: "variant-s", pancakeVariationId: "pv-s", pancakeDisplayId: pancakeDisplayIdOfS, isComposite: false, stockQuantity: 4 },
+      { variantId: "variant-l", pancakeVariationId: "pv-l", pancakeDisplayId: "A132-L", isComposite: false, stockQuantity: 0 },
+    ],
+  };
+}
+
+test("a product whose cheaper in-stock size is excluded by the mapper is withheld, not summarised from the surviving sold-out size", () => {
+  const origin = "https://la.example.test";
+  const incomplete = mapMerchantOffers({ products: [mapperProduct(null)], origin });
+  // Premise: S (799k, sellable, PDP floor) is dropped for a missing MPN; only sold-out L survives.
+  assert.deepEqual(incomplete.offers.map((o) => [o.id, o.priceVnd, o.availability]), [["pv-l", 899_000, "out_of_stock"]]);
+  assert.deepEqual(incomplete.excluded.map((e) => [e.itemGroupId, e.reasons]), [["pp-1", ["MPN_UNRESOLVED"]]]);
+  assert.equal(buildFacebookLiveItems(incomplete.offers, origin, incomplete.excluded).length, 0);
+
+  // Control: with every size valid the parent is emitted at the PDP floor with the best stock class.
+  const complete = mapMerchantOffers({ products: [mapperProduct("A132-S")], origin });
+  assert.deepEqual(complete.excluded, []);
+  const [item] = buildFacebookLiveItems(complete.offers, origin, complete.excluded);
+  const pdpFloor = getStorefrontResolvedPriceRange(mapperProduct("A132-S").projection.options)!.minimum;
+  assert.equal(item?.priceVnd, pdpFloor);
+  assert.equal(item?.priceVnd, 799_000);
+  assert.equal(item?.availability, "in stock");
+});
+
+test("an excluded size withholds only its own product", () => {
+  const items = buildFacebookLiveItems(
+    [offer({ id: "other-s", itemGroupId: "another-product", link: `${ORIGIN}/shop/ao-dai-hoa-vi?variant=other-s` })],
+    ORIGIN,
+    [{ pancakeVariationId: "x", itemGroupId: "product-sd1701", reasons: ["MPN_UNRESOLVED"] }],
+  );
+  assert.deepEqual(items.map((i) => i.id), ["another-product"]);
 });

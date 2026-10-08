@@ -77,6 +77,7 @@ export async function getFacebookLiveFeed(): Promise<MerchantFeedCoordinatorResu
 
         const feed = serializeFacebookLiveFeed({
           offers: mapped.offers,
+          excluded: mapped.excluded,
           market: mapped.market.policy,
           origin,
         });
