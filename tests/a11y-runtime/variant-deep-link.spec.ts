@@ -17,6 +17,7 @@ import { expect, test, type Page } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { OPTIMIZED_IMAGE_ROUTE } from "./image-routes";
 
 const HOST = "127.0.0.1";
 const PORT = 3335;
@@ -145,7 +146,7 @@ async function expectProductHeroToShow(page: Page, urlFragment: string) {
 }
 async function openDeepLink(page: Page, query: string | null) {
   // Offline-safe: the optimizer would otherwise reach content.pancake.vn.
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
   });
   await page.goto(

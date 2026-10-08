@@ -8,6 +8,7 @@ import { expect, test } from "@playwright/test";
 
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
+import { OPTIMIZED_IMAGE_ROUTE, optimizedImageSource } from "./image-routes";
 
 const HOST = "127.0.0.1";
 const PORT = 3333;
@@ -281,7 +282,7 @@ test("storefront catalog card renders trusted primary photography and fallback o
   page,
 }) => {
   // Mock external image optimization to ensure deterministic offline execution
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -314,7 +315,7 @@ test("storefront catalog card renders trusted primary photography and fallback o
 test("PDP with single trusted image renders hero image without redundant thumbnail controls", async ({
   page,
 }) => {
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -351,7 +352,7 @@ test("the desktop information row puts the product's own story left and the purc
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -389,7 +390,7 @@ test("the desktop information row puts the product's own story left and the purc
 test("the below-`lg` gallery shows one trusted image at a time and swipes through all of them", async ({
   page,
 }) => {
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -473,7 +474,7 @@ test("the below-`lg` gallery and its lightbox work at 390 and 768, and never tra
    * alongside 390: a tablet is below `lg` and must get the same one-image gallery, not a squeezed
    * desktop track.
    */
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
   });
 
@@ -561,7 +562,7 @@ test("desktop viewport renders catalog cards and the PDP media stage without hor
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -634,7 +635,7 @@ test("the desktop gallery moves only on deliberate input, clamps at both ends, a
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
@@ -715,7 +716,7 @@ test("only the current slide's photographs are exposed to assistive technology",
    * hidden only by `opacity` would still be matched here and fail.
    */
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
   });
 
@@ -764,10 +765,10 @@ test("each trusted photograph is fetched at full size once, whichever compositio
    * smallest candidate. Dropping the `1px` hint would fetch both at full size and fail here.
    */
   const fetched: { url: string; width: number }[] = [];
-  await page.route("**/_next/image**", (route) => {
+  await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
     const params = new URL(route.request().url()).searchParams;
     fetched.push({
-      url: params.get("url") ?? "",
+      url: optimizedImageSource(route.request().url()),
       width: Number(params.get("w") ?? "0"),
     });
     route.fulfill({ status: 200, contentType: "image/jpeg", body: TINY_JPEG_BUFFER });
