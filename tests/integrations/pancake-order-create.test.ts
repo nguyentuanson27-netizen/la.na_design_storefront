@@ -207,3 +207,22 @@ test("order gateway accepts observed HTTP 201 create success", async () => {
   const response = await gateway.createOrder(request);
   assert.equal(parsePancakeCreateOrderResponse(response), "123456");
 });
+
+test("an order source id is sent as Pancake's `account` field and omitted when not given", () => {
+  const base = {
+    shopId: 920_007,
+    guestName: "Nguyễn Văn A",
+    guestPhone: "0901234567",
+    provinceRef: "84_VN101",
+    districtRef: null,
+    communeRef: "84_VN10105",
+    addressDetail: "12 Đường A",
+    note: null,
+    shippingFeeVnd: 30_000,
+    lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+  };
+
+  assert.equal(buildPancakeCreateOrderRequest({ ...base, orderSourceId: 922_027_175 }).account, 922_027_175);
+  assert.equal("account" in buildPancakeCreateOrderRequest(base), false);
+  assert.throws(() => buildPancakeCreateOrderRequest({ ...base, orderSourceId: 0 }));
+});

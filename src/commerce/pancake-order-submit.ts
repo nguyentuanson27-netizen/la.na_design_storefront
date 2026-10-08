@@ -3,6 +3,7 @@ import type { PancakeCatalogVariation } from "../integrations/pancake/catalog-co
 import {
   buildPancakeCreateOrderRequest,
   parsePancakeCreateOrderResponse,
+  STOREFRONT_ORDER_SOURCE_ID,
   type PancakeCreateOrderRequest,
 } from "../integrations/pancake/order-create.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
@@ -949,6 +950,7 @@ export function createPancakeOrderSubmissionService(
 
     const request = buildPancakeCreateOrderRequest({
       shopId: persistedShopId,
+      orderSourceId: STOREFRONT_ORDER_SOURCE_ID,
       guestName: order.guestName,
       guestPhone: order.guestPhone,
       provinceRef: order.provinceRef,
