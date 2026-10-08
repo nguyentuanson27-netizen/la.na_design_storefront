@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from .policy import QUOTA_EXHAUSTED_MARKER, is_flow_quota_refusal, should_fallback_from_pro
+from .warm import WarmConfig, WarmRunner, spawn_child
 
 HOST = os.environ.get("FLOW_WORKER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLOW_WORKER_PORT", "8787"))
@@ -27,6 +28,28 @@ GFLOW_HOME = Path(os.environ.get("GFLOW_CLI_HOME", "/data/gflow"))
 PROJECT_ID = os.environ.get("FLOW_PROJECT_ID", "").strip()
 GENERATION_BUDGET_SECONDS = int(os.environ.get("FLOW_COMMAND_TIMEOUT_SECONDS", "120"))
 REQUEST_READ_TIMEOUT_SECONDS = int(os.environ.get("FLOW_REQUEST_READ_TIMEOUT_SECONDS", "15"))
+
+
+def _env_number(name: str, default: float) -> float:
+    try:
+        value = float(os.environ.get(name, ""))
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+# Keep one signed-in Chrome warm between requests (see flow_worker.warm). Off unless asked for.
+WARM_BROWSER = os.environ.get("FLOW_WARM_BROWSER", "").strip().lower() in ("1", "true", "yes")
+WARM_CONFIG = WarmConfig(
+    idle_seconds=_env_number("FLOW_WARM_IDLE_SECONDS", 1800),
+    max_jobs=int(_env_number("FLOW_WARM_MAX_JOBS", 50)),
+    max_age_seconds=_env_number("FLOW_WARM_MAX_AGE_SECONDS", 3600),
+    max_rss_mb=int(_env_number("FLOW_WARM_MAX_RSS_MB", 1200)),
+    start_timeout_seconds=_env_number("FLOW_WARM_START_TIMEOUT_SECONDS", 90),
+    min_restart_seconds=_env_number("FLOW_WARM_MIN_RESTART_SECONDS", 60),
+)
+WARM_MAINTENANCE_SECONDS = 5.0
+
 MAX_IMAGE_BYTES = 7 * 1024 * 1024
 MAX_REQUEST_BYTES = 20 * 1024 * 1024
 MAX_ERROR_DETAIL_CHARS = 4 * 1024
@@ -48,6 +71,9 @@ Do not add unrelated clothing or accessories. Do not alter body shape. Do not se
 Produce one realistic, age-appropriate fashion try-on image."""
 
 _generation_lock = threading.Lock()
+# The warm browser, when FLOW_WARM_BROWSER is on (created in main()); None means every request starts
+# gflow as its own process, as before.
+_warm_runner: WarmRunner | None = None
 # The one Flow project every try-on generates in: LA_TRY_ON_FLOW_PROJECT_ID, else the project this
 # worker created once and recorded in the gflow volume. gflow creates a scratch project for every
 # i2i run without --project, so no generation may start until this is known.
@@ -285,6 +311,9 @@ def _run_gflow(args: list[str], timeout_seconds: float, db_path: Path) -> tuple[
     """Run one gflow command; ``(exit code, stdout)``. Timeouts kill the whole process group."""
     if timeout_seconds <= 0:
         return WORKER_TIMEOUT_EXIT_CODE, ""
+    if _warm_runner is not None:
+        # The warm browser holds gflow's profile lease; a second gflow could not start beside it.
+        _warm_runner.stop("subprocess")
     _clean_stale_profile_locks()
     try:
         process = subprocess.Popen(
@@ -324,6 +353,39 @@ def _wire_diagnostics(detail: str) -> dict[str, str]:
     return fields
 
 
+def _run_model_warm(
+    model: str,
+    person: Path,
+    product: Path,
+    output: Path,
+    timeout_seconds: float,
+) -> tuple[int, GflowMachineError] | None:
+    """Run on the warm browser: ``(exit code, error)``, or ``None`` to run it the old way.
+
+    ``None`` only when the browser could not be started or died before the image submit, so nothing
+    has been spent and the request can still be served by its own gflow process.
+    """
+    if _warm_runner is None or _project_id is None or timeout_seconds <= 0:
+        return None
+    outcome = _warm_runner.run(
+        {
+            "model": model,
+            "prompt": TRY_ON_PROMPT,
+            "person": str(person),
+            "product": str(product),
+            "output": str(output),
+            "project": _project_id,
+        },
+        timeout_seconds,
+    )
+    if outcome.kind == "unavailable":
+        _event("flow_try_on.warm_unavailable", model=model)
+        return None
+    if outcome.kind == "timeout":
+        return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+    return outcome.exit_code, _machine_error(outcome.stdout)
+
+
 def _run_model(
     model: str,
     person: Path,
@@ -334,11 +396,16 @@ def _run_model(
 ) -> tuple[int, GflowMachineError]:
     if _project_id is None:
         return 1, GflowMachineError()
-    returncode, stdout = _run_gflow(_command(model, person, product, output), timeout_seconds, db_path)
-    if returncode == WORKER_TIMEOUT_EXIT_CODE:
-        return returncode, GflowMachineError()
-
-    error = _machine_error(stdout)
+    warm = _run_model_warm(model, person, product, output, timeout_seconds)
+    if warm is not None:
+        returncode, error = warm
+        if returncode == WORKER_TIMEOUT_EXIT_CODE:
+            return returncode, GflowMachineError()
+    else:
+        returncode, stdout = _run_gflow(_command(model, person, product, output), timeout_seconds, db_path)
+        if returncode == WORKER_TIMEOUT_EXIT_CODE:
+            return returncode, GflowMachineError()
+        error = _machine_error(stdout)
     if returncode != 0:
         fields = {
             "model": model,
@@ -604,9 +671,59 @@ class Handler(BaseHTTPRequestHandler):
         if not _profile_present():
             self._json(503, {"ok": False, "reason": "AUTH_FAILED"})
             return
-        self._json(200, {"ok": True})
+        body: dict[str, Any] = {"ok": True}
+        if _warm_runner is not None:
+            body["warm"] = _warm_runner.status()
+        self._json(200, body)
+
+    def _authorized(self) -> bool:
+        """The bearer token and the signed-in profile; answers 401 itself when either is missing."""
+        expected = f"Bearer {TOKEN}"
+        supplied = self.headers.get("authorization", "")
+        if not TOKEN or len(TOKEN) < 32 or not hmac.compare_digest(supplied, expected):
+            self._json(401, {"ok": False, "reason": "AUTH_FAILED"})
+            return False
+        if not _profile_present():
+            self._json(401, {"ok": False, "reason": "AUTH_FAILED"})
+            return False
+        return True
+
+    def _warm(self) -> None:
+        """Start the browser in the background; answers at once with the state it is in."""
+        if not self._authorized():
+            return
+        if _warm_runner is None:
+            self._json(200, {"ok": True, "state": "disabled"})
+        elif _project_id is None:
+            # The first request creates the project with its own gflow; a browser started now would
+            # hold the profile lease against it.
+            self._json(200, {"ok": True, "state": "cold"})
+        else:
+            self._json(200, {"ok": True, "state": _warm_runner.warm()})
+
+    def _cool(self) -> None:
+        """Release the browser and its profile lease, for `gflow auth login` and other operator work."""
+        if not self._authorized():
+            return
+        if _warm_runner is None:
+            self._json(200, {"ok": True, "state": "disabled"})
+            return
+        if not _generation_lock.acquire(blocking=False):
+            self._json(409, {"ok": False, "reason": "BUSY"})
+            return
+        try:
+            _warm_runner.stop("cool")
+        finally:
+            _generation_lock.release()
+        self._json(200, {"ok": True, "state": "cold"})
 
     def do_POST(self) -> None:  # noqa: N802
+        if self.path == "/v1/warm":
+            self._warm()
+            return
+        if self.path == "/v1/cool":
+            self._cool()
+            return
         if self.path != "/v1/try-on":
             self._json(404, {"ok": False})
             return
@@ -679,6 +796,35 @@ class Handler(BaseHTTPRequestHandler):
             _generation_lock.release()
 
 
+def _start_warm_browser() -> None:
+    """Turn on the warm browser: its runner, the thread that releases it when idle, and its shutdown."""
+    global _warm_runner
+    _warm_runner = WarmRunner(
+        config=WARM_CONFIG,
+        spawn=spawn_child(lambda scratch: _gflow_env(Path(scratch) / "gflow.db")),
+        event=_event,
+    )
+
+    def maintain() -> None:
+        while True:
+            time.sleep(WARM_MAINTENANCE_SECONDS)
+            try:
+                assert _warm_runner is not None
+                _warm_runner.maintain()
+            except Exception:
+                _event("flow_warm.maintain_failed")
+
+    threading.Thread(target=maintain, daemon=True).start()
+
+    def terminate(_signum: int, _frame: Any) -> None:
+        if _warm_runner is not None:
+            _warm_runner.shutdown()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, terminate)
+    _event("flow_warm.enabled")
+
+
 def main() -> None:
     if len(TOKEN) < 32:
         raise SystemExit("FLOW_WORKER_TOKEN must contain at least 32 characters")
@@ -687,6 +833,8 @@ def main() -> None:
     if PROJECT_ID and PROJECT_ID_PATTERN.fullmatch(PROJECT_ID) is None:
         raise SystemExit("FLOW_PROJECT_ID must be 1-128 letters, digits or hyphens")
     _clean_stale_profile_locks()
+    if WARM_BROWSER:
+        _start_warm_browser()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

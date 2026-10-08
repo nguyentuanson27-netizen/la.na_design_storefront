@@ -60,9 +60,34 @@ fi
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops "${flow_services[@]}"
 
+# A warm flow-worker keeps Chrome open on the Google profile, and `gflow auth status` opens a second
+# Chrome on that same profile. Ask a running worker to release it first (POST /v1/cool). A worker that
+# is not running, or has the warm browser off, needs nothing; a generation in progress answers 409 and
+# is retried for up to a minute.
+cool_flow_worker() {
+  "${compose[@]}" exec -T flow-worker python -c '
+import os, sys, time, urllib.error, urllib.request
+for _ in range(20):
+    request = urllib.request.Request(
+        "http://127.0.0.1:8787/v1/cool",
+        method="POST",
+        headers={"authorization": "Bearer " + os.environ["FLOW_WORKER_TOKEN"]},
+    )
+    try:
+        urllib.request.urlopen(request, timeout=20).read()
+        sys.exit(0)
+    except urllib.error.HTTPError as error:
+        if error.code != 409:
+            sys.exit(1)
+    time.sleep(3)
+sys.exit(1)
+' >/dev/null 2>&1 || true
+}
+
 # Fail before any database change or app cutover when Flow was explicitly enabled but its server
 # secret/session is unusable. Output is discarded because auth status can include the Google email.
 if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  cool_flow_worker
   if ! "${compose[@]}" run --rm --no-deps flow-worker sh -ec '
     test "${#FLOW_WORKER_TOKEN}" -ge 32
     test "$FLOW_WORKER_TOKEN" = "$(printf %s "$FLOW_WORKER_TOKEN" | tr -d "[:space:]")"
@@ -179,6 +204,7 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
     echo "Flow try-on worker did not become healthy; app cutover was not started" >&2
     exit 1
   fi
+  cool_flow_worker
   if ! "${compose[@]}" exec -T flow-worker sh -ec 'env -u FLOW_WORKER_TOKEN gflow auth status --profile "$GFLOW_CLI_PROFILE" >/dev/null 2>&1'; then
     echo "Flow try-on Google session became unavailable before app cutover" >&2
     exit 1

@@ -141,6 +141,11 @@ export async function handleTryOnPost(
 export type TryOnQuotaEndpointDependencies = Readonly<{
   resolveIdentity: (headers: Headers) => Promise<TryOnIdentity | null>;
   peekQuota: (identity: TryOnIdentity) => TryOnQuotaStatus;
+  /**
+   * Called when a shopper who still has attempts asks for their quota, which the dialog does as it
+   * opens: the moment to get a slow provider ready. A hint; whatever it does or throws changes nothing.
+   */
+  onAttemptsAvailable?: () => void;
 }>;
 
 /**
@@ -150,12 +155,19 @@ export type TryOnQuotaEndpointDependencies = Readonly<{
  */
 export async function handleTryOnQuotaGet(
   request: Request,
-  { resolveIdentity, peekQuota }: TryOnQuotaEndpointDependencies,
+  { resolveIdentity, peekQuota, onAttemptsAvailable }: TryOnQuotaEndpointDependencies,
 ): Promise<Response> {
   try {
     const identity = await resolveIdentity(request.headers);
     if (identity === null) return Response.json({ ok: false }, { status: 503, headers: NO_STORE });
     const { audience, limit, remaining } = peekQuota(identity);
+    if (remaining > 0) {
+      try {
+        onAttemptsAvailable?.();
+      } catch {
+        // A hint must never change the answer.
+      }
+    }
     return Response.json({ ok: true, audience, limit, remaining }, { headers: NO_STORE });
   } catch {
     return Response.json({ ok: false }, { status: 503, headers: NO_STORE });

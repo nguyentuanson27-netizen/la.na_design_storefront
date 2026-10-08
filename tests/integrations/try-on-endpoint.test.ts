@@ -268,3 +268,36 @@ test("GET fails closed with a bare 503 when no identity can be derived or the lo
   assert.equal(throwing.status, 503);
   assert.equal(throwing.headers.get("cache-control"), "no-store");
 });
+
+test("GET asks the provider to get ready only for a shopper who still has attempts, and a failing hint changes nothing", async () => {
+  let warmed = 0;
+  const ask = (remaining: number, onAttemptsAvailable: () => void) =>
+    handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
+      resolveIdentity: async () => ({ kind: "guest", key: "v1:" + "a".repeat(64) }),
+      peekQuota: () => ({ audience: "guest", limit: 5, remaining }),
+      onAttemptsAvailable,
+    });
+
+  await ask(3, () => {
+    warmed += 1;
+  });
+  assert.equal(warmed, 1);
+
+  await ask(0, () => {
+    warmed += 1;
+  });
+  assert.equal(warmed, 1);
+
+  const response = await ask(3, () => {
+    throw new Error("worker down");
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, audience: "guest", limit: 5, remaining: 3 });
+
+  const noIdentity = await handleTryOnQuotaGet(new Request(`https://${HOST}/api/try-on`), {
+    resolveIdentity: async () => null,
+    peekQuota: () => assert.fail("must not be reached"),
+    onAttemptsAvailable: () => assert.fail("must not warm without an identity"),
+  });
+  assert.equal(noIdentity.status, 503);
+});

@@ -4,6 +4,7 @@ import {
   resolveTryOnDisplayIdentity,
   resolveTryOnIdentity,
   tryOnService,
+  warmTryOnProvider,
 } from "@/commerce/try-on-runtime";
 
 /**
@@ -22,5 +23,6 @@ export async function GET(request: Request) {
   return handleTryOnQuotaGet(request, {
     resolveIdentity: resolveTryOnDisplayIdentity,
     peekQuota: peekTryOnQuota,
+    onAttemptsAvailable: warmTryOnProvider,
   });
 }

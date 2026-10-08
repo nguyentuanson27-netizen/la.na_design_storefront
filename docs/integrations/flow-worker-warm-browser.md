@@ -1,6 +1,13 @@
 # Thiết kế: flow-worker giữ Chrome chạy sẵn (warm browser)
 
-Trạng thái: **đề xuất, chờ duyệt. Chưa có code.**
+Trạng thái: **đã duyệt và đã triển khai sau cờ `FLOW_WARM_BROWSER` (mặc định tắt).** Vận hành: xem mục
+"Warm browser" trong [`google-flow-virtual-try-on.md`](google-flow-virtual-try-on.md). Chưa đo trên
+tài khoản Flow thật: giai đoạn 0 (đo) và bật thử vẫn phải làm trên VPS.
+
+Quyết định của chủ shop: (1) runner là tiến trình con riêng; (2) trần 1,5 GB RAM, nghỉ sau 30 phút
+hoặc tái chế sau 50 lượt; (3) chấp nhận giữ lease profile, kèm `POST /v1/cool` và runbook. Các mặc định
+đã đặt: nghỉ 1800 s, tối đa 50 lượt, tuổi tối đa 3600 s, tái chế khi cây tiến trình Chrome đạt 1200 MB
+(thấp hơn trần container 1536 MB để worker tự tái chế trước khi Docker phải khởi động lại).
 Liên quan: [`google-flow-virtual-try-on.md`](google-flow-virtual-try-on.md), `services/flow-worker/`.
 
 Căn cứ: đọc mã nguồn `gflow-cli` 0.82.1. Wheel tải về có sha256 trùng hash đã ghim trong
@@ -188,11 +195,22 @@ rủi ro lẫn dữ liệu giữa các khách.
 | Một lượt treo giữ cả runner | Ngân sách `FLOW_COMMAND_TIMEOUT_SECONDS` giữ nguyên; hết hạn thì hủy tác vụ và tái chế client |
 | Pre-warm bị lạm dụng để giữ máy chủ bận | Chỉ gọi sau các cổng sẵn có, giới hạn tần suất khởi động |
 
-## 10. Câu hỏi mở
+## 10. Câu hỏi mở: đã quyết
 
-1. Chạy runner **trong tiến trình worker** (đơn giản, nhưng cần xóa `FLOW_WORKER_TOKEN` khỏi
-   `os.environ` hoặc cách ly khác) hay như **tiến trình con riêng** nói chuyện với worker qua pipe
-   (cách ly tốt hơn, thêm một lớp IPC)? Đề xuất: tiến trình con riêng, vì giữ nguyên ranh giới bảo mật
-   hiện nay (Chrome không bao giờ thấy token).
-2. Ngưỡng mặc định ở mục 3 và 4 có hợp với RAM thực của VPS không?
-3. Có chấp nhận lease profile bị giữ lâu và quy trình đăng nhập lại như mục 6 không?
+1. Runner chạy như **tiến trình con riêng** (`flow_worker/warm_child.py`), giao tiếp qua pipe bằng
+   JSON theo dòng. Chrome không bao giờ thấy `FLOW_WORKER_TOKEN`.
+2. Trần RAM 1,5 GB (`mem_limit: 1536m`), nghỉ sau 30 phút, tái chế sau 50 lượt. Các ngưỡng còn lại
+   (tuổi 1 giờ, RSS 1200 MB) là mặc định để chỉnh sau khi đo ở giai đoạn 0.
+3. Chấp nhận giữ lease. Có `POST /v1/cool`, và `deploy.sh` tự gọi nó trước các lệnh `gflow auth status`
+   (lệnh này mở một Chrome thứ hai trên cùng profile nên sẽ lỗi nếu worker đang warm).
+
+## 11. Những gì đã làm so với bản thiết kế
+
+- `warm.py` (quản lý vòng đời) và `warm_child.py` (tiến trình giữ `FlowApiClient`); `server.py` nối
+  vào `_run_model`, thêm `POST /v1/warm`, `POST /v1/cool`, `warm` trong `/health`, tắt sạch khi
+  SIGTERM. Mọi `_run_gflow` (đường cũ, `_ensure_project`) nhả trình duyệt warm trước khi chạy.
+- Storefront: `GET /api/try-on` (hộp thoại gọi khi mở) gọi `warmFlowWorker` nếu khách còn lượt và
+  provider là Flow. Không chờ, không bao giờ làm hỏng câu trả lời.
+- Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.
+- Sai khác nhỏ so với bản thiết kế: tái chế sau lượt lỗi (thay vì thử lại một lần trong cùng client);
+  không có `ping` trước mỗi lượt, vì lượt nào gặp trình duyệt chết trước khi gửi sẽ chạy bằng đường cũ.
