@@ -3,12 +3,14 @@
  * intercepted: it answers every image path with the same deterministic, deliberately incompressible
  * PNG so the optimizer's WebP output spans many response chunks. Everything else is left alone.
  */
+const { createRequire } = process.getBuiltinModule("node:module");
+const loadFromApp = createRequire(__filename);
 const originalFetch = globalThis.fetch;
 let pngPromise;
 
 function noisePng() {
   pngPromise ??= (async () => {
-    const sharp = require("sharp");
+    const sharp = loadFromApp("sharp");
     const width = 900;
     const height = 900;
     const raw = Buffer.alloc(width * height * 3);
