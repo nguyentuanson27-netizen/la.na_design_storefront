@@ -121,10 +121,17 @@ export function BrandTryOnTrigger({
 export function BrandTryOnNudge({
   onOpen,
   onDismiss,
-}: Readonly<{ onOpen: () => void; onDismiss: () => void }>) {
+  openRef,
+}: Readonly<{
+  onOpen: () => void;
+  onDismiss: () => void;
+  /** The coordinator's handle on the button that opens the dialog, so focus can come back to it. */
+  openRef: RefObject<HTMLButtonElement | null>;
+}>) {
   return (
     <div className="absolute bottom-full left-4 mb-2 flex max-w-[calc(100%-5.5rem)] items-stretch border border-[#3B2219] bg-[#FAF7F2] shadow-[0_4px_16px_rgba(0,0,0,0.12)]">
       <button
+        ref={openRef}
         type="button"
         className={`flex min-h-11 min-w-0 items-center gap-2 px-3 text-left text-[13px] leading-4 text-[#3B2219] ${FOCUS_RING}`}
         aria-haspopup="dialog"
@@ -160,6 +167,7 @@ export function BrandTryOnDialog({
   provider: TryOnDisclosureProvider;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Whatever opened the dialog: focus goes back there, so it must be the control the shopper used. */
   returnFocusRef: RefObject<HTMLElement | null>;
 }>) {
   const ids = useId();

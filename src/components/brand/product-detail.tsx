@@ -65,6 +65,11 @@ export function BrandProductDetail({
   // selection above, so opening, failing or dismissing it cannot change what the shopper buys.
   const [tryOnOpen, setTryOnOpen] = useState(false);
   const tryOnTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Focus returns to whichever control opened the dialog. That is not always the entry point: when
+  // the phone reminder opened it, the entry point is by definition above the viewport, and focusing
+  // it would leave focus on a control the shopper cannot see.
+  const tryOnNudgeOpenRef = useRef<HTMLButtonElement | null>(null);
+  const tryOnReturnFocusRef = useRef<HTMLElement | null>(null);
   // The phone-only reminder appears once the shopper has scrolled *past* the entry point (it is
   // above the viewport), not while it is still ahead of them, and can be put away for this visit.
   const [scrolledPastTryOn, setScrolledPastTryOn] = useState(false);
@@ -80,6 +85,22 @@ export function BrandProductDetail({
     observer.observe(trigger);
     return () => observer.disconnect();
   }, [hasTryOn]);
+
+  function openTryOnFrom(opener: HTMLElement | null) {
+    tryOnReturnFocusRef.current = opener;
+    setTryOnOpen(true);
+  }
+
+  function handleTryOnOpenChange(open: boolean) {
+    if (!open) {
+      // The dialog moves focus right after this call. If the opener has since gone (the reminder
+      // unmounts, or the phone bar is hidden by a resize) fall back to the entry point.
+      const opener = tryOnReturnFocusRef.current;
+      const usable = opener !== null && opener.isConnected && opener.getClientRects().length > 0;
+      if (!usable) tryOnReturnFocusRef.current = tryOnTriggerRef.current;
+    }
+    setTryOnOpen(open);
+  }
 
   return (
     <>
@@ -118,16 +139,19 @@ export function BrandProductDetail({
               controller={controller}
               sizeGuide={sizeGuide}
               mobileNudge={
-                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed && !tryOnOpen ? (
+                // Stays mounted while the dialog is open (the native modal makes it inert), so the
+                // button that opened the dialog still exists when focus is given back to it.
+                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed ? (
                   <BrandTryOnNudge
-                    onOpen={() => setTryOnOpen(true)}
+                    openRef={tryOnNudgeOpenRef}
+                    onOpen={() => openTryOnFrom(tryOnNudgeOpenRef.current)}
                     onDismiss={() => setTryOnNudgeDismissed(true)}
                   />
                 ) : null
               }
               tryOnTrigger={
                 tryOn === null ? null : (
-                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => setTryOnOpen(true)} />
+                  <BrandTryOnTrigger triggerRef={tryOnTriggerRef} onOpen={() => openTryOnFrom(tryOnTriggerRef.current)} />
                 )
               }
             />
@@ -150,8 +174,8 @@ export function BrandProductDetail({
           productName={productName}
           provider={tryOn.provider}
           open={tryOnOpen}
-          onOpenChange={setTryOnOpen}
-          returnFocusRef={tryOnTriggerRef}
+          onOpenChange={handleTryOnOpenChange}
+          returnFocusRef={tryOnReturnFocusRef}
         />
       )}
     </>
