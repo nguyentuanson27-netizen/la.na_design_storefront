@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
+import { compressTryOnPhoto } from "./try-on-photo.ts";
 import { createTryOnQuotaLoader } from "./try-on-quota.ts";
 import {
   TRY_ON_NETWORK_FAILURE_MESSAGE,
@@ -41,6 +42,8 @@ import {
  * when the request starts; if they could change before it settles, the result would arrive beside a
  * preview and a teen disclosure that no longer describe the photo and attestation it was made from.
  * The setters below ignore changes while `locked`, whatever the markup does.
+ *
+ * The photo is scaled to at most 1200 px and re-encoded as JPEG in the browser just before it is sent.
  *
  * It submits the photo, the product slug, the acknowledgement and the age state, and nothing else:
  * in particular no product image URL, because the server chooses the garment image itself.
@@ -210,8 +213,13 @@ export function useTryOn({
     setErrorReason(null);
     setResult(null);
 
+    // Shrunk first (a few hundred ms) so the upload and the model input are small; the original is
+    // sent as is if the browser cannot do it.
+    const photo = await compressTryOnPhoto(file);
+    if (controller.signal.aborted) return;
+
     const body = new FormData();
-    body.append("photo", file);
+    body.append("photo", photo);
     body.append("productSlug", productSlug);
     body.append("likenessAcknowledged", "true");
     body.append("ageState", ageState);

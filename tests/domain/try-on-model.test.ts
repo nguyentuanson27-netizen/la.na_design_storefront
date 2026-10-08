@@ -22,6 +22,7 @@ import {
   TRY_ON_TEEN_ATTESTATION_LEAD,
   tryOnFailureMessage,
   tryOnQuotaUpsell,
+  tryOnUploadSize,
   validateTryOnFile,
 } from "../../src/components/headless/try-on-model.ts";
 
@@ -198,4 +199,12 @@ test("step transitions: forward through the wizard, back where it is safe, photo
   assert.equal(nextTryOnStep("photo", "back"), "photo");
   assert.equal(nextTryOnStep("confirm", "continue"), "confirm");
   assert.equal(nextTryOnStep("result", "continue"), "result");
+});
+
+test("the upload is scaled so its long side is 1200px, keeping proportions, and never enlarged", () => {
+  assert.deepEqual(tryOnUploadSize(4032, 3024), { width: 1200, height: 900 });
+  assert.deepEqual(tryOnUploadSize(3024, 4032), { width: 900, height: 1200 });
+  assert.deepEqual(tryOnUploadSize(1200, 800), { width: 1200, height: 800 });
+  assert.deepEqual(tryOnUploadSize(640, 480), { width: 640, height: 480 });
+  assert.deepEqual(tryOnUploadSize(20000, 1), { width: 1200, height: 1 });
 });

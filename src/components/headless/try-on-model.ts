@@ -230,6 +230,29 @@ export function validateTryOnFile(file: Readonly<{ type: string; size: number }>
   return null;
 }
 
+/** Longest side, in pixels, of the photo that is sent for generation; larger photos are scaled down. */
+export const TRY_ON_UPLOAD_MAX_EDGE = 1200;
+/** JPEG quality of the re-encoded photo: about 200–300 KB at the size above. */
+export const TRY_ON_UPLOAD_JPEG_QUALITY = 0.85;
+
+/**
+ * The size the photo is scaled to before upload: the longest side at most `TRY_ON_UPLOAD_MAX_EDGE`,
+ * proportions kept. A photo already within that is never enlarged.
+ */
+export function tryOnUploadSize(
+  width: number,
+  height: number,
+  maxEdge: number = TRY_ON_UPLOAD_MAX_EDGE,
+): Readonly<{ width: number; height: number }> {
+  const longest = Math.max(width, height);
+  if (!(longest > maxEdge)) return { width, height };
+  const scale = maxEdge / longest;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+  };
+}
+
 /** What is still missing before generation is possible, in the order a shopper fills it in. */
 export function missingTryOnSteps({
   hasPhoto,
