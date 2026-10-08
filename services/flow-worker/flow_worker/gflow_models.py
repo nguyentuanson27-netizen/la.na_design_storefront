@@ -48,9 +48,15 @@ _installed = False
 
 
 def configured_model_key() -> str | None:
-    """Nano Banana 2.1's wire key as captured from a live submit, or ``None`` when unset/invalid."""
+    """Nano Banana 2.1's wire key as captured from a live submit, or ``None`` when unset/invalid.
+
+    A key gflow already assigns to another model (``NARWHAL`` = Nano Banana 2, Pro, 2 Lite,
+    Imagen) is refused here: accepting it would let that model's submit pass as 2.1.
+    """
     key = os.environ.get("FLOW_NANO_BANANA_2_1_MODEL_KEY", "").strip()
-    return key if MODEL_KEY_PATTERN.fullmatch(key) else None
+    if not MODEL_KEY_PATTERN.fullmatch(key) or key in KNOWN_MODEL_KEYS:
+        return None
+    return key
 
 
 def _strings(node: Any, out: list[str]) -> None:
@@ -101,7 +107,9 @@ def nano_banana_2_1_body_problem(body: str, expected_key: str | None) -> str | N
             "try-on guard: FLOW_NANO_BANANA_2_1_MODEL_KEY is not configured, so the Nano Banana 2.1 "
             f"submit cannot be attributed; aborted before Flow acted. {candidates}"
         )
-    others = [key for key in KNOWN_MODEL_KEYS if key != expected_key and key in tokens]
+    if expected_key in KNOWN_MODEL_KEYS:
+        return f"try-on guard: {expected_key} is another image model's key, not Nano Banana 2.1's"
+    others = [key for key in KNOWN_MODEL_KEYS if key in tokens]
     if expected_key not in tokens or others:
         return (
             f"try-on guard: the image submit body does not carry exactly the Nano Banana 2.1 key "

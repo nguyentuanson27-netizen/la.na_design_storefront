@@ -454,11 +454,61 @@ class FixedProjectTest(unittest.TestCase):
         run_model.assert_not_called()
         self.assertEqual(raised.exception.reason, "AUTH_FAILED")
 
-    def test_invalid_reply_is_never_used_as_a_project(self):
+    def restart(self):
+        """A recreated container: same gflow volume, fresh process memory."""
+        server._project_id = None
+        server._unrecorded_project_id = None
+
+    def test_invalid_reply_is_never_used_and_never_followed_by_a_second_create(self):
         with self.created(json.dumps({"status": "ok", "project_id": "bad id!"})):
             self.assertEqual(server._ensure_project(30, self.db)[0], 1)
         self.assertIsNone(server._project_id)
-        self.assertFalse((self.home / server.PROJECT_STATE_FILE).exists())
+        self.restart()
+        with self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})) as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        run.assert_not_called()
+        self.assertEqual(self.events[-1], "flow_try_on.project_state_invalid")
+
+    def test_restart_after_an_unrecordable_create_never_creates_a_second_project(self):
+        reply = json.dumps({"status": "ok", "project_id": PROJECT_ID})
+        with self.created(reply), patch.object(server, "_store_project_id", side_effect=OSError("disk")):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        self.restart()
+        with self.created(reply) as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        run.assert_not_called()
+        self.assertIsNone(server._project_id)
+        state = json.loads((self.home / server.PROJECT_STATE_FILE).read_text())
+        self.assertEqual(state["pending"], True)
+
+    def test_restart_after_a_create_that_timed_out_never_creates_a_second_project(self):
+        # Flow may have created the project even though gflow never answered.
+        with self.created("", returncode=server.WORKER_TIMEOUT_EXIT_CODE):
+            self.assertEqual(server._ensure_project(30, self.db)[0], server.WORKER_TIMEOUT_EXIT_CODE)
+        self.restart()
+        with self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})) as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        run.assert_not_called()
+
+    def test_no_create_runs_when_the_pending_marker_cannot_be_written(self):
+        with (
+            patch.object(server, "_write_project_state", side_effect=OSError("read-only")),
+            self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})) as run,
+        ):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        run.assert_not_called()
+        self.assertEqual(self.events, ["flow_try_on.project_record_failed"])
+
+    def test_operator_recorded_id_replaces_the_pending_marker(self):
+        state = self.home / server.PROJECT_STATE_FILE
+        state.write_text(json.dumps({"pending": True, "title": "LA try-on"}))
+        with self.created("") as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        state.write_text(json.dumps({"projectId": PROJECT_ID}))
+        with self.created("") as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 0)
+        run.assert_not_called()
+        self.assertEqual(server._project_id, PROJECT_ID)
 
     def test_corrupt_or_invalid_record_refuses_generation_without_creating_another_project(self):
         for content in ('{"projectId": "../../etc"}', "{not json", '{"title": "LA try-on"}'):

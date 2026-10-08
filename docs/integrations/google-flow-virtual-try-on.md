@@ -55,7 +55,8 @@ wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_mode
   fails the run before any upload or submit.
 - Nano Banana 2.1's wire key is not published. A 2.1 `ogiZ0b` body is accepted only when it carries
   the key configured in `LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY` and no other image model key
-  (`NARWHAL` = Nano Banana 2, Pro, 2 Lite, Imagen), plus both reference ids and the prompt.
+  (`NARWHAL` = Nano Banana 2, Pro, 2 Lite, Imagen), plus both reference ids and the prompt. A
+  configured value that is one of those other keys is ignored, which keeps the fallback disabled.
 - **Live gate.** While that key is empty, every 2.1 submit is aborted before it reaches Flow, so
   the fallback does not generate. The aborted run logs `wire_model_candidates` on
   `flow_try_on.process_error`: the request's enum tokens only (no prompt, ids or tokens). Read the
@@ -198,15 +199,19 @@ Every try-on generates in **one** Flow project. gflow creates a new scratch proj
 `image i2i` run that has no `--project`, so the worker never runs one without it:
 
 - `LA_TRY_ON_FLOW_PROJECT_ID` set: that existing project is used.
-- Empty: on the first generation the worker runs `gflow project create --title "LA try-on"` once and
-  records the id in `try-on-project.json` inside the `flow_gflow_data` volume. Every later request,
-  and every restarted or recreated worker, reuses it. Deleting that file (or the volume) is the only
-  way the worker creates another project.
-- Fail closed: if the project cannot be created, if `try-on-project.json` exists but cannot be
-  read or holds no valid id, or if a newly created project cannot be recorded, the request fails
-  before any generation starts and nothing else is created. A created but unrecorded id is logged
-  (`flow_try_on.project_record_failed`, `project_id`) and its write is retried by later requests;
-  fix the volume or the file, or set `LA_TRY_ON_FLOW_PROJECT_ID` to that id.
+- Empty: on the first generation the worker writes a pending marker to `try-on-project.json` in the
+  `flow_gflow_data` volume, runs `gflow project create --title "LA try-on"` once, and replaces the
+  marker with the id. Every later request, and every restarted or recreated worker, reuses it.
+  Deleting that file (or the volume) is the only way the worker creates another project.
+- Create at most once, fail closed: the pending marker is written **before** the create, so a worker
+  that dies, times out or cannot record the id after Flow may have created the project never
+  creates a second one, not even after a restart. Instead every request fails before generation
+  with `flow_try_on.project_state_invalid` (`problem=pending`). The same happens when
+  `try-on-project.json` cannot be read or holds no valid id. Only a create that failed before
+  reaching Flow (no session, profile busy) withdraws the marker.
+- To recover: find the "LA try-on" project in Flow (or the `project_id` logged by
+  `flow_try_on.project_created` / `project_record_failed`), then write
+  `{"projectId": "<id>"}` to `try-on-project.json` or set `LA_TRY_ON_FLOW_PROJECT_ID`.
 
 Each run still uploads the shopper and garment under run-unique names, and the submit is aborted
 unless it carries the two media ids this run uploaded, so one shared project cannot bind another

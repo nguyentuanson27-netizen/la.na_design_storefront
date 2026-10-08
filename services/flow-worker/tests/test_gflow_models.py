@@ -53,6 +53,14 @@ class ModelKeyAndQuotaDetailTest(unittest.TestCase):
             with patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": value}):
                 self.assertEqual(gflow_models.configured_model_key(), expected)
 
+    def test_another_models_key_is_never_accepted_as_nano_banana_2_1(self):
+        for key in gflow_models.KNOWN_MODEL_KEYS:
+            with self.subTest(key=key):
+                with patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": key}):
+                    self.assertIsNone(gflow_models.configured_model_key())
+                # Even if it reached the check directly, a submit carrying that key is refused.
+                self.assertIsNotNone(gflow_models.nano_banana_2_1_body_problem(submit_body(key), key))
+
     def test_any_resource_exhausted_image_submit_falls_back(self):
         for reasons in ((), ("PUBLIC_ERROR_QUOTA",), ("PUBLIC_ERROR_PER_MINUTE_LIMIT",), ("PUBLIC_ERROR_DAILY_QUOTA",)):
             with self.subTest(reasons=reasons):
@@ -124,6 +132,13 @@ class GflowModelPatchTest(unittest.TestCase):
                 "WIRE_MODEL_CANDIDATES=NANO_BANANA_2_1",
                 mc._image_body_problem(submit_body("NANO_BANANA_2_1"), refs, Model.NARWHAL),
             )
+        for key in gflow_models.KNOWN_MODEL_KEYS:
+            with (
+                self.subTest(configured=key),
+                patch.object(gflow_prompt_guard, "_expected_prompt", TRY_ON_PROMPT),
+                patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": key}),
+            ):
+                self.assertIsNotNone(mc._image_body_problem(submit_body(key), refs, Model.NARWHAL))
 
 
 MODEL_PICKER = """<!doctype html><html><body>

@@ -357,8 +357,9 @@ class ProjectStateError(RuntimeError):
 def _stored_project_id() -> str | None:
     """The recorded try-on project id, or ``None`` only when no record exists.
 
-    A record that exists but cannot be read or does not hold a valid id raises instead: treating
-    it as missing would create a second project and break the one-project guarantee.
+    A record that exists but cannot be read, does not hold a valid id, or is still the pending
+    marker of an earlier create raises instead: treating it as missing would create a second
+    project and break the one-project guarantee.
     """
     try:
         raw = _project_state_path().read_text(encoding="utf-8")
@@ -373,37 +374,63 @@ def _stored_project_id() -> str | None:
     project_id = state.get("projectId") if isinstance(state, dict) else None
     if isinstance(project_id, str) and PROJECT_ID_PATTERN.fullmatch(project_id):
         return project_id
+    if isinstance(state, dict) and state.get("pending") is True and project_id is None:
+        raise ProjectStateError("pending")
     raise ProjectStateError("invalid")
 
 
-def _store_project_id(project_id: str) -> None:
+def _write_project_state(state: dict[str, Any]) -> None:
     path = _project_state_path()
     temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(json.dumps({"projectId": project_id, "title": PROJECT_TITLE}), encoding="utf-8")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
     os.replace(temporary, path)
 
 
-def _ensure_project(timeout_seconds: float, db_path: Path) -> tuple[int, GflowMachineError]:
-    """Resolve the one try-on project, creating and recording it only if no record exists.
+def _store_project_id(project_id: str) -> None:
+    _write_project_state({"projectId": project_id, "title": PROJECT_TITLE})
 
-    Fails closed: an unreadable or invalid record, or a created project that cannot be recorded,
-    refuses generation instead of risking a second project after the next restart. A created but
-    unrecorded id is kept in memory, so later requests retry the write rather than create again.
+
+# gflow exits that end before Flow is asked to create anything: no session (3, 8) or the profile
+# lease held by another run. Only after these may the pending marker be withdrawn.
+_PRE_FLOW_EXIT_CODES = (3, 8)
+
+
+def _failed_before_flow(returncode: int, error: GflowMachineError) -> bool:
+    return returncode in _PRE_FLOW_EXIT_CODES or (
+        returncode == 11 and error.error_class == "ProfileLockedError"
+    )
+
+
+def _ensure_project(timeout_seconds: float, db_path: Path) -> tuple[int, GflowMachineError]:
+    """Resolve the one try-on project; create it at most once per gflow volume.
+
+    Before ``gflow project create`` runs, a pending marker is written to the state file. If the
+    worker dies or loses the reply after Flow created the project, or cannot record the id, the
+    marker (or the id) stays in the volume, so no later request or restarted worker creates a
+    second project: they refuse generation until an operator records the id or sets
+    LA_TRY_ON_FLOW_PROJECT_ID. A created but unrecorded id is also kept in memory, so this
+    process retries the write rather than the create.
     """
     global _project_id, _unrecorded_project_id
     if _project_id is not None:
         return 0, GflowMachineError()
-    try:
-        stored = _stored_project_id()
-    except ProjectStateError as exc:
-        _event("flow_try_on.project_state_invalid", problem=str(exc), path=str(_project_state_path()))
-        return 1, GflowMachineError()
-    if stored is not None:
-        _project_id = stored
-        return 0, GflowMachineError()
+    if _unrecorded_project_id is None:
+        try:
+            stored = _stored_project_id()
+        except ProjectStateError as exc:
+            _event("flow_try_on.project_state_invalid", problem=str(exc), path=str(_project_state_path()))
+            return 1, GflowMachineError()
+        if stored is not None:
+            _project_id = stored
+            return 0, GflowMachineError()
 
     created = _unrecorded_project_id
     if created is None:
+        try:
+            _write_project_state({"pending": True, "title": PROJECT_TITLE, "since": int(time.time())})
+        except OSError:
+            _event("flow_try_on.project_record_failed", path=str(_project_state_path()))
+            return 1, GflowMachineError()
         returncode, stdout = _run_gflow(
             _gflow("project", "create", "--title", PROJECT_TITLE, "--profile", PROFILE, "--json"),
             timeout_seconds,
@@ -415,8 +442,18 @@ def _ensure_project(timeout_seconds: float, db_path: Path) -> tuple[int, GflowMa
             reply = None
         created = reply.get("project_id") if isinstance(reply, dict) and reply.get("status") == "ok" else None
         if returncode != 0 or not isinstance(created, str) or not PROJECT_ID_PATTERN.fullmatch(created):
+            error = _machine_error(stdout)
+            if _failed_before_flow(returncode, error):
+                # Nothing reached Flow, so no project can exist: the next request may create.
+                # If the marker cannot be removed it keeps blocking, which is the safe side.
+                try:
+                    _project_state_path().unlink(missing_ok=True)
+                except OSError:
+                    pass
+            # Otherwise (timeout, unreadable reply, any other failure) Flow may have created it:
+            # the pending marker stays and blocks a second create.
             _event("flow_try_on.project_create_failed", exit_code=str(returncode))
-            return returncode or 1, _machine_error(stdout)
+            return returncode or 1, error
         _unrecorded_project_id = created
         _event("flow_try_on.project_created", project_id=created)
     try:
