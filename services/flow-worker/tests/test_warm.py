@@ -1,10 +1,13 @@
+import http.client
 import json
 import subprocess
 import sys
 import tempfile
 import textwrap
+import threading
 import time
 import unittest
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 from unittest.mock import patch
 
@@ -62,10 +65,12 @@ def make_runner(test, *, env=None, clock=None, rss=lambda _pid: 100.0, **config)
     script.write_text(FAKE_CHILD)
     test.addCleanup(lambda: script.unlink(missing_ok=True))
 
+    spawned = []
+
     def spawn(_scratch):
         import os
 
-        return subprocess.Popen(
+        process = subprocess.Popen(
             [sys.executable, str(script)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
@@ -74,6 +79,8 @@ def make_runner(test, *, env=None, clock=None, rss=lambda _pid: 100.0, **config)
             start_new_session=True,
             env={**os.environ, **(env or {})},
         )
+        spawned.append(process)
+        return process
 
     kwargs = {"start_timeout_seconds": 5.0, "min_restart_seconds": 0.0, **config}
     runner = warm.WarmRunner(
@@ -85,6 +92,7 @@ def make_runner(test, *, env=None, clock=None, rss=lambda _pid: 100.0, **config)
     )
     test.addCleanup(runner.shutdown)
     runner.events = events
+    runner.spawned = spawned
     return runner
 
 
@@ -215,7 +223,158 @@ class WarmRunnerTest(unittest.TestCase):
         self.assertGreaterEqual(warm.process_tree_rss_mb(1), 0.0)
         process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(5)"])
         self.addCleanup(process.kill)
+        self.addCleanup(process.wait)
+        # A process that has only just been spawned has not loaded Python yet; give it a moment.
+        deadline = time.monotonic() + 5
+        while warm.process_tree_rss_mb(process.pid) <= 1.0 and time.monotonic() < deadline:
+            time.sleep(0.05)
         self.assertGreater(warm.process_tree_rss_mb(process.pid), 1.0)
+
+
+class CoolBarrierTest(unittest.TestCase):
+    """`cool` is the barrier operator work (gflow auth login/status) relies on to have the profile alone."""
+
+    def test_a_warm_start_scheduled_before_a_cool_never_starts_chrome_after_it(self):
+        runner = make_runner(self)
+        release, finished = threading.Event(), threading.Event()
+        scheduled = runner._warm_in_background
+
+        def wakes_up_late(epoch):
+            release.wait(5)
+            scheduled(epoch)
+            finished.set()
+
+        with patch.object(runner, "_warm_in_background", wakes_up_late):
+            self.assertEqual(runner.warm(), "starting")
+        self.assertTrue(runner.cool(timeout=2))  # nothing is running yet, so this returns at once
+
+        release.set()  # now the scheduled start gets its turn
+        self.assertTrue(finished.wait(5))
+        self.assertEqual(runner.spawned, [])
+        self.assertEqual(runner.state, warm.COLD)
+
+    def test_no_warm_hint_or_request_starts_chrome_while_the_pause_lasts_and_they_do_afterwards(self):
+        clock = FakeClock()
+        runner = make_runner(self, clock=clock, cool_pause_seconds=900)
+        self.assertTrue(runner.cool(timeout=2))
+
+        self.assertEqual(runner.warm(), "paused")
+        self.assertEqual(runner.status(), {"state": warm.COLD, "paused": True})
+        # A shopper's request is not refused: it is told to use its own gflow process instead.
+        self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
+        self.assertEqual(runner.spawned, [])
+
+        clock.now += 901
+        self.assertEqual(runner.status(), {"state": warm.COLD, "paused": False})
+        self.assertEqual(runner.run(job("ok"), 10).kind, "done")
+        self.assertEqual(len(runner.spawned), 1)
+
+    def test_cool_ends_a_start_in_progress_instead_of_waiting_for_chrome_to_finish_starting(self):
+        # The child never reports ready and the start timeout is 30 s: cool must not wait for it.
+        runner = make_runner(self, env={"FAKE_NEVER_READY": "1"}, start_timeout_seconds=30)
+        self.assertEqual(runner.warm(), "starting")
+        deadline = time.monotonic() + 5
+        while not runner.spawned and time.monotonic() < deadline:
+            time.sleep(0.02)
+        self.assertEqual(len(runner.spawned), 1)
+
+        started = time.monotonic()
+        self.assertTrue(runner.cool(timeout=5))
+        self.assertLess(time.monotonic() - started, 3)
+        # The process holding the profile is gone by the time cool says it is released.
+        self.assertIsNotNone(runner.spawned[0].poll())
+        self.assertIn(("flow_warm.start_failed", {"reason": "cancelled"}), runner.events)
+
+    def test_cool_reports_failure_when_the_browser_cannot_be_released_in_time(self):
+        runner = make_runner(self)
+        holding, release = threading.Event(), threading.Event()
+
+        def hold_the_lock():
+            with runner._lock:
+                holding.set()
+                release.wait(5)
+
+        thread = threading.Thread(target=hold_the_lock)
+        thread.start()
+        self.addCleanup(thread.join)
+        self.addCleanup(release.set)
+        self.assertTrue(holding.wait(5))
+
+        self.assertFalse(runner.cool(timeout=0.1))
+        # Even so no new start is allowed: the pause was set before waiting for the lock.
+        self.assertEqual(runner.warm(), "paused")
+
+    def test_a_per_request_gflow_keeps_the_browser_down_for_as_long_as_it_runs(self):
+        runner = make_runner(self)
+        runner.run(job("ok"), 10)
+        self.assertEqual(runner.state, warm.WARM)
+
+        with runner.exclusive():
+            self.assertEqual(runner.state, warm.COLD)
+            self.assertEqual(runner.warm(), "paused")
+            self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
+            self.assertEqual(len(runner.spawned), 1)
+
+        self.assertEqual(runner.run(job("ok"), 10).kind, "done")
+        self.assertEqual(len(runner.spawned), 2)
+
+
+class CoolEndpointTest(unittest.TestCase):
+    TOKEN = "t" * 40
+
+    def setUp(self):
+        self.runner = make_runner(self)
+        for target in (
+            patch.object(server, "_warm_runner", self.runner),
+            patch.object(server, "TOKEN", self.TOKEN),
+            patch.object(server, "_profile_present", return_value=True),
+        ):
+            target.start()
+            self.addCleanup(target.stop)
+        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.Handler)
+        thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(self.httpd.server_close)
+        self.addCleanup(self.httpd.shutdown)
+
+    def post_cool(self, token=None, path="/v1/cool"):
+        connection = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=20)
+        headers = {"authorization": f"Bearer {token or self.TOKEN}"}
+        connection.request("POST", path, headers=headers)
+        response = connection.getresponse()
+        body = json.loads(response.read())
+        connection.close()
+        return response.status, body
+
+    def test_cool_releases_the_warm_browser_and_says_so(self):
+        self.runner.run(job("ok"), 10)
+        self.assertEqual(self.runner.state, warm.WARM)
+        self.assertEqual(self.post_cool(), (200, {"ok": True, "state": "cold"}))
+        self.assertEqual(self.runner.state, warm.COLD)
+        self.assertEqual(self.runner.warm(), "paused")
+
+    def test_cool_answers_busy_when_the_browser_could_not_be_released(self):
+        with patch.object(self.runner, "cool", return_value=False):
+            self.assertEqual(self.post_cool(), (409, {"ok": False, "reason": "BUSY"}))
+
+    def test_cool_answers_busy_while_a_generation_is_running(self):
+        with server._generation_lock:
+            self.assertEqual(self.post_cool(), (409, {"ok": False, "reason": "BUSY"}))
+
+    def test_resume_ends_the_pause_early_so_the_browser_can_warm_again(self):
+        self.assertEqual(self.post_cool()[0], 200)
+        self.assertEqual(self.runner.warm(), "paused")
+        self.assertEqual(self.post_cool(path="/v1/resume"), (200, {"ok": True, "state": "cold"}))
+        self.assertEqual(self.runner.warm(), "starting")
+
+    def test_resume_needs_the_worker_token(self):
+        status, body = self.post_cool(token="x" * 40, path="/v1/resume")
+        self.assertEqual((status, body["reason"]), (401, "AUTH_FAILED"))
+
+    def test_cool_needs_the_worker_token(self):
+        status, body = self.post_cool(token="x" * 40)
+        self.assertEqual((status, body["reason"]), (401, "AUTH_FAILED"))
+        self.assertEqual(self.runner.spawned, [])
 
 
 class ServerWarmIntegrationTest(unittest.TestCase):

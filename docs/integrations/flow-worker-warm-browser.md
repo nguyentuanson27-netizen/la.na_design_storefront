@@ -215,6 +215,12 @@ rủi ro lẫn dữ liệu giữa các khách.
   thiếu header thì không warm). Không chờ, không bao giờ làm hỏng câu trả lời.
 - Ngân sách một request dùng chung cho đường warm và đường lui: nếu warm tốn thời gian rồi báo
   không dùng được, gflow theo request chỉ nhận phần còn lại của hạn chót, và không chạy nếu đã hết.
+- `POST /v1/cool` là **rào chắn thật** (sửa theo review): nó huỷ lượt khởi động đã lên lịch hoặc đang
+  chạy, rồi giữ trình duyệt tắt trong `FLOW_WARM_COOL_PAUSE_SECONDS` (900 s): không gợi ý warm nào,
+  không request nào mở Chrome (request vẫn chạy bằng gflow riêng). Trả `409` nếu không nhả được trong
+  15 s. `POST /v1/resume` kết thúc đợt tạm dừng sớm. Mọi gflow theo request cũng giữ trình duyệt warm
+  tắt suốt thời gian nó chạy (`WarmRunner.exclusive`). `deploy.sh` dừng deploy nếu một worker đang chạy
+  mà không cool được (404 = worker bản cũ, bỏ qua).
 - Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.
 - Sai khác nhỏ so với bản thiết kế: tái chế sau lượt lỗi (thay vì thử lại một lần trong cùng client);
   không có `ping` trước mỗi lượt, vì lượt nào gặp trình duyệt chết trước khi gửi sẽ chạy bằng đường cũ.

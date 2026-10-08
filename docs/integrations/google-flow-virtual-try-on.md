@@ -96,7 +96,7 @@ How it behaves:
 
 **While the browser is warm the worker holds the Chrome profile.** Anything else that opens that
 profile (`gflow auth login`, `gflow auth status`, any `docker compose run ... gflow`) fails with a
-profile-lock error. Release it first:
+profile-lock error. Release it first with `POST /v1/cool`:
 
 ```bash
 docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml \
@@ -105,12 +105,21 @@ import os, urllib.request
 request = urllib.request.Request(
     "http://127.0.0.1:8787/v1/cool", method="POST",
     headers={"authorization": "Bearer " + os.environ["FLOW_WORKER_TOKEN"]})
-print(urllib.request.urlopen(request, timeout=20).read().decode())'
+print(urllib.request.urlopen(request, timeout=30).read().decode())'
 ```
 
-`409 BUSY` means a generation is running; retry in a few seconds. The next request or warm-up starts
-the browser again, so run the login straight after cooling, or stop the worker for longer work.
-`deploy.sh` cools a running worker itself before its `gflow auth status` checks.
+`200` means the browser is down **and stays down**: for `FLOW_WARM_COOL_PAUSE_SECONDS` (15 min) no
+pre-warm hint and no request starts it again. Requests in that window still work, each on its own gflow
+process, as without the warm browser. Cool also cancels a start that was already under way. Do the
+operator work inside that window, then call `POST /v1/resume` (same call, that path) to let the browser
+start again, or let the pause run out.
+
+`409 BUSY` means a generation is running, or the browser could not be released within 15 s: the
+profile must **not** be assumed free. Retry in a few seconds.
+
+`deploy.sh` does this itself around its `gflow auth status` checks. It skips a worker that is not
+running or has no warm browser, retries on `409`, and **stops the deploy** if a running worker cannot
+be cooled. It calls `POST /v1/resume` after the post-start check.
 
 ## Production environment
 

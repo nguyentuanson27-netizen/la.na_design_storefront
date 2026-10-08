@@ -29,8 +29,9 @@ import sys
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 COLD = "cold"
 WARM = "warm"
@@ -47,6 +48,8 @@ class WarmConfig:
     max_rss_mb: int = 1200
     start_timeout_seconds: float = 90.0
     min_restart_seconds: float = 60.0
+    # How long a cool request keeps the browser from being started again (see WarmRunner.cool).
+    cool_pause_seconds: float = 900.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -169,7 +172,12 @@ class WarmRunner:
         self._last_start_attempt: float | None = None
         self._recycle_reason: str | None = None
         self._warming = False
-        self._guard = threading.Lock()  # only the warming flag
+        self._guard = threading.Lock()  # the warming flag, the epoch, the pause and the exclusive count
+        # Bumped by every cool and by every exclusive section. A start that began under an earlier
+        # epoch is stale: it gives up, and a scheduled start that wakes under a later one never starts.
+        self._epoch = 0
+        self._paused_until = 0.0
+        self._exclusive = 0
 
     # -- state ---------------------------------------------------------------------------------
 
@@ -181,7 +189,7 @@ class WarmRunner:
     def status(self) -> dict[str, Any]:
         child = self._child
         if child is None or not child.alive():
-            return {"state": COLD}
+            return {"state": COLD, "paused": self._exclusive > 0 or self._clock() < self._paused_until}
         now = self._clock()
         return {
             "state": WARM,
@@ -193,7 +201,14 @@ class WarmRunner:
 
     # -- starting and stopping (the caller holds the lock) -------------------------------------
 
-    def _start_locked(self, deadline: float) -> bool:
+    def _blocked(self, epoch: int) -> bool:
+        """Whether a start under *epoch* must not begin or go on: cooled, paused or exclusive since."""
+        with self._guard:
+            return self._epoch != epoch or self._exclusive > 0 or self._clock() < self._paused_until
+
+    def _start_locked(self, deadline: float, epoch: int) -> bool:
+        if self._blocked(epoch):
+            return False
         self._last_start_attempt = self._clock()
         scratch = tempfile.mkdtemp(prefix="flow-warm-")
         try:
@@ -206,17 +221,28 @@ class WarmRunner:
         limit = min(deadline, self._clock() + self._config.start_timeout_seconds)
         while True:
             try:
-                message = child.messages.get(timeout=max(0.0, limit - self._clock()))
+                # Short waits, so a cool or an exclusive section ends a start in progress promptly.
+                message = child.messages.get(timeout=max(0.0, min(0.2, limit - self._clock())))
             except queue.Empty:
-                self._kill(child)
-                self._event("flow_warm.start_failed", reason="timeout")
-                return False
+                if self._blocked(epoch):
+                    self._kill(child)
+                    self._event("flow_warm.start_failed", reason="cancelled")
+                    return False
+                if self._clock() >= limit:
+                    self._kill(child)
+                    self._event("flow_warm.start_failed", reason="timeout")
+                    return False
+                continue
             if message.get("event") == "ready":
                 break
             if message.get("event") == "eof":
                 self._kill(child)
                 self._event("flow_warm.start_failed", reason="exited")
                 return False
+        if self._blocked(epoch):
+            self._kill(child)
+            self._event("flow_warm.start_failed", reason="cancelled")
+            return False
         self._child = child
         self._jobs = 0
         self._last_activity = self._clock()
@@ -271,6 +297,47 @@ class WarmRunner:
         with self._lock:
             self._stop_locked(reason)
 
+    def cool(self, timeout: float = 15.0) -> bool:
+        """Release the browser and keep it released for ``cool_pause_seconds``: a barrier for operator work.
+
+        For work that needs the Chrome profile to itself (`gflow auth login`, `gflow auth status`).
+        A start that is scheduled or in progress is cancelled, and nothing starts again while the pause
+        lasts: not a ``POST /v1/warm`` hint, not a request (it runs on its own gflow process instead).
+        Returns ``False`` when the browser could not be released within *timeout* seconds, in which case
+        the profile must not be assumed free.
+        """
+        with self._guard:
+            self._epoch += 1
+            self._paused_until = self._clock() + self._config.cool_pause_seconds
+        if not self._lock.acquire(timeout=timeout):
+            return False
+        try:
+            self._stop_locked("cool")
+        finally:
+            self._lock.release()
+        return True
+
+    def resume(self) -> None:
+        """End a cool early, once the operator work that needed the profile is done."""
+        with self._guard:
+            self._paused_until = 0.0
+
+    @contextmanager
+    def exclusive(self) -> Iterator[None]:
+        """Hold the browser down while something else (a per-request gflow) uses the Chrome profile.
+
+        Releases the browser, cancels any start in progress and refuses new ones until the block ends.
+        """
+        with self._guard:
+            self._epoch += 1
+            self._exclusive += 1
+        try:
+            self.stop("subprocess")
+            yield
+        finally:
+            with self._guard:
+                self._exclusive -= 1
+
     # -- jobs ----------------------------------------------------------------------------------
 
     def run(self, job: dict[str, Any], budget_seconds: float) -> WarmOutcome:
@@ -291,7 +358,9 @@ class WarmRunner:
             self._stop_locked("died")
             child = None
         if child is None:
-            if not self._start_locked(deadline):
+            with self._guard:
+                epoch = self._epoch
+            if not self._start_locked(deadline, epoch):
                 return WarmOutcome("unavailable")
             child = self._child
         assert child is not None
@@ -373,20 +442,23 @@ class WarmRunner:
         if child is not None and child.alive():
             return WARM
         with self._guard:
+            if self._exclusive > 0 or self._clock() < self._paused_until:
+                return "paused"
             if self._warming:
                 return "starting"
             last = self._last_start_attempt
             if last is not None and self._clock() - last < self._config.min_restart_seconds:
                 return COLD
             self._warming = True
-        threading.Thread(target=self._warm_in_background, daemon=True).start()
+            epoch = self._epoch
+        threading.Thread(target=self._warm_in_background, args=(epoch,), daemon=True).start()
         return "starting"
 
-    def _warm_in_background(self) -> None:
+    def _warm_in_background(self, epoch: int) -> None:
         try:
             with self._lock:
                 if self._child is None or not self._child.alive():
-                    self._start_locked(self._clock() + self._config.start_timeout_seconds)
+                    self._start_locked(self._clock() + self._config.start_timeout_seconds, epoch)
         finally:
             with self._guard:
                 self._warming = False

@@ -61,27 +61,54 @@ fi
 "${compose[@]}" build app ops "${flow_services[@]}"
 
 # A warm flow-worker keeps Chrome open on the Google profile, and `gflow auth status` opens a second
-# Chrome on that same profile. Ask a running worker to release it first (POST /v1/cool). A worker that
-# is not running, or has the warm browser off, needs nothing; a generation in progress answers 409 and
-# is retried for up to a minute.
-cool_flow_worker() {
+# Chrome on that same profile. So a running worker is asked to release it (POST /v1/cool) before those
+# checks, and the deploy stops if it cannot: carrying on would fail on the profile lock later, with a
+# far less useful message. Cool also keeps the browser from starting again for a while, so a pending
+# warm-up cannot take the profile back. Not running, or a worker from before the warm browser (404),
+# or one with it switched off, has nothing to release. A generation in progress answers 409 and is
+# retried for up to a minute.
+flow_worker_request() {
   "${compose[@]}" exec -T flow-worker python -c '
 import os, sys, time, urllib.error, urllib.request
+path = sys.argv[1]
 for _ in range(20):
     request = urllib.request.Request(
-        "http://127.0.0.1:8787/v1/cool",
+        "http://127.0.0.1:8787" + path,
         method="POST",
         headers={"authorization": "Bearer " + os.environ["FLOW_WORKER_TOKEN"]},
     )
     try:
-        urllib.request.urlopen(request, timeout=20).read()
+        urllib.request.urlopen(request, timeout=30).read()
         sys.exit(0)
     except urllib.error.HTTPError as error:
+        if error.code == 404:
+            sys.exit(0)  # a worker from before the warm browser
         if error.code != 409:
             sys.exit(1)
+    except OSError:
+        pass
     time.sleep(3)
 sys.exit(1)
-' >/dev/null 2>&1 || true
+' "$1" >/dev/null 2>&1
+}
+
+flow_worker_running() {
+  [[ -n "$("${compose[@]}" ps -q --status running flow-worker 2>/dev/null)" ]]
+}
+
+cool_flow_worker() {
+  if flow_worker_running && ! flow_worker_request /v1/cool; then
+    echo "Could not release the flow-worker's Chrome profile (POST /v1/cool); refusing to run the Google session check against a held profile" >&2
+    exit 1
+  fi
+}
+
+# Lets the warm browser start again once the session checks are done (best effort: the pause also
+# expires on its own).
+resume_flow_worker() {
+  if flow_worker_running; then
+    flow_worker_request /v1/resume || true
+  fi
 }
 
 # Fail before any database change or app cutover when Flow was explicitly enabled but its server
@@ -209,6 +236,7 @@ if [[ "${#flow_services[@]}" -gt 0 ]]; then
     echo "Flow try-on Google session became unavailable before app cutover" >&2
     exit 1
   fi
+  resume_flow_worker
   echo "Flow try-on worker and Google session are healthy at release $RELEASE_SHA"
 fi
 
