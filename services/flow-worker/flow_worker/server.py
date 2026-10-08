@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .policy import should_fallback_to_nano2
+from .policy import QUOTA_EXHAUSTED_MARKER, is_flow_quota_refusal, should_fallback_from_pro
 
 HOST = os.environ.get("FLOW_WORKER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLOW_WORKER_PORT", "8787"))
@@ -33,6 +33,11 @@ MAX_ERROR_DETAIL_CHARS = 4 * 1024
 WORKER_TIMEOUT_EXIT_CODE = 124
 MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+# gflow-cli 0.82.1's --project allowlist.
+PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,128}$")
+PROJECT_TITLE = "LA try-on"
+REQUIRED_FLOW_HOST = "flow.google.com"
+PROJECT_STATE_FILE = "try-on-project.json"
 WORKER_ROOT = Path(__file__).resolve().parent.parent
 
 TRY_ON_PROMPT = """Use the first reference image as the person and the second reference image as the garment.
@@ -43,6 +48,12 @@ Do not add unrelated clothing or accessories. Do not alter body shape. Do not se
 Produce one realistic, age-appropriate fashion try-on image."""
 
 _generation_lock = threading.Lock()
+# The one Flow project every try-on generates in: LA_TRY_ON_FLOW_PROJECT_ID, else the project this
+# worker created once and recorded in the gflow volume. gflow creates a scratch project for every
+# i2i run without --project, so no generation may start until this is known.
+_project_id: str | None = PROJECT_ID or None
+# A project this worker created but could not record yet; retried instead of creating another.
+_unrecorded_project_id: str | None = None
 
 
 class RequestError(ValueError):
@@ -98,12 +109,15 @@ def _profile_present() -> bool:
     return profile_dir is not None and profile_dir.is_dir()
 
 
+def _gflow(*args: str) -> list[str]:
+    # The launcher runs the gflow CLI with the try-on patches installed (see gflow_launcher).
+    return [sys.executable, "-m", "flow_worker.gflow_launcher", *args]
+
+
 def _command(model: str, person: Path, product: Path, output: Path) -> list[str]:
-    # The launcher runs the gflow CLI with the prompt guard installed (see gflow_prompt_guard).
-    args = [
-        sys.executable,
-        "-m",
-        "flow_worker.gflow_launcher",
+    if _project_id is None:
+        raise ValueError("the try-on Flow project is not resolved")
+    return _gflow(
         "image",
         "i2i",
         TRY_ON_PROMPT,
@@ -121,11 +135,10 @@ def _command(model: str, person: Path, product: Path, output: Path) -> list[str]
         PROFILE,
         "--output",
         str(output),
+        "--project",
+        _project_id,
         "--json",
-    ]
-    if PROJECT_ID:
-        args.extend(["--project", PROJECT_ID])
-    return args
+    )
 
 
 def _machine_error(stdout: str) -> GflowMachineError:
@@ -158,6 +171,10 @@ def _gflow_env(db_path: Path) -> dict[str, str]:
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
+    # Only flow.google.com's composer carries the try-on patches (prompt guard, Nano Banana 2.1
+    # selection and wire check). On gflow's labs driver `nano2` is Nano Banana 2, so a labs route
+    # must be impossible: gflow_models refuses to load under any other host setting.
+    env["GFLOW_CLI_FLOW_HOST"] = REQUIRED_FLOW_HOST
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(WORKER_ROOT), env.get("PYTHONPATH"))))
     # gflow records every generation in a local SQLite catalog. Keep that catalog inside the
     # request tempdir so operation/media IDs, hashes, local paths and byte counts disappear with
@@ -264,20 +281,14 @@ def _clean_stale_profile_locks() -> None:
         lease.release()
 
 
-def _run_model(
-    model: str,
-    person: Path,
-    product: Path,
-    output: Path,
-    timeout_seconds: float,
-    db_path: Path,
-) -> tuple[int, GflowMachineError]:
+def _run_gflow(args: list[str], timeout_seconds: float, db_path: Path) -> tuple[int, str]:
+    """Run one gflow command; ``(exit code, stdout)``. Timeouts kill the whole process group."""
     if timeout_seconds <= 0:
-        return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+        return WORKER_TIMEOUT_EXIT_CODE, ""
     _clean_stale_profile_locks()
     try:
         process = subprocess.Popen(
-            _command(model, person, product, output),
+            args,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -286,24 +297,180 @@ def _run_model(
             env=_gflow_env(db_path),
         )
     except OSError:
-        return 1, GflowMachineError()
+        return 1, ""
 
     try:
         stdout, _stderr = process.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired:
         _terminate_process_group(process)
-        return WORKER_TIMEOUT_EXIT_CODE, GflowMachineError()
+        return WORKER_TIMEOUT_EXIT_CODE, ""
+    return process.returncode, stdout or ""
 
-    error = _machine_error(stdout or "")
-    if process.returncode != 0:
+
+def _wire_diagnostics(detail: str) -> dict[str, str]:
+    """Enum-only facts from the try-on guard's error detail, safe to log.
+
+    Only SCREAMING_SNAKE tokens pass the patterns below, never provider text or shopper data.
+    They are what an operator needs to set the fallback up from one live run: the RESOURCE_EXHAUSTED
+    refusal reasons, and the enum tokens of an aborted Nano Banana 2.1 submit (its model key).
+    """
+    fields: dict[str, str] = {}
+    quota = re.search(re.escape(QUOTA_EXHAUSTED_MARKER) + r"[^(]*\(([A-Z0-9_, ]{0,400})\)", detail)
+    if quota:
+        fields["quota_reasons"] = quota.group(1)
+    candidates = re.search(r"WIRE_MODEL_CANDIDATES=([A-Z0-9_,]{0,1600})", detail)
+    if candidates:
+        fields["wire_model_candidates"] = candidates.group(1)
+    return fields
+
+
+def _run_model(
+    model: str,
+    person: Path,
+    product: Path,
+    output: Path,
+    timeout_seconds: float,
+    db_path: Path,
+) -> tuple[int, GflowMachineError]:
+    if _project_id is None:
+        return 1, GflowMachineError()
+    returncode, stdout = _run_gflow(_command(model, person, product, output), timeout_seconds, db_path)
+    if returncode == WORKER_TIMEOUT_EXIT_CODE:
+        return returncode, GflowMachineError()
+
+    error = _machine_error(stdout)
+    if returncode != 0:
         fields = {
             "model": model,
-            "exit_code": str(process.returncode),
+            "exit_code": str(returncode),
             "error_class": error.error_class or "unknown",
+            **_wire_diagnostics(error.detail),
         }
         _event("flow_try_on.process_error", **fields)
 
-    return process.returncode, error
+    return returncode, error
+
+
+def _project_state_path() -> Path:
+    return GFLOW_HOME / PROJECT_STATE_FILE
+
+
+class ProjectStateError(RuntimeError):
+    pass
+
+
+def _stored_project_id() -> str | None:
+    """The recorded try-on project id, or ``None`` only when no record exists.
+
+    A record that exists but cannot be read, does not hold a valid id, or is still the pending
+    marker of an earlier create raises instead: treating it as missing would create a second
+    project and break the one-project guarantee.
+    """
+    try:
+        raw = _project_state_path().read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise ProjectStateError("unreadable") from exc
+    try:
+        state = json.loads(raw)
+    except ValueError as exc:
+        raise ProjectStateError("corrupt") from exc
+    project_id = state.get("projectId") if isinstance(state, dict) else None
+    if isinstance(project_id, str) and PROJECT_ID_PATTERN.fullmatch(project_id):
+        return project_id
+    if isinstance(state, dict) and state.get("pending") is True and project_id is None:
+        raise ProjectStateError("pending")
+    raise ProjectStateError("invalid")
+
+
+def _write_project_state(state: dict[str, Any]) -> None:
+    path = _project_state_path()
+    temporary = path.with_name(f".{path.name}.tmp")
+    temporary.write_text(json.dumps(state), encoding="utf-8")
+    os.replace(temporary, path)
+
+
+def _store_project_id(project_id: str) -> None:
+    _write_project_state({"projectId": project_id, "title": PROJECT_TITLE})
+
+
+# gflow exits that end before Flow is asked to create anything: no session (3, 8) or the profile
+# lease held by another run. Only after these may the pending marker be withdrawn.
+_PRE_FLOW_EXIT_CODES = (3, 8)
+
+
+def _failed_before_flow(returncode: int, error: GflowMachineError) -> bool:
+    return returncode in _PRE_FLOW_EXIT_CODES or (
+        returncode == 11 and error.error_class == "ProfileLockedError"
+    )
+
+
+def _ensure_project(timeout_seconds: float, db_path: Path) -> tuple[int, GflowMachineError]:
+    """Resolve the one try-on project; create it at most once per gflow volume.
+
+    Before ``gflow project create`` runs, a pending marker is written to the state file. If the
+    worker dies or loses the reply after Flow created the project, or cannot record the id, the
+    marker (or the id) stays in the volume, so no later request or restarted worker creates a
+    second project: they refuse generation until an operator records the id or sets
+    LA_TRY_ON_FLOW_PROJECT_ID. A created but unrecorded id is also kept in memory, so this
+    process retries the write rather than the create.
+    """
+    global _project_id, _unrecorded_project_id
+    if _project_id is not None:
+        return 0, GflowMachineError()
+    if _unrecorded_project_id is None:
+        try:
+            stored = _stored_project_id()
+        except ProjectStateError as exc:
+            _event("flow_try_on.project_state_invalid", problem=str(exc), path=str(_project_state_path()))
+            return 1, GflowMachineError()
+        if stored is not None:
+            _project_id = stored
+            return 0, GflowMachineError()
+
+    created = _unrecorded_project_id
+    if created is None:
+        try:
+            _write_project_state({"pending": True, "title": PROJECT_TITLE, "since": int(time.time())})
+        except OSError:
+            _event("flow_try_on.project_record_failed", path=str(_project_state_path()))
+            return 1, GflowMachineError()
+        returncode, stdout = _run_gflow(
+            _gflow("project", "create", "--title", PROJECT_TITLE, "--profile", PROFILE, "--json"),
+            timeout_seconds,
+            db_path,
+        )
+        try:
+            reply = json.loads(stdout)
+        except ValueError:
+            reply = None
+        created = reply.get("project_id") if isinstance(reply, dict) and reply.get("status") == "ok" else None
+        if returncode != 0 or not isinstance(created, str) or not PROJECT_ID_PATTERN.fullmatch(created):
+            error = _machine_error(stdout)
+            if _failed_before_flow(returncode, error):
+                # Nothing reached Flow, so no project can exist: the next request may create.
+                # If the marker cannot be removed it keeps blocking, which is the safe side.
+                try:
+                    _project_state_path().unlink(missing_ok=True)
+                except OSError:
+                    pass
+            # Otherwise (timeout, unreadable reply, any other failure) Flow may have created it:
+            # the pending marker stays and blocks a second create.
+            _event("flow_try_on.project_create_failed", exit_code=str(returncode))
+            return returncode or 1, error
+        _unrecorded_project_id = created
+        _event("flow_try_on.project_created", project_id=created)
+    try:
+        _store_project_id(created)
+    except OSError:
+        # The id is the operator's evidence: record it by hand or set LA_TRY_ON_FLOW_PROJECT_ID.
+        _event("flow_try_on.project_record_failed", project_id=created, path=str(_project_state_path()))
+        return 1, GflowMachineError()
+    _unrecorded_project_id = None
+    _project_id = created
+    _event("flow_try_on.project_recorded", project_id=created)
+    return 0, GflowMachineError()
 
 
 def _failure_reason(
@@ -322,6 +489,10 @@ def _failure_reason(
     ):
         return 409, "BUSY"
     if exit_code == 4:
+        return 429, "BUSY"
+    # flow.google.com quota refusals arrive as exit 7 (WireFormatError); only the verified quota
+    # signals are BUSY, every other wire error stays GENERATION_FAILED.
+    if error is not None and is_flow_quota_refusal(exit_code, error.detail):
         return 429, "BUSY"
     if exit_code == 5:
         return 422, "SAFETY_BLOCKED"
@@ -349,6 +520,12 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
         person_path.write_bytes(person)
         product_path.write_bytes(product)
 
+        exit_code, error = _ensure_project(remaining_budget(), db_path)
+        if exit_code != 0:
+            status, reason = _failure_reason(exit_code, error)
+            _event("flow_try_on.generation_failed", model="none", reason=reason)
+            raise WorkerGenerationError(status, reason)
+
         _event("flow_try_on.model_attempt", model="nano-banana-pro")
         exit_code, error = _run_model(
             "nano-pro",
@@ -359,9 +536,10 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             db_path,
         )
         model = "nano-banana-pro"
-        if exit_code != 0 and should_fallback_to_nano2(exit_code, error.detail):
-            _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2")
+        if exit_code != 0 and should_fallback_from_pro(exit_code, error.detail):
+            _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2.1")
             output_path.unlink(missing_ok=True)
+            # In the gflow launcher, nano2 selects exactly "Nano Banana 2.1" (see gflow_models).
             exit_code, error = _run_model(
                 "nano2",
                 person_path,
@@ -370,7 +548,7 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
                 remaining_budget(),
                 db_path,
             )
-            model = "nano-banana-2"
+            model = "nano-banana-2.1"
 
         if exit_code != 0:
             status, reason = _failure_reason(exit_code, error)
@@ -506,6 +684,8 @@ def main() -> None:
         raise SystemExit("FLOW_WORKER_TOKEN must contain at least 32 characters")
     if PROFILE_PATTERN.fullmatch(PROFILE) is None:
         raise SystemExit("GFLOW_CLI_PROFILE contains unsupported characters")
+    if PROJECT_ID and PROJECT_ID_PATTERN.fullmatch(PROJECT_ID) is None:
+        raise SystemExit("FLOW_PROJECT_ID must be 1-128 letters, digits or hyphens")
     _clean_stale_profile_locks()
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 

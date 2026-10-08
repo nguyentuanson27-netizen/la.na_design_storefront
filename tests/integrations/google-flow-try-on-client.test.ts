@@ -70,7 +70,7 @@ test("a worker success returns one signature-validated image", async () => {
   const { client } = harness(
     json({
       ok: true,
-      model: "nano-banana-2",
+      model: "nano-banana-2.1",
       mimeType: "image/png",
       imageBase64: b64(PNG_BYTES),
     }),

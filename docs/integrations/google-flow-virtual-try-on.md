@@ -32,11 +32,42 @@ The app sends only the two already-approved images. Prompt and model policy are 
 Every request is:
 
 1. Nano Banana Pro (`nano-pro`) first.
-2. If and only if gflow reports a Nano Banana Pro **daily quota** exhaustion, retry exactly once with
-   Nano Banana 2 (`nano2`).
-3. Do not fall back on per-minute throttling, WAF/reCAPTCHA unusual activity, auth/session failures,
-   safety/content refusal, timeout, selector drift, network failure or generic provider errors.
-4. Never fall back automatically to Vertex, Nano Banana 2 Lite or a video model.
+2. If the Pro attempt fails for **any quota, rate-limit or credit refusal**, retry exactly once with
+   **Nano Banana 2.1** (released 2026-10-06). Owner decision: this deliberately includes refusals
+   that do not say which limit ran out. The fallback signals are:
+   - flow.google.com refuses the `ogiZ0b` image submit with gRPC `RESOURCE_EXHAUSTED`, with any
+     reason or none (daily, per-minute or unspecified);
+   - the image submit answers HTTP 429;
+   - gflow's rate-limit error (exit 4), including per-minute limits;
+   - Flow replaces the submit control with its insufficient-credits warning (gflow exit 37).
+
+   The worker logs the refusal reasons as `quota_reasons` on `flow_try_on.process_error`.
+3. Do not fall back on WAF/reCAPTCHA unusual activity, auth/session failures, safety/content
+   refusal, timeout, selector drift, network failure or generic provider errors.
+4. Never fall back automatically to Vertex, Nano Banana 2, Nano Banana 2 Lite or a video model.
+
+gflow-cli 0.82.1 predates Nano Banana 2.1 and reports a quota refusal on flow.google.com as a generic
+wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_models.py`):
+
+- The worker pins every gflow run to `GFLOW_CLI_FLOW_HOST=flow.google.com`, and the patches refuse to
+  load under any other value. Only flow.google.com's composer carries these checks; on gflow's labs
+  driver `nano2` is Nano Banana 2, so a labs route could never be reported as 2.1.
+- gflow's `nano2` selects exactly the menu entry labelled "Nano Banana 2.1". Unpatched, it matches
+  both "Nano Banana 2" and "Nano Banana 2.1" and fails as ambiguous.
+- The model picker is read back after selection. A picker that does not show the requested model
+  fails the run before any upload or submit.
+- Nano Banana 2.1's wire key is not published. A 2.1 `ogiZ0b` body is accepted only when it carries
+  the key configured in `LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY` and no other image model key
+  (`NARWHAL` = Nano Banana 2, Pro, 2 Lite, Imagen), plus both reference ids and the prompt. A
+  configured value that is one of those other keys is ignored, which keeps the fallback disabled.
+- **Live gate.** While that key is empty, every 2.1 submit is aborted before it reaches Flow, so
+  the fallback does not generate. The aborted run logs `wire_model_candidates` on
+  `flow_try_on.process_error`: the request's enum tokens only (no prompt, ids or tokens). Read the
+  2.1 key from one such run (it is the token that replaces `GEM_PIX_2` compared with a Pro
+  submit), confirm it is not `NARWHAL`, set it, and redeploy.
+- A `RESOURCE_EXHAUSTED` submit refusal is reported with a quota marker the worker reads as "Pro
+  quota exhausted". It is not reported as gflow's retried rate-limit error, so the request budget
+  is not spent re-running Pro.
 
 ## Production environment
 
@@ -48,7 +79,8 @@ LA_TRY_ON_PROVIDER=flow
 LA_TRY_ON_FLOW_URL=http://flow-worker:8787
 LA_TRY_ON_FLOW_TOKEN=<at-least-32-random-characters>
 LA_TRY_ON_FLOW_PROFILE=default
-LA_TRY_ON_FLOW_PROJECT_ID=<optional-dedicated-flow-project-id>
+# Optional. Empty: the worker creates one "LA try-on" project on first use and reuses it.
+LA_TRY_ON_FLOW_PROJECT_ID=
 ```
 
 Generate the worker token with a cryptographically secure source, for example:
@@ -166,8 +198,28 @@ Before enabling shoppers, use the same Flow account manually, upload an operator
 image in Flow, and complete any required first-use confirmation yourself. The worker deliberately
 does not click consent/rights confirmations on the operator's behalf.
 
-A dedicated Flow project is recommended so operator review and future cleanup are scoped to try-on.
-If `LA_TRY_ON_FLOW_PROJECT_ID` is empty, gflow may create projects while generating.
+Every try-on generates in **one** Flow project. gflow creates a new scratch project for every
+`image i2i` run that has no `--project`, so the worker never runs one without it:
+
+- `LA_TRY_ON_FLOW_PROJECT_ID` set: that existing project is used.
+- Empty: on the first generation the worker writes a pending marker to `try-on-project.json` in the
+  `flow_gflow_data` volume, runs `gflow project create --title "LA try-on"` once, and replaces the
+  marker with the id. Every later request, and every restarted or recreated worker, reuses it.
+  Deleting that file (or the volume) is the only way the worker creates another project.
+- Create at most once, fail closed: the pending marker is written **before** the create, so a worker
+  that dies, times out or cannot record the id after Flow may have created the project never
+  creates a second one, not even after a restart. Instead every request fails before generation
+  with `flow_try_on.project_state_invalid` (`problem=pending`). The same happens when
+  `try-on-project.json` cannot be read or holds no valid id. Only a create that failed before
+  reaching Flow (no session, profile busy) withdraws the marker.
+- To recover: find the "LA try-on" project in Flow (or the `project_id` logged by
+  `flow_try_on.project_created` / `project_record_failed`), then write
+  `{"projectId": "<id>"}` to `try-on-project.json` or set `LA_TRY_ON_FLOW_PROJECT_ID`.
+
+Each run still uploads the shopper and garment under run-unique names, and the submit is aborted
+unless it carries the two media ids this run uploaded, so one shared project cannot bind another
+shopper's photo. The project does accumulate every upload and result; clean it up in Flow as part
+of the retention review below.
 
 ## Enable
 
@@ -201,7 +253,7 @@ The storefront exposes only existing safe try-on failure classes. Worker/Google 
 profile paths, prompt output and CLI stdout/stderr are not returned to shoppers.
 
 - `AUTH_FAILED`: session missing/expired or worker authentication failure.
-- `BUSY`: profile already generating or upstream rate limit without proven Pro daily exhaustion.
+- `BUSY`: profile already generating, or a rate limit that also hit the Nano Banana 2.1 fallback.
 - `SAFETY_BLOCKED`: content/safety refusal; final, no model fallback.
 - `TIMEOUT`: generation watchdog expired.
 - `GENERATION_FAILED`: all other provider/integration failures.
@@ -273,9 +325,8 @@ actual production-like Flow account/profile:
 - [ ] `gflow auth status` verifies the saved session.
 - [ ] One shopper + garment request succeeds on Nano Banana Pro.
 - [ ] The returned file passes JPEG/PNG signature validation in the storefront.
-- [ ] A real Pro daily-quota exhaustion is observed to return a model-named daily-quota error and
-      causes exactly one Nano Banana 2 attempt.
-- [ ] Per-minute throttling does not cause model fallback.
+- [ ] A real Pro quota refusal (its `quota_reasons` recorded) causes exactly one Nano Banana 2.1
+      attempt, with `LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY` captured and set.
 - [ ] Safety/content refusal does not cause model fallback.
 - [ ] WAF/reCAPTCHA unusual activity does not cause model fallback.
 - [ ] Worker timeout does not leave a second automatic generation running.
