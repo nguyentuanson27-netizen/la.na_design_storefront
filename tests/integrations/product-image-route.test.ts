@@ -55,6 +55,13 @@ test("upstream failure maps to 502, bad query shape to 400, undecodable image to
   const garbage = counting(() => new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 }));
   assert.equal((await handleProductImageRequest(request(SRC), { fetch: garbage.fn })).status, 422);
 
+  const corruptJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ALgAJHb/2Q==",
+    "base64",
+  );
+  const corrupt = counting(() => new Response(corruptJpeg, { status: 200 }));
+  assert.equal((await handleProductImageRequest(request(SRC), { fetch: corrupt.fn })).status, 422);
+
   assert.equal((await handleProductImageRequest(request(SRC, "w=1081"))).status, 400);
   assert.equal((await handleProductImageRequest(request(SRC, "w=1080&x=1"))).status, 400);
 });

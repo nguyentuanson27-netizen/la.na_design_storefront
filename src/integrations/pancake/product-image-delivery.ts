@@ -39,6 +39,18 @@ function isRedirect(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
 }
 
+async function sourceDecodes(bytes: Uint8Array): Promise<boolean> {
+  try {
+    await sharp(bytes, { limitInputPixels: PDP_IMAGE_MAX_INPUT_PIXELS, sequentialRead: true })
+      .resize({ width: 16, height: 16, fit: "inside" })
+      .raw()
+      .toBuffer();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function fetchAndCompressPancakeProductImage(
   trustedUrl: string,
   requestedWidth: number,
@@ -143,9 +155,10 @@ export async function fetchAndCompressPancakeProductImage(
           },
         });
       } catch {
-        // Sharp/libvips failed on bytes that already parsed as a supported image: a runtime
-        // problem on our side, not an upstream one, so it must not be reported as a bad gateway.
-        return TRANSCODE_FAILED;
+        // The header parsed but the encode failed. If the pixels cannot even be decoded the source
+        // itself is corrupt (a client-data problem, 422); only a failure on a source that decodes
+        // is ours, and it must not be reported as a bad gateway either.
+        return (await sourceDecodes(bytes)) ? TRANSCODE_FAILED : { ok: false, reason: "UNSUPPORTED_IMAGE" };
       }
 
       if (compressed === null) return { ok: false, reason: "OUTPUT_TOO_LARGE" };

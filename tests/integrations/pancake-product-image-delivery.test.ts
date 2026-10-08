@@ -90,13 +90,16 @@ test("fragment and query variants of one source are refused before any fetch", a
   }
 });
 
-test("a Sharp failure on a supported source is reported as a transcode failure, not upstream", async () => {
-  // Valid PNG signature and header so metadata() succeeds, but the pixel data is truncated.
-  const truncated = TINY_PNG.subarray(0, 40);
-  const mocked = fetcher(new Response(truncated, { status: 200 }));
+test("a source whose header parses but whose pixels are corrupt is an unsupported image, not a bad gateway or a server error", async () => {
+  // Valid JPEG signature and SOF header (so metadata() succeeds), but the quantization tables the
+  // scan refers to are missing -- the shape of the try-on runtime fixture's product photograph.
+  const corruptJpeg = Buffer.from(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ALgAJHb/2Q==",
+    "base64",
+  );
+  const mocked = fetcher(new Response(corruptJpeg, { status: 200 }));
   const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.notEqual(result.reason, "FETCH_FAILED");
+  assert.deepEqual(result, { ok: false, reason: "UNSUPPORTED_IMAGE" });
 });
 
 test("an upstream 404 is reported as an upstream failure", async () => {
