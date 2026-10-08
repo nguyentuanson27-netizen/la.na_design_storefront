@@ -135,3 +135,29 @@ test("invalid configuration is rejected", () => {
   assert.throws(() => createTryOnRateLimiter({ maxConcurrent: 1.5 }), TypeError);
   assert.throws(() => createTryOnRateLimiter({ maxConcurrentUploads: 0 }), TypeError);
 });
+
+test("peekQuota reports what is left today without spending anything", () => {
+  const limiter = createTryOnRateLimiter();
+  assert.deepEqual(limiter.peekQuota(guest(), 0), { audience: "guest", limit: 5, remaining: 5 });
+  assert.deepEqual(limiter.peekQuota(guest(), 0), { audience: "guest", limit: 5, remaining: 5 });
+
+  limiter.consumeAttempt(guest(), 0);
+  limiter.consumeAttempt(guest(), MINUTE);
+  assert.deepEqual(limiter.peekQuota(guest(), MINUTE), { audience: "guest", limit: 5, remaining: 3 });
+  // A refused attempt does not count, so it does not lower the number either.
+  limiter.consumeAttempt(guest(), MINUTE + 1);
+  assert.equal(limiter.peekQuota(guest(), MINUTE + 1).remaining, 3);
+
+  // Another visitor, and a member of the same address, are metered separately.
+  assert.equal(limiter.peekQuota(guest(B), MINUTE).remaining, 5);
+  assert.deepEqual(limiter.peekQuota(member(), MINUTE), { audience: "member", limit: 10, remaining: 10 });
+
+  // The window renews after a day.
+  assert.equal(limiter.peekQuota(guest(), DAY).remaining, 5);
+});
+
+test("peekQuota never goes below zero for an identity that is out of attempts", () => {
+  const limiter = createTryOnRateLimiter();
+  for (let attempt = 0; attempt < 5; attempt += 1) limiter.consumeAttempt(guest(), attempt * MINUTE);
+  assert.equal(limiter.peekQuota(guest(), 5 * MINUTE).remaining, 0);
+});

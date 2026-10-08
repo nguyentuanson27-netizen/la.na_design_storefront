@@ -1,9 +1,12 @@
+import { buildLoginHref } from "../../auth/return-path.ts";
 import {
   TRY_ON_AGE_ADULT,
   TRY_ON_AGE_BELOW_CONSENT_AGE,
   TRY_ON_AGE_TEEN_WITH_GUARDIAN,
   TRY_ON_ALLOWED_IMAGE_MIME_TYPES,
+  TRY_ON_GUEST_QUOTA,
   TRY_ON_MAX_IMAGE_BYTES,
+  TRY_ON_MEMBER_QUOTA,
   type TryOnAgeState,
   type TryOnFailureReason,
 } from "../../commerce/try-on-policy.ts";
@@ -105,14 +108,15 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
   IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.",
   NOT_ELIGIBLE: "Sản phẩm này hiện chưa hỗ trợ thử đồ.",
   PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Vui lòng thử lại sau.",
-  RATE_LIMITED: "Bạn vừa thử đồ xong. Vui lòng chờ khoảng 1 phút rồi thử lại.",
-  LOGIN_REQUIRED: "Bạn đã dùng hết 5 lượt thử đồ không cần đăng nhập. Vui lòng đăng nhập để tiếp tục thử đồ.",
-  DAILY_LIMIT_REACHED: "Bạn đã dùng hết lượt thử đồ hôm nay. Vui lòng quay lại vào ngày mai.",
-  BUSY: "Hệ thống đang có nhiều yêu cầu. Vui lòng thử lại sau ít phút.",
+  RATE_LIMITED:
+    "Bạn vừa thử xong một lượt rồi. Mỗi lượt thử đồ cách nhau khoảng 1 phút, mời bạn nghỉ một chút rồi thử lại nhé.",
+  LOGIN_REQUIRED: `Bạn đã dùng hết ${TRY_ON_GUEST_QUOTA.perDay} lượt thử đồ miễn phí hôm nay. Tạo tài khoản hoặc đăng nhập để tiếp tục thử đồ cùng chúng mình nhé.`,
+  DAILY_LIMIT_REACHED: `Hôm nay bạn đã dùng hết ${TRY_ON_MEMBER_QUOTA.perDay} lượt thử đồ. Lượt thử sẽ được làm mới sau 24 giờ kể từ lượt đầu tiên, hẹn gặp lại bạn nhé.`,
+  BUSY: "Hiện đang có nhiều bạn thử đồ cùng lúc. Mời bạn thử lại sau ít phút nhé.",
   SAFETY_BLOCKED:
     "Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác: chính diện, rõ người, đủ sáng.",
   AUTH_FAILED: "Thử đồ tạm thời chưa dùng được. Bạn vẫn có thể chọn sản phẩm và đặt hàng bình thường.",
-  TIMEOUT: "Tạo ảnh mất quá nhiều thời gian. Vui lòng thử lại.",
+  TIMEOUT: "Ảnh đang mất nhiều thời gian hơn dự kiến. Bạn thử lại giúp chúng mình nhé.",
   GENERATION_FAILED: "Chưa tạo được ảnh thử đồ. Vui lòng thử lại.",
 };
 
@@ -127,6 +131,83 @@ export function parseTryOnFailureReason(reason: unknown): TryOnFailureReason | n
 export function isLoginRequired(reason: TryOnFailureReason | null): boolean {
   return reason === "LOGIN_REQUIRED";
 }
+
+/** Who the server says is asking; `null` until it has said (or if the question failed). */
+export type TryOnAudience = "guest" | "member";
+
+/** Today's allowance as the server reports it, for display only. */
+export type TryOnQuotaView = Readonly<{ audience: TryOnAudience; limit: number; remaining: number }>;
+
+/** Reads `GET /api/try-on`'s body; anything that is not exactly that shape is `null`. */
+export function parseTryOnQuota(payload: unknown): TryOnQuotaView | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const record = payload as Record<string, unknown>;
+  const { audience, limit, remaining } = record;
+  if (record.ok !== true || (audience !== "guest" && audience !== "member")) return null;
+  if (!Number.isSafeInteger(limit) || !Number.isSafeInteger(remaining)) return null;
+  if ((limit as number) < 0 || (remaining as number) < 0) return null;
+  return { audience, limit: limit as number, remaining: remaining as number };
+}
+
+/**
+ * The one line on the first step: what is left today, and for a guest what an account adds. Nothing
+ * is claimed until the server has answered, so a failed lookup shows no number rather than a guess.
+ */
+export function tryOnQuotaLine(quota: TryOnQuotaView | null): string | null {
+  if (quota === null) return null;
+  if (quota.audience === "member") {
+    return `Hôm nay bạn còn ${quota.remaining}/${quota.limit} lượt thử đồ.`;
+  }
+  return quota.remaining > 0
+    ? `Hôm nay bạn còn ${quota.remaining}/${quota.limit} lượt thử đồ miễn phí. Có tài khoản, bạn được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`
+    : `Hôm nay bạn đã dùng hết lượt thử đồ miễn phí. Có tài khoản, bạn được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`;
+}
+
+export type TryOnQuotaUpsell = Readonly<{ title: string; body: string }>;
+
+/**
+ * What a guest who hit a limit is offered: a free account has a bigger allowance. Only a guest is
+ * ever offered it. "Out of attempts for the day" is a guest by definition; "too soon" is ambiguous
+ * until the server has said who is asking, and a signed-in shopper is never told to sign up.
+ */
+export function tryOnQuotaUpsell(
+  reason: TryOnFailureReason | null,
+  audience: TryOnAudience | null,
+): TryOnQuotaUpsell | null {
+  if (audience === "member") return null;
+  if (reason !== "LOGIN_REQUIRED" && !(reason === "RATE_LIMITED" && audience === "guest")) return null;
+  return {
+    title: "Tạo tài khoản để thử đồ thoải mái hơn",
+    body: `Khách chưa đăng nhập được thử ${TRY_ON_GUEST_QUOTA.perDay} lượt mỗi ngày, mỗi lượt cách nhau ${TRY_ON_GUEST_QUOTA.perMinute} phút. Với tài khoản miễn phí, bạn có ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày và có thể thử liên tiếp ${TRY_ON_MEMBER_QUOTA.perMinute} lượt mỗi phút.`,
+  };
+}
+
+/** Sign in or sign up, then come straight back to this product. */
+export function tryOnLoginHref(productSlug: string): string {
+  return buildLoginHref(`/shop/${encodeURIComponent(productSlug)}`);
+}
+
+/** Said once the shopper has pressed the button; the real time is a few tens of seconds. */
+export const TRY_ON_WAIT_NOTE =
+  "Ảnh thường mất khoảng 15–30 giây để hoàn thành. Bạn giữ nguyên cửa sổ này và chờ chúng mình một chút nhé.";
+
+export const TRY_ON_BETA_BADGE = "Đang phát triển";
+
+/** The feature is young; say so plainly and kindly, without promising what it cannot yet do. */
+export const TRY_ON_BETA_NOTE =
+  "Thử đồ bằng AI là tính năng mới, vẫn đang được chúng mình hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn bạn đã thử cùng chúng mình.";
+
+/** What makes a photo work, in the order a shopper decides: what to choose, then what to avoid. */
+export const TRY_ON_PHOTO_DOS: readonly string[] = [
+  "Ảnh chính diện, thấy rõ cả người",
+  "Đủ sáng, nền gọn gàng",
+  "Trang phục ôm dáng, dễ nhìn đường nét",
+];
+export const TRY_ON_PHOTO_DONTS: readonly string[] = [
+  "Che người bằng túi, điện thoại hay tay",
+  "Nhiều người trong cùng một ảnh",
+  "Ảnh mờ, ngược sáng hoặc quá tối",
+];
 
 /** An unrecognised or missing reason is shown as a plain generation failure. */
 export function tryOnFailureMessage(reason: unknown): string {

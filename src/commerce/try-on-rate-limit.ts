@@ -31,13 +31,15 @@
  * engineering defaults that no live measurement has tuned.
  */
 
+import { TRY_ON_GUEST_QUOTA, TRY_ON_MEMBER_QUOTA } from "./try-on-policy.ts";
+
 const MINUTE_MS = 60 * 1_000;
 const DAY_MS = 24 * 60 * MINUTE_MS;
 
 export type TryOnQuota = Readonly<{ perMinute: number; perDay: number }>;
 
-const DEFAULT_GUEST_QUOTA: TryOnQuota = Object.freeze({ perMinute: 1, perDay: 5 });
-const DEFAULT_MEMBER_QUOTA: TryOnQuota = Object.freeze({ perMinute: 2, perDay: 10 });
+const DEFAULT_GUEST_QUOTA: TryOnQuota = TRY_ON_GUEST_QUOTA;
+const DEFAULT_MEMBER_QUOTA: TryOnQuota = TRY_ON_MEMBER_QUOTA;
 /** Image generation takes several seconds per request; this caps spend and memory in flight. */
 const DEFAULT_MAX_CONCURRENT = 3;
 /**
@@ -62,6 +64,13 @@ export type TryOnIdentity = Readonly<{ kind: "guest" | "member"; key: string }>;
 export type TryOnAttemptDecision =
   | Readonly<{ ok: true }>
   | Readonly<{ ok: false; reason: "RATE_LIMITED" | "LOGIN_REQUIRED" | "DAILY_LIMIT_REACHED" }>;
+
+/** Today's allowance for one identity, for display. `limit` is the per-day figure of its own kind. */
+export type TryOnQuotaStatus = Readonly<{
+  audience: TryOnIdentity["kind"];
+  limit: number;
+  remaining: number;
+}>;
 
 export type TryOnGenerationSlot =
   | Readonly<{ ok: true; release: () => void }>
@@ -168,6 +177,20 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     return { ok: true };
   }
 
+  /**
+   * What `identity` has left today, without spending anything. Read-only, so showing it to a shopper
+   * cannot change what they are allowed.
+   */
+  function peekQuota(identity: TryOnIdentity, nowMs: number = Date.now()): TryOnQuotaStatus {
+    const quota = identity.kind === "member" ? memberQuota : guestQuota;
+    const day = liveWindow(dayWindows, `${identity.kind}:${identity.key}`, DAY_MS, nowMs);
+    return {
+      audience: identity.kind,
+      limit: quota.perDay,
+      remaining: Math.max(0, quota.perDay - (day?.count ?? 0)),
+    };
+  }
+
   /** Reserves one of the global upload slots, or reports the service as busy. */
   function startUpload(): TryOnUploadSlot {
     if (uploading >= maxConcurrentUploads) return { ok: false, reason: "BUSY" };
@@ -198,5 +221,5 @@ export function createTryOnRateLimiter(options: TryOnRateLimiterOptions = {}) {
     };
   }
 
-  return { consumeAttempt, startUpload, startGeneration };
+  return { consumeAttempt, peekQuota, startUpload, startGeneration };
 }
