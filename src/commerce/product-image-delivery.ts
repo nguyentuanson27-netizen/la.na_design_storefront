@@ -1,3 +1,5 @@
+import { parseTrustedProductImageUrl } from "./product-media.ts";
+
 export const PDP_IMAGE_MAX_BYTES = 3_000_000;
 export const PDP_IMAGE_SOURCE_MAX_BYTES = 32_000_000;
 export const PDP_IMAGE_MAX_INPUT_PIXELS = 40_000_000;
@@ -103,4 +105,42 @@ export async function compressProductImageUnderLimit({
     }
   }
   return null;
+}
+
+/**
+ * The one spelling of a Pancake image source the delivery endpoint will work for.
+ *
+ * `parseTrustedProductImageUrl` constrains scheme, host and path but passes the query and fragment
+ * through. Both would turn a single reviewed image into unbounded distinct public cache keys that
+ * each trigger a fetch and several Sharp encodes (the fragment is never sent upstream, so it costs
+ * the attacker nothing). Reviewed Pancake media URLs carry no query semantics, so any query or
+ * fragment is refused rather than silently rewritten, and the accepted string must equal its own
+ * canonical form.
+ */
+export function canonicalizePancakeProductImageSource(raw: unknown): string | null {
+  const trusted = parseTrustedProductImageUrl(raw);
+  if (trusted === null) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(trusted);
+  } catch {
+    return null;
+  }
+  // `search`/`hash` read as "" for a bare "?" or "#", while href keeps the delimiter.
+  const canonical = parsed.toString();
+  if (canonical.includes("?") || canonical.includes("#")) return null;
+  if (typeof raw !== "string" || raw !== canonical) return null;
+  return canonical;
+}
+
+/** Drops the query and fragment so a stored Pancake URL can be offered to the endpoint. */
+export function stripPancakeProductImageSuffix(raw: string): string {
+  try {
+    const parsed = new URL(raw);
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().replace(/[?#]+$/, "");
+  } catch {
+    return raw;
+  }
 }

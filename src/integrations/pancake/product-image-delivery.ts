@@ -4,10 +4,11 @@ import {
   PDP_IMAGE_MAX_INPUT_PIXELS,
   PDP_IMAGE_MAX_OUTPUT_HEIGHT,
   PDP_IMAGE_SOURCE_MAX_BYTES,
+  canonicalizePancakeProductImageSource,
   compressProductImageUnderLimit,
 } from "../../commerce/product-image-delivery.ts";
-import { readBoundedBody } from "../../commerce/try-on-image.ts";
 import { parseTrustedProductImageUrl } from "../../commerce/product-media.ts";
+import { readBoundedBody } from "../../commerce/try-on-image.ts";
 import { createTimeoutSignal } from "../vertex-try-on/timeout.ts";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -28,10 +29,12 @@ export type PancakeProductImageDeliveryResult =
         | "TOO_LARGE"
         | "UNSUPPORTED_IMAGE"
         | "OUTPUT_TOO_LARGE"
-        | "FETCH_FAILED";
+        | "FETCH_FAILED"
+        | "TRANSCODE_FAILED";
     }>;
 
 const FETCH_FAILED = { ok: false, reason: "FETCH_FAILED" } as const;
+const TRANSCODE_FAILED = { ok: false, reason: "TRANSCODE_FAILED" } as const;
 
 function isRedirect(status: number): boolean {
   return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
@@ -43,7 +46,7 @@ export async function fetchAndCompressPancakeProductImage(
   options: Readonly<{ fetch?: FetchLike; timeoutMs?: number }> = {},
 ): Promise<PancakeProductImageDeliveryResult> {
   const doFetch: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
-  let current = parseTrustedProductImageUrl(trustedUrl);
+  let current = canonicalizePancakeProductImageSource(trustedUrl);
   if (current === null) return { ok: false, reason: "UNTRUSTED_URL" };
 
   const timeout = createTimeoutSignal(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
@@ -114,29 +117,36 @@ export async function fetchAndCompressPancakeProductImage(
         return { ok: false, reason: "UNSUPPORTED_IMAGE" };
       }
 
-      const compressed = await compressProductImageUnderLimit({
-        requestedWidth,
-        encode: async ({ width, quality }) => {
-          const output = await sharp(bytes, {
-            limitInputPixels: PDP_IMAGE_MAX_INPUT_PIXELS,
-            sequentialRead: true,
-          })
-            .rotate()
-            .resize({
-              width,
-              height: PDP_IMAGE_MAX_OUTPUT_HEIGHT,
-              fit: "inside",
-              withoutEnlargement: true,
+      let compressed: Awaited<ReturnType<typeof compressProductImageUnderLimit>>;
+      try {
+        compressed = await compressProductImageUnderLimit({
+          requestedWidth,
+          encode: async ({ width, quality }) => {
+            const output = await sharp(bytes, {
+              limitInputPixels: PDP_IMAGE_MAX_INPUT_PIXELS,
+              sequentialRead: true,
             })
-            .webp({
-              quality,
-              effort: 4,
-              smartSubsample: true,
-            })
-            .toBuffer();
-          return new Uint8Array(output);
-        },
-      });
+              .rotate()
+              .resize({
+                width,
+                height: PDP_IMAGE_MAX_OUTPUT_HEIGHT,
+                fit: "inside",
+                withoutEnlargement: true,
+              })
+              .webp({
+                quality,
+                effort: 4,
+                smartSubsample: true,
+              })
+              .toBuffer();
+            return new Uint8Array(output);
+          },
+        });
+      } catch {
+        // Sharp/libvips failed on bytes that already parsed as a supported image: a runtime
+        // problem on our side, not an upstream one, so it must not be reported as a bad gateway.
+        return TRANSCODE_FAILED;
+      }
 
       if (compressed === null) return { ok: false, reason: "OUTPUT_TOO_LARGE" };
       return {

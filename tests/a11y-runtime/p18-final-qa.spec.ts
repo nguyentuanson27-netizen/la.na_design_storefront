@@ -156,13 +156,18 @@ async function createMeasuredPage(
     if (message.type() === "error") browserErrors.push(message.text());
   });
   page.on("pageerror", (error) => browserErrors.push(error.message));
-  await page.route("**/_next/image**", (route) => {
+  const fulfillImage = (route: import("@playwright/test").Route) => {
     route.fulfill({
       status: 200,
       contentType: "image/jpeg",
       body: TINY_JPEG_BUFFER,
     });
-  });
+  };
+  await page.route("**/_next/image**", fulfillImage);
+  // PDP gallery images are served by the same-origin optimizer, which would otherwise fetch the
+  // fixture's non-existent Pancake URLs from the live CDN and answer 502. Its own behaviour is
+  // covered by tests/integrations/product-image-route.test.ts with an injected upstream.
+  await page.route("**/api/product-image**", fulfillImage);
 
   return { context, page, browserErrors };
 }

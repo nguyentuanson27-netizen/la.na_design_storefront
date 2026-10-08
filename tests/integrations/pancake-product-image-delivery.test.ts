@@ -80,3 +80,27 @@ test("declared source bodies above the bounded input limit fail before buffering
   });
   assert.deepEqual(result, { ok: false, reason: "TOO_LARGE" });
 });
+
+test("fragment and query variants of one source are refused before any fetch", async () => {
+  for (const variant of [`${URL_OK}#nonce-1`, `${URL_OK}?v=1`, `${URL_OK}?`, `${URL_OK}#`]) {
+    const mocked = fetcher();
+    const result = await fetchAndCompressPancakeProductImage(variant, 1080, { fetch: mocked.fn });
+    assert.deepEqual(result, { ok: false, reason: "UNTRUSTED_URL" }, variant);
+    assert.equal(mocked.calls.length, 0, variant);
+  }
+});
+
+test("a Sharp failure on a supported source is reported as a transcode failure, not upstream", async () => {
+  // Valid PNG signature and header so metadata() succeeds, but the pixel data is truncated.
+  const truncated = TINY_PNG.subarray(0, 40);
+  const mocked = fetcher(new Response(truncated, { status: 200 }));
+  const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
+  assert.equal(result.ok, false);
+  if (!result.ok) assert.notEqual(result.reason, "FETCH_FAILED");
+});
+
+test("an upstream 404 is reported as an upstream failure", async () => {
+  const mocked = fetcher(new Response("nope", { status: 404 }));
+  const result = await fetchAndCompressPancakeProductImage(URL_OK, 1080, { fetch: mocked.fn });
+  assert.deepEqual(result, { ok: false, reason: "FETCH_FAILED" });
+});
