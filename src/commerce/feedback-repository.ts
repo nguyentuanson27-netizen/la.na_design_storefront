@@ -23,7 +23,9 @@ export type FeedbackReadClient = {
     findMany(args: {
       where: {
         isPresent: boolean;
-        pancakeDisplayId: { startsWith: string } | { equals: string; mode: "insensitive" };
+        pancakeDisplayId:
+          | { startsWith: string }
+          | { startsWith: string; contains: string; mode: "insensitive" };
         product: { pancakeShopId: number };
       };
       select: {
@@ -71,7 +73,10 @@ function sortByDisplayId(variants: readonly FeedbackVariantRow[]): FeedbackVaria
 }
 
 /** Every trusted, distinct image URL on the variants, in display-ID order. */
-function collectImageSources(variants: readonly FeedbackVariantRow[]): string[] {
+function collectImageSources(
+  variants: readonly FeedbackVariantRow[],
+  limit: number = Number.POSITIVE_INFINITY,
+): string[] {
   const seen = new Set<string>();
   const sources: string[] = [];
   for (const variant of sortByDisplayId(variants)) {
@@ -79,6 +84,8 @@ function collectImageSources(variants: readonly FeedbackVariantRow[]): string[] 
       ? (variant.pancakeImageUrls as unknown[])
       : [];
     for (const raw of urls) {
+      // A capped caller stops parsing as soon as it has what it will show.
+      if (sources.length >= limit) return sources;
       if (typeof raw !== "string") continue;
       const src = parseHomepageImageSrc(raw);
       if (!src || seen.has(src)) continue;
@@ -188,8 +195,7 @@ export function selectProductFeedback(
     const tagged = input.taggedVariants.filter(
       (variant) => isFeedbackVariant(variant) && parseFeedbackProductCode(variant.pancakeDisplayId) === code,
     );
-    const images = collectImageSources(tagged)
-      .slice(0, limit)
+    const images = collectImageSources(tagged, limit)
       .map((src) => {
         const knownDimension = KNOWN_FEEDBACK_IMAGE_DIMENSIONS.get(src);
         return Object.freeze({
@@ -268,7 +274,8 @@ export const BRAND_FEEDBACK_CACHE_TTL_MS = 60_000;
  * The product page's feedback reads, bounded per request.
  *
  * Per product page view: one indexed lookup of the product's code, one count of present products
- * sharing it, and one read of exactly that code's `ANH-FEEDBACK-<code>` variants. The brand gallery
+ * sharing it, and one read of the `ANH-FEEDBACK-*` variants whose ID contains that code (its rows,
+ * not a fixed number; parsing stops at the rail's cap). The brand gallery
  * -- the only read that spans every feedback variant, and the same one the homepage makes -- is
  * shared across product pages per shop for `ttlMs`, with concurrent misses joining one read and a
  * failed read never cached.
@@ -301,10 +308,14 @@ export function createProductFeedbackRepository(
       client.productMirror.count({
         where: { pancakeShopId: shopId, isPresent: true, productCode: { equals: code, mode: "insensitive" } },
       }),
+      // Candidates, not matches: the mirror keeps Pancake's `display_id` untrimmed, and the parser
+      // reads `ANH-FEEDBACK-SV605 ` or `ANH-FEEDBACK- SV605` as SV605, so the exact comparison is
+      // left to `parseFeedbackProductCode` in `selectProductFeedback`. `contains` keeps the read to
+      // the IDs that could name this code.
       client.variantMirror.findMany({
         where: {
           isPresent: true,
-          pancakeDisplayId: { equals: `${FEEDBACK_DISPLAY_ID_PREFIX}${code}`, mode: "insensitive" },
+          pancakeDisplayId: { startsWith: FEEDBACK_DISPLAY_ID_PREFIX, contains: code, mode: "insensitive" },
           product: { pancakeShopId: shopId },
         },
         select: FEEDBACK_VARIANT_SELECT,
@@ -319,7 +330,10 @@ export function createProductFeedbackRepository(
       shopId,
       productId,
     }: { shopId: number; productId: string }): Promise<ProductFeedback | null> {
-      const brandImages = readBrandImages(shopId);
+      // The brand gallery is the fallback and the source of the `/feedback` link, not a condition
+      // for showing the product's own photographs: a failed brand read reads as no brand gallery,
+      // which still leaves nothing to fall back to when the product has none of its own.
+      const brandImages = readBrandImages(shopId).catch(() => [] as readonly FeedbackImage[]);
       const product = await client.productMirror.findFirst({
         where: { id: productId, pancakeShopId: shopId },
         select: { productCode: true },

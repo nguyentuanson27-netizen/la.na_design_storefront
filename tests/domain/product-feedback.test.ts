@@ -153,21 +153,53 @@ test("many tagged variants and URLs still yield at most the cap, de-duplicated, 
   assert.equal(new Set(feedback?.images.map((image) => image.src)).size, PRODUCT_FEEDBACK_IMAGE_LIMIT);
 });
 
+test("padded tagged display IDs still name their product, and a longer code containing it does not", () => {
+  const feedback = selectProductFeedback({
+    productCode: "SV605",
+    productCodeOwnerCount: 1,
+    taggedVariants: [
+      // The mirror stores Pancake's `display_id` untrimmed; the parser trims after the prefix.
+      row("ANH-FEEDBACK-SV605 ", [UNCALIBRATED]),
+      row("ANH-FEEDBACK- SV605", [KNOWN_3.src]),
+      // A candidate the `contains` read returns but that names another product.
+      row("ANH-FEEDBACK-SV6050", [UNCALIBRATED_2]),
+    ],
+    brandImages: [],
+  });
+  assert.equal(feedback?.scope, "product");
+  assert.deepEqual(feedback?.images.map((image) => image.src), [KNOWN_3.src, UNCALIBRATED]);
+});
+
 type Call = Readonly<{ method: string; where: unknown }>;
+
+const isTagRead = (where: { pancakeDisplayId: object }) => "contains" in where.pancakeDisplayId;
 
 function fakeClient(
   calls: Call[],
-  { productCode = "SV605", owners = 1, failBrand = false }: { productCode?: string | null; owners?: number; failBrand?: boolean } = {},
+  {
+    productCode = "SV605",
+    owners = 1,
+    failBrand = false,
+    failTag = false,
+    tagged = [row("ANH-FEEDBACK-SV605 ", [UNCALIBRATED])],
+  }: {
+    productCode?: string | null;
+    owners?: number;
+    failBrand?: boolean;
+    failTag?: boolean;
+    tagged?: FeedbackVariantRow[];
+  } = {},
 ): ProductFeedbackReadClient {
   return {
     variantMirror: {
       async findMany(args) {
         calls.push({ method: "variantMirror.findMany", where: args.where });
-        if ("startsWith" in args.where.pancakeDisplayId) {
-          if (failBrand) throw new Error("connection reset");
-          return [row("ANH-FEEDBACK-01", [KNOWN_1.src])];
+        if (isTagRead(args.where)) {
+          if (failTag) throw new Error("connection reset");
+          return tagged;
         }
-        return [row("ANH-FEEDBACK-SV605", [UNCALIBRATED])];
+        if (failBrand) throw new Error("statement timeout");
+        return [row("ANH-FEEDBACK-01", [KNOWN_1.src])];
       },
     },
     productMirror: {
@@ -183,7 +215,7 @@ function fakeClient(
   };
 }
 
-test("readProductFeedback reads only the product's own tag and counts who else carries its code", async () => {
+test("readProductFeedback reads only the product's candidate tags and counts who else carries its code", async () => {
   const calls: Call[] = [];
   const feedback = await readProductFeedback({ client: fakeClient(calls), shopId: 7, productId: "prod-1" });
 
@@ -201,7 +233,11 @@ test("readProductFeedback reads only the product's own tag and counts who else c
   const variantReads = calls.filter((call) => call.method === "variantMirror.findMany").map((call) => call.where);
   assert.deepEqual(variantReads, [
     { isPresent: true, pancakeDisplayId: { startsWith: "ANH-FEEDBACK-" }, product: { pancakeShopId: 7 } },
-    { isPresent: true, pancakeDisplayId: { equals: "ANH-FEEDBACK-SV605", mode: "insensitive" }, product: { pancakeShopId: 7 } },
+    {
+      isPresent: true,
+      pancakeDisplayId: { startsWith: "ANH-FEEDBACK-", contains: "SV605", mode: "insensitive" },
+      product: { pancakeShopId: 7 },
+    },
   ]);
 });
 
@@ -223,7 +259,7 @@ test("the brand gallery read is shared across product pages per shop until its T
   let clock = 1_000;
   const repository = createProductFeedbackRepository(fakeClient(calls), { now: () => clock, ttlMs: 60_000 });
   const brandReads = () =>
-    calls.filter((call) => call.method === "variantMirror.findMany" && JSON.stringify(call.where).includes("startsWith")).length;
+    calls.filter((call) => call.method === "variantMirror.findMany" && !isTagRead(call.where as { pancakeDisplayId: object })).length;
 
   await Promise.all([
     repository.readProductFeedback({ shopId: 7, productId: "a" }),
@@ -240,7 +276,7 @@ test("the brand gallery read is shared across product pages per shop until its T
   assert.equal(brandReads(), 3, "expired entries are re-read");
 });
 
-test("a failed brand read is not cached", async () => {
+test("a failed brand read keeps the product's own photographs and is not cached", async () => {
   const calls: Call[] = [];
   let failBrand = true;
   const client = fakeClient(calls);
@@ -248,20 +284,30 @@ test("a failed brand read is not cached", async () => {
     ...client,
     variantMirror: {
       async findMany(args) {
-        if (failBrand && "startsWith" in args.where.pancakeDisplayId) throw new Error("connection reset");
+        if (failBrand && !isTagRead(args.where)) throw new Error("statement timeout");
         return client.variantMirror.findMany(args);
       },
     },
   };
   const repository = createProductFeedbackRepository(flaky, { now: () => 0 });
-  await assert.rejects(repository.readProductFeedback({ shopId: 7, productId: "a" }));
+
+  const during = await repository.readProductFeedback({ shopId: 7, productId: "a" });
+  assert.equal(during?.scope, "product");
+  assert.equal(during?.hasBrandGallery, false, "no /feedback link while the brand gallery is unknown");
+
   failBrand = false;
-  assert.equal((await repository.readProductFeedback({ shopId: 7, productId: "a" }))?.scope, "product");
+  const after = await repository.readProductFeedback({ shopId: 7, productId: "a" });
+  assert.equal(after?.scope, "product");
+  assert.equal(after?.hasBrandGallery, true, "the failed read was not cached");
 });
 
 test("readProductFeedback fails closed rather than failing the product page", async () => {
-  const client = fakeClient([], { failBrand: true });
-  assert.equal(await readProductFeedback({ client, shopId: 7, productId: "prod-1" }), null);
+  // A failed brand read with nothing of the product's own leaves nothing to show.
+  const noOwn = fakeClient([], { failBrand: true, tagged: [] });
+  assert.equal(await readProductFeedback({ client: noOwn, shopId: 7, productId: "prod-1" }), null);
+  // A failed tag read cannot be told from "no photographs", so the rail is omitted entirely.
+  const tagDown = fakeClient([], { failTag: true });
+  assert.equal(await readProductFeedback({ client: tagDown, shopId: 7, productId: "prod-1" }), null);
 });
 
 test("the rail's heading says whose photographs these are", () => {

@@ -34,6 +34,8 @@ const OWN_CALIBRATED = HOMEPAGE_CONFIG.feedback.images[2]!.src;
 // Not in the dimension registry: the product page must still show it, and the viewer must
 // contain it without an invented ratio.
 const OWN_UNCALIBRATED = "https://content.pancake.vn/2-2610/2026/10/8/pdp-feedback-uncalibrated.jpg";
+// On a variant whose display ID Pancake sent padded; the mirror keeps it untrimmed.
+const OWN_PADDED = "https://content.pancake.vn/2-2610/2026/10/8/pdp-feedback-padded-id.jpg";
 const SHARED_ONLY = "https://content.pancake.vn/2-2610/2026/10/8/pdp-feedback-shared-code.jpg";
 
 const products = {
@@ -123,15 +125,15 @@ async function createProduct({ slug, name, code }: { slug: string; name: string;
 }
 
 /** One tagged feedback variant, on the same inactive holder product the brand rows live on. */
-async function tagFeedback(code: string, urls: readonly string[]) {
+async function tagFeedback(code: string, urls: readonly string[], displayId = `ANH-FEEDBACK-${code}`) {
   const holder = await prisma.productMirror.findFirstOrThrow({
     where: { pancakeShopId: SHOP_ID, name: "ANH FEEDBACK fixture" },
   });
   await prisma.variantMirror.create({
     data: {
-      pancakeVariationId: `pdp-feedback-tag-${code}-${runId}`,
+      pancakeVariationId: `pdp-feedback-tag-${displayId.replaceAll(" ", "_")}-${runId}`,
       productId: holder.id,
-      pancakeDisplayId: `ANH-FEEDBACK-${code}`,
+      pancakeDisplayId: displayId,
       pancakeImageUrls: [...urls],
       isPresent: true,
       isActive: true,
@@ -156,6 +158,7 @@ test.beforeAll(async () => {
   await seedFeedbackMirror(prisma, { shopId: SHOP_ID, runId, urls: [BRAND_1, BRAND_2] });
   for (const product of Object.values(products)) await createProduct(product);
   await tagFeedback(products.own.code, [OWN_CALIBRATED, OWN_UNCALIBRATED]);
+  await tagFeedback(products.own.code, [OWN_PADDED], `ANH-FEEDBACK-${products.own.code} `);
   await tagFeedback("FBDUP3", [SHARED_ONLY]);
 
   server = spawn(process.execPath, [NEXT_CLI, "dev", "--hostname", HOST, "--port", String(PORT)], {
@@ -193,11 +196,12 @@ test("a product's own tagged photographs show under its own heading, an uncalibr
   const section = rail(page);
   await expect(section.getByRole("heading", { level: 2, name: "Khách hàng diện mẫu này" })).toBeVisible();
   const photos = section.getByRole("button", { name: /^Phóng to ảnh/ });
-  await expect(photos).toHaveCount(2);
+  // Two from `ANH-FEEDBACK-FBOWN1`, one from the padded `ANH-FEEDBACK-FBOWN1 `.
+  await expect(photos).toHaveCount(3);
   await expect(section.getByRole("link", { name: /^Xem thêm/ })).toHaveAttribute("href", "/feedback");
 
   // The in-panel link names the count and leads to the rail.
-  const jump = page.getByRole("link", { name: "Xem 2 ảnh khách hàng diện mẫu này" });
+  const jump = page.getByRole("link", { name: "Xem 3 ảnh khách hàng diện mẫu này" });
   await expect(jump).toHaveAttribute("href", "#pdp-feedback");
 
   // The uncalibrated photograph opens contained in the viewer, and closing returns focus to it.
