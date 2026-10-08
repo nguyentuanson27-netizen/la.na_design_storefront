@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { MerchantMarketPolicy, MerchantOffer } from "../../src/commerce/merchant-offer-mapper.ts";
-import { MerchantFeedByteOverflowError, MerchantFeedSerializationError } from "../../src/commerce/merchant-feed-serializer.ts";
+import { MerchantFeedByteOverflowError, MerchantFeedOfferOverflowError, MerchantFeedSerializationError } from "../../src/commerce/merchant-feed-serializer.ts";
+import { MAX_MERCHANT_CANDIDATE_VARIANTS, MAX_MERCHANT_OFFERS } from "../../src/commerce/merchant-feed-limits.ts";
 import {
   buildFacebookLiveItems,
   serializeFacebookLiveFeed,
@@ -101,5 +102,57 @@ test("XML encoding is bounded and invalid control characters fail rather than en
   assert.throws(
     () => serializeFacebookLiveFeed({ ...data, offers: [offer({ title: "Unsafe\u0000title" })] }),
     MerchantFeedSerializationError,
+  );
+});
+
+
+test("many size offers remain within the source candidate ceiling when they collapse into fewer parent items", () => {
+  // Merchant can read 7,000 candidates, while the emitted 5,000 item budget applies after
+  // grouping. A valid catalog of 1,700 designs x 3 sizes must not be rejected at 5,100 variants.
+  const variants = Array.from({ length: 1_700 }, (_, productIndex) =>
+    ["S", "M", "L"].map((size) => {
+      const variantId = `variant-${productIndex}-${size.toLowerCase()}`;
+      return offer({
+        id: variantId,
+        itemGroupId: `product-${productIndex}`,
+        title: `Áo dài ${productIndex}`,
+        mpn: `SKU-${productIndex}-${size}`,
+        size,
+        link: `${ORIGIN}/shop/ao-dai-${productIndex}?variant=${variantId}`,
+      });
+    }),
+  ).flat();
+
+  assert.equal(variants.length, 5_100);
+  assert.ok(variants.length > MAX_MERCHANT_OFFERS);
+  assert.ok(variants.length <= MAX_MERCHANT_CANDIDATE_VARIANTS);
+  const feed = serializeFacebookLiveFeed({ offers: variants, market: MARKET, origin: ORIGIN });
+  assert.equal(feed.offerCount, 1_700);
+  assert.equal((feed.body.match(/<item>/g) ?? []).length, 1_700);
+});
+
+test("the Live feed still rejects excess source candidates and excess distinct parent products", () => {
+  const tooManyCandidates = Array.from(
+    { length: MAX_MERCHANT_CANDIDATE_VARIANTS + 1 },
+    () => offer(),
+  );
+  assert.throws(
+    () => buildFacebookLiveItems(tooManyCandidates, ORIGIN),
+    MerchantFeedOfferOverflowError,
+  );
+
+  const tooManyParents = Array.from({ length: MAX_MERCHANT_OFFERS + 1 }, (_, index) => {
+    const variantId = `variant-${index}`;
+    return offer({
+      id: variantId,
+      itemGroupId: `product-${index}`,
+      title: `Áo dài ${index}`,
+      mpn: `SKU-${index}`,
+      link: `${ORIGIN}/shop/ao-dai-${index}?variant=${variantId}`,
+    });
+  });
+  assert.throws(
+    () => buildFacebookLiveItems(tooManyParents, ORIGIN),
+    MerchantFeedOfferOverflowError,
   );
 });
