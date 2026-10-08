@@ -1097,6 +1097,67 @@ test.describe("the endpoint enforces the gates itself", () => {
   });
 });
 
+test.describe("after signing up or in from the try-on link, the shopper returns to the product", () => {
+  const productPath = `/shop/${slugs.eligible}`;
+  const loginWithReturn = (next: string) => `${ENABLED_URL}/login?next=${encodeURIComponent(next)}`;
+  const password = "try-on-return-password-1";
+
+  test("signing up goes back to the product page", async ({ page }) => {
+    await page.goto(loginWithReturn(productPath), { waitUntil: "networkidle" });
+    await page.locator("#sign-up-name").fill("Return Member");
+    await page.locator("#sign-up-email").fill(`try-on-return-up-${runId}@example.test`);
+    await page.locator("#sign-up-password").fill(password);
+    await page.locator('form[aria-labelledby="sign-up-title"] button[type="submit"]').click();
+
+    await page.waitForURL(`${ENABLED_URL}${productPath}`);
+    await expect(triggerOf(page)).toBeVisible();
+  });
+
+  test("signing in goes back to the product page", async ({ page, request }) => {
+    const email = `try-on-return-in-${runId}@example.test`;
+    const created = await request.post(`${ENABLED_URL}/api/auth/sign-up/email`, {
+      headers: { origin: ENABLED_URL, "x-ci-client-ip": "203.0.113.50" },
+      data: { name: "Return Member", email, password },
+    });
+    expect(created.ok(), await created.text()).toBe(true);
+
+    // The page is a separate browser context, so it is signed out and uses the sign-in form.
+    await page.goto(loginWithReturn(productPath), { waitUntil: "networkidle" });
+    await page.locator("#sign-in-email").fill(email);
+    await page.locator("#sign-in-password").fill(password);
+    await page.locator('form[aria-labelledby="sign-in-title"] button[type="submit"]').click();
+
+    await page.waitForURL(`${ENABLED_URL}${productPath}`);
+    await expect(triggerOf(page)).toBeVisible();
+  });
+
+  test("a next that leaves the site is ignored: the shopper stays on the account page", async ({ page }) => {
+    await page.goto(loginWithReturn("//evil.example/shop"), { waitUntil: "networkidle" });
+    await page.locator("#sign-up-name").fill("Return Member");
+    await page.locator("#sign-up-email").fill(`try-on-return-unsafe-${runId}@example.test`);
+    await page.locator("#sign-up-password").fill(password);
+    await page.locator('form[aria-labelledby="sign-up-title"] button[type="submit"]').click();
+
+    // Signed in, on /login, and nothing navigated away.
+    await expect(page.getByText("Đã đăng nhập", { exact: true })).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).origin).toBe(ENABLED_URL);
+    expect(new URL(page.url()).pathname).toBe("/login");
+  });
+
+  test("without a next the shopper stays on the account page", async ({ page }) => {
+    await page.goto(`${ENABLED_URL}/login`, { waitUntil: "networkidle" });
+    await page.locator("#sign-up-name").fill("Return Member");
+    await page.locator("#sign-up-email").fill(`try-on-return-none-${runId}@example.test`);
+    await page.locator("#sign-up-password").fill(password);
+    await page.locator('form[aria-labelledby="sign-up-title"] button[type="submit"]').click();
+
+    await expect(page.getByText("Đã đăng nhập", { exact: true })).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(new URL(page.url()).pathname).toBe("/login");
+  });
+});
+
 test("a guest told to log in sees the sign-in link on the result step, and the dialog still closes cleanly", async ({
   page,
 }) => {

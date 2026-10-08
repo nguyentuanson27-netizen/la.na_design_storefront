@@ -1,5 +1,10 @@
 import { handleTryOnPost, handleTryOnQuotaGet } from "@/commerce/try-on-endpoint";
-import { peekTryOnQuota, resolveTryOnIdentity, tryOnService } from "@/commerce/try-on-runtime";
+import {
+  peekTryOnQuota,
+  resolveTryOnDisplayIdentity,
+  resolveTryOnIdentity,
+  tryOnService,
+} from "@/commerce/try-on-runtime";
 
 /**
  * Virtual try-on. All logic is in `@/commerce/try-on-endpoint` and `@/commerce/try-on-service`; this
@@ -14,5 +19,8 @@ export async function POST(request: Request) {
 }
 
 export async function GET(request: Request) {
-  return handleTryOnQuotaGet(request, { resolveIdentity: resolveTryOnIdentity, peekQuota: peekTryOnQuota });
+  return handleTryOnQuotaGet(request, {
+    resolveIdentity: resolveTryOnDisplayIdentity,
+    peekQuota: peekTryOnQuota,
+  });
 }

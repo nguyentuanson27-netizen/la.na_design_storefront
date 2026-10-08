@@ -12,6 +12,7 @@ import { createMerchandisingRepository } from "./merchandising-repository.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import { getConfiguredStorefrontProductBySlug } from "./storefront-catalog-runtime.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
+import { createTryOnIdentityResolvers } from "./try-on-identity.ts";
 import { createTryOnRateLimiter, type TryOnIdentity } from "./try-on-rate-limit.ts";
 import { createTryOnService } from "./try-on-service.ts";
 
@@ -67,28 +68,24 @@ function resolveTryOnClientKey(headers: Headers): string | null {
   }
 }
 
-/** Account ids are short opaque strings; anything else is not trusted as a rate-limit key. */
-const MEMBER_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const identityResolvers = createTryOnIdentityResolvers({
+  getSessionUserId: async (headers) => (await auth.api.getSession({ headers }))?.user?.id,
+  deriveClientKey: resolveTryOnClientKey,
+});
 
 /**
- * A signed-in shopper is a member with their own, larger quota; everyone else is a guest keyed by
- * client address. Any account counts — the quota is about cost, not about who the account is.
- *
- * A session lookup that fails (database down, malformed cookie) falls back to guest, never to
- * member, so a fault can only make the limit stricter. With neither a session nor a derivable
- * client address there is no identity to meter, and the request fails closed.
+ * Who is spending an attempt: a signed-in shopper is a member with their own, larger quota; everyone
+ * else is a guest keyed by client address. A failed session lookup counts as a guest, which can only
+ * make the limit stricter. With neither a session nor a derivable client address there is no identity
+ * to meter, and the request fails closed. See `try-on-identity.ts`.
  */
-export async function resolveTryOnIdentity(headers: Headers): Promise<TryOnIdentity | null> {
-  try {
-    const session = await auth.api.getSession({ headers });
-    const id = session?.user?.id;
-    if (typeof id === "string" && MEMBER_ID_PATTERN.test(id)) return { kind: "member", key: id };
-  } catch {
-    // Fall through to guest.
-  }
-  const clientKey = resolveTryOnClientKey(headers);
-  return clientKey === null ? null : { kind: "guest", key: clientKey };
-}
+export const resolveTryOnIdentity = identityResolvers.forAttempt;
+
+/**
+ * Who is *asking what they have left*: the same answer, except that a failed session lookup is an
+ * error (the quota endpoint reports it as unavailable) instead of a guess that a member is a guest.
+ */
+export const resolveTryOnDisplayIdentity = identityResolvers.forDisplay;
 
 /**
  * Whether the PDP should offer try-on for this product, decided on the server so the browser never
