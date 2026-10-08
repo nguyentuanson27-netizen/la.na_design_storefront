@@ -357,7 +357,7 @@ async function asNewGuest(page: Page) {
 }
 
 function triggerOf(page: Page) {
-  // "Thử đồ" on a phone, "Thử đồ bằng ảnh của bạn" from the `sm` breakpoint up.
+  // "Thử đồ AI", a link-styled button beside the size guide.
   return page.getByRole("button", { name: /^Thử đồ/ });
 }
 function dialogOf(page: Page) {
@@ -421,33 +421,32 @@ async function fillThroughConfirmation(
 
 // --- eligibility ------------------------------------------------------------------------------
 
-test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, in its own row under the size guide", async ({
+test("an eligible apparel PDP offers Thử đồ at phone and desktop widths, beside the size guide", async ({
   page,
 }) => {
   const watched = await watch(page);
   await page.goto(`${ENABLED_URL}/shop/${slugs.eligible}`, { waitUntil: "networkidle" });
   const sizeGuide = page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true });
 
-  async function expectOwnRowUnderSizeGuide() {
+  async function expectBesideSizeGuide() {
     await expect(triggerOf(page)).toBeVisible();
     await expect(sizeGuide).toBeVisible();
     const [trigger, guide] = await Promise.all([triggerOf(page).boundingBox(), sizeGuide.boundingBox()]);
-    // Its own row, directly beneath the size-guide link and starting at the same left edge, so it
-    // is noticed without displacing the add-to-bag controls from the panel.
-    expect(trigger!.y).toBeGreaterThanOrEqual(guide!.y + guide!.height - 1);
-    expect(trigger!.y - (guide!.y + guide!.height)).toBeLessThan(24);
-    expect(Math.abs(trigger!.x - guide!.x)).toBeLessThan(8);
-    // It says what it is: AI, still in development, and free.
-    await expect(triggerOf(page)).toContainText("AI · Beta");
-    await expect(triggerOf(page)).toContainText("miễn phí");
+    // On the size-guide line, after the guide, so it adds no height above the add-to-bag controls.
+    expect(Math.abs(trigger!.y + trigger!.height / 2 - (guide!.y + guide!.height / 2))).toBeLessThan(4);
+    expect(trigger!.x).toBeGreaterThan(guide!.x + guide!.width);
+    // It says what it is: AI, still in development, and (to assistive technology) free.
+    await expect(triggerOf(page)).toContainText("Thử đồ AI");
+    await expect(triggerOf(page)).toContainText("Beta");
+    await expect(triggerOf(page)).toHaveAccessibleName(/miễn phí/);
   }
 
-  await expectOwnRowUnderSizeGuide();
+  await expectBesideSizeGuide();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeEnabled();
   await assertPageQuality(page);
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expectOwnRowUnderSizeGuide();
+  await expectBesideSizeGuide();
   await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeVisible();
   await assertPageQuality(page);
 

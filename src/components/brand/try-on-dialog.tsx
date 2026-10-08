@@ -78,9 +78,12 @@ function PersonIcon() {
 }
 
 /**
- * The entry point. It was a text link on the size-guide line, which is easy to read past, so it is
- * now a quiet outlined row of its own under it: what it does in one line, and a small mark that it
- * is AI and still in development. Its name still begins "Thử đồ".
+ * The entry point: a text link beside "Hướng dẫn chọn size", in the same style, because both help
+ * the shopper choose (owner request 2026-10-08). It was briefly a full-width outlined row of its own,
+ * which pushed the purchase buttons down; the phone reminder (`BrandTryOnNudge`) is what keeps a
+ * shopper who read past it from missing it. A small mark says it is still in development, and the
+ * accessible name says the rest of what the row used to: on your own photo, free. Its name still
+ * begins "Thử đồ".
  */
 export function BrandTryOnTrigger({
   onOpen,
@@ -90,24 +93,17 @@ export function BrandTryOnTrigger({
     <button
       ref={triggerRef}
       type="button"
-      className={`group mt-1 flex min-h-14 w-full items-center gap-3 border border-[#3B2219] px-4 py-2.5 text-left text-[#3B2219] transition-colors hover:bg-[#3B2219]/5 ${FOCUS_RING} focus-visible:outline-offset-4`}
+      className={`group inline-flex min-h-11 items-center gap-2 text-sm text-[#3B2219] ${FOCUS_RING} focus-visible:outline-offset-4`}
       aria-haspopup="dialog"
       onClick={onOpen}
     >
       <PersonIcon />
-      <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-semibold">Thử đồ bằng ảnh của bạn</span>
-          <span className="border border-[#3B2219]/60 px-1.5 py-px text-[10px] font-semibold uppercase tracking-[0.12em]">
-            AI · Beta
-          </span>
-        </span>
-        <span className="mt-0.5 block text-xs leading-5 text-black/65">
-          Xem sản phẩm trên chính bạn, hoàn toàn miễn phí
-        </span>
+      <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
+        Thử đồ AI
       </span>
-      <span aria-hidden="true" className="shrink-0 text-lg leading-none transition-transform group-hover:translate-x-0.5">
-        →
+      <span className="sr-only"> bằng ảnh của bạn, hoàn toàn miễn phí,</span>
+      <span className="border border-[#3B2219]/50 px-1 text-[9px] font-semibold uppercase leading-[14px] tracking-[0.12em]">
+        Beta
       </span>
     </button>
   );
