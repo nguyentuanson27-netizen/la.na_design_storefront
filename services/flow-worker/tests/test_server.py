@@ -174,6 +174,12 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(env["GFLOW_CLI_DB_PATH"], str(db_path))
         self.assertNotEqual(env["GFLOW_CLI_DB_PATH"], "/data/gflow/gflow.db")
 
+    def test_gflow_is_pinned_to_flow_google_com_even_when_the_worker_env_says_otherwise(self):
+        for inherited in ({}, {"GFLOW_CLI_FLOW_HOST": "auto"}, {"GFLOW_CLI_FLOW_HOST": "labs.google"}):
+            with self.subTest(inherited=inherited), patch.dict(server.os.environ, inherited, clear=True):
+                env = server._gflow_env(server.Path("/tmp/gflow.db"))
+            self.assertEqual(env["GFLOW_CLI_FLOW_HOST"], "flow.google.com")
+
     def test_generation_catalog_lives_in_request_tempdir_and_is_removed(self):
         db_paths = []
 

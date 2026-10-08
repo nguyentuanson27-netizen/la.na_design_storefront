@@ -21,6 +21,16 @@ if os.environ.get("FLOW_REQUIRE_BROWSER_TESTS") and not (HAS_GFLOW and HAS_PLAYW
     raise RuntimeError("FLOW_REQUIRE_BROWSER_TESTS is set but gflow-cli or playwright is missing")
 
 
+def install_like_the_worker() -> None:
+    """The worker's child env pins GFLOW_CLI_FLOW_HOST before gflow loads (server._gflow_env)."""
+    from gflow_cli.config import reset_settings
+
+    os.environ["GFLOW_CLI_FLOW_HOST"] = "flow.google.com"
+    reset_settings()
+    gflow_prompt_guard.install()
+    gflow_models.install()
+
+
 def submit_body(*model_keys: str) -> str:
     inner = json.dumps([[TRY_ON_PROMPT, [[[None, 1, PERSON_ID]], [[None, 1, GARMENT_ID]]]], *model_keys])
     return "f.req=" + json.dumps([[["ogiZ0b", inner, None, "generic"]]]) + "&at=token"
@@ -77,8 +87,29 @@ class GflowModelPatchTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        gflow_prompt_guard.install()
-        gflow_models.install()
+        install_like_the_worker()
+
+    def test_patches_refuse_to_load_unless_gflow_is_pinned_to_flow_google_com(self):
+        from gflow_cli.config import reset_settings
+
+        for host in ("auto", "labs.google"):
+            with (
+                self.subTest(host=host),
+                patch.object(gflow_models, "_installed", False),
+                patch.dict(os.environ, {"GFLOW_CLI_FLOW_HOST": host}),
+            ):
+                reset_settings()
+                with self.assertRaisesRegex(RuntimeError, "GFLOW_CLI_FLOW_HOST=flow.google.com"):
+                    gflow_models.install()
+        reset_settings()
+
+    def test_pinned_host_never_routes_any_page_to_the_labs_driver(self):
+        from gflow_cli.api.transports._common import migrated_route
+
+        for url in ("https://labs.google/fx/tools/flow/project/x", "about:blank", "", "https://flow.google.com/"):
+            for prefer in (False, True):
+                with self.subTest(url=url, prefer=prefer):
+                    self.assertEqual(migrated_route(url, "flow.google.com", prefer_migrated=prefer), "migrated")
 
     def test_nano2_matches_exactly_the_nano_banana_2_1_menu_entry(self):
         from gflow_cli.api.image import Model
@@ -176,8 +207,7 @@ class NanoBanana21PickerTest(unittest.TestCase):
             if os.environ.get("FLOW_REQUIRE_BROWSER_TESTS"):
                 raise RuntimeError("FLOW_REQUIRE_BROWSER_TESTS is set but no browser was found")
             raise unittest.SkipTest("needs a Chromium/Chrome binary")
-        gflow_prompt_guard.install()
-        gflow_models.install()
+        install_like_the_worker()
 
     def select(self, *, sticky: bool):
         from gflow_cli.api.image import Model

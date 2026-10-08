@@ -49,6 +49,9 @@ Every request is:
 gflow-cli 0.82.1 predates Nano Banana 2.1 and reports a quota refusal on flow.google.com as a generic
 wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_models.py`):
 
+- The worker pins every gflow run to `GFLOW_CLI_FLOW_HOST=flow.google.com`, and the patches refuse to
+  load under any other value. Only flow.google.com's composer carries these checks; on gflow's labs
+  driver `nano2` is Nano Banana 2, so a labs route could never be reported as 2.1.
 - gflow's `nano2` selects exactly the menu entry labelled "Nano Banana 2.1". Unpatched, it matches
   both "Nano Banana 2" and "Nano Banana 2.1" and fails as ambiguous.
 - The model picker is read back after selection. A picker that does not show the requested model

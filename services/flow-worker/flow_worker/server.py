@@ -36,6 +36,7 @@ PROFILE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 # gflow-cli 0.82.1's --project allowlist.
 PROJECT_ID_PATTERN = re.compile(r"^[A-Za-z0-9-]{1,128}$")
 PROJECT_TITLE = "LA try-on"
+REQUIRED_FLOW_HOST = "flow.google.com"
 PROJECT_STATE_FILE = "try-on-project.json"
 WORKER_ROOT = Path(__file__).resolve().parent.parent
 
@@ -170,6 +171,10 @@ def _gflow_env(db_path: Path) -> dict[str, str]:
     env["GFLOW_CLI_HEADLESS"] = "false"
     env["GFLOW_CLI_HISTORY_PROMPTS"] = "redacted"
     env["GFLOW_CLI_UPDATE_CHECK"] = "false"
+    # Only flow.google.com's composer carries the try-on patches (prompt guard, Nano Banana 2.1
+    # selection and wire check). On gflow's labs driver `nano2` is Nano Banana 2, so a labs route
+    # must be impossible: gflow_models refuses to load under any other host setting.
+    env["GFLOW_CLI_FLOW_HOST"] = REQUIRED_FLOW_HOST
     env["PYTHONPATH"] = os.pathsep.join(filter(None, (str(WORKER_ROOT), env.get("PYTHONPATH"))))
     # gflow records every generation in a local SQLite catalog. Keep that catalog inside the
     # request tempdir so operation/media IDs, hashes, local paths and byte counts disappear with

@@ -22,6 +22,9 @@
    spend the request budget re-running a Pro attempt that cannot succeed.
 
 Installed only inside the gflow subprocess the worker starts (``flow_worker.gflow_launcher``).
+Every patch above lives on flow.google.com's composer; gflow's labs driver maps ``nano2`` to Nano
+Banana 2 with none of these checks. ``install`` therefore refuses to load unless gflow is pinned to
+``GFLOW_CLI_FLOW_HOST=flow.google.com``, under which gflow never routes to the labs driver.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from typing import Any
 from .policy import QUOTA_EXHAUSTED_MARKER
 
 GFLOW_VERSION = "0.82.1"
+REQUIRED_FLOW_HOST = "flow.google.com"
 NANO_BANANA_2_1_LABEL = "Nano Banana 2.1"
 RESOURCE_EXHAUSTED = 8
 IMAGE_SUBMIT_RPC = "ogiZ0b"
@@ -134,6 +138,14 @@ def install() -> None:
     version = metadata.version("gflow-cli")
     if version != GFLOW_VERSION:
         raise RuntimeError(f"try-on model patches target gflow-cli {GFLOW_VERSION}, found {version}")
+    from gflow_cli.config import get_settings
+
+    flow_host = get_settings().flow_host
+    if flow_host != REQUIRED_FLOW_HOST:
+        raise RuntimeError(
+            f"try-on model patches need GFLOW_CLI_FLOW_HOST={REQUIRED_FLOW_HOST}, found {flow_host}: "
+            "another host could route to the labs driver, where nano2 is Nano Banana 2"
+        )
 
     from gflow_cli.api.image import Model as ImageModel
     from gflow_cli.api.transports import batchexecute
