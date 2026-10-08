@@ -216,9 +216,13 @@ rủi ro lẫn dữ liệu giữa các khách.
 - Ngân sách một request dùng chung cho đường warm và đường lui: nếu warm tốn thời gian rồi báo
   không dùng được, gflow theo request chỉ nhận phần còn lại của hạn chót, và không chạy nếu đã hết.
 - `POST /v1/cool` là **rào chắn thật** (sửa theo review): nó huỷ lượt khởi động đã lên lịch hoặc đang
-  chạy, rồi giữ trình duyệt tắt trong `FLOW_WARM_COOL_PAUSE_SECONDS` (900 s): không gợi ý warm nào,
-  không request nào mở Chrome (request vẫn chạy bằng gflow riêng). Trả `409` nếu không nhả được trong
-  15 s. `POST /v1/resume` kết thúc đợt tạm dừng sớm. Mọi gflow theo request cũng giữ trình duyệt warm
+  chạy, rồi giữ trình duyệt tắt và **đóng worker với mọi try-on** trong `FLOW_WARM_COOL_PAUSE_SECONDS`
+  (900 s): không gợi ý warm nào mở Chrome, và `POST /v1/try-on` trả `409 BUSY` (kiểm tra dưới
+  `_generation_lock`, cùng khóa mà `/v1/cool` giữ khi đặt đợt tạm dừng, nên request nào cũng hoặc đứng
+  trước cool và được chờ, hoặc đứng sau và bị từ chối). Nhờ đó không có gflow nào của khách tranh
+  profile với `gflow auth status` của người vận hành. Trả `409` nếu không nhả được trong 15 s.
+  `POST /v1/resume` kết thúc đợt tạm dừng sớm; đợt tạm dừng tự hết sau 900 s nếu quên. Khi
+  `FLOW_WARM_BROWSER` tắt, không có gì thay đổi (khoảng trống cũ giữa deploy và lưu lượng vẫn như trước). Mọi gflow theo request cũng giữ trình duyệt warm
   tắt suốt thời gian nó chạy (`WarmRunner.exclusive`). `deploy.sh` dừng deploy nếu một worker đang chạy
   mà không cool được (404 = worker bản cũ, bỏ qua).
 - Chưa làm: cờ Chrome giảm RAM, hạ Xvfb, giữ composer mở sẵn. Cả ba chờ số liệu ở giai đoạn 0.

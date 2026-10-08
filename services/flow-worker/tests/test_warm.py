@@ -260,7 +260,8 @@ class CoolBarrierTest(unittest.TestCase):
 
         self.assertEqual(runner.warm(), "paused")
         self.assertEqual(runner.status(), {"state": warm.COLD, "paused": True})
-        # A shopper's request is not refused: it is told to use its own gflow process instead.
+        # The runner itself never starts Chrome during the pause. (The HTTP layer goes further and refuses
+        # try-on requests as busy for the whole pause: see CoolEndpointTest.)
         self.assertEqual(runner.run(job("ok"), 10).kind, "unavailable")
         self.assertEqual(runner.spawned, [])
 
@@ -360,6 +361,48 @@ class CoolEndpointTest(unittest.TestCase):
     def test_cool_answers_busy_while_a_generation_is_running(self):
         with server._generation_lock:
             self.assertEqual(self.post_cool(), (409, {"ok": False, "reason": "BUSY"}))
+
+    def post_try_on(self):
+        connection = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=20)
+        body = b"{}"
+        headers = {
+            "authorization": f"Bearer {self.TOKEN}",
+            "content-type": "application/json",
+            "content-length": str(len(body)),
+        }
+        connection.request("POST", "/v1/try-on", body=body, headers=headers)
+        response = connection.getresponse()
+        result = json.loads(response.read())
+        connection.close()
+        return response.status, result
+
+    def test_while_cooled_a_shoppers_try_on_is_refused_busy_and_never_touches_the_profile(self):
+        # cool succeeds -> a shopper submits -> the operator's own `gflow auth status` runs. The shopper's
+        # request must not have started any gflow of its own in between.
+        self.assertEqual(self.post_cool()[0], 200)
+        with (
+            patch.object(server, "_generate", side_effect=AssertionError("must not generate while cooled")),
+            patch.object(server, "_run_gflow", side_effect=AssertionError("must not start gflow while cooled")),
+        ):
+            self.assertEqual(self.post_try_on(), (409, {"ok": False, "reason": "BUSY"}))
+        self.assertEqual(self.runner.spawned, [])
+        self.assertEqual(self.runner.state, warm.COLD)
+
+    def test_after_resume_try_on_requests_are_served_again(self):
+        self.assertEqual(self.post_cool()[0], 200)
+        self.assertEqual(self.post_try_on()[0], 409)
+        self.assertEqual(self.post_cool(path="/v1/resume")[0], 200)
+        # Past the gate the (empty) body is rejected as the bad request it is: the request is being served.
+        self.assertEqual(self.post_try_on(), (400, {"ok": False, "reason": "GENERATION_FAILED"}))
+
+    def test_the_pause_ends_by_itself(self):
+        clock = FakeClock()
+        self.runner._clock = clock
+        self.runner._config = warm.WarmConfig(cool_pause_seconds=900, start_timeout_seconds=5)
+        self.assertEqual(self.post_cool()[0], 200)
+        self.assertEqual(self.post_try_on()[0], 409)
+        clock.now += 901
+        self.assertEqual(self.post_try_on()[0], 400)
 
     def test_resume_ends_the_pause_early_so_the_browser_can_warm_again(self):
         self.assertEqual(self.post_cool()[0], 200)

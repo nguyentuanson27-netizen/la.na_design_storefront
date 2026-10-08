@@ -108,11 +108,13 @@ request = urllib.request.Request(
 print(urllib.request.urlopen(request, timeout=30).read().decode())'
 ```
 
-`200` means the browser is down **and stays down**: for `FLOW_WARM_COOL_PAUSE_SECONDS` (15 min) no
-pre-warm hint and no request starts it again. Requests in that window still work, each on its own gflow
-process, as without the warm browser. Cool also cancels a start that was already under way. Do the
-operator work inside that window, then call `POST /v1/resume` (same call, that path) to let the browser
-start again, or let the pause run out.
+`200` means the browser is down **and the worker is closed to try-ons**: for
+`FLOW_WARM_COOL_PAUSE_SECONDS` (15 min) no pre-warm hint starts Chrome and every `POST /v1/try-on` is
+refused as `409 BUSY` (shoppers see the usual "busy, try again" message), so nothing else can take the
+Chrome profile while the operator uses it. Cool also cancels a start that was already under way, and it
+waits for a generation in flight (`409` until it ends). Do the operator work inside that window, then
+call `POST /v1/resume` (same call, that path) to open the worker again, or let the pause run out.
+If `FLOW_WARM_BROWSER` is off, none of this applies and the worker behaves as before.
 
 `409 BUSY` means a generation is running, or the browser could not be released within 15 s: the
 profile must **not** be assumed free. Retry in a few seconds.

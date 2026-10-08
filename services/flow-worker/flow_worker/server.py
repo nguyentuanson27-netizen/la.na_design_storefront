@@ -782,6 +782,14 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         try:
+            if _warm_runner is not None and _warm_runner.paused():
+                # An operator cooled the worker to have the Chrome profile to themselves
+                # (`gflow auth login/status`). A try-on now would start its own gflow on that profile
+                # and take the lease from them, so it is refused as busy until the pause ends. Checked
+                # under the generation lock, which `/v1/cool` also holds while it sets the pause, so
+                # every request is either ahead of the cool (and it waits) or behind it (and is refused).
+                self._json(409, {"ok": False, "reason": "BUSY"})
+                return
             try:
                 self.connection.settimeout(REQUEST_READ_TIMEOUT_SECONDS)
                 raw_body = self.rfile.read(length)

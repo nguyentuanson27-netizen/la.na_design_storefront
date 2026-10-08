@@ -64,7 +64,8 @@ fi
 # Chrome on that same profile. So a running worker is asked to release it (POST /v1/cool) before those
 # checks, and the deploy stops if it cannot: carrying on would fail on the profile lock later, with a
 # far less useful message. Cool also keeps the browser from starting again for a while, so a pending
-# warm-up cannot take the profile back. Not running, or a worker from before the warm browser (404),
+# warm-up cannot take the profile back, and closes the worker to try-on requests (they answer BUSY) so
+# no per-request gflow can either. Not running, or a worker from before the warm browser (404),
 # or one with it switched off, has nothing to release. A generation in progress answers 409 and is
 # retried for up to a minute.
 flow_worker_request() {

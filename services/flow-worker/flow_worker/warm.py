@@ -317,6 +317,11 @@ class WarmRunner:
             self._lock.release()
         return True
 
+    def paused(self) -> bool:
+        """Whether a cool is in effect: the operator has the Chrome profile, and nothing may use it."""
+        with self._guard:
+            return self._clock() < self._paused_until
+
     def resume(self) -> None:
         """End a cool early, once the operator work that needed the profile is done."""
         with self._guard:
