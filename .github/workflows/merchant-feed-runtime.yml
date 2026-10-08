@@ -130,3 +130,19 @@ jobs:
             cat "$RUNNER_TEMP/merchant-feed-runtime.log"
             exit 1
           fi
+
+          # The Live catalog is a separate product-level source; request parameters cannot
+          # influence the server-owned origin, market or single-flight cache key.
+          live_first_status="$(curl --silent --output "$RUNNER_TEMP/facebook-live-first.txt" --dump-header "$RUNNER_TEMP/facebook-live-first.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/facebook-live.xml?country=VN&size=S')"
+          live_second_status="$(curl --silent --output "$RUNNER_TEMP/facebook-live-second.txt" --dump-header "$RUNNER_TEMP/facebook-live-second.headers" --write-out '%{http_code}' 'http://127.0.0.1:3220/feeds/facebook-live.xml?country=US&size=L')"
+          test "$live_first_status" = "200"
+          test "$live_second_status" = "200"
+          grep -Fqi 'content-type: application/rss+xml; charset=utf-8' "$RUNNER_TEMP/facebook-live-first.headers"
+          grep -Fqi 'x-la-merchant-feed-state: generated' "$RUNNER_TEMP/facebook-live-first.headers"
+          grep -Fqi 'x-la-merchant-feed-state: hit' "$RUNNER_TEMP/facebook-live-second.headers"
+          grep -Fq '<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">' "$RUNNER_TEMP/facebook-live-first.txt"
+          grep -Fq 'Facebook Live Catalog</title>' "$RUNNER_TEMP/facebook-live-first.txt"
+          cmp -s "$RUNNER_TEMP/facebook-live-first.txt" "$RUNNER_TEMP/facebook-live-second.txt"
+          test "$(grep -Fc '[facebook-live-feed] cold_generation' "$RUNNER_TEMP/merchant-feed-runtime.log")" = "1"
+          grep -Fq '[facebook-live-feed] generation_success' "$RUNNER_TEMP/merchant-feed-runtime.log"
+          grep -Fq '[facebook-live-feed] success_cache_hit' "$RUNNER_TEMP/merchant-feed-runtime.log"
