@@ -19,10 +19,15 @@ export const PRODUCT_IMAGE_MAX_QUEUED = 64;
 /** Requests that may be waiting on one `src` + `w` run besides its leader. */
 export const PRODUCT_IMAGE_MAX_FOLLOWERS = 16;
 /**
- * Every request that is waiting on a run, leader or follower. Each one materializes its own copy of
- * the body (just under 3 MB) when the run settles, so this bounds memory and egress as well as CPU.
+ * Every request that is waiting on a run, leader or follower, or whose response body is still being
+ * written to its client. A slot is held until the body has been consumed, cancelled or the hold
+ * timeout fires, so a wave of slow clients cannot be followed by another wave. The bytes of a run
+ * are shared by all of its responses, so the cost per response is only its stream state.
  */
 export const PRODUCT_IMAGE_MAX_PENDING = 128;
+/** Longest a response may hold an admission slot before the transfer is cut off. */
+export const PRODUCT_IMAGE_HOLD_MS = 30_000;
+const BODY_CHUNK_BYTES = 64 * 1024;
 
 const inFlight = new Map<string, Readonly<{ run: Promise<DeliveryResult>; followers: { count: number } }>>();
 let pendingRequests = 0;
@@ -46,6 +51,55 @@ async function runLimited(
   } finally {
     releaseSlot();
   }
+}
+
+/**
+ * Streams shared bytes one chunk per consumer pull (no queueing ahead of the client), calling
+ * `release` exactly once when the transfer finishes, is cancelled, or outlives `holdMs`.
+ */
+function streamHoldingSlot(
+  bytes: Uint8Array,
+  holdMs: number,
+  release: () => void,
+): ReadableStream<Uint8Array> {
+  let offset = 0;
+  let released = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
+  const finish = () => {
+    if (released) return;
+    released = true;
+    if (timer !== undefined) clearTimeout(timer);
+    release();
+  };
+  return new ReadableStream<Uint8Array>(
+    {
+      start(c) {
+        controller = c;
+        timer = setTimeout(() => {
+          try {
+            controller?.error(new Error("response hold timeout"));
+          } catch {
+            // already closed
+          }
+          finish();
+        }, holdMs);
+        timer.unref?.();
+      },
+      pull(c) {
+        c.enqueue(bytes.subarray(offset, offset + BODY_CHUNK_BYTES));
+        offset += BODY_CHUNK_BYTES;
+        if (offset >= bytes.byteLength) {
+          c.close();
+          finish();
+        }
+      },
+      cancel() {
+        finish();
+      },
+    },
+    { highWaterMark: 0 },
+  );
 }
 
 function busyResponse(): Response {
@@ -75,7 +129,7 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number }> = {},
+  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number; holdMs?: number }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
@@ -120,13 +174,21 @@ export async function handleProductImageRequest(
   }
 
   pendingRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pendingRequests -= 1;
+  };
   let result: DeliveryResult;
   try {
     result = await entry.run;
-  } finally {
-    pendingRequests -= 1;
+  } catch (error) {
+    release();
+    throw error;
   }
   if (!result.ok) {
+    release();
     switch (result.reason) {
       case "UNTRUSTED_URL":
         return errorResponse(400);
@@ -141,9 +203,7 @@ export async function handleProductImageRequest(
     }
   }
 
-  const body = new ArrayBuffer(result.image.bytes.byteLength);
-  new Uint8Array(body).set(result.image.bytes);
-
+  const body = streamHoldingSlot(result.image.bytes, options.holdMs ?? PRODUCT_IMAGE_HOLD_MS, release);
   return new Response(body, {
     status: 200,
     headers: {

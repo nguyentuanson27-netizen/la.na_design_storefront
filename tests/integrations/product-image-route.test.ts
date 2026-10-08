@@ -14,6 +14,11 @@ function request(src: string, extra = "w=1080"): Request {
   return new Request(`https://shop.test/api/product-image?src=${encodeURIComponent(src)}&${extra}`);
 }
 
+async function ok(response: Response): Promise<void> {
+  assert.equal(response.status, 200);
+  await response.arrayBuffer(); // consuming the body is what returns its admission slot
+}
+
 function counting(response: () => Response) {
   const calls: string[] = [];
   const fn = async (url: string) => {
@@ -73,7 +78,7 @@ test("a full gallery burst queues behind the concurrency cap instead of being sh
       { fetch: upstream },
     ),
   );
-  for (const response of await Promise.all(burst)) assert.equal(response.status, 200);
+  for (const response of await Promise.all(burst)) await ok(response);
   assert.equal(started, 20);
   assert.ok(peak <= 4, `at most 4 may run at once, saw ${peak}`);
 });
@@ -106,12 +111,12 @@ test("only an overflowing queue is shed with 503, before fetch or Sharp", async 
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   release.splice(0).forEach((r) => r());
-  for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  for (const response of await Promise.all(admitted)) await ok(response);
   assert.equal(started, 4);
 
   // Slots are returned: a new request is admitted once the earlier ones settle.
   const later = counting(() => new Response(TINY_PNG, { status: 200 }));
-  assert.equal((await handleProductImageRequest(request(srcFor(5)), { ...limits, fetch: later.fn })).status, 200);
+  await ok(await handleProductImageRequest(request(srcFor(5)), { ...limits, fetch: later.fn }));
 });
 
 test("duplicate followers of one in-flight key are bounded and the excess is shed", async () => {
@@ -137,7 +142,7 @@ test("duplicate followers of one in-flight key are bounded and the excess is she
   }
 
   open();
-  for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  for (const response of await Promise.all(admitted)) await ok(response);
   assert.equal(started, 1, "followers share the leader's single upstream fetch");
 });
 
@@ -157,9 +162,9 @@ test("the global pending budget sheds requests across keys once it is spent", as
   assert.equal((await handleProductImageRequest(request(srcFor(0)), limits)).status, 503);
 
   open();
-  for (const response of await Promise.all(admitted)) assert.equal(response.status, 200);
+  for (const response of await Promise.all(admitted)) await ok(response);
   // Budget is returned once the requests settle.
-  assert.equal((await handleProductImageRequest(request(srcFor(3)), { ...limits, fetch: async () => new Response(TINY_PNG) })).status, 200);
+  await ok(await handleProductImageRequest(request(srcFor(3)), { ...limits, fetch: async () => new Response(TINY_PNG) }));
 });
 
 test("identical concurrent requests share one fetch and do not consume extra slots", async () => {
@@ -176,6 +181,36 @@ test("identical concurrent requests share one fetch and do not consume extra slo
   );
   await new Promise((resolve) => setTimeout(resolve, 20));
   open();
-  for (const response of await Promise.all(responses)) assert.equal(response.status, 200);
+  for (const response of await Promise.all(responses)) await ok(response);
   assert.equal(started, 1);
+});
+
+test("an admitted response holds its slot until its body is consumed, so a second wave cannot bypass the budget", async () => {
+  const upstream = async () => new Response(TINY_PNG, { status: 200 });
+  const limits = { fetch: upstream, maxPending: 2, holdMs: 5_000 };
+  const srcFor = (n: number) => `https://content.pancake.vn/images/1/2/3/slow-${n}.png`;
+
+  // First wave completes its transcode but its clients are slow: bodies stay unread.
+  const wave = await Promise.all([0, 1].map((n) => handleProductImageRequest(request(srcFor(n)), limits)));
+  for (const response of wave) assert.equal(response.status, 200);
+
+  const second = await handleProductImageRequest(request(srcFor(2)), limits);
+  assert.equal(second.status, 503, "slots are still held by the unread first-wave bodies");
+
+  await wave[0]!.arrayBuffer();
+  await ok(await handleProductImageRequest(request(srcFor(2)), limits));
+  await wave[1]!.body!.cancel(); // a client that goes away also returns its slot
+  await ok(await handleProductImageRequest(request(srcFor(3)), limits));
+});
+
+test("a client that never reads is cut off after the hold timeout and its slot returns", async () => {
+  const upstream = async () => new Response(TINY_PNG, { status: 200 });
+  const limits = { fetch: upstream, maxPending: 1, holdMs: 30 };
+  const stalled = await handleProductImageRequest(request(SRC), limits);
+  assert.equal(stalled.status, 200);
+  assert.equal((await handleProductImageRequest(request(SRC), limits)).status, 503);
+
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await ok(await handleProductImageRequest(request(SRC), limits));
+  await assert.rejects(() => stalled.arrayBuffer());
 });
