@@ -17,6 +17,7 @@ export function createPancakeOrderSubmissionRuntime(config: PancakeConfig) {
   const gateway = createPancakeOrderGateway(client);
   return createPancakeOrderSubmissionService(prisma, gateway, {
     onEvent: writePancakeOrderSubmissionEvent,
+    orderSourceId: config.orderSourceId,
     async onConfirmed(code) { await scheduleMetaPurchaseSafely(prisma, code); },
   });
 }

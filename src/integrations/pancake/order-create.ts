@@ -8,6 +8,8 @@ export type PancakeCreateOrderLineInput = {
 
 export type PancakeCreateOrderInput = {
   shopId: number;
+  /** Pancake order source ID, sent as `account`. Omitted from the request when absent. */
+  orderSourceId?: number;
   guestName: string;
   guestPhone: string;
   provinceRef: string;
@@ -47,6 +49,7 @@ export type PancakeShippingAddress = PancakeLegacyShippingAddress | PancakeTwoLe
 
 export type PancakeCreateOrderRequest = {
   shop_id: number;
+  account?: number;
   bill_full_name: string;
   bill_phone_number: string;
   shipping_fee: number;
@@ -107,6 +110,8 @@ export function buildPancakeCreateOrderRequest(
   if (!input || typeof input !== "object") invalidInput();
 
   const shopId = requirePositiveSafeInteger(input.shopId);
+  const orderSourceId =
+    input.orderSourceId === undefined ? undefined : requirePositiveSafeInteger(input.orderSourceId);
   const guestName = requireNormalizedNonEmptyString(input.guestName);
   const guestPhone = requireNormalizedNonEmptyString(input.guestPhone);
   const provinceRef = requireNormalizedNonEmptyString(input.provinceRef);
@@ -140,6 +145,7 @@ export function buildPancakeCreateOrderRequest(
 
   return {
     shop_id: shopId,
+    ...(orderSourceId === undefined ? {} : { account: orderSourceId }),
     bill_full_name: guestName,
     bill_phone_number: guestPhone,
     shipping_fee: shippingFeeVnd,

@@ -152,6 +152,8 @@ export type PancakeOrderSubmissionOptions = {
    * boundary and price two lines of the same order against different instants.
    */
   now?: () => Date;
+  /** Pancake POS order source ID stamped on every created order; omitted when not configured. */
+  orderSourceId?: number;
 };
 
 function emitSafely(
@@ -949,6 +951,7 @@ export function createPancakeOrderSubmissionService(
 
     const request = buildPancakeCreateOrderRequest({
       shopId: persistedShopId,
+      ...(options.orderSourceId === undefined ? {} : { orderSourceId: options.orderSourceId }),
       guestName: order.guestName,
       guestPhone: order.guestPhone,
       provinceRef: order.provinceRef,

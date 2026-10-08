@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   PancakeConfigError,
   readPancakeConfig,
+  readPancakeOrderSourceId,
   readPancakeShopId,
 } from "../../src/integrations/pancake/config.ts";
 
@@ -51,5 +52,25 @@ test("configuration errors never include the API key value", () => {
       assert.equal(error.message.includes(apiKey), false);
       return true;
     },
+  );
+});
+
+test("reads the optional POS order source ID and fails closed when it is malformed", () => {
+  assert.equal(readPancakeOrderSourceId({}), undefined);
+  assert.equal(readPancakeOrderSourceId({ PANCAKE_ORDER_SOURCE_ID: "  " }), undefined);
+  assert.equal(readPancakeOrderSourceId({ PANCAKE_ORDER_SOURCE_ID: " 922027175 " }), 922027175);
+  for (const bad of ["abc", "0", "-1", "1.5", "99999999999999999999"]) {
+    assert.throws(
+      () => readPancakeOrderSourceId({ PANCAKE_ORDER_SOURCE_ID: bad }),
+      PancakeConfigError,
+    );
+  }
+  assert.deepEqual(
+    readPancakeConfig({
+      PANCAKE_API_KEY: "k",
+      PANCAKE_SHOP_ID: "6036602",
+      PANCAKE_ORDER_SOURCE_ID: "922027175",
+    }),
+    { apiKey: "k", shopId: 6036602, orderSourceId: 922027175 },
   );
 });

@@ -127,6 +127,39 @@ test("submission durably enters POS_SUBMITTING before exactly one successful Pan
   await cleanup(key);
 });
 
+test("the configured POS order source reaches the Pancake create request as `account`, and is absent when unconfigured", async () => {
+  for (const scenario of [
+    { key: "order-source-set", orderSourceId: 922_027_175 },
+    { key: "order-source-unset", orderSourceId: undefined },
+  ] as const) {
+    const order = await createDraft(scenario.key);
+    let sent: Record<string, unknown> | undefined;
+    const service = createPancakeOrderSubmissionService(
+      prisma,
+      {
+        async fetchVariations() {
+          return [liveVariation()];
+        },
+        async createOrder(request) {
+          sent = request as unknown as Record<string, unknown>;
+          return { id: 700_002 };
+        },
+      },
+      scenario.orderSourceId === undefined ? {} : { orderSourceId: scenario.orderSourceId },
+    );
+
+    const result = await service.submit({ publicCode: order.publicCode, shopId });
+    assert.equal(result.ok, true);
+    assert.ok(sent, "createOrder must be reached");
+    if (scenario.orderSourceId === undefined) {
+      assert.equal("account" in sent, false);
+    } else {
+      assert.equal(sent.account, scenario.orderSourceId);
+    }
+    await cleanup(scenario.key);
+  }
+});
+
 test("submission rejects mismatched or unproven Pancake shop scope before any external call", async () => {
   for (const scenario of [
     { key: "shop-mismatch", persistedShopId: shopId, runtimeShopId: shopId + 1 },
