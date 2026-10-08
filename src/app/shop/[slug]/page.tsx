@@ -1,9 +1,11 @@
 import Link from "next/link";
 
-import { BRAND } from "@/brand";
+import { BRAND, messengerUrlFromFanpage, zaloUrlFromTelephone } from "@/brand";
 import { CommerceEventReporter } from "@/components/brand/commerce-event-reporter";
+import { FeedbackRail } from "@/components/brand/feedback-gallery";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { BrandProductDetail } from "@/components/brand/product-detail";
+import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadProductRoute, type ProductRouteData, type ProductRouteProps } from "@/routes/product";
 
@@ -18,6 +20,40 @@ import { loadProductRoute, type ProductRouteData, type ProductRouteProps } from 
  */
 
 const relatedTones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
+
+/** The in-page target of the "see customer photographs" link under the purchase buttons. */
+const FEEDBACK_SECTION_ID = "pdp-feedback";
+
+const PANEL_LINK =
+  "underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors hover:decoration-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]";
+
+function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] | "photos" }>) {
+  const paths: Record<typeof kind, string> = {
+    // Banknote.
+    cod: "M3 7h18v10H3z M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
+    // Two arrows turning back.
+    returns: "M4 9h12a4 4 0 0 1 0 8H8 M7 6 4 9l3 3",
+    // Delivery truck.
+    "free-shipping": "M3 6h11v9H3z M14 9h4l3 3v3h-7 M7 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M17 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
+    // Camera.
+    photos: "M4 8h3l2-2h6l2 2h3v11H4z M12 16.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+  };
+  return (
+    <svg
+      aria-hidden="true"
+      focusable={false}
+      className="h-[18px] w-[18px] shrink-0"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d={paths[kind]} />
+    </svg>
+  );
+}
 
 function render(data: ProductRouteData) {
   const { editorial } = data;
@@ -134,6 +170,66 @@ function render(data: ProductRouteData) {
     </section>
   );
 
+  // A shopper unsure of their size can ask the shop directly, beside the guide. Both links are
+  // derived from approved contact facts, and either is omitted when it cannot be derived.
+  const messengerHref = messengerUrlFromFanpage(BRAND.contact.fanpageUrl);
+  const zaloHref = zaloUrlFromTelephone(BRAND.contact.telephone);
+  const sizeHelp = messengerHref === null && zaloHref === null ? null : (
+    <p className="flex flex-wrap items-center gap-x-3 text-sm text-[#3B2219]/70" data-pdp-size-help="">
+      <span>Phân vân size? Hỏi shop qua</span>
+      {messengerHref === null ? null : (
+        <a
+          className={`inline-flex min-h-11 items-center text-[#3B2219] ${PANEL_LINK}`}
+          href={messengerHref}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Messenger<span className="sr-only"> (mở trong tab mới)</span>
+        </a>
+      )}
+      {zaloHref === null ? null : (
+        <a
+          className={`inline-flex min-h-11 items-center text-[#3B2219] ${PANEL_LINK}`}
+          href={zaloHref}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Zalo<span className="sr-only"> (mở trong tab mới)</span>
+        </a>
+      )}
+    </p>
+  );
+
+  // The buying facts, repeated where the decision is made; the full policies stay further down.
+  const purchaseAssurance = (
+    <div className="mt-4 border-t border-[#3B2219]/15 pt-4">
+      <ul aria-label="Cam kết mua hàng" className="space-y-2 text-sm text-[#3B2219]/80">
+        {data.purchaseAssurance.map((item) => (
+          <li key={item.key} className="flex items-center gap-2.5">
+            <AssuranceIcon kind={item.key} />
+            {item.href === null ? (
+              <span>{item.label}</span>
+            ) : (
+              <Link className={PANEL_LINK} href={item.href}>
+                {item.label}
+              </Link>
+            )}
+          </li>
+        ))}
+      </ul>
+      {data.feedback === null ? null : (
+        <p className="mt-2 flex items-center gap-2.5 text-sm text-[#3B2219]/80">
+          <AssuranceIcon kind="photos" />
+          <a className={PANEL_LINK} href={`#${FEEDBACK_SECTION_ID}`}>
+            {data.feedback.scope === "product"
+              ? `Xem ${data.feedback.images.length} ảnh khách hàng diện mẫu này`
+              : `Xem ảnh khách hàng diện ${BRAND.identity.name}`}
+          </a>
+        </p>
+      )}
+    </div>
+  );
+
   return (
     <>
       <span hidden data-pdp-root="" />
@@ -155,7 +251,21 @@ function render(data: ProductRouteData) {
         identity={identity}
         productInformation={productInformation}
         purchaseInformation={purchaseInformation}
+        sizeHelp={sizeHelp}
+        purchaseAssurance={purchaseAssurance}
       />
+
+      {data.feedback === null ? null : (
+        <FeedbackRail
+          id={FEEDBACK_SECTION_ID}
+          headingId="pdp-feedback-title"
+          surface="product"
+          title={data.feedback.title}
+          ctaLabel={data.feedback.ctaLabel}
+          href={data.feedback.href}
+          images={data.feedback.images}
+        />
+      )}
 
       {data.relatedCards.length > 0 ? (
         <div className="mx-auto max-w-[1600px] px-6 pb-16">

@@ -47,6 +47,10 @@ type BrandProductDetailProps = Readonly<{
   productInformation: ReactNode | null;
   /** Right column, below the panel: shipping and returns. */
   purchaseInformation: ReactNode;
+  /** Inside the panel, under the size guide: chat links for size questions. */
+  sizeHelp?: ReactNode;
+  /** Inside the panel, under the purchase buttons: payment, returns and shipping facts. */
+  purchaseAssurance?: ReactNode;
 }>;
 
 export function BrandProductDetail({
@@ -59,6 +63,8 @@ export function BrandProductDetail({
   identity,
   productInformation,
   purchaseInformation,
+  sizeHelp = null,
+  purchaseAssurance = null,
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
   // Virtual try-on is only a link on the size-guide line and a dialog: it shares no state with the
@@ -138,6 +144,8 @@ export function BrandProductDetail({
             <PurchasePanelView
               controller={controller}
               sizeGuide={sizeGuide}
+              sizeHelp={sizeHelp}
+              assurance={purchaseAssurance}
               mobileNudge={
                 // Stays mounted while the dialog is open (the native modal makes it inert), so the
                 // button that opened the dialog still exists when focus is given back to it.

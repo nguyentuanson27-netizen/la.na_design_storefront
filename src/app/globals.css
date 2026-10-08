@@ -2173,6 +2173,28 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   padding: 0 var(--shell-gutter);
 }
 
+/* On the product page the rail sits between the information row and the related grid, inside the
+   page's 1600px column, with the related grid's own rule above it instead of a rule below. */
+.feedback-rail--product {
+  /* The page column's own gutter (`px-6`), so the heading and photographs line up with the
+     information row above and the related grid below. */
+  --shell-gutter: 1.5rem;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 1.5rem 0 3rem;
+  border-bottom: 0;
+}
+
+.feedback-rail--product .section-heading-row {
+  margin-inline: var(--shell-gutter);
+  padding: 1.5rem 0 0;
+  border-top: 1px solid rgb(0 0 0 / 20%);
+}
+
+.feedback-rail--product .home-more {
+  margin-top: 1.5rem;
+}
+
 .category-discovery__intro {
   /* Centre the heading against the photographs, not against photographs plus their names. */
   padding-bottom: 3rem;
@@ -2363,6 +2385,24 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   max-width: 100%;
   max-height: 100%;
   pointer-events: none;
+}
+
+/* A photograph with no calibrated size is contained in a fixed box the size the sized one is
+   capped to, rather than given an invented ratio. */
+.feedback-viewer__figure--boxed {
+  width: 100%;
+}
+
+.feedback-viewer__box {
+  position: relative;
+  display: block;
+  width: min(100%, 72rem);
+  height: calc(100dvh - 7rem);
+  margin: 0 auto;
+}
+
+.feedback-viewer__box img {
+  pointer-events: auto;
 }
 
 .feedback-viewer__img {

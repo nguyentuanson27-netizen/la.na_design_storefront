@@ -426,6 +426,16 @@ export function messengerUrlFromFanpage(fanpageUrl: string): string | null {
   if (!/^[A-Za-z0-9.]+$/.test(username!) || username === "profile.php") return null;
   return `https://m.me/${username}`;
 }
+/**
+ * The Zalo chat link for the approved support number (owner-facts §3 publishes it as
+ * "Hotline/Zalo"), **derived** rather than stored: a Vietnamese mobile number written as ten digits
+ * from a leading 0 becomes `https://zalo.me/<number>`. Anything else yields `null`, so no link is
+ * guessed.
+ */
+export function zaloUrlFromTelephone(telephone: string): string | null {
+  return /^0\d{9}$/.test(telephone) ? `https://zalo.me/${telephone}` : null;
+}
+
 export const SIZE_GUIDE = loaded.sizeGuide;
 export const NAVIGATION = loaded.navigation;
 export const FULFILLMENT = loaded.fulfillment;

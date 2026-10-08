@@ -342,6 +342,7 @@ Replaces the role previously discussed as the Ding Dang "Muse" area.
 - No customer name, product name, quote or caption is rendered on the homepage.
 - **Owner amendment 2026-10-05:** feedback selection/order comes from the configured Pancake shop's mirrored variants whose `pancakeDisplayId` starts exactly with `ANH-FEEDBACK-`. Product-name matches, substring matches and other shops are not feedback authority.
 - Repository config is only the natural-dimension registry for approved mirrored feedback URLs; it is **not** an alternate image-selection source. A mirrored image URL without calibrated natural `width`/`height` must not be published with guessed dimensions. If the exact mirror source cannot produce a fully calibrated gallery, feedback fails closed instead of substituting repository-selected images.
+- **Owner amendment 2026-10-08 — product-tagged feedback.** A variant whose display ID is `ANH-FEEDBACK-<product code>` (a remainder containing a letter, e.g. `ANH-FEEDBACK-SV605`) tags its images to the product whose split-off Pancake `productCode` is that code, case-insensitively; a bare ordinal (`ANH-FEEDBACK-01`) stays brand feedback. The fail-closed rule above is unchanged for brand feedback: one uncalibrated brand image still closes the homepage rail and `/feedback`. The single, deliberate exception is a product-tagged image that is not yet calibrated: it is **omitted** from the homepage rail and `/feedback` (which stay all-or-nothing over everything else) rather than closing them, because tagged photographs are added in Pancake one product at a time. Once calibrated, a tagged image joins both in display-ID order.
 - Horizontal rail/carousel rhythm similar to the approved reference.
 - Touch users can swipe horizontally.
 - Desktop users can scroll/drag/use an accessible control path.
@@ -352,6 +353,14 @@ Replaces the role previously discussed as the Ding Dang "Muse" area.
 - At the end of the section, render `Xem thêm` linking to the dedicated feedback page.
 
 Accessibility does not mean adding visible captions the owner did not request. Each configured feedback photo must still carry an appropriate manually authored accessible text decision (`alt` text when informative, or explicitly decorative empty alt when that is truly correct).
+
+#### Product page rail (owner amendment 2026-10-08)
+
+- A product page shows that product's own tagged photographs under `productPageTitle` ("Khách hàng diện mẫu này") when it has any **and** its code is carried by exactly one present product in the shop. `productCode` is not a unique key in the mirror; an ambiguous code fails closed to the brand rail rather than attributing one product's customers to another.
+- Otherwise it shows the first brand-gallery photographs under the brand title, exactly as resolved for the homepage; with no publishable brand gallery and no own photographs, the rail is omitted. The two are never mixed.
+- At most 12 photographs. The rail crops to the same 3:4 box as the homepage rail, so an uncalibrated tagged photograph needs no invented ratio there; the viewer contains it in a fixed box instead.
+- `Xem thêm` links to `/feedback` only while that page is published.
+- Reads per product page are bounded to the product's code; the brand gallery read is shared per shop for 60 seconds, the cadence `/feedback` re-reads the mirror on.
 
 #### Dedicated feedback page
 

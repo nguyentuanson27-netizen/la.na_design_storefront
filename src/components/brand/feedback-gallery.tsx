@@ -10,7 +10,19 @@ import type { HomeFeedbackSection } from "@/routes/home-model";
 type FeedbackImage = HomeFeedbackSection["images"][number];
 
 /**
- * Customer feedback photographs (spec §7.6): the homepage rail and the `/feedback` gallery.
+ * What the rail and the viewer can show: a gallery photograph, or a product page photograph whose
+ * natural size is not calibrated yet (`null`). Only the uncropped `/feedback` masonry needs the size.
+ */
+type ViewableFeedbackImage = Readonly<{
+  src: string;
+  alt: string;
+  width: number | null;
+  height: number | null;
+}>;
+
+/**
+ * Customer feedback photographs (spec §7.6): the homepage and product page rail, and the `/feedback`
+ * gallery.
  *
  * Images only. No customer name, product name, quote or caption is rendered, and no photograph is a
  * link -- each carries only the alt decision its config entry made. The rail crops to a fixed 3:4
@@ -28,12 +40,12 @@ function FeedbackPhoto({
   eager = false,
   uncropped = false,
 }: Readonly<{
-  image: FeedbackImage;
+  image: ViewableFeedbackImage;
   sizes: string;
   eager?: boolean;
   uncropped?: boolean;
 }>) {
-  if (uncropped) {
+  if (uncropped && image.width !== null && image.height !== null) {
     return (
       <span className="feedback-photo-uncropped">
         <Image
@@ -64,7 +76,7 @@ function FeedbackPhoto({
 }
 
 /** The button's name: the photograph's own alt when it has one, its position when it is decorative. */
-function zoomLabel(image: FeedbackImage, index: number, total: number) {
+function zoomLabel(image: ViewableFeedbackImage, index: number, total: number) {
   return image.alt ? `Phóng to ảnh: ${image.alt}` : `Phóng to ảnh ${index + 1} trên ${total}`;
 }
 
@@ -94,7 +106,7 @@ function FeedbackViewer({
   onClose,
   onStep,
 }: Readonly<{
-  images: readonly FeedbackImage[];
+  images: readonly ViewableFeedbackImage[];
   openIndex: number | null;
   onClose: () => void;
   onStep: (delta: number) => void;
@@ -146,17 +158,34 @@ function FeedbackViewer({
               <line x1="18" y1="6" x2="6" y2="18" />
             </svg>
           </button>
-          <figure className="feedback-viewer__figure">
-            <Image
-              key={image.src}
-              src={image.src}
-              alt={image.alt}
-              width={image.width}
-              height={image.height}
-              sizes="100vw"
-              className="feedback-viewer__img"
-            />
-          </figure>
+          {image.width !== null && image.height !== null ? (
+            <figure className="feedback-viewer__figure">
+              <Image
+                key={image.src}
+                src={image.src}
+                alt={image.alt}
+                width={image.width}
+                height={image.height}
+                sizes="100vw"
+                className="feedback-viewer__img"
+              />
+            </figure>
+          ) : (
+            // No calibrated size: contain the photograph in a fixed viewport box instead of
+            // inventing a ratio for it.
+            <figure className="feedback-viewer__figure feedback-viewer__figure--boxed">
+              <span className="feedback-viewer__box">
+                <Image
+                  key={image.src}
+                  src={image.src}
+                  alt={image.alt}
+                  fill
+                  sizes="100vw"
+                  className="object-contain"
+                />
+              </span>
+            </figure>
+          )}
           {many ? (
             <>
               <button
@@ -194,27 +223,45 @@ function FeedbackViewer({
 const FEEDBACK_PAGE_EAGER_COUNT = 4;
 
 /**
- * The homepage rail: native horizontal scroll with snap points, no carousel dependency and no
+ * The feedback rail: native horizontal scroll with snap points, no carousel dependency and no
  * autoplay. Touch swipes it; a mouse uses its scrollbar or a trackpad; the keyboard focuses the
  * viewport and scrolls it with the arrow keys, or tabs through the photographs. The title is a
- * heading, not a link -- the way to the full gallery is the `Xem thêm` link after the rail.
+ * heading, not a link -- the way to the full gallery is the `Xem thêm` link after the rail, omitted
+ * when `href` is `null`.
+ *
+ * The homepage and the product page share it. Each photograph is cropped to the same 3:4 box, so a
+ * product photograph whose natural size is not calibrated yet still lays out without shifting.
  */
 export function FeedbackRail({
   title,
   ctaLabel,
   href,
   images,
-}: Readonly<{ title: string; ctaLabel: string; href: string; images: readonly FeedbackImage[] }>) {
+  headingId = "home-feedback-title",
+  surface = "home",
+  id,
+}: Readonly<{
+  title: string;
+  ctaLabel: string;
+  href: string | null;
+  images: readonly ViewableFeedbackImage[];
+  headingId?: string;
+  surface?: "home" | "product";
+  /** The section's own id, for an in-page link to it. */
+  id?: string;
+}>) {
   const viewer = useFeedbackViewer(images.length);
 
   return (
     <section
-      className="feedback-rail"
-      aria-labelledby="home-feedback-title"
-      data-homepage-region="feedback"
+      id={id}
+      className={surface === "product" ? "feedback-rail feedback-rail--product" : "feedback-rail"}
+      aria-labelledby={headingId}
+      data-homepage-region={surface === "home" ? "feedback" : undefined}
+      data-pdp-region={surface === "product" ? "feedback" : undefined}
     >
       <div className="section-heading-row">
-        <h2 id="home-feedback-title">{title}</h2>
+        <h2 id={headingId}>{title}</h2>
       </div>
       <div className="feedback-rail__viewport" tabIndex={0} role="group" aria-label={title}>
         <ul className="feedback-rail__track">
@@ -233,12 +280,14 @@ export function FeedbackRail({
           ))}
         </ul>
       </div>
-      <p className="home-more">
-        <Link href={href}>
-          {ctaLabel}
-          <span className="sr-only">: {title}</span>
-        </Link>
-      </p>
+      {href === null ? null : (
+        <p className="home-more">
+          <Link href={href}>
+            {ctaLabel}
+            <span className="sr-only">: {title}</span>
+          </Link>
+        </p>
+      )}
       <FeedbackViewer images={images} openIndex={viewer.openIndex} onClose={viewer.close} onStep={viewer.step} />
     </section>
   );

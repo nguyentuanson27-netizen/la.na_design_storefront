@@ -8,6 +8,7 @@ import {
   SIZE_GUIDE,
   loadBrandConfig,
   messengerUrlFromFanpage,
+  zaloUrlFromTelephone,
   type BrandConfig,
   type NavigationConfig,
   type SizeGuideConfig,
@@ -333,4 +334,12 @@ test("navigation links must be site-relative, labelled and unique", () => {
     /link label/,
   );
   assert.throws(withNavigation((draft) => ({ ...draft, footer: [] })), /at least one link/);
+});
+
+test("the Zalo chat link derives from the approved support number and is never guessed", () => {
+  assert.equal(zaloUrlFromTelephone(BRAND.contact.telephone), "https://zalo.me/0923159666");
+
+  for (const telephone of ["+84923159666", "923159666", "0923 159 666", "09231596660", ""]) {
+    assert.equal(zaloUrlFromTelephone(telephone), null, telephone);
+  }
 });

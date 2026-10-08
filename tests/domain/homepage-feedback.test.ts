@@ -28,6 +28,7 @@ const complete = (
   overrides: Partial<HomepageConfig["feedback"]> = {},
 ): HomepageConfig["feedback"] => ({
   title: "Khách hàng của La.na",
+  productPageTitle: "Khách hàng diện mẫu này",
   ctaLabel: "Xem thêm",
   metadataTitle: "Khách hàng",
   metadataDescription: "Ảnh khách hàng mặc La.na.",
