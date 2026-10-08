@@ -22,6 +22,10 @@ class FallbackPolicyTest(unittest.TestCase):
             with self.subTest(code=code, text=text):
                 self.assertTrue(should_fallback_from_pro(code, text))
 
+    def test_quota_markers_count_only_on_gflow_wire_errors(self):
+        self.assertFalse(should_fallback_from_pro(1, f"{RESOURCE_EXHAUSTED} (NO_REASON)"))
+        self.assertFalse(should_fallback_from_pro(5, "image submit answered HTTP 429"))
+
     def test_non_quota_failures_never_fall_back(self):
         for code, text in (
             (1, "PUBLIC_ERROR_UNUSUAL_ACTIVITY"),

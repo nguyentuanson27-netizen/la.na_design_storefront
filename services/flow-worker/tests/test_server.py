@@ -149,6 +149,27 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
         self.assertEqual(raised.exception.status, 429)
         self.assertEqual(raised.exception.reason, "BUSY")
 
+    def test_flow_google_com_quota_refusal_on_2_1_reports_busy_but_other_wire_errors_do_not(self):
+        quota = "FLOW_QUOTA_EXHAUSTED: Flow refused the image submit with RESOURCE_EXHAUSTED (NO_REASON)"
+        for second_detail, expected in (
+            (quota, (429, "BUSY")),
+            ("migrated image submit answered HTTP 429", (429, "BUSY")),
+            ("migrated image submit returned no ogiZ0b frame", (502, "GENERATION_FAILED")),
+            ("migrated image submit answered HTTP 500", (502, "GENERATION_FAILED")),
+        ):
+            calls = []
+
+            def run(model, _person, _product, _output, _timeout, _db_path):
+                calls.append(model)
+                detail = quota if model == "nano-pro" else second_detail
+                return 7, server.GflowMachineError(detail=detail, error_class="WireFormatError")
+
+            with self.subTest(second=second_detail), patch.object(server, "_run_model", side_effect=run):
+                with self.assertRaises(server.WorkerGenerationError) as raised:
+                    server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+                self.assertEqual(calls, ["nano-pro", "nano2"])
+                self.assertEqual((raised.exception.status, raised.exception.reason), expected)
+
     def test_safety_refusal_never_falls_back(self):
         calls = []
 

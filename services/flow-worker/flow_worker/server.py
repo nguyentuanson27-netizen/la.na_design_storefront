@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .policy import QUOTA_EXHAUSTED_MARKER, should_fallback_from_pro
+from .policy import QUOTA_EXHAUSTED_MARKER, is_flow_quota_refusal, should_fallback_from_pro
 
 HOST = os.environ.get("FLOW_WORKER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLOW_WORKER_PORT", "8787"))
@@ -489,6 +489,10 @@ def _failure_reason(
     ):
         return 409, "BUSY"
     if exit_code == 4:
+        return 429, "BUSY"
+    # flow.google.com quota refusals arrive as exit 7 (WireFormatError); only the verified quota
+    # signals are BUSY, every other wire error stays GENERATION_FAILED.
+    if error is not None and is_flow_quota_refusal(exit_code, error.detail):
         return 429, "BUSY"
     if exit_code == 5:
         return 422, "SAFETY_BLOCKED"
