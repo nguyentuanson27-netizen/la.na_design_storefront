@@ -358,6 +358,23 @@ class GflowExitStatusTest(unittest.TestCase):
         self.assertNotIn("provider-secret-detail", rendered_events)
 
 
+class WireDiagnosticsTest(unittest.TestCase):
+    def test_only_enum_tokens_from_the_guard_detail_are_logged(self):
+        detail = (
+            "FLOW_QUOTA_EXHAUSTED: Flow refused the image submit with RESOURCE_EXHAUSTED "
+            "(PUBLIC_ERROR_DAILY_QUOTA) try-on guard: aborted. "
+            "WIRE_MODEL_CANDIDATES=NANO_BANANA_2_1,IMAGE_ASPECT_RATIO_PORTRAIT shopper-photo.jpg"
+        )
+        self.assertEqual(
+            server._wire_diagnostics(detail),
+            {
+                "quota_reasons": "PUBLIC_ERROR_DAILY_QUOTA",
+                "wire_model_candidates": "NANO_BANANA_2_1,IMAGE_ASPECT_RATIO_PORTRAIT",
+            },
+        )
+        self.assertEqual(server._wire_diagnostics("provider said something (with text)"), {})
+
+
 class FixedProjectTest(unittest.TestCase):
     """gflow creates a scratch Flow project for every i2i run without --project."""
 
@@ -370,6 +387,7 @@ class FixedProjectTest(unittest.TestCase):
         for target in (
             patch.object(server, "GFLOW_HOME", self.home),
             patch.object(server, "_project_id", None),
+            patch.object(server, "_unrecorded_project_id", None),
             patch.object(server, "_event", side_effect=lambda name, **fields: self.events.append(name)),
         ):
             target.start()
@@ -390,7 +408,7 @@ class FixedProjectTest(unittest.TestCase):
         self.assertEqual(server._project_id, PROJECT_ID)
         stored = json.loads((self.home / server.PROJECT_STATE_FILE).read_text())
         self.assertEqual(stored["projectId"], PROJECT_ID)
-        self.assertEqual(self.events, ["flow_try_on.project_created"])
+        self.assertEqual(self.events, ["flow_try_on.project_created", "flow_try_on.project_recorded"])
 
     def test_a_restarted_worker_reuses_the_recorded_project_without_creating_another(self):
         (self.home / server.PROJECT_STATE_FILE).write_text(json.dumps({"projectId": PROJECT_ID}))
@@ -422,11 +440,64 @@ class FixedProjectTest(unittest.TestCase):
         run_model.assert_not_called()
         self.assertEqual(raised.exception.reason, "AUTH_FAILED")
 
-    def test_unusable_records_or_replies_are_never_used_as_a_project(self):
-        (self.home / server.PROJECT_STATE_FILE).write_text('{"projectId": "../../etc"}')
+    def test_invalid_reply_is_never_used_as_a_project(self):
         with self.created(json.dumps({"status": "ok", "project_id": "bad id!"})):
             self.assertEqual(server._ensure_project(30, self.db)[0], 1)
         self.assertIsNone(server._project_id)
+        self.assertFalse((self.home / server.PROJECT_STATE_FILE).exists())
+
+    def test_corrupt_or_invalid_record_refuses_generation_without_creating_another_project(self):
+        for content in ('{"projectId": "../../etc"}', "{not json", '{"title": "LA try-on"}'):
+            with self.subTest(content=content):
+                state = self.home / server.PROJECT_STATE_FILE
+                state.write_text(content)
+                with self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})) as run:
+                    self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+                run.assert_not_called()
+                self.assertIsNone(server._project_id)
+                self.assertEqual(state.read_text(), content)
+                self.assertEqual(self.events[-1], "flow_try_on.project_state_invalid")
+
+    def test_unreadable_record_refuses_generation_without_creating_another_project(self):
+        (self.home / server.PROJECT_STATE_FILE).mkdir()  # exists, but reading it fails
+        with self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})) as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+        run.assert_not_called()
+        self.assertEqual(self.events, ["flow_try_on.project_state_invalid"])
+
+    def test_unrecordable_project_refuses_generation_and_retries_the_write_not_the_create(self):
+        reply = json.dumps({"status": "ok", "project_id": PROJECT_ID})
+        with (
+            self.created(reply) as run,
+            patch.object(server, "_store_project_id", side_effect=OSError("read-only volume")),
+            patch.object(server, "_run_model") as run_model,
+        ):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 1)
+            with self.assertRaises(server.WorkerGenerationError):
+                server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+        self.assertEqual(run.call_count, 1)
+        run_model.assert_not_called()
+        self.assertIsNone(server._project_id)
+        self.assertIn("flow_try_on.project_record_failed", self.events)
+
+        # Once the volume is writable again the same project is recorded; no second create.
+        with self.created(reply) as run:
+            self.assertEqual(server._ensure_project(30, self.db)[0], 0)
+        run.assert_not_called()
+        self.assertEqual(server._project_id, PROJECT_ID)
+        self.assertEqual(json.loads((self.home / server.PROJECT_STATE_FILE).read_text())["projectId"], PROJECT_ID)
+
+    def test_restarted_worker_after_recording_never_creates_again(self):
+        with self.created(json.dumps({"status": "ok", "project_id": PROJECT_ID})):
+            server._ensure_project(30, self.db)
+        with (
+            patch.object(server, "_project_id", None),
+            patch.object(server, "_unrecorded_project_id", None),
+            self.created("") as run,
+        ):
+            self.assertEqual(server._ensure_project(30, self.db)[0], 0)
+            self.assertEqual(server._project_id, PROJECT_ID)
+        run.assert_not_called()
 
 
 class FakeLease:

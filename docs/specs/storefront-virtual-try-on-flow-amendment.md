@@ -23,8 +23,8 @@ provider allowances.
 For the Flow provider, the model policy is explicit:
 
 1. attempt **Nano Banana Pro** (`nano-pro`) first;
-2. only when that attempt is rejected because Nano Banana Pro's **image quota or Flow credits are
-   exhausted**, attempt **Nano Banana 2.1** once (gflow `nano2`, which the worker's launcher pins to
+2. only when that attempt is rejected because Nano Banana Pro's **daily image quota (proven by the
+   refusal itself) or Flow credits are exhausted**, attempt **Nano Banana 2.1** once (gflow `nano2`, which the worker's launcher pins to
    Flow's "Nano Banana 2.1" menu entry);
 3. do not fall back for authentication failures, safety/content refusals, WAF/reCAPTCHA unusual
    activity, generic network/provider failures, selector drift, timeout, or per-minute throttling;
@@ -132,7 +132,9 @@ or Vertex fallback.
 - [ ] Flow configuration fails closed when worker URL/token are missing or malformed.
 - [ ] Storefront sends only validated person/product images to the private worker.
 - [ ] Worker selects Nano Banana Pro first.
-- [ ] A Pro quota or credit exhaustion causes exactly one Nano Banana 2.1 attempt.
+- [ ] A proven Pro daily-quota or credit exhaustion causes exactly one Nano Banana 2.1 attempt;
+      an undifferentiated RESOURCE_EXHAUSTED or HTTP 429 does not.
+- [ ] A Nano Banana 2.1 submit is accepted only with its live-captured wire model key configured.
 - [ ] Per-minute throttling, WAF/reCAPTCHA, auth, safety, timeout, selector drift and generic failures
       do **not** trigger model fallback.
 - [ ] There is never an automatic Flow -> Vertex fallback.

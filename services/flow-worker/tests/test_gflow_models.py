@@ -21,8 +21,8 @@ if os.environ.get("FLOW_REQUIRE_BROWSER_TESTS") and not (HAS_GFLOW and HAS_PLAYW
     raise RuntimeError("FLOW_REQUIRE_BROWSER_TESTS is set but gflow-cli or playwright is missing")
 
 
-def submit_body(model_key: str) -> str:
-    inner = json.dumps([[TRY_ON_PROMPT, [[[None, 1, PERSON_ID]], [[None, 1, GARMENT_ID]]]], model_key])
+def submit_body(*model_keys: str) -> str:
+    inner = json.dumps([[TRY_ON_PROMPT, [[[None, 1, PERSON_ID]], [[None, 1, GARMENT_ID]]]], *model_keys])
     return "f.req=" + json.dumps([[["ogiZ0b", inner, None, "generic"]]]) + "&at=token"
 
 
@@ -33,16 +33,33 @@ def refusal_reply(code: int, reason: str, rpcid: str = "ogiZ0b") -> str:
 
 
 class ModelKeyAndQuotaDetailTest(unittest.TestCase):
-    def test_other_image_model_keys_are_found_only_as_whole_tokens(self):
-        self.assertEqual(gflow_models.other_model_in_body(submit_body("GEM_PIX_2")), "GEM_PIX_2")
-        self.assertEqual(gflow_models.other_model_in_body(submit_body("HARBOR_SEAL")), "HARBOR_SEAL")
-        self.assertIsNone(gflow_models.other_model_in_body(submit_body("NARWHAL")))
-        self.assertIsNone(gflow_models.other_model_in_body(submit_body("GEM_PIX_2_1")))
+    def test_nano_banana_2_1_is_proven_only_by_the_configured_key_alone(self):
+        problem = gflow_models.nano_banana_2_1_body_problem
+        key = "NANO_BANANA_2_1"
+        self.assertIsNone(problem(submit_body(key), key))
+        # Nano Banana 2's key, an unknown key, or a second model key are never 2.1.
+        self.assertIsNotNone(problem(submit_body("NARWHAL"), key))
+        self.assertIsNotNone(problem(submit_body("MYSTERY_MODEL"), key))
+        self.assertIsNotNone(problem(submit_body(key, "GEM_PIX_2"), key))
 
-    def test_only_a_resource_exhausted_image_submit_is_marked_as_quota(self):
-        detail = gflow_models.quota_refusal_detail("ogiZ0b", 8, ("PUBLIC_ERROR_QUOTA",))
-        self.assertIn(QUOTA_EXHAUSTED_MARKER, detail)
-        self.assertTrue(should_fallback_from_pro(7, detail))
+    def test_unconfigured_key_fails_closed_and_lists_only_enum_tokens(self):
+        detail = gflow_models.nano_banana_2_1_body_problem(submit_body("SOME_NEW_KEY"), None)
+        self.assertIn("WIRE_MODEL_CANDIDATES=SOME_NEW_KEY", detail)
+        for shopper_data in (PERSON_ID, GARMENT_ID, "first reference image", "token"):
+            self.assertNotIn(shopper_data, detail)
+
+    def test_configured_key_must_look_like_a_wire_enum(self):
+        for value, expected in (("NANO_BANANA_2_1", "NANO_BANANA_2_1"), ("", None), ("bad key", None)):
+            with patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": value}):
+                self.assertEqual(gflow_models.configured_model_key(), expected)
+
+    def test_resource_exhausted_falls_back_only_with_daily_evidence(self):
+        undifferentiated = gflow_models.quota_refusal_detail("ogiZ0b", 8, ("PUBLIC_ERROR_QUOTA",))
+        self.assertIn(QUOTA_EXHAUSTED_MARKER, undifferentiated)
+        self.assertFalse(should_fallback_from_pro(7, undifferentiated))
+        self.assertFalse(should_fallback_from_pro(7, gflow_models.quota_refusal_detail("ogiZ0b", 8, ())))
+        daily = gflow_models.quota_refusal_detail("ogiZ0b", 8, ("PUBLIC_ERROR_DAILY_IMAGE_QUOTA",))
+        self.assertTrue(should_fallback_from_pro(7, daily))
         self.assertIsNone(gflow_models.quota_refusal_detail("ogiZ0b", 7, ("PUBLIC_ERROR_UNUSUAL_ACTIVITY",)))
         self.assertIsNone(gflow_models.quota_refusal_detail("MZZa6b", 8, ()))
 
@@ -70,29 +87,44 @@ class GflowModelPatchTest(unittest.TestCase):
         from gflow_cli.api.transports import migrated_composer as mc
         from gflow_cli.errors import RateLimitError, WafRejectionError, WireFormatError
 
-        refusal = mc._submit_refusal(refusal_reply(8, "PUBLIC_ERROR_IMAGE_QUOTA"), ("ogiZ0b",))
+        refusal = mc._submit_refusal(refusal_reply(8, "PUBLIC_ERROR_DAILY_IMAGE_QUOTA"), ("ogiZ0b",))
         self.assertIsInstance(refusal, WireFormatError)
         self.assertNotIsInstance(refusal, RateLimitError)
         self.assertIn(QUOTA_EXHAUSTED_MARKER, refusal.detail)
         self.assertTrue(should_fallback_from_pro(7, refusal.detail))
 
+        undifferentiated = mc._submit_refusal(refusal_reply(8, "PUBLIC_ERROR_IMAGE_QUOTA"), ("ogiZ0b",))
+        self.assertFalse(should_fallback_from_pro(7, undifferentiated.detail))
+
         unusual = mc._submit_refusal(refusal_reply(7, "PUBLIC_ERROR_UNUSUAL_ACTIVITY"), ("ogiZ0b",))
         self.assertIsInstance(unusual, WafRejectionError)
         self.assertIsNone(mc._submit_refusal(refusal_reply(8, "X", rpcid="MZZa6b"), ("ogiZ0b",)))
 
-    def test_nano_banana_2_1_submit_must_not_carry_another_model_key(self):
+    def test_nano_banana_2_1_submit_needs_the_configured_key_at_the_wire(self):
         from gflow_cli.api.image import Model
         from gflow_cli.api.transports import migrated_composer as mc
 
         refs = (PERSON_ID, GARMENT_ID)
-        with patch.object(gflow_prompt_guard, "_expected_prompt", TRY_ON_PROMPT):
+        with (
+            patch.object(gflow_prompt_guard, "_expected_prompt", TRY_ON_PROMPT),
+            patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": "NANO_BANANA_2_1"}),
+        ):
             self.assertIsNone(mc._image_body_problem(submit_body("NANO_BANANA_2_1"), refs, Model.NARWHAL))
-            self.assertIn("GEM_PIX_2", mc._image_body_problem(submit_body("GEM_PIX_2"), refs, Model.NARWHAL))
+            self.assertIsNotNone(mc._image_body_problem(submit_body("NARWHAL"), refs, Model.NARWHAL))
+            self.assertIsNotNone(mc._image_body_problem(submit_body("GEM_PIX_2"), refs, Model.NARWHAL))
             # Pro keeps gflow's own exact model-key check.
             self.assertIsNone(mc._image_body_problem(submit_body("GEM_PIX_2"), refs, Model.GEM_PIX_2))
             self.assertIsNotNone(mc._image_body_problem(submit_body("NARWHAL"), refs, Model.GEM_PIX_2))
             # References and prompt are still required.
             self.assertIsNotNone(mc._image_body_problem(submit_body("NANO_BANANA_2_1"), (PERSON_ID, MISSING_ID), Model.NARWHAL))
+        with (
+            patch.object(gflow_prompt_guard, "_expected_prompt", TRY_ON_PROMPT),
+            patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": ""}),
+        ):
+            self.assertIn(
+                "WIRE_MODEL_CANDIDATES=NANO_BANANA_2_1",
+                mc._image_body_problem(submit_body("NANO_BANANA_2_1"), refs, Model.NARWHAL),
+            )
 
 
 MODEL_PICKER = """<!doctype html><html><body>

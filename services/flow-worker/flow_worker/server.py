@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .policy import should_fallback_from_pro
+from .policy import QUOTA_EXHAUSTED_MARKER, should_fallback_from_pro
 
 HOST = os.environ.get("FLOW_WORKER_HOST", "0.0.0.0")
 PORT = int(os.environ.get("FLOW_WORKER_PORT", "8787"))
@@ -51,6 +51,8 @@ _generation_lock = threading.Lock()
 # worker created once and recorded in the gflow volume. gflow creates a scratch project for every
 # i2i run without --project, so no generation may start until this is known.
 _project_id: str | None = PROJECT_ID or None
+# A project this worker created but could not record yet; retried instead of creating another.
+_unrecorded_project_id: str | None = None
 
 
 class RequestError(ValueError):
@@ -300,6 +302,23 @@ def _run_gflow(args: list[str], timeout_seconds: float, db_path: Path) -> tuple[
     return process.returncode, stdout or ""
 
 
+def _wire_diagnostics(detail: str) -> dict[str, str]:
+    """Enum-only facts from the try-on guard's error detail, safe to log.
+
+    Only SCREAMING_SNAKE tokens pass the patterns below, never provider text or shopper data.
+    They are what an operator needs to set the fallback up from one live run: the RESOURCE_EXHAUSTED
+    refusal reasons, and the enum tokens of an aborted Nano Banana 2.1 submit (its model key).
+    """
+    fields: dict[str, str] = {}
+    quota = re.search(re.escape(QUOTA_EXHAUSTED_MARKER) + r"[^(]*\(([A-Z0-9_, ]{0,400})\)", detail)
+    if quota:
+        fields["quota_reasons"] = quota.group(1)
+    candidates = re.search(r"WIRE_MODEL_CANDIDATES=([A-Z0-9_,]{0,1600})", detail)
+    if candidates:
+        fields["wire_model_candidates"] = candidates.group(1)
+    return fields
+
+
 def _run_model(
     model: str,
     person: Path,
@@ -320,6 +339,7 @@ def _run_model(
             "model": model,
             "exit_code": str(returncode),
             "error_class": error.error_class or "unknown",
+            **_wire_diagnostics(error.detail),
         }
         _event("flow_try_on.process_error", **fields)
 
@@ -330,15 +350,30 @@ def _project_state_path() -> Path:
     return GFLOW_HOME / PROJECT_STATE_FILE
 
 
+class ProjectStateError(RuntimeError):
+    pass
+
+
 def _stored_project_id() -> str | None:
+    """The recorded try-on project id, or ``None`` only when no record exists.
+
+    A record that exists but cannot be read or does not hold a valid id raises instead: treating
+    it as missing would create a second project and break the one-project guarantee.
+    """
     try:
-        state = json.loads(_project_state_path().read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        raw = _project_state_path().read_text(encoding="utf-8")
+    except FileNotFoundError:
         return None
+    except OSError as exc:
+        raise ProjectStateError("unreadable") from exc
+    try:
+        state = json.loads(raw)
+    except ValueError as exc:
+        raise ProjectStateError("corrupt") from exc
     project_id = state.get("projectId") if isinstance(state, dict) else None
     if isinstance(project_id, str) and PROJECT_ID_PATTERN.fullmatch(project_id):
         return project_id
-    return None
+    raise ProjectStateError("invalid")
 
 
 def _store_project_id(project_id: str) -> None:
@@ -349,36 +384,50 @@ def _store_project_id(project_id: str) -> None:
 
 
 def _ensure_project(timeout_seconds: float, db_path: Path) -> tuple[int, GflowMachineError]:
-    """Resolve the one try-on project, creating and recording it only if none exists yet."""
-    global _project_id
+    """Resolve the one try-on project, creating and recording it only if no record exists.
+
+    Fails closed: an unreadable or invalid record, or a created project that cannot be recorded,
+    refuses generation instead of risking a second project after the next restart. A created but
+    unrecorded id is kept in memory, so later requests retry the write rather than create again.
+    """
+    global _project_id, _unrecorded_project_id
     if _project_id is not None:
         return 0, GflowMachineError()
-    stored = _stored_project_id()
+    try:
+        stored = _stored_project_id()
+    except ProjectStateError as exc:
+        _event("flow_try_on.project_state_invalid", problem=str(exc), path=str(_project_state_path()))
+        return 1, GflowMachineError()
     if stored is not None:
         _project_id = stored
         return 0, GflowMachineError()
 
-    returncode, stdout = _run_gflow(
-        _gflow("project", "create", "--title", PROJECT_TITLE, "--profile", PROFILE, "--json"),
-        timeout_seconds,
-        db_path,
-    )
-    try:
-        reply = json.loads(stdout)
-    except ValueError:
-        reply = None
-    created = reply.get("project_id") if isinstance(reply, dict) and reply.get("status") == "ok" else None
-    if returncode != 0 or not isinstance(created, str) or not PROJECT_ID_PATTERN.fullmatch(created):
-        _event("flow_try_on.project_create_failed", exit_code=str(returncode))
-        return returncode or 1, _machine_error(stdout)
+    created = _unrecorded_project_id
+    if created is None:
+        returncode, stdout = _run_gflow(
+            _gflow("project", "create", "--title", PROJECT_TITLE, "--profile", PROFILE, "--json"),
+            timeout_seconds,
+            db_path,
+        )
+        try:
+            reply = json.loads(stdout)
+        except ValueError:
+            reply = None
+        created = reply.get("project_id") if isinstance(reply, dict) and reply.get("status") == "ok" else None
+        if returncode != 0 or not isinstance(created, str) or not PROJECT_ID_PATTERN.fullmatch(created):
+            _event("flow_try_on.project_create_failed", exit_code=str(returncode))
+            return returncode or 1, _machine_error(stdout)
+        _unrecorded_project_id = created
+        _event("flow_try_on.project_created", project_id=created)
     try:
         _store_project_id(created)
     except OSError:
-        # Still generate in it; only a worker restart before the next successful write could
-        # create another project.
-        _event("flow_try_on.project_record_failed")
+        # The id is the operator's evidence: record it by hand or set LA_TRY_ON_FLOW_PROJECT_ID.
+        _event("flow_try_on.project_record_failed", project_id=created, path=str(_project_state_path()))
+        return 1, GflowMachineError()
+    _unrecorded_project_id = None
     _project_id = created
-    _event("flow_try_on.project_created")
+    _event("flow_try_on.project_recorded", project_id=created)
     return 0, GflowMachineError()
 
 
