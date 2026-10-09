@@ -24,7 +24,6 @@ import {
 } from "./merchant-offer-mapper.ts";
 import {
   resolveEffectiveApparelFacts,
-  MERCHANT_SHOP_APPAREL_DEFAULTS,
   type MerchantGender,
   type MerchantAgeGroup,
 } from "./merchant-apparel-facts.ts";
@@ -107,7 +106,9 @@ export function buildMerchantParentItems(
       .map((img) => img.url)
       .filter((url) => url !== imageLink);
 
-    // Resolve price across relevant options (preferring parent set options for composite)
+    // Resolve price and availability from the SAME offers, so the advertised price is one a shopper
+    // can actually order. Options are size/colour variants: taking the cheapest of all of them while
+    // reporting `in_stock` because a different one is available would advertise a price nobody can buy.
     const options = product.projection.options;
     const relevantOptions =
       product.projection.mode === "composite"
@@ -115,30 +116,37 @@ export function buildMerchantParentItems(
         : options;
     const candidateOptions = relevantOptions.length > 0 ? relevantOptions : options;
 
-    const prices = candidateOptions
-      .map((o) => o.price)
-      .filter((p): p is number => typeof p === "number" && Number.isFinite(p) && p > 0);
+    const pricedOptions = candidateOptions.filter(
+      (o) => typeof o.price === "number" && Number.isFinite(o.price) && o.price > 0,
+    );
+    if (pricedOptions.length === 0) continue;
 
-    if (prices.length === 0) continue;
-    const priceVnd = Math.min(...prices);
+    const orderable = pricedOptions.filter((o) => o.purchasable && o.availability.published);
+    const inStock = orderable.filter(
+      (o) => o.availability.published && o.availability.merchant === "in_stock",
+    );
+    const backordered = orderable.filter(
+      (o) =>
+        o.availability.published &&
+        o.availability.merchant === "backorder" &&
+        o.availability.availabilityDate !== null,
+    );
 
-    // Resolve availability. `in_stock` wins; otherwise the earliest published backorder date.
     let availability: ParentFeedAvailability = "out_of_stock";
     let availabilityDate: string | null = null;
-    for (const opt of candidateOptions) {
-      if (!opt.purchasable || !opt.availability.published) continue;
-      if (opt.availability.merchant === "in_stock") {
-        availability = "in_stock";
-        availabilityDate = null;
-        break;
-      }
-      if (opt.availability.merchant === "backorder" && opt.availability.availabilityDate !== null) {
-        if (availabilityDate === null || opt.availability.availabilityDate < availabilityDate) {
-          availability = "backorder";
-          availabilityDate = opt.availability.availabilityDate;
-        }
-      }
+    let offered = pricedOptions;
+    if (inStock.length > 0) {
+      availability = "in_stock";
+      offered = inStock;
+    } else if (backordered.length > 0) {
+      availability = "backorder";
+      offered = backordered;
+      availabilityDate = backordered
+        .map((o) => (o.availability.published ? o.availability.availabilityDate : null))
+        .filter((d): d is string => d !== null)
+        .sort()[0]!;
     }
+    const priceVnd = Math.min(...offered.map((o) => o.price as number));
 
     // Option B description: published editorial description if present, else brand fallback
     const rawDesc = product.publishedDescription?.trim();
@@ -151,10 +159,10 @@ export function buildMerchantParentItems(
     const description = resolveBoundedMerchantText(resolvedDesc, MERCHANT_DESCRIPTION_MAX_LENGTH);
     if (description === null) continue;
 
+    // ADR 0007: a corrupt or unapproved persisted override is withheld, never repaired with defaults.
     const apparel = resolveEffectiveApparelFacts(product.apparelOverrides);
-    const gender = apparel.ok ? apparel.facts.gender : MERCHANT_SHOP_APPAREL_DEFAULTS.gender;
-    const ageGroup = apparel.ok ? apparel.facts.ageGroup : MERCHANT_SHOP_APPAREL_DEFAULTS.ageGroup;
-    const condition = apparel.ok ? apparel.facts.condition : MERCHANT_SHOP_APPAREL_DEFAULTS.condition;
+    if (!apparel.ok) continue;
+    const { gender, ageGroup, condition } = apparel.facts;
 
     items.push(
       Object.freeze({

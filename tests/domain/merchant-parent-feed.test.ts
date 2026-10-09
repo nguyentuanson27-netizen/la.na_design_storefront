@@ -62,13 +62,13 @@ function candidate(overrides: Partial<MerchantCandidateProduct> = {}): MerchantC
   };
 }
 
-test("builds parent item with lowest price across options and in_stock when at least one option is available", () => {
+test("builds parent item priced from the orderable options only, in_stock when one is available", () => {
   const items = buildMerchantParentItems([candidate()], ORIGIN);
   assert.equal(items.length, 1);
   const item = items[0]!;
   assert.equal(item.id, "prod-sd1701");
   assert.equal(item.title, "Áo dài Đan Hoa SD1701");
-  assert.equal(item.priceVnd, 849_000); // Minimum price across all valid options
+  assert.equal(item.priceVnd, 899_000); // The sold-out 849000 size is not an offer anyone can order
   assert.equal(item.availability, "in_stock");
   assert.equal(item.link, "https://www.lanadesign.vn/shop/ao-dai-dan-hoa-sd1701");
   assert.equal(item.imageLink, "https://content.pancake.vn/web-media/img-primary.jpg");
@@ -172,7 +172,7 @@ test("serializes Google Merchant Parent feed with XML escaping and proper RSS 2.
   assert.ok(feed.body.includes("<rss version=\"2.0\" xmlns:g=\"http://base.google.com/ns/1.0\">"));
   assert.ok(feed.body.includes("<g:id>prod-sd1701</g:id>"));
   assert.ok(feed.body.includes("<g:title>Áo dài Đan Hoa SD1701</g:title>"));
-  assert.ok(feed.body.includes("<g:price>849000 VND</g:price>"));
+  assert.ok(feed.body.includes("<g:price>899000 VND</g:price>"));
   assert.ok(feed.body.includes("<g:availability>in_stock</g:availability>"));
   assert.ok(feed.body.includes("Mô tả chuẩn &amp; độc quyền &lt;La.na&gt;"));
 });
@@ -181,5 +181,45 @@ test("serializes Facebook Parent feed with Meta availability formatting", () => 
   const items = buildMerchantParentItems([candidate()], ORIGIN);
   const feed = serializeFacebookParentFeed({ items, market: MARKET, origin: ORIGIN });
   assert.ok(feed.body.includes("<g:availability>in stock</g:availability>"));
-  assert.ok(feed.body.includes("<g:price>849000 VND</g:price>"));
+  assert.ok(feed.body.includes("<g:price>899000 VND</g:price>"));
+});
+
+test("price is the cheapest ORDERABLE option; a cheaper sold-out size never sets the price", () => {
+  const prod = candidate({
+    projection: {
+      mode: "standalone",
+      options: [
+        projectionOption({ price: 1_000_000, purchasable: true }),
+        projectionOption({ price: 950_000, purchasable: true }),
+        projectionOption({ price: 500_000, purchasable: false }),
+      ],
+    },
+  });
+  const [item] = buildMerchantParentItems([prod], ORIGIN);
+  assert.equal(item!.priceVnd, 950_000);
+  assert.equal(item!.availability, "in_stock");
+});
+
+test("a fully sold-out product keeps its lowest listed price as out_of_stock", () => {
+  const prod = candidate({
+    projection: {
+      mode: "standalone",
+      options: [
+        projectionOption({ price: 900_000, purchasable: false }),
+        projectionOption({ price: 850_000, purchasable: false }),
+      ],
+    },
+  });
+  const [item] = buildMerchantParentItems([prod], ORIGIN);
+  assert.equal(item!.availability, "out_of_stock");
+  assert.equal(item!.priceVnd, 850_000);
+});
+
+test("an invalid stored apparel override withholds the product instead of publishing defaults", () => {
+  const bad = candidate({
+    apparelOverrides: { ...INHERITED_APPAREL_OVERRIDES, gender: "invalid" } as never,
+  });
+  const good = candidate({ pancakeProductId: "prod-ok", slug: "ao-dai-ok" });
+  const items = buildMerchantParentItems([bad, good], ORIGIN);
+  assert.deepEqual(items.map((i) => i.id), ["prod-ok"]);
 });

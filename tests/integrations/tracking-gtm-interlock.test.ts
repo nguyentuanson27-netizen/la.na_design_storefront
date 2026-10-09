@@ -116,6 +116,39 @@ test("a configured GTM container opens Google Tag Manager and Analytics origins 
   }
 });
 
+test("an empty public GTM id does not mask the server id in the CSP", async () => {
+  const originalPublic = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  const originalServer = process.env.LA_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "";
+  process.env.LA_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    const csp = await readCsp(`?empty-public-gtm-${Date.now()}`);
+    assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+  } finally {
+    if (originalPublic !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalPublic;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+    if (originalServer !== undefined) process.env.LA_GTM_CONTAINER_ID = originalServer;
+    else delete process.env.LA_GTM_CONTAINER_ID;
+  }
+});
+
+test("conflicting public and server GTM ids fail the config", async () => {
+  const originalPublic = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  const originalServer = process.env.LA_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+  process.env.LA_GTM_CONTAINER_ID = "GTM-OTHER123";
+
+  try {
+    await assert.rejects(readCsp(`?conflicting-gtm-${Date.now()}`), /both set and differ/);
+  } finally {
+    if (originalPublic !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalPublic;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+    if (originalServer !== undefined) process.env.LA_GTM_CONTAINER_ID = originalServer;
+    else delete process.env.LA_GTM_CONTAINER_ID;
+  }
+});
+
 test("T3 every requested tracking mode resolves to zero GTM load in tracking config", () => {
   for (const desiredMode of TRACKING_MODES) {
     const runtime = resolveTrackingRuntime({

@@ -71,7 +71,21 @@ const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 // production host, but Next bakes this policy into the build, so the allowance is unconditional.
 
 // Google Tag Manager (GTM)
-const configuredGtmContainerId = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID ?? process.env.LA_GTM_CONTAINER_ID ?? "";
+// An empty build arg is "unset", not a value: the Dockerfile always defines the public variable
+// (default ""), so `??` alone would let it mask the server-side fallback. Both sources are trimmed,
+// and two different non-empty ids are a deployment mistake that must fail the build.
+const publicGtmContainerId = (process.env.NEXT_PUBLIC_GTM_CONTAINER_ID ?? "").trim();
+const serverGtmContainerId = (process.env.LA_GTM_CONTAINER_ID ?? "").trim();
+if (
+  publicGtmContainerId.length > 0 &&
+  serverGtmContainerId.length > 0 &&
+  publicGtmContainerId !== serverGtmContainerId
+) {
+  throw new Error(
+    "NEXT_PUBLIC_GTM_CONTAINER_ID and LA_GTM_CONTAINER_ID are both set and differ; configure one container id",
+  );
+}
+const configuredGtmContainerId = publicGtmContainerId || serverGtmContainerId;
 if (
   configuredGtmContainerId.length > 0 &&
   !/^GTM-[A-Z0-9]{4,10}$/.test(configuredGtmContainerId)
