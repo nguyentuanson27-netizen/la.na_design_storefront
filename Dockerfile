@@ -31,6 +31,11 @@ ARG NEXT_PUBLIC_FACEBOOK_PIXEL_ID=""
 ENV NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${NEXT_PUBLIC_FACEBOOK_PIXEL_ID}
 ARG NEXT_PUBLIC_GTM_CONTAINER_ID=""
 ENV NEXT_PUBLIC_GTM_CONTAINER_ID=${NEXT_PUBLIC_GTM_CONTAINER_ID}
+# The server-side id is what the runtime loader and tracking config read. It must reach the build
+# too, or a deployment that sets only this one bakes a CSP without Google origins around a loader
+# that then emits the script. next.config.mjs rejects two different ids.
+ARG LA_GTM_CONTAINER_ID=""
+ENV LA_GTM_CONTAINER_ID=${LA_GTM_CONTAINER_ID}
 # ChatGPT Ads uses the same build-time contract: the public Pixel ID controls both the loader and
 # the CSP origins. The Conversions API key remains runtime-only and never enters this image stage.
 ARG NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID=""

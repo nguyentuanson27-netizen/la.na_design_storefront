@@ -223,3 +223,23 @@ test("an invalid stored apparel override withholds the product instead of publis
   const items = buildMerchantParentItems([bad, good], ORIGIN);
   assert.deepEqual(items.map((i) => i.id), ["prod-ok"]);
 });
+
+test("backorder price and date come from the same option, not the cheapest price with the earliest date", () => {
+  const dated = (price: number, availabilityDate: string) => {
+    const option = projectionOption({ price, purchasable: true, isPreorderSale: true });
+    return {
+      ...option,
+      availability: fixtureAvailability(option, { availabilityDate, today: "2026-10-09" }),
+    };
+  };
+  const prod = candidate({
+    projection: {
+      mode: "standalone",
+      options: [dated(750_000, "2026-12-04"), dated(900_000, "2026-11-20")],
+    },
+  });
+  const [item] = buildMerchantParentItems([prod], ORIGIN);
+  assert.equal(item!.availability, "backorder");
+  assert.equal(item!.availabilityDate, "2026-11-20");
+  assert.equal(item!.priceVnd, 900_000); // the 11-20 option's own price, not the 750000 of the 12-04 one
+});

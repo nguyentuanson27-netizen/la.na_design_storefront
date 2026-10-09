@@ -139,12 +139,18 @@ export function buildMerchantParentItems(
       availability = "in_stock";
       offered = inStock;
     } else if (backordered.length > 0) {
+      // One coherent offer: price and date must describe the SAME option, or the row advertises a
+      // size/date pair nobody can order. Earliest date wins; equal dates take the lower price.
+      const representative = [...backordered].sort((x, y) => {
+        const dx = x.availability.published ? (x.availability.availabilityDate ?? "") : "";
+        const dy = y.availability.published ? (y.availability.availabilityDate ?? "") : "";
+        return dx < dy ? -1 : dx > dy ? 1 : (x.price as number) - (y.price as number);
+      })[0]!;
       availability = "backorder";
-      offered = backordered;
-      availabilityDate = backordered
-        .map((o) => (o.availability.published ? o.availability.availabilityDate : null))
-        .filter((d): d is string => d !== null)
-        .sort()[0]!;
+      offered = [representative];
+      availabilityDate = representative.availability.published
+        ? representative.availability.availabilityDate
+        : null;
     }
     const priceVnd = Math.min(...offered.map((o) => o.price as number));
 
