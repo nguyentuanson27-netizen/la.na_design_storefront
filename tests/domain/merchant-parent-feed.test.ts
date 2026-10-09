@@ -7,6 +7,7 @@ import {
   serializeFacebookParentFeed,
 } from "../../src/commerce/merchant-parent-feed.ts";
 import type { MerchantCandidateProduct, MerchantMarketPolicy } from "../../src/commerce/merchant-offer-mapper.ts";
+import { buildMetaAddToCartPixelParameters } from "../../src/commerce/meta-pixel-parameters.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "../../src/commerce/product-merchant-facts-repository.ts";
 import { fixtureAvailability, withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 import { type StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
@@ -269,4 +270,51 @@ test("backorder price and date come from the same option: the cheapest one, with
   // The same option supplies both: 750000 with ITS date, never 750000 with the other size's 11-20.
   assert.equal(item!.priceVnd, 750_000);
   assert.equal(item!.availabilityDate, "2026-12-04");
+});
+
+test("Meta feed g:id is the product slug the Pixel and CAPI send as content_ids; Google keeps the Pancake id", () => {
+  const items = buildMerchantParentItems([candidate()], ORIGIN);
+  assert.equal(items[0]!.id, "prod-sd1701");
+  assert.equal(items[0]!.metaContentId, "ao-dai-dan-hoa-sd1701");
+
+  const facebook = serializeFacebookParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.ok(facebook.body.includes("<g:id>ao-dai-dan-hoa-sd1701</g:id>"));
+  assert.ok(!facebook.body.includes("prod-sd1701"));
+
+  const google = serializeGoogleMerchantParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.ok(google.body.includes("<g:id>prod-sd1701</g:id>"));
+  assert.ok(!google.body.includes("<g:id>ao-dai-dan-hoa-sd1701</g:id>"));
+
+  // The same slug is what the AddToCart event sends for this product.
+  const event = buildMetaAddToCartPixelParameters({
+    slug: "ao-dai-dan-hoa-sd1701",
+    productName: "Áo dài Đan Hoa SD1701",
+    committedUnitPriceVnd: 899_000,
+    quantity: 1,
+  });
+  assert.deepEqual(event.content_ids, [items[0]!.metaContentId]);
+});
+
+test("a slug over Meta's 100-character id limit leaves the product out of the Meta feed only", () => {
+  const longSlug = `ao-dai-${"a".repeat(93)}`; // 100 characters
+  const tooLongSlug = `${longSlug}b`; // 101 characters
+  const items = buildMerchantParentItems(
+    [
+      candidate({ pancakeProductId: "prod-fits", slug: longSlug }),
+      candidate({ pancakeProductId: "prod-long", slug: tooLongSlug }),
+    ],
+    ORIGIN,
+  );
+  assert.equal(items.length, 2);
+  assert.equal(items.find((i) => i.id === "prod-fits")!.metaContentId, longSlug);
+  assert.equal(items.find((i) => i.id === "prod-long")!.metaContentId, null);
+
+  const facebook = serializeFacebookParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.equal(facebook.offerCount, 1);
+  assert.equal((facebook.body.match(/<item>/g) ?? []).length, 1);
+  assert.ok(facebook.body.includes(`<g:id>${longSlug}</g:id>`));
+  assert.ok(!facebook.body.includes(tooLongSlug));
+
+  const google = serializeGoogleMerchantParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.equal(google.offerCount, 2);
 });

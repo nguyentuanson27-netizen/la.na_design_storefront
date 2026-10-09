@@ -7,6 +7,15 @@
 > from the same orderable offers (`representative-offers.ts`), and the unselected product page now quotes that
 > same set, so the `Từ` floor no longer includes a sold-out size (not the cross-size floor described below). Meta Live remains a
 > separate catalog.
+>
+> **Meta item ID (follow-up to PR #125):** the Meta feeds (`/feeds/facebook-live.xml`, `/feeds/facebook.xml`,
+> `/feeds/facebook-catalog.xml`) now use the product **slug** as `g:id`, not the Pancake product ID, because the
+> Pixel and CAPI send the slug as `content_ids` (ViewContent, AddToCart, InitiateCheckout, Purchase) and Meta
+> matches an event to a catalog item only when the two are equal. The Google feed keeps the Pancake product ID.
+> A slug longer than Meta's 100-character id limit leaves that product out of the Meta feed (never truncated).
+> Slugs are website-owned and an ADMIN can change one (`ProductSlugHistory`); a changed slug is a new Meta
+> catalog item, so avoid renaming the slug of a product that is running ads. Where the contract below says
+> `g:id = product ID`, read "slug" for the Meta feeds.
 
 ## Objective
 Commerce Manager's live-product picker should show **one catalog item per original Pancake product**, not one item per size. This is a separate opt-in catalog source at `GET /feeds/facebook-live.xml`; the existing `/feeds/google-merchant` remains untouched.
@@ -37,9 +46,9 @@ Commerce Manager's live-product picker should show **one catalog item per origin
 4. Verify exact-head CI, review security and release notes, open PR as draft if any gate is unresolved.
 
 ## Non-goals
-- No modification to product mirrors, size stock, price rules, Google Merchant feed URL, Pixel/CAPI IDs, Meta Commerce Manager settings, DB schema or live Meta/Pancake API writes.
+- No modification to product mirrors, size stock, price rules, Google Merchant feed URL, Pixel/CAPI IDs (the feed now follows them), Meta Commerce Manager settings, DB schema or live Meta/Pancake API writes.
 - No fake apparel size, invented parent MPN, or automatic migration/deletion of old catalog records.
 
 ## Verification & rollout
 - After merge/deploy, inspect the XML and add its URL as the **only source** in a dedicated Live catalog. Confirm real import results, product click-through, images, availability and Meta's apparel eligibility before using in livestreams.
-- Keep SKU feed/Meta ads in their existing catalog. Verify dynamic-ad event ID matching separately if reusing the Live catalog for ads.
+- Keep SKU feed/Meta ads in their existing catalog. With slug ids the Live catalog can match Pixel events; verify the match in Commerce Manager (Events → Catalog match / Diagnostics) before relying on it for dynamic ads. Items already imported under Pancake product IDs are not renamed: use a fresh catalog or delete the old items once the slug feed has imported.
