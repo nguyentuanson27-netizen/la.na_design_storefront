@@ -17,6 +17,7 @@ import {
   classifyExternalIdentifier,
   classifyMerchantText,
 } from "./merchant-identity-audit.ts";
+import { selectRepresentativeOffers } from "./representative-offers.ts";
 import { MAX_MERCHANT_FEED_BYTES } from "./merchant-feed-limits.ts";
 import {
   type MerchantCandidateProduct,
@@ -106,9 +107,8 @@ export function buildMerchantParentItems(
       .map((img) => img.url)
       .filter((url) => url !== imageLink);
 
-    // Resolve price and availability from the SAME offers, so the advertised price is one a shopper
-    // can actually order. Options are size/colour variants: taking the cheapest of all of them while
-    // reporting `in_stock` because a different one is available would advertise a price nobody can buy.
+    // Price and availability come from the SAME orderable offers (see representative-offers.ts), the
+    // set the unselected product page quotes too, so the feed row and its landing page agree.
     const options = product.projection.options;
     const relevantOptions =
       product.projection.mode === "composite"
@@ -116,43 +116,11 @@ export function buildMerchantParentItems(
         : options;
     const candidateOptions = relevantOptions.length > 0 ? relevantOptions : options;
 
-    const pricedOptions = candidateOptions.filter(
-      (o) => typeof o.price === "number" && Number.isFinite(o.price) && o.price > 0,
-    );
-    if (pricedOptions.length === 0) continue;
-
-    const orderable = pricedOptions.filter((o) => o.purchasable && o.availability.published);
-    const inStock = orderable.filter(
-      (o) => o.availability.published && o.availability.merchant === "in_stock",
-    );
-    const backordered = orderable.filter(
-      (o) =>
-        o.availability.published &&
-        o.availability.merchant === "backorder" &&
-        o.availability.availabilityDate !== null,
-    );
-
-    let availability: ParentFeedAvailability = "out_of_stock";
-    let availabilityDate: string | null = null;
-    let offered = pricedOptions;
-    if (inStock.length > 0) {
-      availability = "in_stock";
-      offered = inStock;
-    } else if (backordered.length > 0) {
-      // One coherent offer: price and date must describe the SAME option, or the row advertises a
-      // size/date pair nobody can order. Earliest date wins; equal dates take the lower price.
-      const representative = [...backordered].sort((x, y) => {
-        const dx = x.availability.published ? (x.availability.availabilityDate ?? "") : "";
-        const dy = y.availability.published ? (y.availability.availabilityDate ?? "") : "";
-        return dx < dy ? -1 : dx > dy ? 1 : (x.price as number) - (y.price as number);
-      })[0]!;
-      availability = "backorder";
-      offered = [representative];
-      availabilityDate = representative.availability.published
-        ? representative.availability.availabilityDate
-        : null;
-    }
-    const priceVnd = Math.min(...offered.map((o) => o.price as number));
+    const offers = selectRepresentativeOffers(candidateOptions);
+    if (offers.representative === null) continue;
+    const availability: ParentFeedAvailability = offers.availability;
+    const availabilityDate = offers.availabilityDate;
+    const priceVnd = offers.representative.price as number;
 
     // Option B description: published editorial description if present, else brand fallback
     const rawDesc = product.publishedDescription?.trim();

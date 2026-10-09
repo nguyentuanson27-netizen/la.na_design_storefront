@@ -7,6 +7,7 @@ import {
   normalizeStorefrontProjectionSelection,
   type StorefrontProjectionOption,
 } from "../../commerce/storefront-projection.ts";
+import { selectRepresentativeOffers } from "../../commerce/representative-offers.ts";
 import { getStorefrontResolvedPriceRange } from "../../commerce/storefront-product.ts";
 
 /**
@@ -38,8 +39,16 @@ export type VariantSelectionViewInput = Readonly<{
   colorDimensionLabel?: string;
 }>;
 
+/**
+ * The price quoted before a size is chosen.
+ *
+ * It ranges over the options a shopper can actually order (in stock, else dated preorder), falling
+ * back to every priced option only when nothing is orderable. A sold-out size therefore never sets
+ * the "Từ" floor, and the merchant feed quotes the same set via `selectRepresentativeOffers`, which
+ * is what keeps the feed price equal to the price on the page its link opens.
+ */
 function defaultPriceLabel(options: readonly StorefrontProjectionOption[]): string {
-  const range = getStorefrontResolvedPriceRange(options);
+  const range = getStorefrontResolvedPriceRange(selectRepresentativeOffers(options).offered);
   if (!range) return "Giá đang cập nhật";
   return range.minimum === range.maximum
     ? currency.format(range.minimum)

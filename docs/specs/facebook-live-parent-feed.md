@@ -4,7 +4,8 @@
 > `/feeds/google-merchant.xml` now also serve one parent-level item per Pancake product
 > (`merchant-parent-feed.ts`), so the per-size Google feed is no longer "untouched" and the Google
 > items carry no `g:size`, `g:color` or `g:item_group_id`. Price and availability on parent items come
-> from the same orderable offers (not the cross-size floor described below). Meta Live remains a
+> from the same orderable offers (`representative-offers.ts`), and the unselected product page now quotes that
+> same set, so the `Từ` floor no longer includes a sold-out size (not the cross-size floor described below). Meta Live remains a
 > separate catalog.
 
 ## Objective
