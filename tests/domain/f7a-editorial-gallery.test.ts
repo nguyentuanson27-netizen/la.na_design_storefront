@@ -134,6 +134,14 @@ test("the desktop media stage contains the garment and never takes the page's ve
   }
   // And the pointer surface leaves vertical panning to the browser.
   assert.match(cssSource, /\.pdp-stage__nav \{[^}]*touch-action: pan-y;/);
-  // The mobile gallery's swipe surface owes the page the same thing.
-  assert.match(cssSource, /\.pdp-mobile-gallery__image \{[^}]*touch-action: pan-y;/);
+  // The phone gallery owes the page the same thing, by a different route: it is a native
+  // horizontal scroll-snap track (its scroll listener, in `useSnapTrack`, reads only the track's own
+  // horizontal offset). The track cannot scroll vertically, so a vertical wheel or swipe over it
+  // reaches the page, and no `touch-action` restriction is left for a diagonal thumb to trip over --
+  // the browser decides whether it meant the gallery or the page.
+  assert.match(
+    cssSource,
+    /\.pdp-mobile-gallery__track,\n\.pdp-lightbox__track \{[^}]*overflow-y: hidden;[^}]*scroll-snap-type: x mandatory;/,
+  );
+  assert.doesNotMatch(cssSource, /\.pdp-mobile-gallery__image \{[^}]*touch-action/);
 });

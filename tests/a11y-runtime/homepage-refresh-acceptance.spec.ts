@@ -584,10 +584,17 @@ test("the feedback rail scrolls horizontally, is keyboard operable and leads to 
     await expect(section.getByRole("heading", { level: 2, name: "Acceptance feedback" })).toBeVisible();
     // The title is a heading, not a link; the photographs are images only.
     await expect(section.locator("h2 a, a h2")).toHaveCount(0);
-    expect(await section.locator(".feedback-rail__item img").evaluateAll((images) =>
-      images.map((image) => image.getAttribute("alt")),
-    )).toEqual(FEEDBACK_ALTS);
+    await expect(section.locator(".feedback-rail__item")).toHaveCount(FEEDBACK_ALTS.length);
     await expect(section.locator(".feedback-rail__track a")).toHaveCount(0);
+
+    /*
+     * Until the rail is scrolled, only what is on screen and the next rail-width carry a photograph:
+     * a phone does not download the whole rail the moment it nears the screen.
+     */
+    const railImages = section.locator(".feedback-rail__item img");
+    const mountedBeforeScroll = await railImages.count();
+    expect(mountedBeforeScroll).toBeGreaterThan(0);
+    if (viewport === MOBILE) expect(mountedBeforeScroll).toBeLessThan(FEEDBACK_ALTS.length);
 
     const rail = section.getByRole("group", { name: "Acceptance feedback" });
     const metrics = await rail.evaluate((element) => ({
@@ -603,6 +610,15 @@ test("the feedback rail scrolls horizontally, is keyboard operable and leads to 
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect.poll(() => rail.evaluate((element) => element.scrollLeft)).toBeGreaterThan(0);
+
+    // Scrolled to its end, the rail holds every photograph, in order, images only.
+    await rail.evaluate((element) => element.scrollTo({ left: element.scrollWidth, behavior: "instant" }));
+    await expect(railImages).toHaveCount(FEEDBACK_ALTS.length);
+    expect(await railImages.evaluateAll((images) =>
+      images.map((image) => image.getAttribute("alt")),
+    )).toEqual(FEEDBACK_ALTS);
+    await rail.evaluate((element) => element.scrollTo({ left: 0, behavior: "instant" }));
+
     // Every photograph is a zoom button in order, and the one after the last is `Xem thêm`.
     const zoomButtons = section.locator(".feedback-rail__item button.feedback-zoom");
     await expect(zoomButtons).toHaveCount(FEEDBACK_ALTS.length);

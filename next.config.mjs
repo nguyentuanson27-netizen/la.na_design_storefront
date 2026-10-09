@@ -172,6 +172,10 @@ const nextConfig = {
     LA_BUILD_ZALO_ADS_QUARANTINE_CSP: zaloAdsQuarantinePolicy,
   },
   images: {
+    // AVIF first: about a fifth smaller than WebP for the same photograph, which is most of what a
+    // phone on 4G spends loading a listing. Browsers that do not advertise AVIF keep WebP. The
+    // first request for each size encodes more slowly; the optimizer caches the result.
+    formats: ["image/avif", "image/webp"],
     remotePatterns: pancakeImageRemotePatterns,
   },
   async headers() {

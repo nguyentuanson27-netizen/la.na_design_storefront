@@ -158,7 +158,24 @@ async function expectSizeGuideTableFits(
 async function assertPageQuality(page: import("@playwright/test").Page) {
   const overflowReport = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
+    /*
+     * A page of a horizontal scroll container (the PDP's phone gallery, the feedback rail) sits
+     * off screen by design until it is scrolled to; the container clips it and the document never
+     * widens. Such an element is exempt only while that nearest scroller is itself on screen, so a
+     * scroller that overflows the page is still caught -- as is anything clipped merely by
+     * `overflow: hidden`, which the shopper cannot scroll to.
+     */
+    const insideOnScreenScroller = (element: HTMLElement) => {
+      for (let ancestor = element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+        const { overflowX } = getComputedStyle(ancestor);
+        if (overflowX !== "auto" && overflowX !== "scroll") continue;
+        const box = ancestor.getBoundingClientRect();
+        return box.left >= -0.5 && box.right <= viewportWidth + 0.5;
+      }
+      return false;
+    };
     const offenders = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+      .filter((element) => !insideOnScreenScroller(element))
       .map((element) => {
         const rect = element.getBoundingClientRect();
         return {

@@ -1,4 +1,4 @@
-import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import {
   ListingBreadcrumbs,
   ListingEmptyState,
@@ -57,6 +57,7 @@ function render(data: NewArrivalsViewModel) {
                   key={card.id}
                   model={card.model}
                   tone={tones[(data.toneOffset + index) % tones.length]!}
+                  eager={index < PRODUCT_CARD_EAGER_COUNT}
                 />
               ))}
             </ListingProductGrid>

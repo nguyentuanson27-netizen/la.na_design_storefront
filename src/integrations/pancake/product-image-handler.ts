@@ -1,7 +1,11 @@
 import {
+  PDP_IMAGE_ENCODING_VERSION,
   canonicalizePancakeProductImageSource,
+  isContentAddressedPancakeSource,
+  negotiatePdpImageFormat,
   parsePdpImageWidth,
 } from "../../commerce/product-image-delivery.ts";
+import { readDefaultProductImageCache, type ProductImageCache } from "./product-image-cache.ts";
 import { fetchAndCompressPancakeProductImage } from "./product-image-delivery.ts";
 
 type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
@@ -35,6 +39,14 @@ export const PRODUCT_IMAGE_IDLE_MS = 15_000;
  * a slot indefinitely. A body is under 3 MB, so 120 s still admits clients down to ~25 KB/s.
  */
 export const PRODUCT_IMAGE_MAX_TRANSFER_MS = 120_000;
+/**
+ * A content-addressed source requested at the current encoding version never changes, so browsers
+ * keep it for a year without revalidating. Anything else keeps the short cache the endpoint always
+ * had: a request without `v` (a page rendered before the version existed) or a source whose URL does
+ * not carry its content hash.
+ */
+export const PRODUCT_IMAGE_IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable";
+export const PRODUCT_IMAGE_SHORT_CACHE_CONTROL = "public, max-age=3600, stale-while-revalidate=86400";
 const BODY_CHUNK_BYTES = 64 * 1024;
 
 const inFlight = new Map<string, Readonly<{ run: Promise<DeliveryResult>; followers: { count: number } }>>();
@@ -148,14 +160,28 @@ function errorResponse(status: number): Response {
  */
 export async function handleProductImageRequest(
   request: Request,
-  options: Readonly<{ fetch?: FetchLike; maxConcurrent?: number; maxQueued?: number; maxFollowers?: number; maxPending?: number; idleMs?: number; maxTransferMs?: number; chunkBytes?: number }> = {},
+  options: Readonly<{
+    fetch?: FetchLike;
+    /** `null` serves uncached; omitted, the production default (`readDefaultProductImageCache`). */
+    cache?: ProductImageCache | null;
+    maxConcurrent?: number;
+    maxQueued?: number;
+    maxFollowers?: number;
+    maxPending?: number;
+    idleMs?: number;
+    maxTransferMs?: number;
+    chunkBytes?: number;
+  }> = {},
 ): Promise<Response> {
   const searchParams = new URL(request.url).searchParams;
   const keys = [...searchParams.keys()];
+  const versions = searchParams.getAll("v");
   if (
-    keys.some((key) => key !== "src" && key !== "w") ||
+    keys.some((key) => key !== "src" && key !== "w" && key !== "v") ||
     searchParams.getAll("src").length !== 1 ||
-    searchParams.getAll("w").length !== 1
+    searchParams.getAll("w").length !== 1 ||
+    versions.length > 1 ||
+    (versions.length === 1 && !/^[0-9]{1,4}$/.test(versions[0]!))
   ) {
     return errorResponse(400);
   }
@@ -166,13 +192,59 @@ export async function handleProductImageRequest(
   const src = canonicalizePancakeProductImageSource(searchParams.get("src"));
   if (src === null || width === null) return errorResponse(400);
 
-  const key = `${width}|${src}`;
+  // Every version is served the current encoding (`v` never multiplies the work); it decides only
+  // how long a browser may keep the answer.
+  const format = negotiatePdpImageFormat(request.headers.get("accept"));
+  const mimeType = format === "avif" ? "image/avif" : "image/webp";
+  const contentAddressed = isContentAddressedPancakeSource(src);
+  const cacheControl =
+    contentAddressed && versions[0] === PDP_IMAGE_ENCODING_VERSION
+      ? PRODUCT_IMAGE_IMMUTABLE_CACHE_CONTROL
+      : PRODUCT_IMAGE_SHORT_CACHE_CONTROL;
+  // Only a source that cannot change may outlive the request on disk.
+  const cache = contentAddressed
+    ? options.cache === undefined
+      ? readDefaultProductImageCache()
+      : options.cache
+    : null;
+
+  const key = `${PDP_IMAGE_ENCODING_VERSION}|${format}|${width}|${src}`;
   const maxConcurrent = options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT;
   if (pendingRequests >= (options.maxPending ?? PRODUCT_IMAGE_MAX_PENDING)) return busyResponse();
+
+  // The slot is reserved synchronously, before any await: a cache read is I/O too, and requests
+  // that all passed the check above while suspended in it must not each be admitted afterwards.
+  // From here every path releases it exactly once -- shed, error, or the body being consumed.
+  pendingRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pendingRequests -= 1;
+  };
+
+  const streamOptions = {
+    idleMs: options.idleMs ?? PRODUCT_IMAGE_IDLE_MS,
+    maxTransferMs: options.maxTransferMs ?? PRODUCT_IMAGE_MAX_TRANSFER_MS,
+    chunkBytes: options.chunkBytes ?? BODY_CHUNK_BYTES,
+  };
+
+  // A hit costs neither a Pancake fetch nor an encode, so it never waits on the encoder's queue; it
+  // holds its pending slot while its body is written, like every other response.
+  let cached: Awaited<ReturnType<ProductImageCache["read"]>> = null;
+  if (cache !== null) {
+    try {
+      cached = await cache.read(key, mimeType);
+    } catch {
+      cached = null; // the cache contract is best-effort; a throwing one is a miss
+    }
+  }
+  if (cached !== null) return imageResponse(cached, streamOptions, release, cacheControl, "hit");
 
   let entry = inFlight.get(key);
   if (entry !== undefined) {
     if (entry.followers.count >= (options.maxFollowers ?? PRODUCT_IMAGE_MAX_FOLLOWERS)) {
+      release();
       return busyResponse();
     }
     entry.followers.count += 1;
@@ -181,24 +253,24 @@ export async function handleProductImageRequest(
       activeRuns >= maxConcurrent &&
       waiters.length >= (options.maxQueued ?? PRODUCT_IMAGE_MAX_QUEUED)
     ) {
+      release();
       return busyResponse();
     }
     const run = runLimited({ maxConcurrent }, () =>
-      fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch }),
-    ).finally(() => {
-      inFlight.delete(key);
-    });
+      fetchAndCompressPancakeProductImage(src, width, { fetch: options.fetch, format }),
+    )
+      .then((result) => {
+        // Once per key, by the run's leader; the response does not wait on the disk.
+        if (result.ok && cache !== null) void cache.write(key, result.image);
+        return result;
+      })
+      .finally(() => {
+        inFlight.delete(key);
+      });
     entry = { run, followers: { count: 0 } };
     inFlight.set(key, entry);
   }
 
-  pendingRequests += 1;
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
-    pendingRequests -= 1;
-  };
   let result: DeliveryResult;
   try {
     result = await entry.run;
@@ -222,22 +294,30 @@ export async function handleProductImageRequest(
     }
   }
 
-  const body = streamHoldingSlot(
-    result.image.bytes,
-    {
-      idleMs: options.idleMs ?? PRODUCT_IMAGE_IDLE_MS,
-      maxTransferMs: options.maxTransferMs ?? PRODUCT_IMAGE_MAX_TRANSFER_MS,
-      chunkBytes: options.chunkBytes ?? BODY_CHUNK_BYTES,
-    },
+  return imageResponse(
+    result.image,
+    streamOptions,
     release,
+    cacheControl,
+    cache === null ? null : "miss",
   );
-  return new Response(body, {
-    status: 200,
-    headers: {
-      "Cache-Control": "public, max-age=3600, stale-while-revalidate=86400",
-      "Content-Length": String(result.image.bytes.byteLength),
-      "Content-Type": result.image.mimeType,
-      "X-Content-Type-Options": "nosniff",
-    },
-  });
+}
+
+function imageResponse(
+  image: Readonly<{ bytes: Uint8Array; mimeType: string }>,
+  limits: Readonly<{ idleMs: number; maxTransferMs: number; chunkBytes: number }>,
+  release: () => void,
+  cacheControl: string,
+  cacheStatus: "hit" | "miss" | null,
+): Response {
+  const headers: Record<string, string> = {
+    "Cache-Control": cacheControl,
+    "Content-Length": String(image.bytes.byteLength),
+    "Content-Type": image.mimeType,
+    // The format follows the request's `Accept`, so a shared cache must key on it too.
+    Vary: "Accept",
+    "X-Content-Type-Options": "nosniff",
+  };
+  if (cacheStatus !== null) headers["X-Product-Image-Cache"] = cacheStatus;
+  return new Response(streamHoldingSlot(image.bytes, limits, release), { status: 200, headers });
 }

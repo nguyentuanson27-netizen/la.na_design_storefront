@@ -14,12 +14,23 @@ import type { ProductCardModel } from "@/components/headless/build-product-card-
 
 export type ProductCardTone = "stone" | "olive" | "ink" | "sand";
 
+/**
+ * How many cards at the head of a listing load their photograph eagerly: the first row of the
+ * two-column phone grid, which is what a phone paints first and usually its LCP. Everything after
+ * it stays lazy. No `fetchPriority`: on a collection with a cover photograph that is the LCP, and
+ * the cards must not outbid it.
+ */
+export const PRODUCT_CARD_EAGER_COUNT = 2;
+
 export function ProductCard({
   model,
   tone,
+  eager = false,
 }: {
   model: ProductCardModel;
   tone: ProductCardTone;
+  /** The card sits in a listing's first row; see `PRODUCT_CARD_EAGER_COUNT`. */
+  eager?: boolean;
 }) {
   const { price, primaryImage, hoverImage, flashSale, lastSizesLeft, marketingBadge, availabilityLabel } =
     model;
@@ -64,6 +75,7 @@ export function ProductCard({
                 alt={primaryImage.alt || model.name}
                 fill
                 sizes="(min-width: 1024px) 25vw, 50vw"
+                loading={eager ? "eager" : undefined}
                 className={`object-cover transition-all duration-500 ${
                   hoverImage
                     ? "group-hover:opacity-0 group-hover:scale-105"

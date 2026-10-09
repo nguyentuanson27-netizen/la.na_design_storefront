@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  useEffect,
   useRef,
   useState,
   type KeyboardEvent,
@@ -10,12 +11,15 @@ import {
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
 import { pdpProductImageLoader } from "@/components/headless/pdp-image-loader";
+import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
+import { useSnapTrack } from "@/components/headless/use-snap-track";
 import {
   buildDesktopProductGallerySlides,
   resolveGalleryImageForSelection,
   resolveGallerySlideForSelection,
   stepGallerySlide,
 } from "@/components/brand/product-gallery-layout";
+import { preloadImageForViewport } from "@/components/brand/viewport-image-preload";
 
 const DRAG_THRESHOLD_PX = 48;
 const DIALOG_FOCUSABLE_SELECTOR = [
@@ -27,17 +31,23 @@ const DIALOG_FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(",");
 
+/**
+ * The `lg` seam the two compositions split on, as the media queries the first photograph's preload
+ * hints are scoped by. Each composition's `<img>` stays lazy, because an eager `<img>` is fetched
+ * even inside the composition `display: none` hides; the scoped hint is what starts the visible
+ * one early, and the hidden one is never requested at all.
+ */
+const MOBILE_MEDIA = "(max-width: 1023.98px)";
+const DESKTOP_MEDIA = "(min-width: 1024px)";
+const MOBILE_SIZES = "(max-width: 1023px) 100vw, 1px";
+const DESKTOP_SIZES = "(min-width: 1024px) 50vw, 1px";
+
 type BrandProductMediaStageProps = Readonly<{
   media: StorefrontProductMedia;
   productName: string;
   selectedVariantId: string | null;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
 }>;
-
-function clampedImageStep(current: number, delta: number, imageCount: number) {
-  if (imageCount <= 0) return 0;
-  return Math.min(Math.max(current + delta, 0), imageCount - 1);
-}
 
 export function BrandProductMediaStage({
   media,
@@ -49,16 +59,16 @@ export function BrandProductMediaStage({
   const slides = buildDesktopProductGallerySlides(images.length);
 
   const [desktopSlide, setDesktopSlide] = useState(0);
-  const [mobileImage, setMobileImage] = useState(0);
   const [syncedVariantId, setSyncedVariantId] = useState(selectedVariantId);
-  const [lightboxImage, setLightboxImage] = useState(0);
+  const mobile = useSnapTrack({ count: images.length });
+  const lightbox = useSnapTrack({ count: images.length });
+  const documentLoaded = useDocumentLoaded();
 
-  const mobileTriggerRef = useRef<HTMLButtonElement | null>(null);
   const lightboxRef = useRef<HTMLDialogElement | null>(null);
   const lightboxCloseRef = useRef<HTMLButtonElement | null>(null);
-  const mobileDragOriginRef = useRef<{ x: number; y: number } | null>(null);
-  const mobileDraggedRef = useRef(false);
-  const lightboxDragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const lightboxOpenerRef = useRef<HTMLButtonElement | null>(null);
+  const desktopDragOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const mobileSyncedVariantRef = useRef(selectedVariantId);
 
   if (selectedVariantId !== syncedVariantId) {
     const nextDesktop = resolveGallerySlideForSelection({
@@ -68,88 +78,90 @@ export function BrandProductMediaStage({
       selectedVariantId,
       galleryIndexByVariantId,
     });
-    const nextMobile = resolveGalleryImageForSelection({
-      imageCount: images.length,
-      currentImage: mobileImage,
-      syncedVariantId,
-      selectedVariantId,
-      galleryIndexByVariantId,
-    });
 
     setSyncedVariantId(selectedVariantId);
     setDesktopSlide(nextDesktop.slide);
-    setMobileImage(nextMobile.image);
   }
+
+  // The phone gallery follows a variant change by moving its track, which is a DOM write, so it
+  // happens after commit rather than during render as the desktop slide's state change does.
+  const { index: mobileIndex, mount: mountMobile, scrollToIndex: scrollMobileTo } = mobile;
+  useEffect(() => {
+    const previousVariantId = mobileSyncedVariantRef.current;
+    if (previousVariantId === selectedVariantId) return;
+    mobileSyncedVariantRef.current = selectedVariantId;
+    const next = resolveGalleryImageForSelection({
+      imageCount: images.length,
+      currentImage: mobileIndex,
+      syncedVariantId: previousVariantId,
+      selectedVariantId,
+      galleryIndexByVariantId,
+    });
+    if (next.image !== mobileIndex) scrollMobileTo(next.image);
+  }, [selectedVariantId, galleryIndexByVariantId, images.length, mobileIndex, scrollMobileTo]);
+
+  // Once the page has loaded, the second photograph is fetched ahead of the first swipe, so the
+  // swipe lands on a photograph that is already there rather than on a request just leaving.
+  useEffect(() => {
+    if (documentLoaded) mountMobile([1]);
+  }, [documentLoaded, mountMobile]);
 
   if (images.length === 0) return null;
 
-  function stepMobile(delta: number) {
-    setMobileImage((current) => clampedImageStep(current, delta, images.length));
-  }
+  preloadImageForViewport({
+    src: images[0]!.url,
+    loader: pdpProductImageLoader,
+    sizes: MOBILE_SIZES,
+    media: MOBILE_MEDIA,
+  });
+  preloadImageForViewport({
+    src: images[0]!.url,
+    loader: pdpProductImageLoader,
+    sizes: DESKTOP_SIZES,
+    media: DESKTOP_MEDIA,
+  });
 
-  function stepLightbox(delta: number) {
-    setLightboxImage((current) => clampedImageStep(current, delta, images.length));
-  }
-
-  function handleSwipeStart(
-    event: ReactPointerEvent<HTMLElement>,
-    target: "mobile" | "lightbox",
-  ) {
-    if (!event.isPrimary) return;
-    const next = { x: event.clientX, y: event.clientY };
-    if (target === "mobile") {
-      mobileDragOriginRef.current = next;
-      mobileDraggedRef.current = false;
-    } else {
-      lightboxDragOriginRef.current = next;
-    }
-  }
-
-  function handleSwipeEnd(
-    event: ReactPointerEvent<HTMLElement>,
-    target: "mobile" | "lightbox",
-  ) {
-    const ref = target === "mobile" ? mobileDragOriginRef : lightboxDragOriginRef;
-    const origin = ref.current;
-    ref.current = null;
-    if (!origin) return;
-
-    const horizontal = event.clientX - origin.x;
-    const vertical = event.clientY - origin.y;
-    if (Math.abs(horizontal) < DRAG_THRESHOLD_PX || Math.abs(horizontal) <= Math.abs(vertical)) {
-      return;
-    }
-
-    if (target === "mobile") {
-      mobileDraggedRef.current = true;
-      stepMobile(horizontal < 0 ? 1 : -1);
-    } else {
-      stepLightbox(horizontal < 0 ? 1 : -1);
-    }
-  }
-
-  function openLightbox() {
-    if (mobileDraggedRef.current) {
-      mobileDraggedRef.current = false;
-      return;
-    }
-
-    setLightboxImage(mobileImage);
+  function openLightbox(index: number, opener: HTMLButtonElement) {
     const dialog = lightboxRef.current;
     if (!dialog || dialog.open) return;
+    lightboxOpenerRef.current = opener;
     dialog.showModal();
+    // The dialog has a box only once it is open, so the track can be positioned only now.
+    lightbox.scrollToIndex(index);
     lightboxCloseRef.current?.focus();
+  }
+
+  function closeLightbox() {
+    // The phone gallery returns showing the photograph the lightbox was left on.
+    mobile.scrollToIndex(lightbox.index);
+    const opener = mobile.trackRef.current?.querySelectorAll<HTMLButtonElement>(
+      ".pdp-mobile-gallery__image",
+    )[lightbox.index];
+    (opener ?? lightboxOpenerRef.current)?.focus({ preventScroll: true });
+  }
+
+  function onMobileKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const target = Math.min(
+      Math.max(mobile.index + (event.key === "ArrowLeft" ? -1 : 1), 0),
+      images.length - 1,
+    );
+    mobile.scrollToIndex(target, "animated");
+    mobile.trackRef.current
+      ?.querySelectorAll<HTMLButtonElement>(".pdp-mobile-gallery__image")
+      [target]?.focus({ preventScroll: true });
   }
 
   function containLightboxFocus(event: KeyboardEvent<HTMLDialogElement>) {
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      stepLightbox(-1);
+      lightbox.scrollToIndex(lightbox.index - 1, "animated");
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      stepLightbox(1);
+      lightbox.scrollToIndex(lightbox.index + 1, "animated");
       return;
     }
     if (event.key !== "Tab") return;
@@ -176,8 +188,20 @@ export function BrandProductMediaStage({
     }
   }
 
-  const currentMobileImage = images[mobileImage]!;
-  const currentLightboxImage = images[lightboxImage]!;
+  function handleDesktopSwipeEnd(event: ReactPointerEvent<HTMLElement>) {
+    const origin = desktopDragOriginRef.current;
+    desktopDragOriginRef.current = null;
+    if (!origin) return;
+    const horizontal = event.clientX - origin.x;
+    const vertical = event.clientY - origin.y;
+    if (Math.abs(horizontal) < DRAG_THRESHOLD_PX || Math.abs(horizontal) <= Math.abs(vertical)) return;
+    setDesktopSlide((current) =>
+      stepGallerySlide(current, horizontal < 0 ? 1 : -1, slides.length),
+    );
+  }
+
+  const imageAlt = (index: number) =>
+    index === 0 ? productName : images[index]!.alt || `${productName} - Ảnh ${index + 1}`;
   const hasMultipleImages = images.length > 1;
   const hasMultipleDesktopSlides = slides.length > 1;
 
@@ -188,37 +212,51 @@ export function BrandProductMediaStage({
       data-header-overlay-hero=""
     >
       <div className="pdp-mobile-gallery lg:hidden">
-        <button
-          ref={mobileTriggerRef}
-          type="button"
-          className="pdp-mobile-gallery__image"
-          aria-label={`Mở ảnh ${mobileImage + 1} / ${images.length} của ${productName}`}
-          onClick={openLightbox}
-          onPointerDown={(event) => handleSwipeStart(event, "mobile")}
-          onPointerUp={(event) => handleSwipeEnd(event, "mobile")}
-          onPointerCancel={() => {
-            mobileDragOriginRef.current = null;
-          }}
+        {/*
+          One page per photograph on a native scroll-snap track (`useSnapTrack`): the photograph
+          follows the finger, and a photograph is mounted only once the shopper is on it or beside
+          it. Each page is the button that opens it full screen; only the current one is in the tab
+          order, and the arrow keys move between them.
+        */}
+        <div
+          {...mobile.trackProps}
+          className="pdp-mobile-gallery__track"
+          onKeyDown={onMobileKeyDown}
         >
-          <Image
-            loader={pdpProductImageLoader}
-            src={currentMobileImage.url}
-            alt={mobileImage === 0 ? productName : currentMobileImage.alt || `${productName} - Ảnh ${mobileImage + 1}`}
-            fill
-            preload={mobileImage === 0}
-            sizes="(max-width: 1023px) 100vw, 1px"
-            /*
-              An `<img>` is draggable by default, and starting a native image drag fires
-              `pointercancel`, which throws away the swipe mid-gesture. Touch never hits this,
-              a mouse or trackpad always does.
-            */
-            draggable={false}
-            className="object-cover"
-          />
-        </button>
+          {images.map((image, index) => {
+            const isCurrent = index === mobile.index;
+            return (
+              <button
+                key={image.url}
+                type="button"
+                className="pdp-mobile-gallery__image"
+                aria-label={`Mở ảnh ${index + 1} / ${images.length} của ${productName}`}
+                tabIndex={isCurrent ? undefined : -1}
+                data-active={isCurrent ? "true" : "false"}
+                onClick={(event) => openLightbox(index, event.currentTarget)}
+              >
+                {mobile.mounted.has(index) ? (
+                  <Image
+                    loader={pdpProductImageLoader}
+                    src={image.url}
+                    alt={imageAlt(index)}
+                    fill
+                    sizes={MOBILE_SIZES}
+                    /*
+                      An `<img>` is draggable by default, and a native image drag would take over
+                      the mouse drag the track turns into scrolling. Touch never hits this.
+                    */
+                    draggable={false}
+                    className="object-cover"
+                  />
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
 
         <p className="pdp-mobile-gallery__counter" role="status" aria-live="polite">
-          {mobileImage + 1}/{images.length}
+          {mobile.index + 1}/{images.length}
         </p>
       </div>
 
@@ -244,7 +282,7 @@ export function BrandProductMediaStage({
                     src={images[imageIndex]!.url}
                     alt=""
                     fill
-                    sizes="(min-width: 1024px) 50vw, 1px"
+                    sizes={DESKTOP_SIZES}
                     draggable={false}
                     className="pdp-stage__backdrop-image object-cover"
                   />
@@ -260,10 +298,9 @@ export function BrandProductMediaStage({
                     <Image
                       loader={pdpProductImageLoader}
                       src={image.url}
-                      alt={imageIndex === 0 ? productName : image.alt || `${productName} - Ảnh ${imageIndex + 1}`}
+                      alt={imageAlt(imageIndex)}
                       fill
-                      preload={imageIndex === 0}
-                      sizes="(min-width: 1024px) 50vw, 1px"
+                      sizes={DESKTOP_SIZES}
                       draggable={false}
                       className="object-cover"
                     />
@@ -279,20 +316,12 @@ export function BrandProductMediaStage({
         <>
           <div
             className="pdp-stage__nav"
-            onPointerDown={(event) => handleSwipeStart(event, "lightbox")}
-            onPointerUp={(event) => {
-              const origin = lightboxDragOriginRef.current;
-              lightboxDragOriginRef.current = null;
-              if (!origin) return;
-              const horizontal = event.clientX - origin.x;
-              const vertical = event.clientY - origin.y;
-              if (Math.abs(horizontal) < DRAG_THRESHOLD_PX || Math.abs(horizontal) <= Math.abs(vertical)) return;
-              setDesktopSlide((current) =>
-                stepGallerySlide(current, horizontal < 0 ? 1 : -1, slides.length),
-              );
+            onPointerDown={(event) => {
+              if (event.isPrimary) desktopDragOriginRef.current = { x: event.clientX, y: event.clientY };
             }}
+            onPointerUp={handleDesktopSwipeEnd}
             onPointerCancel={() => {
-              lightboxDragOriginRef.current = null;
+              desktopDragOriginRef.current = null;
             }}
           >
             <button
@@ -329,7 +358,7 @@ export function BrandProductMediaStage({
         ref={lightboxRef}
         aria-label={`Xem ảnh ${productName}`}
         className="m-0 h-dvh max-h-none w-screen max-w-none overflow-hidden border-0 bg-black/95 p-0 text-white backdrop:bg-black/95"
-        onClose={() => mobileTriggerRef.current?.focus()}
+        onClose={closeLightbox}
         onKeyDown={containLightboxFocus}
       >
         <div className="relative flex h-dvh w-screen items-center justify-center">
@@ -343,29 +372,29 @@ export function BrandProductMediaStage({
             ×
           </button>
 
-          <div
-            className="relative h-full w-full touch-pan-y"
-            onPointerDown={(event) => handleSwipeStart(event, "lightbox")}
-            onPointerUp={(event) => handleSwipeEnd(event, "lightbox")}
-            onPointerCancel={() => {
-              lightboxDragOriginRef.current = null;
-            }}
-          >
-            <Image
-              loader={pdpProductImageLoader}
-              src={currentLightboxImage.url}
-              alt={currentLightboxImage.alt || `${productName} - Ảnh ${lightboxImage + 1}`}
-              fill
-              sizes="100vw"
-              draggable={false}
-              className="object-contain"
-            />
+          {/* The same snap track as the phone gallery, each photograph contained rather than cropped. */}
+          <div {...lightbox.trackProps} className="pdp-lightbox__track">
+            {images.map((image, index) => (
+              <div key={image.url} className="pdp-lightbox__page">
+                {lightbox.mounted.has(index) ? (
+                  <Image
+                    loader={pdpProductImageLoader}
+                    src={image.url}
+                    alt={image.alt || `${productName} - Ảnh ${index + 1}`}
+                    fill
+                    sizes="100vw"
+                    draggable={false}
+                    className="object-contain"
+                  />
+                ) : null}
+              </div>
+            ))}
           </div>
 
           {hasMultipleImages ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-5 z-20 flex justify-center">
               <p className="bg-black/55 px-3 py-1 text-xs font-semibold tracking-[0.12em]">
-                {lightboxImage + 1}/{images.length}
+                {lightbox.index + 1}/{images.length}
               </p>
             </div>
           ) : null}

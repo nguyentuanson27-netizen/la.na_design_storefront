@@ -747,10 +747,15 @@ main nav[aria-label="Breadcrumb"] a {
  * rather than by flat cream.
  * If a half is narrower than a 2:3 cell, the cell narrows and crops at the sides only.
  *
- * Slides stack in place rather than sitting side by side on a translated track, which is how
- * `.home-hero__slide` already does this. A track would lay the later slides out past the right
- * edge of the viewport -- clipped, but still measurably outside it, which is precisely what the
- * storefront's no-horizontal-overflow guard exists to catch.
+ * The desktop slides stack in place rather than sitting side by side on a translated track, which
+ * is how `.home-hero__slide` already does this. A translated track would lay the later slides out
+ * past the right edge of the viewport -- clipped, but still measurably outside it, which is
+ * precisely what the storefront's no-horizontal-overflow guard exists to catch.
+ *
+ * The phone gallery is a track, but a scroll container rather than a translated one: its pages
+ * overflow only the container, which the document's width never sees, the same way the feedback
+ * rail does. That buys the native swipe -- the photograph follows the finger, a fling carries
+ * momentum, and the browser decides whether a diagonal thumb meant the gallery or the page.
  */
 .pdp-mobile-gallery {
   position: absolute;
@@ -758,14 +763,45 @@ main nav[aria-label="Breadcrumb"] a {
   background: var(--stone);
 }
 
-.pdp-mobile-gallery__image {
+.pdp-mobile-gallery__track,
+.pdp-lightbox__track {
   position: absolute;
   inset: 0;
-  width: 100%;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* An edge swipe stays in the gallery instead of becoming the browser's back gesture. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.pdp-mobile-gallery__track::-webkit-scrollbar,
+.pdp-lightbox__track::-webkit-scrollbar {
+  display: none;
+}
+
+/* A mouse drag sets the offset by hand (`useSnapTrack`); snapping returns when it is released. */
+.pdp-mobile-gallery__track[data-dragging],
+.pdp-lightbox__track[data-dragging] {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+
+.pdp-mobile-gallery__image,
+.pdp-lightbox__page {
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  /* One photograph per fling, however hard the flick. */
+  scroll-snap-stop: always;
+}
+
+.pdp-mobile-gallery__image {
   padding: 0;
   border: 0;
   background: transparent;
-  touch-action: pan-y;
   user-select: none;
 }
 
@@ -1589,6 +1625,67 @@ body:has(.admin-shell) .site-masthead {
 @media (max-width: 1023.98px) {
   body:has([data-mobile-purchase-bar]) .messenger-fab {
     bottom: calc(6rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* The bubble that stands in for Pancake's widget until it is tapped (pancake-chat.tsx). It sits
+   where Pancake's own 48px bubble will appear, so the swap is not a jump. */
+.pancake-chat-facade {
+  position: fixed;
+  z-index: 45;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--chocolate);
+  color: var(--cream);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+
+.pancake-chat-facade:hover {
+  transform: scale(1.06);
+}
+
+.pancake-chat-facade:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+}
+
+.pancake-chat-facade[data-loading] {
+  cursor: progress;
+  animation: pancake-chat-facade-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes pancake-chat-facade-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar]) .pancake-chat-facade {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+body:has(.admin-shell) .pancake-chat-facade {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pancake-chat-facade {
+    transition: none;
+  }
+
+  .pancake-chat-facade[data-loading] {
+    animation: none;
   }
 }
 

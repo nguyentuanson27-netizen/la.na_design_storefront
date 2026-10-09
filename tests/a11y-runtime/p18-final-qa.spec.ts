@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -6,6 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { PDP_IMAGE_ENCODING_VERSION } from "../../src/commerce/product-image-delivery.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -282,7 +284,16 @@ test("P18 captures representative production performance evidence for home, PLP,
            */
           const visibleProductImages = await page
             .locator(`img[alt^="${productName}"]:visible`)
-            .evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+            .evaluateAll((elements) =>
+              elements
+                // The phone gallery is a scroll-snap track that also holds the next photograph,
+                // laid out past the right edge until it is swiped to; only what is on screen counts.
+                .filter((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return rect.right > 0.5 && rect.left < window.innerWidth - 0.5;
+                })
+                .map((element) => element.getAttribute("alt")),
+            );
           // A phone paints image 1 alone; from `lg` up the first page is the pair `1+2` (the blurred
           // colour field behind it has an empty alt, so it is not counted as a photograph).
           expect(
@@ -306,8 +317,11 @@ test("P18 captures representative production performance evidence for home, PLP,
             await expect(stage.locator(".pdp-stage__track")).toBeHidden();
             const mobileGallery = stage.locator(".pdp-mobile-gallery");
             await expect(mobileGallery).toBeVisible();
-            await expect(mobileGallery.locator("img")).toHaveCount(1);
-            await expect(mobileGallery.locator("img")).toHaveAttribute("alt", productName);
+            const currentPage = mobileGallery.locator('.pdp-mobile-gallery__image[data-active="true"]');
+            await expect(currentPage).toHaveCount(1);
+            await expect(currentPage.locator("img")).toHaveAttribute("alt", productName);
+            // Never the whole gallery up front: the current photograph, plus the next once loaded.
+            expect(await mobileGallery.locator("img").count()).toBeLessThanOrEqual(2);
             await expect(stage.getByRole("status")).toHaveText("1/3");
           }
         }
@@ -492,6 +506,30 @@ test("P18 production server streams /api/product-image completely and survives a
   expect((await afterCancel.arrayBuffer()).byteLength).toBe(
     Number(afterCancel.headers.get("content-length")),
   );
+
+  /*
+   * 2b. A content-hashed source at the current version: AVIF for a browser that accepts it, kept by
+   * that browser for a year, and served the second time from the production server's disk cache.
+   * The width is one no other step in this run asks for, so the first request is a real miss.
+   */
+  const hashedUrl = `${BASE_URL}/api/product-image?src=${encodeURIComponent(
+    `https://content.pancake.vn/1/2/3/4/${createHash("sha1").update(runId).digest("hex")}.jpg`,
+  )}&w=750&v=${PDP_IMAGE_ENCODING_VERSION}`;
+  const avifHeaders = { accept: "image/avif,image/webp,*/*;q=0.8" };
+  const miss = await fetch(hashedUrl, { headers: avifHeaders });
+  expect(miss.status).toBe(200);
+  expect(miss.headers.get("content-type")).toBe("image/avif");
+  expect(miss.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+  // Next prepends its own router headers to Vary; what matters is that Accept is among them.
+  expect(miss.headers.get("vary")?.split(",").map((value) => value.trim())).toContain("Accept");
+  expect(miss.headers.get("x-product-image-cache")).toBe("miss");
+  const missBody = Buffer.from(await miss.arrayBuffer());
+  expect(missBody.subarray(4, 12).toString("latin1")).toBe("ftypavif");
+  await expect
+    .poll(async () => (await fetch(hashedUrl, { headers: avifHeaders })).headers.get("x-product-image-cache"))
+    .toBe("hit");
+  const hit = await fetch(hashedUrl, { headers: avifHeaders });
+  expect(Buffer.from(await hit.arrayBuffer()).equals(missBody)).toBe(true);
 
   // 3. Policy still holds over real HTTP: variants of the source never reach the upstream.
   const fragment = await fetch(

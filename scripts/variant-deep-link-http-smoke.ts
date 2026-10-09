@@ -171,9 +171,14 @@ function serves(frame: string, urlFragment: string) {
  * gone on matching nothing at all, which is a silently passing test rather than a contract.
  */
 function assertMobileGalleryOpensOn(body: string, expectedUrlFragment: string, label: string) {
+  // The gallery is a scroll-snap track with one page per photograph, but the server mounts a
+  // photograph only in the first page; the rest arrive in the browser as the shopper nears them.
+  // So each page is read up to its own `</button>`, and only pages holding an `<img>` count.
   const frames = [
-    ...body.matchAll(/<button\b[^>]*class="pdp-mobile-gallery__image"[\s\S]{0,1600}?<img[^>]*>/g),
-  ].map((match) => match[0]);
+    ...body.matchAll(/<button\b[^>]*class="pdp-mobile-gallery__image"[^>]*>[\s\S]*?<\/button>/g),
+  ]
+    .map((match) => match[0])
+    .filter((page) => /<img\b/.test(page));
 
   assert.equal(frames.length, 1, `${label}: the phone gallery must serve exactly one photograph`);
   assert.ok(

@@ -22,6 +22,12 @@ import { useAccountAuth } from "@/components/headless/use-account-auth";
  * this one file, not an edit spread across two chrome surfaces.
  */
 const BRAND_MASTER_LOGO_SRC = "/brand/la-na-design-master-logo.png";
+/**
+ * The rendered width, in CSS pixels: `.brand-mark-logo` is 2.75rem (44px) tall and the lockup is
+ * 4185x2148, so it draws about 86px wide. The browser multiplies this by the device pixel ratio
+ * itself; declaring double the width made every phone fetch a candidate twice the size it paints.
+ */
+const BRAND_MASTER_LOGO_SIZES = "88px";
 
 type HierarchicalNavigationLink = NavigationLink & Readonly<{
   key?: string;
@@ -239,8 +245,10 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
             alt=""
             width={4185}
             height={2148}
-            sizes="176px"
-            priority
+            sizes={BRAND_MASTER_LOGO_SIZES}
+            // Eager, so it never waits on layout, but without a preload: on the pages with a
+            // full-bleed hero the hero photograph is the LCP and keeps the early bandwidth.
+            loading="eager"
           />
         </Link>
 
@@ -448,7 +456,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
               alt={BRAND.identity.name}
               width={4185}
               height={2148}
-              sizes="176px"
+              sizes={BRAND_MASTER_LOGO_SIZES}
             />
             <button
               ref={mobileNavCloseRef}

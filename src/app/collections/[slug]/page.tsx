@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
-import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import { CollectionFilterPanel } from "@/components/brand/collection-filter-panel";
 import {
   ListingBreadcrumbs,
@@ -152,6 +152,7 @@ function render(data: CollectionViewModel) {
                     key={card.id}
                     model={card.model}
                     tone={tones[(data.toneOffset + index) % tones.length]!}
+                    eager={index < PRODUCT_CARD_EAGER_COUNT}
                   />
                 ))}
               </ListingProductGrid>

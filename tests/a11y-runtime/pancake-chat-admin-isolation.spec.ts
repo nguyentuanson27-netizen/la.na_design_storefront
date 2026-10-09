@@ -170,6 +170,14 @@ function pancakeFootprint(page: Page) {
 
 const NO_PANCAKE = { root: false, script: false, runtime: false };
 
+/** Mirrors `PANCAKE_ENGAGED_STORAGE_KEY`: set once a shopper has opened the chat in this browser. */
+const ENGAGED_STORAGE_KEY = "lana:pancake-chat-engaged";
+
+/** The lightweight bubble a first-time visitor sees until they tap it. */
+function chatFacade(page: Page) {
+  return page.getByRole("button", { name: /^Chat với / });
+}
+
 test.beforeAll(async () => {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
   const { headers } = await auth.api.signUpEmail({
@@ -237,9 +245,12 @@ test("on the production host Pancake loads, and a client-side return to admin la
   await expect(page.locator(".messenger-fab")).toHaveCount(0);
   expect(pancakeRequests).toEqual([]);
 
-  // Client-side navigation to the storefront: Pancake loads there, in place of the Messenger button.
+  // Client-side navigation to the storefront: Pancake's bubble stands there, in place of the
+  // Messenger button, and the widget itself loads on the tap that opens it.
   await page.locator("a.brand-mark").click();
   await page.waitForURL(`${PRODUCTION_ORIGIN}/`);
+  await expect(chatFacade(page)).toBeVisible();
+  await chatFacade(page).click();
   await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
   expect(await pancakeFootprint(page)).toEqual({ root: true, script: true, runtime: true });
   await expect(page.locator(".messenger-fab")).toHaveCount(0);
@@ -264,12 +275,159 @@ test("on the production host Pancake loads, and a client-side return to admin la
   expect(pancakeRequests).toHaveLength(1);
 });
 
+test("a first visit shows a facade bubble; the widget loads only on its tap, which opens the chat", async ({
+  page,
+  context,
+}) => {
+  const pancakeRequests = await stubPancake(context);
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  const facade = chatFacade(page);
+  await expect(facade).toBeVisible();
+  const facadeBox = (await facade.boundingBox())!;
+  expect([Math.round(facadeBox.width), Math.round(facadeBox.height)]).toEqual([48, 48]);
+  await expect(page.locator(".messenger-fab")).toHaveCount(0);
+
+  // Load and idle pass without Pancake: its ~750 KB never competes with the page.
+  await delay(6_000);
+  expect(await pancakeFootprint(page)).toEqual(NO_PANCAKE);
+  expect(pancakeRequests).toEqual([]);
+
+  // One tap loads the widget and opens it: the facade hands over to Pancake's own chat box.
+  await facade.click();
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(1);
+  await expect(facade).toHaveCount(0);
+  expect(pancakeRequests).toHaveLength(1);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBe("1");
+});
+
+test("a returning chatter gets the real widget after load, without a tap", async ({ page, context }) => {
+  const pancakeRequests = await stubPancake(context);
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(chatFacade(page)).toHaveCount(0);
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(0);
+  expect(pancakeRequests).toHaveLength(1);
+});
+
+test("a tapped facade hands over to Messenger when Pancake cannot be reached, and never strands the shopper", async ({
+  page,
+  context,
+}) => {
+  await context.route("https://chat-plugin.pancake.vn/**", (route) => route.abort());
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/shipping`, { waitUntil: "networkidle" });
+  await chatFacade(page).click();
+  const messenger = page.getByRole("link", { name: /qua Messenger$/ });
+  await expect(messenger).toBeVisible();
+  await expect(chatFacade(page)).toHaveCount(0);
+  // A tap that never opened the chat does not make this browser a returning chatter.
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+
+  // A client-side navigation keeps the Messenger link: the failure belongs to this document.
+  await page.locator("a.brand-mark").click();
+  await page.waitForURL(`${PRODUCTION_ORIGIN}/`);
+  await expect(messenger).toBeVisible();
+
+  // A fresh document starts from the facade again -- still a way to chat, never an empty corner.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(chatFacade(page)).toBeVisible();
+  await chatFacade(page).click();
+  await expect(messenger).toBeVisible();
+});
+
+test("a returning chatter whose Pancake load fails gets Messenger and stops auto-loading it", async ({
+  page,
+  context,
+}) => {
+  await context.route("https://chat-plugin.pancake.vn/**", (route) => route.abort());
+  await serveAsProduction(context);
+  await context.addInitScript((key) => {
+    // Only the first document starts engaged; the reload below must see what the failure left.
+    if (!window.sessionStorage.getItem("seeded")) {
+      window.sessionStorage.setItem("seeded", "1");
+      window.localStorage.setItem(key, "1");
+    }
+  }, ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible();
+  await expect(chatFacade(page)).toHaveCount(0);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+
+  // Next document: no automatic load to fail again, the facade instead.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(chatFacade(page)).toBeVisible();
+});
+
+test("a returning chatter whose Pancake script loads but never draws its widget gets Messenger", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: "/* no widget */" }),
+  );
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
+  await expect(chatFacade(page)).toHaveCount(0);
+});
+
+/** A script that appends Pancake's root and then stops: the state of an initialisation that failed partway. */
+const ROOT_ONLY_STUB = `
+  var root = document.createElement("div");
+  root.id = "pancake-chat-plugin-root";
+  document.body.appendChild(root);
+`;
+
+test("a tap whose Pancake draws only an empty root falls back to Messenger and is not remembered", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: ROOT_ONLY_STUB }),
+  );
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await chatFacade(page).click();
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
+  await expect(chatFacade(page)).toHaveCount(0);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+});
+
+test("a returning chatter whose Pancake draws only an empty root gets Messenger", async ({ page, context }) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: ROOT_ONLY_STUB }),
+  );
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+});
+
 test("the Pancake bubble is 48px, and the open chat's close button sits above the sticky masthead", async ({
   page,
   context,
 }) => {
   await stubPancake(context);
   await serveAsProduction(context);
+  // A returning chatter, so the widget draws its own closed bubble rather than opening on a tap.
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
 
   await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
