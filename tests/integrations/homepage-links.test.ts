@@ -42,7 +42,7 @@ const UNAPPROVED_SUPPORT_PATHS = new Set([
   "/size-guide",
 ]);
 const LOCKED_IMG_SRC =
-  "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};";
+  "img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc}${gtmImgSrc};";
 const LOCKED_MEDIA_SRC =
   "media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};";
 // img-src interpolates reviewed measurement beacon origins, so pinning the directive alone would

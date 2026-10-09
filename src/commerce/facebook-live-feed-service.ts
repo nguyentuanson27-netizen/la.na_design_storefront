@@ -1,6 +1,5 @@
 /**
- * Public, read-only Facebook Live feed. Shares the existing Merchant fact authority and nine
- * bounded repository reads, but owns its own cache domain and XML representation.
+ * Public, read-only Facebook Live / Catalog feed. Emits parent-level catalog items.
  */
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
@@ -8,9 +7,12 @@ import { readStorefrontOrigin } from "./storefront-origin.ts";
 import { createMerchantOfferRepository, MerchantOfferReadError } from "./merchant-offer-repository.ts";
 import { createMerchantFeedCoordinator, type MerchantFeedCoordinatorResult } from "./merchant-feed-coordinator.ts";
 import { MerchantFeedByteOverflowError, MerchantFeedOfferOverflowError } from "./merchant-feed-serializer.ts";
-import { serializeFacebookLiveFeed } from "./facebook-live-feed.ts";
+import {
+  buildMerchantParentItems,
+  serializeFacebookParentFeed,
+} from "./merchant-parent-feed.ts";
 
-const FEED_SCHEMA_VERSION = "parent-rss-v1";
+const FEED_SCHEMA_VERSION = "parent-rss-v2";
 const PROMOTION_PRICING_REVISION_ID = "current";
 
 async function readPricingRevision(): Promise<bigint> {
@@ -40,7 +42,6 @@ function coordinatorFor(key: string) {
       }),
     });
   } else if (runtimeCoordinator.key !== key) {
-    // This server process must serve exactly one reviewed shop/feed identity.
     throw new Error("Facebook Live feed cache key changed during process lifetime");
   }
   return runtimeCoordinator.coordinator;
@@ -75,9 +76,9 @@ export async function getFacebookLiveFeed(): Promise<MerchantFeedCoordinatorResu
           return { ok: false as const, failureClass: "MARKET_UNRESOLVED" as const };
         }
 
-        const feed = serializeFacebookLiveFeed({
-          offers: mapped.offers,
-          excluded: mapped.excluded,
+        const items = buildMerchantParentItems(snapshot.products, origin);
+        const feed = serializeFacebookParentFeed({
+          items,
           market: mapped.market.policy,
           origin,
         });

@@ -489,6 +489,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
   }: Readonly<{ shopId: number; origin: string; now?: Date }>) {
     const loaded = await loadCandidateProducts({ shopId, now });
     return Object.freeze({
+      products: loaded.products,
       mapping: mapMerchantOffers({ products: loaded.products, origin }),
       nextPricingTransitionAtMs: loaded.nextPricingTransitionAtMs,
     });
