@@ -87,6 +87,8 @@ export function verifyReviewedGtmEvidence(
       ga4MeasurementIds: approved.ga4MeasurementIds,
       googleAdsConversions: approved.googleAdsConversions,
       tiktokPixelIds: approved.tiktokPixelIds,
+      reviewedCustomHtml: approved.reviewedCustomHtml,
+      reviewedGalleryTemplates: approved.reviewedGalleryTemplates,
     },
   });
   if (!audit.ok) {

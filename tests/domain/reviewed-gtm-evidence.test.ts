@@ -157,3 +157,57 @@ test("a partially filled record and an escaping export path are rejected", () =>
   assert.equal(escaping.ok, false);
   assert.match(escaping.problems.join("\n"), /repository-relative/);
 });
+
+test("a record that pins reviewed Custom HTML and a reviewed gallery template verifies end to end", () => {
+  const html = "<script>ttq.load('FIXTUREPIXEL01');ttq.page();</script>";
+  const templateData = "___INFO___ reviewed ___WEB_PERMISSIONS___ []";
+  const gallery = {
+    host: "github.com",
+    owner: "tiktok",
+    repository: "gtm-template-pixel",
+    galleryTemplateId: "MRQN8",
+    version: "4ec12fa4f950ef1f829255007287ad26d40132a6",
+    signature: "50cbfb75f71b7527977e02eff867e564a69edba2db3fe8a9097b1ae252730680",
+  };
+  const body = exportJson() as { containerVersion: Record<string, unknown> };
+  const tags = body.containerVersion.tag as unknown[];
+  tags.push(
+    {
+      tagId: "20",
+      name: "TikTok base",
+      type: "html",
+      firingTriggerId: ["10"],
+      parameter: [{ type: "TEMPLATE", key: "html", value: html }],
+    },
+    {
+      tagId: "21",
+      name: "TikTok event",
+      type: "cvt_MRQN8",
+      firingTriggerId: ["10"],
+      parameter: [{ type: "TEMPLATE", key: "pixel_code", value: "FIXTUREPIXEL01" }],
+    },
+  );
+  body.containerVersion.customTemplate = [{ templateId: "10", name: "TikTok Pixel", templateData, galleryReference: gallery }];
+
+  const { root, record } = repositoryWith(body);
+  const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+  const full: ReviewedGtmVersion = {
+    ...record,
+    approvedDestinations: {
+      ...APPROVED,
+      tiktokPixelIds: ["FIXTUREPIXEL01"],
+      reviewedCustomHtml: [{ sha256: sha(html) }],
+      reviewedGalleryTemplates: [{ ...gallery, templateDataSha256: sha(templateData) }],
+    },
+  };
+  assert.deepEqual([...verifyReviewedGtmEvidence(full, root).problems], []);
+
+  // Dropping the pins puts both tags back to being refused.
+  const unpinned = verifyReviewedGtmEvidence(
+    { ...full, approvedDestinations: { ...APPROVED, tiktokPixelIds: ["FIXTUREPIXEL01"] } },
+    root,
+  );
+  assert.equal(unpinned.ok, false);
+  assert.match(unpinned.problems.join("\n"), /UNAUDITABLE_TAG_TYPE/);
+});
+

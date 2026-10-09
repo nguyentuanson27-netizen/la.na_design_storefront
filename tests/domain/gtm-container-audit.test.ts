@@ -14,6 +14,7 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { describe, it } from "node:test";
 
 import {
@@ -1958,6 +1959,144 @@ describe("calibration against the first real saved export", () => {
       approved: APPROVED,
     });
     assert.deepEqual(codes(result), [GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW]);
+  });
+});
+
+describe("reviewed Custom HTML and gallery template pins", () => {
+  const sha = (text: string) => createHash("sha256").update(text, "utf8").digest("hex");
+
+  const PIXEL = "FIXTUREPIXEL01";
+  const BASE_HTML = `<script>!function(w,d,t){ttq.load('${PIXEL}');ttq.page();}(window,document,'ttq');</script>`;
+  const TEMPLATE_DATA = "___INFO___ reviewed template body ___WEB_PERMISSIONS___ []";
+  const GALLERY = {
+    host: "github.com",
+    owner: "tiktok",
+    repository: "gtm-template-pixel",
+    galleryTemplateId: "MRQN8",
+    version: "4ec12fa4f950ef1f829255007287ad26d40132a6",
+    signature: "50cbfb75f71b7527977e02eff867e564a69edba2db3fe8a9097b1ae252730680",
+  };
+  const pinned: GtmApprovedDestinations = {
+    ...APPROVED,
+    reviewedCustomHtml: [{ sha256: sha(BASE_HTML) }],
+    reviewedGalleryTemplates: [{ ...GALLERY, templateDataSha256: sha(TEMPLATE_DATA) }],
+  };
+
+  const htmlTag = (html = BASE_HTML, overrides: Record<string, unknown> = {}) => ({
+    tagId: "20",
+    name: "TikTok base",
+    type: "html",
+    firingTriggerId: [LIVE_TRIGGER_ID],
+    parameter: [
+      { type: "TEMPLATE", key: "html", value: html },
+      { type: "BOOLEAN", key: "supportDocumentWrite", value: "false" },
+    ],
+    ...overrides,
+  });
+
+  const templateTag = (pixel: string | null = PIXEL, overrides: Record<string, unknown> = {}) => ({
+    tagId: "21",
+    name: "TikTok event",
+    type: "cvt_MRQN8",
+    firingTriggerId: [LIVE_TRIGGER_ID],
+    parameter: [
+      ...(pixel === null ? [] : [{ type: "TEMPLATE", key: "pixel_code", value: pixel }]),
+      { type: "TEMPLATE", key: "event", value: "ViewContent" },
+    ],
+    ...overrides,
+  });
+
+  const template = (templateData = TEMPLATE_DATA, reference: Record<string, unknown> = GALLERY) => ({
+    templateId: "10",
+    name: "TikTok Pixel",
+    templateData,
+    galleryReference: reference,
+  });
+
+  const run = (tags: unknown[], customTemplate: unknown[], approved = pinned) =>
+    auditGtmContainerExport({ source: containerExport({ tag: tags, customTemplate }), approved });
+
+  it("accepts the exact reviewed Custom HTML and the exact reviewed template, with approved ids", () => {
+    assert.deepEqual(codes(run([htmlTag(), templateTag()], [template()])), []);
+  });
+
+  it("refuses both when no review pin was supplied", () => {
+    // The template tag is refused twice over: an unreviewed tag type, and a TikTok pixel field on a
+    // type that is not entitled to carry one.
+    const result = run([htmlTag(), templateTag()], [template()], APPROVED);
+    assert.deepEqual(codes(result), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION, GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+  });
+
+  it("refuses Custom HTML edited by a single character", () => {
+    const result = run([htmlTag(`${BASE_HTML} `)], []);
+    assert.deepEqual(codes(result), [GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+  });
+
+  it("refuses reviewed Custom HTML that carries an extra parameter or enables document.write", () => {
+    const extra = htmlTag(BASE_HTML, {
+      parameter: [
+        { type: "TEMPLATE", key: "html", value: BASE_HTML },
+        { type: "TEMPLATE", key: "extraScriptUrl", value: "https://example.invalid/x.js" },
+      ],
+    });
+    assert.deepEqual(codes(run([extra], [])), [GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+    const documentWrite = htmlTag(BASE_HTML, {
+      parameter: [
+        { type: "TEMPLATE", key: "html", value: BASE_HTML },
+        { type: "BOOLEAN", key: "supportDocumentWrite", value: "true" },
+      ],
+    });
+    assert.deepEqual(codes(run([documentWrite], [])), [GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+  });
+
+  it("refuses a pinned snippet that loads a TikTok pixel the owner has not approved", () => {
+    const other = BASE_HTML.replace(PIXEL, "SOMEOTHERPIXEL");
+    const approved: GtmApprovedDestinations = { ...pinned, reviewedCustomHtml: [{ sha256: sha(other) }] };
+    assert.deepEqual(codes(run([htmlTag(other)], [], approved)), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION]);
+  });
+
+  it("still requires the live guard on a reviewed Custom HTML or template tag", () => {
+    const unguarded = [
+      htmlTag(BASE_HTML, { firingTriggerId: [ALWAYS_TRIGGER_ID] }),
+      templateTag(PIXEL, { firingTriggerId: [ALWAYS_TRIGGER_ID] }),
+    ];
+    assert.deepEqual(codes(run(unguarded, [template()])), [GTM_AUDIT_CODES.TAG_WITHOUT_LIVE_GUARD]);
+  });
+
+  it("refuses template tags when the saved template differs from the reviewed one", () => {
+    const editedBody = run([templateTag()], [template(`${TEMPLATE_DATA} // edited`)]);
+    assert.deepEqual(codes(editedBody), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION, GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+    const otherVersion = run([templateTag()], [template(TEMPLATE_DATA, { ...GALLERY, version: "0".repeat(40) })]);
+    assert.deepEqual(codes(otherVersion), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION, GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+    const otherSignature = run([templateTag()], [template(TEMPLATE_DATA, { ...GALLERY, signature: "f".repeat(64) })]);
+    assert.deepEqual(codes(otherSignature), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION, GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+  });
+
+  it("refuses a template tag whose template is not in the container", () => {
+    assert.deepEqual(codes(run([templateTag()], [])), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION, GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE]);
+  });
+
+  it("checks the pixel a reviewed template tag reports to", () => {
+    assert.deepEqual(codes(run([templateTag("UNAPPROVEDPIXEL")], [template()])), [
+      GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+    ]);
+    assert.deepEqual(codes(run([templateTag(null)], [template()])), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION]);
+    // An unresolvable reference is refused as such, and it also leaves the tag naming no checkable pixel.
+    assert.deepEqual(codes(run([templateTag("{{Pixel from somewhere}}")], [template()])), [
+      GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+      GTM_AUDIT_CODES.UNRESOLVED_DESTINATION_REFERENCE,
+    ]);
+  });
+
+  it("does not let a TikTok pixel field ride on a tag type that is not TikTok's", () => {
+    const smuggled = ga4ConfigTag({
+      parameter: [
+        { type: "TEMPLATE", key: "measurementId", value: "G-FIXTURE001" },
+        { type: "BOOLEAN", key: "sendPageView", value: "false" },
+        { type: "TEMPLATE", key: "pixel_code", value: PIXEL },
+      ],
+    });
+    assert.deepEqual(codes(run([smuggled], [])), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION]);
   });
 });
 

@@ -62,6 +62,18 @@ export type ReviewedGtmVersion = Readonly<{
     ga4MeasurementIds: readonly string[];
     googleAdsConversions: readonly Readonly<{ conversionId: string; conversionLabel: string }>[];
     tiktokPixelIds: readonly string[];
+    /** Exact Custom HTML a person reviewed, pinned by the SHA-256 of its `html` parameter. */
+    reviewedCustomHtml?: readonly Readonly<{ sha256: string }>[];
+    /** Gallery templates a person reviewed, pinned by identity and the SHA-256 of `templateData`. */
+    reviewedGalleryTemplates?: readonly Readonly<{
+      host: string;
+      owner: string;
+      repository: string;
+      galleryTemplateId: string;
+      version: string;
+      signature: string;
+      templateDataSha256: string;
+    }>[];
   }> | null;
 }>;
 

@@ -38,6 +38,8 @@
  * bind the artifact that will be published.
  */
 
+import { createHash } from "node:crypto";
+
 export const GTM_AUDIT_CODES = {
   /** The export could not be parsed as a container version at all. */
   MALFORMED_EXPORT: "MALFORMED_EXPORT",
@@ -98,6 +100,26 @@ export type GtmApprovedDestinations = Readonly<{
    */
   googleAdsConversions: readonly Readonly<{ conversionId: string; conversionLabel: string }>[];
   tiktokPixelIds: readonly string[];
+  /**
+   * Custom HTML tags a person has read and approved, each pinned by the SHA-256 of its exact `html`
+   * parameter. A Custom HTML tag is arbitrary script, so it is never certified by type: only these
+   * exact bytes pass, and any edit — one character — makes the tag unreviewed again.
+   */
+  reviewedCustomHtml?: readonly Readonly<{ sha256: string }>[];
+  /**
+   * Gallery templates a person has read and approved. The pin is the template's full identity
+   * (repository, commit, signature) AND the SHA-256 of its saved `templateData`, so a template
+   * re-imported at a different version, or edited in place, is not the one that was reviewed.
+   */
+  reviewedGalleryTemplates?: readonly Readonly<{
+    host: string;
+    owner: string;
+    repository: string;
+    galleryTemplateId: string;
+    version: string;
+    signature: string;
+    templateDataSha256: string;
+  }>[];
 }>;
 
 export type GtmAuditResult = Readonly<{
@@ -282,7 +304,8 @@ const REVIEWED_TAG_TYPES: ReadonlySet<string> = new Set([
 const GA4_DESTINATION_KEYS: readonly string[] = ["measurementId", "measurementIdOverride", "tagId"];
 const ADS_CONVERSION_ID_KEY = "conversionId";
 const ADS_CONVERSION_LABEL_KEY = "conversionLabel";
-const TIKTOK_DESTINATION_KEYS: readonly string[] = ["pixelId"];
+/** `pixelId` is the generic spelling; `pixel_code` is what the reviewed TikTok Pixel template uses. */
+const TIKTOK_DESTINATION_KEYS: readonly string[] = ["pixelId", "pixel_code"];
 
 const ALL_DESTINATION_KEYS: ReadonlySet<string> = new Set([
   ...GA4_DESTINATION_KEYS,
@@ -884,6 +907,29 @@ function validateContainerVersionShape(
   return !before.malformed;
 }
 
+function sha256Hex(text: string): string {
+  return createHash("sha256").update(text, "utf8").digest("hex");
+}
+
+const TTQ_LOAD_ID = /ttq\.load\(\s*['"]([^'"]+)['"]/g;
+
+/** The pixel ids a TikTok snippet loads, read from its `ttq.load('<id>')` calls. */
+function tiktokLoadedIds(html: string): string[] {
+  return [...html.matchAll(TTQ_LOAD_ID)].map((match) => match[1]!);
+}
+
+/**
+ * The exact `html` of a Custom HTML tag, but only when the tag carries nothing else that could
+ * change what runs: just `html` and a `supportDocumentWrite` that is not enabled.
+ */
+function customHtmlOf(tag: Record<string, unknown>): string | null {
+  const parameters = readParameters(tag.parameter);
+  const allowedKeys = new Set(["html", "supportDocumentWrite"]);
+  if (parameters.some((parameter) => !allowedKeys.has(readString(parameter.key) ?? ""))) return null;
+  if (parameterValue(parameters, "supportDocumentWrite") === "true") return null;
+  return parameterValue(parameters, "html");
+}
+
 export function auditGtmContainerExport({
   source,
   approved,
@@ -906,6 +952,9 @@ export function auditGtmContainerExport({
   const approvedAdsAccounts = new Set(
     approved.googleAdsConversions.map((pair) => stripAdsAccountPrefix(pair.conversionId)),
   );
+
+  const reviewedHtmlHashes = new Set((approved.reviewedCustomHtml ?? []).map((pin) => pin.sha256));
+  const reviewedTemplates = approved.reviewedGalleryTemplates ?? [];
 
   if (approvedGa4.size + approvedAdsPairs.size + approvedTiktok.size === 0) {
     // Owner gate O4. Passing here would certify a container against no reviewed destination at all.
@@ -1084,6 +1133,31 @@ export function auditGtmContainerExport({
     }
   }
 
+  // Gallery templates this container carries that match a reviewed pin exactly, by the tag type they
+  // register (`cvt_<galleryTemplateId>`). A template whose identity or bytes differ from the pin is
+  // simply absent here, so every tag of its type falls back to being refused.
+  const pinnedTemplateTagTypes = new Set<string>();
+  const containerTemplates = Array.isArray(version.customTemplate) ? version.customTemplate : [];
+  for (const template of containerTemplates) {
+    if (!isRecord(template) || !isRecord(template.galleryReference)) continue;
+    const reference = template.galleryReference;
+    const templateData = readString(template.templateData);
+    if (templateData === null) continue;
+    const digest = sha256Hex(templateData);
+    const matches = reviewedTemplates.some(
+      (pin) =>
+        pin.host === readString(reference.host)
+        && pin.owner === readString(reference.owner)
+        && pin.repository === readString(reference.repository)
+        && pin.galleryTemplateId === readString(reference.galleryTemplateId)
+        && pin.version === readString(reference.version)
+        && pin.signature === readString(reference.signature)
+        && pin.templateDataSha256 === digest,
+    );
+    const galleryTemplateId = readString(reference.galleryTemplateId);
+    if (matches && galleryTemplateId !== null) pinnedTemplateTagTypes.add(`cvt_${galleryTemplateId}`);
+  }
+
   const guardedTriggerIds = modeVariableIsAppOwned ? new Set(
     triggers
       .filter(isRecord)
@@ -1119,7 +1193,11 @@ export function auditGtmContainerExport({
     // A live guard says when a tag fires, never where it delivers. For a type this audit has no
     // reviewed parser for, nothing in the export bounds the destination, so the guard cannot stand
     // in for one and the artifact is refused.
-    if (!REVIEWED_TAG_TYPES.has(type)) {
+    const customHtml = type === "html" ? customHtmlOf(candidate) : null;
+    const isReviewedCustomHtml = customHtml !== null && reviewedHtmlHashes.has(sha256Hex(customHtml));
+    const isReviewedTemplateTag = pinnedTemplateTagTypes.has(type);
+
+    if (!REVIEWED_TAG_TYPES.has(type) && !isReviewedCustomHtml && !isReviewedTemplateTag) {
       refuse(
         GTM_AUDIT_CODES.UNAUDITABLE_TAG_TYPE,
         `${label} has tag type "${type === "" ? "(none)" : type}", which this audit has no reviewed parser for`,
@@ -1169,7 +1247,9 @@ export function auditGtmContainerExport({
         ? GA4_DESTINATION_KEYS
         : ADS_TAG_TYPES.has(type)
           ? [ADS_CONVERSION_ID_KEY, ADS_CONVERSION_LABEL_KEY]
-          : [],
+          : isReviewedTemplateTag
+            ? ["pixel_code"]
+            : [],
     );
     for (const key of destinationKeysPresent(candidate)) {
       if (!allowedKeys.has(key)) {
@@ -1251,6 +1331,35 @@ export function auditGtmContainerExport({
           }
         }
       }
+    }
+
+    // A reviewed Custom HTML tag is certified by its bytes, but the ids it loads must still be ones
+    // the owner approved: the pin proves the snippet is the one that was read, not that it was read
+    // against this approval.
+    if (isReviewedCustomHtml && customHtml !== null) {
+      const loaded = tiktokLoadedIds(customHtml);
+      if (loaded.length === 0) {
+        refuse(
+          GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+          `${label} is a reviewed snippet that loads no TikTok pixel this audit can check`,
+        );
+      }
+      for (const id of loaded) {
+        if (!approvedTiktok.has(id)) {
+          refuse(
+            GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+            `${label} names a TikTok destination the owner has not reviewed`,
+          );
+        }
+      }
+    }
+
+    // A reviewed template tag must say which pixel it reports to, in the field the template reads.
+    if (isReviewedTemplateTag && readKey("pixel_code").length === 0) {
+      refuse(
+        GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+        `${label} does not name a TikTok pixel, so the destination it reports to cannot be checked`,
+      );
     }
 
     for (const key of TIKTOK_DESTINATION_KEYS) {
