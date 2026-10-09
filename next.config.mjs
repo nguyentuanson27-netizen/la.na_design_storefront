@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const isDevelopment = process.env.NODE_ENV === "development";
 
 // The Meta pixel needs three holes in the policy: its loader script, the 1x1 beacons it writes as
@@ -94,7 +96,20 @@ if (
     "NEXT_PUBLIC_GTM_CONTAINER_ID must be the GTM-XXXXXXX container id from Tag Manager",
   );
 }
-const hasGtm = configuredGtmContainerId.length > 0;
+// The CSP opens Google origins only for the container recorded as reviewed (marketing spec §5.1–5.2),
+// the same record the runtime loader obeys. `LA_TRACKING_MODE` is runtime-only, so it can narrow the
+// loader further but cannot widen this policy.
+const reviewedGtmVersion = JSON.parse(
+  readFileSync(new URL("./src/tracking/reviewed-gtm-version.json", import.meta.url), "utf8"),
+);
+const hasGtm =
+  configuredGtmContainerId.length > 0 &&
+  reviewedGtmVersion.containerId === configuredGtmContainerId &&
+  typeof reviewedGtmVersion.versionId === "string" &&
+  reviewedGtmVersion.versionId.length > 0 &&
+  typeof reviewedGtmVersion.exportPath === "string" &&
+  reviewedGtmVersion.exportPath.length > 0 &&
+  /^[0-9a-f]{64}$/.test(reviewedGtmVersion.exportSha256 ?? "");
 const gtmScriptSrc = hasGtm ? " https://www.googletagmanager.com" : "";
 const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
 const gtmConnectSrc = hasGtm

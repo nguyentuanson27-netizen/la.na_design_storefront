@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { readdir, readFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -54,8 +55,37 @@ type NextConfigLike = {
   headers?: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>>;
 };
 
-async function readCsp(cacheBuster = ""): Promise<string> {
-  const configUrl = pathToFileURL(resolve("next.config.mjs")).href + cacheBuster;
+type ReviewedRecord = {
+  containerId: string | null;
+  versionId: string | null;
+  exportPath: string | null;
+  exportSha256: string | null;
+};
+
+const REVIEWED_RECORD: ReviewedRecord = {
+  containerId: "GTM-PRZT92JR",
+  versionId: "7",
+  exportPath: "docs/gtm/GTM-PRZT92JR-v7.json",
+  exportSha256: "a".repeat(64),
+};
+
+/**
+ * Loads `next.config.mjs`'s CSP. With `record`, the config is copied beside a temporary reviewed
+ * record so the "reviewed" branch can be exercised without editing the repository's real record.
+ */
+async function readCsp(cacheBuster = "", record?: ReviewedRecord): Promise<string> {
+  let configPath = resolve("next.config.mjs");
+  if (record !== undefined) {
+    const dir = await mkdtemp(join(tmpdir(), "reviewed-gtm-"));
+    await mkdir(join(dir, "src", "tracking"), { recursive: true });
+    await cp(configPath, join(dir, "next.config.mjs"));
+    await writeFile(
+      join(dir, "src", "tracking", "reviewed-gtm-version.json"),
+      JSON.stringify(record),
+    );
+    configPath = join(dir, "next.config.mjs");
+  }
+  const configUrl = pathToFileURL(configPath).href + cacheBuster;
   const { default: nextConfig } = (await import(configUrl)) as { default: NextConfigLike };
   assert.equal(typeof nextConfig.headers, "function");
   const rules = await nextConfig.headers!();
@@ -96,12 +126,12 @@ test("the production Content-Security-Policy opens no Google or TikTok origin wh
   }
 });
 
-test("a configured GTM container opens Google Tag Manager and Analytics origins in the CSP", async () => {
+test("a configured AND reviewed GTM container opens Google Tag Manager and Analytics origins in the CSP", async () => {
   const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
   process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
 
   try {
-    const csp = await readCsp(`?configured-gtm-${Date.now()}`);
+    const csp = await readCsp(`?configured-gtm-${Date.now()}`, REVIEWED_RECORD);
 
     assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.match(csp, /img-src[^;]*https:\/\/www\.googletagmanager\.com/);
@@ -123,7 +153,7 @@ test("an empty public GTM id does not mask the server id in the CSP", async () =
   process.env.LA_GTM_CONTAINER_ID = "GTM-PRZT92JR";
 
   try {
-    const csp = await readCsp(`?empty-public-gtm-${Date.now()}`);
+    const csp = await readCsp(`?empty-public-gtm-${Date.now()}`, REVIEWED_RECORD);
     assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
   } finally {
     if (originalPublic !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalPublic;
@@ -140,12 +170,40 @@ test("conflicting public and server GTM ids fail the config", async () => {
   process.env.LA_GTM_CONTAINER_ID = "GTM-OTHER123";
 
   try {
-    await assert.rejects(readCsp(`?conflicting-gtm-${Date.now()}`), /both set and differ/);
+    await assert.rejects(
+      readCsp(`?conflicting-gtm-${Date.now()}`, REVIEWED_RECORD),
+      /both set and differ/,
+    );
   } finally {
     if (originalPublic !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalPublic;
     else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
     if (originalServer !== undefined) process.env.LA_GTM_CONTAINER_ID = originalServer;
     else delete process.env.LA_GTM_CONTAINER_ID;
+  }
+});
+
+test("a configured but UNREVIEWED GTM container keeps the CSP closed", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    const empty = { containerId: null, versionId: null, exportPath: null, exportSha256: null };
+    const otherContainer = { ...REVIEWED_RECORD, containerId: "GTM-OTHER123" };
+    const noChecksum = { ...REVIEWED_RECORD, exportSha256: null };
+    for (const [label, record] of [
+      ["no reviewed record", empty],
+      ["a different reviewed container", otherContainer],
+      ["a record without an export checksum", noChecksum],
+    ] as const) {
+      const csp = await readCsp(`?unreviewed-${label}-${Date.now()}`, record);
+      assert.equal(csp.includes("googletagmanager"), false, `${label} must keep the CSP closed`);
+    }
+    // The repository's own record is empty today, so the real config is closed too.
+    const real = await readCsp(`?unreviewed-real-${Date.now()}`);
+    assert.equal(real.includes("googletagmanager"), false);
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
   }
 });
 
