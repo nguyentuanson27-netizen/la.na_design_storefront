@@ -38,7 +38,15 @@ export type ParentFeedAvailability = "in_stock" | "out_of_stock" | "backorder";
 export type FacebookAvailability = "in stock" | "out of stock" | "available for order";
 
 export type MerchantParentFeedItem = Readonly<{
+  /** Pancake product ID: the Google Merchant `g:id`. */
   id: string;
+  /**
+   * The Meta catalog `g:id`. It is the product slug because the Pixel and CAPI send the slug as
+   * `content_ids` (ViewContent, AddToCart, InitiateCheckout, Purchase), and Meta matches an event to a
+   * catalog item only when the two are equal. Null when the slug exceeds Meta's 100-character id limit:
+   * the product is then left out of the Meta feed rather than published under a truncated id.
+   */
+  metaContentId: string | null;
   title: string;
   description: string;
   link: string;
@@ -142,6 +150,7 @@ export function buildMerchantParentItems(
     items.push(
       Object.freeze({
         id,
+        metaContentId: slug.length <= PRODUCT_ID_MAX_LENGTH ? slug : null,
         title,
         description,
         link,
@@ -234,7 +243,10 @@ export function serializeFacebookParentFeed({
   origin: string;
   maxBytes?: number;
 }>): Readonly<{ body: string; byteLength: number; offerCount: number }> {
-  assertMerchantOfferCount(items.length);
+  const metaItems = items.filter(
+    (item): item is MerchantParentFeedItem & { metaContentId: string } => item.metaContentId !== null,
+  );
+  assertMerchantOfferCount(metaItems.length);
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_MERCHANT_FEED_BYTES) {
     throw new MerchantFeedSerializationError("Facebook feed byte ceiling must be a positive bounded integer");
   }
@@ -246,7 +258,7 @@ export function serializeFacebookParentFeed({
   writer.append(`<link>${xml(origin)}</link>\n`);
   writer.append(`<description>${xml(BRAND.merchant.feedBrand)} livestream products</description>\n`);
 
-  for (const item of items) {
+  for (const item of metaItems) {
     const metaAvailability: FacebookAvailability =
       item.availability === "in_stock"
         ? "in stock"
@@ -260,7 +272,7 @@ export function serializeFacebookParentFeed({
 
     writer.append(
       "<item>\n" +
-      `<g:id>${xml(item.id)}</g:id>\n` +
+      `<g:id>${xml(item.metaContentId)}</g:id>\n` +
       `<g:title>${xml(item.title)}</g:title>\n` +
       `<g:description>${xml(item.description)}</g:description>\n` +
       `<g:link>${xml(item.link)}</g:link>\n` +
@@ -277,5 +289,5 @@ export function serializeFacebookParentFeed({
     );
   }
   writer.append("</channel></rss>\n");
-  return Object.freeze({ ...writer.finish(), offerCount: items.length });
+  return Object.freeze({ ...writer.finish(), offerCount: metaItems.length });
 }
