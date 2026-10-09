@@ -314,16 +314,70 @@ test("a returning chatter gets the real widget after load, without a tap", async
   expect(pancakeRequests).toHaveLength(1);
 });
 
-test("a tapped facade hands over to Messenger when Pancake cannot be reached", async ({
+test("a tapped facade hands over to Messenger when Pancake cannot be reached, and never strands the shopper", async ({
   page,
   context,
 }) => {
   await context.route("https://chat-plugin.pancake.vn/**", (route) => route.abort());
   await serveAsProduction(context);
 
-  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.goto(`${PRODUCTION_ORIGIN}/shipping`, { waitUntil: "networkidle" });
   await chatFacade(page).click();
+  const messenger = page.getByRole("link", { name: /qua Messenger$/ });
+  await expect(messenger).toBeVisible();
+  await expect(chatFacade(page)).toHaveCount(0);
+  // A tap that never opened the chat does not make this browser a returning chatter.
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+
+  // A client-side navigation keeps the Messenger link: the failure belongs to this document.
+  await page.locator("a.brand-mark").click();
+  await page.waitForURL(`${PRODUCTION_ORIGIN}/`);
+  await expect(messenger).toBeVisible();
+
+  // A fresh document starts from the facade again -- still a way to chat, never an empty corner.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(chatFacade(page)).toBeVisible();
+  await chatFacade(page).click();
+  await expect(messenger).toBeVisible();
+});
+
+test("a returning chatter whose Pancake load fails gets Messenger and stops auto-loading it", async ({
+  page,
+  context,
+}) => {
+  await context.route("https://chat-plugin.pancake.vn/**", (route) => route.abort());
+  await serveAsProduction(context);
+  await context.addInitScript((key) => {
+    // Only the first document starts engaged; the reload below must see what the failure left.
+    if (!window.sessionStorage.getItem("seeded")) {
+      window.sessionStorage.setItem("seeded", "1");
+      window.localStorage.setItem(key, "1");
+    }
+  }, ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
   await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible();
+  await expect(chatFacade(page)).toHaveCount(0);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+
+  // Next document: no automatic load to fail again, the facade instead.
+  await page.reload({ waitUntil: "networkidle" });
+  await expect(chatFacade(page)).toBeVisible();
+});
+
+test("a returning chatter whose Pancake script loads but never draws its widget gets Messenger", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: "/* no widget */" }),
+  );
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
   await expect(chatFacade(page)).toHaveCount(0);
 });
 

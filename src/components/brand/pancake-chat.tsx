@@ -10,17 +10,21 @@ export const PANCAKE_ROOT_ID = "pancake-chat-plugin-root";
 /** Pancake's own bubble inside its root: clicking it is how its chat box opens. */
 const PANCAKE_BUBBLE_SELECTOR = "#pkcp-button";
 /**
- * Set once a shopper has opened the chat in this browser. From then on the real widget loads on
- * every page, as it always used to, so a reply from the shop reaches them without a tap.
+ * Set once a shopper has actually had the chat open in this browser -- not merely tapped for it.
+ * From then on the real widget loads on every page, as it always used to, so a reply from the shop
+ * reaches them without a tap. Cleared again if that automatic load fails, so an outage does not
+ * leave a returning shopper with no chat at all on every later page.
  */
 export const PANCAKE_ENGAGED_STORAGE_KEY = "lana:pancake-chat-engaged";
-/** How long a tapped bubble waits for Pancake before it hands the shopper to Messenger instead. */
+/** How long the page waits for Pancake's widget before it hands the shopper to Messenger instead. */
 const PANCAKE_OPEN_TIMEOUT_MS = 12_000;
 
 declare global {
   interface Window {
     /** Set the moment the Pancake script is inserted, before it has even downloaded. */
     __lanaPancakeChatInserted?: boolean;
+    /** Set when that script failed to load or its widget never appeared, for the document's life. */
+    __lanaPancakeChatFailed?: boolean;
     PancakeChatPlugin?: unknown;
   }
 }
@@ -46,12 +50,17 @@ function readEngaged(): boolean {
   }
 }
 
-function rememberEngaged(): void {
+function rememberEngaged(engaged: boolean): void {
   try {
-    window.localStorage.setItem(PANCAKE_ENGAGED_STORAGE_KEY, "1");
+    if (engaged) window.localStorage.setItem(PANCAKE_ENGAGED_STORAGE_KEY, "1");
+    else window.localStorage.removeItem(PANCAKE_ENGAGED_STORAGE_KEY);
   } catch {
     // Storage blocked: the shopper simply taps the bubble again on the next page load.
   }
+}
+
+function pancakeChatFailed(): boolean {
+  return window.__lanaPancakeChatFailed === true;
 }
 
 /** Inserts Pancake's installation script once per document, reporting a load failure. */
@@ -66,7 +75,14 @@ function insertPancakeScript(pageId: string, onError?: () => void): void {
     root?.setAttribute("role", "complementary");
     root?.setAttribute("aria-label", "Chat với shop");
   });
-  if (onError) script.addEventListener("error", onError, { once: true });
+  script.addEventListener(
+    "error",
+    () => {
+      window.__lanaPancakeChatFailed = true;
+      onError?.();
+    },
+    { once: true },
+  );
   window.__lanaPancakeChatInserted = true;
   document.body.appendChild(script);
 }
@@ -85,8 +101,10 @@ type FacadePhase = "idle" | "loading" | "open" | "failed";
  * gets a facade: a lightweight bubble of our own in the same corner, and the real widget is inserted
  * only when that bubble is tapped -- at which point it is opened for them, so one tap still opens
  * the chat. A shopper who has opened it before (`PANCAKE_ENGAGED_STORAGE_KEY`) gets the real widget
- * once the page has loaded and the browser is idle, which is how every visitor used to get it. If
- * Pancake cannot be reached after a tap, the bubble becomes the Messenger link.
+ * once the page has loaded and the browser is idle, which is how every visitor used to get it.
+ * Whenever Pancake cannot be reached -- after a tap, or on that automatic load -- or its widget has
+ * not appeared within `PANCAKE_OPEN_TIMEOUT_MS`, the Messenger link stands in, so the corner never
+ * ends up empty.
  *
  * The component inserts the script itself rather than through `next/script`, whose `lazyOnload`
  * cannot be cancelled: leaving the page before the idle callback fires -- say, into admin -- must
@@ -104,16 +122,32 @@ export function PancakeChat({
   // Read after hydration only: the server and the first client render both show the facade state.
   const engaged = useSyncExternalStore(subscribeToNothing, readEngaged, readFalse);
   const alreadyRunning = useSyncExternalStore(subscribeToNothing, pancakeChatHasRun, readFalse);
+  // A failure earlier in this document (before a client-side navigation remounted this component).
+  const failedEarlier = useSyncExternalStore(subscribeToNothing, pancakeChatFailed, readFalse);
   const [phase, setPhase] = useState<FacadePhase>("idle");
   const cleanupRef = useRef<(() => void) | null>(null);
 
-  // A returning chatter: the real widget, deferred to idle after load exactly as before.
+  // A returning chatter: the real widget, deferred to idle after load exactly as before, with the
+  // same failure handling as a tap -- a script that fails or a widget that never appears hands over
+  // to Messenger, and the browser stops being treated as engaged.
   useEffect(() => {
     if (!engaged || document.getElementById(PANCAKE_SCRIPT_ID) !== null) return;
 
     let idleHandle: number | undefined;
     let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-    const insert = () => insertPancakeScript(pageId);
+    let readinessHandle: ReturnType<typeof setTimeout> | undefined;
+    const fail = () => {
+      clearTimeout(readinessHandle);
+      window.__lanaPancakeChatFailed = true;
+      rememberEngaged(false);
+      setPhase("failed");
+    };
+    const insert = () => {
+      insertPancakeScript(pageId, fail);
+      readinessHandle = setTimeout(() => {
+        if (document.getElementById(PANCAKE_ROOT_ID) === null) fail();
+      }, PANCAKE_OPEN_TIMEOUT_MS);
+    };
     const schedule = () => {
       if (typeof window.requestIdleCallback === "function") {
         idleHandle = window.requestIdleCallback(insert, { timeout: 5_000 });
@@ -128,7 +162,8 @@ export function PancakeChat({
     return () => {
       window.removeEventListener("load", schedule);
       if (idleHandle !== undefined) window.cancelIdleCallback(idleHandle);
-      if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+      clearTimeout(timeoutHandle);
+      clearTimeout(readinessHandle);
     };
   }, [engaged, pageId]);
 
@@ -137,7 +172,6 @@ export function PancakeChat({
   function openRealWidget() {
     if (phase === "loading") return;
     setPhase("loading");
-    rememberEngaged();
 
     const observer = new MutationObserver(() => {
       tryOpen();
@@ -150,6 +184,9 @@ export function PancakeChat({
       observer.disconnect();
       clearTimeout(timeout);
       cleanupRef.current = null;
+      // Only a widget that actually appeared makes this browser a returning chatter.
+      if (next === "open") rememberEngaged(true);
+      else window.__lanaPancakeChatFailed = true;
       setPhase(next);
     }
     function tryOpen() {
@@ -170,11 +207,11 @@ export function PancakeChat({
     if (!tryOpen()) observer.observe(document.body, { childList: true, subtree: true });
   }
 
-  if (phase === "failed") {
+  if (phase === "failed" || failedEarlier) {
     return messengerHref ? <MessengerButton href={messengerHref} brandName={brandName} /> : null;
   }
   // The real widget draws its own bubble; two in one corner would stack. A tapped facade stays up,
-  // busy, until that bubble exists (the tap has already marked this browser as engaged).
+  // busy, until that bubble exists or the attempt fails.
   if (phase !== "loading" && (engaged || alreadyRunning || phase === "open")) return null;
 
   return (
