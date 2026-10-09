@@ -11,6 +11,12 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  *
  * The route tracker owns both document and SPA PageView so it can share one event ID with CAPI.
  *
+ * Loaded `lazyOnload` -- after the page's `load` event, in idle time -- so the library never competes
+ * with a phone's first paint or first taps. Nothing is lost by the wait: `facebook-pixel-client`
+ * holds every event fired before the snippet runs and hands them over in order, and each browser
+ * event has a server-side CAPI twin with the same event ID, so a shopper who leaves before `load`
+ * is still counted once.
+ *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
  * browser load/error event happened before that effect subscribed.
@@ -21,7 +27,7 @@ export function FacebookPixel() {
 
   return (
     <>
-      <Script id="facebook-pixel" strategy="afterInteractive">
+      <Script id="facebook-pixel" strategy="lazyOnload">
         {`!function(f,b,e,v,n,t,s)
 {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
 n.callMethod.apply(n,arguments):n.queue.push(arguments)};
