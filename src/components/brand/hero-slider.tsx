@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArtDirectedHeroImage } from "@/components/brand/art-directed-hero-image";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
+import { useDocumentLoaded } from "@/components/headless/use-document-loaded";
 import { HOME_HERO_CTA_LABEL, type HomeHeroSlide } from "@/routes/home-hero";
 
 /**
@@ -42,24 +43,29 @@ function usePrefersReducedMotion(): boolean {
 function HeroSlideFigure({
   slide,
   preload,
+  showImage = true,
   interactive = true,
   keyShortcuts,
 }: Readonly<{
   slide: HomeHeroSlide;
   preload: boolean;
+  /** False until the slide's photograph may be requested; the frame and its CTA render either way. */
+  showImage?: boolean;
   interactive?: boolean;
   keyShortcuts?: string;
 }>) {
   return (
     <>
       <div className="home-hero__media">
-        <ArtDirectedHeroImage
-          desktopSrc={slide.imageUrl}
-          mobileSrc={slide.mobileImageUrl}
-          alt={slide.label}
-          preload={preload}
-          draggable={false}
-        />
+        {showImage ? (
+          <ArtDirectedHeroImage
+            desktopSrc={slide.imageUrl}
+            mobileSrc={slide.mobileImageUrl}
+            alt={slide.label}
+            preload={preload}
+            draggable={false}
+          />
+        ) : null}
       </div>
       <p className="home-hero__cta">
         <Link
@@ -81,6 +87,7 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
   const [focused, setFocused] = useState(false);
   const [interacting, setInteracting] = useState(false);
   const prefersReducedMotion = usePrefersReducedMotion();
+  const documentLoaded = useDocumentLoaded();
   const dragStart = useRef<{ x: number; y: number } | null>(null);
   const sectionRef = useRef<HTMLElement>(null);
   const focusActiveCtaAfterChange = useRef(false);
@@ -211,6 +218,11 @@ export function BrandHeroSlider({ slides }: Readonly<{ slides: readonly HomeHero
               <HeroSlideFigure
                 slide={slide}
                 preload={index === 0}
+                // The later slides stack over the first at `opacity: 0`, which a browser counts as on
+                // screen, so their lazy photographs would download alongside the first slide's LCP
+                // image. They mount after `load` instead, still well before the first autoplay
+                // advance; a shopper reaching one sooner (a swipe, a tap) fetches it on demand.
+                showImage={index === 0 || isActive || documentLoaded}
                 interactive={isActive}
                 keyShortcuts={SLIDE_KEY_SHORTCUTS}
               />

@@ -7,7 +7,7 @@ import {
   ListingEmptyState,
   ListingProductGrid,
 } from "@/components/brand/listing-chrome";
-import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import type { PlpFilterState } from "@/components/headless/plp-filter-model";
 import { usePlpInfiniteGrid } from "@/components/headless/use-plp-infinite-grid";
 
@@ -67,6 +67,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
             key={`${model.href}-${idx}`}
             model={model}
             tone={tones[idx % tones.length]!}
+            eager={idx < PRODUCT_CARD_EAGER_COUNT}
           />
         ))}
 
