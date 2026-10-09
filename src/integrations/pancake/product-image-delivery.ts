@@ -6,6 +6,7 @@ import {
   PDP_IMAGE_SOURCE_MAX_BYTES,
   canonicalizePancakeProductImageSource,
   compressProductImageUnderLimit,
+  type PdpImageFormat,
 } from "../../commerce/product-image-delivery.ts";
 import { readBoundedBody } from "../../commerce/try-on-image.ts";
 import { createTimeoutSignal } from "../vertex-try-on/timeout.ts";
@@ -19,7 +20,7 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 export type PancakeProductImageDeliveryResult =
   | Readonly<{
       ok: true;
-      image: Readonly<{ bytes: Uint8Array; mimeType: "image/webp" }>;
+      image: Readonly<{ bytes: Uint8Array; mimeType: "image/webp" | "image/avif" }>;
     }>
   | Readonly<{
       ok: false;
@@ -54,8 +55,9 @@ async function sourceDecodes(bytes: Uint8Array): Promise<boolean> {
 export async function fetchAndCompressPancakeProductImage(
   trustedUrl: string,
   requestedWidth: number,
-  options: Readonly<{ fetch?: FetchLike; timeoutMs?: number }> = {},
+  options: Readonly<{ fetch?: FetchLike; timeoutMs?: number; format?: PdpImageFormat }> = {},
 ): Promise<PancakeProductImageDeliveryResult> {
+  const format = options.format ?? "webp";
   const doFetch: FetchLike = options.fetch ?? ((url, init) => fetch(url, init));
   let current = canonicalizePancakeProductImageSource(trustedUrl);
   if (current === null) return { ok: false, reason: "UNTRUSTED_URL" };
@@ -133,8 +135,9 @@ export async function fetchAndCompressPancakeProductImage(
       try {
         compressed = await compressProductImageUnderLimit({
           requestedWidth,
+          format,
           encode: async ({ width, quality }) => {
-            const output = await sharp(bytes, {
+            const resized = sharp(bytes, {
               limitInputPixels: PDP_IMAGE_MAX_INPUT_PIXELS,
               sequentialRead: true,
             })
@@ -144,13 +147,13 @@ export async function fetchAndCompressPancakeProductImage(
                 height: PDP_IMAGE_MAX_OUTPUT_HEIGHT,
                 fit: "inside",
                 withoutEnlargement: true,
-              })
-              .webp({
-                quality,
-                effort: 4,
-                smartSubsample: true,
-              })
-              .toBuffer();
+              });
+            // AVIF effort 3 rather than the default 4: noticeably faster to encode for a
+            // negligible size difference, and the disk cache means each encode happens once.
+            const output = await (format === "avif"
+              ? resized.avif({ quality, effort: 3 })
+              : resized.webp({ quality, effort: 4, smartSubsample: true })
+            ).toBuffer();
             return new Uint8Array(output);
           },
         });
@@ -166,7 +169,7 @@ export async function fetchAndCompressPancakeProductImage(
         ok: true,
         image: {
           bytes: compressed.bytes,
-          mimeType: "image/webp",
+          mimeType: format === "avif" ? "image/avif" : "image/webp",
         },
       };
     }

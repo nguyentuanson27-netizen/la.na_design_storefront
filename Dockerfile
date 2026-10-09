@@ -56,6 +56,9 @@ COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/next.config.mjs ./next.config.mjs
 COPY --from=build --chown=node:node /app/src/generated/prisma ./src/generated/prisma
 COPY --from=build --chown=node:node /app/public ./public
+# The product-image disk cache (PRODUCT_IMAGE_CACHE_DIR). Created here, owned by node, so the named
+# volume compose mounts on it is initialised writable for the unprivileged runtime user.
+RUN mkdir -p /app/var/product-image-cache && chown -R node:node /app/var
 
 USER node
 EXPOSE 3000

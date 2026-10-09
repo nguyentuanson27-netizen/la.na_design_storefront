@@ -1,8 +1,18 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readdir, rm, utimes, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { PDP_IMAGE_MAX_BYTES } from "../../src/commerce/product-image-delivery.ts";
-import { handleProductImageRequest } from "../../src/integrations/pancake/product-image-handler.ts";
+import sharp from "sharp";
+
+import { PDP_IMAGE_ENCODING_VERSION, PDP_IMAGE_MAX_BYTES } from "../../src/commerce/product-image-delivery.ts";
+import { createDiskProductImageCache } from "../../src/integrations/pancake/product-image-cache.ts";
+import {
+  PRODUCT_IMAGE_IMMUTABLE_CACHE_CONTROL,
+  PRODUCT_IMAGE_SHORT_CACHE_CONTROL,
+  handleProductImageRequest,
+} from "../../src/integrations/pancake/product-image-handler.ts";
 
 const SRC = "https://content.pancake.vn/images/1/2/3/dress.png";
 const TINY_PNG = Buffer.from(
@@ -268,3 +278,155 @@ test("the total transfer ceiling cuts off a client that trickles forever", async
   });
   await ok(await handleProductImageRequest(request(SRC), limits));
 });
+
+const HASHED_SRC = "https://content.pancake.vn/1/2/3/4/8bf497694fac109aa56013bfc23dbf69198b269a.png";
+
+function cachedRequest(src: string, extra: string, accept?: string): Request {
+  return new Request(`https://shop.test/api/product-image?src=${encodeURIComponent(src)}&${extra}`, {
+    headers: accept === undefined ? {} : { accept },
+  });
+}
+
+test("a content-hashed source at the current version is immutable for a year; anything else keeps the short cache", async () => {
+  const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+  const current = await handleProductImageRequest(
+    cachedRequest(HASHED_SRC, `w=828&v=${PDP_IMAGE_ENCODING_VERSION}`),
+    { fetch: upstream.fn, cache: null },
+  );
+  assert.equal(current.headers.get("cache-control"), PRODUCT_IMAGE_IMMUTABLE_CACHE_CONTROL);
+  assert.equal(current.headers.get("vary"), "Accept");
+  await ok(current);
+
+  // A page rendered before the version existed, or a source without a content hash.
+  for (const [src, extra] of [
+    [HASHED_SRC, "w=828"],
+    [HASHED_SRC, "w=828&v=1"],
+    [SRC, `w=828&v=${PDP_IMAGE_ENCODING_VERSION}`],
+  ] as const) {
+    const response = await handleProductImageRequest(cachedRequest(src, extra), { fetch: upstream.fn, cache: null });
+    assert.equal(response.headers.get("cache-control"), PRODUCT_IMAGE_SHORT_CACHE_CONTROL, `${src} ${extra}`);
+    await ok(response);
+  }
+});
+
+test("the version is one short numeric token; anything else is a bad request", async () => {
+  const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+  for (const extra of ["w=828&v=abc", "w=828&v=1&v=2", "w=828&v=", "w=828&v=12345"]) {
+    const response = await handleProductImageRequest(cachedRequest(HASHED_SRC, extra), { fetch: upstream.fn, cache: null });
+    assert.equal(response.status, 400, extra);
+  }
+  assert.deepEqual(upstream.calls, []);
+});
+
+test("a browser that accepts AVIF gets AVIF; the rest get WebP", async () => {
+  const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+  const avif = await handleProductImageRequest(
+    cachedRequest(HASHED_SRC, "w=828&v=2", "image/avif,image/webp,*/*;q=0.8"),
+    { fetch: upstream.fn, cache: null },
+  );
+  assert.equal(avif.status, 200);
+  assert.equal(avif.headers.get("content-type"), "image/avif");
+  const avifBody = Buffer.from(await avif.arrayBuffer());
+  assert.equal((await sharp(avifBody).metadata()).format, "heif");
+
+  const webp = await handleProductImageRequest(
+    cachedRequest(HASHED_SRC, "w=828&v=2", "image/webp,*/*;q=0.8"),
+    { fetch: upstream.fn, cache: null },
+  );
+  assert.equal(webp.headers.get("content-type"), "image/webp");
+  await ok(webp);
+});
+
+test("the disk cache answers a repeat request without Pancake or Sharp, per width and format", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "product-image-cache-"));
+  try {
+    const cache = createDiskProductImageCache({ directory, maxBytes: 10 * 1024 * 1024 });
+    const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+    const fetchOnce = (extra: string, accept?: string) =>
+      handleProductImageRequest(cachedRequest(HASHED_SRC, extra, accept), { fetch: upstream.fn, cache });
+
+    const first = await fetchOnce("w=828&v=2");
+    assert.equal(first.headers.get("x-product-image-cache"), "miss");
+    const firstBody = new Uint8Array(await first.arrayBuffer());
+    // The write is not awaited by the response; give it a turn to land.
+    await waitFor(async () => (await readdir(directory)).some((name) => name.endsWith(".webp")));
+
+    const second = await fetchOnce("w=828&v=2");
+    assert.equal(second.headers.get("x-product-image-cache"), "hit");
+    assert.equal(second.headers.get("content-type"), "image/webp");
+    assert.deepEqual(new Uint8Array(await second.arrayBuffer()), firstBody);
+    assert.equal(upstream.calls.length, 1);
+
+    // Another format or width is its own entry.
+    const avif = await fetchOnce("w=828&v=2", "image/avif");
+    assert.equal(avif.headers.get("x-product-image-cache"), "miss");
+    await ok(avif);
+    assert.equal(upstream.calls.length, 2);
+
+    // A source without a content hash is never kept on disk.
+    const unhashed = counting(() => new Response(TINY_PNG, { status: 200 }));
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const response = await handleProductImageRequest(cachedRequest(SRC, "w=828&v=2"), { fetch: unhashed.fn, cache });
+      assert.equal(response.headers.get("x-product-image-cache"), null);
+      await ok(response);
+    }
+    assert.equal(unhashed.calls.length, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("the disk cache stays inside its budget by dropping the least recently used entries", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "product-image-cache-"));
+  try {
+    const cache = createDiskProductImageCache({ directory, maxBytes: 2_500 });
+    const image = (fill: number) => ({ bytes: new Uint8Array(1_000).fill(fill), mimeType: "image/webp" as const });
+    await cache.write("a", image(1));
+    await cache.write("b", image(2));
+    // Using `a` makes `b` the least recently used.
+    const past = new Date(Date.now() - 60_000);
+    for (const name of await readdir(directory)) await utimes(join(directory, name), past, past);
+    assert.ok(await cache.read("a", "image/webp"));
+    await cache.write("c", image(3));
+
+    assert.ok(await cache.read("a", "image/webp"), "the recently read entry survives");
+    assert.equal(await cache.read("b", "image/webp"), null, "the least recently used entry is gone");
+    assert.ok(await cache.read("c", "image/webp"), "the new entry is kept");
+    assert.equal(await cache.read("a", "image/avif"), null, "formats are separate entries");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("an unusable cache directory degrades to the uncached endpoint instead of failing", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "product-image-cache-"));
+  try {
+    // A file where the directory should be: every mkdir, read and write fails.
+    const blocked = join(directory, "blocked");
+    await writeFile(blocked, "not a directory");
+    const cache = createDiskProductImageCache({ directory: join(blocked, "cache"), maxBytes: 1_000_000 });
+    const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+    const originalWarn = console.warn;
+    console.warn = () => {};
+    try {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const response = await handleProductImageRequest(cachedRequest(HASHED_SRC, "w=828&v=2"), { fetch: upstream.fn, cache });
+        assert.equal(response.status, 200);
+        await ok(response);
+      }
+    } finally {
+      console.warn = originalWarn;
+    }
+    assert.equal(upstream.calls.length, 2);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+async function waitFor(condition: () => Promise<boolean>): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (await condition()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("condition never held");
+}

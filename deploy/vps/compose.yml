@@ -43,6 +43,13 @@ services:
       # .env.production: only secrets live in that file now.
       APP_DOMAIN: ${APP_DOMAIN:?set APP_DOMAIN}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?set BETTER_AUTH_URL}
+      # Encoded PDP photographs, kept across releases so a deploy does not re-fetch and re-encode
+      # the catalogue (src/integrations/pancake/product-image-cache.ts). Least recently used files
+      # are dropped past the budget.
+      PRODUCT_IMAGE_CACHE_DIR: /app/var/product-image-cache
+      PRODUCT_IMAGE_CACHE_MAX_MB: ${PRODUCT_IMAGE_CACHE_MAX_MB:-2048}
+    volumes:
+      - product_image_cache:/app/var/product-image-cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -215,6 +222,7 @@ networks:
 
 volumes:
   postgres_data:
+  product_image_cache:
   caddy_data:
   caddy_config:
   flow_gflow_data:
