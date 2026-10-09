@@ -128,7 +128,12 @@ test.describe("reviewed container, tracking mode preview", () => {
     expect(csp).toMatch(/frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
 
     expect(vendorRequests).toEqual([`https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`]);
-    expect(await page.locator('script[src*="googletagmanager.com"]').count()).toBe(0);
+    // The container snippet inserts its own loader element (the request itself is aborted above).
+    await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveCount(1);
+    await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveAttribute(
+      "src",
+      `https://www.googletagmanager.com/gtm.js?id=${REVIEWED_CONTAINER}`,
+    );
     // Read from the server's own HTML: React keeps `noscript` children out of the hydrated client tree.
     expect(await response!.text()).toContain(`ns.html?id=${REVIEWED_CONTAINER}`);
 
