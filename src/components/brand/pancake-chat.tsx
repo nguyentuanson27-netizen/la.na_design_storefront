@@ -59,6 +59,18 @@ function rememberEngaged(engaged: boolean): void {
   }
 }
 
+/**
+ * Whether Pancake's widget is actually usable: its bubble is drawn, or its chat box is open. Pancake
+ * appends its root before drawing anything inside it, so a root alone -- a script that failed partway
+ * through initialising -- is not a working chat and must not stand in for one.
+ */
+function pancakeWidgetUsable(): boolean {
+  return (
+    document.querySelector(`#${PANCAKE_ROOT_ID} ${PANCAKE_BUBBLE_SELECTOR}, #${PANCAKE_ROOT_ID} .pkcp-popup-open`) !==
+    null
+  );
+}
+
 function pancakeChatFailed(): boolean {
   return window.__lanaPancakeChatFailed === true;
 }
@@ -145,7 +157,7 @@ export function PancakeChat({
     const insert = () => {
       insertPancakeScript(pageId, fail);
       readinessHandle = setTimeout(() => {
-        if (document.getElementById(PANCAKE_ROOT_ID) === null) fail();
+        if (!pancakeWidgetUsable()) fail();
       }, PANCAKE_OPEN_TIMEOUT_MS);
     };
     const schedule = () => {
@@ -177,8 +189,8 @@ export function PancakeChat({
       tryOpen();
     });
     const timeout = setTimeout(() => {
-      // Pancake answered but never drew its bubble, or never answered: Messenger stands in.
-      finish(document.getElementById(PANCAKE_ROOT_ID) !== null ? "open" : "failed");
+      // Pancake never answered, or answered without drawing a usable widget: Messenger stands in.
+      finish(pancakeWidgetUsable() ? "open" : "failed");
     }, PANCAKE_OPEN_TIMEOUT_MS);
     function finish(next: FacadePhase) {
       observer.disconnect();

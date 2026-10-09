@@ -381,6 +381,45 @@ test("a returning chatter whose Pancake script loads but never draws its widget 
   await expect(chatFacade(page)).toHaveCount(0);
 });
 
+/** A script that appends Pancake's root and then stops: the state of an initialisation that failed partway. */
+const ROOT_ONLY_STUB = `
+  var root = document.createElement("div");
+  root.id = "pancake-chat-plugin-root";
+  document.body.appendChild(root);
+`;
+
+test("a tap whose Pancake draws only an empty root falls back to Messenger and is not remembered", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: ROOT_ONLY_STUB }),
+  );
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await chatFacade(page).click();
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
+  await expect(chatFacade(page)).toHaveCount(0);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+});
+
+test("a returning chatter whose Pancake draws only an empty root gets Messenger", async ({ page, context }) => {
+  test.setTimeout(60_000);
+  await context.route("https://chat-plugin.pancake.vn/**", (route) =>
+    route.fulfill({ status: 200, contentType: "application/javascript", body: ROOT_ONLY_STUB }),
+  );
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible({ timeout: 30_000 });
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBeNull();
+});
+
 test("the Pancake bubble is 48px, and the open chat's close button sits above the sticky masthead", async ({
   page,
   context,
