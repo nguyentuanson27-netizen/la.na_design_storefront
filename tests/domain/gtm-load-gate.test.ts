@@ -14,12 +14,14 @@ const REVIEWED: ReviewedGtmVersion = {
   versionId: "7",
   exportPath: "docs/gtm/GTM-PRZT92JR-v7.json",
   exportSha256: "b".repeat(64),
+  approvedDestinations: { ga4MeasurementIds: ["G-FIXTURE001"], googleAdsConversions: [], tiktokPixelIds: [] },
 };
 const EMPTY: ReviewedGtmVersion = {
   containerId: null,
   versionId: null,
   exportPath: null,
   exportSha256: null,
+  approvedDestinations: null,
 };
 
 test("the repository ships with no reviewed container, so nothing may load", () => {
@@ -71,6 +73,7 @@ test("conflicting ids and an incomplete record fail closed", () => {
     { ...REVIEWED, versionId: null },
     { ...REVIEWED, exportPath: "" },
     { ...REVIEWED, exportSha256: "not-a-checksum" },
+    { ...REVIEWED, approvedDestinations: null },
   ]) {
     assert.equal(isReviewedGtmContainer(ID, broken), false);
   }

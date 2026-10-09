@@ -109,7 +109,9 @@ const hasGtm =
   reviewedGtmVersion.versionId.length > 0 &&
   typeof reviewedGtmVersion.exportPath === "string" &&
   reviewedGtmVersion.exportPath.length > 0 &&
-  /^[0-9a-f]{64}$/.test(reviewedGtmVersion.exportSha256 ?? "");
+  /^[0-9a-f]{64}$/.test(reviewedGtmVersion.exportSha256 ?? "") &&
+  reviewedGtmVersion.approvedDestinations !== null &&
+  typeof reviewedGtmVersion.approvedDestinations === "object";
 const gtmScriptSrc = hasGtm ? " https://www.googletagmanager.com" : "";
 const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
 const gtmConnectSrc = hasGtm

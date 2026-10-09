@@ -60,6 +60,7 @@ type ReviewedRecord = {
   versionId: string | null;
   exportPath: string | null;
   exportSha256: string | null;
+  approvedDestinations: object | null;
 };
 
 const REVIEWED_RECORD: ReviewedRecord = {
@@ -67,6 +68,7 @@ const REVIEWED_RECORD: ReviewedRecord = {
   versionId: "7",
   exportPath: "docs/gtm/GTM-PRZT92JR-v7.json",
   exportSha256: "a".repeat(64),
+  approvedDestinations: { ga4MeasurementIds: [], googleAdsConversions: [], tiktokPixelIds: [] },
 };
 
 /**
@@ -187,7 +189,13 @@ test("a configured but UNREVIEWED GTM container keeps the CSP closed", async () 
   process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
 
   try {
-    const empty = { containerId: null, versionId: null, exportPath: null, exportSha256: null };
+    const empty = {
+      containerId: null,
+      versionId: null,
+      exportPath: null,
+      exportSha256: null,
+      approvedDestinations: null,
+    };
     const otherContainer = { ...REVIEWED_RECORD, containerId: "GTM-OTHER123" };
     const noChecksum = { ...REVIEWED_RECORD, exportSha256: null };
     for (const [label, record] of [

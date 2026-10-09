@@ -42,7 +42,10 @@ const GTM_CONTAINER_ID = /^GTM-[A-Z0-9]{4,10}$/;
 /**
  * The evidence that an exact saved GTM container version was exported, audited and reviewed
  * (marketing spec §5.1–5.2). The gate is DATA, not a boolean someone can flip: it is open only for
- * the container this record names, and only when every field of the record is present. Filling the
+ * the container this record names, and only when every field of the record is present. This runtime
+ * check is SHAPE ONLY — it cannot read the export. The binding to real bytes is enforced in CI by
+ * `reviewed-gtm-evidence.ts` (file exists, sha256 matches, container/version match, audit passes), so
+ * a record that does not pass that test must never reach a release. Filling the
  * record belongs to the unit that exports, checksums and reviews that version; `next.config.mjs`
  * reads the same file to decide whether the CSP opens, so the loader and the CSP cannot disagree.
  */
@@ -51,6 +54,15 @@ export type ReviewedGtmVersion = Readonly<{
   versionId: string | null;
   exportPath: string | null;
   exportSha256: string | null;
+  /**
+   * The owner-approved vendor ids the export is audited against (owner gate O4). Shape only here;
+   * `reviewed-gtm-evidence.ts` binds it to the export bytes in CI.
+   */
+  approvedDestinations: Readonly<{
+    ga4MeasurementIds: readonly string[];
+    googleAdsConversions: readonly Readonly<{ conversionId: string; conversionLabel: string }>[];
+    tiktokPixelIds: readonly string[];
+  }> | null;
 }>;
 
 export const REVIEWED_GTM_VERSION: ReviewedGtmVersion = Object.freeze({
@@ -70,7 +82,8 @@ export function isReviewedGtmContainer(
     record.exportPath !== null &&
     record.exportPath.length > 0 &&
     record.exportSha256 !== null &&
-    /^[0-9a-f]{64}$/.test(record.exportSha256)
+    /^[0-9a-f]{64}$/.test(record.exportSha256) &&
+    record.approvedDestinations !== null
   );
 }
 
