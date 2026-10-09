@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 const isDevelopment = process.env.NODE_ENV === "development";
 
 // The Meta pixel needs three holes in the policy: its loader script, the 1x1 beacons it writes as
@@ -69,6 +71,64 @@ const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 // its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
 // media), and the Roboto face it imports from Google Fonts. The widget only loads on the permanent
 // production host, but Next bakes this policy into the build, so the allowance is unconditional.
+
+// Google Tag Manager (GTM)
+// An empty build arg is "unset", not a value: the Dockerfile always defines the public variable
+// (default ""), so `??` alone would let it mask the server-side fallback. Both sources are trimmed,
+// and two different non-empty ids are a deployment mistake that must fail the build.
+const publicGtmContainerId = (process.env.NEXT_PUBLIC_GTM_CONTAINER_ID ?? "").trim();
+const serverGtmContainerId = (process.env.LA_GTM_CONTAINER_ID ?? "").trim();
+if (
+  publicGtmContainerId.length > 0 &&
+  serverGtmContainerId.length > 0 &&
+  publicGtmContainerId !== serverGtmContainerId
+) {
+  throw new Error(
+    "NEXT_PUBLIC_GTM_CONTAINER_ID and LA_GTM_CONTAINER_ID are both set and differ; configure one container id",
+  );
+}
+const configuredGtmContainerId = publicGtmContainerId || serverGtmContainerId;
+if (
+  configuredGtmContainerId.length > 0 &&
+  !/^GTM-[A-Z0-9]{4,10}$/.test(configuredGtmContainerId)
+) {
+  throw new Error(
+    "NEXT_PUBLIC_GTM_CONTAINER_ID must be the GTM-XXXXXXX container id from Tag Manager",
+  );
+}
+// The CSP opens Google origins only for the container recorded as reviewed (marketing spec §5.1–5.2),
+// the same record the runtime loader obeys. `LA_TRACKING_MODE` is runtime-only, so it can narrow the
+// loader further but cannot widen this policy.
+const reviewedGtmVersion = JSON.parse(
+  readFileSync(new URL("./src/tracking/reviewed-gtm-version.json", import.meta.url), "utf8"),
+);
+const hasGtm =
+  configuredGtmContainerId.length > 0 &&
+  reviewedGtmVersion.containerId === configuredGtmContainerId &&
+  typeof reviewedGtmVersion.versionId === "string" &&
+  reviewedGtmVersion.versionId.length > 0 &&
+  typeof reviewedGtmVersion.exportPath === "string" &&
+  reviewedGtmVersion.exportPath.length > 0 &&
+  /^[0-9a-f]{64}$/.test(reviewedGtmVersion.exportSha256 ?? "") &&
+  reviewedGtmVersion.approvedDestinations !== null &&
+  typeof reviewedGtmVersion.approvedDestinations === "object";
+// TikTok's origin is opened only when the reviewed record approves a TikTok pixel. The reviewed
+// Custom HTML (TikTok Base) inserts `https://analytics.tiktok.com/i18n/pixel/events.js`, which needs
+// `script-src`; `connect-src` alone does not let the browser load it. Further origins that script
+// talks to are NOT added on a guess: they have to be observed in a real browser run (see the release
+// gates in the pull request) and added here by name, never by wildcard.
+const hasTikTok =
+  hasGtm &&
+  Array.isArray(reviewedGtmVersion.approvedDestinations.tiktokPixelIds) &&
+  reviewedGtmVersion.approvedDestinations.tiktokPixelIds.length > 0;
+const tiktokOrigin = hasTikTok ? " https://analytics.tiktok.com" : "";
+const gtmScriptSrc = hasGtm ? ` https://www.googletagmanager.com${tiktokOrigin}` : "";
+const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
+const gtmConnectSrc = hasGtm
+  ? ` https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com${tiktokOrigin}`
+  : "";
+const gtmFrameSrc = hasGtm ? " https://www.googletagmanager.com" : "";
+
 const pancakeChatScriptSrc = " https://chat-plugin.pancake.vn";
 const pancakeChatStyleSrc = " https://fonts.googleapis.com";
 const pancakeChatFontSrc = " https://fonts.gstatic.com";
@@ -97,15 +157,16 @@ const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc}${gtmScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};
+  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc}${gtmImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc}${gtmConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';
+  frame-src 'self'${gtmFrameSrc};
   frame-ancestors 'none';
   upgrade-insecure-requests;
 `

@@ -12,6 +12,8 @@
  * other request-controlled input must never be able to promote a deployment to `live`.
  */
 
+import reviewedGtmVersion from "./reviewed-gtm-version.json" with { type: "json" };
+
 type TrackingEnvironment = Readonly<Record<string, string | undefined>>;
 
 export const TRACKING_MODES = ["disabled", "preview", "live"] as const;
@@ -28,42 +30,99 @@ export type TrackingRuntime = Readonly<{
   containerId: string | null;
   /** Whether the browser bootstrap (dataLayer, mode, consent defaults, page views) is rendered. */
   publishesDataLayer: boolean;
-  /** Always false until the reviewed immutable GTM version exists. */
-  loadsGoogleTagManager: false;
+  /**
+   * Whether the loader may render. False unless the container is the reviewed one recorded in
+   * `reviewed-gtm-version.json` AND the mode is not `disabled`.
+   */
+  loadsGoogleTagManager: boolean;
 }>;
 
 const GTM_CONTAINER_ID = /^GTM-[A-Z0-9]{4,10}$/;
 
 /**
- * The reviewed-GTM-version gate. Flipping this is not a configuration change: it belongs to the
- * unit that exports, checksums and reviews an exact saved container version, opens the CSP and adds
- * the loader. Nothing in this module may make GTM load.
+ * The evidence that an exact saved GTM container version was exported, audited and reviewed
+ * (marketing spec §5.1–5.2). The gate is DATA, not a boolean someone can flip: it is open only for
+ * the container this record names, and only when every field of the record is present. This runtime
+ * check is SHAPE ONLY — it cannot read the export. The binding to real bytes is enforced in CI by
+ * `reviewed-gtm-evidence.ts` (file exists, sha256 matches, container/version match, audit passes), so
+ * a record that does not pass that test must never reach a release. Filling the
+ * record belongs to the unit that exports, checksums and reviews that version; `next.config.mjs`
+ * reads the same file to decide whether the CSP opens, so the loader and the CSP cannot disagree.
  */
-const REVIEWED_GTM_VERSION_AVAILABLE = false;
+export type ReviewedGtmVersion = Readonly<{
+  containerId: string | null;
+  versionId: string | null;
+  exportPath: string | null;
+  exportSha256: string | null;
+  /**
+   * The owner-approved vendor ids the export is audited against (owner gate O4). Shape only here;
+   * `reviewed-gtm-evidence.ts` binds it to the export bytes in CI.
+   */
+  approvedDestinations: Readonly<{
+    ga4MeasurementIds: readonly string[];
+    googleAdsConversions: readonly Readonly<{ conversionId: string; conversionLabel: string }>[];
+    tiktokPixelIds: readonly string[];
+    /** Exact Custom HTML a person reviewed, pinned by the SHA-256 of its `html` parameter. */
+    reviewedCustomHtml?: readonly Readonly<{ sha256: string }>[];
+    /** Gallery templates a person reviewed, pinned by identity and the SHA-256 of `templateData`. */
+    reviewedGalleryTemplates?: readonly Readonly<{
+      host: string;
+      owner: string;
+      repository: string;
+      galleryTemplateId: string;
+      version: string;
+      signature: string;
+      templateDataSha256: string;
+    }>[];
+  }> | null;
+}>;
+
+export const REVIEWED_GTM_VERSION: ReviewedGtmVersion = Object.freeze({
+  ...(reviewedGtmVersion as ReviewedGtmVersion),
+});
+
+export function isReviewedGtmContainer(
+  containerId: string | null,
+  record: ReviewedGtmVersion = REVIEWED_GTM_VERSION,
+): boolean {
+  return (
+    containerId !== null &&
+    GTM_CONTAINER_ID.test(containerId) &&
+    record.containerId === containerId &&
+    record.versionId !== null &&
+    record.versionId.length > 0 &&
+    record.exportPath !== null &&
+    record.exportPath.length > 0 &&
+    record.exportSha256 !== null &&
+    /^[0-9a-f]{64}$/.test(record.exportSha256) &&
+    record.approvedDestinations !== null
+  );
+}
 
 function isTrackingMode(value: string): value is TrackingMode {
   return (TRACKING_MODES as readonly string[]).includes(value);
 }
 
 export function readTrackingConfig(env: TrackingEnvironment = process.env): TrackingConfig {
+  // Absent, empty or whitespace-only is the fail-closed default. An empty string is what a blank
+  // `LA_TRACKING_MODE=` line in an env file produces, and it means "not set", not "an unknown mode".
+  // A present, non-empty, unrecognised value is a deployment mistake and must not silently degrade
+  // to "disabled" in a deployment that believes it is measuring.
+  // Only a value with nothing in it is "not set"; a padded one such as "live " is still a mistake.
   const rawMode = env.LA_TRACKING_MODE;
-  // Absent is the fail-closed default; a present-but-unrecognised value is a deployment mistake and
-  // must not silently degrade to "disabled" in a deployment that believes it is measuring.
-  const desiredMode = rawMode === undefined ? "disabled" : rawMode;
+  const desiredMode = rawMode === undefined || rawMode.trim() === "" ? "disabled" : rawMode;
   if (!isTrackingMode(desiredMode)) {
     throw new RangeError(`LA_TRACKING_MODE must be one of ${TRACKING_MODES.join(", ")}`);
   }
 
-  const rawContainerId = env.LA_GTM_CONTAINER_ID;
+  // `disabled` is the kill switch, so it has to work on its own: an operator turning tracking off
+  // must not also have to remove the container id, and a server that throws while rendering would
+  // turn the switch into an outage. Any configured id is ignored, and nothing loads.
   if (desiredMode === "disabled") {
-    if (rawContainerId !== undefined && rawContainerId.length > 0) {
-      throw new RangeError(
-        "LA_GTM_CONTAINER_ID must not be configured while LA_TRACKING_MODE is disabled",
-      );
-    }
     return Object.freeze({ desiredMode, containerId: null });
   }
 
+  const rawContainerId = env.LA_GTM_CONTAINER_ID;
   if (rawContainerId === undefined || !GTM_CONTAINER_ID.test(rawContainerId)) {
     throw new RangeError(
       "LA_GTM_CONTAINER_ID must be the GTM-XXXXXXX container id from Tag Manager",
@@ -73,19 +132,23 @@ export function readTrackingConfig(env: TrackingEnvironment = process.env): Trac
   return Object.freeze({ desiredMode, containerId: rawContainerId });
 }
 
-export function resolveTrackingRuntime(config: TrackingConfig): TrackingRuntime {
+export function resolveTrackingRuntime(
+  config: TrackingConfig,
+  record: ReviewedGtmVersion = REVIEWED_GTM_VERSION,
+): TrackingRuntime {
   return Object.freeze({
     mode: config.desiredMode,
     containerId: config.containerId,
     publishesDataLayer: config.desiredMode !== "disabled",
-    loadsGoogleTagManager: false as const,
+    loadsGoogleTagManager:
+      config.desiredMode !== "disabled" && isReviewedGtmContainer(config.containerId, record),
   });
 }
 
 /**
- * The single place any future loader must ask before rendering a GTM script. It is false for every
- * mode while the reviewed immutable version gate is closed.
+ * The single place the loader asks before rendering a GTM script. False for every mode until a
+ * reviewed container version is recorded, and always false for `disabled`.
  */
 export function shouldLoadGoogleTagManager(runtime: TrackingRuntime): boolean {
-  return REVIEWED_GTM_VERSION_AVAILABLE && runtime.mode !== "disabled";
+  return runtime.loadsGoogleTagManager;
 }

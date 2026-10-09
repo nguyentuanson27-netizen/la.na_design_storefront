@@ -291,6 +291,14 @@ Final preview must preview that exact saved version, not a later mutable workspa
 
 Tag Assistant is verification evidence, not a network-isolation control.
 
+**Release gate for `src/tracking/reviewed-gtm-version.json`.** The runtime and the CSP only check the
+record's shape. CI (`tests/domain/reviewed-gtm-evidence.test.ts`) binds it to the evidence: the
+referenced export must be checked in, its SHA-256 must equal `exportSha256`, its container and saved
+version ids must equal `containerId` / `versionId`, and `auditGtmContainerExport()` must pass against
+the record's `approvedDestinations`. The loader requests the container by public id, which serves
+whatever is *published*, so at every release (and after any console republish) confirm in Tag Manager
+that the live version equals `versionId`; there is no automated check for that.
+
 ### 5.3 Page views
 
 Application code owns canonical initial/App Router `page_view`. The GTM/GA4 configuration must disable overlapping automatic/history page-view behavior so one navigation is counted once.

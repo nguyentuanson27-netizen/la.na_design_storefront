@@ -16,7 +16,7 @@ test("T2 tracking configuration defaults to disabled when the deployment configu
 });
 
 test("T2 tracking configuration fails closed on a malformed desired mode", () => {
-  for (const desired of ["LIVE", "live ", "enabled", "", "preview;live"]) {
+  for (const desired of ["LIVE", "live ", " live", "enabled", "preview;live"]) {
     assert.throws(
       () => readTrackingConfig({ LA_TRACKING_MODE: desired }),
       /LA_TRACKING_MODE/,
@@ -67,15 +67,26 @@ test("T2 preview and live require a well-formed GTM container id", () => {
   }
 });
 
-test("T2 disabled deployments reject a configured container id instead of half-configuring tracking", () => {
-  assert.throws(
-    () =>
-      readTrackingConfig({
-        LA_TRACKING_MODE: "disabled",
-        LA_GTM_CONTAINER_ID: "GTM-ABC123",
-      }),
-    /LA_GTM_CONTAINER_ID/,
+test("T2 disabled is a safe kill switch: a configured container id is ignored, never an error", () => {
+  const closed = { desiredMode: "disabled", containerId: null };
+  assert.deepEqual(
+    readTrackingConfig({ LA_TRACKING_MODE: "disabled", LA_GTM_CONTAINER_ID: "GTM-ABC123" }),
+    closed,
   );
+  // Even a malformed id cannot turn the switch into an outage.
+  assert.deepEqual(
+    readTrackingConfig({ LA_TRACKING_MODE: "disabled", LA_GTM_CONTAINER_ID: "not-an-id" }),
+    closed,
+  );
+});
+
+test("T2 a blank mode, as written by `LA_TRACKING_MODE=` in an env file, is the disabled default", () => {
+  const closed = { desiredMode: "disabled", containerId: null };
+  assert.deepEqual(readTrackingConfig({ LA_TRACKING_MODE: "" }), closed);
+  assert.deepEqual(readTrackingConfig({ LA_TRACKING_MODE: "   " }), closed);
+  assert.deepEqual(readTrackingConfig({ LA_TRACKING_MODE: "", LA_GTM_CONTAINER_ID: "GTM-ABC123" }), closed);
+  // A non-empty unknown value is still a deployment mistake.
+  assert.throws(() => readTrackingConfig({ LA_TRACKING_MODE: "lve" }), /LA_TRACKING_MODE/);
 });
 
 test("T2 desired live can never come from client, Host or public build input", () => {

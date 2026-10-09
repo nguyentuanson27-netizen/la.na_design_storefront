@@ -1,5 +1,13 @@
 # Facebook Live product-level XML feed
 
+> **Superseded in part by PR #125 (owner decision, 2026-10-09):** `/feeds/google-merchant` and
+> `/feeds/google-merchant.xml` now also serve one parent-level item per Pancake product
+> (`merchant-parent-feed.ts`), so the per-size Google feed is no longer "untouched" and the Google
+> items carry no `g:size`, `g:color` or `g:item_group_id`. Price and availability on parent items come
+> from the same orderable offers (`representative-offers.ts`), and the unselected product page now quotes that
+> same set, so the `Từ` floor no longer includes a sold-out size (not the cross-size floor described below). Meta Live remains a
+> separate catalog.
+
 ## Objective
 Commerce Manager's live-product picker should show **one catalog item per original Pancake product**, not one item per size. This is a separate opt-in catalog source at `GET /feeds/facebook-live.xml`; the existing `/feeds/google-merchant` remains untouched.
 

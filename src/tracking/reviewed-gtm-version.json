@@ -1,0 +1,36 @@
+{
+  "containerId": "GTM-PRZT92JR",
+  "versionId": "5",
+  "exportPath": "docs/gtm/GTM-PRZT92JR-v5.json",
+  "exportSha256": "64f064b5a9ef78d4b14bcbc78d855b82c771e49f8863654f84d67b31a37760b9",
+  "approvedDestinations": {
+    "ga4MeasurementIds": [
+      "G-94N0KSJG27"
+    ],
+    "googleAdsConversions": [
+      {
+        "conversionId": "17016425181",
+        "conversionLabel": "Uy3bCLC82ZYdEN2ViLI_"
+      }
+    ],
+    "tiktokPixelIds": [
+      "CRJQE53C77UDCGHCT5U0"
+    ],
+    "reviewedCustomHtml": [
+      {
+        "sha256": "bd07c2254ac662315e3461d0a54993154501dd73c7d9e14e744738698b54e371"
+      }
+    ],
+    "reviewedGalleryTemplates": [
+      {
+        "host": "github.com",
+        "owner": "tiktok",
+        "repository": "gtm-template-pixel",
+        "version": "4ec12fa4f950ef1f829255007287ad26d40132a6",
+        "signature": "50cbfb75f71b7527977e02eff867e564a69edba2db3fe8a9097b1ae252730680",
+        "galleryTemplateId": "MRQN8",
+        "templateDataSha256": "46abd9530d1f1af4f34c44a7f7ce0f986a3d794a81b5515ca7967cf774da5c43"
+      }
+    ]
+  }
+}

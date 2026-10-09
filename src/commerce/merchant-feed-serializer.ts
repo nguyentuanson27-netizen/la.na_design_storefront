@@ -62,7 +62,7 @@ export class BoundedXmlWriter {
   }
 }
 
-function merchantAvailabilityDate(value: string): string {
+export function merchantAvailabilityDate(value: string): string {
   const serialized = serializeVietnamAvailabilityDate(value);
   if (serialized === null) {
     throw new MerchantFeedSerializationError("Merchant availability date must be a real YYYY-MM-DD calendar day");

@@ -29,6 +29,13 @@ ENV BETTER_AUTH_IP_HEADER=x-build-client-ip
 # ships no tracking and no Facebook origin in the policy.
 ARG NEXT_PUBLIC_FACEBOOK_PIXEL_ID=""
 ENV NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${NEXT_PUBLIC_FACEBOOK_PIXEL_ID}
+ARG NEXT_PUBLIC_GTM_CONTAINER_ID=""
+ENV NEXT_PUBLIC_GTM_CONTAINER_ID=${NEXT_PUBLIC_GTM_CONTAINER_ID}
+# The server-side id is what the runtime loader and tracking config read. It must reach the build
+# too, or a deployment that sets only this one bakes a CSP without Google origins around a loader
+# that then emits the script. next.config.mjs rejects two different ids.
+ARG LA_GTM_CONTAINER_ID=""
+ENV LA_GTM_CONTAINER_ID=${LA_GTM_CONTAINER_ID}
 # ChatGPT Ads uses the same build-time contract: the public Pixel ID controls both the loader and
 # the CSP origins. The Conversions API key remains runtime-only and never enters this image stage.
 ARG NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID=""
@@ -54,6 +61,9 @@ COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/next.config.mjs ./next.config.mjs
+# next.config.mjs reads the reviewed-GTM-version record at startup (it decides the CSP), so the runtime
+# image must carry it beside the config or `next start` fails to load the config.
+COPY --from=build --chown=node:node /app/src/tracking/reviewed-gtm-version.json ./src/tracking/reviewed-gtm-version.json
 COPY --from=build --chown=node:node /app/src/generated/prisma ./src/generated/prisma
 COPY --from=build --chown=node:node /app/public ./public
 # The product-image disk cache (PRODUCT_IMAGE_CACHE_DIR). Created here, owned by node, so the named

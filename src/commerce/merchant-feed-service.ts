@@ -10,16 +10,18 @@ import {
 import {
   MerchantFeedByteOverflowError,
   MerchantFeedOfferOverflowError,
-  serializeMerchantFeed,
 } from "./merchant-feed-serializer.ts";
+import {
+  buildMerchantParentItems,
+  serializeGoogleMerchantParentFeed,
+} from "./merchant-parent-feed.ts";
 import { createMerchantOfferRepository, MerchantOfferReadError } from "./merchant-offer-repository.ts";
 import { readStorefrontOrigin } from "./storefront-origin.ts";
 
-const MERCHANT_FEED_SCHEMA_VERSION = "rss-v1";
+const MERCHANT_FEED_SCHEMA_VERSION = "parent-rss-v1";
 const PROMOTION_PRICING_REVISION_ID = "current";
 
 function observeMerchantFeed(event: MerchantFeedEvent): void {
-  // Bounded event names only: no request data, product data, exceptions, credentials or PII.
   console.info(`[merchant-feed] ${event}`);
 }
 
@@ -52,8 +54,6 @@ function coordinatorFor(key: string) {
       }),
     });
   } else if (runtimeCoordinator.key !== key) {
-    // A process should have exactly one trusted shop/schema domain. Treat env drift as a config
-    // failure rather than silently allocating another public heavy-work domain.
     throw new Error("Merchant feed trusted cache key changed during the process lifetime");
   }
   return runtimeCoordinator.coordinator;
@@ -112,8 +112,9 @@ export async function getMerchantFeed(): Promise<MerchantFeedCoordinatorResult> 
           return Object.freeze({ ok: false as const, failureClass: "MARKET_UNRESOLVED" as const });
         }
 
-        const serialized = serializeMerchantFeed({
-          offers: mapped.offers,
+        const items = buildMerchantParentItems(snapshot.products, origin);
+        const serialized = serializeGoogleMerchantParentFeed({
+          items,
           market: mapped.market.policy,
           origin,
         });
