@@ -8,7 +8,7 @@ import {
 } from "../../src/commerce/merchant-parent-feed.ts";
 import type { MerchantCandidateProduct, MerchantMarketPolicy } from "../../src/commerce/merchant-offer-mapper.ts";
 import { INHERITED_APPAREL_OVERRIDES } from "../../src/commerce/product-merchant-facts-repository.ts";
-import { withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
+import { fixtureAvailability, withFixtureAvailability } from "../fixtures/storefront-projection-option.ts";
 import { type StorefrontProjectionOption } from "../../src/commerce/storefront-projection.ts";
 
 const ORIGIN = "https://www.lanadesign.vn";
@@ -97,22 +97,45 @@ test("marks availability as out_of_stock when all options are sold out", () => {
   assert.equal(items[0]!.availability, "out_of_stock");
 });
 
-test("marks availability as backorder when options are preorder sale", () => {
+test("marks availability as backorder, with its availability_date, when options are preorder sale", () => {
+  const preorder = projectionOption({ price: 899_000, purchasable: true, isPreorderSale: true });
   const prod = candidate({
     projection: {
       mode: "standalone",
       options: [
-        projectionOption({
-          price: 899_000,
-          purchasable: true,
-          isPreorderSale: true,
-        }),
+        {
+          ...preorder,
+          availability: fixtureAvailability(preorder, {
+            availabilityDate: "2026-11-20",
+            today: "2026-10-09",
+          }),
+        },
       ],
     },
   });
   const items = buildMerchantParentItems([prod], ORIGIN);
   assert.equal(items.length, 1);
   assert.equal(items[0]!.availability, "backorder");
+  assert.equal(items[0]!.availabilityDate, "2026-11-20");
+
+  const google = serializeGoogleMerchantParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.ok(google.body.includes("<g:availability>backorder</g:availability>"));
+  assert.ok(google.body.includes("<g:availability_date>"));
+  const facebook = serializeFacebookParentFeed({ items, market: MARKET, origin: ORIGIN });
+  assert.ok(facebook.body.includes("<g:availability>available for order</g:availability>"));
+  assert.ok(facebook.body.includes("<g:availability_date>"));
+});
+
+test("an undated preorder is withheld as out_of_stock rather than published as a dateless backorder", () => {
+  const prod = candidate({
+    projection: {
+      mode: "standalone",
+      options: [projectionOption({ price: 899_000, purchasable: true, isPreorderSale: true })],
+    },
+  });
+  const items = buildMerchantParentItems([prod], ORIGIN);
+  assert.equal(items[0]!.availability, "out_of_stock");
+  assert.equal(items[0]!.availabilityDate, null);
 });
 
 test("supports composite/combo products without getting blocked", () => {

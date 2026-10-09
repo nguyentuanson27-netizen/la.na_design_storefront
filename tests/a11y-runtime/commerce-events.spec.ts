@@ -227,7 +227,7 @@ test.beforeAll(async () => {
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
       NEXT_TELEMETRY_DISABLED: "1",
-      // Publishes the dataLayer. Loading a container remains a separate, still-closed gate.
+      // Publishes the dataLayer and loads the (synthetic) container; the route is aborted in-test.
       LA_TRACKING_MODE: "preview",
       LA_GTM_CONTAINER_ID: "GTM-TESTONLY",
     },
@@ -493,7 +493,7 @@ test("U19 commerce event payloads carry no cart identity and no customer facts",
   }
 });
 
-test("U18 publishing commerce events loads no tag manager and opens no vendor origin", async ({
+test("U18 the configured GTM container is the only vendor origin the page opens", async ({
   page,
 }) => {
   const vendorRequests: string[] = [];
@@ -503,9 +503,14 @@ test("U18 publishing commerce events loads no tag manager and opens no vendor or
       vendorRequests.push(url);
     }
   });
+  // Keep the run hermetic: the container id is synthetic, so never let the request leave the box.
+  await page.route(/googletagmanager\.com/, (route) => route.abort());
 
   await page.goto(`${BASE_URL}/shop/${shirt.slug}`, { waitUntil: "networkidle" });
   expect((await readEvents(page, "view_item")).length).toBe(1);
-  expect(vendorRequests, "T8 owns the first container load").toEqual([]);
-  expect(await page.locator('script[src*="googletagmanager.com"]').count()).toBe(0);
+  expect(
+    vendorRequests,
+    "only the configured container loads; the page itself opens no analytics or ads origin",
+  ).toEqual(["https://www.googletagmanager.com/gtm.js?id=GTM-TESTONLY"]);
+  expect(await page.locator('script[src*="googletagmanager.com"]').count()).toBe(1);
 });

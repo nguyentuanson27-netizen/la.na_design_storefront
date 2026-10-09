@@ -10,6 +10,7 @@ import {
   BoundedXmlWriter,
   MerchantFeedSerializationError,
   assertMerchantOfferCount,
+  merchantAvailabilityDate,
   xml,
 } from "./merchant-feed-serializer.ts";
 import {
@@ -44,6 +45,8 @@ export type MerchantParentFeedItem = Readonly<{
   imageLink: string;
   additionalImageLinks: readonly string[];
   availability: ParentFeedAvailability;
+  /** Google requires `availability_date` beside `backorder`; null for every other state. */
+  availabilityDate: string | null;
   priceVnd: number;
   brand: string;
   condition: "new" | "refurbished" | "used";
@@ -119,15 +122,21 @@ export function buildMerchantParentItems(
     if (prices.length === 0) continue;
     const priceVnd = Math.min(...prices);
 
-    // Resolve availability
+    // Resolve availability. `in_stock` wins; otherwise the earliest published backorder date.
     let availability: ParentFeedAvailability = "out_of_stock";
+    let availabilityDate: string | null = null;
     for (const opt of candidateOptions) {
-      if (opt.purchasable && opt.availability.published && opt.availability.merchant === "in_stock") {
+      if (!opt.purchasable || !opt.availability.published) continue;
+      if (opt.availability.merchant === "in_stock") {
         availability = "in_stock";
+        availabilityDate = null;
         break;
       }
-      if (opt.purchasable && opt.availability.published && opt.availability.merchant === "backorder") {
-        availability = "backorder";
+      if (opt.availability.merchant === "backorder" && opt.availability.availabilityDate !== null) {
+        if (availabilityDate === null || opt.availability.availabilityDate < availabilityDate) {
+          availability = "backorder";
+          availabilityDate = opt.availability.availabilityDate;
+        }
       }
     }
 
@@ -156,6 +165,7 @@ export function buildMerchantParentItems(
         imageLink,
         additionalImageLinks: Object.freeze(additionalImageLinks),
         availability,
+        availabilityDate,
         priceVnd,
         brand: BRAND.merchant.feedBrand,
         condition,
@@ -167,6 +177,11 @@ export function buildMerchantParentItems(
 
   assertMerchantOfferCount(items.length);
   return Object.freeze(items.sort((a, b) => a.id.localeCompare(b.id, "en")));
+}
+
+function availabilityDateXml(item: MerchantParentFeedItem): string {
+  if (item.availability !== "backorder" || item.availabilityDate === null) return "";
+  return `<g:availability_date>${xml(merchantAvailabilityDate(item.availabilityDate))}</g:availability_date>\n`;
 }
 
 /**
@@ -209,6 +224,7 @@ export function serializeGoogleMerchantParentFeed({
       `<g:image_link>${xml(item.imageLink)}</g:image_link>\n` +
       additionalImages +
       `<g:availability>${xml(item.availability)}</g:availability>\n` +
+      availabilityDateXml(item) +
       `<g:price>${xml(String(item.priceVnd))} ${xml(market.currency)}</g:price>\n` +
       `<g:brand>${xml(item.brand)}</g:brand>\n` +
       `<g:condition>${xml(item.condition)}</g:condition>\n` +
@@ -268,6 +284,7 @@ export function serializeFacebookParentFeed({
       `<g:image_link>${xml(item.imageLink)}</g:image_link>\n` +
       additionalImages +
       `<g:availability>${xml(metaAvailability)}</g:availability>\n` +
+      availabilityDateXml(item) +
       `<g:price>${xml(String(item.priceVnd))} ${xml(market.currency)}</g:price>\n` +
       `<g:brand>${xml(item.brand)}</g:brand>\n` +
       `<g:condition>${xml(item.condition)}</g:condition>\n` +
