@@ -223,6 +223,53 @@ function FeedbackViewer({
 const FEEDBACK_PAGE_EAGER_COUNT = 4;
 
 /**
+ * How many rail photographs are in the server-rendered markup: the two or so a phone shows, plus
+ * the next ones. The rest mount as the rail is scrolled towards them (`useRailReveal`).
+ */
+const FEEDBACK_RAIL_INITIAL_COUNT = 4;
+
+/**
+ * How many rail items have their photograph mounted: everything up to one rail-width beyond what is
+ * on screen, widened as the rail scrolls and never narrowed.
+ *
+ * The photographs are lazy, but a browser starts a lazy image from well over a thousand pixels
+ * away, and the whole rail is barely wider than that: left to `loading="lazy"` alone, every
+ * photograph in it downloads the moment the rail nears the screen, most of them to sit off its
+ * right edge. Each item keeps its 3:4 box either way, so mounting one later never shifts the rail.
+ */
+function useRailReveal(total: number) {
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const [revealed, setRevealed] = useState(Math.min(FEEDBACK_RAIL_INITIAL_COUNT, total));
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport || revealed >= total) return;
+
+    const reveal = () => {
+      const bounds = viewport.getBoundingClientRect();
+      const limit = bounds.right + bounds.width;
+      const items = viewport.querySelectorAll<HTMLElement>(".feedback-rail__item");
+      let count = 0;
+      items.forEach((item, index) => {
+        if (item.getBoundingClientRect().left < limit) count = index + 1;
+      });
+      setRevealed((current) => Math.max(current, count));
+    };
+
+    // The observer also fires once on observing, which sizes the first reveal to a wide screen.
+    const resizeObserver = new ResizeObserver(reveal);
+    resizeObserver.observe(viewport);
+    viewport.addEventListener("scroll", reveal, { passive: true });
+    return () => {
+      resizeObserver.disconnect();
+      viewport.removeEventListener("scroll", reveal);
+    };
+  }, [revealed, total]);
+
+  return { viewportRef, revealed };
+}
+
+/**
  * The feedback rail: native horizontal scroll with snap points, no carousel dependency and no
  * autoplay. Touch swipes it; a mouse uses its scrollbar or a trackpad; the keyboard focuses the
  * viewport and scrolls it with the arrow keys, or tabs through the photographs. The title is a
@@ -251,6 +298,7 @@ export function FeedbackRail({
   id?: string;
 }>) {
   const viewer = useFeedbackViewer(images.length);
+  const { viewportRef, revealed } = useRailReveal(images.length);
 
   return (
     <section
@@ -263,7 +311,13 @@ export function FeedbackRail({
       <div className="section-heading-row">
         <h2 id={headingId}>{title}</h2>
       </div>
-      <div className="feedback-rail__viewport" tabIndex={0} role="group" aria-label={title}>
+      <div
+        ref={viewportRef}
+        className="feedback-rail__viewport"
+        tabIndex={0}
+        role="group"
+        aria-label={title}
+      >
         <ul className="feedback-rail__track">
           {images.map((image, index) => (
             <li className="feedback-rail__item" key={`${index}-${image.src}`}>
@@ -274,7 +328,11 @@ export function FeedbackRail({
                 aria-haspopup="dialog"
                 onClick={() => viewer.open(index)}
               >
-                <FeedbackPhoto image={image} sizes="(min-width: 901px) 20vw, 42vw" />
+                {index < revealed ? (
+                  <FeedbackPhoto image={image} sizes="(min-width: 901px) 20vw, 42vw" />
+                ) : (
+                  <span className="feedback-photo" />
+                )}
               </button>
             </li>
           ))}
