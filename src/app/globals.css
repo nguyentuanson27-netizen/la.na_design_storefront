@@ -747,10 +747,15 @@ main nav[aria-label="Breadcrumb"] a {
  * rather than by flat cream.
  * If a half is narrower than a 2:3 cell, the cell narrows and crops at the sides only.
  *
- * Slides stack in place rather than sitting side by side on a translated track, which is how
- * `.home-hero__slide` already does this. A track would lay the later slides out past the right
- * edge of the viewport -- clipped, but still measurably outside it, which is precisely what the
- * storefront's no-horizontal-overflow guard exists to catch.
+ * The desktop slides stack in place rather than sitting side by side on a translated track, which
+ * is how `.home-hero__slide` already does this. A translated track would lay the later slides out
+ * past the right edge of the viewport -- clipped, but still measurably outside it, which is
+ * precisely what the storefront's no-horizontal-overflow guard exists to catch.
+ *
+ * The phone gallery is a track, but a scroll container rather than a translated one: its pages
+ * overflow only the container, which the document's width never sees, the same way the feedback
+ * rail does. That buys the native swipe -- the photograph follows the finger, a fling carries
+ * momentum, and the browser decides whether a diagonal thumb meant the gallery or the page.
  */
 .pdp-mobile-gallery {
   position: absolute;
@@ -758,14 +763,45 @@ main nav[aria-label="Breadcrumb"] a {
   background: var(--stone);
 }
 
-.pdp-mobile-gallery__image {
+.pdp-mobile-gallery__track,
+.pdp-lightbox__track {
   position: absolute;
   inset: 0;
-  width: 100%;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* An edge swipe stays in the gallery instead of becoming the browser's back gesture. */
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.pdp-mobile-gallery__track::-webkit-scrollbar,
+.pdp-lightbox__track::-webkit-scrollbar {
+  display: none;
+}
+
+/* A mouse drag sets the offset by hand (`useSnapTrack`); snapping returns when it is released. */
+.pdp-mobile-gallery__track[data-dragging],
+.pdp-lightbox__track[data-dragging] {
+  scroll-snap-type: none;
+  cursor: grabbing;
+}
+
+.pdp-mobile-gallery__image,
+.pdp-lightbox__page {
+  position: relative;
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+  /* One photograph per fling, however hard the flick. */
+  scroll-snap-stop: always;
+}
+
+.pdp-mobile-gallery__image {
   padding: 0;
   border: 0;
   background: transparent;
-  touch-action: pan-y;
   user-select: none;
 }
 

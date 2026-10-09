@@ -119,11 +119,12 @@ async function cleanup() {
  * The photograph the shopper is actually looking at.
  *
  * These tests run at a phone viewport, where the mobile spec replaced the editorial grid with a
- * one-image-at-a-time gallery. The visible image is the variant's current lead image, which is the
- * same fact the old `[aria-label^="Bộ sưu tập hình ảnh "]` lead image carried.
+ * one-image-at-a-time gallery. The current page's image is the variant's current lead image, which
+ * is the same fact the old `[aria-label^="Bộ sưu tập hình ảnh "]` lead image carried. The gallery
+ * is a scroll-snap track that also holds its neighbours, so "current" is the page marked active.
  */
 function heroImage(page: Page) {
-  return page.locator(".pdp-mobile-gallery__image img").first();
+  return page.locator('.pdp-mobile-gallery__image[data-active="true"] img');
 }
 
 async function expectHeroToShow(page: Page, urlFragment: string) {

@@ -85,7 +85,24 @@ async function cleanup() {
 async function assertPageQuality(page: import("@playwright/test").Page) {
   const overflowReport = await page.evaluate(() => {
     const viewportWidth = window.innerWidth;
+    /*
+     * A page of a horizontal scroll container (the PDP's phone gallery, the feedback rail) sits
+     * off screen by design until it is scrolled to; the container clips it and the document never
+     * widens. Such an element is exempt only while that nearest scroller is itself on screen, so a
+     * scroller that overflows the page is still caught -- as is anything clipped merely by
+     * `overflow: hidden`, which the shopper cannot scroll to.
+     */
+    const insideOnScreenScroller = (element: HTMLElement) => {
+      for (let ancestor = element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+        const { overflowX } = getComputedStyle(ancestor);
+        if (overflowX !== "auto" && overflowX !== "scroll") continue;
+        const box = ancestor.getBoundingClientRect();
+        return box.left >= -0.5 && box.right <= viewportWidth + 0.5;
+      }
+      return false;
+    };
     const offenders = Array.from(document.body.querySelectorAll<HTMLElement>("*"))
+      .filter((element) => !insideOnScreenScroller(element))
       .map((element) => {
         const rect = element.getBoundingClientRect();
         return {
@@ -409,15 +426,35 @@ test("the below-`lg` gallery shows one trusted image at a time and swipes throug
    */
   const hero = page.getByRole("region", { name: `Ảnh chính của ${multiName}` });
   const counter = hero.getByRole("status");
-  const visibleImage = hero.locator("img:visible");
+  const gallery = hero.locator(".pdp-mobile-gallery");
+  const currentPage = hero.locator('.pdp-mobile-gallery__image[data-active="true"]');
+  const currentImage = currentPage.locator("img");
 
   const showing = async () => ({
-    alt: await visibleImage.getAttribute("alt"),
-    src: await visibleImage.getAttribute("src"),
+    alt: await currentImage.getAttribute("alt"),
+    src: await currentImage.getAttribute("src"),
   });
 
-  // The swipe surface is the gallery button itself, not the full-bleed section around it.
-  const swipeSurface = hero.locator(".pdp-mobile-gallery__image");
+  /*
+   * One photograph on screen at a time: the gallery is a scroll-snap track, so "on screen" means
+   * the current page has come to rest exactly over the gallery's own box.
+   */
+  async function expectCurrentPageAtRest() {
+    await expect
+      .poll(async () => {
+        const [pageBox, galleryBox] = await Promise.all([
+          currentPage.boundingBox(),
+          gallery.boundingBox(),
+        ]);
+        return Math.round(Math.abs(pageBox!.x - galleryBox!.x));
+      })
+      .toBe(0);
+    await expect(currentPage).toHaveCount(1);
+  }
+
+  // The swipe surface is the gallery track itself, not the full-bleed section around it. This
+  // project drives a mouse, which takes the track's drag path; touch is the browser's own scroll.
+  const swipeSurface = hero.locator(".pdp-mobile-gallery__track");
 
   async function swipe(direction: "next" | "previous") {
     const box = (await swipeSurface.boundingBox())!;
@@ -431,14 +468,20 @@ test("the below-`lg` gallery shows one trusted image at a time and swipes throug
   }
 
   // One image on screen at a time, and the counter says which.
-  await expect(visibleImage).toHaveCount(1);
+  await expectCurrentPageAtRest();
   await expect(counter).toHaveText("1/3");
+
+  /*
+   * The phone never fetches the whole gallery up front: after load it holds the first photograph
+   * and the one a first swipe lands on, and the third is not in the markup until it is next.
+   */
+  await expect(hero.locator(".pdp-mobile-gallery__image img")).toHaveCount(2);
 
   const seen = [await showing()];
   for (const expected of ["2/3", "3/3"]) {
     await swipe("next");
     await expect(counter).toHaveText(expected);
-    await expect(visibleImage).toHaveCount(1);
+    await expectCurrentPageAtRest();
     seen.push(await showing());
   }
 
@@ -452,13 +495,29 @@ test("the below-`lg` gallery shows one trusted image at a time and swipes throug
 
   // The ends clamp rather than wrap, the same as the desktop stage.
   await swipe("next");
+  await expectCurrentPageAtRest();
   await expect(counter).toHaveText("3/3");
   for (const expected of ["2/3", "1/3"]) {
     await swipe("previous");
     await expect(counter).toHaveText(expected);
+    await expectCurrentPageAtRest();
   }
   await swipe("previous");
+  await expectCurrentPageAtRest();
   await expect(counter).toHaveText("1/3");
+
+  // A drag is a swipe, never a tap: no swipe above opened the lightbox.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  // The arrow keys move the current photograph, and focus follows it.
+  await hero.getByRole("button", { name: /^Mở ảnh 1 \/ 3 của / }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(counter).toHaveText("2/3");
+  await expect(hero.getByRole("button", { name: /^Mở ảnh 2 \/ 3 của / })).toBeFocused();
+  await expectCurrentPageAtRest();
+  await page.keyboard.press("ArrowLeft");
+  await expect(counter).toHaveText("1/3");
+  await expectCurrentPageAtRest();
 
   // The old editorial grid is gone rather than hidden.
   await expect(page.getByLabel(`Bộ sưu tập hình ảnh ${multiName}`)).toHaveCount(0);
@@ -493,14 +552,17 @@ test("the below-`lg` gallery and its lightbox work at 390 and 768, and never tra
     // Below `lg` it is the one-image gallery, never the desktop track.
     await expect(mobileGallery, `${viewport.label} gallery`).toBeVisible();
     await expect(hero.locator(".pdp-stage__track")).toBeHidden();
-    await expect(hero.locator("img:visible")).toHaveCount(1);
+    const firstPageBox = (await hero.locator(".pdp-mobile-gallery__image").first().boundingBox())!;
+    const galleryBox = (await mobileGallery.boundingBox())!;
+    expect(Math.round(firstPageBox.x - galleryBox.x), `${viewport.label}: first page at rest`).toBe(0);
+    expect(Math.round(firstPageBox.width - galleryBox.width), `${viewport.label}: one page wide`).toBe(0);
     await expect(counter).toHaveText(`1/3`);
 
     /*
      * The swipe surface owes the page its vertical gestures. A wheel over the gallery scrolls the
      * document and leaves the gallery where it was.
      */
-    const surface = mobileGallery.locator(".pdp-mobile-gallery__image");
+    const surface = mobileGallery.locator(".pdp-mobile-gallery__track");
     const box = (await surface.boundingBox())!;
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.wheel(0, 600);
@@ -519,7 +581,7 @@ test("the below-`lg` gallery and its lightbox work at 390 and 768, and never tra
     const lightbox = page.getByRole("dialog", { name: `Xem ảnh ${multiName}` });
     await expect(lightbox, `${viewport.label} lightbox`).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(1);
-    const lightboxImage = lightbox.locator("img");
+    const lightboxImage = lightbox.locator(".pdp-lightbox__page").first().locator("img");
     expect(
       await lightboxImage.evaluate((element) => getComputedStyle(element).objectFit),
       `${viewport.label}: the lightbox contains the garment`,
@@ -755,14 +817,11 @@ test("each trusted photograph is fetched at full size once, whichever compositio
   page,
 }) => {
   /*
-   * The stage carries both compositions, so image 1 exists twice in the markup and the `<link
-   * rel="preload">` for each is emitted whatever the viewport. What keeps that honest is the
-   * `sizes` hint on each copy: the composition this viewport is not showing declares `1px`, so the
-   * browser resolves it to the smallest candidate in the srcset instead of the real photograph.
-   *
-   * So the guarantee is about full-size bytes, not request count: a viewport downloads each
-   * photograph at full size at most once, and the off-composition copy never grows past the
-   * smallest candidate. Dropping the `1px` hint would fetch both at full size and fail here.
+   * The stage carries both compositions, so image 1 exists twice in the markup. Each copy's `<img>`
+   * is lazy, so the copy inside the composition `display: none` hides is never requested, and each
+   * copy's preload hint is scoped by `media` to the viewports that paint it, so only one hint is
+   * ever followed. A viewport therefore downloads each photograph at most once, and image 1 exactly
+   * once: there is no off-composition decoy request at all.
    */
   const fetched: { url: string; width: number }[] = [];
   await page.route(OPTIMIZED_IMAGE_ROUTE, (route) => {
@@ -823,30 +882,18 @@ test("each trusted photograph is fetched at full size once, whichever compositio
 
     /*
      * The `lg+` track paints every slide, so the rest load too. The below-`lg` gallery shows one
-     * photograph at a time and fetches the others only as the shopper swipes, which is why a phone
-     * leaves this page having downloaded one photograph. Pinning both directions stops the phone
-     * quietly regressing into fetching the whole gallery up front.
+     * photograph at a time: once the page has loaded it fetches the second, so the first swipe
+     * lands on a photograph that is already there, and the third only as the shopper nears it. So a
+     * phone leaves this page having downloaded two photographs. Pinning both directions stops the
+     * phone regressing into either a cold first swipe or fetching the whole gallery up front.
      */
     expect(
       photographs.slice(1).map(fullSizeCountFor),
       `${viewport.label}: later photographs (${report})`,
-    ).toEqual(viewport.label === "desktop" ? [1, 1] : [0, 0]);
+    ).toEqual(viewport.label === "desktop" ? [1, 1] : [1, 0]);
 
-    /*
-     * Image 1 is the one photograph both compositions declare, so it is the one that can carry a
-     * decoy. At most two requests: the real one, and a strictly narrower hinted candidate. Three
-     * would mean a composition stopped scoping its `sizes`.
-     */
-    const primaryWidths = widthsFor("primary.jpg");
-    expect(
-      primaryWidths.length,
-      `${viewport.label}: image 1 requests (${report})`,
-    ).toBeLessThanOrEqual(2);
-    const widest = Math.max(...primaryWidths);
-    expect(
-      primaryWidths.filter((width) => width !== widest).every((width) => width < widest),
-      `${viewport.label}: the hidden composition must stay narrower than the real one (${report})`,
-    ).toBe(true);
+    // Image 1 is the one photograph both compositions declare: one request, no hinted decoy.
+    expect(widthsFor("primary.jpg"), `${viewport.label}: image 1 requests (${report})`).toHaveLength(1);
   }
 });
 
