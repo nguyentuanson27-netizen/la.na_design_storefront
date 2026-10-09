@@ -66,8 +66,8 @@ function isPixelLibraryLoaded(): boolean {
  * Two things still need waiting on, and they are different:
  *
  *   - Before the snippet has run at all there is no `fbq` to hand anything to. Those calls are held
- *     here, in order, until there is. `next/script` loads the snippet `lazyOnload`, so a
- *     page-level event fired from a mount effect always lands in this window.
+ *     here, in order, until there is. `next/script` loads the snippet `afterInteractive`, so a
+ *     page-level event fired from a mount effect regularly lands in this window.
  *   - A caller that records an event as sent must not do so while it sits in a queue an ad blocker
  *     will discard. The snippet records the external script's lifecycle on the script element
  *     itself before inserting it, so an acknowledgement subscriber can observe a terminal state
