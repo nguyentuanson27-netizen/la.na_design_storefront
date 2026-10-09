@@ -61,6 +61,9 @@ COPY --from=prod-deps --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/.next ./.next
 COPY --from=build --chown=node:node /app/package.json ./package.json
 COPY --from=build --chown=node:node /app/next.config.mjs ./next.config.mjs
+# next.config.mjs reads the reviewed-GTM-version record at startup (it decides the CSP), so the runtime
+# image must carry it beside the config or `next start` fails to load the config.
+COPY --from=build --chown=node:node /app/src/tracking/reviewed-gtm-version.json ./src/tracking/reviewed-gtm-version.json
 COPY --from=build --chown=node:node /app/src/generated/prisma ./src/generated/prisma
 COPY --from=build --chown=node:node /app/public ./public
 # The product-image disk cache (PRODUCT_IMAGE_CACHE_DIR). Created here, owned by node, so the named
