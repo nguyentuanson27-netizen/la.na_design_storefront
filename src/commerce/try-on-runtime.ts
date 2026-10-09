@@ -2,6 +2,7 @@ import { readAuthServerConfig } from "../auth/config.ts";
 import { auth } from "../auth/server.ts";
 import { prisma } from "../db/prisma.ts";
 import { createGoogleFlowTryOnClient } from "../integrations/google-flow-try-on/client.ts";
+import { warmFlowWorker } from "../integrations/google-flow-try-on/warm.ts";
 import { readTryOnRuntimeConfig } from "../integrations/try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
 import { getGoogleAccessToken } from "../integrations/vertex-try-on/google-auth.ts";
@@ -58,6 +59,15 @@ export const tryOnService = createTryOnService({
       : createVertexTryOnClient({ config, getAccessToken: getGoogleAccessToken }).generate({ person, product }),
   emit: (signal) => emitTryOnSignal(signal),
 });
+
+/**
+ * Gets the provider ready for a shopper who is about to try something on. Only the Flow worker has
+ * anything to prepare (its Chrome); Vertex needs nothing. Fire and forget.
+ */
+export function warmTryOnProvider(): void {
+  const config = readTryOnRuntimeConfig();
+  if (config.available && config.provider === "flow") warmFlowWorker({ config });
+}
 
 /** Same trusted-proxy-header identity the checkout limiters use; `null` when none can be derived. */
 function resolveTryOnClientKey(headers: Headers): string | null {

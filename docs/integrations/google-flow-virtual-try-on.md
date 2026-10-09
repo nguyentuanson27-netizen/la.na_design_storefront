@@ -69,6 +69,61 @@ wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_mode
   quota exhausted". It is not reported as gflow's retried rate-limit error, so the request budget
   is not spent re-running Pro.
 
+## Warm browser (optional)
+
+By default every try-on starts its own gflow process, which launches Chrome and Flow's bootstrap
+before any work begins. With `LA_TRY_ON_FLOW_WARM_BROWSER=true` the worker instead keeps one signed-in
+Chrome open between requests. Design, limits and rationale:
+[`flow-worker-warm-browser.md`](flow-worker-warm-browser.md). It is **off by default**; turn it on
+only after the live gates below pass with it off.
+
+How it behaves:
+
+- A child process (`flow_worker.warm_child`) holds the browser; the worker talks to it over a pipe,
+  so Chrome never sees `FLOW_WORKER_TOKEN`. One job at a time, as before.
+- The browser starts on the first request, or earlier when the storefront calls `POST /v1/warm`
+  (it does when a shopper with attempts left opens the dialog). It is released after
+  `FLOW_WARM_IDLE_SECONDS` (30 min) without a request, and recycled between requests after
+  `FLOW_WARM_MAX_JOBS` (50) jobs, `FLOW_WARM_MAX_AGE_SECONDS` (1 h) or when its process tree holds
+  `FLOW_WARM_MAX_RSS_MB` (1200 MB). A failed job also recycles it.
+- The container is capped at 1.5 GB (`mem_limit`) and 1.5 CPUs. Past the cap Docker restarts the
+  worker, which comes back cold.
+- If the warm browser cannot start, or dies before the image submit went out, that request is run
+  the old way (own gflow process). A death after the submit is a failure, never a retry, so quota is
+  not spent twice.
+- `GET /health` adds `warm: {state, jobs, ageSeconds, idleSeconds, rssMb}`. Log events:
+  `flow_warm.started` (with `startup_ms`), `flow_warm.stopped` (with `reason`), `flow_warm.start_failed`.
+
+**While the browser is warm the worker holds the Chrome profile.** Anything else that opens that
+profile (`gflow auth login`, `gflow auth status`, any `docker compose run ... gflow`) fails with a
+profile-lock error. Release it first with `POST /v1/cool`:
+
+```bash
+docker compose --env-file deploy/vps/.env.production -f deploy/vps/compose.yml \
+  --profile flow-try-on exec -T flow-worker python -c '
+import os, urllib.request
+request = urllib.request.Request(
+    "http://127.0.0.1:8787/v1/cool", method="POST",
+    headers={"authorization": "Bearer " + os.environ["FLOW_WORKER_TOKEN"]})
+print(urllib.request.urlopen(request, timeout=30).read().decode())'
+```
+
+`200` means the browser is down **and the worker is closed to try-ons**: for
+`FLOW_WARM_COOL_PAUSE_SECONDS` (15 min) no pre-warm hint starts Chrome and every `POST /v1/try-on` is
+refused as `409 BUSY` (shoppers see the usual "busy, try again" message), so nothing else can take the
+Chrome profile while the operator uses it. Cool also cancels a start that was already under way, and it
+waits for a generation in flight (`409` until it ends). Do the operator work inside that window, then
+call `POST /v1/resume` (same call, that path) to open the worker again, or let the pause run out.
+If `FLOW_WARM_BROWSER` is off, none of this applies and the worker behaves as before.
+
+`409 BUSY` means a generation is running, or the browser could not be released within 15 s: the
+profile must **not** be assumed free. Retry in a few seconds.
+
+`deploy.sh` does this itself around its `gflow auth status` checks. It skips a worker that is not
+running or has no warm browser, retries on `409`, and **stops the deploy** if a running worker cannot
+be cooled. It calls `POST /v1/resume` as soon as each check is over, whether it passed or failed, so
+shoppers are refused (BUSY) only while a check needs the profile.
+
 ## Production environment
 
 Keep the feature disabled while bootstrapping the Chrome session:

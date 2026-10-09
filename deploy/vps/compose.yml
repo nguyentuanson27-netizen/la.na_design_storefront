@@ -144,6 +144,11 @@ services:
       FLOW_NANO_BANANA_2_1_MODEL_KEY: ${LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY:-}
       GFLOW_CLI_HOME: /data/gflow
       FLOW_COMMAND_TIMEOUT_SECONDS: "120"
+      # Warm browser (docs/integrations/flow-worker-warm-browser.md). Off unless true.
+      FLOW_WARM_BROWSER: ${LA_TRY_ON_FLOW_WARM_BROWSER:-false}
+      FLOW_WARM_IDLE_SECONDS: "1800"
+      FLOW_WARM_MAX_JOBS: "50"
+      FLOW_WARM_MAX_RSS_MB: "1200"
     init: true
     volumes:
       - flow_gflow_data:/data/gflow
@@ -168,6 +173,12 @@ services:
     cap_drop:
       - ALL
     pids_limit: 512
+    # A warm Chrome stays resident, so the container is capped: past the limit Docker restarts this
+    # worker (cold) instead of starving the rest of the host. The worker recycles Chrome at
+    # FLOW_WARM_MAX_RSS_MB, well below this ceiling.
+    mem_limit: 1536m
+    memswap_limit: 1536m
+    cpus: "1.5"
     networks:
       - backend
 
