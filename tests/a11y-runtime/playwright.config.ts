@@ -29,6 +29,7 @@ export default defineConfig({
     "facebook-pixel-disabled.spec.ts",
     "flash-sale-freshness.spec.ts",
     "footer-support.spec.ts",
+    "gtm-reviewed-container.spec.ts",
     "homepage-composition.spec.ts",
     "homepage-hero.spec.ts",
     "homepage-refresh-acceptance.spec.ts",

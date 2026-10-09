@@ -206,9 +206,26 @@ test("a configured but UNREVIEWED GTM container keeps the CSP closed", async () 
       const csp = await readCsp(`?unreviewed-${label}-${Date.now()}`, record);
       assert.equal(csp.includes("googletagmanager"), false, `${label} must keep the CSP closed`);
     }
-    // The repository's own record is empty today, so the real config is closed too.
+    // The repository's own record reviews GTM-PRZT92JR only, so any other container id is closed on
+    // the real config too.
+    process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-OTHER123";
     const real = await readCsp(`?unreviewed-real-${Date.now()}`);
     assert.equal(real.includes("googletagmanager"), false);
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  }
+});
+
+test("the repository's own reviewed record opens the CSP for GTM-PRZT92JR and nothing else", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    const csp = await readCsp(`?real-reviewed-${Date.now()}`);
+    assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(csp, /frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
   } finally {
     if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
     else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;

@@ -24,13 +24,22 @@ const EMPTY: ReviewedGtmVersion = {
   approvedDestinations: null,
 };
 
-test("the repository ships with no reviewed container, so nothing may load", () => {
-  assert.deepEqual({ ...REVIEWED_GTM_VERSION }, { ...EMPTY });
-  assert.equal(isReviewedGtmContainer(ID), false);
+test("the repository's own record reviews exactly GTM-PRZT92JR and no other container", () => {
+  assert.equal(REVIEWED_GTM_VERSION.containerId, ID);
+  assert.equal(isReviewedGtmContainer(ID), true);
+  assert.equal(isReviewedGtmContainer("GTM-OTHER123"), false);
+
+  const live = { LA_TRACKING_MODE: "live", LA_GTM_CONTAINER_ID: ID, NEXT_PUBLIC_GTM_CONTAINER_ID: ID };
+  assert.deepEqual(resolveGtmLoad(live), { load: true, containerId: ID });
+  assert.deepEqual(resolveGtmLoad({ ...live, LA_TRACKING_MODE: "preview" }), { load: true, containerId: ID });
+  // Same environment, other container: not the reviewed one, so nothing loads.
   assert.deepEqual(
-    resolveGtmLoad({ LA_TRACKING_MODE: "live", LA_GTM_CONTAINER_ID: ID, NEXT_PUBLIC_GTM_CONTAINER_ID: ID }),
+    resolveGtmLoad({ ...live, LA_GTM_CONTAINER_ID: "GTM-OTHER123", NEXT_PUBLIC_GTM_CONTAINER_ID: "GTM-OTHER123" }),
     { load: false },
   );
+  // The reviewed container with the mode disabled or absent never loads.
+  assert.deepEqual(resolveGtmLoad({ ...live, LA_TRACKING_MODE: "disabled", LA_GTM_CONTAINER_ID: "" }), { load: false });
+  assert.deepEqual(resolveGtmLoad({ NEXT_PUBLIC_GTM_CONTAINER_ID: ID }), { load: false });
 });
 
 test("disabled never loads, even for a reviewed container with the public id set", () => {
