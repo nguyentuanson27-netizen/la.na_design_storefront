@@ -4,6 +4,7 @@ import { connection } from "next/server";
 
 import { ChatGptAdsPixel } from "@/components/analytics/chatgpt-ads-pixel";
 import { FacebookPixel } from "@/components/analytics/facebook-pixel";
+import { GoogleTagManager } from "@/components/analytics/google-tag-manager";
 import { TrackingBootstrap } from "@/components/analytics/tracking-bootstrap";
 import { TrackingPageView } from "@/components/analytics/tracking-page-view";
 import { ZaloAdsPixel } from "@/components/analytics/zalo-ads-pixel";
@@ -94,6 +95,7 @@ export function SiteChrome({
   return (
     <SiteDocument>
       <TrackingBootstrap />
+      <GoogleTagManager />
       <ChatGptAdsPixel />
       {model.structuredData.map((document, index) => (
         <script

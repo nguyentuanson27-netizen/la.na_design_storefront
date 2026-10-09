@@ -69,6 +69,25 @@ const zaloAdsConnectSrc = hasZaloAdsPixel ? " https://log.adtimaserver.vn" : "";
 // its API and websocket on pages.fm, avatars on content.pancake.vn (already allowed for catalog
 // media), and the Roboto face it imports from Google Fonts. The widget only loads on the permanent
 // production host, but Next bakes this policy into the build, so the allowance is unconditional.
+
+// Google Tag Manager (GTM)
+const configuredGtmContainerId = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID ?? process.env.LA_GTM_CONTAINER_ID ?? "";
+if (
+  configuredGtmContainerId.length > 0 &&
+  !/^GTM-[A-Z0-9]{4,10}$/.test(configuredGtmContainerId)
+) {
+  throw new Error(
+    "NEXT_PUBLIC_GTM_CONTAINER_ID must be the GTM-XXXXXXX container id from Tag Manager",
+  );
+}
+const hasGtm = configuredGtmContainerId.length > 0;
+const gtmScriptSrc = hasGtm ? " https://www.googletagmanager.com" : "";
+const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
+const gtmConnectSrc = hasGtm
+  ? " https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com https://analytics.tiktok.com"
+  : "";
+const gtmFrameSrc = hasGtm ? " https://www.googletagmanager.com" : "";
+
 const pancakeChatScriptSrc = " https://chat-plugin.pancake.vn";
 const pancakeChatStyleSrc = " https://fonts.googleapis.com";
 const pancakeChatFontSrc = " https://fonts.gstatic.com";
@@ -97,15 +116,16 @@ const pancakeImageRemotePatterns = pancakeImageHostnames.flatMap((hostname) =>
 
 const contentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc};
+  script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}${pancakeChatScriptSrc}${facebookScriptSrc}${openAiAdsScriptSrc}${zaloAdsScriptSrc}${gtmScriptSrc};
   style-src 'self' 'unsafe-inline'${pancakeChatStyleSrc};
-  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc};
+  img-src 'self' blob: data: https://content.pancake.vn https://statics.pancake.vn https://cdn.pancake.vn${facebookImgSrc}${openAiAdsImgSrc}${zaloAdsImgSrc}${gtmImgSrc};
   media-src 'self' https://content.pancake.vn${pancakeChatMediaSrc};
   font-src 'self'${pancakeChatFontSrc};
-  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc};
+  connect-src 'self'${isDevelopment ? " ws: wss:" : ""}${pancakeChatConnectSrc}${facebookConnectSrc}${openAiAdsConnectSrc}${zaloAdsConnectSrc}${gtmConnectSrc};
   object-src 'none';
   base-uri 'self';
   form-action 'self';
+  frame-src 'self'${gtmFrameSrc};
   frame-ancestors 'none';
   upgrade-insecure-requests;
 `

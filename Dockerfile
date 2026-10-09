@@ -29,6 +29,8 @@ ENV BETTER_AUTH_IP_HEADER=x-build-client-ip
 # ships no tracking and no Facebook origin in the policy.
 ARG NEXT_PUBLIC_FACEBOOK_PIXEL_ID=""
 ENV NEXT_PUBLIC_FACEBOOK_PIXEL_ID=${NEXT_PUBLIC_FACEBOOK_PIXEL_ID}
+ARG NEXT_PUBLIC_GTM_CONTAINER_ID=""
+ENV NEXT_PUBLIC_GTM_CONTAINER_ID=${NEXT_PUBLIC_GTM_CONTAINER_ID}
 # ChatGPT Ads uses the same build-time contract: the public Pixel ID controls both the loader and
 # the CSP origins. The Conversions API key remains runtime-only and never enters this image stage.
 ARG NEXT_PUBLIC_OPENAI_ADS_PIXEL_ID=""

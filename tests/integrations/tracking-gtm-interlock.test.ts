@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { resolveTrackingRuntime, TRACKING_MODES } from "../../src/tracking/config.ts";
 
@@ -34,64 +34,108 @@ async function collectSourceFiles(directory: string): Promise<string[]> {
   return files;
 }
 
-test("T3 no application source delivers a GTM or vendor measurement script", async () => {
+test("T8 GTM container is delivered strictly through GoogleTagManager; no other source delivers vendor markers", async () => {
   const files = await collectSourceFiles(SOURCE_ROOT);
   assert.ok(files.length > 0, "expected application sources to scan");
 
   const offenders: string[] = [];
   for (const file of files) {
+    if (file.endsWith("google-tag-manager.tsx")) continue;
     const contents = await readFile(file, "utf8");
     for (const marker of VENDOR_DELIVERY_MARKERS) {
       if (contents.includes(marker)) offenders.push(`${file}: ${marker}`);
     }
   }
 
-  assert.deepEqual(offenders, [], "PR-A prepares the dataLayer only; T8 owns the first GTM load");
+  assert.deepEqual(offenders, [], "T8 delivers GTM strictly through GoogleTagManager; no other source delivers vendor markers");
 });
 
-test("T3 the production Content-Security-Policy opens no Google or TikTok origin", async () => {
-  const config = await readFile(new URL("../../next.config.mjs", import.meta.url), "utf8");
+type NextConfigLike = {
+  headers?: () => Promise<Array<{ source: string; headers: Array<{ key: string; value: string }> }>>;
+};
 
-  for (const origin of [
-    "googletagmanager",
-    "google-analytics",
-    "googleadservices",
-    "googlesyndication",
-    "tiktok",
-  ]) {
-    assert.equal(
-      config.includes(origin),
-      false,
-      `${origin} must stay closed in the CSP until the reviewed GTM integration needs it`,
-    );
-  }
-  assert.equal(
-    /unsafe-eval/.test(config.replace(/isDevelopment \? " 'unsafe-eval'" : ""/, "")),
-    false,
-    "production must not carry a convenience unsafe-eval allowance",
+async function readCsp(cacheBuster = ""): Promise<string> {
+  const configUrl = pathToFileURL(resolve("next.config.mjs")).href + cacheBuster;
+  const { default: nextConfig } = (await import(configUrl)) as { default: NextConfigLike };
+  assert.equal(typeof nextConfig.headers, "function");
+  const rules = await nextConfig.headers!();
+  const globalRule = rules.find(({ source }) => source === "/(.*)");
+  assert.ok(globalRule);
+  const csp = new Map(globalRule.headers.map(({ key, value }) => [key, value])).get(
+    "Content-Security-Policy",
   );
+  assert.ok(csp);
+  return csp;
+}
+
+test("the production Content-Security-Policy opens no Google or TikTok origin when unconfigured", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  const originalLaGtm = process.env.LA_GTM_CONTAINER_ID;
+  delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  delete process.env.LA_GTM_CONTAINER_ID;
+
+  try {
+    const csp = await readCsp(`?unconfigured-gtm-${Date.now()}`);
+    for (const origin of [
+      "googletagmanager",
+      "google-analytics",
+      "googleadservices",
+      "googlesyndication",
+      "tiktok",
+    ]) {
+      assert.equal(
+        csp.includes(origin),
+        false,
+        `${origin} must stay closed in the CSP until GTM container ID is configured`,
+      );
+    }
+    assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    if (originalLaGtm !== undefined) process.env.LA_GTM_CONTAINER_ID = originalLaGtm;
+  }
 });
 
-test("T3 every requested tracking mode resolves to zero GTM load", () => {
+test("a configured GTM container opens Google Tag Manager and Analytics origins in the CSP", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    const csp = await readCsp(`?configured-gtm-${Date.now()}`);
+
+    assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(csp, /img-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(csp, /connect-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(csp, /frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.match(csp, /connect-src[^;]*https:\/\/www\.google-analytics\.com/);
+    assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
+    assert.doesNotMatch(csp, /\*/, "production must not carry wildcards");
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  }
+});
+
+test("T3 every requested tracking mode resolves to zero GTM load in tracking config", () => {
   for (const desiredMode of TRACKING_MODES) {
     const runtime = resolveTrackingRuntime({
       desiredMode,
       containerId: desiredMode === "disabled" ? null : "GTM-ABC123",
     });
-    assert.equal(runtime.loadsGoogleTagManager, false, `${desiredMode} must not load GTM`);
+    assert.equal(runtime.loadsGoogleTagManager, false, `${desiredMode} must not load GTM in tracking config`);
   }
 });
 
-test("T3 the site chrome mounts the tracking bootstrap before content and keeps one direct Meta mount", async () => {
-  // Task 36 moved these mounts out of the root layout and into the chrome shell, which places them
-  // unconditionally. The file changed; what is asserted about it did not.
+test("T8 the site chrome mounts the tracking bootstrap, GTM, and other pixel mounts", async () => {
   const chrome = await readFile(new URL("../../src/routes/site-chrome.tsx", import.meta.url), "utf8");
 
   const bootstrapIndex = chrome.indexOf("<TrackingBootstrap");
+  const gtmIndex = chrome.indexOf("<GoogleTagManager");
   const childrenIndex = chrome.indexOf("{children}");
   const pageViewIndex = chrome.indexOf("<TrackingPageView");
 
   assert.notEqual(bootstrapIndex, -1, "the tracking bootstrap must be mounted");
+  assert.notEqual(gtmIndex, -1, "the Google Tag Manager component must be mounted");
   assert.notEqual(pageViewIndex, -1, "the canonical page-view authority must be mounted");
   assert.ok(
     bootstrapIndex < childrenIndex,
@@ -116,10 +160,6 @@ test("T3 the site chrome mounts the tracking bootstrap before content and keeps 
 });
 
 test("T3 the root layout reaches the tracking mounts only through the site chrome", async () => {
-  // The mounts above are site-wide because the layout renders the chrome and nothing else. A layout
-  // that reached past it -- rendering the brand document or the masthead directly -- would ship a
-  // storefront with no dataLayer and no page-view authority, and every assertion above would still
-  // pass. This is what stops that.
   const layout = await readFile(new URL("../../src/app/layout.tsx", import.meta.url), "utf8");
 
   assert.match(layout, /<SiteChrome\b/, "the layout must render the chrome shell");
