@@ -430,3 +430,75 @@ async function waitFor(condition: () => Promise<boolean>): Promise<void> {
   }
   throw new Error("condition never held");
 }
+
+const HASHED_SRC_B = "https://content.pancake.vn/1/2/3/4/c3499c2729730a7f807efb8676a92dcb6f8a3f8f.png";
+
+test("the pending slot is reserved before the cache read: concurrent misses cannot overrun the cap", async () => {
+  let reads = 0;
+  let openBarrier!: () => void;
+  const barrier = new Promise<void>((resolve) => {
+    openBarrier = resolve;
+  });
+  const cache = {
+    read: async () => {
+      reads += 1;
+      await barrier;
+      return null;
+    },
+    write: async () => {},
+  };
+  const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+  const options = { fetch: upstream.fn, cache, maxPending: 1 };
+
+  const first = handleProductImageRequest(cachedRequest(HASHED_SRC, "w=828&v=2"), options);
+  // The first request is suspended inside the cache read, holding the only slot.
+  const second = await handleProductImageRequest(cachedRequest(HASHED_SRC_B, "w=828&v=2"), options);
+  assert.equal(second.status, 503);
+  assert.equal(second.headers.get("cache-control"), "no-store");
+  assert.equal(reads, 1, "a shed request never reaches the cache");
+
+  openBarrier();
+  await ok(await first);
+  assert.deepEqual(upstream.calls, [HASHED_SRC]);
+
+  // Its slot came back once the body was consumed.
+  await ok(await handleProductImageRequest(cachedRequest(HASHED_SRC_B, "w=828&v=2"), options));
+});
+
+test("hits, cache errors and upstream failures each return their pending slot exactly once", async () => {
+  const upstream = counting(() => new Response(TINY_PNG, { status: 200 }));
+  const image = { bytes: new Uint8Array(await sharp(TINY_PNG).webp().toBuffer()), mimeType: "image/webp" as const };
+  const hitting = { read: async () => image, write: async () => {} };
+  const throwing = {
+    read: async () => {
+      throw new Error("disk gone");
+    },
+    write: async () => {},
+  };
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const hit = await handleProductImageRequest(cachedRequest(HASHED_SRC, "w=828&v=2"), {
+      fetch: upstream.fn,
+      cache: hitting,
+      maxPending: 1,
+    });
+    assert.equal(hit.headers.get("x-product-image-cache"), "hit");
+    await ok(hit);
+
+    const throwingRead = await handleProductImageRequest(cachedRequest(HASHED_SRC, "w=828&v=2"), {
+      fetch: upstream.fn,
+      cache: throwing,
+      maxPending: 1,
+    });
+    assert.equal(throwingRead.headers.get("x-product-image-cache"), "miss");
+    await ok(throwingRead);
+
+    const failed = await handleProductImageRequest(cachedRequest(HASHED_SRC_B, "w=828&v=2"), {
+      fetch: async () => new Response(null, { status: 500 }),
+      cache: null,
+      maxPending: 1,
+    });
+    assert.equal(failed.status, 502);
+  }
+  assert.equal(upstream.calls.length, 3, "only the throwing cache fell through to Pancake");
+});

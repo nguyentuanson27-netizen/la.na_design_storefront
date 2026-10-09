@@ -212,6 +212,17 @@ export async function handleProductImageRequest(
   const maxConcurrent = options.maxConcurrent ?? PRODUCT_IMAGE_MAX_CONCURRENT;
   if (pendingRequests >= (options.maxPending ?? PRODUCT_IMAGE_MAX_PENDING)) return busyResponse();
 
+  // The slot is reserved synchronously, before any await: a cache read is I/O too, and requests
+  // that all passed the check above while suspended in it must not each be admitted afterwards.
+  // From here every path releases it exactly once -- shed, error, or the body being consumed.
+  pendingRequests += 1;
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    pendingRequests -= 1;
+  };
+
   const streamOptions = {
     idleMs: options.idleMs ?? PRODUCT_IMAGE_IDLE_MS,
     maxTransferMs: options.maxTransferMs ?? PRODUCT_IMAGE_MAX_TRANSFER_MS,
@@ -219,23 +230,21 @@ export async function handleProductImageRequest(
   };
 
   // A hit costs neither a Pancake fetch nor an encode, so it never waits on the encoder's queue; it
-  // still holds a pending slot while its body is written, like every other response.
-  const cached = cache === null ? null : await cache.read(key, mimeType);
-  if (cached !== null) {
-    if (pendingRequests >= (options.maxPending ?? PRODUCT_IMAGE_MAX_PENDING)) return busyResponse();
-    pendingRequests += 1;
-    let releasedHit = false;
-    const releaseHit = () => {
-      if (releasedHit) return;
-      releasedHit = true;
-      pendingRequests -= 1;
-    };
-    return imageResponse(cached, streamOptions, releaseHit, cacheControl, "hit");
+  // holds its pending slot while its body is written, like every other response.
+  let cached: Awaited<ReturnType<ProductImageCache["read"]>> = null;
+  if (cache !== null) {
+    try {
+      cached = await cache.read(key, mimeType);
+    } catch {
+      cached = null; // the cache contract is best-effort; a throwing one is a miss
+    }
   }
+  if (cached !== null) return imageResponse(cached, streamOptions, release, cacheControl, "hit");
 
   let entry = inFlight.get(key);
   if (entry !== undefined) {
     if (entry.followers.count >= (options.maxFollowers ?? PRODUCT_IMAGE_MAX_FOLLOWERS)) {
+      release();
       return busyResponse();
     }
     entry.followers.count += 1;
@@ -244,6 +253,7 @@ export async function handleProductImageRequest(
       activeRuns >= maxConcurrent &&
       waiters.length >= (options.maxQueued ?? PRODUCT_IMAGE_MAX_QUEUED)
     ) {
+      release();
       return busyResponse();
     }
     const run = runLimited({ maxConcurrent }, () =>
@@ -261,13 +271,6 @@ export async function handleProductImageRequest(
     inFlight.set(key, entry);
   }
 
-  pendingRequests += 1;
-  let released = false;
-  const release = () => {
-    if (released) return;
-    released = true;
-    pendingRequests -= 1;
-  };
   let result: DeliveryResult;
   try {
     result = await entry.run;
