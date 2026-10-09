@@ -87,3 +87,11 @@ test("conflicting ids and an incomplete record fail closed", () => {
     assert.equal(isReviewedGtmContainer(ID, broken), false);
   }
 });
+
+test("flipping the mode to disabled while the ids stay configured closes the loader without throwing", () => {
+  const ids = { LA_GTM_CONTAINER_ID: ID, NEXT_PUBLIC_GTM_CONTAINER_ID: ID };
+  assert.deepEqual(resolveGtmLoad({ ...ids, LA_TRACKING_MODE: "disabled" }, REVIEWED), { load: false });
+  // The blank value an env file produces is the same closed state.
+  assert.deepEqual(resolveGtmLoad({ ...ids, LA_TRACKING_MODE: "" }, REVIEWED), { load: false });
+});
+

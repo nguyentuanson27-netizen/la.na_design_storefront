@@ -104,24 +104,25 @@ function isTrackingMode(value: string): value is TrackingMode {
 }
 
 export function readTrackingConfig(env: TrackingEnvironment = process.env): TrackingConfig {
+  // Absent, empty or whitespace-only is the fail-closed default. An empty string is what a blank
+  // `LA_TRACKING_MODE=` line in an env file produces, and it means "not set", not "an unknown mode".
+  // A present, non-empty, unrecognised value is a deployment mistake and must not silently degrade
+  // to "disabled" in a deployment that believes it is measuring.
+  // Only a value with nothing in it is "not set"; a padded one such as "live " is still a mistake.
   const rawMode = env.LA_TRACKING_MODE;
-  // Absent is the fail-closed default; a present-but-unrecognised value is a deployment mistake and
-  // must not silently degrade to "disabled" in a deployment that believes it is measuring.
-  const desiredMode = rawMode === undefined ? "disabled" : rawMode;
+  const desiredMode = rawMode === undefined || rawMode.trim() === "" ? "disabled" : rawMode;
   if (!isTrackingMode(desiredMode)) {
     throw new RangeError(`LA_TRACKING_MODE must be one of ${TRACKING_MODES.join(", ")}`);
   }
 
-  const rawContainerId = env.LA_GTM_CONTAINER_ID;
+  // `disabled` is the kill switch, so it has to work on its own: an operator turning tracking off
+  // must not also have to remove the container id, and a server that throws while rendering would
+  // turn the switch into an outage. Any configured id is ignored, and nothing loads.
   if (desiredMode === "disabled") {
-    if (rawContainerId !== undefined && rawContainerId.length > 0) {
-      throw new RangeError(
-        "LA_GTM_CONTAINER_ID must not be configured while LA_TRACKING_MODE is disabled",
-      );
-    }
     return Object.freeze({ desiredMode, containerId: null });
   }
 
+  const rawContainerId = env.LA_GTM_CONTAINER_ID;
   if (rawContainerId === undefined || !GTM_CONTAINER_ID.test(rawContainerId)) {
     throw new RangeError(
       "LA_GTM_CONTAINER_ID must be the GTM-XXXXXXX container id from Tag Manager",

@@ -112,10 +112,20 @@ const hasGtm =
   /^[0-9a-f]{64}$/.test(reviewedGtmVersion.exportSha256 ?? "") &&
   reviewedGtmVersion.approvedDestinations !== null &&
   typeof reviewedGtmVersion.approvedDestinations === "object";
-const gtmScriptSrc = hasGtm ? " https://www.googletagmanager.com" : "";
+// TikTok's origin is opened only when the reviewed record approves a TikTok pixel. The reviewed
+// Custom HTML (TikTok Base) inserts `https://analytics.tiktok.com/i18n/pixel/events.js`, which needs
+// `script-src`; `connect-src` alone does not let the browser load it. Further origins that script
+// talks to are NOT added on a guess: they have to be observed in a real browser run (see the release
+// gates in the pull request) and added here by name, never by wildcard.
+const hasTikTok =
+  hasGtm &&
+  Array.isArray(reviewedGtmVersion.approvedDestinations.tiktokPixelIds) &&
+  reviewedGtmVersion.approvedDestinations.tiktokPixelIds.length > 0;
+const tiktokOrigin = hasTikTok ? " https://analytics.tiktok.com" : "";
+const gtmScriptSrc = hasGtm ? ` https://www.googletagmanager.com${tiktokOrigin}` : "";
 const gtmImgSrc = hasGtm ? " https://www.googletagmanager.com https://www.google-analytics.com" : "";
 const gtmConnectSrc = hasGtm
-  ? " https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com https://analytics.tiktok.com"
+  ? ` https://www.googletagmanager.com https://www.google-analytics.com https://analytics.google.com https://stats.g.doubleclick.net https://region1.google-analytics.com${tiktokOrigin}`
   : "";
 const gtmFrameSrc = hasGtm ? " https://www.googletagmanager.com" : "";
 

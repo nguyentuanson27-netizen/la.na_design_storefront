@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 
@@ -14,8 +15,12 @@ import { expect, test, type Page } from "@playwright/test";
  *
  *   - mode `preview`: the loader renders, `gtm.js` is requested once for exactly that container, and
  *     the dataLayer carries the tracking mode before the container starts.
- *   - mode absent (`disabled`): the container id is configured, the CSP admits Google, and still
- *     nothing loads and no dataLayer is published -- the case that used to bypass the interlock.
+ *   - the reviewed TikTok Base snippet, run under the real CSP, can load TikTok's SDK. The container
+ *     is stood in for by a stub that runs the exact Custom HTML from the committed export, so a
+ *     missing `script-src` origin shows up as a CSP violation instead of being masked.
+ *   - mode blank (`LA_TRACKING_MODE=`, as an env file written from the template produces) with the
+ *     container ids still configured: the page renders (the kill switch must not throw), nothing
+ *     loads and no dataLayer is published -- the case that used to bypass the interlock.
  *
  * The container request is aborted in the browser, so the run stays hermetic. A synthetic or
  * otherwise unreviewed container is covered by commerce-events.spec.ts (U18).
@@ -24,6 +29,8 @@ import { expect, test, type Page } from "@playwright/test";
 declare global {
   interface Window {
     dataLayer?: Array<Record<string, unknown>>;
+    __cspViolations?: string[];
+    __ttqEventsJs?: number;
   }
 }
 
@@ -102,6 +109,20 @@ async function recordVendorRequests(page: Page): Promise<string[]> {
   return requests;
 }
 
+/** The script body of the reviewed TikTok Base tag, exactly as saved in the committed export. */
+function reviewedTikTokBaseSnippet(): string {
+  const exported = JSON.parse(
+    readFileSync(resolve(APP_ROOT, "docs/gtm/GTM-PRZT92JR-v5.json"), "utf8"),
+  ) as {
+    containerVersion: { tag: Array<{ name: string; parameter: Array<{ key: string; value?: string }> }> };
+  };
+  const tag = exported.containerVersion.tag.find((candidate) => candidate.name === "tiktok ads - pixel");
+  const html = tag?.parameter.find((parameter) => parameter.key === "html")?.value ?? "";
+  const snippet = /<script>([\s\S]*?)<\/script>/.exec(html)?.[1];
+  if (!snippet) throw new Error("the reviewed TikTok Base tag has no inline script");
+  return snippet;
+}
+
 test.describe("reviewed container, tracking mode preview", () => {
   let server: RunningServer | undefined;
 
@@ -146,15 +167,48 @@ test.describe("reviewed container, tracking mode preview", () => {
     expect(startIndex).toBeGreaterThanOrEqual(0);
     expect(modeIndex).toBeLessThan(startIndex);
   });
+
+  test("the reviewed TikTok Base snippet can load TikTok's SDK under the real CSP", async ({ page }) => {
+    await page.addInitScript(() => {
+      window.__cspViolations = [];
+      document.addEventListener("securitypolicyviolation", (event) => {
+        window.__cspViolations?.push(`${event.violatedDirective} :: ${event.blockedURI}`);
+      });
+    });
+    // A stand-in container that does what the reviewed one does: run the saved Custom HTML. The
+    // request for TikTok's SDK is answered with a stub, but only after the browser has let it
+    // through the policy, so a CSP block means the stub never runs.
+    await page.route(/googletagmanager\.com\/gtm\.js/, (route) =>
+      route.fulfill({
+        contentType: "application/javascript",
+        body: `(function(){var s=document.createElement('script');s.text=${JSON.stringify(reviewedTikTokBaseSnippet())};document.head.appendChild(s);})();`,
+      }),
+    );
+    await page.route(/analytics\.tiktok\.com\/i18n\/pixel\/events\.js/, (route) =>
+      route.fulfill({
+        contentType: "application/javascript",
+        body: "window.__ttqEventsJs = (window.__ttqEventsJs || 0) + 1;",
+      }),
+    );
+
+    await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+
+    await expect.poll(() => page.evaluate(() => window.__ttqEventsJs ?? 0)).toBe(1);
+    const violations = await page.evaluate(() => window.__cspViolations ?? []);
+    expect(violations.filter((entry) => /tiktok|googletagmanager/.test(entry))).toEqual([]);
+  });
 });
 
-test.describe("reviewed container, tracking mode absent", () => {
+test.describe("reviewed container, tracking mode blank", () => {
   let server: RunningServer | undefined;
 
   test.beforeAll(async () => {
     server = await startServer(3341, ".next-test/gtm-reviewed-disabled", (environment) => {
-      // Only the build-time public id is set: the CSP opens, but the tracking mode is `disabled`.
+      // What an env file written from deploy/vps/env.example with the mode left blank produces: the
+      // ids are still configured, the CSP opens, and the mode is an empty string.
       environment.NEXT_PUBLIC_GTM_CONTAINER_ID = REVIEWED_CONTAINER;
+      environment.LA_GTM_CONTAINER_ID = REVIEWED_CONTAINER;
+      environment.LA_TRACKING_MODE = "";
     });
   });
 
@@ -162,9 +216,14 @@ test.describe("reviewed container, tracking mode absent", () => {
     await stopServer(server);
   });
 
-  test("a configured, reviewed container still loads nothing and publishes no dataLayer", async ({ page }) => {
+  test("a configured, reviewed container with a blank mode renders, loads nothing and publishes no dataLayer", async ({
+    page,
+  }) => {
     const vendorRequests = await recordVendorRequests(page);
     const response = await page.goto(`${server!.baseUrl}/about`, { waitUntil: "networkidle" });
+
+    // The kill switch must not throw while rendering: the page is served.
+    expect(response?.status()).toBe(200);
 
     // The policy is a build-time fact and does not know the mode...
     expect(response?.headers()["content-security-policy"] ?? "").toContain("googletagmanager.com");

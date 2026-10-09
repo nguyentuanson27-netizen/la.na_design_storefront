@@ -225,7 +225,35 @@ test("the repository's own reviewed record opens the CSP for GTM-PRZT92JR and no
     const csp = await readCsp(`?real-reviewed-${Date.now()}`);
     assert.match(csp, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
     assert.match(csp, /frame-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    // The reviewed TikTok Base loads events.js, which `connect-src` alone would not allow.
+    assert.match(csp, /script-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    assert.match(csp, /connect-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    assert.doesNotMatch(csp, /\*/, "no wildcard origin");
     assert.doesNotMatch(csp, /'unsafe-eval'/, "production must not carry unsafe-eval");
+  } finally {
+    if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
+    else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  }
+});
+
+test("TikTok's origin follows the reviewed record's TikTok approval, not just the container", async () => {
+  const originalGtm = process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
+  process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = "GTM-PRZT92JR";
+
+  try {
+    // A reviewed container with no approved TikTok pixel opens Google but never TikTok.
+    const withoutTikTok = await readCsp(`?reviewed-no-tiktok-${Date.now()}`, REVIEWED_RECORD);
+    assert.match(withoutTikTok, /script-src[^;]*https:\/\/www\.googletagmanager\.com/);
+    assert.equal(withoutTikTok.includes("tiktok"), false);
+
+    const withTikTok = await readCsp(`?reviewed-tiktok-${Date.now()}`, {
+      ...REVIEWED_RECORD,
+      approvedDestinations: { ga4MeasurementIds: [], googleAdsConversions: [], tiktokPixelIds: ["PIXEL12345"] },
+    });
+    assert.match(withTikTok, /script-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    assert.match(withTikTok, /connect-src[^;]*https:\/\/analytics\.tiktok\.com/);
+    // Only what is justified is opened: no TikTok image origin, and nothing for an unreviewed id.
+    assert.doesNotMatch(withTikTok, /img-src[^;]*tiktok/);
   } finally {
     if (originalGtm !== undefined) process.env.NEXT_PUBLIC_GTM_CONTAINER_ID = originalGtm;
     else delete process.env.NEXT_PUBLIC_GTM_CONTAINER_ID;
