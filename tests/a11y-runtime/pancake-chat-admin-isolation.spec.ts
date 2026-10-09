@@ -170,6 +170,14 @@ function pancakeFootprint(page: Page) {
 
 const NO_PANCAKE = { root: false, script: false, runtime: false };
 
+/** Mirrors `PANCAKE_ENGAGED_STORAGE_KEY`: set once a shopper has opened the chat in this browser. */
+const ENGAGED_STORAGE_KEY = "lana:pancake-chat-engaged";
+
+/** The lightweight bubble a first-time visitor sees until they tap it. */
+function chatFacade(page: Page) {
+  return page.getByRole("button", { name: /^Chat với / });
+}
+
 test.beforeAll(async () => {
   await prisma.user.deleteMany({ where: { email: adminEmail } });
   const { headers } = await auth.api.signUpEmail({
@@ -237,9 +245,12 @@ test("on the production host Pancake loads, and a client-side return to admin la
   await expect(page.locator(".messenger-fab")).toHaveCount(0);
   expect(pancakeRequests).toEqual([]);
 
-  // Client-side navigation to the storefront: Pancake loads there, in place of the Messenger button.
+  // Client-side navigation to the storefront: Pancake's bubble stands there, in place of the
+  // Messenger button, and the widget itself loads on the tap that opens it.
   await page.locator("a.brand-mark").click();
   await page.waitForURL(`${PRODUCTION_ORIGIN}/`);
+  await expect(chatFacade(page)).toBeVisible();
+  await chatFacade(page).click();
   await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
   expect(await pancakeFootprint(page)).toEqual({ root: true, script: true, runtime: true });
   await expect(page.locator(".messenger-fab")).toHaveCount(0);
@@ -264,12 +275,66 @@ test("on the production host Pancake loads, and a client-side return to admin la
   expect(pancakeRequests).toHaveLength(1);
 });
 
+test("a first visit shows a facade bubble; the widget loads only on its tap, which opens the chat", async ({
+  page,
+  context,
+}) => {
+  const pancakeRequests = await stubPancake(context);
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  const facade = chatFacade(page);
+  await expect(facade).toBeVisible();
+  const facadeBox = (await facade.boundingBox())!;
+  expect([Math.round(facadeBox.width), Math.round(facadeBox.height)]).toEqual([48, 48]);
+  await expect(page.locator(".messenger-fab")).toHaveCount(0);
+
+  // Load and idle pass without Pancake: its ~750 KB never competes with the page.
+  await delay(6_000);
+  expect(await pancakeFootprint(page)).toEqual(NO_PANCAKE);
+  expect(pancakeRequests).toEqual([]);
+
+  // One tap loads the widget and opens it: the facade hands over to Pancake's own chat box.
+  await facade.click();
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(1);
+  await expect(facade).toHaveCount(0);
+  expect(pancakeRequests).toHaveLength(1);
+  expect(await page.evaluate((key) => window.localStorage.getItem(key), ENGAGED_STORAGE_KEY)).toBe("1");
+});
+
+test("a returning chatter gets the real widget after load, without a tap", async ({ page, context }) => {
+  const pancakeRequests = await stubPancake(context);
+  await serveAsProduction(context);
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);
+  await expect(chatFacade(page)).toHaveCount(0);
+  await expect(page.locator(".pkcp-popup-open")).toHaveCount(0);
+  expect(pancakeRequests).toHaveLength(1);
+});
+
+test("a tapped facade hands over to Messenger when Pancake cannot be reached", async ({
+  page,
+  context,
+}) => {
+  await context.route("https://chat-plugin.pancake.vn/**", (route) => route.abort());
+  await serveAsProduction(context);
+
+  await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
+  await chatFacade(page).click();
+  await expect(page.getByRole("link", { name: /qua Messenger$/ })).toBeVisible();
+  await expect(chatFacade(page)).toHaveCount(0);
+});
+
 test("the Pancake bubble is 48px, and the open chat's close button sits above the sticky masthead", async ({
   page,
   context,
 }) => {
   await stubPancake(context);
   await serveAsProduction(context);
+  // A returning chatter, so the widget draws its own closed bubble rather than opening on a tap.
+  await context.addInitScript((key) => window.localStorage.setItem(key, "1"), ENGAGED_STORAGE_KEY);
 
   await page.goto(`${PRODUCTION_ORIGIN}/`, { waitUntil: "networkidle" });
   await page.waitForFunction(() => document.getElementById("pancake-chat-plugin-root") !== null);

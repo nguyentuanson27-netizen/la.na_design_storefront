@@ -1628,6 +1628,67 @@ body:has(.admin-shell) .site-masthead {
   }
 }
 
+/* The bubble that stands in for Pancake's widget until it is tapped (pancake-chat.tsx). It sits
+   where Pancake's own 48px bubble will appear, so the swap is not a jump. */
+.pancake-chat-facade {
+  position: fixed;
+  z-index: 45;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: max(20px, env(safe-area-inset-bottom));
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--chocolate);
+  color: var(--cream);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 18%);
+  cursor: pointer;
+  transition: transform 160ms ease;
+}
+
+.pancake-chat-facade:hover {
+  transform: scale(1.06);
+}
+
+.pancake-chat-facade:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+}
+
+.pancake-chat-facade[data-loading] {
+  cursor: progress;
+  animation: pancake-chat-facade-pulse 900ms ease-in-out infinite alternate;
+}
+
+@keyframes pancake-chat-facade-pulse {
+  to {
+    opacity: 0.55;
+  }
+}
+
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar]) .pancake-chat-facade {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+body:has(.admin-shell) .pancake-chat-facade {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pancake-chat-facade {
+    transition: none;
+  }
+
+  .pancake-chat-facade[data-loading] {
+    animation: none;
+  }
+}
+
 /* Pancake's chat widget (see pancake-chat.tsx) pins its root with an inline z-index of 2^31-1,
    which would float it over the menu, cart drawer and dialogs. `!important` is the only way past an
    inline style: it takes the Messenger button's layer instead, under every overlay. */

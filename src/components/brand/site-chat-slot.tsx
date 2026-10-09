@@ -39,7 +39,9 @@ export function SiteChatSlot({
   }, [pathname]);
 
   const kind = siteChatFor({ hostname, pathname, pancakePageId, pancakeHosts });
-  if (kind === "pancake" && pancakePageId) return <PancakeChat pageId={pancakePageId} />;
+  if (kind === "pancake" && pancakePageId) {
+    return <PancakeChat pageId={pancakePageId} messengerHref={messengerHref} brandName={brandName} />;
+  }
   if (kind === "messenger" && messengerHref) return <MessengerButton href={messengerHref} brandName={brandName} />;
   return null;
 }
