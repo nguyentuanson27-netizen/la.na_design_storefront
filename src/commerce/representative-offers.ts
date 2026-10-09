@@ -8,8 +8,14 @@
  * Both read this function so they cannot drift apart.
  *
  * Preference follows what a shopper can actually order: in-stock options, else dated backorder
- * options, else (nothing orderable) every priced option, which keeps a sold-out product's lowest
- * listed price rather than hiding it.
+ * options, else a product that is *provably* sold out (every priced option has a published
+ * `out_of_stock`), which keeps its lowest listed price rather than hiding it.
+ *
+ * Anything else is `unresolved`. An unpublished availability is deliberate (ADR 0011): a purchasable
+ * preorder with a missing or expired date, or a stock figure nobody can read, is withheld because the
+ * catalog cannot state it, not because it is sold out. Relabelling it `out_of_stock` would contradict
+ * a checkout that is still accepting the order, so a feed must omit an unresolved product. A page
+ * still needs a price to show, so `offered` falls back to every priced option there.
  */
 import type { ExternalAvailability } from "./availability-projection.ts";
 
@@ -20,13 +26,17 @@ export type RepresentativeOfferCandidate = Readonly<{
 }>;
 
 export type RepresentativeOffers<TOption extends RepresentativeOfferCandidate> = Readonly<{
-  availability: "in_stock" | "backorder" | "out_of_stock";
-  /** Every option in the winning class. A page quotes the range over these. */
+  availability: "in_stock" | "backorder" | "out_of_stock" | "unresolved";
+  /**
+   * Every option in the winning class. A page quotes the range over these; for `unresolved` it is
+   * every priced option, which is a display fallback and not a statement of availability.
+   */
   offered: readonly TOption[];
   /**
    * One option that speaks for a single-offer surface such as a feed row: the cheapest of `offered`,
    * ties broken by the earlier availability date, so price and date describe the same option.
-   * Null only when no option has a usable price.
+   * Null when no option has a usable price. For `unresolved` it still names a price, so a feed
+   * must check `availability` and omit the row rather than publish it.
    */
   representative: TOption | null;
   /** The representative's backorder date; null for every other class. */
@@ -56,12 +66,18 @@ export function selectRepresentativeOffers<TOption extends RepresentativeOfferCa
   );
   const backordered = orderable.filter((option) => backorderDate(option) !== null);
 
+  const provablySoldOut =
+    priced.length > 0 &&
+    priced.every((option) => option.availability.published && option.availability.merchant === "out_of_stock");
+
   const [availability, offered] =
     inStock.length > 0
       ? (["in_stock", inStock] as const)
       : backordered.length > 0
         ? (["backorder", backordered] as const)
-        : (["out_of_stock", priced] as const);
+        : provablySoldOut
+          ? (["out_of_stock", priced] as const)
+          : (["unresolved", priced] as const);
 
   const representative =
     [...offered].sort((a, b) => {

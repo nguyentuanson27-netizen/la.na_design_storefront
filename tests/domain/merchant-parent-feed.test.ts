@@ -88,7 +88,7 @@ test("marks availability as out_of_stock when all options are sold out", () => {
     projection: {
       mode: "standalone",
       options: [
-        projectionOption({ price: 899_000, purchasable: false }),
+        projectionOption({ price: 899_000, purchasable: false, unavailableReason: "OUT_OF_STOCK" }),
       ],
     },
   });
@@ -126,16 +126,42 @@ test("marks availability as backorder, with its availability_date, when options 
   assert.ok(facebook.body.includes("<g:availability_date>"));
 });
 
-test("an undated preorder is withheld as out_of_stock rather than published as a dateless backorder", () => {
+test("an undated preorder is withheld, never published as out_of_stock (ADR 0011)", () => {
   const prod = candidate({
     projection: {
       mode: "standalone",
       options: [projectionOption({ price: 899_000, purchasable: true, isPreorderSale: true })],
     },
   });
-  const items = buildMerchantParentItems([prod], ORIGIN);
-  assert.equal(items[0]!.availability, "out_of_stock");
-  assert.equal(items[0]!.availabilityDate, null);
+  assert.deepEqual(buildMerchantParentItems([prod], ORIGIN), []);
+});
+
+test("an expired preorder date and unreadable stock are withheld too", () => {
+  const expired = projectionOption({ price: 899_000, purchasable: true, isPreorderSale: true });
+  const withExpiredDate = {
+    ...expired,
+    availability: fixtureAvailability(expired, { availabilityDate: "2026-09-01", today: "2026-10-09" }),
+  };
+  const unreadable = projectionOption({ id: "u", price: 899_000, purchasable: false, unavailableReason: null });
+  const items = buildMerchantParentItems(
+    [
+      candidate({ pancakeProductId: "p-expired", slug: "ao-expired", projection: { mode: "standalone", options: [withExpiredDate] } }),
+      candidate({ pancakeProductId: "p-unreadable", slug: "ao-unreadable", projection: { mode: "standalone", options: [unreadable] } }),
+    ],
+    ORIGIN,
+  );
+  assert.deepEqual(items, []);
+});
+
+test("a mix of sold-out and unresolved sizes is withheld; only a provably sold-out product is out_of_stock", () => {
+  const soldOut = projectionOption({ id: "so", price: 899_000, purchasable: false, unavailableReason: "OUT_OF_STOCK" });
+  const unresolved = projectionOption({ id: "un", size: "M", price: 899_000, purchasable: false, unavailableReason: null });
+  const mixed = candidate({ projection: { mode: "standalone", options: [soldOut, unresolved] } });
+  assert.deepEqual(buildMerchantParentItems([mixed], ORIGIN), []);
+
+  const genuine = candidate({ projection: { mode: "standalone", options: [soldOut] } });
+  const [item] = buildMerchantParentItems([genuine], ORIGIN);
+  assert.equal(item!.availability, "out_of_stock");
 });
 
 test("supports composite/combo products without getting blocked", () => {
@@ -205,8 +231,8 @@ test("a fully sold-out product keeps its lowest listed price as out_of_stock", (
     projection: {
       mode: "standalone",
       options: [
-        projectionOption({ price: 900_000, purchasable: false }),
-        projectionOption({ price: 850_000, purchasable: false }),
+        projectionOption({ price: 900_000, purchasable: false, unavailableReason: "OUT_OF_STOCK" }),
+        projectionOption({ price: 850_000, purchasable: false, unavailableReason: "OUT_OF_STOCK" }),
       ],
     },
   });

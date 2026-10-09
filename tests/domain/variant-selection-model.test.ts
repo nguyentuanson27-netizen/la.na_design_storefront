@@ -425,6 +425,24 @@ test("priceDisplay covers the selected-discount branch", () => {
 test("priceDisplay covers the unselected-but-on-sale branch", () => {
   const options = [
     option({ id: "a", size: "S", price: 75_000, basePriceVnd: 100_000, isDiscounted: true }),
+    option({ id: "b", size: "M", price: 90_000 }),
+  ];
+
+  const { priceDisplay } = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: null },
+  });
+
+  // The sale option is the cheapest orderable one, so it speaks for the product.
+  assert.equal(priceDisplay.displayText, vnd("75.000"));
+  assert.equal(priceDisplay.compareAtText, vnd("100.000"));
+  assert.equal(priceDisplay.discountPercent, 25);
+});
+
+test("a sale on a dearer size does not speak for the product when a cheaper size is orderable", () => {
+  const options = [
+    option({ id: "a", size: "S", price: 75_000, basePriceVnd: 100_000, isDiscounted: true }),
     option({ id: "b", size: "M", price: 60_000 }),
   ];
 
@@ -434,10 +452,34 @@ test("priceDisplay covers the unselected-but-on-sale branch", () => {
     selection: { kindKey: null, color: null, size: null },
   });
 
-  // A cheaper current variant exists, so the baseline prefixes "Sale từ".
-  assert.equal(priceDisplay.displayText, `Sale từ ${vnd("75.000")}`);
-  assert.equal(priceDisplay.compareAtText, vnd("100.000"));
-  assert.equal(priceDisplay.discountPercent, 25);
+  // The quoted (feed) price is 60,000 for the ordinary size; no struck-through 75,000 sale.
+  assert.equal(priceDisplay.displayText, `Từ ${vnd("60.000")}`);
+  assert.equal(priceDisplay.compareAtText, null);
+  assert.equal(priceDisplay.discountPercent, null);
+});
+
+test("a sold-out size's sale never shows when another size is orderable", () => {
+  const options = [
+    option({ id: "s", size: "S", price: 899_000 }),
+    option({
+      id: "m",
+      size: "M",
+      price: 849_000,
+      basePriceVnd: 999_000,
+      isDiscounted: true,
+      purchasable: false,
+      unavailableReason: "OUT_OF_STOCK",
+    }),
+  ];
+
+  const { priceDisplay } = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: null },
+  });
+
+  assert.equal(priceDisplay.displayText, vnd("899.000"));
+  assert.equal(priceDisplay.compareAtText, null);
 });
 
 test("priceDisplay covers the plain branch with nothing struck through", () => {

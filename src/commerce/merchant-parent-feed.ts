@@ -117,7 +117,8 @@ export function buildMerchantParentItems(
     const candidateOptions = relevantOptions.length > 0 ? relevantOptions : options;
 
     const offers = selectRepresentativeOffers(candidateOptions);
-    if (offers.representative === null) continue;
+    // An unresolved availability is withheld, never relabelled out_of_stock (ADR 0011).
+    if (offers.representative === null || offers.availability === "unresolved") continue;
     const availability: ParentFeedAvailability = offers.availability;
     const availabilityDate = offers.availabilityDate;
     const priceVnd = offers.representative.price as number;

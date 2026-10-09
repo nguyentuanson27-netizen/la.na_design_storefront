@@ -78,6 +78,7 @@ test("sold-out cheaper size: feed price equals the unselected page and the selec
 
   // Unselected page: the sold-out 849,000 no longer sets a "Từ" floor.
   assert.equal(view(options, null).priceLabel, vnd("899.000"));
+  assert.equal(view(options, null).priceDisplay.displayText, vnd("899.000"));
   // Selecting the orderable size shows the same amount.
   assert.equal(view(options, "S").priceLabel, vnd("899.000"));
 });
@@ -113,4 +114,48 @@ test("dated preorder sizes: feed and page quote the same cheapest preorder floor
   assert.equal(item!.availability, "backorder");
   assert.equal(item!.priceVnd, 750_000);
   assert.equal(view(options, null).priceLabel, `Từ ${vnd("750.000")}`);
+});
+
+test("a sold-out size on sale never reaches the rendered price (priceDisplay), only the orderable price", () => {
+  const options = [
+    option({ id: "s", size: "S", price: 899_000 }),
+    option({
+      id: "m",
+      size: "M",
+      price: 849_000,
+      basePriceVnd: 999_000,
+      isDiscounted: true,
+      purchasable: false,
+      unavailableReason: "OUT_OF_STOCK",
+    }),
+  ];
+  const [item] = buildMerchantParentItems([product(options)], ORIGIN);
+  const { priceDisplay } = view(options, null);
+  assert.equal(item!.priceVnd, 899_000);
+  assert.equal(priceDisplay.displayText, vnd("899.000"));
+  assert.equal(priceDisplay.compareAtText, null);
+});
+
+test("a discounted size dearer than an ordinary orderable size shows no sale on the page, and the feed quotes the ordinary price", () => {
+  const options = [
+    option({ id: "s", size: "S", price: 75_000, basePriceVnd: 100_000, isDiscounted: true }),
+    option({ id: "m", size: "M", price: 60_000 }),
+  ];
+  const [item] = buildMerchantParentItems([product(options)], ORIGIN);
+  const { priceDisplay } = view(options, null);
+  assert.equal(item!.priceVnd, 60_000);
+  assert.equal(priceDisplay.displayText, `Từ ${vnd("60.000")}`);
+  assert.equal(priceDisplay.compareAtText, null);
+});
+
+test("a cheapest discounted orderable size is quoted with its own strike-through on both surfaces", () => {
+  const options = [
+    option({ id: "s", size: "S", price: 75_000, basePriceVnd: 100_000, isDiscounted: true }),
+    option({ id: "m", size: "M", price: 90_000 }),
+  ];
+  const [item] = buildMerchantParentItems([product(options)], ORIGIN);
+  const { priceDisplay } = view(options, null);
+  assert.equal(item!.priceVnd, 75_000);
+  assert.equal(priceDisplay.displayText, vnd("75.000"));
+  assert.equal(priceDisplay.compareAtText, vnd("100.000"));
 });
