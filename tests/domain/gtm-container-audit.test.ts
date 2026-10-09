@@ -1877,3 +1877,87 @@ describe("GTM container export static audit", () => {
     ].sort());
   });
 });
+
+describe("calibration against the first real saved export", () => {
+  it("reads the upper-case usage contexts a real export carries, and still refuses an unknown one", () => {
+    const accepted = auditGtmContainerExport({
+      source: containerExport({ container: { publicId: "GTM-FIXTURE", usageContext: ["WEB"] } }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(accepted), []);
+
+    const androidSdk = auditGtmContainerExport({
+      source: containerExport({ container: { publicId: "GTM-FIXTURE", usageContext: ["WEB", "ANDROID_SDK_5"] } }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(androidSdk), []);
+
+    const unknown = auditGtmContainerExport({
+      source: containerExport({ container: { publicId: "GTM-FIXTURE", usageContext: ["WEB", "FRIDGE"] } }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(unknown), [GTM_AUDIT_CODES.MALFORMED_EXPORT]);
+  });
+
+  const googleTag = (tagId: string, overrides: Record<string, unknown> = {}) => ({
+    tagId: "9",
+    name: "Google tag",
+    type: "googtag",
+    firingTriggerId: [LIVE_TRIGGER_ID],
+    parameter: [
+      { type: "TEMPLATE", key: "tagId", value: tagId },
+      { type: "BOOLEAN", key: "sendPageView", value: "false" },
+    ],
+    ...overrides,
+  });
+
+  it("accepts a Google tag naming an approved Google Ads account, written with or without the AW- prefix", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({ tag: [googleTag("AW-FIXTURE001")] }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(result), []);
+
+    const bareApproval = auditGtmContainerExport({
+      source: containerExport({ tag: [googleTag("AW-17016425181")] }),
+      approved: {
+        ...APPROVED,
+        googleAdsConversions: [{ conversionId: "17016425181", conversionLabel: "FixtureLabel01" }],
+      },
+    });
+    assert.deepEqual(codes(bareApproval), []);
+  });
+
+  it("refuses a Google tag naming a Google Ads account nobody approved", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({ tag: [googleTag("AW-OTHERACCOUNT")] }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(result), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION]);
+  });
+
+  it("still treats a G- id on a Google tag as a GA4 property that must be approved", () => {
+    const approved = auditGtmContainerExport({
+      source: containerExport({ tag: [googleTag("G-FIXTURE001")] }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(approved), []);
+
+    const unapproved = auditGtmContainerExport({
+      source: containerExport({ tag: [googleTag("G-UNREVIEWED")] }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(unapproved), [GTM_AUDIT_CODES.UNAPPROVED_DESTINATION]);
+  });
+
+  it("does not let the AW- allowance excuse a Google tag that still sends automatic page views", () => {
+    const result = auditGtmContainerExport({
+      source: containerExport({
+        tag: [googleTag("AW-FIXTURE001", { parameter: [{ type: "TEMPLATE", key: "tagId", value: "AW-FIXTURE001" }] })],
+      }),
+      approved: APPROVED,
+    });
+    assert.deepEqual(codes(result), [GTM_AUDIT_CODES.GA4_AUTOMATIC_PAGE_VIEW]);
+  });
+});
+

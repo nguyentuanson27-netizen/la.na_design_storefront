@@ -111,6 +111,15 @@ export type GtmAuditResult = Readonly<{
 const WEB_USAGE_CONTEXT = "web";
 
 /**
+ * Real exports spell usage contexts as upper-case enum names (`WEB`, `ANDROID_SDK_5`), while the REST
+ * API and the first fixtures use `web` / `androidSdk5`. Both are the same fact, so they are compared
+ * in one normalised form: lower-cased with underscores removed.
+ */
+function normaliseUsageContext(value: string): string {
+  return value.toLowerCase().replace(/_/g, "");
+}
+
+/**
  * The usage contexts the published schema defines.
  *
  * The nested container is an approval boundary, so what it declares has to be readable in full
@@ -121,15 +130,9 @@ const WEB_USAGE_CONTEXT = "web";
  * usage contexts name the platforms a container serves, not exclusions. That is a policy decision
  * rather than a fact read from an artifact, and it is one to revisit against the first real export.
  */
-const KNOWN_USAGE_CONTEXTS: ReadonlySet<string> = new Set([
-  "web",
-  "android",
-  "ios",
-  "androidSdk5",
-  "iosSdk5",
-  "amp",
-  "server",
-]);
+const KNOWN_USAGE_CONTEXTS: ReadonlySet<string> = new Set(
+  ["web", "android", "ios", "androidSdk5", "iosSdk5", "amp", "server"].map(normaliseUsageContext),
+);
 
 /** The container export format this parser was written against. */
 const SUPPORTED_EXPORT_FORMAT_VERSION = 2;
@@ -289,6 +292,12 @@ const ALL_DESTINATION_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 /** Which vendor's destination fields each reviewed tag type is allowed to carry. */
+const ADS_ACCOUNT_PREFIX = "AW-";
+
+function stripAdsAccountPrefix(id: string): string {
+  return id.startsWith(ADS_ACCOUNT_PREFIX) ? id.slice(ADS_ACCOUNT_PREFIX.length) : id;
+}
+
 const GA4_TAG_TYPES: ReadonlySet<string> = new Set(["gaawc", "googtag", "gaawe"]);
 const ADS_TAG_TYPES: ReadonlySet<string> = new Set(["awct"]);
 
@@ -857,7 +866,7 @@ function validateContainerVersionShape(
         const contexts = container.usageContext;
         if (!Array.isArray(contexts)) {
           malformed("containerVersion.container.usageContext is not an array");
-        } else if (!contexts.every((entry) => KNOWN_USAGE_CONTEXTS.has(readString(entry) ?? ""))) {
+        } else if (!contexts.every((entry) => KNOWN_USAGE_CONTEXTS.has(normaliseUsageContext(readString(entry) ?? "")))) {
           malformed("containerVersion.container.usageContext holds an entry this audit cannot read");
         }
       }
@@ -891,6 +900,12 @@ export function auditGtmContainerExport({
     approved.googleAdsConversions.map((pair) => `${pair.conversionId}\u0000${pair.conversionLabel}`),
   );
   const approvedAdsIds = new Set(approved.googleAdsConversions.map((pair) => pair.conversionId));
+  // A Google tag names its destination in `tagId`, which is a GA4 property (`G-…`) or a Google Ads
+  // account (`AW-…`). The Ads conversion tag carries the same account without the prefix, so the
+  // account is compared in its bare form.
+  const approvedAdsAccounts = new Set(
+    approved.googleAdsConversions.map((pair) => stripAdsAccountPrefix(pair.conversionId)),
+  );
 
   if (approvedGa4.size + approvedAdsPairs.size + approvedTiktok.size === 0) {
     // Owner gate O4. Passing here would certify a container against no reviewed destination at all.
@@ -1019,7 +1034,7 @@ export function auditGtmContainerExport({
   const usageContext = isRecord(version.container) ? version.container.usageContext : undefined;
   const declaresWebContext =
     Array.isArray(usageContext)
-    && usageContext.some((entry) => readString(entry)?.toLowerCase() === WEB_USAGE_CONTEXT);
+    && usageContext.some((entry) => normaliseUsageContext(readString(entry) ?? "") === WEB_USAGE_CONTEXT);
   if (!declaresWebContext) {
     refuse(
       GTM_AUDIT_CODES.CONTAINER_NOT_APPROVED,
@@ -1174,8 +1189,19 @@ export function auditGtmContainerExport({
 
     if (GA4_TAG_TYPES.has(type)) {
       let namesGa4Destination = false;
+      let namesAdsAccount = false;
       for (const key of GA4_DESTINATION_KEYS) {
         for (const id of readKey(key)) {
+          if (type === "googtag" && key === "tagId" && id.startsWith(ADS_ACCOUNT_PREFIX)) {
+            namesAdsAccount = true;
+            if (!approvedAdsAccounts.has(stripAdsAccountPrefix(id))) {
+              refuse(
+                GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
+                `${label} names a Google Ads account the owner has not reviewed`,
+              );
+            }
+            continue;
+          }
           namesGa4Destination = true;
           if (!approvedGa4.has(id)) {
             refuse(
@@ -1190,7 +1216,7 @@ export function auditGtmContainerExport({
       // has to say which one, in a field this audit reads. Checking only the ids it happens to find
       // would certify a tag that names its property somewhere this parser does not look — the same
       // proof a Google Ads conversion already owes about its own action.
-      if (isGoogleConfigurationTag(candidate) && !namesGa4Destination) {
+      if (isGoogleConfigurationTag(candidate) && !namesGa4Destination && !namesAdsAccount) {
         refuse(
           GTM_AUDIT_CODES.UNAPPROVED_DESTINATION,
           `${label} configures a Google destination without naming one this audit can check`,
