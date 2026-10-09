@@ -282,7 +282,16 @@ test("P18 captures representative production performance evidence for home, PLP,
            */
           const visibleProductImages = await page
             .locator(`img[alt^="${productName}"]:visible`)
-            .evaluateAll((elements) => elements.map((element) => element.getAttribute("alt")));
+            .evaluateAll((elements) =>
+              elements
+                // The phone gallery is a scroll-snap track that also holds the next photograph,
+                // laid out past the right edge until it is swiped to; only what is on screen counts.
+                .filter((element) => {
+                  const rect = element.getBoundingClientRect();
+                  return rect.right > 0.5 && rect.left < window.innerWidth - 0.5;
+                })
+                .map((element) => element.getAttribute("alt")),
+            );
           // A phone paints image 1 alone; from `lg` up the first page is the pair `1+2` (the blurred
           // colour field behind it has an empty alt, so it is not counted as a photograph).
           expect(
@@ -306,8 +315,11 @@ test("P18 captures representative production performance evidence for home, PLP,
             await expect(stage.locator(".pdp-stage__track")).toBeHidden();
             const mobileGallery = stage.locator(".pdp-mobile-gallery");
             await expect(mobileGallery).toBeVisible();
-            await expect(mobileGallery.locator("img")).toHaveCount(1);
-            await expect(mobileGallery.locator("img")).toHaveAttribute("alt", productName);
+            const currentPage = mobileGallery.locator('.pdp-mobile-gallery__image[data-active="true"]');
+            await expect(currentPage).toHaveCount(1);
+            await expect(currentPage.locator("img")).toHaveAttribute("alt", productName);
+            // Never the whole gallery up front: the current photograph, plus the next once loaded.
+            expect(await mobileGallery.locator("img").count()).toBeLessThanOrEqual(2);
             await expect(stage.getByRole("status")).toHaveText("1/3");
           }
         }
