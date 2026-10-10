@@ -23,6 +23,8 @@ import {
 } from "@/components/headless/try-on-model";
 import { useTryOn } from "@/components/headless/use-try-on";
 
+import { BrandTryOnWaiting } from "./try-on-waiting";
+
 /**
  * Virtual try-on on the PDP (`docs/specs/storefront-virtual-try-on.md` §6, §13, §14).
  *
@@ -486,12 +488,7 @@ export function BrandTryOnDialog({
           {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
         </div>
 
-        {phase === "loading" ? (
-          <div
-            aria-busy="true"
-            className="mt-2 h-72 animate-pulse rounded-lg border border-black/10 bg-black/5"
-          />
-        ) : null}
+        {phase === "loading" ? <BrandTryOnWaiting previewUrl={tryOn.previewUrl} /> : null}
 
         {phase === "success" && result ? (
           <>
