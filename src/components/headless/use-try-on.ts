@@ -50,7 +50,7 @@ import {
  */
 
 type Phase = "idle" | "loading" | "success" | "error";
-export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" }>;
+export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
 
 function decodeImage(base64: string, mimeType: TryOnResult["mimeType"]): TryOnResult {
   const binary = atob(base64);
@@ -233,7 +233,7 @@ export function useTryOn({
         response.ok &&
         record.ok === true &&
         typeof record.imageBase64 === "string" &&
-        (record.mimeType === "image/png" || record.mimeType === "image/jpeg")
+        (record.mimeType === "image/png" || record.mimeType === "image/jpeg" || record.mimeType === "image/webp")
       ) {
         setResult(decodeImage(record.imageBase64, record.mimeType));
         setPhase("success");

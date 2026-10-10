@@ -47,6 +47,7 @@ const JPEG_BASE64 =
   "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAMCAgMCAgMDAwMEAwMEBQgFBQQEBQoHBwYIDAoMDAsKCwsNDhIQDQ4RDgsLEBYQERMUFRUVDA8XGBYUGBIUFRT/wAARCAAQABADASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAf/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/8QAFAEBAAAAAAAAAAAAAAAAAAAABv/EABQRAQAAAAAAAAAAAAAAAAAAAAD/2gAMAwEAAhEDEQA/ALgAJHb/2Q==";
 const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGOwiaogCTGMahjVMHw1AABPQw4Q5oG1CgAAAABJRU5ErkJggg==";
+const WEBP_BASE64 = "UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQABAAAUAmJaACdLoABDAAAP7bUf/Ys5bAvH/8zR+k30m7mAAAAA==";
 
 type UploadScenario = "ok" | "slow" | "fail" | "safety";
 
@@ -487,8 +488,10 @@ test("opened from the phone reminder, closing returns focus to the reminder, whi
   expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
 });
 
-test("accessory, uncategorised and WebP-first products do not offer Thử đồ", async ({ page }) => {
-  for (const slug of [slugs.accessory, slugs.uncategorised, slugs.webpFirst]) {
+test("a WebP-first dress offers Thử đồ; accessory and uncategorised products do not", async ({ page }) => {
+  await page.goto(`${ENABLED_URL}/shop/${slugs.webpFirst}`, { waitUntil: "networkidle" });
+  await expect(triggerOf(page)).toBeVisible();
+  for (const slug of [slugs.accessory, slugs.uncategorised]) {
     await page.goto(`${ENABLED_URL}/shop/${slug}`, { waitUntil: "networkidle" });
     await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true })).toBeVisible();
     await expect(triggerOf(page)).toHaveCount(0);
@@ -602,7 +605,7 @@ test("closing discards the photo, the choices and the result", async ({ page }) 
 
 // --- upload ------------------------------------------------------------------------------------
 
-test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image files are refused", async ({ page }) => {
+test("a JPEG, PNG or WebP shows a local preview; unsupported, oversized and non-image files are refused", async ({ page }) => {
   const watched = await watch(page);
   const dialog = await openTryOn(page);
   const { photo, preview, next, alert } = parts(dialog);
@@ -617,13 +620,15 @@ test("a JPEG or PNG shows a local preview; unsupported, oversized and non-image 
   await expect(preview).toBeVisible();
   await expect(next).toBeEnabled();
 
-  await photo.setInputFiles({ name: "toi.webp", mimeType: "image/webp", buffer: Buffer.from("RIFFxxxxWEBPVP8 ") });
-  await expect(alert).toHaveText("Ảnh phải là tệp JPG hoặc PNG hợp lệ.");
-  await expect(preview).toHaveCount(0);
-  await expect(next).toBeDisabled();
+  await photo.setInputFiles({ name: "toi.webp", mimeType: "image/webp", buffer: Buffer.from(WEBP_BASE64, "base64") });
+  await expect(preview).toBeVisible();
+  await expect.poll(() => preview.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
+  await expect(next).toBeEnabled();
 
   await photo.setInputFiles({ name: "toi.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") });
-  await expect(alert).toHaveText("Ảnh phải là tệp JPG hoặc PNG hợp lệ.");
+  await expect(alert).toHaveText("Ảnh phải là tệp JPG, PNG hoặc WebP hợp lệ.");
+  await expect(preview).toHaveCount(0);
+  await expect(next).toBeDisabled();
 
   await photo.setInputFiles({
     name: "lon.jpg",
@@ -1037,12 +1042,12 @@ test.describe("the endpoint enforces the gates itself", () => {
       expect(await response.json()).toEqual({ ok: false, reason });
     }
 
-    const webp = await post(
+    const gif = await post(
       request,
-      form({ photo: { name: "x.webp", mimeType: "image/webp", buffer: Buffer.from("RIFFxxxxWEBPVP8 ") } as never }),
+      form({ photo: { name: "x.gif", mimeType: "image/gif", buffer: Buffer.from("GIF89a") } as never }),
       `198.51.100.${(ip += 1)}`,
     );
-    expect(webp.status()).toBe(415);
+    expect(gif.status()).toBe(415);
 
     const forged = await post(
       request,
@@ -1057,7 +1062,7 @@ test.describe("the endpoint enforces the gates itself", () => {
 
   test("non-eligible products are refused before any fetch or prediction", async ({ request }) => {
     let ip = 120;
-    for (const slug of [slugs.accessory, slugs.webpFirst, slugs.uncategorised, "no-such-product"]) {
+    for (const slug of [slugs.accessory, slugs.uncategorised, "no-such-product"]) {
       const response = await post(request, form({ productSlug: slug }), `198.51.100.${(ip += 1)}`);
       expect(response.status(), slug).toBe(404);
       expect(await response.json()).toEqual({ ok: false, reason: "NOT_ELIGIBLE" });

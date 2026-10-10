@@ -17,11 +17,13 @@ import { createTimeoutSignal } from "./timeout.ts";
  * resolved for a server-re-resolved product. It is re-checked against that same authority here —
  * so this function cannot be coaxed into fetching anything the storefront would not render — and
  * every redirect hop must pass that authority too, so a trusted host cannot bounce the fetch to an
- * internal address. HTTPS only, bounded time, bounded bytes, JPEG/PNG signature required.
+ * internal address. HTTPS only, bounded time, bounded bytes, JPEG/PNG/WebP signature required.
  */
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 2;
+/** The PDP width whose cached WebP doubles as the garment reference. */
+const TRY_ON_GARMENT_WIDTH = 1080;
 
 export type TrustedProductImageFetchResult =
   | Readonly<{ ok: true; image: Readonly<{ bytes: Uint8Array; mimeType: TryOnImageMimeType }> }>
@@ -110,19 +112,19 @@ export async function fetchTryOnGarmentImage(
   options: Readonly<{ fetch?: FetchLike; cache?: ProductImageCache | null; timeoutMs?: number }> = {},
 ): Promise<TrustedProductImageFetchResult> {
   const canonical = canonicalizePancakeProductImageSource(url);
+  // Same rule as the PDP endpoint: only a source that cannot change may be read from or written to
+  // disk, and under the very key the endpoint uses, so either side can warm the entry for the other.
   const cache =
-    options.cache !== undefined
-      ? options.cache
-      : canonical !== null && isContentAddressedPancakeSource(canonical)
-        ? readDefaultProductImageCache()
-        : null;
+    canonical !== null && isContentAddressedPancakeSource(canonical)
+      ? options.cache !== undefined
+        ? options.cache
+        : readDefaultProductImageCache()
+      : null;
+  const cacheKey = `${PDP_IMAGE_ENCODING_VERSION}|webp|${TRY_ON_GARMENT_WIDTH}|${canonical}`;
 
-  if (cache !== null && canonical !== null) {
+  if (cache !== null) {
     try {
-      const cached = await cache.read(
-        `${PDP_IMAGE_ENCODING_VERSION}|webp|1080|${canonical}`,
-        "image/webp",
-      );
+      const cached = await cache.read(cacheKey, "image/webp");
       if (cached !== null) {
         return { ok: true, image: { bytes: cached.bytes, mimeType: "image/webp" } };
       }
@@ -136,7 +138,7 @@ export async function fetchTryOnGarmentImage(
 
   if (direct.reason === "TOO_LARGE" && canonical !== null) {
     try {
-      const compressed = await fetchAndCompressPancakeProductImage(url, 1080, {
+      const compressed = await fetchAndCompressPancakeProductImage(canonical, TRY_ON_GARMENT_WIDTH, {
         fetch: options.fetch,
         timeoutMs: options.timeoutMs,
         format: "webp",
@@ -144,10 +146,7 @@ export async function fetchTryOnGarmentImage(
       if (compressed.ok && compressed.image.mimeType === "image/webp") {
         if (cache !== null) {
           try {
-            await cache.write(
-              `${PDP_IMAGE_ENCODING_VERSION}|webp|1080|${canonical}`,
-              compressed.image,
-            );
+            await cache.write(cacheKey, compressed.image);
           } catch {
             // Best-effort cache write
           }

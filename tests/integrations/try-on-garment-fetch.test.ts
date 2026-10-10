@@ -94,6 +94,8 @@ test("compresses oversized Pancake image to WebP and populates cache", async () 
     assert.ok(result.image.bytes.byteLength < TRY_ON_MAX_IMAGE_BYTES);
   }
 
+  assert.equal(calls.length, 2, "one bounded direct fetch, then one source fetch for compression");
+
   // Verify it was written to cache
   const cached = await cache.read(`2|webp|1080|${PANCAKE_URL}`, "image/webp");
   assert.ok(cached !== null);
@@ -111,4 +113,17 @@ test("untrusted product image URL is rejected before any network call", async ()
     assert.equal(result.reason, "UNTRUSTED_URL");
   }
   assert.equal(calls.length, 0);
+});
+
+test("a source that is not content-addressed never reads or writes the cache", async () => {
+  const mutable = "https://content.pancake.vn/images/1/2/3/dress.jpg";
+  const cache = memoryCache();
+  cache.store.set(`2|webp|1080|${mutable}`, { bytes: new Uint8Array(WEBP_BYTES), mimeType: "image/webp" });
+  const { fn, calls } = fetcher(new Response(JPEG_BYTES, { status: 200 }));
+
+  const result = await fetchTryOnGarmentImage(mutable, { fetch: fn, cache });
+
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.image.mimeType, "image/jpeg");
+  assert.equal(calls.length, 1);
 });
