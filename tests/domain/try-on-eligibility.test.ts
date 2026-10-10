@@ -77,10 +77,22 @@ test("no trusted first image is excluded", () => {
   );
 });
 
-test("a WebP first image is excluded and image 2 is never substituted", () => {
+test("a WebP first image is eligible", () => {
   const result = resolveTryOnEligibility({
     categoryKeys: ["vayDam"],
-    media: media(WEBP, [[JPG]]),
+    media: media(WEBP),
+  });
+  assert.equal(result.eligible, true);
+  if (result.eligible) assert.equal(result.productImage.url, WEBP);
+});
+
+test("an unsupported image format (e.g. gif) is excluded and image 2 is never substituted", () => {
+  const result = resolveTryOnEligibility({
+    categoryKeys: ["vayDam"],
+    media: {
+      primary: { url: "https://content.pancake.vn/images/1/2/3/dress.gif", alt: "alt" },
+      gallery: [],
+    },
   });
   assert.deepEqual(result, { eligible: false, reason: "UNSUPPORTED_IMAGE_FORMAT" });
 });

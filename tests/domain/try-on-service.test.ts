@@ -118,11 +118,28 @@ test("a forged client product-image URL is ignored: only the server-resolved fir
 
 test("image 2 is never used when image 1 is unsupported", async () => {
   const { run, probe } = build({
-    loadProduct: async () => product({ primary: "https://content.pancake.vn/images/1/2/3/first.webp" }),
+    loadProduct: async () => ({
+      slug: "vay-hoa",
+      categoryKeys: ["vayDam"],
+      media: {
+        primary: { url: "https://content.pancake.vn/images/1/2/3/first.gif", alt: "alt" },
+        gallery: [{ url: SECOND_IMAGE, alt: "alt" }],
+      },
+    }),
   });
   assert.deepEqual(await run(), { ok: false, reason: "NOT_ELIGIBLE" });
   assert.equal(probe.fetchProductImage.length, 0);
   assert.equal(probe.generate.length, 0);
+});
+
+test("a WebP product image is eligible and passed to fetchProductImage", async () => {
+  const webpUrl = "https://content.pancake.vn/images/1/2/3/first.webp";
+  const { run, probe } = build({
+    loadProduct: async () => product({ primary: webpUrl }),
+  });
+  const result = await run();
+  assert.equal(result.ok, true);
+  assert.deepEqual(probe.fetchProductImage, [webpUrl]);
 });
 
 test("ineligible products never reach the product-image fetch or Vertex", async () => {

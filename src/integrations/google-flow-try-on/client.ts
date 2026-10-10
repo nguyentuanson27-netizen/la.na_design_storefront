@@ -64,7 +64,7 @@ function parseSuccess(body: unknown): GenerateResult {
     value.ok !== true ||
     typeof value.model !== "string" ||
     !ALLOWED_MODELS.has(value.model) ||
-    (value.mimeType !== "image/jpeg" && value.mimeType !== "image/png") ||
+    (value.mimeType !== "image/jpeg" && value.mimeType !== "image/png" && value.mimeType !== "image/webp") ||
     typeof value.imageBase64 !== "string" ||
     value.imageBase64.length === 0 ||
     value.imageBase64.length % 4 !== 0 ||

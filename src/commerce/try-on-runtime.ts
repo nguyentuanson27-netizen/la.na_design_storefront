@@ -6,7 +6,7 @@ import { warmFlowWorker } from "../integrations/google-flow-try-on/warm.ts";
 import { readTryOnRuntimeConfig } from "../integrations/try-on/config.ts";
 import { createVertexTryOnClient } from "../integrations/vertex-try-on/client.ts";
 import { getGoogleAccessToken } from "../integrations/vertex-try-on/google-auth.ts";
-import { fetchTrustedProductImage } from "../integrations/vertex-try-on/product-image.ts";
+import { fetchTryOnGarmentImage } from "../integrations/vertex-try-on/product-image.ts";
 import { emitTryOnSignal } from "../operations/try-on-observability.ts";
 import { deriveGuestCheckoutClientKey } from "./guest-checkout-client-identity.ts";
 import { createMerchandisingRepository } from "./merchandising-repository.ts";
@@ -52,7 +52,7 @@ export const tryOnService = createTryOnService({
   readConfig: () => readTryOnRuntimeConfig(),
   limiter,
   loadProduct,
-  fetchProductImage: (url) => fetchTrustedProductImage(url),
+  fetchProductImage: (url) => fetchTryOnGarmentImage(url),
   generate: ({ config, person, product }) =>
     config.provider === "flow"
       ? createGoogleFlowTryOnClient({ config }).generate({ person, product })

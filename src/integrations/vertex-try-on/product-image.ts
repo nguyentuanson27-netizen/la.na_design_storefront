@@ -1,6 +1,13 @@
 import { sniffImageMime, readBoundedBody } from "../../commerce/try-on-image.ts";
 import { parseTrustedProductImageUrl } from "../../commerce/product-media.ts";
 import { TRY_ON_MAX_IMAGE_BYTES, type TryOnImageMimeType } from "../../commerce/try-on-policy.ts";
+import {
+  PDP_IMAGE_ENCODING_VERSION,
+  canonicalizePancakeProductImageSource,
+  isContentAddressedPancakeSource,
+} from "../../commerce/product-image-delivery.ts";
+import { readDefaultProductImageCache, type ProductImageCache } from "../pancake/product-image-cache.ts";
+import { fetchAndCompressPancakeProductImage } from "../pancake/product-image-delivery.ts";
 import { createTimeoutSignal } from "./timeout.ts";
 
 /**
@@ -45,7 +52,7 @@ export async function fetchTrustedProductImage(
       const response = await doFetch(current, {
         method: "GET",
         redirect: "manual",
-        headers: { accept: "image/jpeg,image/png" },
+        headers: { accept: "image/jpeg,image/png,image/webp" },
         signal,
       });
 
@@ -90,4 +97,67 @@ export async function fetchTrustedProductImage(
   } finally {
     timeout.clear();
   }
+}
+
+/**
+ * Resolves the garment reference image for virtual try-on:
+ * 1. Checks if a web-optimized 1080px WebP exists in the product image cache.
+ * 2. Directly fetches trusted images up to 7 MB (JPEG, PNG, or WebP).
+ * 3. For oversized Pancake camera uploads (> 7 MB), compresses to 1080px WebP and caches the result.
+ */
+export async function fetchTryOnGarmentImage(
+  url: string,
+  options: Readonly<{ fetch?: FetchLike; cache?: ProductImageCache | null; timeoutMs?: number }> = {},
+): Promise<TrustedProductImageFetchResult> {
+  const canonical = canonicalizePancakeProductImageSource(url);
+  const cache =
+    options.cache !== undefined
+      ? options.cache
+      : canonical !== null && isContentAddressedPancakeSource(canonical)
+        ? readDefaultProductImageCache()
+        : null;
+
+  if (cache !== null && canonical !== null) {
+    try {
+      const cached = await cache.read(
+        `${PDP_IMAGE_ENCODING_VERSION}|webp|1080|${canonical}`,
+        "image/webp",
+      );
+      if (cached !== null) {
+        return { ok: true, image: { bytes: cached.bytes, mimeType: "image/webp" } };
+      }
+    } catch {
+      // Best-effort cache lookup; proceed on miss or error
+    }
+  }
+
+  const direct = await fetchTrustedProductImage(url, options);
+  if (direct.ok) return direct;
+
+  if (direct.reason === "TOO_LARGE" && canonical !== null) {
+    try {
+      const compressed = await fetchAndCompressPancakeProductImage(url, 1080, {
+        fetch: options.fetch,
+        timeoutMs: options.timeoutMs,
+        format: "webp",
+      });
+      if (compressed.ok && compressed.image.mimeType === "image/webp") {
+        if (cache !== null) {
+          try {
+            await cache.write(
+              `${PDP_IMAGE_ENCODING_VERSION}|webp|1080|${canonical}`,
+              compressed.image,
+            );
+          } catch {
+            // Best-effort cache write
+          }
+        }
+        return { ok: true, image: { bytes: compressed.image.bytes, mimeType: "image/webp" } };
+      }
+    } catch {
+      // Fall through to returning direct failure
+    }
+  }
+
+  return direct;
 }

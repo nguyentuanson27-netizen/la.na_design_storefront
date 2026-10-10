@@ -104,7 +104,7 @@ const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
   LIKENESS_REQUIRED: "Vui lòng xác nhận quyền sử dụng hình ảnh trước khi tạo ảnh.",
   AGE_STATE_INVALID: "Vui lòng chọn độ tuổi của bạn trước khi tạo ảnh.",
   AGE_BLOCKED: "Tính năng thử đồ chưa dành cho bạn.",
-  UNSUPPORTED_IMAGE: "Ảnh phải là tệp JPG hoặc PNG hợp lệ.",
+  UNSUPPORTED_IMAGE: "Ảnh phải là tệp JPG, PNG hoặc WebP hợp lệ.",
   IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.",
   NOT_ELIGIBLE: "Sản phẩm này hiện chưa hỗ trợ thử đồ.",
   PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Vui lòng thử lại sau.",
