@@ -65,6 +65,8 @@ async function generate(url, init) {
   if (marker.includes("SCENARIO:safety")) return json({ promptFeedback: { blockReason: "IMAGE_SAFETY" } });
   if (marker.includes("SCENARIO:fail")) return json({ error: { code: 500, message: "fixture upstream failure" } }, 500);
   if (marker.includes("SCENARIO:slow")) await sleep(1_500);
+  // Long enough for a test to close the dialog while the picture is still being made.
+  if (marker.includes("SCENARIO:linger")) await sleep(5_000);
 
   return json({
     candidates: [{

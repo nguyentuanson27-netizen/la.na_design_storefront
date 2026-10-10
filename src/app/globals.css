@@ -2791,6 +2791,24 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   animation: tryon-wait-label-in 0.45s ease-out;
 }
 
+/* The waiting bar along the caption's top edge, paced by tryOnWaitProgress (never full early). */
+.tryon-wait__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 3px;
+  background: rgba(250, 247, 242, 0.25);
+}
+
+.tryon-wait__bar > span {
+  display: block;
+  height: 100%;
+  background: #faf7f2;
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
 .tryon-wait__dots {
   display: inline-flex;
   flex-shrink: 0;
@@ -2853,8 +2871,81 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     animation: none;
   }
 
+  .tryon-wait__bar > span,
+  .tryon-dock__bar > span {
+    transition: none;
+  }
+
   .tryon-wait__sweep,
   .tryon-wait__scan {
     display: none;
   }
 }
+
+/*
+ * The minimised try-on (src/components/brand/try-on-dock.tsx): bottom left, clear of the chat button
+ * on the right. On a phone PDP it sits above the fixed purchase bar instead of on top of it.
+ */
+.tryon-dock {
+  position: fixed;
+  left: 1rem;
+  bottom: max(1rem, env(safe-area-inset-bottom));
+  z-index: 45;
+  max-width: calc(100% - 6rem);
+}
+
+@media (max-width: 1023.98px) {
+  body:has([data-mobile-purchase-bar]) .tryon-dock {
+    bottom: calc(5rem + env(safe-area-inset-bottom));
+  }
+}
+
+.tryon-dock__bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: rgba(59, 34, 25, 0.12);
+}
+
+.tryon-dock__bar > span {
+  display: block;
+  height: 100%;
+  background: #3b2219;
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
+.tryon-dock__thumb {
+  position: relative;
+  overflow: hidden;
+}
+
+.tryon-dock__thumb--loading::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 30%, rgba(255, 255, 255, 0.6) 50%, transparent 70%);
+  transform: translateX(-100%);
+  animation: tryon-wait-sweep 2.4s ease-in-out infinite;
+}
+
+.tryon-dock--ready {
+  animation: tryon-dock-ready 0.5s ease-out;
+}
+
+@keyframes tryon-dock-ready {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tryon-dock__thumb--loading::after,
+  .tryon-dock--ready {
+    animation: none;
+  }
+}
+

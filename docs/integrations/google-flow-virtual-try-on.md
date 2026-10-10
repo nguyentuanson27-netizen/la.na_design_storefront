@@ -29,7 +29,7 @@ The app sends only the two already-approved images. Prompt and model policy are 
 
 ## Model policy
 
-Every request is:
+Every request is (see 5. for when Pro is skipped):
 
 1. Nano Banana Pro (`nano-pro`) first.
 2. If the Pro attempt fails for **any quota, rate-limit or credit refusal**, retry exactly once with
@@ -45,6 +45,20 @@ Every request is:
 3. Do not fall back on WAF/reCAPTCHA unusual activity, auth/session failures, safety/content
    refusal, timeout, selector drift, network failure or generic provider errors.
 4. Never fall back automatically to Vertex, Nano Banana 2, Nano Banana 2 Lite or a video model.
+5. **Pro cool-down (owner decision 2026-10-10).** After a Pro refusal that falls back, the worker
+   remembers it (`policy.ProCooldown`, in memory) and later requests go straight to 2.1 until it
+   ends, instead of paying for a Pro attempt that is certain to be refused:
+   - a per-minute limit or any HTTP 429: 90 s;
+   - a daily limit (`DAILY` in the refusal) or exhausted credits (exit 37): until the next 03:00
+     Vietnam time (UTC+7);
+   - a refusal that names no limit: 20 min.
+
+   The first request after the end asks Pro again: success clears the cool-down, another refusal
+   starts a new one. A refusal naming several limits takes the longest. Pro is never skipped while
+   `LA_TRY_ON_FLOW_NANO_BANANA_2_1_MODEL_KEY` is unset, because 2.1 cannot run then. A restarted
+   worker forgets the cool-down and asks Pro once. Logged as `flow_try_on.pro_cooldown` (kind, end
+   in UTC) and `flow_try_on.pro_skipped` per skipped request; `flow_try_on.model_fallback` is only
+   logged when Pro was actually tried.
 
 gflow-cli 0.82.1 predates Nano Banana 2.1 and reports a quota refusal on flow.google.com as a generic
 wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_models.py`):

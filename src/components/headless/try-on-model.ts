@@ -187,9 +187,48 @@ export function tryOnLoginHref(productSlug: string): string {
   return buildLoginHref(`/shop/${encodeURIComponent(productSlug)}`);
 }
 
-/** Said once the shopper has pressed the button; the real time is a few tens of seconds. */
+/**
+ * Said once the shopper has pressed the button; the real time is a few tens of seconds. The request
+ * keeps running when the dialog is closed (`try-on-session.tsx`), so the shopper is told they are
+ * free to go on browsing rather than asked to sit and watch.
+ */
 export const TRY_ON_WAIT_NOTE =
-  "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Bạn giữ nguyên cửa sổ này và chờ chúng mình một chút nhé.";
+  "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Bạn cứ xem tiếp sản phẩm, chúng mình sẽ báo khi ảnh xong.";
+
+/** The usual time to a result, which the waiting bar is paced on (spec: 30–60 s on Flow). */
+export const TRY_ON_EXPECTED_SECONDS = 60;
+
+/**
+ * How full the waiting bar is after `elapsedSeconds`, from 0 to 0.97.
+ *
+ * Paced so it reaches 90 % at the usual time and then creeps, never reaching the end: the provider
+ * reports no progress, so the bar must not claim a finish that has not happened, however long the
+ * wait. It eases out (fast at first, slower near 90 %), which is how a wait feels shortest.
+ */
+export function tryOnWaitProgress(elapsedSeconds: number): number {
+  const elapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
+  if (elapsed <= TRY_ON_EXPECTED_SECONDS) {
+    const share = elapsed / TRY_ON_EXPECTED_SECONDS;
+    return 0.9 * (1 - (1 - share) ** 2);
+  }
+  return Math.min(0.97, 0.9 + 0.07 * (1 - Math.exp(-(elapsed - TRY_ON_EXPECTED_SECONDS) / 40)));
+}
+
+/** "35 giây", "1 phút 5 giây": how long the shopper has waited, for the minimised indicator. */
+export function tryOnElapsedLabel(elapsedSeconds: number): string {
+  const total = Number.isFinite(elapsedSeconds) ? Math.max(0, Math.floor(elapsedSeconds)) : 0;
+  if (total < 60) return `${total} giây`;
+  const seconds = total % 60;
+  return seconds === 0 ? `${total / 60} phút` : `${Math.floor(total / 60)} phút ${seconds} giây`;
+}
+
+/** Put before the tab's title when a result arrives while the shopper is in another tab or app. */
+export const TRY_ON_DONE_TITLE_PREFIX = "✓ Ảnh thử đồ đã xong · ";
+
+/** Shown on the confirmation step while another product's try-on is still being made. */
+export function tryOnBusyElsewhereMessage(productName: string): string {
+  return `Đang tạo ảnh thử đồ cho ${productName}. Bạn đợi ảnh đó xong rồi thử tiếp món này nhé.`;
+}
 
 /**
  * What the waiting screen says as the seconds pass. These are not progress reports (the provider

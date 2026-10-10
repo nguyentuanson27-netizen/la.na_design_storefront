@@ -28,7 +28,11 @@ const SERVER_TRY_ON_FILES = [
 ];
 const CLIENT_TRY_ON_FILES = [
   "src/components/brand/try-on-dialog.tsx",
+  "src/components/brand/try-on-dock.tsx",
+  "src/components/brand/try-on-result.tsx",
+  "src/components/brand/try-on-waiting.tsx",
   "src/components/headless/use-try-on.ts",
+  "src/components/headless/try-on-session.tsx",
   "src/components/headless/try-on-model.ts",
   "src/components/headless/try-on-disclosure.ts",
 ];
@@ -148,7 +152,9 @@ test("credentials stay server-side: no client file imports provider, auth or run
       assert.match(specifier, /try-on-policy(\.ts)?$/, `${path} imports ${specifier}`);
     }
   }
-  for (const path of CLIENT_TRY_ON_FILES.filter((file) => file.endsWith("try-on-dialog.tsx") || file.endsWith("use-try-on.ts"))) {
+  for (const path of CLIENT_TRY_ON_FILES.filter((file) =>
+    /try-on-(dialog|dock|session|waiting)\.tsx$|use-try-on\.ts$/.test(file),
+  )) {
     assert.match(code(path), /^"use client";/m, path);
   }
   assert.doesNotMatch(code("src/commerce/try-on-policy.ts"), /^import\s/m);

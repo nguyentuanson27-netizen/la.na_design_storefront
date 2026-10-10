@@ -18,7 +18,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-from .policy import QUOTA_EXHAUSTED_MARKER, is_flow_quota_refusal, should_fallback_from_pro
+from .gflow_models import configured_model_key
+from .policy import (
+    QUOTA_EXHAUSTED_MARKER,
+    ProCooldown,
+    is_flow_quota_refusal,
+    pro_refusal_kind,
+    should_fallback_from_pro,
+)
 from .warm import WarmConfig, WarmRunner, spawn_child
 
 HOST = os.environ.get("FLOW_WORKER_HOST", "0.0.0.0")
@@ -79,6 +86,10 @@ Produce one realistic, age-appropriate fashion try-on image."""
 _generation_lock = threading.Lock()
 # The clock a request's deadline is measured on; a seam so tests can move time.
 _monotonic = time.monotonic
+# The wall clock the Pro cool-down is measured on (a daily limit ends at a time of day); also a seam.
+_wall_clock = time.time
+# Nano Banana Pro's quota refusals, remembered across requests (see policy.ProCooldown).
+_pro_cooldown = ProCooldown()
 # The warm browser, when FLOW_WARM_BROWSER is on (created in main()); None means every request starts
 # gflow as its own process, as before.
 _warm_runner: WarmRunner | None = None
@@ -591,6 +602,27 @@ def _failure_reason(
     return 502, "GENERATION_FAILED"
 
 
+def _iso_utc(epoch_seconds: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(epoch_seconds))
+
+
+def _skip_pro() -> bool:
+    """Whether this request goes straight to Nano Banana 2.1 because Pro is cooling down.
+
+    Only while 2.1 can actually run: with its wire key unset every 2.1 submit is aborted, and
+    skipping Pro then would turn a request Pro might still serve into a certain failure.
+    """
+    return _pro_cooldown.active(_wall_clock()) and configured_model_key() is not None
+
+
+def _note_pro_refusal(exit_code: int, detail: str) -> None:
+    kind = pro_refusal_kind(exit_code, detail)
+    if kind is None:
+        return
+    _pro_cooldown.note_refusal(kind, _wall_clock())
+    _event("flow_try_on.pro_cooldown", kind=kind, until=_iso_utc(_pro_cooldown.until))
+
+
 def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str) -> tuple[str, bytes, str]:
     suffix = {"image/jpeg": ".jpg", "image/png": ".png"}
     deadline = time.monotonic() + GENERATION_BUDGET_SECONDS
@@ -616,18 +648,33 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             _event("flow_try_on.generation_failed", model="none", reason=reason)
             raise WorkerGenerationError(status, reason)
 
-        _event("flow_try_on.model_attempt", model="nano-banana-pro")
-        exit_code, error = _run_model(
-            "nano-pro",
-            person_path,
-            product_path,
-            output_path,
-            remaining_budget(),
-            db_path,
-        )
+        if _skip_pro():
+            # Pro refused for quota a moment ago and is cooling down: go straight to 2.1 rather
+            # than spend part of this request's budget on a refusal that is all but certain.
+            _event(
+                "flow_try_on.pro_skipped",
+                kind=_pro_cooldown.kind or "unknown",
+                until=_iso_utc(_pro_cooldown.until),
+            )
+            fall_back = True
+        else:
+            _event("flow_try_on.model_attempt", model="nano-banana-pro")
+            exit_code, error = _run_model(
+                "nano-pro",
+                person_path,
+                product_path,
+                output_path,
+                remaining_budget(),
+                db_path,
+            )
+            fall_back = exit_code != 0 and should_fallback_from_pro(exit_code, error.detail)
+            if exit_code == 0:
+                _pro_cooldown.clear()
+            elif fall_back:
+                _note_pro_refusal(exit_code, error.detail)
+                _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2.1")
         model = "nano-banana-pro"
-        if exit_code != 0 and should_fallback_from_pro(exit_code, error.detail):
-            _event("flow_try_on.model_fallback", source="nano-banana-pro", target="nano-banana-2.1")
+        if fall_back:
             output_path.unlink(missing_ok=True)
             # In the gflow launcher, nano2 selects exactly "Nano Banana 2.1" (see gflow_models).
             exit_code, error = _run_model(

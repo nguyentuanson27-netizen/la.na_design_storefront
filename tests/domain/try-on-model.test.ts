@@ -10,6 +10,11 @@ import {
   TRY_ON_PHOTO_DOS,
   TRY_ON_WAIT_NOTE,
   TRY_ON_WAIT_STAGES,
+  TRY_ON_EXPECTED_SECONDS,
+  TRY_ON_DONE_TITLE_PREFIX,
+  tryOnBusyElsewhereMessage,
+  tryOnElapsedLabel,
+  tryOnWaitProgress,
   tryOnWaitStageIndex,
   isBlockedAgeState,
   isFinalForPhoto,
@@ -155,6 +160,37 @@ test("the waiting caption moves on with the seconds and stays on the last line f
   assert.equal(starts[0], 0);
   assert.deepEqual(starts, [...starts].sort((a, b) => a - b));
   assert.ok(TRY_ON_WAIT_STAGES.every((stage) => stage.label.length > 0 && !/\d/.test(stage.label)));
+});
+
+test("the waiting bar reaches 90% at the usual time, keeps creeping, and is never full before the picture", () => {
+  assert.equal(tryOnWaitProgress(0), 0);
+  assert.ok(Math.abs(tryOnWaitProgress(TRY_ON_EXPECTED_SECONDS) - 0.9) < 1e-9);
+  // Eases out: the first half of the usual wait covers most of the bar.
+  assert.ok(tryOnWaitProgress(TRY_ON_EXPECTED_SECONDS / 2) > 0.6);
+  let previous = -1;
+  for (let seconds = 0; seconds <= 600; seconds += 5) {
+    const progress = tryOnWaitProgress(seconds);
+    assert.ok(progress >= previous, `not monotonic at ${seconds}s`);
+    assert.ok(progress <= 0.97, `too full at ${seconds}s`);
+    previous = progress;
+  }
+  assert.ok(tryOnWaitProgress(120) > tryOnWaitProgress(70));
+  assert.equal(tryOnWaitProgress(-3), 0);
+  assert.equal(tryOnWaitProgress(Number.NaN), 0);
+});
+
+test("the minimised indicator says how long the shopper has waited in seconds, then minutes", () => {
+  assert.equal(tryOnElapsedLabel(0), "0 giây");
+  assert.equal(tryOnElapsedLabel(35.8), "35 giây");
+  assert.equal(tryOnElapsedLabel(60), "1 phút");
+  assert.equal(tryOnElapsedLabel(65), "1 phút 5 giây");
+  assert.equal(tryOnElapsedLabel(-1), "0 giây");
+});
+
+test("the busy notice names the product being made, and the done mark reads first in a tab", () => {
+  assert.match(tryOnBusyElsewhereMessage("Áo dài Sen"), /Áo dài Sen/);
+  assert.match(TRY_ON_DONE_TITLE_PREFIX, /^✓ Ảnh thử đồ đã xong/);
+  assert.match(TRY_ON_WAIT_NOTE, /xem tiếp/);
 });
 
 test("only a safety block makes the photo final", () => {
