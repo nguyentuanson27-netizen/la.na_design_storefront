@@ -8,6 +8,7 @@ import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
+import { resolveTwoLevelAddressNames } from "../support/pancake-geo-names.ts";
 
 /**
  * I6b — where the submission service's write boundary actually is.
@@ -127,6 +128,7 @@ function recordingGateway(
   variation: PancakeCatalogVariation | null,
 ) {
   return {
+    resolveTwoLevelAddressNames,
     async fetchVariations() {
       events.push("catalog");
       if (!variation) throw new Error("catalog unavailable");
