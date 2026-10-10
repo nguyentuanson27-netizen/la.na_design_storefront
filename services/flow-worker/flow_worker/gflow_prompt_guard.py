@@ -53,14 +53,29 @@ _PICKER_OPEN_CAP_MS = 2200
 _PICKER_FILTER_CAP_MS = 2500
 _CHIP_COMMIT_CAP_MS = 2500
 _CLEAR_CAP_MS = 600
-# After the filtered option shows up, let a late re-render of the list finish before Enter.
-_PICKER_SETTLE_MS = 150
+# How long the picker must stay unchanged, with the requested asset first, before Enter.
+_PICKER_SETTLE_MS = 200
 
-# True once the first option's text contains the typed name, i.e. the list is filtered and the
-# option Enter will commit is the one that was asked for (Enter takes the first option).
-_FIRST_OPTION_IS_JS = """([selector, name]) => {
-  const option = document.querySelector(selector);
-  return !!option && (option.textContent || '').includes(name);
+# True once the picker is settled on the requested asset: its first option (Enter commits the first
+# option) is the asset itself -- its text ends with the typed name, so a stale or look-alike row that
+# merely contains the name does not count -- and the option list has not changed for settleMs. The
+# probe state lives on the page and restarts whenever the list changes or polling had a gap.
+_PICKER_SETTLED_JS = """([selector, name, settleMs]) => {
+  const options = [...document.querySelectorAll(selector)];
+  const label = (option) => (option.textContent || '').trim();
+  if (!options.length || !label(options[0]).endsWith(name)) {
+    window.__tryOnPickerProbe = null;
+    return false;
+  }
+  const signature = options.map(label).join('\\n');
+  const now = performance.now();
+  const probe = window.__tryOnPickerProbe;
+  if (!probe || probe.signature !== signature || now - probe.last > 500) {
+    window.__tryOnPickerProbe = { signature, since: now, last: now };
+    return false;
+  }
+  probe.last = now;
+  return now - probe.since >= settleMs;
 }"""
 _CHIP_COUNT_JS = "([selector, count]) => document.querySelectorAll(selector).length >= count"
 _COMPOSER_EMPTY_JS = """(selector) => {
@@ -208,10 +223,11 @@ def install() -> None:
             await page.keyboard.type(name, delay=100)
             typed = time.monotonic()
             filtered = await wait_until(
-                page, _FIRST_OPTION_IS_JS, [mc.PICKER_OPTION, name], _PICKER_FILTER_CAP_MS
+                page,
+                _PICKER_SETTLED_JS,
+                [mc.PICKER_OPTION, name, _PICKER_SETTLE_MS],
+                _PICKER_FILTER_CAP_MS,
             )
-            if filtered:
-                await page.wait_for_timeout(_PICKER_SETTLE_MS)
             offered = [t.strip() for t in await page.locator(mc.PICKER_OPTION).all_text_contents()]
             listed = time.monotonic()
             await page.keyboard.press("Enter")

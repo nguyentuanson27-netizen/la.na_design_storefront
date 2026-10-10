@@ -24,7 +24,8 @@
   ?open_lag=MS, ?filter_lag=MS and ?chip_lag=MS model a slow Flow: the picker opens MS after "@",
   keeps showing the previous (unfiltered) list for MS after each keystroke, and inserts the chip MS
   after Enter. Enter commits the first option on screen, as Flow does, so acting before the list
-  is filtered attaches the wrong asset.
+  is filtered attaches the wrong asset. An asset such as "<name>.old" is a look-alike that contains
+  the query and is listed first until the filter ranks the exact name ahead of it.
 -->
 <div id="composer" contenteditable="true"></div>
 <button id="submit"><mat-icon>arrow_forward</mat-icon></button>
@@ -55,8 +56,11 @@ function renderPicker(filter) {
     document.body.appendChild(picker);
   }
   picker.innerHTML = "";
-  for (const name of Object.keys(ASSETS)) {
-    if (filter && !name.includes(filter)) continue;
+  // Filtered results rank the exact name first, so a look-alike that merely contains the query is
+  // first until the filter has been applied.
+  const names = Object.keys(ASSETS).filter((name) => !filter || name.includes(filter));
+  if (filter) names.sort((a, b) => (b === filter) - (a === filter));
+  for (const name of names) {
     const option = document.createElement("button");
     option.className = "asset-item";
     option.setAttribute("role", "option");

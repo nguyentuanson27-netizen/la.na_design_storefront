@@ -16,6 +16,7 @@ from flow_worker.server import TRY_ON_PROMPT
 
 PERSON_ID = "11111111-1111-4111-8111-111111111111"
 GARMENT_ID = "22222222-2222-4222-8222-222222222222"
+DECOY_ID = "66666666-6666-4666-8666-666666666666"
 MEDIA_ID = "33333333-3333-4333-8333-333333333333"
 WORKFLOW_ID = "44444444-4444-4444-8444-444444444444"
 PROJECT_ID = "55555555-5555-4555-8555-555555555555"
@@ -130,12 +131,12 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
     def setUp(self):
         _FakeFlow.submits = []
 
-    def run_try_on(self, **page_modes):
+    def run_try_on(self, page_assets=None, **page_modes):
         from gflow_cli.api.image import GenerateImageRequest, Model
         from gflow_cli.api.transports import migrated_composer as mc
         from playwright.async_api import async_playwright
 
-        query = urllib.parse.urlencode({"assets": json.dumps(ASSETS), **page_modes})
+        query = urllib.parse.urlencode({"assets": json.dumps(page_assets or ASSETS), **page_modes})
         url = f"http://127.0.0.1:{self.server.server_port}/?{query}"
 
         async def scenario():
@@ -208,6 +209,16 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
         self.assertTrue(guard.prompt_present(_FakeFlow.submits[0]["prompt"], TRY_ON_PROMPT))
         # gflow's own sleeps alone are 2 x (2.2 + 2.5 + 2.5) + 0.6 = 15 s.
         self.assertLess(elapsed, 9, f"mention gestures took {elapsed:.1f}s")
+
+    def test_look_alike_first_option_is_not_committed_before_the_filter_ranks_the_exact_asset(self):
+        # Before filtering, the first row is "person-ab12cd34.jpg.old": it contains the typed name, but
+        # it is another asset. Committing it would attach DECOY_ID in place of the person photo.
+        page_assets = {"person-ab12cd34.jpg.old": DECOY_ID, **ASSETS}
+        images, error = self.run_try_on(page_assets=page_assets, filter_lag=400)
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertNotIn(DECOY_ID, _FakeFlow.submits[0]["references"])
 
     def test_fixed_sleeps_come_back_with_flow_mention_fast_off(self):
         with patch.dict(os.environ, {"FLOW_MENTION_FAST": "0"}):
