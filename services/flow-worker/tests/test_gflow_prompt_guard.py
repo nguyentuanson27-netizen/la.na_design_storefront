@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import threading
+import time
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -170,6 +171,72 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
                     await browser.close()
 
         return asyncio.run(scenario())
+
+    def with_page(self, scenario_body, **page_modes):
+        """Run ``scenario_body(page, composer)`` on the fake composer; return (result, error)."""
+        from gflow_cli.api.transports import migrated_composer as mc
+        from playwright.async_api import async_playwright
+
+        query = urllib.parse.urlencode({"assets": json.dumps(ASSETS), **page_modes})
+        url = f"http://127.0.0.1:{self.server.server_port}/?{query}"
+
+        async def scenario():
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(executable_path=BROWSER, args=["--no-sandbox"])
+                try:
+                    page = await browser.new_page()
+                    await page.goto(url)
+                    try:
+                        return await scenario_body(page, mc.MigratedComposer()), None
+                    except Exception as error:  # noqa: BLE001 - asserted by the caller
+                        return None, error
+                finally:
+                    await browser.close()
+
+        return asyncio.run(scenario())
+
+    def test_slow_flow_attaches_the_right_references_without_the_fixed_sleeps(self):
+        # The picker opens late, keeps the unfiltered list on screen after each keystroke, and the chip
+        # lands late. Enter commits the first option on screen, so acting early attaches the wrong asset.
+        started = time.monotonic()
+        images, error = self.run_try_on(open_lag=300, filter_lag=400, chip_lag=400)
+        elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertTrue(guard.prompt_present(_FakeFlow.submits[0]["prompt"], TRY_ON_PROMPT))
+        # gflow's own sleeps alone are 2 x (2.2 + 2.5 + 2.5) + 0.6 = 15 s.
+        self.assertLess(elapsed, 9, f"mention gestures took {elapsed:.1f}s")
+
+    def test_fixed_sleeps_come_back_with_flow_mention_fast_off(self):
+        with patch.dict(os.environ, {"FLOW_MENTION_FAST": "0"}):
+            started = time.monotonic()
+            images, error = self.run_try_on()
+            elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertGreater(elapsed, 14)
+
+    def test_asset_the_picker_never_lists_is_retried_then_refused(self):
+        from gflow_cli.api.transports import migrated_composer as mc
+        from gflow_cli.errors import ReferenceNotFoundError
+
+        async def mention_missing(page, composer):
+            await composer._mention_by_name(page, "no-such-asset.jpg", expect_chips=1)
+
+        with (
+            patch.object(guard, "_PICKER_FILTER_CAP_MS", 300),
+            patch.object(guard, "_CHIP_COMMIT_CAP_MS", 300),
+            patch.object(mc, "FRAME_SEARCH_RETRY_PAUSE_S", 0.05),
+        ):
+            result, error = self.with_page(mention_missing)
+
+        self.assertIsNone(result)
+        self.assertIsInstance(error, ReferenceNotFoundError)
+        self.assertIn("3 attempts", str(error))
+        self.assertEqual(_FakeFlow.submits, [])
 
     def test_prompt_lands_and_is_submitted_with_both_references_when_the_caret_left_the_composer(self):
         # Without the guard this exact page state generated with an empty prompt (reproduced).

@@ -21,6 +21,10 @@
   ?focus=lost models the picker teardown taking focus and caret out of the composer after a commit.
   ?input=ignored models an editor that drops programmatic insertText input.
   ?wire=drop-prompt models a submit that leaves the composer prompt out of the request.
+  ?open_lag=MS, ?filter_lag=MS and ?chip_lag=MS model a slow Flow: the picker opens MS after "@",
+  keeps showing the previous (unfiltered) list for MS after each keystroke, and inserts the chip MS
+  after Enter. Enter commits the first option on screen, as Flow does, so acting before the list
+  is filtered attaches the wrong asset.
 -->
 <div id="composer" contenteditable="true"></div>
 <button id="submit"><mat-icon>arrow_forward</mat-icon></button>
@@ -30,6 +34,9 @@ const ASSETS = JSON.parse(params.get("assets") || "{}");  // display name -> med
 const FOCUS = params.get("focus") || "kept";
 const INPUT = params.get("input") || "accepted";
 const WIRE = params.get("wire") || "composer";
+const OPEN_LAG = Number(params.get("open_lag") || 0);
+const FILTER_LAG = Number(params.get("filter_lag") || 0);
+const CHIP_LAG = Number(params.get("chip_lag") || 0);
 const composer = document.getElementById("composer");
 let picker = null;
 let query = null;
@@ -41,7 +48,7 @@ function closePicker() {
   query = null;
 }
 
-function renderPicker() {
+function renderPicker(filter) {
   if (!picker) {
     picker = document.createElement("div");
     picker.className = "cdk-overlay-pane";
@@ -49,7 +56,7 @@ function renderPicker() {
   }
   picker.innerHTML = "";
   for (const name of Object.keys(ASSETS)) {
-    if (query && !name.includes(query)) continue;
+    if (filter && !name.includes(filter)) continue;
     const option = document.createElement("button");
     option.className = "asset-item";
     option.setAttribute("role", "option");
@@ -61,38 +68,41 @@ function renderPicker() {
 composer.addEventListener("keydown", (event) => {
   if (event.key === "@") {
     query = "";
-    setTimeout(renderPicker, 0);
+    setTimeout(() => renderPicker(""), OPEN_LAG);
     return;
   }
   if (event.key === "Enter" && picker) {
     event.preventDefault();
-    const name = Object.keys(ASSETS).find((candidate) => query && candidate.includes(query));
+    const first = picker.querySelector("button");
+    const name = first ? first.textContent : null;
     const selection = window.getSelection();
     const node = selection.anchorNode;
-    if (name && node && node.nodeType === Node.TEXT_NODE) {
-      const offset = selection.anchorOffset;
-      const start = node.data.lastIndexOf("@", offset);
-      const after = node.splitText(start);
-      after.data = after.data.slice(offset - start);
-      const chip = document.createElement("span");
-      chip.className = "mention-chip";
-      chip.contentEditable = "false";
-      chip.dataset.referenceType = "media";
-      chip.dataset.entityId = "";
-      chip.dataset.mediaId = ASSETS[name];
-      chip.textContent = name;
-      node.parentNode.insertBefore(chip, after);
-      const range = document.createRange();
-      range.setStart(after, 0);
-      range.collapse(true);
-      selection.removeAllRanges();
-      selection.addRange(range);
-    }
+    const offset = selection.anchorOffset;
     closePicker();
-    if (FOCUS === "lost") {
-      composer.blur();
-      window.getSelection().removeAllRanges();
-    }
+    setTimeout(() => {
+      if (name && node && node.nodeType === Node.TEXT_NODE) {
+        const start = node.data.lastIndexOf("@", offset);
+        const after = node.splitText(start);
+        after.data = after.data.slice(offset - start);
+        const chip = document.createElement("span");
+        chip.className = "mention-chip";
+        chip.contentEditable = "false";
+        chip.dataset.referenceType = "media";
+        chip.dataset.entityId = "";
+        chip.dataset.mediaId = ASSETS[name];
+        chip.textContent = name;
+        node.parentNode.insertBefore(chip, after);
+        const range = document.createRange();
+        range.setStart(after, 0);
+        range.collapse(true);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+      if (FOCUS === "lost") {
+        composer.blur();
+        window.getSelection().removeAllRanges();
+      }
+    }, CHIP_LAG);
   }
 });
 
@@ -110,7 +120,8 @@ composer.addEventListener("input", () => {
   const at = node.data.lastIndexOf("@", selection.anchorOffset);
   if (at < 0) { closePicker(); return; }
   query = node.data.slice(at + 1, selection.anchorOffset);
-  renderPicker();
+  const filter = query;
+  setTimeout(() => { if (picker) renderPicker(filter); }, FILTER_LAG);
 });
 
 function promptText() {
