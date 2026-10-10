@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import threading
+import time
 import unittest
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -15,6 +16,7 @@ from flow_worker.server import TRY_ON_PROMPT
 
 PERSON_ID = "11111111-1111-4111-8111-111111111111"
 GARMENT_ID = "22222222-2222-4222-8222-222222222222"
+DECOY_ID = "66666666-6666-4666-8666-666666666666"
 MEDIA_ID = "33333333-3333-4333-8333-333333333333"
 WORKFLOW_ID = "44444444-4444-4444-8444-444444444444"
 PROJECT_ID = "55555555-5555-4555-8555-555555555555"
@@ -129,12 +131,12 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
     def setUp(self):
         _FakeFlow.submits = []
 
-    def run_try_on(self, **page_modes):
+    def run_try_on(self, page_assets=None, **page_modes):
         from gflow_cli.api.image import GenerateImageRequest, Model
         from gflow_cli.api.transports import migrated_composer as mc
         from playwright.async_api import async_playwright
 
-        query = urllib.parse.urlencode({"assets": json.dumps(ASSETS), **page_modes})
+        query = urllib.parse.urlencode({"assets": json.dumps(page_assets or ASSETS), **page_modes})
         url = f"http://127.0.0.1:{self.server.server_port}/?{query}"
 
         async def scenario():
@@ -170,6 +172,103 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
                     await browser.close()
 
         return asyncio.run(scenario())
+
+    def with_page(self, scenario_body, **page_modes):
+        """Run ``scenario_body(page, composer)`` on the fake composer; return (result, error)."""
+        from gflow_cli.api.transports import migrated_composer as mc
+        from playwright.async_api import async_playwright
+
+        query = urllib.parse.urlencode({"assets": json.dumps(ASSETS), **page_modes})
+        url = f"http://127.0.0.1:{self.server.server_port}/?{query}"
+
+        async def scenario():
+            async with async_playwright() as playwright:
+                browser = await playwright.chromium.launch(executable_path=BROWSER, args=["--no-sandbox"])
+                try:
+                    page = await browser.new_page()
+                    await page.goto(url)
+                    try:
+                        return await scenario_body(page, mc.MigratedComposer()), None
+                    except Exception as error:  # noqa: BLE001 - asserted by the caller
+                        return None, error
+                finally:
+                    await browser.close()
+
+        return asyncio.run(scenario())
+
+    def test_slow_flow_attaches_the_right_references_without_the_fixed_sleeps(self):
+        # The picker opens late, keeps the unfiltered list on screen after each keystroke, and the chip
+        # lands late. Enter commits the first option on screen, so acting early attaches the wrong asset.
+        started = time.monotonic()
+        images, error = self.run_try_on(open_lag=300, filter_lag=400, chip_lag=400)
+        elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(len(images), 1)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertTrue(guard.prompt_present(_FakeFlow.submits[0]["prompt"], TRY_ON_PROMPT))
+        # gflow's own sleeps alone are 2 x (2.2 + 2.5 + 2.5) + 0.6 = 15 s.
+        self.assertLess(elapsed, 9, f"mention gestures took {elapsed:.1f}s")
+
+    def test_look_alike_first_option_is_not_committed_before_the_filter_ranks_the_exact_asset(self):
+        # Before filtering, the first row is "person-ab12cd34.jpg.old": it contains the typed name, but
+        # it is another asset. Committing it would attach DECOY_ID in place of the person photo.
+        page_assets = {"person-ab12cd34.jpg.old": DECOY_ID, **ASSETS}
+        images, error = self.run_try_on(page_assets=page_assets, filter_lag=400)
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertNotIn(DECOY_ID, _FakeFlow.submits[0]["references"])
+
+    def test_prefix_look_alike_first_option_is_not_committed_before_the_filter_ranks_the_exact_asset(self):
+        # "old-person-ab12cd34.jpg" ENDS with the typed name but is another asset.
+        page_assets = {"old-person-ab12cd34.jpg": DECOY_ID, **ASSETS}
+        images, error = self.run_try_on(page_assets=page_assets, filter_lag=400)
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertNotIn(DECOY_ID, _FakeFlow.submits[0]["references"])
+
+    def test_a_picker_whose_names_cannot_be_told_apart_falls_back_to_the_fixed_wait(self):
+        # Icon text and name share one text node, so no option can be recognised as exactly the asset:
+        # the wait runs to its cap (gflow's fixed time) instead of acting on a guess.
+        with patch.object(guard, "_PICKER_FILTER_CAP_MS", 700):
+            started = time.monotonic()
+            images, error = self.run_try_on(label="joined")
+            elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertGreater(elapsed, 2 * 0.7, "the capped wait was skipped")
+
+    def test_fixed_sleeps_come_back_with_flow_mention_fast_off(self):
+        with patch.dict(os.environ, {"FLOW_MENTION_FAST": "0"}):
+            started = time.monotonic()
+            images, error = self.run_try_on()
+            elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertGreater(elapsed, 14)
+
+    def test_asset_the_picker_never_lists_is_retried_then_refused(self):
+        from gflow_cli.api.transports import migrated_composer as mc
+        from gflow_cli.errors import ReferenceNotFoundError
+
+        async def mention_missing(page, composer):
+            await composer._mention_by_name(page, "no-such-asset.jpg", expect_chips=1)
+
+        with (
+            patch.object(guard, "_PICKER_FILTER_CAP_MS", 300),
+            patch.object(guard, "_CHIP_COMMIT_CAP_MS", 300),
+            patch.object(mc, "FRAME_SEARCH_RETRY_PAUSE_S", 0.05),
+        ):
+            result, error = self.with_page(mention_missing)
+
+        self.assertIsNone(result)
+        self.assertIsInstance(error, ReferenceNotFoundError)
+        self.assertIn("3 attempts", str(error))
+        self.assertEqual(_FakeFlow.submits, [])
 
     def test_prompt_lands_and_is_submitted_with_both_references_when_the_caret_left_the_composer(self):
         # Without the guard this exact page state generated with an empty prompt (reproduced).

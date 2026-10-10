@@ -751,9 +751,17 @@ test("an adult generation shows loading, exactly one result, a download, and req
   await expect(adult).toHaveCount(0);
   await expect(acknowledge).toHaveCount(0);
   await expect(generate).toHaveCount(0);
+  // The waiting picture shows the shopper's own (local) photo, as decoration only: the one
+  // announcement is the status line above, and the picture is gone once the result is there.
+  const waiting = dialog.getByTestId("try-on-waiting");
+  await expect(waiting).toBeVisible();
+  await expect(waiting.locator("img")).toHaveAttribute("src", /^blob:/);
+  await expect(waiting.locator("img")).toHaveAttribute("alt", "");
+  await expect(waiting.locator("img")).toHaveAttribute("aria-hidden", "true");
   await assertPageQuality(page);
 
   await expect(result).toBeVisible();
+  await expect(waiting).toHaveCount(0);
   await expect(dialog.getByRole("img", { name: /Ảnh thử đồ do AI tạo/ })).toHaveCount(1);
   await expect(status).toContainText("Đã tạo xong ảnh thử đồ.");
   await expect.poll(() => result.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
@@ -824,6 +832,30 @@ test("an adult generation shows loading, exactly one result, a download, and req
 
   await page.setViewportSize({ width: 1280, height: 900 });
   await assertPageQuality(page);
+});
+
+test("the waiting picture stands still when the shopper asks for reduced motion", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  const { generate, result, status } = parts(dialog);
+
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("slow") });
+  await generate.click();
+  await expect(status).toContainText("Đang tạo ảnh thử đồ");
+
+  const waiting = dialog.getByTestId("try-on-waiting");
+  await expect(waiting).toBeVisible();
+  // The moving overlays are not drawn and nothing left on screen animates.
+  await expect(waiting.locator(".tryon-wait__sweep")).toBeHidden();
+  await expect(waiting.locator(".tryon-wait__scan")).toBeHidden();
+  await expect(waiting.locator(".tryon-wait__label")).toHaveCSS("animation-name", "none");
+  await expect(waiting.locator(".tryon-wait__dots > span").first()).toHaveCSS("animation-name", "none");
+  await assertPageQuality(page);
+
+  await expect(result).toBeVisible();
+  await expect(waiting).toHaveCount(0);
+  expect(watched.pageErrors).toEqual([]);
 });
 
 test("while a generation runs the form is off screen and cannot change, so a late result matches what was sent", async ({

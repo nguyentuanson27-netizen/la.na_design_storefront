@@ -2727,3 +2727,134 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
     animation: none;
   }
 }
+
+/*
+ * Virtual try-on waiting picture (src/components/brand/try-on-waiting.tsx). The shopper's own photo
+ * under a moving sheen and scan line, with a caption that changes as the wait goes on. The 18rem box
+ * is the old placeholder's height, so the dialog does not change size when the result replaces it.
+ */
+.tryon-wait {
+  position: relative;
+  height: 18rem;
+  overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 0.5rem;
+  background: linear-gradient(160deg, #efe9de, #e3d9c9);
+}
+
+.tryon-wait__photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: saturate(0.85) brightness(0.96);
+}
+
+.tryon-wait__sweep {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+  transform: translateX(-100%);
+  animation: tryon-wait-sweep 2.4s ease-in-out infinite;
+}
+
+.tryon-wait__scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 6%;
+  height: 2px;
+  background: #faf7f2;
+  box-shadow: 0 0 10px 2px rgba(250, 247, 242, 0.85);
+  animation: tryon-wait-scan 3.2s ease-in-out infinite alternate;
+}
+
+.tryon-wait__caption {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.5rem 0.875rem;
+  background: #3b2219;
+  color: #faf7f2;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+}
+
+.tryon-wait__label {
+  animation: tryon-wait-label-in 0.45s ease-out;
+}
+
+.tryon-wait__dots {
+  display: inline-flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+.tryon-wait__dots > span {
+  width: 0.3125rem;
+  height: 0.3125rem;
+  border-radius: 9999px;
+  background: #faf7f2;
+  animation: tryon-wait-dot 1.2s ease-in-out infinite;
+}
+
+.tryon-wait__dots > span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.tryon-wait__dots > span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes tryon-wait-sweep {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes tryon-wait-scan {
+  to {
+    top: 82%;
+  }
+}
+
+@keyframes tryon-wait-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes tryon-wait-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tryon-wait__sweep,
+  .tryon-wait__scan,
+  .tryon-wait__label,
+  .tryon-wait__dots > span {
+    animation: none;
+  }
+
+  .tryon-wait__sweep,
+  .tryon-wait__scan {
+    display: none;
+  }
+}

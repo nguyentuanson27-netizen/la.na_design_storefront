@@ -191,6 +191,29 @@ export function tryOnLoginHref(productSlug: string): string {
 export const TRY_ON_WAIT_NOTE =
   "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Bạn giữ nguyên cửa sổ này và chờ chúng mình một chút nhé.";
 
+/**
+ * What the waiting screen says as the seconds pass. These are not progress reports (the provider
+ * gives none); they are reassurance that moves, ending on a line that still reads honestly when the
+ * wait runs past the usual minute. The last stage stays up for as long as the request does.
+ */
+export const TRY_ON_WAIT_STAGES = [
+  { fromSeconds: 0, label: "Đang chuẩn bị ảnh của bạn…" },
+  { fromSeconds: 8, label: "Đang thử đồ lên ảnh của bạn…" },
+  { fromSeconds: 22, label: "Đang chỉnh nếp vải và ánh sáng…" },
+  { fromSeconds: 40, label: "Sắp xong rồi, bạn chờ thêm chút nhé…" },
+  { fromSeconds: 70, label: "Lần này lâu hơn thường lệ, hệ thống vẫn đang tạo ảnh cho bạn…" },
+] as const;
+
+/** The index into `TRY_ON_WAIT_STAGES` to show after `elapsedSeconds` of waiting. */
+export function tryOnWaitStageIndex(elapsedSeconds: number): number {
+  const elapsed = Number.isFinite(elapsedSeconds) ? Math.max(0, elapsedSeconds) : 0;
+  let index = 0;
+  for (let candidate = 0; candidate < TRY_ON_WAIT_STAGES.length; candidate += 1) {
+    if (TRY_ON_WAIT_STAGES[candidate]!.fromSeconds <= elapsed) index = candidate;
+  }
+  return index;
+}
+
 export const TRY_ON_BETA_BADGE = "Đang phát triển";
 
 /** The feature is young; say so plainly and kindly, without promising what it cannot yet do. */

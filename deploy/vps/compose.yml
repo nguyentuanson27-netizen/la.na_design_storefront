@@ -158,6 +158,9 @@ services:
       FLOW_WARM_IDLE_SECONDS: "1800"
       FLOW_WARM_MAX_JOBS: "50"
       FLOW_WARM_MAX_RSS_MB: "1200"
+      # Mention gestures wait on the page instead of gflow's fixed sleeps. Set
+      # LA_TRY_ON_FLOW_MENTION_FAST=0 and redeploy to restore the fixed sleeps.
+      FLOW_MENTION_FAST: ${LA_TRY_ON_FLOW_MENTION_FAST:-1}
     init: true
     volumes:
       - flow_gflow_data:/data/gflow

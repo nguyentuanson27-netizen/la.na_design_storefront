@@ -69,6 +69,25 @@ wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_mode
   quota exhausted". It is not reported as gflow's retried rate-limit error, so the request budget
   is not spent re-running Pro.
 
+## Reference attach speed (`LA_TRY_ON_FLOW_MENTION_FAST`)
+
+gflow-cli 0.82.1 attaches each reference by typing `@`, the file name and Enter, with fixed sleeps of
+2.2 s, 2.5 s and 2.5 s in between (7.2 s per reference). The prompt guard
+(`flow_worker/gflow_prompt_guard.py`) replaces those sleeps with waits on the page: the picker has
+options, its first option holds the typed file name as a whole text node of its own (so `<name>.old`
+and `old-<name>` do not count) and the list stayed unchanged for 200 ms, then the chip exists. Every wait is capped at gflow's own sleep and falls through to
+gflow's chip-count check and retry, so it is never slower than gflow. The submit body guard is
+unchanged and still refuses a wrong or missing reference or prompt.
+
+- **On by default.** Log event `tryon.mention_timing` (`picker_ms`, `type_ms`, `filter_wait_ms`,
+  `commit_ms`, `filtered`) shows where the time goes. `filtered=false` on every run means Flow's
+  picker does not render the file name as a text node of its own, so the guard cannot tell the asset
+  apart and the run took gflow's fixed time.
+- **Rollback.** Set `LA_TRY_ON_FLOW_MENTION_FAST=0` (also `false`, `no`, `off`) in
+  `deploy/vps/.env.production` and redeploy. `compose.yml` maps it to the worker's
+  `FLOW_MENTION_FAST`; the worker passes it on to every gflow process, warm or not. Restoring it to
+  `1` re-enables the fast path.
+
 ## Warm browser (optional)
 
 By default every try-on starts its own gflow process, which launches Chrome and Flow's bootstrap

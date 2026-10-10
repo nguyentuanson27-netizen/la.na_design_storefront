@@ -9,6 +9,8 @@ import {
   TRY_ON_PHOTO_DONTS,
   TRY_ON_PHOTO_DOS,
   TRY_ON_WAIT_NOTE,
+  TRY_ON_WAIT_STAGES,
+  tryOnWaitStageIndex,
   isBlockedAgeState,
   isFinalForPhoto,
   isTeenAgeState,
@@ -138,6 +140,21 @@ test("the wait and in-development notices say what the shopper needs to know", (
   assert.match(TRY_ON_WAIT_NOTE, /30–60 giây/);
   assert.match(TRY_ON_BETA_NOTE, /đang được .*hoàn thiện/);
   assert.ok(TRY_ON_PHOTO_DOS.length > 0 && TRY_ON_PHOTO_DONTS.length > 0);
+});
+
+test("the waiting caption moves on with the seconds and stays on the last line for a long wait", () => {
+  assert.equal(tryOnWaitStageIndex(0), 0);
+  assert.equal(tryOnWaitStageIndex(7.9), 0);
+  assert.equal(tryOnWaitStageIndex(8), 1);
+  assert.equal(tryOnWaitStageIndex(45), 3);
+  assert.equal(tryOnWaitStageIndex(600), TRY_ON_WAIT_STAGES.length - 1);
+  // A clock that went backwards or a bad number never leaves the first caption.
+  assert.equal(tryOnWaitStageIndex(-5), 0);
+  assert.equal(tryOnWaitStageIndex(Number.NaN), 0);
+  const starts = TRY_ON_WAIT_STAGES.map((stage) => stage.fromSeconds);
+  assert.equal(starts[0], 0);
+  assert.deepEqual(starts, [...starts].sort((a, b) => a - b));
+  assert.ok(TRY_ON_WAIT_STAGES.every((stage) => stage.label.length > 0 && !/\d/.test(stage.label)));
 });
 
 test("only a safety block makes the photo final", () => {
