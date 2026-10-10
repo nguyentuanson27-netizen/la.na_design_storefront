@@ -190,6 +190,9 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
       request = input;
       return { id: 800_001 };
     },
+    async resolveTwoLevelAddressNames() {
+      return { provinceName: "Tỉnh Y", communeName: "Phường Y" };
+    },
   });
 
   assert.deepEqual(await healthy.submit({ publicCode: first.order.publicCode, shopId }), {
@@ -201,18 +204,24 @@ test("P8 retryable DRAFT refreshes in place so current cart/address reach the la
   assert.equal(request.bill_full_name, "Nguyễn Văn B");
   assert.equal(request.bill_phone_number, "0987654321");
   assert.ok(request.shipping_address.address.startsWith("34 Đường Y"));
-  // The refreshed draft carries the two-level address, which Pancake takes as new_* ids.
+  // The refreshed draft carries the two-level address, in the shape Pancake POS stores for "Địa chỉ mới".
   assert.deepEqual(
     {
-      new_province_id: "new_province_id" in request.shipping_address
-        ? request.shipping_address.new_province_id
-        : undefined,
-      new_commune_id: "new_commune_id" in request.shipping_address
-        ? request.shipping_address.new_commune_id
-        : undefined,
-      legacyDistrict: "district_id" in request.shipping_address,
+      render_type: "render_type" in request.shipping_address ? request.shipping_address.render_type : undefined,
+      province_id: "province_id" in request.shipping_address ? request.shipping_address.province_id : undefined,
+      district_id: "district_id" in request.shipping_address ? request.shipping_address.district_id : undefined,
+      commune_id: "commune_id" in request.shipping_address ? request.shipping_address.commune_id : undefined,
+      province_name: "province_name" in request.shipping_address ? request.shipping_address.province_name : undefined,
+      commune_name: "commune_name" in request.shipping_address ? request.shipping_address.commune_name : undefined,
     },
-    { new_province_id: "province-y", new_commune_id: "commune-y", legacyDistrict: false },
+    {
+      render_type: "new",
+      province_id: "province-y",
+      district_id: null,
+      commune_id: "commune-y",
+      province_name: "Tỉnh Y",
+      commune_name: "Phường Y",
+    },
   );
   assert.ok(request.note?.startsWith("Địa chỉ mới"));
   assert.deepEqual(request.items.map(({ variation_id }) => variation_id), [variantB.pancakeVariationId]);

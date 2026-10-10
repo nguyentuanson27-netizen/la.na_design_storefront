@@ -136,11 +136,14 @@ async function pancakeResponse(url, init) {
     const variationId = process.env.PANCAKE_A11Y_VARIATION_ID;
     if (
       body?.shop_id !== Number(SHOP_ID) ||
-      body?.shipping_address?.new_province_id !== PROVINCE_CURRENT ||
-      body?.shipping_address?.new_commune_id !== COMMUNE_CURRENT ||
-      "province_id" in (body?.shipping_address ?? {}) ||
-      "district_id" in (body?.shipping_address ?? {}) ||
-      "commune_id" in (body?.shipping_address ?? {}) ||
+      body?.shipping_address?.render_type !== "new" ||
+      body?.shipping_address?.province_id !== PROVINCE_CURRENT ||
+      body?.shipping_address?.commune_id !== COMMUNE_CURRENT ||
+      body?.shipping_address?.district_id !== null ||
+      body?.shipping_address?.province_name !== "Tỉnh Current" ||
+      body?.shipping_address?.commune_name !== "Phường Current" ||
+      "new_province_id" in (body?.shipping_address ?? {}) ||
+      "new_commune_id" in (body?.shipping_address ?? {}) ||
       body?.shipping_address?.phone_number !== "0901234567" ||
       body?.items?.length !== 1 ||
       body.items[0]?.variation_id !== variationId ||

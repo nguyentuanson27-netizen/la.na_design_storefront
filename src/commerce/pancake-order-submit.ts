@@ -140,6 +140,15 @@ export type PancakeOrderSubmissionGateway = {
     variationIds: readonly string[],
   ): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
+  /**
+   * Display names for a two-level (no district) address, which Pancake POS needs next to the ids to
+   * show its "Địa chỉ mới" tab. A read, so a failure is retryable before anything is sent. A
+   * gateway without it cannot submit a two-level order.
+   */
+  resolveTwoLevelAddressNames?(
+    provinceRef: string,
+    communeRef: string,
+  ): Promise<{ provinceName: string; communeName: string }>;
 };
 
 export type PancakeOrderSubmissionOptions = {
@@ -949,8 +958,21 @@ export function createPancakeOrderSubmissionService(
     const noteWithMarker = order.note ? `${order.note} ${orderMarker}` : orderMarker;
     const addressDetailWithMarker = `${order.addressDetail} ${orderMarker}`;
 
+    let geoNames: { provinceName: string; communeName: string } | undefined;
+    if (order.districtRef === null) {
+      // Still before the write boundary: a geo outage is a retryable DRAFT, never a half-described
+      // address that the POS would render with empty province and ward fields.
+      try {
+        if (!gateway.resolveTwoLevelAddressNames) return resetValidation();
+        geoNames = await gateway.resolveTwoLevelAddressNames(order.provinceRef, order.communeRef);
+      } catch {
+        return resetValidation();
+      }
+    }
+
     const request = buildPancakeCreateOrderRequest({
       shopId: persistedShopId,
+      ...(geoNames ?? {}),
       ...(options.orderSourceId === undefined ? {} : { orderSourceId: options.orderSourceId }),
       guestName: order.guestName,
       guestPhone: order.guestPhone,

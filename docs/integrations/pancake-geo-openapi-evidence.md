@@ -152,9 +152,14 @@ What checkout does, and where each part comes from:
   covered by it; it follows Pancake's observed behaviour (a new-format province id such as
   `84_VN101` returns two-level rows with `district_id: null`). `listPancakeNewCommunes` fails closed
   on any row that names a district or a different province;
-- create order: `shipping_address.new_province_id` / `new_commune_id` instead of the
-  `province_id` / `district_id` / `commune_id` triple, which is likewise observed rather than in the
-  reviewed create-order evidence;
+- create order: the shape Pancake POS itself stores for its "Địa chỉ mới" tab —
+  `shipping_address.render_type: "new"`, the new `84_VN…` ids in `province_id` / `commune_id`,
+  `district_id: null`, plus `province_name` / `commune_name`. This is observed from real POS orders,
+  not in the reviewed create-order evidence. `new_province_id` / `new_commune_id` are **not** used:
+  Pancake stores them in side columns but the POS UI ignores them, so such an order shows empty
+  province/ward fields. The names are not persisted on the order; submit re-reads them from the geo
+  endpoints (`resolveTwoLevelAddressNames`) before the write and leaves the order a retryable DRAFT
+  if that read fails;
 - `OrderMirror.districtRef` is `NULL` for a two-level checkout. A draft snapshotted before the switch
   still carries its district and is still submitted with the old triple.
 
