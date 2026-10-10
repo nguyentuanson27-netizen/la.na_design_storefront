@@ -8,6 +8,7 @@ import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
+import { resolveTwoLevelAddressNames } from "../support/pancake-geo-names.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -153,6 +154,7 @@ function gatewayWithFreshBase(variationId: string, productId: string, freshBaseV
   return {
     created,
     gateway: {
+      resolveTwoLevelAddressNames,
       async fetchVariations() {
         return [liveVariation(variationId, productId, freshBaseVnd)];
       },
@@ -333,6 +335,7 @@ test("P9b the write-back records Pancake's own after-discount, not a copy of the
 
   const created: unknown[] = [];
   const result = await submissionService({
+    resolveTwoLevelAddressNames,
     async fetchVariations() {
       return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 600_000, 550_000)];
     },
@@ -573,6 +576,7 @@ test("P9b a campaign that ends while the live Pancake read is in flight is price
   const service = createPancakeOrderSubmissionService(
     prisma,
     {
+      resolveTwoLevelAddressNames,
       async fetchVariations() {
         clock = new Date(endsAt.getTime() + 300);
         return [liveVariation(variant.pancakeVariationId, product.pancakeProductId, 500_000)];

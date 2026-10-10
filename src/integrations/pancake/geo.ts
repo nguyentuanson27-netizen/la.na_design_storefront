@@ -225,7 +225,8 @@ export async function listPancakeCommunes(
  * Vietnam abolished the district level on 1 July 2025 and merged provinces. Pancake serves the new
  * units from the same geo endpoints: `is_new=true` lists the new provinces, and `/geo/communes`
  * queried with a new province id (and no `district_id`) lists its wards/communes with no district
- * parent. Orders then carry `new_province_id` / `new_commune_id` instead of the old triple.
+ * parent. Orders then carry `render_type: "new"` with the new ids in `province_id` / `commune_id`
+ * (`district_id: null`) and the `province_name` / `commune_name` display names.
  *
  * The published OpenAPI document predates this and still marks `district_id` as required on
  * `/geo/communes`, so the shape here comes from observed Pancake behaviour; run
