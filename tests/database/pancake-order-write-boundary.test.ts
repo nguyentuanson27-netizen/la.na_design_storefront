@@ -198,6 +198,61 @@ test("I6b a refused hook sends nothing and leaves the order submittable again", 
   assert.equal(order.pancakeOrderId, null);
 });
 
+test("a geo-name lookup outage for a two-level draft sends nothing and a healthy retry confirms once", async () => {
+  const { product, variant, publicCode } = await seedDraft("geo-outage", 500_000);
+  const live = liveVariation(variant.pancakeVariationId, product.pancakeProductId, 500_000);
+  const events: string[] = [];
+  const created: Array<{ shipping_address: unknown }> = [];
+
+  const outage = await createPancakeOrderSubmissionService(
+    prisma,
+    {
+      ...recordingGateway(events, live),
+      async resolveTwoLevelAddressNames() {
+        events.push("geo");
+        throw new Error("geo unavailable");
+      },
+    },
+    { now: () => now },
+  ).submit({
+    publicCode,
+    shopId,
+    beforeExternalWrite: async () => {
+      events.push("hook");
+      return true;
+    },
+  });
+
+  assert.deepEqual(outage, { ok: false, state: "DRAFT", reason: "VALIDATION_UNAVAILABLE" });
+  assert.deepEqual(events, ["catalog", "geo"], "neither the hook nor the create may run");
+  const afterOutage = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode } });
+  assert.equal(afterOutage.state, "DRAFT");
+  assert.equal(afterOutage.pancakeOrderId, null);
+
+  const retry = await createPancakeOrderSubmissionService(
+    prisma,
+    {
+      ...recordingGateway(events, live),
+      async createOrder(request) {
+        created.push(request);
+        return { id: 900_102 };
+      },
+    },
+    { now: () => now },
+  ).submit({ publicCode, shopId });
+
+  assert.deepEqual(retry, { ok: true, state: "CONFIRMED", pancakeOrderId: "900102" });
+  assert.equal(created.length, 1, "exactly one order is created");
+  assert.deepEqual(
+    {
+      render_type: (created[0]!.shipping_address as Record<string, unknown>).render_type,
+      province_name: (created[0]!.shipping_address as Record<string, unknown>).province_name,
+      commune_name: (created[0]!.shipping_address as Record<string, unknown>).commune_name,
+    },
+    { render_type: "new", province_name: "Tỉnh Test", commune_name: "Phường Test" },
+  );
+});
+
 test("I6b a pre-write ending never reaches the hook at all", async () => {
   // The defect this file exists for. Both of these end the submission with nothing sent, and both
   // must leave the caller's hold exactly as it was — for I6b that means still RESERVED, and
