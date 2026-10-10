@@ -220,6 +220,27 @@ class GflowTwoReferencesPlusPromptTest(unittest.TestCase):
         self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
         self.assertNotIn(DECOY_ID, _FakeFlow.submits[0]["references"])
 
+    def test_prefix_look_alike_first_option_is_not_committed_before_the_filter_ranks_the_exact_asset(self):
+        # "old-person-ab12cd34.jpg" ENDS with the typed name but is another asset.
+        page_assets = {"old-person-ab12cd34.jpg": DECOY_ID, **ASSETS}
+        images, error = self.run_try_on(page_assets=page_assets, filter_lag=400)
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertNotIn(DECOY_ID, _FakeFlow.submits[0]["references"])
+
+    def test_a_picker_whose_names_cannot_be_told_apart_falls_back_to_the_fixed_wait(self):
+        # Icon text and name share one text node, so no option can be recognised as exactly the asset:
+        # the wait runs to its cap (gflow's fixed time) instead of acting on a guess.
+        with patch.object(guard, "_PICKER_FILTER_CAP_MS", 700):
+            started = time.monotonic()
+            images, error = self.run_try_on(label="joined")
+            elapsed = time.monotonic() - started
+
+        self.assertIsNone(error)
+        self.assertEqual(_FakeFlow.submits[0]["references"], [PERSON_ID, GARMENT_ID])
+        self.assertGreater(elapsed, 2 * 0.7, "the capped wait was skipped")
+
     def test_fixed_sleeps_come_back_with_flow_mention_fast_off(self):
         with patch.dict(os.environ, {"FLOW_MENTION_FAST": "0"}):
             started = time.monotonic()

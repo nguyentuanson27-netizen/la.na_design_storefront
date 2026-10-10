@@ -21,6 +21,8 @@
   ?focus=lost models the picker teardown taking focus and caret out of the composer after a commit.
   ?input=ignored models an editor that drops programmatic insertText input.
   ?wire=drop-prompt models a submit that leaves the composer prompt out of the request.
+  ?label=joined renders each option's icon text and name as one text node ("image<name>") instead of an
+  icon element followed by the name, which the picker guard cannot tell apart from a look-alike.
   ?open_lag=MS, ?filter_lag=MS and ?chip_lag=MS model a slow Flow: the picker opens MS after "@",
   keeps showing the previous (unfiltered) list for MS after each keystroke, and inserts the chip MS
   after Enter. Enter commits the first option on screen, as Flow does, so acting before the list
@@ -35,6 +37,7 @@ const ASSETS = JSON.parse(params.get("assets") || "{}");  // display name -> med
 const FOCUS = params.get("focus") || "kept";
 const INPUT = params.get("input") || "accepted";
 const WIRE = params.get("wire") || "composer";
+const LABEL = params.get("label") || "separate";
 const OPEN_LAG = Number(params.get("open_lag") || 0);
 const FILTER_LAG = Number(params.get("filter_lag") || 0);
 const CHIP_LAG = Number(params.get("chip_lag") || 0);
@@ -64,7 +67,14 @@ function renderPicker(filter) {
     const option = document.createElement("button");
     option.className = "asset-item";
     option.setAttribute("role", "option");
-    option.textContent = name;
+    option.dataset.asset = name;
+    if (LABEL === "joined") {
+      option.textContent = "image" + name;  // icon text and name in one text node
+    } else {
+      const icon = document.createElement("i");
+      icon.textContent = "image";
+      option.append(icon, name);  // an icon element, then the name as its own text node
+    }
     picker.appendChild(option);
   }
 }
@@ -78,7 +88,7 @@ composer.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && picker) {
     event.preventDefault();
     const first = picker.querySelector("button");
-    const name = first ? first.textContent : null;
+    const name = first ? first.dataset.asset : null;
     const selection = window.getSelection();
     const node = selection.anchorNode;
     const offset = selection.anchorOffset;

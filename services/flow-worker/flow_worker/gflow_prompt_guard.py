@@ -57,13 +57,23 @@ _CLEAR_CAP_MS = 600
 _PICKER_SETTLE_MS = 200
 
 # True once the picker is settled on the requested asset: its first option (Enter commits the first
-# option) is the asset itself -- its text ends with the typed name, so a stale or look-alike row that
-# merely contains the name does not count -- and the option list has not changed for settleMs. The
-# probe state lives on the page and restarts whenever the list changes or polling had a gap.
+# option) carries the typed name as a whole text node of its own -- an option is an icon followed by
+# the file name, so a look-alike such as "<name>.old" or "old-<name>" is a different text and does not
+# count -- and the option list has not changed for settleMs. When the name cannot be found as a text
+# node of its own (Flow renders it differently from what this expects) this never turns true and the
+# wait runs to its cap, i.e. gflow's own fixed time. The probe state lives on the page and restarts
+# whenever the list changes or polling had a gap.
 _PICKER_SETTLED_JS = """([selector, name, settleMs]) => {
   const options = [...document.querySelectorAll(selector)];
   const label = (option) => (option.textContent || '').trim();
-  if (!options.length || !label(options[0]).endsWith(name)) {
+  const namesTheAsset = (option) => {
+    const walker = document.createTreeWalker(option, NodeFilter.SHOW_TEXT);
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if ((node.data || '').trim() === name) return true;
+    }
+    return false;
+  };
+  if (!options.length || !namesTheAsset(options[0])) {
     window.__tryOnPickerProbe = null;
     return false;
   }
