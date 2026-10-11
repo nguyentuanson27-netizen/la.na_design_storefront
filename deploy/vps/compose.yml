@@ -52,6 +52,10 @@ services:
       PRODUCT_IMAGE_CACHE_MAX_MB: ${PRODUCT_IMAGE_CACHE_MAX_MB:-2048}
     volumes:
       - product_image_cache:/app/var/product-image-cache
+      # Google service-account credential for the Vertex try-on overflow (LA_TRY_ON_OVERFLOW_PROVIDER=
+      # vertex): a directory delivered to the VPS out of band, never committed, read-only here. With
+      # overflow off it is simply empty. deploy.sh checks the file before a release that needs it.
+      - ${LA_TRY_ON_GCP_CREDENTIALS_DIR:-./secrets/try-on-gcp}:/run/secrets/try-on-gcp:ro
     depends_on:
       postgres:
         condition: service_healthy

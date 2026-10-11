@@ -55,3 +55,18 @@ test("a failing writer never throws into the request", () => {
     }),
   );
 });
+
+test("routing signals carry only a known provider and cause", () => {
+  assert.deepEqual(
+    buildTryOnSignal({ name: "try_on.overflow_routed", provider: "vertex", cause: "primary_busy", productSlug: "vay-hoa" }),
+    { name: "try_on.overflow_routed", provider: "vertex", cause: "primary_busy", productSlug: "vay-hoa" },
+  );
+  assert.deepEqual(
+    buildTryOnSignal({
+      name: "try_on.primary_marked_down",
+      provider: "openai" as never,
+      cause: "worker said: token abc123 expired" as never,
+    }),
+    { name: "try_on.primary_marked_down" },
+  );
+});

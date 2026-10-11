@@ -13,6 +13,8 @@ import { createMerchandisingRepository } from "./merchandising-repository.ts";
 import type { StorefrontProductMedia } from "./product-media.ts";
 import { getConfiguredStorefrontProductBySlug } from "./storefront-catalog-runtime.ts";
 import { resolveTryOnEligibility } from "./try-on-eligibility.ts";
+import { createTryOnOverflowGate } from "./try-on-overflow.ts";
+import { disclosedTryOnProviders, type TryOnDisclosedProviders } from "./try-on-provider.ts";
 import { createTryOnIdentityResolvers } from "./try-on-identity.ts";
 import { createTryOnRateLimiter, type TryOnIdentity } from "./try-on-rate-limit.ts";
 import { createTryOnService } from "./try-on-service.ts";
@@ -30,6 +32,12 @@ const startupTryOnConfig = readTryOnRuntimeConfig();
 const limiter = createTryOnRateLimiter(
   startupTryOnConfig.available && startupTryOnConfig.provider === "flow" ? { maxConcurrent: 1 } : {},
 );
+// The Vertex overflow behind Flow, when configured: its daily cap, its own slots and Flow's health.
+// Like the limiter it is built once from the startup configuration.
+const overflowGate =
+  startupTryOnConfig.available && startupTryOnConfig.provider === "flow" && startupTryOnConfig.overflow
+    ? createTryOnOverflowGate({ dailyCap: startupTryOnConfig.overflow.dailyCap })
+    : undefined;
 
 async function loadProduct(slug: string) {
   let product: Awaited<ReturnType<typeof getConfiguredStorefrontProductBySlug>>;
@@ -51,6 +59,7 @@ export const peekTryOnQuota = (identity: TryOnIdentity) => limiter.peekQuota(ide
 export const tryOnService = createTryOnService({
   readConfig: () => readTryOnRuntimeConfig(),
   limiter,
+  overflowGate,
   loadProduct,
   fetchProductImage: (url) => fetchTryOnGarmentImage(url),
   generate: ({ config, person, product }) =>
@@ -107,13 +116,14 @@ export const resolveTryOnDisplayIdentity = identityResolvers.forDisplay;
  */
 export async function resolveProductTryOn(
   product: Readonly<{ id: string; slug: string; media: StorefrontProductMedia }>,
-): Promise<Readonly<{ productSlug: string; provider: "vertex" | "flow" }> | null> {
+): Promise<Readonly<{ productSlug: string; provider: TryOnDisclosedProviders }> | null> {
   const config = readTryOnRuntimeConfig();
   if (!config.available) return null;
   try {
     const categoryKeys = await createMerchandisingRepository(prisma).readCategoryMembership(product.id);
     const eligibility = resolveTryOnEligibility({ categoryKeys, media: product.media });
-    return eligibility.eligible ? { productSlug: product.slug, provider: config.provider } : null;
+    // The provider is only for the privacy disclosure: with an overflow both processors are named.
+    return eligibility.eligible ? { productSlug: product.slug, provider: disclosedTryOnProviders(config) } : null;
   } catch {
     return null;
   }

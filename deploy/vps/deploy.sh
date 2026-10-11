@@ -26,6 +26,9 @@ RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
 TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_FLOW_URL="$(grep -E '^LA_TRY_ON_FLOW_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_OVERFLOW_PROVIDER="$(grep -E '^LA_TRY_ON_OVERFLOW_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_GCP_CREDENTIALS="$(grep -E '^GOOGLE_APPLICATION_CREDENTIALS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_GCP_CREDENTIALS_DIR="$(grep -E '^LA_TRY_ON_GCP_CREDENTIALS_DIR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="${TRY_ON_PROVIDER:-vertex}"
 if [[ -z "$RELEASE_SHA" || "$RELEASE_SHA" == "replace-with-approved-git-sha" ]]; then
   echo "RELEASE_SHA must be set in $ENV_FILE" >&2
@@ -57,8 +60,40 @@ elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
   exit 1
 fi
 
+# The Vertex overflow reads its credential from the directory compose.yml mounts at
+# /run/secrets/try-on-gcp. A missing or unreadable file would only show up as AUTH_FAILED on the first
+# overflowed try-on, so the deploy stops instead: here for a missing file, and after the image build
+# (TRY_ON_CREDENTIAL_CHECK_JS below) for one the app's own user cannot open. Contents are never read
+# or printed.
+TRY_ON_OVERFLOW_ON=false
+if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" && "$TRY_ON_OVERFLOW_PROVIDER" == "vertex" ]]; then
+  TRY_ON_OVERFLOW_ON=true
+  if [[ "$TRY_ON_GCP_CREDENTIALS" != /run/secrets/try-on-gcp/* ]]; then
+    echo "Vertex overflow requires GOOGLE_APPLICATION_CREDENTIALS under /run/secrets/try-on-gcp/" >&2
+    exit 1
+  fi
+  credentials_dir="${TRY_ON_GCP_CREDENTIALS_DIR:-./secrets/try-on-gcp}"
+  [[ "$credentials_dir" == /* ]] || credentials_dir="$(dirname "$COMPOSE_FILE")/$credentials_dir"
+  if [[ ! -s "$credentials_dir/${TRY_ON_GCP_CREDENTIALS#/run/secrets/try-on-gcp/}" ]]; then
+    echo "Vertex overflow credential file is missing or empty in $credentials_dir" >&2
+    exit 1
+  fi
+fi
+
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops "${flow_services[@]}"
+
+# The host check above cannot see what the container sees: the app image runs as `node` (uid 1000)
+# with the credential mounted read-only, so a root-owned 0600 key passes there and fails here. Run in
+# the built image, as its own user, before any migration or cutover. It opens the file and closes it
+# without reading a byte.
+TRY_ON_CREDENTIAL_CHECK_JS='const fs = require("node:fs"); const path = process.env.GOOGLE_APPLICATION_CREDENTIALS || ""; try { if (!fs.statSync(path).isFile()) throw new Error(); fs.accessSync(path, fs.constants.R_OK); fs.closeSync(fs.openSync(path, "r")); } catch { process.exit(1); }'
+if [[ "$TRY_ON_OVERFLOW_ON" == "true" ]]; then
+  if ! "${compose[@]}" run --rm --no-deps app node -e "$TRY_ON_CREDENTIAL_CHECK_JS"; then
+    echo "The Vertex overflow credential is not readable by the app container's user (uid 1000); see deploy/vps/env.example" >&2
+    exit 1
+  fi
+fi
 
 # A warm flow-worker keeps Chrome open on the Google profile, and `gflow auth status` opens a second
 # Chrome on that same profile. So a running worker is asked to release it (POST /v1/cool) before those

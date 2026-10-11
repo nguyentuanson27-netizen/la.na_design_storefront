@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { StorefrontProductMedia } from "@/commerce/product-media";
-import type { TryOnProvider } from "@/commerce/try-on-provider";
+import type { TryOnDisclosedProviders } from "@/commerce/try-on-provider";
 import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
@@ -41,7 +41,7 @@ type BrandProductDetailProps = Readonly<{
   galleryIndexByVariantId: Readonly<Record<string, number>>;
   sizeGuide: ProductMappedSizeGuide | null;
   /** Server-decided virtual try-on entry point; `null` renders nothing and changes nothing else. */
-  tryOn: Readonly<{ productSlug: string; provider: TryOnProvider }> | null;
+  tryOn: Readonly<{ productSlug: string; provider: TryOnDisclosedProviders }> | null;
   /** Left column, first: name, collection context. */
   identity: ReactNode;
   /** Left column, below the identity: description, material, care. `null` when none truthfully exists. */

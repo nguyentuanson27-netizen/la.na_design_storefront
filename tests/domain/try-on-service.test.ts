@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { resolveStorefrontProductMedia } from "../../src/commerce/product-media.ts";
+import { createTryOnOverflowGate } from "../../src/commerce/try-on-overflow.ts";
 import { createTryOnRateLimiter } from "../../src/commerce/try-on-rate-limit.ts";
 import { createTryOnService, type TryOnServiceDependencies } from "../../src/commerce/try-on-service.ts";
 import type { TryOnSignalInput } from "../../src/operations/try-on-observability.ts";
@@ -422,4 +423,151 @@ test("the upload slot is released after a failed read and before the product loo
   });
   assert.equal((await service.handle({ identity: GUEST, readForm: async () => tryOnForm() })).ok, true);
   assert.equal(uploadFreeDuringGenerate, true);
+});
+
+// --- Vertex overflow behind Flow ------------------------------------------------------------------
+
+const FLOW_WITH_OVERFLOW = {
+  available: true,
+  provider: "flow",
+  workerUrl: "http://flow-worker:8787",
+  workerToken: "f".repeat(64),
+  overflow: { vertex: CONFIG, dailyCap: 5 },
+} as const;
+
+function buildOverflow(
+  flowOutcomes: Array<"ok" | "TIMEOUT" | "AUTH_FAILED" | "SAFETY_BLOCKED" | "BUSY_HELD" | "BUSY_QUOTA" | "throw"> = [],
+  options: { dailyCap?: number; withGate?: boolean; garmentFetches?: Array<"ok" | "fail"> } = {},
+) {
+  const calls: string[] = [];
+  const limiter = createTryOnRateLimiter({ ...OPEN, maxConcurrent: 1 });
+  const gate = createTryOnOverflowGate({ dailyCap: options.dailyCap ?? 5 });
+  const { run, probe } = build({
+    readConfig: () => FLOW_WITH_OVERFLOW,
+    limiter,
+    overflowGate: options.withGate === false ? undefined : gate,
+    fetchProductImage: async () =>
+      (options.garmentFetches?.shift() ?? "ok") === "ok"
+        ? { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }
+        : { ok: false, reason: "FETCH_FAILED" },
+    generate: async ({ config }) => {
+      calls.push(config.provider);
+      if (config.provider === "vertex") return { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } };
+      const outcome = flowOutcomes.shift() ?? "ok";
+      if (outcome === "throw") throw new Error("worker socket hang up");
+      if (outcome === "BUSY_HELD") return { ok: false, reason: "BUSY" };
+      if (outcome === "BUSY_QUOTA") return { ok: false, reason: "BUSY", quotaExhausted: true };
+      return outcome === "ok"
+        ? { ok: true, image: { bytes: PNG_BYTES, mimeType: "image/png" } }
+        : { ok: false, reason: outcome };
+    },
+  });
+  return { run, probe, calls, limiter, gate };
+}
+
+test("overflow: Flow serves while its slot is free; nothing is routed to Vertex", async () => {
+  const { run, probe, calls } = buildOverflow();
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(calls, ["flow"]);
+  assert.equal(probe.signals.some((signal) => signal.name === "try_on.overflow_routed"), false);
+  assert.ok(probe.signals.some((s) => s.name === "try_on.generation_started" && s.provider === "flow"));
+});
+
+test("overflow: with Flow's one slot taken the request goes to Vertex instead of BUSY", async () => {
+  const { run, probe, calls, limiter } = buildOverflow();
+  const held = limiter.startGeneration();
+  assert.equal(held.ok, true);
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(calls, ["vertex"]);
+  assert.ok(
+    probe.signals.some(
+      (s) => s.name === "try_on.overflow_routed" && s.cause === "primary_busy" && s.provider === "vertex",
+    ),
+  );
+  assert.ok(probe.signals.some((s) => s.name === "try_on.generation_succeeded" && s.provider === "vertex"));
+});
+
+test("overflow: past the daily cap a busy Flow answers BUSY as before, and nothing is sent", async () => {
+  const { run, probe, calls, limiter } = buildOverflow([], { dailyCap: 1 });
+  limiter.startGeneration();
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(calls, ["vertex"]);
+  assert.ok(probe.signals.some((s) => s.name === "try_on.rate_limited" && s.cause === "daily_cap"));
+});
+
+test("overflow: a Flow failure is final for that request and is never retried on Vertex", async () => {
+  for (const outcome of ["TIMEOUT", "SAFETY_BLOCKED", "AUTH_FAILED", "throw"] as const) {
+    const { run, calls } = buildOverflow([outcome]);
+    const result = await run();
+    assert.equal(result.ok, false, outcome);
+    assert.deepEqual(calls, ["flow"], outcome);
+  }
+});
+
+test("overflow: after an auth failure Flow is marked down and the next request goes to Vertex", async () => {
+  const { run, probe, calls } = buildOverflow(["AUTH_FAILED"]);
+  assert.deepEqual(await run(), { ok: false, reason: "AUTH_FAILED" });
+  assert.ok(probe.signals.some((s) => s.name === "try_on.primary_marked_down" && s.cause === "auth_failed"));
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(calls, ["flow", "vertex"]);
+  assert.ok(probe.signals.some((s) => s.name === "try_on.overflow_routed" && s.cause === "primary_down"));
+});
+
+test("overflow: three Flow failures in a row (thrown or reported) mark it down", async () => {
+  const { run, calls } = buildOverflow(["TIMEOUT", "throw", "TIMEOUT"]);
+  for (let i = 0; i < 4; i += 1) await run();
+  assert.deepEqual(calls, ["flow", "flow", "flow", "vertex"]);
+});
+
+test("overflow: a failure before the provider call does not count against Flow's health", async () => {
+  const { run, calls, gate } = buildOverflow();
+  // Swap in a garment fetch that fails: it is not Flow's failure.
+  const failing = build({
+    readConfig: () => FLOW_WITH_OVERFLOW,
+    limiter: createTryOnRateLimiter({ ...OPEN, maxConcurrent: 1 }),
+    overflowGate: gate,
+    fetchProductImage: async () => ({ ok: false, reason: "FETCH_FAILED" }),
+  });
+  for (let i = 0; i < 4; i += 1) await failing.run();
+  assert.equal(gate.primaryDown(), false);
+  await run();
+  assert.deepEqual(calls, ["flow"]);
+});
+
+test("overflow configured without a gate behaves as Flow alone: a busy Flow is BUSY", async () => {
+  const { run, calls, limiter } = buildOverflow([], { withGate: false });
+  limiter.startGeneration();
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(calls, []);
+});
+
+test("overflow: a garment fetch that fails before Vertex is called hands the day's generation back", async () => {
+  const { run, probe, calls, limiter } = buildOverflow([], { dailyCap: 1, garmentFetches: ["fail", "ok"] });
+  limiter.startGeneration(); // Flow is busy for both requests
+  assert.deepEqual(await run(), { ok: false, reason: "PRODUCT_IMAGE_UNAVAILABLE" });
+  // Nothing reached Vertex, and no route was reported for a call that never began.
+  assert.deepEqual(calls, []);
+  assert.equal(probe.signals.some((s) => s.name === "try_on.overflow_routed"), false);
+
+  assert.equal((await run()).ok, true);
+  assert.deepEqual(calls, ["vertex"]);
+  assert.equal(probe.signals.filter((s) => s.name === "try_on.overflow_routed").length, 1);
+  // Now the one generation of the day is spent.
+  assert.deepEqual(await run(), { ok: false, reason: "BUSY" });
+  assert.deepEqual(calls, ["vertex"]);
+});
+
+test("overflow: a held worker's BUSY keeps Flow in use; a quota BUSY sends the next request to Vertex", async () => {
+  const held = buildOverflow(["BUSY_HELD", "ok"]);
+  assert.deepEqual(await held.run(), { ok: false, reason: "BUSY" });
+  assert.equal((await held.run()).ok, true);
+  assert.deepEqual(held.calls, ["flow", "flow"]);
+  assert.equal(held.probe.signals.some((s) => s.name === "try_on.primary_marked_down"), false);
+
+  const quota = buildOverflow(["BUSY_QUOTA"]);
+  assert.deepEqual(await quota.run(), { ok: false, reason: "BUSY" });
+  assert.equal((await quota.run()).ok, true);
+  assert.deepEqual(quota.calls, ["flow", "vertex"]);
+  assert.ok(quota.probe.signals.some((s) => s.name === "try_on.primary_marked_down" && s.cause === "provider_busy"));
 });

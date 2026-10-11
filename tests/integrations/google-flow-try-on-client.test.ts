@@ -123,7 +123,6 @@ test("worker failure classes map to the existing safe try-on reasons", async () 
     [401, { ok: false, reason: "AUTH_FAILED" }, "AUTH_FAILED"],
     [403, { ok: false, reason: "AUTH_FAILED" }, "AUTH_FAILED"],
     [409, { ok: false, reason: "BUSY" }, "BUSY"],
-    [429, { ok: false, reason: "BUSY" }, "BUSY"],
     [422, { ok: false, reason: "SAFETY_BLOCKED" }, "SAFETY_BLOCKED"],
     [504, { ok: false, reason: "TIMEOUT" }, "TIMEOUT"],
     [502, { ok: false, reason: "GENERATION_FAILED", detail: "secret upstream text" }, "GENERATION_FAILED"],
@@ -133,6 +132,18 @@ test("worker failure classes map to the existing safe try-on reasons", async () 
     const result = await client.generate({ person, product });
     assert.deepEqual(result, { ok: false, reason });
     assert.doesNotMatch(JSON.stringify(result), /secret upstream text/);
+  }
+});
+
+test("only the worker's 429 BUSY is a quota refusal; a 409 BUSY is a momentarily held worker", async () => {
+  for (const [status, body, expected] of [
+    [429, { ok: false, reason: "BUSY" }, { ok: false, reason: "BUSY", quotaExhausted: true }],
+    [429, { unexpected: true }, { ok: false, reason: "BUSY", quotaExhausted: true }],
+    [409, { ok: false, reason: "BUSY" }, { ok: false, reason: "BUSY" }],
+    [409, { unexpected: true }, { ok: false, reason: "BUSY" }],
+  ] as const) {
+    const { client } = harness(json(body, status));
+    assert.deepEqual(await client.generate({ person, product }), expected, `${status} ${JSON.stringify(body)}`);
   }
 });
 
