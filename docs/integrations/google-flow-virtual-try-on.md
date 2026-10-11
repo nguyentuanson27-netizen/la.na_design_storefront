@@ -99,10 +99,12 @@ To turn it on:
    `LA_TRY_ON_GCP_CREDENTIALS_DIR` elsewhere), readable by uid 1000: `chmod 0440`, `chgrp 1000`.
 3. In `.env.production`: `LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, `LA_TRY_ON_VERTEX_DAILY_CAP=<n>`,
    `LA_TRY_ON_GCP_PROJECT_ID=<project>`, `GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/try-on-gcp/<name>.json`.
-4. Deploy. `deploy.sh` refuses when the credential path or file is missing.
+4. Deploy. `deploy.sh` refuses when the credential path or file is missing, and again, after building
+   the image, when the app's own user (uid 1000) cannot open the file inside the container.
 
 Watch: `try_on.overflow_routed` (cause `primary_busy` / `primary_down`), `try_on.primary_marked_down`
-(cause `auth_failed` / `provider_busy` / `repeated_failures`), `try_on.rate_limited` with cause
+(cause `auth_failed` / `provider_busy` / `repeated_failures`; `provider_busy` only for the worker's
+quota `429 BUSY`, never its momentary `409 BUSY`), `try_on.rate_limited` with cause
 `daily_cap` or `concurrency` (overflow refused), and `provider` on every `generation_*` signal. To turn
 it off, empty `LA_TRY_ON_OVERFLOW_PROVIDER` and redeploy.
 

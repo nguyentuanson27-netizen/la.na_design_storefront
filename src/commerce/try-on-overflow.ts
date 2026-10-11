@@ -1,5 +1,4 @@
 import type { TryOnFailureReason } from "./try-on-policy.ts";
-import type { TryOnGenerationSlot } from "./try-on-rate-limit.ts";
 
 /**
  * The Vertex overflow behind Flow (owner decision 2026-10-11; see `try-on-provider.ts`).
@@ -11,11 +10,16 @@ import type { TryOnGenerationSlot } from "./try-on-rate-limit.ts";
  *
  * Three controls, all in process memory like the rest of the limiter (one app container, ADR 0002):
  *
- * - a cap on Vertex generations per calendar day in Vietnam time (UTC+7), counted when a slot is
- *   taken because that is when the spend is committed, whatever the outcome;
+ * - a cap on Vertex generations per calendar day in Vietnam time (UTC+7). Taking a slot only
+ *   *reserves* one of today's generations; it is spent by `commit()` at the provider call, whatever
+ *   the outcome, and a reservation released without a commit (the garment image could not be
+ *   fetched, so Vertex was never called) is handed back. Reservations count against the cap, so
+ *   concurrent requests can never overshoot it;
  * - a cap on Vertex generations in flight;
- * - Flow's health: an auth failure marks it down for 30 min, a BUSY from the worker itself (both of
- *   its models out of quota) for 10 min, and three generic failures or timeouts in a row for 15 min.
+ * - Flow's health: an auth failure marks it down for 30 min, a quota BUSY from the worker (its final
+ *   model refused for quota, HTTP 429) for 10 min, and three generic failures or timeouts in a row
+ *   for 15 min. A BUSY that only means the worker is momentarily held (its lock, a held Chrome
+ *   profile, an operator's `/v1/cool` pause: HTTP 409) says nothing about Flow's health.
  *   While it is down every request goes to Vertex; the first request after that tries Flow again.
  *
  * A restart forgets all three: the cap starts again and Flow is tried first. That is acceptable for a
@@ -33,7 +37,13 @@ export const PRIMARY_DOWN_AFTER_FAILURES_MS = 15 * MINUTE_MS;
 export const PRIMARY_FAILURES_BEFORE_DOWN = 3;
 
 export type TryOnOverflowSlot =
-  | Exclude<TryOnGenerationSlot, Readonly<{ ok: false }>>
+  | Readonly<{
+      ok: true;
+      /** Spends the reserved generation: call it right before the provider call. Idempotent. */
+      commit: () => void;
+      /** Frees the slot, and hands the reservation back if it was never committed. Idempotent. */
+      release: () => void;
+    }>
   | Readonly<{ ok: false; reason: "BUSY"; cause: "daily_cap" | "concurrency" }>;
 
 export type TryOnPrimaryDown = Readonly<{
@@ -41,7 +51,10 @@ export type TryOnPrimaryDown = Readonly<{
   forMs: number;
 }>;
 
-export type TryOnPrimaryOutcome = Readonly<{ ok: true }> | Readonly<{ ok: false; reason: TryOnFailureReason }>;
+export type TryOnPrimaryOutcome =
+  | Readonly<{ ok: true }>
+  /** `quotaExhausted`: the worker's BUSY was a quota refusal, not a momentarily held worker. */
+  | Readonly<{ ok: false; reason: TryOnFailureReason; quotaExhausted?: boolean }>;
 
 export type TryOnOverflowGate = Readonly<{
   /** Whether Flow is marked down right now; requests then go straight to the overflow. */
@@ -70,6 +83,8 @@ export function createTryOnOverflowGate(
 
   let day = vietnamDay(now());
   let usedToday = 0;
+  // Reserved but not yet committed or handed back; they belong to the day they were taken on.
+  let reserved = 0;
   let inFlight = 0;
   let downUntil = 0;
   let failuresInARow = 0;
@@ -83,18 +98,31 @@ export function createTryOnOverflowGate(
     if (today !== day) {
       day = today;
       usedToday = 0;
+      reserved = 0;
     }
-    if (usedToday >= options.dailyCap) return { ok: false, reason: "BUSY", cause: "daily_cap" };
+    if (usedToday + reserved >= options.dailyCap) return { ok: false, reason: "BUSY", cause: "daily_cap" };
     if (inFlight >= maxConcurrent) return { ok: false, reason: "BUSY", cause: "concurrency" };
-    usedToday += 1;
+    reserved += 1;
     inFlight += 1;
+    const takenOn = day;
+    let state: "reserved" | "committed" | "returned" = "reserved";
     let released = false;
+    function settleReservation(spend: boolean) {
+      if (state !== "reserved") return;
+      state = spend ? "committed" : "returned";
+      // A reservation from a previous day was already dropped when the day turned over.
+      if (takenOn !== day) return;
+      reserved -= 1;
+      if (spend) usedToday += 1;
+    }
     return {
       ok: true,
+      commit: () => settleReservation(true),
       release: () => {
         if (released) return;
         released = true;
         inFlight -= 1;
+        settleReservation(false);
       },
     };
   }
@@ -114,7 +142,10 @@ export function createTryOnOverflowGate(
       case "AUTH_FAILED":
         return markDown("auth_failed", PRIMARY_DOWN_AFTER_AUTH_FAILURE_MS);
       case "BUSY":
-        return markDown("provider_busy", PRIMARY_DOWN_AFTER_PROVIDER_BUSY_MS);
+        // Only a quota refusal says Flow cannot serve for a while; a held worker frees in seconds.
+        return outcome.quotaExhausted === true
+          ? markDown("provider_busy", PRIMARY_DOWN_AFTER_PROVIDER_BUSY_MS)
+          : null;
       case "GENERATION_FAILED":
       case "TIMEOUT":
         failuresInARow += 1;

@@ -32,14 +32,18 @@ is sent and never revisited, so one shopper action still reaches exactly one pro
 
 A Flow failure is **never** retried on Vertex: a Flow timeout may still finish and spend, and a
 content/safety refusal must stay final. What Flow does with the requests it gets sets its health:
-an auth failure marks it down for 30 min, a `BUSY` from the worker itself (both models out of quota)
-for 10 min, and three generic failures or timeouts in a row for 15 min. While it is down, requests go
+an auth failure marks it down for 30 min, a quota `BUSY` from the worker (its final model refused for
+quota: HTTP 429) for 10 min, and three generic failures or timeouts in a row for 15 min. A `BUSY` that
+only means the worker is momentarily held (its lock, a held Chrome profile, an operator's `/v1/cool`
+pause: HTTP 409) does not count. While it is down, requests go
 to Vertex; the first one afterwards tries Flow again.
 
 Configuration (`LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, the Vertex project and credential, and
 `LA_TRY_ON_VERTEX_DAILY_CAP`) is server-only and fail-soft: anything missing or invalid leaves Flow
 alone, exactly as without overflow. The cap counts Vertex generations per calendar day in Vietnam
-time, in process memory (a restart starts it again).
+time, in process memory (a restart starts it again). Routing to Vertex only reserves one of the day's
+generations; it is spent at the Vertex call, and handed back if the request ends before that (e.g. the
+garment image could not be fetched). Reservations count against the cap, so it cannot be overshot.
 
 Because the shopper consents before anyone knows which provider will serve them, the privacy
 disclosure with overflow on names both processors, says Vertex is used when Flow is busy or down,

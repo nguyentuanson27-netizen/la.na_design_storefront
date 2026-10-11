@@ -10,7 +10,7 @@ type FlowFailureReason = Extract<
 
 type GenerateResult =
   | Readonly<{ ok: true; image: Image }>
-  | Readonly<{ ok: false; reason: FlowFailureReason }>;
+  | Readonly<{ ok: false; reason: FlowFailureReason; quotaExhausted?: boolean }>;
 
 type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
@@ -39,7 +39,18 @@ function isTimeout(error: unknown): boolean {
   return error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError");
 }
 
+/**
+ * The worker answers BUSY with two statuses (`flow_worker/server.py` `_failure_reason` and its
+ * request handler): 429 when its final model was refused for quota or rate limit, 409 when it is only
+ * held for a moment (its generation lock, a held Chrome profile, an operator's `/v1/cool` pause).
+ * Only the first says Flow cannot serve for a while, which the Vertex overflow acts on.
+ */
 function parseFailure(status: number, body: unknown): GenerateResult {
+  const result = parseFailureReason(status, body);
+  return !result.ok && result.reason === "BUSY" && status === 429 ? { ...result, quotaExhausted: true } : result;
+}
+
+function parseFailureReason(status: number, body: unknown): GenerateResult {
   if (
     typeof body === "object" &&
     body !== null &&

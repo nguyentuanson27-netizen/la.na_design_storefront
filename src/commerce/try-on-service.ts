@@ -61,7 +61,12 @@ export type TryOnServiceDependencies = Readonly<{
   >;
   generate: (input: Readonly<{ config: AvailableTryOnRuntimeConfig; person: Image; product: Image }>) => Promise<
     | Readonly<{ ok: true; image: Image }>
-    | Readonly<{ ok: false; reason: "SAFETY_BLOCKED" | "AUTH_FAILED" | "BUSY" | "TIMEOUT" | "GENERATION_FAILED" }>
+    | Readonly<{
+        ok: false;
+        reason: "SAFETY_BLOCKED" | "AUTH_FAILED" | "BUSY" | "TIMEOUT" | "GENERATION_FAILED";
+        /** Flow only: its BUSY was a quota refusal (HTTP 429), not a momentarily held worker. */
+        quotaExhausted?: boolean;
+      }>
   >;
   emit: (signal: TryOnSignalInput) => void;
   now?: () => number;
@@ -82,38 +87,36 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
   const now = deps.now ?? Date.now;
 
   /**
-   * Picks the provider and takes its slot, or emits BUSY and returns `null`. Flow first unless it is
-   * marked down; the overflow only when Flow cannot take the request. Never both.
+   * Picks the provider and takes its slot, or says BUSY (with the overflow's reason, if it refused). Flow first unless it is marked
+   * down; the overflow only when Flow cannot take the request. Never both. An overflow slot only
+   * reserves a Vertex generation: the caller commits it at the provider call.
    */
-  function acquireGeneration(
-    config: AvailableTryOnRuntimeConfig,
-    productSlug: string,
-  ): Readonly<{ provider: AvailableTryOnRuntimeConfig; release: () => void }> | null {
+  function acquireGeneration(config: AvailableTryOnRuntimeConfig):
+    | Readonly<{
+        ok: true;
+        provider: AvailableTryOnRuntimeConfig;
+        release: () => void;
+        overflow?: Readonly<{ commit: () => void; cause: "primary_busy" | "primary_down" }>;
+      }>
+    | Readonly<{ ok: false; cause?: "daily_cap" | "concurrency" }> {
     const overflow = config.provider === "flow" ? config.overflow : undefined;
     const gate = overflow === undefined ? undefined : deps.overflowGate;
 
     const primaryDown = gate?.primaryDown() ?? false;
     if (!primaryDown) {
       const slot = deps.limiter.startGeneration();
-      if (slot.ok) return { provider: config, release: slot.release };
+      if (slot.ok) return { ok: true, provider: config, release: slot.release };
     }
-    if (gate === undefined || overflow === undefined) {
-      deps.emit({ name: "try_on.rate_limited", reason: "BUSY", productSlug });
-      return null;
-    }
+    if (gate === undefined || overflow === undefined) return { ok: false };
 
     const slot = gate.startOverflow();
-    if (!slot.ok) {
-      deps.emit({ name: "try_on.rate_limited", reason: "BUSY", productSlug, cause: slot.cause });
-      return null;
-    }
-    deps.emit({
-      name: "try_on.overflow_routed",
-      productSlug,
-      provider: "vertex",
-      cause: primaryDown ? "primary_down" : "primary_busy",
-    });
-    return { provider: overflow.vertex, release: slot.release };
+    if (!slot.ok) return { ok: false, cause: slot.cause };
+    return {
+      ok: true,
+      provider: overflow.vertex,
+      release: slot.release,
+      overflow: { commit: slot.commit, cause: primaryDown ? "primary_down" : "primary_busy" },
+    };
   }
 
   function notePrimary(
@@ -176,8 +179,16 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
       });
       if (!eligibility.eligible) return fail("NOT_ELIGIBLE");
 
-      const route = acquireGeneration(config, productSlug);
-      if (route === null) return { ok: false, reason: "BUSY" };
+      const route = acquireGeneration(config);
+      if (!route.ok) {
+        deps.emit({
+          name: "try_on.rate_limited",
+          reason: "BUSY",
+          productSlug,
+          ...(route.cause === undefined ? {} : { cause: route.cause }),
+        });
+        return { ok: false, reason: "BUSY" };
+      }
       releaseSlot = route.release;
       const provider = route.provider;
       const primaryGate =
@@ -189,6 +200,17 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
       const garment = await deps.fetchProductImage(eligibility.productImage.url);
       if (!garment.ok) return fail("PRODUCT_IMAGE_UNAVAILABLE");
 
+      // Only now is the provider called: an overflow's reserved generation is spent here (a garment
+      // fetch that failed above hands it back), and the routing is reported for a call that happens.
+      if (route.overflow) {
+        route.overflow.commit();
+        deps.emit({
+          name: "try_on.overflow_routed",
+          productSlug,
+          provider: "vertex",
+          cause: route.overflow.cause,
+        });
+      }
       deps.emit({ name: "try_on.generation_started", productSlug, provider: provider.provider });
       const upstreamStartedAt = now();
       // From here a throw is the provider's failure, which Flow's health has to hear about.
@@ -199,7 +221,12 @@ export function createTryOnService(deps: TryOnServiceDependencies) {
         product: garment.image,
       });
       const upstreamLatencyMs = now() - upstreamStartedAt;
-      notePrimary(reportPrimary, generated.ok ? { ok: true } : { ok: false, reason: generated.reason });
+      notePrimary(
+        reportPrimary,
+        generated.ok
+          ? { ok: true }
+          : { ok: false, reason: generated.reason, quotaExhausted: generated.quotaExhausted === true },
+      );
       reportPrimary = undefined;
 
       if (!generated.ok) {

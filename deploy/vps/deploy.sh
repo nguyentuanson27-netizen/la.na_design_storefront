@@ -61,9 +61,13 @@ elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
 fi
 
 # The Vertex overflow reads its credential from the directory compose.yml mounts at
-# /run/secrets/try-on-gcp. A missing file would only show up as AUTH_FAILED on the first overflowed
-# try-on, so the deploy stops here instead. Contents are never read or printed.
+# /run/secrets/try-on-gcp. A missing or unreadable file would only show up as AUTH_FAILED on the first
+# overflowed try-on, so the deploy stops instead: here for a missing file, and after the image build
+# (TRY_ON_CREDENTIAL_CHECK_JS below) for one the app's own user cannot open. Contents are never read
+# or printed.
+TRY_ON_OVERFLOW_ON=false
 if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" && "$TRY_ON_OVERFLOW_PROVIDER" == "vertex" ]]; then
+  TRY_ON_OVERFLOW_ON=true
   if [[ "$TRY_ON_GCP_CREDENTIALS" != /run/secrets/try-on-gcp/* ]]; then
     echo "Vertex overflow requires GOOGLE_APPLICATION_CREDENTIALS under /run/secrets/try-on-gcp/" >&2
     exit 1
@@ -78,6 +82,18 @@ fi
 
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops "${flow_services[@]}"
+
+# The host check above cannot see what the container sees: the app image runs as `node` (uid 1000)
+# with the credential mounted read-only, so a root-owned 0600 key passes there and fails here. Run in
+# the built image, as its own user, before any migration or cutover. It opens the file and closes it
+# without reading a byte.
+TRY_ON_CREDENTIAL_CHECK_JS='const fs = require("node:fs"); const path = process.env.GOOGLE_APPLICATION_CREDENTIALS || ""; try { if (!fs.statSync(path).isFile()) throw new Error(); fs.accessSync(path, fs.constants.R_OK); fs.closeSync(fs.openSync(path, "r")); } catch { process.exit(1); }'
+if [[ "$TRY_ON_OVERFLOW_ON" == "true" ]]; then
+  if ! "${compose[@]}" run --rm --no-deps app node -e "$TRY_ON_CREDENTIAL_CHECK_JS"; then
+    echo "The Vertex overflow credential is not readable by the app container's user (uid 1000); see deploy/vps/env.example" >&2
+    exit 1
+  fi
+fi
 
 # A warm flow-worker keeps Chrome open on the Google profile, and `gflow auth status` opens a second
 # Chrome on that same profile. So a running worker is asked to release it (POST /v1/cool) before those

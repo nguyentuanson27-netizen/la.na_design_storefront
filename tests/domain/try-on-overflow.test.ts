@@ -19,24 +19,69 @@ function clock(start = MORNING) {
   return { now: () => t, advance: (ms: number) => (t += ms), set: (ms: number) => (t = ms) };
 }
 
-test("the daily cap counts every overflow slot taken and refuses past it, whatever the outcome", () => {
+test("the daily cap counts every committed generation and refuses past it, whatever the outcome", () => {
   const time = clock();
   const gate = createTryOnOverflowGate({ dailyCap: 2, maxConcurrent: 5, now: time.now });
+  for (let i = 0; i < 2; i += 1) {
+    const slot = gate.startOverflow();
+    assert.equal(slot.ok, true);
+    if (slot.ok) {
+      slot.commit();
+      slot.commit(); // idempotent: one generation is spent once
+      slot.release();
+    }
+  }
+  assert.deepEqual(gate.startOverflow(), { ok: false, reason: "BUSY", cause: "daily_cap" });
+});
+
+test("a reservation released without a commit (Vertex never called) is handed back", () => {
+  const gate = createTryOnOverflowGate({ dailyCap: 1, now: clock().now });
+  const unused = gate.startOverflow();
+  assert.equal(unused.ok, true);
+  if (unused.ok) {
+    unused.release();
+    unused.release();
+    unused.commit(); // too late: a released reservation can no longer be spent
+  }
+  const used = gate.startOverflow();
+  assert.equal(used.ok, true);
+  if (used.ok) {
+    used.commit();
+    used.release();
+  }
+  assert.deepEqual(gate.startOverflow(), { ok: false, reason: "BUSY", cause: "daily_cap" });
+});
+
+test("pending reservations count against the cap, so concurrent requests cannot overshoot it", () => {
+  const gate = createTryOnOverflowGate({ dailyCap: 1, maxConcurrent: 5, now: clock().now });
   const first = gate.startOverflow();
-  const second = gate.startOverflow();
-  assert.equal(first.ok && second.ok, true);
-  if (first.ok) first.release();
-  if (second.ok) second.release();
+  assert.equal(first.ok, true);
   assert.deepEqual(gate.startOverflow(), { ok: false, reason: "BUSY", cause: "daily_cap" });
 });
 
 test("the day turns over at midnight Vietnam time, not UTC", () => {
   const time = clock(Date.UTC(2026, 9, 11, 16, 59, 0)); // 23:59 in Vietnam
-  const gate = createTryOnOverflowGate({ dailyCap: 1, now: time.now });
+  const gate = createTryOnOverflowGate({ dailyCap: 1, maxConcurrent: 5, now: time.now });
   const slot = gate.startOverflow();
-  if (slot.ok) slot.release();
+  if (slot.ok) {
+    slot.commit();
+    slot.release();
+  }
   assert.equal(gate.startOverflow().ok, false);
   time.set(Date.UTC(2026, 9, 11, 17, 0, 0)); // 00:00 the next day in Vietnam
+  const next = gate.startOverflow();
+  assert.equal(next.ok, true);
+});
+
+test("a reservation taken before midnight and settled after it does not touch the new day", () => {
+  const time = clock(Date.UTC(2026, 9, 11, 16, 59, 30)); // 23:59:30 in Vietnam
+  const gate = createTryOnOverflowGate({ dailyCap: 1, maxConcurrent: 5, now: time.now });
+  const late = gate.startOverflow();
+  time.set(Date.UTC(2026, 9, 11, 17, 0, 30)); // 00:00:30
+  if (late.ok) {
+    late.commit();
+    late.release();
+  }
   assert.equal(gate.startOverflow().ok, true);
 });
 
@@ -69,10 +114,15 @@ test("an auth failure marks Flow down for 30 minutes, then it is tried again", (
   assert.equal(gate.primaryDown(), false);
 });
 
-test("a BUSY from Flow itself marks it down for 10 minutes", () => {
+test("a held worker's BUSY says nothing about Flow's health; a quota BUSY marks it down for 10 minutes", () => {
   const time = clock();
   const gate = createTryOnOverflowGate({ dailyCap: 10, now: time.now });
-  assert.deepEqual(gate.notePrimaryOutcome({ ok: false, reason: "BUSY" }), {
+  for (let i = 0; i < 5; i += 1) {
+    assert.equal(gate.notePrimaryOutcome({ ok: false, reason: "BUSY" }), null);
+    assert.equal(gate.notePrimaryOutcome({ ok: false, reason: "BUSY", quotaExhausted: false }), null);
+  }
+  assert.equal(gate.primaryDown(), false);
+  assert.deepEqual(gate.notePrimaryOutcome({ ok: false, reason: "BUSY", quotaExhausted: true }), {
     cause: "provider_busy",
     forMs: PRIMARY_DOWN_AFTER_PROVIDER_BUSY_MS,
   });
