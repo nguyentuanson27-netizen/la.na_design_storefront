@@ -73,16 +73,58 @@ test("the day turns over at midnight Vietnam time, not UTC", () => {
   assert.equal(next.ok, true);
 });
 
-test("a reservation taken before midnight and settled after it does not touch the new day", () => {
-  const time = clock(Date.UTC(2026, 9, 11, 16, 59, 30)); // 23:59:30 in Vietnam
+test("a generation reserved before midnight and called after it counts on the day of the call", () => {
+  const time = clock(Date.UTC(2026, 9, 11, 16, 59, 59)); // 23:59:59 in Vietnam
   const gate = createTryOnOverflowGate({ dailyCap: 1, maxConcurrent: 5, now: time.now });
   const late = gate.startOverflow();
-  time.set(Date.UTC(2026, 9, 11, 17, 0, 30)); // 00:00:30
+  assert.equal(late.ok, true);
+
+  time.set(Date.UTC(2026, 9, 11, 17, 0, 0)); // 00:00:00: the reservation still holds the new day's one
+  assert.deepEqual(gate.startOverflow(), { ok: false, reason: "BUSY", cause: "daily_cap" });
+
+  time.set(Date.UTC(2026, 9, 11, 17, 0, 1)); // 00:00:01: Vertex is called for it
   if (late.ok) {
     late.commit();
     late.release();
   }
+  time.set(Date.UTC(2026, 9, 11, 17, 0, 2)); // 00:00:02: a second call the same day is refused
+  assert.deepEqual(gate.startOverflow(), { ok: false, reason: "BUSY", cause: "daily_cap" });
+
+  time.set(Date.UTC(2026, 9, 12, 17, 0, 0)); // the next midnight frees it again
   assert.equal(gate.startOverflow().ok, true);
+});
+
+test("a reservation from before midnight that is handed back frees the new day", () => {
+  const time = clock(Date.UTC(2026, 9, 11, 16, 59, 59)); // 23:59:59 in Vietnam
+  const gate = createTryOnOverflowGate({ dailyCap: 1, maxConcurrent: 5, now: time.now });
+  const late = gate.startOverflow();
+  time.set(Date.UTC(2026, 9, 11, 17, 0, 1));
+  if (late.ok) late.release(); // its garment fetch failed: Vertex was never called
+  assert.equal(gate.startOverflow().ok, true);
+});
+
+test("no calendar day ever sees more Vertex calls than the cap, across midnight and concurrency", () => {
+  const time = clock(Date.UTC(2026, 9, 11, 16, 59, 0)); // 23:59 in Vietnam
+  const cap = 2;
+  const gate = createTryOnOverflowGate({ dailyCap: cap, maxConcurrent: 4, now: time.now });
+  const callsByDay = new Map<number, number>();
+  const open: Array<Extract<ReturnType<typeof gate.startOverflow>, { ok: true }>> = [];
+  for (let step = 0; step < 240; step += 1) {
+    time.advance(1_000);
+    const slot = gate.startOverflow();
+    if (slot.ok) open.push(slot);
+    if (open.length > 0 && step % 3 === 0) {
+      const settled = open.shift()!;
+      if (step % 2 === 0) {
+        settled.commit();
+        const vnDay = Math.floor((time.now() + 7 * HOUR) / (24 * HOUR));
+        callsByDay.set(vnDay, (callsByDay.get(vnDay) ?? 0) + 1);
+      }
+      settled.release();
+    }
+  }
+  assert.ok(callsByDay.size >= 2, "the run crossed midnight");
+  for (const [vnDay, calls] of callsByDay) assert.ok(calls <= cap, `day ${vnDay}: ${calls} calls`);
 });
 
 test("overflow slots are bounded in flight and freed exactly once", () => {

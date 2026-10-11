@@ -10,11 +10,12 @@ import type { TryOnFailureReason } from "./try-on-policy.ts";
  *
  * Three controls, all in process memory like the rest of the limiter (one app container, ADR 0002):
  *
- * - a cap on Vertex generations per calendar day in Vietnam time (UTC+7). Taking a slot only
- *   *reserves* one of today's generations; it is spent by `commit()` at the provider call, whatever
- *   the outcome, and a reservation released without a commit (the garment image could not be
- *   fetched, so Vertex was never called) is handed back. Reservations count against the cap, so
- *   concurrent requests can never overshoot it;
+ * - a cap on Vertex generations per calendar day in Vietnam time (UTC+7), the day of the Vertex call.
+ *   Taking a slot only *reserves* a generation; it is spent by `commit()` at the provider call,
+ *   whatever the outcome, and a reservation released without a commit (the garment image could not
+ *   be fetched, so Vertex was never called) is handed back. Outstanding reservations count against
+ *   the cap, including across midnight, so neither concurrent requests nor one reserved before
+ *   midnight and called after it can overshoot a day;
  * - a cap on Vertex generations in flight;
  * - Flow's health: an auth failure marks it down for 30 min, a quota BUSY from the worker (its final
  *   model refused for quota, HTTP 429) for 10 min, and three generic failures or timeouts in a row
@@ -82,8 +83,12 @@ export function createTryOnOverflowGate(
   }
 
   let day = vietnamDay(now());
+  // Generations spent on `day`, the Vietnam calendar day of the Vertex call itself.
   let usedToday = 0;
-  // Reserved but not yet committed or handed back; they belong to the day they were taken on.
+  // Reserved but not yet committed or handed back, whatever day they were taken on: one taken before
+  // midnight may still be spent after it, so the day turning over never drops them. Admission keeps
+  // `usedToday + reserved <= dailyCap`, a commit moves one from `reserved` to `usedToday`, and a new
+  // day only lowers `usedToday`, so no calendar day can see more than `dailyCap` calls.
   let reserved = 0;
   let inFlight = 0;
   let downUntil = 0;
@@ -93,27 +98,31 @@ export function createTryOnOverflowGate(
     return now() < downUntil;
   }
 
-  function startOverflow(): TryOnOverflowSlot {
+  function turnOverDay() {
     const today = vietnamDay(now());
     if (today !== day) {
       day = today;
       usedToday = 0;
-      reserved = 0;
     }
+  }
+
+  function startOverflow(): TryOnOverflowSlot {
+    turnOverDay();
     if (usedToday + reserved >= options.dailyCap) return { ok: false, reason: "BUSY", cause: "daily_cap" };
     if (inFlight >= maxConcurrent) return { ok: false, reason: "BUSY", cause: "concurrency" };
     reserved += 1;
     inFlight += 1;
-    const takenOn = day;
     let state: "reserved" | "committed" | "returned" = "reserved";
     let released = false;
     function settleReservation(spend: boolean) {
       if (state !== "reserved") return;
       state = spend ? "committed" : "returned";
-      // A reservation from a previous day was already dropped when the day turned over.
-      if (takenOn !== day) return;
       reserved -= 1;
-      if (spend) usedToday += 1;
+      if (spend) {
+        // Charged to the day of the call, not the day of the reservation.
+        turnOverDay();
+        usedToday += 1;
+      }
     }
     return {
       ok: true,

@@ -41,9 +41,10 @@ to Vertex; the first one afterwards tries Flow again.
 Configuration (`LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, the Vertex project and credential, and
 `LA_TRY_ON_VERTEX_DAILY_CAP`) is server-only and fail-soft: anything missing or invalid leaves Flow
 alone, exactly as without overflow. The cap counts Vertex generations per calendar day in Vietnam
-time, in process memory (a restart starts it again). Routing to Vertex only reserves one of the day's
-generations; it is spent at the Vertex call, and handed back if the request ends before that (e.g. the
-garment image could not be fetched). Reservations count against the cap, so it cannot be overshot.
+time — the day of the Vertex call — in process memory (a restart starts it again). Routing to Vertex
+only reserves a generation; it is spent at the Vertex call, and handed back if the request ends before
+that (e.g. the garment image could not be fetched). Outstanding reservations count against the cap,
+including one taken before midnight and called after it, so no calendar day can exceed it.
 
 Because the shopper consents before anyone knows which provider will serve them, the privacy
 disclosure with overflow on names both processors, says Vertex is used when Flow is busy or down,
