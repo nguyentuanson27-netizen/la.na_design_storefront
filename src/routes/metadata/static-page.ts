@@ -20,7 +20,7 @@ export async function buildEvergreenPageMetadata(
   input: Readonly<{
     props: StaticPageMetadataProps;
     pathname: string;
-    title: string;
+    title: string | Readonly<{ absolute: string }>;
     description: string;
   }>,
 ): Promise<Metadata> {

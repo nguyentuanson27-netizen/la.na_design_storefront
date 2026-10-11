@@ -279,24 +279,18 @@ test("U33a the About page publishes the approved minimum and invents no brand hi
     await expect(main).not.toContainText(elsewhere);
   }
 
-  // B6 withholds the founding year, the founder and any brand story or values. This is the
-  // assertion that fails if a later edit writes an origin story into the page.
-  for (const withheld of [
-    /thành lập (?:năm|vào)/i,
-    /founder/i,
-    /nhà sáng lập/i,
-    /sứ mệnh/i,
-    /giá trị cốt lõi/i,
-    /câu chuyện thương hiệu/i,
-  ]) {
+  // Owner approved founding year 2022 and the brand story, while founder name remains withheld.
+  await expect(main).toContainText("2022");
+  await expect(main).toContainText("Charismatic in every yard of cloth");
+  for (const withheld of [/founder/i, /nhà sáng lập/i]) {
     await expect(main).not.toContainText(withheld);
   }
 
-  // A year on this page may only be the approved tax issue date. Anything else is a founding year,
-  // which is the fact B6 withheld -- so the check is "no other year", not "no year at all".
+  // Allowed years on this page are the approved founding year 2022 or the tax issue date.
   const years = ((await main.innerText()).match(/\b(?:19|20)\d{2}\b/g) ?? []);
   for (const year of years) {
-    expect(PUBLIC_LEGAL_FACTS.taxIdIssueDate).toContain(year);
+    const isApprovedYear = year === "2022" || PUBLIC_LEGAL_FACTS.taxIdIssueDate.includes(year);
+    expect(isApprovedYear).toBe(true);
   }
 
   const overflow = await page.evaluate(

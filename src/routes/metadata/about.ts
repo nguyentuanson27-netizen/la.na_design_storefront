@@ -1,11 +1,7 @@
 import type { Metadata } from "next";
 
 import { BRAND } from "@/brand";
-import { PUBLIC_BRAND_POSITIONING } from "@/content/public-brand-facts";
-
 import { buildEvergreenPageMetadata, type StaticPageMetadataProps } from "./static-page.ts";
-
-/** The About page's metadata. The description is the approved positioning sentence, not prose. */
 
 export type AboutMetadataProps = StaticPageMetadataProps;
 
@@ -13,7 +9,10 @@ export async function buildAboutMetadata(props: AboutMetadataProps): Promise<Met
   return buildEvergreenPageMetadata({
     props,
     pathname: "/about",
-    title: `Về ${BRAND.identity.name}`,
-    description: PUBLIC_BRAND_POSITIONING,
+    title: {
+      absolute: `Về ${BRAND.identity.name} | Thời Trang Nữ Thiết Kế & Áo Dài Cao Cấp Từ 2022`,
+    },
+    description:
+      "Thành lập từ năm 2022, La.na Design là thương hiệu thời trang nữ thiết kế cao cấp, nổi bật với áo dài cách tân 4 tà, đầm tiệc và set đồ thanh lịch, tôn vinh nét duyên Việt.",
   });
 }
