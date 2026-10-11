@@ -11,6 +11,8 @@ src/generated/prisma/
 coverage/
 playwright-report/
 test-results/
+# Out-of-band deployment secrets (e.g. the Vertex try-on credential), never committed.
+deploy/vps/secrets/
 
 # Python
 __pycache__/

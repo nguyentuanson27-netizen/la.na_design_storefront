@@ -22,3 +22,13 @@ test("Flow disclosure scopes the no-store claim and names persistent browser sto
   assert.doesNotMatch(copy.detail, /Vertex AI/);
   assert.doesNotMatch(copy.summary, /không lưu ảnh trong hệ thống của mình/);
 });
+
+test("Flow with a Vertex overflow names both processors, when Vertex is used, and one per generation", () => {
+  const copy = resolveTryOnPrivacyDisclosure("flow-vertex", "La.na Design");
+  assert.match(copy.summary, /Google Flow/);
+  assert.match(copy.summary, /Google Cloud Vertex AI khi Google Flow đang bận/);
+  assert.match(copy.detail, /Mỗi lần tạo ảnh chỉ dùng một trong hai dịch vụ/);
+  assert.match(copy.detail, /không cam kết zero-retention/);
+  assert.match(copy.detail, /thiết lập kiểm soát dữ liệu/);
+  assert.doesNotMatch(copy.summary, /không lưu ảnh trong hệ thống của mình/);
+});

@@ -26,6 +26,9 @@ RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
 TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_FLOW_URL="$(grep -E '^LA_TRY_ON_FLOW_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_OVERFLOW_PROVIDER="$(grep -E '^LA_TRY_ON_OVERFLOW_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_GCP_CREDENTIALS="$(grep -E '^GOOGLE_APPLICATION_CREDENTIALS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+TRY_ON_GCP_CREDENTIALS_DIR="$(grep -E '^LA_TRY_ON_GCP_CREDENTIALS_DIR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="${TRY_ON_PROVIDER:-vertex}"
 if [[ -z "$RELEASE_SHA" || "$RELEASE_SHA" == "replace-with-approved-git-sha" ]]; then
   echo "RELEASE_SHA must be set in $ENV_FILE" >&2
@@ -55,6 +58,22 @@ if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" ]]; then
 elif [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" != "vertex" ]]; then
   echo "LA_TRY_ON_PROVIDER must be vertex or flow when try-on is enabled" >&2
   exit 1
+fi
+
+# The Vertex overflow reads its credential from the directory compose.yml mounts at
+# /run/secrets/try-on-gcp. A missing file would only show up as AUTH_FAILED on the first overflowed
+# try-on, so the deploy stops here instead. Contents are never read or printed.
+if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" && "$TRY_ON_OVERFLOW_PROVIDER" == "vertex" ]]; then
+  if [[ "$TRY_ON_GCP_CREDENTIALS" != /run/secrets/try-on-gcp/* ]]; then
+    echo "Vertex overflow requires GOOGLE_APPLICATION_CREDENTIALS under /run/secrets/try-on-gcp/" >&2
+    exit 1
+  fi
+  credentials_dir="${TRY_ON_GCP_CREDENTIALS_DIR:-./secrets/try-on-gcp}"
+  [[ "$credentials_dir" == /* ]] || credentials_dir="$(dirname "$COMPOSE_FILE")/$credentials_dir"
+  if [[ ! -s "$credentials_dir/${TRY_ON_GCP_CREDENTIALS#/run/secrets/try-on-gcp/}" ]]; then
+    echo "Vertex overflow credential file is missing or empty in $credentials_dir" >&2
+    exit 1
+  fi
 fi
 
 "${compose[@]}" config --quiet

@@ -1,4 +1,4 @@
-import type { TryOnRuntimeConfig } from "../../commerce/try-on-provider.ts";
+import type { TryOnOverflowConfig, TryOnRuntimeConfig } from "../../commerce/try-on-provider.ts";
 import { readTryOnConfig as readVertexTryOnConfig } from "../vertex-try-on/config.ts";
 
 type TryOnEnvironment = Readonly<Record<string, string | undefined>>;
@@ -19,6 +19,26 @@ function parseWorkerUrl(value: string | undefined): string | null {
   } catch {
     return null;
   }
+}
+
+/** A whole number of generations per day, 1..10 000; anything else disables overflow. */
+const DAILY_CAP_PATTERN = /^[1-9][0-9]{0,4}$/;
+
+/**
+ * Vertex overflow for Flow: on only with `LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, a complete Vertex
+ * configuration and an explicit `LA_TRY_ON_VERTEX_DAILY_CAP`. Anything missing leaves Flow alone,
+ * exactly as before — an incomplete overflow never makes Flow unavailable.
+ */
+function readOverflow(env: TryOnEnvironment): TryOnOverflowConfig | null {
+  if (env.LA_TRY_ON_OVERFLOW_PROVIDER !== "vertex") return null;
+  const cap = env.LA_TRY_ON_VERTEX_DAILY_CAP ?? "";
+  if (!DAILY_CAP_PATTERN.test(cap) || Number(cap) > 10_000) return null;
+  const vertex = readVertexTryOnConfig(env);
+  if (!vertex.available) return null;
+  return {
+    vertex: { available: true, provider: "vertex", projectId: vertex.projectId, location: vertex.location },
+    dailyCap: Number(cap),
+  };
 }
 
 /**
@@ -51,5 +71,8 @@ export function readTryOnRuntimeConfig(env: TryOnEnvironment = process.env): Try
     return { available: false, reason: "NOT_CONFIGURED" };
   }
 
-  return { available: true, provider: "flow", workerUrl, workerToken };
+  const overflow = readOverflow(env);
+  return overflow === null
+    ? { available: true, provider: "flow", workerUrl, workerToken }
+    : { available: true, provider: "flow", workerUrl, workerToken, overflow };
 }

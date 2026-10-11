@@ -98,3 +98,63 @@ test("an unknown provider fails closed instead of guessing", () => {
     { available: false, reason: "NOT_CONFIGURED" },
   );
 });
+
+const FLOW_WITH_OVERFLOW = {
+  LA_TRY_ON_ENABLED: "true",
+  LA_TRY_ON_PROVIDER: "flow",
+  LA_TRY_ON_FLOW_URL: "http://flow-worker:8787",
+  LA_TRY_ON_FLOW_TOKEN: "f".repeat(64),
+  LA_TRY_ON_OVERFLOW_PROVIDER: "vertex",
+  LA_TRY_ON_VERTEX_DAILY_CAP: "40",
+  LA_TRY_ON_GCP_PROJECT_ID: "lana-design-prod",
+  GOOGLE_APPLICATION_CREDENTIALS: "/run/secrets/try-on-gcp/google.json",
+} as const;
+
+test("flow with a complete Vertex overflow carries the Vertex config and the daily cap", () => {
+  assert.deepEqual(readTryOnRuntimeConfig(FLOW_WITH_OVERFLOW), {
+    available: true,
+    provider: "flow",
+    workerUrl: "http://flow-worker:8787",
+    workerToken: "f".repeat(64),
+    overflow: {
+      vertex: { available: true, provider: "vertex", projectId: "lana-design-prod", location: "global" },
+      dailyCap: 40,
+    },
+  });
+});
+
+test("an incomplete or invalid overflow leaves Flow alone instead of disabling try-on", () => {
+  const flowAlone = {
+    available: true,
+    provider: "flow",
+    workerUrl: "http://flow-worker:8787",
+    workerToken: "f".repeat(64),
+  };
+  const broken: Array<Record<string, string | undefined>> = [
+    { LA_TRY_ON_OVERFLOW_PROVIDER: undefined },
+    { LA_TRY_ON_OVERFLOW_PROVIDER: "flow" },
+    { LA_TRY_ON_OVERFLOW_PROVIDER: "Vertex" },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: undefined },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: "0" },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: "-5" },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: "1.5" },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: "10001" },
+    { LA_TRY_ON_VERTEX_DAILY_CAP: " 40" },
+    { LA_TRY_ON_GCP_PROJECT_ID: undefined },
+    { GOOGLE_APPLICATION_CREDENTIALS: "" },
+    { LA_TRY_ON_GCP_LOCATION: "us-central1" },
+  ];
+  for (const change of broken) {
+    const env: Record<string, string | undefined> = { ...FLOW_WITH_OVERFLOW, ...change };
+    assert.deepEqual(readTryOnRuntimeConfig(env), flowAlone, JSON.stringify(change));
+  }
+});
+
+test("Vertex as the primary provider never gains an overflow", () => {
+  assert.deepEqual(readTryOnRuntimeConfig({ ...VERTEX, LA_TRY_ON_OVERFLOW_PROVIDER: "vertex", LA_TRY_ON_VERTEX_DAILY_CAP: "40" }), {
+    available: true,
+    provider: "vertex",
+    projectId: "lana-design-prod",
+    location: "global",
+  });
+});

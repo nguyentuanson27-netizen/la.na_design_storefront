@@ -17,7 +17,35 @@ export type TryOnSignalName =
   | "try_on.generation_succeeded"
   | "try_on.generation_failed"
   | "try_on.safety_blocked"
-  | "try_on.rate_limited";
+  | "try_on.rate_limited"
+  /** A request sent to the Vertex overflow instead of Flow; `cause` says why. */
+  | "try_on.overflow_routed"
+  /** Flow marked down after this outcome; requests go to the overflow for a while. */
+  | "try_on.primary_marked_down";
+
+/** The provider a generation went to. */
+export type TryOnSignalProvider = "vertex" | "flow";
+
+/** Why a request was routed to the overflow, why the overflow refused one, or why Flow went down. */
+export type TryOnSignalCause =
+  | "primary_busy"
+  | "primary_down"
+  | "daily_cap"
+  | "concurrency"
+  | "auth_failed"
+  | "provider_busy"
+  | "repeated_failures";
+
+const PROVIDERS: readonly TryOnSignalProvider[] = ["vertex", "flow"];
+const CAUSES: readonly TryOnSignalCause[] = [
+  "primary_busy",
+  "primary_down",
+  "daily_cap",
+  "concurrency",
+  "auth_failed",
+  "provider_busy",
+  "repeated_failures",
+];
 
 export type TryOnSignalInput = Readonly<{
   name: TryOnSignalName;
@@ -25,10 +53,12 @@ export type TryOnSignalInput = Readonly<{
   reason?: TryOnFailureReason;
   /** Total request latency. */
   latencyMs?: number;
-  /** Time spent in the Vertex AI call alone. */
+  /** Time spent in the provider call alone. */
   upstreamLatencyMs?: number;
   /** The server-resolved storefront slug, never a client-supplied string. */
   productSlug?: string;
+  provider?: TryOnSignalProvider;
+  cause?: TryOnSignalCause;
 }>;
 
 export type TryOnSignal = Readonly<{
@@ -37,6 +67,8 @@ export type TryOnSignal = Readonly<{
   latencyMs?: number;
   upstreamLatencyMs?: number;
   productSlug?: string;
+  provider?: TryOnSignalProvider;
+  cause?: TryOnSignalCause;
 }>;
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -63,6 +95,8 @@ export function buildTryOnSignal(input: TryOnSignalInput): TryOnSignal {
   ) {
     signal.productSlug = input.productSlug;
   }
+  if (input.provider !== undefined && PROVIDERS.includes(input.provider)) signal.provider = input.provider;
+  if (input.cause !== undefined && CAUSES.includes(input.cause)) signal.cause = input.cause;
   return signal;
 }
 

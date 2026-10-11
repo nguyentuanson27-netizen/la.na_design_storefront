@@ -83,6 +83,29 @@ wire error, so the worker's gflow launcher patches both (`flow_worker/gflow_mode
   quota exhausted". It is not reported as gflow's retried rate-limit error, so the request budget
   is not spent re-running Pro.
 
+## Vertex overflow (`LA_TRY_ON_OVERFLOW_PROVIDER=vertex`)
+
+Optional. With it on, the storefront sends a request to Vertex (Nano Banana Pro, global) **instead
+of** this worker when the worker's one slot is taken or the worker is marked down; it never sends one
+request to both. The routing, the daily cap and Flow's health live in the storefront
+(`src/commerce/try-on-overflow.ts`); the worker is unchanged. See the spec amendment's "Vertex
+overflow" section for the rules.
+
+To turn it on:
+
+1. Create (or reuse) a Google Cloud project with billing and the Vertex AI API, and a service account
+   with only the Vertex online-prediction role (`docs/integrations/vertex-virtual-try-on.md`).
+2. Put its JSON key on the VPS at `deploy/vps/secrets/try-on-gcp/<name>.json` (git-ignored; or point
+   `LA_TRY_ON_GCP_CREDENTIALS_DIR` elsewhere), readable by uid 1000: `chmod 0440`, `chgrp 1000`.
+3. In `.env.production`: `LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, `LA_TRY_ON_VERTEX_DAILY_CAP=<n>`,
+   `LA_TRY_ON_GCP_PROJECT_ID=<project>`, `GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/try-on-gcp/<name>.json`.
+4. Deploy. `deploy.sh` refuses when the credential path or file is missing.
+
+Watch: `try_on.overflow_routed` (cause `primary_busy` / `primary_down`), `try_on.primary_marked_down`
+(cause `auth_failed` / `provider_busy` / `repeated_failures`), `try_on.rate_limited` with cause
+`daily_cap` or `concurrency` (overflow refused), and `provider` on every `generation_*` signal. To turn
+it off, empty `LA_TRY_ON_OVERFLOW_PROVIDER` and redeploy.
+
 ## Reference attach speed (`LA_TRY_ON_FLOW_MENTION_FAST`)
 
 gflow-cli 0.82.1 attaches each reference by typing `@`, the file name and Enter, with fixed sleeps of

@@ -20,6 +20,36 @@ The storefront may use either provider, selected only by server configuration:
 There is **no automatic Flow -> Vertex fallback**. One shopper action must never silently spend both
 provider allowances.
 
+### Vertex overflow (amendment 2026-10-11, owner decision)
+
+Vertex may serve a request *instead of* Flow, never after it. The provider is chosen before anything
+is sent and never revisited, so one shopper action still reaches exactly one provider:
+
+- **Flow** when its single slot is free and it is not marked down;
+- otherwise **Vertex**, if overflow is configured and its gate allows it (a daily cap and its own
+  in-flight limit);
+- otherwise `BUSY`, as before.
+
+A Flow failure is **never** retried on Vertex: a Flow timeout may still finish and spend, and a
+content/safety refusal must stay final. What Flow does with the requests it gets sets its health:
+an auth failure marks it down for 30 min, a `BUSY` from the worker itself (both models out of quota)
+for 10 min, and three generic failures or timeouts in a row for 15 min. While it is down, requests go
+to Vertex; the first one afterwards tries Flow again.
+
+Configuration (`LA_TRY_ON_OVERFLOW_PROVIDER=vertex`, the Vertex project and credential, and
+`LA_TRY_ON_VERTEX_DAILY_CAP`) is server-only and fail-soft: anything missing or invalid leaves Flow
+alone, exactly as without overflow. The cap counts Vertex generations per calendar day in Vietnam
+time, in process memory (a restart starts it again).
+
+Because the shopper consents before anyone knows which provider will serve them, the privacy
+disclosure with overflow on names both processors, says Vertex is used when Flow is busy or down,
+and says each generation uses only one of them. Vertex keeps its own explicit safety settings and
+`personGeneration` contract; results may differ in look between the two providers.
+
+Operator gates before turning overflow on in production: the Vertex project/billing and a
+least-privilege service account, the credential mounted read-only (see `deploy/vps/env.example`),
+an agreed daily cap, a live Vertex generation and the consented minor test on Vertex.
+
 For the Flow provider, the model policy is explicit:
 
 1. attempt **Nano Banana Pro** (`nano-pro`) first;
@@ -138,7 +168,10 @@ or Vertex fallback.
 - [ ] A Nano Banana 2.1 submit is accepted only with its live-captured wire model key configured.
 - [ ] WAF/reCAPTCHA, auth, safety, timeout, selector drift and generic failures do **not** trigger
       model fallback.
-- [ ] There is never an automatic Flow -> Vertex fallback.
+- [ ] There is never an automatic Flow -> Vertex fallback after a Flow request; with overflow on,
+      Vertex serves only requests routed to it *before* sending (Flow busy or marked down), within
+      its daily cap, and each request reaches exactly one provider.
+- [ ] With overflow on, the disclosure names Flow and Vertex and when each is used.
 - [ ] Worker accepts at most one in-flight generation per Google profile.
 - [ ] Worker request/response bodies, Google cookies/profile data and bearer token are never logged.
 - [ ] Worker local input/output files and gflow SQLite generation catalog are request-scoped and
