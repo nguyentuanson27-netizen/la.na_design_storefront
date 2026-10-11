@@ -120,27 +120,11 @@ export function useTryOn({
     setQuotaCurrent(outcome.kind === "known");
   }
 
-  // When this product's job settles. The acknowledgement is a representation about one photo for one
-  // generation; asking again for the next attempt is deliberate (spec §6), and the server demands it
-  // regardless. Every submitted attempt counts, so the number has moved whatever the outcome was. A
-  // photo the provider refused for good is dropped and the shopper sent back to choose another, with
-  // the explanation still showing there.
-  const settledKey = job !== null && job.status !== "loading" ? `${job.id}:${job.status}` : null;
-  const settledRef = useRef<string | null>(null);
+  // The dialog's open state as of the last render, for the settle callback, which runs later.
+  const activeRef = useRef(active);
   useEffect(() => {
-    if (settledKey === null || settledRef.current === settledKey || job === null) return;
-    settledRef.current = settledKey;
-    setAcknowledged(false);
-    if (active) void refreshQuota();
-    if (job.photoRefused) {
-      setFile(null);
-      setPreviewUrl(null);
-      clearFileInput();
-      setStep((current) => nextTryOnStep(current, "photo-dropped"));
-    }
-    // Only a newly settled job should run this; the rest is read as of that moment.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [settledKey]);
+    activeRef.current = active;
+  }, [active]);
 
   // An outcome on screen has been seen: the dock and the tab title stop pointing to it.
   const { markSeen, discard } = session;
@@ -165,7 +149,7 @@ export function useTryOn({
       return;
     }
     setStep("result");
-    if (file === null) {
+    if (file === null && job.file !== null) {
       setFile(job.file);
       setPreviewUrl(URL.createObjectURL(job.file));
       setFileError(null);
@@ -238,7 +222,22 @@ export function useTryOn({
     if (!canGenerate || file === null || ageState === null) return;
     // The session refuses synchronously while any job is loading, so a second click in the same
     // frame cannot start a second generation before this has re-rendered.
-    if (!session.start({ productSlug, productName, file, ageState })) return;
+    const started = session.start({ productSlug, productName, file, ageState }, (settled) => {
+      // The acknowledgement is a representation about one photo for one generation; asking again
+      // for the next attempt is deliberate (spec §6), and the server demands it regardless.
+      setAcknowledged(false);
+      // Every submitted attempt counts, so the number has moved whatever the outcome was.
+      if (activeRef.current) void refreshQuota();
+      if (settled.photoRefused) {
+        // The provider refused this photo for good. It is dropped, and the shopper is sent back to
+        // choose another, with the explanation still showing there.
+        setFile(null);
+        setPreviewUrl(null);
+        clearFileInput();
+        setStep((current) => nextTryOnStep(current, "photo-dropped"));
+      }
+    });
+    if (!started) return;
     setStep((current) => nextTryOnStep(current, "generate"));
   }
 

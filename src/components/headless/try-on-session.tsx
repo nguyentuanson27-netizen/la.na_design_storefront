@@ -47,11 +47,14 @@ export type TryOnJob = Readonly<{
   id: number;
   productSlug: string;
   productName: string;
-  /** The photo as chosen, so the dialog can offer "Tạo lại" with it after being closed and reopened. */
-  file: File;
+  /**
+   * The photo as chosen, so the dialog can offer "Tạo lại" with it after being closed and reopened.
+   * `null` once the provider has refused the photo: it is released then, with its URL.
+   */
+  file: File | null;
   ageState: TryOnAgeState;
   /** This job's own object URL for the photo (the dialog's preview URL dies with the dialog). */
-  photoUrl: string;
+  photoUrl: string | null;
   startedAt: number;
   status: "loading" | "success" | "error";
   result: TryOnResult | null;
@@ -75,8 +78,12 @@ type JobOpener = (opener: HTMLElement | null) => void;
 
 export type TryOnSession = Readonly<{
   job: TryOnJob | null;
-  /** False, and nothing is sent, while another job is loading. */
-  start: (input: TryOnJobInput) => boolean;
+  /**
+   * False, and nothing is sent, while another job is loading. `onSettled` is called once with the
+   * settled job, from the request's own callback rather than a render, so the form that started it
+   * can reset itself (a component that has unmounted meanwhile simply ignores it).
+   */
+  start: (input: TryOnJobInput, onSettled?: (job: TryOnJob) => void) => boolean;
   /** Drops a settled job and its images. A loading job is never dropped: its attempt is spent. */
   discard: (id: number) => void;
   markSeen: (id: number) => void;
@@ -102,7 +109,7 @@ function decodeImage(base64: string, mimeType: TryOnResult["mimeType"]): TryOnRe
 }
 
 function revokeJob(job: TryOnJob) {
-  URL.revokeObjectURL(job.photoUrl);
+  if (job.photoUrl) URL.revokeObjectURL(job.photoUrl);
   if (job.result) URL.revokeObjectURL(job.result.url);
 }
 
@@ -200,7 +207,7 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
   }, []);
 
   const start = useCallback(
-    (input: TryOnJobInput) => {
+    (input: TryOnJobInput, onSettled?: (job: TryOnJob) => void) => {
       const current = jobRef.current;
       if (current?.status === "loading") return false;
       if (current) revokeJob(current);
@@ -229,7 +236,14 @@ export function TryOnSessionProvider({ children }: Readonly<{ children: ReactNod
           if (outcome.result) URL.revokeObjectURL(outcome.result.url);
           return;
         }
-        commit({ ...latest, ...outcome });
+        let settled: TryOnJob = { ...latest, ...outcome };
+        if (outcome.photoRefused) {
+          // A photo the provider refused for good is not kept, shown or offered again anywhere.
+          if (latest.photoUrl) URL.revokeObjectURL(latest.photoUrl);
+          settled = { ...settled, file: null, photoUrl: null };
+        }
+        commit(settled);
+        onSettled?.(settled);
       });
       return true;
     },

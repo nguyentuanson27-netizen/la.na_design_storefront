@@ -8,12 +8,14 @@ import {
   tryOnWaitStageIndex,
 } from "@/components/headless/try-on-model";
 
-/** Seconds since `startedAt`, ticking once a second. */
+/**
+ * Seconds since `startedAt`, ticking once a second. Before the first tick after a new start the clock
+ * read may predate it; that reads as 0, which is what the wait is at that moment.
+ */
 export function useTryOnElapsedSeconds(startedAt: number | null): number {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     if (startedAt === null) return;
-    setNow(Date.now());
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [startedAt]);
