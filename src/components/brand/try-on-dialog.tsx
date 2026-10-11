@@ -21,7 +21,7 @@ import {
   TRY_ON_WAIT_NOTE,
   isLoginRequired,
 } from "@/components/headless/try-on-model";
-import { useTryOn } from "@/components/headless/use-try-on";
+import { useTryOn, type TryOnResult } from "@/components/headless/use-try-on";
 
 import { BrandTryOnWaiting } from "./try-on-waiting";
 
@@ -58,6 +58,12 @@ const FOCUS_RING =
 const PEER_FOCUS_RING =
   "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]";
 const TEXT_BUTTON = `min-h-11 text-sm font-semibold underline underline-offset-4 ${FOCUS_RING}`;
+
+const RESULT_EXTENSION: Readonly<Record<TryOnResult["mimeType"], string>> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
 
 function PersonIcon() {
   return (
@@ -280,9 +286,9 @@ export function BrandTryOnDialog({
           ref={fileInputRef}
           id={`${ids}-photo`}
           type="file"
-          accept="image/jpeg,image/png"
+          accept="image/jpeg,image/png,image/webp"
           className="peer sr-only"
-          aria-label="Ảnh của bạn (JPG hoặc PNG, tối đa 7 MB)"
+          aria-label="Ảnh của bạn (JPG, PNG hoặc WebP, tối đa 7 MB)"
           aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
           aria-invalid={tryOn.fileError ? "true" : undefined}
           onChange={tryOn.chooseFile}
@@ -307,7 +313,7 @@ export function BrandTryOnDialog({
                 +
               </span>
               <span className="text-sm font-semibold">Chọn ảnh</span>
-              <span className="text-xs">JPG hoặc PNG, tối đa 7 MB</span>
+              <span className="text-xs">JPG, PNG hoặc WebP, tối đa 7 MB</span>
             </>
           )}
         </label>
@@ -501,7 +507,7 @@ export function BrandTryOnDialog({
             <div className="mt-3 grid grid-cols-2 gap-2">
               <a
                 href={result.url}
-                download={`thu-do-${productSlug}.${result.mimeType === "image/png" ? "png" : "jpg"}`}
+                download={`thu-do-${productSlug}.${RESULT_EXTENSION[result.mimeType]}`}
                 className="btn btn--primary px-4"
               >
                 Tải ảnh

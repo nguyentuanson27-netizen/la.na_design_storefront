@@ -11,7 +11,7 @@
 /** Vertex AI accepts at most 7 MB per image. The shopper upload and the product image share it. */
 export const TRY_ON_MAX_IMAGE_BYTES = 7 * 1024 * 1024;
 
-export const TRY_ON_ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png"] as const;
+export const TRY_ON_ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp"] as const;
 export type TryOnImageMimeType = (typeof TRY_ON_ALLOWED_IMAGE_MIME_TYPES)[number];
 
 /** The likeness-rights representation the shopper confirms before every generation (spec §6). */

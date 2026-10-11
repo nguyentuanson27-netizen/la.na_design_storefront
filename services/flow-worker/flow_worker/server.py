@@ -111,6 +111,8 @@ def _sniff_mime(data: bytes) -> str | None:
         return "image/jpeg"
     if data.startswith(b"\x89PNG\r\n\x1a\n"):
         return "image/png"
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp"
     return None
 
 
@@ -121,7 +123,7 @@ def _decode_image(value: Any) -> tuple[bytes, str]:
         raise RequestError("invalid image fields")
     mime = value.get("mimeType")
     encoded = value.get("imageBase64")
-    if mime not in ("image/jpeg", "image/png") or not isinstance(encoded, str):
+    if mime not in ("image/jpeg", "image/png", "image/webp") or not isinstance(encoded, str):
         raise RequestError("unsupported image")
     try:
         data = base64.b64decode(encoded, validate=True)
@@ -592,7 +594,7 @@ def _failure_reason(
 
 
 def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str) -> tuple[str, bytes, str]:
-    suffix = {"image/jpeg": ".jpg", "image/png": ".png"}
+    suffix = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
     deadline = time.monotonic() + GENERATION_BUDGET_SECONDS
 
     def remaining_budget() -> float:
@@ -650,6 +652,7 @@ def _generate(person: bytes, person_mime: str, product: bytes, product_mime: str
             root / f"{output_path.stem}.jpg",
             root / f"{output_path.stem}.jpeg",
             root / f"{output_path.stem}.png",
+            root / f"{output_path.stem}.webp",
         )
         output_file = next((p for p in output_candidates if p.is_file()), None)
         if output_file is None:

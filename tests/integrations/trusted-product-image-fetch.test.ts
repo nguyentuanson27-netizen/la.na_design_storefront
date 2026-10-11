@@ -114,9 +114,18 @@ test("a product image over 7 MB fails safely: by Content-Length and by streamed 
   );
 });
 
-test("a non-image body, a WebP body, or a non-200 status fails", async () => {
+test("fetches a valid WebP image successfully", async () => {
+  const { fn } = fetcher(new Response(WEBP_BYTES, { status: 200 }));
+  const result = await fetchTrustedProductImage(URL_OK, { fetch: fn });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.image.mimeType, "image/webp");
+    assert.deepEqual([...result.image.bytes], [...WEBP_BYTES]);
+  }
+});
+
+test("a non-image body or a non-200 status fails", async () => {
   for (const response of [
-    new Response(WEBP_BYTES, { status: 200, headers: { "content-type": "image/jpeg" } }),
     new Response("<html></html>", { status: 200, headers: { "content-type": "image/jpeg" } }),
     new Response(JPEG_BYTES, { status: 404 }),
     new Response(JPEG_BYTES, { status: 500 }),
