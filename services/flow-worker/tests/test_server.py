@@ -333,6 +333,23 @@ class WorkerGenerationPolicyTest(unittest.TestCase):
                 }
             )
 
+    def test_image_boundary_accepts_webp(self):
+        webp_bytes = b"RIFF$\x00\x00\x00WEBPVP8 "
+        data, mime = server._decode_image(
+            {
+                "mimeType": "image/webp",
+                "imageBase64": "UklGRiQAAABXRUJQVlA4IA==",
+            }
+        )
+        self.assertEqual(mime, "image/webp")
+        self.assertEqual(data, webp_bytes)
+
+    def test_sniff_mime_detects_jpeg_png_and_webp(self):
+        self.assertEqual(server._sniff_mime(b"\xff\xd8\xff"), "image/jpeg")
+        self.assertEqual(server._sniff_mime(b"\x89PNG\r\n\x1a\n"), "image/png")
+        self.assertEqual(server._sniff_mime(b"RIFF$\x00\x00\x00WEBPVP8 "), "image/webp")
+        self.assertIsNone(server._sniff_mime(b"GIF89a"))
+
 
 
 class GflowExitStatusTest(unittest.TestCase):

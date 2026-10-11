@@ -41,7 +41,7 @@ import {
  * waits for them, and the dock offers to discard it.
  */
 
-export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" }>;
+export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
 
 export type TryOnJob = Readonly<{
   id: number;
@@ -133,7 +133,7 @@ async function runJob(input: TryOnJobInput): Promise<Outcome> {
       response.ok &&
       record.ok === true &&
       typeof record.imageBase64 === "string" &&
-      (record.mimeType === "image/png" || record.mimeType === "image/jpeg")
+      (record.mimeType === "image/png" || record.mimeType === "image/jpeg" || record.mimeType === "image/webp")
     ) {
       return {
         status: "success",

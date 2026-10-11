@@ -84,7 +84,9 @@ Required generation controls:
   `BLOCK_LOW_AND_ABOVE`.
 
 Google documents up to 14 reference images and a 7 MB maximum per inline image for this model. The
-storefront intentionally keeps its stricter existing JPEG/PNG + 7 MB input contract.
+storefront accepts JPEG, PNG and WebP (all listed as supported input types there) and keeps the
+7 MB ceiling on every image it sends. AVIF is not used: Google Flow's upload refuses it (gflow-cli
+0.82.1 accepts only PNG/JPEG/WebP/GIF by magic bytes), so the try-on garment is never AVIF.
 
 Important: the model page marks dedicated **Virtual try-on** capability as unsupported. This
 implementation uses Gemini image editing for the try-on use case, so garment/person fidelity must be
@@ -109,19 +111,26 @@ A product is eligible when all of the following are true:
    - `setDo`;
    - `vayDam`;
 2. it has a first trusted storefront image from the existing media authority;
-3. that exact first image is JPEG/JPG or PNG.
+3. that exact first image is JPEG/JPG, PNG or WebP.
 
 Do not:
 
 - infer eligibility from product names, collections, SKU text, or image recognition;
-- fall through to the second product image if the first image is unsupported;
-- add WebP conversion solely for MVP.
+- fall through to the second product image if the first image is unsupported.
 
 A product with missing/unknown category membership, no trusted first image, or a first image in unsupported format is not eligible.
 
-The product image's actual byte size is checked only when generation begins. If the trusted JPEG/PNG fetch exceeds Vertex AI's 7 MB per-image limit, fail that generation with a safe message. Do not add a PDP-time network probe merely to decide whether the button should render.
+The product image's actual byte size is checked only when generation begins. Do not add a PDP-time network probe merely to decide whether the button should render.
 
-This keeps the owner's “first image” rule exact and avoids adding an image-conversion dependency.
+### Oversized product images (owner-approved change, PR #129)
+
+Pancake product photographs are sometimes raw camera uploads well over 7 MB. Those used to fail every generation (`PRODUCT_IMAGE_UNAVAILABLE`). The garment reference is now resolved as follows, always for the same exact first trusted image:
+
+1. **Cache.** If the PDP image endpoint has already encoded that image as the 1080 px WebP (same key, `<encoding version>|webp|1080|<canonical src>`), use it. Only canonical, content-addressed Pancake sources are read from or written to the cache.
+2. **Direct fetch.** Otherwise fetch the original under the trusted-media contract, bounded to 7 MB.
+3. **Bounded conversion.** Only if that fetch is over 7 MB: refetch the canonical source through the existing PDP delivery pipeline (32 MB source cap, 40 MP pixel guard, JPEG/PNG/WebP sources only, EXIF rotation), encode it as WebP at most 1080 px wide under the 3 MB delivery ceiling, cache it, and use that.
+
+Every image sent to a provider is still <= 7 MB. Any failure along the way (untrusted URL, source over 32 MB, undecodable source, encode over the ceiling) fails that generation with the same safe `PRODUCT_IMAGE_UNAVAILABLE` message. Image 2 is never substituted. The conversion uses the Sharp dependency the PDP image endpoint already has; the cached file is a public catalogue photograph, never shopper input or output.
 
 MVP adds no admin eligibility field or database table.
 
@@ -151,7 +160,7 @@ For the outbound product-image fetch:
 - use HTTPS only;
 - reject redirects outside the trusted boundary;
 - bound timeout and response bytes;
-- verify JPEG/PNG content type/signature before sending to Vertex AI.
+- verify JPEG/PNG/WebP content type/signature before sending to the provider.
 
 Do not create a second product-media authority.
 
@@ -253,7 +262,7 @@ Prompt wording is **not** the safety boundary. Provider safety controls and serv
 gates remain authoritative.
 
 The response may contain text/thought parts, but the application accepts exactly one validated
-inline JPEG/PNG image from exactly one candidate. Explicit provider safety blocks fail closed.
+inline JPEG/PNG image from exactly one candidate (the Flow provider may also return WebP). Explicit provider safety blocks fail closed.
 Malformed output, extra images, invalid base64, unsupported formats or MIME/signature mismatch are
 generic generation failures. No weaker retry or fallback is allowed.
 
@@ -264,7 +273,8 @@ generic generation failures. No weaker retry or fallback is allowed.
 MVP accepts exactly one:
 
 - JPEG/JPG;
-- PNG.
+- PNG;
+- WebP.
 
 Each image sent to Vertex AI must be **<= 7 MB**.
 
@@ -448,7 +458,8 @@ Cover:
 - `aoDai`, `setDo`, `vayDam` eligible; `phuKien` excluded;
 - missing/unknown membership excluded;
 - missing trusted first media excluded;
-- first product image WebP excluded rather than converted or replaced by image 2;
+- first product image WebP eligible; an unsupported first image (e.g. GIF) excluded rather than replaced by image 2;
+- garment reference: cache hit makes no fetch; a <= 7 MB original is sent as is; an original over 7 MB is converted to a bounded WebP (exercised with a real, high-resolution source over 7 MB) and cached; a mutable source never touches the cache;
 - unsupported/oversized shopper image rejected;
 - server ignores/rejects arbitrary client product-image URLs;
 - request pins `gemini-3-pro-image`;
@@ -469,7 +480,7 @@ Cover representative desktop/mobile flows:
 - eligible PDP shows **Thử đồ**;
 - accessory/non-eligible PDP does not;
 - upload preview;
-- JPEG/PNG accepted, unsupported format rejected;
+- JPEG/PNG/WebP accepted, unsupported format rejected;
 - generation stays unavailable until likeness acknowledgement and allowed age state are complete;
 - teen path explicitly includes digital-consent-age + guardian attestation;
 - blocked age path cannot generate;
@@ -624,8 +635,9 @@ These remain open rather than being guessed:
 Implementation is acceptable when:
 
 - [ ] Eligible apparel PDPs expose **Thử đồ** and accessories do not.
-- [ ] The exact first trusted product image is used; unsupported first-image format disables try-on rather than falling through or converting.
-- [ ] Shopper input accepts exactly one JPEG/PNG image within the provider limit.
+- [ ] The exact first trusted product image is used; unsupported first-image format disables try-on rather than falling through.
+- [ ] A first product image over 7 MB is converted server-side to a bounded WebP (§4 "Oversized product images"); nothing over 7 MB reaches a provider.
+- [ ] Shopper input accepts exactly one JPEG/PNG/WebP image within the provider limit.
 - [ ] Product-image byte size is enforced during the generation fetch; PDP rendering does not add a remote size probe.
 - [ ] Each request requires likeness-rights acknowledgement.
 - [ ] Server-enforced age state is non-overlapping: `adult` and `teen_eligible_with_guardian` allowed; `below_digital_consent_age` rejected.
@@ -640,6 +652,7 @@ Implementation is acceptable when:
 - [ ] Try-on errors never break PDP/cart/checkout.
 - [ ] Browser flow is accessible and covered by the existing Playwright suite.
 - [ ] Controlled live quality/cost/latency/minor-safety evidence is reviewed before production enablement.
+- [ ] A controlled live smoke on both providers with a WebP first image and with a real Pancake garment original over 7 MB (e.g. the 13.5 MB "Set quần Hạ Lam" photo) passes before the WebP/oversized change is rolled out.
 - [ ] Current model lifecycle is re-checked before launch.
 - [ ] Repository lint/typecheck/tests/build pass.
 - [ ] No unrelated catalog/commerce refactor is mixed in.
@@ -654,7 +667,7 @@ MVP does not include:
 - geolocation for age-policy resolution;
 - durable consent ledger;
 - processing the blocked age state;
-- WebP conversion;
+- converting a first image in an unsupported format (GIF, AVIF, HEIC) instead of excluding the product;
 - side/back pose inputs;
 - multi-output generation;
 - history/account image library;

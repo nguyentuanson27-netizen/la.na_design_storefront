@@ -200,12 +200,13 @@ test("only a safety block makes the photo final", () => {
   }
 });
 
-test("local file validation mirrors the server limits (JPEG/PNG, at most 7 MB)", () => {
+test("local file validation mirrors the server limits (JPEG/PNG/WebP, at most 7 MB)", () => {
   assert.equal(validateTryOnFile({ type: "image/jpeg", size: 1 }), null);
   assert.equal(validateTryOnFile({ type: "image/png", size: 7 * 1024 * 1024 }), null);
+  assert.equal(validateTryOnFile({ type: "image/webp", size: 1 }), null);
   assert.match(validateTryOnFile({ type: "image/png", size: 7 * 1024 * 1024 + 1 })!, /7 MB/);
-  for (const type of ["image/webp", "image/gif", "application/pdf", ""]) {
-    assert.match(validateTryOnFile({ type, size: 1 })!, /JPG hoặc PNG/);
+  for (const type of ["image/gif", "application/pdf", ""]) {
+    assert.match(validateTryOnFile({ type, size: 1 })!, /JPG, PNG hoặc WebP/);
   }
 });
 

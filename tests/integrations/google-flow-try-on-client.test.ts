@@ -83,6 +83,23 @@ test("a worker success returns one signature-validated image", async () => {
   }
 });
 
+test("a worker success with WebP returns one signature-validated image", async () => {
+  const { client } = harness(
+    json({
+      ok: true,
+      model: "nano-banana-pro",
+      mimeType: "image/webp",
+      imageBase64: b64(WEBP_BYTES),
+    }),
+  );
+  const result = await client.generate({ person, product });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.equal(result.image.mimeType, "image/webp");
+    assert.deepEqual([...result.image.bytes], [...WEBP_BYTES]);
+  }
+});
+
 test("untrusted worker output is rejected", async () => {
   const cases = [
     {},

@@ -59,7 +59,7 @@ test("create-order mapper emits only the reviewed server-owned allowlist and omi
   assert.equal("status" in request, false);
 });
 
-test("a two-level address (no district) is sent as Pancake's new_province_id / new_commune_id", () => {
+test("a two-level address (no district) is sent in the shape Pancake POS stores for 'Địa chỉ mới'", () => {
   const request = buildPancakeCreateOrderRequest({
     shopId: 920_007,
     guestName: "Nguyễn Văn A",
@@ -67,6 +67,8 @@ test("a two-level address (no district) is sent as Pancake's new_province_id / n
     provinceRef: "84_VN101",
     districtRef: null,
     communeRef: "84_VN10105",
+    provinceName: "Hà Nội",
+    communeName: "Phường Hoàn Kiếm",
     addressDetail: "12 Đường A",
     note: null,
     shippingFeeVnd: 30_000,
@@ -77,12 +79,53 @@ test("a two-level address (no district) is sent as Pancake's new_province_id / n
     full_name: "Nguyễn Văn A",
     phone_number: "0901234567",
     address: "12 Đường A",
-    new_province_id: "84_VN101",
-    new_commune_id: "84_VN10105",
+    render_type: "new",
+    province_id: "84_VN101",
+    district_id: null,
+    commune_id: "84_VN10105",
+    province_name: "Hà Nội",
+    commune_name: "Phường Hoàn Kiếm",
   });
-  // Never a half-old address: no old province/district/commune ids ride along.
-  for (const legacyKey of ["province_id", "district_id", "commune_id"]) {
-    assert.equal(legacyKey in request.shipping_address, false, legacyKey);
+  // The POS UI does not read these; they must not ride along.
+  for (const unreadKey of ["new_province_id", "new_commune_id"]) {
+    assert.equal(unreadKey in request.shipping_address, false, unreadKey);
+  }
+});
+
+test("a two-level address without province/commune names is refused rather than sent unrenderable", () => {
+  assert.throws(() =>
+    buildPancakeCreateOrderRequest({
+      shopId: 920_007,
+      guestName: "Nguyễn Văn A",
+      guestPhone: "0901234567",
+      provinceRef: "84_VN101",
+      districtRef: null,
+      communeRef: "84_VN10105",
+      addressDetail: "12 Đường A",
+      note: null,
+      shippingFeeVnd: 0,
+      lines: [{ pancakeVariationId: "variation-001", quantity: 1, unitPriceVnd: 500_000 }],
+    }),
+  );
+});
+
+test("the old three-level address carries no render_type or geo names", () => {
+  const request = buildPancakeCreateOrderRequest({
+    shopId: 920_007,
+    guestName: "A",
+    guestPhone: "0900000000",
+    provinceRef: "p",
+    districtRef: "d",
+    communeRef: "c",
+    provinceName: "ignored",
+    communeName: "ignored",
+    addressDetail: "x",
+    note: null,
+    shippingFeeVnd: 0,
+    lines: [{ pancakeVariationId: "v", quantity: 1, unitPriceVnd: 0 }],
+  });
+  for (const key of ["render_type", "province_name", "commune_name"]) {
+    assert.equal(key in request.shipping_address, false, key);
   }
 });
 
@@ -216,6 +259,8 @@ test("an order source id is sent as Pancake's `account` field and omitted when n
     provinceRef: "84_VN101",
     districtRef: null,
     communeRef: "84_VN10105",
+    provinceName: "Hà Nội",
+    communeName: "Phường Hoàn Kiếm",
     addressDetail: "12 Đường A",
     note: null,
     shippingFeeVnd: 30_000,
@@ -225,4 +270,30 @@ test("an order source id is sent as Pancake's `account` field and omitted when n
   assert.equal(buildPancakeCreateOrderRequest({ ...base, orderSourceId: 922_027_175 }).account, 922_027_175);
   assert.equal("account" in buildPancakeCreateOrderRequest(base), false);
   assert.throws(() => buildPancakeCreateOrderRequest({ ...base, orderSourceId: 0 }));
+});
+
+test("gateway resolves two-level province and ward names from the geo endpoints, and fails closed on an unknown id", async () => {
+  const gateway = createPancakeOrderGateway({
+    async getJson(endpoint, query) {
+      if (endpoint === "/geo/provinces") {
+        assert.deepEqual(query, { country_code: "84", is_new: true });
+        return { data: [{ id: "84_VN129", name: "Hồ Chí Minh" }] };
+      }
+      assert.equal(endpoint, "/geo/communes");
+      assert.deepEqual(query, { province_id: "84_VN129" });
+      return {
+        data: [{ id: "84_VN12951", name: "Phường Thông Tây Hội", province_id: "84_VN129", district_id: null }],
+      };
+    },
+    async postJson() {
+      throw new Error("unexpected write");
+    },
+  });
+
+  assert.deepEqual(await gateway.resolveTwoLevelAddressNames("84_VN129", "84_VN12951"), {
+    provinceName: "Hồ Chí Minh",
+    communeName: "Phường Thông Tây Hội",
+  });
+  await assert.rejects(gateway.resolveTwoLevelAddressNames("84_VN129", "84_VN00000"));
+  await assert.rejects(gateway.resolveTwoLevelAddressNames("84_VN999", "84_VN12951"));
 });

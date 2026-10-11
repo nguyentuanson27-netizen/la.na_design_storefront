@@ -15,7 +15,7 @@ const ROOT = resolve(import.meta.dirname, "../..");
 function files(directory: string, keep: (name: string) => boolean = () => true): string[] {
   return readdirSync(join(ROOT, directory))
     .filter(keep)
-    .map((name) => join(directory, name));
+    .map((name) => join(directory, name).replace(/\\/g, "/"));
 }
 
 const SERVER_TRY_ON_FILES = [

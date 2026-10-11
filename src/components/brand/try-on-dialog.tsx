@@ -289,9 +289,9 @@ export function BrandTryOnDialog({
           ref={fileInputRef}
           id={`${ids}-photo`}
           type="file"
-          accept="image/jpeg,image/png"
+          accept="image/jpeg,image/png,image/webp"
           className="peer sr-only"
-          aria-label="Ảnh của bạn (JPG hoặc PNG, tối đa 7 MB)"
+          aria-label="Ảnh của bạn (JPG, PNG hoặc WebP, tối đa 7 MB)"
           aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
           aria-invalid={tryOn.fileError ? "true" : undefined}
           onChange={tryOn.chooseFile}
@@ -316,7 +316,7 @@ export function BrandTryOnDialog({
                 +
               </span>
               <span className="text-sm font-semibold">Chọn ảnh</span>
-              <span className="text-xs">JPG hoặc PNG, tối đa 7 MB</span>
+              <span className="text-xs">JPG, PNG hoặc WebP, tối đa 7 MB</span>
             </>
           )}
         </label>

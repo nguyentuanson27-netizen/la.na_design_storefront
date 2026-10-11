@@ -16,6 +16,7 @@ import { deriveStorefrontProjectionSelection } from "../../src/commerce/storefro
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import { acceptAnyRenderedQuote } from "../fixtures/rendered-quote-authority.ts";
+import { resolveTwoLevelAddressNames } from "../support/pancake-geo-names.ts";
 
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) throw new Error("DATABASE_URL is required for database smoke tests");
@@ -513,6 +514,7 @@ async function submitAgainst(publicCode: string, liveCatalog: readonly PancakeCa
   const result = await createPancakeOrderSubmissionService(
     prisma,
     {
+      resolveTwoLevelAddressNames,
       async fetchVariations(requestShopId) {
         assert.equal(requestShopId, shopId);
         return liveCatalog;

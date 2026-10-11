@@ -3,6 +3,12 @@ import type { ReactNode } from "react";
 import { TRY_ON_TEEN_DISCLOSURE } from "@/components/headless/try-on-model";
 import type { TryOnResult } from "@/components/headless/try-on-session";
 
+const RESULT_EXTENSION: Readonly<Record<TryOnResult["mimeType"], string>> = {
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/webp": "webp",
+};
+
 /**
  * A finished try-on picture with what must always travel with it: the download, the statement that
  * it is an AI picture for reference only, and for a teen attestation the disclosure as well. Shared
@@ -34,7 +40,7 @@ export function BrandTryOnResult({
       <div className="mt-3 grid grid-cols-2 gap-2">
         <a
           href={result.url}
-          download={`thu-do-${productSlug}.${result.mimeType === "image/png" ? "png" : "jpg"}`}
+          download={`thu-do-${productSlug}.${RESULT_EXTENSION[result.mimeType]}`}
           className="btn btn--primary px-4"
         >
           Tải ảnh

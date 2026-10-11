@@ -5,6 +5,7 @@ import {
   MAX_VARIATIONS_PER_READ,
   PancakeVariationFilterMismatchError,
 } from "./variation-stock-read.ts";
+import { listPancakeNewCommunes, listPancakeNewProvinces } from "./geo.ts";
 import type { PancakeCreateOrderRequest } from "./order-create.ts";
 import {
   searchOrderByMarker,
@@ -97,6 +98,28 @@ export function createPancakeOrderGateway(
       const wanted = new Set(requested);
       const catalog = await fetchCompleteCatalog({ client, shopId: checkedShopId });
       return catalog.filter((variation) => wanted.has(variation.id));
+    },
+
+    /**
+     * The display names of a two-level address. The order only persists the Pancake ids, but the
+     * POS "Địa chỉ mới" tab is rendered from `province_name` / `commune_name`, so the names are
+     * read back from the same geo endpoints checkout validated the ids against. An id Pancake no
+     * longer lists throws, so an unresolvable address is never sent as one the POS cannot show.
+     */
+    async resolveTwoLevelAddressNames(
+      provinceRef: string,
+      communeRef: string,
+    ): Promise<{ provinceName: string; communeName: string }> {
+      const [provinces, communes] = await Promise.all([
+        listPancakeNewProvinces(client, { countryCode: "84" }),
+        listPancakeNewCommunes(client, { provinceId: provinceRef }),
+      ]);
+      const province = provinces.find((entry) => entry.id === provinceRef);
+      const commune = communes.find((entry) => entry.id === communeRef);
+      if (!province || !commune) {
+        throw new Error("Pancake geo no longer lists the order's province or ward/commune");
+      }
+      return { provinceName: province.name, communeName: commune.name };
     },
 
     async fetchOrderStatus(shopId: number, orderId: string): Promise<PancakeOrderStatus> {

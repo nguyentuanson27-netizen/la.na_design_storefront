@@ -6,10 +6,10 @@ import { TRY_ON_MAX_IMAGE_BYTES } from "../../src/commerce/try-on-policy.ts";
 import { parseTryOnRequest } from "../../src/commerce/try-on-request.ts";
 import { JPEG_BYTES, PNG_BYTES, WEBP_BYTES, tryOnForm } from "../support/try-on-fixtures.ts";
 
-test("sniffImageMime recognises JPEG and PNG signatures only", () => {
+test("sniffImageMime recognises JPEG, PNG and WebP signatures only", () => {
   assert.equal(sniffImageMime(JPEG_BYTES), "image/jpeg");
   assert.equal(sniffImageMime(PNG_BYTES), "image/png");
-  assert.equal(sniffImageMime(WEBP_BYTES), null);
+  assert.equal(sniffImageMime(WEBP_BYTES), "image/webp");
   assert.equal(sniffImageMime(new Uint8Array([0x47, 0x49, 0x46, 0x38])), null);
   assert.equal(sniffImageMime(new Uint8Array()), null);
 });
@@ -53,6 +53,13 @@ test("a valid request parses to the slug, age state and photo bytes", async () =
 test("a PNG upload with a PNG declared type is accepted", async () => {
   const result = await parseTryOnRequest(
     tryOnForm({ photo: new File([PNG_BYTES], "me.png", { type: "image/png" }) }),
+  );
+  assert.equal(result.ok, true);
+});
+
+test("a WebP upload with a WebP declared type is accepted", async () => {
+  const result = await parseTryOnRequest(
+    tryOnForm({ photo: new File([WEBP_BYTES], "me.webp", { type: "image/webp" }) }),
   );
   assert.equal(result.ok, true);
 });
@@ -109,7 +116,6 @@ test("a text field in place of the file is rejected", async () => {
 
 test("unsupported shopper MIME types are rejected", async () => {
   for (const [bytes, type] of [
-    [WEBP_BYTES, "image/webp"],
     [new Uint8Array([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]), "image/gif"],
     [JPEG_BYTES, "application/pdf"],
     [JPEG_BYTES, ""],
