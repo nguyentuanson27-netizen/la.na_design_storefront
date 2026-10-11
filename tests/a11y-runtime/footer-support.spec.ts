@@ -182,6 +182,7 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   for (const topic of supportTopics) {
     await expect(support.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
   }
+  await expect(policy.getByRole("link", { name: "Về La.na Design", exact: true })).toHaveAttribute("href", "/about");
   for (const topic of policyTopics) {
     await expect(policy.getByRole("link", { name: topic.title, exact: true })).toHaveAttribute("href", topic.href);
   }
@@ -258,7 +259,7 @@ test("F9a footer renders four final groups, canonical destinations and exact leg
   const mobileGroups = [
     { heading: "Mua sắm", navigation: "Mua sắm", firstLink: "Áo dài" },
     { heading: "Hỗ trợ khách hàng", navigation: "Hỗ trợ khách hàng", firstLink: supportTopics[0]!.title },
-    { heading: "Thông tin & chính sách", navigation: "Thông tin và chính sách", firstLink: policyTopics[0]!.title },
+    { heading: "Thông tin & chính sách", navigation: "Thông tin và chính sách", firstLink: "Về La.na Design" },
   ] as const;
 
   for (const group of mobileGroups) {
@@ -333,6 +334,7 @@ test("F9a mobile footer without JavaScript keeps every link and ships no disclos
     const expected = [
       ...expectedShopping.map((item) => ({ label: item.label, href: item.href })),
       ...supportTopics.map((topic) => ({ label: topic.title, href: topic.href })),
+      { label: "Về La.na Design", href: "/about" },
       ...policyTopics.map((topic) => ({ label: topic.title, href: topic.href })),
     ];
     expect(expected.length).toBeGreaterThan(0);

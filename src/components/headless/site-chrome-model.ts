@@ -80,9 +80,12 @@ export function buildSiteChromeContent(
       supportLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "support").map(
         (topic) => Object.freeze({ href: topic.href, label: topic.title }),
       ),
-      policyLinks: POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy").map(
-        (topic) => Object.freeze({ href: topic.href, label: topic.title }),
-      ),
+      policyLinks: [
+        Object.freeze({ href: "/about", label: "Về La.na Design" }),
+        ...POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy").map(
+          (topic) => Object.freeze({ href: topic.href, label: topic.title }),
+        ),
+      ],
     },
   };
 }
