@@ -2,72 +2,70 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type RefObject } from "react";
 
-import { compressTryOnPhoto } from "./try-on-photo.ts";
 import { createTryOnQuotaLoader } from "./try-on-quota.ts";
 import {
-  TRY_ON_NETWORK_FAILURE_MESSAGE,
   isBlockedAgeState,
-  isFinalForPhoto,
   isTeenAgeState,
   isTryOnAgeAllowed,
   missingTryOnSteps,
   nextTryOnStep,
-  parseTryOnFailureReason,
+  tryOnBusyElsewhereMessage,
   tryOnLoginHref,
   tryOnQuotaLine,
   tryOnStepNumber,
-  tryOnFailureMessage,
   tryOnQuotaUpsell,
   validateTryOnFile,
   type TryOnAgeState,
-  type TryOnFailureReason,
   type TryOnQuotaView,
   type TryOnStep,
 } from "./try-on-model.ts";
+import { useTryOnSession, type TryOnJob } from "./try-on-session.tsx";
 
 /**
- * Virtual try-on behaviour for a PDP dialog: the photo, the shopper's attestations, the one request
- * to `/api/try-on`, and its result.
+ * Virtual try-on behaviour for a PDP dialog: the photo, the shopper's attestations, the steps, and
+ * the one generation that `useTryOnSession` runs for them.
  *
  * Isolation is the design constraint. This hook shares no state with the variant selection or the
  * cart and imports neither, so a failure here cannot change what the shopper is buying. It holds the
- * photo and the result only as in-memory blob URLs, revokes them when replaced, and `reset()` drops
- * everything when the dialog closes — nothing is written to browser storage.
+ * photo only as an in-memory blob URL, revokes it when replaced, and `reset()` drops the form when
+ * the dialog closes — nothing is written to browser storage.
  *
  * The dialog is a three-step wizard (`step`): photo, age and confirmation, result. Loading, success
  * and failure are all the result step, so the form is not on screen while a request is in flight.
  *
- * Everything the request is built from is also frozen while it runs, in the hook and not only in the
- * markup. The photo, the age attestation and the acknowledgement are snapshotted into the `FormData`
- * when the request starts; if they could change before it settles, the result would arrive beside a
- * preview and a teen disclosure that no longer describe the photo and attestation it was made from.
- * The setters below ignore changes while `locked`, whatever the markup does.
+ * The request itself is not this hook's. `generate()` hands it to the session provider in the root
+ * layout, which keeps it running when the dialog closes or the shopper moves to another page; the
+ * phase, result and error shown here are that job's, when it is for this product. Reopening the
+ * dialog (`resume()`) puts the shopper back on the job's result step, with its photo and age, so
+ * "Tạo lại" still works. A job for another product that is still loading blocks a new one here:
+ * the provider serves one at a time, and an attempt sent while it is busy is counted and refused.
  *
- * The photo is scaled to at most 1200 px and re-encoded as JPEG in the browser just before it is sent.
+ * Everything the request is built from is frozen while it runs, in the hook and not only in the
+ * markup. The setters below ignore changes while `locked`, whatever the markup does.
  *
  * It submits the photo, the product slug, the acknowledgement and the age state, and nothing else:
  * in particular no product image URL, because the server chooses the garment image itself.
  */
 
-type Phase = "idle" | "loading" | "success" | "error";
-export type TryOnResult = Readonly<{ url: string; mimeType: "image/png" | "image/jpeg" | "image/webp" }>;
-
-function decodeImage(base64: string, mimeType: TryOnResult["mimeType"]): TryOnResult {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
-  return { url: URL.createObjectURL(new Blob([bytes], { type: mimeType })), mimeType };
-}
+type Phase = "idle" | TryOnJob["status"];
+export type { TryOnResult } from "./try-on-session.tsx";
 
 export function useTryOn({
   productSlug,
+  productName,
   fileInputRef,
+  active,
 }: Readonly<{
   productSlug: string;
+  productName: string;
   /** The markup's own file input, so a refused photo can be cleared without remounting (and losing focus). */
   fileInputRef: RefObject<HTMLInputElement | null>;
+  /** Whether the dialog is open: the outcome of a job counts as seen only while it is on screen. */
+  active: boolean;
 }>) {
-  const abortRef = useRef<AbortController | null>(null);
+  const session = useTryOnSession();
+  const job = session.job?.productSlug === productSlug ? session.job : null;
+  const otherJob = session.job !== null && job === null ? session.job : null;
 
   const [step, setStep] = useState<TryOnStep>("photo");
   const [file, setFile] = useState<File | null>(null);
@@ -75,10 +73,6 @@ export function useTryOn({
   const [fileError, setFileError] = useState<string | null>(null);
   const [acknowledged, setAcknowledged] = useState(false);
   const [ageState, setAgeState] = useState<TryOnAgeState | null>(null);
-  const [phase, setPhase] = useState<Phase>("idle");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [errorReason, setErrorReason] = useState<TryOnFailureReason | null>(null);
-  const [result, setResult] = useState<TryOnResult | null>(null);
   // What is left today, as the server says. Display only: the server enforces the limit on its own.
   // `quotaCurrent` is false from the moment a refresh starts until it answers, so a number that may
   // be out of date is never shown; the audience it carries survives that wait (it only decides
@@ -98,19 +92,16 @@ export function useTryOn({
     };
   }, [previewUrl]);
   useEffect(() => {
-    return () => {
-      if (result) URL.revokeObjectURL(result.url);
-    };
-  }, [result]);
-  useEffect(() => () => abortRef.current?.abort(), []);
-  useEffect(() => {
     const loader = quotaLoaderRef.current;
     return () => loader?.cancel();
   }, []);
 
+  const phase: Phase = job?.status ?? "idle";
   const locked = phase === "loading";
+  const busyElsewhere = otherJob?.status === "loading";
   const canGenerate =
     !locked &&
+    !busyElsewhere &&
     file !== null &&
     fileError === null &&
     acknowledged &&
@@ -129,32 +120,65 @@ export function useTryOn({
     setQuotaCurrent(outcome.kind === "known");
   }
 
+  // The dialog's open state as of the last render, for the settle callback, which runs later.
+  const activeRef = useRef(active);
+  useEffect(() => {
+    activeRef.current = active;
+  }, [active]);
+
+  // An outcome on screen has been seen: the dock and the tab title stop pointing to it.
+  const { markSeen, discard } = session;
+  const showing = active && job !== null && job.status !== "loading" && !job.seen && step !== "confirm";
+  useEffect(() => {
+    if (showing && job) markSeen(job.id);
+  }, [showing, job, markSeen]);
+
+  /** Drops this product's settled result or error, as replacing the photo or going back always did. */
+  function dropSettledJob() {
+    if (job !== null && job.status !== "loading") discard(job.id);
+  }
+
+  /**
+   * Called when the dialog opens. With a job for this product the shopper lands on its result step
+   * (or back on the photo step, if the photo was refused), with the job's photo and age restored.
+   */
+  function resume() {
+    if (job === null) return;
+    if (job.photoRefused) {
+      setStep("photo");
+      return;
+    }
+    setStep("result");
+    if (file === null && job.file !== null) {
+      setFile(job.file);
+      setPreviewUrl(URL.createObjectURL(job.file));
+      setFileError(null);
+    }
+    if (ageState === null) setAgeState(job.ageState);
+  }
+
+  /**
+   * Called when the dialog closes. The form is dropped; the job is not aborted — it keeps running
+   * and the dock reports it — but an outcome the shopper has already seen goes with the dialog.
+   */
   function reset() {
     quotaLoaderRef.current?.cancel();
     setQuota(null);
     setQuotaCurrent(false);
-    abortRef.current?.abort();
-    abortRef.current = null;
     setStep("photo");
     setFile(null);
     setPreviewUrl(null);
     setFileError(null);
     setAcknowledged(false);
     setAgeState(null);
-    setPhase("idle");
-    setErrorMessage(null);
-    setErrorReason(null);
-    setResult(null);
     clearFileInput();
+    if (job !== null && job.status !== "loading" && (job.seen || showing)) discard(job.id);
   }
 
   function chooseFile(event: ChangeEvent<HTMLInputElement>) {
-    if (locked || abortRef.current !== null) return;
+    if (locked) return;
     const next = event.target.files?.[0] ?? null;
-    setResult(null);
-    setErrorMessage(null);
-    setErrorReason(null);
-    setPhase("idle");
+    dropSettledJob();
     if (next === null) {
       setFile(null);
       setPreviewUrl(null);
@@ -182,99 +206,48 @@ export function useTryOn({
 
   /** Back to choosing a photo. The current one stays until another replaces it. */
   function changePhoto() {
-    if (locked || abortRef.current !== null) return;
-    setResult(null);
-    setErrorMessage(null);
-    setErrorReason(null);
-    setPhase("idle");
+    if (locked) return;
+    dropSettledJob();
     setStep((current) => nextTryOnStep(current, "change-photo"));
   }
 
   /** Back to the confirmation step to run again; the acknowledgement is asked afresh. */
   function backToConfirm() {
-    if (locked || abortRef.current !== null) return;
-    setResult(null);
-    setErrorMessage(null);
-    setErrorReason(null);
-    setPhase("idle");
+    if (locked) return;
+    dropSettledJob();
     setStep((current) => nextTryOnStep(current, "back"));
   }
 
-  async function generate() {
-    // `abortRef` is set synchronously, so a second click in the same frame cannot start a second
-    // generation before `phase` has re-rendered.
-    if (!canGenerate || file === null || ageState === null || abortRef.current !== null) return;
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    setStep((current) => nextTryOnStep(current, "generate"));
-    setPhase("loading");
-    setErrorMessage(null);
-    setErrorReason(null);
-    setResult(null);
-
-    // Shrunk first (a few hundred ms) so the upload and the model input are small; the original is
-    // sent as is if the browser cannot do it.
-    const photo = await compressTryOnPhoto(file);
-    if (controller.signal.aborted) return;
-
-    const body = new FormData();
-    body.append("photo", photo);
-    body.append("productSlug", productSlug);
-    body.append("likenessAcknowledged", "true");
-    body.append("ageState", ageState);
-
-    try {
-      const response = await fetch("/api/try-on", { method: "POST", body, signal: controller.signal });
-      const payload: unknown = await response.json().catch(() => null);
-      const record = typeof payload === "object" && payload !== null ? (payload as Record<string, unknown>) : {};
-
-      if (
-        response.ok &&
-        record.ok === true &&
-        typeof record.imageBase64 === "string" &&
-        (record.mimeType === "image/png" || record.mimeType === "image/jpeg" || record.mimeType === "image/webp")
-      ) {
-        setResult(decodeImage(record.imageBase64, record.mimeType));
-        setPhase("success");
-      } else {
-        setErrorMessage(tryOnFailureMessage(record.reason));
-        setErrorReason(parseTryOnFailureReason(record.reason));
-        setPhase("error");
-        if (isFinalForPhoto(record.reason)) {
-          // The provider refused this photo for good. It is dropped, and the shopper is sent back to
-          // choose another, with the explanation still showing there.
-          setFile(null);
-          setPreviewUrl(null);
-          clearFileInput();
-          setStep((current) => nextTryOnStep(current, "photo-dropped"));
-        }
-      }
-    } catch (error) {
-      if (controller.signal.aborted) return;
-      setErrorMessage(
-        error instanceof TypeError ? TRY_ON_NETWORK_FAILURE_MESSAGE : tryOnFailureMessage(undefined),
-      );
-      setPhase("error");
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      // The acknowledgement is a representation about one photo for one generation. Asking again
+  function generate() {
+    if (!canGenerate || file === null || ageState === null) return;
+    // The session refuses synchronously while any job is loading, so a second click in the same
+    // frame cannot start a second generation before this has re-rendered.
+    const started = session.start({ productSlug, productName, file, ageState }, (settled) => {
+      // The acknowledgement is a representation about one photo for one generation; asking again
       // for the next attempt is deliberate (spec §6), and the server demands it regardless.
-      if (!controller.signal.aborted) {
-        setAcknowledged(false);
-        // Every submitted attempt counts, so the number has moved whatever the outcome was.
-        void refreshQuota();
+      setAcknowledged(false);
+      // Every submitted attempt counts, so the number has moved whatever the outcome was.
+      if (activeRef.current) void refreshQuota();
+      if (settled.photoRefused) {
+        // The provider refused this photo for good. It is dropped, and the shopper is sent back to
+        // choose another, with the explanation still showing there.
+        setFile(null);
+        setPreviewUrl(null);
+        clearFileInput();
+        setStep((current) => nextTryOnStep(current, "photo-dropped"));
       }
-    }
+    });
+    if (!started) return;
+    setStep((current) => nextTryOnStep(current, "generate"));
   }
 
   function chooseAge(value: TryOnAgeState) {
-    if (locked || abortRef.current !== null) return;
+    if (locked) return;
     setAgeState(value);
   }
 
   function chooseAcknowledged(value: boolean) {
-    if (locked || abortRef.current !== null) return;
+    if (locked) return;
     setAcknowledged(value);
   }
 
@@ -296,18 +269,24 @@ export function useTryOn({
     isTeen: isTeenAgeState(ageState),
     isBlockedAge: isBlockedAgeState(ageState),
     phase,
-    errorMessage,
-    errorReason,
+    /** When this product's job started and the photo it was made from, for the waiting picture. */
+    jobStartedAt: job?.startedAt ?? null,
+    jobPhotoUrl: job?.photoUrl ?? null,
+    errorMessage: job?.errorMessage ?? null,
+    errorReason: job?.errorReason ?? null,
+    /** Set while another product's try-on is being made: this one waits for it. */
+    busyMessage: busyElsewhere && otherJob ? tryOnBusyElsewhereMessage(otherJob.productName) : null,
     quota,
     quotaLine: quotaCurrent ? tryOnQuotaLine(quota) : null,
-    quotaUpsell: tryOnQuotaUpsell(errorReason, quota?.audience ?? null),
+    quotaUpsell: tryOnQuotaUpsell(job?.errorReason ?? null, quota?.audience ?? null),
     loginHref: tryOnLoginHref(productSlug),
     refreshQuota,
-    result,
+    result: job?.result ?? null,
     canGenerate,
     missingSteps: missingTryOnSteps({ hasPhoto: file !== null, ageState, acknowledged }),
     chooseFile,
     generate,
+    resume,
     reset,
   };
 }

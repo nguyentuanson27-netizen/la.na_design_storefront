@@ -21,8 +21,9 @@ import {
   TRY_ON_WAIT_NOTE,
   isLoginRequired,
 } from "@/components/headless/try-on-model";
-import { useTryOn, type TryOnResult } from "@/components/headless/use-try-on";
+import { useTryOn } from "@/components/headless/use-try-on";
 
+import { BrandTryOnResult } from "./try-on-result";
 import { BrandTryOnWaiting } from "./try-on-waiting";
 
 /**
@@ -36,7 +37,12 @@ import { BrandTryOnWaiting } from "./try-on-waiting";
  * the same line as the size guide, inside the purchase panel; the dialog is a native modal `<dialog>`
  * rendered beside it by the coordinator, which owns the one `open` flag and the trigger ref. The
  * native dialog supplies the focus trap, the inert page behind it and Escape; closing it by any
- * route drops the photo and the result and returns focus to the trigger.
+ * route drops the photo and the choices and returns focus to the trigger.
+ *
+ * Closing does not stop a generation. The request belongs to the session provider in the root
+ * layout, so the shopper can close the dialog while the picture is being made, keep browsing, and
+ * come back to it from the dock (`try-on-dock.tsx`) or by reopening the dialog. A result the shopper
+ * has seen is dropped on close, as before; one they have not seen yet waits in the dock.
  *
  * A bottom sheet below `sm`, a centred 440 px modal from `sm` up. Three short steps — photo, age and
  * confirmation, result — so no step needs scrolling on a phone but the teen path, and the result is
@@ -58,12 +64,6 @@ const FOCUS_RING =
 const PEER_FOCUS_RING =
   "peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[#3B2219]";
 const TEXT_BUTTON = `min-h-11 text-sm font-semibold underline underline-offset-4 ${FOCUS_RING}`;
-
-const RESULT_EXTENSION: Readonly<Record<TryOnResult["mimeType"], string>> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/webp": "webp",
-};
 
 function PersonIcon() {
   return (
@@ -179,7 +179,7 @@ export function BrandTryOnDialog({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const shownStepRef = useRef<number | null>(null);
-  const tryOn = useTryOn({ productSlug, fileInputRef });
+  const tryOn = useTryOn({ productSlug, productName, fileInputRef, active: open });
   const { step, phase, result } = tryOn;
   const privacyDisclosure = resolveTryOnPrivacyDisclosure(provider, BRAND.identity.name);
 
@@ -191,11 +191,14 @@ export function BrandTryOnDialog({
     if (!open && dialog.open) dialog.close();
   }, [open]);
 
-  // What is left today is asked for each time the dialog opens, so it is never a stale number.
-  const { refreshQuota } = tryOn;
+  // What is left today is asked for each time the dialog opens, so it is never a stale number. A job
+  // for this product that is still running, or has finished, is picked up where it is.
+  const { refreshQuota, resume } = tryOn;
   useEffect(() => {
-    if (open) void refreshQuota();
-    // `refreshQuota` is recreated every render; only opening should ask again.
+    if (!open) return;
+    resume();
+    void refreshQuota();
+    // `refreshQuota` and `resume` are recreated every render; only opening should run them.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
@@ -247,7 +250,7 @@ export function BrandTryOnDialog({
   const fileErrorId = `${ids}-file-error`;
   const attestationId = `${ids}-attestation`;
   const hintId = `${ids}-hint`;
-  const showHint = !tryOn.canGenerate && !tryOn.isBlockedAge;
+  const showHint = !tryOn.canGenerate && !tryOn.isBlockedAge && tryOn.busyMessage === null;
 
   const headingClass = "mb-3 text-base font-semibold outline-none";
 
@@ -460,11 +463,16 @@ export function BrandTryOnDialog({
           <p className="mt-1">{privacyDisclosure.detail}</p>
         </details>
 
+        {tryOn.busyMessage ? (
+          <p id={hintId} className="mt-4 border-l-[3px] border-[#3B2219] bg-[#3B2219]/5 px-3 py-2 text-[13px] leading-5 text-black/80">
+            {tryOn.busyMessage}
+          </p>
+        ) : null}
         <button
           type="button"
           className="btn btn--primary mt-4 w-full px-4"
           disabled={!tryOn.canGenerate}
-          aria-describedby={showHint ? hintId : undefined}
+          aria-describedby={showHint || tryOn.busyMessage ? hintId : undefined}
           onClick={tryOn.generate}
         >
           Tạo ảnh thử đồ
@@ -494,37 +502,38 @@ export function BrandTryOnDialog({
           {phase === "success" ? "Đã tạo xong ảnh thử đồ." : null}
         </div>
 
-        {phase === "loading" ? <BrandTryOnWaiting previewUrl={tryOn.previewUrl} /> : null}
+        {phase === "loading" ? (
+          <>
+            <BrandTryOnWaiting photoUrl={tryOn.jobPhotoUrl ?? tryOn.previewUrl} startedAt={tryOn.jobStartedAt} />
+            {/* The page behind has the size guide, the materials and the purchase panel; closing the
+                dialog is how the shopper reaches them, and the generation carries on regardless. */}
+            <button
+              type="button"
+              className="btn btn--outline mt-4 w-full px-4"
+              onClick={() => dialogRef.current?.close()}
+            >
+              Xem tiếp sản phẩm trong lúc chờ
+            </button>
+            <p className="mt-2 text-center text-xs leading-5 text-black/60">
+              Chọn size, xem chất liệu hay hướng dẫn chọn size ngay trên trang. Ảnh xong sẽ hiện ở góc
+              màn hình.
+            </p>
+          </>
+        ) : null}
 
         {phase === "success" && result ? (
           <>
-            {/* eslint-disable-next-line @next/next/no-img-element -- a generated blob; next/image cannot optimise it. */}
-            <img
-              src={result.url}
-              alt={`Ảnh thử đồ do AI tạo cho ${productName}, chỉ mang tính tham khảo`}
-              className="mx-auto mt-2 max-h-[22rem] w-auto max-w-full border border-black/15 object-contain"
+            <BrandTryOnResult
+              result={result}
+              productName={productName}
+              productSlug={productSlug}
+              isTeen={tryOn.isTeen}
+              secondaryAction={
+                <button type="button" className="btn btn--outline px-4" onClick={tryOn.backToConfirm}>
+                  Tạo lại
+                </button>
+              }
             />
-            <div className="mt-3 grid grid-cols-2 gap-2">
-              <a
-                href={result.url}
-                download={`thu-do-${productSlug}.${RESULT_EXTENSION[result.mimeType]}`}
-                className="btn btn--primary px-4"
-              >
-                Tải ảnh
-              </a>
-              <button type="button" className="btn btn--outline px-4" onClick={tryOn.backToConfirm}>
-                Tạo lại
-              </button>
-            </div>
-            <p className="mt-3 text-xs leading-5 text-black/65">
-              Ảnh do AI tạo, chỉ mang tính tham khảo — không đảm bảo kích cỡ, độ vừa vặn, chất liệu hay
-              màu sắc thật.
-            </p>
-            {tryOn.isTeen ? (
-              <p className="mt-2 border-l-[3px] border-[#3B2219] pl-3 text-xs leading-5 text-black/75">
-                {TRY_ON_TEEN_DISCLOSURE}
-              </p>
-            ) : null}
             <div className="mt-2 text-center">
               <button type="button" className={TEXT_BUTTON} onClick={tryOn.changePhoto}>
                 Dùng ảnh khác

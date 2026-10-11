@@ -194,6 +194,23 @@ The UI must state that the result is AI-generated and is **not** a guarantee of 
 
 For the teen path, use plain age-appropriate language and state that the generated image may be inaccurate and should not be used to judge the shopper's body or determine clothing size.
 
+**Waiting in the background (amendment 2026-10-10).** A generation takes about a minute, and closing
+the dialog used to abort it while the attempt was still counted. The request now belongs to a session
+provider in the root layout (`src/components/headless/try-on-session.tsx`):
+
+- closing the dialog, or moving to another page inside the app, does not stop a generation; a full
+  page load still does;
+- while it runs, a small card bottom left (`BrandTryOnDock`) shows the shopper's photo, the time
+  waited and a bar paced on the usual minute (90 % at 60 s, never full before the result); pressing it
+  opens the product's dialog on its PDP, or a viewer elsewhere;
+- when it settles the card says so (announced once), the tab title gains "✓ Ảnh thử đồ đã xong" if
+  the shopper is in another tab or app, and a device that supports it vibrates briefly;
+- one generation at a time for the whole site: while one is loading, another product's dialog says
+  so and cannot generate (an attempt sent while the provider is busy is counted, then refused);
+- the AI and teen disclosures travel with the result wherever it is shown;
+- a result the shopper has seen is dropped when they close what showed it, as before; an unseen one
+  waits in the card, which can discard it. Nothing is written to browser storage.
+
 Before each generation, the shopper must confirm:
 
 > Tôi xác nhận đây là ảnh của tôi hoặc tôi có sự đồng ý rõ ràng và các quyền cần thiết để sử dụng hình ảnh của người trong ảnh cho tính năng thử đồ này.

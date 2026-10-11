@@ -12,10 +12,12 @@ import { SiteChat } from "@/components/brand/site-chat";
 import { SiteDocument } from "@/components/brand/site-document";
 import { SiteFooter } from "@/components/brand/site-footer";
 import { SiteMasthead } from "@/components/brand/site-masthead";
+import { BrandTryOnDock } from "@/components/brand/try-on-dock";
 import {
   buildSiteChromeContent,
   type SiteChromeContent,
 } from "@/components/headless/site-chrome-model";
+import { TryOnSessionProvider } from "@/components/headless/try-on-session";
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildSiteStructuredData, serializeJsonLd } from "@/seo/structured-data";
 
@@ -104,9 +106,14 @@ export function SiteChrome({
           dangerouslySetInnerHTML={{ __html: serializeJsonLd(document) }}
         />
       ))}
-      <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
-      <main id="main-content">{children}</main>
-      <SiteFooter model={model.content.footer} />
+      {/* Holds a virtual try-on that is being made across page changes, with its dock; see
+          `try-on-session.tsx`. It wraps only what can start or show one. */}
+      <TryOnSessionProvider>
+        <SiteMasthead promotion={model.content.promotion} header={model.content.header} />
+        <main id="main-content">{children}</main>
+        <SiteFooter model={model.content.footer} />
+        <BrandTryOnDock />
+      </TryOnSessionProvider>
       <SiteChat pancakeHosts={PANCAKE_CHAT_HOSTS} />
       <TrackingPageView />
       <FacebookPixel />

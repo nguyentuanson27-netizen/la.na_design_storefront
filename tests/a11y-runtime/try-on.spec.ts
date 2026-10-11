@@ -49,7 +49,7 @@ const PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAFklEQVR4nGOwiaogCTGMahjVMHw1AABPQw4Q5oG1CgAAAABJRU5ErkJggg==";
 const WEBP_BASE64 = "UklGRjgAAABXRUJQVlA4ICwAAACwAQCdASoQABAAAUAmJaACdLoABDAAAP7bUf/Ys5bAvH/8zR+k30m7mAAAAA==";
 
-type UploadScenario = "ok" | "slow" | "fail" | "safety";
+type UploadScenario = "ok" | "slow" | "linger" | "linger-safety" | "fail" | "safety";
 
 /** A real, decodable image whose trailing bytes tell the fixture how Vertex should answer. */
 function jpegPhoto(scenario: UploadScenario = "ok") {
@@ -905,6 +905,132 @@ test("while a generation runs the form is off screen and cannot change, so a lat
   await assertPageQuality(page);
   expect(watched.pageErrors).toEqual([]);
   expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
+test("closing while the picture is being made keeps it going: the dock shows the wait, then the result", async ({
+  page,
+}) => {
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("linger") });
+  await parts(dialog).generate.click();
+  await expect(parts(dialog).status).toContainText("Đang tạo ảnh thử đồ");
+  await expect(parts(dialog).status).toContainText("xem tiếp sản phẩm");
+
+  // "Xem tiếp sản phẩm trong lúc chờ" closes the dialog; the generation carries on.
+  await dialog.getByRole("button", { name: "Xem tiếp sản phẩm trong lúc chờ", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  const dock = page.getByTestId("try-on-dock");
+  const dockButton = dock.getByRole("button", { name: /Đang tạo ảnh thử đồ/ });
+  await expect(dockButton).toBeVisible();
+  // A loading job cannot be discarded: its attempt is spent and the picture is on its way.
+  await expect(dock.getByRole("button", { name: "Bỏ ảnh thử đồ" })).toHaveCount(0);
+  // The page is usable meanwhile: the size guide opens.
+  await page.getByRole("button", { name: "Hướng dẫn chọn size", exact: true }).click();
+  await page.keyboard.press("Escape");
+
+  // Reopening while it runs picks up the wait where it is.
+  await dockButton.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId("try-on-waiting")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  await expect(dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ })).toBeVisible({ timeout: 20_000 });
+  await expect(dock.getByRole("status")).toHaveText(/đã xong/);
+  expect(predictCalls()).toHaveLength(1);
+
+  // The dock opens this page's dialog on the result, with what must travel with it.
+  await dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ }).click();
+  await expect(parts(dialog).result).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Tải ảnh" })).toBeVisible();
+  await expect(dialog.getByText(/Ảnh do AI tạo, chỉ mang tính tham khảo/)).toBeVisible();
+  await expect(parts(dialog).retry).toBeVisible();
+
+  // Seen and closed: it goes, as closing always did, and the dock with it.
+  await page.keyboard.press("Escape");
+  await expect(dock).toHaveCount(0);
+  await triggerOf(page).click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(parts(dialog).result).toHaveCount(0);
+
+  expect(predictCalls()).toHaveLength(1);
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
+test("a WebP garment with a WebP photo also generates in the background and comes back through the dock", async ({
+  page,
+}) => {
+  const watched = await watch(page);
+  const dialog = await openTryOn(page, ENABLED_URL, slugs.webpFirst);
+  const photo = {
+    name: "toi.webp",
+    mimeType: "image/webp",
+    buffer: Buffer.concat([Buffer.from(WEBP_BASE64, "base64"), Buffer.from("SCENARIO:linger")]),
+  };
+  await fillThroughConfirmation(dialog, { photo });
+  await parts(dialog).generate.click();
+  await dialog.getByRole("button", { name: "Xem tiếp sản phẩm trong lúc chờ", exact: true }).click();
+  await expect(dialog).toBeHidden();
+
+  const dock = page.getByTestId("try-on-dock");
+  await dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ }).click({ timeout: 20_000 });
+  await expect(parts(dialog).result).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Tải ảnh" })).toHaveAttribute(
+    "download",
+    new RegExp(`^thu-do-${slugs.webpFirst}\\.(png|jpg|webp)$`),
+  );
+  expect(predictCalls()).toHaveLength(1);
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched)).toEqual([]);
+});
+
+test("an unseen result can be discarded from the dock without opening it", async ({ page }) => {
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("linger") });
+  await parts(dialog).generate.click();
+  await page.keyboard.press("Escape");
+  const dock = page.getByTestId("try-on-dock");
+  await expect(dock.getByRole("button", { name: /Ảnh thử đồ đã xong/ })).toBeVisible({ timeout: 20_000 });
+  await dock.getByRole("button", { name: "Bỏ ảnh thử đồ" }).click();
+  await expect(dock).toHaveCount(0);
+  await triggerOf(page).click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+});
+
+test("a photo refused while the dialog was closed is not kept: the dock shows no picture, reopening asks for another", async ({
+  page,
+}) => {
+  const watched = await watch(page);
+  const dialog = await openTryOn(page);
+  await fillThroughConfirmation(dialog, { photo: jpegPhoto("linger-safety") });
+  await parts(dialog).generate.click();
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+
+  const dock = page.getByTestId("try-on-dock");
+  // While it is being made the dock shows the shopper's photo (decorative, so by element)...
+  await expect(dock.locator('img[src^="blob:"]')).toHaveCount(1);
+  const refused = dock.getByRole("button", { name: /Chưa tạo được ảnh/ });
+  await expect(refused).toBeVisible({ timeout: 20_000 });
+  // ...and once the provider has refused it, nothing of it: no thumbnail, no blob left to show.
+  await expect(dock.locator("img")).toHaveCount(0);
+
+  // Reopening lands on choosing another photo, with the safe explanation and no preview.
+  await refused.click();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(parts(dialog).alert.first()).toContainText("Không thể tạo ảnh từ ảnh này");
+  await expect(parts(dialog).preview).toHaveCount(0);
+  await expect(dialog.locator('img[src^="blob:"]')).toHaveCount(0);
+  await expect(parts(dialog).next).toBeDisabled();
+
+  // Nothing was retried.
+  expect(predictCalls()).toHaveLength(1);
+  await page.keyboard.press("Escape");
+  await expect(dock).toHaveCount(0);
+  expect(watched.pageErrors).toEqual([]);
+  expect(unexpectedConsoleErrors(watched, { allowTryOnFailure: true })).toEqual([]);
 });
 
 test("a PNG upload generates a result at desktop width", async ({ page }) => {

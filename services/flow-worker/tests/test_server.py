@@ -7,6 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from flow_worker import server
+from flow_worker.policy import PRO_COOLDOWN_SHORT_SECONDS, PRO_COOLDOWN_UNKNOWN_SECONDS
 
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"test-image"
@@ -23,9 +24,17 @@ def with_project(test_case):
         test_case.addCleanup(target.stop)
 
 
+def with_fresh_pro_cooldown(test_case):
+    """Each test starts with Pro never refused; the cool-down is module state in the worker."""
+    target = patch.object(server, "_pro_cooldown", server.ProCooldown())
+    target.start()
+    test_case.addCleanup(target.stop)
+
+
 class WorkerGenerationPolicyTest(unittest.TestCase):
     def setUp(self):
         with_project(self)
+        with_fresh_pro_cooldown(self)
 
     def test_pro_success_does_not_touch_nano2(self):
         calls = []
@@ -695,6 +704,102 @@ class StaleProfileLockCleanupTest(unittest.TestCase):
                 self.assertTrue(server._chrome_uses_profile(self.profile_dir))
                 (proc / "17" / "cmdline").write_bytes(b"/usr/bin/python3\0-m\0flow_worker.server\0")
                 self.assertFalse(server._chrome_uses_profile(self.profile_dir))
+
+
+NANO_2_1_KEY = {"FLOW_NANO_BANANA_2_1_MODEL_KEY": "NANO_BANANA_2_1_TEST"}
+
+
+class ProCooldownTest(unittest.TestCase):
+    def setUp(self):
+        with_project(self)
+        with_fresh_pro_cooldown(self)
+        self.now = 1_000_000.0
+        clock = patch.object(server, "_wall_clock", side_effect=lambda: self.now)
+        clock.start()
+        self.addCleanup(clock.stop)
+        self.calls = []
+        self.pro_detail = None
+
+    def run_model(self, model, _person, _product, output, _timeout, _db_path):
+        self.calls.append(model)
+        if model == "nano-pro" and self.pro_detail is not None:
+            return 7, server.GflowMachineError(detail=self.pro_detail, error_class="WireFormatError")
+        output.write_bytes(PNG)
+        return 0, server.GflowMachineError()
+
+    def generate(self):
+        with patch.object(server, "_run_model", side_effect=self.run_model):
+            return server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")[0]
+
+    def test_after_a_quota_refusal_later_requests_skip_pro_until_the_cool_down_ends(self):
+        self.pro_detail = "FLOW_QUOTA_EXHAUSTED: Flow refused the image submit with RESOURCE_EXHAUSTED (PUBLIC_ERROR_PER_MINUTE_LIMIT)"
+        with patch.dict(os.environ, NANO_2_1_KEY):
+            self.assertEqual(self.generate(), "nano-banana-2.1")
+            self.now += 30
+            self.assertEqual(self.generate(), "nano-banana-2.1")
+            # The limit has cleared by the time the cool-down ends: Pro is asked again and serves.
+            self.pro_detail = None
+            self.now += PRO_COOLDOWN_SHORT_SECONDS
+            self.assertEqual(self.generate(), "nano-banana-pro")
+            self.assertEqual(self.generate(), "nano-banana-pro")
+        self.assertEqual(self.calls, ["nano-pro", "nano2", "nano2", "nano-pro", "nano-pro"])
+
+    def test_a_pro_refused_again_after_the_cool_down_starts_another(self):
+        self.pro_detail = "FLOW_QUOTA_EXHAUSTED: Flow refused the image submit with RESOURCE_EXHAUSTED (NO_REASON)"
+        with patch.dict(os.environ, NANO_2_1_KEY):
+            self.generate()
+            self.now += PRO_COOLDOWN_UNKNOWN_SECONDS
+            self.generate()
+            self.now += 60
+            self.generate()
+        self.assertEqual(self.calls, ["nano-pro", "nano2", "nano-pro", "nano2", "nano2"])
+
+    def test_a_daily_limit_keeps_pro_off_until_3am_vietnam_time(self):
+        # 2026-10-10 14:00 in Vietnam (UTC+7).
+        self.now = 1_791_615_600.0
+        self.pro_detail = "FLOW_QUOTA_EXHAUSTED: Flow refused the image submit with RESOURCE_EXHAUSTED (PUBLIC_ERROR_DAILY_QUOTA)"
+        with patch.dict(os.environ, NANO_2_1_KEY):
+            self.generate()
+            self.now += 12 * 3600  # 02:00 the next day
+            self.generate()
+            self.now += 3600  # 03:00
+            self.pro_detail = None
+            self.assertEqual(self.generate(), "nano-banana-pro")
+        self.assertEqual(self.calls, ["nano-pro", "nano2", "nano2", "nano-pro"])
+
+    def test_pro_is_never_skipped_while_nano_banana_2_1_cannot_run(self):
+        self.pro_detail = "migrated image submit answered HTTP 429"
+        with patch.dict(os.environ, {"FLOW_NANO_BANANA_2_1_MODEL_KEY": ""}):
+            self.generate()
+            self.now += 10
+            self.generate()
+        self.assertEqual(self.calls, ["nano-pro", "nano2", "nano-pro", "nano2"])
+
+    def test_failures_that_do_not_fall_back_start_no_cool_down(self):
+        def run(model, _person, _product, _output, _timeout, _db_path):
+            self.calls.append(model)
+            return 5, server.GflowMachineError(detail="Content policy blocked this image")
+
+        with patch.dict(os.environ, NANO_2_1_KEY), patch.object(server, "_run_model", side_effect=run):
+            for _ in range(2):
+                with self.assertRaises(server.WorkerGenerationError):
+                    server._generate(b"\xff\xd8\xffp", "image/jpeg", b"\xff\xd8\xffg", "image/jpeg")
+        self.assertEqual(self.calls, ["nano-pro", "nano-pro"])
+
+    def test_the_cool_down_is_logged_with_its_kind_and_end_and_each_skip_is_logged(self):
+        self.pro_detail = "migrated image submit answered HTTP 429"
+        events = []
+        with (
+            patch.dict(os.environ, NANO_2_1_KEY),
+            patch.object(server, "_event", side_effect=lambda name, **fields: events.append((name, fields))),
+        ):
+            self.generate()
+            self.generate()
+        until = server._iso_utc(self.now + PRO_COOLDOWN_SHORT_SECONDS)
+        self.assertIn(("flow_try_on.pro_cooldown", {"kind": "short", "until": until}), events)
+        self.assertIn(("flow_try_on.pro_skipped", {"kind": "short", "until": until}), events)
+        names = [name for name, _ in events]
+        self.assertEqual(names.count("flow_try_on.model_fallback"), 1)
 
 
 if __name__ == "__main__":

@@ -8,6 +8,7 @@ import { BrandProductGallery } from "@/components/brand/product-gallery";
 import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
 import { BrandTryOnDialog, BrandTryOnNudge, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
+import { useTryOnSession } from "@/components/headless/try-on-session";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -81,6 +82,19 @@ export function BrandProductDetail({
   const [scrolledPastTryOn, setScrolledPastTryOn] = useState(false);
   const [tryOnNudgeDismissed, setTryOnNudgeDismissed] = useState(false);
   const hasTryOn = tryOn !== null;
+  const tryOnSession = useTryOnSession();
+  const tryOnSlug = tryOn?.productSlug ?? null;
+  const { registerDialog } = tryOnSession;
+
+  // The dock opens this page's own dialog for a job about this product. Focus goes back to the entry
+  // point afterwards rather than to the dock, which may be gone once the result is dismissed.
+  useEffect(() => {
+    if (tryOnSlug === null) return;
+    return registerDialog(tryOnSlug, () => {
+      tryOnReturnFocusRef.current = tryOnTriggerRef.current;
+      setTryOnOpen(true);
+    });
+  }, [tryOnSlug, registerDialog]);
 
   useEffect(() => {
     const trigger = tryOnTriggerRef.current;
@@ -149,7 +163,8 @@ export function BrandProductDetail({
               mobileNudge={
                 // Stays mounted while the dialog is open (the native modal makes it inert), so the
                 // button that opened the dialog still exists when focus is given back to it.
-                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed ? (
+                // The dock takes the same corner while a try-on is under way or waiting to be seen.
+                hasTryOn && scrolledPastTryOn && !tryOnNudgeDismissed && tryOnSession.job === null ? (
                   <BrandTryOnNudge
                     openRef={tryOnNudgeOpenRef}
                     onOpen={() => openTryOnFrom(tryOnNudgeOpenRef.current)}
