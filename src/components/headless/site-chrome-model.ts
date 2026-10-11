@@ -1,3 +1,4 @@
+import { BRAND } from "../../brand/index.ts";
 import {
   describeGuestShippingPromotion,
   describeGuestShippingPromotionHeadline,
@@ -81,7 +82,7 @@ export function buildSiteChromeContent(
         (topic) => Object.freeze({ href: topic.href, label: topic.title }),
       ),
       policyLinks: [
-        Object.freeze({ href: "/about", label: "Về La.na Design" }),
+        Object.freeze({ href: "/about", label: `Về ${BRAND.identity.name}` }),
         ...POLICY_HUB_TOPICS.filter((topic) => topic.footerGroup === "policy").map(
           (topic) => Object.freeze({ href: topic.href, label: topic.title }),
         ),
