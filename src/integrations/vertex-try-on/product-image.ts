@@ -22,7 +22,11 @@ import { createTimeoutSignal } from "./timeout.ts";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_REDIRECTS = 2;
-/** The PDP width whose cached WebP doubles as the garment reference. */
+/**
+ * The PDP width whose cached WebP doubles as the garment reference. Only the WebP entry: the AVIF one
+ * is unusable here, since gflow refuses any upload that is not PNG, JPEG, WebP or GIF by its magic
+ * bytes (gflow-cli 0.82.1 `validate_image_file`) and Gemini takes no AVIF input either.
+ */
 const TRY_ON_GARMENT_WIDTH = 1080;
 
 export type TrustedProductImageFetchResult =
