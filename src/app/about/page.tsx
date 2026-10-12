@@ -5,13 +5,18 @@ import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadAboutRoute, type AboutRouteProps } from "@/routes/about";
 import type { AboutViewModel } from "@/routes/evergreen-model";
+import { ABOUT_FAQ } from "@/routes/about-copy";
 import { buildAboutMetadata } from "@/routes/metadata/about";
 
 function render(data: AboutViewModel) {
+  const name = BRAND.identity.name;
+  const alias = BRAND.identity.searchAlias;
+  const { opens, closes } = BRAND.contact.supportHours;
+
   return (
     <PageShell>
       <PageBreadcrumbs
-        items={[{ label: "Trang chủ", href: "/" }, { label: "Về La.na Design" }]}
+        items={[{ label: "Trang chủ", href: "/" }, { label: `Về ${name}` }]}
       />
       <PageHeader
         eyebrow="Thương hiệu thời trang nữ thiết kế"
@@ -36,14 +41,14 @@ function render(data: AboutViewModel) {
             id="brand-origin-heading"
             className="font-display text-2xl tracking-[-0.03em] md:text-3xl"
           >
-            1. Về Thương Hiệu La.na Design — Hành Trình Tôn Vinh Nét Duyên Việt
+            1. Về Thương Hiệu {name} — Hành Trình Tôn Vinh Nét Duyên Việt
           </h2>
           <div className="mt-4 space-y-4 text-base leading-7 text-black/75">
             <p>
-              Thành lập từ <strong>năm 2022</strong>, <strong>La.na Design</strong> (hay còn được biết đến với tên gọi thân thuộc <strong>Lana Design</strong>) là thương hiệu thời trang nữ thiết kế cao cấp, được tạo dựng từ niềm đam mê gìn giữ và làm mới nét đẹp trang phục truyền thống của người phụ nữ Việt Nam trong nhịp sống đương đại.
+              Thành lập từ <strong>năm 2022</strong>, <strong>{name}</strong> (hay còn được biết đến với tên gọi thân thuộc <strong>{alias}</strong>) là thương hiệu thời trang nữ thiết kế cao cấp, được tạo dựng từ niềm đam mê gìn giữ và làm mới nét đẹp trang phục truyền thống của người phụ nữ Việt Nam trong nhịp sống đương đại.
             </p>
             <p>
-              Ngay từ những ngày đầu khởi dựng, La.na Design đã định hình cho mình một lối đi riêng: <strong>Nữ tính, sang trọng, thanh lịch và mang đậm bản sắc Á Đông</strong>. Thương hiệu nhanh chóng khẳng định vị thế trong lòng phái đẹp qua những sáng tạo đặc sắc: từ những tà <strong>áo dài cách tân 4 tà</strong> thướt tha, bay bổng; những mẫu <strong>đầm tiệc</strong> quý phái, kiêu kỳ; cho đến các <strong>set đồ</strong> dạo phố, công sở chỉn chu mang tính ứng dụng cao.
+              Ngay từ những ngày đầu khởi dựng, {name} đã định hình cho mình một lối đi riêng: <strong>Nữ tính, sang trọng, thanh lịch và mang đậm bản sắc Á Đông</strong>. Thương hiệu nhanh chóng khẳng định vị thế trong lòng phái đẹp qua những sáng tạo đặc sắc: từ những tà <strong>áo dài cách tân 4 tà</strong> thướt tha, bay bổng; những mẫu <strong>đầm tiệc</strong> quý phái, kiêu kỳ; cho đến các <strong>set đồ</strong> dạo phố, công sở chỉn chu mang tính ứng dụng cao.
             </p>
             <p>
               Với La.na, mỗi người phụ nữ là một đóa hoa mang vẻ đẹp và khí chất riêng biệt. Chúng tôi không chạy theo những xu hướng nhất thời, mà tập trung kiến tạo nên những thiết kế có giá trị bền vững cùng thời gian — nơi sự e ấp, dịu dàng hòa quyện cùng phong thái độc lập, rạng rỡ của người phụ nữ thế hệ mới.
@@ -60,7 +65,7 @@ function render(data: AboutViewModel) {
             2. Dấu Ấn Thiết Kế &amp; Triết Lý Chế Tác
           </h2>
           <p className="mt-3 text-base leading-7 text-black/75">
-            Để đáp ứng sự đa dạng trong phong cách và nhu cầu của quý cô ở từng sự kiện hay thời điểm trong năm, La.na Design xây dựng tiêu chuẩn khắt khe xuyên suốt trong mọi dòng sản phẩm:
+            Để đáp ứng sự đa dạng trong phong cách và nhu cầu của quý cô ở từng sự kiện hay thời điểm trong năm, {name} xây dựng tiêu chuẩn khắt khe xuyên suốt trong mọi dòng sản phẩm:
           </p>
           <div className="mt-6 grid gap-6 sm:grid-cols-3">
             <div className="rounded-md border border-black/10 bg-[#FAFAFA] p-5">
@@ -144,7 +149,7 @@ function render(data: AboutViewModel) {
             <li className="flex items-start gap-3">
               <span className="font-semibold text-[#8B5E3C]">•</span>
               <div>
-                <strong>Tư vấn tận tâm 1:1:</strong> Đội ngũ tư vấn viên am hiểu sâu sắc về phom dáng và 3 bảng size chuyên biệt (Form rộng, Form vừa, Form nhỏ) luôn sẵn sàng hỗ trợ từ 08:00 đến 22:00 mỗi ngày.
+                <strong>Tư vấn tận tâm 1:1:</strong> Đội ngũ tư vấn viên am hiểu sâu sắc về phom dáng và 3 bảng size chuyên biệt (Form rộng, Form vừa, Form nhỏ) luôn sẵn sàng hỗ trợ từ {opens} đến {closes} mỗi ngày.
               </div>
             </li>
             <li className="flex items-start gap-3">
@@ -166,49 +171,55 @@ function render(data: AboutViewModel) {
           </p>
           <dl className="mt-6 grid max-w-2xl gap-6 text-base leading-7 sm:grid-cols-2">
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Thương hiệu</dt>
-              <dd className="mt-2 text-black/80 font-medium">La.na Design (Lana Design)</dd>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Thương hiệu</dt>
+              <dd className="mt-2 text-black/80 font-medium">
+                {name} ({alias})
+              </dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Đơn vị chủ quản</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Đơn vị chủ quản</dt>
               <dd className="mt-2 text-black/80 font-medium">{data.legalEntityName}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Mã số thuế</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Mã số thuế</dt>
               <dd className="mt-2 text-black/80 font-medium">
                 {data.taxCode} — ngày cấp: {data.taxIdIssueDate}
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Năm thành lập</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Năm thành lập</dt>
               <dd className="mt-2 text-black/80 font-medium">2022</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">
                 Địa chỉ đăng ký kinh doanh
               </dt>
               <dd className="mt-2 text-black/80 font-medium">{data.registeredAddress}</dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">
                 Địa chỉ kinh doanh &amp; nhận hàng đổi trả
               </dt>
               <dd className="mt-2 text-black/80 font-medium">{data.businessAddress}</dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Hotline / Zalo</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Hotline / Zalo</dt>
               <dd className="mt-2 text-black/80 font-medium">
-                <a href="tel:+84923159666" className="hover:underline">0923 159 666</a>
+                <a href={`tel:${BRAND.contact.telephoneInternational}`} className="hover:underline">
+                  {BRAND.contact.telephone.replace(/^(\d{4})(\d{3})(\d{3})$/, "$1 $2 $3")}
+                </a>
               </dd>
             </div>
             <div>
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Email hỗ trợ &amp; CSKH</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Email hỗ trợ &amp; CSKH</dt>
               <dd className="mt-2 text-black/80 font-medium">
-                <a href="mailto:la.nadesignsince2022@gmail.com" className="hover:underline">la.nadesignsince2022@gmail.com</a>
+                <a href={`mailto:${BRAND.contact.email}`} className="hover:underline">
+                  {BRAND.contact.email}
+                </a>
               </dd>
             </div>
             <div className="sm:col-span-2">
-              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/50">Email công ty</dt>
+              <dt className="text-xs font-semibold uppercase tracking-[0.13em] text-black/60">Email công ty</dt>
               <dd className="mt-2 text-black/80 font-medium">{data.legalEmail}</dd>
             </div>
           </dl>
@@ -220,30 +231,12 @@ function render(data: AboutViewModel) {
             6. Câu Hỏi Thường Gặp (FAQ)
           </h2>
           <div className="mt-6 space-y-6">
-            <div className="rounded-lg border border-black/10 p-5">
-              <h3 className="font-display text-lg font-medium">
-                La.na Design thành lập năm nào và chuyên về dòng sản phẩm gì?
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-black/70">
-                La.na Design thành lập từ năm 2022, là thương hiệu thời trang nữ thiết kế cao cấp chuyên về các dòng áo dài cách tân 4 tà, đầm dự tiệc và set đồ thanh lịch dành cho phái đẹp.
-              </p>
-            </div>
-            <div className="rounded-lg border border-black/10 p-5">
-              <h3 className="font-display text-lg font-medium">
-                Khách hàng có thể đến thử đồ trực tiếp ở đâu?
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-black/70">
-                Quý khách có thể ghé thăm và trải nghiệm trực tiếp không gian thời trang tại Showroom La.na Design: 212 Nguyễn Trãi, Hà Nội (mở cửa từ 08:00 đến 22:00 hàng ngày).
-              </p>
-            </div>
-            <div className="rounded-lg border border-black/10 p-5">
-              <h3 className="font-display text-lg font-medium">
-                Tôi mua hàng online từ xa thì làm sao để chọn được size vừa vặn?
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-black/70">
-                Quý khách có thể trải nghiệm tính năng Thử đồ ảo AI ngay trên website, tham khảo bảng số đo chi tiết (ngực, eo, mông) hoặc nhắn tin trực tiếp qua hotline/Zalo 0923 159 666 để được chuyên viên tư vấn hỗ trợ chọn size chuẩn xác. La.na cũng áp dụng chính sách đổi size trong 15 ngày để nàng hoàn toàn yên tâm.
-              </p>
-            </div>
+            {ABOUT_FAQ.map(({ question, answer }) => (
+              <div key={question} className="rounded-lg border border-black/10 p-5">
+                <h3 className="font-display text-lg font-medium">{question}</h3>
+                <p className="mt-2 text-sm leading-6 text-black/70">{answer}</p>
+              </div>
+            ))}
           </div>
         </section>
       </div>
