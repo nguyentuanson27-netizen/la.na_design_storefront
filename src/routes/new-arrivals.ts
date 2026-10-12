@@ -34,7 +34,7 @@ export async function loadNewArrivalsRoute({
   let catalogPage: Awaited<ReturnType<typeof listConfiguredManualNewArrivalsPage>>;
   try {
     page = parseStorefrontListingPage(await searchParams);
-    catalogPage = await listConfiguredNewestProductPage({
+    catalogPage = await listConfiguredManualNewArrivalsPage({
       page,
       pageSize: NEW_ARRIVALS_PAGE_SIZE,
       now,

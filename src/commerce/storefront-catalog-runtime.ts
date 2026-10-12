@@ -88,7 +88,7 @@ export async function listConfiguredStorefrontProductPage({
 }
 
 /**
- * One page of `/new-arrivals`: newest first, with the pricing rule its cards need and the window
+ * One page of `/new-arrivals`: admin-selected order, with the pricing rule its cards need and the window
  * that pricing is valid for.
  *
  * Priced through the same promotion resolution as every other listing, so a campaign that starts
