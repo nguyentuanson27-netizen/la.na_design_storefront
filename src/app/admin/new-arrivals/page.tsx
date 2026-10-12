@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { connection } from "next/server";
 import Link from "next/link";
 
@@ -21,6 +22,28 @@ function single(value: string | string[] | undefined): string {
   return typeof value === "string" ? value : "";
 }
 
+const ERROR_MESSAGES = {
+  stale: "Danh sách đã thay đổi hoặc sản phẩm không còn khả dụng. Danh sách đã được tải lại, vui lòng thử lại.",
+  full: `Danh sách đã đạt tối đa ${MAX_NEW_ARRIVAL_PRODUCTS} sản phẩm. Hãy gỡ bớt trước khi thêm.`,
+  invalid: "Thao tác không hợp lệ. Không có thay đổi nào được lưu.",
+} as const;
+
+type ErrorCode = keyof typeof ERROR_MESSAGES;
+
+function errorCodeFor(reason: string): ErrorCode {
+  if (reason === "merchandising-invalid-product") return "stale";
+  if (reason === "merchandising-too-many") return "full";
+  return "invalid";
+}
+
+function pageUrl(q: string, error?: ErrorCode): string {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  if (error) params.set("error", error);
+  const query = params.toString();
+  return query ? `/admin/new-arrivals?${query}` : "/admin/new-arrivals";
+}
+
 async function changeSelection(formData: FormData) {
   "use server";
   const session = await requireCurrentAdmin();
@@ -29,15 +52,16 @@ async function changeSelection(formData: FormData) {
     shopId,
     repository: createNewArrivalsRepository(prisma),
   });
+  const rawQuery = formData.get("q");
+  const q = typeof rawQuery === "string" ? rawQuery.trim().slice(0, MAX_SEARCH_LENGTH) : "";
   const result = await service.update(session, {
     operation: formData.get("operation"),
     productId: formData.get("productId"),
   });
-  if (!result.ok) {
-    throw new Error(`Không thể cập nhật danh sách Hàng mới về: ${result.reason}`);
-  }
   revalidatePath("/new-arrivals");
   revalidatePath("/admin/new-arrivals");
+  // A stale click (double submit, another admin changed the list) is an expected outcome, not a crash.
+  redirect(pageUrl(q, result.ok ? undefined : errorCodeFor(result.reason)));
 }
 
 export default async function AdminNewArrivalsPage({ searchParams }: Props) {
@@ -47,6 +71,10 @@ export default async function AdminNewArrivalsPage({ searchParams }: Props) {
   const repository = createNewArrivalsRepository(prisma);
   const params = await searchParams;
   const q = single(params.q).trim().slice(0, MAX_SEARCH_LENGTH);
+  const errorParam = single(params.error);
+  const errorMessage = Object.hasOwn(ERROR_MESSAGES, errorParam)
+    ? ERROR_MESSAGES[errorParam as ErrorCode]
+    : null;
   const [selected, matches] = await Promise.all([
     repository.listForAdmin(shopId),
     repository.searchForAdmin(shopId, q),
@@ -64,6 +92,10 @@ export default async function AdminNewArrivalsPage({ searchParams }: Props) {
           Có thể chọn tối đa {MAX_NEW_ARRIVAL_PRODUCTS} sản phẩm.
         </p>
       </header>
+
+      {errorMessage ? (
+        <p role="alert" className="border border-red-800/40 p-4 text-sm text-red-900">{errorMessage}</p>
+      ) : null}
 
       <section aria-labelledby="selected-title" className="space-y-5">
         <h2 id="selected-title" className="font-display text-2xl">
@@ -90,6 +122,7 @@ export default async function AdminNewArrivalsPage({ searchParams }: Props) {
                   ] as const).map(([operation, label, disabled]) => (
                     <form key={operation} action={changeSelection}>
                       <input type="hidden" name="operation" value={operation} />
+                      <input type="hidden" name="q" value={q} />
                       <input type="hidden" name="productId" value={product.id} />
                       <button className={button} type="submit" disabled={disabled}
                         aria-label={`${label} ${product.name}`}>
@@ -129,6 +162,7 @@ export default async function AdminNewArrivalsPage({ searchParams }: Props) {
                 ) : (
                   <form action={changeSelection}>
                     <input type="hidden" name="operation" value="add" />
+                    <input type="hidden" name="q" value={q} />
                     <input type="hidden" name="productId" value={product.id} />
                     <button className={button} type="submit" disabled={selected.length >= MAX_NEW_ARRIVAL_PRODUCTS}
                       aria-label={`Thêm ${product.name} vào Hàng mới về`}>Thêm</button>

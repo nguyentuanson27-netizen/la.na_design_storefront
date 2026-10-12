@@ -1,3 +1,4 @@
+import { BRAND } from "@/brand";
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import {
   ListingBreadcrumbs,
@@ -29,7 +30,7 @@ function render(data: NewArrivalsViewModel) {
       />
       <ListingHeader eyebrow="Tuyển chọn" title="Hàng mới về">
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-          Những thiết kế được La.na Design chọn giới thiệu trong danh mục Hàng mới về.
+          {`Những thiết kế được ${BRAND.identity.name} chọn giới thiệu trong danh mục Hàng mới về.`}
         </p>
       </ListingHeader>
 
@@ -38,7 +39,7 @@ function render(data: NewArrivalsViewModel) {
           titleId="new-arrivals-empty-title"
           eyebrow="Sản phẩm hiện tại"
           title="Chưa có sản phẩm trong danh mục Hàng mới về."
-          copy="Các thiết kế được La.na Design chọn giới thiệu sẽ xuất hiện tại đây."
+          copy={`Các thiết kế được ${BRAND.identity.name} chọn giới thiệu sẽ xuất hiện tại đây.`}
           action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
         />
       ) : (
