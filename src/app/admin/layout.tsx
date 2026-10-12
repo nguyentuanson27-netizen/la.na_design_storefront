@@ -19,6 +19,9 @@ export default function AdminLayout({ children }: Readonly<{ children: React.Rea
           <Link className="border-b border-black/30 pb-1 focus-visible:outline-2 focus-visible:outline-offset-4" href="/admin/collections">
             Collections
           </Link>
+          <Link className="border-b border-black/30 pb-1 focus-visible:outline-2 focus-visible:outline-offset-4" href="/admin/new-arrivals">
+            Hàng mới về
+          </Link>
           <Link className="border-b border-black/30 pb-1 focus-visible:outline-2 focus-visible:outline-offset-4" href="/admin/promotions">
             Khuyến mãi
           </Link>

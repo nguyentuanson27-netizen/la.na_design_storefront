@@ -299,7 +299,7 @@ Clickable category with level-2 categories:
 
 - `/collections`: keep as an aggregate collections landing page.
 - Child collections: currently **none approved**. Do not invent placeholders/fake collections.
-- `/new-arrivals`: keep; shows newest products automatically.
+- `/new-arrivals`: keep; displays only products explicitly selected and ordered by an administrator. No date-based automatic inclusion or expiration. The empty selection renders an empty list. Disabled/withdrawn products are hidden, not replaced with other products.
 - `/sale`: keep; shows products with a real current promotion/discount only.
 - `/shop`: keep as `Tất cả sản phẩm`, but do not include it in primary navigation.
 - `/contact`: keep with contact form.

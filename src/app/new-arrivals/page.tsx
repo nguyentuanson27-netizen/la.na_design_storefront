@@ -1,3 +1,4 @@
+import { BRAND } from "@/brand";
 import { PRODUCT_CARD_EAGER_COUNT, ProductCard, type ProductCardTone } from "@/components/brand/product-card";
 import {
   ListingBreadcrumbs,
@@ -16,7 +17,7 @@ import {
 } from "@/routes/new-arrivals";
 import { buildNewArrivalsMetadata } from "@/routes/metadata/new-arrivals";
 
-/** Markup only. The recency read, its paging, the tracking and the refresh window live in
+/** Markup only. The manual selection, its paging, the tracking and the refresh window live in
  *  `@/routes/new-arrivals`. */
 
 const tones: readonly ProductCardTone[] = ["stone", "olive", "ink", "sand"];
@@ -27,10 +28,9 @@ function render(data: NewArrivalsViewModel) {
       <ListingBreadcrumbs
         items={[{ label: "Trang chủ", href: "/" }, { label: "Hàng mới về" }]}
       />
-      <ListingHeader eyebrow="Mới nhất" title="Hàng mới về">
+      <ListingHeader eyebrow="Tuyển chọn" title="Hàng mới về">
         <p className="mt-6 max-w-2xl text-sm leading-6 text-[#3B2219]/70">
-          Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng
-          chọn lọc.
+          {`Những thiết kế được ${BRAND.identity.name} chọn giới thiệu trong danh mục Hàng mới về.`}
         </p>
       </ListingHeader>
 
@@ -38,14 +38,14 @@ function render(data: NewArrivalsViewModel) {
         <ListingEmptyState
           titleId="new-arrivals-empty-title"
           eyebrow="Sản phẩm hiện tại"
-          title="Chưa có sản phẩm đang mở bán."
-          copy="Sản phẩm sẽ xuất hiện tại đây khi sẵn sàng để mua trên website."
+          title="Chưa có sản phẩm trong danh mục Hàng mới về."
+          copy={`Các thiết kế được ${BRAND.identity.name} chọn giới thiệu sẽ xuất hiện tại đây.`}
           action={{ href: "/shop", label: "Xem toàn bộ cửa hàng" }}
         />
       ) : (
         <section aria-labelledby="new-arrivals-products-title" className="mt-8">
           <h2 id="new-arrivals-products-title" className="sr-only">
-            Sản phẩm mới nhất
+            Sản phẩm được chọn
           </h2>
           <div className="border-b border-[#3B2219]/15 pb-4">
             <ListingResultCount>{data.totalCount} sản phẩm</ListingResultCount>

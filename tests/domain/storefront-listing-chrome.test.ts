@@ -208,20 +208,23 @@ test("every storefront page takes its shell, breadcrumb and heading from the sha
 });
 
 /**
- * Master spec §10: "`/new-arrivals`: keep; shows newest products automatically."
+ * Master spec §10: `/new-arrivals` displays only products an administrator selected and ordered.
  *
- * The route used to seal an empty view model and render an editorial page, on the reasoning that a
- * listing there would be a second authority over `/shop`. These pin that it now reads products,
- * that it reads them from the recency authority rather than a hand-merchandised list, and that it
- * does not reach for a `new` status the catalog does not have.
+ * The route used to seal an empty view model, then read catalog recency. These pin that it now
+ * reads the admin-selected list, never the recency ordering, and that it does not reach for a
+ * `new` status the catalog does not have.
  */
-test("new-arrivals loads the newest products rather than sealing an empty view model", () => {
+test("new-arrivals loads the admin-selected products rather than catalog recency", () => {
   const route = read("src/routes/new-arrivals.ts");
 
   assert.match(
     route,
-    /listConfiguredNewestProductPage/,
-    "the route must read the catalog's recency ordering",
+    /listConfiguredManualNewArrivalsPage/,
+    "the route must read the admin-selected list",
+  );
+  assert.ok(
+    !/listConfiguredNewestProductPage|listNewestProductPage/.test(route),
+    "the route must not fall back to catalog recency",
   );
   assert.ok(
     !/NewArrivalsViewModel = Readonly<Record<string, never>>/.test(route),
@@ -234,7 +237,7 @@ test("new-arrivals loads the newest products rather than sealing an empty view m
     "promotion-priced cards need the promotion refresh window, not a flat cadence",
   );
 
-  // Nothing invents marketing status or a merchandised order here.
+  // Nothing invents a marketing status here; the order comes only from the admin selection.
   for (const invented of ["isNew", "featured", "handpicked", "curatedOrder"]) {
     assert.ok(!route.includes(invented), `new-arrivals must not invent ${invented}`);
   }
