@@ -9,6 +9,7 @@ import {
   listRelatedStorefrontProducts,
 } from "./storefront-related-products.ts";
 import { createMerchandisingRepository } from "./merchandising-repository.ts";
+import { createNewArrivalsRepository } from "./new-arrivals-repository.ts";
 import {
   categoryListingKeys,
   TOP_LEVEL_CATEGORY_KEYS,
@@ -93,7 +94,7 @@ export async function listConfiguredStorefrontProductPage({
  * Priced through the same promotion resolution as every other listing, so a campaign that starts
  * or ends mid-session refreshes this route too rather than leaving it showing a stale price.
  */
-export async function listConfiguredNewestProductPage({
+export async function listConfiguredManualNewArrivalsPage({
   page,
   pageSize,
   now,
@@ -103,16 +104,20 @@ export async function listConfiguredNewestProductPage({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  const result = await createStorefrontCatalogRepository(prisma).listNewestProductPage({
+  const selected = await createNewArrivalsRepository(prisma).listVisiblePage({
     shopId,
     page,
     pageSize,
   });
+  const products = await createStorefrontCatalogRepository(prisma).listProductsByIds({
+    shopId,
+    ids: selected.ids,
+  });
   const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
-    products: result.products,
+    products,
     now,
   });
-  return { ...result, pricingRule, refreshAfterMs };
+  return { ...selected, products, pricingRule, refreshAfterMs };
 }
 
 export async function listConfiguredStorefrontDiscoveryPage({

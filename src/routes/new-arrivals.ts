@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { connection } from "next/server";
 
-import { listConfiguredNewestProductPage } from "@/commerce/storefront-catalog-runtime";
+import { listConfiguredManualNewArrivalsPage } from "@/commerce/storefront-catalog-runtime";
 import {
   parseStorefrontListingPage,
   type StorefrontDiscoverySearchParams,
@@ -14,20 +14,7 @@ import {
 } from "./flash-sale-model.ts";
 import { NEW_ARRIVALS_TITLE } from "./metadata/new-arrivals.ts";
 
-/**
- * The new-arrivals page's loader.
- *
- * Master spec §10 keeps `/new-arrivals` and says it "shows newest products automatically", so this
- * reads the catalog in recency order and pages through it. It used to seal an empty view model on
- * the reasoning that a listing here would be a second authority over `/shop`'s filtering and
- * ordering -- but the two answer different questions. `/shop` is `Tất cả sản phẩm` with filters and
- * a customer-chosen sort; this is one fixed ordering with none, taken from the same
- * `listNewestProducts` read the homepage grid uses, so there is one definition of "newest" rather
- * than two.
- *
- * Nothing here invents a `new` status or merchandises the order by hand: the ordering is the
- * catalog's own `createdAt`, and §25 reserves a manually merchandised order for the category PLP.
- */
+/** /new-arrivals is the admin-selected list, never catalog recency. */
 
 export const NEW_ARRIVALS_PAGE_SIZE = 24;
 
@@ -44,7 +31,7 @@ export async function loadNewArrivalsRoute({
   const now = new Date();
 
   let page: number;
-  let catalogPage: Awaited<ReturnType<typeof listConfiguredNewestProductPage>>;
+  let catalogPage: Awaited<ReturnType<typeof listConfiguredManualNewArrivalsPage>>;
   try {
     page = parseStorefrontListingPage(await searchParams);
     catalogPage = await listConfiguredNewestProductPage({
