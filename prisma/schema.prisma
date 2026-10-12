@@ -217,10 +217,13 @@ model ProductMirror {
 
 /// Admin-selected products for /new-arrivals. No date-based membership or auto-expiry.
 model NewArrivalProduct {
-  productId String @id
-  position  Int    @unique
+  productId     String @id
+  pancakeShopId Int
+  position      Int
 
   product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([pancakeShopId, position])
 }
 
 model ProductSlugHistory {

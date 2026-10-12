@@ -18,8 +18,8 @@ import { BUYER_AXE_TAGS } from "./axe-tags";
  * eyebrow, one serif H1, then the listing -- with no horizontal overflow, a reachable keyboard
  * path and no Axe violations at either width.
  *
- * It also proves the two behaviours the re-skin must not have changed: `/new-arrivals` shows the
- * catalog's newest products (§10), and `/sale` shows only products with a real active discount.
+ * It also proves the two behaviours the re-skin must not have changed: `/new-arrivals` shows only
+ * the administrator's selection in the administrator's order (§10), and `/sale` shows only products with a real active discount.
  */
 
 const HOST = "127.0.0.1";
@@ -46,7 +46,11 @@ const VIEWPORTS = [
   { name: "desktop", width: 1440, height: 900 },
 ] as const;
 
-/** Newest last: the seed order is oldest-first, so `Listing Newest` must lead `/new-arrivals`. */
+/**
+ * Seeded oldest-first by `createdAt`. `/new-arrivals` is the admin-selected list, so the fixture
+ * selects `oldest` then `newest` (the reverse of recency) and leaves `middle` unselected: the page
+ * must follow the selection, not the timestamps, and must not backfill `middle`.
+ */
 const PRODUCTS = [
   { key: "oldest", label: "Listing Oldest", price: 900_000, daysAgo: 30, discounted: false },
   { key: "middle", label: "Listing Middle", price: 800_000, daysAgo: 20, discounted: true },
@@ -102,7 +106,21 @@ async function stopServer() {
   server = undefined;
 }
 
+const MANUAL_NEW_ARRIVAL_KEYS = ["oldest", "newest"] as const;
+let seededProducts = new Map<string, { id: string }>();
+
+async function selectNewArrivals(seeded: ReadonlyMap<string, { id: string }>) {
+  await prisma.newArrivalProduct.createMany({
+    data: MANUAL_NEW_ARRIVAL_KEYS.map((key, position) => ({
+      productId: seeded.get(key)!.id,
+      pancakeShopId: SHOP_ID,
+      position,
+    })),
+  });
+}
+
 async function cleanup() {
+  await prisma.newArrivalProduct.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.promotionCampaign.deleteMany({ where: { id: campaignId } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
@@ -176,6 +194,9 @@ test.beforeAll(async () => {
   for (const product of PRODUCTS) {
     seeded.set(product.key, await seedProduct(product));
   }
+
+  seededProducts = seeded;
+  await selectNewArrivals(seeded);
 
   // Exactly one product carries a real, currently active discount, so `/sale` has something to
   // show and something to leave out.
@@ -526,7 +547,7 @@ test("a product-bearing listing shows its first product image inside the initial
   console.log(`first product image offsets: ${JSON.stringify(folds)}`);
 });
 
-test("new-arrivals shows the catalog newest first, and pages without losing the ordering", async ({
+test("new-arrivals shows only the admin selection in the admin's order, and pages without losing it", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
@@ -539,14 +560,15 @@ test("new-arrivals shows the catalog newest first, and pages without losing the 
   expect(names.length).toBeGreaterThan(0);
 
   const indexOf = (key: string) => names.findIndex((name) => name.includes(productName(key)));
-  expect(indexOf("newest"), "the newest product must appear").toBeGreaterThanOrEqual(0);
-  expect(indexOf("oldest"), "the oldest product must appear").toBeGreaterThanOrEqual(0);
+  expect(indexOf("oldest"), "a selected product must appear").toBeGreaterThanOrEqual(0);
+  expect(indexOf("newest"), "a selected product must appear").toBeGreaterThanOrEqual(0);
   expect(
-    indexOf("newest"),
-    "newest first: the most recently added product leads the listing",
-  ).toBeLessThan(indexOf("oldest"));
+    indexOf("oldest"),
+    "admin order wins over recency: the first selected product leads even though it is the oldest",
+  ).toBeLessThan(indexOf("newest"));
+  expect(indexOf("middle"), "an unselected product is never backfilled").toBe(-1);
 
-  await expect(page.getByText(/^\d+ sản phẩm$/)).toBeVisible();
+  await expect(page.getByText(/^2 sản phẩm$/)).toBeVisible();
 
   // A page past the end is a 404 rather than a silently empty listing.
   const beyond = await page.request.get(`${BASE_URL}/new-arrivals?page=99`);
@@ -555,6 +577,26 @@ test("new-arrivals shows the catalog newest first, and pages without losing the 
   // An invalid page is rejected the same way every other listing rejects it.
   const invalid = await page.request.get(`${BASE_URL}/new-arrivals?page=0`);
   expect(invalid.status()).toBe(404);
+});
+
+test("new-arrivals with no selection is an empty state, never a newest-products fallback", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await prisma.newArrivalProduct.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+  try {
+    await page.goto(`${BASE_URL}/new-arrivals`, { waitUntil: "networkidle" });
+
+    await expect(
+      page.getByRole("heading", { name: "Chưa có sản phẩm trong danh mục Hàng mới về." }),
+    ).toBeVisible();
+    await expect(page.locator("main a[href^='/shop/']")).toHaveCount(0);
+    for (const key of ["oldest", "middle", "newest"]) {
+      await expect(page.getByText(productName(key))).toHaveCount(0);
+    }
+  } finally {
+    await selectNewArrivals(seededProducts);
+  }
 });
 
 test("sale still lists only products with a real active discount", async ({ page }) => {

@@ -2,12 +2,13 @@
 -- Intentionally empty on deployment: there must be no automatic newest-products fallback.
 CREATE TABLE "NewArrivalProduct" (
     "productId" TEXT NOT NULL,
+    "pancakeShopId" INTEGER NOT NULL,
     "position" INTEGER NOT NULL,
 
     CONSTRAINT "NewArrivalProduct_pkey" PRIMARY KEY ("productId")
 );
 
-CREATE UNIQUE INDEX "NewArrivalProduct_position_key" ON "NewArrivalProduct"("position");
+CREATE UNIQUE INDEX "NewArrivalProduct_pancakeShopId_position_key" ON "NewArrivalProduct"("pancakeShopId", "position");
 
 ALTER TABLE "NewArrivalProduct"
     ADD CONSTRAINT "NewArrivalProduct_productId_fkey"

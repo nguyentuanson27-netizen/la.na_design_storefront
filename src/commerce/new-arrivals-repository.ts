@@ -29,7 +29,7 @@ export function createNewArrivalsRepository(client: PrismaClient) {
   /** Includes inactive picks so an admin can remove them even though customers cannot see them. */
   async function listForAdmin(shopId: number) {
     return client.newArrivalProduct.findMany({
-      where: { product: { pancakeShopId: parseShopId(shopId) } },
+      where: { pancakeShopId: parseShopId(shopId) },
       orderBy: [{ position: "asc" }],
       select: {
         position: true,
@@ -79,7 +79,7 @@ export function createNewArrivalsRepository(client: PrismaClient) {
     }
 
     const result = await client.$transaction(async (tx) => {
-      const where = { product: visibleProduct(safeShopId) };
+      const where = { pancakeShopId: safeShopId, product: visibleProduct(safeShopId) };
       const totalProducts = await tx.newArrivalProduct.count({ where });
       const entries = await tx.newArrivalProduct.findMany({
         where,
@@ -99,7 +99,11 @@ export function createNewArrivalsRepository(client: PrismaClient) {
     };
   }
 
-  /** One atomic replacement preserves unique ranks; the write can only be initiated by an admin. */
+  /**
+   * One atomic replacement preserves unique ranks; the write can only be initiated by an admin.
+   * Reads, deletes and ranks are all scoped to `shopId`, so a product id from another shop is
+   * "not in the list" and is rejected rather than mutating that shop's selection.
+   */
   async function applyChange({
     shopId, operation, productId,
   }: {
@@ -115,6 +119,7 @@ export function createNewArrivalsRepository(client: PrismaClient) {
       try {
         return await client.$transaction(async (tx) => {
           const entries = await tx.newArrivalProduct.findMany({
+            where: { pancakeShopId: safeShopId },
             orderBy: [{ position: "asc" }],
             select: { productId: true },
           });
@@ -131,10 +136,10 @@ export function createNewArrivalsRepository(client: PrismaClient) {
           if (next.length === current.length && next.every((id, i) => id === current[i])) {
             return next;
           }
-          await tx.newArrivalProduct.deleteMany({});
+          await tx.newArrivalProduct.deleteMany({ where: { pancakeShopId: safeShopId } });
           if (next.length > 0) {
             await tx.newArrivalProduct.createMany({
-              data: next.map((id, position) => ({ productId: id, position })),
+              data: next.map((id, position) => ({ productId: id, pancakeShopId: safeShopId, position })),
             });
           }
           return next;
@@ -143,7 +148,7 @@ export function createNewArrivalsRepository(client: PrismaClient) {
         if (!isWriteConflict(error) || attempt === MAX_WRITE_ATTEMPTS - 1) throw error;
       }
     }
-    throw new Error("New arrivals selection write did not complete");
+    throw new Error("Selection write retries exhausted");
   }
 
   return { listForAdmin, searchForAdmin, listVisiblePage, applyChange };

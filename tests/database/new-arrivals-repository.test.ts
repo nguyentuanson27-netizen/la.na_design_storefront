@@ -57,7 +57,7 @@ test("pagination occurs after visibility filtering, without backfilling unselect
     ids.push(p.id);
   }
   await client.newArrivalProduct.createMany({
-    data: ids.map((productId, position) => ({ productId, position })),
+    data: ids.map((productId, position) => ({ productId, pancakeShopId: shopId, position })),
   });
   await client.productMirror.update({ where: { id: ids[0]! }, data: { isPresent: false } });
 
@@ -78,4 +78,27 @@ test("foreign products and invalid changes are rejected without clearing existin
     (error: unknown) => error instanceof MerchandisingError && error.reason === "merchandising-invalid-product",
   );
   assert.deepEqual((await repo.listVisiblePage({ shopId, page: 1, pageSize: 24 })).ids, [local.id]);
+});
+
+test("changes are scoped to the shop: foreign remove/move cannot touch or rewrite another shop's selection", async () => {
+  const local = await seed("scoped-local");
+  const foreignA = await seed("scoped-foreign-a", foreignShopId);
+  const foreignB = await seed("scoped-foreign-b", foreignShopId);
+  await repo.applyChange({ shopId, operation: "add", productId: local.id });
+  await repo.applyChange({ shopId: foreignShopId, operation: "add", productId: foreignA.id });
+  await repo.applyChange({ shopId: foreignShopId, operation: "add", productId: foreignB.id });
+
+  for (const operation of ["remove", "move-up", "move-down"] as const) {
+    await assert.rejects(
+      () => repo.applyChange({ shopId, operation, productId: foreignB.id }),
+      (error: unknown) => error instanceof MerchandisingError && error.reason === "merchandising-invalid-product",
+    );
+  }
+  // A legitimate edit in one shop leaves the other shop's rows and ranks untouched.
+  await repo.applyChange({ shopId, operation: "remove", productId: local.id });
+
+  const foreign = await repo.listForAdmin(foreignShopId);
+  assert.deepEqual(foreign.map((entry) => entry.product.id), [foreignA.id, foreignB.id]);
+  assert.deepEqual(foreign.map((entry) => entry.position), [0, 1]);
+  assert.equal((await repo.listForAdmin(shopId)).length, 0);
 });
