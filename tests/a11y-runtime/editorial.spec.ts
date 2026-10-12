@@ -939,12 +939,12 @@ test("U1a search entry hands q to Shop and new arrivals is Vietnamese-first", as
 
   await page.goto(`${BASE_URL}/new-arrivals`, { waitUntil: "networkidle" });
   await expect(page).toHaveTitle(/Hàng mới/);
-  // Master spec §10 keeps /new-arrivals and says it shows newest products automatically, so the
+  // Master spec §10 keeps /new-arrivals as an admin-curated list, so the
   // heading is the listing's, in the same serif hierarchy every other listing uses.
   await expect(page.getByRole("heading", { level: 1, name: "Hàng mới về" })).toBeVisible();
   await expect(
     page.getByText(
-      "Những phom dáng, chất liệu và lớp trang phục theo mùa mới nhất — được ra mắt với số lượng chọn lọc.",
+      "Những thiết kế được La.na Design chọn giới thiệu trong danh mục Hàng mới về.",
       { exact: true },
     ),
   ).toBeVisible();

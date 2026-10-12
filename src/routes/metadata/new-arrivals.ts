@@ -28,6 +28,6 @@ export async function buildNewArrivalsMetadata({
     pathname: "/new-arrivals",
     searchParams: await searchParams,
     title: NEW_ARRIVALS_TITLE,
-    description: `Những sản phẩm mới nhất từ ${BRAND.identity.name}.`,
+    description: `Những thiết kế được ${BRAND.identity.name} chọn giới thiệu trong danh mục Hàng mới về.`,
   });
 }
