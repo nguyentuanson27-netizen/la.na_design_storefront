@@ -1,5 +1,6 @@
 import { BRAND } from "@/brand";
 import { buildAboutViewModel, type AboutViewModel } from "./evergreen-model.ts";
+import { ABOUT_DESCRIPTION, ABOUT_FAQ } from "./about-copy.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
 /** The About page's loader. Owner-approved brand story, legal facts and SEO/GEO structured data. */
@@ -16,8 +17,7 @@ export async function loadAboutRoute(): Promise<RouteHandle<AboutViewModel>> {
     "@context": "https://schema.org",
     "@type": "AboutPage",
     name: `Về ${BRAND.identity.name} | Thời Trang Nữ Thiết Kế & Áo Dài Cao Cấp Từ 2022`,
-    description:
-      "Thành lập từ năm 2022, La.na Design là thương hiệu thời trang nữ thiết kế cao cấp, nổi bật với áo dài cách tân 4 tà, đầm tiệc và set đồ thanh lịch, tôn vinh nét duyên Việt.",
+    description: ABOUT_DESCRIPTION,
     url: aboutUrl,
     mainEntity: {
       "@type": "Organization",
@@ -51,32 +51,11 @@ export async function loadAboutRoute(): Promise<RouteHandle<AboutViewModel>> {
   const faqJsonLd = {
     "@context": "https://schema.org",
     "@type": "FAQPage",
-    mainEntity: [
-      {
-        "@type": "Question",
-        name: "La.na Design thành lập năm nào và chuyên về dòng sản phẩm gì?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "La.na Design thành lập từ năm 2022, là thương hiệu thời trang nữ thiết kế cao cấp chuyên về các dòng áo dài cách tân 4 tà, đầm dự tiệc và set đồ thanh lịch dành cho phái đẹp.",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Khách hàng có thể đến thử đồ trực tiếp ở đâu?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Quý khách có thể ghé thăm và trải nghiệm trực tiếp không gian thời trang tại Showroom La.na Design: 212 Nguyễn Trãi, Hà Nội (mở cửa từ 08:00 đến 22:00 hàng ngày).",
-        },
-      },
-      {
-        "@type": "Question",
-        name: "Tôi mua hàng online từ xa thì làm sao để chọn được size vừa vặn?",
-        acceptedAnswer: {
-          "@type": "Answer",
-          text: "Quý khách có thể trải nghiệm tính năng Thử đồ ảo AI ngay trên website, tham khảo bảng số đo chi tiết (ngực, eo, mông) hoặc nhắn tin trực tiếp qua hotline/Zalo 0923 159 666 để được chuyên viên tư vấn hỗ trợ chọn size chuẩn xác. La.na cũng áp dụng chính sách đổi size trong 15 ngày để nàng hoàn toàn yên tâm.",
-        },
-      },
-    ],
+    mainEntity: ABOUT_FAQ.map(({ question, answer }) => ({
+      "@type": "Question",
+      name: question,
+      acceptedAnswer: { "@type": "Answer", text: answer },
+    })),
   };
 
   const breadcrumbsJsonLd = {
@@ -92,7 +71,7 @@ export async function loadAboutRoute(): Promise<RouteHandle<AboutViewModel>> {
       {
         "@type": "ListItem",
         position: 2,
-        name: "Về La.na Design",
+        name: `Về ${BRAND.identity.name}`,
         item: aboutUrl,
       },
     ],
