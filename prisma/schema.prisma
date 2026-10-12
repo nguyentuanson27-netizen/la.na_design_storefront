@@ -205,6 +205,7 @@ model ProductMirror {
   promotionTargets  PromotionTarget[]
 
   homepageFeature      HomepageFeaturedProduct?
+  newArrival           NewArrivalProduct?
   categoryMemberships  ProductCategoryMembership[]
   categoryOrders       CategoryProductOrder[]
   relatedOverrides     RelatedProductOverride[]    @relation("RelatedSource")
@@ -212,6 +213,14 @@ model ProductMirror {
   sellingPolicy        ProductSellingPolicy?
 
   @@index([pancakeShopId, isPresent])
+}
+
+/// Admin-selected products for /new-arrivals. No date-based membership or auto-expiry.
+model NewArrivalProduct {
+  productId String @id
+  position  Int    @unique
+
+  product ProductMirror @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
 
 model ProductSlugHistory {
