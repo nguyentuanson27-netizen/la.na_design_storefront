@@ -49,11 +49,12 @@
 - [x] **Checkpoint A:** sau GQ03+GQ04, chứng minh independent gate default-OFF/invalid/legacy flag ON, no new-rule publish/candidates/revision bump, fixed freeze + legacy quote baseline; downstream OFF cart parity đợi GQ07/08.
   - Evidence: GQ03 gate default-OFF (unset/invalid/legacy-flag-ON all OFF), new-rule publish/candidate lookup blocked with no revision bump, Fixed freeze atomic, legacy suites unchanged (full `pnpm test:db` 642/642, `pnpm test` 2852/2852). Downstream cart OFF parity remains for GQ07/GQ08.
 ### Admin scope vertical slice
-- [ ] **GQ05 — Admin create/edit/publish scope cho hai loại mới** _(deps: GQ03, GQ04; gate: OWNER+DB)_
-  - [ ] Admin không thể ghi combo scope mâu thuẫn hay vượt giới hạn; authz server và revisions được kiểm chứng.
-  - [ ] Scheduled fixed preview hiển thị sản phẩm đã chốt tại publish; Global all-paid không đòi category.
-  - [ ] Scope Draft UI validated; incomplete tier/gift publish hoặc flag OFF bị reject trước GQ09a/GQ13a; legacy PROMOTION/FLASH_SALE/CLEARANCE vẫn đúng.
-  - [ ] **Evidence:** `pnpm test:domain` ; `pnpm test:db` ; manual admin preview trong sandbox
+- [x] **GQ05 — Admin create/edit/publish scope cho hai loại mới** _(deps: GQ03, GQ04; gate: OWNER+DB)_
+  - [x] Admin không thể ghi combo scope mâu thuẫn hay vượt giới hạn; authz server và revisions được kiểm chứng.
+  - [x] Scheduled fixed preview hiển thị sản phẩm đã chốt tại publish; Global all-paid không đòi category.
+  - [x] Scope Draft UI validated; incomplete tier/gift publish hoặc flag OFF bị reject trước GQ09a/GQ13a; legacy PROMOTION/FLASH_SALE/CLEARANCE vẫn đúng.
+  - [x] **Evidence:** `pnpm test:domain` ; `pnpm test:db` ; manual admin preview trong sandbox
+  - Evidence: `/admin/promotions/gift-quantity` (list, create, edit Draft/Scheduled, copy, publish, disable, end-early) with its own server actions, funnel and form; legacy `/admin/promotions` form/actions untouched (only a header link added). `tests/domain/gift-quantity-admin-input.test.ts` 10/10, `tests/domain/gift-quantity-admin-operation.test.ts` 8/8 (authorize-before-parse order, per-action label/service contract, no payload in messages), `tests/database/gift-quantity-admin-operations.test.ts` 9/9 (authz, round trip, contradictions refused and nothing written incl. global+targets/ALL_PAID_LINES with a real scope/unknown product/oversized lists, trigger change clears the replaced trigger, kind immutable, Draft-only edits, copy re-captures its own freeze), `tests/a11y-runtime/admin-gift-quantity.spec.ts` 8/8 in Chromium (Axe clean at 390px, EX-22 form reshapes and hides category/product pickers, keyboard, typed announced refusal while the gate is OFF, DB rows exactly as typed) and the legacy `admin-promotions.spec.ts` still 7/7; `scripts/admin-authz-http-smoke.ts` extended and passing. Publish stays refused (`INVALID_RULE`) until GQ09a/GQ13a.
 
 ### Quantity tier: engine to buyer quote
 - [x] **GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety** _(deps: GQ00, GQ02; gate: R-05 + H0 ROUNDING)_
