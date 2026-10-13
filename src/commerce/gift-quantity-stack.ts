@@ -1,0 +1,403 @@
+import {
+  priceQuantityTier,
+  type QuantityTierConfig,
+  type TierPriceSegment,
+} from "./gift-quantity-tier.ts";
+import type { ScopeProductFacts, ScopeResolver } from "./gift-quantity-scope.ts";
+import { applyPercentage, type PromotionCampaignKind } from "./promotion-pricing.ts";
+
+/**
+ * Gift & Quantity Promotions v1 (GQ07): the stacking orchestrator.
+ *
+ * Pure. It takes the per-line price the legacy resolver already produced, the tier campaigns that
+ * are active for the cart, and the stacking consents, and returns the final paid price groups with
+ * an ordered discount ledger. It never reads storage, a clock or the feature gate: a caller that
+ * has the gate OFF simply never calls it, which is what keeps legacy pricing byte-for-byte as is.
+ *
+ * Decisions (ADR 0016):
+ * - D-01: two campaigns stack only when BOTH allow each other. A legacy campaign has no stacking
+ *   configuration of its own, so it stacks only if a consent exists for it (`legacyConsents`); with
+ *   no consent it simply keeps the price the legacy resolver gave it, and the tier steps aside.
+ *   Priorities must be unique among campaigns acting on the same unit; a tie or a missing priority
+ *   is a conflict and fails closed -- the new campaign is dropped, never picked at random.
+ * - D-02: a legacy `FIXED_PRICE` inside a stack is a price ceiling, `min(current, fixed)`.
+ * - D-06: percentages round half-up per unit (shared with the legacy resolver).
+ * - Spec FR-07/FR-10: when a tier turns out to be `TIER_PRICE_INVALID`, that whole tier is dropped
+ *   and the chain is re-run from the same inputs, so every tier and stack downstream is recomputed
+ *   on the corrected prices. The re-run uses the same `now`, scope and price snapshot.
+ *
+ * Dropping is conservative and cart-wide: a conflict is decided per campaign pair on the current
+ * cart, and the new campaign loses to legacy; two new campaigns in conflict both lose.
+ */
+
+/** Stack peer wildcard: every campaign of that kind. */
+export const STACK_PEER_ANY = "*";
+
+export type StackPeerKind = PromotionCampaignKind | "QUANTITY_TIER";
+
+export type StackPeer = Readonly<{ kind: StackPeerKind; campaignId: string }>;
+
+export type StackLegacyCampaign = Readonly<{
+  id: string;
+  kind: PromotionCampaignKind;
+  discountType: "PERCENTAGE" | "FIXED_PRICE";
+  percentageValue: number | null;
+  fixedPriceVnd: bigint | null;
+}>;
+
+export type StackInputLine = Readonly<{
+  /** Stable identity of the source line within this call; never a cart id or PII. */
+  lineKey: string;
+  pancakeVariationId: string;
+  quantity: number;
+  product: ScopeProductFacts;
+  /** The catalog price the legacy resolver started from, whole VND >= 1. */
+  basePriceVnd: number;
+  /**
+   * What the legacy resolver decided at the base price: the single discounting campaign and the
+   * price it produced. Null when no legacy campaign discounts this variant (including a legacy
+   * conflict, which legacy resolves to "no promotion").
+   */
+  legacy: Readonly<{ campaign: StackLegacyCampaign; effectivePriceVnd: number }> | null;
+}>;
+
+export type StackTierParticipant = Readonly<{
+  id: string;
+  config: QuantityTierConfig;
+  /** Scope membership for a product, built by `buildScopeResolver`. */
+  resolve: ScopeResolver;
+  /** Lower runs first. Required whenever the tier shares a unit with another campaign. */
+  priority: number | null;
+  stackingEnabled: boolean;
+  peers: readonly StackPeer[];
+}>;
+
+export type StackLegacyConsent = ReadonlyMap<string, Readonly<{ priority: number }>>;
+
+export type StackStep = Readonly<{
+  campaignId: string;
+  source: "LEGACY" | "QUANTITY_TIER";
+  kind: StackPeerKind;
+  priority: number | null;
+  inputPriceVnd: number;
+  outputPriceVnd: number;
+  appliedQuantity: number;
+}>;
+
+export type StackedGroup = Readonly<{
+  groupKey: string;
+  lineKey: string;
+  pancakeVariationId: string;
+  quantity: number;
+  basePriceVnd: number;
+  unitPriceVnd: number;
+  lineTotalVnd: number;
+  steps: readonly StackStep[];
+}>;
+
+export type StackDropReason =
+  | "STACK_NOT_PERMITTED"
+  | "STACK_PRIORITY_CONFLICT"
+  | "TIER_PRICE_INVALID"
+  | "TIER_CONFIG_INVALID"
+  | "TIER_INPUT_INVALID";
+
+export type StackDroppedCampaign = Readonly<{
+  campaignId: string;
+  reason: StackDropReason;
+  /** The other campaign in a pair conflict, when there is one. */
+  otherCampaignId: string | null;
+}>;
+
+export type StackResult =
+  | Readonly<{
+      ok: true;
+      groups: readonly StackedGroup[];
+      subtotalVnd: number;
+      dropped: readonly StackDroppedCampaign[];
+    }>
+  | Readonly<{ ok: false; reason: "INPUT_INVALID" }>;
+
+type Mutable = {
+  groupKey: string;
+  lineKey: string;
+  pancakeVariationId: string;
+  product: ScopeProductFacts;
+  quantity: number;
+  basePriceVnd: number;
+  unitPriceVnd: number;
+  steps: StackStep[];
+};
+
+const MAX_STACK_LINES = 200;
+
+function validLine(line: StackInputLine): boolean {
+  return (
+    typeof line.lineKey === "string" &&
+    line.lineKey.length > 0 &&
+    Number.isSafeInteger(line.quantity) &&
+    line.quantity >= 1 &&
+    Number.isSafeInteger(line.basePriceVnd) &&
+    line.basePriceVnd >= 1 &&
+    (line.legacy === null ||
+      (Number.isSafeInteger(line.legacy.effectivePriceVnd) &&
+        line.legacy.effectivePriceVnd >= 1 &&
+        line.legacy.effectivePriceVnd <= line.basePriceVnd))
+  );
+}
+
+/**
+ * One legacy price step applied at a chain position. Percentages apply to the current price;
+ * `FIXED_PRICE` is a ceiling (D-02), so it can never raise a price an earlier step lowered.
+ * Returns null when the step cannot produce a valid price, in which case it is skipped.
+ */
+export function applyLegacyStackStep(campaign: StackLegacyCampaign, currentPriceVnd: number): number | null {
+  if (!Number.isSafeInteger(currentPriceVnd) || currentPriceVnd < 1) return null;
+  let next: number | null;
+  if (campaign.discountType === "PERCENTAGE") {
+    next = campaign.percentageValue === null ? null : applyPercentage(currentPriceVnd, campaign.percentageValue);
+  } else {
+    if (campaign.fixedPriceVnd === null || campaign.fixedPriceVnd <= BigInt(0)) return null;
+    if (campaign.fixedPriceVnd > BigInt(Number.MAX_SAFE_INTEGER)) return null;
+    next = Math.min(currentPriceVnd, Number(campaign.fixedPriceVnd));
+  }
+  if (next === null || !Number.isSafeInteger(next) || next < 1 || next > currentPriceVnd) return null;
+  return next;
+}
+
+function allows(peers: readonly StackPeer[], kind: StackPeerKind, campaignId: string): boolean {
+  return peers.some((peer) => peer.kind === kind && (peer.campaignId === STACK_PEER_ANY || peer.campaignId === campaignId));
+}
+
+type Participant =
+  | Readonly<{ source: "TIER"; id: string; tier: StackTierParticipant; priority: number | null }>
+  | Readonly<{ source: "LEGACY"; id: string; campaign: StackLegacyCampaign; priority: number | null; consented: boolean }>;
+
+export function priceStack(input: Readonly<{
+  lines: readonly StackInputLine[];
+  tiers: readonly StackTierParticipant[];
+  legacyConsents: StackLegacyConsent;
+}>): StackResult {
+  const { lines, tiers, legacyConsents } = input;
+  if (!Array.isArray(lines) || lines.length === 0 || lines.length > MAX_STACK_LINES) return { ok: false, reason: "INPUT_INVALID" };
+  const keys = new Set<string>();
+  for (const line of lines) {
+    if (!validLine(line) || keys.has(line.lineKey)) return { ok: false, reason: "INPUT_INVALID" };
+    keys.add(line.lineKey);
+  }
+  const tierIds = new Set<string>();
+  for (const tier of tiers) {
+    if (tierIds.has(tier.id)) return { ok: false, reason: "INPUT_INVALID" };
+    tierIds.add(tier.id);
+  }
+
+  // Deterministic regardless of the order the caller (or the database) listed things in.
+  const sortedLines = [...lines].sort((a, b) => (a.lineKey < b.lineKey ? -1 : a.lineKey > b.lineKey ? 1 : 0));
+  const sortedTiers = [...tiers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  const dropped = new Map<string, StackDroppedCampaign>();
+  const drop = (campaignId: string, reason: StackDropReason, otherCampaignId: string | null) => {
+    if (!dropped.has(campaignId)) dropped.set(campaignId, { campaignId, reason, otherCampaignId });
+  };
+
+  // Which lines each campaign touches.
+  const tierLines = new Map<string, Set<string>>();
+  for (const tier of sortedTiers) {
+    tierLines.set(tier.id, new Set(sortedLines.filter((line) => tier.resolve(line.product)).map((line) => line.lineKey)));
+  }
+  const legacyById = new Map<string, StackLegacyCampaign>();
+  const legacyLines = new Map<string, Set<string>>();
+  for (const line of sortedLines) {
+    if (line.legacy === null) continue;
+    legacyById.set(line.legacy.campaign.id, line.legacy.campaign);
+    const set = legacyLines.get(line.legacy.campaign.id) ?? new Set<string>();
+    set.add(line.lineKey);
+    legacyLines.set(line.legacy.campaign.id, set);
+  }
+
+  const participants = new Map<string, Participant>();
+  for (const tier of sortedTiers) {
+    participants.set(`T:${tier.id}`, { source: "TIER", id: tier.id, tier, priority: tier.priority });
+  }
+  for (const [id, campaign] of legacyById) {
+    const consent = legacyConsents.get(id);
+    participants.set(`L:${id}`, { source: "LEGACY", id, campaign, priority: consent?.priority ?? null, consented: consent !== undefined });
+  }
+  const linesOf = (p: Participant) => (p.source === "TIER" ? tierLines.get(p.id)! : legacyLines.get(p.id)!);
+  const share = (a: Participant, b: Participant) => {
+    const bLines = linesOf(b);
+    for (const key of linesOf(a)) if (bLines.has(key)) return true;
+    return false;
+  };
+
+  // Pairwise compatibility on the lines the pair actually shares. Evaluated once, on the original
+  // participants, so the outcome never depends on the order conflicts are discovered in.
+  const all = [...participants.values()];
+  for (let i = 0; i < all.length; i += 1) {
+    for (let j = i + 1; j < all.length; j += 1) {
+      const a = all[i]!;
+      const b = all[j]!;
+      if (a.source === "LEGACY" && b.source === "LEGACY") continue;
+      if (!share(a, b)) continue;
+
+      const compatible = (x: Participant, y: Participant): boolean => {
+        if (x.source === "TIER") {
+          if (!x.tier.stackingEnabled) return false;
+          return allows(x.tier.peers, y.source === "TIER" ? "QUANTITY_TIER" : y.campaign.kind, y.id);
+        }
+        // A legacy campaign's own consent. Its peers are the tier campaigns that name it.
+        return x.consented;
+      };
+      const ok = compatible(a, b) && compatible(b, a);
+      const tiersOf = [a, b].filter((p) => p.source === "TIER");
+      const other = (p: Participant) => (p === a ? b.id : a.id);
+
+      if (!ok) {
+        // New yields to legacy; two new campaigns that may not stack drop each other.
+        for (const tier of tiersOf) drop(tier.id, "STACK_NOT_PERMITTED", other(tier));
+        continue;
+      }
+      if (a.priority === null || b.priority === null || a.priority === b.priority) {
+        for (const tier of tiersOf) drop(tier.id, "STACK_PRIORITY_CONFLICT", other(tier));
+      }
+    }
+  }
+
+  const alive = (id: string) => !dropped.has(id);
+
+  // Run the chain; a tier that proves invalid is dropped and the whole chain re-run.
+  for (let attempt = 0; attempt <= sortedTiers.length; attempt += 1) {
+    const activeTiers = sortedTiers.filter((tier) => alive(tier.id));
+
+    // Legacy campaigns that sit in the chain: they share a line with a surviving tier.
+    const chainLegacy = new Set<string>();
+    for (const [id] of legacyById) {
+      const legacyParticipant = participants.get(`L:${id}`)!;
+      for (const tier of activeTiers) {
+        if (share(legacyParticipant, participants.get(`T:${tier.id}`)!)) chainLegacy.add(id);
+      }
+    }
+
+    const groups: Mutable[] = sortedLines.map((line) => {
+      const inChain = line.legacy !== null && chainLegacy.has(line.legacy.campaign.id);
+      const steps: StackStep[] = [];
+      let price = line.basePriceVnd;
+      if (line.legacy !== null && !inChain) {
+        price = line.legacy.effectivePriceVnd;
+        if (price !== line.basePriceVnd) {
+          steps.push({
+            campaignId: line.legacy.campaign.id, source: "LEGACY", kind: line.legacy.campaign.kind,
+            priority: legacyConsents.get(line.legacy.campaign.id)?.priority ?? null,
+            inputPriceVnd: line.basePriceVnd, outputPriceVnd: price, appliedQuantity: line.quantity,
+          });
+        }
+      }
+      return {
+        groupKey: line.lineKey, lineKey: line.lineKey, pancakeVariationId: line.pancakeVariationId,
+        product: line.product, quantity: line.quantity, basePriceVnd: line.basePriceVnd, unitPriceVnd: price, steps,
+      };
+    });
+
+    const chain = [
+      ...activeTiers.map((tier) => ({ source: "TIER" as const, id: tier.id, priority: tier.priority })),
+      ...[...chainLegacy].map((id) => ({ source: "LEGACY" as const, id, priority: legacyConsents.get(id)!.priority })),
+    ].sort((a, b) => {
+      // Tiers that share nothing may have no priority; they sort last, then by id.
+      const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
+      const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) return pa - pb;
+      return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+    });
+
+    let restart = false;
+    let working = groups;
+    for (const step of chain) {
+      if (step.source === "LEGACY") {
+        const campaign = legacyById.get(step.id)!;
+        const touched = legacyLines.get(step.id)!;
+        for (const group of working) {
+          if (!touched.has(group.lineKey)) continue;
+          const next = applyLegacyStackStep(campaign, group.unitPriceVnd);
+          if (next === null || next === group.unitPriceVnd) continue;
+          group.steps.push({
+            campaignId: campaign.id, source: "LEGACY", kind: campaign.kind, priority: step.priority,
+            inputPriceVnd: group.unitPriceVnd, outputPriceVnd: next, appliedQuantity: group.quantity,
+          });
+          group.unitPriceVnd = next;
+        }
+        continue;
+      }
+
+      const tier = activeTiers.find((candidate) => candidate.id === step.id)!;
+      const inScope = working.filter((group) => tier.resolve(group.product));
+      if (inScope.length === 0) continue;
+      const result = priceQuantityTier(
+        tier.config,
+        inScope.map((group) => ({
+          lineKey: group.groupKey,
+          pancakeVariationId: group.pancakeVariationId,
+          quantity: group.quantity,
+          unitPriceVnd: group.unitPriceVnd,
+        })),
+      );
+      if (result.status === "NOT_REACHED") continue;
+      if (result.status !== "APPLIED") {
+        const reason: StackDropReason =
+          result.status === "TIER_PRICE_INVALID" ? "TIER_PRICE_INVALID" : result.status === "INVALID_CONFIG" ? "TIER_CONFIG_INVALID" : "TIER_INPUT_INVALID";
+        drop(tier.id, reason, null);
+        restart = true;
+        break;
+      }
+
+      const bySource = new Map(inScope.map((group) => [group.groupKey, group]));
+      const replaced = new Map<string, Mutable[]>();
+      const segmentsPerSource = new Map<string, number>();
+      for (const segment of result.segments as readonly TierPriceSegment[]) {
+        segmentsPerSource.set(segment.lineKey, (segmentsPerSource.get(segment.lineKey) ?? 0) + 1);
+      }
+      for (const segment of result.segments as readonly TierPriceSegment[]) {
+        const origin = bySource.get(segment.lineKey)!;
+        const list = replaced.get(origin.groupKey) ?? [];
+        const steps = [...origin.steps];
+        if (segment.discounted) {
+          steps.push({
+            campaignId: tier.id, source: "QUANTITY_TIER", kind: "QUANTITY_TIER", priority: tier.priority,
+            inputPriceVnd: segment.unitPriceBeforeVnd, outputPriceVnd: segment.unitPriceVnd, appliedQuantity: segment.quantity,
+          });
+        }
+        list.push({
+          // A source this tier left whole keeps its key, so keys only change where a split happened.
+          groupKey: segmentsPerSource.get(segment.lineKey) === 1 && !segment.discounted ? origin.groupKey : segment.segmentKey,
+          lineKey: origin.lineKey, pancakeVariationId: origin.pancakeVariationId, product: origin.product,
+          quantity: segment.quantity, basePriceVnd: origin.basePriceVnd, unitPriceVnd: segment.unitPriceVnd, steps,
+        });
+        replaced.set(origin.groupKey, list);
+      }
+      working = working.flatMap((group) => replaced.get(group.groupKey) ?? [group]);
+    }
+
+    if (restart) continue;
+
+    const finalGroups: StackedGroup[] = working.map((group) => ({
+      groupKey: group.groupKey,
+      lineKey: group.lineKey,
+      pancakeVariationId: group.pancakeVariationId,
+      quantity: group.quantity,
+      basePriceVnd: group.basePriceVnd,
+      unitPriceVnd: group.unitPriceVnd,
+      lineTotalVnd: group.unitPriceVnd * group.quantity,
+      steps: group.steps,
+    }));
+    const subtotalVnd = finalGroups.reduce((sum, group) => sum + group.lineTotalVnd, 0);
+    if (!Number.isSafeInteger(subtotalVnd)) return { ok: false, reason: "INPUT_INVALID" };
+    return {
+      ok: true,
+      groups: finalGroups,
+      subtotalVnd,
+      dropped: [...dropped.values()].sort((a, b) => (a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0)),
+    };
+  }
+
+  // Unreachable: every restart drops at least one tier, and there are finitely many.
+  return { ok: false, reason: "INPUT_INVALID" };
+}

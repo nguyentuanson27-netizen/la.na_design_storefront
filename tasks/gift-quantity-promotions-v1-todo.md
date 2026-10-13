@@ -62,11 +62,12 @@
   - [x] No overflow/negative/0đ paid; stable paid segments và boundary theo rounding được owner duyệt; nếu half-up mỗi chiếc: `100.001×90%=90.001`, `5×90%=5` mỗi chiếc, qty=3→15 thay vì line-round 14.
   - [x] **Evidence:** Focused `tests/domain/gift-quantity-tier.test.ts` ; `pnpm test:domain`
   - Evidence: `src/commerce/gift-quantity-tier.ts` + `tests/domain/gift-quantity-tier.test.ts` 21/21 pass: EX-07/08/17/19, highest-tier-only, FROM from N0, half-up per unit (`5×90%=5`, 3 units = 15), 290.003đ split without averaging, whole-tier `TIER_PRICE_INVALID` (no clamp, no partial), monotonic-benefit property, bounds/overflow; `pnpm test:domain` locally.
-- [ ] **GQ07 — Stacking policy, priority và adapter legacy price** _(deps: GQ00, GQ06; gate: R-01/R-02)_
-  - [ ] EX-09: 1m → 900k → 855k; conflict/priority tie fail-closed theo R-01.
-  - [ ] Legacy `FIXED_PRICE` R-02; consume gate GQ03 và OFF parity với resolver cũ kể cả legacy activation ON.
-  - [ ] Runtime VND invalid bỏ toàn tier khỏi quote, recompute downstream và phát reason; không clamp/chịu tăng giá không xác nhận.
-  - [ ] **Evidence:** Focused `tests/domain/gift-quantity-stack.test.ts` ; `pnpm test:domain`
+- [x] **GQ07 — Stacking policy, priority và adapter legacy price** _(deps: GQ00, GQ06; gate: R-01/R-02)_
+  - [x] EX-09: 1m → 900k → 855k; conflict/priority tie fail-closed theo R-01.
+  - [x] Legacy `FIXED_PRICE` R-02; consume gate GQ03 và OFF parity với resolver cũ kể cả legacy activation ON.
+  - [x] Runtime VND invalid bỏ toàn tier khỏi quote, recompute downstream và phát reason; không clamp/chịu tăng giá không xác nhận.
+  - [x] **Evidence:** Focused `tests/domain/gift-quantity-stack.test.ts` ; `pnpm test:domain`
+  - Evidence: `src/commerce/gift-quantity-stack.ts` + `tests/domain/gift-quantity-stack.test.ts` 17/17 pass: no-tier parity with the legacy resolver, EX-09 (1.000.000 → 900.000 → 855.000), priority order changes money, two-way consent (kind/id/stacking flag), tie/missing priority fail closed, R-02 ceiling, EX-21 whole-tier drop + chain re-run, determinism, money identities. Legacy `FIXED_PRICE`/resolver untouched (only `applyPercentage` is now exported). Gate consumption/OFF cart parity is wired and re-verified in GQ08. ADR 0016 D-10 records the consent model.
 - [ ] **GQ08 — Đưa tier pricing vào cart quote authority dưới feature flag** _(deps: GQ03, GQ04, GQ05, GQ07; gate: FEATURE FLAG from GQ03)_
   - [ ] Quote paid khớp tier/stack ở server và guest checkout sau này; thay đổi quantity làm tái tính từ authoritative facts.
   - [ ] Gate GQ03 OFF/unset giữ exact legacy quote/cart output; ON bounded lookups/no N+1; verify lại sau wiring, không tính vào Checkpoint A.
