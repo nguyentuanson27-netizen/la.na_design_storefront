@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
 import { META_COOKIE_MAX_LENGTH, META_FBC_PATTERN, META_FBP_PATTERN } from "./cookie-format.ts";
+import { readMetaVisitorId } from "./first-party-cookies.ts";
 import type { MetaConversionsConfig } from "./pixel-config.ts";
 
 /**
@@ -24,6 +25,8 @@ export type MetaUserIdentity = Readonly<{
   /** Meta's own browser cookies. They are the strongest match signal available for a guest. */
   fbp: string | null;
   fbc: string | null;
+  /** This site's visitor ID (`la_vid`), sent as `external_id` exactly as the pixel sends it. */
+  externalId: string | null;
 }>;
 
 export type MetaPurchaseContent = Readonly<{
@@ -122,6 +125,10 @@ export function buildMetaUserData(identity: MetaUserIdentity): Record<string, un
   const fbc = validateMetaCookie(identity.fbc, "fbc");
   if (fbp) userData.fbp = fbp;
   if (fbc) userData.fbc = fbc;
+  // Already 64 hex digits of randomness, the form Meta expects; hashing again would break the
+  // match with the pixel, which sends the same value.
+  const externalId = readMetaVisitorId(identity.externalId);
+  if (externalId) userData.external_id = [externalId];
 
   return userData;
 }

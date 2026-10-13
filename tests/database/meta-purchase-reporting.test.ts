@@ -34,6 +34,7 @@ const requestContext = {
   clientUserAgent: "Mozilla/5.0",
   fbp: "fb.1.1700000000000.1234567890",
   fbc: "fb.1.1700000000000.AbCd",
+  externalId: null,
   eventSourceUrl: "https://example.test/checkout",
 } as const;
 

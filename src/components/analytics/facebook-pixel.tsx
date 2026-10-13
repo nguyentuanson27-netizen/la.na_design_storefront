@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Script from "next/script";
 
+import { META_VISITOR_ID_COOKIE } from "@/integrations/meta/first-party-cookies";
 import { readMetaPixelConfig } from "@/integrations/meta/pixel-config";
 
 import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
@@ -10,6 +11,8 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * environment ships no third-party script and the CSP stays closed around it.
  *
  * The route tracker owns both document and SPA PageView so it can share one event ID with CAPI.
+ * `init` passes the visitor ID the proxy wrote (`la_vid`) as `external_id`, the same value the
+ * Conversions API sends, so Meta can tie the browser and server events of one visitor together.
  *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
@@ -32,7 +35,9 @@ t.onload=function(){t.dataset.laMetaPixelStatus=typeof f.fbq==='function'&&typeo
 t.onerror=function(){t.dataset.laMetaPixelStatus='unavailable'};
 s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', ${JSON.stringify(config.pixelId)});`}
+fbq('init', ${JSON.stringify(config.pixelId)}, (function(){
+var m=document.cookie.match(/(?:^|; )${META_VISITOR_ID_COOKIE}=([0-9a-f]{64})(?:;|$)/);
+return m?{external_id:m[1]}:{}})());`}
       </Script>
       {/* The tracker reads search params, which opts its subtree out of static rendering; the
           boundary keeps that confined to a component that renders nothing. */}

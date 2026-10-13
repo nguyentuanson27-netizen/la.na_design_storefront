@@ -377,14 +377,20 @@ test.beforeEach(async () => {
   await prisma.rateLimit.deleteMany({ where: { id: { startsWith: "meta-signal:" } } });
 });
 
-test("a configured pixel initialises once and reports the first page view", async ({ page }) => {
+test("a configured pixel initialises once and reports the first page view", async ({ page, context }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
 
-  await waitForTwin(await waitForEvent(page, "PageView"));
+  const twin = await waitForTwin(await waitForEvent(page, "PageView"));
   const calls = await readCalls(page);
 
-  expect(calls.filter((call) => call[0] === "init")).toEqual([["init", PIXEL_ID]]);
+  // The proxy writes the visitor ID with the first response; the pixel and the server twin send
+  // the same value as external_id, so Meta ties both sides of this visitor together.
+  const visitorId = (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "la_vid");
+  expect(visitorId?.value).toMatch(/^[0-9a-f]{64}$/);
+  expect(visitorId?.httpOnly).toBe(false);
+  expect(calls.filter((call) => call[0] === "init")).toEqual([["init", PIXEL_ID, { external_id: visitorId!.value }]]);
+  expect(twin.user_data).toMatchObject({ external_id: [visitorId!.value] });
   expect(trackedEventNames(calls).filter((name) => name === "PageView")).toHaveLength(1);
 });
 
@@ -425,6 +431,7 @@ test("login does not emit a Meta PageView on either side", async ({ page }) => {
 
 test("the product page reports ViewContent, and adding to the bag reports AddToCart", async ({
   page,
+  context,
 }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
@@ -447,12 +454,15 @@ test("the product page reports ViewContent, and adding to the bag reports AddToC
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
 
   const addToCart = await waitForEvent(page, "AddToCart");
-  await waitForTwin(addToCart);
+  const addToCartTwin = await waitForTwin(addToCart);
   expect(addToCart[2]).toMatchObject({
     content_ids: [productSlug],
     currency: "VND",
     value: UNIT_PRICE,
   });
+  // The committed AddToCart is matched on the same visitor ID the pixel was initialised with.
+  const visitorId = (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "la_vid")!.value;
+  expect(addToCartTwin.user_data).toMatchObject({ external_id: [visitorId] });
 });
 
 test("U18 AddToCart reports the price the server committed, once, not the rendered one", async ({

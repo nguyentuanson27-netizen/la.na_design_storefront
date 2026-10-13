@@ -4,9 +4,13 @@ import { resolveConfiguredStorefrontProductSlug } from "@/commerce/storefront-ca
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 import {
   META_CLICK_ID_COOKIE,
+  META_CLICK_ID_MAX_AGE_SECONDS,
+  META_VISITOR_ID_COOKIE,
+  META_VISITOR_ID_MAX_AGE_SECONDS,
   nextMetaClickIdCookie,
-  serializeMetaClickIdCookie,
-} from "@/integrations/meta/click-id-cookie";
+  nextMetaVisitorIdCookie,
+  serializeMetaFirstPartyCookie,
+} from "@/integrations/meta/first-party-cookies";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
@@ -18,27 +22,39 @@ const UNRESOLVED_PRODUCT_PATH = "/__unresolved-product";
 const META_PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
 
 /**
- * Keeps an ad click's `fbclid` as `_fbc` from the landing response on, so a later Purchase sent
- * through the Conversions API still carries it when the pixel never ran or its cookie expired.
- * Only document loads count; with no pixel configured nothing Meta-related is written at all.
+ * Writes the first-party cookies Meta's events match on: the ad click's `fbclid` as `_fbc`, so a
+ * later Purchase still carries it when the pixel never ran or its cookie expired, and this site's
+ * visitor ID as `la_vid`, sent as `external_id`. Only document loads count; with no pixel
+ * configured nothing Meta-related is written at all. Storefront pages are `private, no-store`,
+ * so no shared cache can hand one visitor's cookie to another.
  */
-function applyMetaClickIdCookie(request: NextRequest, response: Response): void {
+function applyMetaFirstPartyCookies(request: NextRequest, response: Response): void {
   if (!META_PIXEL_CONFIGURED || (request.method !== "GET" && request.method !== "HEAD")) return;
-  const value = nextMetaClickIdCookie({
-    fbclid: request.nextUrl.searchParams.get("fbclid"),
-    existing: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
-    nowMs: Date.now(),
-  });
-  if (value === null) return;
+  // Next runs the proxy again for the 404 rewrite below; the first pass already wrote these.
+  if (request.nextUrl.pathname === UNRESOLVED_PRODUCT_PATH) return;
   try {
-    response.headers.append("Set-Cookie", serializeMetaClickIdCookie(value, readStorefrontOrigin()));
+    const origin = readStorefrontOrigin();
+    const clickId = nextMetaClickIdCookie({
+      fbclid: request.nextUrl.searchParams.get("fbclid"),
+      existing: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
+      nowMs: Date.now(),
+    });
+    if (clickId !== null) {
+      response.headers.append("Set-Cookie",
+        serializeMetaFirstPartyCookie(META_CLICK_ID_COOKIE, clickId, META_CLICK_ID_MAX_AGE_SECONDS, origin));
+    }
+    const visitorId = nextMetaVisitorIdCookie(request.cookies.get(META_VISITOR_ID_COOKIE)?.value);
+    if (visitorId !== null) {
+      response.headers.append("Set-Cookie",
+        serializeMetaFirstPartyCookie(META_VISITOR_ID_COOKIE, visitorId, META_VISITOR_ID_MAX_AGE_SECONDS, origin));
+    }
   } catch {
     // Measurement never costs a shopper the page.
   }
 }
 
 function applyResponseHeaders(request: NextRequest, response: Response): Response {
-  applyMetaClickIdCookie(request, response);
+  applyMetaFirstPartyCookies(request, response);
   const exposure = readSearchExposure();
   if (
     shouldNoIndexRequest({

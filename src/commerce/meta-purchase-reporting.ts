@@ -10,6 +10,7 @@ export type MetaPurchaseRequestContext = Readonly<{
   clientUserAgent: string | null;
   fbp: string | null;
   fbc: string | null;
+  externalId: string | null;
   eventSourceUrl: string | null;
 }>;
 
@@ -102,7 +103,7 @@ export async function reportMetaPurchase(client: ReportClient, orderCode: string
       valueVnd: snapshot.valueVnd, contents: snapshot.contents,
       identity: { phone: order.guestPhone, fullName: order.guestName,
         clientIpAddress: context?.clientIpAddress ?? null, clientUserAgent: context?.clientUserAgent ?? null,
-        fbp: context?.fbp ?? null, fbc: context?.fbc ?? null },
+        fbp: context?.fbp ?? null, fbc: context?.fbc ?? null, externalId: context?.externalId ?? null },
     });
     if (saved) event.user_data = { ...(event.user_data as Record<string, unknown>), ...saved.userData };
     // CAS chooses one payload under concurrent submit/reconcile/readback. Losers replay its bytes.

@@ -845,6 +845,7 @@ describe("U39 / G1: Direct Meta Runtime Emission Paths (AddToCart & Purchase)", 
         clientUserAgent: "Mozilla/5.0",
         fbp: "fb.1.1234",
         fbc: "fb.1.5678",
+        externalId: null,
       },
     });
 
