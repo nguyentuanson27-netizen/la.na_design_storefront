@@ -23,7 +23,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 **ĐÃ CHỐT QUA INTERVIEW:** FR-01 đến FR-12 bên dưới phản ánh 21 quyết định của chủ cửa hàng; đây là nguồn yêu cầu nghiệp vụ đã xác nhận.
 
-**ĐỀ XUẤT THIẾT KẾ CHỜ REVIEW SPEC:** chính sách xung đột cặp chương trình, cách xử lý `FIXED_PRICE` cũ khi xếp thứ tự, khóa trùng quà theo *sản phẩm gốc*, rounding theo đơn vị hàng, yêu cầu quà READY/có thể giữ chỗ và cơ chế lưu cấu hình/snapshot. Đây là các quy ước cần được chấp thuận trong vòng review spec; không giả định đã được chủ cửa hàng quyết định.
+**ĐỀ XUẤT THIẾT KẾ CHỜ CHỦ DỰ ÁN DUYỆT:** chính sách stack/xung đột, ý nghĩa `FIXED_PRICE` legacy, khóa trùng quà theo *sản phẩm gốc*, rounding từng chiếc, gift READY, schema/snapshot và **cách diễn giải FROM nhiều bậc dùng ngưỡng khởi đầu `N0` (R-05)**. FR nào chứa quy tắc đề xuất phải được chủ dự án phê duyệt tại review spec; không suy diễn đây là quyết định thứ 22 của interview. Các quy tắc bảo toàn tiền, bất biến quote và không gửi đơn chưa được xác nhận là safety constraints.
 
 **BẮT BUỘC XÁC MINH TRƯỚC `/build` CHO LUỒNG PHỤ THUỘC POS VÀ TRƯỚC RELEASE:** Pancake có ghi nhận chính xác (1) dòng quà 0đ, (2) `PAID + GIFT` cùng `pancakeVariationId`, (3) **hai dòng `PAID` cùng `pancakeVariationId` nhưng khác đơn giá** hay không. Nếu chưa có bằng chứng live cho luồng cần dùng, chỉ được bắt đầu `/build` luồng đó khi chủ dự án đã phê duyệt phương án thay thế bảo toàn chính xác tiền, số lượng, audit và đã thêm acceptance tests tương ứng. Bằng chứng custom price dương hiện có không chứng minh các trường hợp này.
 
@@ -35,8 +35,10 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - **Phạm vi hợp lệ (`eligible products`):** hợp của các sản phẩm được chỉ định trực tiếp và thuộc các danh mục được chọn, sau khi trừ danh sách loại trừ; loại trừ luôn thắng. Chỉ dòng **mua trả tiền** mới được tính.
 - **Số lượng hợp lệ `Q`:** tổng `quantity` của **tất cả biến thể và tất cả mẫu** nằm trong phạm vi hợp lệ. Có thể cộng đầm A với đầm B và các size/màu khác nhau.
 - **Giá trị hợp lệ `S`:** tổng tiền hàng **sau khi áp dụng tất cả giảm giá được phép**, trước phí vận chuyển, không gồm dòng quà. Có thể tính trên toàn đơn hoặc chỉ dòng mua thuộc phạm vi hợp lệ, tùy Admin chọn.
+- **Phạm vi toàn đơn (`GLOBAL_ALL_PAID_LINES`):** chỉ dùng với quà `ORDER_SUBTOTAL` + `ALL_PAID_LINES`; lấy tất cả dòng mua trả tiền, không yêu cầu chọn danh mục, sản phẩm, exclude hay chế độ Dynamic/Fixed. Đây là scope logic của trigger, không tự đưa sản phẩm mới vào rule giảm giá.
 - **Suất quà:** một quyền chọn một đơn vị quà từ danh sách được cấu hình; không phải tự động thêm quà vào giỏ.
 - **Bậc cao nhất:** bậc có `minQuantity` cao nhất không vượt quá `Q`.
+- **Ngưỡng khởi đầu `N0` (đề xuất R-05):** ngưỡng số lượng nhỏ nhất trong chương trình tier đã publish. Mức giảm chỉ lấy từ **bậc cao nhất đạt được**; riêng cách đếm chiếc được giảm trong chế độ FROM bắt đầu tại `N0`, không đặt lại từ đầu mỗi khi lên bậc cao hơn.
 
 ## 4. Functional requirements — Admin
 
@@ -44,7 +46,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 - Admin vào `/admin/promotions`, tạo/sao chép/chỉnh sửa/xem trước/xuất bản/tạm dừng/kết thúc chương trình theo quyền và vòng đời hiện có (`Draft`, `Scheduled`, `Active`, `Ended`, `Disabled`).
 - Chọn rõ `GIFT_ITEM` hoặc `QUANTITY_TIER`; không dùng `FIXED_PRICE` cũ để biểu thị giảm VND/chiếc.
-- Bắt buộc có tên, loại, thời gian hiệu lực, phạm vi áp dụng, điều kiện, phần thưởng/giảm giá, cấu hình kết hợp và độ ưu tiên nếu có liên quan.
+- Bắt buộc có tên, loại, thời gian hiệu lực, điều kiện, phần thưởng/giảm giá, cấu hình kết hợp/độ ưu tiên nếu liên quan. **Phạm vi danh mục/sản phẩm chỉ bắt buộc** với trigger số lượng, tier hoặc `ORDER_SUBTOTAL + ELIGIBLE_PAID_LINES`; `ORDER_SUBTOTAL + ALL_PAID_LINES` dùng scope toàn đơn, **không ép Admin chọn danh mục/sản phẩm giả**.
 - Chỉ Admin được thay đổi. Các trường không hợp lệ/không dùng cho loại chương trình được từ chối ở server, không chỉ ẩn ở giao diện.
 - Xem trước phải có trường hợp đạt/chưa đạt, số quà hoặc số chiếc giảm, tính tiền và cảnh báo xung đột trước khi publish.
 
@@ -52,8 +54,11 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 - Admin chọn theo **danh mục**, **sản phẩm gốc cụ thể**, hoặc kết hợp cả hai.
 - Admin loại trừ từng sản phẩm gốc; loại trừ có ưu tiên cao hơn mọi quy tắc chọn vào.
-- Có hai chế độ: `DYNAMIC_CATEGORY` (tự nhận sản phẩm mới thuộc danh mục được chọn theo dữ liệu tại thời điểm tính) và `FIXED_PRODUCT_SET` (chụp danh sách product IDs cố định khi kích hoạt, thay đổi danh mục sau đó không tự bổ sung).
+- Có hai chế độ trong phạm vi có chọn sản phẩm: `DYNAMIC_CATEGORY` (membership được đọc tại thời điểm tính quyền lợi) và `FIXED_PRODUCT_SET` (**đóng băng danh sách `ProductMirror.id` ngay trong transaction publish**, kể cả khi campaign còn `Scheduled`, không đợi `startsAt`). Resolver hiện tại `SCHEDULED → ACTIVE` chỉ phụ thuộc `now`, **không phát sinh snapshot hoặc DB write tại `startsAt`**.
 - Dữ liệu danh mục website-owned hiện có dùng `ProductCategoryMembership.categoryKey`. Cách kế thừa danh mục cha/con cần thống nhất với category resolver hiện hành; không tự sáng tạo quan hệ phân cấp trong khuyến mại.
+- **Freeze transaction contract (Scheduled/zero traffic):** cùng transaction publish/re-enable, đọc membership + sản phẩm include/exclude qua một DB snapshot nhất quán (ví dụ transaction isolation phù hợp), tính tập IDs hữu hạn, validate coverage/bounds, persist frozen IDs kèm `frozenAt`/campaign revision và nâng durable `PromotionPricingRevision` theo quy ước hiện hành; tất cả cùng commit hoặc cùng rollback. Category mới sau publish nhưng trước `startsAt` **không** tham gia tập fixed, dù không có request/cron nào chạm chiến dịch. Đổi membership thông thường không được rebuild frozen IDs.
+- **Scheduled material edit:** nếu thay đổi category/includes/excludes hoặc `scopeMode` trước khi Active, revalidate và **thay toàn bộ fixed snapshot trong cùng transaction của bản chỉnh sửa**, advance revision; nếu chỉ đổi tên/thời gian/discount/priority, giữ nguyên frozen IDs (chỉ cập nhật cấu hình và revision khi làm thay đổi economic rules). Re-enable campaign Disabled-before-Active được xem là publish mới và **chụp lại** tập fixed từ membership hiện thời; Active/Ended giữ hạn chế mutation/copy theo lifecycle có sẵn. Snapshot phải cho phép audit lý do một sản phẩm có/không tham gia.
+- **Scope toàn đơn:** đối với `GIFT_ITEM + ORDER_SUBTOTAL + ALL_PAID_LINES`, Admin không chọn danh mục/includes/excludes/Dynamic/Fixed; server chấp nhận `GLOBAL_ALL_PAID_LINES` và **từ chối tổ hợp scope vừa global vừa có danh sách mục tiêu**. Các rule dùng `QUANTITY`, `QUANTITY_TIER` hoặc `ELIGIBLE_PAID_LINES` vẫn bắt buộc có phạm vi hợp lệ.
 - Chương trình chỉ xét sản phẩm/biến thể còn hợp lệ theo trạng thái storefront hiện tại. Thay đổi danh mục/giá/availability phải kích hoạt tái tính quyền lợi trước checkout.
 
 ### FR-03. Quà theo số lượng
@@ -66,6 +71,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 ### FR-04. Quà theo giá trị đơn hàng
 
 - Admin chọn `condition = ORDER_SUBTOTAL`, `minimumSubtotalVnd = T > 0`, `subtotalScope = ALL_PAID_LINES | ELIGIBLE_PAID_LINES`.
+- Khi `subtotalScope = ALL_PAID_LINES`, server dùng `GLOBAL_ALL_PAID_LINES` và tính `S` từ toàn bộ paid lines dù sản phẩm không nằm trong category nào; không cần/quy định không chấp nhận scope chọn lọc. Khi `subtotalScope = ELIGIBLE_PAID_LINES`, Admin bắt buộc chọn scope category/product và include/exclude có hiệu lực như FR-02.
 - Giá trị xét là `S` **sau tất cả giảm giá hợp lệ**; không gồm phí ship và quà.
 - Admin chọn `awardMode = ONCE` hoặc `REPEAT_PER_THRESHOLD`:
   - `ONCE`: `earned = 1` nếu `S >= T`, ngược lại 0.
@@ -92,15 +98,19 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 ### FR-07. Giảm giá theo số lượng
 
-- Admin chọn `QUANTITY_TIER`, cấu hình các bậc `(minQuantity, discountValue)`, số nguyên tăng nghiêm ngặt, không trùng ngưỡng; áp dụng **bậc cao nhất đạt được**.
+- Admin chọn `QUANTITY_TIER`, cấu hình các bậc `(minQuantity, discountValue)` có `minQuantity` là số nguyên dương tăng nghiêm ngặt; **chỉ áp dụng giá trị giảm của bậc cao nhất đạt được**. **Đề xuất để không gây nghịch lý kinh doanh (R-05):** trong cùng chương trình, `discountValue` theo % hoặc VND/chiếc phải **không giảm** khi ngưỡng cao hơn; publish/Scheduled material edit từ chối các bậc giảm giá trị theo cùng đơn vị.
 - Admin chọn **một đơn vị giảm giá chung cho toàn chương trình**: `PERCENTAGE` hoặc `FIXED_AMOUNT_PER_UNIT_VND`. Không trộn hai loại trong cùng chương trình.
 - Với phần trăm: giảm tỷ lệ trên **giá hiện tại tại bước ưu tiên đó** của từng chiếc được giảm. Với VND: trừ đúng số tiền VND được cấu hình **trên mỗi chiếc được giảm**; không hiểu thành tổng tiền giảm một lần hay giá bán cố định.
+- **FIXED_AMOUNT_PER_UNIT_VND invalid price policy:** một bước trừ VND chỉ hợp lệ khi `discountVnd` là số nguyên dương và **`currentUnitPriceVnd - discountVnd >= 1`** trên **mọi chiếc thực sự được giảm** tại bước đó. Không clamp giá về 1đ/0đ, không tạo giá âm, không chuyển thành giảm tổng đơn và không tự bình quân đơn giá. Đây là điều kiện của chính rule mới, không đổi ngữ nghĩa `FIXED_PRICE` legacy.
+- **Publish / Scheduled material-edit validation:** server kiểm tra bậc và các biến thể hiện đang bán có thể chịu ảnh hưởng, dùng **giá còn lại sau mọi bước ưu tiên đứng trước được phép stack** (không chỉ catalog base) để từ chối cấu hình chắc chắn gây giá paid ≤0; thông báo variant/ngưỡng/campaign và yêu cầu Admin chỉnh ngưỡng giảm/stack. Không giả định kiểm tra này chứng minh được giá/tồn kho tương lai cho `DYNAMIC_CATEGORY` hoặc thời điểm khác.
+- **Runtime / reprice khi dữ liệu đổi:** nếu sau đồng bộ giá, thêm sản phẩm động hoặc thay đổi chương trình đứng trước làm cho tier VND vượt giá còn lại ở **bất kỳ chiếc được giảm nào**, đánh dấu `TIER_PRICE_INVALID` và **không áp dụng toàn bộ tier campaign cho quote đó** (không chỉ bỏ giảm trên chiếc rẻ). Re-resolve **toàn bộ** cart từ giá authority và các campaign còn hợp lệ, tính lại S/quà/ship, hiển thị thay đổi cùng lý do khuyến mại không áp dụng; quote-proof cũ (kể cả khi tổng tiền không đổi) phải bị từ chối và người mua **xác nhận lại báo giá mới** trước khi tạo submit-capable draft/Pancake call. Nếu không tạo được quote hợp lệ hoặc không thể xác thực consent, **chặn checkout**, không gửi POS. Ghi cảnh báo để Admin sửa campaign; tuyệt đối không tự gửi mức giá cao hơn đã được khách đồng ý.
 - Admin chọn `discountedUnits = ALL_ELIGIBLE_UNITS | FROM_REACHED_THRESHOLD`.
   - `ALL`: tất cả `Q` chiếc hợp lệ hưởng mức của bậc cao nhất.
-  - `FROM_REACHED_THRESHOLD`: nếu bậc thắng có ngưỡng `N`, chỉ **`max(0, Q - N + 1)` chiếc** được hưởng mức của bậc thắng; các chiếc còn lại giữ giá tại bước này.
+  - `FROM_REACHED_THRESHOLD` (**đề xuất cần chủ dự án duyệt R-05**): nếu chương trình có bậc khởi đầu `N0` và `Q >= N0`, giảm **`Q - N0 + 1` chiếc** theo *mức của bậc cao nhất đang đạt*; nếu `Q < N0` thì không giảm. Khi lên bậc mới, **không đặt lại số chiếc được giảm** theo ngưỡng mới. Như vậy `highest tier only` vẫn đúng về **mức giảm**, còn các chiếc từ mốc bắt đầu vẫn được ưu đãi.
 - Khi chỉ giảm một phần, Admin chọn `selectionPriority = CHEAPEST_FIRST | MOST_EXPENSIVE_FIRST`.
 - **Quy ước đề xuất:** xếp theo **giá của mỗi chiếc ngay trước bước giảm này**, tie-break ổn định theo `pancakeVariationId` rồi khóa định danh dòng, không theo thứ tự browser gửi.
 - Ví dụ Q=5, bậc thắng N=3 giảm 10%, `FROM_REACHED_THRESHOLD` ⇒ 3 chiếc được giảm; nếu Q=3 ⇒ 1 chiếc. Khi chọn `ALL` thì đủ Q chiếc được giảm.
+- **Phản ví dụ đã loại bỏ bởi cách tính đề xuất:** giá mọi chiếc 500.000đ, các bậc `N=2 → 10%`, `N=4 → 15%`. Công thức cũ `Q - N(winning) + 1` cho Q=3 giảm `2 × 50.000 = 100.000đ`, nhưng Q=4 chỉ giảm `1 × 75.000 = 75.000đ` — mua thêm một chiếc lại mất quyền lợi. Với **`N0=2` cố định**, Q=3 giảm `2 × 50.000 = 100.000đ`, Q=4 giảm `3 × 75.000 = 225.000đ`. Preview phải hiển thị cả số chiếc, mức giảm và tổng tiền giảm trước/sau từng mốc; test chứng minh tổng ưu đãi **của riêng tier này** không giảm khi thêm 1 chiếc với cùng các giá đầu vào và các bậc giảm không giảm. Không bảo đảm tổng tiền cuối đơn bất biến khi giá ngoài chương trình/stack khác thay đổi.
 - **Phân bổ giảm theo từng chiếc:** resolver chọn các chiếc đủ điều kiện theo thứ tự ổn định, áp dụng từng bước giảm giá/rounding lên đơn giá của **mỗi chiếc** rồi mới nhóm dòng. Cùng một variant có thể có cả chiếc nguyên giá lẫn chiếc được giảm; không bình quân hay làm tròn lại đơn giá để ép thành một dòng.
 - **Tách paid price segments:** chỉ gộp các chiếc đồng nhất về variant, `unitPriceVnd`, discount provenance và fulfillment; mỗi nhóm tạo dòng `PAID` riêng với `lineId` duy nhất trong quote, ổn định khi re-resolve cùng cart/rule facts, do server tạo và **độc lập với `pancakeVariationId`**. Mỗi dòng giữ quantity, đơn giá, thành tiền và discount ledger riêng; `lineId` không chứa cart UUID/PII.
 - Ví dụ mua 3 chiếc cùng variant giá 100.001đ, tier N=3 giảm 10% cho chiếc từ mốc: `2 × 100.001đ + 1 × 90.001đ = 290.003đ`. Phải có **hai dòng `PAID`**, quantity 2 và 1, cùng variation ID nhưng khác unit price; không có đơn giá VND nguyên nào cho một dòng quantity=3 tạo được tổng 290.003đ.
@@ -119,11 +129,12 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 - `PromotionDiscountType.FIXED_PRICE` của hệ thống hiện tại nghĩa là **giá bán cuối theo chiếc**, không phải trừ đi X đồng. Không được đổi dữ liệu lịch sử/ý nghĩa công thức này.
 - **Đề xuất cần duyệt:** trong chuỗi giảm giá có cho phép kết hợp, một chương trình legacy fixed-price đóng vai trò **mức giá trần**: `nextUnitPrice = min(currentUnitPrice, configuredFixedPriceVnd)` để không tăng giá đã được giảm trước đó. Nếu không phù hợp với ý định kinh doanh, phải chọn cách xử lý khác trong review spec; không được tự triển khai cách tính này.
-- Giảm % và VND mới là bước giảm thực tế trên `currentUnitPrice`; không được làm âm hoặc thành 0đ đối với **hàng mua**.
+- Giảm % và VND mới là bước giảm thực tế trên `currentUnitPrice`; xử lý VND quá mức **theo fail-closed/requote tại FR-07**, không được làm âm/0đ hoặc âm thầm bỏ bước giảm rồi gửi mức giá mới chưa được khách xác nhận.
 
 ### FR-10. Quy tắc tiền VND và tồn kho
 
 - Server là authority cho giá, Q, S, danh tính product/variant, phạm vi, tỷ lệ, ưu tiên, kho và số suất quà.
+- Khi một tier bị loại khỏi quote do `TIER_PRICE_INVALID`, phải tính lại các tier/stack downstream trên kết quả mới, quà theo subtotal sau giảm, shipping, quote signature và bất biến đơn; lưu audit reason. Tình huống chạy lại quote phải sử dụng cùng một điểm `now`/scope/price snapshot, không rơi vào vòng lặp giá.
 - Sử dụng số nguyên VND an toàn; phép nhân/chia %, cộng dồn cần tránh overflow. **Đề xuất** giữ cách làm tròn half-up bằng `BigInt` đã có trong `promotion-pricing.ts`, ở granularity **mỗi đơn vị hàng** trước khi cộng dòng.
 - Đơn giá của hàng mua phải là số nguyên dương; quà tặng có đơn giá thanh toán 0đ **với line role GIFT**. Không cho client giả một dòng mua có giá 0đ.
 - Kiểm tra tồn kho quà cùng cơ chế reservation của hàng mua; **cộng nhu cầu vật lý từ tất cả price segments `PAID` và dòng `GIFT` theo cùng `variantId`** trước khi kiểm tra/giữ chỗ. Ví dụ hai dòng `PAID` của một variant với quantity 2+1 chỉ giữ chỗ **3 chiếc vật lý một lần** theo `(orderId, variantId)`, không sinh hai reservation cạnh tranh hoặc giữ chỗ trùng; áp dụng cả khi có `GIFT` cùng variant.
@@ -148,8 +159,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 ## 5. Thuật toán tham chiếu (hợp đồng hành vi, chưa phải code)
 
 1. Đọc giỏ hàng trả tiền, catalog/variant/selling mode, category membership, cấu hình chiến dịch và `now` trong một lần tính nhất quán.
-2. Xác định danh sách campaign hiệu lực và product scope sau exclusion; giải quyết tính tương thích và ưu tiên stack theo cấu hình Admin; nếu conflict không hợp lệ thì từ chối giá mâu thuẫn theo chính sách fail-closed đã duyệt.
-3. Tính **giá trả tiền** lần lượt theo priority, cả khuyến mại legacy và tier; Q là **số chiếc paid mua thật trước khi chia price segments**. Xác định bậc cao nhất, ALL/FROM và CHEAPEST/MOST_EXPENSIVE; phân bổ giá từng chiếc rồi nhóm các chiếc đồng nhất về variant/giá/provenance/fulfillment thành nhiều dòng `PAID` có `lineId` ổn định nếu cần, không ép mỗi variation chỉ còn một dòng.
+2. Xác định campaign hiệu lực và product scope: `GLOBAL_ALL_PAID_LINES` không cần category picker; `FIXED_PRODUCT_SET` chỉ dùng frozen IDs đã ghi tại publish/Scheduled scope-edit; `DYNAMIC_CATEGORY` đọc membership hiện tại. Giải quyết tính tương thích/ưu tiên stack; nếu conflict không hợp lệ thì từ chối giá mâu thuẫn theo chính sách fail-closed.
+3. Tính **giá trả tiền** lần lượt theo priority, cả legacy và tier; Q từ số chiếc paid mua thật trước khi split. Chọn bậc **cao nhất đạt được**, còn phạm vi FROM được tính từ **`N0` là bậc đầu tiên** (R-05, chờ owner duyệt), không đặt lại theo bậc thắng; xếp CHEAPEST/MOST_EXPENSIVE, phân bổ giá từng chiếc và tạo `PAID` price segments với `lineId`. Nếu tier VND không đảm bảo đơn giá paid >=1 tại bất kỳ chiếc đang được giảm, loại **toàn bộ** tier khỏi quote, tính lại authority và trả trạng thái `TIER_PRICE_INVALID`, không clamp giá.
 4. Tính subtotal hàng mua và `S` của từng gift campaign **sau hoàn tất giảm giá**; tính entitled bằng công thức tại FR-03/04 và giới hạn trên mỗi đơn.
 5. Lấy danh sách biến thể quà còn được phép và khả dụng; xác nhận lựa chọn người mua, chống chọn trùng khi tắt, và tổng nhu cầu kho kể cả paid + gift.
 6. Tính shipping từ tổng quantity và subtotal của các dòng `PAID`, không gồm `GIFT`. Quote ký từng `lineId`, role, đơn giá/quantity/thành tiền của paid price segments, discount ledger, quyền lợi và xác nhận không nhận quà; nhiều paid lines trùng variation nhưng khác giá không bị gộp.
@@ -178,15 +189,20 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 | EX-16 | Dynamic category có sản phẩm mới; Fixed set có sản phẩm mới | Dynamic tự xét khi hợp lệ; Fixed không tự thêm |
 | EX-17 | Một variant, 3 chiếc × 100.001đ, tier N=3 giảm 10% `FROM` | Tạo hai dòng `PAID` cùng variation: (`lineId=A`, quantity=2, unit=100.001đ) + (`lineId=B`, quantity=1, unit=90.001đ) = **290.003đ**; quote proof/snapshot giữ đủ 2 line IDs, không được bình quân giá |
 | EX-18 | EX-17, cần giữ chỗ tồn kho cho hai dòng paid | Capacity/reservation cộng đúng **3 chiếc vật lý** cùng variant, giữ chỗ một lần theo `(orderId, variantId)`; submit POS phụ thuộc acceptance paid+paid khác giá hoặc phương án thay thế được duyệt |
+| EX-19 | 500.000đ/chiếc, tier N=2 giảm 10%, N=4 giảm 15%, FROM, chỉ có một loại hàng giá không đổi | **Công thức cũ Q−N(winning)+1**: Q=3 tiết kiệm 100.000đ, Q=4 chỉ 75.000đ (không chấp nhận). **Đề xuất N0=2**: Q=3 tiết kiệm 2×50.000=100.000đ; Q=4 tiết kiệm 3×75.000=225.000đ, chỉ dùng mức 15% của bậc cao nhất; preview và test ranh giới |
+| EX-20 | Scheduled fixed campaign publish lúc T0 có đầm A/B; T1 thêm đầm C vào category, T2=startsAt; không có request trước T2 | Snapshot fixed A/B ngay tại T0; T2 vẫn chỉ A/B; Scheduled sửa scope trước T2 tái snapshot trong transaction, sửa chỉ tên/time giữ A/B; re-enable Disabled-before-Active chụp lại theo membership mới |
+| EX-21 | Tier giảm cố định 50.000đ/chiếc; giá hiện tại sau Flash trước tier chỉ còn 40.000đ | Publish/Scheduled edit reject nếu biết trước; nếu phát sinh sau sync/reprice, bỏ **toàn tier campaign** khỏi quote đó, re-resolve/quà/ship; yêu cầu buyer xác nhận quote mới, không clamp về 1đ hay tự submit POS |
+| EX-22 | Gift ORDER_SUBTOTAL T=1.000.000đ, ALL_PAID_LINES, không chọn category/products; giỏ có đầm 600k + phụ kiện 500k | Scope `GLOBAL_ALL_PAID_LINES`, S=1.100.000đ, nhận quyền chọn quà; Admin không bị bắt chọn category; chọn global + include/exclude bị từ chối |
 
 ## 6. UI/UX và phân quyền
 
 ### Admin `/admin/promotions`
 
 - Chọn loại chương trình; form biến đổi theo loại, không hiển thị trường mâu thuẫn.
-- Scope picker có danh mục, sản phẩm bổ sung, loại trừ, Dynamic/Fixed, đếm/preview số sản phẩm được ảnh hưởng.
-- Gift form có QUANTITY/ORDER_SUBTOTAL; ngưỡng; subtotal scope; ONCE/REPEAT (chỉ ở value); max gift optional; quà theo product và allowlisted variants; allow duplicate.
+- Scope picker có danh mục, sản phẩm bổ sung, loại trừ, Dynamic/Fixed, đếm/preview; **ẩn và không yêu cầu** danh mục/product khi chọn `ORDER_SUBTOTAL + ALL_PAID_LINES` (hiển thị rõ **Áp dụng giá trị toàn đơn**). Khi `FIXED_PRODUCT_SET`, preview cho biết danh sách **đã chốt tại publish** và thời điểm `frozenAt`, không hứa thu nạp sản phẩm mới sau đó.
+- Gift form có QUANTITY/ORDER_SUBTOTAL; ngưỡng, subtotal scope; `ALL_PAID_LINES` chạy được với scope trống, `ELIGIBLE_PAID_LINES` đòi scope; ONCE/REPEAT (chỉ ở value), max gift optional, quà theo product/variants và allow duplicate.
 - Tier form có danh sách bậc, loại giảm %, VND mỗi chiếc; ALL/FROM; CHEAPEST/MOST_EXPENSIVE chỉ khi FROM.
+- Tier preview cần minh họa **Q ngay trước/sau mỗi bậc**, số chiếc giảm theo `N0`, tổng mức giảm và so sánh khi tăng Q với cùng giá; highlight phản ví dụ Q=3→4 của EX-19. Khi bậc giảm giá trị hoặc VND gây paid <=0 theo giả định giá hiện có, chặn publish với lỗi cụ thể.
 - Stacking editor hiển thị luật tương thích, priority, cảnh báo conflict, và preview giá minh họa. Trạng thái publish phải từ chối input mâu thuẫn/bậc không tăng/ngưỡng không hợp lệ.
 - Mọi thay đổi có audit tối thiểu: actor, campaign ID, bản trước/sau hoặc revision, thời điểm, hành động; tránh lưu dữ liệu cá nhân khách.
 
@@ -213,11 +229,11 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 ### Data contract đề xuất (không phải migration đã viết)
 
 - **Campaign**: `id`, `kind`, `name`, effective window, lifecycle, `priority`, `version/revision`, stacking policy, creator/audit.
-- **Eligibility scope**: dynamic category keys hoặc frozen product IDs; includes, excludes; product-only membership. Không thay đổi membership của catalog.
+- **Eligibility scope**: discriminated union `GLOBAL_ALL_PAID_LINES` (không category/targets, dành riêng gift `ORDER_SUBTOTAL+ALL_PAID_LINES`) **hoặc** `DYNAMIC_CATEGORY` (category keys + includes/excludes) **hoặc** `FIXED_PRODUCT_SET` (frozen ProductMirror IDs, `frozenAt`, campaign revision, nguồn category/includes/excludes để audit). Snapshot fixed được ghi trong cùng publish/re-enable/Scheduled scope-edit transaction, có DB snapshot nhất quán, không thêm vào lúc start và không phụ thuộc lưu lượng. Không sửa catalog membership.
 - **Gift rule**: `trigger: QUANTITY | ORDER_SUBTOTAL`, minimum, subtotal scope, repeat mode, max gifts, `allowDuplicateGifts`, product/variant gift allowlist.
-- **Tier rule**: discount unit, list of strictly increasing threshold/value, ALL/FROM, CHEAPEST/MOST_EXPENSIVE.
+- **Tier rule**: discount unit, ngưỡng `minQuantity` tăng nghiêm ngặt, `discountValue` cùng loại **không giảm**, ALL/FROM, CHEAPEST/MOST_EXPENSIVE và `N0` (min threshold) để tính số chiếc FROM; validation bao gồm VND vượt current paid unit sau stacking, audit `TIER_PRICE_INVALID` và cơ chế re-quote.
 - **Cart gift selection**: cart/campaign/variant/qty, validated server-side; tách khỏi paid `CartItem`. Thay đổi selection làm vô hiệu proof trước đó.
-- **Resolved quote lines**: `lineId` duy nhất / role / campaign trên facts canonical do server tạo, **không unique theo variation ID**; một variant có thể sinh nhiều price segments `PAID` ngay cả khi không có gift. Mỗi line giữ nguyên quantity × `unitPriceVnd` = `lineTotalVnd`; quote bao gồm paid/gift, entitlement, acknowledgment và campaign version.
+- **Resolved quote lines**: `lineId` duy nhất / role / campaign trên facts canonical do server tạo, **không unique theo variation ID**; một variant có thể sinh nhiều price segments `PAID` ngay cả khi không có gift. Mỗi line giữ nguyên quantity × `unitPriceVnd` = `lineTotalVnd`; quote lưu các discount steps và trạng thái bất hợp lệ như `TIER_PRICE_INVALID`, paid/gift, entitlement, acknowledgment và campaign version để thay đổi provenance cũng làm mất hiệu lực proof.
 - **Order snapshots**: `lineId`, `PAID/GIFT` role, variation ID, quantity/đơn giá/thành tiền theo từng price segment; discount step ledger (`campaignId`, priority, type, input/output price, applied qty); gift entitlement/selected/unclaimed và proof acknowledgment. Giữ hai dòng PAID cùng variant có giá khác nhau tách biệt, bất biến khi finalized, không phá dữ liệu lịch sử.
 - **Pancake map**: tách semantic website lines khỏi shape vendor; adapter dùng contract đã xác minh, không tự suy ra từ typescript type.
 
@@ -237,23 +253,23 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 ## 9. Testing strategy và ma trận chấp nhận
 
 **Domain/unit:**
-- Form parse + lifecycle + quyền Admin; scope include/exclude; category Dynamic/Fixed; parent set và mọi màu/size.
+- Form parse + lifecycle + quyền Admin; scope include/exclude; category Dynamic/Fixed; **fixed snapshot tại publish transaction, không phụ thuộc Scheduled start traffic, Scheduled scope-edit replace nhưng non-scope edit giữ snapshot, re-enable recapture**; global all-paid scope không targets và từ chối global cùng selected scope; parent set và mọi màu/size.
 - Gift Q=N−1/N/2N/2N+1, limit; value S=T−1/T/2T+1, ONCE/REPEAT, subtotal ALL/ELIGIBLE, trừ shipping/quà.
-- Tier highest-only, %, fixed-VND-per-unit, ALL/FROM, cheapest/expensive, tie deterministic, round half-up, money boundary. **EX-17** phải kiểm tra allocation 2×100.001 + 1×90.001 = 290.003đ, 2 line IDs khác nhau, cùng variation ID, và tính ổn định khi re-resolve.
+- Tier highest-only, %, fixed-VND-per-unit, ALL/FROM từ **N0**, cheapest/expensive, tie deterministic, round half-up, money boundary, validate values không giảm; **EX-19** phát hiện & loại bỏ nonmonotonic total discount khi Q=3→4. **EX-17** bảo toàn 290.003đ, hai line IDs ổn định. **EX-21** invalid VND sau stacking/sync: reject khi publish nếu biết, runtime drop toàn tier+requote, không clamp, không POS khi proof stale.
 - Stacking pairwise permission/priority, legacy fixed price, overlap/concurrent mutation/conflict fail-closed, gift evaluated after discounts.
 - Duplicate gift product and variant policy; selection partial/zero, invalid selection, camp expired, different gift same total.
 
 **DB/integration:**
-- Migration backcompat và revision bump transactional; immutable per-`lineId` order audit; concurrent reservations gộp `PAID+PAID` hai giá cùng variation và `PAID+GIFT` cùng variation **một lần theo tổng quantity**; retry không giữ chỗ trùng.
-- Signed quote with gifts/ack và `PAID` price segments; quote proof của EX-17 giữ hai `lineId` và đủ quantity/unitPriceVnd/line total; stale/forged quote; reprice stock/category/rule; signed confirmation of skipped gifts.
+- Migration backcompat và revision bump transactional; **frozen scope + frozenAt + campaign revision cùng publish/re-enable/scope-edit transaction** có nhất quán khi membership thay đổi đồng thời; trạng thái Scheduled chuyển theo clock không làm DB mutation. Immutable per-`lineId` order audit; concurrent reservations gộp paid/gift đúng một lần; retry không trùng.
+- Signed quote với từng paid price segment, gifts/ack và status `TIER_PRICE_INVALID`: thay campaign price/quote giá lên hoặc không đổi vẫn buộc buyer re-confirm, không tạo submit-capable draft/Pancake khi stale; EX-17 giữ hai line IDs, EX-21 reprice stock/category/rule/discount theo thứ tự. Signature bảo toàn toàn bộ facts.
 - Pancake live acceptance có kiểm soát cho **GIFT 0đ**, **PAID+GIFT cùng variation** và **PAID+PAID cùng variation khác đơn giá** (EX-17); kiểm tra read-back line-level money/quantity/total, rollback/cancel/reconcile/unknown. Nếu POS không hỗ trợ, yêu cầu phương án thay thế được chủ dự án duyệt trước `/build`. Không chạy acceptance có side effects trong CI.
 - Existing promotion, shipping, product catalog, Merchant/Meta Purchase, preorder/composite regressions.
 
 **Browser/E2E và accessibility:**
-- Admin tạo gift theo Q và S với cả hai scopes, chế độ nhân/once, duplicate cap và product variants; tạo tier giá % và VND; xem preview/priority.
+- Admin tạo gift theo Q và S: **ALL_PAID_LINES không cần scope** và ELIGIBLE scope bắt buộc, ONCE/REPEAT, duplicate cap, allowed variants; tạo tier % và VND, preview `N0`, báo lỗi giá âm/0, EX-19 so sánh Q=3/4 và EX-21 checkout re-confirm.
 - Cart 1 đầm + 1 set, nhiều size cùng mẫu, chọn 2 quà khác nhau/trùng khi được phép; vượt/mất ngưỡng.
 - Khách bỏ 1/all gifts, partial stock, out of stock, giao diện xác nhận; đổi quà khiến quote mất hiệu lực.
-- Keyboard/focus/labels/announcement, mobile/cart/checkout; test thời điểm chương trình bắt đầu/kết thúc.
+- Keyboard/focus/labels/announcement, mobile/cart/checkout; EX-20 Scheduled fixed scope không tự thêm sản phẩm mới giữa publish→startsAt và Scheduled scope edit re-freeze, EX-22 global all-paid; test thời điểm bắt đầu/kết thúc, không dựa vào cron.
 
 **Các file test hiện có để mở rộng:** `tests/domain/promotion-pricing.test.ts`, `tests/domain/checkout-quote.test.ts`, `tests/domain/checkout-quote-proof.test.ts`, `tests/domain/guest-shipping-policy.test.ts`, `tests/database/promotion-persistence.test.ts`, `tests/database/guest-checkout-p9a-quote-proof.test.ts`, `tests/database/capacity-reservation.test.ts`, `tests/database/pancake-order-submit.test.ts`, `tests/a11y-runtime/admin-promotions.spec.ts`, `tests/a11y-runtime/checkout.spec.ts`.
 
@@ -284,12 +300,12 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 
 ## 11. Acceptance criteria tổng hợp (definition of success)
 
-- [ ] AC-01 Admin tạo được `GIFT_ITEM` với QUANTITY hoặc ORDER_SUBTOTAL, chọn ALL/ELIGIBLE subtotal và ONCE/REPEAT phù hợp.
-- [ ] AC-02 Admin cấu hình Dynamic/Fixed scope gồm category + product includes/excludes; số chiếc được cộng giữa mọi mẫu/biến thể hợp lệ, set tính đúng một chiếc.
+- [ ] AC-01 Admin tạo được `GIFT_ITEM` với QUANTITY hoặc ORDER_SUBTOTAL, ALL/ELIGIBLE subtotal và ONCE/REPEAT; **ALL_PAID_LINES chạy không cần danh mục/product scope** còn ELIGIBLE cần scope; từ chối tổ hợp global+targets.
+- [ ] AC-02 Admin cấu hình Dynamic/Fixed scope category + product includes/excludes; fixed IDs snapshot **trong publish/re-enable hoặc Scheduled scope-edit transaction** (zero traffic/startsAt không thay đổi), non-scope edit giữ snapshot; số chiếc gộp các mẫu/variants và set đếm 1.
 - [ ] AC-03 Admin quản lý được danh sách quà product + allowed variants, cho/không cho trùng và max gifts/đơn tùy chọn.
 - [ ] AC-04 Earned/selected gift slots luôn đúng tại ranh giới; khách chọn được 0..entitled, kể cả khi kho thiếu một phần/toàn bộ, với xác nhận bắt buộc nếu không nhận đủ.
-- [ ] AC-05 Tier chọn highest threshold only; %/fixed VND per unit, ALL/FROM, CHEAPEST/MOST_EXPENSIVE đúng; khi FROM giảm một phần cùng variant, **hai dòng PAID khác giá** được lưu/ký riêng và bảo toàn chính xác 290.003đ ở EX-17.
-- [ ] AC-06 Campaign stacking và thứ tự priority do Admin thiết lập; mỗi bước dùng giá còn lại, không làm tăng/âm/zero giá trả tiền.
+- [ ] AC-05 Highest-tier-only; tier discount values cùng loại **không giảm**; ALL/FROM tính từ `N0` để tránh mất tổng ưu đãi khi lên bậc (EX-19, chờ owner duyệt R-05), CHEAPEST/MOST_EXPENSIVE đúng; nhiều `PAID` khác giá cùng variation bảo toàn 290.003đ của EX-17.
+- [ ] AC-06 Stack theo priority, tính từ giá còn lại, không tạo paid price <=0; VND không hợp lệ được **reject publish nếu biết trước** hoặc **loại toàn tier+requote+re-ack** ở runtime (EX-21), tuyệt đối không clamp hoặc gửi giá cao hơn quote đã ký; telemetry phản ánh lỗi.
 - [ ] AC-07 Ngưỡng giá trị quà xét tiền sau tất cả giảm giá, trước phí ship và không tính quà; giá ở mọi bề mặt cùng một authority.
 - [ ] AC-08 Quote proof ký/xác thực từng `lineId`, role, quantity, đơn giá và discount step của paid/gift; nhiều paid lines cùng variation khác giá không bị mất; bất kỳ thay đổi dù tổng tiền bằng nhau cũng cần re-confirm.
 - [ ] AC-09 Reservation và submit idempotent; các price segments `PAID` và `GIFT` cùng variant được gộp nhu cầu vật lý, EX-18 chỉ giữ chỗ đúng 3 chiếc một lần; composite và concurrency không cấp/giữ chỗ trùng.
@@ -307,10 +323,10 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 
 **R-04 — Gift fulfillment:** đề xuất chỉ cấp quà READY và đã chứng minh capacity, bao gồm composite nếu hỗ trợ; không tự dùng PREORDER/OVERSELL cho quà.
 
-**R-05 — Cách diễn giải `FROM_REACHED_THRESHOLD` khi nhiều bậc:** đề xuất số chiếc giảm = Q − N(thắng) + 1, mức giảm của bậc thắng, ranking theo giá ngay trước step.
+**R-05 — Cách diễn giải `FROM_REACHED_THRESHOLD` khi nhiều bậc — PHƯƠNG ÁN ĐỀ XUẤT CHỜ OWNER DUYỆT:** dùng `N0 = min(minQuantity)` làm mốc chiếc bắt đầu giảm cho toàn bộ chương trình, `discountValue` ở bậc **cao nhất** đang đạt áp lên `Q-N0+1` chiếc; giá trị giảm theo bậc không được giảm. Cách cũ `Q-N(winning)+1` bị loại trong **bản đề xuất** vì có thể làm tổng ưu đãi giảm khi Q tăng (EX-19: 100.000đ → 75.000đ); đề xuất mới Q=3 100.000đ → Q=4 225.000đ. Đây **không phải quy tắc người dùng đã chốt trong interview**; chủ dự án phải xác nhận tại review spec trước `/plan`/`/build` phần tier.
 
 **R-06 — POS acceptance (hard blocker):** kiểm chứng live có operator phê duyệt cho (a) quà giá 0đ, (b) PAID+GIFT trùng variation, (c) **PAID+PAID trùng variation với giá khác nhau**; read-back unit/quantity/totals, cancel/reconcile, rollback an toàn. Nếu (c) không đạt, trước `/build` phải có phương án thay thế được chủ dự án duyệt, giữ chính xác 290.003đ của EX-17; không bình quân/làm tròn giá. Các gate (a)/(b) vẫn độc lập.
 
 **R-07 — Phân cấp category:** xác minh category scope cha/con và snapshot fixed theo category resolver site-owned đang dùng, tránh tính sản phẩm ngoài danh mục Admin nghĩ mình đã chọn.
 
-**Trạng thái cuối:** hoàn thành bản spec để **chủ dự án review và duyệt**. **Chưa `/plan`, chưa `/build`, chưa migration/code change, chưa chạy tests hoặc nghiệm thu Pancake trong lượt này.**
+**Trạng thái cuối:** 4 self-review findings về fixed snapshot, VND overflow, FROM multi-tier và global scope đã được xử lý **trong bản đề xuất spec** với examples/AC. **R-05 vẫn yêu cầu chủ dự án xác nhận cách tính `N0`**, cùng các quyết định R-01..R-04/R-07 và gate Pancake R-06; chưa `/plan`, chưa `/build`, chưa migration/code change hoặc live POS acceptance.
