@@ -1,0 +1,50 @@
+# ADR 0016: Gift & Quantity Promotions v1 — owner decisions (H0) and Pancake gift projection
+
+- **Status:** Accepted (owner decisions recorded 2026-10-13 in the `/build` session; see "Evidence of approval")
+- **Date:** 2026-10-13
+- **Governs:** [`docs/specs/gift-quantity-promotions-v1.md`](../specs/gift-quantity-promotions-v1.md) R-01..R-05, R-07, VND rounding and the Pancake gift representation. Plan: [`tasks/gift-quantity-promotions-v1-plan.md`](../../tasks/gift-quantity-promotions-v1-plan.md), task GQ00.
+- **Does not decide:** R-06 live Pancake acceptance (still a separate operator gate, see "Pancake gate"), production enablement (`/ship`).
+
+## Evidence of approval
+
+The shop owner answered each decision explicitly in the `/build` session (AskUserQuestion answers, 2026-10-13). Each answer selected the option the spec marked as its proposal; the owner did not choose an alternative for any item. The Pancake 1đ gift representation (D-08) was stated by the owner in the same session together with a screenshot of a Pancake order that lists the same SKU on several lines with different unit prices.
+
+## Decisions
+
+| ID | Topic | Decision |
+|---|---|---|
+| D-01 (R-01) | Stack pairing | Two campaigns stack only when **both** allow combining with each other (type-level and/or campaign-ID level, checked in both directions). Priority must be unique among campaigns acting on the same unit price. Campaigns without stack configuration keep today's behaviour (legacy overlap resolves to base price). Contradictory configuration at runtime fails closed with a warning; never random. |
+| D-02 (R-02) | Legacy `FIXED_PRICE` in a stack | Acts as a **price ceiling**: `next = min(current, configuredFixedPriceVnd)`. Standalone semantics (final per-unit price) and historical data are unchanged. |
+| D-03 (R-03) | Duplicate gift identity | When `allowDuplicateGifts = false`, at most one unit **per `ProductMirror`** within a campaign, regardless of variant. |
+| D-04 (R-04) | Gift fulfilment | Only variants that can be delivered **READY** with proven capacity. No PREORDER/OVERSELL for free gifts. Composite gifts are allowed only when every component can be checked and reserved; until GQ17 delivers that, composite variants are excluded from gift allowlists. |
+| D-05 (R-05) | FROM_REACHED_THRESHOLD | `N0 = min(minQuantity)` of the campaign. The discount value comes from the **highest reached tier**; it is applied to `Q − N0 + 1` units when `Q >= N0`, else 0. Discount values must be non-decreasing with the tier threshold. EX-19 holds (Q=3 → 100.000đ, Q=4 → 225.000đ). |
+| D-06 | VND rounding | **Half-up with `BigInt` on each unit's price**, then group units into lines. Never round a line total and never average. `100.001 × 90% = 90.001`; `5 × 90% = 5` per unit, so 3 units = 15đ. |
+| D-07 (R-07) | Category parent/child | Use the existing `category-taxonomy.ts` resolver (`categoryListingKeys`) and website-owned `ProductCategoryMembership`; promotions invent no hierarchy of their own. |
+| D-08 | Pancake gift representation | See below. |
+
+## D-08 — Pancake gift projection (owner request)
+
+For accounting convenience the owner wants gift units sent to Pancake with **a price of 1đ per unit**, with the same amount **deducted from the paid goods**, so the Pancake order total equals the website total exactly.
+
+The website remains the authority. The change is confined to the *outbound vendor projection*:
+
+1. **Website quote, proof and order snapshot are unchanged.** Gift lines stay `role = GIFT`, `unitPriceVnd = 0`; paid lines keep their exact segment prices. The buyer sees 0đ for gifts, the quote proof signs 0đ, analytics/Meta Purchase use the website snapshot (gifts contribute 0 revenue), shipping uses paid-only quantity and subtotal. The buyer never sees the 1đ.
+2. **Projection (pure function, GQ20).** Input: the signed paid/gift lines. `G` = total gift units. Output lines for Pancake:
+   - gift lines: `variation`, `quantity`, `unitPriceVnd = 1` (grouped per variation);
+   - paid lines: the same segments, except that a total of `G` đ is removed from paid *units*: iterate paid units ordered by unit price descending, then `lineId` ascending, then unit index; from each take `min(remaining, unitPrice − 1)` đ. The affected unit becomes its own line (quantity 1, reduced unit price); identical `(variation, price)` units are re-grouped.
+   - The sum of projected lines **must equal** the sum of website paid lines. If `remaining > 0` after all units (all paid units at 1đ) the projection is infeasible → fail closed (`VENDOR_PROJECTION_INFEASIBLE`), no POS call, buyer is re-quoted/blocked.
+3. **Audit.** The projection that was sent (lines + hash) is stored with the order snapshot so reconciliation compares Pancake read-back against **the projection**, and compares order totals against the website total. Website lines are never rewritten to match the vendor shape.
+4. **Idempotency/determinism.** The projection is a pure function of the signed lines; retries produce the identical payload.
+5. **Consequence for the POS gate.** Case (a) “gift at 0đ” is no longer needed for the flow (a 1đ line is an ordinary positive custom price, the case P10 proved). The projection *does* always produce lines with the same `pancakeVariationId` and different unit prices when a gift/paid unit pair share a variant or when a deduction splits a paid segment, so cases (b) PAID+GIFT same variation and (c) PAID+PAID same variation different prices remain required at **API level**. The owner's screenshot shows the Pancake UI accepts several lines of one SKU with different prices (including 0đ and 7đ); that is UI evidence, not API evidence.
+
+## Pancake gate (R-06) status
+
+- No live Pancake call was made or authorised in this task. GQ01 delivers a probe script and runbook only; running it needs independent operator approval at execution time.
+- Until API evidence for (b) and (c) exists, the gift and `FROM_REACHED_THRESHOLD` paths stay behind the default-OFF gate and no task may be reported as "live-verified". `ALL_ELIGIBLE_UNITS` tiers without gifts emit one line per variation/price and do not depend on (b)/(c).
+
+## Consequences
+
+- GQ01 probe cases become: (b′) PAID + GIFT@1đ same variation; (c) PAID + PAID same variation / different price (EX-17, 290.003đ); (a) 0đ remains an optional informational case.
+- GQ15 snapshot stores the vendor projection (lines + hash). GQ20 implements and unit-tests the projection with mocks. GQ21 reconciles read-back against the projection.
+- Spec examples EX-13/EX-17/EX-18 gain a vendor-projection expectation; website-side expectations are unchanged.
+- No change to legacy `FIXED_PRICE` data, catalog prices in Pancake, or historical orders.

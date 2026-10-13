@@ -1,7 +1,7 @@
 # SPEC-PRM-002 — Khuyến mại tặng sản phẩm và giảm giá theo số lượng (v1)
 
 **Project:** La.na Design Storefront  
-**Status:** DRAFT — đã xác nhận yêu cầu interview; chờ chủ dự án duyệt spec trước `/plan` và `/build`  
+**Status:** H0 APPROVED 13/10/2026 — R-01..R-05, R-07 và làm tròn đã được owner chốt theo đề xuất, ghi tại [ADR 0016](../decisions/0016-gift-quantity-promotions-v1-decisions.md); **R-06 (POS API acceptance) vẫn mở**; quà gửi Pancake giá 1đ theo ADR 0016 D-08  
 **Ngày:** 13/10/2026  
 **Repository baseline tham khảo:** `nguyentuanson27-netizen/la.na_design_storefront`, `main@7371a791af4e`  
 **Vị trí dự kiến trong repo:** `docs/specs/gift-quantity-promotions-v1.md`
@@ -329,4 +329,6 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 
 **R-07 — Phân cấp category:** xác minh category scope cha/con và snapshot fixed theo category resolver site-owned đang dùng, tránh tính sản phẩm ngoài danh mục Admin nghĩ mình đã chọn.
 
-**Trạng thái cuối:** 4 self-review findings về fixed snapshot, VND overflow, FROM multi-tier và global scope đã được xử lý **trong bản đề xuất spec** với examples/AC. **R-05 vẫn yêu cầu chủ dự án xác nhận cách tính `N0`**, cùng các quyết định R-01..R-04/R-07 và gate Pancake R-06; chưa `/plan`, chưa `/build`, chưa migration/code change hoặc live POS acceptance.
+**Cập nhật H0 (13/10/2026):** R-01, R-02, R-03, R-04, R-05 (`N0`), R-07 và làm tròn half-up BigInt trên đơn giá từng chiếc đã được owner chấp thuận đúng như đề xuất — xem ADR 0016. **D-08:** khi gửi Pancake, mỗi chiếc quà có giá **1đ** và tổng số đồng này được trừ khỏi các chiếc hàng mua (đơn Pancake bằng tổng website); quote/proof/snapshot/analytics của website vẫn ghi quà 0đ. R-06 còn mở ở mức API cho (b) PAID+GIFT cùng variation và (c) PAID+PAID khác giá; case (a) quà 0đ không còn cần cho luồng.
+
+**Trạng thái trước H0 (lịch sử):** 4 self-review findings về fixed snapshot, VND overflow, FROM multi-tier và global scope đã được xử lý **trong bản đề xuất spec** với examples/AC. **R-05 vẫn yêu cầu chủ dự án xác nhận cách tính `N0`**, cùng các quyết định R-01..R-04/R-07 và gate Pancake R-06; chưa `/plan`, chưa `/build`, chưa migration/code change hoặc live POS acceptance.
