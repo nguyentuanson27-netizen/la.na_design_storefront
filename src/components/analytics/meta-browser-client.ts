@@ -4,6 +4,8 @@ import { trackFacebookPixelEvent, type FacebookPixelEventParameters } from "./fa
 import type { CommittedMetaEvent } from "@/commerce/meta-event-reporting";
 import { readMetaPagePath } from "@/integrations/meta/page-source";
 
+import { whenMetaBrowserIdKnown } from "./meta-browser-id-wait";
+
 const CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
 let observedUrl: string | null = null;
 const observedEvents = new Set<string>();
@@ -33,10 +35,13 @@ export function trackMetaBrowserEvent(name: "PageView" | "ViewContent" | "Initia
     const signal = name === "PageView" ? { eventId, path }
       : receipt ? { receipt } : null;
     // Browser occurrence and Pixel delivery are independent: blockers must not silence CAPI.
-    if (signal) void fetch("/api/meta/events", {
+    // The server reads the page (and any fbclid) from the referrer, so pin it to the URL the event
+    // happened on: the signal may leave after a client-side navigation to another page.
+    const referrer = window.location.href;
+    if (signal) whenMetaBrowserIdKnown(() => void fetch("/api/meta/events", {
       method: "POST", headers: { "content-type": "application/json" },
-      credentials: "same-origin", keepalive: true, body: JSON.stringify(signal),
-    }).catch(() => undefined);
+      credentials: "same-origin", keepalive: true, referrer, body: JSON.stringify(signal),
+    }).catch(() => undefined));
   } catch { /* Measurement never interrupts a shopper. */ }
 }
 
