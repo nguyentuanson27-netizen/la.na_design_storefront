@@ -72,6 +72,68 @@ enum PromotionDiscountType {
   FIXED_PRICE
 }
 
+/// Gift & Quantity Promotions v1 (ADR 0016). Deliberately separate from `PromotionCampaignKind` /
+/// `PromotionDiscountType`: legacy readers never see these rows, so a new rule can never be priced
+/// by the legacy resolver and the legacy enums keep their exact meaning.
+enum GiftQuantityCampaignKind {
+  GIFT_ITEM
+  QUANTITY_TIER
+}
+
+enum GiftQuantityScopeMode {
+  /// Only for GIFT_ITEM + ORDER_SUBTOTAL + ALL_PAID_LINES: every paid line, no targets.
+  GLOBAL_ALL_PAID_LINES
+  /// Category membership is read when the benefit is evaluated.
+  DYNAMIC_CATEGORY
+  /// Product ids frozen in the publish transaction (`GiftQuantityFrozenProduct`).
+  FIXED_PRODUCT_SET
+}
+
+enum GiftTrigger {
+  QUANTITY
+  ORDER_SUBTOTAL
+}
+
+enum GiftSubtotalScope {
+  ALL_PAID_LINES
+  ELIGIBLE_PAID_LINES
+}
+
+enum GiftAwardMode {
+  ONCE
+  REPEAT_PER_THRESHOLD
+}
+
+enum QuantityTierDiscountUnit {
+  PERCENTAGE
+  /// VND taken off each discounted unit. Never a total, never a fixed sale price.
+  FIXED_AMOUNT_PER_UNIT_VND
+}
+
+enum QuantityTierDiscountedUnits {
+  ALL_ELIGIBLE_UNITS
+  FROM_REACHED_THRESHOLD
+}
+
+enum QuantityTierSelectionPriority {
+  CHEAPEST_FIRST
+  MOST_EXPENSIVE_FIRST
+}
+
+enum GiftQuantityScopeTargetRole {
+  INCLUDE
+  EXCLUDE
+}
+
+/// Which side of a stack pairing a peer names. A pairing is only effective when both campaigns
+/// allow each other (ADR 0016 D-01); the two-way check is the lifecycle service's job.
+enum GiftQuantityStackPeerKind {
+  PROMOTION
+  FLASH_SALE
+  CLEARANCE
+  QUANTITY_TIER
+}
+
 /// ADR 0014 §5. Website-owned; Pancake catalog sync never writes it (master spec §27).
 enum SellingMode {
   STANDARD
@@ -203,6 +265,8 @@ model ProductMirror {
   merchantFacts     ProductMerchantFacts?
   slugHistory       ProductSlugHistory[]
   promotionTargets  PromotionTarget[]
+  giftQuantityTargets         GiftQuantityTarget[]
+  giftQuantityFrozenProducts  GiftQuantityFrozenProduct[]
 
   homepageFeature      HomepageFeaturedProduct?
   newArrival           NewArrivalProduct?
@@ -359,6 +423,141 @@ model PromotionPricingRevision {
   updatedAt DateTime @updatedAt
 }
 
+/// One gift or quantity-tier campaign (Gift & Quantity Promotions v1).
+///
+/// Lifecycle fields mean exactly what they mean on `PromotionCampaign` and feed the same derived
+/// status (Draft / Scheduled / Active / Ended / Disabled): status is never stored.
+///
+/// What the database enforces is what is universal at rest: enum membership, the exclusivity of the
+/// gift and tier field groups, the global-scope shape, bounds, and the identity/shape of children.
+/// A Draft may be incomplete or business-invalid; the lifecycle service validates completeness and
+/// economics at Publish / re-enable / Scheduled material edit.
+///
+/// `revision` is the campaign's own economic revision (bumped by the lifecycle service on edits that
+/// change economics); it is what a frozen scope snapshot and a signed quote pin themselves to.
+model GiftQuantityCampaign {
+  id         String                   @id @default(cuid())
+  kind       GiftQuantityCampaignKind
+  name       String
+  startsAt   DateTime?
+  endsAt     DateTime?
+  isEnabled  Boolean                  @default(false)
+  enabledAt  DateTime?
+  disabledAt DateTime?
+  revision   Int                      @default(1)
+  createdAt  DateTime                 @default(now())
+  updatedAt  DateTime                 @updatedAt
+
+  /// Stack priority: lower runs first. Unique among campaigns acting on the same unit price is a
+  /// publish-time rule, not a column constraint (legacy campaigns have no priority).
+  stackPriority   Int?
+  stackingEnabled Boolean @default(false)
+
+  scopeMode              GiftQuantityScopeMode @default(DYNAMIC_CATEGORY)
+  categoryKeys           String[]              @default([])
+  /// Fixed scope audit: when the product set was frozen and at which campaign revision. Both null
+  /// or both set; the frozen ids live in `GiftQuantityFrozenProduct`.
+  frozenAt               DateTime?
+  frozenCampaignRevision Int?
+
+  // GIFT_ITEM rule
+  giftTrigger         GiftTrigger?
+  minimumQuantity     Int?
+  minimumSubtotalVnd  BigInt?
+  subtotalScope       GiftSubtotalScope?
+  awardMode           GiftAwardMode?
+  maxGiftsPerOrder    Int?
+  allowDuplicateGifts Boolean?
+
+  // QUANTITY_TIER rule. One unit for the whole campaign: methods are never mixed.
+  tierUnit              QuantityTierDiscountUnit?
+  tierDiscountedUnits   QuantityTierDiscountedUnits?
+  tierSelectionPriority QuantityTierSelectionPriority?
+
+  targets     GiftQuantityTarget[]
+  frozen      GiftQuantityFrozenProduct[]
+  tiers       QuantityTier[]
+  giftOptions GiftOption[]
+  stackPeers  GiftQuantityStackPeer[]
+
+  @@unique([id, kind])
+  @@unique([id, kind, tierUnit])
+  @@index([isEnabled, startsAt, endsAt])
+}
+
+/// Explicit product include / exclude entries. Exclude always wins at evaluation; a product may be
+/// listed once per campaign, so an include and an exclude of the same product cannot coexist.
+model GiftQuantityTarget {
+  id         String                      @id @default(cuid())
+  campaignId String
+  productId  String
+  role       GiftQuantityScopeTargetRole
+  createdAt  DateTime                    @default(now())
+  campaign   GiftQuantityCampaign        @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  product    ProductMirror               @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, productId])
+  @@index([productId])
+}
+
+/// The frozen product set of a FIXED_PRODUCT_SET campaign. Written only inside the transaction that
+/// publishes / re-enables / edits the scope of a campaign, never at its start time.
+model GiftQuantityFrozenProduct {
+  campaignId String
+  productId  String
+  campaign   GiftQuantityCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  product    ProductMirror        @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@id([campaignId, productId])
+  @@index([productId])
+}
+
+/// A quantity tier. `campaignKind` is fixed to QUANTITY_TIER and part of the foreign key, so a tier
+/// can only ever hang off a QUANTITY_TIER campaign.
+model QuantityTier {
+  id            String                   @id @default(cuid())
+  campaignId    String
+  campaignKind  GiftQuantityCampaignKind @default(QUANTITY_TIER)
+  /// Copy of the parent's `tierUnit`, held in step by an `ON UPDATE CASCADE` composite foreign key.
+  /// It exists so the database itself can bound a percentage tier to 1..99; a tier can therefore
+  /// only be written once the campaign has chosen its unit, and the unit cannot be switched to
+  /// `PERCENTAGE` while any tier holds a value above 99.
+  unit          QuantityTierDiscountUnit
+  minQuantity   Int
+  /// Percent (1..99) or VND per discounted unit, per `unit`.
+  discountValue Int
+  createdAt     DateTime                 @default(now())
+  campaign      GiftQuantityCampaign     @relation(fields: [campaignId, campaignKind, unit], references: [id, kind, tierUnit], onDelete: Cascade, onUpdate: Cascade)
+
+  @@unique([campaignId, minQuantity])
+}
+
+/// One variant a gift campaign may give. Same shape rule as `QuantityTier`: GIFT_ITEM campaigns only.
+model GiftOption {
+  id           String                   @id @default(cuid())
+  campaignId   String
+  campaignKind GiftQuantityCampaignKind @default(GIFT_ITEM)
+  variantId    String
+  createdAt    DateTime                 @default(now())
+  campaign     GiftQuantityCampaign     @relation(fields: [campaignId, campaignKind], references: [id, kind], onDelete: Cascade)
+  variant      VariantMirror            @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, variantId])
+  @@index([variantId])
+}
+
+/// A stack permission this campaign grants. `peerCampaignId = "*"` means every campaign of that kind.
+model GiftQuantityStackPeer {
+  id             String                    @id @default(cuid())
+  campaignId     String
+  peerKind       GiftQuantityStackPeerKind
+  peerCampaignId String
+  createdAt      DateTime                  @default(now())
+  campaign       GiftQuantityCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, peerKind, peerCampaignId])
+}
+
 model VariantMirror {
   id                              String                     @id @default(cuid())
   pancakeVariationId              String                     @unique
@@ -388,6 +587,7 @@ model VariantMirror {
   compositeComponents             CompositeComponentMirror[] @relation("CompositeParent")
   compositeParents                CompositeComponentMirror[] @relation("CompositeComponent")
   promotionTargets                PromotionTarget[]
+  giftOptions                     GiftOption[]
   capacityReservations            VariantCapacityReservation[]
   capacityReservationResources    CapacityReservationResource[]
   availabilityCycle               VariantAvailabilityCycle?

@@ -34,11 +34,12 @@
   - [x] Một set thương mại = một chiếc, các mẫu/size khác nhau cộng số lượng; parent/child category theo resolver đã được duyệt.
   - [x] **Evidence:** `node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/gift-quantity-scope.test.ts`
   - Evidence: `tests/domain/gift-quantity-scope.test.ts` 16/16 pass (EX-05/06/16/22, include/exclude, bounds, frozen never widens, global refused outside GIFT ORDER_SUBTOTAL ALL_PAID_LINES); `src/commerce/gift-quantity-scope.ts`; parent/child via `categoryListingKeys` (ADR 0016 D-07).
-- [ ] **GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược** _(deps: GQ00, GQ02; gate: MIGRATION/FLAG-OFF)_
-  - [ ] Constraints ngăn invalid enum, duplicate tier threshold/target, mixed discount method và orphan references; legacy row đọc như trước.
-  - [ ] Migration additive + down/feature-off strategy được review, không viết lại price/order lịch sử.
-  - [ ] Persist/read config round-trip; độc lập gate default-OFF khi unset/invalid/legacy-ON, chỉ exact `true` bật; schema, DB & domain gate tests pass.
-  - [ ] **Evidence:** `pnpm prisma:validate` ; focused `tests/database/gift-quantity-persistence.test.ts` + `tests/domain/gift-quantity-gate.test.ts` (OFF/ON/invalid, legacy independent).
+- [x] **GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược** _(deps: GQ00, GQ02; gate: MIGRATION/FLAG-OFF)_
+  - [x] Constraints ngăn invalid enum, duplicate tier threshold/target, mixed discount method và orphan references; legacy row đọc như trước.
+  - [x] Migration additive + down/feature-off strategy được review, không viết lại price/order lịch sử.
+  - [x] Persist/read config round-trip; độc lập gate default-OFF khi unset/invalid/legacy-ON, chỉ exact `true` bật; schema, DB & domain gate tests pass.
+  - [x] **Evidence:** `pnpm prisma:validate` ; focused `tests/database/gift-quantity-persistence.test.ts` + `tests/domain/gift-quantity-gate.test.ts` (OFF/ON/invalid, legacy independent).
+  - Evidence: migration `20261013120000_add_gift_quantity_campaigns` (additive, own tables/enums, rollback = drop tables then types, documented in the migration header; ADR 0016 D-09); `tests/database/gift-quantity-persistence.test.ts` 19/19 and `tests/domain/gift-quantity-gate.test.ts` 5/5 pass; `pnpm prisma:validate` ok; full `pnpm test:db` 642/642 and `pnpm test` 2852/2852 (1 skipped) locally.
 - [ ] **GQ04 — Freeze fixed product IDs trong transaction publish/Scheduled edit** _(deps: GQ02, GQ03; gate: SCHEMA/LOCK)_
   - [ ] Publish/re-enable ghi frozen IDs, frozenAt, revision cùng commit; Scheduled chuyển Active theo clock và zero-traffic không mutate.
   - [ ] Sửa scope của Scheduled atomic revalidate/replace; sửa tên hoặc giờ không âm thầm đổi frozen IDs.

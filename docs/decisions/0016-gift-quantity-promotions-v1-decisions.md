@@ -21,6 +21,7 @@ The shop owner answered each decision explicitly in the `/build` session (AskUse
 | D-06 | VND rounding | **Half-up with `BigInt` on each unit's price**, then group units into lines. Never round a line total and never average. `100.001 × 90% = 90.001`; `5 × 90% = 5` per unit, so 3 units = 15đ. |
 | D-07 (R-07) | Category parent/child | Use the existing `category-taxonomy.ts` resolver (`categoryListingKeys`) and website-owned `ProductCategoryMembership`; promotions invent no hierarchy of their own. |
 | D-08 | Pancake gift representation | See below. |
+| D-09 | Persistence isolation (GQ03) | Gift and quantity-tier campaigns live in **their own tables and enums** (`GiftQuantityCampaign`, `GiftQuantityTarget`, `GiftQuantityFrozenProduct`, `QuantityTier`, `GiftOption`, `GiftQuantityStackPeer`), not as new `PromotionCampaignKind` values. Reason: legacy readers (candidate lookup, flash-sale/sale listings, Merchant, runtime health, order audit) select `PromotionCampaign` rows and would otherwise have to be audited and kept from pricing a row whose `discountType` is meaningless for the new rules; separate tables make that impossible by construction and leave legacy data, enums and constraints untouched. Lifecycle fields keep the same meaning and the same derived status; the lifecycle service shares the global `PromotionPricingRevision` lock and revision. Gate: `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED`, exact `"true"`, independent of `LA_PROMOTION_ACTIVATION_ENABLED`. |
 
 ## D-08 — Pancake gift projection (owner request)
 
