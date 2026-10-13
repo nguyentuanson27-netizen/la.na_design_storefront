@@ -56,11 +56,12 @@
   - [ ] **Evidence:** `pnpm test:domain` ; `pnpm test:db` ; manual admin preview trong sandbox
 
 ### Quantity tier: engine to buyer quote
-- [ ] **GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety** _(deps: GQ00, GQ02; gate: R-05 + H0 ROUNDING)_
-  - [ ] EX-07/08/17/19: bậc cao nhất, FROM allocation, nhiều biến thể, paid split 290.003đ; không bình quân.
-  - [ ] Bậc discount không giảm và giá trị fixed VND phải dương; `TIER_PRICE_INVALID` khi giá còn lại ≤ số tiền giảm.
-  - [ ] No overflow/negative/0đ paid; stable paid segments và boundary theo rounding được owner duyệt; nếu half-up mỗi chiếc: `100.001×90%=90.001`, `5×90%=5` mỗi chiếc, qty=3→15 thay vì line-round 14.
-  - [ ] **Evidence:** Focused `tests/domain/gift-quantity-tier.test.ts` ; `pnpm test:domain`
+- [x] **GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety** _(deps: GQ00, GQ02; gate: R-05 + H0 ROUNDING)_
+  - [x] EX-07/08/17/19: bậc cao nhất, FROM allocation, nhiều biến thể, paid split 290.003đ; không bình quân.
+  - [x] Bậc discount không giảm và giá trị fixed VND phải dương; `TIER_PRICE_INVALID` khi giá còn lại ≤ số tiền giảm.
+  - [x] No overflow/negative/0đ paid; stable paid segments và boundary theo rounding được owner duyệt; nếu half-up mỗi chiếc: `100.001×90%=90.001`, `5×90%=5` mỗi chiếc, qty=3→15 thay vì line-round 14.
+  - [x] **Evidence:** Focused `tests/domain/gift-quantity-tier.test.ts` ; `pnpm test:domain`
+  - Evidence: `src/commerce/gift-quantity-tier.ts` + `tests/domain/gift-quantity-tier.test.ts` 21/21 pass: EX-07/08/17/19, highest-tier-only, FROM from N0, half-up per unit (`5×90%=5`, 3 units = 15), 290.003đ split without averaging, whole-tier `TIER_PRICE_INVALID` (no clamp, no partial), monotonic-benefit property, bounds/overflow; `pnpm test:domain` locally.
 - [ ] **GQ07 — Stacking policy, priority và adapter legacy price** _(deps: GQ00, GQ06; gate: R-01/R-02)_
   - [ ] EX-09: 1m → 900k → 855k; conflict/priority tie fail-closed theo R-01.
   - [ ] Legacy `FIXED_PRICE` R-02; consume gate GQ03 và OFF parity với resolver cũ kể cả legacy activation ON.
