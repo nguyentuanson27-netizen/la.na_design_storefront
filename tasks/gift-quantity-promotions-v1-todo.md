@@ -28,11 +28,12 @@
   - [x] **Evidence (offline):** `tests/domain/pancake-gift-quantity-capability-probe.test.ts` 16/16 pass; runbook [`docs/integrations/pancake-gift-quantity-acceptance.md`](../docs/integrations/pancake-gift-quantity-acceptance.md). **Live evidence log: NOT RUN.**
 
 ### Scope & persistence
-- [ ] **GQ02 — Quy ước scope Dynamic/Fixed/Global theo taxonomy hiện có** _(deps: GQ00; gate: R-07)_
-  - [ ] Dynamic đọc membership hiện tại; Fixed chỉ nhận frozen ProductMirror IDs; include/exclude đúng ưu tiên và bounded.
-  - [ ] `GLOBAL_ALL_PAID_LINES` không đòi category/targets nhưng không được kết hợp includes/excludes; eligible subtype đòi scope.
-  - [ ] Một set thương mại = một chiếc, các mẫu/size khác nhau cộng số lượng; parent/child category theo resolver đã được duyệt.
-  - [ ] **Evidence:** `node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/gift-quantity-scope.test.ts`
+- [x] **GQ02 — Quy ước scope Dynamic/Fixed/Global theo taxonomy hiện có** _(deps: GQ00; gate: R-07)_
+  - [x] Dynamic đọc membership hiện tại; Fixed chỉ nhận frozen ProductMirror IDs; include/exclude đúng ưu tiên và bounded.
+  - [x] `GLOBAL_ALL_PAID_LINES` không đòi category/targets nhưng không được kết hợp includes/excludes; eligible subtype đòi scope.
+  - [x] Một set thương mại = một chiếc, các mẫu/size khác nhau cộng số lượng; parent/child category theo resolver đã được duyệt.
+  - [x] **Evidence:** `node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/gift-quantity-scope.test.ts`
+  - Evidence: `tests/domain/gift-quantity-scope.test.ts` 16/16 pass (EX-05/06/16/22, include/exclude, bounds, frozen never widens, global refused outside GIFT ORDER_SUBTOTAL ALL_PAID_LINES); `src/commerce/gift-quantity-scope.ts`; parent/child via `categoryListingKeys` (ADR 0016 D-07).
 - [ ] **GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược** _(deps: GQ00, GQ02; gate: MIGRATION/FLAG-OFF)_
   - [ ] Constraints ngăn invalid enum, duplicate tier threshold/target, mixed discount method và orphan references; legacy row đọc như trước.
   - [ ] Migration additive + down/feature-off strategy được review, không viết lại price/order lịch sử.
