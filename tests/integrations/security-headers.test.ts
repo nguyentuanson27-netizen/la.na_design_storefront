@@ -79,6 +79,7 @@ test("no pixel configured means no third-party origin is allowed", async () => {
 
   // An unused allowance for a third-party script origin is a hole with nothing behind it.
   assert.doesNotMatch(csp, /facebook/);
+  assert.doesNotMatch(csp, /\.on\.aws|\.run\.app/);
 });
 
 test("a configured pixel opens exactly the origins it needs and nothing wider", async () => {
@@ -89,6 +90,18 @@ test("a configured pixel opens exactly the origins it needs and nothing wider", 
     assert.match(csp, /script-src[^;]*https:\/\/connect\.facebook\.net/);
     assert.match(csp, /img-src[^;]*https:\/\/www\.facebook\.com/);
     assert.match(csp, /connect-src[^;]*https:\/\/www\.facebook\.com/);
+
+    // The business's Conversions API Gateway receives a copy of each pixel event by fetch only.
+    const directive = (name: string) => csp.match(new RegExp(`(?:^|; )${name} ([^;]*)`))?.[1] ?? "";
+    const gatewayOrigins = (value: string) =>
+      value.split(" ").filter((token) => /\.on\.aws$|\.run\.app$/.test(token));
+    assert.deepEqual(gatewayOrigins(directive("connect-src")), [
+      "https://xd-f1cf3d4fdb19408ea770fc6f80817dcb.ecs.us-east-1.on.aws",
+      "https://bded8a3c6ae-1-1053047382554.us-central1.run.app",
+    ]);
+    for (const name of ["script-src", "img-src", "frame-src", "default-src"]) {
+      assert.deepEqual(gatewayOrigins(directive(name)), [], `${name} must not admit the gateway`);
+    }
 
     // The baseline must survive the additions: still no wildcards, still no eval.
     assert.match(csp, /default-src 'self'/);

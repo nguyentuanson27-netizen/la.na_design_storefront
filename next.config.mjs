@@ -20,8 +20,17 @@ if (configuredFacebookPixelId.length > 0 && !/^[0-9]{15,16}$/.test(configuredFac
 const hasFacebookPixel = configuredFacebookPixelId.length > 0;
 const facebookScriptSrc = hasFacebookPixel ? " https://connect.facebook.net" : "";
 const facebookImgSrc = hasFacebookPixel ? " https://www.facebook.com" : "";
+// La.na's own Conversions API Gateway. Once fbevents.js reads the pixel's signals config, Meta has
+// it post a copy of every browser event to the gateway the business connected to that pixel, from
+// the page, as a fetch. Both origins were observed in a production browser run (2026-10-13) and
+// confirmed as the business's own gateway cluster in Events Manager: the primary on AWS and its
+// fallback on Cloud Run. They are opened by name, never by wildcard; a redeployed gateway gets new
+// hostnames and must be added here again.
+const metaCapiGatewayConnectSrc =
+  " https://xd-f1cf3d4fdb19408ea770fc6f80817dcb.ecs.us-east-1.on.aws"
+  + " https://bded8a3c6ae-1-1053047382554.us-central1.run.app";
 const facebookConnectSrc = hasFacebookPixel
-  ? " https://www.facebook.com https://connect.facebook.net"
+  ? ` https://www.facebook.com https://connect.facebook.net${metaCapiGatewayConnectSrc}`
   : "";
 
 // ChatGPT Ads Measurement Pixel. Like Meta, this is a build input because the CSP is baked into
