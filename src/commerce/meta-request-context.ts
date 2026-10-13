@@ -8,7 +8,7 @@ import { reportMetaEventSafely, type CommittedMetaEvent } from "./meta-event-rep
 import { reportMetaPurchaseSafely, type MetaPurchaseRequestContext } from "./meta-purchase-reporting.ts";
 import { readMetaConversionsConfig, type MetaConversionsConfig } from "../integrations/meta/pixel-config.ts";
 import { validateMetaCookie } from "../integrations/meta/conversions-api.ts";
-import { META_VISITOR_ID_COOKIE } from "../integrations/meta/first-party-cookies.ts";
+import { META_VISITOR_ID_COOKIE, readMetaExternalId } from "../integrations/meta/first-party-cookies.ts";
 import { readMetaPagePath } from "./meta-browser-receipt.ts";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 
@@ -31,7 +31,7 @@ export async function readMetaRequestContext(path: string): Promise<MetaPurchase
     clientUserAgent: requestHeaders.get("user-agent"),
     fbp: cookieStore.get("_fbp")?.value ?? null,
     fbc,
-    externalId: cookieStore.get(META_VISITOR_ID_COOKIE)?.value ?? null,
+    externalId: readMetaExternalId(cookieStore.get(META_VISITOR_ID_COOKIE)?.value),
     eventSourceUrl: `${readStorefrontOrigin()}${sourcePath}`,
   };
 }

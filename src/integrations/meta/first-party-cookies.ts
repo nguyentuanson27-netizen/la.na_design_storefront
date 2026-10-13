@@ -11,6 +11,10 @@
  *   Conversions API so every event from one browser ties together even when Meta's cookies do
  *   not survive. It is 256 random bits, nothing derived from the shopper; written as 64 lowercase
  *   hex digits it is already in the hashed form Meta expects, so both sides send it unchanged.
+ *
+ * Both are off unless `LA_META_FIRST_PARTY_COOKIES_ENABLED` is exactly `true`, a runtime switch
+ * like `LA_TRY_ON_ENABLED`. Turning it off also expires any `la_vid` already issued, so neither
+ * the pixel nor the Conversions API keeps sending it; `_fbc` stays, as the pixel writes it anyway.
  */
 
 import { META_COOKIE_MAX_LENGTH, META_FBC_PATTERN } from "./cookie-format.ts";
@@ -109,4 +113,51 @@ export function serializeMetaFirstPartyCookie(
   if (origin.hostname.startsWith("www.")) attributes.push(`Domain=${origin.hostname.slice(4)}`);
   if (origin.protocol === "https:") attributes.push("Secure");
   return attributes.join("; ");
+}
+
+/** The runtime switch for both cookies and for `external_id`. Anything but exact `true` is off. */
+export function readMetaFirstPartyCookiesEnabled(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): boolean {
+  return env.LA_META_FIRST_PARTY_COOKIES_ENABLED === "true";
+}
+
+/**
+ * The Set-Cookie values for one request: none unless it is a storefront page load. Switched on,
+ * `_fbc` for a new ad click and `la_vid` for a browser without one; switched off, only the expiry
+ * of an `la_vid` issued while it was on.
+ */
+export function metaFirstPartySetCookies(input: Readonly<{
+  enabled: boolean;
+  method: string;
+  pathname: string;
+  headers: HeaderReader;
+  fbclid: string | null;
+  clickIdCookie: string | undefined;
+  visitorIdCookie: string | undefined;
+  nowMs: number;
+  storefrontOrigin: string;
+}>): string[] {
+  const { method, pathname, headers, storefrontOrigin } = input;
+  if (!isMetaCookieNavigation({ method, pathname, headers })) return [];
+  if (!input.enabled) {
+    return input.visitorIdCookie === undefined
+      ? []
+      : [serializeMetaFirstPartyCookie(META_VISITOR_ID_COOKIE, "", 0, storefrontOrigin)];
+  }
+  const cookies: string[] = [];
+  const clickId = nextMetaClickIdCookie({ fbclid: input.fbclid, existing: input.clickIdCookie, nowMs: input.nowMs });
+  if (clickId !== null) {
+    cookies.push(serializeMetaFirstPartyCookie(META_CLICK_ID_COOKIE, clickId, META_CLICK_ID_MAX_AGE_SECONDS, storefrontOrigin));
+  }
+  const visitorId = nextMetaVisitorIdCookie(input.visitorIdCookie);
+  if (visitorId !== null) {
+    cookies.push(serializeMetaFirstPartyCookie(META_VISITOR_ID_COOKIE, visitorId, META_VISITOR_ID_MAX_AGE_SECONDS, storefrontOrigin));
+  }
+  return cookies;
+}
+
+/** The visitor ID to send as `external_id`: none while the switch is off. */
+export function readMetaExternalId(cookieValue: string | null | undefined): string | null {
+  return readMetaFirstPartyCookiesEnabled() ? readMetaVisitorId(cookieValue) : null;
 }

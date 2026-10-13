@@ -4,13 +4,9 @@ import { resolveConfiguredStorefrontProductSlug } from "@/commerce/storefront-ca
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
 import {
   META_CLICK_ID_COOKIE,
-  META_CLICK_ID_MAX_AGE_SECONDS,
   META_VISITOR_ID_COOKIE,
-  META_VISITOR_ID_MAX_AGE_SECONDS,
-  isMetaCookieNavigation,
-  nextMetaClickIdCookie,
-  nextMetaVisitorIdCookie,
-  serializeMetaFirstPartyCookie,
+  metaFirstPartySetCookies,
+  readMetaFirstPartyCookiesEnabled,
 } from "@/integrations/meta/first-party-cookies";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 
@@ -26,30 +22,25 @@ const META_PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").len
  * Writes the first-party cookies Meta's events match on: the ad click's `fbclid` as `_fbc`, so a
  * later Purchase still carries it when the pixel never ran or its cookie expired, and this site's
  * visitor ID as `la_vid`, sent as `external_id`. Only a browser's load of a public storefront page
- * counts (`isMetaCookieNavigation`); with no pixel configured nothing Meta-related is written at
- * all. Storefront pages are `private, no-store`, so no shared cache can hand one visitor's cookie
- * to another.
+ * counts, only while `LA_META_FIRST_PARTY_COOKIES_ENABLED` is on, and with no pixel configured
+ * nothing Meta-related is written at all. Storefront pages are `private, no-store`, so no shared
+ * cache can hand one visitor's cookie to another.
  */
 function applyMetaFirstPartyCookies(request: NextRequest, response: Response): void {
   if (!META_PIXEL_CONFIGURED) return;
-  const { method, nextUrl: { pathname }, headers } = request;
-  if (!isMetaCookieNavigation({ method, pathname, headers })) return;
   try {
-    const origin = readStorefrontOrigin();
-    const clickId = nextMetaClickIdCookie({
+    const cookies = metaFirstPartySetCookies({
+      enabled: readMetaFirstPartyCookiesEnabled(),
+      method: request.method,
+      pathname: request.nextUrl.pathname,
+      headers: request.headers,
       fbclid: request.nextUrl.searchParams.get("fbclid"),
-      existing: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
+      clickIdCookie: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
+      visitorIdCookie: request.cookies.get(META_VISITOR_ID_COOKIE)?.value,
       nowMs: Date.now(),
+      storefrontOrigin: readStorefrontOrigin(),
     });
-    if (clickId !== null) {
-      response.headers.append("Set-Cookie",
-        serializeMetaFirstPartyCookie(META_CLICK_ID_COOKIE, clickId, META_CLICK_ID_MAX_AGE_SECONDS, origin));
-    }
-    const visitorId = nextMetaVisitorIdCookie(request.cookies.get(META_VISITOR_ID_COOKIE)?.value);
-    if (visitorId !== null) {
-      response.headers.append("Set-Cookie",
-        serializeMetaFirstPartyCookie(META_VISITOR_ID_COOKIE, visitorId, META_VISITOR_ID_MAX_AGE_SECONDS, origin));
-    }
+    for (const cookie of cookies) response.headers.append("Set-Cookie", cookie);
   } catch {
     // Measurement never costs a shopper the page.
   }

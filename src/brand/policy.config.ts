@@ -263,6 +263,22 @@ export const POLICY_CONTENT = {
         ],
         items: [],
       },
+      {
+        heading: "11.7. Cookie và công cụ đo lường, quảng cáo",
+        paragraphs: [
+          "Website sử dụng cookie và các công nghệ tương tự để duy trì giỏ hàng và phiên đăng nhập, thống kê lượt truy cập, đo lường hiệu quả quảng cáo và hiển thị quảng cáo phù hợp hơn với khách hàng.",
+          "Ngoài các trường hợp nêu tại mục 11.3, La.na Design sử dụng công cụ đo lường và quảng cáo của Meta (Facebook, Instagram), Google (Google Analytics, Google Ads), TikTok, OpenAI (quảng cáo trên ChatGPT) và Zalo. Thông tin có thể được chia sẻ với các đối tác này gồm:",
+        ],
+        items: [
+          "Mã định danh ngẫu nhiên do website hoặc đối tác tạo và lưu trong cookie (ví dụ: la_vid, _fbp, _fbc, _ga). Các mã này không chứa họ tên, số điện thoại hay địa chỉ của khách hàng.",
+          "Địa chỉ IP, loại trình duyệt và thiết bị, các trang đã xem, sản phẩm đã xem hoặc thêm vào giỏ hàng.",
+          "Khi khách hàng đặt hàng: giá trị đơn hàng và sản phẩm đã mua; riêng với Meta, kèm số điện thoại và họ tên đã được mã hóa một chiều (băm) trước khi gửi đi.",
+        ],
+        closingParagraphs: [
+          "Cookie giỏ hàng và phiên đăng nhập được lưu trong thời gian cần thiết để website hoạt động. Cookie đo lường và quảng cáo được lưu tối đa 90 ngày (_fbp, _fbc), 1 năm (la_vid) hoặc theo thời hạn riêng của từng đối tác. Thông tin chia sẻ với các đối tác có thể được lưu trữ và xử lý trên máy chủ đặt ngoài lãnh thổ Việt Nam.",
+          "Khách hàng có thể chặn hoặc xóa cookie trong phần cài đặt của trình duyệt, và điều chỉnh tùy chọn quảng cáo trong tài khoản Meta, Google hoặc TikTok của mình. Việc chặn cookie đo lường và quảng cáo không ảnh hưởng đến việc mua hàng; riêng cookie giỏ hàng cần được bật để đặt hàng trên website.",
+        ],
+      },
     ],
   },
   "dieu-kien-cung-cap": {

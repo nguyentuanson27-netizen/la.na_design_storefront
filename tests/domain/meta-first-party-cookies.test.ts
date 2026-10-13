@@ -4,12 +4,17 @@ import test from "node:test";
 import {
   isMetaCookieNavigation,
   META_CLICK_ID_MAX_AGE_SECONDS,
+  META_VISITOR_ID_MAX_AGE_SECONDS,
+  metaFirstPartySetCookies,
+  readMetaExternalId,
+  readMetaFirstPartyCookiesEnabled,
   nextMetaClickIdCookie,
   nextMetaVisitorIdCookie,
   readMetaVisitorId,
   serializeMetaFirstPartyCookie,
 } from "../../src/integrations/meta/first-party-cookies.ts";
 import { buildMetaUserData } from "../../src/integrations/meta/conversions-api.ts";
+import { POLICY_CONTENT, type PolicyContentSection } from "../../src/brand/policy.config.ts";
 import { validateMetaCookie } from "../../src/integrations/meta/conversions-api.ts";
 
 const NOW = 1_760_000_000_123;
@@ -127,4 +132,70 @@ test("HEAD, router fetches, prefetch and non-document requests never get them", 
   assert.equal(navigation("GET", "/shop", { "sec-fetch-dest": "empty", accept: "*/*" }), false);
   assert.equal(navigation("GET", "/shop", { "sec-fetch-dest": "image", accept: "text/html" }), false);
   assert.equal(navigation("GET", "/shop", { accept: "*/*" }), false);
+});
+
+test("the switch is on only for exact true", () => {
+  assert.equal(readMetaFirstPartyCookiesEnabled({ LA_META_FIRST_PARTY_COOKIES_ENABLED: "true" }), true);
+  for (const value of [undefined, "", "1", "TRUE", "yes", "false", " true"]) {
+    assert.equal(readMetaFirstPartyCookiesEnabled({ LA_META_FIRST_PARTY_COOKIES_ENABLED: value }), false, String(value));
+  }
+});
+
+function setCookies(overrides: Partial<Parameters<typeof metaFirstPartySetCookies>[0]> = {}) {
+  return metaFirstPartySetCookies({
+    enabled: true,
+    method: "GET",
+    pathname: "/shop",
+    headers: { get: (name) => (name === "sec-fetch-dest" ? "document" : null) },
+    fbclid: "IwAR0abc",
+    clickIdCookie: undefined,
+    visitorIdCookie: undefined,
+    nowMs: NOW,
+    storefrontOrigin: "https://www.lanadesign.vn",
+    ...overrides,
+  });
+}
+
+test("switched on, a storefront page load writes a new click and a missing visitor ID", () => {
+  const [clickId, visitorId, ...rest] = setCookies();
+  assert.equal(clickId, `_fbc=fb.1.${NOW}.IwAR0abc; Path=/; Max-Age=7776000; SameSite=Lax; Domain=lanadesign.vn; Secure`);
+  assert.match(visitorId!, /^la_vid=[0-9a-f]{64}; Path=\/; Max-Age=31536000; SameSite=Lax; Domain=lanadesign\.vn; Secure$/);
+  assert.deepEqual(rest, []);
+  assert.deepEqual(setCookies({ fbclid: null, visitorIdCookie: VISITOR_ID }), []);
+  assert.deepEqual(setCookies({ pathname: "/admin" }), []);
+});
+
+test("switched off, nothing is written and an issued visitor ID is expired, never _fbc", () => {
+  assert.deepEqual(setCookies({ enabled: false }), []);
+  assert.deepEqual(setCookies({ enabled: false, visitorIdCookie: VISITOR_ID, clickIdCookie: "fb.1.1750000000000.IwAR0old" }), [
+    "la_vid=; Path=/; Max-Age=0; SameSite=Lax; Domain=lanadesign.vn; Secure",
+  ]);
+  // Only on a storefront page load, like every other write.
+  assert.deepEqual(setCookies({ enabled: false, visitorIdCookie: VISITOR_ID, pathname: "/api/meta/events" }), []);
+});
+
+test("external_id is read from the cookie only while the switch is on", (t) => {
+  const previous = process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED;
+  t.after(() => {
+    if (previous === undefined) delete process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED;
+    else process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED = previous;
+  });
+  delete process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED;
+  assert.equal(readMetaExternalId(VISITOR_ID), null);
+  process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED = "true";
+  assert.equal(readMetaExternalId(VISITOR_ID), VISITOR_ID);
+  assert.equal(readMetaExternalId("not-ours"), null);
+});
+
+test("the privacy policy discloses both cookies, their lifetimes and Meta as a recipient", () => {
+  const sections: readonly PolicyContentSection[] = POLICY_CONTENT["bao-mat"].sections;
+  const privacy = sections.find((section) => section.heading.startsWith("11.7."));
+  assert.ok(privacy, "the cookie clause is missing from /policies#bao-mat");
+  const text = [...privacy.paragraphs, ...privacy.items, ...(privacy.closingParagraphs ?? [])].join("\n");
+  for (const disclosed of ["la_vid", "_fbc", "_fbp", "Meta", "90 ngày", "1 năm"]) {
+    assert.ok(text.includes(disclosed), `the policy no longer mentions ${disclosed}`);
+  }
+  // The lifetimes above are the ones the cookies are actually written with.
+  assert.equal(META_CLICK_ID_MAX_AGE_SECONDS, 90 * 24 * 60 * 60);
+  assert.equal(META_VISITOR_ID_MAX_AGE_SECONDS, 365 * 24 * 60 * 60);
 });

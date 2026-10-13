@@ -6,7 +6,7 @@ import { after } from "next/server";
 
 import { readAuthServerConfig } from "../auth/config.ts";
 import { readStorefrontOrigin } from "./storefront-origin.ts";
-import { META_VISITOR_ID_COOKIE } from "../integrations/meta/first-party-cookies.ts";
+import { META_VISITOR_ID_COOKIE, readMetaExternalId } from "../integrations/meta/first-party-cookies.ts";
 import { prisma } from "../db/prisma.ts";
 import { createAnonymousCartCookieSession } from "./anonymous-cart-cookie.ts";
 import {
@@ -65,7 +65,7 @@ async function readMeasurementRequestContexts() {
       clientUserAgent,
       fbp: cookieStore.get("_fbp")?.value ?? null,
       fbc: cookieStore.get("_fbc")?.value ?? null,
-      externalId: cookieStore.get(META_VISITOR_ID_COOKIE)?.value ?? null,
+      externalId: readMetaExternalId(cookieStore.get(META_VISITOR_ID_COOKIE)?.value),
       eventSourceUrl,
     },
     openAiAds: {

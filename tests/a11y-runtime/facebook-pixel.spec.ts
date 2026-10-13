@@ -347,6 +347,8 @@ test.beforeAll(async () => {
       FACEBOOK_CAPI_ACCESS_TOKEN: "synthetic-meta-test-token",
       FACEBOOK_GRAPH_API_VERSION: "v26.0",
       FACEBOOK_CAPI_TEST_EVENT_CODE: "",
+      // _fbc / la_vid / external_id are off in production until switched on; this spec covers them on.
+      LA_META_FIRST_PARTY_COOKIES_ENABLED: "true",
       META_TEST_CAPTURE_FILE: captureFile,
       NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(resolve(import.meta.dirname, "meta-capi.stub.mjs")).href}`,
       // Both destinations observable on one server, so a test can prove they succeed and fail
