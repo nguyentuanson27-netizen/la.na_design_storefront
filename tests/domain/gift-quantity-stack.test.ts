@@ -11,6 +11,8 @@ import {
   type StackPeer,
   type StackResult,
   type StackTierParticipant,
+  resolveGiftCampaignStacking,
+  stackPeersAllow,
 } from "../../src/commerce/gift-quantity-stack.ts";
 import type { QuantityTierConfig } from "../../src/commerce/gift-quantity-tier.ts";
 import { resolvePromotionPricing, type ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
@@ -218,7 +220,7 @@ test("quantity is counted per tier scope, then a tier splits a line into segment
     legacyConsents: consents(),
   }));
   const dressGroups = result.groups.filter((group) => group.lineKey === "v");
-  assert.deepEqual(dressGroups.map((group) => [group.groupKey, group.quantity, group.unitPriceVnd]), [["v:disc", 1, 90_001], ["v:full", 2, 100_001]]);
+  assert.deepEqual(dressGroups.map((group) => [group.groupKey, group.quantity, group.unitPriceVnd]), [["v|disc", 1, 90_001], ["v|full", 2, 100_001]]);
   assert.equal(dressGroups.reduce((sum, group) => sum + group.lineTotalVnd, 0), 290_003);
   assert.deepEqual(result.groups.find((group) => group.lineKey === "other")!.groupKey, "other", "an untouched line keeps its key");
   assert.equal(new Set(result.groups.map((group) => group.groupKey)).size, result.groups.length);
@@ -277,4 +279,68 @@ test("invalid input is refused, not priced", () => {
   assert.deepEqual(priceStack({ lines: [good], tiers: [tier("x", pctTier(1)), tier("x", pctTier(1))], legacyConsents: consents() }), { ok: false, reason: "INPUT_INVALID" });
   assert.deepEqual(bad({ legacy: { campaign: flash(), effectivePriceVnd: 200_000 } }), { ok: false, reason: "INPUT_INVALID" }, "legacy cannot raise a price");
   assert.deepEqual(priceStack({ lines: Array.from({ length: 201 }, (_, i) => line(`l${i}`, 1, 100)), tiers: [], legacyConsents: consents() }), { ok: false, reason: "INPUT_INVALID" });
+});
+
+test("F08: derived group keys cannot collide with caller keys — a key that looks like a derived one is refused, and repeated splits stay unique", () => {
+  const line = (lineKey: string, quantity: number, basePriceVnd: number): StackInputLine => ({
+    lineKey, pancakeVariationId: `var-${lineKey}`, quantity, product: { productId: `p-${lineKey}`, categoryKeys: ["vayDam"] }, basePriceVnd, legacy: null,
+  });
+  const tier = (id: string, minQuantity: number): StackTierParticipant => ({
+    id, config: { unit: "PERCENTAGE", discountedUnits: "FROM_REACHED_THRESHOLD", selectionPriority: "CHEAPEST_FIRST", tiers: [{ minQuantity, discountValue: 10 }] },
+    resolve: () => true, priority: 1, stackingEnabled: false, peers: [],
+  });
+  for (const bad of ["x|disc", "x:disc", "a b", "", "x".repeat(65)]) {
+    assert.deepEqual(priceStack({ lines: [line("x", 3, 100_001), line(bad, 1, 50_000)], tiers: [tier("t", 3)], legacyConsents: new Map() }), { ok: false, reason: "INPUT_INVALID" }, JSON.stringify(bad));
+  }
+  const result = priceStack({ lines: [line("x", 3, 100_001), line("y", 3, 100_001)], tiers: [tier("t", 3)], legacyConsents: new Map() });
+  assert.ok(result.ok);
+  if (!result.ok) return;
+  const keys = result.groups.map((group) => group.groupKey);
+  assert.equal(new Set(keys).size, keys.length, "every group key is unique");
+  assert.ok(keys.every((key) => key === "x" || key === "y" || /^[xy]\|(disc|full)$/.test(key)), JSON.stringify(keys));
+});
+
+const giftPeer = (campaignId: string): StackPeer => ({ kind: "GIFT_ITEM", campaignId });
+
+test("F02: a gift campaign can be named as a peer, by id or by wildcard", () => {
+  assert.equal(stackPeersAllow([giftPeer("g2")], "GIFT_ITEM", "g2"), true);
+  assert.equal(stackPeersAllow([giftPeer("g2")], "GIFT_ITEM", "g3"), false);
+  assert.equal(stackPeersAllow([giftPeer(STACK_PEER_ANY)], "GIFT_ITEM", "anything"), true);
+  assert.equal(stackPeersAllow([giftPeer(STACK_PEER_ANY)], "QUANTITY_TIER", "anything"), false, "the wildcard is per kind");
+});
+
+test("F02: two gift campaigns run together only when both enable stacking and each names the other", () => {
+  const g = (id: string, stackingEnabled: boolean, peers: StackPeer[]) => ({ id, stackingEnabled, peers });
+  // mutual consent
+  assert.deepEqual(
+    resolveGiftCampaignStacking([g("a", true, [giftPeer("b")]), g("b", true, [giftPeer(STACK_PEER_ANY)])]),
+    { permitted: ["a", "b"], dropped: [] },
+  );
+  // one-way: b does not name a -> both step aside, with the other side reported
+  const oneWay = resolveGiftCampaignStacking([g("a", true, [giftPeer("b")]), g("b", true, [])]);
+  assert.deepEqual(oneWay.permitted, []);
+  assert.deepEqual(oneWay.dropped, [
+    { campaignId: "a", reason: "STACK_NOT_PERMITTED", otherCampaignId: "b" },
+    { campaignId: "b", reason: "STACK_NOT_PERMITTED", otherCampaignId: "a" },
+  ]);
+  // naming each other is not enough while one has stacking switched off
+  assert.deepEqual(resolveGiftCampaignStacking([g("a", true, [giftPeer("b")]), g("b", false, [giftPeer("a")])]).permitted, []);
+  // no configuration at all: two campaigns that never opted in do not combine
+  assert.deepEqual(resolveGiftCampaignStacking([g("a", false, []), g("b", false, [])]).permitted, []);
+});
+
+test("F02: a lone gift campaign always runs, a third refused pair drops only its members, and order never matters", () => {
+  const g = (id: string, stackingEnabled: boolean, peers: StackPeer[]) => ({ id, stackingEnabled, peers });
+  assert.deepEqual(resolveGiftCampaignStacking([g("only", false, [])]), { permitted: ["only"], dropped: [] });
+  const campaigns = [
+    g("a", true, [giftPeer("b")]),
+    g("b", true, [giftPeer("a")]),
+    g("c", false, []),
+  ];
+  const forward = resolveGiftCampaignStacking(campaigns);
+  const backward = resolveGiftCampaignStacking([...campaigns].reverse());
+  assert.deepEqual(forward, backward);
+  // c conflicts with both a and b, so all three step aside; nothing is picked at random
+  assert.deepEqual(forward.permitted, []);
+  assert.deepEqual(forward.dropped.map((entry) => entry.campaignId), ["a", "b", "c"]);
 });

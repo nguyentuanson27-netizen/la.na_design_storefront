@@ -474,3 +474,26 @@ test("deleting a campaign cascades to its children; deleting a product removes i
   await prisma.$executeRaw`DELETE FROM "GiftQuantityCampaign" WHERE "id" = ${`${PREFIX}-cascade`}`;
   assert.equal(await prisma.giftOption.count({ where: { campaignId: `${PREFIX}-cascade` } }), 0);
 });
+
+test("F02: gift campaigns can name each other as stack peers (by id and by wildcard) and still cannot name themselves", async () => {
+  await insertCampaign(gift("gp1"));
+  await insertCampaign(gift("gp2"));
+  await prisma.giftQuantityStackPeer.createMany({
+    data: [
+      { campaignId: `${PREFIX}-gp1`, peerKind: "GIFT_ITEM", peerCampaignId: `${PREFIX}-gp2` },
+      { campaignId: `${PREFIX}-gp2`, peerKind: "GIFT_ITEM", peerCampaignId: "*" },
+    ],
+  });
+  const read = await prisma.giftQuantityStackPeer.findMany({
+    where: { campaignId: { in: [`${PREFIX}-gp1`, `${PREFIX}-gp2`] } },
+    orderBy: { campaignId: "asc" },
+  });
+  assert.deepEqual(read.map((peer) => [peer.campaignId, peer.peerKind, peer.peerCampaignId]), [
+    [`${PREFIX}-gp1`, "GIFT_ITEM", `${PREFIX}-gp2`],
+    [`${PREFIX}-gp2`, "GIFT_ITEM", "*"],
+  ]);
+  await rejects(
+    () => prisma.giftQuantityStackPeer.create({ data: { campaignId: `${PREFIX}-gp1`, peerKind: "GIFT_ITEM", peerCampaignId: `${PREFIX}-gp1` } }),
+    "GiftQuantityStackPeer_peer_check",
+  );
+});

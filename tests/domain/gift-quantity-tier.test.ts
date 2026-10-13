@@ -50,7 +50,7 @@ test("EX-07: tier N=3 10%, Q=5 — ALL discounts 5 units, FROM discounts 3 units
   assert.equal(from.totalDiscountVnd, 30_000);
   assert.deepEqual(
     from.segments.map((segment) => [segment.segmentKey, segment.quantity, segment.unitPriceVnd]),
-    [["a:disc", 3, 90_000], ["a:full", 2, 100_000]],
+    [["a|disc", 3, 90_000], ["a|full", 2, 100_000]],
   );
 });
 
@@ -79,7 +79,7 @@ test("EX-17: 3 x 100.001 with tier N=3 10% FROM yields 2 x 100.001 + 1 x 90.001 
   );
   assert.equal(sum(result), 290_003);
   // distinct, stable segment keys even though the variation repeats
-  assert.deepEqual(result.segments.map((s) => s.segmentKey), ["v:disc", "v:full"]);
+  assert.deepEqual(result.segments.map((s) => s.segmentKey), ["v|disc", "v|full"]);
 });
 
 test("D-06 rounding is half-up per unit: 5 x 90% = 5 per unit, so 3 units = 15 (not a rounded 13.5 -> 14)", () => {
