@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
+import { META_COOKIE_MAX_LENGTH, META_FBC_PATTERN, META_FBP_PATTERN } from "./cookie-format.ts";
 import type { MetaConversionsConfig } from "./pixel-config.ts";
 
 /**
@@ -127,10 +128,8 @@ export function buildMetaUserData(identity: MetaUserIdentity): Record<string, un
 
 /** Pass Meta cookies through unchanged; never hash them or invent a click ID. */
 export function validateMetaCookie(value: string | null, kind: "fbp" | "fbc"): string | null {
-  if (!value || value.length > 512) return null;
-  const pattern = kind === "fbp"
-    ? /^fb\.\d+\.\d{13}\.[0-9]+(?:\.[A-Za-z0-9_-]+)?$/
-    : /^fb\.\d+\.\d{13}\.[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)?$/;
+  if (!value || value.length > META_COOKIE_MAX_LENGTH) return null;
+  const pattern = kind === "fbp" ? META_FBP_PATTERN : META_FBC_PATTERN;
   return pattern.test(value) ? value : null;
 }
 

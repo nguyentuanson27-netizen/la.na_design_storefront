@@ -11,14 +11,22 @@
  * a short deadline passes. CAPI exists for exactly the browsers where the pixel never arrives.
  */
 
+import { META_COOKIE_MAX_LENGTH, META_FBP_PATTERN } from "../../integrations/meta/cookie-format.ts";
+
 const FBP_WAIT_MS = 2_000;
 /** Deliberately not the pixel client's 250 ms cadence, which the browser suite counts as its own. */
 const CHECK_INTERVAL_MS = 100;
 /** `fbevents.js` writes `_fbp` while draining the snippet's queue; give that a moment once loaded. */
 const LOADED_GRACE_MS = 300;
 
+/** Only a cookie the server will accept counts: an empty or malformed `_fbp` would still be dropped. */
 function hasBrowserIdCookie(): boolean {
-  return document.cookie.split(";").some((cookie) => cookie.trimStart().startsWith("_fbp="));
+  return document.cookie.split(";").some((cookie) => {
+    const entry = cookie.trimStart();
+    if (!entry.startsWith("_fbp=")) return false;
+    const value = entry.slice("_fbp=".length);
+    return value.length <= META_COOKIE_MAX_LENGTH && META_FBP_PATTERN.test(value);
+  });
 }
 
 function readPixelLibraryStatus(): string | null {
@@ -70,5 +78,10 @@ export function whenMetaBrowserIdKnown(send: () => void, now: () => number = Dat
 
   window.addEventListener("pagehide", finish);
   document.addEventListener("visibilitychange", onVisibilityChange);
+  // A page that is already hidden will never report the transition, and its timers are throttled.
+  if (document.visibilityState === "hidden") {
+    finish();
+    return;
+  }
   check();
 }

@@ -13,11 +13,14 @@ function replaceGlobal(name: "window" | "document", value: unknown) {
 }
 
 /** A page with the pixel snippet's script element, its cookies and its hide events. */
-function fakePage(t: TestContext, options: { cookie?: string; status?: string | null } = {}) {
+function fakePage(
+  t: TestContext,
+  options: { cookie?: string; status?: string | null; visibilityState?: string } = {},
+) {
   const page = {
     cookie: options.cookie ?? "la_session=1",
     status: options.status === undefined ? "loading" : options.status,
-    visibilityState: "visible",
+    visibilityState: options.visibilityState ?? "visible",
     clock: 0,
     listeners: new Map<string, Set<() => void>>(),
   };
@@ -128,6 +131,36 @@ test("leaving the page flushes the waiting signal instead of dropping it", (t) =
   advance(3_000);
   assert.equal(sent, 1);
   assert.equal(listenerCount(), 0);
+});
+
+test("a page already hidden when the signal starts sends at once and leaves nothing behind", (t) => {
+  const { now, advance, dispatch, listenerCount } = fakePage(t, { visibilityState: "hidden" });
+  let sent = 0;
+  whenMetaBrowserIdKnown(() => { sent += 1; }, now);
+  assert.equal(sent, 1);
+  assert.equal(listenerCount(), 0);
+
+  dispatch("window", "pagehide");
+  advance(3_000);
+  assert.equal(sent, 1);
+});
+
+test("only a _fbp the server would accept ends the wait", (t) => {
+  const { page, now, advance } = fakePage(t, { cookie: "_fbp=; la_session=1" });
+  let sent = 0;
+  whenMetaBrowserIdKnown(() => { sent += 1; }, now);
+  assert.equal(sent, 0);
+
+  page.cookie = "_fbp=invalid; la_session=1";
+  advance(500);
+  assert.equal(sent, 0);
+  page.cookie = `_fbp=fb.1.1700000000000.${"1".repeat(600)}`;
+  advance(500);
+  assert.equal(sent, 0);
+
+  page.cookie = "la_session=1; _fbp=fb.1.1700000000000.1234567890";
+  advance(100);
+  assert.equal(sent, 1);
 });
 
 test("a throwing sender cannot escape the timer", (t) => {
