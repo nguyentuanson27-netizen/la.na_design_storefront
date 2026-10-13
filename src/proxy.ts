@@ -7,6 +7,7 @@ import {
   META_CLICK_ID_MAX_AGE_SECONDS,
   META_VISITOR_ID_COOKIE,
   META_VISITOR_ID_MAX_AGE_SECONDS,
+  isMetaCookieNavigation,
   nextMetaClickIdCookie,
   nextMetaVisitorIdCookie,
   serializeMetaFirstPartyCookie,
@@ -24,14 +25,15 @@ const META_PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").len
 /**
  * Writes the first-party cookies Meta's events match on: the ad click's `fbclid` as `_fbc`, so a
  * later Purchase still carries it when the pixel never ran or its cookie expired, and this site's
- * visitor ID as `la_vid`, sent as `external_id`. Only document loads count; with no pixel
- * configured nothing Meta-related is written at all. Storefront pages are `private, no-store`,
- * so no shared cache can hand one visitor's cookie to another.
+ * visitor ID as `la_vid`, sent as `external_id`. Only a browser's load of a public storefront page
+ * counts (`isMetaCookieNavigation`); with no pixel configured nothing Meta-related is written at
+ * all. Storefront pages are `private, no-store`, so no shared cache can hand one visitor's cookie
+ * to another.
  */
 function applyMetaFirstPartyCookies(request: NextRequest, response: Response): void {
-  if (!META_PIXEL_CONFIGURED || (request.method !== "GET" && request.method !== "HEAD")) return;
-  // Next runs the proxy again for the 404 rewrite below; the first pass already wrote these.
-  if (request.nextUrl.pathname === UNRESOLVED_PRODUCT_PATH) return;
+  if (!META_PIXEL_CONFIGURED) return;
+  const { method, nextUrl: { pathname }, headers } = request;
+  if (!isMetaCookieNavigation({ method, pathname, headers })) return;
   try {
     const origin = readStorefrontOrigin();
     const clickId = nextMetaClickIdCookie({

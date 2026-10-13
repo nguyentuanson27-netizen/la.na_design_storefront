@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  isMetaCookieNavigation,
   META_CLICK_ID_MAX_AGE_SECONDS,
   nextMetaClickIdCookie,
   nextMetaVisitorIdCookie,
@@ -92,4 +93,38 @@ test("the visitor ID cookie is scoped like the click ID, for a year", () => {
     serializeMetaFirstPartyCookie("la_vid", VISITOR_ID, 365 * 24 * 60 * 60, "https://www.lanadesign.vn"),
     `la_vid=${VISITOR_ID}; Path=/; Max-Age=31536000; SameSite=Lax; Domain=lanadesign.vn; Secure`,
   );
+});
+
+function navigation(method: string, pathname: string, headers: Record<string, string>) {
+  const lower = new Map(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+  return isMetaCookieNavigation({ method, pathname, headers: { get: (name) => lower.get(name) ?? null } });
+}
+const DOCUMENT = { "sec-fetch-dest": "document", accept: "text/html,application/xhtml+xml" };
+
+test("a browser's load of a public storefront page is eligible for the cookies", () => {
+  for (const path of ["/", "/shop", "/shop/ao-dai-lua", "/collections/sale"]) {
+    assert.equal(navigation("GET", path, DOCUMENT), true, path);
+  }
+  // No Sec-Fetch-Dest at all: an HTML Accept still marks a page load.
+  assert.equal(navigation("GET", "/shop", { accept: "text/html" }), true);
+});
+
+test("private paths, files and the internal 404 rewrite never get them", () => {
+  for (const path of ["/admin", "/admin/orders", "/account", "/login", "/api/meta/events",
+    "/icon.svg", "/robots.txt", "/__unresolved-product", "/Shop"]) {
+    assert.equal(navigation("GET", path, DOCUMENT), false, path);
+  }
+});
+
+test("HEAD, router fetches, prefetch and non-document requests never get them", () => {
+  assert.equal(navigation("HEAD", "/shop", DOCUMENT), false);
+  assert.equal(navigation("POST", "/shop", DOCUMENT), false);
+  // An App Router navigation or prefetch, as the proxy sees it once Next has removed the Flight headers.
+  assert.equal(navigation("GET", "/shop", { "sec-fetch-dest": "empty", accept: "text/x-component" }), false);
+  assert.equal(navigation("GET", "/shop", { accept: "text/x-component" }), false);
+  assert.equal(navigation("GET", "/shop", { ...DOCUMENT, "sec-purpose": "prefetch;prerender" }), false);
+  assert.equal(navigation("GET", "/shop", { ...DOCUMENT, purpose: "prefetch" }), false);
+  assert.equal(navigation("GET", "/shop", { "sec-fetch-dest": "empty", accept: "*/*" }), false);
+  assert.equal(navigation("GET", "/shop", { "sec-fetch-dest": "image", accept: "text/html" }), false);
+  assert.equal(navigation("GET", "/shop", { accept: "*/*" }), false);
 });

@@ -34,7 +34,8 @@ const requestContext = {
   clientUserAgent: "Mozilla/5.0",
   fbp: "fb.1.1700000000000.1234567890",
   fbc: "fb.1.1700000000000.AbCd",
-  externalId: null,
+  // The browser's la_vid, the same value the pixel was initialised with.
+  externalId: "0123456789abcdef".repeat(4),
   eventSourceUrl: "https://example.test/checkout",
 } as const;
 
@@ -188,6 +189,8 @@ test("the server event carries hashed identity and the order code as its dedup i
   assert.deepEqual(userData.ph, [sha256("84912345678")]);
   assert.deepEqual(userData.fn, [sha256("an")]);
   assert.equal(userData.fbp, requestContext.fbp);
+  // Sent as the pixel sends it, not hashed again, or the two sides would not match.
+  assert.deepEqual(userData.external_id, [requestContext.externalId]);
 
   // The buyer's phone and name must never leave in the clear.
   const serialized = JSON.stringify(body);
@@ -255,6 +258,8 @@ test("SYNC_UNKNOWN reconciliation reports Purchase after commit with the origina
   assert.equal(events[0]!.event_time, Math.floor(syncedAt.getTime() / 1000));
   assert.equal(events[0]!.event_source_url, requestContext.eventSourceUrl);
   assert.equal((events[0]!.user_data as Record<string, unknown>).fbc, requestContext.fbc);
+  // The browser request is long gone; the visitor ID comes from the saved checkout context.
+  assert.deepEqual((events[0]!.user_data as Record<string, unknown>).external_id, [requestContext.externalId]);
 });
 
 test("retry and browser readback reuse immutable Purchase bytes after catalog, order and identity changes", async () => {
@@ -276,7 +281,7 @@ test("retry and browser readback reuse immutable Purchase bytes after catalog, o
     } });
     const browserSnapshot = await readMetaPurchaseSnapshot(prisma, orderCode);
     assert.deepEqual(browserSnapshot, { valueVnd: 928_000, contents: [{ id: "meta-linen-shirt", quantity: 2, itemPrice: 449_000 }] });
-    await reportMetaPurchaseSafely(prisma, orderCode, { ...requestContext, fbc: null }, {
+    await reportMetaPurchaseSafely(prisma, orderCode, { ...requestContext, fbc: null, externalId: "f".repeat(64) }, {
       now: new Date(reportedAt.getTime() + 3600_000), fetchImpl: async (_url, init) => {
         bodies.push(String(init?.body)); return Response.json({ events_received: 1 });
       },
@@ -285,6 +290,8 @@ test("retry and browser readback reuse immutable Purchase bytes after catalog, o
   });
   assert.equal(bodies.length, 2);
   assert.equal(bodies[0], bodies[1]);
+  // A retry from another browser context keeps the buyer's original visitor ID.
+  assert.deepEqual(JSON.parse(bodies[1]!).data[0].user_data.external_id, [requestContext.externalId]);
   assert.deepEqual(await readMetaPurchaseSnapshot(prisma, orderCode), { valueVnd: 928_000,
     contents: [{ id: "meta-linen-shirt", quantity: 2, itemPrice: 449_000 }] });
   const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });

@@ -14,6 +14,7 @@
  */
 
 import { META_COOKIE_MAX_LENGTH, META_FBC_PATTERN } from "./cookie-format.ts";
+import { readMetaPagePath } from "./page-source.ts";
 
 export const META_CLICK_ID_COOKIE = "_fbc";
 /** Meta attributes a click for up to 90 days; the pixel keeps `_fbc` that long too. */
@@ -23,6 +24,33 @@ const FBCLID_PATTERN = /^[A-Za-z0-9_-]{1,400}$/;
 export const META_VISITOR_ID_COOKIE = "la_vid";
 export const META_VISITOR_ID_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 export const META_VISITOR_ID_PATTERN = /^[0-9a-f]{64}$/;
+
+type HeaderReader = Readonly<{ get(name: string): string | null }>;
+
+/**
+ * Only a browser loading a public storefront page gets these cookies: the same pages Meta events
+ * are reported for (no admin, account, login or API paths, no files), and only the document load
+ * itself. HEAD, speculative prefetches, and anything a browser did not ask for as a page are left
+ * without a per-visitor Set-Cookie.
+ *
+ * App Router navigations and prefetches need no rule of their own, and could not have one: Next
+ * strips the Flight headers (`rsc`, `next-router-prefetch`) before the proxy sees the request, and
+ * the router fetches them with `Sec-Fetch-Dest: empty` and `Accept: text/x-component`.
+ */
+export function isMetaCookieNavigation(input: Readonly<{
+  method: string;
+  pathname: string;
+  headers: HeaderReader;
+}>): boolean {
+  const { method, pathname, headers } = input;
+  if (method !== "GET" || readMetaPagePath(pathname) === null) return false;
+  const purpose = `${headers.get("sec-purpose") ?? ""} ${headers.get("purpose") ?? ""}`;
+  if (purpose.includes("prefetch")) return false;
+  const destination = headers.get("sec-fetch-dest");
+  // Every current browser sends Sec-Fetch-Dest; Accept is the fallback for one that does not.
+  if (destination !== null) return destination === "document";
+  return (headers.get("accept") ?? "").includes("text/html");
+}
 
 function readClickId(cookieValue: string | undefined): string | null {
   if (!cookieValue || cookieValue.length > META_COOKIE_MAX_LENGTH) return null;

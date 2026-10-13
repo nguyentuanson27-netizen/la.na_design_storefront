@@ -718,6 +718,37 @@ test("the server keeps an ad click as _fbc, so later twins carry it even with th
   expect((viewContent.user_data as Record<string, unknown>).fbc).toBe(landed!.value);
 });
 
+test("only a page load of a public storefront route gets the Meta cookies", async ({ playwright }) => {
+  // A fresh, cookieless context for every request: one that already carried the cookies would get
+  // none back whatever the rule, and prove nothing.
+  const metaCookies = async (path: string, init: { method?: "GET" | "HEAD"; headers?: Record<string, string> } = {}) => {
+    const http = await playwright.request.newContext();
+    try {
+      const response = await http.fetch(`${BASE_URL}${path}?fbclid=ScopeClick_1`, {
+        method: init.method ?? "GET", headers: init.headers, maxRedirects: 0,
+      });
+      return response.headersArray()
+        .filter(({ name, value }) => name.toLowerCase() === "set-cookie" && /^(?:_fbc|la_vid)=/.test(value))
+        .map(({ value }) => value.split("=")[0]);
+    } finally {
+      await http.dispose();
+    }
+  };
+  const page = { "sec-fetch-dest": "document", accept: "text/html" };
+
+  expect((await metaCookies("/shop", { headers: page })).sort()).toEqual(["_fbc", "la_vid"]);
+  for (const path of ["/login", "/admin", "/account", "/icon.svg"]) {
+    expect(await metaCookies(path, { headers: page }), path).toEqual([]);
+  }
+  expect(await metaCookies("/shop", { method: "HEAD", headers: page })).toEqual([]);
+  // An App Router navigation and prefetch, with the headers the router really sends.
+  const router = { "sec-fetch-dest": "empty", accept: "text/x-component", rsc: "1" };
+  expect(await metaCookies("/shop", { headers: router })).toEqual([]);
+  expect(await metaCookies("/shop", { headers: { ...router, "next-router-prefetch": "1" } })).toEqual([]);
+  // A browser's speculative prefetch of the page itself.
+  expect(await metaCookies("/shop", { headers: { ...page, "sec-purpose": "prefetch" } })).toEqual([]);
+});
+
 test("cart page and drawer report only positive committed quantity deltas with shared IDs", async ({ page }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
