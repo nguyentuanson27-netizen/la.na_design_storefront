@@ -25,7 +25,7 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 **ĐỀ XUẤT THIẾT KẾ CHỜ REVIEW SPEC:** chính sách xung đột cặp chương trình, cách xử lý `FIXED_PRICE` cũ khi xếp thứ tự, khóa trùng quà theo *sản phẩm gốc*, rounding theo đơn vị hàng, yêu cầu quà READY/có thể giữ chỗ và cơ chế lưu cấu hình/snapshot. Đây là các quy ước cần được chấp thuận trong vòng review spec; không giả định đã được chủ cửa hàng quyết định.
 
-**BẮT BUỘC XÁC MINH TRƯỚC BUILD/RELEASE:** Pancake có ghi nhận chính xác dòng quà 0đ và trường hợp cùng `pancakeVariationId` xuất hiện một dòng trả tiền và một dòng tặng miễn phí hay không. Bằng chứng thử custom price dương hiện có **không** chứng minh hai trường hợp này.
+**BẮT BUỘC XÁC MINH TRƯỚC `/build` CHO LUỒNG PHỤ THUỘC POS VÀ TRƯỚC RELEASE:** Pancake có ghi nhận chính xác (1) dòng quà 0đ, (2) `PAID + GIFT` cùng `pancakeVariationId`, (3) **hai dòng `PAID` cùng `pancakeVariationId` nhưng khác đơn giá** hay không. Nếu chưa có bằng chứng live cho luồng cần dùng, chỉ được bắt đầu `/build` luồng đó khi chủ dự án đã phê duyệt phương án thay thế bảo toàn chính xác tiền, số lượng, audit và đã thêm acceptance tests tương ứng. Bằng chứng custom price dương hiện có không chứng minh các trường hợp này.
 
 ## 3. Khái niệm và mô hình đếm
 
@@ -101,6 +101,9 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - Khi chỉ giảm một phần, Admin chọn `selectionPriority = CHEAPEST_FIRST | MOST_EXPENSIVE_FIRST`.
 - **Quy ước đề xuất:** xếp theo **giá của mỗi chiếc ngay trước bước giảm này**, tie-break ổn định theo `pancakeVariationId` rồi khóa định danh dòng, không theo thứ tự browser gửi.
 - Ví dụ Q=5, bậc thắng N=3 giảm 10%, `FROM_REACHED_THRESHOLD` ⇒ 3 chiếc được giảm; nếu Q=3 ⇒ 1 chiếc. Khi chọn `ALL` thì đủ Q chiếc được giảm.
+- **Phân bổ giảm theo từng chiếc:** resolver chọn các chiếc đủ điều kiện theo thứ tự ổn định, áp dụng từng bước giảm giá/rounding lên đơn giá của **mỗi chiếc** rồi mới nhóm dòng. Cùng một variant có thể có cả chiếc nguyên giá lẫn chiếc được giảm; không bình quân hay làm tròn lại đơn giá để ép thành một dòng.
+- **Tách paid price segments:** chỉ gộp các chiếc đồng nhất về variant, `unitPriceVnd`, discount provenance và fulfillment; mỗi nhóm tạo dòng `PAID` riêng với `lineId` duy nhất trong quote, ổn định khi re-resolve cùng cart/rule facts, do server tạo và **độc lập với `pancakeVariationId`**. Mỗi dòng giữ quantity, đơn giá, thành tiền và discount ledger riêng; `lineId` không chứa cart UUID/PII.
+- Ví dụ mua 3 chiếc cùng variant giá 100.001đ, tier N=3 giảm 10% cho chiếc từ mốc: `2 × 100.001đ + 1 × 90.001đ = 290.003đ`. Phải có **hai dòng `PAID`**, quantity 2 và 1, cùng variation ID nhưng khác unit price; không có đơn giá VND nguyên nào cho một dòng quantity=3 tạo được tổng 290.003đ.
 
 ### FR-08. Cộng dồn và ưu tiên chương trình
 
@@ -123,33 +126,33 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - Server là authority cho giá, Q, S, danh tính product/variant, phạm vi, tỷ lệ, ưu tiên, kho và số suất quà.
 - Sử dụng số nguyên VND an toàn; phép nhân/chia %, cộng dồn cần tránh overflow. **Đề xuất** giữ cách làm tròn half-up bằng `BigInt` đã có trong `promotion-pricing.ts`, ở granularity **mỗi đơn vị hàng** trước khi cộng dòng.
 - Đơn giá của hàng mua phải là số nguyên dương; quà tặng có đơn giá thanh toán 0đ **với line role GIFT**. Không cho client giả một dòng mua có giá 0đ.
-- Kiểm tra tồn kho quà cùng cơ chế reservation của hàng mua; số lượng cùng variant xuất hiện ở nhiều vai trò phải được **cộng nhu cầu vật lý** trước khi giữ chỗ.
+- Kiểm tra tồn kho quà cùng cơ chế reservation của hàng mua; **cộng nhu cầu vật lý từ tất cả price segments `PAID` và dòng `GIFT` theo cùng `variantId`** trước khi kiểm tra/giữ chỗ. Ví dụ hai dòng `PAID` của một variant với quantity 2+1 chỉ giữ chỗ **3 chiếc vật lý một lần** theo `(orderId, variantId)`, không sinh hai reservation cạnh tranh hoặc giữ chỗ trùng; áp dụng cả khi có `GIFT` cùng variant.
 - **Đề xuất để tránh lời hứa tồn kho sai:** quà chỉ chọn từ variant có khả năng giao `READY` được xác minh; hỗ trợ quà composite chỉ khi có kiểm tra/giữ chỗ tài nguyên cấu thành; không mặc định sử dụng quy tắc PREORDER/OVERSELL của hàng mua để cấp quà miễn phí.
 
 ### FR-11. Giỏ hàng, checkout và snapshot
 
 - Cart và checkout hiển thị rõ điều kiện hiện tại, mức thiếu tới mốc tiếp theo, mức giảm áp dụng, số suất quà đạt được, lựa chọn quà còn hàng và số chưa nhận.
 - Khách chọn quà trong UI riêng, các quà **không** tự thêm thành `CartItem` trả tiền. Khi lượng mua giảm hoặc campaign hết hạn, quyền lợi được tính lại và lựa chọn không hợp lệ phải được hiển thị/đề nghị chọn lại.
-- Quote gồm các **dòng mua** và **dòng quà** có role phân biệt, cùng campaign ID/version, applied discounts theo thứ tự, các entitlement, selection và acknowledgment. Hai dòng có thể cùng variant nhưng khác role/giá.
-- Quote proof ký/xác minh cả **quyền lợi quà** và xác nhận từ bỏ quà, chứ không chỉ số tiền. Nếu bất kỳ giá, giảm giá, điều kiện, quà, tồn kho/cấp quà hoặc fulfillment thay đổi, submit yêu cầu khách xác nhận báo giá mới — **kể cả khi tổng tiền không đổi**.
-- Lưu order snapshot bất biến về campaign/rule/version, nguồn giảm, tiền theo từng dòng, lựa chọn quà, số quà thiếu/bỏ qua, xác nhận. Retry phải idempotent; không tự cấp lại quà sau khi đã xác nhận.
+- Quote gồm dòng **`PAID`** (có thể nhiều dòng cùng variation ID với giá khác nhau) và **`GIFT`**, mỗi dòng có **`lineId` duy nhất**, do server dựng/canonicalize ổn định giữa render và submit nếu facts không đổi, không dùng variation ID làm khóa dòng. Mỗi dòng có role, variation ID, quantity, `unitPriceVnd`, `lineTotalVnd`, fulfillment, campaign ID/version và ordered discount provenance; quote cũng ghi entitlement, selection và acknowledgment. `lineId` không để lộ cart UUID/PII và không do browser quyết định.
+- Quote proof ký/xác minh **từng `lineId`, role, variation ID, quantity, đơn giá, thành tiền và discount steps** của cả `PAID` và `GIFT`, quyền lợi quà và xác nhận từ bỏ quà; không chỉ ký tổng tiền. Canonical quote cho phép variation ID lặp khi `lineId` khác nhau, không làm mất giá/discount provenance. Nếu giá, phân bổ paid, điều kiện, quà, tồn kho/cấp quà hoặc fulfillment thay đổi, submit yêu cầu xác nhận lại — **kể cả khi tổng tiền không đổi**.
+- Lưu order snapshot bất biến **theo `lineId`** về role `PAID/GIFT`, variation ID, quantity, đơn giá, thành tiền, campaign/rule/version, discount-step provenance, quà/entitlement và xác nhận. Hai dòng `PAID` của cùng variant khác giá phải được lưu riêng; tổng các `lineTotalVnd` paid phải bằng merchandise subtotal đã xác nhận. Retry phải idempotent và không tự cấp lại quà.
 - Với shipping: chỉ dùng **số chiếc hàng mua trả tiền** và **subtotal trả tiền sau giảm**; quà không đẩy đơn qua ngưỡng miễn ship. **Không thay đổi** điều kiện hiện tại `subtotal > ngưỡng` hoặc `paid quantity >= ngưỡng`.
 
 ### FR-12. Pancake, analytics, feed và SEO
 
 - Website sở hữu chính sách khuyến mại; Pancake tiếp tục sở hữu catalog, base price và nguồn sự thật tồn kho. Không sửa giá danh mục Pancake chỉ vì có promotion.
-- Payload gửi Pancake phải duy trì chính xác `pancakeVariationId`, `quantity`, giá cuối cùng của dòng mua, và quà 0đ nếu hợp đồng POS chấp nhận; hậu kiểm so sánh số tiền/quantity và order ID thực tế.
-- **Release blocker:** thử nghiệm có kiểm soát phải chứng minh (1) Pancake nhận quà 0đ; (2) nhận paid + free cùng variation ID hoặc có phương án thay thế đã được phê duyệt; (3) reconciliation/cancel/retry/stocks/merchant order đồng nhất. Nếu không chứng minh được, **không bật chương trình gift**, không giả giá và không lặng lẽ gộp các dòng sai ý nghĩa.
+- Adapter Pancake phải bảo toàn **từng dòng `PAID`** (có thể lặp `pancakeVariationId` với đơn giá khác nhau), từng dòng quà `GIFT` 0đ nếu POS chấp nhận, quantity và giá cuối mỗi dòng. `lineId` là danh tính nội bộ quote/snapshot, không giả định Pancake hỗ trợ field đó. Hậu kiểm read-back từng mức giá, quantity, tổng tiền và order ID; **không** bình quân, thay giá hoặc gộp dòng chỉ để né trùng variation ID.
+- **Pre-build contract decision / release blocker:** operator phải kiểm chứng có kiểm soát (1) quà 0đ, (2) `PAID+GIFT` cùng variation và (3) **`PAID+PAID` cùng variation nhưng khác giá**, cùng tính nhất quán read-back/reconcile/cancel/retry/stock và tổng tiền. Nếu trường hợp cần dùng không được chứng minh live, **trước `/build` luồng phụ thuộc POS đó** phải có phương án thay thế bảo toàn money/stock/audit và được chủ dự án phê duyệt. Không có bằng chứng hay phương án phù hợp thì giữ **OFF** chức năng gift hoặc tier `FROM_REACHED_THRESHOLD` liên quan; không âm thầm bình quân/làm tròn đơn giá.
 - Analytics/Meta Purchase sử dụng doanh thu thực trả, không tính quà 0đ thành doanh thu; order audit lưu danh tính quà. Merchant feed, canonical price trên PDP và structured data không được công bố mức giảm theo giỏ như giá mua đơn chiếc vô điều kiện.
 
 ## 5. Thuật toán tham chiếu (hợp đồng hành vi, chưa phải code)
 
 1. Đọc giỏ hàng trả tiền, catalog/variant/selling mode, category membership, cấu hình chiến dịch và `now` trong một lần tính nhất quán.
 2. Xác định danh sách campaign hiệu lực và product scope sau exclusion; giải quyết tính tương thích và ưu tiên stack theo cấu hình Admin; nếu conflict không hợp lệ thì từ chối giá mâu thuẫn theo chính sách fail-closed đã duyệt.
-3. Tính **giá trả tiền** lần lượt theo priority, cả khuyến mại legacy và tier. Với tier, tính Q từ các dòng mua hợp lệ, xác định bậc cao nhất, chọn ALL hoặc FROM_REACHED_THRESHOLD; sắp xếp CHEAPEST/MOST_EXPENSIVE khi cần.
+3. Tính **giá trả tiền** lần lượt theo priority, cả khuyến mại legacy và tier; Q là **số chiếc paid mua thật trước khi chia price segments**. Xác định bậc cao nhất, ALL/FROM và CHEAPEST/MOST_EXPENSIVE; phân bổ giá từng chiếc rồi nhóm các chiếc đồng nhất về variant/giá/provenance/fulfillment thành nhiều dòng `PAID` có `lineId` ổn định nếu cần, không ép mỗi variation chỉ còn một dòng.
 4. Tính subtotal hàng mua và `S` của từng gift campaign **sau hoàn tất giảm giá**; tính entitled bằng công thức tại FR-03/04 và giới hạn trên mỗi đơn.
 5. Lấy danh sách biến thể quà còn được phép và khả dụng; xác nhận lựa chọn người mua, chống chọn trùng khi tắt, và tổng nhu cầu kho kể cả paid + gift.
-6. Tính shipping chỉ từ paid lines. Dựng quote với item roles, discounts, entitlements và xác nhận quà không nhận; ký quote bằng mechanism server-side.
+6. Tính shipping từ tổng quantity và subtotal của các dòng `PAID`, không gồm `GIFT`. Quote ký từng `lineId`, role, đơn giá/quantity/thành tiền của paid price segments, discount ledger, quyền lợi và xác nhận không nhận quà; nhiều paid lines trùng variation nhưng khác giá không bị gộp.
 7. Khi submit, re-resolve giá, scope, campaign, kho và quote **trong transaction/critical section hiện có**; so sánh toàn bộ với bằng chứng người mua đã chấp nhận. Nếu khác, trả quote mới yêu cầu xác nhận; chưa submit Pancake.
 8. Giữ chỗ hàng và quà nhất quán; ghi snapshot; submit Pancake bằng duy nhất một order idempotency boundary; reconcile success/unknown/error theo chính sách hiện tại.
 
@@ -173,6 +176,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 | EX-14 | Thay lựa chọn quà A→B, tổng tiền không đổi | Quote proof cũ không còn hợp lệ; yêu cầu khách xem/xác nhận lại |
 | EX-15 | Gift Q=2 được chọn từ mẫu có đỏ/M, đen/S; đỏ/L không được Admin cho | Chỉ đỏ/M và đen/S là lựa chọn hợp lệ |
 | EX-16 | Dynamic category có sản phẩm mới; Fixed set có sản phẩm mới | Dynamic tự xét khi hợp lệ; Fixed không tự thêm |
+| EX-17 | Một variant, 3 chiếc × 100.001đ, tier N=3 giảm 10% `FROM` | Tạo hai dòng `PAID` cùng variation: (`lineId=A`, quantity=2, unit=100.001đ) + (`lineId=B`, quantity=1, unit=90.001đ) = **290.003đ**; quote proof/snapshot giữ đủ 2 line IDs, không được bình quân giá |
+| EX-18 | EX-17, cần giữ chỗ tồn kho cho hai dòng paid | Capacity/reservation cộng đúng **3 chiếc vật lý** cùng variant, giữ chỗ một lần theo `(orderId, variantId)`; submit POS phụ thuộc acceptance paid+paid khác giá hoặc phương án thay thế được duyệt |
 
 ## 6. UI/UX và phân quyền
 
@@ -212,8 +217,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - **Gift rule**: `trigger: QUANTITY | ORDER_SUBTOTAL`, minimum, subtotal scope, repeat mode, max gifts, `allowDuplicateGifts`, product/variant gift allowlist.
 - **Tier rule**: discount unit, list of strictly increasing threshold/value, ALL/FROM, CHEAPEST/MOST_EXPENSIVE.
 - **Cart gift selection**: cart/campaign/variant/qty, validated server-side; tách khỏi paid `CartItem`. Thay đổi selection làm vô hiệu proof trước đó.
-- **Resolved quote lines**: unique **line identity / role / campaign**, không giả định unique theo variation; quote có phần paid lines, gift lines, entitlement, nonclaimed acknowledgement và campaign version.
-- **Order snapshots**: `PAID/GIFT` role; discount step ledger (`campaignId`, priority, type, input/output price, applied qty); gift entitlement/selected/unclaimed và proof acknowledgment. Bất biến khi order finalized; không làm mất snapshots lịch sử.
+- **Resolved quote lines**: `lineId` duy nhất / role / campaign trên facts canonical do server tạo, **không unique theo variation ID**; một variant có thể sinh nhiều price segments `PAID` ngay cả khi không có gift. Mỗi line giữ nguyên quantity × `unitPriceVnd` = `lineTotalVnd`; quote bao gồm paid/gift, entitlement, acknowledgment và campaign version.
+- **Order snapshots**: `lineId`, `PAID/GIFT` role, variation ID, quantity/đơn giá/thành tiền theo từng price segment; discount step ledger (`campaignId`, priority, type, input/output price, applied qty); gift entitlement/selected/unclaimed và proof acknowledgment. Giữ hai dòng PAID cùng variant có giá khác nhau tách biệt, bất biến khi finalized, không phá dữ liệu lịch sử.
 - **Pancake map**: tách semantic website lines khỏi shape vendor; adapter dùng contract đã xác minh, không tự suy ra từ typescript type.
 
 **Định hướng kiến trúc:** engine khuyến mại **cấp giỏ hàng thuần/pure** sau một nguồn giá paid thống nhất; giữ lại legacy price resolver khi feature gate tắt. Tránh nhồi gift vào `promotion-pricing.ts` như một giá variant vô điều kiện hoặc sửa `CartItem` paid thành dòng quà. Schema có thể dùng bảng campaign riêng để tránh khiến `PromotionCampaign.discountType` hiện có vô nghĩa; quyết định chi tiết ở `/plan` sau khi review migration/backward compatibility.
@@ -234,14 +239,14 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 **Domain/unit:**
 - Form parse + lifecycle + quyền Admin; scope include/exclude; category Dynamic/Fixed; parent set và mọi màu/size.
 - Gift Q=N−1/N/2N/2N+1, limit; value S=T−1/T/2T+1, ONCE/REPEAT, subtotal ALL/ELIGIBLE, trừ shipping/quà.
-- Tier highest-only, %, fixed-VND-per-unit, ALL/FROM, cheapest/expensive, tie deterministic, round half-up, money boundary.
+- Tier highest-only, %, fixed-VND-per-unit, ALL/FROM, cheapest/expensive, tie deterministic, round half-up, money boundary. **EX-17** phải kiểm tra allocation 2×100.001 + 1×90.001 = 290.003đ, 2 line IDs khác nhau, cùng variation ID, và tính ổn định khi re-resolve.
 - Stacking pairwise permission/priority, legacy fixed price, overlap/concurrent mutation/conflict fail-closed, gift evaluated after discounts.
 - Duplicate gift product and variant policy; selection partial/zero, invalid selection, camp expired, different gift same total.
 
 **DB/integration:**
-- Migration backcompat và revision bump transactional; order audit immutable; concurrent stock reservations, paid+gift cùng variation; retries không trùng.
-- Signed quote with gifts/ack; stale/forged quote; reprice after stock/category/rule change; signed confirmation of skipped gifts.
-- Pancake exact-money acceptance **0đ** và **same variation repeated with distinct prices**, read-back, rollback/cancel/reconcile, unknown response; không chạy acceptance có side effects trong CI.
+- Migration backcompat và revision bump transactional; immutable per-`lineId` order audit; concurrent reservations gộp `PAID+PAID` hai giá cùng variation và `PAID+GIFT` cùng variation **một lần theo tổng quantity**; retry không giữ chỗ trùng.
+- Signed quote with gifts/ack và `PAID` price segments; quote proof của EX-17 giữ hai `lineId` và đủ quantity/unitPriceVnd/line total; stale/forged quote; reprice stock/category/rule; signed confirmation of skipped gifts.
+- Pancake live acceptance có kiểm soát cho **GIFT 0đ**, **PAID+GIFT cùng variation** và **PAID+PAID cùng variation khác đơn giá** (EX-17); kiểm tra read-back line-level money/quantity/total, rollback/cancel/reconcile/unknown. Nếu POS không hỗ trợ, yêu cầu phương án thay thế được chủ dự án duyệt trước `/build`. Không chạy acceptance có side effects trong CI.
 - Existing promotion, shipping, product catalog, Merchant/Meta Purchase, preorder/composite regressions.
 
 **Browser/E2E và accessibility:**
@@ -283,12 +288,12 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 - [ ] AC-02 Admin cấu hình Dynamic/Fixed scope gồm category + product includes/excludes; số chiếc được cộng giữa mọi mẫu/biến thể hợp lệ, set tính đúng một chiếc.
 - [ ] AC-03 Admin quản lý được danh sách quà product + allowed variants, cho/không cho trùng và max gifts/đơn tùy chọn.
 - [ ] AC-04 Earned/selected gift slots luôn đúng tại ranh giới; khách chọn được 0..entitled, kể cả khi kho thiếu một phần/toàn bộ, với xác nhận bắt buộc nếu không nhận đủ.
-- [ ] AC-05 Tier chọn highest threshold only; discount % hoặc fixed VND per discounted unit; ALL/FROM và CHEAPEST/MOST_EXPENSIVE đúng.
+- [ ] AC-05 Tier chọn highest threshold only; %/fixed VND per unit, ALL/FROM, CHEAPEST/MOST_EXPENSIVE đúng; khi FROM giảm một phần cùng variant, **hai dòng PAID khác giá** được lưu/ký riêng và bảo toàn chính xác 290.003đ ở EX-17.
 - [ ] AC-06 Campaign stacking và thứ tự priority do Admin thiết lập; mỗi bước dùng giá còn lại, không làm tăng/âm/zero giá trả tiền.
 - [ ] AC-07 Ngưỡng giá trị quà xét tiền sau tất cả giảm giá, trước phí ship và không tính quà; giá ở mọi bề mặt cùng một authority.
-- [ ] AC-08 Quote proof xác thực paid/gift, discounts, số suất chưa nhận và acknowledgment; bất kỳ thay đổi dù total bằng nhau cũng cần re-confirm.
-- [ ] AC-09 Reservation và submit idempotent, tồn kho đủ cho paid + gift + composite; không trùng quà dưới concurrency.
-- [ ] AC-10 Pancake live acceptance chính xác cho 0đ và paid+gift cùng variation hoặc có giải pháp thay thế **được phê duyệt riêng**; chưa đạt thì gate vẫn OFF.
+- [ ] AC-08 Quote proof ký/xác thực từng `lineId`, role, quantity, đơn giá và discount step của paid/gift; nhiều paid lines cùng variation khác giá không bị mất; bất kỳ thay đổi dù tổng tiền bằng nhau cũng cần re-confirm.
+- [ ] AC-09 Reservation và submit idempotent; các price segments `PAID` và `GIFT` cùng variant được gộp nhu cầu vật lý, EX-18 chỉ giữ chỗ đúng 3 chiếc một lần; composite và concurrency không cấp/giữ chỗ trùng.
+- [ ] AC-10 Pancake live acceptance cho quà 0đ, `PAID+GIFT` cùng variation và **`PAID+PAID` cùng variation khác đơn giá**, hoặc phương án thay thế được chủ dự án duyệt trước `/build` luồng phụ thuộc; chưa có bằng chứng/giải pháp thì gate liên quan vẫn OFF.
 - [ ] AC-11 Order snapshot/audit bất biến, shipping/analytics/feeds/preorder/legacy promotion không bị hồi quy.
 - [ ] AC-12 Domain/DB/E2E/accessibility/security/observability/release gates và Definition of Done đạt, có evidence và rollback.
 
@@ -304,7 +309,7 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 
 **R-05 — Cách diễn giải `FROM_REACHED_THRESHOLD` khi nhiều bậc:** đề xuất số chiếc giảm = Q − N(thắng) + 1, mức giảm của bậc thắng, ranking theo giá ngay trước step.
 
-**R-06 — POS acceptance (hard blocker):** chuẩn bị một kịch bản kiểm thử có side effects được operator chấp thuận và rollback/an toàn dữ liệu; không coi bằng chứng giá tùy chỉnh dương là bằng chứng dòng 0đ hoặc duplicate.
+**R-06 — POS acceptance (hard blocker):** kiểm chứng live có operator phê duyệt cho (a) quà giá 0đ, (b) PAID+GIFT trùng variation, (c) **PAID+PAID trùng variation với giá khác nhau**; read-back unit/quantity/totals, cancel/reconcile, rollback an toàn. Nếu (c) không đạt, trước `/build` phải có phương án thay thế được chủ dự án duyệt, giữ chính xác 290.003đ của EX-17; không bình quân/làm tròn giá. Các gate (a)/(b) vẫn độc lập.
 
 **R-07 — Phân cấp category:** xác minh category scope cha/con và snapshot fixed theo category resolver site-owned đang dùng, tránh tính sản phẩm ngoài danh mục Admin nghĩ mình đã chọn.
 
