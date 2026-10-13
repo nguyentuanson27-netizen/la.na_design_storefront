@@ -687,6 +687,27 @@ test("a first visit's CAPI twins wait for the _fbp the pixel writes and keep the
   expect(new URL(String(twinsOf(homeView!)[0]!.event_source_url)).pathname).toBe("/");
 });
 
+test("the server keeps an ad click as _fbc, so later twins carry it even with the pixel blocked", async ({ page, context }) => {
+  const start = readServerEvents().length;
+  // Blocked: fbevents.js never runs, so any _fbc can only have come from the landing response.
+  await installPixelStub(page, null);
+  await page.goto(`${BASE_URL}/shop?fbclid=PersistedClick_7`, { waitUntil: "networkidle" });
+  const readClickCookie = async () => (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "_fbc");
+  const landed = await readClickCookie();
+  expect(landed?.value).toMatch(/^fb\.1\.[0-9]{13}\.PersistedClick_7$/);
+  expect(landed?.httpOnly).toBe(false);
+
+  // A reload of the same click must not move the click time.
+  await page.goto(`${BASE_URL}/shop?fbclid=PersistedClick_7`, { waitUntil: "networkidle" });
+  expect((await readClickCookie())?.value).toBe(landed!.value);
+
+  // A page with no fbclid in its URL or referrer: the click can only come from the cookie.
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await expect.poll(() => readServerEvents().slice(start).filter((event) => event.event_name === "ViewContent").length).toBe(1);
+  const viewContent = readServerEvents().slice(start).find((event) => event.event_name === "ViewContent")!;
+  expect((viewContent.user_data as Record<string, unknown>).fbc).toBe(landed!.value);
+});
+
 test("cart page and drawer report only positive committed quantity deltas with shared IDs", async ({ page }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });

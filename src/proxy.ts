@@ -2,6 +2,11 @@ import { type NextRequest, NextResponse } from "next/server";
 
 import { resolveConfiguredStorefrontProductSlug } from "@/commerce/storefront-catalog-runtime";
 import { readStorefrontOrigin } from "@/commerce/storefront-origin";
+import {
+  META_CLICK_ID_COOKIE,
+  nextMetaClickIdCookie,
+  serializeMetaClickIdCookie,
+} from "@/integrations/meta/click-id-cookie";
 import { readSearchExposure, shouldNoIndexRequest } from "@/seo/search-exposure";
 
 const SHOP_PRODUCT_PREFIX = "/shop/";
@@ -10,7 +15,30 @@ const NO_INDEX_VALUE = "noindex, nofollow";
 /** Deliberately unroutable: it exists to be answered by the app's not-found page, never matched. */
 const UNRESOLVED_PRODUCT_PATH = "/__unresolved-product";
 
-function applySearchExposureHeader(request: NextRequest, response: Response): Response {
+const META_PIXEL_CONFIGURED = (process.env.LA_BUILD_FACEBOOK_PIXEL_ID ?? "").length > 0;
+
+/**
+ * Keeps an ad click's `fbclid` as `_fbc` from the landing response on, so a later Purchase sent
+ * through the Conversions API still carries it when the pixel never ran or its cookie expired.
+ * Only document loads count; with no pixel configured nothing Meta-related is written at all.
+ */
+function applyMetaClickIdCookie(request: NextRequest, response: Response): void {
+  if (!META_PIXEL_CONFIGURED || (request.method !== "GET" && request.method !== "HEAD")) return;
+  const value = nextMetaClickIdCookie({
+    fbclid: request.nextUrl.searchParams.get("fbclid"),
+    existing: request.cookies.get(META_CLICK_ID_COOKIE)?.value,
+    nowMs: Date.now(),
+  });
+  if (value === null) return;
+  try {
+    response.headers.append("Set-Cookie", serializeMetaClickIdCookie(value, readStorefrontOrigin()));
+  } catch {
+    // Measurement never costs a shopper the page.
+  }
+}
+
+function applyResponseHeaders(request: NextRequest, response: Response): Response {
+  applyMetaClickIdCookie(request, response);
   const exposure = readSearchExposure();
   if (
     shouldNoIndexRequest({
@@ -26,21 +54,21 @@ function applySearchExposureHeader(request: NextRequest, response: Response): Re
 
 export async function proxy(request: NextRequest) {
   if (!EXACT_PRODUCT_PATH.test(request.nextUrl.pathname)) {
-    return applySearchExposureHeader(request, NextResponse.next());
+    return applyResponseHeaders(request, NextResponse.next());
   }
 
   const slug = request.nextUrl.pathname.slice(SHOP_PRODUCT_PREFIX.length);
   const resolution = await resolveConfiguredStorefrontProductSlug(slug);
 
   if (resolution.kind === "CURRENT") {
-    return applySearchExposureHeader(request, NextResponse.next());
+    return applyResponseHeaders(request, NextResponse.next());
   }
 
   if (resolution.kind === "HISTORICAL") {
     const destination = new URL(readStorefrontOrigin());
     destination.pathname = `${SHOP_PRODUCT_PREFIX}${resolution.currentSlug}`;
 
-    return applySearchExposureHeader(
+    return applyResponseHeaders(
       request,
       new Response(null, {
         status: 301,
@@ -77,7 +105,7 @@ export async function proxy(request: NextRequest) {
   destination.search = "";
   destination.hash = "";
 
-  return applySearchExposureHeader(request, NextResponse.rewrite(destination));
+  return applyResponseHeaders(request, NextResponse.rewrite(destination));
 }
 
 export const config = {
