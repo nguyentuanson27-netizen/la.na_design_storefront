@@ -253,7 +253,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 - `tests/a11y-runtime/admin-promotions.spec.ts`
 
 **Acceptance criteria:**
-- [ ] **GQ09a:** server parse + validate + persist tier ladder/priority/stack, one discount method per campaign, ngưỡng strict increasing, value không giảm, bounded input; invalid/malformed không persist/publish hoặc bump revision.
+- [ ] **GQ09a:** server parse + validate + persist tier ladder/priority/stack, one discount method per campaign, ngưỡng strict increasing, value không giảm, bounded input; malformed/unbounded bị từ chối ngay cả khi Draft; Draft chưa đủ business rule vẫn lưu được, nhưng publish invalid bị chặn và không bump revision.
 - [ ] **GQ09a DB:** `create Draft → read-back → edit → publish/re-enable` giữ đủ tier/stack rules và atomic revision; reject invalid config, unauthorized operation và chứng minh legacy campaign create/edit/publish không hồi quy.
 - [ ] **GQ09b:** form/preview hiển thị số chiếc/money steps, EX-19, tier-invalid/priority collision; a11y keyboard/focus/errors và legacy form parity. UI không được bypass server validation.
 
@@ -331,7 +331,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 - `tests/a11y-runtime/admin-promotions.spec.ts`
 
 **Acceptance criteria:**
-- [ ] **GQ13a:** server validate Q/S scope, ONCE/REPEAT, gift variant allowlist, duplicate toggle/cap/stock/READY, bounds; malformed/unauthorized/incomplete config không persist/publish, copy/edit giữ ngữ nghĩa.
+- [ ] **GQ13a:** server validate Q/S scope, ONCE/REPEAT, gift variant allowlist, duplicate toggle/cap/stock/READY, bounds; malformed/unauthorized không persist; Draft thiếu business rule vẫn lưu được, nhưng publish invalid bị chặn và không bump revision; copy/edit giữ ngữ nghĩa.
 - [ ] **GQ13a DB:** `create Draft → read-back → edit → publish/re-enable`, Scheduled material edit/revision atomic; invalid allowlist/cap/eligibility reject, gift READY/composite đúng R-04, legacy create/edit/publish parity.
 - [ ] **GQ13b:** UI gift Q/S and scope, choose variants/caps/duplicates, preview entitlement; keyboard/focus/errors/mobile browser tests; không rely vào client validation cho publish.
 
