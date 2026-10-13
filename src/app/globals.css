@@ -541,9 +541,6 @@ main nav[aria-label="Breadcrumb"] a {
 
 .footer-bct-badge {
   display: block;
-  width: 140px;
-  max-width: 100%;
-  height: auto;
 }
 
 .footer-legal-name {
