@@ -27,7 +27,7 @@ const API_KEY = "super-secret-api-key";
 
 type Item = { variation_id: string; quantity: number; variation_info: { retail_price: number } };
 type PostedBody = { items: Item[] };
-type PosBehavior = "faithful" | "merge-average" | "reject" | "network" | "no-id" | "readback-fails";
+type PosBehavior = "faithful" | "merge-average" | "reject" | "network" | "no-id" | "readback-fails" | "cancel-fails" | "cancel-unexpected-body";
 
 function fakePos(behavior: PosBehavior, stock = 10) {
   const calls: string[] = [];
@@ -66,6 +66,8 @@ function fakePos(behavior: PosBehavior, stock = 10) {
     },
     async putJson(endpoint, body) {
       calls.push(`PUT ${endpoint} ${JSON.stringify(body)}`);
+      if (behavior === "cancel-fails") throw new Error("503 service unavailable");
+      if (behavior === "cancel-unexpected-body") return { success: false };
       return { success: true };
     },
   };
@@ -288,4 +290,41 @@ test("probe order input is a flagged do-not-ship test order carrying the run id"
   const input = buildProbeOrderInput(SHOP_ID, VARIATION, PROBE_CASES.PAID_PAID_DIFFERENT_PRICE, "run1");
   assert.match(input.note ?? "", /GQ01 run1 PAID_PAID_DIFFERENT_PRICE - DO NOT SHIP/);
   assert.equal(input.lines.every((line) => line.pancakeVariationId === VARIATION), true);
+});
+
+test("a case whose test order could not be cancelled is NOT a pass: the run stops, flags cleanup and reports it", async () => {
+  for (const behavior of ["cancel-fails", "cancel-unexpected-body"] as const) {
+    const { client, calls } = fakePos(behavior);
+    const report = await runCapabilityProbe(
+      approvedEnv("PAID_PAID_DIFFERENT_PRICE,PAID_GIFT_VENDOR_PRICE_SAME_VARIATION"),
+      deps(client),
+    );
+    assert.equal(report.cases.length, 1, `${behavior}: no further order is created while one is still open`);
+    const [entry] = report.cases;
+    assert.equal(entry.outcome, "CLEANUP_NOT_CONFIRMED", behavior);
+    assert.notEqual(entry.cleanupResult, "CANCELED_STATUS_7");
+    assert.match(entry.note, /cancel it manually/);
+    assert.equal(entry.readBackMerchandiseTotalVnd, 290_003, "the read-back evidence is kept for the operator");
+    assert.equal(report.allCreatedOrdersCleanedUp, false);
+    assert.equal(report.allSelectedGatingCasesPassed, false);
+    assert.equal(calls.filter((call) => call.startsWith("POST")).length, 1);
+  }
+});
+
+test("an unconfirmed cancellation after an unknown read-back also stops the run and flags cleanup", async () => {
+  const { client } = fakePos("readback-fails");
+  const original = client.putJson.bind(client);
+  client.putJson = async () => { throw new Error("timeout"); };
+  void original;
+  const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE,PAID_GIFT_VENDOR_PRICE_SAME_VARIATION"), deps(client));
+  assert.equal(report.cases.length, 1);
+  assert.equal(report.cases[0].outcome, "UNKNOWN_RESPONSE");
+  assert.equal(report.allCreatedOrdersCleanedUp, false);
+  assert.equal(report.allSelectedGatingCasesPassed, false);
+});
+
+test("a clean run reports every created order cleaned up", async () => {
+  const { client } = fakePos("faithful");
+  const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE"), deps(client));
+  assert.equal(report.allCreatedOrdersCleanedUp, true);
 });
