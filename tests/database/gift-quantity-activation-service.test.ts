@@ -553,3 +553,97 @@ test("candidate lookup is bounded by DISTINCT products and fails closed", async 
   await assert.doesNotReject(() => readScopeProductFacts({ productIds: sameProduct }));
   assert.ok(MAX_ACTIVE_GIFT_QUANTITY_CAMPAIGNS >= 1);
 });
+
+const throwingValidator = () => {
+  throw new Error("the rule validator must not run for an edit that changes nothing a buyer is charged");
+};
+
+test("F03: a rename that re-sends every stored value is not an effective edit — ungated, unvalidated, no revision, frozen ids kept", async () => {
+  await draft("f03");
+  await publishGiftQuantityCampaign({ campaignId: `${P}-f03`, now: T0, session: ADMIN, env: ON, validateRule: passRules });
+  const stored = await campaign("f03");
+  const before = await revision();
+  const frozenBefore = await frozenIds("f03");
+
+  // exactly what the admin form sends on a save: every field, unchanged, plus a new name
+  for (const env of [{}, ON]) {
+    const outcome = await editScheduledGiftQuantityCampaign({
+      campaignId: `${P}-f03`, now: T0, session: ADMIN, env, validateRule: throwingValidator,
+      patch: {
+        kind: "GIFT_ITEM", giftTrigger: stored.giftTrigger, subtotalScope: stored.subtotalScope,
+        name: `Renamed ${env === ON ? "on" : "off"}`,
+        startsAt: stored.startsAt, endsAt: stored.endsAt,
+        scope: { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: [...stored.categoryKeys], includeProductIds: [], excludeProductIds: [] },
+      },
+    });
+    assert.equal(outcome.ok, true, JSON.stringify(outcome, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+    assert.equal(outcome.ok && outcome.campaignRevision, stored.revision, "the campaign revision does not move");
+  }
+  assert.equal(await revision(), before, "the shared pricing revision does not move");
+  const after = await campaign("f03");
+  assert.equal(after.revision, stored.revision);
+  assert.equal(after.name, "Renamed on");
+  assert.deepEqual(await frozenIds("f03"), frozenBefore);
+  assert.equal(after.frozenAt?.toISOString(), stored.frozenAt?.toISOString());
+});
+
+test("F03: a save that changes nothing at all is a no-op even with the gate OFF; a real change is still gated", async () => {
+  await draft("f03b");
+  await publishGiftQuantityCampaign({ campaignId: `${P}-f03b`, now: T0, session: ADMIN, env: ON, validateRule: passRules });
+  const stored = await campaign("f03b");
+  const before = await revision();
+  const same = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-f03b`, now: T0, session: ADMIN, env: {}, validateRule: throwingValidator,
+    patch: { startsAt: new Date(stored.startsAt!.getTime()), endsAt: new Date(stored.endsAt!.getTime()), stackingEnabled: stored.stackingEnabled, stackPriority: stored.stackPriority },
+  });
+  assert.equal(same.ok, true);
+  assert.equal(await revision(), before);
+
+  const moved = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-f03b`, now: T0, session: ADMIN, env: {}, patch: { endsAt: new Date("2026-11-15T00:00:00Z") },
+  });
+  assert.deepEqual(moved, { ok: false, failure: { reason: "FEATURE_DISABLED" } });
+  assert.equal((await campaign("f03b")).endsAt?.toISOString(), stored.endsAt?.toISOString());
+  assert.equal(await revision(), before);
+
+  const real = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-f03b`, now: T0, session: ADMIN, env: ON, validateRule: passRules, patch: { endsAt: new Date("2026-11-15T00:00:00Z") },
+  });
+  assert.equal(real.ok, true);
+  assert.equal(await revision(), before + BigInt(1));
+  assert.equal((await campaign("f03b")).revision, stored.revision + 1);
+});
+
+test("F05: the trigger, subtotal scope and kind are not editable once Scheduled — a different value is refused, not ignored", async () => {
+  await draft("f05");
+  await publishGiftQuantityCampaign({ campaignId: `${P}-f05`, now: T0, session: ADMIN, env: ON, validateRule: passRules });
+  const stored = await campaign("f05");
+  const before = await revision();
+  const refuse = async (patch: Parameters<typeof editScheduledGiftQuantityCampaign>[0]["patch"]) =>
+    editScheduledGiftQuantityCampaign({ campaignId: `${P}-f05`, now: T0, session: ADMIN, env: ON, validateRule: passRules, patch });
+
+  assert.deepEqual(await refuse({ giftTrigger: "ORDER_SUBTOTAL" }), { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED"] } });
+  assert.deepEqual(await refuse({ giftTrigger: null }), { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED"] } });
+  assert.deepEqual(await refuse({ subtotalScope: "ALL_PAID_LINES" }), { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED"] } });
+  assert.deepEqual(await refuse({ kind: "QUANTITY_TIER" }), { ok: false, failure: { reason: "INVALID_INPUT", errors: ["KIND_IMMUTABLE"] } });
+  // a refused edit — even one that also renames — leaves everything as it was
+  assert.equal((await refuse({ name: "Sneaky", giftTrigger: "ORDER_SUBTOTAL" })).ok, false);
+  const after = await campaign("f05");
+  assert.deepEqual([after.name, after.giftTrigger, after.subtotalScope, after.revision], [stored.name, stored.giftTrigger, stored.subtotalScope, stored.revision]);
+  assert.equal(await revision(), before);
+  // the stored values themselves are accepted
+  assert.equal((await refuse({ kind: "GIFT_ITEM", giftTrigger: stored.giftTrigger, subtotalScope: stored.subtotalScope })).ok, true);
+});
+
+test("F04: a product on both lists is persisted once, as excluded, by Scheduled edits — never a unique-constraint failure", async () => {
+  await draft("f04", { categoryKeys: ["setVay"] });
+  await publishGiftQuantityCampaign({ campaignId: `${P}-f04`, now: T0, session: ADMIN, env: ON, validateRule: passRules });
+  const outcome = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-f04`, now: T0, session: ADMIN, env: ON, validateRule: passRules,
+    patch: { scope: { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: ["setVay"], includeProductIds: [`${P}-x`, `${P}-a`], excludeProductIds: [`${P}-a`] } },
+  });
+  assert.equal(outcome.ok, true, JSON.stringify(outcome, (_k, v) => (typeof v === "bigint" ? v.toString() : v)));
+  const targets = await prisma.giftQuantityTarget.findMany({ where: { campaignId: `${P}-f04` }, orderBy: { productId: "asc" } });
+  assert.deepEqual(targets.map((t) => [t.productId.replace(`${P}-`, ""), t.role]), [["a", "EXCLUDE"], ["x", "INCLUDE"]]);
+  assert.deepEqual(await frozenIds("f04"), ["b", "x"], "the excluded product is not frozen; the explicit include is");
+});

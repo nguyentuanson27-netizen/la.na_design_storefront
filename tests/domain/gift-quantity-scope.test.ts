@@ -13,6 +13,7 @@ import {
   MAX_SCOPE_EXCLUDED_PRODUCTS,
   MAX_SCOPE_INCLUDED_PRODUCTS,
   sumScopeTotals,
+  applyExcludeWins,
   validateScopeConfig,
   type FrozenProductSet,
   type ScopeConfig,
@@ -141,9 +142,10 @@ test("dynamic scope: category + include union, exclude always wins", () => {
   assert.equal(resolve(product("none")), false, "no membership");
   // exclude beats include
   const both = buildScopeResolver(
-    valid({ mode: DYNAMIC_CATEGORY, includeProductIds: ["p"], excludeProductIds: ["p"] }),
+    valid({ mode: DYNAMIC_CATEGORY, categoryKeys: ["aoDai"], includeProductIds: ["p"], excludeProductIds: ["p"] }),
     null,
   );
+  assert.equal(both(product("p", "aoDaiTet")), false, "in a selected category and on both lists: excluded");
   assert.equal(both(product("p")), false);
 });
 
@@ -270,4 +272,26 @@ test("totals ignore out-of-scope lines and reject invalid or overflowing lines",
   );
   // invalid lines are rejected even when out of scope: the cart is malformed either way
   assert.throws(() => sumScopeTotals(resolver, [line(outScope, 0, 1)]), RangeError);
+});
+
+test("F04: exclude wins is applied once, at validation — a product on both lists comes back only as excluded", () => {
+  const result = validateScopeConfig(
+    { mode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], includeProductIds: ["a", "b"], excludeProductIds: ["b", "c"] },
+    { allowGlobal: false },
+  );
+  assert.ok(result.ok);
+  if (!result.ok || result.scope.mode === "GLOBAL_ALL_PAID_LINES") return;
+  assert.deepEqual([...result.scope.includeProductIds], ["a"]);
+  assert.deepEqual([...result.scope.excludeProductIds], ["b", "c"]);
+  assert.deepEqual(applyExcludeWins(["a", "b", "c"], ["b"]), ["a", "c"]);
+  assert.deepEqual(applyExcludeWins(["a"], []), ["a"]);
+});
+
+test("F04: a scope whose only selection is cancelled by its own exclusions selects nothing and is refused as empty", () => {
+  const result = validateScopeConfig(
+    { mode: "FIXED_PRODUCT_SET", categoryKeys: [], includeProductIds: ["a"], excludeProductIds: ["a"] },
+    { allowGlobal: false },
+  );
+  assert.equal(result.ok, false);
+  assert.deepEqual(!result.ok && result.issues.map((issue) => issue.code), ["scope-empty"]);
 });

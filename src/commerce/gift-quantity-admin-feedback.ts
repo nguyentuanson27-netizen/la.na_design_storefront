@@ -54,6 +54,9 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   SUBTOTAL_SCOPE_MISMATCH:
     "Phạm vi tính giá trị không khớp với kiểu phạm vi: “Tất cả dòng trả tiền” dùng phạm vi toàn đơn, còn “Chỉ dòng thuộc phạm vi” cần chọn danh mục hoặc sản phẩm.",
   GIFT_FIELDS_ON_TIER: "Chiến dịch giảm giá theo số lượng không có điều kiện nhận quà.",
+  KIND_IMMUTABLE: "Không thể đổi loại chiến dịch sau khi đã tạo. Hãy tạo chiến dịch mới.",
+  GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED:
+    "Không thể đổi điều kiện nhận quà khi chiến dịch đã lên lịch, vì các mốc đã nhập sẽ đổi nghĩa. Hãy tắt chiến dịch rồi sao chép thành bản nháp mới để đổi điều kiện.",
   IDENTIFIER_TOO_LONG: "Mã chiến dịch không hợp lệ.",
   WINDOW_NOT_POSITIVE: "Thời gian kết thúc phải sau thời gian bắt đầu.",
   WINDOW_ALREADY_ENDED: "Thời gian kết thúc đã qua.",

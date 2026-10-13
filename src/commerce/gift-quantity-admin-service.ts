@@ -23,7 +23,7 @@ import { requireAdminSession } from "../auth/authorization.ts";
 import { prisma } from "../db/prisma.ts";
 
 import type { GiftQuantityDraftValues } from "./gift-quantity-admin-input.ts";
-import { validateScopeConfig, type ScopeIssue } from "./gift-quantity-scope.ts";
+import { applyExcludeWins, validateScopeConfig, type ScopeIssue } from "./gift-quantity-scope.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import { lockRows } from "./promotion-activation-service.ts";
 import { buildCopyCampaignName, deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
@@ -134,7 +134,8 @@ export async function createDraftGiftQuantityCampaign({
   requireAdminSession(session);
   const invalid = validateAll(values);
   if (invalid !== null) return { ok: false, failure: invalid };
-  const unknown = await unknownProductIds(client, [...values.includeProductIds, ...values.excludeProductIds]);
+  const includeProductIds = applyExcludeWins(values.includeProductIds, values.excludeProductIds);
+  const unknown = await unknownProductIds(client, [...includeProductIds, ...values.excludeProductIds]);
   if (unknown.length > 0) return { ok: false, failure: { reason: "INVALID_SCOPE", issues: [{ code: "scope-product-id-invalid", field: "productIds" }] } };
 
   const name = normalizePromotionCampaignName(values.name);
@@ -152,7 +153,7 @@ export async function createDraftGiftQuantityCampaign({
       subtotalScope: values.kind === "GIFT_ITEM" && values.giftTrigger === "ORDER_SUBTOTAL" ? values.subtotalScope : null,
       targets: {
         create: [
-          ...values.includeProductIds.map((productId) => ({ productId, role: "INCLUDE" as const })),
+          ...includeProductIds.map((productId) => ({ productId, role: "INCLUDE" as const })),
           ...values.excludeProductIds.map((productId) => ({ productId, role: "EXCLUDE" as const })),
         ],
       },
@@ -183,7 +184,8 @@ export async function editDraftGiftQuantityCampaign({
   if (!isBoundedPromotionIdentifier(campaignId)) return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["IDENTIFIER_TOO_LONG"] } };
   const invalid = validateAll(values);
   if (invalid !== null) return { ok: false, failure: invalid };
-  const unknown = await unknownProductIds(client, [...values.includeProductIds, ...values.excludeProductIds]);
+  const includeProductIds = applyExcludeWins(values.includeProductIds, values.excludeProductIds);
+  const unknown = await unknownProductIds(client, [...includeProductIds, ...values.excludeProductIds]);
   if (unknown.length > 0) return { ok: false, failure: { reason: "INVALID_SCOPE", issues: [{ code: "scope-product-id-invalid", field: "productIds" }] } };
   const name = normalizePromotionCampaignName(values.name);
   if (!name.ok) return { ok: false, failure: { reason: "INVALID_INPUT", errors: [name.error] } };
@@ -202,7 +204,7 @@ export async function editDraftGiftQuantityCampaign({
     await tx.giftQuantityTarget.deleteMany({ where: { campaignId } });
     await tx.giftQuantityTarget.createMany({
       data: [
-        ...values.includeProductIds.map((productId) => ({ campaignId, productId, role: "INCLUDE" as const })),
+        ...includeProductIds.map((productId) => ({ campaignId, productId, role: "INCLUDE" as const })),
         ...values.excludeProductIds.map((productId) => ({ campaignId, productId, role: "EXCLUDE" as const })),
       ],
     });

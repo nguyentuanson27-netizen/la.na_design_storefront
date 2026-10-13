@@ -222,3 +222,22 @@ test("copy: configuration and children are copied verbatim into a fresh, unfroze
 
   assert.deepEqual(await copyGiftQuantityCampaign({ campaignId: `${P}-none`, session: ADMIN }), { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } });
 });
+
+test("F04: a product named as both applicable and excluded is stored once, as excluded, by create and by edit — never a unique-constraint failure", async () => {
+  const created = await createDraftGiftQuantityCampaign({
+    values: values({ includeProductIds: [`${P}-a`, `${P}-b`], excludeProductIds: [`${P}-a`] }),
+    session: ADMIN,
+  });
+  assert.equal(created.ok, true, JSON.stringify(created));
+  if (!created.ok) return;
+  const rolesOf = async () =>
+    (await prisma.giftQuantityTarget.findMany({ where: { campaignId: created.campaignId }, orderBy: { productId: "asc" } })).map((t) => [t.productId, t.role]);
+  assert.deepEqual(await rolesOf(), [[`${P}-a`, "EXCLUDE"], [`${P}-b`, "INCLUDE"]]);
+
+  const edited = await editDraftGiftQuantityCampaign({
+    campaignId: created.campaignId, now: NOW, session: ADMIN,
+    values: values({ includeProductIds: [`${P}-b`, `${P}-a`], excludeProductIds: [`${P}-b`] }),
+  });
+  assert.equal(edited.ok, true, JSON.stringify(edited));
+  assert.deepEqual(await rolesOf(), [[`${P}-a`, "INCLUDE"], [`${P}-b`, "EXCLUDE"]]);
+});

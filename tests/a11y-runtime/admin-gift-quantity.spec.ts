@@ -34,6 +34,11 @@ const password = "admin-gift-quantity-runtime-password-123";
 const productId = `gq05-prod-${runId}`;
 const seededName = `GQ05 Seeded Draft ${runId}`;
 const seededId = `gq05-seed-${runId}`;
+const scheduledName = `GQ05 Scheduled ${runId}`;
+const scheduledId = `gq05-sched-${runId}`;
+// Minute-aligned, because that is the precision the datetime-local field round-trips.
+const scheduledStart = new Date(Math.floor((Date.now() + 10 * 24 * 3600 * 1000) / 60_000) * 60_000);
+const scheduledEnd = new Date(scheduledStart.getTime() + 5 * 24 * 3600 * 1000);
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -97,6 +102,13 @@ test.beforeAll(async () => {
      VALUES ($1,'GIFT_ITEM',$2,'DYNAMIC_CATEGORY',ARRAY['setVay']::text[],'QUANTITY',2,NOW())`,
     seededId, seededName,
   );
+
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      id: scheduledId, kind: "GIFT_ITEM", name: scheduledName, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
+      giftTrigger: "QUANTITY", minimumQuantity: 2, isEnabled: true, enabledAt: new Date(), startsAt: scheduledStart, endsAt: scheduledEnd,
+    },
+  });
 
   const { headers } = await auth.api.signUpEmail({
     returnHeaders: true,
@@ -280,4 +292,34 @@ test("GQ05 copy creates a fresh Draft", async ({ page, context }) => {
   const copies = await prisma.giftQuantityCampaign.findMany({ where: { name: `${seededName} - Bản sao` } });
   expect(copies).toHaveLength(1);
   expect(copies[0]!.isEnabled).toBe(false);
+});
+
+test("F03/F05 a Scheduled campaign: the trigger is shown but fixed, and a rename saved through the real form is not an effective edit", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  await page.goto(`${PAGE}?edit=${scheduledId}`, { waitUntil: "networkidle" });
+  const trigger = page.getByRole("combobox", { name: "Nhận quà khi" });
+  await expect(trigger).toBeDisabled();
+  await expect(trigger).toHaveValue("QUANTITY");
+  await expect(page.getByText("Chiến dịch đã lên lịch nên không đổi được điều kiện nhận quà.")).toBeVisible();
+
+  const renamed = `${scheduledName} renamed`;
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(renamed);
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+
+  // The feature gate is OFF in this environment: a real change would be refused, a rename must not be.
+  await expect(page).toHaveURL(`${PAGE}?status=ok`);
+  const after = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: scheduledId } });
+  expect(after.name).toBe(renamed);
+  expect(after.revision).toBe(1);
+  expect(after.startsAt?.toISOString()).toBe(scheduledStart.toISOString());
+  expect(after.endsAt?.toISOString()).toBe(scheduledEnd.toISOString());
+  expect(after.isEnabled).toBe(true);
+
+  // moving the end date IS an effective edit and is refused while the gate is OFF
+  await page.goto(`${PAGE}?edit=${scheduledId}`, { waitUntil: "networkidle" });
+  await page.getByLabel("Kết thúc (giờ Việt Nam)").fill("2099-01-01T10:00");
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page.locator("#promotion-admin-status")).toContainText("Tính năng quà tặng và giảm giá theo số lượng đang tắt");
+  const unchanged = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: scheduledId } });
+  expect(unchanged.endsAt?.toISOString()).toBe(scheduledEnd.toISOString());
 });

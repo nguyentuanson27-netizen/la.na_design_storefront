@@ -19,7 +19,7 @@
  *   production default refuses until GQ09a/GQ13a provide real validators.
  */
 
-import type { PrismaClient } from "../generated/prisma/client.ts";
+import type { GiftQuantityCampaignKind, GiftSubtotalScope, GiftTrigger, PrismaClient } from "../generated/prisma/client.ts";
 import { requireAdminSession } from "../auth/authorization.ts";
 import { prisma } from "../db/prisma.ts";
 
@@ -30,6 +30,7 @@ import {
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { validateRuleForPublish, type RuleValidator } from "./gift-quantity-rule-validation.ts";
 import {
+  applyExcludeWins,
   computeFrozenProductIds,
   expandScopeCategoryKeys,
   FIXED_PRODUCT_SET,
@@ -365,6 +366,14 @@ export type ScopePatch = Readonly<{
  * by GQ09a / GQ13a through their own write contracts; they reuse this transaction.
  */
 export type ScheduledEditPatch = Readonly<{
+  /**
+   * Identity facts the caller believes the campaign has. They are **not editable** on a Scheduled
+   * campaign, so a value that differs from the stored one is refused instead of silently ignored
+   * (changing the trigger would change what the stored thresholds mean).
+   */
+  kind?: GiftQuantityCampaignKind;
+  giftTrigger?: GiftTrigger | null;
+  subtotalScope?: GiftSubtotalScope | null;
   name?: string;
   startsAt?: Date | null;
   endsAt?: Date | null;
@@ -401,13 +410,11 @@ export async function editScheduledGiftQuantityCampaign({
   const unbounded = refuseUnboundedId(campaignId);
   if (unbounded !== null) return { ok: false, failure: unbounded };
 
-  // A key that is present but `undefined` means "not provided", never "clear it".
+  // A key that is present but `undefined` means "not provided", never "clear it". Whether a provided
+  // value is a *change* is decided inside the transaction against the stored row: a form re-sends
+  // every field on every save, and an unchanged field is not an edit.
   const touchesStart = patch.startsAt !== undefined;
   const touchesEnd = patch.endsAt !== undefined;
-  const touchesAnythingEffective =
-    touchesStart || touchesEnd || patch.stackPriority !== undefined || patch.stackingEnabled !== undefined || patch.scope !== undefined;
-  // A rename is not effective, so it is neither gated nor held to rule validation.
-  if (touchesAnythingEffective && !isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } };
 
   const normalizedName = patch.name === undefined ? null : normalizePromotionCampaignName(patch.name);
   if (normalizedName !== null && !normalizedName.ok) {
@@ -420,36 +427,68 @@ export async function editScheduledGiftQuantityCampaign({
 
     const row = await loadCampaign(tx, campaignId);
     if (row === null) return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } } as const;
+    // What actually changes, measured against the stored campaign. A form re-sends every field on
+    // every save, so a provided value is only an edit when it differs.
+    const instant = (date: Date | null) => (date === null ? null : date.getTime());
+    const startsAt = touchesStart ? patch.startsAt ?? null : row.startsAt;
+    const endsAt = touchesEnd ? patch.endsAt ?? null : row.endsAt;
+    const startsAtChanged = touchesStart && instant(startsAt) !== instant(row.startsAt);
+    const endsAtChanged = touchesEnd && instant(endsAt) !== instant(row.endsAt);
+    const priorityChanged = patch.stackPriority !== undefined && patch.stackPriority !== row.stackPriority;
+    const stackingChanged = patch.stackingEnabled !== undefined && patch.stackingEnabled !== row.stackingEnabled;
+    const currentInclude = row.targets.filter((t) => t.role === "INCLUDE").map((t) => t.productId);
+    const currentExclude = row.targets.filter((t) => t.role === "EXCLUDE").map((t) => t.productId);
+    // Exclude wins, so a product named on both lists is compared (and later persisted) once, as excluded.
+    const scopeChanged =
+      patch.scope !== undefined &&
+      (patch.scope.scopeMode !== row.scopeMode ||
+        (patch.scope.scopeMode !== "GLOBAL_ALL_PAID_LINES" &&
+          (!sameSet(patch.scope.categoryKeys, row.categoryKeys) ||
+            !sameSet(applyExcludeWins(patch.scope.includeProductIds, patch.scope.excludeProductIds), currentInclude) ||
+            !sameSet(patch.scope.excludeProductIds, currentExclude))));
+    const effective = startsAtChanged || endsAtChanged || priorityChanged || stackingChanged || scopeChanged;
+
+    // The gate is decided by what the edit would change, before anything else about the campaign.
+    if (effective && !isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } } as const;
+
     const lifecycle = deriveCampaignLifecycle({ ...row, now });
     if (lifecycle.status !== "SCHEDULED") {
       return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } } as const;
     }
 
-    const startsAt = touchesStart ? patch.startsAt ?? null : row.startsAt;
-    const endsAt = touchesEnd ? patch.endsAt ?? null : row.endsAt;
-    const windowErrors = touchesAnythingEffective ? validateWindow(startsAt, endsAt, now, { startMustBeFuture: true }) : [];
-    if (windowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: windowErrors } } as const;
+    // Identity is not editable here: refuse a mismatch loudly rather than drop it.
+    if (patch.kind !== undefined && patch.kind !== row.kind) {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["KIND_IMMUTABLE"] } } as const;
+    }
+    if (
+      row.kind === "GIFT_ITEM" &&
+      ((patch.giftTrigger !== undefined && patch.giftTrigger !== row.giftTrigger) ||
+        (patch.subtotalScope !== undefined && patch.subtotalScope !== row.subtotalScope))
+    ) {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED"] } } as const;
+    }
 
     const scopeValidation = validateScopeConfig(scopeFromRow(row, patch.scope), { allowGlobal: allowsGlobalScope(row) });
     if (!scopeValidation.ok) {
       return { ok: false, failure: { reason: "INVALID_SCOPE", issues: scopeValidation.issues } } as const;
     }
-    if (touchesAnythingEffective) {
-      const ruleErrors = validateRule(ruleInputOf(row));
+    const normalizedScope = scopeValidation.scope;
+
+    // Only a real change to what a buyer is charged is gated, window-checked and rule-validated. A
+    // rename, or a save that re-sends the stored values, is neither.
+    if (effective) {
+      if (!isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } } as const;
+      const windowErrors = validateWindow(startsAt, endsAt, now, { startMustBeFuture: true });
+      if (windowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: windowErrors } } as const;
+      // Validate the campaign as it will be after the edit, not the stored row it replaces.
+      const after = {
+        ...ruleInputOf(row),
+        stackingEnabled: patch.stackingEnabled ?? row.stackingEnabled,
+        stackPriority: patch.stackPriority !== undefined ? patch.stackPriority : row.stackPriority,
+      };
+      const ruleErrors = validateRule(after);
       if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
     }
-
-    const currentInclude = row.targets.filter((t) => t.role === "INCLUDE").map((t) => t.productId);
-    const currentExclude = row.targets.filter((t) => t.role === "EXCLUDE").map((t) => t.productId);
-    const scopeChanged =
-      patch.scope !== undefined &&
-      (patch.scope.scopeMode !== row.scopeMode ||
-        !sameSet(patch.scope.categoryKeys, row.categoryKeys) ||
-        !sameSet(patch.scope.includeProductIds, currentInclude) ||
-        !sameSet(patch.scope.excludeProductIds, currentExclude));
-    const otherEffectiveChange =
-      touchesStart || touchesEnd || patch.stackPriority !== undefined || patch.stackingEnabled !== undefined;
-    const effective = scopeChanged || otherEffectiveChange;
 
     const campaignRevision = effective ? row.revision + 1 : row.revision;
     let frozenProductCount: number | null = null;
@@ -459,15 +498,21 @@ export async function editScheduledGiftQuantityCampaign({
       // away from Fixed clears it *before* the mode changes.
       if (scopeValidation.scope.mode !== FIXED_PRODUCT_SET) await clearFrozenSet(tx, row.id);
       await tx.giftQuantityTarget.deleteMany({ where: { campaignId: row.id } });
+      // The normalized scope is what is persisted: a product on both lists is stored once, as EXCLUDE.
+      const persistedInclude = normalizedScope.mode === "GLOBAL_ALL_PAID_LINES" ? [] : normalizedScope.includeProductIds;
+      const persistedExclude = normalizedScope.mode === "GLOBAL_ALL_PAID_LINES" ? [] : normalizedScope.excludeProductIds;
       await tx.giftQuantityTarget.createMany({
         data: [
-          ...patch.scope.includeProductIds.map((productId) => ({ campaignId: row.id, productId, role: "INCLUDE" as const })),
-          ...patch.scope.excludeProductIds.map((productId) => ({ campaignId: row.id, productId, role: "EXCLUDE" as const })),
+          ...persistedInclude.map((productId) => ({ campaignId: row.id, productId, role: "INCLUDE" as const })),
+          ...persistedExclude.map((productId) => ({ campaignId: row.id, productId, role: "EXCLUDE" as const })),
         ],
       });
       await tx.giftQuantityCampaign.update({
         where: { id: row.id },
-        data: { scopeMode: patch.scope.scopeMode, categoryKeys: [...patch.scope.categoryKeys] },
+        data: {
+          scopeMode: normalizedScope.mode,
+          categoryKeys: normalizedScope.mode === "GLOBAL_ALL_PAID_LINES" ? [] : [...normalizedScope.categoryKeys],
+        },
       });
       if (scopeValidation.scope.mode === FIXED_PRODUCT_SET) {
         const frozen = await writeFrozenSet(tx, row.id, scopeValidation.scope, now, campaignRevision);
@@ -483,10 +528,10 @@ export async function editScheduledGiftQuantityCampaign({
       where: { id: row.id },
       data: {
         ...(normalizedName !== null && normalizedName.ok ? { name: normalizedName.name } : {}),
-        ...(touchesStart ? { startsAt } : {}),
-        ...(touchesEnd ? { endsAt } : {}),
-        ...(patch.stackPriority !== undefined ? { stackPriority: patch.stackPriority } : {}),
-        ...(patch.stackingEnabled !== undefined ? { stackingEnabled: patch.stackingEnabled } : {}),
+        ...(startsAtChanged ? { startsAt } : {}),
+        ...(endsAtChanged ? { endsAt } : {}),
+        ...(priorityChanged ? { stackPriority: patch.stackPriority } : {}),
+        ...(stackingChanged ? { stackingEnabled: patch.stackingEnabled } : {}),
         revision: campaignRevision,
       },
     });
