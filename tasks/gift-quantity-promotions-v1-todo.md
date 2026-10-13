@@ -21,11 +21,11 @@
   - [x] R-06 được giữ là gate riêng cần evidence POS; không coi custom-price dương là evidence đủ.
   - [x] **Evidence:** Owner link sign-off cho R-01..R-05/R-07 **và rounding**; spec/ADR/EX/AC nhất quán; không cần runtime tests.
   - Evidence (13/10/2026): owner answers captured in `/build` session; recorded in [ADR 0016](../docs/decisions/0016-gift-quantity-promotions-v1-decisions.md); spec status updated. Owner chose the spec's proposal for every item, so EX/AC values are unchanged. R-06 remains an open POS gate.
-- [ ] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_
-  - [ ] Trước thao tác POS có explicit operator consent, preflight stock, idempotency key, test order, cleanup/reconcile và log không PII/secret.
-  - [ ] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ; nếu thất bại, không ngụy tạo vendor support.
-  - [ ] Case không được hỗ trợ phải có phương án thay thế bảo toàn tiền/kho/audit được owner duyệt trước khi xây luồng phụ thuộc.
-  - [ ] **Evidence:** Focused domain probe tests; kiểm tra runbook bằng reviewer; chạy live chỉ trong môi trường được operator phê duyệt.
+- [ ] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_ — **BUILD DONE (probe + runbook + tests); LIVE EVIDENCE PENDING (H1/R-06) — task stays open**
+  - [x] Trước thao tác POS có explicit operator consent (`GQ_POS_PROBE_APPROVED=shop:<id>` + danh sách case), preflight stock, một lần tạo duy nhất (không retry; run id trong note), cleanup bằng huỷ đơn mọi đường thoát, log không PII/secret (tests với fake client).
+  - [ ] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ — **cần operator chạy live**; chưa có kết quả, không ngụy tạo vendor support.
+  - [x] Case không được hỗ trợ có phương án thay thế đề xuất trong runbook (cần owner duyệt trước khi xây luồng phụ thuộc). Cases theo ADR 0016 D-08: `PAID_PAID_DIFFERENT_PRICE` (290.003đ), `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` (99.000đ + quà 1.000đ), `GIFT_ZERO_PRICE_INFORMATIONAL` (không gating).
+  - [x] **Evidence (offline):** `tests/domain/pancake-gift-quantity-capability-probe.test.ts` 16/16 pass; runbook [`docs/integrations/pancake-gift-quantity-acceptance.md`](../docs/integrations/pancake-gift-quantity-acceptance.md). **Live evidence log: NOT RUN.**
 
 ### Scope & persistence
 - [ ] **GQ02 — Quy ước scope Dynamic/Fixed/Global theo taxonomy hiện có** _(deps: GQ00; gate: R-07)_
