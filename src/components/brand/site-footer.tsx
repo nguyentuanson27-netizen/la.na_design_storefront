@@ -214,6 +214,7 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
               alt="Đã thông báo Bộ Công Thương"
               width={140}
               height={52}
+              style={{ width: "auto", height: "auto" }}
               loading="lazy"
             />
           </a>
