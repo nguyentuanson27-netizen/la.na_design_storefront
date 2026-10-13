@@ -132,6 +132,7 @@ enum GiftQuantityStackPeerKind {
   FLASH_SALE
   CLEARANCE
   QUANTITY_TIER
+  GIFT_ITEM
 }
 
 /// ADR 0014 §5. Website-owned; Pancake catalog sync never writes it (master spec §27).

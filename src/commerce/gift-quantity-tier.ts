@@ -106,7 +106,11 @@ export type TierInputLine = Readonly<{
 }>;
 
 export type TierPriceSegment = Readonly<{
-  /** `${lineKey}:disc` for discounted units, `${lineKey}:full` for the rest. Stable for equal facts. */
+  /**
+   * `${lineKey}|disc` for discounted units, `${lineKey}|full` for the rest. Stable for equal facts.
+   * The separator is `|`, which the stack layer forbids in any caller-supplied line key, so a derived
+   * key can never equal an original one; derived keys are injective in (parent key, suffix).
+   */
   segmentKey: string;
   lineKey: string;
   pancakeVariationId: string;
@@ -166,7 +170,7 @@ export function applyTierStep(unit: TierDiscountUnit, discountValue: number, uni
 
 function unchanged(lines: readonly TierInputLine[]): TierPriceSegment[] {
   return lines.map((line) => ({
-    segmentKey: `${line.lineKey}:full`,
+    segmentKey: `${line.lineKey}|full`,
     lineKey: line.lineKey,
     pancakeVariationId: line.pancakeVariationId,
     quantity: line.quantity,
@@ -271,7 +275,7 @@ export function priceQuantityTier(config: QuantityTierConfig, lines: readonly Ti
       const perUnit = line.unitPriceVnd - price;
       totalDiscountVnd += perUnit * discountedQuantity;
       segments.push({
-        segmentKey: `${line.lineKey}:disc`,
+        segmentKey: `${line.lineKey}|disc`,
         lineKey: line.lineKey,
         pancakeVariationId: line.pancakeVariationId,
         quantity: discountedQuantity,
@@ -285,7 +289,7 @@ export function priceQuantityTier(config: QuantityTierConfig, lines: readonly Ti
     const fullQuantity = line.quantity - discountedQuantity;
     if (fullQuantity > 0) {
       segments.push({
-        segmentKey: `${line.lineKey}:full`,
+        segmentKey: `${line.lineKey}|full`,
         lineKey: line.lineKey,
         pancakeVariationId: line.pancakeVariationId,
         quantity: fullQuantity,

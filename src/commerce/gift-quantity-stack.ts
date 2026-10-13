@@ -33,7 +33,7 @@ import { applyPercentage, type PromotionCampaignKind } from "./promotion-pricing
 /** Stack peer wildcard: every campaign of that kind. */
 export const STACK_PEER_ANY = "*";
 
-export type StackPeerKind = PromotionCampaignKind | "QUANTITY_TIER";
+export type StackPeerKind = PromotionCampaignKind | "QUANTITY_TIER" | "GIFT_ITEM";
 
 export type StackPeer = Readonly<{ kind: StackPeerKind; campaignId: string }>;
 
@@ -131,10 +131,16 @@ type Mutable = {
 
 const MAX_STACK_LINES = 200;
 
+/**
+ * Caller-supplied line keys are a plain token. `|` is reserved: it joins a key to a split suffix
+ * (`key|disc`, `key|full`), so a derived key can never collide with an original one.
+ */
+export const STACK_LINE_KEY_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
 function validLine(line: StackInputLine): boolean {
   return (
     typeof line.lineKey === "string" &&
-    line.lineKey.length > 0 &&
+    STACK_LINE_KEY_PATTERN.test(line.lineKey) &&
     Number.isSafeInteger(line.quantity) &&
     line.quantity >= 1 &&
     Number.isSafeInteger(line.basePriceVnd) &&
@@ -165,7 +171,8 @@ export function applyLegacyStackStep(campaign: StackLegacyCampaign, currentPrice
   return next;
 }
 
-function allows(peers: readonly StackPeer[], kind: StackPeerKind, campaignId: string): boolean {
+/** Whether a peer list accepts a campaign of `kind` with `campaignId` (by id, or by kind with `*`). */
+export function stackPeersAllow(peers: readonly StackPeer[], kind: StackPeerKind, campaignId: string): boolean {
   return peers.some((peer) => peer.kind === kind && (peer.campaignId === STACK_PEER_ANY || peer.campaignId === campaignId));
 }
 
@@ -243,7 +250,7 @@ export function priceStack(input: Readonly<{
       const compatible = (x: Participant, y: Participant): boolean => {
         if (x.source === "TIER") {
           if (!x.tier.stackingEnabled) return false;
-          return allows(x.tier.peers, y.source === "TIER" ? "QUANTITY_TIER" : y.campaign.kind, y.id);
+          return stackPeersAllow(x.tier.peers, y.source === "TIER" ? "QUANTITY_TIER" : y.campaign.kind, y.id);
         }
         // A legacy campaign's own consent. Its peers are the tier campaigns that name it.
         return x.consented;
@@ -400,4 +407,48 @@ export function priceStack(input: Readonly<{
 
   // Unreachable: every restart drops at least one tier, and there are finitely many.
   return { ok: false, reason: "INPUT_INVALID" };
+}
+
+export type GiftStackCandidate = Readonly<{
+  id: string;
+  stackingEnabled: boolean;
+  peers: readonly StackPeer[];
+}>;
+
+export type GiftStackResolution = Readonly<{
+  /** Campaigns that may run together on this cart, in id order. */
+  permitted: readonly string[];
+  /** Campaigns that stepped aside, with the other campaign in the refused pair. */
+  dropped: readonly StackDroppedCampaign[];
+}>;
+
+/**
+ * Which of the gift campaigns that are all earning on one cart may run together (FR-08).
+ *
+ * A gift never changes a price, so there is no order to resolve; the only question is permission.
+ * Two gift campaigns coexist only when **both** have stacking enabled and **each** names the other
+ * (by id, or by the `GIFT_ITEM` wildcard). Any refused pair drops **both** campaigns, the same
+ * conservative rule as price stacking, and the result does not depend on input order. A single
+ * gift campaign always runs: with nothing to combine with, no permission is asked.
+ */
+export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandidate[]): GiftStackResolution {
+  const sorted = [...campaigns].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const dropped = new Map<string, StackDroppedCampaign>();
+  for (let i = 0; i < sorted.length; i += 1) {
+    for (let j = i + 1; j < sorted.length; j += 1) {
+      const a = sorted[i]!;
+      const b = sorted[j]!;
+      const together =
+        a.stackingEnabled && b.stackingEnabled &&
+        stackPeersAllow(a.peers, "GIFT_ITEM", b.id) &&
+        stackPeersAllow(b.peers, "GIFT_ITEM", a.id);
+      if (together) continue;
+      if (!dropped.has(a.id)) dropped.set(a.id, { campaignId: a.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: b.id });
+      if (!dropped.has(b.id)) dropped.set(b.id, { campaignId: b.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: a.id });
+    }
+  }
+  return {
+    permitted: sorted.filter((campaign) => !dropped.has(campaign.id)).map((campaign) => campaign.id),
+    dropped: sorted.filter((campaign) => dropped.has(campaign.id)).map((campaign) => dropped.get(campaign.id)!),
+  };
 }
