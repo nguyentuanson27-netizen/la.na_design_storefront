@@ -276,7 +276,7 @@ CI/PostgreSQL/browser và integration live secrets phải được cung cấp th
 ## 10. Rollout, kiểm soát vận hành, ranh giới
 
 - Mở rộng bằng migration cộng thêm, rollback tương thích; **feature flag mặc định OFF** cho khuyến mại mới. Không sửa dữ liệu lịch sử, không tự bật campaign hiện có.
-- Stage rollout: domain/DB tests → admin preview/sandbox → quote/order integration → controlled Pancake zero-price evidence → E2E/accessibility → owner review → bật có kiểm soát; kill switch phải dừng tạo quote mới theo luật mới mà không làm sai các order đã hoàn tất.
+- Stage rollout: **trước `/build` của luồng phụ thuộc POS**, xác nhận contract cho từng case (quà 0đ, `PAID+GIFT`, `PAID+PAID` hai giá) bằng bằng chứng live hoặc phương án thay thế được chủ dự án duyệt → domain/DB tests → admin preview/sandbox → quote/order integration → controlled end-to-end Pancake acceptance/read-back trên adapter triển khai → E2E/accessibility → owner review → bật có kiểm soát. Kill switch phải dừng tạo quote mới theo luật mới mà không làm sai các order đã hoàn tất.
 - Metrics/log không PII: promotion candidate/conflict, quote/requote, gift entitled/selected/unclaimed, stock insufficiency, stale proof, price divergence, Pancake accepted/rejected/unknown, idempotency dedupe. Alert cho xung đột active, tồn kho âm/quà trùng, POS quote mismatch.
 - **Always:** giữ chuẩn authz, validation, integer money, atomic reservation, proof, migrations, tests, docs, feature gating và Definition of Done trong `05_SHARED_REFERENCES.md`.
 - **Ask first:** thay đổi semantics legacy `FIXED_PRICE`, cấu trúc tables khi dữ liệu thật có migration rủi ro, trường hợp adapter Pancake cần compromise, thêm dependencies, điều chỉnh ship/SEO/analytics, đổi behavior legacy overlap.
