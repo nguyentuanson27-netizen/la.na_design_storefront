@@ -1,13 +1,13 @@
 # Gift & Quantity Promotions v1 — task checklist
 
-**Status:** DRAFT/NOT STARTED — approval required before `/build`.
+**Status:** IN PROGRESS — owner started `/build` (13/10/2026). H0 decisions: ADR 0016. Tasks are checked only after merge **and** verification evidence.
 **Source spec:** [`docs/specs/gift-quantity-promotions-v1.md`](../docs/specs/gift-quantity-promotions-v1.md), merged PR #136 at `main@431e0deccf5500d9f5adbddfa4528ddcd0926cbf`.
 **Implementation plan:** [`tasks/gift-quantity-promotions-v1-plan.md`](./gift-quantity-promotions-v1-plan.md). Do not alter historical `tasks/plan.md` or `tasks/todo.md`.
 
 ## Hard approvals / blockers
-- [ ] **H0 Owner:** R-01..R-05/R-07 **và quyết định riêng rounding/granularity** (BigInt half-up **mỗi chiếc** vs cách khác) có owner sign-off; update spec/EX/AC/ADR trước GQ06/GQ07 `/build` nếu khác phương án đề xuất.
-- [ ] **H1 POS:** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
-- [ ] **H2 Plan:** Owner reviews/approves this plan and PR sizing/dependency graph.
+- [x] **H0 Owner (ADR 0016, 13/10/2026):** R-01..R-05/R-07 **và quyết định riêng rounding/granularity** (BigInt half-up **mỗi chiếc** vs cách khác) có owner sign-off; update spec/EX/AC/ADR trước GQ06/GQ07 `/build` nếu khác phương án đề xuất.
+- [ ] **H1 POS (OPEN — API-level; owner amended gift representation to 1.000đ per unit, ADR 0016 D-08):** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
+- [x] **H2 Plan (owner issued `/build` 13/10/2026):** Owner reviews/approves this plan and PR sizing/dependency graph.
 - [ ] **H3 Core:** GQ03 tạo gate `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` độc lập default-OFF; GQ04 chứng minh OFF chặn new publish/candidates, không bump revision, legacy activation/quote parity trước Checkpoint A; GQ07/08 reverify cart OFF parity sau wiring.
 - [ ] **H4 Checkout:** HMAC+nonclaim consent, reservation race/idempotency, Pancake read-back/reconcile.
 - [ ] **H5 Ship:** exact-head CI, DoD, a11y, security, observability, rollback, separate launch approval; feature gate mặc định OFF cho tới `/ship`.
@@ -15,11 +15,12 @@
 ## Task execution (all initially unchecked)
 
 ### Decision / POS evidence gates
-- [ ] **GQ00 — Chốt R-01..R-05/R-07, rounding và ownership** _(deps: none; gate: OWNER)_
-  - [ ] Chốt từng R-01..R-05/R-07 **và rounding/granularity riêng biệt** (quy tắc, lúc làm tròn, per-unit/per-line) có bằng chứng owner; nếu thiếu, implementation liên quan BLOCKED.
-  - [ ] Nếu owner chọn khác `N0`/stack/half-up per-unit, sửa spec/EX-17/VND boundary/AC/ADR trước GQ06/GQ07.
-  - [ ] R-06 được giữ là gate riêng cần evidence POS; không coi custom-price dương là evidence đủ.
-  - [ ] **Evidence:** Owner link sign-off cho R-01..R-05/R-07 **và rounding**; spec/ADR/EX/AC nhất quán; không cần runtime tests.
+- [x] **GQ00 — Chốt R-01..R-05/R-07, rounding và ownership** _(deps: none; gate: OWNER)_
+  - [x] Chốt từng R-01..R-05/R-07 **và rounding/granularity riêng biệt** (quy tắc, lúc làm tròn, per-unit/per-line) có bằng chứng owner; nếu thiếu, implementation liên quan BLOCKED.
+  - [x] Nếu owner chọn khác `N0`/stack/half-up per-unit, sửa spec/EX-17/VND boundary/AC/ADR trước GQ06/GQ07.
+  - [x] R-06 được giữ là gate riêng cần evidence POS; không coi custom-price dương là evidence đủ.
+  - [x] **Evidence:** Owner link sign-off cho R-01..R-05/R-07 **và rounding**; spec/ADR/EX/AC nhất quán; không cần runtime tests.
+  - Evidence (13/10/2026): owner answers captured in `/build` session; recorded in [ADR 0016](../docs/decisions/0016-gift-quantity-promotions-v1-decisions.md); spec status updated. Owner chose the spec's proposal for every item, so EX/AC values are unchanged. R-06 remains an open POS gate.
 - [ ] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_
   - [ ] Trước thao tác POS có explicit operator consent, preflight stock, idempotency key, test order, cleanup/reconcile và log không PII/secret.
   - [ ] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ; nếu thất bại, không ngụy tạo vendor support.
