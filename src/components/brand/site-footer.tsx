@@ -187,16 +187,37 @@ export function SiteFooter({ model }: Readonly<{ model: SiteFooterModel }>) {
       </div>
 
       <div className="footer-legal" data-footer-legal>
-        <p className="footer-label">Thông tin pháp lý</p>
-        <p className="footer-legal-name">{model.legal.legalEntityName}</p>
-        {/* Beside the entity it belongs to, not at the end of the block: the representative is part
-            of who the company is, where the lines below are where to reach it. */}
-        <p>Đại diện pháp luật: {model.legal.legalRepresentative}</p>
-        <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
-        <p>
-          MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}
-        </p>
-        <p>Email: {model.legal.legalEmail}</p>
+        <div className="footer-legal-info">
+          <p className="footer-label">Thông tin pháp lý</p>
+          <p className="footer-legal-name">{model.legal.legalEntityName}</p>
+          {/* Beside the entity it belongs to, not at the end of the block: the representative is part
+              of who the company is, where the lines below are where to reach it. */}
+          <p>Đại diện pháp luật: {model.legal.legalRepresentative}</p>
+          <p>Địa chỉ đăng ký: {model.legal.registeredAddress}</p>
+          <p>
+            MST: {model.legal.taxCode} - ngày cấp: {model.legal.taxIdIssueDate}
+          </p>
+          <p>Email: {model.legal.legalEmail}</p>
+        </div>
+
+        <div className="footer-certification">
+          <a
+            className="footer-bct-link"
+            href="http://online.gov.vn/nen-tang/005c15fc-3eb7-44a5-9aab-0f29fd7b5995"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Đã thông báo Bộ Công Thương"
+          >
+            <Image
+              className="footer-bct-badge"
+              src="/brand/bo-cong-thuong-da-thong-bao.png"
+              alt="Đã thông báo Bộ Công Thương"
+              width={140}
+              height={52}
+              loading="lazy"
+            />
+          </a>
+        </div>
       </div>
 
       <p className="footer-meta">© 2026 {BRAND.identity.name}</p>

@@ -504,8 +504,10 @@ main nav[aria-label="Breadcrumb"] a {
 }
 
 .footer-legal {
-  display: grid;
-  gap: var(--space-1);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: var(--space-6);
   margin-top: var(--space-7);
   padding-top: var(--space-5);
   border-top: 1px solid var(--line);
@@ -513,6 +515,35 @@ main nav[aria-label="Breadcrumb"] a {
   font-size: 0.78rem;
   line-height: 1.55;
   overflow-wrap: anywhere;
+}
+
+.footer-legal-info {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.footer-certification {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.footer-bct-link {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-sm, 4px);
+  transition: opacity 150ms ease;
+}
+
+.footer-bct-link:hover {
+  opacity: 0.85;
+}
+
+.footer-bct-badge {
+  display: block;
+  width: 140px;
+  max-width: 100%;
+  height: auto;
 }
 
 .footer-legal-name {
@@ -1913,6 +1944,12 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   .site-footer {
     padding-top: var(--space-6);
     padding-bottom: var(--space-5);
+  }
+
+  .footer-legal {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
   }
 }
 
