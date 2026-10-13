@@ -68,7 +68,7 @@
   - [ ] Không gắn nhãn giá cart-tier lên PDP/PLP/structured data như giá vô điều kiện.
   - [ ] **Evidence:** `pnpm test:db` ; `pnpm test:domain` ; manual cart quote sample
 - [ ] **GQ09 — Admin tier ladder, stacking và preview số tiền** _(deps: GQ05, GQ08; gate: R-05 + H0 ROUNDING + ADMIN WRITE)_
-  - [ ] **GQ09a server:** parse/validate/persist/publish ladder, method, FROM, priority/stack, strict bounds; invalid không write hoặc bump revision.
+  - [ ] **GQ09a server:** parse/validate/persist/publish ladder, method, FROM, priority/stack, strict bounds; malformed/unbounded không write; Draft incomplete được lưu nhưng publish business-invalid bị chặn và không bump revision.
   - [ ] **GQ09a DB:** create Draft → read → edit → publish/re-enable, invalid payload reject, atomic revision & legacy create/edit/publish parity.
   - [ ] **GQ09b UI:** tier preview EX-19, money steps, invalid VND/priority; browser keyboard/focus/errors & legacy form parity; finish GQ09 only after a+b.
   - [ ] **Evidence:** focused `tests/database/promotion-admin-operations.test.ts` (create/read/edit/publish + invalid + legacy), `pnpm test:db`, `pnpm test:domain`, `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts`.
@@ -91,7 +91,7 @@
   - [ ] Concurrent paid/cart/gift mutation không phát sinh entitlement vượt cap; no auto-select/replacement.
   - [ ] **Evidence:** Focused DB gift selection tests ; `pnpm test:db` ; authz/CSRF review
 - [ ] **GQ13 — Admin gift rule UX: product/variant allowlist và giới hạn** _(deps: GQ05, GQ09, GQ10, GQ12; gate: R-03/R-04 + ADMIN WRITE)_
-  - [ ] **GQ13a server:** strict parse/validate/persist/publish Q/S, ALL/ELIGIBLE, ONCE/REPEAT, allowed variants, duplicate/cap; invalid/unauth no write/revision bump.
+  - [ ] **GQ13a server:** strict parse/validate/persist/publish Q/S, ALL/ELIGIBLE, ONCE/REPEAT, allowed variants, duplicate/cap; malformed/unauth không write; Draft incomplete được lưu, publish rule invalid bị chặn/no revision bump.
   - [ ] **GQ13a DB:** create Draft → read → edit → publish/re-enable, invalid allowlist/cap/eligibility reject; READY/composite, Scheduled revision/copy và legacy parity.
   - [ ] **GQ13b UI:** gift product/variant selector, caps/duplicates, Q/S preview; mobile/keyboard/focus/errors; finish GQ13 only after a+b.
   - [ ] **Evidence:** focused `tests/database/promotion-admin-operations.test.ts` (gift create/read/edit/publish + invalid + legacy), `pnpm test:db` + `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts`.
