@@ -6,7 +6,7 @@
 
 ## Hard approvals / blockers
 - [x] **H0 Owner (ADR 0016, 13/10/2026):** R-01..R-05/R-07 **và quyết định riêng rounding/granularity** (BigInt half-up **mỗi chiếc** vs cách khác) có owner sign-off; update spec/EX/AC/ADR trước GQ06/GQ07 `/build` nếu khác phương án đề xuất.
-- [ ] **H1 POS (OPEN — API-level; owner amended gift representation to 1đ, ADR 0016 D-08):** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
+- [ ] **H1 POS (OPEN — API-level; owner amended gift representation to 1.000đ per unit, ADR 0016 D-08):** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
 - [x] **H2 Plan (owner issued `/build` 13/10/2026):** Owner reviews/approves this plan and PR sizing/dependency graph.
 - [ ] **H3 Core:** GQ03 tạo gate `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` độc lập default-OFF; GQ04 chứng minh OFF chặn new publish/candidates, không bump revision, legacy activation/quote parity trước Checkpoint A; GQ07/08 reverify cart OFF parity sau wiring.
 - [ ] **H4 Checkout:** HMAC+nonclaim consent, reservation race/idempotency, Pancake read-back/reconcile.

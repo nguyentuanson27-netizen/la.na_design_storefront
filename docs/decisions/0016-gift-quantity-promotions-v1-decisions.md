@@ -1,4 +1,4 @@
-# ADR 0016: Gift & Quantity Promotions v1 — owner decisions (H0) and Pancake gift projection
+# ADR 0016: Gift & Quantity Promotions v1 — owner decisions (H0) and Pancake gift projection (1.000đ per gift unit)
 
 - **Status:** Accepted (owner decisions recorded 2026-10-13 in the `/build` session; see "Evidence of approval")
 - **Date:** 2026-10-13
@@ -7,7 +7,7 @@
 
 ## Evidence of approval
 
-The shop owner answered each decision explicitly in the `/build` session (AskUserQuestion answers, 2026-10-13). Each answer selected the option the spec marked as its proposal; the owner did not choose an alternative for any item. The Pancake 1đ gift representation (D-08) was stated by the owner in the same session together with a screenshot of a Pancake order that lists the same SKU on several lines with different unit prices.
+The shop owner answered each decision explicitly in the `/build` session (AskUserQuestion answers, 2026-10-13). Each answer selected the option the spec marked as its proposal; the owner did not choose an alternative for any item. The Pancake 1.000đ gift representation (D-08; the owner first said 1đ, then changed it to 1.000đ in the same session) was stated by the owner in the same session together with a screenshot of a Pancake order that lists the same SKU on several lines with different unit prices.
 
 ## Decisions
 
@@ -24,18 +24,18 @@ The shop owner answered each decision explicitly in the `/build` session (AskUse
 
 ## D-08 — Pancake gift projection (owner request)
 
-For accounting convenience the owner wants gift units sent to Pancake with **a price of 1đ per unit**, with the same amount **deducted from the paid goods**, so the Pancake order total equals the website total exactly.
+For accounting convenience the owner wants gift units sent to Pancake with **a price of 1.000đ per unit** (`GIFT_VENDOR_UNIT_PRICE_VND = 1000`, a single named constant owned by the adapter), with the same amount **deducted from the paid goods**, so the Pancake order total equals the website total exactly.
 
 The website remains the authority. The change is confined to the *outbound vendor projection*:
 
-1. **Website quote, proof and order snapshot are unchanged.** Gift lines stay `role = GIFT`, `unitPriceVnd = 0`; paid lines keep their exact segment prices. The buyer sees 0đ for gifts, the quote proof signs 0đ, analytics/Meta Purchase use the website snapshot (gifts contribute 0 revenue), shipping uses paid-only quantity and subtotal. The buyer never sees the 1đ.
-2. **Projection (pure function, GQ20).** Input: the signed paid/gift lines. `G` = total gift units. Output lines for Pancake:
-   - gift lines: `variation`, `quantity`, `unitPriceVnd = 1` (grouped per variation);
-   - paid lines: the same segments, except that a total of `G` đ is removed from paid *units*: iterate paid units ordered by unit price descending, then `lineId` ascending, then unit index; from each take `min(remaining, unitPrice − 1)` đ. The affected unit becomes its own line (quantity 1, reduced unit price); identical `(variation, price)` units are re-grouped.
-   - The sum of projected lines **must equal** the sum of website paid lines. If `remaining > 0` after all units (all paid units at 1đ) the projection is infeasible → fail closed (`VENDOR_PROJECTION_INFEASIBLE`), no POS call, buyer is re-quoted/blocked.
+1. **Website quote, proof and order snapshot are unchanged.** Gift lines stay `role = GIFT`, `unitPriceVnd = 0`; paid lines keep their exact segment prices. The buyer sees 0đ for gifts, the quote proof signs 0đ, analytics/Meta Purchase use the website snapshot (gifts contribute 0 revenue), shipping uses paid-only quantity and subtotal. The buyer never sees the 1.000đ.
+2. **Projection (pure function, GQ20).** Input: the signed paid/gift lines. `G` = total gift units; `D = G × GIFT_VENDOR_UNIT_PRICE_VND` is the amount to deduct. Output lines for Pancake:
+   - gift lines: `variation`, `quantity`, `unitPriceVnd = 1000` (grouped per variation);
+   - paid lines: the same segments, except that a total of `D` đ is removed from paid *units*: iterate paid units ordered by unit price descending, then `lineId` ascending, then unit index; from each take `min(remaining, unitPrice − 1)` đ. The affected unit becomes its own line (quantity 1, reduced unit price); identical `(variation, price)` units are re-grouped.
+   - The sum of projected lines **must equal** the sum of website paid lines. If `remaining > 0` after all units (the paid units cannot absorb `D` while each keeps a price ≥ 1đ) the projection is infeasible → fail closed (`VENDOR_PROJECTION_INFEASIBLE`), no POS call, buyer is re-quoted/blocked.
 3. **Audit.** The projection that was sent (lines + hash) is stored with the order snapshot so reconciliation compares Pancake read-back against **the projection**, and compares order totals against the website total. Website lines are never rewritten to match the vendor shape.
 4. **Idempotency/determinism.** The projection is a pure function of the signed lines; retries produce the identical payload.
-5. **Consequence for the POS gate.** Case (a) “gift at 0đ” is no longer needed for the flow (a 1đ line is an ordinary positive custom price, the case P10 proved). The projection *does* always produce lines with the same `pancakeVariationId` and different unit prices when a gift/paid unit pair share a variant or when a deduction splits a paid segment, so cases (b) PAID+GIFT same variation and (c) PAID+PAID same variation different prices remain required at **API level**. The owner's screenshot shows the Pancake UI accepts several lines of one SKU with different prices (including 0đ and 7đ); that is UI evidence, not API evidence.
+5. **Consequence for the POS gate.** Case (a) “gift at 0đ” is no longer needed for the flow (a 1.000đ line is an ordinary positive custom price, the case P10 proved). The projection *does* always produce lines with the same `pancakeVariationId` and different unit prices when a gift/paid unit pair share a variant or when a deduction splits a paid segment, so cases (b) PAID+GIFT same variation and (c) PAID+PAID same variation different prices remain required at **API level**. The owner's screenshot shows the Pancake UI accepts several lines of one SKU with different prices (including 0đ and 7đ); that is UI evidence, not API evidence.
 
 ## Pancake gate (R-06) status
 
@@ -44,7 +44,8 @@ The website remains the authority. The change is confined to the *outbound vendo
 
 ## Consequences
 
-- GQ01 probe cases become: (b′) PAID + GIFT@1đ same variation; (c) PAID + PAID same variation / different price (EX-17, 290.003đ); (a) 0đ remains an optional informational case.
+- GQ01 probe cases become: (b′) PAID(P−1.000đ) + GIFT@1.000đ same variation; (c) PAID + PAID same variation / different price (EX-17, 290.003đ); (a) 0đ remains an optional informational case.
 - GQ15 snapshot stores the vendor projection (lines + hash). GQ20 implements and unit-tests the projection with mocks. GQ21 reconciles read-back against the projection.
 - Spec examples EX-13/EX-17/EX-18 gain a vendor-projection expectation; website-side expectations are unchanged.
+- The 1.000đ amount is a constant in one place; changing it later is a code change plus ADR amendment, never a per-campaign setting.
 - No change to legacy `FIXED_PRICE` data, catalog prices in Pancake, or historical orders.
