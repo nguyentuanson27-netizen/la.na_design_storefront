@@ -232,6 +232,24 @@ test("A7b repository policy authority records the normalized owner decisions", (
   assert.doesNotMatch(authority, /^\s*-\s*Chuyển khoản ngân hàng\.\s*$/m);
 });
 
+test("§11.7 is published exactly as the owner approved it in the policy authority", () => {
+  const authority = readFileSync(`${REPO_ROOT}docs/specs/la-na-design-policy-authority.md`, "utf8");
+  const start = authority.indexOf("### 11.7. Cookie và công cụ đo lường, quảng cáo");
+  assert.ok(start >= 0, "the approved §11.7 is missing from the policy authority");
+  const end = authority.indexOf("\n## ", start);
+  const normalize = (text: string) => text.replace(/\s+/g, " ").trim();
+  const approved = normalize(authority.slice(start, end).split("\n")
+    .filter((line) => !line.startsWith(">")).map((line) => line.replace(/^- /, "")).join("\n"));
+
+  // What /policies#bao-mat renders, through the same view model as the page.
+  const privacy = buildPolicyHubViewModel().topics.find((topic) => topic.id === "bao-mat") as TopicWithSections;
+  const published = privacy.sections?.find((section) => section.heading.startsWith("11.7."));
+  assert.ok(published, "§11.7 is not published");
+  for (const sentence of [published.heading, ...published.paragraphs, ...published.items, ...(published.closingParagraphs ?? [])]) {
+    assert.ok(approved.includes(normalize(sentence)), `published but not approved: ${sentence}`);
+  }
+});
+
 test("A7b the hub page is wired through the route factory like every other evergreen page", () => {
   const source = readFileSync(`${REPO_ROOT}src/app/policies/page.tsx`, "utf8");
   assert.match(source, /createStorefrontRoute/);
