@@ -72,9 +72,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 ## 4. Task cards
 
 ### Phase Gate — Decision / POS evidence gates
-
 ### GQ00 — Chốt quyết định R-01..R-05, R-07 và ownership
-
 **Purpose:** Đối chiếu spec mới với Brand #2 authority và legacy promotions; ghi quyết định owner theo từng R, ưu tiên R-05 (`N0` hay cách khác), R-01/R-02 stacking và R-07 phân cấp category. Không suy diễn rằng merge spec đồng nghĩa phê duyệt các công thức đang được đề xuất.
 
 **Dependencies:** None. **Estimate:** S (2 likely files). **Gate:** OWNER.
@@ -90,9 +88,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Owner decision review kèm link nguồn; kiểm tra spec/ADR nhất quán; không cần runtime tests.
-
 ### GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế
-
 **Purpose:** Chuẩn bị acceptance probe an toàn dựa trên P10, có operator approval, shop/test variants xác định, read-back/cancel/rollback; tách ba case (0đ, PAID+GIFT cùng variation, PAID+PAID cùng variation hai giá). Không chạy trên CI hay live khi chưa được phép.
 
 **Dependencies:** None. **Estimate:** M (3 likely files). **Gate:** POS.
@@ -111,9 +107,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 - [ ] Focused domain probe tests; kiểm tra runbook bằng reviewer; chạy live chỉ trong môi trường được operator phê duyệt.
 
 ### Phase Foundation — Scope & persistence
-
 ### GQ02 — Quy ước scope Dynamic/Fixed/Global theo taxonomy hiện có
-
 **Purpose:** Định nghĩa typed scope resolver dùng `categoryListingKeys` và membership website-owned, cùng logic cộng các mẫu/màu/size thực mua, loại trừ ưu tiên; global scope chỉ cho gift subtotal toàn đơn. R-07 phải có owner approval trước khi chốt hierarchy.
 
 **Dependencies:** `GQ00`. **Estimate:** M (3 likely files). **Gate:** R-07.
@@ -130,9 +124,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/gift-quantity-scope.test.ts`
-
 ### GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược
-
 **Purpose:** Thiết kế migration cộng thêm cho rule types, scope keys/frozen ID, revision, targets, gift allowlist và tier ladder; không khiến `PromotionCampaign.discountType` legacy mất nghĩa. Thiết kế theo lựa chọn ADR thay vì ép bảng cũ thành nullable vô tội vạ.
 
 **Dependencies:** `GQ00`, `GQ02`. **Estimate:** M (3 likely files). **Gate:** MIGRATION.
@@ -149,9 +141,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm prisma:validate` ; `node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 tests/database/gift-quantity-persistence.test.ts`
-
 ### GQ04 — Freeze fixed product IDs trong transaction publish/Scheduled edit
-
 **Purpose:** Mở rộng activation boundary dưới lock + revision hiện có: Scheduled snapshot tại publish (không đợi startsAt); scope material edit tái snapshot; edit khác giữ; re-enable trước Active tái snapshot.
 
 **Dependencies:** `GQ02`, `GQ03`. **Estimate:** M (4 likely files). **Gate:** SCHEMA/LOCK.
@@ -173,9 +163,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 **Checkpoint A:** schema + atomic fixed membership publish + feature flag baseline; compare legacy promotion behavior and exact revision increments.
 
 ### Phase Slice A — Admin scope vertical slice
-
 ### GQ05 — Admin create/edit/publish scope cho hai loại mới
-
 **Purpose:** Mở action parser + admin form theo typed campaign kinds: chọn category, products, excludes, Dynamic/Fixed hoặc scope Global cho gift subtotal, preview; server là quyền quyết định, không dựa vào form hidden fields.
 
 **Dependencies:** `GQ03`, `GQ04`. **Estimate:** M (4 likely files). **Gate:** OWNER+DB.
@@ -195,9 +183,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 - [ ] `pnpm test:domain` ; `pnpm test:db` ; manual admin preview trong sandbox
 
 ### Phase Slice B — Quantity tier: engine to buyer quote
-
 ### GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety
-
 **Purpose:** Đưa tier arithmetic vào pure domain: highest achieved tier, `ALL` hoặc `FROM` từ `N0` sau owner approval, xếp cheap/expensive theo giá trước step, tie ổn định, BigInt half-up và segment paid theo lineId.
 
 **Dependencies:** `GQ00`, `GQ02`. **Estimate:** S (2 likely files). **Gate:** R-05.
@@ -213,9 +199,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused `tests/domain/gift-quantity-tier.test.ts` ; `pnpm test:domain`
-
 ### GQ07 — Stacking policy, priority và adapter legacy price
-
 **Purpose:** Thêm orchestrator tính lần lượt trên giá còn lại, respect bidirectional compatibility và priority đã duyệt; không tự đổi `FIXED_PRICE` cũ hoặc existing conflict when flag OFF. Quà subtotal phải tính sau mọi bước tiền.
 
 **Dependencies:** `GQ00`, `GQ06`. **Estimate:** M (4 likely files). **Gate:** R-01/R-02.
@@ -233,9 +217,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused `tests/domain/gift-quantity-stack.test.ts` ; `pnpm test:domain`
-
 ### GQ08 — Đưa tier pricing vào cart quote authority dưới feature flag
-
 **Purpose:** Kết nối bounded campaign lookup, category scope và pure pricing với cart authority; không đưa giá theo số lượng của cả giỏ vào canonical đơn-chiếc PDP/merchant feed; không tạo resolver song song.
 
 **Dependencies:** `GQ04`, `GQ05`, `GQ07`. **Estimate:** M (4 likely files). **Gate:** FEATURE FLAG.
@@ -253,9 +235,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm test:db` ; `pnpm test:domain` ; manual cart quote sample
-
 ### GQ09 — Admin tier ladder, stacking và preview số tiền
-
 **Purpose:** UI chỉnh ngưỡng/discount method ALL/FROM cheap/expensive, priority/stack; preview từng mốc bao gồm Q=3→4 EX-19 và khi VND trừ quá mức. Tách sub-component nếu form hiện tại trở nên khó review.
 
 **Dependencies:** `GQ05`, `GQ08`. **Estimate:** M (4 likely files). **Gate:** R-05.
@@ -277,9 +257,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 **Checkpoint B:** working Admin tier preview → authoritative paid cart quote, with R-05 approved and runtime invalid-VND requote proof; ensure feature flag OFF parity.
 
 ### Phase Slice C — Gift: entitlement to cart choice
-
 ### GQ10 — Gift entitlement engine sau paid discounts
-
 **Purpose:** Tính quyền quà theo Q/N hoặc subtotal S/T, ALL_PAID/ELIGIBLE, ONCE/REPEAT, cap, duplicate policy per product và gift variant allowlist. Gift không nâng Q/S/shipping.
 
 **Dependencies:** `GQ02`, `GQ08`. **Estimate:** S (2 likely files). **Gate:** R-03/R-04.
@@ -295,9 +273,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused `tests/domain/gift-quantity-entitlement.test.ts` ; `pnpm test:domain`
-
 ### GQ11 — Persist cart gift selections tách paid CartItem
-
 **Purpose:** Migration additive cho selection theo cart/campaign/variant + bounds, không vi phạm `CartItem @@unique([cartId,variantId])` của hàng mua; cung cấp schema snapshot chuẩn bị cho consent.
 
 **Dependencies:** `GQ03`, `GQ10`. **Estimate:** M (3 likely files). **Gate:** MIGRATION.
@@ -314,9 +290,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm prisma:validate` ; focused DB selection tests ; `pnpm test:db`
-
 ### GQ12 — Server gift selection mutation + capacity authorization
-
 **Purpose:** Một server-owned write boundary cho khách chọn/sửa/bỏ quà bằng cart cookie/session hiện có, entitlement/allowlist/cap/duplicate/READY/stock được re-evaluate khi mutation và quote; state invalid không tự cấp quà.
 
 **Dependencies:** `GQ10`, `GQ11`, `GQ08`. **Estimate:** M (4 likely files). **Gate:** AUTH/INVENTORY.
@@ -334,9 +308,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused DB gift selection tests ; `pnpm test:db` ; authz/CSRF review
-
 ### GQ13 — Admin gift rule UX: product/variant allowlist và giới hạn
-
 **Purpose:** Thêm gift condition form Q/S, scope ALL/ELIGIBLE, ONCE/REPEAT, max per order, duplicate product-level toggle và chooser variant theo nguồn tồn kho có kiểm chứng; preview actual gift quota.
 
 **Dependencies:** `GQ05`, `GQ10`, `GQ12`. **Estimate:** M (4 likely files). **Gate:** R-03/R-04.
@@ -354,9 +326,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts` ; manual review
-
 ### GQ14 — Cart buyer gift picker và hiển thị quyền lợi
-
 **Purpose:** Mở route cart model + UI chooser sản phẩm→variant: earned, selected, skipped, stock, thiếu tới mốc tiếp theo; empty/partial/all-out đúng; không gắn quà 0đ thành paid CartItem.
 
 **Dependencies:** `GQ12`, `GQ08`. **Estimate:** M (5 likely files). **Gate:** BUYER UX.
@@ -379,9 +349,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 **Checkpoint C:** Admin gift rule → cart entitlement → explicit user selection/partial skip; no automatic gift or price/ship inflation.
 
 ### Phase Slice D — Signed checkout & inventory
-
 ### GQ15 — Schema immutable paid/gift order segments và acknowledgement
-
 **Purpose:** Thêm snapshot additive cho role PAID/GIFT, stable `lineId`, ordered discounts, campaign revision, entitled/selected/unclaimed/acknowledged; hai PAID cùng variation khác giá tồn tại riêng, order cũ không thay đổi.
 
 **Dependencies:** `GQ01`, `GQ11`, `GQ08`. **Estimate:** M (3 likely files). **Gate:** POS+MIGRATION.
@@ -398,9 +366,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm prisma:validate` ; focused snapshot schema tests ; migration review
-
 ### GQ16 — Signed quote proof theo lineId/role và consent quà
-
 **Purpose:** Mở rộng HMAC canonical bytes, uniqueness theo lineId thay vì variation, money signed từng đoạn; sign gift selections/entitlements và hành động xác nhận bỏ quà một cách context-bound.
 
 **Dependencies:** `GQ14`, `GQ15`. **Estimate:** M (4 likely files). **Gate:** SECURITY.
@@ -418,9 +384,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused quote/proof domain tests ; security review HMAC canonicalization
-
 ### GQ17 — DRAFT order + reservation từ paid/gift price segments
-
 **Purpose:** Đưa quote đã ký qua checkout snapshot, tính stock bằng tổng lượng vật lý theo variant kể cả gift, composite components, giữ chỗ một lần/variant/order; lưu provenance bất biến và không reissue gift trên retry.
 
 **Dependencies:** `GQ15`, `GQ16`, `GQ01`. **Estimate:** M (4 likely files). **Gate:** CAPACITY.
@@ -438,9 +402,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm test:db` focused snapshot/capacity ; `pnpm test:domain`
-
 ### GQ18 — Submit/reprice handshake, VND-invalid và gift nonclaim
-
 **Purpose:** Trước gửi POS re-resolve tất cả quote facts, rule revision, base live price, stock và acknowledgement; nếu khác tạo PRICE_CHANGED + quote mới chờ user action, không tự submit khi tổng tiền có vẻ bằng.
 
 **Dependencies:** `GQ16`, `GQ17`, `GQ08`. **Estimate:** M (4 likely files). **Gate:** SECURITY.
@@ -458,9 +420,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm test:domain` ; focused `tests/database/guest-checkout-p9a-quote-proof.test.ts` ; `pnpm test:db`
-
 ### GQ19 — Checkout UX xác nhận thiếu/bỏ quà và báo giá mới
-
 **Purpose:** Nối route checkout model/guest form với quote role gift, số suất nhận/bỏ qua, explicit acknowledgment và replay-safe submit; hiển thị tách quà giá 0đ và từng bước giảm giá.
 
 **Dependencies:** `GQ18`, `GQ14`. **Estimate:** M (5 likely files). **Gate:** BUYER UX.
@@ -483,9 +443,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 **Checkpoint D:** signed buyer quote/consent → immutable paid/gift snapshots → atomic stock reservations → re-quote, before any outbound POS.
 
 ### Phase Slice E — POS order & reconciliation
-
 ### GQ20 — POS create-order giữ line-level exact money
-
 **Purpose:** Mở rộng outbound Pancake adapter từ typed quote/snapshot, chỉ theo contract đã chứng minh ở GQ01 (hoặc giải pháp owner-approved); PAID+PAID và PAID+GIFT cùng variation không bị gộp sai.
 
 **Dependencies:** `GQ01`, `GQ17`, `GQ18`. **Estimate:** M (4 likely files). **Gate:** R-06.
@@ -503,9 +461,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] Focused Pancake contract/domain + DB submission tests; no live side effects in CI
-
 ### GQ21 — POS reconciliation/recovery cùng idempotency và inventory
-
 **Purpose:** Read-back price segments và quà theo giới hạn POS, kiểm tra tổng tiền/quantity, reserve state transitions, cancellation/retry/unknown và snapshot audit; không tự tạo lại order khi ambiguous response.
 
 **Dependencies:** `GQ20`, `GQ17`. **Estimate:** M (4 likely files). **Gate:** R-06.
@@ -527,9 +483,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 **Checkpoint E:** exact-money Pancake adapter + response/read-back + unknown/retry/cancel/reconcile evidence (GQ01 operator gate already cleared).
 
 ### Phase Slice F — Downstream consumers & operations
-
 ### GQ22 — Shipping paid-only và analytics Purchase revenue parity
-
 **Purpose:** Audit paid quantity/subtotal của quà 0đ trong free-ship calculation và Meta/analytics purchase projections; không đổi điều kiện > / >= hiện hành. Loại quà khỏi doanh thu, lưu gift identity trong audit.
 
 **Dependencies:** `GQ17`, `GQ20`. **Estimate:** M (4 likely files). **Gate:** ANALYTICS.
@@ -547,9 +501,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm test:domain` ; `pnpm test:db` ; event payload inspection in test fixtures
-
 ### GQ23 — Merchant/SEO/listing không công bố giá theo giỏ vô điều kiện
-
 **Purpose:** Giữ authoritative per-unit unconditional price trên PDP/PLP/feed/structured data, tier/cart price chỉ hiện khi đạt điều kiện; Merchant cache revision/invalidation và `/sale` semantics không bị phá.
 
 **Dependencies:** `GQ08`, `GQ22`. **Estimate:** M (4 likely files). **Gate:** MERCHANT/SEO.
@@ -567,9 +519,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 
 **Verification:**
 - [ ] `pnpm test:domain` ; `pnpm test:db` ; Merchant/structured-data parity review
-
 ### GQ24 — Telemetry, kill switch, audit và rollback readiness
-
 **Purpose:** Thêm signal theo campaign/quote/stock/POS và giám sát fail-closed; feature flag OFF mặc định, bounded/no-PII logs, clear pause/disable/rollback runbook không sửa order immutable.
 
 **Dependencies:** `GQ07`, `GQ18`, `GQ21`. **Estimate:** M (4 likely files). **Gate:** SHIP.
@@ -589,9 +539,7 @@ Graph shows primary critical path; the **per-task dependency lists below are aut
 - [ ] Focused telemetry tests; feature-flag OFF/ON smoke; review runbook và alert definitions
 
 ### Phase Final — E2E acceptance / launch readiness
-
 ### GQ25 — Integration acceptance, DoD và controlled rollout gate
-
 **Purpose:** Chạy exact-head full suite/CI, end-to-end cross-account checkout, concurrency/load bounds, docs/audit, browser accessibility và controlled POS read-back. Chỉ /ship khi tất cả hard gate và owner approve còn hiệu lực.
 
 **Dependencies:** `GQ09`, `GQ13`, `GQ19`, `GQ21`, `GQ22`, `GQ23`, `GQ24`. **Estimate:** M (3 likely files). **Gate:** DoD/SHIP.
