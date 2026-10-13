@@ -162,7 +162,7 @@ function toSnapshot(campaign: ApplicablePromotionCampaign): PromotionSnapshot {
  * the intermediate product exceeds 2^53 for large bases and the result drifts. `BigInt` keeps every
  * step exact, and the value only returns to `number` once it is known to be a safe integer.
  */
-function applyPercentage(basePriceVnd: number, percentageValue: number): number | null {
+export function applyPercentage(basePriceVnd: number, percentageValue: number): number | null {
   if (!Number.isSafeInteger(percentageValue)) return null;
   if (percentageValue < MIN_PERCENTAGE || percentageValue > MAX_PERCENTAGE) return null;
 
