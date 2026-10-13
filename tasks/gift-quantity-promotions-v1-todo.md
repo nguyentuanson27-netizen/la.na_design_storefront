@@ -5,21 +5,21 @@
 **Implementation plan:** [`tasks/gift-quantity-promotions-v1-plan.md`](./gift-quantity-promotions-v1-plan.md). Do not alter historical `tasks/plan.md` or `tasks/todo.md`.
 
 ## Hard approvals / blockers
-- [ ] **H0 Owner:** R-01..R-05/R-07 explicitly approved (especially R-05 `N0` vs alternative); source-of-truth spec/ADR updated before dependent `/build`.
+- [ ] **H0 Owner:** R-01..R-05/R-07 **và quyết định riêng rounding/granularity** (BigInt half-up **mỗi chiếc** vs cách khác) có owner sign-off; update spec/EX/AC/ADR trước GQ06/GQ07 `/build` nếu khác phương án đề xuất.
 - [ ] **H1 POS:** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
 - [ ] **H2 Plan:** Owner reviews/approves this plan and PR sizing/dependency graph.
-- [ ] **H3 Core:** migration/backcompat, fixed freeze+revision, default-OFF legacy regression.
+- [ ] **H3 Core:** GQ03 tạo gate `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` độc lập default-OFF; GQ04 chứng minh OFF chặn new publish/candidates, không bump revision, legacy activation/quote parity trước Checkpoint A; GQ07/08 reverify cart OFF parity sau wiring.
 - [ ] **H4 Checkout:** HMAC+nonclaim consent, reservation race/idempotency, Pancake read-back/reconcile.
-- [ ] **H5 Ship:** exact-head CI, DoD, a11y, security, observability, rollback, separate launch approval.
+- [ ] **H5 Ship:** exact-head CI, DoD, a11y, security, observability, rollback, separate launch approval; feature gate mặc định OFF cho tới `/ship`.
 
 ## Task execution (all initially unchecked)
 
 ### Decision / POS evidence gates
-- [ ] **GQ00 — Chốt quyết định R-01..R-05, R-07 và ownership** _(deps: none; gate: OWNER)_
-  - [ ] Có bằng chứng chấp thuận rõ ràng cho từng R-01..R-05/R-07, hoặc giữ đúng phần implementation tương ứng ở trạng thái BLOCKED.
-  - [ ] Nếu chủ dự án thay đổi R-05 hoặc stack semantics, cập nhật spec/EX/AC và review trước khi viết runtime code.
+- [ ] **GQ00 — Chốt R-01..R-05/R-07, rounding và ownership** _(deps: none; gate: OWNER)_
+  - [ ] Chốt từng R-01..R-05/R-07 **và rounding/granularity riêng biệt** (quy tắc, lúc làm tròn, per-unit/per-line) có bằng chứng owner; nếu thiếu, implementation liên quan BLOCKED.
+  - [ ] Nếu owner chọn khác `N0`/stack/half-up per-unit, sửa spec/EX-17/VND boundary/AC/ADR trước GQ06/GQ07.
   - [ ] R-06 được giữ là gate riêng cần evidence POS; không coi custom-price dương là evidence đủ.
-  - [ ] **Evidence:** Owner decision review kèm link nguồn; kiểm tra spec/ADR nhất quán; không cần runtime tests.
+  - [ ] **Evidence:** Owner link sign-off cho R-01..R-05/R-07 **và rounding**; spec/ADR/EX/AC nhất quán; không cần runtime tests.
 - [ ] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_
   - [ ] Trước thao tác POS có explicit operator consent, preflight stock, idempotency key, test order, cleanup/reconcile và log không PII/secret.
   - [ ] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ; nếu thất bại, không ngụy tạo vendor support.
@@ -32,47 +32,47 @@
   - [ ] `GLOBAL_ALL_PAID_LINES` không đòi category/targets nhưng không được kết hợp includes/excludes; eligible subtype đòi scope.
   - [ ] Một set thương mại = một chiếc, các mẫu/size khác nhau cộng số lượng; parent/child category theo resolver đã được duyệt.
   - [ ] **Evidence:** `node --env-file-if-exists=.env.local --experimental-strip-types --test tests/domain/gift-quantity-scope.test.ts`
-- [ ] **GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược** _(deps: GQ00, GQ02; gate: MIGRATION)_
+- [ ] **GQ03 — Schema campaign, scopes và tier/gift config tương thích ngược** _(deps: GQ00, GQ02; gate: MIGRATION/FLAG-OFF)_
   - [ ] Constraints ngăn invalid enum, duplicate tier threshold/target, mixed discount method và orphan references; legacy row đọc như trước.
   - [ ] Migration additive + down/feature-off strategy được review, không viết lại price/order lịch sử.
-  - [ ] Store/reload config round-trip; `pnpm prisma:validate` và DB schema tests pass.
-  - [ ] **Evidence:** `pnpm prisma:validate` ; `node --env-file-if-exists=.env.test.local --experimental-strip-types --test --test-concurrency=1 tests/database/gift-quantity-persistence.test.ts`
+  - [ ] Persist/read config round-trip; độc lập gate default-OFF khi unset/invalid/legacy-ON, chỉ exact `true` bật; schema, DB & domain gate tests pass.
+  - [ ] **Evidence:** `pnpm prisma:validate` ; focused `tests/database/gift-quantity-persistence.test.ts` + `tests/domain/gift-quantity-gate.test.ts` (OFF/ON/invalid, legacy independent).
 - [ ] **GQ04 — Freeze fixed product IDs trong transaction publish/Scheduled edit** _(deps: GQ02, GQ03; gate: SCHEMA/LOCK)_
   - [ ] Publish/re-enable ghi frozen IDs, frozenAt, revision cùng commit; Scheduled chuyển Active theo clock và zero-traffic không mutate.
   - [ ] Sửa scope của Scheduled atomic revalidate/replace; sửa tên hoặc giờ không âm thầm đổi frozen IDs.
-  - [ ] Sync category concurrently không tạo snapshot nửa cũ nửa mới; legacy activation/overlap không hồi quy.
-  - [ ] **Evidence:** `pnpm test:db` (focused DB setup) ; code review lock order + rollback + revision evidence
-- [ ] **Checkpoint A:** frozen-scope/schema/admin validation reviewed and verified.
+  - [ ] Sync category không tạo snapshot nửa cũ; **GQ03 flag OFF** chặn publish/re-enable/candidate new kinds, không bump pricing revision; legacy flag ON không bật gift/tier, legacy quote/overlap không hồi quy.
+  - [ ] **Evidence:** focused `tests/database/promotion-activation-service.test.ts` + domain gate tests (OFF/ON/revision/fixed freeze), legacy pricing baseline; `pnpm test:db` + lock review.
+- [ ] **Checkpoint A:** sau GQ03+GQ04, chứng minh independent gate default-OFF/invalid/legacy flag ON, no new-rule publish/candidates/revision bump, fixed freeze + legacy quote baseline; downstream OFF cart parity đợi GQ07/08.
 
 ### Admin scope vertical slice
 - [ ] **GQ05 — Admin create/edit/publish scope cho hai loại mới** _(deps: GQ03, GQ04; gate: OWNER+DB)_
   - [ ] Admin không thể ghi combo scope mâu thuẫn hay vượt giới hạn; authz server và revisions được kiểm chứng.
   - [ ] Scheduled fixed preview hiển thị sản phẩm đã chốt tại publish; Global all-paid không đòi category.
-  - [ ] UI draft có lỗi cụ thể; legacy PROMOTION/FLASH_SALE/CLEARANCE action vẫn đúng.
+  - [ ] Scope Draft UI validated; incomplete tier/gift publish hoặc flag OFF bị reject trước GQ09a/GQ13a; legacy PROMOTION/FLASH_SALE/CLEARANCE vẫn đúng.
   - [ ] **Evidence:** `pnpm test:domain` ; `pnpm test:db` ; manual admin preview trong sandbox
 
 ### Quantity tier: engine to buyer quote
-- [ ] **GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety** _(deps: GQ00, GQ02; gate: R-05)_
+- [ ] **GQ06 — Pure tier pricing từng chiếc, FROM N0 và fixed-VND safety** _(deps: GQ00, GQ02; gate: R-05 + H0 ROUNDING)_
   - [ ] EX-07/08/17/19: bậc cao nhất, FROM allocation, nhiều biến thể, paid split 290.003đ; không bình quân.
   - [ ] Bậc discount không giảm và giá trị fixed VND phải dương; `TIER_PRICE_INVALID` khi giá còn lại ≤ số tiền giảm.
-  - [ ] No overflow/negative/0đ paid; deterministic quote segments, test boundary cheap/expensive/rounding.
+  - [ ] No overflow/negative/0đ paid; stable paid segments và boundary theo rounding được owner duyệt; nếu half-up mỗi chiếc: `100.001×90%=90.001`, `5×90%=5` mỗi chiếc, qty=3→15 thay vì line-round 14.
   - [ ] **Evidence:** Focused `tests/domain/gift-quantity-tier.test.ts` ; `pnpm test:domain`
 - [ ] **GQ07 — Stacking policy, priority và adapter legacy price** _(deps: GQ00, GQ06; gate: R-01/R-02)_
   - [ ] EX-09: 1m → 900k → 855k; conflict/priority tie fail-closed theo R-01.
-  - [ ] Legacy `FIXED_PRICE` semantics theo R-02; flag OFF parity 100% với resolver cũ.
+  - [ ] Legacy `FIXED_PRICE` R-02; consume gate GQ03 và OFF parity với resolver cũ kể cả legacy activation ON.
   - [ ] Runtime VND invalid bỏ toàn tier khỏi quote, recompute downstream và phát reason; không clamp/chịu tăng giá không xác nhận.
   - [ ] **Evidence:** Focused `tests/domain/gift-quantity-stack.test.ts` ; `pnpm test:domain`
-- [ ] **GQ08 — Đưa tier pricing vào cart quote authority dưới feature flag** _(deps: GQ04, GQ05, GQ07; gate: FEATURE FLAG)_
+- [ ] **GQ08 — Đưa tier pricing vào cart quote authority dưới feature flag** _(deps: GQ03, GQ04, GQ05, GQ07; gate: FEATURE FLAG from GQ03)_
   - [ ] Quote paid khớp tier/stack ở server và guest checkout sau này; thay đổi quantity làm tái tính từ authoritative facts.
-  - [ ] Feature flag OFF giữ output/cart legacy; bounded reads và không tạo N+1 theo item/campaign.
+  - [ ] Gate GQ03 OFF/unset giữ exact legacy quote/cart output; ON bounded lookups/no N+1; verify lại sau wiring, không tính vào Checkpoint A.
   - [ ] Không gắn nhãn giá cart-tier lên PDP/PLP/structured data như giá vô điều kiện.
   - [ ] **Evidence:** `pnpm test:db` ; `pnpm test:domain` ; manual cart quote sample
-- [ ] **GQ09 — Admin tier ladder, stacking và preview số tiền** _(deps: GQ05, GQ08; gate: R-05)_
-  - [ ] Admin chỉ được chọn một method % hoặc VND/chiếc cho toàn campaign, nhiều tier tăng ngưỡng và discount không giảm.
-  - [ ] Preview cho biết số chiếc hưởng ưu đãi, số tiền sau từng bước, cảnh báo tier invalid và priority collision.
-  - [ ] A11y keyboard/focus/errors và legacy form parity đạt.
-  - [ ] **Evidence:** `pnpm test:domain` ; `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts`
-- [ ] **Checkpoint B:** authoritative tier quote + Admin preview + legacy-OFF parity.
+- [ ] **GQ09 — Admin tier ladder, stacking và preview số tiền** _(deps: GQ05, GQ08; gate: R-05 + H0 ROUNDING + ADMIN WRITE)_
+  - [ ] **GQ09a server:** parse/validate/persist/publish ladder, method, FROM, priority/stack, strict bounds; invalid không write hoặc bump revision.
+  - [ ] **GQ09a DB:** create Draft → read → edit → publish/re-enable, invalid payload reject, atomic revision & legacy create/edit/publish parity.
+  - [ ] **GQ09b UI:** tier preview EX-19, money steps, invalid VND/priority; browser keyboard/focus/errors & legacy form parity; finish GQ09 only after a+b.
+  - [ ] **Evidence:** focused `tests/database/promotion-admin-operations.test.ts` (create/read/edit/publish + invalid + legacy), `pnpm test:db`, `pnpm test:domain`, `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts`.
+- [ ] **Checkpoint B:** GQ09a tier server write + GQ09b UI, authoritative tier quote, R-05/rounding owner approval and GQ08 downstream OFF parity.
 
 ### Gift: entitlement to cart choice
 - [ ] **GQ10 — Gift entitlement engine sau paid discounts** _(deps: GQ02, GQ08; gate: R-03/R-04)_
@@ -90,11 +90,11 @@
   - [ ] Partial/zero selection được phép, nhưng checkout phải cần separate explicit nonclaim acknowledgement.
   - [ ] Concurrent paid/cart/gift mutation không phát sinh entitlement vượt cap; no auto-select/replacement.
   - [ ] **Evidence:** Focused DB gift selection tests ; `pnpm test:db` ; authz/CSRF review
-- [ ] **GQ13 — Admin gift rule UX: product/variant allowlist và giới hạn** _(deps: GQ05, GQ10, GQ12; gate: R-03/R-04)_
-  - [ ] Admin tạo gift Q/S, include/exclude, selected variants và số quà tối đa, xem preview entitlement.
-  - [ ] Không cho chọn biến thể chưa được chứng minh READY/nhầm composite; copy/scheduled edit/scope parity.
-  - [ ] Keyboard, focus, error states và mobile admin form qua browser tests.
-  - [ ] **Evidence:** `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts` ; manual review
+- [ ] **GQ13 — Admin gift rule UX: product/variant allowlist và giới hạn** _(deps: GQ05, GQ09, GQ10, GQ12; gate: R-03/R-04 + ADMIN WRITE)_
+  - [ ] **GQ13a server:** strict parse/validate/persist/publish Q/S, ALL/ELIGIBLE, ONCE/REPEAT, allowed variants, duplicate/cap; invalid/unauth no write/revision bump.
+  - [ ] **GQ13a DB:** create Draft → read → edit → publish/re-enable, invalid allowlist/cap/eligibility reject; READY/composite, Scheduled revision/copy và legacy parity.
+  - [ ] **GQ13b UI:** gift product/variant selector, caps/duplicates, Q/S preview; mobile/keyboard/focus/errors; finish GQ13 only after a+b.
+  - [ ] **Evidence:** focused `tests/database/promotion-admin-operations.test.ts` (gift create/read/edit/publish + invalid + legacy), `pnpm test:db` + `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts admin-promotions.spec.ts`.
 - [ ] **GQ14 — Cart buyer gift picker và hiển thị quyền lợi** _(deps: GQ12, GQ08; gate: BUYER UX)_
   - [ ] Khách thấy quyền lợi và tự chọn 0..entitled; thay giỏ mất điều kiện phải show stale selection không thay ngầm.
   - [ ] Khi quà hết/thiếu, UI cho thấy hàng còn và quyền skip, chưa tự xác nhận thay khách.
