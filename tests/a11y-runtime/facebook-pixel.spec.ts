@@ -113,13 +113,22 @@ async function cleanup() {
  * records every later call — the same handover the real library performs, which is what the client
  * detects through `callMethod`.
  */
-const PIXEL_LIBRARY_STUB = `(function(){
+const PIXEL_LIBRARY_STUB = pixelLibraryStub();
+
+/** The stub, optionally also writing `_fbp` as the real library does on a shopper's first visit. */
+function pixelLibraryStub(browserId?: string): string {
+  const writeBrowserId = browserId === undefined
+    ? ""
+    : `document.cookie = ${JSON.stringify(`_fbp=${browserId}; path=/; SameSite=Lax`)};`;
+  return `(function(){
+  ${writeBrowserId}
   var original = window.fbq;
   window.__fbqCalls = (original && original.queue) ? [].slice.call(original.queue) : [];
   var shim = function(){ window.__fbqCalls.push([].slice.call(arguments)); };
   shim.callMethod = shim; shim.loaded = true; shim.version = '2.0'; shim.queue = [];
   window.fbq = shim; window._fbq = shim;
 })();`;
+}
 
 type PixelCall = unknown[];
 
@@ -160,17 +169,22 @@ function readLivePixelPolls(page: Page): Promise<number[]> {
  * @param libraryDelayMs how long `fbevents.js` takes to arrive, or `null` to never serve it, which
  *   is what an ad blocker looks like from the page's point of view.
  */
-async function installPixelStub(page: Page, libraryDelayMs: number | null = 0) {
+async function installPixelStub(
+  page: Page,
+  libraryDelayMs: number | null = 0,
+  options: { browserId?: string; release?: Promise<void> } = {},
+) {
   await page.route("https://connect.facebook.net/**", async (route: Route) => {
     if (libraryDelayMs === null) {
       await route.abort();
       return;
     }
     if (libraryDelayMs > 0) await delay(libraryDelayMs);
+    if (options.release) await options.release;
     await route.fulfill({
       status: 200,
       contentType: "application/javascript",
-      body: PIXEL_LIBRARY_STUB,
+      body: options.browserId === undefined ? PIXEL_LIBRARY_STUB : pixelLibraryStub(options.browserId),
     });
   });
   // The noscript beacon and the pixel's own transport must never leave the test runner.
@@ -621,6 +635,56 @@ test("server render/prefetch emits nothing; blocked Pixel still produces browser
     expect((event.user_data as Record<string, unknown>).fbc).toMatch(/^fb\.1\.[0-9]{13}\.SyntheticClick_123$/);
     expect(String(event.event_source_url)).not.toContain("?");
   }
+});
+
+test("a first visit's CAPI twins wait for the _fbp the pixel writes and keep their page across a client-side navigation", async ({ page }) => {
+  const browserId = "fb.1.1700000000000.987654321";
+  // Compile both routes first, so leaving the product page fits well inside the twins' wait.
+  await page.request.get(`${BASE_URL}/shop/${productSlug}`);
+  await page.request.get(`${BASE_URL}/`);
+  let releaseLibrary!: () => void;
+  const release = new Promise<void>((resolve) => { releaseLibrary = resolve; });
+  // A fresh context carries no `_fbp`: only the library writes it, and only once it is released.
+  await installPixelStub(page, 0, { browserId, release });
+  await page.goto(`${BASE_URL}/shop/${productSlug}?fbclid=FirstVisitClick_42`, { waitUntil: "domcontentloaded" });
+
+  // Leave the product page as soon as its events are in the snippet's queue, while the library
+  // (and with it the cookie) has still not arrived.
+  await page.waitForFunction(() =>
+    (window.fbq?.queue ?? []).some((call) => (call as unknown[])[1] === "ViewContent"));
+  await page.locator("header a[href='/']").first().click();
+  await expect(page).toHaveURL(BASE_URL + "/");
+  expect(await page.evaluate(() => document.cookie.includes("_fbp="))).toBe(false);
+  releaseLibrary();
+
+  await expect
+    .poll(async () => trackedEventNames(await readCalls(page)).filter((name) => name === "PageView").length)
+    .toBe(2);
+  const calls = (await readCalls(page)).filter((call) => call[0] === "track");
+  const [productView, homeView] = calls.filter((call) => call[1] === "PageView");
+  const viewContent = findEvent(calls, "ViewContent")!;
+  const twinsOf = (call: PixelCall) => {
+    const id = (call[3] as { eventID: string }).eventID;
+    return readServerEvents().filter((event) => event.event_id === id && event.event_name === call[1]);
+  };
+  for (const call of [productView!, viewContent, homeView!]) {
+    await expect.poll(() => twinsOf(call).length).toBe(1);
+  }
+  // Nothing was sent early without the cookie and then again with it.
+  await delay(1_000);
+  for (const call of [productView!, viewContent, homeView!]) {
+    const twins = twinsOf(call);
+    expect(twins).toHaveLength(1);
+    expect(twins[0]!.user_data).toMatchObject({ fbp: browserId });
+  }
+
+  // The product page's twins left after the navigation, yet still report that page and its click.
+  for (const call of [productView!, viewContent]) {
+    const twin = twinsOf(call)[0]!;
+    expect(new URL(String(twin.event_source_url)).pathname).toBe(`/shop/${productSlug}`);
+    expect((twin.user_data as Record<string, unknown>).fbc).toMatch(/^fb\.1\.[0-9]{13}\.FirstVisitClick_42$/);
+  }
+  expect(new URL(String(twinsOf(homeView!)[0]!.event_source_url)).pathname).toBe("/");
 });
 
 test("cart page and drawer report only positive committed quantity deltas with shared IDs", async ({ page }) => {
