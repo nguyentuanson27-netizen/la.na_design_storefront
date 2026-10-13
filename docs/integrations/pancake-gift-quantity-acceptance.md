@@ -39,14 +39,14 @@ GQ_POS_PROBE_PRODUCT_CODE=<product code> \
 pnpm pancake:gift-quantity:probe
 ```
 
-Exit codes: `0` all selected gating cases passed; `2` at least one did not; `1` refused or crashed.
+Exit codes: `0` all selected gating cases passed **and** every created order was confirmed cancelled; `2` at least one gating case did not pass; `3` a created test order was **not confirmed cancelled** (cancel it by hand first; takes priority over `2`); `1` refused or crashed.
 
 Safety properties (covered by `tests/domain/pancake-gift-quantity-capability-probe.test.ts` with a fake client):
 
 - refuses CI and anything except the exact `shop:<id>` approval; a refused run makes no network call;
 - stock preflight before the first write;
 - **one create attempt per case, never retried** (Pancake has no idempotency key); an ambiguous response stops the run and reports the run id used in the order note (`GQ01 <runId> <case> - DO NOT SHIP`) so the operator can search the POS and cancel any order found;
-- the created order is cancelled on every path after creation;
+- the created order is cancelled on every path after creation; a case whose cancellation is not confirmed (`CANCELED_STATUS_7`) is reported `CLEANUP_NOT_CONFIRMED`, never `PASS`, and **stops the run** so no further order is created while one is still open;
 - the report contains no API key and no customer data beyond the fixed test constants.
 
 ## Interpreting results and the fallback if a case fails

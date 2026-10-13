@@ -99,7 +99,16 @@ export const PROBE_CASES: Readonly<Record<ProbeCaseId, ProbeCaseDefinition>> = O
   },
 });
 
-export type ProbeOutcome = "PASS" | "FAIL_LINES_NOT_PRESERVED" | "REJECTED_BY_POS" | "UNKNOWN_RESPONSE";
+export type ProbeOutcome =
+  | "PASS"
+  | "FAIL_LINES_NOT_PRESERVED"
+  | "REJECTED_BY_POS"
+  | "UNKNOWN_RESPONSE"
+  /** The case ran, but the order it created was not confirmed cancelled. Never a pass. */
+  | "CLEANUP_NOT_CONFIRMED";
+
+/** The only cancellation result that proves the test order is closed. */
+export const CLEANUP_CONFIRMED = "CANCELED_STATUS_7";
 
 export type ProbeCaseReport = Readonly<{
   caseId: ProbeCaseId;
@@ -122,8 +131,13 @@ export type ProbeReport = Readonly<{
   shopId: number;
   variationId: string;
   cases: readonly ProbeCaseReport[];
-  /** true only when every selected gating case passed. Says nothing about unselected cases. */
+  /**
+   * true only when every selected gating case passed AND every order the run created was confirmed
+   * cancelled. Says nothing about unselected cases.
+   */
   allSelectedGatingCasesPassed: boolean;
+  /** false when any created order was not confirmed cancelled: the operator must close it by hand. */
+  allCreatedOrdersCleanedUp: boolean;
 }>;
 
 export type ProbeEnvironment = Readonly<Record<string, string | undefined>>;
@@ -369,7 +383,18 @@ async function runCase(
   // Whatever happened after creation, the test order must not stay open. This never throws.
   const cleanupResult = await attemptOrderCancellation(client, shopId, createdOrderId);
 
-  if (result) return { ...result, cleanupResult };
+  const cleanedUp = cleanupResult === CLEANUP_CONFIRMED;
+  if (result) {
+    // A case that left an open test order behind has not passed, whatever the read-back showed.
+    return cleanedUp
+      ? { ...result, cleanupResult }
+      : {
+          ...result,
+          outcome: "CLEANUP_NOT_CONFIRMED",
+          cleanupResult,
+          note: `${result.note}. The created order was NOT confirmed cancelled (${cleanupResult}); cancel it manually before continuing`,
+        };
+  }
   return {
     ...base,
     ...empty,
@@ -378,6 +403,10 @@ async function runCase(
     cleanupResult,
     note: "Read-back failed after the order was created; cancellation was attempted. Treat the case as not proven",
   };
+}
+
+function cleanupIsClean(report: ProbeCaseReport): boolean {
+  return report.createdPancakeOrderId === null || report.cleanupResult === CLEANUP_CONFIRMED;
 }
 
 export type ProbeDependencies = Readonly<{
@@ -417,10 +446,11 @@ export async function runCapabilityProbe(
   for (const id of selection) {
     const report = await runCase(client, config.shopId, variationId, PROBE_CASES[id], runId);
     cases.push(report);
-    // A case that ended in an unknown state may have left an order behind: stop and let the
-    // operator reconcile before anything else is created.
-    if (report.outcome === "UNKNOWN_RESPONSE") break;
+    // A case that ended in an unknown state, or that left a created order open, may have left an
+    // order behind: stop and let the operator reconcile before anything else is created.
+    if (report.outcome === "UNKNOWN_RESPONSE" || !cleanupIsClean(report)) break;
   }
+  const allCreatedOrdersCleanedUp = cases.every(cleanupIsClean);
 
   return Object.freeze({
     runId,
@@ -429,8 +459,10 @@ export async function runCapabilityProbe(
     variationId,
     cases: Object.freeze(cases),
     allSelectedGatingCasesPassed:
+      allCreatedOrdersCleanedUp &&
       cases.length === selection.length &&
       cases.filter((entry) => entry.gating).every((entry) => entry.outcome === "PASS"),
+    allCreatedOrdersCleanedUp,
   });
 }
 
@@ -445,7 +477,8 @@ if (isDirectExecution()) {
     console.log("PANCAKE_GIFT_QUANTITY_PROBE_BEGIN");
     console.log(JSON.stringify(report, null, 2));
     console.log("PANCAKE_GIFT_QUANTITY_PROBE_END");
-    process.exit(report.allSelectedGatingCasesPassed ? 0 : 2);
+    // 3: a created test order is still open (act first); 2: the capability is not proven; 0: proven.
+    process.exit(!report.allCreatedOrdersCleanedUp ? 3 : report.allSelectedGatingCasesPassed ? 0 : 2);
   } catch (error) {
     console.error(`Gift/quantity POS probe failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
