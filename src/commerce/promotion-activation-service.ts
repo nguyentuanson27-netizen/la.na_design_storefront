@@ -92,7 +92,7 @@ export type ActivationOutcome =
   | Readonly<{ ok: true; campaignId: string; revision: bigint }>
   | Readonly<{ ok: false; failure: ActivationFailure }>;
 
-type Tx = Prisma.TransactionClient;
+export type Tx = Prisma.TransactionClient;
 
 /**
  * Shaped like the sessions the rest of the admin domain takes, so authorization is the same check
@@ -131,7 +131,7 @@ function refuseUnboundedCampaignId(campaignId: string): ActivationFailure | null
  * This is the first statement of every effective mutation, so ordering is established before any
  * decision is read.
  */
-async function lockRevision(tx: Tx): Promise<bigint> {
+export async function lockRevision(tx: Tx): Promise<bigint> {
   const rows = await tx.$queryRaw<Array<{ revision: bigint }>>`
     SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID} FOR UPDATE
   `;
@@ -142,7 +142,7 @@ async function lockRevision(tx: Tx): Promise<bigint> {
   return revision;
 }
 
-async function advanceRevision(tx: Tx, current: bigint): Promise<bigint> {
+export async function advanceRevision(tx: Tx, current: bigint): Promise<bigint> {
   const next = current + BigInt(1);
   await tx.$executeRaw`
     UPDATE "PromotionPricingRevision"
@@ -179,9 +179,9 @@ async function expandCoverage(
  * `ORDER BY "id"` is what keeps two callers holding overlapping sets from crossing: they queue on
  * the same first row instead of each holding what the other still needs.
  */
-async function lockRows(
+export async function lockRows(
   tx: Tx,
-  table: "PromotionCampaign" | "ProductMirror" | "VariantMirror",
+  table: "PromotionCampaign" | "GiftQuantityCampaign" | "ProductMirror" | "VariantMirror",
   ids: readonly string[],
 ): Promise<void> {
   if (ids.length === 0) return;
