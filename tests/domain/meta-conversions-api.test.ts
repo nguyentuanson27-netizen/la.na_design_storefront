@@ -26,6 +26,7 @@ const identity = {
   clientUserAgent: "Mozilla/5.0",
   fbp: "fb.1.1700000000000.1234567890",
   fbc: "fb.1.1700000000000.AbCd",
+  externalId: null,
 } as const;
 
 function sha256(value: string): string {

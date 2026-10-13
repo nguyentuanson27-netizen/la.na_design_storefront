@@ -347,6 +347,8 @@ test.beforeAll(async () => {
       FACEBOOK_CAPI_ACCESS_TOKEN: "synthetic-meta-test-token",
       FACEBOOK_GRAPH_API_VERSION: "v26.0",
       FACEBOOK_CAPI_TEST_EVENT_CODE: "",
+      // _fbc / la_vid / external_id are off in production until switched on; this spec covers them on.
+      LA_META_FIRST_PARTY_COOKIES_ENABLED: "true",
       META_TEST_CAPTURE_FILE: captureFile,
       NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${pathToFileURL(resolve(import.meta.dirname, "meta-capi.stub.mjs")).href}`,
       // Both destinations observable on one server, so a test can prove they succeed and fail
@@ -377,14 +379,20 @@ test.beforeEach(async () => {
   await prisma.rateLimit.deleteMany({ where: { id: { startsWith: "meta-signal:" } } });
 });
 
-test("a configured pixel initialises once and reports the first page view", async ({ page }) => {
+test("a configured pixel initialises once and reports the first page view", async ({ page, context }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop`, { waitUntil: "networkidle" });
 
-  await waitForTwin(await waitForEvent(page, "PageView"));
+  const twin = await waitForTwin(await waitForEvent(page, "PageView"));
   const calls = await readCalls(page);
 
-  expect(calls.filter((call) => call[0] === "init")).toEqual([["init", PIXEL_ID]]);
+  // The proxy writes the visitor ID with the first response; the pixel and the server twin send
+  // the same value as external_id, so Meta ties both sides of this visitor together.
+  const visitorId = (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "la_vid");
+  expect(visitorId?.value).toMatch(/^[0-9a-f]{64}$/);
+  expect(visitorId?.httpOnly).toBe(false);
+  expect(calls.filter((call) => call[0] === "init")).toEqual([["init", PIXEL_ID, { external_id: visitorId!.value }]]);
+  expect(twin.user_data).toMatchObject({ external_id: [visitorId!.value] });
   expect(trackedEventNames(calls).filter((name) => name === "PageView")).toHaveLength(1);
 });
 
@@ -425,6 +433,7 @@ test("login does not emit a Meta PageView on either side", async ({ page }) => {
 
 test("the product page reports ViewContent, and adding to the bag reports AddToCart", async ({
   page,
+  context,
 }) => {
   await installPixelStub(page);
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
@@ -447,12 +456,15 @@ test("the product page reports ViewContent, and adding to the bag reports AddToC
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
 
   const addToCart = await waitForEvent(page, "AddToCart");
-  await waitForTwin(addToCart);
+  const addToCartTwin = await waitForTwin(addToCart);
   expect(addToCart[2]).toMatchObject({
     content_ids: [productSlug],
     currency: "VND",
     value: UNIT_PRICE,
   });
+  // The committed AddToCart is matched on the same visitor ID the pixel was initialised with.
+  const visitorId = (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "la_vid")!.value;
+  expect(addToCartTwin.user_data).toMatchObject({ external_id: [visitorId] });
 });
 
 test("U18 AddToCart reports the price the server committed, once, not the rendered one", async ({
@@ -685,6 +697,58 @@ test("a first visit's CAPI twins wait for the _fbp the pixel writes and keep the
     expect((twin.user_data as Record<string, unknown>).fbc).toMatch(/^fb\.1\.[0-9]{13}\.FirstVisitClick_42$/);
   }
   expect(new URL(String(twinsOf(homeView!)[0]!.event_source_url)).pathname).toBe("/");
+});
+
+test("the server keeps an ad click as _fbc, so later twins carry it even with the pixel blocked", async ({ page, context }) => {
+  const start = readServerEvents().length;
+  // Blocked: fbevents.js never runs, so any _fbc can only have come from the landing response.
+  await installPixelStub(page, null);
+  await page.goto(`${BASE_URL}/shop?fbclid=PersistedClick_7`, { waitUntil: "networkidle" });
+  const readClickCookie = async () => (await context.cookies(BASE_URL)).find((cookie) => cookie.name === "_fbc");
+  const landed = await readClickCookie();
+  expect(landed?.value).toMatch(/^fb\.1\.[0-9]{13}\.PersistedClick_7$/);
+  expect(landed?.httpOnly).toBe(false);
+
+  // A reload of the same click must not move the click time.
+  await page.goto(`${BASE_URL}/shop?fbclid=PersistedClick_7`, { waitUntil: "networkidle" });
+  expect((await readClickCookie())?.value).toBe(landed!.value);
+
+  // A page with no fbclid in its URL or referrer: the click can only come from the cookie.
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+  await expect.poll(() => readServerEvents().slice(start).filter((event) => event.event_name === "ViewContent").length).toBe(1);
+  const viewContent = readServerEvents().slice(start).find((event) => event.event_name === "ViewContent")!;
+  expect((viewContent.user_data as Record<string, unknown>).fbc).toBe(landed!.value);
+});
+
+test("only a page load of a public storefront route gets the Meta cookies", async ({ playwright }) => {
+  // A fresh, cookieless context for every request: one that already carried the cookies would get
+  // none back whatever the rule, and prove nothing.
+  const metaCookies = async (path: string, init: { method?: "GET" | "HEAD"; headers?: Record<string, string> } = {}) => {
+    const http = await playwright.request.newContext();
+    try {
+      const response = await http.fetch(`${BASE_URL}${path}?fbclid=ScopeClick_1`, {
+        method: init.method ?? "GET", headers: init.headers, maxRedirects: 0,
+      });
+      return response.headersArray()
+        .filter(({ name, value }) => name.toLowerCase() === "set-cookie" && /^(?:_fbc|la_vid)=/.test(value))
+        .map(({ value }) => value.split("=")[0]);
+    } finally {
+      await http.dispose();
+    }
+  };
+  const page = { "sec-fetch-dest": "document", accept: "text/html" };
+
+  expect((await metaCookies("/shop", { headers: page })).sort()).toEqual(["_fbc", "la_vid"]);
+  for (const path of ["/login", "/admin", "/account", "/icon.svg"]) {
+    expect(await metaCookies(path, { headers: page }), path).toEqual([]);
+  }
+  expect(await metaCookies("/shop", { method: "HEAD", headers: page })).toEqual([]);
+  // An App Router navigation and prefetch, with the headers the router really sends.
+  const router = { "sec-fetch-dest": "empty", accept: "text/x-component", rsc: "1" };
+  expect(await metaCookies("/shop", { headers: router })).toEqual([]);
+  expect(await metaCookies("/shop", { headers: { ...router, "next-router-prefetch": "1" } })).toEqual([]);
+  // A browser's speculative prefetch of the page itself.
+  expect(await metaCookies("/shop", { headers: { ...page, "sec-purpose": "prefetch" } })).toEqual([]);
 });
 
 test("cart page and drawer report only positive committed quantity deltas with shared IDs", async ({ page }) => {
