@@ -39,14 +39,14 @@ GQ_POS_PROBE_PRODUCT_CODE=<product code> \
 pnpm pancake:gift-quantity:probe
 ```
 
-Exit codes: `0` all selected gating cases passed **and** every created order was confirmed cancelled; `2` at least one gating case did not pass; `3` a created test order was **not confirmed cancelled** (cancel it by hand first; takes priority over `2`); `1` refused or crashed.
+Exit codes: `0` all selected gating cases passed **and** no test order may be open (every case either was explicitly refused by the POS, or created an order that was read back as status 7); `2` at least one gating case did not pass; `3` a test order **may still be open**: a cancellation was not proven, or a create gave no definite answer so an order of unknown id may exist (find it by the run id in the order note and cancel it first; takes priority over `2`, and applies to informational cases too); `1` refused or crashed.
 
 Safety properties (covered by `tests/domain/pancake-gift-quantity-capability-probe.test.ts` with a fake client):
 
 - refuses CI and anything except the exact `shop:<id>` approval; a refused run makes no network call;
 - stock preflight before the first write;
 - **one create attempt per case, never retried** (Pancake has no idempotency key); an ambiguous response stops the run and reports the run id used in the order note (`GQ01 <runId> <case> - DO NOT SHIP`) so the operator can search the POS and cancel any order found;
-- the created order is cancelled on every path after creation; a case whose cancellation is not confirmed (`CANCELED_STATUS_7`) is reported `CLEANUP_NOT_CONFIRMED`, never `PASS`, and **stops the run** so no further order is created while one is still open;
+- the created order is cancelled on every path after creation; a case whose cancellation is not proven is reported `CLEANUP_NOT_CONFIRMED`, never `PASS`, and **stops the run**; the cancel call's own `success: true` is not proof, the order is read back and must report status 7 so no further order is created while one is still open;
 - the report contains no API key and no customer data beyond the fixed test constants.
 
 ## Interpreting results and the fallback if a case fails

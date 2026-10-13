@@ -8,10 +8,10 @@ import {
   type PancakeCreateOrderInput,
 } from "../src/integrations/pancake/order-create.ts";
 import {
-  attemptOrderCancellation,
   CI_REFUSAL_MESSAGE,
   environmentFlagIsEnabled,
   extractCreatedOrderId,
+  sanitizeCleanupErrorMessage,
   TEST_ADDRESS_DETAIL,
   TEST_COMMUNE_ID,
   TEST_CUSTOMER_NAME,
@@ -110,6 +110,20 @@ export type ProbeOutcome =
 /** The only cancellation result that proves the test order is closed. */
 export const CLEANUP_CONFIRMED = "CANCELED_STATUS_7";
 
+/**
+ * What is known about the order a case may have created. "No order id came back" is NOT "no order":
+ * a timeout or a response without an id can hide an order that exists.
+ */
+export type ProbeOrderState =
+  /** The POS refused the request outright (HTTP 4xx): nothing was created. */
+  | "NOT_CREATED"
+  /** Created, then cancelled and read back as status 7. */
+  | "CREATED_CANCELLED"
+  /** Created, but the cancellation could not be proven. An open test order exists. */
+  | "CREATED_CLEANUP_UNCONFIRMED"
+  /** The create call gave no definite answer. An order may exist and nobody knows its id. */
+  | "CREATION_UNKNOWN";
+
 export type ProbeCaseReport = Readonly<{
   caseId: ProbeCaseId;
   gating: boolean;
@@ -121,6 +135,7 @@ export type ProbeCaseReport = Readonly<{
   orderTotalPriceVnd: number | null;
   totalMatchesExpected: boolean;
   createdPancakeOrderId: string | null;
+  orderState: ProbeOrderState;
   cleanupResult: string;
   note: string;
 }>;
@@ -136,8 +151,12 @@ export type ProbeReport = Readonly<{
    * cancelled. Says nothing about unselected cases.
    */
   allSelectedGatingCasesPassed: boolean;
-  /** false when any created order was not confirmed cancelled: the operator must close it by hand. */
-  allCreatedOrdersCleanedUp: boolean;
+  /**
+   * false unless every case either created nothing (explicitly refused) or created an order that
+   * was proven cancelled. An unknown create, or a cancellation that could not be proven, makes it
+   * false even for an informational case: the operator must find and close the order by hand.
+   */
+  noOrderMayBeOpen: boolean;
 }>;
 
 export type ProbeEnvironment = Readonly<Record<string, string | undefined>>;
@@ -322,6 +341,7 @@ async function runCase(
     createdPancakeOrderId: null,
     cleanupResult: "NOT_ATTEMPTED",
   } as const;
+  const unknownCreation = { orderState: "CREATION_UNKNOWN" } as const;
 
   const request = buildPancakeCreateOrderRequest(buildProbeOrderInput(shopId, variationId, definition, runId));
 
@@ -335,6 +355,7 @@ async function runCase(
       ...base,
       ...empty,
       outcome: rejected ? "REJECTED_BY_POS" : "UNKNOWN_RESPONSE",
+      orderState: rejected ? "NOT_CREATED" : "CREATION_UNKNOWN",
       note: rejected
         ? `POS rejected the request with HTTP ${(error as PancakeHttpError).status}; no order was created`
         : "Create call did not return a definite answer. Do NOT retry: search the POS for the run id in the order note and cancel any order found",
@@ -349,11 +370,12 @@ async function runCase(
       ...base,
       ...empty,
       outcome: "UNKNOWN_RESPONSE",
+      ...unknownCreation,
       note: "Create response had no parsable order id. Do NOT retry: search the POS for the run id in the order note and cancel any order found",
     };
   }
 
-  let result: Omit<ProbeCaseReport, "cleanupResult"> | undefined;
+  let result: Omit<ProbeCaseReport, "cleanupResult" | "orderState"> | undefined;
   try {
     const payload = await client.getJson(`/shops/${shopId}/orders/${createdOrderId}`);
     const { lines, orderTotalPriceVnd } = readBackOrderLines(payload);
@@ -381,17 +403,19 @@ async function runCase(
   }
 
   // Whatever happened after creation, the test order must not stay open. This never throws.
-  const cleanupResult = await attemptOrderCancellation(client, shopId, createdOrderId);
+  const cleanupResult = await cancelAndVerify(client, shopId, createdOrderId);
 
   const cleanedUp = cleanupResult === CLEANUP_CONFIRMED;
+  const orderState: ProbeOrderState = cleanedUp ? "CREATED_CANCELLED" : "CREATED_CLEANUP_UNCONFIRMED";
   if (result) {
     // A case that left an open test order behind has not passed, whatever the read-back showed.
     return cleanedUp
-      ? { ...result, cleanupResult }
+      ? { ...result, cleanupResult, orderState }
       : {
           ...result,
           outcome: "CLEANUP_NOT_CONFIRMED",
           cleanupResult,
+          orderState,
           note: `${result.note}. The created order was NOT confirmed cancelled (${cleanupResult}); cancel it manually before continuing`,
         };
   }
@@ -401,12 +425,45 @@ async function runCase(
     outcome: "UNKNOWN_RESPONSE",
     createdPancakeOrderId: createdOrderId,
     cleanupResult,
+    orderState,
     note: "Read-back failed after the order was created; cancellation was attempted. Treat the case as not proven",
   };
 }
 
-function cleanupIsClean(report: ProbeCaseReport): boolean {
-  return report.createdPancakeOrderId === null || report.cleanupResult === CLEANUP_CONFIRMED;
+/**
+ * Cancels the test order and PROVES it is cancelled. `success: true` from the PUT is not proof: the
+ * API can acknowledge a request without applying it, so the order is read back and must report
+ * status 7. A PUT body that itself names a different status, or a read-back that disagrees, is a
+ * contradiction and fails closed. Never throws.
+ */
+export async function cancelAndVerify(
+  client: ControlledAcceptanceClient,
+  shopId: number,
+  orderId: string,
+): Promise<string> {
+  const endpoint = `/shops/${shopId}/orders/${orderId}`;
+  let put: { success?: unknown; data?: { status?: unknown }; status?: unknown } | null | undefined;
+  try {
+    put = (await client.putJson(endpoint, { status: 7 })) as typeof put; // 7 = CANCELED
+  } catch (error) {
+    return `CLEANUP_FAILED_${sanitizeCleanupErrorMessage(error instanceof Error ? error.message : String(error))}`;
+  }
+  const reported = put?.data?.status ?? put?.status;
+  if (typeof reported === "number" && reported !== 7) return `CANCEL_RESPONSE_STATUS_${reported}`;
+  if (reported === undefined && put?.success !== true) return "PUT_RETURNED_UNEXPECTED_BODY";
+
+  try {
+    const payload = (await client.getJson(endpoint)) as { data?: { status?: unknown }; status?: unknown } | null;
+    const status = payload?.data?.status ?? payload?.status;
+    if (status === 7) return CLEANUP_CONFIRMED;
+    return `CANCEL_NOT_VERIFIED_STATUS_${typeof status === "number" ? status : "MISSING"}`;
+  } catch {
+    return "CANCEL_NOT_VERIFIED_READBACK_FAILED";
+  }
+}
+
+function orderSafe(report: ProbeCaseReport): boolean {
+  return report.orderState === "NOT_CREATED" || report.orderState === "CREATED_CANCELLED";
 }
 
 export type ProbeDependencies = Readonly<{
@@ -448,9 +505,9 @@ export async function runCapabilityProbe(
     cases.push(report);
     // A case that ended in an unknown state, or that left a created order open, may have left an
     // order behind: stop and let the operator reconcile before anything else is created.
-    if (report.outcome === "UNKNOWN_RESPONSE" || !cleanupIsClean(report)) break;
+    if (report.outcome === "UNKNOWN_RESPONSE" || !orderSafe(report)) break;
   }
-  const allCreatedOrdersCleanedUp = cases.every(cleanupIsClean);
+  const noOrderMayBeOpen = cases.every(orderSafe);
 
   return Object.freeze({
     runId,
@@ -459,10 +516,10 @@ export async function runCapabilityProbe(
     variationId,
     cases: Object.freeze(cases),
     allSelectedGatingCasesPassed:
-      allCreatedOrdersCleanedUp &&
+      noOrderMayBeOpen &&
       cases.length === selection.length &&
       cases.filter((entry) => entry.gating).every((entry) => entry.outcome === "PASS"),
-    allCreatedOrdersCleanedUp,
+    noOrderMayBeOpen,
   });
 }
 
@@ -477,8 +534,8 @@ if (isDirectExecution()) {
     console.log("PANCAKE_GIFT_QUANTITY_PROBE_BEGIN");
     console.log(JSON.stringify(report, null, 2));
     console.log("PANCAKE_GIFT_QUANTITY_PROBE_END");
-    // 3: a created test order is still open (act first); 2: the capability is not proven; 0: proven.
-    process.exit(!report.allCreatedOrdersCleanedUp ? 3 : report.allSelectedGatingCasesPassed ? 0 : 2);
+    // 3: a test order may still be open, or its creation is unknown (act first); 2: the capability is not proven; 0: proven.
+    process.exit(!report.noOrderMayBeOpen ? 3 : report.allSelectedGatingCasesPassed ? 0 : 2);
   } catch (error) {
     console.error(`Gift/quantity POS probe failed: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);

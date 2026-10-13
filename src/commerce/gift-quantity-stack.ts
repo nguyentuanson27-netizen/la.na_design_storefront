@@ -1,5 +1,6 @@
 import {
   priceQuantityTier,
+  validateTierConfig,
   type QuantityTierConfig,
   type TierPriceSegment,
 } from "./gift-quantity-tier.ts";
@@ -200,7 +201,20 @@ export function priceStack(input: Readonly<{
 
   // Deterministic regardless of the order the caller (or the database) listed things in.
   const sortedLines = [...lines].sort((a, b) => (a.lineKey < b.lineKey ? -1 : a.lineKey > b.lineKey ? 1 : 0));
-  const sortedTiers = [...tiers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const sortedByIdTiers = [...tiers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+
+  // A tier whose in-scope paid quantity has not reached its first threshold changes no price, so it
+  // takes no part in conflict detection: it can neither be dropped nor make another campaign drop.
+  // Without this, an idle tier that merely shares a line with a valid one would cancel the valid
+  // tier's discount. Quantity is independent of price, so this is decided once, up front. A tier
+  // with an invalid configuration still participates, so it is reported as invalid, not silently idle.
+  const sortedTiers = sortedByIdTiers.filter((tier) => {
+    if (validateTierConfig(tier.config).length > 0) return true;
+    const startThreshold = tier.config.tiers[0]!.minQuantity;
+    let eligible = 0;
+    for (const line of sortedLines) if (tier.resolve(line.product)) eligible += line.quantity;
+    return eligible >= startThreshold;
+  });
 
   const dropped = new Map<string, StackDroppedCampaign>();
   const drop = (campaignId: string, reason: StackDropReason, otherCampaignId: string | null) => {

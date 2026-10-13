@@ -16,7 +16,10 @@ RUN uv export \
       >> /tmp/gflow-runtime.txt
 
 FROM ${PYTHON_IMAGE}
-ARG GOOGLE_CHROME_VERSION=155.0.8059.39-1
+# Google'"'"'s apt repository publishes only the current stable build, so an exact version pin stops
+# resolving within weeks. Empty (default) installs that current build; set this build arg to an
+# exact `dpkg` version to fail the build unless that version is still served.
+ARG GOOGLE_CHROME_VERSION=
 
 ENV PYTHONUNBUFFERED=1 \
     DISPLAY=:99 \
@@ -43,7 +46,7 @@ RUN apt-get update \
  && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] https://dl.google.com/linux/chrome/deb/ stable main" \
     > /etc/apt/sources.list.d/google-chrome.list \
  && apt-get update \
- && apt-get install -y --no-install-recommends "google-chrome-stable=${GOOGLE_CHROME_VERSION}" \
+ && apt-get install -y --no-install-recommends "google-chrome-stable${GOOGLE_CHROME_VERSION:+=$GOOGLE_CHROME_VERSION}" \
  && mv /opt/google/chrome/chrome /opt/google/chrome/chrome-orig \
  && printf '#!/bin/bash\nexec /opt/google/chrome/chrome-orig --no-sandbox "$@"\n' > /opt/google/chrome/chrome \
  && chmod +x /opt/google/chrome/chrome \

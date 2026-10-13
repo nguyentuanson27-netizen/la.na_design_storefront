@@ -344,3 +344,40 @@ test("F02: a lone gift campaign always runs, a third refused pair drops only its
   assert.deepEqual(forward.permitted, []);
   assert.deepEqual(forward.dropped.map((entry) => entry.campaignId), ["a", "b", "c"]);
 });
+
+test("R03: a tier that has not reached its first threshold takes no part in conflicts — it cannot cancel a valid tier's discount", () => {
+  const lines = [line("a", 2, 1_000_000)];
+  // A reaches (N=1) and has no stacking configuration; B overlaps the same line but needs 5 units
+  const valid = tier("a-valid", pctTier(10, 1));
+  const idle = tier("b-idle", pctTier(30, 5));
+  for (const order of [[valid, idle], [idle, valid]]) {
+    const result = ok(priceStack({ lines, tiers: order, legacyConsents: consents() }));
+    assert.equal(result.groups[0]!.unitPriceVnd, 900_000, "the reached tier keeps its 10%");
+    assert.deepEqual(result.dropped, [], "the idle tier is neither dropped nor reported, and it dropped nobody");
+  }
+  // once B does reach its threshold the pair genuinely conflicts and both step aside, as before
+  const reached = ok(priceStack({ lines: [line("a", 5, 1_000_000)], tiers: [valid, idle], legacyConsents: consents() }));
+  assert.equal(reached.groups[0]!.unitPriceVnd, 1_000_000);
+  assert.deepEqual(reached.dropped.map((d) => [d.campaignId, d.reason]), [["a-valid", "STACK_NOT_PERMITTED"], ["b-idle", "STACK_NOT_PERMITTED"]]);
+});
+
+test("R03: an idle tier does not pull a non-consenting legacy campaign into the chain or change its price", () => {
+  const flash: StackLegacyCampaign = { id: "flash", kind: "FLASH_SALE", discountType: "PERCENTAGE", percentageValue: 20, fixedPriceVnd: null };
+  const result = ok(priceStack({
+    lines: [line("a", 1, 1_000_000, "p1", flash)],
+    tiers: [tier("idle", pctTier(30, 5))],
+    legacyConsents: consents(),
+  }));
+  assert.equal(result.groups[0]!.unitPriceVnd, 800_000, "the running Flash Sale keeps its price");
+  assert.deepEqual(result.dropped, []);
+  assert.deepEqual(result.groups[0]!.steps.map((step) => step.campaignId), ["flash"]);
+});
+
+test("R03: quantity is counted over the tier's own scope, and an invalid configuration is still reported rather than treated as idle", () => {
+  const onlyP2 = tier("scoped", pctTier(10, 3), { resolve: (product) => product.productId === "p2" });
+  // 5 units overall but only 1 in the tier's scope: idle
+  const idle = ok(priceStack({ lines: [line("a", 4, 100_000, "p1"), line("b", 1, 100_000, "p2")], tiers: [onlyP2], legacyConsents: consents() }));
+  assert.deepEqual(idle.groups.map((g) => g.unitPriceVnd), [100_000, 100_000]);
+  const invalid = ok(priceStack({ lines: [line("a", 1, 100_000)], tiers: [tier("bad", { ...pctTier(10), tiers: [] })], legacyConsents: consents() }));
+  assert.deepEqual(invalid.dropped.map((d) => [d.campaignId, d.reason]), [["bad", "TIER_CONFIG_INVALID"]]);
+});

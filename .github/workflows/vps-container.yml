@@ -61,7 +61,11 @@ jobs:
             "from gflow_cli.config import get_settings; assert str(get_settings().resolved_db_path()) == '/tmp/gflow-auth.db'"
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
           chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
-          grep -Fq "155.0.8059.39" <<<"$chrome_version"
+          echo "Image Chrome: $chrome_version"
+          # Google's apt repo serves only the current stable build, so the image carries whatever is
+          # current; CI proves it is real Google Chrome at or above the major the worker was tested on.
+          [[ "$chrome_version" =~ ^Google\ Chrome\ ([0-9]+)\. ]] || { echo "not Google Chrome: $chrome_version"; exit 1; }
+          (( BASH_REMATCH[1] >= 155 )) || { echo "Chrome ${BASH_REMATCH[1]} is below the tested floor 155"; exit 1; }
 
       - name: Flow worker tests against the image's gflow and Chrome
         run: |

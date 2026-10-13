@@ -223,16 +223,22 @@ The image is intentionally reproducible at the credential-bearing boundary:
   `services/flow-worker/gflow-lock/`.
 - The build exports that lock with `uv export --frozen`, installs the resolved runtime with
   `pip --require-hashes`, and pins the gflow 0.82.1 wheel by SHA-256.
-- Google Chrome is pinned to `155.0.8059.39-1`; a missing apt version fails the build instead of
-  silently moving the session-bearing worker to a new browser.
+- Google Chrome comes from Google's apt repository, which publishes only the current stable build
+  (an exact `google-chrome-stable=<version>` pin stopped resolving within weeks and broke the image
+  build). The image therefore installs the current stable build; CI proves it is real Google Chrome at
+  or above the tested major (155) and prints the version. To rebuild a specific browser, pass
+  `--build-arg GOOGLE_CHROME_VERSION=<exact dpkg version>`: the build then fails if Google no longer
+  serves it. Reproducibility of the credential-bearing worker is the image itself, so deploy the image
+  CI verified rather than rebuilding it later.
 
 The worker runs real Chrome headed under Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that
 changes the browser mode gflow relies on for Flow/reCAPTCHA.
 
 Dependency/browser updates are deliberate maintenance work: replace the lock files from the exact
-upstream gflow release tag, review the lock diff, update the gflow wheel hash and/or Chrome pin, run
-CI image verification, then live-smoke one Flow generation before production rollout. Chrome is not
-auto-upgraded just because Google's apt repository publishes a newer stable build.
+upstream gflow release tag, review the lock diff, update the gflow wheel hash, run CI image
+verification, then live-smoke one Flow generation before production rollout. Every image rebuild picks
+up the current Chrome stable, so a rebuild is itself a browser change: live-smoke before promoting it,
+and raise the CI major floor deliberately when a newer major has been smoke-tested.
 
 ## Chrome sandbox (accepted risk)
 
