@@ -40,13 +40,14 @@
   - [x] Persist/read config round-trip; độc lập gate default-OFF khi unset/invalid/legacy-ON, chỉ exact `true` bật; schema, DB & domain gate tests pass.
   - [x] **Evidence:** `pnpm prisma:validate` ; focused `tests/database/gift-quantity-persistence.test.ts` + `tests/domain/gift-quantity-gate.test.ts` (OFF/ON/invalid, legacy independent).
   - Evidence: migration `20261013120000_add_gift_quantity_campaigns` (additive, own tables/enums, rollback = drop tables then types, documented in the migration header; ADR 0016 D-09); `tests/database/gift-quantity-persistence.test.ts` 19/19 and `tests/domain/gift-quantity-gate.test.ts` 5/5 pass; `pnpm prisma:validate` ok; full `pnpm test:db` 642/642 and `pnpm test` 2852/2852 (1 skipped) locally.
-- [ ] **GQ04 — Freeze fixed product IDs trong transaction publish/Scheduled edit** _(deps: GQ02, GQ03; gate: SCHEMA/LOCK)_
-  - [ ] Publish/re-enable ghi frozen IDs, frozenAt, revision cùng commit; Scheduled chuyển Active theo clock và zero-traffic không mutate.
-  - [ ] Sửa scope của Scheduled atomic revalidate/replace; sửa tên hoặc giờ không âm thầm đổi frozen IDs.
-  - [ ] Sync category không tạo snapshot nửa cũ; **GQ03 flag OFF** chặn publish/re-enable/candidate new kinds, không bump pricing revision; legacy flag ON không bật gift/tier, legacy quote/overlap không hồi quy.
-  - [ ] **Evidence:** focused `tests/database/promotion-activation-service.test.ts` + domain gate tests (OFF/ON/revision/fixed freeze), legacy pricing baseline; `pnpm test:db` + lock review.
-- [ ] **Checkpoint A:** sau GQ03+GQ04, chứng minh independent gate default-OFF/invalid/legacy flag ON, no new-rule publish/candidates/revision bump, fixed freeze + legacy quote baseline; downstream OFF cart parity đợi GQ07/08.
-
+- [x] **GQ04 — Freeze fixed product IDs trong transaction publish/Scheduled edit** _(deps: GQ02, GQ03; gate: SCHEMA/LOCK)_
+  - [x] Publish/re-enable ghi frozen IDs, frozenAt, revision cùng commit; Scheduled chuyển Active theo clock và zero-traffic không mutate.
+  - [x] Sửa scope của Scheduled atomic revalidate/replace; sửa tên hoặc giờ không âm thầm đổi frozen IDs.
+  - [x] Sync category không tạo snapshot nửa cũ; **GQ03 flag OFF** chặn publish/re-enable/candidate new kinds, không bump pricing revision; legacy flag ON không bật gift/tier, legacy quote/overlap không hồi quy.
+  - [x] **Evidence:** focused `tests/database/promotion-activation-service.test.ts` + domain gate tests (OFF/ON/revision/fixed freeze), legacy pricing baseline; `pnpm test:db` + lock review.
+  - Evidence: `src/commerce/gift-quantity-activation-service.ts` (publish / re-enable / Scheduled edit / disable / end-early under the shared revision lock) and `gift-quantity-candidate-repository.ts`; `tests/database/gift-quantity-activation-service.test.ts` 26/26 pass: gate OFF (incl. legacy flag ON) refuses and reads/advances nothing, Fixed ids + frozenAt + campaign revision frozen at publish, nothing written at startsAt (EX-20), scope edit replaces the snapshot, name/time/priority edits keep it, re-enable re-captures, refused edits roll back, disable/end-early ungated, concurrent publishes serialized, a rename is neither gated nor rule-validated, a Scheduled edit can never clear or backdate startsAt, disable only for ACTIVE/SCHEDULED, end-early bumps the campaign revision, excludes applied before the freeze bound. Membership is read with one SQL statement (one snapshot). Production rule validator refuses publish until GQ09a/GQ13a (fail closed). Full `pnpm test:db` 642/642 locally.
+- [x] **Checkpoint A:** sau GQ03+GQ04, chứng minh independent gate default-OFF/invalid/legacy flag ON, no new-rule publish/candidates/revision bump, fixed freeze + legacy quote baseline; downstream OFF cart parity đợi GQ07/08.
+  - Evidence: GQ03 gate default-OFF (unset/invalid/legacy-flag-ON all OFF), new-rule publish/candidate lookup blocked with no revision bump, Fixed freeze atomic, legacy suites unchanged (full `pnpm test:db` 642/642, `pnpm test` 2852/2852). Downstream cart OFF parity remains for GQ07/GQ08.
 ### Admin scope vertical slice
 - [ ] **GQ05 — Admin create/edit/publish scope cho hai loại mới** _(deps: GQ03, GQ04; gate: OWNER+DB)_
   - [ ] Admin không thể ghi combo scope mâu thuẫn hay vượt giới hạn; authz server và revisions được kiểm chứng.
