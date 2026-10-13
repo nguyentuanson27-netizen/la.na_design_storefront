@@ -94,6 +94,11 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
         now,
         session,
         patch: {
+          // Identity and trigger are not editable once Scheduled; the service refuses a mismatch
+          // instead of dropping it, so a changed form value can never be silently ignored.
+          kind: parsed.value.kind,
+          giftTrigger: parsed.value.giftTrigger,
+          subtotalScope: parsed.value.subtotalScope,
           name: parsed.value.name,
           startsAt: parsed.value.startsAt,
           endsAt: parsed.value.endsAt,

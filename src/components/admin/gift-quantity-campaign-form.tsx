@@ -178,6 +178,8 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
   const [previewing, startPreviewing] = useTransition();
 
   const isGift = kind === "GIFT_ITEM";
+  // Once Scheduled, the trigger decides what the stored thresholds mean, so it is shown but fixed.
+  const locked = mode === "edit" && initialData?.status === "SCHEDULED";
   // The global scope is the answer to exactly one question: gift value of the whole order.
   const globalAllowed = isGift && giftTrigger === "ORDER_SUBTOTAL" && subtotalScope === "ALL_PAID_LINES";
   const isGlobal = scopeMode === "GLOBAL_ALL_PAID_LINES";
@@ -283,7 +285,8 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
           <div className="mt-4 grid gap-6 md:grid-cols-2">
             <div>
               <label className={labelClassName} htmlFor={`${formId}-trigger`}>Nhận quà khi</label>
-              <select className={selectClassName} id={`${formId}-trigger`} name="giftTrigger" onChange={(event) => chooseTrigger(event.target.value as "" | "QUANTITY" | "ORDER_SUBTOTAL")} value={giftTrigger}>
+              {locked ? <input name="giftTrigger" type="hidden" value={giftTrigger} /> : null}
+              <select className={selectClassName} disabled={locked} id={`${formId}-trigger`} name={locked ? undefined : "giftTrigger"} onChange={(event) => chooseTrigger(event.target.value as "" | "QUANTITY" | "ORDER_SUBTOTAL")} value={giftTrigger}>
                 <option value="">Chưa chọn</option>
                 <option value="QUANTITY">Mua đủ số lượng</option>
                 <option value="ORDER_SUBTOTAL">Đơn hàng đạt giá trị tối thiểu</option>
@@ -292,7 +295,8 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
             {giftTrigger === "ORDER_SUBTOTAL" ? (
               <div>
                 <label className={labelClassName} htmlFor={`${formId}-subtotal-scope`}>Giá trị đơn hàng tính trên</label>
-                <select className={selectClassName} id={`${formId}-subtotal-scope`} name="subtotalScope" onChange={(event) => chooseSubtotalScope(event.target.value as "" | "ALL_PAID_LINES" | "ELIGIBLE_PAID_LINES")} value={subtotalScope}>
+                {locked ? <input name="subtotalScope" type="hidden" value={subtotalScope} /> : null}
+                <select className={selectClassName} disabled={locked} id={`${formId}-subtotal-scope`} name={locked ? undefined : "subtotalScope"} onChange={(event) => chooseSubtotalScope(event.target.value as "" | "ALL_PAID_LINES" | "ELIGIBLE_PAID_LINES")} value={subtotalScope}>
                   <option value="">Chưa chọn</option>
                   <option value="ALL_PAID_LINES">Tất cả sản phẩm trả tiền trong đơn</option>
                   <option value="ELIGIBLE_PAID_LINES">Chỉ sản phẩm thuộc phạm vi đã chọn</option>
@@ -300,6 +304,11 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
               </div>
             ) : null}
           </div>
+          {locked ? (
+            <p className="mt-3 text-xs text-neutral-700" id={`${formId}-locked-note`}>
+              Chiến dịch đã lên lịch nên không đổi được điều kiện nhận quà. Hãy tắt rồi sao chép thành bản nháp mới nếu cần đổi.
+            </p>
+          ) : null}
           <p className="mt-3 text-xs text-neutral-700">
             Số lượng/giá trị tối thiểu, số suất tối đa và danh sách quà được cấu hình ở bước quy tắc.
           </p>

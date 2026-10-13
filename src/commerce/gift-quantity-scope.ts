@@ -169,8 +169,13 @@ export function validateScopeConfig(input: unknown, context: ScopeContext): Scop
     issues,
   );
 
+  // Exclude wins (spec FR-01): a product named on both lists is excluded, so it is dropped from the
+  // include list here, once, and every writer persists this normalized scope. The database keeps one
+  // role per (campaign, product), so persisting both would be refused there.
+  const effectiveIncludes = applyExcludeWins(includeProductIds, excludeProductIds);
+
   // A scope that selects nothing (only exclusions, or nothing at all) would never match a line.
-  if (categoryKeys.length === 0 && includeProductIds.length === 0 && issues.length === 0) {
+  if (categoryKeys.length === 0 && effectiveIncludes.length === 0 && issues.length === 0) {
     issues.push({ code: "scope-empty", field: "scope" });
   }
   if (issues.length > 0) return { ok: false, issues };
@@ -180,10 +185,19 @@ export function validateScopeConfig(input: unknown, context: ScopeContext): Scop
     scope: Object.freeze({
       mode,
       categoryKeys: Object.freeze(categoryKeys),
-      includeProductIds: Object.freeze(includeProductIds),
+      includeProductIds: Object.freeze(effectiveIncludes),
       excludeProductIds: Object.freeze(excludeProductIds),
     }),
   };
+}
+
+/** The include list without any product that is also excluded: exclude wins. Order is kept. */
+export function applyExcludeWins(
+  includeProductIds: readonly string[],
+  excludeProductIds: readonly string[],
+): string[] {
+  const excluded = new Set(excludeProductIds);
+  return includeProductIds.filter((id) => !excluded.has(id));
 }
 
 /** What the resolver knows about a product: its id and its persisted category membership keys. */
