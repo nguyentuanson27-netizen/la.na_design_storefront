@@ -119,7 +119,10 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
             trùng lặp và vòng đời đều do máy chủ quyết định.
           </p>
         </div>
-        <div>
+        <div className="flex flex-wrap gap-3">
+          <Link className={`${buttonClassName} inline-flex items-center`} href="/admin/promotions/gift-quantity">
+            Quà tặng &amp; giảm theo số lượng
+          </Link>
           {isNew || editId ? (
             <Link className={buttonClassName} href="/admin/promotions">
               ← Quay lại danh sách

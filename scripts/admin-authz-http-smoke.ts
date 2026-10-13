@@ -222,6 +222,39 @@ try {
     "the promotion admin must state that activation is off while the gate is disabled",
   );
 
+  // GQ05 — the gift / quantity-tier admin surface is behind the same guard, and its own gate must
+  // be visibly off by default.
+  const giftQuantityPath = "/admin/promotions/gift-quantity";
+  const customerGiftQuantity = await fetch(`${BASE_URL}${giftQuantityPath}`, {
+    headers: { cookie: customerCookie },
+    redirect: "manual",
+  });
+  assert.equal(
+    customerGiftQuantity.status,
+    404,
+    `CUSTOMER must not read ${giftQuantityPath}, received ${customerGiftQuantity.status}`,
+  );
+  const anonymousGiftQuantity = await fetch(`${BASE_URL}${giftQuantityPath}`, { redirect: "manual" });
+  assert.ok(
+    anonymousGiftQuantity.status === 307
+      || anonymousGiftQuantity.status === 302
+      || anonymousGiftQuantity.status === 404,
+    `anonymous must not read ${giftQuantityPath}, received ${anonymousGiftQuantity.status}`,
+  );
+  const adminGiftQuantity = await fetch(`${BASE_URL}${giftQuantityPath}`, {
+    headers: { cookie: adminCookie },
+    redirect: "manual",
+  });
+  assert.equal(
+    adminGiftQuantity.status,
+    200,
+    `ADMIN must read ${giftQuantityPath}, received ${adminGiftQuantity.status}`,
+  );
+  assert.ok(
+    (await adminGiftQuantity.text()).includes("Tính năng đang tắt"),
+    "the gift/quantity admin must state that the feature is off while its gate is disabled",
+  );
+
   const editorPath = `/admin/products/${encodeURIComponent(product.id)}`;
   const editorResponse = await fetch(`${BASE_URL}${editorPath}`, {
     headers: { cookie: adminCookie },

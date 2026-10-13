@@ -118,7 +118,10 @@ function allowsGlobalScope(row: Pick<CampaignRow, "kind" | "giftTrigger" | "subt
  * limit is reported rather than silently truncated. Only the membership keys the scope covers are
  * aggregated; that is all `computeFrozenProductIds` looks at.
  */
-async function readMembershipSnapshot(tx: Tx, scope: Extract<ScopeConfig, { categoryKeys: readonly string[] }>) {
+export async function readMembershipSnapshot(
+  tx: Pick<Tx, "$queryRaw">,
+  scope: Extract<ScopeConfig, { categoryKeys: readonly string[] }>,
+) {
   const covered = [...expandScopeCategoryKeys(scope.categoryKeys)];
   const rows = await tx.$queryRaw<Array<{ productId: string; categoryKeys: string[] }>>`
     SELECT pm."id" AS "productId",
