@@ -1,7 +1,10 @@
 import { Suspense } from "react";
 import Script from "next/script";
 
-import { META_VISITOR_ID_COOKIE } from "@/integrations/meta/first-party-cookies";
+import {
+  META_VISITOR_ID_COOKIE,
+  readMetaFirstPartyCookiesEnabled,
+} from "@/integrations/meta/first-party-cookies";
 import { readMetaPixelConfig } from "@/integrations/meta/pixel-config";
 
 import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
@@ -11,8 +14,12 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
  * environment ships no third-party script and the CSP stays closed around it.
  *
  * The route tracker owns both document and SPA PageView so it can share one event ID with CAPI.
- * `init` passes the visitor ID the proxy wrote (`la_vid`) as `external_id`, the same value the
- * Conversions API sends, so Meta can tie the browser and server events of one visitor together.
+ * While `LA_META_FIRST_PARTY_COOKIES_ENABLED` is on, `init` passes the visitor ID the proxy wrote
+ * (`la_vid`) as `external_id`, the same value the Conversions API sends, so Meta can tie the browser
+ * and server events of one visitor together. Off, `init` never reads it, even from a cookie issued
+ * while it was on: a visitor whose first page after the switch is not a storefront page load (so
+ * the proxy has not expired it yet) must not keep sending it. The chrome renders per request
+ * (`loadSiteChrome` awaits `connection()`), so this reads the runtime value, not the build's.
  *
  * The external script's lifecycle is also persisted on the element itself before insertion. A
  * later Purchase effect can therefore distinguish `ready` from `unavailable` even if the one-shot
@@ -21,6 +28,11 @@ import { FacebookPixelRouteTracker } from "./facebook-pixel-route-tracker";
 export function FacebookPixel() {
   const config = readMetaPixelConfig();
   if (config === null) return null;
+  const advancedMatching = readMetaFirstPartyCookiesEnabled()
+    ? `(function(){
+var m=document.cookie.match(/(?:^|; )${META_VISITOR_ID_COOKIE}=([0-9a-f]{64})(?:;|$)/);
+return m?{external_id:m[1]}:{}})()`
+    : "{}";
 
   return (
     <>
@@ -35,9 +47,7 @@ t.onload=function(){t.dataset.laMetaPixelStatus=typeof f.fbq==='function'&&typeo
 t.onerror=function(){t.dataset.laMetaPixelStatus='unavailable'};
 s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script',
 'https://connect.facebook.net/en_US/fbevents.js');
-fbq('init', ${JSON.stringify(config.pixelId)}, (function(){
-var m=document.cookie.match(/(?:^|; )${META_VISITOR_ID_COOKIE}=([0-9a-f]{64})(?:;|$)/);
-return m?{external_id:m[1]}:{}})());`}
+fbq('init', ${JSON.stringify(config.pixelId)}, ${advancedMatching});`}
       </Script>
       {/* The tracker reads search params, which opts its subtree out of static rendering; the
           boundary keeps that confined to a component that renders nothing. */}

@@ -27,6 +27,7 @@ export default defineConfig({
     "evergreen-pages.spec.ts",
     "facebook-pixel.spec.ts",
     "facebook-pixel-disabled.spec.ts",
+    "facebook-pixel-cookies-off.spec.ts",
     "flash-sale-freshness.spec.ts",
     "footer-support.spec.ts",
     "gtm-reviewed-container.spec.ts",

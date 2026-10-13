@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 
 import { META_COOKIE_MAX_LENGTH, META_FBC_PATTERN, META_FBP_PATTERN } from "./cookie-format.ts";
-import { readMetaVisitorId } from "./first-party-cookies.ts";
+import { readMetaFirstPartyCookiesEnabled, readMetaVisitorId } from "./first-party-cookies.ts";
 import type { MetaConversionsConfig } from "./pixel-config.ts";
 
 /**
@@ -220,6 +220,19 @@ function safeTraceId(value: unknown): string | null {
  * Reporting a sale must never be able to fail a sale, so transport problems are returned rather
  * than thrown and the caller is expected to carry on regardless.
  */
+/**
+ * The switch decides at the moment of sending, not only when an event was built: a Purchase whose
+ * context was saved, or whose payload was frozen, while it was on must not carry `external_id`
+ * after it is turned off. Nothing else changes, so event id, time and dedup are untouched.
+ */
+function withoutExternalId(event: Record<string, unknown>): Record<string, unknown> {
+  const userData = event.user_data;
+  if (typeof userData !== "object" || userData === null || !("external_id" in userData)) return event;
+  const rest: Record<string, unknown> = { ...userData };
+  delete rest.external_id;
+  return { ...event, user_data: rest };
+}
+
 export async function sendMetaConversionEvents(
   config: MetaConversionsConfig,
   events: readonly Record<string, unknown>[],
@@ -227,7 +240,8 @@ export async function sendMetaConversionEvents(
   timeoutMs = 3_000,
   options: SendOptions = {},
 ): Promise<MetaConversionsSendResult> {
-  const { url, body } = buildMetaConversionsRequest(config, events);
+  const outbound = readMetaFirstPartyCookiesEnabled() ? events : events.map(withoutExternalId);
+  const { url, body } = buildMetaConversionsRequest(config, outbound);
   const maxAttempts = Math.max(1, Math.min(3, options.maxAttempts ?? 3));
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   let failure: Exclude<MetaConversionsSendResult, { ok: true }> = {

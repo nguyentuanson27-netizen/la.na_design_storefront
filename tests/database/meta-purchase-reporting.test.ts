@@ -108,12 +108,21 @@ async function seedConfirmedOrder(state: "CONFIRMED" | "DRAFT" | "SYNC_UNKNOWN" 
   });
 }
 
-/** The access token is read per call, so it is what turns server reporting on and off here. */
+/**
+ * The access token is read per call, so it is what turns server reporting on and off here. The
+ * first-party cookie switch is on too unless a test turns it off, since it gates `external_id`.
+ */
 function withConversionsEnv<T>(run: () => Promise<T>): Promise<T> {
   process.env.FACEBOOK_CAPI_ACCESS_TOKEN = "test-token";
+  process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED = "true";
   return run().finally(() => {
     delete process.env.FACEBOOK_CAPI_ACCESS_TOKEN;
+    delete process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED;
   });
+}
+
+function switchFirstPartyCookiesOff(): void {
+  process.env.LA_META_FIRST_PARTY_COOKIES_ENABLED = "false";
 }
 
 test.beforeEach(cleanup);
@@ -260,6 +269,62 @@ test("SYNC_UNKNOWN reconciliation reports Purchase after commit with the origina
   assert.equal((events[0]!.user_data as Record<string, unknown>).fbc, requestContext.fbc);
   // The browser request is long gone; the visitor ID comes from the saved checkout context.
   assert.deepEqual((events[0]!.user_data as Record<string, unknown>).external_id, [requestContext.externalId]);
+});
+
+test("turning the switch off stops external_id on a Purchase whose context was saved while it was on", async () => {
+  await seedConfirmedOrder("DRAFT");
+  const events: Array<Record<string, unknown>> = [];
+  await withConversionsEnv(async () => {
+    await saveMetaPurchaseContextSafely(prisma, orderCode, requestContext, reportedAt);
+    const saved = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+    assert.ok(saved.metaPurchaseContext!.includes(requestContext.externalId), "saved while on");
+    await prisma.orderMirror.update({ where: { publicCode: orderCode }, data: { state: "SYNC_UNKNOWN" } });
+    switchFirstPartyCookiesOff();
+    const service = createPancakeOrderReconciliationService({
+      client: prisma, clock: () => reportedAt,
+      gateway: { searchOrderByMarker: async () => ({ kind: "FOUND", orderId: "meta-pos-off" }) },
+      onConfirmed: async (code) => {
+        await reportMetaPurchaseSafely(prisma, code, null, { now: reportedAt, fetchImpl: async (_url, init) => {
+          events.push(JSON.parse(String(init?.body)).data[0]);
+          return Response.json({ events_received: 1 });
+        } });
+      },
+    });
+    assert.equal((await service.reconcileAllUnknownOrders({ shopId })).confirmed, 1);
+  });
+  assert.equal(events.length, 1);
+  const userData = events[0]!.user_data as Record<string, unknown>;
+  assert.equal("external_id" in userData, false);
+  // Everything else the saved context carried, and the dedup facts, are unchanged.
+  assert.equal(userData.fbc, requestContext.fbc);
+  assert.equal(events[0]!.event_id, orderCode);
+  assert.equal(events[0]!.event_time, Math.floor(syncedAt.getTime() / 1000));
+});
+
+test("turning the switch off stops external_id on a retry of a Purchase frozen while it was on", async () => {
+  await seedConfirmedOrder();
+  const bodies: string[] = [];
+  await withConversionsEnv(async () => {
+    await reportMetaPurchaseSafely(prisma, orderCode, requestContext, { now: reportedAt, fetchImpl: async (_url, init) => {
+      bodies.push(String(init?.body));
+      return Response.json({ error: { code: 2, message: "temporarily unavailable" } }, { status: 500 });
+    } });
+    const frozen = await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } });
+    assert.ok(frozen.metaPurchasePayload!.includes(requestContext.externalId), "frozen while on");
+    switchFirstPartyCookiesOff();
+    await reportMetaPurchaseSafely(prisma, orderCode, null, { now: reportedAt, fetchImpl: async (_url, init) => {
+      bodies.push(String(init?.body));
+      return Response.json({ events_received: 1 });
+    } });
+  });
+  const [first, retry] = [JSON.parse(bodies[0]!).data[0], JSON.parse(bodies.at(-1)!).data[0]];
+  assert.deepEqual(first.user_data.external_id, [requestContext.externalId]);
+  assert.equal("external_id" in retry.user_data, false);
+  assert.equal(retry.event_id, first.event_id);
+  assert.equal(retry.event_time, first.event_time);
+  assert.deepEqual(retry.custom_data, first.custom_data);
+  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { publicCode: orderCode } })).metaPurchaseSentAt?.getTime(),
+    reportedAt.getTime());
 });
 
 test("retry and browser readback reuse immutable Purchase bytes after catalog, order and identity changes", async () => {
