@@ -192,6 +192,33 @@ test("GQ05 pressing Bật while the feature gate is OFF gives a typed, announced
   expect(after.revision).toBe(1);
 });
 
+test("GQ13a a refused action's specific sub-reason reaches the Admin page, and a hand-edited one never widens it", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  const status = page.locator("#promotion-admin-status");
+  const generic = "Quy tắc của chiến dịch chưa hoàn thiện hoặc chưa được hỗ trợ xuất bản";
+
+  // What the Server Action redirect now carries for a 21st concurrent gift campaign.
+  await page.goto(`${PAGE}?status=error&reason=INVALID_RULE&code=GIFT_CAMPAIGN_LIMIT_EXCEEDED`, { waitUntil: "networkidle" });
+  await expect(status).toHaveAttribute("role", "alert");
+  await expect(status).toContainText("chiến dịch quà tặng được phép cùng hiệu lực");
+  await expect(status).not.toContainText(generic);
+  await expect(status).toBeFocused();
+
+  // Other gift publish refusals are specific too.
+  await page.goto(`${PAGE}?status=error&reason=INVALID_RULE&code=GIFT_VARIANT_COMPOSITE`, { waitUntil: "networkidle" });
+  await expect(status).toContainText("combo");
+
+  // Unknown, hostile or mismatched codes fall back to the reason's generic sentence and are never echoed.
+  for (const code of ["NOPE", "__proto__", "constructor", "%3Cscript%3Ealert(1)%3C%2Fscript%3E"]) {
+    await page.goto(`${PAGE}?status=error&reason=INVALID_RULE&code=${code}`, { waitUntil: "networkidle" });
+    await expect(status).toContainText(generic);
+    await expect(status).not.toContainText(code.replace(/%3C|%3E|%2F/g, ""));
+  }
+  await page.goto(`${PAGE}?status=error&reason=FEATURE_DISABLED&code=GIFT_CAMPAIGN_LIMIT_EXCEEDED`, { waitUntil: "networkidle" });
+  await expect(status).toContainText("Tính năng quà tặng và giảm giá theo số lượng đang tắt");
+  await expect(status).not.toContainText("cùng hiệu lực");
+});
+
 test("GQ05 the surface stays usable at a narrow mobile viewport", async ({ page, context }) => {
   await context.addCookies(adminCookies);
   await page.setViewportSize({ width: 390, height: 844 });

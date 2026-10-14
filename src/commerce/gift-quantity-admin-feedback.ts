@@ -20,6 +20,12 @@ export type GiftQuantityFailure =
 
 export type GiftQuantityFailureDescription = Readonly<{
   reason: GiftQuantityFailure["reason"];
+  /**
+   * The allowlisted sub-reason that selected `message`, present only when a fixed sentence exists for
+   * it. It is a closed-vocabulary code from this domain, never request text, so it may travel in the
+   * redirect URL; the page resolves it again against the same tables.
+   */
+  code?: string;
   message: string;
   /** Every refusal happens before commit or is rolled back, so a retry changes nothing by itself. */
   wroteNothing: true;
@@ -165,25 +171,58 @@ const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   GIFT_FIELD_NOT_APPLICABLE: "Có trường không thuộc điều kiện nhận quà đã chọn.",
 };
 
+const REFINEMENTS: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  INVALID_INPUT: INVALID_INPUT_REFINEMENTS,
+  INVALID_SCOPE: INVALID_SCOPE_REFINEMENTS,
+  FROZEN_SET_INVALID: FROZEN_REFINEMENTS,
+  INVALID_RULE: INVALID_RULE_REFINEMENTS,
+};
+const has = (table: object, key: string) => Object.prototype.hasOwnProperty.call(table, key);
+
+/** The fixed sentence for a (reason, sub-reason) pair, or null. Own properties only: `constructor` is not a code. */
+function refinementFor(reason: string, code: string): string | null {
+  if (!has(REFINEMENTS, reason)) return null;
+  const table = REFINEMENTS[reason]!;
+  return has(table, code) ? table[code]! : null;
+}
+
+function subReasonOf(failure: GiftQuantityFailure): string | null {
+  if (failure.reason === "INVALID_INPUT" || failure.reason === "INVALID_RULE") return failure.errors[0] ?? null;
+  if (failure.reason === "INVALID_SCOPE") return failure.issues[0]?.code ?? null;
+  if (failure.reason === "FROZEN_SET_INVALID") return failure.code;
+  return null;
+}
+
 export function describeGiftQuantityFailure(failure: GiftQuantityFailure): GiftQuantityFailureDescription {
-  let message = BASE_MESSAGES[failure.reason];
-  if (failure.reason === "INVALID_INPUT") {
-    message = INVALID_INPUT_REFINEMENTS[failure.errors[0] ?? ""] ?? message;
-  } else if (failure.reason === "INVALID_SCOPE") {
-    message = INVALID_SCOPE_REFINEMENTS[failure.issues[0]?.code ?? ""] ?? message;
-  } else if (failure.reason === "FROZEN_SET_INVALID") {
-    message = FROZEN_REFINEMENTS[failure.code] ?? message;
-  } else if (failure.reason === "INVALID_RULE") {
-    message = INVALID_RULE_REFINEMENTS[failure.errors[0] ?? ""] ?? message;
-  }
-  return Object.freeze({ reason: failure.reason, message, wroteNothing: true as const });
+  const code = subReasonOf(failure);
+  const refined = code === null ? null : refinementFor(failure.reason, code);
+  return Object.freeze({
+    reason: failure.reason,
+    ...(refined === null || code === null ? {} : { code }),
+    message: refined ?? BASE_MESSAGES[failure.reason],
+    wroteNothing: true as const,
+  });
+}
+
+/**
+ * The query string a refused action redirects with: the typed reason, plus the sub-reason when a fixed
+ * sentence exists for it. Nothing else -- no ids, names or free text -- ever reaches the URL.
+ */
+export function giftQuantityFailureQuery(failure: GiftQuantityFailureDescription): string {
+  const code = failure.code === undefined ? "" : `&code=${encodeURIComponent(failure.code)}`;
+  return `status=error&reason=${encodeURIComponent(failure.reason)}${code}`;
 }
 
 /** The reasons the admin page will render from the URL; anything else falls back to a generic sentence. */
 export const GIFT_QUANTITY_RENDERABLE_REASONS: ReadonlySet<string> = new Set(Object.keys(BASE_MESSAGES));
 
-export function describeGiftQuantityReason(reason: string): string | null {
-  return GIFT_QUANTITY_RENDERABLE_REASONS.has(reason)
-    ? BASE_MESSAGES[reason as GiftQuantityFailure["reason"]]
-    : null;
+/**
+ * The sentence for a failure read back from the URL. The `code` only refines a known `reason` and only
+ * when it is in that reason's own table; anything else (hand-edited, mismatched, unknown) falls back to
+ * the reason's generic sentence, and an unknown reason renders nothing. The code is never echoed.
+ */
+export function describeGiftQuantityReason(reason: string, code?: string | null): string | null {
+  if (!GIFT_QUANTITY_RENDERABLE_REASONS.has(reason)) return null;
+  const refined = typeof code === "string" && code.length > 0 ? refinementFor(reason, code) : null;
+  return refined ?? BASE_MESSAGES[reason as GiftQuantityFailure["reason"]];
 }

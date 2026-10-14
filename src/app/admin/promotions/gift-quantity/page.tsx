@@ -47,6 +47,7 @@ type PageProps = {
     q?: string | string[];
     status?: string | string[];
     reason?: string | string[];
+    code?: string | string[];
     new?: string | string[];
     edit?: string | string[];
   }>;
@@ -72,8 +73,9 @@ export default async function GiftQuantityAdminPage({ searchParams }: PageProps)
   const isNew = single(query.new) === "1";
   const editId = single(query.edit);
   const reason = single(query.reason);
-  // The URL carries only a typed reason; the sentence is resolved here, on the server.
-  const failureMessage = reason === null ? null : describeGiftQuantityReason(reason);
+  // The URL carries only a typed reason and an allowlisted sub-reason; the sentence is resolved here,
+  // on the server, and an unknown or mismatched sub-reason falls back to the reason's generic one.
+  const failureMessage = reason === null ? null : describeGiftQuantityReason(reason, single(query.code));
   const now = new Date();
 
   const campaigns = await repository.listCampaigns({ search, now });
