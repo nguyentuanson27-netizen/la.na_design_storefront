@@ -206,23 +206,24 @@ test("engine import boundary distinguishes erased types from runtime pricing imp
   assert.deepEqual(engineImports('import { type StackPeer, priceStack as price } from "./gift-quantity-stack.ts";'), [{ kind: "stack", names: ["priceStack"] }]);
 });
 
-test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/structured-data path can)", () => {
-  const root = join(import.meta.dirname, "..", "..", "src");
+// Modules allowed to import part of the engines without becoming a price surface.
+// - Validators check configuration or price safety; they never calculate a cart price.
+// - The tier editor's preview (GQ09b) is a simulated, admin-only illustration: it runs the pure
+//   tier function on one sample line and is never a buyer-authoritative cart price. It may import
+//   exactly these runtime symbols and nothing from the quote/stack engines.
+const adminEngineImports: Record<string, readonly string[]> = {
+  "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
+  "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
+  "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
+  "components/admin/gift-quantity-tier-fields.tsx": ["MAX_TIER_UNITS", "MAX_TIERS_PER_CAMPAIGN", "priceQuantityTier", "validateTierConfig"],
+};
+
+/** Importers per engine kind; a declared admin module exceeding its symbols fails immediately. */
+function engineImporters(sources: ReadonlyArray<Readonly<{ path: string; text: string }>>) {
   const importers = new Map<string, string[]>();
-  // These admin modules may validate configuration/price safety, never calculate a cart price.
-  // The tier editor's preview (GQ09b) is the one admin-only exception: it runs the pure engine on a
-  // single illustrative sample line for the admin and is never a buyer quote, so it may import the
-  // pricing function and nothing else from the quote/stack engines.
-  const adminValidators: Record<string, readonly string[]> = {
-    "components/admin/gift-quantity-tier-fields.tsx": ["MAX_TIER_UNITS", "MAX_TIERS_PER_CAMPAIGN", "priceQuantityTier", "validateTierConfig"],
-    "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
-    "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
-    "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
-  };
-  for (const file of sourceFiles(root)) {
-    const path = relative(root, file).split("\\").join("/");
-    for (const { kind, names } of engineImports(readFileSync(file, "utf8"))) {
-      const allowed = adminValidators[path];
+  for (const { path, text } of sources) {
+    for (const { kind, names } of engineImports(text)) {
+      const allowed = adminEngineImports[path];
       if (allowed) {
         assert.ok(names.every((name) => allowed.includes(name)), `${path} may only import its validation functions/constants`);
         continue;
@@ -232,6 +233,15 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
       importers.set(kind, list);
     }
   }
+  return importers;
+}
+
+test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/structured-data path can)", () => {
+  const root = join(import.meta.dirname, "..", "..", "src");
+  const importers = engineImporters(sourceFiles(root).map((file) => ({
+    path: relative(root, file).split("\\").join("/"),
+    text: readFileSync(file, "utf8"),
+  })));
   assert.deepEqual(importers.get("quote")?.sort(), ["commerce/storefront-cart-repository.ts"]);
   // Gift selection may import only the gift stack-consent resolver, not paid tier arithmetic.
   assert.deepEqual(importers.get("stack")?.sort(), ["commerce/cart-gift-selection.ts", "commerce/gift-quantity-quote.ts"]);
@@ -239,4 +249,18 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
   assert.match(selectionSource, /resolveGiftCampaignStacking/);
   assert.doesNotMatch(selectionSource, /\bpriceStack\b/);
   assert.deepEqual(importers.get("tier")?.sort(), ["commerce/gift-quantity-stack.ts"]);
+});
+
+test("the admin tier preview exception is exact: any other importer still breaks the boundary", () => {
+  const tierImport = 'import { priceQuantityTier } from "@/commerce/gift-quantity-tier";';
+  const previewPath = "components/admin/gift-quantity-tier-fields.tsx";
+  // The declared preview may use the pure tier function, so it is not counted as an importer.
+  assert.equal(engineImporters([{ path: previewPath, text: tierImport }]).get("tier"), undefined);
+  // Buyer-facing and other admin modules importing the same function are reported, so the boundary assertion fails.
+  assert.deepEqual(engineImporters([{ path: "components/storefront/price-tag.tsx", text: tierImport }]).get("tier"), ["components/storefront/price-tag.tsx"]);
+  assert.deepEqual(engineImporters([{ path: "app/(storefront)/p/[slug]/page.tsx", text: tierImport }]).get("tier"), ["app/(storefront)/p/[slug]/page.tsx"]);
+  assert.deepEqual(engineImporters([{ path: "components/admin/other-panel.tsx", text: tierImport }]).get("tier"), ["components/admin/other-panel.tsx"]);
+  // The preview never gains the cart quote or stack engines.
+  assert.throws(() => engineImporters([{ path: previewPath, text: 'import { priceStack } from "@/commerce/gift-quantity-stack";' }]));
+  assert.throws(() => engineImporters([{ path: previewPath, text: 'import { quoteGiftQuantity } from "@/commerce/gift-quantity-quote";' }]));
 });

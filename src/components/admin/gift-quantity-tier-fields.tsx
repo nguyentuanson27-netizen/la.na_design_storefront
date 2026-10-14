@@ -173,7 +173,7 @@ export function GiftQuantityTierFields({
   }
 
   return (
-    <fieldset className="border-t border-black/20 pt-6">
+    <fieldset className="min-w-0 border-t border-black/20 pt-6">
       <legend className={labelClass}>Quy tắc giảm giá theo số lượng</legend>
       <input name="tierRuleForm" type="hidden" value="on" />
       <p className="mt-2 text-sm leading-6 text-neutral-700">
@@ -218,7 +218,7 @@ export function GiftQuantityTierFields({
       ) : null}
 
       <div className="mt-6 space-y-4">
-        <h4 className={labelClass}>Bậc số lượng ({tiers.length}/{MAX_TIERS_PER_CAMPAIGN})</h4>
+        <h3 className={labelClass}>Bậc số lượng ({tiers.length}/{MAX_TIERS_PER_CAMPAIGN})</h3>
         {tiers.map((row, index) => (
           <div className="grid items-end gap-3 border-l-2 border-black/20 pl-4 sm:grid-cols-[1fr_1fr_auto]" key={row.key}>
             <div>
@@ -259,7 +259,7 @@ export function GiftQuantityTierFields({
               </button>
               <p aria-live="polite" className="mt-2 text-sm" role="status">{priorityNotice}</p>
             </div>
-            <h4 className={labelClass}>Chiến dịch cho phép cộng dồn ({peers.length}/{MAX_STACK_PEERS})</h4>
+            <h3 className={labelClass}>Chiến dịch cho phép cộng dồn ({peers.length}/{MAX_STACK_PEERS})</h3>
             {peers.map((peer, index) => (
               <div className="grid items-end gap-3 sm:grid-cols-[1fr_1fr_auto]" key={peer.key}>
                 <div>
@@ -288,7 +288,7 @@ export function GiftQuantityTierFields({
       </div>
 
       <section aria-labelledby={id + "-preview"} className="mt-6 border-t border-black/10 pt-6">
-        <h4 className={labelClass} id={id + "-preview"}>Xem trước tiền (EX-19: Q=3 → Q=4)</h4>
+        <h3 className={labelClass} id={id + "-preview"}>Xem trước tiền (EX-19: Q=3 → Q=4)</h3>
         <p className="mt-2 text-xs leading-5 text-neutral-700">
           Mô phỏng một loại hàng đồng giá và đủ điều kiện, trước bước tier. Không phải báo giá thực của giỏ;
           scope, ưu đãi trước tier, giá thật và ưu tiên vẫn được máy chủ tính lại.
@@ -308,7 +308,7 @@ export function GiftQuantityTierFields({
           {preview === null ? null : !preview.ok ? (
             <p className="text-red-800">{preview.error}</p>
           ) : (
-            <div className="overflow-x-auto">
+            <div aria-label="Bảng giá minh họa, cuộn ngang được" className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-4" role="region" tabIndex={0}>
               <table className="w-full min-w-[34rem] border-collapse text-left">
                 <caption className="sr-only">So sánh số lượng và mức giảm giá minh họa</caption>
                 <thead><tr className="border-b border-black/20">
