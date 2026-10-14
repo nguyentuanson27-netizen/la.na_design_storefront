@@ -35,7 +35,7 @@ import {
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { checkTierPriceSafety } from "./gift-quantity-publish-guards.ts";
 import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
-import { hasStackPriorityConflict } from "./gift-quantity-stack-priority.ts";
+import { hasStackPriorityConflict, MAX_STACK_PRIORITY } from "./gift-quantity-stack-priority.ts";
 import { validateRuleForPublish, type RuleValidationInput, type RuleValidator } from "./gift-quantity-rule-validation.ts";
 import {
   applyExcludeWins,
@@ -258,6 +258,7 @@ async function crossRowRuleErrors(
   source: RuleSource,
   scope: ScopeConfig,
   now: Date,
+  frozenCampaignId?: string,
 ): Promise<readonly string[]> {
   if (source.kind !== "QUANTITY_TIER") return [];
   const rule = tierRuleOfRow(source);
@@ -269,7 +270,7 @@ async function crossRowRuleErrors(
     }
   }
   if (toQuantityTierConfig(rule) !== null) {
-    const price = await checkTierPriceSafety(tx, rule, scope);
+    const price = await checkTierPriceSafety(tx, rule, scope, frozenCampaignId);
     if (price !== null) errors.push(price);
   }
   return errors;
@@ -480,7 +481,7 @@ function sameTierRule(a: TierRuleInput, b: TierRuleInput): boolean {
   const selection = (rule: TierRuleInput) => (rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null);
   const ladder = (rule: TierRuleInput) =>
     [...rule.tiers].sort((x, y) => x.minQuantity - y.minQuantity).map((tier) => `${tier.minQuantity}:${tier.discountValue}`).join(",");
-  const peers = (rule: TierRuleInput) => rule.peers.map((peer) => `${peer.kind}|${peer.campaignId}`).sort().join(",");
+  const peers = (rule: TierRuleInput) => JSON.stringify(rule.peers.map((peer) => JSON.stringify([peer.kind, peer.campaignId])).sort());
   return (
     a.unit === b.unit &&
     a.discountedUnits === b.discountedUnits &&
@@ -529,6 +530,14 @@ export async function editScheduledGiftQuantityCampaign({
   const normalizedName = patch.name === undefined ? null : normalizePromotionCampaignName(patch.name);
   if (normalizedName !== null && !normalizedName.ok) {
     return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["INVALID_NAME"] } };
+  }
+
+  if (patch.stackPriority !== undefined && patch.stackPriority !== null &&
+    (!Number.isSafeInteger(patch.stackPriority) || patch.stackPriority < 0 || patch.stackPriority > MAX_STACK_PRIORITY)) {
+    return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["STACK_PRIORITY_OUT_OF_RANGE"] } };
+  }
+  if (patch.stackingEnabled !== undefined && typeof patch.stackingEnabled !== "boolean") {
+    return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["INVALID_STACKING_FLAG"] } };
   }
 
   // Malformed or unbounded rule input is refused before anything is locked or read, whatever the
@@ -625,7 +634,10 @@ export async function editScheduledGiftQuantityCampaign({
       }
       const ruleErrors = validateRule(ruleInputOf(after));
       if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
-      const crossRowErrors = await crossRowRuleErrors(tx, row.id, after, normalizedScope, now);
+      const crossRowErrors = await crossRowRuleErrors(
+        tx, row.id, after, normalizedScope, now,
+        !scopeChanged && normalizedScope.mode === FIXED_PRODUCT_SET ? row.id : undefined,
+      );
       if (crossRowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: crossRowErrors } } as const;
     }
 

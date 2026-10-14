@@ -523,3 +523,69 @@ test("copy keeps the whole rule and the copy is a Draft that must pass its own p
   assert.equal(copy.isEnabled, false);
   assert.deepEqual(await refusedErrors(await publish(copied.campaignId)), ["STACK_PRIORITY_CONFLICT"]);
 });
+
+test("Scheduled Fixed edit: price safety includes frozen products that left their category", async () => {
+  await product("frozen-cheap", 40_000, "setVay");
+  const id = await createTier("frozen-cheap", rule(), { scopeMode: "FIXED_PRODUCT_SET" });
+  assert.equal((await publish(id)).ok, true);
+  await prisma.productCategoryMembership.deleteMany({ where: { productId: `${P}-frozen-cheap` } });
+  const before = await revision();
+  const base = await stored(id);
+  const outcome = await editScheduledGiftQuantityCampaign({
+    campaignId: id, now: NOW, session: ADMIN, env: ON,
+    patch: { tierRule: rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 50_000 }] }) },
+  });
+  assert.deepEqual(await refusedErrors(outcome), ["TIER_PRICE_BELOW_MINIMUM"]);
+  assert.equal(await revision(), before);
+  assert.equal((await stored(id)).revision, base.revision);
+  assert.equal((await stored(id)).tierUnit, "PERCENTAGE");
+  assert.equal(await prisma.giftQuantityFrozenProduct.count({ where: { campaignId: id } }), 2);
+});
+
+test("Scheduled Fixed edit: newly categorized products do not affect the retained frozen scope", async () => {
+  const id = await createTier("frozen-safe", rule(), { scopeMode: "FIXED_PRODUCT_SET" });
+  assert.equal((await publish(id)).ok, true);
+  await product("new-cheap", 40_000, "setVay");
+  const before = await revision();
+  const outcome = await editScheduledGiftQuantityCampaign({
+    campaignId: id, now: NOW, session: ADMIN, env: ON,
+    patch: { tierRule: rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 50_000 }] }) },
+  });
+  assert.equal(outcome.ok, true, show(outcome));
+  assert.equal(await revision(), before + BigInt(1));
+  assert.deepEqual((await prisma.giftQuantityFrozenProduct.findMany({ where: { campaignId: id } })).map(p => p.productId), [`${P}-a`]);
+  // A real scope change re-freezes current membership, so the new cheap product now counts.
+  const refreshed = await editScheduledGiftQuantityCampaign({
+    campaignId: id, now: NOW, session: ADMIN, env: ON,
+    patch: { scope: { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: ["setVay"], includeProductIds: [`${P}-new-cheap`], excludeProductIds: [] } },
+  });
+  assert.deepEqual(await refusedErrors(refreshed), ["TIER_PRICE_BELOW_MINIMUM"]);
+});
+
+test("Scheduled edit: scalar stack priority bounds are refused as typed input errors", async () => {
+  const id = await createTier("scalar-bounds", rule());
+  assert.equal((await publish(id)).ok, true);
+  const before = await revision();
+  for (const stackPriority of [-1, 1.5, 1_000_001, Number.NaN]) {
+    const outcome = await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, patch: { stackPriority } });
+    assert.deepEqual(outcome.ok === false && outcome.failure.reason === "INVALID_INPUT" ? outcome.failure.errors : null, ["STACK_PRIORITY_OUT_OF_RANGE"]);
+  }
+  assert.equal(await revision(), before);
+  assert.equal((await stored(id)).stackPriority, null);
+});
+
+test("Scheduled edit: distinct peer sets cannot collide in the real-change comparison", async () => {
+  const a = await legacy("compare-a");
+  const b = await legacy("compare-b");
+  const combined = await legacy(`compare-a,PROMOTION|${b}`);
+  const id = await createTier("peer-compare", rule({ peers: [{ kind: "PROMOTION", campaignId: a }, { kind: "PROMOTION", campaignId: b }] }));
+  assert.equal((await publish(id)).ok, true);
+  const changed = rule({ peers: [{ kind: "PROMOTION", campaignId: combined }] });
+  const before = await revision();
+  const off = await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: {}, patch: { tierRule: changed } });
+  assert.equal(off.ok === false && off.failure.reason, "FEATURE_DISABLED");
+  const on = await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, patch: { tierRule: changed } });
+  assert.equal(on.ok, true, show(on));
+  assert.equal(await revision(), before + BigInt(1));
+  assert.deepEqual((await stored(id)).stackPeers.map(p => p.peerCampaignId), [combined]);
+});

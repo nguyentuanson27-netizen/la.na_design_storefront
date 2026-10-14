@@ -30,6 +30,10 @@ export type PublishGuardError = "STACK_PRIORITY_CONFLICT" | "TIER_PRICE_BELOW_MI
  * statement, so it costs the same whatever the scope's size and sees one snapshot. The lowest price
  * is the worst case for both tier units, so checking it covers every other unit.
  *
+ * For a Scheduled edit that retains a Fixed snapshot, `frozenCampaignId` selects that stored
+ * product set instead of current category membership. Publish, re-enable and real scope edits
+ * validate current membership because they capture a new snapshot.
+ *
  * This is what is *known now* from catalog prices. Earlier stack steps can only lower the price a
  * tier sees, so a tier that is safe here may still be dropped at runtime (`TIER_PRICE_INVALID`,
  * whole tier, never clamped); a tier that fails here fails for certain.
@@ -37,6 +41,7 @@ export type PublishGuardError = "STACK_PRIORITY_CONFLICT" | "TIER_PRICE_BELOW_MI
 export async function readLowestScopeUnitPriceVnd(
   tx: Pick<Tx, "$queryRaw">,
   scope: ScopeConfig,
+  frozenCampaignId?: string,
 ): Promise<number | null> {
   if (scope.mode === "GLOBAL_ALL_PAID_LINES") return null;
   const covered = [...expandScopeCategoryKeys(scope.categoryKeys)];
@@ -49,13 +54,21 @@ export async function readLowestScopeUnitPriceVnd(
       AND v."pancakeRetailPrice" <= 9007199254740991
       AND v."pancakeRetailPrice" = floor(v."pancakeRetailPrice")
       AND (
-        v."productId" = ANY(${[...scope.includeProductIds]}::text[])
-        OR EXISTS (
-          SELECT 1 FROM "ProductCategoryMembership" m
-          WHERE m."productId" = v."productId" AND m."categoryKey" = ANY(${covered}::text[])
+        (${frozenCampaignId ?? null}::text IS NOT NULL AND EXISTS (
+          SELECT 1 FROM "GiftQuantityFrozenProduct" f
+          WHERE f."campaignId" = ${frozenCampaignId ?? null}::text AND f."productId" = v."productId"
+        ))
+        OR (${frozenCampaignId ?? null}::text IS NULL
+          AND (
+            v."productId" = ANY(${[...scope.includeProductIds]}::text[])
+            OR EXISTS (
+              SELECT 1 FROM "ProductCategoryMembership" m
+              WHERE m."productId" = v."productId" AND m."categoryKey" = ANY(${covered}::text[])
+            )
+          )
+          AND NOT (v."productId" = ANY(${[...scope.excludeProductIds]}::text[]))
         )
       )
-      AND NOT (v."productId" = ANY(${[...scope.excludeProductIds]}::text[]))
   `;
   const lowest = rows[0]?.lowest;
   return typeof lowest === "number" && Number.isSafeInteger(lowest) ? lowest : null;
@@ -66,10 +79,11 @@ export async function checkTierPriceSafety(
   tx: Pick<Tx, "$queryRaw">,
   rule: TierRuleInput,
   scope: ScopeConfig,
+  frozenCampaignId?: string,
 ): Promise<PublishGuardError | null> {
   const config = toQuantityTierConfig(rule);
   if (config === null) return null;
-  const lowest = await readLowestScopeUnitPriceVnd(tx, scope);
+  const lowest = await readLowestScopeUnitPriceVnd(tx, scope, frozenCampaignId);
   if (lowest === null) return null;
   return findPricesInvalidForTier(config, [lowest]).length > 0 ? "TIER_PRICE_BELOW_MINIMUM" : null;
 }

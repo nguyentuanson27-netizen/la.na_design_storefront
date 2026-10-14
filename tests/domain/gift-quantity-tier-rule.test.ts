@@ -192,3 +192,15 @@ test("dispatcher: tier rules use the tier validator, gift rules still refuse unt
   assert.deepEqual(validateRuleForPublish({ ...base, tierUnit: null }), ["TIER_CONFIG_INCOMPLETE"]);
   assert.deepEqual(validateRuleForPublish({ ...base, kind: "GIFT_ITEM" }), ["RULE_VALIDATION_NOT_AVAILABLE"]);
 });
+
+test("structure: direct service inputs enforce enum and boolean allowlists before persistence", () => {
+  for (const [field, value, error] of [
+    ["unit", "BOGUS", "INVALID_TIER_UNIT"],
+    ["discountedUnits", "BOGUS", "INVALID_TIER_DISCOUNTED_UNITS"],
+    ["selectionPriority", "BOGUS", "INVALID_TIER_SELECTION_PRIORITY"],
+    ["stackingEnabled", "true", "INVALID_STACKING_FLAG"],
+  ] as const) {
+    const malformed = rule({ discountedUnits: "FROM_REACHED_THRESHOLD", selectionPriority: "CHEAPEST_FIRST", [field]: value } as unknown as Partial<TierRuleInput>);
+    assert.ok(validateTierRuleStructure(malformed).includes(error), field);
+  }
+});
