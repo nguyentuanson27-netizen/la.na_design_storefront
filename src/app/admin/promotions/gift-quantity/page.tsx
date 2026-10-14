@@ -164,7 +164,10 @@ export default async function GiftQuantityAdminPage({ searchParams }: PageProps)
               </p>
               {toEdit.status === "DRAFT" || toEdit.status === "SCHEDULED" ? (
                 <div className="mt-6 border-t border-black/10 pt-6">
+                  {/* Keyed by campaign: the form and tier fields seed their state from props once, so moving
+                      between two ?edit= links on this page must reset all of it, never carry A's rule onto B. */}
                   <GiftQuantityCampaignForm
+                    key={toEdit.id}
                     action={editGiftQuantityAction}
                     categories={categoryOptions}
                     initialData={{
@@ -183,6 +186,7 @@ export default async function GiftQuantityAdminPage({ searchParams }: PageProps)
                       frozenAt: toEdit.frozenAt,
                       frozenCount: toEdit.frozenCount,
                       frozenPreview: toEdit.frozenPreview.map((product) => ({ id: product.id, label: product.name })),
+                      tierRule: toEdit.tierRule,
                     }}
                     mode="edit"
                   />

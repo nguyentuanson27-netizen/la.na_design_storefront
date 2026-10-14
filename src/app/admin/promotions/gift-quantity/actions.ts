@@ -22,6 +22,7 @@ import {
 } from "@/commerce/gift-quantity-legacy-consent";
 import { createGiftQuantityAdminRepository, type AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
 import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
+import { hasStackPriorityConflict, MAX_STACK_PRIORITY } from "@/commerce/gift-quantity-stack-priority";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
 import { deriveCampaignLifecycle } from "@/commerce/promotion-campaign-lifecycle";
 import { prisma } from "@/db/prisma";
@@ -224,4 +225,28 @@ export async function previewGiftQuantityScopeAction(input: {
         },
     input.global === true,
   );
+}
+
+/** Advisory only: effective writes re-check the same priority under the pricing revision lock. */
+export async function checkGiftQuantityStackPriorityAction(
+  priority: number,
+  campaignId: string | null,
+): Promise<"AVAILABLE" | "CONFLICT" | "INVALID"> {
+  try {
+    await requireCurrentAdmin();
+  } catch {
+    return "INVALID";
+  }
+  if (!Number.isSafeInteger(priority) || priority < 0 || priority > MAX_STACK_PRIORITY) return "INVALID";
+  if (campaignId !== null && !isBoundedPromotionIdentifier(campaignId)) return "INVALID";
+  if (campaignId !== null) {
+    const campaign = await prisma.giftQuantityCampaign.findUnique({ where: { id: campaignId }, select: { kind: true } });
+    if (campaign?.kind !== "QUANTITY_TIER") return "INVALID";
+  }
+  const conflict = await hasStackPriorityConflict(prisma, {
+    campaignId: campaignId ?? "",
+    priority,
+    now: new Date(),
+  });
+  return conflict ? "CONFLICT" : "AVAILABLE";
 }

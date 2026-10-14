@@ -393,3 +393,193 @@ test("GQ09a-F1 real Server Actions reject tier fields on Gift create and edit wi
   const [after] = await prisma.$queryRaw<Array<{ revision: bigint }>>`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}`;
   expect(after!.revision).toBe(revision!.revision);
 });
+
+
+test("GQ09b tier form previews EX-19 Q=3 to Q=4 and fails closed for invalid VND", async ({ page, context }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await context.addCookies(adminCookies);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await watchDocumentTitle(page);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await expect(page.getByRole("group", { name: "Quy tắc giảm giá theo số lượng" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("PERCENTAGE");
+  await page.getByRole("combobox", { name: "Chiếc được giảm", exact: true }).selectOption("FROM_REACHED_THRESHOLD");
+  await page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" }).selectOption("CHEAPEST_FIRST");
+  await page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" }).fill("2");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).fill("10");
+  await page.getByRole("button", { name: "+ Thêm bậc" }).click();
+  await page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" }).fill("4");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("15");
+  const previewButton = page.getByRole("button", { name: "Xem trước giá" });
+  await previewButton.focus();
+  await expect(previewButton).toBeFocused();
+  await previewButton.click();
+
+  const table = page.getByRole("table", { name: "So sánh số lượng và mức giảm giá minh họa" });
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("100.000đ");
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("1.400.000đ");
+  await expect(table.getByRole("row", { name: /Q=4/ })).toContainText("225.000đ");
+  await expect(table.getByRole("row", { name: /Q=4/ })).toContainText("1.775.000đ");
+  await expect(page.getByText("Q=4: 3 × 425.000đ + 1 × 500.000đ")).toBeVisible();
+
+  // A fixed 50,000 VND step on a 40,000 VND unit must drop the whole tier.
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("FIXED_AMOUNT_PER_UNIT_VND");
+  await page.getByRole("textbox", { name: "Mức giảm (VND/chiếc)" }).first().fill("50000");
+  await page.getByRole("textbox", { name: "Mức giảm (VND/chiếc)" }).nth(1).fill("50000");
+  await page.getByRole("textbox", { name: "Giá mỗi chiếc trước tier (VND)" }).fill("40000");
+  await previewButton.click();
+  await expect(page.getByText(/TIER_PRICE_INVALID: bỏ toàn bậc/).first()).toBeVisible();
+  // "Tiết kiệm" is exactly zero: the whole tier is dropped, not clamped to a 1đ unit price.
+  await expect(table.getByRole("row", { name: /Q=3/ }).getByRole("cell").nth(2)).toHaveText("0đ");
+
+  await expectSettledDocumentTitle(page);
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("GQ09b Draft tier rule persists, reads back, and edits without bumping pricing revision", async ({ page, context }) => {
+  const name = "GQ09b Draft " + runId;
+  const before = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(name);
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await page.getByRole("checkbox", { name: "Set váy" }).check();
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("PERCENTAGE");
+  await page.getByRole("combobox", { name: "Chiếc được giảm", exact: true }).selectOption("FROM_REACHED_THRESHOLD");
+  await page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" }).selectOption("MOST_EXPENSIVE_FIRST");
+  await page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" }).fill("2");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).fill("10");
+  await page.getByRole("button", { name: "+ Thêm bậc" }).click();
+  await page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" }).fill("4");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("15");
+  await page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ }).check();
+  await page.getByRole("textbox", { name: /Mức ưu tiên \(0/ }).fill("7");
+  await page.getByRole("button", { name: "+ Thêm chiến dịch" }).click();
+  await page.getByRole("button", { name: "Tạo bản nháp" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+
+  const created = await prisma.giftQuantityCampaign.findFirstOrThrow({
+    where: { name }, include: { tiers: { orderBy: { minQuantity: "asc" } }, stackPeers: true },
+  });
+  expect(created.kind).toBe("QUANTITY_TIER");
+  expect(created.tierDiscountedUnits).toBe("FROM_REACHED_THRESHOLD");
+  expect(created.tierSelectionPriority).toBe("MOST_EXPENSIVE_FIRST");
+  expect(created.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[2, 10], [4, 15]]);
+  expect(created.stackPriority).toBe(7);
+  expect(created.stackingEnabled).toBe(true);
+  expect(created.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["PROMOTION", "*"]]);
+  expect(created.isEnabled).toBe(false);
+  await page.goto(PAGE + "?edit=" + created.id, { waitUntil: "networkidle" });
+  await expect(page.getByRole("combobox", { name: "Đơn vị giảm giá" })).toHaveValue("PERCENTAGE");
+  await expect(page.getByRole("combobox", { name: "Chiếc được giảm", exact: true })).toHaveValue("FROM_REACHED_THRESHOLD");
+  await expect(page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" })).toHaveValue("MOST_EXPENSIVE_FIRST");
+  await expect(page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ })).toBeChecked();
+  await expect(page.getByRole("textbox", { name: /Mức ưu tiên \(0/ })).toHaveValue("7");
+  await expect(page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" })).toHaveValue("4");
+  await expect(page.getByRole("textbox", { name: "ID chiến dịch hoặc *" })).toHaveValue("*");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("20");
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+  const edited = await prisma.giftQuantityCampaign.findUniqueOrThrow({
+    where: { id: created.id }, include: { tiers: { orderBy: { minQuantity: "asc" } }, stackPeers: true },
+  });
+  expect(edited.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[2, 10], [4, 20]]);
+  expect(edited.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["PROMOTION", "*"]]);
+  expect(edited.revision).toBe(created.revision);
+  const after = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  expect(after.revision).toBe(before.revision);
+});
+
+test("GQ09b priority preflight flags live collisions but never changes promotion revision", async ({ page, context }) => {
+  const name = "GQ09b Priority " + runId;
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      kind: "QUANTITY_TIER", name, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
+      tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", stackPriority: 17,
+      stackingEnabled: true, isEnabled: true, enabledAt: new Date(),
+      tiers: { create: [{ minQuantity: 2, discountValue: 10 }] },
+    },
+  });
+  const before = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ }).check();
+  const priority = page.getByRole("textbox", { name: /Mức ưu tiên \(0/ });
+  await priority.fill("17");
+  await page.getByRole("button", { name: "Kiểm tra mức ưu tiên" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "đã có chiến dịch còn hiệu lực" })).toBeVisible();
+  await priority.fill("18");
+  await page.getByRole("button", { name: "Kiểm tra mức ưu tiên" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Chưa phát hiện xung đột" })).toBeVisible();
+  const after = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  expect(after.revision).toBe(before.revision);
+});
+
+test("GQ09b moving between Sửa links remounts the edit form and never writes campaign A's rule onto B", async ({ page, context }) => {
+  const nameA = "GQ09b Key A " + runId;
+  const nameB = "GQ09b Key B " + runId;
+  const common = { kind: "QUANTITY_TIER", scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"], stackingEnabled: true } as const;
+  const a = await prisma.giftQuantityCampaign.create({
+    data: {
+      ...common, name: nameA, tierUnit: "PERCENTAGE", tierDiscountedUnits: "FROM_REACHED_THRESHOLD",
+      tierSelectionPriority: "CHEAPEST_FIRST", stackPriority: 31,
+      tiers: { create: [{ minQuantity: 2, discountValue: 10 }, { minQuantity: 4, discountValue: 15 }] },
+      stackPeers: { create: [{ peerKind: "PROMOTION", peerCampaignId: "*" }] },
+    },
+  });
+  const b = await prisma.giftQuantityCampaign.create({
+    data: {
+      ...common, name: nameB, tierUnit: "FIXED_AMOUNT_PER_UNIT_VND", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+      stackPriority: 32,
+      tiers: { create: [{ minQuantity: 3, discountValue: 20000 }] },
+      stackPeers: { create: [{ peerKind: "CLEARANCE", peerCampaignId: "*" }] },
+    },
+  });
+  const read = (id: string) => prisma.giftQuantityCampaign.findUniqueOrThrow({
+    where: { id }, include: { tiers: { orderBy: { minQuantity: "asc" } }, stackPeers: true },
+  });
+
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?edit=" + a.id, { waitUntil: "networkidle" });
+  await expect(page.getByRole("heading", { name: "Chỉnh sửa: " + nameA })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Tên chiến dịch" })).toHaveValue(nameA);
+  await expect(page.getByRole("combobox", { name: "Đơn vị giảm giá" })).toHaveValue("PERCENTAGE");
+  await expect(page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" })).toHaveValue("4");
+
+  // A client-side navigation, not a reload: the page keeps the same form position and receives B's props.
+  await page.getByRole("link", { name: "Sửa " + nameB }).click();
+  await expect(page).toHaveURL(PAGE + "?edit=" + b.id);
+  await expect(page.getByRole("heading", { name: "Chỉnh sửa: " + nameB })).toBeVisible();
+  await expect(page.getByRole("textbox", { name: "Tên chiến dịch" })).toHaveValue(nameB);
+  await expect(page.getByRole("combobox", { name: "Đơn vị giảm giá" })).toHaveValue("FIXED_AMOUNT_PER_UNIT_VND");
+  await expect(page.getByRole("combobox", { name: "Chiếc được giảm", exact: true })).toHaveValue("ALL_ELIGIBLE_UNITS");
+  await expect(page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" })).toHaveCount(0);
+  await expect(page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" })).toHaveValue("3");
+  await expect(page.getByRole("textbox", { name: "Mức giảm (VND/chiếc)" })).toHaveValue("20000");
+  await expect(page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" })).toHaveCount(0);
+  await expect(page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ })).toBeChecked();
+  await expect(page.getByRole("textbox", { name: /Mức ưu tiên \(0/ })).toHaveValue("32");
+  await expect(page.getByRole("combobox", { name: "Đối tác 1: loại" })).toHaveValue("CLEARANCE");
+
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(nameB + " edited");
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+
+  const [savedA, savedB] = [await read(a.id), await read(b.id)];
+  expect(savedA.name).toBe(nameA);
+  expect(savedA.tierUnit).toBe("PERCENTAGE");
+  expect(savedA.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[2, 10], [4, 15]]);
+  expect(savedA.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["PROMOTION", "*"]]);
+  expect(savedB.name).toBe(nameB + " edited");
+  expect(savedB.tierUnit).toBe("FIXED_AMOUNT_PER_UNIT_VND");
+  expect(savedB.tierDiscountedUnits).toBe("ALL_ELIGIBLE_UNITS");
+  expect(savedB.stackPriority).toBe(32);
+  expect(savedB.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[3, 20000]]);
+  expect(savedB.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["CLEARANCE", "*"]]);
+});
