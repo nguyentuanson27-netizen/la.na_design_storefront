@@ -393,3 +393,128 @@ test("GQ09a-F1 real Server Actions reject tier fields on Gift create and edit wi
   const [after] = await prisma.$queryRaw<Array<{ revision: bigint }>>`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}`;
   expect(after!.revision).toBe(revision!.revision);
 });
+
+
+test("GQ09b tier form previews EX-19 Q=3 to Q=4 and fails closed for invalid VND", async ({ page, context }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  await context.addCookies(adminCookies);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await expect(page.getByRole("group", { name: "Quy tắc giảm giá theo số lượng" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("PERCENTAGE");
+  await page.getByRole("combobox", { name: "Chiếc được giảm" }).selectOption("FROM_REACHED_THRESHOLD");
+  await page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" }).selectOption("CHEAPEST_FIRST");
+  await page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" }).fill("2");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).fill("10");
+  await page.getByRole("button", { name: "+ Thêm bậc" }).click();
+  await page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" }).fill("4");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("15");
+  const previewButton = page.getByRole("button", { name: "Xem trước giá" });
+  await previewButton.focus();
+  await expect(previewButton).toBeFocused();
+  await previewButton.click();
+
+  const table = page.getByRole("table", { name: "So sánh số lượng và mức giảm giá minh họa" });
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("100.000đ");
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("1.400.000đ");
+  await expect(table.getByRole("row", { name: /Q=4/ })).toContainText("225.000đ");
+  await expect(table.getByRole("row", { name: /Q=4/ })).toContainText("1.775.000đ");
+  await expect(page.getByText("Q=4: 3 × 425.000đ + 1 × 500.000đ")).toBeVisible();
+
+  // A fixed 50,000 VND step on a 40,000 VND unit must drop the whole tier.
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("FIXED_AMOUNT_PER_UNIT_VND");
+  await page.getByRole("textbox", { name: "Mức giảm (VND/chiếc)" }).first().fill("50000");
+  await page.getByRole("textbox", { name: "Mức giảm (VND/chiếc)" }).nth(1).fill("50000");
+  await page.getByRole("textbox", { name: "Giá mỗi chiếc trước tier (VND)" }).fill("40000");
+  await previewButton.click();
+  await expect(page.getByText(/TIER_PRICE_INVALID: bỏ toàn bậc/).first()).toBeVisible();
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("0đ");
+
+  await expectSettledDocumentTitle(page);
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+  expect(errors).toEqual([]);
+});
+
+test("GQ09b Draft tier rule persists, reads back, and edits without bumping pricing revision", async ({ page, context }) => {
+  const name = "GQ09b Draft " + runId;
+  const before = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(name);
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await page.getByRole("checkbox", { name: "Set váy" }).check();
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("PERCENTAGE");
+  await page.getByRole("combobox", { name: "Chiếc được giảm" }).selectOption("FROM_REACHED_THRESHOLD");
+  await page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" }).selectOption("MOST_EXPENSIVE_FIRST");
+  await page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" }).fill("2");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).fill("10");
+  await page.getByRole("button", { name: "+ Thêm bậc" }).click();
+  await page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" }).fill("4");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("15");
+  await page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ }).check();
+  await page.getByRole("textbox", { name: /Mức ưu tiên \(0/ }).fill("7");
+  await page.getByRole("button", { name: "+ Thêm chiến dịch" }).click();
+  await page.getByRole("button", { name: "Tạo bản nháp" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+
+  const created = await prisma.giftQuantityCampaign.findFirstOrThrow({
+    where: { name }, include: { tiers: { orderBy: { minQuantity: "asc" } }, stackPeers: true },
+  });
+  expect(created.kind).toBe("QUANTITY_TIER");
+  expect(created.tierDiscountedUnits).toBe("FROM_REACHED_THRESHOLD");
+  expect(created.tierSelectionPriority).toBe("MOST_EXPENSIVE_FIRST");
+  expect(created.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[2, 10], [4, 15]]);
+  expect(created.stackPriority).toBe(7);
+  expect(created.stackingEnabled).toBe(true);
+  expect(created.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["PROMOTION", "*"]]);
+  expect(created.isEnabled).toBe(false);
+  await page.goto(PAGE + "?edit=" + created.id, { waitUntil: "networkidle" });
+  await expect(page.getByRole("combobox", { name: "Đơn vị giảm giá" })).toHaveValue("PERCENTAGE");
+  await expect(page.getByRole("combobox", { name: "Chiếc được giảm" })).toHaveValue("FROM_REACHED_THRESHOLD");
+  await expect(page.getByRole("combobox", { name: "Ưu tiên chiếc được giảm" })).toHaveValue("MOST_EXPENSIVE_FIRST");
+  await expect(page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ })).toBeChecked();
+  await expect(page.getByRole("textbox", { name: /Mức ưu tiên \(0/ })).toHaveValue("7");
+  await expect(page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" })).toHaveValue("4");
+  await expect(page.getByRole("textbox", { name: "ID chiến dịch hoặc *" })).toHaveValue("*");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("20");
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+  const edited = await prisma.giftQuantityCampaign.findUniqueOrThrow({
+    where: { id: created.id }, include: { tiers: { orderBy: { minQuantity: "asc" } }, stackPeers: true },
+  });
+  expect(edited.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[2, 10], [4, 20]]);
+  expect(edited.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["PROMOTION", "*"]]);
+  expect(edited.revision).toBe(created.revision);
+  const after = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  expect(after.revision).toBe(before.revision);
+});
+
+test("GQ09b priority preflight flags live collisions but never changes promotion revision", async ({ page, context }) => {
+  const name = "GQ09b Priority " + runId;
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      kind: "QUANTITY_TIER", name, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
+      tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", stackPriority: 17,
+      stackingEnabled: true, isEnabled: true, enabledAt: new Date(),
+      tiers: { create: [{ minQuantity: 2, discountValue: 10 }] },
+    },
+  });
+  const before = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await page.getByRole("checkbox", { name: /Cho phép cộng dồn khi cả hai/ }).check();
+  const priority = page.getByRole("textbox", { name: /Mức ưu tiên \(0/ });
+  await priority.fill("17");
+  await page.getByRole("button", { name: "Kiểm tra mức ưu tiên" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "đã có chiến dịch còn hiệu lực" })).toBeVisible();
+  await priority.fill("18");
+  await page.getByRole("button", { name: "Kiểm tra mức ưu tiên" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Chưa phát hiện xung đột" })).toBeVisible();
+  const after = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });
+  expect(after.revision).toBe(before.revision);
+});

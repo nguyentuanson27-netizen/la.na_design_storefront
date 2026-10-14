@@ -183,6 +183,7 @@ export default async function GiftQuantityAdminPage({ searchParams }: PageProps)
                       frozenAt: toEdit.frozenAt,
                       frozenCount: toEdit.frozenCount,
                       frozenPreview: toEdit.frozenPreview.map((product) => ({ id: product.id, label: product.name })),
+                      tierRule: toEdit.tierRule,
                     }}
                     mode="edit"
                   />
