@@ -15,8 +15,13 @@
  *   single-statement membership read (one snapshot) and written, with `frozenAt` and the new
  *   campaign revision, in the same transaction as the publish / re-enable / scope edit. Nothing is
  *   written at `startsAt`: Scheduled -> Active is derived from `now`.
- * - **Rule validation seam.** Rule economics are validated by an injected `RuleValidator`; the
- *   production default refuses until GQ09a/GQ13a provide real validators.
+ * - **Rule validation seam.** Rule economics are validated by an injected `RuleValidator`. The
+ *   production default validates quantity-tier rules (GQ09a) and still refuses gift rules until
+ *   GQ13a. Checks that need other rows (unique stack priority, EX-21 catalog prices) run in the same
+ *   transaction under the revision lock. A refused publish / edit rolls back: no revision moves.
+ * - **Tier rule edits.** A Scheduled edit may replace the whole tier rule (ladder, FROM/ALL,
+ *   stacking, peers). The rule is validated as it will be after the edit, and only a *real* change
+ *   against the stored rule is gated, validated and revisioned.
  */
 
 import type { GiftQuantityCampaignKind, GiftSubtotalScope, GiftTrigger, PrismaClient } from "../generated/prisma/client.ts";
@@ -28,7 +33,10 @@ import {
   type GiftQuantityCampaignRecord,
 } from "./gift-quantity-candidate-repository.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
-import { validateRuleForPublish, type RuleValidator } from "./gift-quantity-rule-validation.ts";
+import { checkTierPriceSafety } from "./gift-quantity-publish-guards.ts";
+import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
+import { hasStackPriorityConflict } from "./gift-quantity-stack-priority.ts";
+import { validateRuleForPublish, type RuleValidationInput, type RuleValidator } from "./gift-quantity-rule-validation.ts";
 import {
   applyExcludeWins,
   computeFrozenProductIds,
@@ -40,6 +48,7 @@ import {
   type ScopeIssue,
   type ScopeProductFacts,
 } from "./gift-quantity-scope.ts";
+import { toQuantityTierConfig, validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import { deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
 import { normalizePromotionCampaignName } from "./promotion-campaign-name.ts";
@@ -195,7 +204,15 @@ function validateWindow(
   return errors;
 }
 
-function ruleInputOf(row: CampaignRow) {
+/** The rule fields a validation looks at: the stored row, or the row as an edit would leave it. */
+type RuleSource = Pick<
+  CampaignRow,
+  | "kind" | "giftTrigger" | "minimumQuantity" | "minimumSubtotalVnd" | "subtotalScope" | "awardMode"
+  | "maxGiftsPerOrder" | "allowDuplicateGifts" | "tierUnit" | "tierDiscountedUnits" | "tierSelectionPriority"
+  | "tiers" | "giftOptions" | "stackingEnabled" | "stackPriority" | "stackPeers"
+>;
+
+function ruleInputOf(row: RuleSource): RuleValidationInput {
   return {
     kind: row.kind,
     giftTrigger: row.giftTrigger,
@@ -210,7 +227,52 @@ function ruleInputOf(row: CampaignRow) {
     tierSelectionPriority: row.tierSelectionPriority,
     tiers: row.tiers,
     giftVariantIds: row.giftOptions.map((option) => option.variantId),
+    stackingEnabled: row.stackingEnabled,
+    stackPriority: row.stackPriority,
+    stackPeers: row.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
   } as const;
+}
+
+function tierRuleOfRow(row: RuleSource): TierRuleInput {
+  return {
+    unit: row.tierUnit,
+    discountedUnits: row.tierDiscountedUnits,
+    selectionPriority: row.tierSelectionPriority,
+    tiers: row.tiers,
+    stackingEnabled: row.stackingEnabled,
+    stackPriority: row.stackPriority,
+    peers: row.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+  };
+}
+
+/**
+ * Checks that need other rows, run after the campaign's own rule validated and inside the same
+ * transaction as the write (so under the revision lock): the stack priority is unique among
+ * effective-or-pending stacking tiers and legacy consents, and a fixed-VND tier cannot take any
+ * in-scope catalog price below 1 VND (EX-21). Peers must exist (also enforced on Draft writes; it
+ * is re-checked here because a Draft's peer is only a name until the campaign goes live).
+ */
+async function crossRowRuleErrors(
+  tx: Tx,
+  campaignId: string,
+  source: RuleSource,
+  scope: ScopeConfig,
+  now: Date,
+): Promise<readonly string[]> {
+  if (source.kind !== "QUANTITY_TIER") return [];
+  const rule = tierRuleOfRow(source);
+  const errors: string[] = [];
+  errors.push(...(await invalidStackPeers(tx, rule, campaignId)));
+  if (rule.stackingEnabled && rule.stackPriority !== null) {
+    if (await hasStackPriorityConflict(tx, { campaignId, priority: rule.stackPriority, now })) {
+      errors.push("STACK_PRIORITY_CONFLICT");
+    }
+  }
+  if (toQuantityTierConfig(rule) !== null) {
+    const price = await checkTierPriceSafety(tx, rule, scope);
+    if (price !== null) errors.push(price);
+  }
+  return errors;
 }
 
 async function loadCampaign(tx: Tx, campaignId: string): Promise<CampaignRow | null> {
@@ -260,6 +322,8 @@ export async function publishGiftQuantityCampaign({
 
     const ruleErrors = validateRule(ruleInputOf(row));
     if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
+    const crossRowErrors = await crossRowRuleErrors(tx, row.id, row, scope.scope, now);
+    if (crossRowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: crossRowErrors } } as const;
 
     // A publish / re-enable is a new effective version of the campaign.
     const campaignRevision = row.revision + 1;
@@ -362,8 +426,8 @@ export type ScopePatch = Readonly<{
 }>;
 
 /**
- * Fields a Scheduled edit may change here. Rule fields (tiers, gift options, thresholds) are added
- * by GQ09a / GQ13a through their own write contracts; they reuse this transaction.
+ * Fields a Scheduled edit may change here. The tier rule is GQ09a's; gift options and thresholds
+ * arrive with GQ13a through their own write contract and reuse this transaction.
  */
 export type ScheduledEditPatch = Readonly<{
   /**
@@ -380,7 +444,53 @@ export type ScheduledEditPatch = Readonly<{
   stackPriority?: number | null;
   stackingEnabled?: boolean;
   scope?: ScopePatch;
+  /**
+   * Quantity-tier campaigns only: the whole rule (ladder, FROM/ALL, stacking, peers) as it should
+   * be after the edit. Compared with the stored rule; an identical rule is not an edit. When given
+   * together with `stackPriority` / `stackingEnabled` the three must agree.
+   */
+  tierRule?: TierRuleInput;
 }>;
+
+/** The campaign as it will be once `patch` lands: only the rule fields a Scheduled edit can change. */
+function applyRulePatch(
+  row: CampaignRow,
+  patch: ScheduledEditPatch,
+  stackPriority: number | null,
+  stackingEnabled: boolean,
+): RuleSource {
+  const rule = patch.tierRule;
+  return {
+    ...row,
+    stackPriority,
+    stackingEnabled,
+    ...(rule === undefined
+      ? {}
+      : {
+          tierUnit: rule.unit,
+          tierDiscountedUnits: rule.discountedUnits,
+          tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
+          tiers: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })),
+          stackPeers: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })),
+        }),
+  };
+}
+
+function sameTierRule(a: TierRuleInput, b: TierRuleInput): boolean {
+  const selection = (rule: TierRuleInput) => (rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null);
+  const ladder = (rule: TierRuleInput) =>
+    [...rule.tiers].sort((x, y) => x.minQuantity - y.minQuantity).map((tier) => `${tier.minQuantity}:${tier.discountValue}`).join(",");
+  const peers = (rule: TierRuleInput) => rule.peers.map((peer) => `${peer.kind}|${peer.campaignId}`).sort().join(",");
+  return (
+    a.unit === b.unit &&
+    a.discountedUnits === b.discountedUnits &&
+    selection(a) === selection(b) &&
+    a.stackingEnabled === b.stackingEnabled &&
+    a.stackPriority === b.stackPriority &&
+    ladder(a) === ladder(b) &&
+    peers(a) === peers(b)
+  );
+}
 
 function sameSet(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
@@ -421,6 +531,19 @@ export async function editScheduledGiftQuantityCampaign({
     return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["INVALID_NAME"] } };
   }
 
+  // Malformed or unbounded rule input is refused before anything is locked or read, whatever the
+  // gate says: it is not a business question and it can never be stored.
+  if (patch.tierRule !== undefined) {
+    const structure = validateTierRuleStructure(patch.tierRule);
+    if (structure.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: structure } };
+    if (
+      (patch.stackPriority !== undefined && patch.stackPriority !== patch.tierRule.stackPriority) ||
+      (patch.stackingEnabled !== undefined && patch.stackingEnabled !== patch.tierRule.stackingEnabled)
+    ) {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["STACK_FIELDS_CONFLICT"] } };
+    }
+  }
+
   return client.$transaction(async (tx) => {
     const currentRevision = await lockRevision(tx);
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
@@ -434,8 +557,16 @@ export async function editScheduledGiftQuantityCampaign({
     const endsAt = touchesEnd ? patch.endsAt ?? null : row.endsAt;
     const startsAtChanged = touchesStart && instant(startsAt) !== instant(row.startsAt);
     const endsAtChanged = touchesEnd && instant(endsAt) !== instant(row.endsAt);
-    const priorityChanged = patch.stackPriority !== undefined && patch.stackPriority !== row.stackPriority;
-    const stackingChanged = patch.stackingEnabled !== undefined && patch.stackingEnabled !== row.stackingEnabled;
+    // The stacking fields as they will be: a whole-rule patch dictates them (and was checked above
+    // to agree with any scalar patch); otherwise the scalar patch, otherwise what is stored.
+    const nextPriority =
+      patch.tierRule !== undefined ? patch.tierRule.stackPriority : patch.stackPriority !== undefined ? patch.stackPriority : row.stackPriority;
+    const nextStacking =
+      patch.tierRule !== undefined ? patch.tierRule.stackingEnabled : patch.stackingEnabled !== undefined ? patch.stackingEnabled : row.stackingEnabled;
+    const priorityChanged = nextPriority !== row.stackPriority;
+    const stackingChanged = nextStacking !== row.stackingEnabled;
+    // Compared as a rule, so re-sending the stored ladder (in any order) is not an edit.
+    const tierRuleChanged = patch.tierRule !== undefined && !sameTierRule(patch.tierRule, tierRuleOfRow(row));
     const currentInclude = row.targets.filter((t) => t.role === "INCLUDE").map((t) => t.productId);
     const currentExclude = row.targets.filter((t) => t.role === "EXCLUDE").map((t) => t.productId);
     // Exclude wins, so a product named on both lists is compared (and later persisted) once, as excluded.
@@ -446,7 +577,7 @@ export async function editScheduledGiftQuantityCampaign({
           (!sameSet(patch.scope.categoryKeys, row.categoryKeys) ||
             !sameSet(applyExcludeWins(patch.scope.includeProductIds, patch.scope.excludeProductIds), currentInclude) ||
             !sameSet(patch.scope.excludeProductIds, currentExclude))));
-    const effective = startsAtChanged || endsAtChanged || priorityChanged || stackingChanged || scopeChanged;
+    const effective = startsAtChanged || endsAtChanged || priorityChanged || stackingChanged || scopeChanged || tierRuleChanged;
 
     // The gate is decided by what the edit would change, before anything else about the campaign.
     if (effective && !isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } } as const;
@@ -468,6 +599,11 @@ export async function editScheduledGiftQuantityCampaign({
       return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_TRIGGER_NOT_EDITABLE_WHEN_SCHEDULED"] } } as const;
     }
 
+    // A tier rule belongs to a tier campaign; a gift campaign has none to replace.
+    if (patch.tierRule !== undefined && row.kind !== "QUANTITY_TIER") {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["TIER_FIELDS_ON_GIFT"] } } as const;
+    }
+
     const scopeValidation = validateScopeConfig(scopeFromRow(row, patch.scope), { allowGlobal: allowsGlobalScope(row) });
     if (!scopeValidation.ok) {
       return { ok: false, failure: { reason: "INVALID_SCOPE", issues: scopeValidation.issues } } as const;
@@ -480,14 +616,17 @@ export async function editScheduledGiftQuantityCampaign({
       if (!isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } } as const;
       const windowErrors = validateWindow(startsAt, endsAt, now, { startMustBeFuture: true });
       if (windowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: windowErrors } } as const;
-      // Validate the campaign as it will be after the edit, not the stored row it replaces.
-      const after = {
-        ...ruleInputOf(row),
-        stackingEnabled: patch.stackingEnabled ?? row.stackingEnabled,
-        stackPriority: patch.stackPriority !== undefined ? patch.stackPriority : row.stackPriority,
-      };
-      const ruleErrors = validateRule(after);
+      // Validate the campaign as it will be after the edit, not the stored row it replaces: a
+      // patch that turns stacking on without a priority must be refused here, not stored.
+      const after = applyRulePatch(row, patch, nextPriority, nextStacking);
+      if (tierRuleChanged && patch.tierRule !== undefined) {
+        const peerErrors = await invalidStackPeers(tx, patch.tierRule, row.id);
+        if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } } as const;
+      }
+      const ruleErrors = validateRule(ruleInputOf(after));
       if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
+      const crossRowErrors = await crossRowRuleErrors(tx, row.id, after, normalizedScope, now);
+      if (crossRowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: crossRowErrors } } as const;
     }
 
     const campaignRevision = effective ? row.revision + 1 : row.revision;
@@ -524,14 +663,32 @@ export async function editScheduledGiftQuantityCampaign({
       }
     }
 
+    if (tierRuleChanged && patch.tierRule !== undefined) {
+      const rule = patch.tierRule;
+      // The old ladder goes first: a ladder row's `unit` follows the parent's `tierUnit`.
+      await tx.quantityTier.deleteMany({ where: { campaignId: row.id } });
+      await tx.giftQuantityStackPeer.deleteMany({ where: { campaignId: row.id } });
+      await tx.giftQuantityCampaign.update({
+        where: { id: row.id },
+        data: {
+          tierUnit: rule.unit,
+          tierDiscountedUnits: rule.discountedUnits,
+          tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
+          // Nested creates must not pass `unit`: it is filled from the parent campaign.
+          tiers: { create: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
+          stackPeers: { create: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })) },
+        },
+      });
+    }
+
     await tx.giftQuantityCampaign.update({
       where: { id: row.id },
       data: {
         ...(normalizedName !== null && normalizedName.ok ? { name: normalizedName.name } : {}),
         ...(startsAtChanged ? { startsAt } : {}),
         ...(endsAtChanged ? { endsAt } : {}),
-        ...(priorityChanged ? { stackPriority: patch.stackPriority } : {}),
-        ...(stackingChanged ? { stackingEnabled: patch.stackingEnabled } : {}),
+        ...(priorityChanged ? { stackPriority: nextPriority } : {}),
+        ...(stackingChanged ? { stackingEnabled: nextStacking } : {}),
         revision: campaignRevision,
       },
     });

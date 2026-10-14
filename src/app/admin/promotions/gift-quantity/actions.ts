@@ -118,6 +118,8 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
             includeProductIds: submitted.includeProductIds,
             excludeProductIds: submitted.excludeProductIds,
           },
+          // Only when the submission described the rule (GQ09a); a form without tier fields leaves it.
+          ...(submitted.tierRule ? { tierRule: submitted.tierRule } : {}),
         },
       });
     }
