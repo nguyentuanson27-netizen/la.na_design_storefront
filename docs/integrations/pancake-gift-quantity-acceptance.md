@@ -1,6 +1,6 @@
 # Pancake gift & quantity capability probe (GQ01 / R-06)
 
-Status: **NOT RUN.** This document and `scripts/pancake-gift-quantity-capability-probe.ts` exist so an operator can produce the API-level evidence that Gift & Quantity Promotions v1 needs. No live Pancake call has been made by the project team for this feature; nothing below is a vendor-support claim until the operator records a run in the "Evidence log" section.
+Status: **RUN 2026-10-14 (shop 715077776): both gating cases PASS** — see the Evidence log. This document and `scripts/pancake-gift-quantity-capability-probe.ts` exist so an operator can produce the API-level evidence that Gift & Quantity Promotions v1 needs. The only vendor-support claims are those recorded in the "Evidence log" section, for the shop and date stated there.
 
 Governing decisions: [ADR 0016](../decisions/0016-gift-quantity-promotions-v1-decisions.md) (D-08: gift units are sent to Pancake at **1.000đ** each and 1.000đ per gift unit is deducted from the paid goods) and spec §4 FR-12 / R-06.
 
@@ -70,4 +70,15 @@ The project never averages or re-rounds prices to dodge a vendor limitation (spe
 
 | Date | Operator | Shop | Cases run | Outcomes | Report location |
 |---|---|---|---|---|---|
-| — | — | — | — | NOT RUN | — |
+| 2026-10-14 | Repository owner (run through a Claude Code session) | 715077776 | `PAID_PAID_DIFFERENT_PRICE`, `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` (run id `ab50e3dd`; variation `9e7a1103-6e08-4580-be46-41678726f1dd`, SKU `SQ069S`, stock 5 before the run) | Both **PASS**, exit 0. Case 1: lines 2 × 100.001đ + 1 × 90.001đ read back unmerged, `total_price` 290.003đ. Case 2: lines 1 × 99.000đ + 1 × 1.000đ read back unmerged, `total_price` 100.000đ. Both test orders (POS ids 1 and 2) were cancelled and read back as status 7; `noOrderMayBeOpen: true`. `GIFT_ZERO_PRICE_INFORMATIONAL` was not run (not gating under D-08). | Report below |
+
+### Run report (2026-10-14, run id `ab50e3dd`)
+
+Raw probe output, no key and no customer data (the probe prints neither). Produced with `NODE_USE_ENV_PROXY=1` because the sandbox reaches the POS only through an egress proxy and Node's `fetch` ignores `HTTPS_PROXY` otherwise.
+
+| Case | Requested lines | Read-back lines | Expected / read-back / order total | Cleanup |
+|---|---|---|---|---|
+| `PAID_PAID_DIFFERENT_PRICE` | 2 × 100.001đ, 1 × 90.001đ | 2 × 100.001đ, 1 × 90.001đ (same variation, not merged) | 290.003đ / 290.003đ / 290.003đ | status 7 |
+| `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` | 1 × 99.000đ, 1 × 1.000đ | 1 × 99.000đ, 1 × 1.000đ (same variation, not merged) | 100.000đ / 100.000đ / 100.000đ | status 7 |
+
+What this proves: on this shop the create-order API accepts several lines of one variation at different unit prices and reports them back unmerged with the merchandise total equal to the sum of the lines. What it does not prove: behaviour on any other shop or variation, a variation that also has a discount or voucher, shipping, or stock reservation effects (the probe measures none of them), or that the same shape survives a later edit of the order in the POS UI. One run is one observation; re-run before enabling the flag in production if the POS integration or the shop changes.
