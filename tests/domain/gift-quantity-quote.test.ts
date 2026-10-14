@@ -210,7 +210,11 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
   const root = join(import.meta.dirname, "..", "..", "src");
   const importers = new Map<string, string[]>();
   // These admin modules may validate configuration/price safety, never calculate a cart price.
+  // The tier editor's preview (GQ09b) is the one admin-only exception: it runs the pure engine on a
+  // single illustrative sample line for the admin and is never a buyer quote, so it may import the
+  // pricing function and nothing else from the quote/stack engines.
   const adminValidators: Record<string, readonly string[]> = {
+    "components/admin/gift-quantity-tier-fields.tsx": ["MAX_TIER_UNITS", "MAX_TIERS_PER_CAMPAIGN", "priceQuantityTier", "validateTierConfig"],
     "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
     "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
     "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
