@@ -26,6 +26,8 @@ export const GIFT_QUANTITY_ADMIN_OPERATIONS = [
   "edit-scheduled",
   "disable",
   "end-early",
+  "set-legacy-consent",
+  "clear-legacy-consent",
 ] as const;
 export type GiftQuantityAdminOperation = (typeof GIFT_QUANTITY_ADMIN_OPERATIONS)[number];
 

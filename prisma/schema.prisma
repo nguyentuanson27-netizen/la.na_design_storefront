@@ -388,6 +388,9 @@ model PromotionCampaign {
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
   targets         PromotionTarget[]
+  /// Consent to stack with quantity-tier campaigns (ADR 0016 D-10). A relation only: no column is
+  /// added to this legacy table, and a campaign without a row keeps today's behaviour exactly.
+  stackConsent    LegacyPromotionStackConsent?
 
   @@index([isEnabled, startsAt, endsAt])
 }
@@ -558,6 +561,19 @@ model GiftQuantityStackPeer {
   campaign       GiftQuantityCampaign      @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   @@unique([campaignId, peerKind, peerCampaignId])
+}
+
+/// A legacy campaign's consent to stack with quantity-tier campaigns (ADR 0016 D-10), written by the
+/// gift/quantity admin write contract. Absent row = not stackable = legacy behaviour unchanged. It
+/// lives in its own table so the legacy `PromotionCampaign` table, its constraints and every legacy
+/// reader stay exactly as they are.
+model LegacyPromotionStackConsent {
+  campaignId    String            @id
+  /// Position in the stack: lower runs first. Must be unique among enabled stacking campaigns.
+  stackPriority Int
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  campaign      PromotionCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }
 
 /// A buyer's chosen gift for a cart (GQ11). Kept apart from `CartItem` on purpose: a gift is never a

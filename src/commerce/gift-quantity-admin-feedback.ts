@@ -61,6 +61,7 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   WINDOW_NOT_POSITIVE: "Thời gian kết thúc phải sau thời gian bắt đầu.",
   WINDOW_ALREADY_ENDED: "Thời gian kết thúc đã qua.",
   INVALID_NAME: "Tên chiến dịch không hợp lệ.",
+  STACK_PRIORITY_OUT_OF_RANGE: "Mức ưu tiên cộng dồn nằm ngoài giới hạn cho phép.",
 };
 
 const INVALID_SCOPE_REFINEMENTS: Readonly<Record<string, string>> = {
@@ -85,6 +86,7 @@ const FROZEN_REFINEMENTS: Readonly<Record<string, string>> = {
 
 const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   RULE_VALIDATION_NOT_AVAILABLE: BASE_MESSAGES.INVALID_RULE,
+  STACK_PRIORITY_CONFLICT: "Mức ưu tiên cộng dồn đã được chiến dịch đang hoạt động khác sử dụng. Hãy chọn mức khác.",
 };
 
 export function describeGiftQuantityFailure(failure: GiftQuantityFailure): GiftQuantityFailureDescription {
