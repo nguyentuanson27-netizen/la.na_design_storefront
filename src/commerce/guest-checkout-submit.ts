@@ -255,7 +255,9 @@ function isCartChangedReason(reason: string): boolean {
     reason === "VARIATION_UNAVAILABLE" ||
     reason === "PRICE_CHANGED" ||
     reason === "PRICE_UNAVAILABLE" ||
-    reason === "STOCK_UNAVAILABLE"
+    reason === "STOCK_UNAVAILABLE" ||
+    // GQ20: the quote the buyer proved no longer holds; the next submit creates a new order.
+    reason === "BENEFIT_REQUOTE_REQUIRED"
   );
 }
 
@@ -282,14 +284,6 @@ function mapSubmissionResult(
     if (result.reason === "PRICE_CHANGED" && "repricedQuote" in result) {
       return { ok: false, status: "PRICE_CHANGED", priceChange: result.repricedQuote };
     }
-    if (result.reason === "BENEFIT_REQUOTE_REQUIRED") {
-      // The quote the buyer proved no longer holds (a Pancake base, a legacy sale or a benefit campaign
-      // moved). Nothing was written to Pancake; the buyer's next view re-quotes and asks again.
-      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", orderCode };
-    }
-    if (result.reason === "BENEFIT_SUBMISSION_UNAVAILABLE") {
-      return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode };
-    }
     if (result.reason === "VALIDATION_UNAVAILABLE") {
       return {
         ok: false,
@@ -302,6 +296,9 @@ function mapSubmissionResult(
   }
 
   if (result.state === "REJECTED") {
+    if (result.reason === "VALIDATION_UNAVAILABLE") {
+      return { ok: false, status: "RETRYABLE", reason: "SERVICE_UNAVAILABLE", orderCode };
+    }
     return {
       ok: false,
       status: "RETRYABLE",

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { benefitQuoteDigest } from "../../src/commerce/checkout-quote-proof.ts";
 import { replaceOrderQuoteSnapshot, readOrderQuoteSnapshot } from "../../src/commerce/order-quote-snapshot.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -51,15 +52,17 @@ async function confirmedBenefitOrder() {
       data: { orderId: order.id, variantId: "variant-p", pancakeVariationId: "var-p", metaContentId: "content-p", productName: "P", size: "M", quantity, unitPriceVnd: BigInt(unit), lineTotalVnd: BigInt(unit * quantity) },
     });
   }
-  const written = await prisma.$transaction((tx) => replaceOrderQuoteSnapshot(tx, order.id, {
-    quoteFormat: "laq3", quoteDigest: "c".repeat(64), paidSubtotalVnd: 290_003, shippingFeeVnd: 30_000, totalVnd: 320_003,
+  const facts = {
+    paidSubtotalVnd: 290_003, shippingFeeVnd: 30_000, totalVnd: 320_003,
     lines: [
       { lineId: "P:var-p:0", role: "PAID", variantId: "variant-p", pancakeVariationId: "var-p", quantity: 2, unitPriceVnd: 100_001, lineTotalVnd: 200_002, baseUnitPriceVnd: null, fulfillmentState: "READY", campaign: null, discountSteps: [] },
       { lineId: "P:var-p:1", role: "PAID", variantId: "variant-p", pancakeVariationId: "var-p", quantity: 1, unitPriceVnd: 90_001, lineTotalVnd: 90_001, baseUnitPriceVnd: 100_001, fulfillmentState: "READY", campaign: null, discountSteps: [{ campaignId: "tier-1", source: "QUANTITY_TIER", campaignKind: "QUANTITY_TIER", priority: 1, inputPriceVnd: 100_001, outputPriceVnd: 90_001, appliedQuantity: 1 }] },
       { lineId: "G:camp-1:var-p", role: "GIFT", variantId: "variant-p", pancakeVariationId: "var-p", quantity: 1, unitPriceVnd: 0, lineTotalVnd: 0, baseUnitPriceVnd: null, fulfillmentState: "READY", campaign: { id: "camp-1", revision: 2 }, discountSteps: [] },
     ],
     entitlements: [{ campaignId: "camp-1", campaignRevision: 2, entitled: 1, selected: 1, skippedWhileAvailable: 0, contendedForSharedStock: 0, shortForStock: 0 }],
-    acknowledgedAt: null,
+  } as const;
+  const written = await prisma.$transaction((tx) => replaceOrderQuoteSnapshot(tx, order.id, {
+    ...facts, quoteFormat: "laq3", quoteDigest: benefitQuoteDigest(facts as never), acknowledgedAt: null,
   }));
   assert.deepEqual(written, { ok: true });
   await prisma.orderMirror.update({ where: { id: order.id }, data: { state: "CONFIRMED", pancakeOrderId: "910220001", purchaseOccurredAt: NOW } });

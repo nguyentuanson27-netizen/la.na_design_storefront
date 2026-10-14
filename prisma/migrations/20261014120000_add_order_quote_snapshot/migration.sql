@@ -1,6 +1,6 @@
 -- Gift & Quantity Promotions v1 (GQ15): the order's benefit-aware quote, stored by `lineId`.
 --
--- Additive: one enum and four new tables, referenced by nothing that exists today. `OrderLineSnapshot`
+-- Additive: one enum, four new tables and an OrderMirror state-transition guard. `OrderLineSnapshot`
 -- (one row per variation, mutable while DRAFT) is untouched and keeps being the legacy record, so an
 -- order priced before this migration, or priced with no gift and no quantity tier, has no row here and
 -- is read exactly as before. NOTHING IS BACKFILLED: no campaign, entitlement or acknowledgement is
@@ -26,9 +26,10 @@
 -- price is validated by the single writer (`order-quote-snapshot.ts`), not re-derived here.
 --
 -- Rolling back (nothing else depends on it; no data in any older table is touched):
+--   DROP TRIGGER "OrderQuoteDraftReentry_guard" ON "OrderMirror";
 --   DROP TABLE "OrderQuoteDiscountStep", "OrderQuoteEntitlement", "OrderQuoteLine", "OrderQuoteSnapshot";
 --   DROP TYPE "OrderQuoteLineRole";
---   DROP FUNCTION "order_quote_row_guard"(), "order_quote_verify_snapshot"(TEXT), "order_quote_verify_trigger"();
+--   DROP FUNCTION "order_quote_row_guard"(), "order_quote_verify_snapshot"(TEXT), "order_quote_verify_trigger"(), "order_quote_draft_reentry_guard"();
 
 -- CreateEnum
 CREATE TYPE "OrderQuoteLineRole" AS ENUM ('PAID', 'GIFT');
@@ -137,7 +138,7 @@ ALTER TABLE "OrderQuoteEntitlement" ADD CONSTRAINT "OrderQuoteEntitlement_snapsh
 
 -- Bounds. Money is whole VND within the JavaScript safe-integer range the application reads it in.
 ALTER TABLE "OrderQuoteSnapshot"
-  ADD CONSTRAINT "OrderQuoteSnapshot_format_check" CHECK ("quoteFormat" ~ '^laq[0-9]{1,3}$'),
+  ADD CONSTRAINT "OrderQuoteSnapshot_format_check" CHECK ("quoteFormat" = 'laq3'),
   ADD CONSTRAINT "OrderQuoteSnapshot_digest_check" CHECK ("quoteDigest" ~ '^[0-9a-f]{64}$'),
   ADD CONSTRAINT "OrderQuoteSnapshot_money_check" CHECK (
     "paidSubtotalVnd" BETWEEN 1 AND 9007199254740991
@@ -207,6 +208,27 @@ ALTER TABLE "OrderQuoteEntitlement"
     AND "skippedWhileAvailable" + "contendedForSharedStock" + "shortForStock" = "unclaimed"
   );
 
+-- A quote-bearing order cannot re-enter editable DRAFT after its first exit. Legacy orders have no
+-- quote snapshot, so their existing VALIDATING -> DRAFT reprice/outage retries remain unchanged.
+-- UPDATE already locks OrderMirror, the same parent lock quote writers/row guards take. A changed
+-- benefit quote after validation needs a new order; returning the old order to DRAFT must not unfreeze it.
+CREATE FUNCTION "order_quote_draft_reentry_guard"()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD."state" <> 'DRAFT' AND NEW."state" = 'DRAFT'
+    AND EXISTS (SELECT 1 FROM "OrderQuoteSnapshot" WHERE "orderId" = OLD."id") THEN
+    RAISE EXCEPTION 'An order with a quote snapshot cannot return to DRAFT after its first exit';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER "OrderQuoteDraftReentry_guard"
+BEFORE UPDATE OF "state" ON "OrderMirror"
+FOR EACH ROW EXECUTE FUNCTION "order_quote_draft_reentry_guard"();
+
 -- Changes only while the order is DRAFT. The order is found through the row's own parent chain; a row
 -- cannot be moved to another parent. Reading is unrestricted.
 CREATE FUNCTION "order_quote_row_guard"()
@@ -253,7 +275,10 @@ BEGIN
     RAISE EXCEPTION 'order_quote_row_guard is not defined for %', TG_TABLE_NAME;
   END IF;
 
-  SELECT o."state"::TEXT INTO order_state FROM "OrderMirror" o WHERE o."id" = target_order;
+  -- Hold the parent until commit: a plain read (or FK KEY SHARE) lets a state UPDATE commit
+  -- between this DRAFT check and the quote write. Recheck the current state after any wait.
+  -- Application writers/state transitions lock OrderMirror before touching quote children.
+  SELECT o."state"::TEXT INTO order_state FROM "OrderMirror" o WHERE o."id" = target_order FOR UPDATE;
   IF order_state IS DISTINCT FROM 'DRAFT' THEN
     RAISE EXCEPTION 'Order quote rows are immutable once the order has left DRAFT';
   END IF;

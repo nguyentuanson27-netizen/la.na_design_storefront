@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Client } from "pg";
+import { benefitQuoteDigest, issueBenefitQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
+import { validateQuoteStructure } from "../../src/commerce/order-quote-rules.ts";
 
 import {
   readOrderQuoteSnapshot,
@@ -20,10 +23,11 @@ const DIGEST = "b".repeat(64);
 const ACK = new Date("2026-10-14T10:00:00.000Z");
 
 async function cleanup() {
-  // The rows are frozen once an order leaves DRAFT; the only way back is the order's own state, which
-  // is exactly what a test needs and exactly what production code never does. The set is removed in
-  // one transaction because the cross-row totals are checked at commit.
+  // Frozen fixtures cannot re-enter DRAFT through the production state boundary. As the test schema's
+  // owner, suspend only that transition trigger during this transaction's fixture cleanup, then
+  // restore it before commit. Quote row checks/guards and foreign keys remain enabled throughout.
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('ALTER TABLE "OrderMirror" DISABLE TRIGGER "OrderQuoteDraftReentry_guard"');
     await tx.orderMirror.updateMany({ where: { publicCode: { startsWith: P } }, data: { state: "DRAFT" } });
     const snapshots = await tx.orderQuoteSnapshot.findMany({ where: { order: { publicCode: { startsWith: P } } }, select: { id: true } });
     const ids = snapshots.map((snapshot) => snapshot.id);
@@ -32,6 +36,7 @@ async function cleanup() {
     await tx.orderQuoteEntitlement.deleteMany({ where: { snapshotId: { in: ids } } });
     await tx.orderQuoteSnapshot.deleteMany({ where: { id: { in: ids } } });
     await tx.orderMirror.deleteMany({ where: { publicCode: { startsWith: P } } });
+    await tx.$executeRawUnsafe('ALTER TABLE "OrderMirror" ENABLE TRIGGER "OrderQuoteDraftReentry_guard"');
   });
 }
 
@@ -59,21 +64,23 @@ const tierStep = { campaignId: "tier-1", source: "QUANTITY_TIER" as const, campa
 
 /** EX-17: one variation, 2 x 100.001d + 1 x 90.001d. */
 function ex17(overrides: Partial<OrderQuoteSnapshotInput> = {}): OrderQuoteSnapshotInput {
-  return {
+  const input: OrderQuoteSnapshotInput = {
     quoteFormat: "laq3", quoteDigest: DIGEST, paidSubtotalVnd: 290_003, shippingFeeVnd: 30_000, totalVnd: 320_003,
     lines: [paid("P:var-1:0", 2, 100_001), paid("P:var-1:1", 1, 90_001, { baseUnitPriceVnd: 100_001, discountSteps: [tierStep] })],
     entitlements: [], acknowledgedAt: null, ...overrides,
   };
+  return { ...input, quoteDigest: overrides.quoteDigest ?? (validateQuoteStructure(input).ok ? benefitQuoteDigest(input) : DIGEST) };
 }
 
 /** EX-18 flavour: a paid unit and a gift unit of the SAME variation, 2 of 3 gift slots not taken. */
 function paidAndGift(overrides: Partial<OrderQuoteSnapshotInput> = {}): OrderQuoteSnapshotInput {
-  return {
+  const input: OrderQuoteSnapshotInput = {
     quoteFormat: "laq3", quoteDigest: DIGEST, paidSubtotalVnd: 99_000, shippingFeeVnd: 30_000, totalVnd: 129_000,
     lines: [paid("P:var-1:0", 1, 99_000), gift("G:camp-1:var-1", 1)],
     entitlements: [{ campaignId: "camp-1", campaignRevision: 3, entitled: 3, selected: 1, skippedWhileAvailable: 1, contendedForSharedStock: 0, shortForStock: 1 }],
     acknowledgedAt: ACK, ...overrides,
   };
+  return { ...input, quoteDigest: overrides.quoteDigest ?? (validateQuoteStructure(input).ok ? benefitQuoteDigest(input) : DIGEST) };
 }
 
 async function write(orderId: string, input: OrderQuoteSnapshotInput) {
@@ -165,6 +172,120 @@ test("an invalid quote never reaches the database: the writer refuses it and the
   assert.equal((await readOrderQuoteSnapshot(prisma, draft.id))!.paidSubtotalVnd, 290_003);
 });
 
+test("unsupported quote formats are rejected by both writer and database without replacing the quote", async () => {
+  const draft = await order();
+  const original = ex17();
+  await write(draft.id, original);
+  const snapshot = (await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } }));
+  const rawDigest = benefitQuoteDigest(ex17({ lines: [paid("P:base", 1, 100, { pancakeVariationId: "x" })], paidSubtotalVnd: 100, shippingFeeVnd: 0, totalVnd: 100 }));
+  for (const quoteFormat of ["laq2", "laq4", "laq999"]) {
+    assert.deepEqual(await write(draft.id, { ...original, quoteFormat }), { ok: false, reason: "SNAPSHOT_INVALID", issue: "FORMAT_INVALID" });
+    await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: snapshot.id }, data: { quoteFormat } }), /check constraint|violates/i);
+    const target = await order();
+    await rejects(() => rawSnapshot(target.id, { quoteFormat, quoteDigest: rawDigest }), /check constraint|violates/i);
+    assert.equal((await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } })).id, snapshot.id);
+    assert.equal((await readOrderQuoteSnapshot(prisma, draft.id))!.quoteFormat, "laq3");
+  }
+});
+
+test("a digest from different same-total segments is refused before replacing the stored quote", async () => {
+  const draft = await order();
+  const original = ex17();
+  await write(draft.id, original);
+  const changed = ex17({ lines: [paid("P:var-1:0", 1, 100_001), paid("P:var-1:1", 1, 190_002)] });
+  assert.equal(original.totalVnd, changed.totalVnd);
+  assert.deepEqual(await write(draft.id, { ...changed, quoteDigest: original.quoteDigest }), { ok: false, reason: "SNAPSHOT_INVALID", issue: "DIGEST_MISMATCH" });
+  assert.deepEqual((await readOrderQuoteSnapshot(prisma, draft.id))!.lines, original.lines);
+  assert.deepEqual(await write(draft.id, changed), { ok: true });
+  const stored = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+  assert.equal(stored.quoteDigest, benefitQuoteDigest(stored));
+});
+
+test("signable INTEGER boundary quantities and priorities round trip through the snapshot", async () => {
+  const max = 2_147_483_647;
+  for (const priority of [-2_147_483_648, max]) {
+    const input = ex17({
+      lines: [paid("P:a", max, 1, { baseUnitPriceVnd: 1, discountSteps: [{ ...tierStep, inputPriceVnd: 1, outputPriceVnd: 1, priority, appliedQuantity: max }] })],
+      paidSubtotalVnd: max, shippingFeeVnd: 0, totalVnd: max,
+    });
+    assert.ok(issueBenefitQuoteProof({ quote: input, cartId: "test-cart", secret: "test-secret-at-least-32-characters-long" }));
+    const draft = await order();
+    assert.deepEqual(await write(draft.id, input), { ok: true });
+    const stored = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+    assert.equal(stored.paidQuantity, max);
+    assert.equal(stored.lines[0]!.discountSteps[0]!.priority, priority);
+  }
+});
+
+/** Observe an actual lock wait, rather than assuming a query blocked because a timer elapsed. */
+async function waitForBlock(observer: Client, waiterPid: number, blockerPid: number) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const { rows } = await observer.query<{ blocked: boolean }>("SELECT $1::int = ANY(pg_blocking_pids($2::int)) AS blocked", [blockerPid, waiterPid]);
+    if (rows[0]!.blocked) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.fail("expected the concurrent transaction to wait for the order row lock");
+}
+
+test("quote writes and the DRAFT exit serialize in both transaction orders", async () => {
+  const writer = new Client({ connectionString });
+  const transition = new Client({ connectionString });
+  const observer = new Client({ connectionString });
+  await Promise.all([writer.connect(), transition.connect(), observer.connect()]);
+  try {
+    const writerPid = (await writer.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+    const transitionPid = (await transition.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+    for (const writerFirst of [true, false]) {
+      const draft = await order();
+      await write(draft.id, ex17());
+      const snapshot = (await prisma.orderQuoteSnapshot.findUnique({ where: { orderId: draft.id }, include: { lines: true } }))!;
+      const line = snapshot.lines[0]!;
+      await writer.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await transition.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      // A real child-row change which preserves all monetary/quantity invariants.
+      const editQuote = () => writer.query('UPDATE "OrderQuoteLine" SET "variantId" = $1 WHERE "id" = $2', ["changed-variant", line.id]);
+      const leaveDraft = () => transition.query('UPDATE "OrderMirror" SET "state" = \'VALIDATING\' WHERE "id" = $1', [draft.id]);
+      if (writerFirst) {
+        await editQuote();
+        const pending = leaveDraft();
+        const completed = pending.then(() => null, error => error as Error);
+        try {
+          await waitForBlock(observer, transitionPid, writerPid);
+          await writer.query("COMMIT");
+          assert.equal(await completed, null);
+          await transition.query("COMMIT");
+        } finally {
+          await writer.query("ROLLBACK");
+          await completed;
+        }
+        assert.equal((await prisma.orderQuoteLine.findUniqueOrThrow({ where: { id: line.id } })).variantId, "changed-variant");
+      } else {
+        await leaveDraft();
+        const pending = editQuote();
+        const completed = pending.then(() => null, error => error as Error);
+        try {
+          await waitForBlock(observer, writerPid, transitionPid);
+          await transition.query("COMMIT");
+          const error = await completed;
+          assert.ok(error);
+          assert.match(error.message, /immutable/i);
+          await writer.query("ROLLBACK");
+        } finally {
+          await transition.query("ROLLBACK");
+          await completed;
+        }
+        assert.equal((await prisma.orderQuoteLine.findUniqueOrThrow({ where: { id: line.id } })).variantId, line.variantId);
+      }
+      assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: draft.id } })).state, "VALIDATING");
+      await rejects(editQuote, /immutable/i);
+    }
+  } finally {
+    await Promise.all([writer.query("ROLLBACK"), transition.query("ROLLBACK")]);
+    await Promise.all([writer.end(), transition.end(), observer.end()]);
+  }
+});
+
 test("a failed write rolls back with its transaction and does not half-replace the previous quote", async () => {
   const draft = await order();
   await write(draft.id, ex17());
@@ -208,6 +329,42 @@ test("an order that is not a DRAFT cannot receive a first quote either", async (
   const confirmed = await order("CONFIRMED");
   await rejects(() => write(confirmed.id, ex17()), /immutable/i);
   assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: confirmed.id } }), 0);
+});
+
+test("the first DRAFT exit prevents re-entry and keeps quote rows immutable for writer and direct writes", async () => {
+  for (const state of ["VALIDATING", "CONFIRMED"] as const) {
+    const draft = await order();
+    const original = ex17({
+      lines: [...ex17().lines, gift("G:camp-1:var-1", 1)],
+      entitlements: paidAndGift().entitlements, acknowledgedAt: ACK,
+    });
+    await write(draft.id, original);
+    const before = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+    const snapshot = await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id }, include: { lines: { include: { discountSteps: true } }, entitlements: true } });
+    await prisma.orderMirror.update({ where: { id: draft.id }, data: { state } });
+    await rejects(() => prisma.orderMirror.update({ where: { id: draft.id }, data: { state: "DRAFT" } }), /cannot return to DRAFT/i);
+    assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: draft.id } })).state, state);
+    await rejects(() => write(draft.id, paidAndGift()), /immutable/i);
+    await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: snapshot.id }, data: { quoteDigest: DIGEST } }), /immutable/i);
+    await rejects(() => prisma.orderQuoteLine.update({ where: { id: snapshot.lines[0]!.id }, data: { variantId: "changed" } }), /immutable/i);
+    const step = snapshot.lines.flatMap(line => line.discountSteps)[0]!;
+    await rejects(() => prisma.orderQuoteDiscountStep.update({ where: { id: step.id }, data: { priority: 2 } }), /immutable/i);
+    await rejects(() => prisma.orderQuoteEntitlement.update({ where: { id: snapshot.entitlements[0]!.id }, data: { campaignRevision: 4 } }), /immutable/i);
+    assert.deepEqual(await readOrderQuoteSnapshot(prisma, draft.id), before);
+    assert.equal((await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } })).id, snapshot.id);
+  }
+});
+
+test("legacy orders without a benefit quote keep VALIDATING -> DRAFT reprice and outage retries", async () => {
+  const legacy = await order();
+  for (const syncErrorCode of ["PRICE_CHANGED", "VALIDATION_UNAVAILABLE"]) {
+    await prisma.orderMirror.update({ where: { id: legacy.id }, data: { state: "VALIDATING" } });
+    assert.equal((await prisma.orderMirror.updateMany({ where: { id: legacy.id, state: "VALIDATING" }, data: { state: "DRAFT", syncErrorCode } })).count, 1);
+    const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { id: legacy.id } });
+    assert.equal(stored.state, "DRAFT");
+    assert.equal(stored.syncErrorCode, syncErrorCode);
+    assert.equal(await readOrderQuoteSnapshot(prisma, legacy.id), null);
+  }
 });
 
 test("a row cannot be moved to another order's quote", async () => {

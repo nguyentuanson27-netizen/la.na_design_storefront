@@ -2,9 +2,9 @@
  * The order's benefit-aware quote, stored by `lineId` (GQ15).
  *
  * This module is the single writer and reader of `OrderQuoteSnapshot` and its rows. It validates the
- * quote it is handed -- bounded integer money, the shape of each role, the discount chain, the
- * entitlement arithmetic -- before anything reaches the database, and the migration re-checks the
- * same invariants (row checks, the DRAFT-only change rule, and the cross-row totals at commit), so
+ * quote it is handed -- the canonical digest, bounded integer money, the shape of each role, the
+ * discount chain, the entitlement arithmetic -- before anything reaches the database. The migration
+ * re-checks row constraints, the DRAFT-only change rule, and the cross-row totals at commit, so
  * neither layer is the only thing standing between a wrong number and an order.
  *
  * It decides nothing about price, stock or entitlement. The caller (the checkout DRAFT step) hands
@@ -16,6 +16,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import { benefitQuoteDigest, BENEFIT_PROOF_FORMAT } from "./checkout-quote-proof.ts";
 import {
   isQuoteText,
   MAX_QUOTE_ENTITLEMENTS,
@@ -34,7 +35,6 @@ export const MAX_ORDER_QUOTE_LINES = MAX_QUOTE_LINES;
 export const MAX_ORDER_QUOTE_STEPS_PER_LINE = MAX_QUOTE_STEPS_PER_LINE;
 export const MAX_ORDER_QUOTE_ENTITLEMENTS = MAX_QUOTE_ENTITLEMENTS;
 export const MAX_ORDER_QUOTE_GIFT_UNITS = MAX_QUOTE_GIFT_UNITS;
-const FORMAT_PATTERN = /^laq[0-9]{1,3}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 export type OrderQuoteDiscountStepInput = QuoteDiscountStepFacts;
@@ -89,6 +89,7 @@ export type OrderQuoteSnapshotIssue =
   | QuoteStructureIssue
   | "FORMAT_INVALID"
   | "DIGEST_INVALID"
+  | "DIGEST_MISMATCH"
   | "DROPPED_BENEFITS_INVALID"
   | "VENDOR_PROJECTION_INVALID"
   | "ACKNOWLEDGEMENT_REQUIRED"
@@ -100,7 +101,7 @@ export function validateOrderQuoteSnapshot(
 ): Readonly<{ ok: true; totals: QuoteTotals }> | Readonly<{ ok: false; issue: OrderQuoteSnapshotIssue }> {
   const fail = (issue: OrderQuoteSnapshotIssue) => ({ ok: false as const, issue });
   if (typeof input !== "object" || input === null) return fail("MONEY_INVALID");
-  if (typeof input.quoteFormat !== "string" || !FORMAT_PATTERN.test(input.quoteFormat)) return fail("FORMAT_INVALID");
+  if (input.quoteFormat !== BENEFIT_PROOF_FORMAT) return fail("FORMAT_INVALID");
   if (typeof input.quoteDigest !== "string" || !DIGEST_PATTERN.test(input.quoteDigest)) return fail("DIGEST_INVALID");
 
   const dropped = input.droppedBenefits ?? [];
@@ -153,6 +154,7 @@ export function validateOrderQuoteSnapshot(
   if (acknowledged && !(input.acknowledgedAt instanceof Date && Number.isFinite(input.acknowledgedAt.getTime()))) return fail("ACKNOWLEDGEMENT_REQUIRED");
   if (verdict.totals.unclaimedSlots > 0 && !acknowledged) return fail("ACKNOWLEDGEMENT_REQUIRED");
   if (verdict.totals.unclaimedSlots === 0 && acknowledged) return fail("ACKNOWLEDGEMENT_UNNEEDED");
+  if (input.quoteDigest !== benefitQuoteDigest(input)) return fail("DIGEST_MISMATCH");
   return verdict;
 }
 
@@ -161,6 +163,9 @@ export function validateOrderQuoteSnapshot(
  * accepts it: the database refuses the removal once the order has left DRAFT.
  */
 export async function clearOrderQuoteSnapshot(tx: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+  // Take the parent before touching quote rows, just as checkout state transitions do. This also
+  // serializes two first writes/replacements before either reads the previous snapshot.
+  await tx.$queryRaw`SELECT "id" FROM "OrderMirror" WHERE "id" = ${orderId} FOR UPDATE`;
   const previous = await tx.orderQuoteSnapshot.findUnique({ where: { orderId }, select: { id: true } });
   if (previous === null) return false;
   await tx.orderQuoteDiscountStep.deleteMany({ where: { line: { snapshotId: previous.id } } });

@@ -219,13 +219,13 @@ test("EX-18: reservation lines sum the paid segments and the gift of one variati
   const service = createGuestCheckoutSubmitService({
     snapshot: snapshotService({ proof }),
     // The legacy POS submission is out of scope; what matters here is the hold taken before it.
-    orderSubmission: { submit: async () => ({ ok: false as const, state: "DRAFT" as const, reason: "BENEFIT_SUBMISSION_UNAVAILABLE" as const }) },
+    orderSubmission: { submit: async () => ({ ok: false as const, state: "DRAFT" as const, reason: "SUBMISSION_BUSY" as const }) },
     generatePublicCode: code,
     capacity: createCapacityReservationRepository(prisma),
     clock: () => NOW,
   });
   const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
-  assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode: (await prisma.orderMirror.findFirstOrThrow({ where: { sourceCartId: cartId } })).publicCode });
+  assert.deepEqual(result, { ok: false, status: "PROCESSING", orderCode: (await prisma.orderMirror.findFirstOrThrow({ where: { sourceCartId: cartId } })).publicCode });
 
   const held = await holds();
   assert.deepEqual(held.map((hold) => [hold.variantId, hold.quantity, hold.state]).sort(), [
@@ -543,7 +543,7 @@ test("a benefit cart is refused, not silently stripped, by a service that cannot
 
 // -- GQ18: the POS gate -----------------------------------------------------------------------------------
 
-test("a benefit order is never sent to the POS by the legacy submission: it stays DRAFT, holds untouched, no external call", async () => {
+test("a benefit order is never sent to the POS by the legacy submission: it is closed, its holds go back, no external call", async () => {
   await seed();
   await chooseGift(2);
   const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
@@ -566,15 +566,18 @@ test("a benefit order is never sent to the POS by the legacy submission: it stay
   const order = await prisma.orderMirror.findFirstOrThrow({ where: { sourceCartId: cartId } });
   assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode: order.publicCode });
   assert.deepEqual(calls, [], "not one call to Pancake");
-  assert.equal(order.state, "DRAFT");
-  assert.deepEqual((await holds()).map((hold) => hold.state), ["RESERVED", "RESERVED"], "holds stay expirable RESERVED, not SUBMITTING");
+  // A quote-bearing order can never re-enter DRAFT, so "not now" is a closed order, not a parked one.
+  assert.equal(order.state, "REJECTED");
+  assert.equal(order.syncErrorCode, "BENEFIT_SUBMISSION_UNAVAILABLE");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED", "RELEASED"], "the units go back at once");
   assert.deepEqual(events, ["pancake_order.validation_started", "pancake_order.benefit_submission_withheld"]);
 
-  // Asking again changes nothing: no second order, no second hold, still DRAFT.
+  // Asking again starts a new order from the unchanged cart; it is withheld the same way and never reaches Pancake.
   await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
-  assert.equal(await orderCount(), 1);
-  assert.equal((await holds()).length, 2);
-  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } })).state, "DRAFT");
+  assert.equal(await orderCount(), 2);
+  assert.deepEqual(calls, []);
+  assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: order.id } })).state, "REJECTED");
+  assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: order.id } }), 1, "the closed order keeps its quote as history");
 });
 
 // -- GQ20: the POS submission of a benefit order ------------------------------------------------------------
@@ -708,9 +711,9 @@ test("GQ20: a shop without line-level acceptance never receives a benefit order,
   assert.equal(result.ok, false);
   assert.equal(pancake.calls.fetch, 0);
   assert.deepEqual(pancake.calls.create, []);
-  assert.equal((await lastOrder()).state, "DRAFT");
+  assert.equal((await lastOrder()).state, "REJECTED");
   assert.ok(events.includes("pancake_order.benefit_submission_withheld"));
-  assert.deepEqual((await holds()).map((hold) => hold.state), ["RESERVED"]);
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED"]);
 });
 
 test("GQ20: a moved Pancake base makes the order re-quote instead of writing a wrong one; the mirror learns the fresh base", async () => {
@@ -722,12 +725,12 @@ test("GQ20: a moved Pancake base makes the order re-quote instead of writing a w
   const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
   assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", orderCode: (await lastOrder()).publicCode });
   assert.deepEqual(pancake.calls.create, [], "nothing is written to Pancake");
-  assert.equal((await lastOrder()).state, "DRAFT");
+  assert.equal((await lastOrder()).state, "REJECTED");
   assert.ok(events.includes("pancake_order.benefit_requote_required"));
-  assert.deepEqual((await holds()).map((hold) => hold.state), ["RESERVED"], "the hold is still expirable, not SUBMITTING");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED"], "nothing was written, so the units go back at once");
   assert.equal((await prisma.variantMirror.findUniqueOrThrow({ where: { id: paid.variantId } })).pancakeRetailPrice, 110_001);
 
-  // The buyer's next view re-quotes from the fresh base and the new proof goes through.
+  // The buyer's next view re-quotes from the fresh base; the new proof creates a new order and goes through.
   const fresh = await renderedFacts();
   assert.equal(fresh.lines[0]!.unitPriceVnd, 110_001);
   const retry = submission(fakePancake(), issueBenefitQuoteProof({ quote: fresh, cartId, secret })!);
@@ -750,7 +753,7 @@ test("GQ20: a tier or gift campaign that ended or was edited after the quote mak
     const order = await lastOrder();
     const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, { lineLevelPricingVerifiedShopIds: [SHOP], env: ON, now: () => NOW, onConfirmed: async () => undefined });
     const result = await pos.submit({ publicCode: order.publicCode, shopId: SHOP });
-    assert.deepEqual(result, { ok: false, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" }, change);
+    assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" }, change);
     assert.deepEqual(pancake.calls.create, [], change);
     void service;
   }
@@ -1034,7 +1037,7 @@ test("GQ24: a telemetry observer that throws never changes the checkout", async 
   assert.ok(drafted.ok);
 });
 
-test("GQ24 kill switch: turning the gate OFF stops new quotes using the new rules, re-quotes a draft, and leaves a confirmed order and its audit trail untouched", async () => {
+test("GQ24 kill switch: turning the gate OFF stops new quotes using the new rules, closes an in-flight draft for a re-quote, and leaves a confirmed order and its audit trail untouched", async () => {
   await seed();
   await chooseGift(2);
   const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
@@ -1056,9 +1059,10 @@ test("GQ24 kill switch: turning the gate OFF stops new quotes using the new rule
   const draft = await lastOrder();
   const pancake = fakePancake();
   const off = createPancakeOrderSubmissionService(prisma, pancake.gateway, { lineLevelPricingVerifiedShopIds: [SHOP], env: {}, now: () => NOW, onConfirmed: async () => undefined });
-  assert.deepEqual(await off.submit({ publicCode: draft.publicCode, shopId: SHOP }), { ok: false, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" });
+  assert.deepEqual(await off.submit({ publicCode: draft.publicCode, shopId: SHOP }), { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" });
   assert.deepEqual(pancake.calls.create, []);
-  assert.equal((await lastOrder()).state, "DRAFT");
+  assert.equal((await lastOrder()).state, "REJECTED");
+  assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: draft.id } }), 1, "the quote stays as history");
 
   // A new quote with the gate OFF is the legacy one: no gift, no tier price, no quote rows.
   const legacyFacts = await resolveBenefitCheckoutQuote({

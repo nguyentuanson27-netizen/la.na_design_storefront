@@ -56,6 +56,44 @@ function proof(quote: BenefitQuoteProofFacts = build(), overrides: { cartId?: st
 const verify = (token: unknown, currentQuote: BenefitQuoteProofFacts, overrides: { cartId?: string; secret?: string } = {}) =>
   verifyBenefitQuoteProof({ proof: token, cartId: overrides.cartId ?? cartId, currentQuote, secret: overrides.secret ?? secret });
 
+test("quotes cannot sign quantities or priorities outside the snapshot INTEGER range", () => {
+  const max = 2_147_483_647;
+  const boundary = build({ paid: [paidGroup({ quantity: max, unitPriceVnd: 1 })] });
+  assert.ok(proof(boundary));
+  const overflow: BenefitQuoteProofFacts = {
+    ...boundary, paidSubtotalVnd: max + 1, totalVnd: max + 1,
+    lines: [...boundary.lines, { ...boundary.lines[0]!, lineId: "P:extra", quantity: 1, lineTotalVnd: 1 }],
+  };
+  assert.throws(() => proof(overflow), TypeError);
+  assert.deepEqual(verify(proof(boundary), overflow), { ok: false, reason: "PRICE_CHANGED" });
+  for (const priority of [-2_147_483_648, max]) {
+    assert.ok(proof(build({ paid: [paidGroup({ quantity: 1, unitPriceVnd: 90_001, steps: [{ ...tierStep, priority }] })] })));
+  }
+  for (const priority of [-2_147_483_649, max + 1]) {
+    const quote = build();
+    const invalid = { ...quote, lines: quote.lines.map(line => ({ ...line, discountSteps: line.discountSteps.map(step => ({ ...step, priority })) })) };
+    assert.throws(() => proof(invalid), TypeError);
+    assert.deepEqual(verify(proof(quote), invalid), { ok: false, reason: "PRICE_CHANGED" });
+  }
+});
+
+test("malformed or omitted gift campaigns fail closed in both verifiers", () => {
+  const quote = withGift();
+  const rendered = proof(quote);
+  const token = issueNonclaimAcknowledgement({ quote, cartId, secret, now: NOW })!;
+  const campaignCases: unknown[] = [undefined, null, 1, "camp-1", [], {}, { id: "camp-1" }, { id: 1, revision: 3 }, { id: "camp-1", revision: "3" }];
+  const giftLine = quote.lines.find(line => line.role === "GIFT")!;
+  const omitted: Record<string, unknown> = { ...giftLine };
+  delete omitted.campaign;
+  const invalidLines = [omitted, ...campaignCases.map(campaign => ({ ...giftLine, campaign }))];
+  for (const invalidLine of invalidLines) {
+    const invalid = { ...quote, lines: quote.lines.map(line => line.role === "GIFT" ? invalidLine : line) } as BenefitQuoteProofFacts;
+    assert.deepEqual(verify(rendered, invalid), { ok: false, reason: "PRICE_CHANGED" });
+    assert.deepEqual(verifyNonclaimAcknowledgement({ token, cartId, currentQuote: invalid, secret, now: NOW }), { ok: false, reason: "ACK_STALE" });
+    assert.throws(() => proof(invalid), TypeError);
+  }
+});
+
 // -- The quote builder ----------------------------------------------------------------------------------
 
 test("EX-17: two PAID segments of one variation get distinct lineIds, highest price first, and keep their money", () => {

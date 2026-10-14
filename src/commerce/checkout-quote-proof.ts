@@ -330,7 +330,7 @@ export function verifyRenderedQuoteProof({
 /** What the buyer was shown, with paid and gift segments. Identical in shape to what an order stores. */
 export type BenefitQuoteProofFacts = QuoteStructure;
 
-const BENEFIT_PROOF_FORMAT = "laq3";
+export const BENEFIT_PROOF_FORMAT = "laq3";
 
 /**
  * A quote with many segments is larger than a legacy one (each line carries its role, campaign and

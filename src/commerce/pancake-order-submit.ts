@@ -49,14 +49,16 @@ export type PancakeOrderSubmissionReason =
   /**
    * GQ18 -- the order carries a benefit quote (gifts or quantity-tier segments). The legacy submission
    * would send the paid lines and silently drop the gifts, and the legacy reprice would rewrite prices
-   * the quote has signed, so such an order is held at DRAFT with nothing sent until the line-level
-   * Pancake projection (GQ20) exists. The reason is stable so that work can remove exactly this gate.
+   * the quote has signed. A shop whose line-level pricing was not accepted live (GQ01) therefore never
+   * receives it: the order is closed as REJECTED (a quote-bearing order cannot return to DRAFT) with
+   * nothing sent, and the buyer's next submit creates a new order.
    */
   | "BENEFIT_SUBMISSION_UNAVAILABLE"
   /**
    * GQ20 -- a benefit order's fresh-base recheck found that the price story behind its quote (the live
    * Pancake base, a legacy campaign, or a gift / tier campaign's liveness or revision) no longer holds.
-   * The order goes back to DRAFT with nothing written to Pancake; the buyer's next submit re-quotes.
+   * The order is closed as REJECTED with nothing written to Pancake (a quote-bearing order cannot
+   * return to DRAFT); the buyer's next submit creates a new order from a fresh quote.
    */
   | "BENEFIT_REQUOTE_REQUIRED";
 
@@ -94,13 +96,14 @@ export type PancakeOrderSubmissionEvent =
   | {
       name: "pancake_order.validation_unavailable";
       correlationId: string;
-      state: "DRAFT";
+      /** `REJECTED` for a quote-bearing order: the database never lets it back into DRAFT. */
+      state: "DRAFT" | "REJECTED";
       reason: "VALIDATION_UNAVAILABLE";
     }
   | {
       name: "pancake_order.benefit_submission_withheld";
       correlationId: string;
-      state: "DRAFT";
+      state: "REJECTED";
       reason: "BENEFIT_SUBMISSION_UNAVAILABLE";
     }
   | {
@@ -112,7 +115,7 @@ export type PancakeOrderSubmissionEvent =
   | {
       name: "pancake_order.benefit_requote_required";
       correlationId: string;
-      state: "DRAFT";
+      state: "REJECTED";
       reason: "BENEFIT_REQUOTE_REQUIRED";
     }
   | {
@@ -303,7 +306,10 @@ function existingResult(order: {
       reason === "PRICE_CHANGED" ||
       reason === "PRICE_UNAVAILABLE" ||
       reason === "STOCK_UNAVAILABLE" ||
-      reason === "COMPOSITE_SELLING_MODE_UNSUPPORTED"
+      reason === "COMPOSITE_SELLING_MODE_UNSUPPORTED" ||
+      reason === "VALIDATION_UNAVAILABLE" ||
+      reason === "BENEFIT_SUBMISSION_UNAVAILABLE" ||
+      reason === "BENEFIT_REQUOTE_REQUIRED"
     ) {
       return { ok: false, state: "REJECTED", reason };
     }
@@ -629,7 +635,45 @@ export function createPancakeOrderSubmissionService(
       });
     }
 
+    /**
+     * A quote-bearing order never returns to DRAFT: the database refuses it, because the quote rows
+     * are signed history that must not be unfrozen. Where a legacy order goes back to DRAFT to be
+     * tried again, a benefit order is closed as REJECTED with nothing sent; the holds are released by
+     * the caller and the buyer's next submit creates a new order from a fresh quote.
+     */
+    async function closeBenefitOrder(
+      reason: "VALIDATION_UNAVAILABLE" | "BENEFIT_SUBMISSION_UNAVAILABLE" | "BENEFIT_REQUOTE_REQUIRED",
+      mirrorRefresh: ReadonlyArray<{ variantId: string; freshBaseVnd: number; freshAfterDiscountVnd: number }> = [],
+    ): Promise<boolean> {
+      return client.$transaction(async (tx) => {
+        const closed = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "VALIDATING" },
+          data: { state: "REJECTED", syncErrorCode: reason },
+        });
+        if (closed.count !== 1) return false;
+        // The fresher base is written back to the mirror, exactly as the legacy reprice does, so the
+        // buyer's re-quote starts from what Pancake reported and the handshake terminates.
+        for (const line of mirrorRefresh) {
+          await tx.variantMirror.updateMany({
+            where: { id: line.variantId },
+            data: { pancakeRetailPrice: line.freshBaseVnd, pancakeRetailPriceAfterDiscount: line.freshAfterDiscountVnd },
+          });
+        }
+        return true;
+      });
+    }
+
     async function resetValidation(): Promise<PancakeOrderSubmissionResult> {
+      if (order.quoteSnapshot) {
+        await closeBenefitOrder("VALIDATION_UNAVAILABLE");
+        emitSafely(options.onEvent, {
+          name: "pancake_order.validation_unavailable",
+          correlationId,
+          state: "REJECTED",
+          reason: "VALIDATION_UNAVAILABLE",
+        });
+        return { ok: false, state: "REJECTED", reason: "VALIDATION_UNAVAILABLE" };
+      }
       await client.orderMirror.updateMany({
         where: { id: order.id, state: "VALIDATING" },
         data: { state: "DRAFT", syncErrorCode: "VALIDATION_UNAVAILABLE" },
@@ -946,19 +990,16 @@ export function createPancakeOrderSubmissionService(
 
     type BenefitSnapshot = NonNullable<typeof order.quoteSnapshot>;
 
-    /** Back to DRAFT with nothing read from or sent to Pancake: the benefit path is closed for this order. */
+    /** Closed with nothing read from or sent to Pancake: the benefit path is not open for this shop. */
     async function withholdBenefitOrder(): Promise<PancakeOrderSubmissionResult> {
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "VALIDATING" },
-        data: { state: "DRAFT", syncErrorCode: "BENEFIT_SUBMISSION_UNAVAILABLE" },
-      });
+      await closeBenefitOrder("BENEFIT_SUBMISSION_UNAVAILABLE");
       emitSafely(options.onEvent, {
         name: "pancake_order.benefit_submission_withheld",
         correlationId,
-        state: "DRAFT",
+        state: "REJECTED",
         reason: "BENEFIT_SUBMISSION_UNAVAILABLE",
       });
-      return { ok: false, state: "DRAFT", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
+      return { ok: false, state: "REJECTED", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
     }
 
     /**
@@ -972,7 +1013,8 @@ export function createPancakeOrderSubmissionService(
      *    variant add up, and a variant that carries a gift is judged as READY stock only;
      *  - the fresh-base recheck compares the live Pancake base, the legacy campaign behind the first
      *    discount step and the liveness of every tier / gift campaign with what the quote recorded.
-     *    Any difference sends the order back to DRAFT for a re-quote; nothing is repriced in place,
+     *    Any difference closes the order (REJECTED, holds released) so the next submit re-quotes into a new
+     *    order -- a quote-bearing order can never return to DRAFT; nothing is repriced in place,
      *    because the quote rows are signed history, not working data.
      * The write boundary, the create call, the unknown-outcome handling and the confirmation are the
      * shared tail (`finalizeSubmission`).
@@ -1167,23 +1209,9 @@ export function createPancakeOrderSubmissionService(
       }
 
       if (requote) {
-        await client.$transaction(async (tx) => {
-          const held = await tx.orderMirror.updateMany({
-            where: { id: order.id, state: "VALIDATING" },
-            data: { state: "DRAFT", syncErrorCode: "BENEFIT_REQUOTE_REQUIRED" },
-          });
-          if (held.count !== 1) return;
-          // The fresher base is written back to the mirror, exactly as the legacy reprice does, so the
-          // buyer's re-quote starts from what Pancake reported and the handshake terminates.
-          for (const line of mirrorRefresh) {
-            await tx.variantMirror.updateMany({
-              where: { id: line.variantId },
-              data: { pancakeRetailPrice: line.freshBaseVnd, pancakeRetailPriceAfterDiscount: line.freshAfterDiscountVnd },
-            });
-          }
-        });
-        emitSafely(options.onEvent, { name: "pancake_order.benefit_requote_required", correlationId, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" });
-        return { ok: false, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" };
+        await closeBenefitOrder("BENEFIT_REQUOTE_REQUIRED", mirrorRefresh);
+        emitSafely(options.onEvent, { name: "pancake_order.benefit_requote_required", correlationId, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" });
+        return { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" };
       }
 
       return finalizeSubmission({

@@ -67,8 +67,11 @@ Built and tested, **not yet wired**: nothing writes `OrderQuoteSnapshot` and not
 
 Release gates this adds before the flag is turned on:
 
-- The migration `20261014120000_add_order_quote_snapshot` is additive with a written rollback (drop four tables, one enum, three functions). Apply it, and read it, before any deploy that contains GQ17.
-- An order that leaves DRAFT freezes its quote rows. Any flow that must re-quote after `VALIDATING` (none exists today) would have to create a new order, not edit the snapshot.
+- The migration `20261014120000_add_order_quote_snapshot` is additive with a written rollback (drop the state-transition trigger on `OrderMirror`, four tables, one enum and four functions). Existing columns/data are unchanged. Apply it, and read it, before any deploy that contains GQ17.
+- An order with a quote snapshot cannot return to DRAFT after its first exit: `OrderQuoteDraftReentry_guard` rejects the transition, so the original quote stays immutable. Legacy orders without this snapshot retain their current `VALIDATING -> DRAFT` reprice/outage retries. GQ17–GQ18 must create a new order for a changed benefit quote or retry that needs editable DRAFT, rather than reuse the legacy reset path for a quote-bearing order.
+- Quote writes and state transitions serialize on the `OrderMirror` row. Lock the order before touching quote children; the row guard holds `FOR UPDATE` until commit and rechecks DRAFT after waiting. The snapshot writer also locks the order before reading/replacing the previous quote.
+- The snapshot writer recomputes `benefitQuoteDigest` from the validated stored quote facts and rejects `DIGEST_MISMATCH` before modifying any row. A valid-looking digest supplied by a caller is insufficient; same-total segment changes still change the digest. This records quote identity; GQ17 must separately verify the buyer's proof and acknowledgement before calling the writer.
+- Both the writer and database accept only `quoteFormat = laq3`, the canonical format the benefit digest hashes. Future versions need explicit canonicalization/digest support before they can be stored; a legacy `laq2` proof never labels a benefit snapshot.
 - The acknowledgement endpoint (GQ19) must verify the buyer's render proof for the quote being acknowledged before it issues `laa1`; the token module deliberately does not decide that.
 - `vendorProjectionHash` / `vendorProjection` are empty until GQ20 writes the Pancake projection (ADR 0016 D-08); reconciliation (GQ21) compares read-back against that projection.
 

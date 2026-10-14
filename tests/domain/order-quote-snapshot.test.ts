@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { benefitQuoteDigest } from "../../src/commerce/checkout-quote-proof.ts";
+import { validateQuoteStructure } from "../../src/commerce/order-quote-rules.ts";
 
 import {
   validateOrderQuoteSnapshot,
@@ -26,11 +28,12 @@ function gift(lineId: string, quantity: number, campaignId = "camp-1", extra: Pa
 
 /** EX-17: 2 x 100.001d + 1 x 90.001d of one variation, 290.003d, free shipping or not is the caller's business. */
 function ex17(overrides: Partial<OrderQuoteSnapshotInput> = {}): OrderQuoteSnapshotInput {
-  return {
+  const input: OrderQuoteSnapshotInput = {
     quoteFormat: "laq3", quoteDigest: DIGEST, paidSubtotalVnd: 290_003, shippingFeeVnd: 30_000, totalVnd: 320_003,
     lines: [paid("P:var-1:0", 2, 100_001), paid("P:var-1:1", 1, 90_001, { baseUnitPriceVnd: 100_001, discountSteps: [{ campaignId: "tier-1", source: "QUANTITY_TIER", campaignKind: "QUANTITY_TIER", priority: 1, inputPriceVnd: 100_001, outputPriceVnd: 90_001, appliedQuantity: 1 }] })],
     entitlements: [], acknowledgedAt: null, ...overrides,
   };
+  return { ...input, quoteDigest: overrides.quoteDigest ?? (validateQuoteStructure(input).ok ? benefitQuoteDigest(input) : DIGEST) };
 }
 
 function issueOf(input: OrderQuoteSnapshotInput) {
@@ -73,7 +76,7 @@ test("EX-18: slots not taken are kept per campaign and need an acknowledgement",
   assert.equal(issueOf({ ...base, acknowledgedAt: ACK, entitlements: [{ ...base.entitlements[0]!, shortForStock: 0 }] }), "ENTITLEMENT_INVALID");
   // Selecting nothing at all is a valid quote with every slot unclaimed.
   assert.deepEqual(
-    validateOrderQuoteSnapshot({ ...base, lines: [paid("P:var-1:0", 1, 100_000)], acknowledgedAt: ACK, entitlements: [{ campaignId: "camp-1", campaignRevision: 3, entitled: 2, selected: 0, skippedWhileAvailable: 2, contendedForSharedStock: 0, shortForStock: 0 }] }),
+    validateOrderQuoteSnapshot(ex17({ ...base, quoteDigest: undefined, lines: [paid("P:var-1:0", 1, 100_000)], acknowledgedAt: ACK, entitlements: [{ campaignId: "camp-1", campaignRevision: 3, entitled: 2, selected: 0, skippedWhileAvailable: 2, contendedForSharedStock: 0, shortForStock: 0 }] })),
     { ok: true, totals: { paidQuantity: 1, giftQuantity: 0, unclaimedSlots: 2 } },
   );
 });
@@ -132,4 +135,34 @@ test("format and digest are validated and the input is never trusted structurall
   assert.equal(issueOf(null as unknown as OrderQuoteSnapshotInput), "MONEY_INVALID");
   assert.equal(issueOf(ex17({ entitlements: Array.from({ length: 21 }, (_, index) => ({ campaignId: `c${index}`, campaignRevision: 1, entitled: 0, selected: 0, skippedWhileAvailable: 0, contendedForSharedStock: 0, shortForStock: 0 })) })), "ENTITLEMENT_INVALID");
   assert.equal(issueOf(ex17({ lines: [paid("P:a", 1, 290_003, { fulfillmentState: "LATER" as never })] })), "LINE_FIELDS_INVALID");
+});
+
+test("a valid laq3 digest cannot be persisted under another well-formed format version", () => {
+  const quote = ex17();
+  assert.equal(quote.quoteDigest, benefitQuoteDigest(quote));
+  for (const quoteFormat of ["laq2", "laq4", "laq999"]) {
+    assert.equal(issueOf({ ...quote, quoteFormat }), "FORMAT_INVALID");
+  }
+  assert.equal(issueOf(quote), null);
+});
+
+test("the digest must describe the stored facts even when changed segments keep the same total", () => {
+  const original = ex17();
+  const changed = ex17({ lines: [paid("P:var-1:0", 1, 100_001), paid("P:var-1:1", 1, 190_002)] });
+  assert.equal(original.totalVnd, changed.totalVnd);
+  assert.notEqual(original.quoteDigest, changed.quoteDigest);
+  assert.equal(issueOf({ ...changed, quoteDigest: original.quoteDigest }), "DIGEST_MISMATCH");
+  assert.equal(issueOf(changed), null);
+  assert.equal(issueOf(ex17({ quoteDigest: DIGEST })), "DIGEST_MISMATCH");
+});
+
+test("snapshot validation shares the proof's aggregate quantity and priority INTEGER bounds", () => {
+  const max = 2_147_483_647;
+  const boundary = ex17({ lines: [paid("P:a", max, 1)], paidSubtotalVnd: max, shippingFeeVnd: 0, totalVnd: max });
+  assert.equal(issueOf(boundary), null);
+  assert.equal(issueOf(ex17({ ...boundary, lines: [...boundary.lines, paid("P:b", 1, 1)], paidSubtotalVnd: max + 1, totalVnd: max + 1 })), "MONEY_INVALID");
+  for (const priority of [-2_147_483_649, max + 1]) {
+    const quote = ex17();
+    assert.equal(issueOf({ ...quote, lines: quote.lines.map(line => ({ ...line, discountSteps: line.discountSteps.map(step => ({ ...step, priority })) })) }), "DISCOUNT_CHAIN_INVALID");
+  }
 });

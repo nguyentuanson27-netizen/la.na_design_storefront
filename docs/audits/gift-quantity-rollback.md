@@ -21,8 +21,10 @@ alert **thresholds** in §4 are proposals derived from the signal design, not me
    order leaves DRAFT, enforced by database triggers). Turning the flag OFF does not touch, re-price,
    cancel or re-send any of them.
 4. **An in-flight draft is never silently re-priced.** A DRAFT created while the flag was ON and submitted
-   after it went OFF is answered `BENEFIT_REQUOTE_REQUIRED` (buyer sees `CART_CHANGED`), nothing is sent to
-   Pancake, and the DRAFT and its quote rows stay exactly as they were (test "GQ24 kill switch").
+   after it went OFF is closed as `REJECTED / BENEFIT_REQUOTE_REQUIRED` (the buyer sees `CART_CHANGED`),
+   nothing is sent to Pancake, its holds are released at once, and its quote rows stay as history (a
+   quote-bearing order can never return to DRAFT). The buyer's next submit creates a new, legacy-priced order
+   (test "GQ24 kill switch").
 5. **Audit trail survives the campaign.** Every GIFT line stores the campaign id **and revision**; every
    tier step stores its campaign id and the input/output price; the order stores the quote digest and the
    frozen Pancake projection hash. Editing, disabling or ending the campaign later does not change them
@@ -121,7 +123,7 @@ A single bad **campaign** (not the engine) is handled by disabling that campaign
    reload the environment).
 3. Verify: `docker compose exec app node -e 'if (process.env.LA_GIFT_QUANTITY_PROMOTIONS_ENABLED === "true") process.exit(1)'`.
 4. Effect, verified by tests: carts price with legacy rules only; no gift is offered; no tier price applies;
-   a DRAFT taken before the switch is answered `BENEFIT_REQUOTE_REQUIRED` and nothing is sent to Pancake.
+   a draft taken before the switch is closed `REJECTED / BENEFIT_REQUOTE_REQUIRED`, its stock goes back, and nothing is sent to Pancake.
    Expect a short burst of `benefit_requote_required` and buyers re-confirming a price — that is the switch
    working, not a new incident.
 5. Do **not** delete or edit order quote rows, campaigns or `PromotionPricingRevision`. They are the audit
@@ -130,7 +132,7 @@ A single bad **campaign** (not the engine) is handled by disabling that campaign
 ### Tier 2 — one campaign
 
 Disable it in Admin (or `disableGiftQuantityCampaign`). Open carts re-quote on their next view; drafts that
-relied on it are answered `BENEFIT_REQUOTE_REQUIRED`.
+relied on it are closed `REJECTED / BENEFIT_REQUOTE_REQUIRED` and the buyer's next submit makes a new order.
 
 ### Tier 3 — the shop's POS acceptance
 

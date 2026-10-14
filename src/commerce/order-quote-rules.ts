@@ -20,6 +20,7 @@ export const QUOTE_LINE_ID_PATTERN = /^[A-Za-z0-9:_-]{1,200}$/;
 
 const MAX_VND = Number.MAX_SAFE_INTEGER;
 const MAX_INT = 2_147_483_647;
+const MIN_INT = -2_147_483_648;
 
 export type QuoteDiscountStepFacts = Readonly<{
   campaignId: string;
@@ -117,7 +118,7 @@ function validateLine(line: QuoteLineFacts): QuoteStructureIssue | null {
       line.fulfillmentState !== "READY" || // D-04: a free gift is never fulfilled from PREORDER/OVERSELL capacity
       line.quantity > MAX_QUOTE_GIFT_UNITS ||
       line.discountSteps.length !== 0 ||
-      line.campaign === null ||
+      typeof line.campaign !== "object" || line.campaign === null ||
       !isQuoteText(line.campaign.id, 200) ||
       !isQuotePositive(line.campaign.revision, MAX_INT)
     ) {
@@ -143,7 +144,7 @@ function validateLine(line: QuoteLineFacts): QuoteStructureIssue | null {
       (step.source !== "LEGACY" && step.source !== "QUANTITY_TIER") ||
       !isQuoteText(step.campaignId, 200) ||
       !isQuoteText(step.campaignKind, 40) ||
-      !(step.priority === null || (typeof step.priority === "number" && Number.isSafeInteger(step.priority))) ||
+      !(step.priority === null || (typeof step.priority === "number" && Number.isInteger(step.priority) && step.priority >= MIN_INT && step.priority <= MAX_INT)) ||
       !isQuotePositive(step.inputPriceVnd) ||
       !isQuotePositive(step.outputPriceVnd) ||
       !isQuotePositive(step.appliedQuantity, MAX_INT) ||
@@ -180,7 +181,7 @@ export function validateQuoteStructure(
     if (line.role === "PAID") {
       paidTotal += line.lineTotalVnd;
       paidQuantity += line.quantity;
-      if (!Number.isSafeInteger(paidTotal) || !Number.isSafeInteger(paidQuantity)) return fail("MONEY_INVALID");
+      if (!Number.isSafeInteger(paidTotal) || !isQuotePositive(paidQuantity, MAX_INT)) return fail("MONEY_INVALID");
     } else {
       giftQuantity += line.quantity;
       const campaign = line.campaign!;
