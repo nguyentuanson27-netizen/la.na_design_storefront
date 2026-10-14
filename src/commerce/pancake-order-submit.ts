@@ -26,6 +26,8 @@ import {
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
 import { readActiveGiftQuantityCampaigns, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
+import { compareOrderReadBack } from "./pancake-order-readback-check.ts";
+import type { PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
 import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
@@ -100,6 +102,12 @@ export type PancakeOrderSubmissionEvent =
       reason: "BENEFIT_SUBMISSION_UNAVAILABLE";
     }
   | {
+      name: "pancake_order.benefit_readback_unconfirmed";
+      correlationId: string;
+      state: "SYNC_UNKNOWN";
+      reason: "RECONCILE_DRIFT" | "READBACK_UNAVAILABLE";
+    }
+  | {
       name: "pancake_order.benefit_requote_required";
       correlationId: string;
       state: "DRAFT";
@@ -168,6 +176,12 @@ export type PancakeOrderSubmissionGateway = {
     variationIds: readonly string[],
   ): Promise<readonly PancakeCatalogVariation[]>;
   createOrder(request: PancakeCreateOrderRequest): Promise<unknown>;
+  /**
+   * The lines and total the POS stored for a created order (GQ21). Optional: a gateway without it can
+   * still serve legacy orders, but a benefit order created through it is never confirmed on the
+   * create response alone -- it stays `SYNC_UNKNOWN` until reconciliation can read it back.
+   */
+  readOrder?(shopId: number, orderId: string): Promise<PancakeOrderReadBack>;
   /**
    * Display names for a two-level (no district) address, which Pancake POS needs next to the ids to
    * show its "Địa chỉ mới" tab. A read, so a failure is retryable before anything is sent. A
@@ -646,6 +660,13 @@ export function createPancakeOrderSubmissionService(
       subtotalVnd: number;
       totalQuantity: number;
       requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
+      /**
+       * GQ21 -- present for a benefit order: after a definite create, read the order back and confirm it
+       * only if the POS kept exactly the lines that were sent. Anything else leaves the order
+       * `SYNC_UNKNOWN` (with the Pancake id recorded) for reconciliation and the operator; it is never
+       * silently CONFIRMED.
+       */
+      verifyCreatedOrder?: (pancakeOrderId: string) => Promise<"MATCH" | "DRIFT" | "UNAVAILABLE">;
       /** The order's contact facts, already proven non-empty by the caller (a closure cannot carry that narrowing). */
       contact: Readonly<{
         persistedShopId: number;
@@ -673,6 +694,7 @@ export function createPancakeOrderSubmissionService(
       subtotalVnd,
       totalQuantity,
       requestLines,
+      verifyCreatedOrder,
       contact,
     }: FinalizeInput): Promise<PancakeOrderSubmissionResult> {
     // Close the shared-resource case with the same deterministic allocation order as reservation.
@@ -837,6 +859,26 @@ export function createPancakeOrderSubmissionService(
         reason: "CREATE_OUTCOME_UNKNOWN",
       });
       return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+    }
+
+    if (verifyCreatedOrder !== undefined) {
+      const verdict = await verifyCreatedOrder(pancakeOrderId);
+      if (verdict !== "MATCH") {
+        const syncErrorCode = verdict === "DRIFT" ? "RECONCILE_DRIFT" : "READBACK_UNAVAILABLE";
+        try {
+          await client.orderMirror.updateMany({
+            where: { id: order.id, state: "POS_SUBMITTING" },
+            data: { state: "SYNC_UNKNOWN", pancakeOrderId, syncErrorCode },
+          });
+        } catch {
+          await client.orderMirror.updateMany({
+            where: { id: order.id, state: "POS_SUBMITTING" },
+            data: { state: "SYNC_UNKNOWN", syncErrorCode },
+          });
+        }
+        emitSafely(options.onEvent, { name: "pancake_order.benefit_readback_unconfirmed", correlationId, state: "SYNC_UNKNOWN", reason: syncErrorCode });
+        return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+      }
     }
 
     try {
@@ -1139,6 +1181,14 @@ export function createPancakeOrderSubmissionService(
         subtotalVnd: Number(snapshot.paidSubtotalVnd),
         totalQuantity: snapshot.paidQuantity,
         requestLines: projection.lines,
+        verifyCreatedOrder: async (pancakeOrderId) => {
+          if (!gateway.readOrder) return "UNAVAILABLE";
+          try {
+            return compareOrderReadBack(projection.lines, await gateway.readOrder(shopId, pancakeOrderId)).kind === "MATCH" ? "MATCH" : "DRIFT";
+          } catch {
+            return "UNAVAILABLE";
+          }
+        },
         contact: {
           persistedShopId: shopId,
           guestName: order.guestName as string,

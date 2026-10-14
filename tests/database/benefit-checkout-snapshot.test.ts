@@ -51,27 +51,25 @@ let cartId = "";
 let publicCodeCounter = 0;
 
 async function cleanup() {
-  // A confirmed order carries an immutable I7 preorder snapshot (triggers, RESTRICT). Test data is the
-  // one place that is removed, and only by switching the triggers off for that transaction.
+  // Test data only: confirmed orders carry immutable history (the I7 preorder snapshot and, since GQ15,
+  // frozen quote rows), protected by triggers and RESTRICT keys. Removing it needs the triggers off, and
+  // that is done for this one transaction and nothing else.
   const orderIds = (await prisma.orderMirror.findMany({ where: { publicCode: { startsWith: P } }, select: { id: true } })).map((order) => order.id);
   if (orderIds.length > 0) {
     await prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
       await tx.$executeRaw`DELETE FROM "OrderPreorderLineSnapshot" WHERE "snapshotId" IN (SELECT "id" FROM "OrderPreorderSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
       await tx.$executeRaw`DELETE FROM "OrderPreorderSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteDiscountStep" WHERE "lineRowId" IN (SELECT l."id" FROM "OrderQuoteLine" l JOIN "OrderQuoteSnapshot" s ON s."id" = l."snapshotId" WHERE s."orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteLine" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteEntitlement" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "OrderQuoteSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "CapacityReservationResource" WHERE "reservationId" IN (SELECT "id" FROM "VariantCapacityReservation" WHERE "orderId" = ANY(${orderIds}))`;
+      await tx.$executeRaw`DELETE FROM "VariantCapacityReservation" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderLineSnapshot" WHERE "orderId" = ANY(${orderIds})`;
+      await tx.$executeRaw`DELETE FROM "OrderMirror" WHERE "id" = ANY(${orderIds})`;
     });
   }
-  await prisma.orderMirror.updateMany({ where: { publicCode: { startsWith: P } }, data: { state: "DRAFT" } });
-  await prisma.$transaction(async (tx) => {
-    const snapshots = await tx.orderQuoteSnapshot.findMany({ where: { order: { publicCode: { startsWith: P } } }, select: { id: true } });
-    const ids = snapshots.map((snapshot) => snapshot.id);
-    await tx.orderQuoteDiscountStep.deleteMany({ where: { line: { snapshotId: { in: ids } } } });
-    await tx.orderQuoteLine.deleteMany({ where: { snapshotId: { in: ids } } });
-    await tx.orderQuoteEntitlement.deleteMany({ where: { snapshotId: { in: ids } } });
-    await tx.orderQuoteSnapshot.deleteMany({ where: { id: { in: ids } } });
-  });
-  await prisma.variantCapacityReservation.deleteMany({ where: { order: { publicCode: { startsWith: P } } } });
-  await prisma.orderMirror.deleteMany({ where: { publicCode: { startsWith: P } } });
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId: { startsWith: `${P}-` } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: `${P}-` } } });
@@ -581,13 +579,22 @@ test("a benefit order is never sent to the POS by the legacy submission: it stay
 
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
+import type { PancakeOrderReadBack } from "../../src/integrations/pancake/order-readback.ts";
+import { createPancakeOrderReconciliationService } from "../../src/commerce/pancake-order-reconciliation.ts";
 import { PancakeHttpError } from "../../src/integrations/pancake/client.ts";
 
 type LiveOverrides = Readonly<Record<string, Partial<Pick<PancakeCatalogVariation, "retailPrice" | "sellableStock">>>>;
 
 /** A Pancake gateway whose live rows mirror the database, with per-variation overrides; records every call. */
-function fakePancake(overrides: LiveOverrides = {}, behaviour: Readonly<{ create?: (request: PancakeCreateOrderRequest) => Promise<unknown> }> = {}) {
-  const calls = { fetch: 0, create: [] as PancakeCreateOrderRequest[] };
+function fakePancake(
+  overrides: LiveOverrides = {},
+  behaviour: Readonly<{
+    create?: (request: PancakeCreateOrderRequest) => Promise<unknown>;
+    /** What the POS reports for a created order; default echoes the request exactly. `null` removes the capability. */
+    readBack?: ((request: PancakeCreateOrderRequest | undefined) => Promise<PancakeOrderReadBack>) | null;
+  }> = {},
+) {
+  const calls = { fetch: 0, create: [] as PancakeCreateOrderRequest[], readBack: 0 };
   const gateway = {
     async fetchVariations(_shopId: number, variationIds: readonly string[]) {
       calls.fetch += 1;
@@ -609,7 +616,17 @@ function fakePancake(overrides: LiveOverrides = {}, behaviour: Readonly<{ create
       calls.create.push(request);
       return behaviour.create ? behaviour.create(request) : { id: 800_000 + calls.create.length };
     },
+    async readOrder(_shopId: number, _orderId: string): Promise<PancakeOrderReadBack> {
+      calls.readBack += 1;
+      const request = calls.create.at(-1);
+      if (behaviour.readBack) return behaviour.readBack(request);
+      return {
+        lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+        totalPriceVnd: (request?.items ?? []).reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+      };
+    },
   };
+  if (behaviour.readBack === null) delete (gateway as { readOrder?: unknown }).readOrder;
   return { gateway, calls };
 }
 
@@ -807,4 +824,156 @@ test("GQ20: a definite POS refusal rejects the order and releases the holds; the
   assert.equal(order.state, "REJECTED");
   assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED"]);
   assert.equal(await prisma.orderQuoteLine.count({ where: { snapshot: { orderId: order.id } } }), 2);
+});
+
+// -- GQ21: read-back, reconciliation and recovery of a benefit order ---------------------------------------------
+
+const reconciler = (gateway: Parameters<typeof createPancakeOrderReconciliationService>[0]["gateway"], confirmed: string[] = []) =>
+  createPancakeOrderReconciliationService({
+    client: prisma,
+    gateway,
+    clock: () => NOW,
+    absenceConfirmationAttempts: 1,
+    absenceConfirmationDelayMs: 0,
+    sleep: async () => undefined,
+    onConfirmed: async (publicCode) => { confirmed.push(publicCode); },
+  });
+
+test("GQ21: a created order is confirmed only after the POS read back exactly the lines that were sent", async () => {
+  await seed();
+  await chooseGift(2);
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const pancake = fakePancake();
+  const { service } = submission(pancake, proof);
+  assert.equal((await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.equal(pancake.calls.readBack, 1);
+  assert.equal((await lastOrder()).state, "CONFIRMED");
+  assert.deepEqual((await holds()).map((hold) => hold.state).sort(), ["COMMITTED", "COMMITTED"]);
+});
+
+test("GQ21: a POS that merged or re-priced the lines never gets the order CONFIRMED; it stays unknown with its id and its holds", async () => {
+  for (const [label, readBack] of [
+    ["merged to one price", async () => ({ lines: [{ pancakeVariationId: paid.variationId, quantity: 3, unitPriceVnd: 96_667 }], totalPriceVnd: 290_003 })],
+    ["a unit off by 1đ", async (request: PancakeCreateOrderRequest | undefined) => ({ lines: request!.items.map((item, index) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price - (index === 1 ? 1 : 0) })), totalPriceVnd: null })],
+    ["total disagrees", async (request: PancakeCreateOrderRequest | undefined) => ({ lines: request!.items.map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })), totalPriceVnd: 1 })],
+  ] as const) {
+    await cleanup();
+    await seed({ gift: false });
+    const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+    const pancake = fakePancake({}, { readBack });
+    const { service, events } = submission(pancake, proof);
+    const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+    const order = await lastOrder();
+    assert.deepEqual(result, { ok: false, status: "SYNC_UNKNOWN", orderCode: order.publicCode }, label);
+    assert.equal(order.state, "SYNC_UNKNOWN", label);
+    assert.equal(order.syncErrorCode, "RECONCILE_DRIFT", label);
+    assert.equal(order.pancakeOrderId, "800001", `${label}: the operator can find the order`);
+    assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], label);
+    assert.ok(events.includes("pancake_order.benefit_readback_unconfirmed"), label);
+
+    const again = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+    assert.equal(again.ok, false, label);
+    assert.equal(pancake.calls.create.length, 1, `${label}: never a second order`);
+  }
+});
+
+test("GQ21: a read-back that fails or does not exist cannot confirm a benefit order either", async () => {
+  for (const [label, readBack] of [["read fails", async () => { throw new Error("timeout"); }], ["unreadable payload", async () => { throw new Error("Order read-back has no readable items array"); }], ["no capability", null]] as const) {
+    await cleanup();
+    await seed({ gift: false });
+    const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+    const pancake = fakePancake({}, { readBack });
+    const { service } = submission(pancake, proof);
+    assert.equal((await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, false, label);
+    const order = await lastOrder();
+    assert.deepEqual([order.state, order.syncErrorCode], ["SYNC_UNKNOWN", "READBACK_UNAVAILABLE"], label);
+    assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], label);
+  }
+});
+
+test("GQ21: reconciliation settles a drifted order only once the POS matches; until then nothing is confirmed, released or reported", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const pancake = fakePancake({}, { readBack: async () => ({ lines: [{ pancakeVariationId: paid.variationId, quantity: 3, unitPriceVnd: 96_667 }], totalPriceVnd: 290_001 }) });
+  const { service } = submission(pancake, proof);
+  await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  const order = await lastOrder();
+  assert.equal(order.state, "SYNC_UNKNOWN");
+
+  const confirmed: string[] = [];
+  let stored: PancakeOrderReadBack = { lines: [{ pancakeVariationId: paid.variationId, quantity: 3, unitPriceVnd: 96_667 }], totalPriceVnd: 290_001 };
+  const gateway = {
+    searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }),
+    readOrder: async () => stored,
+  };
+  const first = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+  assert.equal(first.ok, false);
+  assert.ok(!first.ok && first.reason === "DRIFT");
+  assert.equal((await lastOrder()).state, "SYNC_UNKNOWN");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+  assert.deepEqual(confirmed, []);
+
+  // The operator corrects the order in the POS; the next pass reads back exactly what was sent.
+  stored = { lines: pancake.calls.create[0]!.items.map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })), totalPriceVnd: 290_003 };
+  const second = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+  assert.deepEqual(second, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
+  const settled = await lastOrder();
+  assert.deepEqual([settled.state, settled.syncErrorCode], ["CONFIRMED", null]);
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["COMMITTED"]);
+  assert.deepEqual(confirmed, [order.publicCode]);
+  // The confirmation wrote the immutable preorder snapshot from the SUMMED demand of the segments.
+  const preorder = await prisma.orderPreorderSnapshot.findUniqueOrThrow({ where: { orderId: order.id }, include: { lines: true } });
+  assert.deepEqual(preorder.lines.map((line) => [line.variantId, line.quantity]), [[paid.variantId, 3]]);
+});
+
+test("GQ21: a benefit order whose lines cannot be read back is not settled by the marker alone", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const { service } = submission(fakePancake({}, { create: async () => { throw new Error("socket hang up") } }), proof);
+  await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  const order = await lastOrder();
+  assert.equal(order.state, "SYNC_UNKNOWN");
+  const confirmed: string[] = [];
+  for (const gateway of [
+    { searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800009" }) },
+    { searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800009" }), readOrder: async () => { throw new Error("boom"); } },
+  ]) {
+    const result = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+    assert.ok(!result.ok && result.reason === "DRIFT");
+    assert.equal((await lastOrder()).state, "SYNC_UNKNOWN");
+  }
+  assert.deepEqual(confirmed, []);
+});
+
+test("GQ21: a timeout that never reached the POS is rejected on reconciliation, the holds go back, and the retry orders and reserves once", async () => {
+  await seed();
+  await chooseGift(2);
+  const facts = await renderedFacts();
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  const first = fakePancake({}, { create: async () => { throw new Error("ETIMEDOUT"); } });
+  const attempt = submission(first, proof);
+  assert.equal((await attempt.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, false);
+  const unknown = await lastOrder();
+  assert.equal(unknown.state, "SYNC_UNKNOWN");
+  assert.deepEqual((await holds()).map((hold) => hold.state).sort(), ["UNKNOWN", "UNKNOWN"]);
+
+  // Reconciliation proves the order never existed: rejected, stock released, nothing confirmed.
+  const result = await reconciler({ searchOrderByMarker: async () => ({ kind: "ABSENT" as const }) }).reconcileOrder(unknown.publicCode);
+  assert.deepEqual(result, { ok: false, state: "REJECTED", reason: "ORDER_REJECTED", reservationsReleased: 2 });
+  assert.deepEqual((await holds()).map((hold) => hold.state).sort(), ["RELEASED", "RELEASED"]);
+
+  // The buyer asks again. One new order, one new set of holds, one gift: the old order's gift and
+  // holds are history, not a second copy.
+  const second = fakePancake();
+  const retry = submission(second, proof);
+  assert.equal((await retry.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.equal(second.calls.create.length, 1);
+  const rows = await prisma.variantCapacityReservation.findMany({ where: { order: { sourceCartId: cartId } }, select: { variantId: true, quantity: true, state: true, orderId: true } });
+  assert.deepEqual(rows.filter((row) => row.state === "COMMITTED").map((row) => [row.variantId === giftItem.variantId ? "gift" : "paid", row.quantity]).sort(), [["gift", 2], ["paid", 3]]);
+  assert.equal(rows.filter((row) => row.orderId === unknown.id && row.state !== "RELEASED").length, 0);
+  const giftUnits = await prisma.orderQuoteLine.aggregate({ _sum: { quantity: true }, where: { role: "GIFT", snapshot: { order: { sourceCartId: cartId, state: "CONFIRMED" } } } });
+  assert.equal(giftUnits._sum.quantity, 2);
+  // Stock accounting: a different cart can still reserve what the rejected order released.
+  const other = await createCapacityReservationRepository(prisma).reserveOrderCapacity({ orderId: (await prisma.orderMirror.create({ data: { publicCode: `${P}-other-${process.pid}` } })).id, lines: [{ variantId: giftItem.variantId, quantity: 3 }] });
+  assert.equal(other.ok, true);
 });
