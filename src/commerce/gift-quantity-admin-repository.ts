@@ -16,6 +16,7 @@ import {
   type ScopeConfig,
 } from "./gift-quantity-scope.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
+import type { TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { MAX_ADMIN_PROMOTION_PAGE_SIZE, parseAdminPromotionPageSize } from "./promotion-admin-feedback.ts";
 import { deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
 
@@ -52,6 +53,7 @@ export type AdminGiftQuantityCampaignDetail = AdminGiftQuantityCampaignRow &
     /** Fixed scopes: the frozen set as audited at publish. */
     frozenCount: number;
     frozenPreview: readonly AdminProductRef[];
+    tierRule: TierRuleInput | null;
   }>;
 
 export type AdminScopePreview =
@@ -106,6 +108,9 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       select: {
         id: true, name: true, kind: true, startsAt: true, endsAt: true, isEnabled: true, enabledAt: true, disabledAt: true,
         scopeMode: true, categoryKeys: true, frozenAt: true, revision: true, giftTrigger: true, subtotalScope: true,
+        tierUnit: true, tierDiscountedUnits: true, tierSelectionPriority: true, stackingEnabled: true, stackPriority: true,
+        tiers: { select: { minQuantity: true, discountValue: true }, orderBy: { minQuantity: "asc" } },
+        stackPeers: { select: { peerKind: true, peerCampaignId: true }, orderBy: [{ peerKind: "asc" }, { peerCampaignId: "asc" }] },
         targets: { select: { role: true, product: { select: { id: true, name: true } } }, orderBy: { productId: "asc" } },
       },
     });
@@ -144,6 +149,15 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       excludes: row.targets.filter((target) => target.role === "EXCLUDE").map((target) => target.product),
       frozenCount,
       frozenPreview: frozenRows.map((entry) => entry.product),
+      tierRule: row.kind === "QUANTITY_TIER" ? {
+        unit: row.tierUnit,
+        discountedUnits: row.tierDiscountedUnits,
+        selectionPriority: row.tierSelectionPriority,
+        tiers: row.tiers,
+        stackingEnabled: row.stackingEnabled,
+        stackPriority: row.stackPriority,
+        peers: row.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+      } : null,
     };
   }
 
