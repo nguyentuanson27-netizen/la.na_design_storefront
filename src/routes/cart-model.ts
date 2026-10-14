@@ -5,6 +5,8 @@ import {
 } from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
+import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
+import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -45,6 +47,7 @@ export type CartLineView = Readonly<{
    * sale that happens to sit below zero internally, and §31 keeps it visually normal.
    */
   preorderLabel: string | null;
+  paidSegments?: readonly string[];
 }>;
 
 export type CartViewModel = Readonly<{
@@ -63,6 +66,8 @@ export type CartViewModel = Readonly<{
    * preorder line. Decided by the shared projection so cart and checkout say the same thing.
    */
   preorderNotice: PreorderFulfillmentNotice | null;
+  gifts?: CartGiftPickerModel;
+  benefitsNotice?: string;
 }>;
 
 /** Why a line cannot be bought, in the shopper's words. */
@@ -108,10 +113,17 @@ export function buildCartViewModel(
   input: Readonly<{
     lines: readonly StorefrontCartLine[];
     commerceTrackingEnabled: boolean;
+    giftState?: CartGiftState;
+    benefitsUnavailable?: boolean;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
   const hasUnavailableLines = input.lines.some((line) => !line.available);
+  const state = input.giftState;
+  const benefits = state?.quote.benefits;
+  const paidBenefits = benefits?.enabled && benefits.ok ? benefits : null;
+  // The current checkout proof/order snapshot cannot carry gifts or split paid segments yet.
+  const checkoutPending = input.benefitsUnavailable || (state && (!state.validation.ok || state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0))) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal);
 
   return Object.freeze({
     isEmpty: input.lines.length === 0,
@@ -133,14 +145,18 @@ export function buildCartViewModel(
           // The line's own canonical classification. Withheld when the line cannot be bought, for
           // the same reason the cart line withholds it: an unavailable line is not being ordered.
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
+          ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
+            ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
         }),
       ),
     ),
-    subtotalText: subtotal === null ? "Chưa thể tính" : currency.format(subtotal),
+    subtotalText: input.benefitsUnavailable || subtotal === null ? "Chưa thể tính" : currency.format(paidBenefits?.subtotalVnd ?? subtotal),
     hasUnavailableLines,
-    canCheckout: !hasUnavailableLines && subtotal !== null,
+    canCheckout: !hasUnavailableLines && subtotal !== null && !checkoutPending,
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
+    ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Quyền lợi này chưa hỗ trợ đặt hàng; vui lòng quay lại khi bước đặt hàng đã sẵn sàng." } : {}),
   });
 }
 

@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 
-import { getCurrentStorefrontCartLines } from "@/commerce/storefront-cart-runtime";
+import { getCurrentStorefrontCartBenefits } from "@/commerce/storefront-cart-runtime";
 import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
 import { isCommerceTrackingEnabled } from "@/components/analytics/commerce-event-reporter";
 
@@ -13,10 +13,11 @@ export type CartRouteProps = Readonly<Record<string, never>>;
 
 export async function loadCartRoute(): Promise<RouteHandle<CartViewModel>> {
   await connection();
-  const lines = await getCurrentStorefrontCartLines();
+  const cart = await getCurrentStorefrontCartBenefits();
+  const { lines } = cart;
 
   return sealRoute({
-    data: buildCartViewModel({ lines, commerceTrackingEnabled: isCommerceTrackingEnabled() }),
+    data: buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled() }),
     // Cart prices are re-resolved on every request, so nothing here is promotion-cached; the shared
     // default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

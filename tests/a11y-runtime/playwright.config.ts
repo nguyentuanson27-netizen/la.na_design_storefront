@@ -19,6 +19,7 @@ export default defineConfig({
     "admin-gift-quantity.spec.ts",
     "admin-promotions.spec.ts",
     "checkout.spec.ts",
+    "cart-gift-picker.spec.ts",
     "collection-breadcrumb.spec.ts",
     "collection-landing.spec.ts",
     "commerce-events.spec.ts",
