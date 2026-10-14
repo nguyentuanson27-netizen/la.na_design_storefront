@@ -32,7 +32,9 @@
  * which token bytes turn into a price.
  */
 
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+
+import { validateQuoteStructure, type QuoteStructure } from "./order-quote-rules.ts";
 
 /**
  * The accepted proof envelope.
@@ -306,4 +308,228 @@ export function verifyRenderedQuoteProof({
   }
 
   return Object.freeze({ ok: true as const });
+}
+
+
+// ---------------------------------------------------------------------------------------------------
+// GQ16 -- the benefit-aware quote: proof keyed by lineId and role, and the non-claim acknowledgement.
+//
+// The functions above keep proving the legacy quote byte for byte (`laq2`: distinct variations, one
+// price each), so a cart with no gift and no quantity tier -- and every cart while the gate is OFF --
+// is unaffected. A cart that has either is proven in the format below, which signs what the money
+// alone cannot say: which segments exist and at what price, what each gift is and under which
+// campaign revision, how many slots were earned, taken and left, and the ordered discounts behind
+// every paid price. A change to any of them is `PRICE_CHANGED` even when the total is identical
+// (EX-13/14/17: a paid unit swapped for a gift of the same value must not redeem the old proof).
+//
+// The rules that hold for the legacy proof hold here too: stateless, the cart id is MAC context and
+// never payload, verification compares canonical bytes against what the server just recomputed and
+// reads nothing back out of the token, and a malformed input fails closed instead of throwing.
+// ---------------------------------------------------------------------------------------------------
+
+/** What the buyer was shown, with paid and gift segments. Identical in shape to what an order stores. */
+export type BenefitQuoteProofFacts = QuoteStructure;
+
+export const BENEFIT_PROOF_FORMAT = "laq3";
+
+/**
+ * A quote with many segments is larger than a legacy one (each line carries its role, campaign and
+ * ordered discount steps), so the envelope is wider. It is still bounded, and issuing refuses to
+ * produce a token the verifier would reject, so a buyer is never stuck re-confirming a quote that can
+ * never be proven; the quote is simply not offered.
+ */
+export const MAX_BENEFIT_QUOTE_PROOF_BYTES = 48 * 1024;
+
+function requireUsableBenefitFacts(quote: BenefitQuoteProofFacts) {
+  const verdict = validateQuoteStructure(quote);
+  if (!verdict.ok) throw new TypeError("Benefit quote proof facts must be a bounded, consistent website quote");
+  return verdict.totals;
+}
+
+const byText = (left: string, right: string) => (left < right ? -1 : left > right ? 1 : 0);
+
+function text(value: string): string {
+  return `${Buffer.byteLength(value, "utf8")}:${value}`;
+}
+
+/**
+ * Deterministic, self-delimiting canonical bytes. Lines are sorted by `lineId` and entitlements by
+ * campaign here rather than trusted from the caller; the ordered discount steps keep their order
+ * because the order is part of what was proven. Every free-text field is length-prefixed, so a value
+ * containing a separator cannot canonicalize as extra fields.
+ */
+function canonicalBenefitQuoteBytes(quote: BenefitQuoteProofFacts): Buffer {
+  const totals = requireUsableBenefitFacts(quote);
+  const lines = [...quote.lines].sort((left, right) => byText(left.lineId, right.lineId));
+  const entitlements = [...quote.entitlements].sort((left, right) => byText(left.campaignId, right.campaignId));
+
+  let canonical =
+    `${BENEFIT_PROOF_FORMAT}` +
+    `|${totals.paidQuantity}|${totals.giftQuantity}` +
+    `|${quote.paidSubtotalVnd}|${quote.shippingFeeVnd}|${quote.totalVnd}` +
+    `|${lines.length}|${entitlements.length}`;
+
+  for (const line of lines) {
+    const campaign = line.campaign === null ? "-" : `${text(line.campaign.id)}@${line.campaign.revision}`;
+    canonical +=
+      `|L${text(line.lineId)}:${line.role}:${text(line.pancakeVariationId)}` +
+      `:${line.quantity}:${line.unitPriceVnd}:${line.lineTotalVnd}:${line.fulfillmentState}:${campaign}:${line.discountSteps.length}`;
+    for (const step of line.discountSteps) {
+      canonical +=
+        `;${text(step.campaignId)}:${step.source}:${text(step.campaignKind)}` +
+        `:${step.priority === null ? "-" : step.priority}:${step.inputPriceVnd}:${step.outputPriceVnd}:${step.appliedQuantity}`;
+    }
+  }
+  for (const entry of entitlements) {
+    canonical +=
+      `|E${text(entry.campaignId)}:${entry.campaignRevision}:${entry.entitled}:${entry.selected}` +
+      `:${entry.skippedWhileAvailable}:${entry.contendedForSharedStock}:${entry.shortForStock}`;
+  }
+  return Buffer.from(canonical, "utf8");
+}
+
+/**
+ * SHA-256 (hex) of the canonical bytes: what an order snapshot stores as `quoteDigest`, and what the
+ * acknowledgement binds to. It identifies a quote; it is not a secret and proves nothing by itself.
+ */
+export function benefitQuoteDigest(quote: BenefitQuoteProofFacts): string {
+  return createHash("sha256").update(canonicalBenefitQuoteBytes(quote)).digest("hex");
+}
+
+/** FR-06: whether the buyer must explicitly acknowledge slots they are not taking before ordering. */
+export function benefitQuoteNeedsNonclaimAcknowledgement(quote: BenefitQuoteProofFacts): boolean {
+  return requireUsableBenefitFacts(quote).unclaimedSlots > 0;
+}
+
+/**
+ * Issues a benefit-quote proof, or `null` when it would exceed the envelope (the caller then refuses
+ * to offer the quote). Facts that are not a consistent bounded quote are a programming error and throw.
+ */
+export function issueBenefitQuoteProof({
+  quote,
+  cartId,
+  secret,
+}: Readonly<{ quote: BenefitQuoteProofFacts; cartId: string; secret: string }>): string | null {
+  const payload = canonicalBenefitQuoteBytes(quote);
+  const key = deriveProofKey(secret);
+  const mac = computeMac(key, requireCartId(cartId), payload);
+  const proof = `${payload.toString("base64url")}.${mac.toString("base64url")}`;
+  return Buffer.byteLength(proof, "utf8") > MAX_BENEFIT_QUOTE_PROOF_BYTES ? null : proof;
+}
+
+/** Same single question as `verifyRenderedQuoteProof`, for a benefit quote. Never returns money. */
+export function verifyBenefitQuoteProof({
+  proof,
+  cartId,
+  currentQuote,
+  secret,
+}: Readonly<{ proof: unknown; cartId: string; currentQuote: BenefitQuoteProofFacts; secret: string }>): RenderedQuoteProofVerification {
+  const reject = (reason: RenderedQuoteProofRejection) => Object.freeze({ ok: false as const, reason });
+  if (!isUsableCartId(cartId)) return reject("PROOF_UNVERIFIED");
+  if (typeof proof !== "string" || proof.length === 0) return reject("PROOF_MISSING");
+  if (Buffer.byteLength(proof, "utf8") > MAX_BENEFIT_QUOTE_PROOF_BYTES) return reject("PROOF_OVERSIZED");
+  if (!PROOF_PATTERN.test(proof)) return reject("PROOF_MALFORMED");
+
+  const separator = proof.indexOf(".");
+  const payload = Buffer.from(proof.slice(0, separator), "base64url");
+  const presentedMac = Buffer.from(proof.slice(separator + 1), "base64url");
+  if (payload.length === 0 || presentedMac.length !== MAC_BYTES) return reject("PROOF_MALFORMED");
+
+  const key = deriveProofKey(secret);
+  if (!timingSafeEqual(presentedMac, computeMac(key, cartId, payload))) return reject("PROOF_UNVERIFIED");
+
+  // Authentic and bound to this cart. A current quote that is not itself well formed cannot match.
+  if (!validateQuoteStructure(currentQuote).ok) return reject("PRICE_CHANGED");
+  return payload.equals(canonicalBenefitQuoteBytes(currentQuote)) ? Object.freeze({ ok: true as const }) : reject("PRICE_CHANGED");
+}
+
+// -- Non-claim acknowledgement -------------------------------------------------------------------
+
+const ACK_FORMAT = "laa1";
+const ACK_KEY_CONTEXT = "la-clothing:checkout-quote-ack-key:v1";
+const ACK_PATTERN = /^laa1\|([0-9]{1,12})\|([0-9a-f]{64})$/;
+const MAX_ACK_TOKEN_BYTES = 512;
+/** An acknowledgement is a consent given at a moment; after this long the buyer is asked again. */
+export const MAX_NONCLAIM_ACK_AGE_SECONDS = 2 * 60 * 60;
+const ACK_CLOCK_SKEW_SECONDS = 60;
+
+export type NonclaimAcknowledgementRejection =
+  | "ACK_MISSING"
+  | "ACK_MALFORMED"
+  | "ACK_UNVERIFIED"
+  /** The quote has no unclaimed slots, so there is nothing to acknowledge; the token is ignored. */
+  | "ACK_NOT_REQUIRED"
+  /** Genuine, but given for a different quote: prices, gifts, slots or campaign revisions moved. */
+  | "ACK_STALE"
+  | "ACK_EXPIRED";
+
+export type NonclaimAcknowledgementVerification =
+  | Readonly<{ ok: true; acknowledgedAt: Date }>
+  | Readonly<{ ok: false; reason: NonclaimAcknowledgementRejection }>;
+
+/** A key used for nothing else: an acknowledgement can never verify as a quote proof or the reverse. */
+function deriveAckKey(secret: string): Buffer {
+  if (typeof secret !== "string" || secret.trim().length < MIN_SECRET_LENGTH) {
+    throw new TypeError("Non-claim acknowledgement requires the validated server secret");
+  }
+  return createHmac("sha256", secret).update(ACK_KEY_CONTEXT).digest();
+}
+
+/**
+ * Issues the buyer's explicit acknowledgement that they are not taking every gift slot they earned.
+ *
+ * It binds the digest of the exact quote shown, the cart (as MAC context, never payload) and the
+ * moment it was given, and nothing else. Returns `null` when the quote has nothing to acknowledge, so
+ * a consent to nothing is never minted. The caller must have verified the buyer's render proof first;
+ * this function does not decide that the buyer saw the quote.
+ */
+export function issueNonclaimAcknowledgement({
+  quote,
+  cartId,
+  secret,
+  now,
+}: Readonly<{ quote: BenefitQuoteProofFacts; cartId: string; secret: string; now: Date }>): string | null {
+  if (!benefitQuoteNeedsNonclaimAcknowledgement(quote)) return null;
+  const issuedAt = Math.floor(now.getTime() / 1000);
+  if (!Number.isSafeInteger(issuedAt) || issuedAt < 0 || issuedAt >= 1e12) throw new TypeError("Acknowledgement time must be a real instant");
+  const payload = Buffer.from(`${ACK_FORMAT}|${issuedAt}|${benefitQuoteDigest(quote)}`, "utf8");
+  const mac = computeMac(deriveAckKey(secret), requireCartId(cartId), payload);
+  return `${payload.toString("base64url")}.${mac.toString("base64url")}`;
+}
+
+/**
+ * Establishes that this acknowledgement is ours, belongs to this cart, was given for exactly
+ * `currentQuote` and is recent enough. The instant it returns comes from the signed payload, never
+ * from the browser, and is what an order records as `acknowledgedAt`.
+ */
+export function verifyNonclaimAcknowledgement({
+  token,
+  cartId,
+  currentQuote,
+  secret,
+  now,
+}: Readonly<{ token: unknown; cartId: string; currentQuote: BenefitQuoteProofFacts; secret: string; now: Date }>): NonclaimAcknowledgementVerification {
+  const reject = (reason: NonclaimAcknowledgementRejection) => Object.freeze({ ok: false as const, reason });
+  if (!isUsableCartId(cartId)) return reject("ACK_UNVERIFIED");
+  if (typeof token !== "string" || token.length === 0) return reject("ACK_MISSING");
+  if (Buffer.byteLength(token, "utf8") > MAX_ACK_TOKEN_BYTES || !PROOF_PATTERN.test(token)) return reject("ACK_MALFORMED");
+
+  const separator = token.indexOf(".");
+  const payload = Buffer.from(token.slice(0, separator), "base64url");
+  const presentedMac = Buffer.from(token.slice(separator + 1), "base64url");
+  if (payload.length === 0 || presentedMac.length !== MAC_BYTES) return reject("ACK_MALFORMED");
+  if (!timingSafeEqual(presentedMac, computeMac(deriveAckKey(secret), cartId, payload))) return reject("ACK_UNVERIFIED");
+
+  // Authentic and bound to this cart; only now is the payload read, and only for its two facts.
+  const match = ACK_PATTERN.exec(payload.toString("utf8"));
+  if (match === null) return reject("ACK_MALFORMED");
+  if (!validateQuoteStructure(currentQuote).ok) return reject("ACK_STALE");
+  if (!benefitQuoteNeedsNonclaimAcknowledgement(currentQuote)) return reject("ACK_NOT_REQUIRED");
+  if (match[2] !== benefitQuoteDigest(currentQuote)) return reject("ACK_STALE");
+
+  const issuedAt = Number(match[1]);
+  const nowSeconds = Math.floor(now.getTime() / 1000);
+  if (!Number.isSafeInteger(nowSeconds) || issuedAt > nowSeconds + ACK_CLOCK_SKEW_SECONDS) return reject("ACK_MALFORMED");
+  if (nowSeconds - issuedAt > MAX_NONCLAIM_ACK_AGE_SECONDS) return reject("ACK_EXPIRED");
+  return Object.freeze({ ok: true as const, acknowledgedAt: new Date(issuedAt * 1000) });
 }

@@ -19,6 +19,13 @@ enum UserRole {
   ADMIN
 }
 
+/// GQ15 -- the role of one quote/snapshot line. A gift is a line of its own with a 0đ unit price and
+/// is never a discounted paid unit; a PAID line always carries a positive integer unit price.
+enum OrderQuoteLineRole {
+  PAID
+  GIFT
+}
+
 enum LocalOrderState {
   DRAFT
   VALIDATING
@@ -760,6 +767,7 @@ model OrderMirror {
   lines                  OrderLineSnapshot[]
   capacityReservations   VariantCapacityReservation[]
   preorderSnapshot       OrderPreorderSnapshot?
+  quoteSnapshot          OrderQuoteSnapshot?
 
   @@index([userId, createdAt])
   @@index([sourceCartId])
@@ -833,6 +841,113 @@ model OrderPreorderLineSnapshot {
 
   @@unique([snapshotId, variantId])
   @@index([variantId])
+}
+
+/// GQ15 -- the order's benefit-aware quote, keyed by `lineId` instead of by variation.
+///
+/// One row per order that was priced with gift or quantity-tier benefits. A legacy order has no row
+/// and is read exactly as before (nothing is backfilled and no campaign is invented for it). The
+/// rows are the website's own record of what the buyer was shown and confirmed: the paid money, the
+/// gifts, each gift campaign's entitled/selected/unclaimed slots and the signed acknowledgement of
+/// the slots not taken. They are never the price authority for a later quote.
+///
+/// Mutable only while the order is DRAFT (a re-quote replaces the whole set in one transaction); the
+/// first state change freezes it. The migration enforces that with triggers, restricts deletion of
+/// the order, and checks that the paid lines add up to the stored merchandise subtotal.
+model OrderQuoteSnapshot {
+  id                   String                  @id @default(cuid())
+  orderId              String                  @unique
+  /// Canonical quote format the proof was issued under (for example `laq3`).
+  quoteFormat          String
+  /// SHA-256 (hex) of the canonical quote bytes the buyer proved; never the proof token itself.
+  quoteDigest          String
+  /// Paid merchandise only, after every discount. Gifts contribute nothing to it.
+  paidSubtotalVnd      BigInt
+  shippingFeeVnd       BigInt
+  totalVnd             BigInt
+  paidQuantity         Int
+  giftQuantity         Int
+  /// Gift slots the buyer is entitled to and does not take (FR-06); the sum over the entitlements.
+  unclaimedSlots       Int
+  /// True only when a signed acknowledgement of exactly this quote was verified. Required whenever
+  /// `unclaimedSlots` > 0.
+  nonclaimAcknowledged Boolean
+  acknowledgedAt       DateTime?
+  /// Pancake projection that was sent (ADR 0016 D-08): lines and their hash. Written by GQ20, both or neither.
+  vendorProjectionHash String?
+  vendorProjection     Json?
+  createdAt            DateTime                @default(now())
+  order                OrderMirror             @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  lines                OrderQuoteLine[]
+  entitlements         OrderQuoteEntitlement[]
+}
+
+/// GQ15 -- one priced segment. `(snapshotId, lineId)` is unique; the variation is deliberately not,
+/// so two PAID segments of one variation at different prices (EX-17/18) and a PAID + GIFT pair of
+/// one variation are stored side by side and never merged or averaged.
+model OrderQuoteLine {
+  id                 String                   @id @default(cuid())
+  snapshotId         String
+  /// Opaque, server-built, stable for equal facts; never a cart id or PII, never chosen by a browser.
+  lineId             String
+  role               OrderQuoteLineRole
+  /// Snapshot of the internal variant id (no foreign key: catalog sync must not be blocked by history).
+  variantId          String
+  pancakeVariationId String
+  quantity           Int
+  unitPriceVnd       BigInt
+  lineTotalVnd       BigInt
+  /// What one unit cost before any promotion step; null when the line is not discounted.
+  baseUnitPriceVnd   BigInt?
+  fulfillmentState   OrderPreorderLineState
+  /// GIFT lines only: the campaign and the revision the gift was granted under.
+  campaignId         String?
+  campaignRevision   Int?
+  createdAt          DateTime                 @default(now())
+  snapshot           OrderQuoteSnapshot       @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+  discountSteps      OrderQuoteDiscountStep[]
+
+  @@unique([snapshotId, lineId])
+  @@index([snapshotId, pancakeVariationId])
+}
+
+/// GQ15 -- the ordered discount ledger of one PAID line: which campaign moved the unit price from
+/// what to what, for how many units, in which order. Provenance only; it never re-prices anything.
+model OrderQuoteDiscountStep {
+  id              String         @id @default(cuid())
+  lineRowId       String
+  position        Int
+  campaignId      String
+  /// `LEGACY` (a Flash Sale / Sale / Gift-less legacy campaign) or `QUANTITY_TIER`.
+  source          String
+  campaignKind    String
+  priority        Int?
+  inputPriceVnd   BigInt
+  outputPriceVnd  BigInt
+  appliedQuantity Int
+  createdAt       DateTime       @default(now())
+  line            OrderQuoteLine @relation(fields: [lineRowId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([lineRowId, position])
+}
+
+/// GQ15 -- per gift campaign: slots entitled, taken and left, with why the rest were not taken.
+/// A gift is never a debt: `unclaimed` is a fact about this order, not a voucher.
+model OrderQuoteEntitlement {
+  id                      String             @id @default(cuid())
+  snapshotId              String
+  campaignId              String
+  campaignRevision        Int
+  entitled                Int
+  selected                Int
+  unclaimed               Int
+  skippedWhileAvailable   Int
+  contendedForSharedStock Int
+  shortForStock           Int
+  createdAt               DateTime           @default(now())
+  snapshot                OrderQuoteSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict, onUpdate: Restrict)
+
+  @@unique([snapshotId, campaignId])
 }
 
 model SyncEvent {
