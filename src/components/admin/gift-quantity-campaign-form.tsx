@@ -7,6 +7,8 @@ import {
   searchGiftQuantityProductsAction,
 } from "@/app/admin/promotions/gift-quantity/actions";
 import type { AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
+import type { TierRuleInput } from "@/commerce/gift-quantity-tier-rule";
+import { GiftQuantityTierFields } from "./gift-quantity-tier-fields";
 import {
   MAX_SCOPE_EXCLUDED_PRODUCTS,
   MAX_SCOPE_INCLUDED_PRODUCTS,
@@ -34,6 +36,7 @@ export type GiftQuantityCampaignFormProps = Readonly<{
     frozenAt: Date | null;
     frozenCount: number;
     frozenPreview: readonly GiftQuantityProductRef[];
+    tierRule?: TierRuleInput | null;
   }>;
   action: (formData: FormData) => void | Promise<void>;
 }>;
@@ -314,6 +317,8 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
           </p>
         </fieldset>
       ) : null}
+
+      {!isGift ? <GiftQuantityTierFields campaignId={initialData?.id ?? null} initialRule={initialData?.tierRule ?? null} /> : null}
 
       <fieldset className="border-t border-black/20 pt-6">
         <legend className={labelClassName}>Phạm vi áp dụng</legend>
