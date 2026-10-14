@@ -5,6 +5,7 @@
  * legacy consent writer both call it inside their revision-locked transaction.
  */
 
+import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import type { Tx } from "./promotion-activation-service.ts";
 
 /** Same bound as the `stackPriority` database checks. */
@@ -45,4 +46,30 @@ export async function hasStackPriorityConflict(
     select: { campaignId: true },
   });
   return legacy !== null;
+}
+
+export type StackPriorityPreflight = "AVAILABLE" | "CONFLICT" | "INVALID";
+
+/**
+ * The admin form's read-only "is this priority free?" check (GQ09b). Advisory only: publish and
+ * Scheduled edits re-check the same priority under the pricing revision lock.
+ *
+ * The inputs are `unknown` on purpose. This runs behind an exported Server Action, so the caller's
+ * TypeScript types prove nothing at runtime: anything that is not a safe integer priority in range,
+ * and a campaign id that is neither `null` (create) nor a bounded string naming an existing tier
+ * campaign, is `INVALID` -- decided before the database is touched, and never an exception.
+ */
+export async function preflightStackPriority(
+  client: Pick<Tx, "giftQuantityCampaign" | "legacyPromotionStackConsent">,
+  input: Readonly<{ priority: unknown; campaignId: unknown; now: Date }>,
+): Promise<StackPriorityPreflight> {
+  const { priority, campaignId } = input;
+  if (typeof priority !== "number" || !Number.isSafeInteger(priority) || priority < 0 || priority > MAX_STACK_PRIORITY) return "INVALID";
+  if (campaignId !== null && (typeof campaignId !== "string" || !isBoundedPromotionIdentifier(campaignId))) return "INVALID";
+  if (campaignId !== null) {
+    const campaign = await client.giftQuantityCampaign.findUnique({ where: { id: campaignId }, select: { kind: true } });
+    if (campaign?.kind !== "QUANTITY_TIER") return "INVALID";
+  }
+  const conflict = await hasStackPriorityConflict(client, { campaignId: campaignId ?? "", priority, now: input.now });
+  return conflict ? "CONFLICT" : "AVAILABLE";
 }
