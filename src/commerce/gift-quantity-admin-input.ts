@@ -11,6 +11,12 @@
 
 import { parseStrictVietnamDateTime } from "./promotion-admin-input.ts";
 import {
+  formCarriesTierRule,
+  parseTierRuleForm,
+  type TierRuleInput,
+  type TierRuleParseReason,
+} from "./gift-quantity-tier-rule.ts";
+import {
   MAX_SCOPE_CATEGORIES,
   MAX_SCOPE_EXCLUDED_PRODUCTS,
   MAX_SCOPE_INCLUDED_PRODUCTS,
@@ -39,14 +45,22 @@ export type GiftQuantityDraftValues = Readonly<{
   giftTrigger: (typeof GIFT_TRIGGERS)[number] | null;
   /** GIFT_ITEM + ORDER_SUBTOTAL only. */
   subtotalScope: (typeof GIFT_SUBTOTAL_SCOPES)[number] | null;
+  /**
+   * QUANTITY_TIER only (GQ09a): the ladder, ALL/FROM selection and stacking. `null` or absent means
+   * "this submission does not describe the rule": a Draft edit then keeps the stored rule, so a
+   * form without tier fields can never wipe a ladder. A gift campaign never carries one.
+   */
+  tierRule?: TierRuleInput | null;
 }>;
 
 export type GiftQuantityDraftParseReason =
+  | "TIER_FIELDS_ON_GIFT"
   | "INVALID_KIND"
   | "INVALID_SCOPE_MODE"
   | "INVALID_GIFT_TRIGGER"
   | "INVALID_SUBTOTAL_SCOPE"
-  | "INVALID_DATE_TIME";
+  | "INVALID_DATE_TIME"
+  | TierRuleParseReason;
 
 export type ParsedGiftQuantityDraft =
   | Readonly<{ ok: true; value: GiftQuantityDraftValues }>
@@ -69,6 +83,8 @@ function strings(formData: FormData, field: string, max: number): string[] {
 export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuantityDraft {
   const kind = allowlisted(formData.get("kind"), GIFT_QUANTITY_KINDS);
   if (kind === null) return { ok: false, reason: "INVALID_KIND" };
+  const carriesTierRule = formCarriesTierRule(formData);
+  if (kind !== "QUANTITY_TIER" && carriesTierRule) return { ok: false, reason: "TIER_FIELDS_ON_GIFT" };
 
   const scopeMode = allowlisted(formData.get("scopeMode"), GIFT_QUANTITY_SCOPE_MODES);
   if (scopeMode === null) return { ok: false, reason: "INVALID_SCOPE_MODE" };
@@ -94,6 +110,13 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
   const endsAt = parseStrictVietnamDateTime(formData.get("endsAt"));
   if (!startsAt.ok || !endsAt.ok) return { ok: false, reason: "INVALID_DATE_TIME" };
 
+  let tierRule: TierRuleInput | null = null;
+  if (kind === "QUANTITY_TIER" && carriesTierRule) {
+    const parsedRule = parseTierRuleForm(formData);
+    if (!parsedRule.ok) return { ok: false, reason: parsedRule.reason };
+    tierRule = parsedRule.value;
+  }
+
   const rawName = formData.get("name");
   return {
     ok: true,
@@ -110,6 +133,7 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
       excludeProductIds: strings(formData, "excludeProductId", MAX_SCOPE_EXCLUDED_PRODUCTS),
       giftTrigger,
       subtotalScope,
+      tierRule,
     },
   };
 }

@@ -136,3 +136,18 @@ test("R04: an untouched time whose stored value carries seconds keeps its exact 
   assert.equal(keepStoredInstantIfUnchangedAtMinute(null, stored), null);
   assert.equal(keepStoredInstantIfUnchangedAtMinute(minute, null), minute);
 });
+
+
+test("GQ09a-F1: every tier field or marker on a gift form is refused, including malformed and oversized rules", () => {
+  for (const key of ["tierRuleForm", "tierUnit", "tierDiscountedUnits", "tierSelectionPriority", "tierMinQuantity", "tierDiscountValue", "stackingEnabled", "stackPriority", "stackPeer"]) {
+    assert.deepEqual(parseGiftQuantityDraftForm(form([...base, [key, ""]])), { ok: false, reason: "TIER_FIELDS_ON_GIFT" });
+  }
+  for (const payload of [
+    [["tierRuleForm", "on"], ["tierUnit", "PERCENTAGE"], ["tierMinQuantity", "2"], ["tierDiscountValue", "10"]],
+    [["tierUnit", "BOGUS"], ["tierMinQuantity", "1.5"]],
+    Array.from({ length: 101 }, () => ["stackPeer", "PROMOTION:x"]),
+  ] as Array<Array<[string, string]>>) {
+    assert.deepEqual(parseGiftQuantityDraftForm(form([...base, ...payload])), { ok: false, reason: "TIER_FIELDS_ON_GIFT" });
+  }
+  assert.equal(parseGiftQuantityDraftForm(form(base)).ok, true);
+});

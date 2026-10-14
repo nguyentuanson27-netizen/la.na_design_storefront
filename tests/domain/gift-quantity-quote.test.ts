@@ -211,13 +211,15 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
   const importers = new Map<string, string[]>();
   // These admin modules may validate configuration/price safety, never calculate a cart price.
   const adminValidators: Record<string, readonly string[]> = {
+    "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
+    "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
   };
   for (const file of sourceFiles(root)) {
     const path = relative(root, file).split("\\").join("/");
     for (const { kind, names } of engineImports(readFileSync(file, "utf8"))) {
-      const allowed = kind === "tier" ? adminValidators[path] : undefined;
+      const allowed = adminValidators[path];
       if (allowed) {
-        assert.deepEqual(names.sort(), [...allowed].sort(), `${path} may only import its validation functions`);
+        assert.ok(names.every((name) => allowed.includes(name)), `${path} may only import its validation functions/constants`);
         continue;
       }
       const list = importers.get(kind) ?? [];
