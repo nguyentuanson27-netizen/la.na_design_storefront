@@ -5,6 +5,8 @@ import {
 } from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
+import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
+import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -45,6 +47,7 @@ export type CartLineView = Readonly<{
    * sale that happens to sit below zero internally, and §31 keeps it visually normal.
    */
   preorderLabel: string | null;
+  paidSegments?: readonly string[];
 }>;
 
 export type CartViewModel = Readonly<{
@@ -63,6 +66,8 @@ export type CartViewModel = Readonly<{
    * preorder line. Decided by the shared projection so cart and checkout say the same thing.
    */
   preorderNotice: PreorderFulfillmentNotice | null;
+  gifts?: CartGiftPickerModel;
+  benefitsNotice?: string;
 }>;
 
 /** Why a line cannot be bought, in the shopper's words. */
@@ -104,14 +109,37 @@ export function cartAvailableSubtotal(lines: readonly StorefrontCartLine[]): num
   return total;
 }
 
+/** Legacy analytics cannot represent a tier's different paid prices for one variation. */
+export function canTrackLegacyCartPrices(input: Readonly<{
+  lines: readonly StorefrontCartLine[]; giftState?: CartGiftState; benefitsUnavailable?: boolean;
+}>): boolean {
+  if (input.benefitsUnavailable) return false;
+  if (!input.giftState) return true; // OFF keeps the existing analytics projection exactly.
+  const benefits = input.giftState.quote.benefits;
+  if (!benefits.enabled || !benefits.ok || benefits.subtotalVnd !== cartAvailableSubtotal(input.lines)) return false;
+  // Equal totals alone do not prove equal item prices or quantities.
+  const paid = input.lines.filter((line) => line.available && line.price !== null);
+  return benefits.groups.every((group) => paid.some((line) => line.variantId === group.lineKey && line.price === group.unitPriceVnd)) &&
+    paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
+}
+
 export function buildCartViewModel(
   input: Readonly<{
     lines: readonly StorefrontCartLine[];
     commerceTrackingEnabled: boolean;
+    giftState?: CartGiftState;
+    benefitsUnavailable?: boolean;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
   const hasUnavailableLines = input.lines.some((line) => !line.available);
+  const state = input.giftState;
+  const benefits = state?.quote.benefits;
+  const paidBenefits = benefits?.enabled && benefits.ok ? benefits : null;
+  // EX-21: a successful recomputation is not buyer acknowledgement of the dropped tier.
+  const tierPriceInvalid = paidBenefits?.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID");
+  // The current checkout proof/order snapshot cannot carry gifts or split paid segments yet.
+  const checkoutPending = input.benefitsUnavailable || tierPriceInvalid || (state && (!state.validation.ok || state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0))) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal);
 
   return Object.freeze({
     isEmpty: input.lines.length === 0,
@@ -133,14 +161,20 @@ export function buildCartViewModel(
           // The line's own canonical classification. Withheld when the line cannot be bought, for
           // the same reason the cart line withholds it: an unavailable line is not being ordered.
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
+          ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
+            ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
         }),
       ),
     ),
-    subtotalText: subtotal === null ? "Chưa thể tính" : currency.format(subtotal),
+    subtotalText: input.benefitsUnavailable || subtotal === null ? "Chưa thể tính" : currency.format(paidBenefits?.subtotalVnd ?? subtotal),
     hasUnavailableLines,
-    canCheckout: !hasUnavailableLines && subtotal !== null,
+    canCheckout: !hasUnavailableLines && subtotal !== null && !checkoutPending,
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
+    ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : tierPriceInvalid
+      ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Cần kiểm tra và xác nhận lại báo giá trước khi đặt hàng; bước đặt hàng chưa hỗ trợ xác nhận thay đổi này."
+      : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Quyền lợi này chưa hỗ trợ đặt hàng; vui lòng quay lại khi bước đặt hàng đã sẵn sàng." } : {}),
   });
 }
 

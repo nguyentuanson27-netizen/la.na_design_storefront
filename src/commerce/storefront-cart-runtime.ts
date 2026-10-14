@@ -2,6 +2,17 @@ import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
 import { getCurrentAnonymousCart } from "./anonymous-cart-next.ts";
 import { createStorefrontCartRepository } from "./storefront-cart-repository.ts";
+import { cookies } from "next/headers";
+import { createCartGiftSelectionService } from "./cart-gift-selection.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+
+/** Buyer cart only; checkout keeps its authority until GQ16–18. */
+export async function getCurrentStorefrontCartBenefits(now = new Date()) {
+  if (!isGiftQuantityPromotionsEnabled()) return { lines: await getCurrentStorefrontCartLines(now) };
+  const result = await createCartGiftSelectionService(prisma, await cookies(), { shopId: readPancakeShopId() }).get(now);
+  if ("state" in result) return { lines: result.state.quote.lines, giftState: result.state };
+  return { lines: await getCurrentStorefrontCartLines(now), benefitsUnavailable: "ok" in result && result.reason !== "CART_UNAVAILABLE" };
+}
 
 export async function getCurrentStorefrontCartLines(now: Date = new Date()) {
   return (await getCurrentStorefrontCheckoutContext(now))?.lines ?? [];

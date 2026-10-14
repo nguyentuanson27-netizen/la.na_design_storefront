@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
+import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
@@ -49,6 +50,7 @@ function render(data: CartViewModel) {
           <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>
+          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </div>
       </PageShell>
@@ -95,6 +97,7 @@ function render(data: CartViewModel) {
                       <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
                     )}
                     <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
+                    {line.paidSegments ? <p className="mt-2 text-sm">Giá theo số lượng: {line.paidSegments.join(" + ")}</p> : null}
                     {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
                         it belongs to rather than only the basket-level notice below. */}
                     {line.preorderLabel === null ? null : (
@@ -107,7 +110,7 @@ function render(data: CartViewModel) {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-medium">{line.priceText}</p>
+                    <p className="font-medium">{line.paidSegments ? "Giá theo số lượng" : line.priceText}</p>
                     <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
                       {line.availabilityLabel}
                     </p>
@@ -124,6 +127,7 @@ function render(data: CartViewModel) {
           ))}
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
+          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
           <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
             <span className="text-sm text-black/75">
@@ -154,7 +158,7 @@ function render(data: CartViewModel) {
             </Link>
           ) : (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
-              Hãy xử lý các dòng chưa khả dụng trước khi thanh toán.
+              {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}
             </p>
           )}
           <Link className="text-link mt-7 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
