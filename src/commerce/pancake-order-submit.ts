@@ -24,7 +24,9 @@ import {
   resolveSellingPolicy,
 } from "./capacity-policy.ts";
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
-import { readActiveGiftQuantityCampaigns, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
+import { resolveBenefitCheckoutQuote } from "./benefit-checkout-quote.ts";
+import { benefitQuoteStillHolds } from "./benefit-quote-commitments.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 import { compareOrderReadBack } from "./pancake-order-readback-check.ts";
 import type { PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
@@ -380,6 +382,7 @@ export function createPancakeOrderSubmissionService(
         quoteSnapshot: {
           include: {
             lines: { orderBy: [{ role: "asc" }, { lineId: "asc" }], include: { discountSteps: { orderBy: { position: "asc" } } } },
+            entitlements: { orderBy: { campaignId: "asc" } },
           },
         },
       },
@@ -1002,6 +1005,15 @@ export function createPancakeOrderSubmissionService(
       return { ok: false, state: "REJECTED", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
     }
 
+    /** The quote the buyer proved no longer holds: closed with nothing sent; the next submit re-quotes into a new order. */
+    async function requoteBenefitOrder(
+      mirrorRefresh: ReadonlyArray<{ variantId: string; freshBaseVnd: number; freshAfterDiscountVnd: number }>,
+    ): Promise<PancakeOrderSubmissionResult> {
+      await closeBenefitOrder("BENEFIT_REQUOTE_REQUIRED", mirrorRefresh);
+      emitSafely(options.onEvent, { name: "pancake_order.benefit_requote_required", correlationId, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" });
+      return { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" };
+    }
+
     /**
      * GQ20 -- the submission of an order that carries a benefit quote (gifts or quantity-tier segments).
      *
@@ -1011,8 +1023,9 @@ export function createPancakeOrderSubmissionService(
      *    signed lines and compared with what was frozen, so a tampered or stale projection is never sent;
      *  - stock is judged on the physical demand of the order: paid segments and gift units of one
      *    variant add up, and a variant that carries a gift is judged as READY stock only;
-     *  - the fresh-base recheck compares the live Pancake base, the legacy campaign behind the first
-     *    discount step and the liveness of every tier / gift campaign with what the quote recorded.
+     *  - the quote is re-derived with the very resolver the checkout DRAFT used (scope, entitlement,
+     *    selection, the full ordered discount stack) and compared with the frozen rows, and the live
+     *    Pancake base is compared with the base the quote recorded.
      *    Any difference closes the order (REJECTED, holds released) so the next submit re-quotes into a new
      *    order -- a quote-bearing order can never return to DRAFT; nothing is repriced in place,
      *    because the quote rows are signed history, not working data.
@@ -1023,6 +1036,12 @@ export function createPancakeOrderSubmissionService(
       snapshot: BenefitSnapshot,
       shopId: number,
     ): Promise<PancakeOrderSubmissionResult> {
+      // The kill switch stops every order that carries a quote, whatever is left in it: a quote that
+      // only records a dropped tier (EX-21) has no live gift or tier step to notice, but it is still a
+      // benefit order the programme no longer stands behind. Closed before any Pancake call.
+      const gateEnv = options.env ?? process.env;
+      if (!isGiftQuantityPromotionsEnabled(gateEnv)) return requoteBenefitOrder([]);
+
       const verifiedShops = options.lineLevelPricingVerifiedShopIds ?? readLineLevelPricingVerifiedShopIds();
       if (!verifiedShops.includes(shopId)) return withholdBenefitOrder();
 
@@ -1066,10 +1085,7 @@ export function createPancakeOrderSubmissionService(
       }
       if (demandByVariant.size === 0 || demandByVariant.size > ANONYMOUS_CART_MAX_DISTINCT_ITEMS + 100) return reject("LOCAL_ORDER_INVALID");
       const demandVariantIds = [...demandByVariant.keys()];
-      const paidVariantIds = [...demandByVariant.values()].filter((demand) => demand.paid > 0).map((demand) => demand.variantId);
 
-      let campaignsByVariantId: ApplicableCampaignLookup["campaignsByVariantId"];
-      let activeBenefitRevisions: ReadonlyMap<string, number>;
       let variantMetaById: Map<
         string,
         {
@@ -1079,11 +1095,7 @@ export function createPancakeOrderSubmissionService(
         }
       >;
       try {
-        const [campaignsResult, variantsResult, activeBenefits] = await Promise.all([
-          readApplicablePromotionCampaignsBatched({
-            variantIds: paidVariantIds,
-            client: client as unknown as PromotionCandidateReadClient,
-          }),
+        const [variantsResult] = await Promise.all([
           client.variantMirror.findMany({
             where: { id: { in: demandVariantIds } },
             select: {
@@ -1104,17 +1116,7 @@ export function createPancakeOrderSubmissionService(
               },
             },
           }),
-          // Every benefit campaign the quote relied on must still be in force. The listing is the same
-          // bounded read the cart uses; scope is not re-evaluated, only liveness and revision.
-          readActiveGiftQuantityCampaigns({
-            now: readNow(),
-            productIds: [],
-            client: client as unknown as GiftQuantityCandidateReadClient,
-            ...(options.env === undefined ? {} : { env: options.env }),
-          }),
         ]);
-        campaignsByVariantId = campaignsResult.campaignsByVariantId;
-        activeBenefitRevisions = new Map(activeBenefits.campaigns.map((entry) => [entry.campaign.id, entry.campaign.revision]));
         variantMetaById = new Map(
           variantsResult.map((v) => [
             v.id,
@@ -1160,12 +1162,9 @@ export function createPancakeOrderSubmissionService(
           if (!isUsableBasePriceVnd(live.retailPrice)) return reject("PRICE_UNAVAILABLE");
           const paidLines = snapshot.lines.filter((line) => line.role === "PAID" && line.variantId === demand.variantId);
           const base = paidLines[0]!.baseUnitPriceVnd ?? paidLines[0]!.unitPriceVnd;
-          const firstLegacy = paidLines[0]!.discountSteps.find((step) => step.source === "LEGACY") ?? null;
-          const fresh = resolvePromotionPricing({ basePriceVnd: live.retailPrice, campaigns: campaignsByVariantId.get(demand.variantId) ?? [], now });
-          const legacyHolds = firstLegacy === null
-            ? !fresh.isDiscounted
-            : fresh.promotion?.id === firstLegacy.campaignId && BigInt(fresh.effectivePriceVnd ?? -1) === firstLegacy.outputPriceVnd;
-          if (BigInt(live.retailPrice) !== base || !legacyHolds) {
+          // Only the live Pancake base is judged here. Every price step above it (legacy campaign and
+          // tier, in whatever priority order) is judged by re-deriving the whole ordered stack below.
+          if (BigInt(live.retailPrice) !== base) {
             requote = true;
             mirrorRefresh.push({ variantId: demand.variantId, freshBaseVnd: live.retailPrice, freshAfterDiscountVnd: live.retailPriceAfterDiscount });
           }
@@ -1201,18 +1200,33 @@ export function createPancakeOrderSubmissionService(
         liveCapacityPlans.push({ variantId: demand.variantId, sellingMode: demand.gift > 0 ? "STANDARD" : meta.policy.sellingMode, resources });
       }
 
-      // Liveness of the benefit campaigns behind the quote: a tier that ended, or a gift campaign that
-      // ended or was edited (revision), makes the signed quote stale even when Pancake's prices did not move.
-      for (const line of snapshot.lines) {
-        if (line.role === "GIFT" && activeBenefitRevisions.get(line.campaignId ?? "") !== line.campaignRevision) requote = true;
-        for (const step of line.discountSteps) if (step.source === "QUANTITY_TIER" && !activeBenefitRevisions.has(step.campaignId)) requote = true;
+      // Scope, entitlement, selection and price are re-derived exactly as the checkout DRAFT derived them
+      // and compared with the frozen quote. The order's own stock hold is excluded so that holding the
+      // last unit does not make the quote differ from itself.
+      if (!requote) {
+        if (order.sourceCartId === null) {
+          requote = true;
+        } else {
+          let fresh: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>>;
+          try {
+            fresh = await client.$transaction((tx) =>
+              resolveBenefitCheckoutQuote({
+                tx,
+                cartId: order.sourceCartId as string,
+                shopId,
+                now,
+                excludeOrderHolds: order.id,
+                ...(options.env === undefined ? {} : { env: options.env }),
+              }),
+            );
+          } catch {
+            return resetValidation();
+          }
+          if (fresh.kind !== "BENEFIT" || !benefitQuoteStillHolds(snapshot, fresh.facts)) requote = true;
+        }
       }
 
-      if (requote) {
-        await closeBenefitOrder("BENEFIT_REQUOTE_REQUIRED", mirrorRefresh);
-        emitSafely(options.onEvent, { name: "pancake_order.benefit_requote_required", correlationId, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" });
-        return { ok: false, state: "REJECTED", reason: "BENEFIT_REQUOTE_REQUIRED" };
-      }
+      if (requote) return requoteBenefitOrder(mirrorRefresh);
 
       return finalizeSubmission({
         liveCapacityPlans,

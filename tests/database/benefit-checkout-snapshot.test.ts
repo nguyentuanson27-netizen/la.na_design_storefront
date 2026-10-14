@@ -553,7 +553,7 @@ test("a benefit order is never sent to the POS by the legacy submission: it is c
     createOrder: async () => { calls.push("createOrder"); return {}; },
   };
   const events: string[] = [];
-  const pos = createPancakeOrderSubmissionService(prisma, gateway, { onEvent: (event) => events.push(event.name) });
+  const pos = createPancakeOrderSubmissionService(prisma, gateway, { onEvent: (event) => events.push(event.name), env: ON });
   const service = createGuestCheckoutSubmitService({
     snapshot: snapshotService({ proof }),
     orderSubmission: pos,
@@ -1089,4 +1089,139 @@ test("GQ24 audit: a stored order names the campaign and revision of every gift a
   const tierStep = stored.lines.flatMap((line) => line.discountSteps).find((step) => step.source === "QUANTITY_TIER");
   assert.equal(tierStep?.campaignId, `${P}-tier`);
   assert.match(stored.quoteDigest, /^[0-9a-f]{64}$/);
+});
+
+// -- Review round on PR #165 --------------------------------------------------------------------------------------
+
+/** The full submit path (DRAFT, hold, POS) with a hook that lets the world move between the hold and the POS step. */
+function submissionWithDrift(pancake: ReturnType<typeof fakePancake>, proof: unknown, drift: () => Promise<void>, options: Readonly<{ env?: Record<string, string | undefined>; acknowledgement?: unknown }> = {}) {
+  const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
+    lineLevelPricingVerifiedShopIds: [SHOP],
+    env: options.env ?? ON,
+    now: () => NOW,
+    onConfirmed: async () => undefined,
+  });
+  return createGuestCheckoutSubmitService({
+    snapshot: snapshotService({ proof, acknowledgement: options.acknowledgement }),
+    orderSubmission: { submit: async (input) => { await drift(); return pos.submit(input); } },
+    generatePublicCode: code,
+    capacity: createCapacityReservationRepository(prisma),
+    clock: () => NOW,
+  });
+}
+
+test("review P1: a recorded remote id is never released by an empty marker search; it is verified by that id", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const pancake = fakePancake({}, { readBack: () => { throw new Error("read-back timed out"); } });
+  const { service } = submission(pancake, proof);
+  await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.pancakeOrderId, order.syncErrorCode], ["SYNC_UNKNOWN", "800001", "READBACK_UNAVAILABLE"]);
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+
+  // The marker is not indexed yet and the read-back still fails: a created order is known to exist.
+  const confirmed: string[] = [];
+  for (const readOrder of [async () => { throw new Error("still down"); }, undefined]) {
+    const gateway = { searchOrderByMarker: async () => ({ kind: "ABSENT" as const }), ...(readOrder ? { readOrder } : {}) };
+    const result = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+    assert.equal(result.ok, false);
+    assert.equal((await lastOrder()).state, "SYNC_UNKNOWN");
+    assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], "the stock stays held while an order is known to exist");
+  }
+  // A different cart cannot take that stock meanwhile.
+  assert.deepEqual(confirmed, []);
+
+  // Read back by the recorded id and matching exactly, the order is settled although the marker never appears.
+  const sent = pancake.calls.create[0]!;
+  const gateway = {
+    searchOrderByMarker: async () => ({ kind: "ABSENT" as const }),
+    readOrder: async () => ({
+      lines: sent.items.map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+      totalPriceVnd: sent.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+    }),
+  };
+  const settled = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+  assert.deepEqual(settled, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["COMMITTED"]);
+});
+
+test("review P1: scope, entitlement or gift option that changed after the DRAFT stops the order before the POS, and the holds go back", async () => {
+  for (const change of ["category scope removed", "gift option withdrawn", "tier scope removed"] as const) {
+    await cleanup();
+    await seed();
+    await chooseGift(2);
+    const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+    const pancake = fakePancake();
+    const service = submissionWithDrift(pancake, proof, async () => {
+      // Direct row changes with the campaign revision untouched: what a catalog sync does to membership.
+      if (change === "category scope removed") await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { categoryKeys: ["other"] } });
+      else if (change === "gift option withdrawn") await prisma.giftOption.deleteMany({ where: { campaignId: `${P}-gift` } });
+      else await prisma.giftQuantityCampaign.update({ where: { id: `${P}-tier` }, data: { categoryKeys: ["other"] } });
+    });
+    const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+    assert.equal(result.ok, false, change);
+    assert.deepEqual(pancake.calls.create, [], `${change}: nothing is sent`);
+    const order = await lastOrder();
+    assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "BENEFIT_REQUOTE_REQUIRED"], change);
+    assert.ok((await holds()).every((hold) => hold.state === "RELEASED"), `${change}: holds go back`);
+    assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: order.id } }), 1, `${change}: the quote is kept as audit`);
+  }
+});
+
+test("review P1: the kill switch also stops a draft that only records a dropped tier (EX-21); nothing is sent and the holds go back", async () => {
+  await seed({ gift: false, quantity: 3, fixedTier: true });
+  const shown = await renderedFacts();
+  const shownProof = issueBenefitQuoteProof({ quote: shown, cartId, secret })!;
+  const later = new Date(NOW.getTime() + 120_000);
+  await prisma.promotionCampaign.create({
+    data: { id: `${P}-flash`, kind: "FLASH_SALE", name: "GQ17 flash", discountType: "FIXED_PRICE", fixedPriceVnd: BigInt(40_000), startsAt: new Date(NOW.getTime() + 60_000), endsAt: FUTURE, isEnabled: true, enabledAt: PAST, targets: { create: [{ productId: paid.productId }] } },
+  });
+  await setLegacyPromotionStackConsent({ campaignId: `${P}-flash`, stackPriority: 1, now: later, session: { user: { id: "admin", role: "ADMIN" }, session: { id: "s" } }, client: prisma, env: ON });
+  // The buyer reconfirms the recomputed quote; it now holds only a LEGACY step and a dropped-tier note.
+  const refused = await create(snapshotService({ proof: shownProof, at: later }), later);
+  assert.ok(!refused.ok && refused.reason === "BENEFIT_QUOTE_UNPROVEN");
+  if (refused.ok || refused.reason !== "BENEFIT_QUOTE_UNPROVEN") return;
+  const freshProof = issueBenefitQuoteProof({ quote: refused.refreshedBenefitQuote, cartId, secret })!;
+
+  const pancake = fakePancake();
+  const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, { lineLevelPricingVerifiedShopIds: [SHOP], env: {}, now: () => later, onConfirmed: async () => undefined });
+  const service = createGuestCheckoutSubmitService({
+    snapshot: snapshotService({ proof: freshProof, at: later }),
+    orderSubmission: pos, // the gate is OFF here
+    generatePublicCode: code,
+    capacity: createCapacityReservationRepository(prisma),
+    clock: () => later,
+  });
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: later });
+  assert.equal(result.ok, false);
+  assert.deepEqual(pancake.calls.create, []);
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "BENEFIT_REQUOTE_REQUIRED"]);
+  assert.ok((await holds()).every((hold) => hold.state === "RELEASED"));
+  const stored = (await readOrderQuoteSnapshot(prisma, order.id))!;
+  assert.equal(stored.lines.some((line) => line.role === "GIFT" || line.discountSteps.some((step) => step.source === "QUANTITY_TIER")), false, "the case under test: no live gift or tier step is left");
+  assert.equal(stored.droppedBenefits.length, 1);
+});
+
+test("review P2: a tier before a legacy sale is a valid stack and is not re-quoted for ever; flash first works too", async () => {
+  for (const order of ["tier first", "flash first"] as const) {
+    await cleanup();
+    await seed({ gift: false, quantity: 1, fixedTier: true });
+    await prisma.promotionCampaign.create({
+      data: { id: `${P}-flash`, kind: "FLASH_SALE", name: "GQ17 flash", discountType: "PERCENTAGE", percentageValue: 10, startsAt: PAST, endsAt: FUTURE, isEnabled: true, enabledAt: PAST, targets: { create: [{ productId: paid.productId }] } },
+    });
+    // The tier stacks at priority 2 in the seed; the flash sale's consent decides which one goes first.
+    await setLegacyPromotionStackConsent({ campaignId: `${P}-flash`, stackPriority: order === "tier first" ? 3 : 1, now: NOW, session: { user: { id: "admin", role: "ADMIN" }, session: { id: "s" } }, client: prisma, env: ON });
+    const facts = await renderedFacts();
+    const line = facts.lines[0]!;
+    assert.deepEqual(line.discountSteps.map((step) => step.source), order === "tier first" ? ["QUANTITY_TIER", "LEGACY"] : ["LEGACY", "QUANTITY_TIER"], order);
+    const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+    const pancake = fakePancake();
+    const { service } = submission(pancake, proof);
+    const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+    assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: (await lastOrder()).publicCode }, order);
+    assert.equal(pancake.calls.create.length, 1, order);
+    assert.equal(pancake.calls.create[0]!.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0), facts.paidSubtotalVnd, order);
+  }
 });

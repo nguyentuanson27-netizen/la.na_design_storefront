@@ -156,7 +156,17 @@ export function createPancakeOrderReconciliationService({
     }
 
     const marker = `[ORDER:${order.publicCode}]`;
-    const search = await searchWithAbsenceConfirmation(order.pancakeShopId, marker);
+    let search: MarkerSearchResult = await searchWithAbsenceConfirmation(order.pancakeShopId, marker);
+
+    // A recorded remote id is evidence that a Pancake order exists. A marker search that finds nothing
+    // (not indexed yet, a different search field, a short page) is not evidence that it does not, so
+    // it must never release the holds of an order we already hold an id for. A benefit order is then
+    // verified by that id through the read-back below; any other order stays unknown for the operator.
+    if (search.kind === "ABSENT" && order.pancakeOrderId !== null) {
+      search = order.quoteSnapshot
+        ? { kind: "FOUND", orderId: order.pancakeOrderId }
+        : { kind: "AMBIGUOUS", reason: "a remote order id is recorded but the marker search found nothing" };
+    }
 
     if (search.kind === "FOUND" && order.quoteSnapshot) {
       // A benefit order is settled on what Pancake stored, not on the marker: several lines of one

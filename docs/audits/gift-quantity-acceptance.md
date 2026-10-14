@@ -20,10 +20,9 @@ actually run.
 | O-1 | **GQ19 — checkout UX not built.** Nothing in the buyer UI submits the benefit proof or the non-claim acknowledgement; the checkout link stays withheld for carts with gifts or split tier prices. | A buyer cannot complete a benefit order end to end in the browser. Server side (GQ17/18/20/21) is proven; the screen is not. |
 | O-2 | **Live adapter-flow acceptance not run.** The two GQ01 gating cases ran live on shop 715077776 and passed (PAID+PAID different price; PAID + GIFT at 1.000đ, same variation). The production adapter (`createOrder` → `readOrder` read-back → confirm) has only run against fakes. | The read-back parser was written from the observed contract, not exercised against the live POS. |
 | O-3 | **`LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` is empty** (by design). | Until the owner lists a shop, benefit orders are withheld before any POS write. |
-| O-4 | **R-05 (`FROM_REACHED_THRESHOLD` multi-tier reading, N0 proposal)** awaits owner approval per the spec. | The shipped tier math follows the proposal; the owner has not signed it off in this repository. |
-| O-5 | **Alert thresholds are proposals** with no production baseline; no dashboard exists. | See rollback record §4. |
-| O-6 | **H5:** exact-head CI on the final PR(s), owner go/no-go, independent `/ship` approval. | Required by the todo; cannot be inferred from this document. |
-| O-7 | **Credential hygiene:** the Pancake API key used for GQ01 was shared in chat. | Rotate it before any further use. |
+| O-4 | **Alert thresholds are proposals** with no production baseline; no dashboard exists. | See rollback record §4. |
+| O-5 | **H5:** exact-head CI on the final PR(s), owner go/no-go, independent `/ship` approval. | Required by the todo; cannot be inferred from this document. |
+| O-6 | **Credential hygiene:** the Pancake API key used for GQ01 was shared in chat. | Rotate it before any further use. |
 
 ### Known limitations (accepted in design, listed so nobody is surprised)
 
@@ -47,7 +46,7 @@ actually run.
 | 04 | S=2.5m: ONCE 1, REPEAT 2 | D `gift-quantity-entitlement` | proven |
 | 05 | ALL_PAID vs ELIGIBLE_PAID | D `gift-quantity-entitlement`, `gift-quantity-scope` | proven |
 | 06 | Q counts items across variants/set = 1 | D `gift-quantity-entitlement`, `gift-quantity-scope` | proven |
-| 07 | Tier ALL vs FROM_REACHED_THRESHOLD | D `gift-quantity-tier` | proven (R-05 reading pending owner, O-4) |
+| 07 | Tier ALL vs FROM_REACHED_THRESHOLD | D `gift-quantity-tier` | proven (R-05 `N0` reading approved at H0, ADR 0016) |
 | 08 | FROM + CHEAPEST / MOST_EXPENSIVE | D `gift-quantity-tier` | proven |
 | 09 | Flash 10% then Tier 5% = 855.000đ | D `gift-quantity-stack`; DB `gift-quantity-cart-quote` | proven |
 | 10 | Threshold judged after discounts | D `gift-quantity-entitlement` | proven |
@@ -59,7 +58,7 @@ actually run.
 | 16 | Dynamic vs Fixed scope | D `gift-quantity-scope` | proven |
 | 17 | 3 × 100.001đ, tier FROM → 2 × 100.001 + 1 × 90.001 = 290.003đ, two lineIds | D `checkout-benefit-quote`, `order-quote-snapshot`, `pancake-gift-projection`; DB `benefit-checkout-snapshot`, `order-quote-snapshot`; live GQ01 case 1 (read back unmerged, 290.003đ) | proven (adapter live run = O-2) |
 | 18 | One reservation of 3 physical units | DB `benefit-checkout-snapshot` ("ONE hold per variant"), `order-quote-snapshot` | proven |
-| 19 | Non-monotonic total discount detected/rejected | D `gift-quantity-tier`; E2E `admin-gift-quantity` | proven (O-4) |
+| 19 | Non-monotonic total discount detected/rejected | D `gift-quantity-tier`; E2E `admin-gift-quantity` | proven (R-05 approved at H0) |
 | 20 | Fixed scope frozen at publish; scheduled edit re-freezes | DB `gift-quantity-activation-service` | proven |
 | 21 | Fixed VND tier below price → whole tier dropped, reconfirm | D `gift-quantity-tier`, `gift-quantity-stack`; DB `gift-quantity-cart-quote`, `gift-quantity-tier-rule-operations`, `benefit-checkout-snapshot` (EX-21); E2E `cart-gift-picker` | proven; reason stored in `droppedBenefits` |
 | 22 | Global ALL_PAID_LINES gift, no scope | D `gift-quantity-entitlement`, `gift-quantity-scope`; DB `gift-quantity-admin-operations`; E2E `admin-gift-quantity` | proven |
@@ -72,14 +71,14 @@ actually run.
 | 02 | Dynamic/Fixed scope, snapshot inside the publish transaction | D `gift-quantity-scope`; DB `gift-quantity-activation-service` | proven |
 | 03 | Gift list, allowed variants, duplicates, max per order | DB `gift-quantity-admin-operations`; D `gift-quantity-entitlement` | proven |
 | 04 | Earned/selected boundaries; 0..entitled; acknowledgement when short | D `gift-quantity-entitlement`; DB `benefit-checkout-snapshot`; E2E `cart-gift-picker` | proven server side; **buyer acknowledgement screen = O-1** |
-| 05 | Highest tier only; non-decreasing; ALL/FROM from N0; multi-price lines | D `gift-quantity-tier` | proven (O-4) |
+| 05 | Highest tier only; non-decreasing; ALL/FROM from N0; multi-price lines | D `gift-quantity-tier` | proven (R-05 approved at H0) |
 | 06 | Stack by priority from remaining price; invalid VND → drop whole tier + requote | D `gift-quantity-stack`; DB `gift-quantity-cart-quote`, `benefit-checkout-snapshot` | proven |
 | 07 | Gift threshold after all discounts, before shipping, gifts excluded; one price authority | D `gift-quantity-entitlement`, `checkout-benefit-quote` (GQ22 shipping); DB `gift-quantity-listing-parity` (GQ23) | proven |
 | 08 | Quote proof signs every lineId, role, quantity, price, step | D `checkout-benefit-quote` | proven |
 | 09 | Reservation/submit idempotent; paid+gift merged; concurrency | DB `benefit-checkout-snapshot` (idempotent retry, single hold, unknown-then-retry) | proven |
 | 10 | Pancake live acceptance: gift, PAID+GIFT same variation, PAID+PAID different price | `docs/integrations/pancake-gift-quantity-acceptance.md` (run `ab50e3dd`); D `pancake-gift-projection`, `pancake-order-readback`; DB `benefit-checkout-snapshot` (GQ20/21) | **partial**: both gating probe cases passed live; `GIFT_ZERO_PRICE` informational case not run (not gating under D-08); adapter flow vs live POS not run (O-2) |
 | 11 | Order snapshot immutable; shipping/analytics/feeds/preorder/legacy not regressed | DB `order-quote-snapshot` (immutability triggers), `benefit-analytics`, `gift-quantity-listing-parity`; flag-OFF legacy test in `benefit-checkout-snapshot` | proven |
-| 12 | Domain/DB/E2E/a11y/security/observability/release gates, DoD, rollback | §Gates below; `gift-quantity-rollback.md` | **partial** — see O-1…O-7 |
+| 12 | Domain/DB/E2E/a11y/security/observability/release gates, DoD, rollback | §Gates below; `gift-quantity-rollback.md` | **partial** — see O-1…O-6 |
 
 ---
 
@@ -101,14 +100,14 @@ present on benefit orders, and every existing event assertion still passes).
 - Bounds: 200 quote lines, 8 steps/line, 20 entitlements, 100 gift units, 48 KiB proof, 512 B acknowledgement,
   50 dropped-benefit records, 1024-byte log line.
 - The Pancake key never entered the repository (verified before every commit of the GQ01 work); it must still be
-  rotated (O-7).
+  rotated (O-6).
 
 ## Staged ON path (for the owner, after O-1…O-3)
 
 1. Build/merge GQ19; run the browser flow on staging with the flag ON.
 2. Run the adapter-flow live acceptance with explicit operator approval (creates and cancels test orders).
 3. List the verified shop id in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`.
-4. Confirm R-05 and the alert thresholds; wire the alerts.
+4. Confirm the alert thresholds and wire the alerts. (R-05 was approved by the owner at H0 on 13/10/2026, recorded in ADR 0016 and the spec status.)
 5. Flag ON with a single low-risk campaign; watch the rollback record §4 for 30 minutes; keep §6 ready.
 6. Separate owner go/no-go and `/ship`.
 

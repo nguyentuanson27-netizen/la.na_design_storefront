@@ -20,7 +20,10 @@ alert **thresholds** in §4 are proposals derived from the signal design, not me
 3. **Old orders are not rewritten.** A confirmed benefit order keeps its quote rows (immutable once the
    order leaves DRAFT, enforced by database triggers). Turning the flag OFF does not touch, re-price,
    cancel or re-send any of them.
-4. **An in-flight draft is never silently re-priced.** A DRAFT created while the flag was ON and submitted
+4. **Every in-flight benefit draft is stopped, not only those with a live gift or tier.** The POS submit refuses any
+   order that carries a quote when the gate is OFF, including one that only records a dropped tier (EX-21), and
+   it re-derives the quote (scope, entitlement, selection, the whole ordered stack) before any Pancake write.
+   An **in-flight draft is never silently re-priced.** A DRAFT created while the flag was ON and submitted
    after it went OFF is closed as `REJECTED / BENEFIT_REQUOTE_REQUIRED` (the buyer sees `CART_CHANGED`),
    nothing is sent to Pancake, its holds are released at once, and its quote rows stay as history (a
    quote-bearing order can never return to DRAFT). The buyer's next submit creates a new, legacy-priced order

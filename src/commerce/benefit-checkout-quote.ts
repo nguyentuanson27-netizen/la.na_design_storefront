@@ -18,6 +18,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import { withoutOrderHolds } from "./capacity-advisory.ts";
 import { readCartGiftState } from "./cart-gift-selection.ts";
 import { buildBenefitCheckoutQuoteFacts, type BenefitQuoteGift, type BenefitQuotePaidGroup } from "./checkout-quote.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
@@ -67,21 +68,27 @@ export async function resolveBenefitCheckoutQuote({
   now,
   env = process.env,
   lines,
+  excludeOrderHolds,
 }: Readonly<{
   tx: Prisma.TransactionClient;
   cartId: string;
   shopId: number;
   now: Date;
   env?: Env;
-  /** The legacy-resolved lines of the cart: identity and fulfillment come from here, prices do not. */
-  lines: readonly StorefrontCartLine[];
+  /**
+   * The legacy-resolved lines of the cart: identity and fulfillment come from here, prices do not.
+   * Omitted by the POS submit, which has no cart view of its own: the cart's own quote supplies them.
+   */
+  lines?: readonly StorefrontCartLine[];
+  /** The POS submit re-derives the quote while the order's own stock hold exists; that hold must not count against it. */
+  excludeOrderHolds?: string;
 }>): Promise<BenefitCheckoutResolution> {
   // Gate OFF: not one statement beyond the legacy checkout's own.
   if (!isGiftQuantityPromotionsEnabled(env)) return { kind: "LEGACY" };
 
   let state: Awaited<ReturnType<typeof readCartGiftState>>;
   try {
-    state = await readCartGiftState(tx, cartId, shopId, now, env);
+    state = await readCartGiftState(excludeOrderHolds === undefined ? tx : withoutOrderHolds(tx, excludeOrderHolds), cartId, shopId, now, env);
   } catch {
     return { kind: "UNAVAILABLE" };
   }
@@ -99,7 +106,7 @@ export async function resolveBenefitCheckoutQuote({
   // A stored gift choice that no longer validates is never repaired here.
   if (!state.validation.ok) return { kind: "GIFT_SELECTION_INVALID" };
 
-  const lineByVariantId = new Map(lines.map((line) => [line.variantId, line]));
+  const lineByVariantId = new Map((lines ?? state.quote.lines).map((line) => [line.variantId, line]));
   const paidGroups: BenefitQuotePaidGroup[] = [];
   const paid: BenefitPaidRow[] = [];
   for (const group of benefits.groups) {

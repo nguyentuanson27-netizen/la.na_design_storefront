@@ -161,3 +161,35 @@ export async function withAdvisorySellableStock<
     }),
   }));
 }
+
+/**
+ * The same transaction client, except that the advisory hold reads ignore one order's own
+ * reservations.
+ *
+ * At checkout DRAFT the order's hold does not exist yet; by the time the POS submit re-derives the
+ * quote it does. Counted, it would make the last unit of a paid item or a gift look sold out to the
+ * very order that holds it, and the re-derived quote would differ forever. Only the hold read is
+ * narrowed -- every other model and method is the client's own.
+ */
+export function withoutOrderHolds<T extends object>(client: T, orderId: string): T {
+  const resources = (client as unknown as { capacityReservationResource?: object }).capacityReservationResource;
+  if (resources === undefined) return client;
+  const narrowed = new Proxy(resources, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "findMany" || typeof value !== "function") return typeof value === "function" ? value.bind(target) : value;
+      return (args: { where?: object } = {}) =>
+        (value as (a: unknown) => unknown).call(target, {
+          ...args,
+          where: { AND: [args.where ?? {}, { reservation: { orderId: { not: orderId } } }] },
+        });
+    },
+  });
+  return new Proxy(client, {
+    get(target, prop) {
+      if (prop === "capacityReservationResource") return narrowed;
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+}
