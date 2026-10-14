@@ -22,7 +22,7 @@ async function cleanup() {
 }
 test.beforeAll(async () => {
   server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", "3348"], {
-    cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", BETTER_AUTH_URL: URL, NEXT_DIST_DIR: ".next-test/gq14", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+    cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_TRACKING_MODE: "preview", LA_GTM_CONTAINER_ID: "GTM-GQ14TEST", BETTER_AUTH_URL: URL, NEXT_DIST_DIR: ".next-test/gq14", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
   server.stderr?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
@@ -116,10 +116,38 @@ test("duplicate product policy disables selecting the same gift again", async ({
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { allowDuplicateGifts: false } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await expect(picker).toContainText("Không đủ lựa chọn quà hợp lệ cho 1 suất");
+  await expect(picker).not.toContainText("Thiếu tồn kho");
+  await expect(picker).toContainText("Mỗi sản phẩm được chọn tối đa 1 chiếc quà");
   await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
+  await expect(picker).toContainText("Còn 10");
   await picker.getByRole("button", { name: "Chọn Trắng / M" }).click();
   await expect(picker).toContainText("Đã chọn 1");
   await expect(picker.getByRole("button", { name: "Chọn Trắng / M" })).toBeDisabled();
+});
+test("view_cart retains the no-tier paid total once across refresh, and emits nothing for EX-17", async ({ page }) => {
+  const events = () => page.evaluate(() => ((window as { dataLayer?: { event?: string; ecommerce?: { value?: number } }[] }).dataLayer ?? []).filter((entry) => entry.event === "view_cart"));
+  await page.goto(`${URL}/cart`);
+  await expect.poll(events).toHaveLength(1);
+  expect((await events())[0].ecommerce?.value).toBe(200_000);
+  const refresh = page.waitForResponse((response) => response.url().includes("/cart?") && response.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await refresh;
+  await expect.poll(events).toHaveLength(1);
+  await prisma.variantMirror.update({ where: { id: paidId }, data: { pancakeRetailPrice: 100_001, pancakeRetailPriceAfterDiscount: 100_001 } });
+  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 3 } });
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  await prisma.giftQuantityCampaign.create({ data: { id: `${PREFIX}tier`, kind: "QUANTITY_TIER", name: "Tier", isEnabled: true, enabledAt: new Date(),
+    scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], tierUnit: "PERCENTAGE", tierDiscountedUnits: "FROM_REACHED_THRESHOLD",
+    tierSelectionPriority: "CHEAPEST_FIRST", tiers: { create: { minQuantity: 3, discountValue: 10 } } } });
+  await page.reload();
+  await expect(page.getByText("290.003", { exact: false }).first()).toBeVisible();
+  expect(await events()).toEqual([]);
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: null } });
+  await page.reload();
+  await expect(page.getByText("Chưa thể tính").first()).toBeVisible();
+  expect(await events()).toEqual([]);
 });
 test("below-threshold shows shortfall; empty paid cart still shows stale gift to remove", async ({ page }) => {
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 300_000 } });

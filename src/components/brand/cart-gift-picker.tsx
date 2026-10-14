@@ -21,7 +21,8 @@ export function BrandCartGiftPicker({ model }: Readonly<{ model: CartGiftPickerM
       return <fieldset className="mt-5 border-t border-black/15 pt-4" disabled={pending} key={campaign.campaignId}>
         <legend className="font-semibold">Quà tặng theo giỏ hàng {index + 1}</legend>
         <p className="text-sm leading-6">Đạt {campaign.earned} suất · Được nhận {campaign.entitled} · Đã chọn {campaign.selected} · Chưa chọn {campaign.unclaimed}</p>
-        {campaign.shortForStock > 0 ? <p className="mt-2 text-sm">Thiếu tồn kho cho {campaign.shortForStock} suất quà. Bạn có thể chọn hàng còn hoặc để trống.</p> : null}
+        {campaign.shortageText ? <p className="mt-2 text-sm">{campaign.shortageText} Bạn có thể chọn hàng còn hoặc để trống.</p> : null}
+        {!campaign.allowDuplicateGifts ? <p className="mt-2 text-sm">Mỗi sản phẩm được chọn tối đa 1 chiếc quà, kể cả khác màu hoặc kích cỡ.</p> : null}
         {campaign.shortfallText ? <p className="mt-2 text-sm">{campaign.shortfallText}</p> : null}
         {campaign.entitled === 0 ? null : <>
           <label className="mt-4 block text-sm" htmlFor={`gift-product-${index}`}>Sản phẩm quà</label>

@@ -109,6 +109,20 @@ export function cartAvailableSubtotal(lines: readonly StorefrontCartLine[]): num
   return total;
 }
 
+/** Legacy analytics cannot represent a tier's different paid prices for one variation. */
+export function canTrackLegacyCartPrices(input: Readonly<{
+  lines: readonly StorefrontCartLine[]; giftState?: CartGiftState; benefitsUnavailable?: boolean;
+}>): boolean {
+  if (input.benefitsUnavailable) return false;
+  if (!input.giftState) return true; // OFF keeps the existing analytics projection exactly.
+  const benefits = input.giftState.quote.benefits;
+  if (!benefits.enabled || !benefits.ok || benefits.subtotalVnd !== cartAvailableSubtotal(input.lines)) return false;
+  // Equal totals alone do not prove equal item prices or quantities.
+  const paid = input.lines.filter((line) => line.available && line.price !== null);
+  return benefits.groups.every((group) => paid.some((line) => line.variantId === group.lineKey && line.price === group.unitPriceVnd)) &&
+    paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
+}
+
 export function buildCartViewModel(
   input: Readonly<{
     lines: readonly StorefrontCartLine[];

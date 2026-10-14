@@ -3,7 +3,7 @@ import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 export type CartGiftPickerModel = Readonly<{
   campaigns: readonly Readonly<{
     campaignId: string; revision: number; earned: number; entitled: number; selected: number;
-    unclaimed: number; shortForStock: number; shortfallText: string | null; allowDuplicateGifts: boolean;
+    unclaimed: number; unavailableSlots: number; shortageText: string | null; shortfallText: string | null; allowDuplicateGifts: boolean;
     products: readonly Readonly<{ productId: string; name: string; options: readonly Readonly<{ variantId: string; label: string; stock: number }>[] }>[];
   }>[];
   selections: readonly Readonly<{ campaignId: string; variantId: string; campaignRevision: number; quantity: number; label: string }>[];
@@ -35,8 +35,13 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
         products.set(option.productId, product);
       }
       const shortfall = entry.shortfallToNext;
+      // The engine aggregate includes distinct-product limits and shared capacity, not just stock.
+      const unavailableSlots = summary?.shortForStock ?? entry.unfulfillableForStock;
+      const shortageText = unavailableSlots === 0 ? null : campaign.options.length > 0 && campaign.options.every((option) => !option.composite && option.readyAvailable === 0)
+        ? `Thiếu tồn kho cho ${unavailableSlots} suất quà.`
+        : `Không đủ lựa chọn quà hợp lệ cho ${unavailableSlots} suất.`;
       return { campaignId: entry.campaignId, revision: entry.revision, earned: entry.earned, entitled: entry.entitled, selected,
-        unclaimed: Math.max(0, entry.entitled - selected), shortForStock: summary?.shortForStock ?? entry.unfulfillableForStock, allowDuplicateGifts: campaign.allowDuplicateGifts,
+        unclaimed: Math.max(0, entry.entitled - selected), unavailableSlots, shortageText, allowDuplicateGifts: campaign.allowDuplicateGifts,
         shortfallText: shortfall?.quantity ? `Mua thêm ${shortfall.quantity} sản phẩm phù hợp để đạt mốc quà tiếp theo.` : shortfall?.subtotalVnd ? `Mua thêm ${currency.format(shortfall.subtotalVnd)} để đạt mốc quà tiếp theo.` : null,
         products: [...products.values()] };
     }),
