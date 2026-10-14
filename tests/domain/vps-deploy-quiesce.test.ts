@@ -35,10 +35,11 @@ case "$args" in
   *" pnpm prisma:migrate:deploy "*) exit "\${FAKE_MIGRATE_EXIT:-0}" ;;
   *" pnpm capacity:handoff:reconcile "*) exit "\${FAKE_RECONCILE_EXIT:-0}" ;;
   *" exec -T postgres "*) echo fake-dump ;;
+  *" --entrypoint /opt/google/chrome/chrome "*) echo "\${FAKE_CHROME:-}" ;;
 esac
 `;
 
-type Run = { status: number | null; calls: string[]; stderr: string };
+type Run = { status: number | null; calls: string[]; stderr: string; stdout: string };
 
 type ScriptRun = {
   running: readonly ("app" | "catalog-sync")[];
@@ -46,6 +47,10 @@ type ScriptRun = {
   reconcileExit?: number;
   syncHealth?: "healthy" | "unhealthy";
   images?: readonly string[];
+  /** Extra lines for deploy/vps/.env.production, e.g. to switch the Flow worker on. */
+  envLines?: readonly string[];
+  /** What the fake Flow worker image's `chrome --version` prints. */
+  chrome?: string;
 };
 
 function runDeploy(options: ScriptRun): Run {
@@ -62,7 +67,7 @@ function runRollback(options: ScriptRun): Run {
 function runScript(
   script: "deploy.sh" | "rollback.sh",
   args: readonly string[],
-  { running, migrateExit = 0, reconcileExit = 0, syncHealth = "healthy", images = [] }: ScriptRun,
+  { running, migrateExit = 0, reconcileExit = 0, syncHealth = "healthy", images = [], envLines = [], chrome = "" }: ScriptRun,
 ): Run {
   const root = mkdtempSync(join(tmpdir(), "deploy-sequence-"));
   try {
@@ -76,6 +81,7 @@ function runScript(
       "deploy/vps/deploy.sh",
       "deploy/vps/rollback.sh",
       "deploy/vps/project-identity.sh",
+      "deploy/vps/flow-chrome-gate.sh",
       "project.config.json",
     ]) {
       copyFileSync(join(REPO_ROOT, file), join(repo, file));
@@ -90,7 +96,7 @@ function runScript(
     git("commit", "-q", "-m", "release");
     writeFileSync(
       join(repo, "deploy/vps/.env.production"),
-      `DEPLOY_TARGET=production\nRELEASE_SHA=${git("rev-parse", "HEAD")}\n`,
+      `DEPLOY_TARGET=production\nRELEASE_SHA=${git("rev-parse", "HEAD")}\n${envLines.map((line) => `${line}\n`).join("")}`,
     );
 
     writeFileSync(join(bin, "docker"), FAKE_DOCKER);
@@ -111,6 +117,7 @@ function runScript(
         FAKE_RECONCILE_EXIT: String(reconcileExit),
         FAKE_SYNC_HEALTH: syncHealth,
         FAKE_IMAGES: images.join(" "),
+        FAKE_CHROME: chrome,
         BACKUP_DIR: join(root, "backups"),
       },
       encoding: "utf8",
@@ -119,7 +126,7 @@ function runScript(
       .split("\n")
       .filter(Boolean)
       .map((line) => line.replace(/^compose --env-file \S+ -f \S+ /, ""));
-    return { status: result.status, calls, stderr: result.stderr };
+    return { status: result.status, calls, stderr: result.stderr, stdout: result.stdout };
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -272,4 +279,38 @@ test("a failed migration never reaches the handoff reconciliation", () => {
   const run = runDeploy({ running: ["app"], migrateExit: 1 });
   assert.notEqual(run.status, 0);
   assert.equal(position(run.calls, RECONCILE), -1);
+});
+
+const FLOW_ON = [
+  "LA_TRY_ON_ENABLED=true",
+  "LA_TRY_ON_PROVIDER=flow",
+  "LA_TRY_ON_FLOW_URL=http://flow-worker:8787",
+];
+const BUILD_ALL = "--profile flow-try-on build app ops flow-worker";
+
+test("V01-F1: a Flow deploy without a recorded Chrome version stops before building anything", () => {
+  for (const envLines of [FLOW_ON, [...FLOW_ON, "LA_FLOW_WORKER_CHROME_VERSION=155.0.8059.39-1"], [...FLOW_ON, "LA_FLOW_WORKER_CHROME_VERSION=155"]]) {
+    const run = runDeploy({ running: [], envLines, chrome: "Google Chrome 155.0.8059.39" });
+    assert.equal(run.status, 1);
+    assert.match(run.stderr, /requires LA_FLOW_WORKER_CHROME_VERSION/);
+    assert.equal(run.calls.some((call) => call.includes("build")), false, "nothing is built");
+  }
+});
+
+test("V01-F1: an image whose Chrome is not the recorded one is refused before any migration or cutover", () => {
+  for (const chrome of ["Google Chrome 156.0.8100.12", "Chromium 155.0.8059.39", ""]) {
+    const run = runDeploy({ running: ["app"], envLines: [...FLOW_ON, "LA_FLOW_WORKER_CHROME_VERSION=155.0.8059.39"], chrome });
+    assert.equal(run.status, 1, chrome);
+    assert.match(run.stderr, /Refusing deploy: the Flow worker image reports/);
+    assert.ok(position(run.calls, BUILD_ALL) >= 0, "the image was built, then inspected");
+    assert.equal(position(run.calls, MIGRATE), -1, "no migration");
+    assert.equal(position(run.calls, START_NEW), -1, "no cutover");
+    assert.equal(position(run.calls, STOP_APP), -1, "the running release is left untouched");
+  }
+});
+
+test("V01-F1: an image carrying the recorded Chrome passes the gate", () => {
+  const run = runDeploy({ running: [], envLines: [...FLOW_ON, "LA_FLOW_WORKER_CHROME_VERSION=155.0.8059.39"], chrome: "Google Chrome 155.0.8059.39" });
+  assert.match(run.stdout, /Flow worker image carries the verified Chrome 155\.0\.8059\.39/);
+  assert.doesNotMatch(run.stderr, /Refusing deploy: the Flow worker image/);
 });

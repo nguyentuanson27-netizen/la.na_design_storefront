@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseGiftQuantityDraftForm } from "../../src/commerce/gift-quantity-admin-input.ts";
+import {
+  keepStoredInstantIfUnchangedAtMinute,
+  parseGiftQuantityDraftForm,
+} from "../../src/commerce/gift-quantity-admin-input.ts";
 import { validateDraftShape } from "../../src/commerce/gift-quantity-admin-service.ts";
 import {
   MAX_SCOPE_CATEGORIES,
@@ -117,4 +120,19 @@ test("draft shape: name and tier rules", () => {
   assert.deepEqual(validateDraftShape(v({ name: "x".repeat(121) })), ["NAME_TOO_LONG"]);
   assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER", giftTrigger: "QUANTITY" })), ["GIFT_FIELDS_ON_TIER"]);
   assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER" })), []);
+});
+
+test("R04: an untouched time whose stored value carries seconds keeps its exact instant; a real edit is used as sent", () => {
+  const stored = new Date("2026-10-20T03:30:37.123Z");
+  const minute = new Date("2026-10-20T03:30:00.000Z");
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(minute, stored), stored, "the form's minute-rounded echo is not an edit");
+  const later = new Date("2026-10-20T03:31:00.000Z");
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(later, stored), later, "a different minute is a real edit");
+  const earlier = new Date("2026-10-20T03:29:00.000Z");
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(earlier, stored), earlier);
+  // already minute-aligned: identical instants stay identical
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(minute, minute), minute);
+  // clearing or adding a time is never swallowed
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(null, stored), null);
+  assert.equal(keepStoredInstantIfUnchangedAtMinute(minute, null), minute);
 });

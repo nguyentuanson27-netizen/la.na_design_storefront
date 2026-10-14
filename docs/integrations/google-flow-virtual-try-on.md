@@ -223,16 +223,29 @@ The image is intentionally reproducible at the credential-bearing boundary:
   `services/flow-worker/gflow-lock/`.
 - The build exports that lock with `uv export --frozen`, installs the resolved runtime with
   `pip --require-hashes`, and pins the gflow 0.82.1 wheel by SHA-256.
-- Google Chrome is pinned to `155.0.8059.39-1`; a missing apt version fails the build instead of
-  silently moving the session-bearing worker to a new browser.
+- Google Chrome comes from Google's apt repository, which publishes only the current stable build
+  (an exact `google-chrome-stable=<version>` pin stopped resolving within weeks and broke the image
+  build). The image therefore installs the current stable build; CI proves it is real Google Chrome at
+  or above the tested major (155) and prints the version. To rebuild a specific browser, pass
+  `--build-arg GOOGLE_CHROME_VERSION=<exact dpkg version>`: the build then fails if Google no longer
+  serves it.
+- The VPS builds this image itself, so the tested browser is bound to production by a gate, not by the
+  build: `LA_FLOW_WORKER_CHROME_VERSION` in `deploy/vps/.env.production` must equal the version the
+  built image reports (`deploy.sh` runs `chrome --version` in it right after the build and refuses to
+  migrate or cut over on any difference). Record the four-part version printed as "Image Chrome" in the
+  CI run summary only after one live Flow generation passed on that build. When Google ships a newer
+  stable, the next deploy stops by design until CI and a smoke test have been repeated and the value
+  updated. This pins the browser version, not the image bytes: deploying a registry image by immutable
+  digest would be stricter and is not implemented.
 
 The worker runs real Chrome headed under Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that
 changes the browser mode gflow relies on for Flow/reCAPTCHA.
 
 Dependency/browser updates are deliberate maintenance work: replace the lock files from the exact
-upstream gflow release tag, review the lock diff, update the gflow wheel hash and/or Chrome pin, run
-CI image verification, then live-smoke one Flow generation before production rollout. Chrome is not
-auto-upgraded just because Google's apt repository publishes a newer stable build.
+upstream gflow release tag, review the lock diff, update the gflow wheel hash, run CI image
+verification, then live-smoke one Flow generation before production rollout. Every image rebuild picks
+up the current Chrome stable, so a rebuild is itself a browser change: live-smoke before promoting it,
+and raise the CI major floor deliberately when a newer major has been smoke-tested.
 
 ## Chrome sandbox (accepted risk)
 

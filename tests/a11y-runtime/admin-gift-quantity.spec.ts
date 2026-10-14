@@ -39,6 +39,11 @@ const scheduledId = `gq05-sched-${runId}`;
 // Minute-aligned, because that is the precision the datetime-local field round-trips.
 const scheduledStart = new Date(Math.floor((Date.now() + 10 * 24 * 3600 * 1000) / 60_000) * 60_000);
 const scheduledEnd = new Date(scheduledStart.getTime() + 5 * 24 * 3600 * 1000);
+// R04: instants that carry seconds and milliseconds, which the minute-precision form field cannot show.
+const preciseName = `GQ05 Precise ${runId}`;
+const preciseId = `gq05-precise-${runId}`;
+const preciseStart = new Date(scheduledStart.getTime() + 37_123);
+const preciseEnd = new Date(scheduledEnd.getTime() + 59_900);
 
 let server: ChildProcess | undefined;
 let serverOutput = "";
@@ -107,6 +112,13 @@ test.beforeAll(async () => {
     data: {
       id: scheduledId, kind: "GIFT_ITEM", name: scheduledName, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
       giftTrigger: "QUANTITY", minimumQuantity: 2, isEnabled: true, enabledAt: new Date(), startsAt: scheduledStart, endsAt: scheduledEnd,
+    },
+  });
+
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      id: preciseId, kind: "GIFT_ITEM", name: preciseName, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
+      giftTrigger: "QUANTITY", minimumQuantity: 2, isEnabled: true, enabledAt: new Date(), startsAt: preciseStart, endsAt: preciseEnd,
     },
   });
 
@@ -322,4 +334,28 @@ test("F03/F05 a Scheduled campaign: the trigger is shown but fixed, and a rename
   await expect(page.locator("#promotion-admin-status")).toContainText("Tính năng quà tặng và giảm giá theo số lượng đang tắt");
   const unchanged = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: scheduledId } });
   expect(unchanged.endsAt?.toISOString()).toBe(scheduledEnd.toISOString());
+});
+
+test("R04 a Scheduled campaign whose times carry seconds can be renamed through the real form without that counting as a time edit", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  await page.goto(`${PAGE}?edit=${preciseId}`, { waitUntil: "networkidle" });
+  const renamed = `${preciseName} renamed`;
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(renamed);
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+
+  // The gate is OFF: had the minute-rounded form value been read as a new start/end, this would be refused.
+  await expect(page).toHaveURL(`${PAGE}?status=ok`);
+  const after = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: preciseId } });
+  expect(after.name).toBe(renamed);
+  expect(after.revision).toBe(1);
+  expect(after.startsAt?.getTime()).toBe(preciseStart.getTime());
+  expect(after.endsAt?.getTime()).toBe(preciseEnd.getTime());
+
+  // typing a genuinely different minute is still an effective edit and is still refused while the gate is OFF
+  await page.goto(`${PAGE}?edit=${preciseId}`, { waitUntil: "networkidle" });
+  await page.getByLabel("Kết thúc (giờ Việt Nam)").fill("2099-01-01T10:00");
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page.locator("#promotion-admin-status")).toContainText("Tính năng quà tặng và giảm giá theo số lượng đang tắt");
+  const unchanged = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: preciseId } });
+  expect(unchanged.endsAt?.getTime()).toBe(preciseEnd.getTime());
 });

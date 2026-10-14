@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { requireCurrentAdmin } from "@/auth/current-admin";
-import { parseGiftQuantityDraftForm } from "@/commerce/gift-quantity-admin-input";
+import { keepStoredInstantIfUnchangedAtMinute, parseGiftQuantityDraftForm } from "@/commerce/gift-quantity-admin-input";
 import {
   copyGiftQuantityCampaign,
   createDraftGiftQuantityCampaign,
@@ -84,8 +84,14 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
 
     const now = new Date();
     const lifecycle = deriveCampaignLifecycle({ ...existing, now });
+    // The form works at minute precision: an untouched time must not become a different instant.
+    const submitted = {
+      ...parsed.value,
+      startsAt: keepStoredInstantIfUnchangedAtMinute(parsed.value.startsAt, existing.startsAt),
+      endsAt: keepStoredInstantIfUnchangedAtMinute(parsed.value.endsAt, existing.endsAt),
+    };
     if (lifecycle.status === "DRAFT") {
-      return editDraftGiftQuantityCampaign({ campaignId: rawId, values: parsed.value, now, session });
+      return editDraftGiftQuantityCampaign({ campaignId: rawId, values: submitted, now, session });
     }
     if (lifecycle.status === "SCHEDULED") {
       // Scheduled edits are effective and gated; the service refuses with FEATURE_DISABLED when OFF.
@@ -96,17 +102,17 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
         patch: {
           // Identity and trigger are not editable once Scheduled; the service refuses a mismatch
           // instead of dropping it, so a changed form value can never be silently ignored.
-          kind: parsed.value.kind,
-          giftTrigger: parsed.value.giftTrigger,
-          subtotalScope: parsed.value.subtotalScope,
-          name: parsed.value.name,
-          startsAt: parsed.value.startsAt,
-          endsAt: parsed.value.endsAt,
+          kind: submitted.kind,
+          giftTrigger: submitted.giftTrigger,
+          subtotalScope: submitted.subtotalScope,
+          name: submitted.name,
+          startsAt: submitted.startsAt,
+          endsAt: submitted.endsAt,
           scope: {
-            scopeMode: parsed.value.scopeMode,
-            categoryKeys: parsed.value.categoryKeys,
-            includeProductIds: parsed.value.includeProductIds,
-            excludeProductIds: parsed.value.excludeProductIds,
+            scopeMode: submitted.scopeMode,
+            categoryKeys: submitted.categoryKeys,
+            includeProductIds: submitted.includeProductIds,
+            excludeProductIds: submitted.excludeProductIds,
           },
         },
       });

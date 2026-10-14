@@ -27,11 +27,13 @@ const API_KEY = "super-secret-api-key";
 
 type Item = { variation_id: string; quantity: number; variation_info: { retail_price: number } };
 type PostedBody = { items: Item[] };
-type PosBehavior = "faithful" | "merge-average" | "reject" | "network" | "no-id" | "readback-fails" | "cancel-fails" | "cancel-unexpected-body";
+type PosBehavior = "faithful" | "merge-average" | "reject" | "network" | "no-id" | "readback-fails" | "cancel-fails" | "cancel-unexpected-body" | "cancel-ack-not-applied" | "cancel-contradicts" | "cancel-readback-fails";
 
 function fakePos(behavior: PosBehavior, stock = 10) {
   const calls: string[] = [];
   const orders = new Map<number, Item[]>();
+  const statuses = new Map<number, number>();
+  let cancelRequested = false;
   let nextId = 5000;
   const client: ControlledAcceptanceClient = {
     async getJson(endpoint) {
@@ -40,11 +42,13 @@ function fakePos(behavior: PosBehavior, stock = 10) {
         return { data: [{ id: VARIATION, remain_quantity: stock }] };
       }
       const id = Number(endpoint.split("/").pop());
-      if (behavior === "readback-fails") throw new Error("boom");
+      // the order cannot be read before the cancel; once cancelled the read-back works again
+      if (behavior === "readback-fails" && !cancelRequested) throw new Error("boom");
       const items = orders.get(id);
       if (!items) throw new Error("not found");
+      if (behavior === "cancel-readback-fails" && cancelRequested) throw new Error("503 read-back unavailable");
       const total = items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0);
-      return { data: { total_price: total, shipping_fee: 30_000, items } };
+      return { data: { total_price: total, shipping_fee: 30_000, status: statuses.get(id) ?? 0, items } };
     },
     async postJson(endpoint, body) {
       calls.push(`POST ${endpoint}`);
@@ -62,13 +66,21 @@ function fakePos(behavior: PosBehavior, stock = 10) {
       }
       const id = nextId++;
       orders.set(id, stored);
+      statuses.set(id, 0);
       return { success: true, data: { id } };
     },
     async putJson(endpoint, body) {
       calls.push(`PUT ${endpoint} ${JSON.stringify(body)}`);
       if (behavior === "cancel-fails") throw new Error("503 service unavailable");
       if (behavior === "cancel-unexpected-body") return { success: false };
-      return { success: true };
+      cancelRequested = true;
+      const id = Number(endpoint.split("/").pop());
+      // acknowledges the request without applying it: success:true but the status never becomes 7
+      if (behavior === "cancel-ack-not-applied") return { success: true };
+      // the body itself names a different status
+      if (behavior === "cancel-contradicts") return { success: true, data: { status: 1 } };
+      statuses.set(id, 7);
+      return { success: true, data: { status: 7 } };
     },
   };
   return { client, calls };
@@ -305,7 +317,7 @@ test("a case whose test order could not be cancelled is NOT a pass: the run stop
     assert.notEqual(entry.cleanupResult, "CANCELED_STATUS_7");
     assert.match(entry.note, /cancel it manually/);
     assert.equal(entry.readBackMerchandiseTotalVnd, 290_003, "the read-back evidence is kept for the operator");
-    assert.equal(report.allCreatedOrdersCleanedUp, false);
+    assert.equal(report.noOrderMayBeOpen, false);
     assert.equal(report.allSelectedGatingCasesPassed, false);
     assert.equal(calls.filter((call) => call.startsWith("POST")).length, 1);
   }
@@ -319,12 +331,81 @@ test("an unconfirmed cancellation after an unknown read-back also stops the run 
   const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE,PAID_GIFT_VENDOR_PRICE_SAME_VARIATION"), deps(client));
   assert.equal(report.cases.length, 1);
   assert.equal(report.cases[0].outcome, "UNKNOWN_RESPONSE");
-  assert.equal(report.allCreatedOrdersCleanedUp, false);
+  assert.equal(report.noOrderMayBeOpen, false);
   assert.equal(report.allSelectedGatingCasesPassed, false);
 });
 
 test("a clean run reports every created order cleaned up", async () => {
   const { client } = fakePos("faithful");
   const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE"), deps(client));
-  assert.equal(report.allCreatedOrdersCleanedUp, true);
+  assert.equal(report.noOrderMayBeOpen, true);
+});
+
+test("R01: a create that times out or returns no id leaves an unknown order — never reported as clean, even for an informational case", async () => {
+  for (const behavior of ["network", "no-id"] as const) {
+    for (const caseId of ["PAID_PAID_DIFFERENT_PRICE", "GIFT_ZERO_PRICE_INFORMATIONAL"] as const) {
+      const { client } = fakePos(behavior);
+      const report = await runCapabilityProbe(approvedEnv(caseId), deps(client));
+      const [entry] = report.cases;
+      assert.equal(entry.orderState, "CREATION_UNKNOWN", `${behavior}/${caseId}`);
+      assert.equal(entry.createdPancakeOrderId, null);
+      assert.equal(report.noOrderMayBeOpen, false, `${behavior}/${caseId}: an order may exist`);
+      // the informational case does not gate the verdict, but it must still not look like a clean success
+      assert.equal(report.allSelectedGatingCasesPassed, false);
+    }
+  }
+});
+
+test("R01: only an explicit POS refusal means nothing was created; a proven cancel means nothing is open", async () => {
+  const rejected = fakePos("reject");
+  const refusedReport = await runCapabilityProbe(approvedEnv("GIFT_ZERO_PRICE_INFORMATIONAL"), deps(rejected.client));
+  assert.equal(refusedReport.cases[0].orderState, "NOT_CREATED");
+  assert.equal(refusedReport.noOrderMayBeOpen, true);
+  assert.equal(refusedReport.allSelectedGatingCasesPassed, true, "a refused informational case is a valid, closed result");
+
+  const faithful = fakePos("faithful");
+  const okReport = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE"), deps(faithful.client));
+  assert.equal(okReport.cases[0].orderState, "CREATED_CANCELLED");
+  assert.equal(okReport.noOrderMayBeOpen, true);
+});
+
+test("R01: an unknown creation stops the run before any further order, and a 5xx is unknown, not a refusal", async () => {
+  const { client, calls } = fakePos("network");
+  const report = await runCapabilityProbe(approvedEnv("GIFT_ZERO_PRICE_INFORMATIONAL,PAID_PAID_DIFFERENT_PRICE"), deps(client));
+  assert.equal(report.cases.length, 1);
+  assert.equal(calls.filter((call) => call.startsWith("POST")).length, 1);
+  const server = fakePos("faithful");
+  const original = server.client.postJson.bind(server.client);
+  server.client.postJson = async () => { throw new PancakeHttpError(503, "/orders"); };
+  void original;
+  const fiveHundred = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE"), deps(server.client));
+  assert.equal(fiveHundred.cases[0].orderState, "CREATION_UNKNOWN");
+  assert.equal(fiveHundred.cases[0].outcome, "UNKNOWN_RESPONSE");
+});
+
+test("R02: success=true from the cancel call is not proof — the order is read back and must report status 7", async () => {
+  const proofs: Array<[PosBehavior, RegExp]> = [
+    ["cancel-ack-not-applied", /^CANCEL_NOT_VERIFIED_STATUS_0$/],
+    ["cancel-contradicts", /^CANCEL_RESPONSE_STATUS_1$/],
+    ["cancel-readback-fails", /^CANCEL_NOT_VERIFIED_READBACK_FAILED$/],
+  ];
+  for (const [behavior, expected] of proofs) {
+    const { client } = fakePos(behavior);
+    const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE,PAID_GIFT_VENDOR_PRICE_SAME_VARIATION"), deps(client));
+    const [entry] = report.cases;
+    assert.match(entry.cleanupResult, expected, behavior);
+    assert.equal(entry.outcome, "CLEANUP_NOT_CONFIRMED", behavior);
+    assert.equal(entry.orderState, "CREATED_CLEANUP_UNCONFIRMED");
+    assert.equal(report.cases.length, 1, `${behavior}: the run stops with an order still open`);
+    assert.equal(report.noOrderMayBeOpen, false);
+    assert.equal(report.allSelectedGatingCasesPassed, false);
+  }
+});
+
+test("R02: a faithful cancel is confirmed only by the read-back (status 7), and the cancel is read before it is trusted", async () => {
+  const { client, calls } = fakePos("faithful");
+  const report = await runCapabilityProbe(approvedEnv("PAID_PAID_DIFFERENT_PRICE"), deps(client));
+  assert.equal(report.cases[0].cleanupResult, "CANCELED_STATUS_7");
+  const putAt = calls.findIndex((call) => call.startsWith("PUT"));
+  assert.ok(calls.slice(putAt + 1).some((call) => call.startsWith("GET /shops") && call.includes("/orders/")), "a read-back follows the PUT");
 });

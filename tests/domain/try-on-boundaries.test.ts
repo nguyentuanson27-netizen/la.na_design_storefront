@@ -122,8 +122,14 @@ test("Flow worker dependency boundary is frozen instead of resolving mutable lat
   assert.match(dockerfile, /uv export[\s\\]+--frozen/);
   assert.match(dockerfile, /pip install --no-cache-dir --require-hashes -r \/tmp\/gflow-runtime\.txt/);
   assert.match(dockerfile, /gflow-cli==0\.82\.1 --hash=sha256:[a-f0-9]{64}/);
-  assert.match(dockerfile, /GOOGLE_CHROME_VERSION=155\.0\.8059\.39-1/);
-  assert.match(dockerfile, /google-chrome-stable=\$\{GOOGLE_CHROME_VERSION\}/);
+  // Google's apt repo serves only the current stable build: no literal version may be baked in,
+  // but a build arg still enforces an exact version when one is passed.
+  assert.match(dockerfile, /^ARG GOOGLE_CHROME_VERSION=$/m);
+  assert.match(dockerfile, /google-chrome-stable\$\{GOOGLE_CHROME_VERSION:\+=\$GOOGLE_CHROME_VERSION\}/);
+  assert.doesNotMatch(dockerfile, /GOOGLE_CHROME_VERSION=\d/);
+  const workflow = source(".github/workflows/vps-container.yml");
+  assert.match(workflow, /BASH_REMATCH\[1\] >= 155/);
+  assert.doesNotMatch(workflow, /grep -Fq "155\./);
   assert.doesNotMatch(dockerfile, /pip install[^\n]*gflow-cli==0\.82\.1(?![^\n]*--hash)/);
 
   assert.match(lockProject, /^version = "0\.82\.1"$/m);

@@ -113,3 +113,15 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
     },
   };
 }
+
+/**
+ * The admin form edits times at minute precision (`datetime-local`), so saving a campaign whose
+ * stored time carries seconds would otherwise turn an untouched field into a one-minute-off "edit".
+ * When the submitted value is exactly the stored instant rounded down to its minute, the field was
+ * not changed and the stored instant is kept. Any other value is a real edit and is used as sent.
+ */
+export function keepStoredInstantIfUnchangedAtMinute(submitted: Date | null, stored: Date | null): Date | null {
+  if (submitted === null || stored === null) return submitted;
+  const storedMinute = Math.floor(stored.getTime() / 60_000) * 60_000;
+  return submitted.getTime() === storedMinute ? stored : submitted;
+}

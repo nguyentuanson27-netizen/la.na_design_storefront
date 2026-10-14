@@ -647,3 +647,34 @@ test("F04: a product on both lists is persisted once, as excluded, by Scheduled 
   assert.deepEqual(targets.map((t) => [t.productId.replace(`${P}-`, ""), t.role]), [["a", "EXCLUDE"], ["x", "INCLUDE"]]);
   assert.deepEqual(await frozenIds("f04"), ["b", "x"], "the excluded product is not frozen; the explicit include is");
 });
+
+test("R04: a stored time carrying seconds survives a rename that echoes it; the minute-rounded echo is what would have been a material edit", async () => {
+  const startsAt = new Date("2026-10-20T03:30:37.123Z");
+  const endsAt = new Date("2026-10-30T10:15:59.900Z");
+  await draft("r04", { startsAt, endsAt });
+  await publishGiftQuantityCampaign({ campaignId: `${P}-r04`, now: T0, session: ADMIN, env: ON, validateRule: passRules });
+  const before = await revision();
+  const stored = await campaign("r04");
+  assert.equal(stored.startsAt?.getTime(), startsAt.getTime(), "the database keeps sub-minute precision");
+
+  // the exact instants echoed back: a pure rename, ungated and unvalidated, nothing moves
+  const renamed = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-r04`, now: T0, session: ADMIN, env: {}, validateRule: throwingValidator,
+    patch: { name: "Renamed with seconds", startsAt: new Date(startsAt.getTime()), endsAt: new Date(endsAt.getTime()) },
+  });
+  assert.equal(renamed.ok, true);
+  const after = await campaign("r04");
+  assert.equal(after.name, "Renamed with seconds");
+  assert.equal(after.startsAt?.getTime(), startsAt.getTime());
+  assert.equal(after.endsAt?.getTime(), endsAt.getTime());
+  assert.equal(after.revision, stored.revision);
+  assert.equal(await revision(), before);
+
+  // a minute-rounded value is a different instant: the service must still treat it as a real, gated edit
+  const rounded = await editScheduledGiftQuantityCampaign({
+    campaignId: `${P}-r04`, now: T0, session: ADMIN, env: {}, validateRule: throwingValidator,
+    patch: { startsAt: new Date("2026-10-20T03:30:00.000Z") },
+  });
+  assert.deepEqual(rounded, { ok: false, failure: { reason: "FEATURE_DISABLED" } });
+  assert.equal((await campaign("r04")).startsAt?.getTime(), startsAt.getTime());
+});
