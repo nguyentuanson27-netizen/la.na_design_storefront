@@ -172,6 +172,10 @@ export function parseTierRuleForm(formData: FormData): ParsedTierRule {
 }
 
 export type TierRuleStructureError =
+  | "INVALID_TIER_UNIT"
+  | "INVALID_TIER_DISCOUNTED_UNITS"
+  | "INVALID_TIER_SELECTION_PRIORITY"
+  | "INVALID_STACKING_FLAG"
   | "TIERS_TOO_MANY"
   | "TIER_THRESHOLD_OUT_OF_RANGE"
   | "TIER_VALUE_OUT_OF_RANGE"
@@ -187,6 +191,11 @@ export type TierRuleStructureError =
 /** Malformed or unbounded input. Enforced on every write, Draft included. */
 export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRuleStructureError[] {
   const errors = new Set<TierRuleStructureError>();
+  // Services also accept typed inputs directly; the form parser is not their validation boundary.
+  if (rule.unit !== null && !(TIER_UNITS as readonly string[]).includes(rule.unit)) errors.add("INVALID_TIER_UNIT");
+  if (rule.discountedUnits !== null && !(TIER_DISCOUNTED_UNITS as readonly string[]).includes(rule.discountedUnits)) errors.add("INVALID_TIER_DISCOUNTED_UNITS");
+  if (rule.selectionPriority !== null && !(TIER_SELECTION_PRIORITIES as readonly string[]).includes(rule.selectionPriority)) errors.add("INVALID_TIER_SELECTION_PRIORITY");
+  if (typeof rule.stackingEnabled !== "boolean") errors.add("INVALID_STACKING_FLAG");
   if (rule.tiers.length > MAX_TIERS_PER_CAMPAIGN) errors.add("TIERS_TOO_MANY");
   if (rule.tiers.length > 0 && rule.unit === null) errors.add("TIER_UNIT_REQUIRED");
 

@@ -154,3 +154,15 @@ test("structure: bounds, duplicates, percent range, unit and stack inputs", () =
   const many = Array.from({ length: MAX_STACK_PEERS + 1 }, (_, index) => ({ kind: "PROMOTION" as const, campaignId: `p${index}` }));
   assert.ok(errors({ peers: many }).includes("STACK_PEERS_TOO_MANY"));
 });
+
+test("structure: direct service inputs enforce enum and boolean allowlists before persistence", () => {
+  for (const [field, value, error] of [
+    ["unit", "BOGUS", "INVALID_TIER_UNIT"],
+    ["discountedUnits", "BOGUS", "INVALID_TIER_DISCOUNTED_UNITS"],
+    ["selectionPriority", "BOGUS", "INVALID_TIER_SELECTION_PRIORITY"],
+    ["stackingEnabled", "true", "INVALID_STACKING_FLAG"],
+  ] as const) {
+    const malformed = rule({ discountedUnits: "FROM_REACHED_THRESHOLD", selectionPriority: "CHEAPEST_FIRST", [field]: value } as unknown as Partial<TierRuleInput>);
+    assert.ok(validateTierRuleStructure(malformed).includes(error), field);
+  }
+});
