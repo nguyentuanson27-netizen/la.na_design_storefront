@@ -16,6 +16,10 @@ import {
   endGiftQuantityCampaignEarly,
   publishGiftQuantityCampaign,
 } from "@/commerce/gift-quantity-activation-service";
+import {
+  clearLegacyPromotionStackConsent,
+  setLegacyPromotionStackConsent,
+} from "@/commerce/gift-quantity-legacy-consent";
 import { createGiftQuantityAdminRepository, type AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
 import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { createPromotionAdminRepository } from "@/commerce/promotion-admin-repository";
@@ -114,6 +118,8 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
             includeProductIds: submitted.includeProductIds,
             excludeProductIds: submitted.excludeProductIds,
           },
+          // Only when the submission described the rule (GQ09a); a form without tier fields leaves it.
+          ...(submitted.tierRule ? { tierRule: submitted.tierRule } : {}),
         },
       });
     }
@@ -149,6 +155,29 @@ export async function endGiftQuantityEarlyAction(formData: FormData): Promise<vo
 export async function copyGiftQuantityAction(formData: FormData): Promise<void> {
   const campaignId = campaignIdFrom(formData);
   const outcome = await runOperation("copy", (session) => copyGiftQuantityCampaign({ campaignId, session }));
+  completeWith(outcome);
+}
+
+/**
+ * A legacy campaign's consent to stack with quantity tiers (GQ09a, ADR 0016 D-10). Setting it is
+ * effective and gated; withdrawing it never is. The campaign id and priority are parsed here only
+ * as far as "a string" and "a plain integer"; the domain service owns every bound.
+ */
+export async function setLegacyStackConsentAction(formData: FormData): Promise<void> {
+  const campaignId = campaignIdFrom(formData);
+  const outcome = await runOperation("set-legacy-consent", async (session) => {
+    const raw = formData.get("stackPriority");
+    const priority = typeof raw === "string" && /^(0|[1-9]\d{0,14})$/.test(raw.trim()) ? Number(raw.trim()) : Number.NaN;
+    return setLegacyPromotionStackConsent({ campaignId, stackPriority: priority, now: new Date(), session });
+  });
+  completeWith(outcome);
+}
+
+export async function clearLegacyStackConsentAction(formData: FormData): Promise<void> {
+  const campaignId = campaignIdFrom(formData);
+  const outcome = await runOperation("clear-legacy-consent", (session) =>
+    clearLegacyPromotionStackConsent({ campaignId, session }),
+  );
   completeWith(outcome);
 }
 

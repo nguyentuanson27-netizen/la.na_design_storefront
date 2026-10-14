@@ -121,13 +121,13 @@ function normalizedOptionValue(value: string | null): string | null {
   return normalized.length > 0 ? normalized : null;
 }
 
-function isPublicOwner(product: StorefrontCartProduct): boolean {
+function isPublicOwner(product: Pick<StorefrontCartProduct, "isPresent" | "isActive">): boolean {
   return product.isPresent && product.isActive;
 }
 
-function isCommerceEligibleVariant(
-  product: StorefrontCartProduct,
-  variant: StorefrontCartVariant,
+export function isCommerceEligibleVariant(
+  product: Pick<StorefrontCartProduct, "isPresent" | "isActive">,
+  variant: Pick<StorefrontCartVariant, "isPresent" | "isActive" | "isCompositeComponentAvailable" | "isSubSetAvailable">,
 ): boolean {
   return (
     variant.isPresent &&

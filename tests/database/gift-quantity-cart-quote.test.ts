@@ -4,6 +4,7 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { MAX_ACTIVE_GIFT_QUANTITY_CAMPAIGNS, type GiftQuantityCandidateReadClient } from "../../src/commerce/gift-quantity-candidate-repository.ts";
+import { setLegacyPromotionStackConsent, clearLegacyPromotionStackConsent } from "../../src/commerce/gift-quantity-legacy-consent.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
@@ -14,8 +15,10 @@ if (!connectionString) throw new Error("DATABASE_URL is required for database sm
 
 const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString }), log: [{ emit: "event", level: "query" }] });
 let queryCount = 0;
-(prisma as unknown as { $on: (event: string, handler: () => void) => void }).$on("query", () => {
+let consentQueryCount = 0;
+(prisma as unknown as { $on: (event: string, handler: (event: { query: string }) => void) => void }).$on("query", (event) => {
   queryCount += 1;
+  if (event.query.includes('"LegacyPromotionStackConsent"')) consentQueryCount++;
 });
 const repository = createStorefrontCartRepository(prisma);
 
@@ -425,4 +428,66 @@ test("the legacy-consent reader is not consulted when no tier campaign is active
   assert.equal(calls, 0);
   assert.ok(quote.benefits.enabled && quote.benefits.ok);
   assert.equal(quote.benefits.enabled && quote.benefits.ok && quote.benefits.subtotalVnd, 900_000);
+});
+
+
+test("stored legacy consent is the default quote reader: set → 855.000, clear → 900.000, OFF parity", async () => {
+  const seed = await seedProduct("stored-consent", [1_000_000]);
+  await flash("stored-consent-flash", seed.productId, 10);
+  await tierCampaign({ id: "stored-consent-tier", tiers: [[1, 5]], stackPriority: 2, stackingEnabled: true,
+    peers: [{ peerKind: "FLASH_SALE", peerCampaignId: "*" }] });
+  const admin = { user: { id: "admin", role: "ADMIN" }, session: { id: "admin-session" } };
+  const campaignId = `${P}-stored-consent-flash`;
+  const set = await setLegacyPromotionStackConsent({ campaignId, stackPriority: 1, now: NOW, session: admin, client: prisma, env: ON });
+  assert.equal(set.ok, true);
+  const input = { shopId: SHOP, items: items(seed, [1]), now: NOW, env: ON };
+  const stacked = await repository.getQuote(input);
+  assert.equal(stacked.benefits.enabled && stacked.benefits.ok && stacked.benefits.subtotalVnd, 855_000);
+  queryCount = 0;
+  const legacy = await repository.getLines(input);
+  const baseline = queryCount;
+  queryCount = 0;
+  const off = await repository.getQuote({ ...input, env: {} });
+  assert.equal(JSON.stringify(off.lines), JSON.stringify(legacy));
+  assert.equal(queryCount, baseline);
+  assert.deepEqual(off.benefits, { enabled: false });
+  assert.equal((await clearLegacyPromotionStackConsent({ campaignId, session: admin, client: prisma })).ok, true);
+  const unstacked = await repository.getQuote(input);
+  assert.equal(unstacked.benefits.enabled && unstacked.benefits.ok && unstacked.benefits.subtotalVnd, 900_000);
+});
+
+test("default legacy consent read failure returns LOOKUP_FAILED with no cause exposed", async () => {
+  const seed = await seedProduct("default-reader-failure", [1_000_000]);
+  await flash("default-reader-failure-flash", seed.productId, 10);
+  await tierCampaign({ id: "default-reader-failure-tier", tiers: [[1, 5]] });
+  let reads = 0;
+  const broken = new Proxy(prisma, { get(target, key, receiver) {
+    if (key === "legacyPromotionStackConsent") return { findMany: async () => { reads++; throw new Error("private connection detail"); } };
+    return Reflect.get(target, key, receiver);
+  } });
+  const quote = await createStorefrontCartRepository(broken).getQuote({ shopId: SHOP, items: items(seed, [1]), now: NOW, env: ON });
+  assert.deepEqual(quote.benefits, { enabled: true, ok: false, reason: "LOOKUP_FAILED" });
+  assert.equal(reads, 1);
+});
+
+
+test("default stored consents for multiple legacy campaigns are read in one batch", async () => {
+  const a = await seedProduct("batch-a", [1_000_000]);
+  const b = await seedProduct("batch-b", [1_000_000]);
+  await flash("batch-a-flash", a.productId, 10);
+  await flash("batch-b-flash", b.productId, 10);
+  await tierCampaign({ id: "batch-tier", tiers: [[1, 5]], stackPriority: 2, stackingEnabled: true,
+    peers: [{ peerKind: "FLASH_SALE", peerCampaignId: "*" }] });
+  const admin = { user: { id: "admin", role: "ADMIN" }, session: { id: "admin-session" } };
+  for (const [suffix, stackPriority] of [["batch-a-flash", 1], ["batch-b-flash", 3]] as const) {
+    assert.equal((await setLegacyPromotionStackConsent({ campaignId: `${P}-${suffix}`, stackPriority, now: NOW, session: admin, client: prisma, env: ON })).ok, true);
+  }
+  consentQueryCount = 0;
+  const cart = [...items(a, [1]), ...items(b, [1])];
+  const quote = await repository.getQuote({ shopId: SHOP, items: cart, now: NOW, env: ON });
+  assert.equal(quote.benefits.enabled && quote.benefits.ok && quote.benefits.subtotalVnd, 1_710_000);
+  assert.equal(consentQueryCount, 1);
+  consentQueryCount = 0;
+  await repository.getQuote({ shopId: SHOP, items: cart, now: NOW, env: {} });
+  assert.equal(consentQueryCount, 0);
 });
