@@ -921,6 +921,20 @@ export function createPancakeOrderSubmissionService(
       return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
     }
 
+    // A valid id means a Pancake order exists. Record it at once, before anything else can fail, so that
+    // no later failure (the read-back, the confirmation transaction, a crash) leaves a local order that
+    // forgets an order it is known to have created: reconciliation protects the holds of an order whose id
+    // is recorded, and cannot do that for one it has no id for. Best effort: the id is also written by
+    // every later transition, and the state is what decides.
+    try {
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "POS_SUBMITTING" },
+        data: { pancakeOrderId },
+      });
+    } catch {
+      // Carried on by the transitions below.
+    }
+
     if (verifyCreatedOrder !== undefined) {
       const verdict = await verifyCreatedOrder(pancakeOrderId);
       if (verdict !== "MATCH") {
@@ -969,10 +983,20 @@ export function createPancakeOrderSubmissionService(
         return existingResult(current);
       }
     } catch {
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
-      });
+      // The create succeeded and (for a benefit order) was read back; only the local confirmation failed.
+      // The known remote id stays on the row and the code says what happened, so reconciliation verifies
+      // that very order instead of searching for a marker that may not be indexed yet.
+      try {
+        await client.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: { state: "SYNC_UNKNOWN", pancakeOrderId, syncErrorCode: "LOCAL_CONFIRMATION_FAILED" },
+        });
+      } catch {
+        await client.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: { state: "SYNC_UNKNOWN", syncErrorCode: "LOCAL_CONFIRMATION_FAILED" },
+        });
+      }
       emitSafely(options.onEvent, {
         name: "pancake_order.create_unknown",
         correlationId,

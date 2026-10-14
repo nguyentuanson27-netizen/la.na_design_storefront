@@ -1381,3 +1381,67 @@ test("review3 P1: a canceled order, or one that is not the requested order and s
     assert.deepEqual(confirmed, [], name);
   }
 });
+
+// -- Fourth review round on PR #165 -------------------------------------------------------------------------------
+
+test("review4 P1: a failed local confirmation keeps the remote order id, so an empty marker search cannot release the stock", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const armed = { value: false };
+  // The create succeeds and the read-back matches; the transaction that confirms the order locally then fails.
+  const flaky = new Proxy(prisma, {
+    get(target, prop) {
+      if (prop === "$transaction") {
+        return (...args: unknown[]) => {
+          if (armed.value) {
+            armed.value = false;
+            return Promise.reject(new Error("injected: confirmation transaction failed"));
+          }
+          return (target.$transaction as (...a: unknown[]) => unknown).apply(target, args);
+        };
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
+  const pancake = fakePancake({}, { readBack: async (request) => {
+    armed.value = true; // the read-back is the last thing before the confirmation transaction
+    return {
+      lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+      totalPriceVnd: (request?.items ?? []).reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+    };
+  } });
+  const pos = createPancakeOrderSubmissionService(flaky as typeof prisma, pancake.gateway, { lineLevelPricingVerifiedShopIds: [SHOP], env: ON, now: () => NOW, onConfirmed: async () => undefined });
+  const service = createGuestCheckoutSubmitService({
+    snapshot: snapshotService({ proof }),
+    orderSubmission: pos,
+    generatePublicCode: code,
+    capacity: createCapacityReservationRepository(prisma),
+    clock: () => NOW,
+  });
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.equal(pancake.calls.create.length, 1);
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.pancakeOrderId, order.syncErrorCode], ["SYNC_UNKNOWN", "800001", "LOCAL_CONFIRMATION_FAILED"], "the id the POS gave is kept and the code says what failed");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+
+  // The marker is not indexed yet. Without the id this would reject the order and release stock that is sold.
+  const confirmed: string[] = [];
+  const absent = await reconciler({ searchOrderByMarker: async () => ({ kind: "ABSENT" as const }), readOrder: async () => { throw new Error("still down"); } }, confirmed).reconcileOrder(order.publicCode);
+  assert.equal(absent.ok, false);
+  assert.equal((await lastOrder()).state, "SYNC_UNKNOWN");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], "the stock stays held");
+
+  // The recorded id is verified by read-back and the order settles without the marker ever appearing.
+  const sent = pancake.calls.create[0]!;
+  const settled = await reconciler({
+    searchOrderByMarker: async () => ({ kind: "ABSENT" as const }),
+    readOrder: async () => ({
+      lines: sent.items.map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+      totalPriceVnd: sent.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+    }),
+  }, confirmed).reconcileOrder(order.publicCode);
+  assert.deepEqual(settled, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["COMMITTED"]);
+});
