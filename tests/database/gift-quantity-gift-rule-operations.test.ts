@@ -7,6 +7,7 @@ import { createCartGiftSelectionService } from "../../src/commerce/cart-gift-sel
 import {
   disableGiftQuantityCampaign,
   editScheduledGiftQuantityCampaign,
+  endGiftQuantityCampaignEarly,
   publishGiftQuantityCampaign,
 } from "../../src/commerce/gift-quantity-activation-service.ts";
 import { parseGiftQuantityDraftForm, type GiftQuantityDraftValues } from "../../src/commerce/gift-quantity-admin-input.ts";
@@ -464,4 +465,151 @@ test("end to end: a gift built through GQ13a is consumed by the cart gift servic
   assert.equal(entitlement.grantable, 2, "two distinct products, duplicates not allowed");
   assert.deepEqual(entitlement.selectableOptions.map((option) => option.variantId), sortedIds([v.g1!, v.g2!]));
   assert.deepEqual(await service.set({ campaignId: id, variantId: v.g1!, quantity: 1, campaignRevision: 2 }, NOW), { ok: true });
+});
+
+// --- Publish admission: the cart's entitlement engine accepts at most MAX_GIFT_CAMPAIGNS gift campaigns at once.
+
+const LIMIT = ["GIFT_CAMPAIGN_LIMIT_EXCEEDED"];
+const ACTIVE_NOW = { startsAt: null, endsAt: null } as const;
+const DAY = 24 * 3600 * 1000;
+
+/** Creates and publishes `count` gift campaigns with the same window, each independently valid. */
+async function fill(count: number, overrides: Partial<GiftQuantityDraftValues> = {}) {
+  const ids: string[] = [];
+  for (let index = 0; index < count; index += 1) {
+    const id = await create(`cap-${index}`, quantityRule([v.g1!]), overrides);
+    const outcome = await publish(id);
+    assert.equal(outcome.ok, true, `${index}: ${show(outcome)}`);
+    ids.push(id);
+  }
+  return ids;
+}
+async function cartService() {
+  const cart = await prisma.cart.create({
+    data: { expiresAt: new Date("2027-01-01T00:00:00Z"), items: { create: { variantId: v.paid!, quantity: 3 } } },
+  });
+  return createCartGiftSelectionService(prisma, { get: () => ({ value: cart.id }) }, { shopId: SHOP, env: ON });
+}
+async function enabledGifts() {
+  return prisma.giftQuantityCampaign.count({ where: { name: { startsWith: P }, kind: "GIFT_ITEM", isEnabled: true } });
+}
+
+test("admission: 20 valid concurrent gifts keep every cart readable, and the 21st is refused with nothing changed", async () => {
+  const ids = await fill(20, ACTIVE_NOW);
+  const service = await cartService();
+  const before20 = await service.get(NOW);
+  assert.ok("state" in before20, "20 gift campaigns must be readable");
+  assert.equal(before20.state.entitlements.length, 20);
+
+  const extra = await create("cap-extra", quantityRule([v.g1!]), ACTIVE_NOW);
+  const revisionBefore = await revision();
+  const refused = await publish(extra);
+  assert.deepEqual(errorsOf(refused), LIMIT);
+  assert.equal(refused.ok === false && refused.failure.reason, "INVALID_RULE");
+  assert.equal(await revision(), revisionBefore, "a refused admission moves no revision");
+  const row = await stored(extra);
+  assert.equal(row.isEnabled, false);
+  assert.equal(row.revision, 1);
+  assert.equal(await enabledGifts(), ids.length);
+
+  const after = await service.get(NOW);
+  assert.ok("state" in after, "the refusal kept the cart lookup working");
+  assert.equal(after.state.entitlements.length, 20);
+});
+
+test("admission: a slot is freed by disable, by end-early and by a window that has ended", async () => {
+  const ids = await fill(20, ACTIVE_NOW);
+  const extra = await create("cap-extra", quantityRule([v.g1!]), ACTIVE_NOW);
+  assert.deepEqual(errorsOf(await publish(extra)), LIMIT);
+
+  assert.equal((await disableGiftQuantityCampaign({ campaignId: ids[0]!, now: NOW, session: ADMIN })).ok, true);
+  assert.equal((await publish(extra)).ok, true, "disabling one frees its slot");
+  const second = await create("cap-second", quantityRule([v.g1!]), ACTIVE_NOW);
+  assert.deepEqual(errorsOf(await publish(second)), LIMIT, "and the slot is taken again");
+
+  const ended = await endGiftQuantityCampaignEarly({ campaignId: ids[1]!, now: NOW, session: ADMIN });
+  assert.equal(ended.ok, true, show(ended));
+  assert.equal((await publish(second)).ok, true, "ending one early frees its slot");
+  assert.equal(await enabledGifts(), 21, "one ended campaign stays enabled but is no longer in force");
+});
+
+test("admission: campaigns whose window has already ended no longer hold a slot, even though they stay enabled", async () => {
+  await fill(20);
+  const later = new Date(END.getTime() + DAY);
+  // No start, so on paper it overlaps the 20 windows that are over by `later`; only the ones still in force count.
+  const open = await create("cap-open", quantityRule([v.g1!]), { startsAt: null, endsAt: new Date(later.getTime() + 5 * DAY) });
+  assert.deepEqual(errorsOf(await publish(open, NOW)), LIMIT, "while the 20 are pending");
+  assert.equal((await publish(open, later)).ok, true, "once their windows are over, their slots are free");
+  assert.equal(await enabledGifts(), 21);
+});
+
+test("admission: scheduled windows are counted per instant and are half-open", async () => {
+  await fill(20);
+  const beforeRevision = await revision();
+  const overlapping = await create("cap-overlap", quantityRule([v.g1!]), { startsAt: new Date(START.getTime() + DAY), endsAt: END });
+  assert.deepEqual(errorsOf(await publish(overlapping)), LIMIT, "21 scheduled campaigns opening in the same window are refused");
+  const longer = await create("cap-longer", quantityRule([v.g1!]), { startsAt: new Date(END.getTime() - DAY), endsAt: new Date(END.getTime() + 5 * DAY) });
+  assert.deepEqual(errorsOf(await publish(longer)), LIMIT, "one day of overlap is enough");
+  const unbounded = await create("cap-unbounded", quantityRule([v.g1!]), ACTIVE_NOW);
+  assert.deepEqual(errorsOf(await publish(unbounded)), LIMIT, "an open-ended window overlaps them too");
+  assert.equal(await revision(), beforeRevision);
+
+  const backToBack = await create("cap-next", quantityRule([v.g1!]), { startsAt: END, endsAt: new Date(END.getTime() + 5 * DAY) });
+  assert.equal((await publish(backToBack)).ok, true, "a campaign starting exactly when the others end does not overlap them");
+  assert.equal(await enabledGifts(), 21);
+});
+
+test("admission: re-enabling a never-active campaign is refused while its slot is taken", async () => {
+  const ids = await fill(20);
+  assert.equal((await disableGiftQuantityCampaign({ campaignId: ids[0]!, now: NOW, session: ADMIN })).ok, true);
+  const extra = await create("cap-extra", quantityRule([v.g1!]));
+  assert.equal((await publish(extra)).ok, true);
+  const before = await revision();
+  const reenable = await publish(ids[0]!);
+  assert.deepEqual(errorsOf(reenable), LIMIT);
+  assert.equal(await revision(), before);
+  assert.equal((await stored(ids[0]!)).isEnabled, false);
+});
+
+test("admission: a Scheduled window edit cannot open an overlap beyond the cap, and a harmless one still works", async () => {
+  await fill(20);
+  const lateStart = END;
+  const lateEnd = new Date(END.getTime() + 5 * DAY);
+  const late = await create("cap-late", quantityRule([v.g1!]), { startsAt: lateStart, endsAt: lateEnd });
+  assert.equal((await publish(late)).ok, true);
+  const before = await revision();
+  const overlap = await editScheduledGiftQuantityCampaign({
+    campaignId: late, now: NOW, session: ADMIN, env: ON, patch: { startsAt: new Date(START.getTime() + DAY) },
+  });
+  assert.deepEqual(errorsOf(overlap), LIMIT);
+  assert.equal(await revision(), before, "a refused edit moves no revision");
+  const unchanged = await stored(late);
+  assert.equal(unchanged.startsAt?.getTime(), lateStart.getTime());
+  assert.equal(unchanged.revision, 2);
+
+  const stretch = await editScheduledGiftQuantityCampaign({
+    campaignId: late, now: NOW, session: ADMIN, env: ON, patch: { endsAt: new Date(lateEnd.getTime() + 5 * DAY) },
+  });
+  assert.equal(stretch.ok, true, show(stretch));
+  assert.equal(await revision(), before + BigInt(1));
+});
+
+test("admission: concurrent publishes of the last two slots admit exactly one, and the cart stays readable", async () => {
+  await fill(19, ACTIVE_NOW);
+  const a = await create("race-a", quantityRule([v.g1!]), ACTIVE_NOW);
+  const b = await create("race-b", quantityRule([v.g1!]), ACTIVE_NOW);
+  const outcomes = await Promise.all([publish(a), publish(b)]);
+  assert.equal(outcomes.filter((outcome) => outcome.ok).length, 1, show(outcomes));
+  assert.deepEqual(errorsOf(outcomes.find((outcome) => !outcome.ok)!), LIMIT);
+  assert.equal(await enabledGifts(), 20);
+  const state = await (await cartService()).get(NOW);
+  assert.ok("state" in state, "the cart gift lookup still works");
+});
+
+test("admission: quantity-tier campaigns are not gift campaigns and take no gift slot", async () => {
+  await prisma.giftQuantityCampaign.create({
+    data: { kind: "QUANTITY_TIER", name: `${P} tier-active`, isEnabled: true, enabledAt: NOW, tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", tiers: { create: { minQuantity: 2, discountValue: 10 } } },
+  });
+  await fill(20, ACTIVE_NOW);
+  assert.equal(await enabledGifts(), 20);
 });

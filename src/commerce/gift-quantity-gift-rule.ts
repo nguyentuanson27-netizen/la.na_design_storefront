@@ -23,7 +23,7 @@
  */
 
 import type { GiftAwardMode, GiftTrigger, PrismaClient } from "../generated/prisma/client.ts";
-import { MAX_GIFT_OPTIONS_PER_CAMPAIGN, MAX_GIFTS_PER_ORDER_TECHNICAL_CAP } from "./gift-quantity-entitlement.ts";
+import { MAX_GIFT_CAMPAIGNS, MAX_GIFT_OPTIONS_PER_CAMPAIGN, MAX_GIFTS_PER_ORDER_TECHNICAL_CAP } from "./gift-quantity-entitlement.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import type { Tx } from "./promotion-activation-service.ts";
 
@@ -347,6 +347,77 @@ export async function giftOptionErrors(
   }
   if (errors.size === 0 && !anyReady) errors.add("GIFT_NO_READY_STOCK");
   return [...errors];
+}
+
+export type GiftCampaignAdmissionError = "GIFT_CAMPAIGN_LIMIT_EXCEEDED";
+
+/** A campaign window; `null` means unbounded on that side. Half-open: it contains `startsAt` and not `endsAt`. */
+export type GiftCampaignWindow = Readonly<{ startsAt: Date | null; endsAt: Date | null }>;
+
+/**
+ * Whether adding `candidate` would put more than `cap` windows in force at one instant.
+ *
+ * Pure. `others` are the windows already admitted; a window that never intersects the candidate's
+ * cannot matter, so only instants inside the candidate's window are examined. The most crowded
+ * instant of a set of intervals is always the start of one of them, hence the candidate's own start
+ * plus every other start that falls inside the candidate window is enough. Intervals are half-open
+ * (a campaign ending exactly when another starts does not overlap it).
+ */
+export function exceedsConcurrentWindows(
+  candidate: GiftCampaignWindow,
+  others: readonly GiftCampaignWindow[],
+  cap: number,
+): boolean {
+  const start = (window: GiftCampaignWindow) => (window.startsAt === null ? Number.NEGATIVE_INFINITY : window.startsAt.getTime());
+  const end = (window: GiftCampaignWindow) => (window.endsAt === null ? Number.POSITIVE_INFINITY : window.endsAt.getTime());
+  const from = start(candidate);
+  const until = end(candidate);
+  if (!(until > from)) return false;
+  const contains = (window: GiftCampaignWindow, instant: number) => start(window) <= instant && instant < end(window);
+  const instants = new Set<number>([from]);
+  for (const other of others) {
+    const at = start(other);
+    if (at > from && at < until) instants.add(at);
+  }
+  for (const instant of instants) {
+    let inForce = 1;
+    for (const other of others) if (contains(other, instant)) inForce += 1;
+    if (inForce > cap) return true;
+  }
+  return false;
+}
+
+/** More enabled-and-not-ended windows than this are not worth scanning: refuse instead of guessing. */
+const MAX_ADMISSION_SCAN = 1_000;
+
+/**
+ * Publish admission: the number of gift campaigns that can be in force at the same time must stay
+ * within what the cart's entitlement engine accepts (`MAX_GIFT_CAMPAIGNS`). The cart loads every
+ * active campaign regardless of scope and passes all gifts to the engine, which refuses more than
+ * the cap outright -- so one campaign too many would make the gift lookup of *every* cart fail even
+ * though each rule is valid. Counting ignores scope on purpose (a global gift reaches every cart).
+ *
+ * Counts enabled gift campaigns that have not ended, Scheduled ones included (they will be in force
+ * when their window opens), and looks only at the instants inside the candidate's own window. It must
+ * run inside the publish / re-enable / Scheduled-edit transaction under the pricing revision lock,
+ * which serialises every effective mutation, so two concurrent admissions cannot both take the last slot.
+ */
+export async function giftCampaignAdmissionErrors(
+  tx: Pick<Tx, "giftQuantityCampaign">,
+  input: Readonly<{ campaignId: string; window: GiftCampaignWindow; now: Date }>,
+): Promise<readonly GiftCampaignAdmissionError[]> {
+  const rows = await tx.giftQuantityCampaign.findMany({
+    where: {
+      kind: "GIFT_ITEM",
+      isEnabled: true,
+      id: { not: input.campaignId },
+      OR: [{ endsAt: null }, { endsAt: { gt: input.now } }],
+    },
+    select: { startsAt: true, endsAt: true },
+    take: MAX_ADMISSION_SCAN + 1,
+  });
+  if (rows.length > MAX_ADMISSION_SCAN) return ["GIFT_CAMPAIGN_LIMIT_EXCEEDED"];
+  return exceedsConcurrentWindows(input.window, rows, MAX_GIFT_CAMPAIGNS) ? ["GIFT_CAMPAIGN_LIMIT_EXCEEDED"] : [];
 }
 
 /** Read-back of the stored gift rule for the admin edit form (GQ13b); null for a missing or tier campaign. */

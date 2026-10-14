@@ -32,8 +32,25 @@ This closes the "required before feature-on" item for **consent integration only
 feature-on gate is still open: H1/H5, the default-OFF flag, GQ15–GQ18 checkout/proof/order/reservation,
 live Pancake evidence and production enablement. Do not add an alternate price calculation.
 
-GQ13a (server write for gift campaigns) is built separately; see the todo entry. GQ13b (gift UI),
-checkout and production enablement remain outside this gate.
+## GQ13a release gates (before feature-on)
+
+GQ13a (server write for gift campaigns, PR #161) is built separately; see the todo entry. GQ13b (gift UI),
+checkout and production enablement remain outside this gate. Known gaps that must be closed or
+explicitly accepted before `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` is turned on:
+
+- **Option shop filter.** `giftOptionErrors` checks that an allowlisted variant exists, is active and
+  not composite, but does not filter by `pancakeShopId`, while the cart does. A variant of another shop
+  is ignored by the cart (it simply never becomes selectable), so nothing breaks, but the admin gets no
+  warning. Add the filter, or accept it, with the single configured shop.
+- **Combined active-campaign bound.** The candidate reader refuses more than 50 active gift *and* tier
+  campaigns together (`LOOKUP_FAILED`). Gift publish is capped at 20 concurrent gift campaigns
+  (`MAX_GIFT_CAMPAIGNS`), but nothing bounds gifts + tiers at 50, and tier publish (GQ09a) has no
+  admission check at all. The same writer/consumer alignment is needed for the combined bound.
+- **Stock at publish is advisory.** One READY option is required, not net of reservations; the cart
+  decides what is selectable on every read.
+- **Gift-to-gift stacking consent** has no admin write yet; two gift campaigns earning on one cart both
+  step aside (fail closed).
+
 
 ## GQ14: dropped-tier acknowledgement gate
 

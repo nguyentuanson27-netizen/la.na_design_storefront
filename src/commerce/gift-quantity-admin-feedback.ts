@@ -156,6 +156,8 @@ const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   GIFT_VARIANT_UNKNOWN: "Có phiên bản sản phẩm trong danh sách quà tặng không tồn tại.",
   GIFT_VARIANT_UNAVAILABLE: "Có quà trong danh sách đang ngừng bán hoặc không còn trong kho dữ liệu. Hãy bỏ quà đó.",
   GIFT_VARIANT_COMPOSITE: "Quà dạng combo chưa được hỗ trợ làm quà tặng. Hãy chọn phiên bản sản phẩm thường.",
+  GIFT_CAMPAIGN_LIMIT_EXCEEDED:
+    "Đã có tối đa số chiến dịch quà tặng được phép cùng hiệu lực trong khoảng thời gian này. Hãy tắt hoặc kết thúc một chiến dịch quà tặng khác, hoặc đổi thời gian để không trùng.",
   GIFT_NO_READY_STOCK: "Không có quà nào trong danh sách còn hàng sẵn sàng để tặng. Hãy bổ sung hàng hoặc đổi quà.",
   GIFT_MINIMUM_QUANTITY_OUT_OF_RANGE: "Số lượng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",
   GIFT_MINIMUM_SUBTOTAL_OUT_OF_RANGE: "Giá trị đơn hàng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",

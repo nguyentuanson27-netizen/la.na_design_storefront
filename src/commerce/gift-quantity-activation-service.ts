@@ -23,6 +23,10 @@
  *   need other rows (unique stack priority, EX-21 catalog prices, gift options that exist, are
  *   active, non-composite and in stock) run in the same transaction under the revision lock. A
  *   refused publish / edit rolls back: no revision moves.
+ * - **Gift admission.** The cart's entitlement engine refuses more than `MAX_GIFT_CAMPAIGNS` gift
+ *   campaigns at once, which would fail the gift lookup of every cart. Publish, re-enable and a
+ *   Scheduled window edit therefore refuse a campaign that would put more gift campaigns in force at
+ *   one instant than that (`GIFT_CAMPAIGN_LIMIT_EXCEEDED`), counted under the revision lock.
  * - **Tier rule edits.** A Scheduled edit may replace the whole tier rule (ladder, FROM/ALL,
  *   stacking, peers). The rule is validated as it will be after the edit, and only a *real* change
  *   against the stored rule is gated, validated and revisioned.
@@ -41,6 +45,7 @@ import {
 } from "./gift-quantity-candidate-repository.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import {
+  giftCampaignAdmissionErrors,
   giftOptionChildren,
   giftOptionErrors,
   giftRuleColumns,
@@ -292,9 +297,15 @@ async function crossRowRuleErrors(
   source: RuleSource,
   scope: ScopeConfig,
   now: Date,
+  window: Readonly<{ startsAt: Date | null; endsAt: Date | null }>,
   frozenCampaignId?: string,
 ): Promise<readonly string[]> {
-  if (source.kind === "GIFT_ITEM") return giftOptionErrors(tx, source.giftOptions.map((option) => option.variantId));
+  if (source.kind === "GIFT_ITEM") {
+    return [
+      ...(await giftOptionErrors(tx, source.giftOptions.map((option) => option.variantId))),
+      ...(await giftCampaignAdmissionErrors(tx, { campaignId, window, now })),
+    ];
+  }
   if (source.kind !== "QUANTITY_TIER") return [];
   const rule = tierRuleOfRow(source);
   const errors: string[] = [];
@@ -358,7 +369,7 @@ export async function publishGiftQuantityCampaign({
 
     const ruleErrors = validateRule(ruleInputOf(row));
     if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
-    const crossRowErrors = await crossRowRuleErrors(tx, row.id, row, scope.scope, now);
+    const crossRowErrors = await crossRowRuleErrors(tx, row.id, row, scope.scope, now, { startsAt: row.startsAt, endsAt: row.endsAt });
     if (crossRowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: crossRowErrors } } as const;
 
     // A publish / re-enable is a new effective version of the campaign.
@@ -704,7 +715,7 @@ export async function editScheduledGiftQuantityCampaign({
       const ruleErrors = validateRule(ruleInputOf(after));
       if (ruleErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: ruleErrors } } as const;
       const crossRowErrors = await crossRowRuleErrors(
-        tx, row.id, after, normalizedScope, now,
+        tx, row.id, after, normalizedScope, now, { startsAt, endsAt },
         !scopeChanged && normalizedScope.mode === FIXED_PRODUCT_SET ? row.id : undefined,
       );
       if (crossRowErrors.length > 0) return { ok: false, failure: { reason: "INVALID_RULE", errors: crossRowErrors } } as const;

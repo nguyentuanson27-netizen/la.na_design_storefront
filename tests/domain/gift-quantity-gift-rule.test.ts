@@ -4,6 +4,7 @@ import test from "node:test";
 import { parseGiftQuantityDraftForm } from "../../src/commerce/gift-quantity-admin-input.ts";
 import { MAX_GIFT_OPTIONS_PER_CAMPAIGN } from "../../src/commerce/gift-quantity-entitlement.ts";
 import {
+  exceedsConcurrentWindows,
   formCarriesGiftRule,
   giftRuleColumns,
   giftRuleOfRow,
@@ -205,4 +206,46 @@ test("row mapping: the BigInt column round-trips through a plain number at the b
   assert.deepEqual(stored, { minimumQuantity: null, minimumSubtotalVnd: 100_000_000_000, awardMode: "ONCE", maxGiftsPerOrder: null, allowDuplicateGifts: true, variantIds: ["v1"] });
   assert.equal(giftRuleColumns(stored).minimumSubtotalVnd, BigInt(100_000_000_000));
   assert.equal(giftRuleColumns(rule()).minimumSubtotalVnd, null);
+});
+
+const at = (day: number) => new Date(Date.UTC(2026, 9, day));
+const win = (from: number | null, to: number | null) => ({ startsAt: from === null ? null : at(from), endsAt: to === null ? null : at(to) });
+
+test("concurrency: the candidate is the cap+1st window in force at one instant only when windows really overlap", () => {
+  const twenty = Array.from({ length: 20 }, () => win(10, 20));
+  assert.equal(exceedsConcurrentWindows(win(10, 20), twenty.slice(0, 19), 20), false, "the 20th is allowed");
+  assert.equal(exceedsConcurrentWindows(win(10, 20), twenty, 20), true, "the 21st is refused");
+  assert.equal(exceedsConcurrentWindows(win(15, 16), twenty, 20), true, "a window inside the others overlaps them");
+  assert.equal(exceedsConcurrentWindows(win(null, null), twenty, 20), true, "an unbounded candidate overlaps everything");
+  assert.equal(exceedsConcurrentWindows(win(5, null), twenty, 20), true, "an open end reaches the others");
+  assert.equal(exceedsConcurrentWindows(win(null, 11), twenty, 20), true, "an open start reaches the others");
+  assert.equal(exceedsConcurrentWindows(win(1, 5), [], 20), false);
+});
+
+test("concurrency: windows are half-open, so back-to-back campaigns never overlap", () => {
+  const twenty = Array.from({ length: 20 }, () => win(10, 20));
+  assert.equal(exceedsConcurrentWindows(win(20, 30), twenty, 20), false, "starts exactly when the others end");
+  assert.equal(exceedsConcurrentWindows(win(1, 10), twenty, 20), false, "ends exactly when the others start");
+  assert.equal(exceedsConcurrentWindows(win(19, 30), twenty, 20), true, "one day of overlap is enough");
+  assert.equal(exceedsConcurrentWindows(win(1, 11), twenty, 20), true);
+});
+
+test("concurrency: only the instants inside the candidate window count, and staggered windows are summed per instant", () => {
+  // 20 windows, but no instant has more than 10 of them in force at once.
+  const staggered = Array.from({ length: 20 }, (_, index) => win(1 + index * 2, 21 + index * 2));
+  assert.equal(exceedsConcurrentWindows(win(1, 40), staggered, 10), true, "at most 10 others overlap at once, so 11 in force exceeds a cap of 10");
+  assert.equal(exceedsConcurrentWindows(win(1, 40), staggered, 11), false, "and exactly fits a cap of 11");
+  // Crowding that never touches the candidate window is irrelevant.
+  const crowded = Array.from({ length: 25 }, () => win(1, 5));
+  assert.equal(exceedsConcurrentWindows(win(6, 9), crowded, 20), false);
+  // A crowd that starts inside the candidate window counts at its own start, not at the candidate's.
+  const late = Array.from({ length: 20 }, () => win(15, 25));
+  assert.equal(exceedsConcurrentWindows(win(10, 18), late, 20), true);
+  assert.equal(exceedsConcurrentWindows(win(10, 15), late, 20), false, "the candidate ends the instant the crowd starts");
+});
+
+test("concurrency: an empty or inverted candidate window is not this function's concern", () => {
+  const twenty = Array.from({ length: 20 }, () => win(10, 20));
+  assert.equal(exceedsConcurrentWindows(win(12, 12), twenty, 20), false);
+  assert.equal(exceedsConcurrentWindows(win(15, 12), twenty, 20), false);
 });
