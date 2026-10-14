@@ -137,6 +137,15 @@ test("format and digest are validated and the input is never trusted structurall
   assert.equal(issueOf(ex17({ lines: [paid("P:a", 1, 290_003, { fulfillmentState: "LATER" as never })] })), "LINE_FIELDS_INVALID");
 });
 
+test("a valid laq3 digest cannot be persisted under another well-formed format version", () => {
+  const quote = ex17();
+  assert.equal(quote.quoteDigest, benefitQuoteDigest(quote));
+  for (const quoteFormat of ["laq2", "laq4", "laq999"]) {
+    assert.equal(issueOf({ ...quote, quoteFormat }), "FORMAT_INVALID");
+  }
+  assert.equal(issueOf(quote), null);
+});
+
 test("the digest must describe the stored facts even when changed segments keep the same total", () => {
   const original = ex17();
   const changed = ex17({ lines: [paid("P:var-1:0", 1, 100_001), paid("P:var-1:1", 1, 190_002)] });

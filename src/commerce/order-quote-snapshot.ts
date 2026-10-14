@@ -16,7 +16,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
-import { benefitQuoteDigest } from "./checkout-quote-proof.ts";
+import { benefitQuoteDigest, BENEFIT_PROOF_FORMAT } from "./checkout-quote-proof.ts";
 import {
   isQuoteText,
   MAX_QUOTE_ENTITLEMENTS,
@@ -35,7 +35,6 @@ export const MAX_ORDER_QUOTE_LINES = MAX_QUOTE_LINES;
 export const MAX_ORDER_QUOTE_STEPS_PER_LINE = MAX_QUOTE_STEPS_PER_LINE;
 export const MAX_ORDER_QUOTE_ENTITLEMENTS = MAX_QUOTE_ENTITLEMENTS;
 export const MAX_ORDER_QUOTE_GIFT_UNITS = MAX_QUOTE_GIFT_UNITS;
-const FORMAT_PATTERN = /^laq[0-9]{1,3}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 export type OrderQuoteDiscountStepInput = QuoteDiscountStepFacts;
@@ -76,7 +75,7 @@ export function validateOrderQuoteSnapshot(
 ): Readonly<{ ok: true; totals: QuoteTotals }> | Readonly<{ ok: false; issue: OrderQuoteSnapshotIssue }> {
   const fail = (issue: OrderQuoteSnapshotIssue) => ({ ok: false as const, issue });
   if (typeof input !== "object" || input === null) return fail("MONEY_INVALID");
-  if (typeof input.quoteFormat !== "string" || !FORMAT_PATTERN.test(input.quoteFormat)) return fail("FORMAT_INVALID");
+  if (input.quoteFormat !== BENEFIT_PROOF_FORMAT) return fail("FORMAT_INVALID");
   if (typeof input.quoteDigest !== "string" || !DIGEST_PATTERN.test(input.quoteDigest)) return fail("DIGEST_INVALID");
 
   const verdict = validateQuoteStructure(input);

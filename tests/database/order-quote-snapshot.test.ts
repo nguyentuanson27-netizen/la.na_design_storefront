@@ -23,10 +23,11 @@ const DIGEST = "b".repeat(64);
 const ACK = new Date("2026-10-14T10:00:00.000Z");
 
 async function cleanup() {
-  // The rows are frozen once an order leaves DRAFT; the only way back is the order's own state, which
-  // is exactly what a test needs and exactly what production code never does. The set is removed in
-  // one transaction because the cross-row totals are checked at commit.
+  // Frozen fixtures cannot re-enter DRAFT through the production state boundary. As the test schema's
+  // owner, suspend only that transition trigger during this transaction's fixture cleanup, then
+  // restore it before commit. Quote row checks/guards and foreign keys remain enabled throughout.
   await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('ALTER TABLE "OrderMirror" DISABLE TRIGGER "OrderQuoteDraftReentry_guard"');
     await tx.orderMirror.updateMany({ where: { publicCode: { startsWith: P } }, data: { state: "DRAFT" } });
     const snapshots = await tx.orderQuoteSnapshot.findMany({ where: { order: { publicCode: { startsWith: P } } }, select: { id: true } });
     const ids = snapshots.map((snapshot) => snapshot.id);
@@ -35,6 +36,7 @@ async function cleanup() {
     await tx.orderQuoteEntitlement.deleteMany({ where: { snapshotId: { in: ids } } });
     await tx.orderQuoteSnapshot.deleteMany({ where: { id: { in: ids } } });
     await tx.orderMirror.deleteMany({ where: { publicCode: { startsWith: P } } });
+    await tx.$executeRawUnsafe('ALTER TABLE "OrderMirror" ENABLE TRIGGER "OrderQuoteDraftReentry_guard"');
   });
 }
 
@@ -168,6 +170,22 @@ test("an invalid quote never reaches the database: the writer refuses it and the
   const result = await write(draft.id, ex17({ paidSubtotalVnd: 290_002, totalVnd: 320_002 }));
   assert.deepEqual(result, { ok: false, reason: "SNAPSHOT_INVALID", issue: "PAID_SUBTOTAL_MISMATCH" });
   assert.equal((await readOrderQuoteSnapshot(prisma, draft.id))!.paidSubtotalVnd, 290_003);
+});
+
+test("unsupported quote formats are rejected by both writer and database without replacing the quote", async () => {
+  const draft = await order();
+  const original = ex17();
+  await write(draft.id, original);
+  const snapshot = (await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } }));
+  const rawDigest = benefitQuoteDigest(ex17({ lines: [paid("P:base", 1, 100, { pancakeVariationId: "x" })], paidSubtotalVnd: 100, shippingFeeVnd: 0, totalVnd: 100 }));
+  for (const quoteFormat of ["laq2", "laq4", "laq999"]) {
+    assert.deepEqual(await write(draft.id, { ...original, quoteFormat }), { ok: false, reason: "SNAPSHOT_INVALID", issue: "FORMAT_INVALID" });
+    await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: snapshot.id }, data: { quoteFormat } }), /check constraint|violates/i);
+    const target = await order();
+    await rejects(() => rawSnapshot(target.id, { quoteFormat, quoteDigest: rawDigest }), /check constraint|violates/i);
+    assert.equal((await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } })).id, snapshot.id);
+    assert.equal((await readOrderQuoteSnapshot(prisma, draft.id))!.quoteFormat, "laq3");
+  }
 });
 
 test("a digest from different same-total segments is refused before replacing the stored quote", async () => {
@@ -311,6 +329,42 @@ test("an order that is not a DRAFT cannot receive a first quote either", async (
   const confirmed = await order("CONFIRMED");
   await rejects(() => write(confirmed.id, ex17()), /immutable/i);
   assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: confirmed.id } }), 0);
+});
+
+test("the first DRAFT exit prevents re-entry and keeps quote rows immutable for writer and direct writes", async () => {
+  for (const state of ["VALIDATING", "CONFIRMED"] as const) {
+    const draft = await order();
+    const original = ex17({
+      lines: [...ex17().lines, gift("G:camp-1:var-1", 1)],
+      entitlements: paidAndGift().entitlements, acknowledgedAt: ACK,
+    });
+    await write(draft.id, original);
+    const before = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+    const snapshot = await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id }, include: { lines: { include: { discountSteps: true } }, entitlements: true } });
+    await prisma.orderMirror.update({ where: { id: draft.id }, data: { state } });
+    await rejects(() => prisma.orderMirror.update({ where: { id: draft.id }, data: { state: "DRAFT" } }), /cannot return to DRAFT/i);
+    assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: draft.id } })).state, state);
+    await rejects(() => write(draft.id, paidAndGift()), /immutable/i);
+    await rejects(() => prisma.orderQuoteSnapshot.update({ where: { id: snapshot.id }, data: { quoteDigest: DIGEST } }), /immutable/i);
+    await rejects(() => prisma.orderQuoteLine.update({ where: { id: snapshot.lines[0]!.id }, data: { variantId: "changed" } }), /immutable/i);
+    const step = snapshot.lines.flatMap(line => line.discountSteps)[0]!;
+    await rejects(() => prisma.orderQuoteDiscountStep.update({ where: { id: step.id }, data: { priority: 2 } }), /immutable/i);
+    await rejects(() => prisma.orderQuoteEntitlement.update({ where: { id: snapshot.entitlements[0]!.id }, data: { campaignRevision: 4 } }), /immutable/i);
+    assert.deepEqual(await readOrderQuoteSnapshot(prisma, draft.id), before);
+    assert.equal((await prisma.orderQuoteSnapshot.findUniqueOrThrow({ where: { orderId: draft.id } })).id, snapshot.id);
+  }
+});
+
+test("legacy orders without a benefit quote keep VALIDATING -> DRAFT reprice and outage retries", async () => {
+  const legacy = await order();
+  for (const syncErrorCode of ["PRICE_CHANGED", "VALIDATION_UNAVAILABLE"]) {
+    await prisma.orderMirror.update({ where: { id: legacy.id }, data: { state: "VALIDATING" } });
+    assert.equal((await prisma.orderMirror.updateMany({ where: { id: legacy.id, state: "VALIDATING" }, data: { state: "DRAFT", syncErrorCode } })).count, 1);
+    const stored = await prisma.orderMirror.findUniqueOrThrow({ where: { id: legacy.id } });
+    assert.equal(stored.state, "DRAFT");
+    assert.equal(stored.syncErrorCode, syncErrorCode);
+    assert.equal(await readOrderQuoteSnapshot(prisma, legacy.id), null);
+  }
 });
 
 test("a row cannot be moved to another order's quote", async () => {
