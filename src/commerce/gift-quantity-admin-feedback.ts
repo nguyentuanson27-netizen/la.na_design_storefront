@@ -42,6 +42,13 @@ const BASE_MESSAGES: Record<GiftQuantityFailure["reason"], string> = {
   INVALID_GIFT_TRIGGER: "Điều kiện nhận quà không hợp lệ.",
   INVALID_SUBTOTAL_SCOPE: "Phạm vi tính giá trị đơn hàng không hợp lệ.",
   INVALID_DATE_TIME: "Thời gian không hợp lệ. Vui lòng nhập ngày giờ theo định dạng hợp lệ.",
+  INVALID_TIER_UNIT: "Đơn vị giảm giá không hợp lệ.",
+  INVALID_TIER_DISCOUNTED_UNITS: "Cách áp dụng giảm giá không hợp lệ.",
+  INVALID_TIER_SELECTION_PRIORITY: "Thứ tự chọn sản phẩm được giảm không hợp lệ.",
+  INVALID_TIER_ROW: "Có bậc giảm giá chưa hợp lệ: số lượng và mức giảm phải là số nguyên dương và nhập đủ cả hai.",
+  INVALID_STACKING_FLAG: "Lựa chọn cho phép cộng dồn không hợp lệ.",
+  INVALID_STACK_PRIORITY: "Mức ưu tiên cộng dồn phải là số nguyên không âm.",
+  INVALID_STACK_PEER: "Có chiến dịch cộng dồn chưa hợp lệ.",
   FORBIDDEN: "Bạn không có quyền thực hiện thao tác này.",
 };
 
@@ -62,6 +69,19 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   WINDOW_ALREADY_ENDED: "Thời gian kết thúc đã qua.",
   INVALID_NAME: "Tên chiến dịch không hợp lệ.",
   STACK_PRIORITY_OUT_OF_RANGE: "Mức ưu tiên cộng dồn nằm ngoài giới hạn cho phép.",
+  TIER_FIELDS_ON_GIFT: "Chiến dịch quà tặng không có bậc giảm giá theo số lượng.",
+  TIERS_TOO_MANY: "Có quá nhiều bậc giảm giá.",
+  TIER_THRESHOLD_OUT_OF_RANGE: "Số lượng của bậc giảm giá nằm ngoài giới hạn cho phép.",
+  TIER_VALUE_OUT_OF_RANGE: "Mức giảm của bậc nằm ngoài giới hạn cho phép.",
+  TIER_PERCENT_OUT_OF_RANGE: "Giảm theo phần trăm phải từ 1% đến 99%.",
+  TIER_THRESHOLD_DUPLICATE: "Có hai bậc giảm giá trùng số lượng.",
+  TIER_UNIT_REQUIRED: "Hãy chọn đơn vị giảm giá (phần trăm hoặc số tiền cố định mỗi sản phẩm).",
+  SELECTION_PRIORITY_NOT_APPLICABLE: "Thứ tự chọn sản phẩm chỉ dùng khi chỉ giảm từ mốc đạt được.",
+  STACK_PEERS_TOO_MANY: "Có quá nhiều chiến dịch cộng dồn.",
+  STACK_PEER_INVALID: "Có chiến dịch cộng dồn chưa hợp lệ.",
+  STACK_PEER_DUPLICATE: "Có chiến dịch cộng dồn bị trùng.",
+  STACK_PEER_SELF: "Chiến dịch không thể cộng dồn với chính nó.",
+  STACK_PEER_UNKNOWN: "Có chiến dịch cộng dồn không tồn tại hoặc không đúng loại.",
 };
 
 const INVALID_SCOPE_REFINEMENTS: Readonly<Record<string, string>> = {
