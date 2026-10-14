@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
+import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { parseGiftQuantityDraftForm } from "../../src/commerce/gift-quantity-admin-input.ts";
 import {
   disableGiftQuantityCampaign,
@@ -589,3 +590,105 @@ test("Scheduled edit: distinct peer sets cannot collide in the real-change compa
   assert.equal(await revision(), before + BigInt(1));
   assert.deepEqual((await stored(id)).stackPeers.map(p => p.peerCampaignId), [combined]);
 });
+
+
+async function compositePriceFixture() {
+  for (const [key, price, sku] of [
+    ["hidden-ao", 20_000, "AO-GQ09"], ["hidden-cv", 200_000, "CV-GQ09"], ["hidden-quan", 200_000, "QUAN-GQ09"],
+    ["combo", 500_000, "COMBO-GQ09"], ["hidden-set", 20_000, "SET-GQ09"],
+  ] as const) {
+    await product(key, price, ...(["hidden-ao", "hidden-set"].includes(key) ? ["setVay"] : []));
+    await prisma.variantMirror.update({ where: { id: `${P}-${key}-v` }, data: { sku, color: "Black", size: "M" } });
+    await prisma.warehouseStock.create({ data: { variantId: `${P}-${key}-v`, pancakeWarehouseId: `${P}-wh`, quantity: 50, syncedAt: NOW } });
+    if (key !== "combo") await prisma.productMirror.update({ where: { id: `${P}-${key}` }, data: { isActive: false } });
+  }
+  await prisma.compositeComponentMirror.createMany({ data: [
+    ...["hidden-ao", "hidden-cv", "hidden-quan"].map(k => ({ parentVariantId: `${P}-combo-v`, componentVariantId: `${P}-${k}-v`, quantity: 1, syncedAt: NOW })),
+    ...["hidden-ao", "hidden-cv"].map(k => ({ parentVariantId: `${P}-hidden-set-v`, componentVariantId: `${P}-${k}-v`, quantity: 1, syncedAt: NOW })),
+  ] });
+}
+
+test("GQ09a-F2: publish and cart include inactive-owner components and authorized subsets in price safety", async () => {
+  await compositePriceFixture();
+  const cart = createStorefrontCartRepository(prisma);
+  for (const key of ["hidden-ao", "hidden-set"]) {
+    const variantId = `${P}-${key}-v`;
+    const lines = await cart.getLines({ shopId: SHOP, items: [{ variantId, quantity: 2 }], now: NOW });
+    assert.equal(lines[0]!.available, true, `${key}: ${show(lines)}`);
+    assert.equal(lines[0]!.price, 20_000);
+    const id = await createTier(`eligible-${key}`, rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 50_000 }] }),
+      { categoryKeys: [], includeProductIds: [`${P}-${key}`] });
+    const before = await revision();
+    assert.deepEqual(await refusedErrors(await publish(id)), ["TIER_PRICE_BELOW_MINIMUM"]);
+    assert.equal(await revision(), before);
+    assert.equal((await stored(id)).isEnabled, false);
+    assert.equal((await stored(id)).revision, 1);
+  }
+});
+
+test("GQ09a-F2: a truly unavailable inactive-owner variant does not block publish", async () => {
+  await product("unavailable", 20_000, "setVay");
+  await prisma.productMirror.update({ where: { id: `${P}-unavailable` }, data: { isActive: false } });
+  await prisma.warehouseStock.create({ data: { variantId: `${P}-unavailable-v`, pancakeWarehouseId: `${P}-wh`, quantity: 50, syncedAt: NOW } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items: [{ variantId: `${P}-unavailable-v`, quantity: 2 }], now: NOW });
+  assert.equal(lines[0]!.available, false);
+  const id = await createTier("unavailable-safe", rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 50_000 }] }));
+  assert.equal((await publish(id)).ok, true);
+});
+
+function catalogInterleavingClient(onPriceRead: (tx: import("../../src/commerce/promotion-activation-service.ts").Tx) => Promise<void>) {
+  // Both transactions are real database transactions. The proxy only places the second commit
+  // precisely after the price SELECT, so the test does not depend on a scheduling delay.
+  return new Proxy(prisma, { get(target, key, receiver) {
+    if (key !== "$transaction") return Reflect.get(target, key, receiver);
+    return (operation: (tx: unknown) => Promise<unknown>, options: unknown) => target.$transaction(async tx => {
+      let fired = false;
+      const wrapped = new Proxy(tx, { get(t, property, r) {
+        if (property !== "$queryRaw") return Reflect.get(t, property, r);
+        return async (...args: unknown[]) => {
+          const result = await Reflect.apply(t.$queryRaw, t, args);
+          if (!fired && Array.isArray(args[0]) && args[0].join("").includes('SELECT MIN(v."pancakeRetailPrice")')) {
+            fired = true;
+            await onPriceRead(tx);
+          }
+          return result;
+        };
+      } });
+      return operation(wrapped);
+    }, options as never);
+  } });
+}
+
+for (const operation of ["publish", "re-enable", "scope edit"] as const) {
+  test(`GQ09a-F3: ${operation} price validation and Fixed freeze use the same catalog snapshot`, async () => {
+    const fixedRule = rule({ unit: "FIXED_AMOUNT_PER_UNIT_VND", tiers: [{ minQuantity: 2, discountValue: 50_000 }] });
+    const id = await createTier(`snapshot-${operation}`, fixedRule, { scopeMode: operation === "scope edit" ? "DYNAMIC_CATEGORY" : "FIXED_PRODUCT_SET" });
+    if (operation !== "publish") assert.equal((await publish(id)).ok, true);
+    if (operation === "re-enable") assert.equal((await disableGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN })).ok, true);
+    await product("race-cheap", 20_000);
+    const before = await revision();
+    const base = await stored(id);
+    let interleavings = 0;
+    const client = catalogInterleavingClient(async tx => {
+      interleavings++;
+      await prisma.$transaction(async catalog => {
+        await catalog.productCategoryMembership.deleteMany({ where: { productId: `${P}-a` } });
+        await catalog.productCategoryMembership.create({ data: { productId: `${P}-race-cheap`, categoryKey: "setVay" } });
+        await catalog.variantMirror.update({ where: { id: `${P}-a-v` }, data: { pancakeRetailPrice: 20_000 } });
+      });
+      const old = await tx.variantMirror.findUniqueOrThrow({ where: { id: `${P}-a-v` } });
+      assert.equal(old.pancakeRetailPrice, 500_000, "the freeze transaction keeps the price snapshot it validated");
+    });
+    const outcome = operation === "scope edit"
+      ? await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, client,
+          patch: { scope: { scopeMode: "FIXED_PRODUCT_SET", categoryKeys: ["setVay"], includeProductIds: [], excludeProductIds: [] } } })
+      : await publishGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, client });
+    assert.equal(outcome.ok, true, show(outcome));
+    assert.equal(interleavings, 1);
+    const frozen = await prisma.giftQuantityFrozenProduct.findMany({ where: { campaignId: id } });
+    assert.deepEqual(frozen.map(p => p.productId), [`${P}-a`], "the newly categorized cheap product was never in the validated snapshot");
+    assert.equal(await revision(), before + BigInt(1));
+    assert.equal((await stored(id)).revision, base.revision + 1);
+    assert.equal((await prisma.variantMirror.findUniqueOrThrow({ where: { id: `${P}-a-v` } })).pancakeRetailPrice, 20_000, "the separate catalog transaction really committed");
+  });
+}

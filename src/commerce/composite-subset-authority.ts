@@ -213,3 +213,28 @@ export function resolveCompositeSubSetAuthorityFromRows({
     candidateCombos: [...candidates.values()],
   });
 }
+
+
+/** The same component/subset commerce facts used by cart resolution and tier publish validation. */
+export const cartVariantCommerceSelection = {
+  compositeComponents: compositeSubSetAuthorityComponentSelection,
+  compositeParents: { select: { parentVariant: { select: {
+    isPresent: true, isActive: true, product: { select: { isPresent: true, isActive: true } },
+  } } } },
+} satisfies Prisma.VariantMirrorSelect;
+
+export function resolveCartVariantCommerceFlags(productIsPresent: boolean, variant: Readonly<{
+  id: string;
+  compositeComponents: readonly AuthorityComponentRow[];
+  compositeParents: readonly Readonly<{ parentVariant: Readonly<{
+    isPresent: boolean; isActive: boolean; product: Readonly<{ isPresent: boolean; isActive: boolean }>;
+  }> }>[];
+}>) {
+  return {
+    isCompositeComponentAvailable: variant.compositeParents.some(({ parentVariant }) =>
+      parentVariant.isPresent && parentVariant.isActive && parentVariant.product.isPresent && parentVariant.product.isActive),
+    isSubSetAvailable: productIsPresent && resolveCompositeSubSetAuthorityFromRows({
+      subSetVariantId: variant.id, components: variant.compositeComponents,
+    }) !== null,
+  };
+}

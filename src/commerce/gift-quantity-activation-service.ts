@@ -11,6 +11,9 @@
  * - **Gate.** Publish, re-enable and Scheduled edit are refused with `FEATURE_DISABLED` unless
  *   `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` is exactly `"true"`. A refused call reads nothing and
  *   advances nothing. Disable and end-early are never gated: they are the rollback path.
+ * - **Catalog snapshot.** Publish/re-enable and Scheduled edits use RepeatableRead so price checks,
+ *   composite/subset facts and Fixed membership share one snapshot. Serialization conflicts are
+ *   retried up to three attempts under the same revision lock.
  * - **Fixed scope freeze.** For `FIXED_PRODUCT_SET` the product ids are computed from one
  *   single-statement membership read (one snapshot) and written, with `frozenAt` and the new
  *   campaign revision, in the same transaction as the publish / re-enable / scope edit. Nothing is
@@ -98,6 +101,23 @@ function authorize(session: AdminSessionCandidate): void {
 
 function refuseUnboundedId(campaignId: string): GiftQuantityActivationFailure | null {
   return isBoundedPromotionIdentifier(campaignId) ? null : { reason: "INVALID_INPUT", errors: ["IDENTIFIER_TOO_LONG"] };
+}
+
+/** One catalog snapshot for validation and Fixed freeze; retry only rolled-back write conflicts. */
+async function runCatalogSnapshot<T>(client: PrismaClient, operation: (tx: Tx) => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.$transaction(operation, { isolationLevel: "RepeatableRead" });
+    } catch (error) {
+      const failure = error as { code?: string; meta?: { code?: string; driverAdapterError?: { cause?: { originalCode?: string } } } } | null;
+      // Raw FOR UPDATE errors retain PostgreSQL's SQLSTATE as P2010 metadata; ORM writes
+      // report the same serialization/deadlock conflict as P2034.
+      const sqlState = failure?.meta?.code ?? failure?.meta?.driverAdapterError?.cause?.originalCode;
+      const conflict = failure?.code === "P2034" ||
+        (failure?.code === "P2010" && ["40001", "40P01"].includes(sqlState ?? ""));
+      if (!conflict || attempt >= 2) throw error;
+    }
+  }
 }
 
 /** The scope the campaign row currently describes, as the pure scope module sees it. */
@@ -300,7 +320,7 @@ export async function publishGiftQuantityCampaign({
   if (unbounded !== null) return { ok: false, failure: unbounded };
   if (!isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } };
 
-  return client.$transaction(async (tx) => {
+  return runCatalogSnapshot(client, async (tx) => {
     const currentRevision = await lockRevision(tx);
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
 
@@ -553,7 +573,7 @@ export async function editScheduledGiftQuantityCampaign({
     }
   }
 
-  return client.$transaction(async (tx) => {
+  return runCatalogSnapshot(client, async (tx) => {
     const currentRevision = await lockRevision(tx);
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
 

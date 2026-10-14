@@ -38,6 +38,7 @@ const BASE_MESSAGES: Record<GiftQuantityFailure["reason"], string> = {
   FROZEN_SET_INVALID: "Không thể chốt danh sách sản phẩm cho chiến dịch này.",
   KIND_IMMUTABLE: "Không thể đổi loại chiến dịch sau khi đã tạo. Hãy tạo chiến dịch mới.",
   INVALID_KIND: "Loại chiến dịch không hợp lệ.",
+  TIER_FIELDS_ON_GIFT: "Chiến dịch quà tặng không có bậc giảm giá theo số lượng.",
   INVALID_SCOPE_MODE: "Kiểu phạm vi áp dụng không hợp lệ.",
   INVALID_GIFT_TRIGGER: "Điều kiện nhận quà không hợp lệ.",
   INVALID_SUBTOTAL_SCOPE: "Phạm vi tính giá trị đơn hàng không hợp lệ.",
@@ -123,6 +124,7 @@ const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   STACK_PRIORITY_CONFLICT: "Mức ưu tiên cộng dồn đã được chiến dịch đang hoạt động khác sử dụng. Hãy chọn mức khác.",
   STACK_PEER_SELF: "Chiến dịch không thể cộng dồn với chính nó.",
   STACK_PEER_UNKNOWN: "Có chiến dịch cộng dồn không tồn tại hoặc không đúng loại.",
+  TIER_PRICE_ELIGIBILITY_UNRESOLVED: "Không thể xác minh đầy đủ giá của sản phẩm thành phần trong phạm vi. Hãy thu hẹp phạm vi rồi thử lại.",
   TIER_PRICE_BELOW_MINIMUM:
     "Mức giảm cố định làm giá của một số sản phẩm trong phạm vi xuống dưới 1đ. Hãy giảm mức giảm hoặc thu hẹp phạm vi.",
 };
