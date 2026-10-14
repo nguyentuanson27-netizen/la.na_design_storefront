@@ -46,4 +46,3 @@ export async function hasStackPriorityConflict(
   });
   return legacy !== null;
 }
-
