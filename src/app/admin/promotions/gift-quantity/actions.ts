@@ -20,6 +20,7 @@ import {
   clearLegacyPromotionStackConsent,
   setLegacyPromotionStackConsent,
 } from "@/commerce/gift-quantity-legacy-consent";
+import { searchGiftOptionCandidates, type GiftOptionCandidate } from "@/commerce/gift-quantity-gift-options";
 import { giftQuantityFailureQuery } from "@/commerce/gift-quantity-admin-feedback";
 import { createGiftQuantityAdminRepository, type AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
 import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
@@ -242,4 +243,17 @@ export async function checkGiftQuantityStackPriorityAction(
     return "INVALID";
   }
   return preflightStackPriority(prisma, { priority, campaignId, now: new Date() });
+}
+
+/**
+ * Bounded gift variant search for the allowlist picker (GQ13b). Admin-only and read-only; the shop
+ * comes from server configuration, never from the caller, and a malformed query is just an empty one.
+ */
+export async function searchGiftQuantityVariantsAction(search: string): Promise<readonly GiftOptionCandidate[]> {
+  try {
+    await requireCurrentAdmin();
+  } catch {
+    return [];
+  }
+  return searchGiftOptionCandidates(prisma, { shopId: readPancakeShopId(), search });
 }

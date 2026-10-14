@@ -16,6 +16,8 @@ import {
   type ScopeConfig,
 } from "./gift-quantity-scope.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
+import { readGiftOptionCandidates, type GiftOptionCandidate } from "./gift-quantity-gift-options.ts";
+import { giftRuleOfRow, type GiftRuleInput } from "./gift-quantity-gift-rule.ts";
 import type { TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { MAX_ADMIN_PROMOTION_PAGE_SIZE, parseAdminPromotionPageSize } from "./promotion-admin-feedback.ts";
 import { deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
@@ -54,6 +56,10 @@ export type AdminGiftQuantityCampaignDetail = AdminGiftQuantityCampaignRow &
     frozenCount: number;
     frozenPreview: readonly AdminProductRef[];
     tierRule: TierRuleInput | null;
+    /** GIFT_ITEM only: thresholds, cap, duplicate policy and allowlist as stored (GQ13b form read-back). */
+    giftRule: GiftRuleInput | null;
+    /** GIFT_ITEM only: labels and today's availability of the stored allowlist. */
+    giftOptions: readonly GiftOptionCandidate[];
   }>;
 
 export type AdminScopePreview =
@@ -109,6 +115,8 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
         id: true, name: true, kind: true, startsAt: true, endsAt: true, isEnabled: true, enabledAt: true, disabledAt: true,
         scopeMode: true, categoryKeys: true, frozenAt: true, revision: true, giftTrigger: true, subtotalScope: true,
         tierUnit: true, tierDiscountedUnits: true, tierSelectionPriority: true, stackingEnabled: true, stackPriority: true,
+        minimumQuantity: true, minimumSubtotalVnd: true, awardMode: true, maxGiftsPerOrder: true, allowDuplicateGifts: true,
+        giftOptions: { select: { variantId: true }, orderBy: { variantId: "asc" } },
         tiers: { select: { minQuantity: true, discountValue: true }, orderBy: { minQuantity: "asc" } },
         stackPeers: { select: { peerKind: true, peerCampaignId: true }, orderBy: [{ peerKind: "asc" }, { peerCampaignId: "asc" }] },
         targets: { select: { role: true, product: { select: { id: true, name: true } } }, orderBy: { productId: "asc" } },
@@ -158,6 +166,8 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
         stackPriority: row.stackPriority,
         peers: row.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
       } : null,
+      giftRule: row.kind === "GIFT_ITEM" ? giftRuleOfRow(row) : null,
+      giftOptions: row.kind === "GIFT_ITEM" ? await readGiftOptionCandidates(client, row.giftOptions.map((option) => option.variantId)) : [],
     };
   }
 
