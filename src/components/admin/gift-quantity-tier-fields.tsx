@@ -124,9 +124,9 @@ export function GiftQuantityTierFields({
   campaignId,
 }: Readonly<{ initialRule: TierRuleInput | null; campaignId: string | null }>) {
   const id = useId();
-  const [unit, setUnit] = useState<TierRuleInput["unit"] | "">(initialRule?.unit ?? "");
-  const [discountedUnits, setDiscountedUnits] = useState<TierRuleInput["discountedUnits"] | "">(initialRule?.discountedUnits ?? "");
-  const [selection, setSelection] = useState<TierRuleInput["selectionPriority"] | "">(initialRule?.selectionPriority ?? "");
+  const [unit, setUnit] = useState<NonNullable<TierRuleInput["unit"]> | "">(initialRule?.unit ?? "");
+  const [discountedUnits, setDiscountedUnits] = useState<NonNullable<TierRuleInput["discountedUnits"]> | "">(initialRule?.discountedUnits ?? "");
+  const [selection, setSelection] = useState<NonNullable<TierRuleInput["selectionPriority"]> | "">(initialRule?.selectionPriority ?? "");
   const [tiers, setTiers] = useState<TierRow[]>(() => initialRule?.tiers.length
     ? initialRule.tiers.map((tier, key) => ({ key, min: String(tier.minQuantity), value: String(tier.discountValue) }))
     : [{ key: 0, min: "", value: "" }]);
