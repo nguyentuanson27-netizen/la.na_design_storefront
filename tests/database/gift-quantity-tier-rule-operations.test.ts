@@ -669,6 +669,7 @@ for (const operation of ["publish", "re-enable", "scope edit"] as const) {
     const before = await revision();
     const base = await stored(id);
     let interleavings = 0;
+    let priceInFreezeSnapshot: number | null = null;
     const client = catalogInterleavingClient(async tx => {
       interleavings++;
       await prisma.$transaction(async catalog => {
@@ -677,7 +678,7 @@ for (const operation of ["publish", "re-enable", "scope edit"] as const) {
         await catalog.variantMirror.update({ where: { id: `${P}-a-v` }, data: { pancakeRetailPrice: 20_000 } });
       });
       const old = await tx.variantMirror.findUniqueOrThrow({ where: { id: `${P}-a-v` } });
-      assert.equal(old.pancakeRetailPrice, 500_000, "the freeze transaction keeps the price snapshot it validated");
+      priceInFreezeSnapshot = old.pancakeRetailPrice;
     });
     const outcome = operation === "scope edit"
       ? await editScheduledGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: ON, client,
@@ -687,6 +688,7 @@ for (const operation of ["publish", "re-enable", "scope edit"] as const) {
     assert.equal(interleavings, 1);
     const frozen = await prisma.giftQuantityFrozenProduct.findMany({ where: { campaignId: id } });
     assert.deepEqual(frozen.map(p => p.productId), [`${P}-a`], "the newly categorized cheap product was never in the validated snapshot");
+    assert.equal(priceInFreezeSnapshot, 500_000, "the freeze transaction keeps the price snapshot it validated");
     assert.equal(await revision(), before + BigInt(1));
     assert.equal((await stored(id)).revision, base.revision + 1);
     assert.equal((await prisma.variantMirror.findUniqueOrThrow({ where: { id: `${P}-a-v` } })).pancakeRetailPrice, 20_000, "the separate catalog transaction really committed");
