@@ -16,7 +16,6 @@ import {
   readScopeProductFacts,
   type GiftQuantityCandidateReadClient,
 } from "../../src/commerce/gift-quantity-candidate-repository.ts";
-import { RULE_VALIDATION_NOT_AVAILABLE } from "../../src/commerce/gift-quantity-rule-validation.ts";
 import { MAX_FROZEN_PRODUCTS } from "../../src/commerce/gift-quantity-scope.ts";
 import { deriveCampaignLifecycle } from "../../src/commerce/promotion-campaign-lifecycle.ts";
 import { PROMOTION_REVISION_ID } from "../../src/commerce/promotion-activation-service.ts";
@@ -157,11 +156,11 @@ test("oversized campaign ids are refused before a transaction opens", async () =
   assert.deepEqual(outcome, { ok: false, failure: { reason: "INVALID_INPUT", errors: ["IDENTIFIER_TOO_LONG"] } });
 });
 
-test("with the production rule validator a campaign cannot become effective yet (fail closed)", async () => {
+test("with the production rule validator an unfinished gift rule cannot become effective (fail closed)", async () => {
   await draft("prod");
   const before = await revision();
   const outcome = await publishGiftQuantityCampaign({ campaignId: `${P}-prod`, now: T0, session: ADMIN, env: ON });
-  assert.deepEqual(outcome, { ok: false, failure: { reason: "INVALID_RULE", errors: [RULE_VALIDATION_NOT_AVAILABLE] } });
+  assert.deepEqual(outcome, { ok: false, failure: { reason: "INVALID_RULE", errors: ["GIFT_DUPLICATE_POLICY_REQUIRED", "GIFT_OPTIONS_EMPTY"] } });
   assert.equal(await revision(), before);
   assert.equal((await campaign("prod")).isEnabled, false);
   assert.deepEqual(await frozenIds("prod"), []);

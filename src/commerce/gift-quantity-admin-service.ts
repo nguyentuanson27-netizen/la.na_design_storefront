@@ -16,6 +16,10 @@
  *   unknown categories or products, oversized or duplicate lists, a kind change after creation.
  * - Changing the gift trigger clears the fields of the trigger it replaced, so the persisted row
  *   never carries two competing readings.
+ * - A gift Draft may carry a half-built rule (no threshold yet, no allowlist, no duplicate policy),
+ *   but never a malformed or unbounded one, a field its trigger does not own, or an allowlisted
+ *   variant that does not exist (GQ13a). Business validity and "can this really be given" are
+ *   publish-time (`gift-quantity-gift-rule.ts`).
  * - A quantity-tier Draft may carry a half-built rule (no unit yet, an empty or non-monotonic
  *   ladder, stacking on without a priority), but never a malformed or unbounded one: structure,
  *   bounds, allowlists and existing peers are enforced on every write (GQ09a). Business validity
@@ -27,6 +31,13 @@ import { requireAdminSession } from "../auth/authorization.ts";
 import { prisma } from "../db/prisma.ts";
 
 import type { GiftQuantityDraftValues } from "./gift-quantity-admin-input.ts";
+import {
+  giftOptionChildren,
+  giftRuleColumns,
+  unknownGiftVariantIds,
+  validateGiftRuleStructure,
+  type GiftRuleInput,
+} from "./gift-quantity-gift-rule.ts";
 import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
 import { applyExcludeWins, validateScopeConfig, type ScopeIssue } from "./gift-quantity-scope.ts";
 import { validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
@@ -62,11 +73,12 @@ export function validateDraftShape(values: GiftQuantityDraftValues): readonly st
   const global = values.scopeMode === "GLOBAL_ALL_PAID_LINES";
   if (values.kind === "QUANTITY_TIER") {
     if (global) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
-    if (values.giftTrigger !== null || values.subtotalScope !== null) errors.push("GIFT_FIELDS_ON_TIER");
+    if (values.giftTrigger !== null || values.subtotalScope !== null || values.giftRule) errors.push("GIFT_FIELDS_ON_TIER");
     if (values.tierRule) errors.push(...validateTierRuleStructure(values.tierRule));
     return errors;
   }
   if (values.tierRule) errors.push("TIER_FIELDS_ON_GIFT");
+  if (values.giftRule) errors.push(...validateGiftRuleStructure(values.giftRule, values.giftTrigger));
 
   if (values.giftTrigger === "QUANTITY") {
     if (global) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
@@ -174,10 +186,15 @@ export async function createDraftGiftQuantityCampaign({
     const peerErrors = await invalidStackPeers(client, tierRule, null);
     if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } };
   }
+  const giftRule = values.kind === "GIFT_ITEM" ? values.giftRule ?? null : null;
+  if (giftRule !== null && (await unknownGiftVariantIds(client, giftRule.variantIds)).length > 0) {
+    return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_VARIANT_UNKNOWN"] } };
+  }
 
   const created = await client.giftQuantityCampaign.create({
     data: {
       ...(tierRule === null ? {} : { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule) }),
+      ...(giftRule === null ? {} : { ...giftRuleColumns(giftRule), ...giftOptionChildren(giftRule) }),
       kind: values.kind,
       name: name.name,
       startsAt: values.startsAt,
@@ -229,6 +246,10 @@ export async function editDraftGiftQuantityCampaign({
     const peerErrors = await invalidStackPeers(client, tierRule, campaignId);
     if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } };
   }
+  const giftRule: GiftRuleInput | null = values.kind === "GIFT_ITEM" ? values.giftRule ?? null : null;
+  if (giftRule !== null && (await unknownGiftVariantIds(client, giftRule.variantIds)).length > 0) {
+    return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_VARIANT_UNKNOWN"] } };
+  }
 
   return client.$transaction(async (tx) => {
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
@@ -258,6 +279,8 @@ export async function editDraftGiftQuantityCampaign({
         data: { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule) },
       });
     }
+    // The whole gift allowlist is replaced in this transaction, never merged into the stored one.
+    if (giftRule !== null) await tx.giftOption.deleteMany({ where: { campaignId } });
     await tx.giftQuantityCampaign.update({
       where: { id: campaignId },
       data: {
@@ -271,6 +294,7 @@ export async function editDraftGiftQuantityCampaign({
               giftTrigger: values.giftTrigger,
               subtotalScope: values.giftTrigger === "ORDER_SUBTOTAL" ? values.subtotalScope : null,
               ...triggerFieldReset(values),
+              ...(giftRule === null ? {} : { ...giftRuleColumns(giftRule), ...giftOptionChildren(giftRule) }),
             }
           : {}),
       },

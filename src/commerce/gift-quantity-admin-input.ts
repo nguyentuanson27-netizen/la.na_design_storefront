@@ -11,6 +11,12 @@
 
 import { parseStrictVietnamDateTime } from "./promotion-admin-input.ts";
 import {
+  formCarriesGiftRule,
+  parseGiftRuleForm,
+  type GiftRuleInput,
+  type GiftRuleParseReason,
+} from "./gift-quantity-gift-rule.ts";
+import {
   formCarriesTierRule,
   parseTierRuleForm,
   type TierRuleInput,
@@ -51,16 +57,24 @@ export type GiftQuantityDraftValues = Readonly<{
    * form without tier fields can never wipe a ladder. A gift campaign never carries one.
    */
   tierRule?: TierRuleInput | null;
+  /**
+   * GIFT_ITEM only (GQ13a): the threshold, award mode, cap, duplicate policy and variant allowlist.
+   * `null` or absent means "this submission does not describe the rule": a Draft edit then keeps the
+   * stored rule, so a form without gift fields can never wipe an allowlist. A tier never carries one.
+   */
+  giftRule?: GiftRuleInput | null;
 }>;
 
 export type GiftQuantityDraftParseReason =
   | "TIER_FIELDS_ON_GIFT"
+  | "GIFT_FIELDS_ON_TIER"
   | "INVALID_KIND"
   | "INVALID_SCOPE_MODE"
   | "INVALID_GIFT_TRIGGER"
   | "INVALID_SUBTOTAL_SCOPE"
   | "INVALID_DATE_TIME"
-  | TierRuleParseReason;
+  | TierRuleParseReason
+  | GiftRuleParseReason;
 
 export type ParsedGiftQuantityDraft =
   | Readonly<{ ok: true; value: GiftQuantityDraftValues }>
@@ -85,6 +99,8 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
   if (kind === null) return { ok: false, reason: "INVALID_KIND" };
   const carriesTierRule = formCarriesTierRule(formData);
   if (kind !== "QUANTITY_TIER" && carriesTierRule) return { ok: false, reason: "TIER_FIELDS_ON_GIFT" };
+  const carriesGiftRule = formCarriesGiftRule(formData);
+  if (kind !== "GIFT_ITEM" && carriesGiftRule) return { ok: false, reason: "GIFT_FIELDS_ON_TIER" };
 
   const scopeMode = allowlisted(formData.get("scopeMode"), GIFT_QUANTITY_SCOPE_MODES);
   if (scopeMode === null) return { ok: false, reason: "INVALID_SCOPE_MODE" };
@@ -117,6 +133,13 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
     tierRule = parsedRule.value;
   }
 
+  let giftRule: GiftRuleInput | null = null;
+  if (kind === "GIFT_ITEM" && carriesGiftRule) {
+    const parsedRule = parseGiftRuleForm(formData);
+    if (!parsedRule.ok) return { ok: false, reason: parsedRule.reason };
+    giftRule = parsedRule.value;
+  }
+
   const rawName = formData.get("name");
   return {
     ok: true,
@@ -134,6 +157,7 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
       giftTrigger,
       subtotalScope,
       tierRule,
+      giftRule,
     },
   };
 }

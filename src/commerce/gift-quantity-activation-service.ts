@@ -19,12 +19,16 @@
  *   campaign revision, in the same transaction as the publish / re-enable / scope edit. Nothing is
  *   written at `startsAt`: Scheduled -> Active is derived from `now`.
  * - **Rule validation seam.** Rule economics are validated by an injected `RuleValidator`. The
- *   production default validates quantity-tier rules (GQ09a) and still refuses gift rules until
- *   GQ13a. Checks that need other rows (unique stack priority, EX-21 catalog prices) run in the same
- *   transaction under the revision lock. A refused publish / edit rolls back: no revision moves.
+ *   production default validates quantity-tier rules (GQ09a) and gift rules (GQ13a). Checks that
+ *   need other rows (unique stack priority, EX-21 catalog prices, gift options that exist, are
+ *   active, non-composite and in stock) run in the same transaction under the revision lock. A
+ *   refused publish / edit rolls back: no revision moves.
  * - **Tier rule edits.** A Scheduled edit may replace the whole tier rule (ladder, FROM/ALL,
  *   stacking, peers). The rule is validated as it will be after the edit, and only a *real* change
  *   against the stored rule is gated, validated and revisioned.
+ * - **Gift rule edits.** A Scheduled edit may replace the gift thresholds, award mode, cap,
+ *   duplicate policy and the whole variant allowlist (GQ13a); the trigger itself stays fixed. The
+ *   same "only a real change is effective" rule applies.
  */
 
 import type { GiftQuantityCampaignKind, GiftSubtotalScope, GiftTrigger, PrismaClient } from "../generated/prisma/client.ts";
@@ -36,6 +40,16 @@ import {
   type GiftQuantityCampaignRecord,
 } from "./gift-quantity-candidate-repository.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import {
+  giftOptionChildren,
+  giftOptionErrors,
+  giftRuleColumns,
+  giftRuleOfRow,
+  sameGiftRule,
+  validateGiftRuleBounds,
+  validateGiftRuleStructure,
+  type GiftRuleInput,
+} from "./gift-quantity-gift-rule.ts";
 import { checkTierPriceSafety } from "./gift-quantity-publish-guards.ts";
 import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
 import { hasStackPriorityConflict, MAX_STACK_PRIORITY } from "./gift-quantity-stack-priority.ts";
@@ -280,6 +294,7 @@ async function crossRowRuleErrors(
   now: Date,
   frozenCampaignId?: string,
 ): Promise<readonly string[]> {
+  if (source.kind === "GIFT_ITEM") return giftOptionErrors(tx, source.giftOptions.map((option) => option.variantId));
   if (source.kind !== "QUANTITY_TIER") return [];
   const rule = tierRuleOfRow(source);
   const errors: string[] = [];
@@ -447,8 +462,8 @@ export type ScopePatch = Readonly<{
 }>;
 
 /**
- * Fields a Scheduled edit may change here. The tier rule is GQ09a's; gift options and thresholds
- * arrive with GQ13a through their own write contract and reuse this transaction.
+ * Fields a Scheduled edit may change here. The tier rule is GQ09a's and the gift rule GQ13a's; both
+ * reuse this transaction, gate and revision.
  */
 export type ScheduledEditPatch = Readonly<{
   /**
@@ -471,6 +486,12 @@ export type ScheduledEditPatch = Readonly<{
    * together with `stackPriority` / `stackingEnabled` the three must agree.
    */
   tierRule?: TierRuleInput;
+  /**
+   * Gift campaigns only: the whole gift rule (thresholds, award mode, cap, duplicate policy and the
+   * variant allowlist) as it should be after the edit. Compared with the stored rule; an identical
+   * rule is not an edit. It must fit the stored trigger, which a Scheduled campaign cannot change.
+   */
+  giftRule?: GiftRuleInput;
 }>;
 
 /** The campaign as it will be once `patch` lands: only the rule fields a Scheduled edit can change. */
@@ -481,10 +502,21 @@ function applyRulePatch(
   stackingEnabled: boolean,
 ): RuleSource {
   const rule = patch.tierRule;
+  const gift = patch.giftRule;
   return {
     ...row,
     stackPriority,
     stackingEnabled,
+    ...(gift === undefined
+      ? {}
+      : {
+          minimumQuantity: gift.minimumQuantity,
+          minimumSubtotalVnd: gift.minimumSubtotalVnd === null ? null : BigInt(gift.minimumSubtotalVnd),
+          awardMode: gift.awardMode,
+          maxGiftsPerOrder: gift.maxGiftsPerOrder,
+          allowDuplicateGifts: gift.allowDuplicateGifts,
+          giftOptions: gift.variantIds.map((variantId) => ({ variantId })),
+        }),
     ...(rule === undefined
       ? {}
       : {
@@ -573,6 +605,13 @@ export async function editScheduledGiftQuantityCampaign({
     }
   }
 
+  // The same for a gift rule's trigger-independent structure; applicability to the stored trigger is
+  // checked once the row is loaded.
+  if (patch.giftRule !== undefined) {
+    const bounds = validateGiftRuleBounds(patch.giftRule);
+    if (bounds.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: bounds } };
+  }
+
   return runCatalogSnapshot(client, async (tx) => {
     const currentRevision = await lockRevision(tx);
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
@@ -596,6 +635,7 @@ export async function editScheduledGiftQuantityCampaign({
     const stackingChanged = nextStacking !== row.stackingEnabled;
     // Compared as a rule, so re-sending the stored ladder (in any order) is not an edit.
     const tierRuleChanged = patch.tierRule !== undefined && !sameTierRule(patch.tierRule, tierRuleOfRow(row));
+    const giftRuleChanged = patch.giftRule !== undefined && row.kind === "GIFT_ITEM" && !sameGiftRule(patch.giftRule, giftRuleOfRow(row));
     const currentInclude = row.targets.filter((t) => t.role === "INCLUDE").map((t) => t.productId);
     const currentExclude = row.targets.filter((t) => t.role === "EXCLUDE").map((t) => t.productId);
     // Exclude wins, so a product named on both lists is compared (and later persisted) once, as excluded.
@@ -606,7 +646,7 @@ export async function editScheduledGiftQuantityCampaign({
           (!sameSet(patch.scope.categoryKeys, row.categoryKeys) ||
             !sameSet(applyExcludeWins(patch.scope.includeProductIds, patch.scope.excludeProductIds), currentInclude) ||
             !sameSet(patch.scope.excludeProductIds, currentExclude))));
-    const effective = startsAtChanged || endsAtChanged || priorityChanged || stackingChanged || scopeChanged || tierRuleChanged;
+    const effective = startsAtChanged || endsAtChanged || priorityChanged || stackingChanged || scopeChanged || tierRuleChanged || giftRuleChanged;
 
     // The gate is decided by what the edit would change, before anything else about the campaign.
     if (effective && !isGiftQuantityPromotionsEnabled(env)) return { ok: false, failure: { reason: "FEATURE_DISABLED" } } as const;
@@ -631,6 +671,15 @@ export async function editScheduledGiftQuantityCampaign({
     // A tier rule belongs to a tier campaign; a gift campaign has none to replace.
     if (patch.tierRule !== undefined && row.kind !== "QUANTITY_TIER") {
       return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["TIER_FIELDS_ON_GIFT"] } } as const;
+    }
+    // ... and a gift rule belongs to a gift campaign. Its fields must fit the stored trigger, which
+    // a Scheduled campaign cannot change: a threshold the trigger does not own is refused, not dropped.
+    if (patch.giftRule !== undefined) {
+      if (row.kind !== "GIFT_ITEM") {
+        return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GIFT_FIELDS_ON_TIER"] } } as const;
+      }
+      const applicability = validateGiftRuleStructure(patch.giftRule, row.giftTrigger);
+      if (applicability.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: applicability } } as const;
     }
 
     const scopeValidation = validateScopeConfig(scopeFromRow(row, patch.scope), { allowGlobal: allowsGlobalScope(row) });
@@ -710,6 +759,15 @@ export async function editScheduledGiftQuantityCampaign({
           tiers: { create: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
           stackPeers: { create: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })) },
         },
+      });
+    }
+
+    if (giftRuleChanged && patch.giftRule !== undefined) {
+      // The whole allowlist is replaced, never merged into the stored one.
+      await tx.giftOption.deleteMany({ where: { campaignId: row.id } });
+      await tx.giftQuantityCampaign.update({
+        where: { id: row.id },
+        data: { ...giftRuleColumns(patch.giftRule), ...giftOptionChildren(patch.giftRule) },
       });
     }
 

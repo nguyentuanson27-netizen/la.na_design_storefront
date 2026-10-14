@@ -180,7 +180,7 @@ test("publish: stacking needs a priority and at least one peer", () => {
   assert.deepEqual(validateTierRuleForPublish(rule({ stackingEnabled: true, stackPriority: 1, peers: [{ kind: "PROMOTION", campaignId: "x" }] })), []);
 });
 
-test("dispatcher: tier rules use the tier validator, gift rules still refuse until GQ13a", () => {
+test("dispatcher: tier rules use the tier validator, gift rules the gift validator, any other kind fails closed", () => {
   const base = {
     kind: "QUANTITY_TIER", giftTrigger: null, minimumQuantity: null, minimumSubtotalVnd: null, subtotalScope: null,
     awardMode: null, maxGiftsPerOrder: null, allowDuplicateGifts: null,
@@ -190,7 +190,13 @@ test("dispatcher: tier rules use the tier validator, gift rules still refuse unt
   } as const;
   assert.deepEqual(validateRuleForPublish(base), []);
   assert.deepEqual(validateRuleForPublish({ ...base, tierUnit: null }), ["TIER_CONFIG_INCOMPLETE"]);
-  assert.deepEqual(validateRuleForPublish({ ...base, kind: "GIFT_ITEM" }), ["RULE_VALIDATION_NOT_AVAILABLE"]);
+  // An unfinished gift rule names exactly what is missing (GQ13a) instead of a blanket refusal.
+  assert.deepEqual(validateRuleForPublish({ ...base, kind: "GIFT_ITEM" }), ["GIFT_TRIGGER_REQUIRED", "GIFT_DUPLICATE_POLICY_REQUIRED", "GIFT_OPTIONS_EMPTY"]);
+  assert.deepEqual(
+    validateRuleForPublish({ ...base, kind: "GIFT_ITEM", giftTrigger: "QUANTITY", minimumQuantity: 2, allowDuplicateGifts: false, giftVariantIds: ["v1"] }),
+    [],
+  );
+  assert.deepEqual(validateRuleForPublish({ ...base, kind: "BOGUS" as unknown as "GIFT_ITEM" }), ["RULE_VALIDATION_NOT_AVAILABLE"]);
 });
 
 test("structure: direct service inputs enforce enum and boolean allowlists before persistence", () => {

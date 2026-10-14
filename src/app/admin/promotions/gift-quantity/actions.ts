@@ -120,6 +120,8 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
           },
           // Only when the submission described the rule (GQ09a); a form without tier fields leaves it.
           ...(submitted.tierRule ? { tierRule: submitted.tierRule } : {}),
+          // Likewise a gift submission that described its rule (GQ13a); one without gift fields leaves it.
+          ...(submitted.giftRule ? { giftRule: submitted.giftRule } : {}),
         },
       });
     }

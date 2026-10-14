@@ -1,3 +1,4 @@
+import { giftRuleOfRow, validateGiftRuleForPublish } from "./gift-quantity-gift-rule.ts";
 import { validateTierRuleForPublish, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import type { StackPeer } from "./gift-quantity-stack.ts";
 import type {
@@ -15,9 +16,9 @@ import type {
  *
  * The lifecycle service (`gift-quantity-activation-service.ts`) owns *when* validation runs and
  * what a failure does; this module owns *what* a valid rule is. Tier rules are validated by
- * `gift-quantity-tier-rule.ts` (GQ09a); gift rules arrive with GQ13a, and until then a gift
- * campaign is refused with `RULE_VALIDATION_NOT_AVAILABLE`, so a campaign whose rule nobody can yet
- * validate can never become effective. That is deliberate fail-closed behaviour, not a TODO.
+ * `gift-quantity-tier-rule.ts` (GQ09a) and gift rules by `gift-quantity-gift-rule.ts` (GQ13a). A
+ * kind nobody can validate is refused with `RULE_VALIDATION_NOT_AVAILABLE`, so a campaign whose rule
+ * nobody can check can never become effective. That is deliberate fail-closed behaviour.
  *
  * Checks that need other rows (unique stack priority, EX-21 catalog prices, peers that exist) are
  * not pure and live in `gift-quantity-publish-guards.ts`, run by the lifecycle service in the same
@@ -62,10 +63,28 @@ function tierRuleOf(input: RuleValidationInput): TierRuleInput {
   };
 }
 
+function giftRulePublishInputOf(input: RuleValidationInput) {
+  return {
+    trigger: input.giftTrigger,
+    subtotalScope: input.subtotalScope,
+    rule: giftRuleOfRow({
+      minimumQuantity: input.minimumQuantity,
+      minimumSubtotalVnd: input.minimumSubtotalVnd,
+      awardMode: input.awardMode,
+      maxGiftsPerOrder: input.maxGiftsPerOrder,
+      allowDuplicateGifts: input.allowDuplicateGifts,
+      giftOptions: input.giftVariantIds.map((variantId) => ({ variantId })),
+    }),
+  } as const;
+}
+
 /**
- * The validator the production lifecycle service uses. Tier rules are validated here (GQ09a); gift
- * rules still refuse until GQ13a provides theirs, so a gift campaign can never become effective
- * before its rule can be checked. Any other kind also refuses: the dispatch fails closed.
+ * The validator the production lifecycle service uses. Tier rules (GQ09a) and gift rules (GQ13a) are
+ * validated here; any other kind refuses, so the dispatch fails closed.
  */
 export const validateRuleForPublish: RuleValidator = (input) =>
-  input.kind === "QUANTITY_TIER" ? validateTierRuleForPublish(tierRuleOf(input)) : refuseUnvalidatedRules(input);
+  input.kind === "QUANTITY_TIER"
+    ? validateTierRuleForPublish(tierRuleOf(input))
+    : input.kind === "GIFT_ITEM"
+      ? validateGiftRuleForPublish(giftRulePublishInputOf(input))
+      : refuseUnvalidatedRules(input);

@@ -50,6 +50,13 @@ const BASE_MESSAGES: Record<GiftQuantityFailure["reason"], string> = {
   INVALID_STACKING_FLAG: "Lựa chọn cho phép cộng dồn không hợp lệ.",
   INVALID_STACK_PRIORITY: "Mức ưu tiên cộng dồn phải là số nguyên không âm.",
   INVALID_STACK_PEER: "Có chiến dịch cộng dồn chưa hợp lệ.",
+  GIFT_FIELDS_ON_TIER: "Chiến dịch giảm giá theo số lượng không có điều kiện nhận quà.",
+  INVALID_GIFT_MINIMUM_QUANTITY: "Số lượng tối thiểu để nhận quà phải là số nguyên dương.",
+  INVALID_GIFT_MINIMUM_SUBTOTAL: "Giá trị đơn hàng tối thiểu để nhận quà phải là số nguyên dương (đồng).",
+  INVALID_GIFT_AWARD_MODE: "Cách tặng quà không hợp lệ.",
+  INVALID_GIFT_MAX_PER_ORDER: "Số quà tối đa mỗi đơn phải là số nguyên dương.",
+  INVALID_GIFT_DUPLICATE_FLAG: "Lựa chọn cho phép tặng trùng quà không hợp lệ.",
+  INVALID_GIFT_VARIANT: "Danh sách quà tặng có phiên bản sản phẩm chưa hợp lệ hoặc quá dài.",
   FORBIDDEN: "Bạn không có quyền thực hiện thao tác này.",
 };
 
@@ -84,6 +91,18 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   STACK_PEER_SELF: "Chiến dịch không thể cộng dồn với chính nó.",
   STACK_PEER_UNKNOWN: "Có chiến dịch cộng dồn không tồn tại hoặc không đúng loại.",
   STACK_FIELDS_CONFLICT: "Mức ưu tiên hoặc lựa chọn cộng dồn không khớp với cấu hình bậc giảm giá.",
+  GIFT_MINIMUM_QUANTITY_OUT_OF_RANGE: "Số lượng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",
+  GIFT_MINIMUM_SUBTOTAL_OUT_OF_RANGE: "Giá trị đơn hàng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",
+  INVALID_GIFT_AWARD_MODE: "Cách tặng quà không hợp lệ.",
+  GIFT_MAX_PER_ORDER_OUT_OF_RANGE: "Số quà tối đa mỗi đơn nằm ngoài giới hạn cho phép (1 đến 100).",
+  INVALID_GIFT_DUPLICATE_FLAG: "Lựa chọn cho phép tặng trùng quà không hợp lệ.",
+  GIFT_OPTIONS_TOO_MANY: "Danh sách quà tặng có quá nhiều phiên bản sản phẩm.",
+  GIFT_OPTION_INVALID: "Danh sách quà tặng có phiên bản sản phẩm không hợp lệ.",
+  GIFT_OPTION_DUPLICATE: "Danh sách quà tặng có phiên bản sản phẩm bị trùng.",
+  GIFT_TRIGGER_REQUIRED_FOR_THRESHOLD: "Hãy chọn điều kiện nhận quà trước khi nhập mốc số lượng hoặc giá trị.",
+  GIFT_FIELD_NOT_APPLICABLE:
+    "Có trường không thuộc điều kiện nhận quà đã chọn: mua đủ số lượng chỉ dùng số lượng tối thiểu, còn theo giá trị đơn hàng dùng giá trị tối thiểu và cách tặng.",
+  GIFT_VARIANT_UNKNOWN: "Có phiên bản sản phẩm trong danh sách quà tặng không tồn tại.",
 };
 
 const INVALID_SCOPE_REFINEMENTS: Readonly<Record<string, string>> = {
@@ -127,6 +146,21 @@ const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   TIER_PRICE_ELIGIBILITY_UNRESOLVED: "Không thể xác minh đầy đủ giá của sản phẩm thành phần trong phạm vi. Hãy thu hẹp phạm vi rồi thử lại.",
   TIER_PRICE_BELOW_MINIMUM:
     "Mức giảm cố định làm giá của một số sản phẩm trong phạm vi xuống dưới 1đ. Hãy giảm mức giảm hoặc thu hẹp phạm vi.",
+  GIFT_TRIGGER_REQUIRED: "Hãy chọn điều kiện nhận quà (mua đủ số lượng hoặc đạt giá trị đơn hàng) trước khi bật.",
+  GIFT_MINIMUM_QUANTITY_REQUIRED: "Hãy nhập số lượng tối thiểu để nhận quà trước khi bật.",
+  GIFT_MINIMUM_SUBTOTAL_REQUIRED: "Hãy nhập giá trị đơn hàng tối thiểu để nhận quà trước khi bật.",
+  GIFT_AWARD_MODE_REQUIRED: "Hãy chọn cách tặng quà (một lần hoặc lặp lại theo mốc) trước khi bật.",
+  GIFT_SUBTOTAL_SCOPE_REQUIRED: "Hãy chọn phạm vi tính giá trị đơn hàng trước khi bật.",
+  GIFT_DUPLICATE_POLICY_REQUIRED: "Hãy chọn có cho phép tặng trùng quà hay không trước khi bật.",
+  GIFT_OPTIONS_EMPTY: "Cần ít nhất một quà trong danh sách quà tặng trước khi bật.",
+  GIFT_VARIANT_UNKNOWN: "Có phiên bản sản phẩm trong danh sách quà tặng không tồn tại.",
+  GIFT_VARIANT_UNAVAILABLE: "Có quà trong danh sách đang ngừng bán hoặc không còn trong kho dữ liệu. Hãy bỏ quà đó.",
+  GIFT_VARIANT_COMPOSITE: "Quà dạng combo chưa được hỗ trợ làm quà tặng. Hãy chọn phiên bản sản phẩm thường.",
+  GIFT_NO_READY_STOCK: "Không có quà nào trong danh sách còn hàng sẵn sàng để tặng. Hãy bổ sung hàng hoặc đổi quà.",
+  GIFT_MINIMUM_QUANTITY_OUT_OF_RANGE: "Số lượng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",
+  GIFT_MINIMUM_SUBTOTAL_OUT_OF_RANGE: "Giá trị đơn hàng tối thiểu để nhận quà nằm ngoài giới hạn cho phép.",
+  GIFT_MAX_PER_ORDER_OUT_OF_RANGE: "Số quà tối đa mỗi đơn nằm ngoài giới hạn cho phép (1 đến 100).",
+  GIFT_FIELD_NOT_APPLICABLE: "Có trường không thuộc điều kiện nhận quà đã chọn.",
 };
 
 export function describeGiftQuantityFailure(failure: GiftQuantityFailure): GiftQuantityFailureDescription {
