@@ -199,6 +199,7 @@
   - [ ] Feature flag OFF regression và staged ON path; rollback/drift alert/PII/bounds reviewed; human go/no-go riêng.
   - [ ] CI exact head pass; lệnh lint/type/domain/DB/browser/build/release pass với môi trường thật; status ghi failures minh bạch.
   - [ ] **Evidence:** `pnpm prisma:validate && pnpm lint && pnpm typecheck && pnpm test && pnpm test:db && pnpm build && pnpm release:check` ; `pnpm exec playwright test --config tests/a11y-runtime/playwright.config.ts` ; operator-approved Pancake
+  - **GQ25 RECORD WRITTEN, GATE NOT PASSED (no box ticked):** `docs/audits/gift-quantity-acceptance.md` maps EX-01..EX-22 and AC-01..AC-12 to tests and lists what is open: **GQ19 buyer UX not built**, live adapter-flow acceptance not run (only the two GQ01 probe cases ran live), verified-shop env empty, R-05 and alert thresholds awaiting the owner, H5 CI/go-no-go/`/ship`, and rotation of the shared Pancake key. Local gates: prisma:validate, typecheck, build pass; lint 0 errors; `pnpm test` 3110/0 fail; `pnpm test:db` 862/0 fail; Playwright 291 pass / 1 fail (`footer-support` 390 px wrap, footer untouched, unproven on main); `release:check` not run (needs a live Pancake key). Flag stays default OFF.
 
 ## Final quality gate (not yet run)
 - [ ] `pnpm prisma:validate`
