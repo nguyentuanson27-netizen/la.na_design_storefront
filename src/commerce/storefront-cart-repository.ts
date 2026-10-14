@@ -3,6 +3,7 @@ import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { resolveGiftQuantityQuote, validateQuoteCartItems, type LegacyConsentReader, type QuoteCartLine } from "./gift-quantity-quote.ts";
+import { createLegacyConsentReader } from "./gift-quantity-legacy-consent.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
@@ -339,7 +340,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     now = new Date(),
     env = process.env,
     giftClient = readClient as unknown as GiftQuantityCandidateReadClient,
-    readLegacyConsents,
+    readLegacyConsents = createLegacyConsentReader(readClient as unknown as Parameters<typeof createLegacyConsentReader>[0]),
   }: {
     shopId: number;
     items: readonly CartItemIdentity[];
