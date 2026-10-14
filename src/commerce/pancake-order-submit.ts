@@ -24,6 +24,9 @@ import {
   resolveSellingPolicy,
 } from "./capacity-policy.ts";
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
+import { readActiveGiftQuantityCampaigns, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
+import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
+import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
 
 const MAX_PUBLIC_CODE_LENGTH = 128;
 
@@ -47,7 +50,13 @@ export type PancakeOrderSubmissionReason =
    * the quote has signed, so such an order is held at DRAFT with nothing sent until the line-level
    * Pancake projection (GQ20) exists. The reason is stable so that work can remove exactly this gate.
    */
-  | "BENEFIT_SUBMISSION_UNAVAILABLE";
+  | "BENEFIT_SUBMISSION_UNAVAILABLE"
+  /**
+   * GQ20 -- a benefit order's fresh-base recheck found that the price story behind its quote (the live
+   * Pancake base, a legacy campaign, or a gift / tier campaign's liveness or revision) no longer holds.
+   * The order goes back to DRAFT with nothing written to Pancake; the buyer's next submit re-quotes.
+   */
+  | "BENEFIT_REQUOTE_REQUIRED";
 
 type PancakeOrderValidationRejectionReason = Extract<
   PancakeOrderSubmissionReason,
@@ -89,6 +98,12 @@ export type PancakeOrderSubmissionEvent =
       correlationId: string;
       state: "DRAFT";
       reason: "BENEFIT_SUBMISSION_UNAVAILABLE";
+    }
+  | {
+      name: "pancake_order.benefit_requote_required";
+      correlationId: string;
+      state: "DRAFT";
+      reason: "BENEFIT_REQUOTE_REQUIRED";
     }
   | {
       name: "pancake_order.quote_repriced";
@@ -165,6 +180,18 @@ export type PancakeOrderSubmissionGateway = {
 };
 
 export type PancakeOrderSubmissionOptions = {
+  /**
+   * Shops whose line-level pricing was accepted live (GQ01). Defaults to the operator-maintained
+   * `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`. A benefit order for any other shop is held at
+   * DRAFT with nothing sent.
+   */
+  lineLevelPricingVerifiedShopIds?: readonly number[];
+  /**
+   * The environment the gift / quantity feature gate is read from (default `process.env`). With the
+   * gate OFF no benefit campaign is in force, so a benefit order is sent back for a re-quote: the
+   * kill switch (GQ24) stops new benefit orders from reaching the POS while leaving history alone.
+   */
+  env?: Readonly<Record<string, string | undefined>>;
   onEvent?: (event: PancakeOrderSubmissionEvent) => void;
   onConfirmed?: (publicCode: string) => Promise<void>;
   /**
@@ -322,25 +349,14 @@ export function createPancakeOrderSubmissionService(
       where: { publicCode: safePublicCode },
       include: {
         lines: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
-        quoteSnapshot: { select: { id: true } },
+        quoteSnapshot: {
+          include: {
+            lines: { orderBy: [{ role: "asc" }, { lineId: "asc" }], include: { discountSteps: { orderBy: { position: "asc" } } } },
+          },
+        },
       },
     });
     const correlationId = order.id;
-    if (order.quoteSnapshot) {
-      // Back to DRAFT before anything is read from Pancake or reserved for a write: no hold changes
-      // state, no external call is made, and the buyer can still re-quote or abandon the order.
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "VALIDATING" },
-        data: { state: "DRAFT", syncErrorCode: "BENEFIT_SUBMISSION_UNAVAILABLE" },
-      });
-      emitSafely(options.onEvent, {
-        name: "pancake_order.benefit_submission_withheld",
-        correlationId,
-        state: "DRAFT",
-        reason: "BENEFIT_SUBMISSION_UNAVAILABLE",
-      });
-      return { ok: false, state: "DRAFT", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
-    }
     emitSafely(options.onEvent, {
       name: "pancake_order.validation_started",
       correlationId,
@@ -605,6 +621,536 @@ export function createPancakeOrderSubmissionService(
       return { ok: false, state: "DRAFT", reason: "VALIDATION_UNAVAILABLE" };
     }
 
+    type LiveCapacityPlan = Readonly<{
+      variantId: string;
+      sellingMode: ReturnType<typeof resolveSellingPolicy>["sellingMode"];
+      resources: readonly Readonly<{
+        pancakeVariationId: string;
+        units: number;
+        floor: number;
+      }>[];
+    }>;
+    type FinalizeInput = Readonly<{
+      liveCapacityPlans: readonly LiveCapacityPlan[];
+      liveByVariationId: ReadonlyMap<string, PancakeCatalogVariation | null>;
+      drifted: boolean;
+      freshLines: ReadonlyArray<{
+        id: string;
+        variantId: string;
+        quantity: number;
+        freshBaseVnd: number;
+        freshAfterDiscountVnd: number;
+        pricing: ReturnType<typeof resolvePromotionPricing>;
+      }>;
+      provenanceDrifted: boolean;
+      subtotalVnd: number;
+      totalQuantity: number;
+      requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
+      /** The order's contact facts, already proven non-empty by the caller (a closure cannot carry that narrowing). */
+      contact: Readonly<{
+        persistedShopId: number;
+        guestName: string;
+        guestPhone: string;
+        provinceRef: string;
+        districtRef: string | null;
+        communeRef: string;
+        addressDetail: string;
+      }>;
+    }>;
+
+    /**
+     * Everything from the capacity close-out to the confirmed order. Shared by the legacy per-variation
+     * path and the benefit path (GQ20), which differ only in how their lines, drift and request lines
+     * are established; the write boundary, the create call, the unknown-outcome handling and the
+     * confirmation are one implementation, so a benefit order cannot get a weaker one.
+     */
+    async function finalizeSubmission({
+      liveCapacityPlans,
+      liveByVariationId,
+      drifted,
+      freshLines,
+      provenanceDrifted,
+      subtotalVnd,
+      totalQuantity,
+      requestLines,
+      contact,
+    }: FinalizeInput): Promise<PancakeOrderSubmissionResult> {
+    // Close the shared-resource case with the same deterministic allocation order as reservation.
+    const pendingByResource = new Map<string, number>();
+    const orderedCapacityPlans = [...liveCapacityPlans].sort((left, right) => {
+      const leftFlexible = left.sellingMode !== "STANDARD";
+      const rightFlexible = right.sellingMode !== "STANDARD";
+      if (leftFlexible !== rightFlexible) return leftFlexible ? 1 : -1;
+      return left.variantId.localeCompare(right.variantId);
+    });
+    for (const plan of orderedCapacityPlans) {
+      for (const resource of plan.resources) {
+        const liveResource = liveByVariationId.get(resource.pancakeVariationId);
+        const pending = pendingByResource.get(resource.pancakeVariationId) ?? 0;
+        const total = pending + resource.units;
+        if (
+          !Number.isSafeInteger(total) ||
+          !liveResource ||
+          !Number.isFinite(liveResource.sellableStock) ||
+          liveResource.sellableStock - total < resource.floor
+        ) {
+          return reject("STOCK_UNAVAILABLE");
+        }
+      }
+      for (const resource of plan.resources) {
+        pendingByResource.set(
+          resource.pancakeVariationId,
+          (pendingByResource.get(resource.pancakeVariationId) ?? 0) + resource.units,
+        );
+      }
+    }
+
+    // Before any totals assertion or outbound call: a drifted quote is not an invalid order, and
+    // must not be judged against totals the buyer is about to be asked to replace.
+    if (drifted) {
+      return repriceDraft(freshLines);
+    }
+
+    const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd, totalQuantity });
+    const totalVnd = checkedAddVnd(subtotalVnd, shippingFeeVnd);
+    if (
+      totalVnd === null ||
+      order.merchandiseSubtotalVnd !== BigInt(subtotalVnd) ||
+      order.shippingFeeVnd !== BigInt(shippingFeeVnd) ||
+      order.totalVnd !== BigInt(totalVnd)
+    ) {
+      return reject("LOCAL_ORDER_INVALID");
+    }
+
+    // Money is settled and asserted; only the story behind it is stale. Corrected here, before the
+    // outbound claim, so the finalized line is already truthful when it becomes immutable. Inside
+    // the same pre-write recovery boundary as the reads above: nothing has been sent to Pancake yet,
+    // so a transient failure is retryable rather than a stranded claim.
+    if (provenanceDrifted) {
+      let refreshed: boolean;
+      try {
+        refreshed = await refreshLineProvenance(freshLines);
+      } catch {
+        return resetValidation();
+      }
+      if (!refreshed) {
+        const current = await client.orderMirror.findUniqueOrThrow({
+          where: { id: order.id },
+          select: { state: true, pancakeOrderId: true, syncErrorCode: true },
+        });
+        return existingResult(current);
+      }
+    }
+
+    const orderMarker = `[ORDER:${order.publicCode}]`;
+    const noteWithMarker = order.note ? `${order.note} ${orderMarker}` : orderMarker;
+    const addressDetailWithMarker = `${contact.addressDetail} ${orderMarker}`;
+
+    let geoNames: { provinceName: string; communeName: string } | undefined;
+    if (contact.districtRef === null) {
+      // Still before the write boundary: a geo outage is a retryable DRAFT, never a half-described
+      // address that the POS would render with empty province and ward fields.
+      try {
+        if (!gateway.resolveTwoLevelAddressNames) return resetValidation();
+        geoNames = await gateway.resolveTwoLevelAddressNames(contact.provinceRef, contact.communeRef);
+      } catch {
+        return resetValidation();
+      }
+    }
+
+    const request = buildPancakeCreateOrderRequest({
+      shopId: contact.persistedShopId,
+      ...(geoNames ?? {}),
+      ...(options.orderSourceId === undefined ? {} : { orderSourceId: options.orderSourceId }),
+      guestName: contact.guestName,
+      guestPhone: contact.guestPhone,
+      provinceRef: contact.provinceRef,
+      districtRef: contact.districtRef,
+      communeRef: contact.communeRef,
+      addressDetail: addressDetailWithMarker,
+      note: noteWithMarker,
+      shippingFeeVnd,
+      lines: requestLines,
+    });
+
+    // The write boundary itself. The request above is pure, so nothing is committed to yet; the
+    // update below is what declares a write may be in flight. A caller that cannot claim its
+    // resource here gets the same answer as any other pre-write bailout — DRAFT, nothing sent.
+    if (beforeExternalWrite && !(await beforeExternalWrite())) {
+      return resetValidation();
+    }
+
+    const submitting = await client.orderMirror.updateMany({
+      where: { id: order.id, state: "VALIDATING" },
+      data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow() },
+    });
+    if (submitting.count !== 1) {
+      const current = await client.orderMirror.findUniqueOrThrow({
+        where: { id: order.id },
+        select: { state: true, pancakeOrderId: true, syncErrorCode: true },
+      });
+      return existingResult(current);
+    }
+
+    emitSafely(options.onEvent, {
+      name: "pancake_order.create_started",
+      correlationId,
+      state: "POS_SUBMITTING",
+      dependency: "pancake",
+      operation: "create_order",
+    });
+
+    let pancakeOrderId: string | null = null;
+    try {
+      const response = await gateway.createOrder(request);
+      pancakeOrderId = parsePancakeCreateOrderResponse(response);
+    } catch (error) {
+      if (
+        error instanceof PancakeHttpError &&
+        (error.status === 400 ||
+          error.status === 401 ||
+          error.status === 403 ||
+          error.status === 404 ||
+          error.status === 422)
+      ) {
+        await client.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: { state: "REJECTED", syncErrorCode: "ORDER_REJECTED" },
+        });
+        emitSafely(options.onEvent, {
+          name: "pancake_order.create_rejected",
+          correlationId,
+          state: "REJECTED",
+          reason: "ORDER_REJECTED",
+        });
+        return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
+      }
+
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "POS_SUBMITTING" },
+        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.create_unknown",
+        correlationId,
+        state: "SYNC_UNKNOWN",
+        reason: "CREATE_OUTCOME_UNKNOWN",
+      });
+      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+    }
+
+    try {
+      const confirmedAt = readNow();
+      const confirmed = await client.$transaction(async (tx) => {
+        const updated = await tx.orderMirror.updateMany({
+          where: { id: order.id, state: "POS_SUBMITTING" },
+          data: {
+            state: "CONFIRMED",
+            pancakeOrderId,
+            syncErrorCode: null,
+          },
+        });
+        if (updated.count !== 1) return false;
+
+        // I7 is part of the local CONFIRMED transition. The remote order is already known to exist,
+        // and complete I7 capacity metadata is copied into immutable history in this transaction.
+        // Rolling/pre-I7 reservations intentionally produce no I7 row rather than re-deriving one
+        // from mutable stock or policy after the Pancake write.
+        await createPreorderSnapshotAtConfirmation(tx, order.id, confirmedAt);
+        return true;
+      });
+      if (!confirmed) {
+        const current = await client.orderMirror.findUniqueOrThrow({
+          where: { id: order.id },
+          select: { state: true, pancakeOrderId: true, syncErrorCode: true },
+        });
+        return existingResult(current);
+      }
+    } catch {
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "POS_SUBMITTING" },
+        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.create_unknown",
+        correlationId,
+        state: "SYNC_UNKNOWN",
+        reason: "CREATE_OUTCOME_UNKNOWN",
+      });
+      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
+    }
+
+    emitSafely(options.onEvent, {
+      name: "pancake_order.confirmed",
+      correlationId,
+      state: "CONFIRMED",
+    });
+    return { ok: true, state: "CONFIRMED", pancakeOrderId };
+    }
+
+    type BenefitSnapshot = NonNullable<typeof order.quoteSnapshot>;
+
+    /** Back to DRAFT with nothing read from or sent to Pancake: the benefit path is closed for this order. */
+    async function withholdBenefitOrder(): Promise<PancakeOrderSubmissionResult> {
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "VALIDATING" },
+        data: { state: "DRAFT", syncErrorCode: "BENEFIT_SUBMISSION_UNAVAILABLE" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.benefit_submission_withheld",
+        correlationId,
+        state: "DRAFT",
+        reason: "BENEFIT_SUBMISSION_UNAVAILABLE",
+      });
+      return { ok: false, state: "DRAFT", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
+    }
+
+    /**
+     * GQ20 -- the submission of an order that carries a benefit quote (gifts or quantity-tier segments).
+     *
+     * What differs from the legacy path, and nothing else:
+     *  - it runs only for a shop whose line-level pricing was accepted live (GQ01);
+     *  - the lines sent are the stored Pancake projection (ADR 0016 D-08), re-derived here from the
+     *    signed lines and compared with what was frozen, so a tampered or stale projection is never sent;
+     *  - stock is judged on the physical demand of the order: paid segments and gift units of one
+     *    variant add up, and a variant that carries a gift is judged as READY stock only;
+     *  - the fresh-base recheck compares the live Pancake base, the legacy campaign behind the first
+     *    discount step and the liveness of every tier / gift campaign with what the quote recorded.
+     *    Any difference sends the order back to DRAFT for a re-quote; nothing is repriced in place,
+     *    because the quote rows are signed history, not working data.
+     * The write boundary, the create call, the unknown-outcome handling and the confirmation are the
+     * shared tail (`finalizeSubmission`).
+     */
+    async function submitBenefitOrder(
+      snapshot: BenefitSnapshot,
+      shopId: number,
+    ): Promise<PancakeOrderSubmissionResult> {
+      const verifiedShops = options.lineLevelPricingVerifiedShopIds ?? readLineLevelPricingVerifiedShopIds();
+      if (!verifiedShops.includes(shopId)) return withholdBenefitOrder();
+
+      // The projection is a pure function of the signed lines. Re-derive it and compare with the frozen
+      // copy; the order totals must be the quote's, and the vendor total must be the website total.
+      const projection = projectBenefitQuoteForVendor(
+        snapshot.lines.map((line) => ({
+          lineId: line.lineId,
+          role: line.role,
+          pancakeVariationId: line.pancakeVariationId,
+          quantity: line.quantity,
+          unitPriceVnd: Number(line.unitPriceVnd),
+        })),
+      );
+      const stored = Array.isArray(snapshot.vendorProjection)
+        ? (snapshot.vendorProjection as unknown as Array<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>)
+        : null;
+      if (
+        !projection.ok ||
+        snapshot.vendorProjectionHash !== projection.hash ||
+        stored === null ||
+        stored.length !== projection.lines.length ||
+        stored.some((line, index) => {
+          const expected = projection.lines[index]!;
+          return line.pancakeVariationId !== expected.pancakeVariationId || line.quantity !== expected.quantity || line.unitPriceVnd !== expected.unitPriceVnd;
+        }) ||
+        BigInt(projection.paidTotalVnd) !== snapshot.paidSubtotalVnd ||
+        order.merchandiseSubtotalVnd !== snapshot.paidSubtotalVnd
+      ) {
+        return reject("LOCAL_ORDER_INVALID");
+      }
+
+      type Demand = { variantId: string; pancakeVariationId: string; paid: number; gift: number };
+      const demandByVariant = new Map<string, Demand>();
+      for (const line of snapshot.lines) {
+        const demand = demandByVariant.get(line.variantId) ?? { variantId: line.variantId, pancakeVariationId: line.pancakeVariationId, paid: 0, gift: 0 };
+        if (demand.pancakeVariationId !== line.pancakeVariationId) return reject("LOCAL_ORDER_INVALID");
+        if (line.role === "GIFT") demand.gift += line.quantity;
+        else demand.paid += line.quantity;
+        demandByVariant.set(line.variantId, demand);
+      }
+      if (demandByVariant.size === 0 || demandByVariant.size > ANONYMOUS_CART_MAX_DISTINCT_ITEMS + 100) return reject("LOCAL_ORDER_INVALID");
+      const demandVariantIds = [...demandByVariant.keys()];
+      const paidVariantIds = [...demandByVariant.values()].filter((demand) => demand.paid > 0).map((demand) => demand.variantId);
+
+      let campaignsByVariantId: ApplicableCampaignLookup["campaignsByVariantId"];
+      let activeBenefitRevisions: ReadonlyMap<string, number>;
+      let variantMetaById: Map<
+        string,
+        {
+          policy: ReturnType<typeof resolveSellingPolicy>;
+          isComposite: boolean;
+          components: readonly Readonly<{ requiredQuantity: number; pancakeVariationId: string; isUsable: boolean }>[];
+        }
+      >;
+      try {
+        const [campaignsResult, variantsResult, activeBenefits] = await Promise.all([
+          readApplicablePromotionCampaignsBatched({
+            variantIds: paidVariantIds,
+            client: client as unknown as PromotionCandidateReadClient,
+          }),
+          client.variantMirror.findMany({
+            where: { id: { in: demandVariantIds } },
+            select: {
+              id: true,
+              product: { select: { sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } } } },
+              compositeComponents: {
+                orderBy: [{ componentVariantId: "asc" }],
+                select: {
+                  quantity: true,
+                  componentVariant: {
+                    select: {
+                      pancakeVariationId: true,
+                      isPresent: true,
+                      product: { select: { pancakeShopId: true, isPresent: true } },
+                    },
+                  },
+                },
+              },
+            },
+          }),
+          // Every benefit campaign the quote relied on must still be in force. The listing is the same
+          // bounded read the cart uses; scope is not re-evaluated, only liveness and revision.
+          readActiveGiftQuantityCampaigns({
+            now: readNow(),
+            productIds: [],
+            client: client as unknown as GiftQuantityCandidateReadClient,
+            ...(options.env === undefined ? {} : { env: options.env }),
+          }),
+        ]);
+        campaignsByVariantId = campaignsResult.campaignsByVariantId;
+        activeBenefitRevisions = new Map(activeBenefits.campaigns.map((entry) => [entry.campaign.id, entry.campaign.revision]));
+        variantMetaById = new Map(
+          variantsResult.map((v) => [
+            v.id,
+            {
+              policy: resolveSellingPolicy(v.product?.sellingPolicy),
+              isComposite: v.compositeComponents.length > 0,
+              components: v.compositeComponents.map((edge) => ({
+                requiredQuantity: edge.quantity,
+                pancakeVariationId: edge.componentVariant.pancakeVariationId,
+                isUsable: edge.componentVariant.isPresent && edge.componentVariant.product.isPresent && edge.componentVariant.product.pancakeShopId === shopId,
+              })),
+            },
+          ]),
+        );
+      } catch {
+        return resetValidation();
+      }
+
+      const liveVariationIds = new Set<string>();
+      for (const demand of demandByVariant.values()) liveVariationIds.add(demand.pancakeVariationId);
+      for (const meta of variantMetaById.values()) for (const component of meta.components) liveVariationIds.add(component.pancakeVariationId);
+      let liveVariations: readonly PancakeCatalogVariation[];
+      try {
+        liveVariations = await gateway.fetchVariations(shopId, [...liveVariationIds]);
+      } catch {
+        return resetValidation();
+      }
+      const now = readNow();
+      const liveByVariationId = new Map<string, PancakeCatalogVariation | null>();
+      for (const variation of liveVariations) {
+        liveByVariationId.set(variation.id, liveByVariationId.has(variation.id) ? null : variation);
+      }
+
+      let requote = false;
+      const mirrorRefresh: Array<{ variantId: string; freshBaseVnd: number; freshAfterDiscountVnd: number }> = [];
+      const liveCapacityPlans: LiveCapacityPlan[] = [];
+      for (const demand of demandByVariant.values()) {
+        const live = liveByVariationId.get(demand.pancakeVariationId);
+        if (!live) return reject("VARIATION_UNAVAILABLE");
+        const meta = variantMetaById.get(demand.variantId) ?? { policy: resolveSellingPolicy(null), isComposite: false, components: [] };
+
+        if (demand.paid > 0) {
+          if (!isUsableBasePriceVnd(live.retailPrice)) return reject("PRICE_UNAVAILABLE");
+          const paidLines = snapshot.lines.filter((line) => line.role === "PAID" && line.variantId === demand.variantId);
+          const base = paidLines[0]!.baseUnitPriceVnd ?? paidLines[0]!.unitPriceVnd;
+          const firstLegacy = paidLines[0]!.discountSteps.find((step) => step.source === "LEGACY") ?? null;
+          const fresh = resolvePromotionPricing({ basePriceVnd: live.retailPrice, campaigns: campaignsByVariantId.get(demand.variantId) ?? [], now });
+          const legacyHolds = firstLegacy === null
+            ? !fresh.isDiscounted
+            : fresh.promotion?.id === firstLegacy.campaignId && BigInt(fresh.effectivePriceVnd ?? -1) === firstLegacy.outputPriceVnd;
+          if (BigInt(live.retailPrice) !== base || !legacyHolds) {
+            requote = true;
+            mirrorRefresh.push({ variantId: demand.variantId, freshBaseVnd: live.retailPrice, freshAfterDiscountVnd: live.retailPriceAfterDiscount });
+          }
+        }
+
+        // A variant that also carries a gift is judged as READY stock only (ADR 0016 D-04): the paid
+        // units may be flexible, the free ones may not. Otherwise the variant keeps its own policy.
+        const floor = demand.gift > 0 ? 0 : capacityFloorForMode(meta.policy.sellingMode, meta.policy.negativeStockLimit);
+        const units = demand.paid + demand.gift;
+        const resources: Array<{ pancakeVariationId: string; units: number; floor: number }> = [];
+        if (meta.isComposite) {
+          if (demand.gift > 0) return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
+          for (const component of meta.components) {
+            const componentUnits = units * component.requiredQuantity;
+            const liveComponent = liveByVariationId.get(component.pancakeVariationId);
+            if (
+              !component.isUsable ||
+              !Number.isSafeInteger(component.requiredQuantity) ||
+              component.requiredQuantity <= 0 ||
+              !Number.isSafeInteger(componentUnits) ||
+              !liveComponent ||
+              !Number.isFinite(liveComponent.sellableStock) ||
+              liveComponent.sellableStock - componentUnits < floor
+            ) {
+              return reject("STOCK_UNAVAILABLE");
+            }
+            resources.push({ pancakeVariationId: component.pancakeVariationId, units: componentUnits, floor });
+          }
+        } else {
+          if (!Number.isFinite(live.sellableStock) || live.sellableStock - units < floor) return reject("STOCK_UNAVAILABLE");
+          resources.push({ pancakeVariationId: demand.pancakeVariationId, units, floor });
+        }
+        liveCapacityPlans.push({ variantId: demand.variantId, sellingMode: demand.gift > 0 ? "STANDARD" : meta.policy.sellingMode, resources });
+      }
+
+      // Liveness of the benefit campaigns behind the quote: a tier that ended, or a gift campaign that
+      // ended or was edited (revision), makes the signed quote stale even when Pancake's prices did not move.
+      for (const line of snapshot.lines) {
+        if (line.role === "GIFT" && activeBenefitRevisions.get(line.campaignId ?? "") !== line.campaignRevision) requote = true;
+        for (const step of line.discountSteps) if (step.source === "QUANTITY_TIER" && !activeBenefitRevisions.has(step.campaignId)) requote = true;
+      }
+
+      if (requote) {
+        await client.$transaction(async (tx) => {
+          const held = await tx.orderMirror.updateMany({
+            where: { id: order.id, state: "VALIDATING" },
+            data: { state: "DRAFT", syncErrorCode: "BENEFIT_REQUOTE_REQUIRED" },
+          });
+          if (held.count !== 1) return;
+          // The fresher base is written back to the mirror, exactly as the legacy reprice does, so the
+          // buyer's re-quote starts from what Pancake reported and the handshake terminates.
+          for (const line of mirrorRefresh) {
+            await tx.variantMirror.updateMany({
+              where: { id: line.variantId },
+              data: { pancakeRetailPrice: line.freshBaseVnd, pancakeRetailPriceAfterDiscount: line.freshAfterDiscountVnd },
+            });
+          }
+        });
+        emitSafely(options.onEvent, { name: "pancake_order.benefit_requote_required", correlationId, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" });
+        return { ok: false, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" };
+      }
+
+      return finalizeSubmission({
+        liveCapacityPlans,
+        liveByVariationId,
+        drifted: false,
+        freshLines: [],
+        provenanceDrifted: false,
+        subtotalVnd: Number(snapshot.paidSubtotalVnd),
+        totalQuantity: snapshot.paidQuantity,
+        requestLines: projection.lines,
+        contact: {
+          persistedShopId: shopId,
+          guestName: order.guestName as string,
+          guestPhone: order.guestPhone as string,
+          provinceRef: order.provinceRef as string,
+          districtRef: order.districtRef,
+          communeRef: order.communeRef as string,
+          addressDetail: order.addressDetail as string,
+        },
+      });
+    }
+
     if (order.pancakeShopId === null || order.pancakeShopId !== safeShopId) {
       return reject("SHOP_SCOPE_UNVERIFIED");
     }
@@ -624,10 +1170,13 @@ export function createPancakeOrderSubmissionService(
       order.shippingFeeVnd === null ||
       order.totalVnd === null ||
       order.lines.length === 0 ||
-      order.lines.length > ANONYMOUS_CART_MAX_DISTINCT_ITEMS
+      // A benefit order stores one row per price segment, so its bound is the quote's, not the cart's.
+      order.lines.length > (order.quoteSnapshot ? 200 : ANONYMOUS_CART_MAX_DISTINCT_ITEMS)
     ) {
       return reject("LOCAL_ORDER_INVALID");
     }
+
+    if (order.quoteSnapshot) return submitBenefitOrder(order.quoteSnapshot, persistedShopId);
 
     // Inside the same pre-write recovery boundary as the live Pancake read below, and for the same
     // reason: the claim has moved the row to `VALIDATING`, but nothing has been sent to Pancake yet.
@@ -774,15 +1323,6 @@ export function createPancakeOrderSubmissionService(
     // Preserve each line's policy while accumulating shared physical resources. STANDARD demand is
     // applied first, then flexible demand, matching reserveOrderCapacity(). Collapsing these to one
     // aggregate floor either rejects a valid flexible tail or lets STANDARD borrow negative headroom.
-    type LiveCapacityPlan = Readonly<{
-      variantId: string;
-      sellingMode: ReturnType<typeof resolveSellingPolicy>["sellingMode"];
-      resources: readonly Readonly<{
-        pancakeVariationId: string;
-        units: number;
-        floor: number;
-      }>[];
-    }>;
     const liveCapacityPlans: LiveCapacityPlan[] = [];
 
     for (const line of order.lines) {
@@ -918,217 +1458,25 @@ export function createPancakeOrderSubmissionService(
       });
     }
 
-    // Close the shared-resource case with the same deterministic allocation order as reservation.
-    const pendingByResource = new Map<string, number>();
-    const orderedCapacityPlans = [...liveCapacityPlans].sort((left, right) => {
-      const leftFlexible = left.sellingMode !== "STANDARD";
-      const rightFlexible = right.sellingMode !== "STANDARD";
-      if (leftFlexible !== rightFlexible) return leftFlexible ? 1 : -1;
-      return left.variantId.localeCompare(right.variantId);
+    return finalizeSubmission({
+      liveCapacityPlans,
+      liveByVariationId,
+      drifted,
+      freshLines,
+      provenanceDrifted,
+      subtotalVnd,
+      totalQuantity,
+      requestLines,
+      contact: {
+        persistedShopId,
+        guestName: order.guestName,
+        guestPhone: order.guestPhone,
+        provinceRef: order.provinceRef,
+        districtRef: order.districtRef,
+        communeRef: order.communeRef,
+        addressDetail: order.addressDetail,
+      },
     });
-    for (const plan of orderedCapacityPlans) {
-      for (const resource of plan.resources) {
-        const liveResource = liveByVariationId.get(resource.pancakeVariationId);
-        const pending = pendingByResource.get(resource.pancakeVariationId) ?? 0;
-        const total = pending + resource.units;
-        if (
-          !Number.isSafeInteger(total) ||
-          !liveResource ||
-          !Number.isFinite(liveResource.sellableStock) ||
-          liveResource.sellableStock - total < resource.floor
-        ) {
-          return reject("STOCK_UNAVAILABLE");
-        }
-      }
-      for (const resource of plan.resources) {
-        pendingByResource.set(
-          resource.pancakeVariationId,
-          (pendingByResource.get(resource.pancakeVariationId) ?? 0) + resource.units,
-        );
-      }
-    }
-
-    // Before any totals assertion or outbound call: a drifted quote is not an invalid order, and
-    // must not be judged against totals the buyer is about to be asked to replace.
-    if (drifted) {
-      return repriceDraft(freshLines);
-    }
-
-    const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd, totalQuantity });
-    const totalVnd = checkedAddVnd(subtotalVnd, shippingFeeVnd);
-    if (
-      totalVnd === null ||
-      order.merchandiseSubtotalVnd !== BigInt(subtotalVnd) ||
-      order.shippingFeeVnd !== BigInt(shippingFeeVnd) ||
-      order.totalVnd !== BigInt(totalVnd)
-    ) {
-      return reject("LOCAL_ORDER_INVALID");
-    }
-
-    // Money is settled and asserted; only the story behind it is stale. Corrected here, before the
-    // outbound claim, so the finalized line is already truthful when it becomes immutable. Inside
-    // the same pre-write recovery boundary as the reads above: nothing has been sent to Pancake yet,
-    // so a transient failure is retryable rather than a stranded claim.
-    if (provenanceDrifted) {
-      let refreshed: boolean;
-      try {
-        refreshed = await refreshLineProvenance(freshLines);
-      } catch {
-        return resetValidation();
-      }
-      if (!refreshed) {
-        const current = await client.orderMirror.findUniqueOrThrow({
-          where: { id: order.id },
-          select: { state: true, pancakeOrderId: true, syncErrorCode: true },
-        });
-        return existingResult(current);
-      }
-    }
-
-    const orderMarker = `[ORDER:${order.publicCode}]`;
-    const noteWithMarker = order.note ? `${order.note} ${orderMarker}` : orderMarker;
-    const addressDetailWithMarker = `${order.addressDetail} ${orderMarker}`;
-
-    let geoNames: { provinceName: string; communeName: string } | undefined;
-    if (order.districtRef === null) {
-      // Still before the write boundary: a geo outage is a retryable DRAFT, never a half-described
-      // address that the POS would render with empty province and ward fields.
-      try {
-        if (!gateway.resolveTwoLevelAddressNames) return resetValidation();
-        geoNames = await gateway.resolveTwoLevelAddressNames(order.provinceRef, order.communeRef);
-      } catch {
-        return resetValidation();
-      }
-    }
-
-    const request = buildPancakeCreateOrderRequest({
-      shopId: persistedShopId,
-      ...(geoNames ?? {}),
-      ...(options.orderSourceId === undefined ? {} : { orderSourceId: options.orderSourceId }),
-      guestName: order.guestName,
-      guestPhone: order.guestPhone,
-      provinceRef: order.provinceRef,
-      districtRef: order.districtRef,
-      communeRef: order.communeRef,
-      addressDetail: addressDetailWithMarker,
-      note: noteWithMarker,
-      shippingFeeVnd,
-      lines: requestLines,
-    });
-
-    // The write boundary itself. The request above is pure, so nothing is committed to yet; the
-    // update below is what declares a write may be in flight. A caller that cannot claim its
-    // resource here gets the same answer as any other pre-write bailout — DRAFT, nothing sent.
-    if (beforeExternalWrite && !(await beforeExternalWrite())) {
-      return resetValidation();
-    }
-
-    const submitting = await client.orderMirror.updateMany({
-      where: { id: order.id, state: "VALIDATING" },
-      data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow() },
-    });
-    if (submitting.count !== 1) {
-      const current = await client.orderMirror.findUniqueOrThrow({
-        where: { id: order.id },
-        select: { state: true, pancakeOrderId: true, syncErrorCode: true },
-      });
-      return existingResult(current);
-    }
-
-    emitSafely(options.onEvent, {
-      name: "pancake_order.create_started",
-      correlationId,
-      state: "POS_SUBMITTING",
-      dependency: "pancake",
-      operation: "create_order",
-    });
-
-    let pancakeOrderId: string | null = null;
-    try {
-      const response = await gateway.createOrder(request);
-      pancakeOrderId = parsePancakeCreateOrderResponse(response);
-    } catch (error) {
-      if (
-        error instanceof PancakeHttpError &&
-        (error.status === 400 ||
-          error.status === 401 ||
-          error.status === 403 ||
-          error.status === 404 ||
-          error.status === 422)
-      ) {
-        await client.orderMirror.updateMany({
-          where: { id: order.id, state: "POS_SUBMITTING" },
-          data: { state: "REJECTED", syncErrorCode: "ORDER_REJECTED" },
-        });
-        emitSafely(options.onEvent, {
-          name: "pancake_order.create_rejected",
-          correlationId,
-          state: "REJECTED",
-          reason: "ORDER_REJECTED",
-        });
-        return { ok: false, state: "REJECTED", reason: "ORDER_REJECTED" };
-      }
-
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
-      });
-      emitSafely(options.onEvent, {
-        name: "pancake_order.create_unknown",
-        correlationId,
-        state: "SYNC_UNKNOWN",
-        reason: "CREATE_OUTCOME_UNKNOWN",
-      });
-      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
-    }
-
-    try {
-      const confirmedAt = readNow();
-      const confirmed = await client.$transaction(async (tx) => {
-        const updated = await tx.orderMirror.updateMany({
-          where: { id: order.id, state: "POS_SUBMITTING" },
-          data: {
-            state: "CONFIRMED",
-            pancakeOrderId,
-            syncErrorCode: null,
-          },
-        });
-        if (updated.count !== 1) return false;
-
-        // I7 is part of the local CONFIRMED transition. The remote order is already known to exist,
-        // and complete I7 capacity metadata is copied into immutable history in this transaction.
-        // Rolling/pre-I7 reservations intentionally produce no I7 row rather than re-deriving one
-        // from mutable stock or policy after the Pancake write.
-        await createPreorderSnapshotAtConfirmation(tx, order.id, confirmedAt);
-        return true;
-      });
-      if (!confirmed) {
-        const current = await client.orderMirror.findUniqueOrThrow({
-          where: { id: order.id },
-          select: { state: true, pancakeOrderId: true, syncErrorCode: true },
-        });
-        return existingResult(current);
-      }
-    } catch {
-      await client.orderMirror.updateMany({
-        where: { id: order.id, state: "POS_SUBMITTING" },
-        data: { state: "SYNC_UNKNOWN", syncErrorCode: "CREATE_OUTCOME_UNKNOWN" },
-      });
-      emitSafely(options.onEvent, {
-        name: "pancake_order.create_unknown",
-        correlationId,
-        state: "SYNC_UNKNOWN",
-        reason: "CREATE_OUTCOME_UNKNOWN",
-      });
-      return { ok: false, state: "SYNC_UNKNOWN", reason: "CREATE_OUTCOME_UNKNOWN" };
-    }
-
-    emitSafely(options.onEvent, {
-      name: "pancake_order.confirmed",
-      correlationId,
-      state: "CONFIRMED",
-    });
-    return { ok: true, state: "CONFIRMED", pancakeOrderId };
   }
 
   return {

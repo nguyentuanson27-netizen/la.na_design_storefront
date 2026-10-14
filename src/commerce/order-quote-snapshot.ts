@@ -77,6 +77,12 @@ export type OrderQuoteSnapshotInput = Readonly<{
   acknowledgedAt: Date | null;
   /** Benefits the quote stepped aside from, with the reason (EX-21 keeps `TIER_PRICE_INVALID`). */
   droppedBenefits?: readonly DroppedBenefitInput[];
+  /**
+   * The Pancake projection of exactly these lines (ADR 0016 D-08, GQ20): a pure function of them, so
+   * it is computed with the quote and frozen with it. Absent for a snapshot that was never meant to be
+   * sent (tests of the record itself).
+   */
+  vendorProjection?: Readonly<{ hash: string; lines: readonly Readonly<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>[] }>;
 }>;
 
 export type OrderQuoteSnapshotIssue =
@@ -84,6 +90,7 @@ export type OrderQuoteSnapshotIssue =
   | "FORMAT_INVALID"
   | "DIGEST_INVALID"
   | "DROPPED_BENEFITS_INVALID"
+  | "VENDOR_PROJECTION_INVALID"
   | "ACKNOWLEDGEMENT_REQUIRED"
   | "ACKNOWLEDGEMENT_UNNEEDED";
 
@@ -110,6 +117,31 @@ export function validateOrderQuoteSnapshot(
     )
   ) {
     return fail("DROPPED_BENEFITS_INVALID");
+  }
+
+  const projection = input.vendorProjection;
+  if (
+    projection !== undefined &&
+    (typeof projection !== "object" ||
+      projection === null ||
+      !DIGEST_PATTERN.test(projection.hash) ||
+      !Array.isArray(projection.lines) ||
+      projection.lines.length === 0 ||
+      projection.lines.length > 400 ||
+      projection.lines.some(
+        (line) =>
+          typeof line !== "object" ||
+          line === null ||
+          !isQuoteText(line.pancakeVariationId, 200) ||
+          !Number.isSafeInteger(line.quantity) ||
+          line.quantity < 1 ||
+          !Number.isSafeInteger(line.unitPriceVnd) ||
+          line.unitPriceVnd < 1,
+      ) ||
+      projection.lines.reduce((sum, line) => sum + line.quantity * line.unitPriceVnd, 0) !== input.paidSubtotalVnd)
+  ) {
+    // The vendor total must be the website total (D-08); anything else must never be stored as sendable.
+    return fail("VENDOR_PROJECTION_INVALID");
   }
 
   const verdict = validateQuoteStructure(input);
@@ -177,6 +209,8 @@ export async function replaceOrderQuoteSnapshot(
       nonclaimAcknowledged: input.acknowledgedAt !== null,
       acknowledgedAt: input.acknowledgedAt,
       droppedBenefits: (input.droppedBenefits?.length ?? 0) === 0 ? undefined : input.droppedBenefits!.map((entry) => ({ ...entry })),
+      vendorProjectionHash: input.vendorProjection?.hash,
+      vendorProjection: input.vendorProjection === undefined ? undefined : input.vendorProjection.lines.map((line) => ({ ...line })),
       lines: {
         create: input.lines.map((line) => ({
           lineId: line.lineId,
@@ -236,6 +270,7 @@ export type StoredOrderQuoteSnapshot = Readonly<{
   lines: readonly OrderQuoteLineInput[];
   entitlements: readonly OrderQuoteEntitlementInput[];
   droppedBenefits: readonly DroppedBenefitInput[];
+  vendorProjection: Readonly<{ hash: string; lines: readonly Readonly<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>[] }> | null;
 }>;
 
 type ReadClient = Pick<Prisma.TransactionClient, "orderQuoteSnapshot">;
@@ -262,6 +297,10 @@ export async function readOrderQuoteSnapshot(client: ReadClient, orderId: string
     unclaimedSlots: row.unclaimedSlots,
     nonclaimAcknowledged: row.nonclaimAcknowledged,
     acknowledgedAt: row.acknowledgedAt,
+    vendorProjection:
+      row.vendorProjectionHash !== null && Array.isArray(row.vendorProjection)
+        ? { hash: row.vendorProjectionHash, lines: row.vendorProjection as unknown as { pancakeVariationId: string; quantity: number; unitPriceVnd: number }[] }
+        : null,
     droppedBenefits: Array.isArray(row.droppedBenefits) ? (row.droppedBenefits as unknown as DroppedBenefitInput[]) : [],
     lines: row.lines.map((line) => ({
       lineId: line.lineId,

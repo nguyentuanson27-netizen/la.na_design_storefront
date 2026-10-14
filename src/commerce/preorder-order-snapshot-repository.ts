@@ -36,6 +36,11 @@ export async function createPreorderSnapshotAtConfirmation(
         orderBy: [{ createdAt: "asc" }, { id: "asc" }],
         select: { variantId: true, quantity: true },
       },
+      // GQ20 -- a benefit order's gifts are not paid lines but they hold and consume stock like any
+      // other unit. Null for every legacy order, which therefore reads exactly as before.
+      quoteSnapshot: {
+        select: { lines: { where: { role: "GIFT" as const }, select: { variantId: true, quantity: true } } },
+      },
       capacityReservations: {
         orderBy: [{ variantId: "asc" }],
         select: {
@@ -61,19 +66,26 @@ export async function createPreorderSnapshotAtConfirmation(
   const reservationByVariantId = new Map(
     order.capacityReservations.map((reservation) => [reservation.variantId, reservation]),
   );
-  if (reservationByVariantId.size !== order.lines.length) {
+  // One entry per variant, in first-seen order. A legacy order has one line per variant, so this is
+  // the identity; a benefit order may have several paid price segments of a variant plus gift units of
+  // it, which the reservation (one row per variant) already holds as a single quantity.
+  const demandByVariantId = new Map<string, number>();
+  for (const line of [...order.lines, ...(order.quoteSnapshot?.lines ?? [])]) {
+    demandByVariantId.set(line.variantId, (demandByVariantId.get(line.variantId) ?? 0) + line.quantity);
+  }
+  if (reservationByVariantId.size !== demandByVariantId.size) {
     throw new Error("I7 accepted reservation set does not match confirmed order lines");
   }
 
   const snapshotInputs: PreorderSnapshotLineInput[] = [];
-  for (const line of order.lines) {
-    const reservation = reservationByVariantId.get(line.variantId);
-    if (!reservation || reservation.quantity !== line.quantity) {
-      throw new Error(`I7 accepted reservation does not match order line ${line.variantId}`);
+  for (const [variantId, quantity] of demandByVariantId) {
+    const reservation = reservationByVariantId.get(variantId);
+    if (!reservation || reservation.quantity !== quantity) {
+      throw new Error(`I7 accepted reservation does not match order line ${variantId}`);
     }
     snapshotInputs.push({
-      variantId: line.variantId,
-      quantity: line.quantity,
+      variantId,
+      quantity,
       isPreorderSale: reservation.acceptedPreorderState === "PREORDER",
     });
   }

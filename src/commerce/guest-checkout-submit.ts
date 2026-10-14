@@ -23,6 +23,7 @@ type SnapshotFailureReason =
   | "MONEY_UNSUPPORTED"
   | "PUBLIC_CODE_UNAVAILABLE"
   | "BENEFIT_CHECKOUT_UNAVAILABLE"
+  | "VENDOR_PROJECTION_INFEASIBLE"
   | "GIFT_SELECTION_INVALID";
 
 type SnapshotResult =
@@ -226,6 +227,7 @@ function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitR
     case "MONEY_UNSUPPORTED":
     case "PUBLIC_CODE_UNAVAILABLE":
     case "BENEFIT_CHECKOUT_UNAVAILABLE":
+    case "VENDOR_PROJECTION_INFEASIBLE":
       return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE" };
     case "GIFT_SELECTION_INVALID":
       // The stored gift choice is left exactly as it is; the buyer goes back to the cart to decide.
@@ -264,6 +266,11 @@ function mapSubmissionResult(
     // resubmitting — the exact opposite of the explicit reconfirmation this outcome requires.
     if (result.reason === "PRICE_CHANGED" && "repricedQuote" in result) {
       return { ok: false, status: "PRICE_CHANGED", priceChange: result.repricedQuote };
+    }
+    if (result.reason === "BENEFIT_REQUOTE_REQUIRED") {
+      // The quote the buyer proved no longer holds (a Pancake base, a legacy sale or a benefit campaign
+      // moved). Nothing was written to Pancake; the buyer's next view re-quotes and asks again.
+      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", orderCode };
     }
     if (result.reason === "BENEFIT_SUBMISSION_UNAVAILABLE") {
       return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode };

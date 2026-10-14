@@ -195,6 +195,7 @@ export function toOrderQuoteSnapshotInput({
   gifts,
   dropped,
   acknowledgedAt,
+  vendorProjection,
 }: Readonly<{
   facts: QuoteStructure;
   digest: string;
@@ -202,6 +203,7 @@ export function toOrderQuoteSnapshotInput({
   gifts: readonly BenefitGiftRow[];
   dropped: readonly DroppedBenefitInput[];
   acknowledgedAt: Date | null;
+  vendorProjection?: OrderQuoteSnapshotInput["vendorProjection"];
 }>): OrderQuoteSnapshotInput | null {
   const variantIdOf = new Map<string, string>();
   for (const row of [...paid, ...gifts]) {
@@ -229,5 +231,6 @@ export function toOrderQuoteSnapshotInput({
     entitlements: facts.entitlements,
     acknowledgedAt,
     droppedBenefits: dropped,
+    ...(vendorProjection === undefined ? {} : { vendorProjection }),
   };
 }

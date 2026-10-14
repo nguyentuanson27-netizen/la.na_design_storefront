@@ -23,6 +23,7 @@ import {
 import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
 import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
 import type { PromotionCampaignKind, PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
@@ -81,6 +82,8 @@ type CheckoutFailureReason =
   | "PUBLIC_CODE_UNAVAILABLE"
   /** GQ17: the cart carries gifts or tier segments and this server cannot price them right now. */
   | "BENEFIT_CHECKOUT_UNAVAILABLE"
+  /** GQ20: the paid goods cannot absorb the 1.000đ-per-gift Pancake projection (ADR 0016 D-08); nothing is written or sent. */
+  | "VENDOR_PROJECTION_INFEASIBLE"
   /** GQ18: a stored gift choice no longer holds; it is left as it is for the buyer to decide again. */
   | "GIFT_SELECTION_INVALID";
 
@@ -701,6 +704,20 @@ export function createGuestCheckoutSnapshotService(
             }
             acknowledgedAt = acknowledgement.acknowledgedAt;
           }
+          // Computed with the quote and frozen with it: a pure function of the signed lines, so a retry
+          // sends the identical payload and the projection cannot drift from what the buyer proved.
+          const projection = projectBenefitQuoteForVendor(
+            facts.lines.map((line) => ({
+              lineId: line.lineId,
+              role: line.role,
+              pancakeVariationId: line.pancakeVariationId,
+              quantity: line.quantity,
+              unitPriceVnd: line.unitPriceVnd,
+            })),
+          );
+          if (!projection.ok) {
+            return { ok: false, reason: projection.reason === "VENDOR_PROJECTION_INFEASIBLE" ? "VENDOR_PROJECTION_INFEASIBLE" : "MONEY_UNSUPPORTED" };
+          }
           benefitQuoteWrite = toOrderQuoteSnapshotInput({
             facts,
             digest: benefitQuoteDigest(facts),
@@ -708,6 +725,7 @@ export function createGuestCheckoutSnapshotService(
             gifts: resolution.gifts,
             dropped: resolution.dropped,
             acknowledgedAt,
+            vendorProjection: { hash: projection.hash, lines: projection.lines },
           });
           if (benefitQuoteWrite === null || !validateOrderQuoteSnapshot(benefitQuoteWrite).ok) {
             return { ok: false, reason: "MONEY_UNSUPPORTED" };
