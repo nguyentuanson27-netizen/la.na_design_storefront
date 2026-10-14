@@ -16,6 +16,10 @@
  *   unknown categories or products, oversized or duplicate lists, a kind change after creation.
  * - Changing the gift trigger clears the fields of the trigger it replaced, so the persisted row
  *   never carries two competing readings.
+ * - A quantity-tier Draft may carry a half-built rule (no unit yet, an empty or non-monotonic
+ *   ladder, stacking on without a priority), but never a malformed or unbounded one: structure,
+ *   bounds, allowlists and existing peers are enforced on every write (GQ09a). Business validity
+ *   of the ladder is publish-time (`gift-quantity-tier-rule.ts`).
  */
 
 import type { PrismaClient } from "../generated/prisma/client.ts";
@@ -23,7 +27,9 @@ import { requireAdminSession } from "../auth/authorization.ts";
 import { prisma } from "../db/prisma.ts";
 
 import type { GiftQuantityDraftValues } from "./gift-quantity-admin-input.ts";
+import { invalidStackPeers } from "./gift-quantity-stack-peers.ts";
 import { applyExcludeWins, validateScopeConfig, type ScopeIssue } from "./gift-quantity-scope.ts";
+import { validateTierRuleStructure, type TierRuleInput } from "./gift-quantity-tier-rule.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import { lockRows } from "./promotion-activation-service.ts";
 import { buildCopyCampaignName, deriveCampaignLifecycle, type CampaignLifecycleStatus } from "./promotion-campaign-lifecycle.ts";
@@ -57,8 +63,10 @@ export function validateDraftShape(values: GiftQuantityDraftValues): readonly st
   if (values.kind === "QUANTITY_TIER") {
     if (global) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
     if (values.giftTrigger !== null || values.subtotalScope !== null) errors.push("GIFT_FIELDS_ON_TIER");
+    if (values.tierRule) errors.push(...validateTierRuleStructure(values.tierRule));
     return errors;
   }
+  if (values.tierRule) errors.push("TIER_FIELDS_ON_GIFT");
 
   if (values.giftTrigger === "QUANTITY") {
     if (global) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
@@ -103,6 +111,27 @@ async function unknownProductIds(
   return ids.filter((id) => !known.has(id));
 }
 
+/** The persisted columns a tier rule describes (children are written separately). */
+function tierRuleColumns(rule: TierRuleInput) {
+  return {
+    tierUnit: rule.unit,
+    tierDiscountedUnits: rule.discountedUnits,
+    // The database allows a selection priority only for FROM; the structure check already refused
+    // the contradiction, this keeps a stale value from surviving a switch back to ALL.
+    tierSelectionPriority: rule.discountedUnits === "FROM_REACHED_THRESHOLD" ? rule.selectionPriority : null,
+    stackingEnabled: rule.stackingEnabled,
+    stackPriority: rule.stackPriority,
+  } as const;
+}
+
+function tierRuleChildren(rule: TierRuleInput) {
+  return {
+    // Nested creates must not pass `unit`: it is a copy of the parent's `tierUnit`, filled from the parent.
+    tiers: { create: rule.tiers.map((tier) => ({ minQuantity: tier.minQuantity, discountValue: tier.discountValue })) },
+    stackPeers: { create: rule.peers.map((peer) => ({ peerKind: peer.kind, peerCampaignId: peer.campaignId })) },
+  } as const;
+}
+
 function triggerFieldReset(values: GiftQuantityDraftValues) {
   if (values.kind === "QUANTITY_TIER") return {};
   if (values.giftTrigger === null) {
@@ -140,9 +169,15 @@ export async function createDraftGiftQuantityCampaign({
 
   const name = normalizePromotionCampaignName(values.name);
   if (!name.ok) return { ok: false, failure: { reason: "INVALID_INPUT", errors: [name.error] } };
+  const tierRule = values.kind === "QUANTITY_TIER" ? values.tierRule ?? null : null;
+  if (tierRule !== null) {
+    const peerErrors = await invalidStackPeers(client, tierRule, null);
+    if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } };
+  }
 
   const created = await client.giftQuantityCampaign.create({
     data: {
+      ...(tierRule === null ? {} : { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule) }),
       kind: values.kind,
       name: name.name,
       startsAt: values.startsAt,
@@ -189,6 +224,11 @@ export async function editDraftGiftQuantityCampaign({
   if (unknown.length > 0) return { ok: false, failure: { reason: "INVALID_SCOPE", issues: [{ code: "scope-product-id-invalid", field: "productIds" }] } };
   const name = normalizePromotionCampaignName(values.name);
   if (!name.ok) return { ok: false, failure: { reason: "INVALID_INPUT", errors: [name.error] } };
+  const tierRule = values.kind === "QUANTITY_TIER" ? values.tierRule ?? null : null;
+  if (tierRule !== null) {
+    const peerErrors = await invalidStackPeers(client, tierRule, campaignId);
+    if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } };
+  }
 
   return client.$transaction(async (tx) => {
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
@@ -208,6 +248,16 @@ export async function editDraftGiftQuantityCampaign({
         ...values.excludeProductIds.map((productId) => ({ campaignId, productId, role: "EXCLUDE" as const })),
       ],
     });
+    if (tierRule !== null) {
+      // Replace the whole rule (ladder, config, stacking, peers) in this transaction. The old
+      // ladder goes first: a ladder row's `unit` follows the parent's `tierUnit`.
+      await tx.quantityTier.deleteMany({ where: { campaignId } });
+      await tx.giftQuantityStackPeer.deleteMany({ where: { campaignId } });
+      await tx.giftQuantityCampaign.update({
+        where: { id: campaignId },
+        data: { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule) },
+      });
+    }
     await tx.giftQuantityCampaign.update({
       where: { id: campaignId },
       data: {

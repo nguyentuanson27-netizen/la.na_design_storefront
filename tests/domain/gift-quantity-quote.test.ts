@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
+import ts from "typescript";
 
 import type { GiftQuantityCandidateReadClient } from "../../src/commerce/gift-quantity-candidate-repository.ts";
 import {
@@ -186,22 +187,52 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
+function engineImports(text: string) {
+  const source = ts.createSourceFile("boundary.ts", text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  return source.statements.flatMap((statement) => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier) || statement.importClause?.isTypeOnly) return [];
+    const kind = statement.moduleSpecifier.text.match(/gift-quantity-(quote|stack|tier)(?:\.ts)?$/)?.[1];
+    if (!kind) return [];
+    const bindings = statement.importClause?.namedBindings;
+    const names = bindings && ts.isNamedImports(bindings)
+      ? bindings.elements.filter((entry) => !entry.isTypeOnly).map((entry) => (entry.propertyName ?? entry.name).text)
+      : ["*"];
+    return names.length === 0 ? [] : [{ kind, names }];
+  });
+}
+
+test("engine import boundary distinguishes erased types from runtime pricing imports", () => {
+  assert.deepEqual(engineImports('import type { StackPeer } from "./gift-quantity-stack.ts";'), []);
+  assert.deepEqual(engineImports('import { type StackPeer, priceStack as price } from "./gift-quantity-stack.ts";'), [{ kind: "stack", names: ["priceStack"] }]);
+});
+
 test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/structured-data path can)", () => {
   const root = join(import.meta.dirname, "..", "..", "src");
   const importers = new Map<string, string[]>();
+  // These admin modules may validate configuration/price safety, never calculate a cart price.
+  const adminValidators: Record<string, readonly string[]> = {
+    "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
+    "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
+    "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
+  };
   for (const file of sourceFiles(root)) {
-    const text = readFileSync(file, "utf8");
-    for (const match of text.matchAll(/from\s+["'][^"']*gift-quantity-(quote|stack|tier)(?:\.ts)?["']/g)) {
-      const list = importers.get(match[1]!) ?? [];
-      list.push(relative(root, file).split("\\").join("/"));
-      importers.set(match[1]!, list);
+    const path = relative(root, file).split("\\").join("/");
+    for (const { kind, names } of engineImports(readFileSync(file, "utf8"))) {
+      const allowed = adminValidators[path];
+      if (allowed) {
+        assert.ok(names.every((name) => allowed.includes(name)), `${path} may only import its validation functions/constants`);
+        continue;
+      }
+      const list = importers.get(kind) ?? [];
+      list.push(path);
+      importers.set(kind, list);
     }
   }
   assert.deepEqual(importers.get("quote")?.sort(), ["commerce/storefront-cart-repository.ts"]);
-  // GQ12 consumes only the gift mutual-consent resolver; paid arithmetic stays in the quote.
+  // Gift selection may import only the gift stack-consent resolver, not paid tier arithmetic.
   assert.deepEqual(importers.get("stack")?.sort(), ["commerce/cart-gift-selection.ts", "commerce/gift-quantity-quote.ts"]);
   const selectionSource = readFileSync(join(root, "commerce", "cart-gift-selection.ts"), "utf8");
   assert.match(selectionSource, /resolveGiftCampaignStacking/);
   assert.doesNotMatch(selectionSource, /\bpriceStack\b/);
-  assert.deepEqual(importers.get("tier")?.sort(), ["commerce/gift-quantity-quote.ts", "commerce/gift-quantity-stack.ts"]);
+  assert.deepEqual(importers.get("tier")?.sort(), ["commerce/gift-quantity-stack.ts"]);
 });
