@@ -2,9 +2,9 @@
  * The order's benefit-aware quote, stored by `lineId` (GQ15).
  *
  * This module is the single writer and reader of `OrderQuoteSnapshot` and its rows. It validates the
- * quote it is handed -- bounded integer money, the shape of each role, the discount chain, the
- * entitlement arithmetic -- before anything reaches the database, and the migration re-checks the
- * same invariants (row checks, the DRAFT-only change rule, and the cross-row totals at commit), so
+ * quote it is handed -- the canonical digest, bounded integer money, the shape of each role, the
+ * discount chain, the entitlement arithmetic -- before anything reaches the database. The migration
+ * re-checks row constraints, the DRAFT-only change rule, and the cross-row totals at commit, so
  * neither layer is the only thing standing between a wrong number and an order.
  *
  * It decides nothing about price, stock or entitlement. The caller (the checkout DRAFT step) hands
@@ -16,6 +16,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import { benefitQuoteDigest } from "./checkout-quote-proof.ts";
 import {
   isQuoteText,
   MAX_QUOTE_ENTITLEMENTS,
@@ -65,6 +66,7 @@ export type OrderQuoteSnapshotIssue =
   | QuoteStructureIssue
   | "FORMAT_INVALID"
   | "DIGEST_INVALID"
+  | "DIGEST_MISMATCH"
   | "ACKNOWLEDGEMENT_REQUIRED"
   | "ACKNOWLEDGEMENT_UNNEEDED";
 
@@ -86,6 +88,7 @@ export function validateOrderQuoteSnapshot(
   if (acknowledged && !(input.acknowledgedAt instanceof Date && Number.isFinite(input.acknowledgedAt.getTime()))) return fail("ACKNOWLEDGEMENT_REQUIRED");
   if (verdict.totals.unclaimedSlots > 0 && !acknowledged) return fail("ACKNOWLEDGEMENT_REQUIRED");
   if (verdict.totals.unclaimedSlots === 0 && acknowledged) return fail("ACKNOWLEDGEMENT_UNNEEDED");
+  if (input.quoteDigest !== benefitQuoteDigest(input)) return fail("DIGEST_MISMATCH");
   return verdict;
 }
 
@@ -111,6 +114,9 @@ export async function replaceOrderQuoteSnapshot(
   const verdict = validateOrderQuoteSnapshot(input);
   if (!verdict.ok) return { ok: false, reason: "SNAPSHOT_INVALID", issue: verdict.issue };
 
+  // Take the parent before touching quote rows, just as checkout state transitions do. This also
+  // serializes two first writes/replacements before either reads the previous snapshot.
+  await tx.$queryRaw`SELECT "id" FROM "OrderMirror" WHERE "id" = ${orderId} FOR UPDATE`;
   const previous = await tx.orderQuoteSnapshot.findUnique({ where: { orderId }, select: { id: true } });
   if (previous !== null) {
     await tx.orderQuoteDiscountStep.deleteMany({ where: { line: { snapshotId: previous.id } } });

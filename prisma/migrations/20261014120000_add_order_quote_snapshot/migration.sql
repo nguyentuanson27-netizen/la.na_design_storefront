@@ -253,7 +253,10 @@ BEGIN
     RAISE EXCEPTION 'order_quote_row_guard is not defined for %', TG_TABLE_NAME;
   END IF;
 
-  SELECT o."state"::TEXT INTO order_state FROM "OrderMirror" o WHERE o."id" = target_order;
+  -- Hold the parent until commit: a plain read (or FK KEY SHARE) lets a state UPDATE commit
+  -- between this DRAFT check and the quote write. Recheck the current state after any wait.
+  -- Application writers/state transitions lock OrderMirror before touching quote children.
+  SELECT o."state"::TEXT INTO order_state FROM "OrderMirror" o WHERE o."id" = target_order FOR UPDATE;
   IF order_state IS DISTINCT FROM 'DRAFT' THEN
     RAISE EXCEPTION 'Order quote rows are immutable once the order has left DRAFT';
   END IF;

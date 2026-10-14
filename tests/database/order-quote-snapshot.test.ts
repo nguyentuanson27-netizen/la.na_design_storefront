@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
+import { Client } from "pg";
+import { benefitQuoteDigest, issueBenefitQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
+import { validateQuoteStructure } from "../../src/commerce/order-quote-rules.ts";
 
 import {
   readOrderQuoteSnapshot,
@@ -59,21 +62,23 @@ const tierStep = { campaignId: "tier-1", source: "QUANTITY_TIER" as const, campa
 
 /** EX-17: one variation, 2 x 100.001d + 1 x 90.001d. */
 function ex17(overrides: Partial<OrderQuoteSnapshotInput> = {}): OrderQuoteSnapshotInput {
-  return {
+  const input: OrderQuoteSnapshotInput = {
     quoteFormat: "laq3", quoteDigest: DIGEST, paidSubtotalVnd: 290_003, shippingFeeVnd: 30_000, totalVnd: 320_003,
     lines: [paid("P:var-1:0", 2, 100_001), paid("P:var-1:1", 1, 90_001, { baseUnitPriceVnd: 100_001, discountSteps: [tierStep] })],
     entitlements: [], acknowledgedAt: null, ...overrides,
   };
+  return { ...input, quoteDigest: overrides.quoteDigest ?? (validateQuoteStructure(input).ok ? benefitQuoteDigest(input) : DIGEST) };
 }
 
 /** EX-18 flavour: a paid unit and a gift unit of the SAME variation, 2 of 3 gift slots not taken. */
 function paidAndGift(overrides: Partial<OrderQuoteSnapshotInput> = {}): OrderQuoteSnapshotInput {
-  return {
+  const input: OrderQuoteSnapshotInput = {
     quoteFormat: "laq3", quoteDigest: DIGEST, paidSubtotalVnd: 99_000, shippingFeeVnd: 30_000, totalVnd: 129_000,
     lines: [paid("P:var-1:0", 1, 99_000), gift("G:camp-1:var-1", 1)],
     entitlements: [{ campaignId: "camp-1", campaignRevision: 3, entitled: 3, selected: 1, skippedWhileAvailable: 1, contendedForSharedStock: 0, shortForStock: 1 }],
     acknowledgedAt: ACK, ...overrides,
   };
+  return { ...input, quoteDigest: overrides.quoteDigest ?? (validateQuoteStructure(input).ok ? benefitQuoteDigest(input) : DIGEST) };
 }
 
 async function write(orderId: string, input: OrderQuoteSnapshotInput) {
@@ -163,6 +168,104 @@ test("an invalid quote never reaches the database: the writer refuses it and the
   const result = await write(draft.id, ex17({ paidSubtotalVnd: 290_002, totalVnd: 320_002 }));
   assert.deepEqual(result, { ok: false, reason: "SNAPSHOT_INVALID", issue: "PAID_SUBTOTAL_MISMATCH" });
   assert.equal((await readOrderQuoteSnapshot(prisma, draft.id))!.paidSubtotalVnd, 290_003);
+});
+
+test("a digest from different same-total segments is refused before replacing the stored quote", async () => {
+  const draft = await order();
+  const original = ex17();
+  await write(draft.id, original);
+  const changed = ex17({ lines: [paid("P:var-1:0", 1, 100_001), paid("P:var-1:1", 1, 190_002)] });
+  assert.equal(original.totalVnd, changed.totalVnd);
+  assert.deepEqual(await write(draft.id, { ...changed, quoteDigest: original.quoteDigest }), { ok: false, reason: "SNAPSHOT_INVALID", issue: "DIGEST_MISMATCH" });
+  assert.deepEqual((await readOrderQuoteSnapshot(prisma, draft.id))!.lines, original.lines);
+  assert.deepEqual(await write(draft.id, changed), { ok: true });
+  const stored = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+  assert.equal(stored.quoteDigest, benefitQuoteDigest(stored));
+});
+
+test("signable INTEGER boundary quantities and priorities round trip through the snapshot", async () => {
+  const max = 2_147_483_647;
+  for (const priority of [-2_147_483_648, max]) {
+    const input = ex17({
+      lines: [paid("P:a", max, 1, { baseUnitPriceVnd: 1, discountSteps: [{ ...tierStep, inputPriceVnd: 1, outputPriceVnd: 1, priority, appliedQuantity: max }] })],
+      paidSubtotalVnd: max, shippingFeeVnd: 0, totalVnd: max,
+    });
+    assert.ok(issueBenefitQuoteProof({ quote: input, cartId: "test-cart", secret: "test-secret-at-least-32-characters-long" }));
+    const draft = await order();
+    assert.deepEqual(await write(draft.id, input), { ok: true });
+    const stored = (await readOrderQuoteSnapshot(prisma, draft.id))!;
+    assert.equal(stored.paidQuantity, max);
+    assert.equal(stored.lines[0]!.discountSteps[0]!.priority, priority);
+  }
+});
+
+/** Observe an actual lock wait, rather than assuming a query blocked because a timer elapsed. */
+async function waitForBlock(observer: Client, waiterPid: number, blockerPid: number) {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const { rows } = await observer.query<{ blocked: boolean }>("SELECT $1::int = ANY(pg_blocking_pids($2::int)) AS blocked", [blockerPid, waiterPid]);
+    if (rows[0]!.blocked) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  assert.fail("expected the concurrent transaction to wait for the order row lock");
+}
+
+test("quote writes and the DRAFT exit serialize in both transaction orders", async () => {
+  const writer = new Client({ connectionString });
+  const transition = new Client({ connectionString });
+  const observer = new Client({ connectionString });
+  await Promise.all([writer.connect(), transition.connect(), observer.connect()]);
+  try {
+    const writerPid = (await writer.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+    const transitionPid = (await transition.query<{ pid: number }>("SELECT pg_backend_pid() AS pid")).rows[0]!.pid;
+    for (const writerFirst of [true, false]) {
+      const draft = await order();
+      await write(draft.id, ex17());
+      const snapshot = (await prisma.orderQuoteSnapshot.findUnique({ where: { orderId: draft.id }, include: { lines: true } }))!;
+      const line = snapshot.lines[0]!;
+      await writer.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await transition.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      // A real child-row change which preserves all monetary/quantity invariants.
+      const editQuote = () => writer.query('UPDATE "OrderQuoteLine" SET "variantId" = $1 WHERE "id" = $2', ["changed-variant", line.id]);
+      const leaveDraft = () => transition.query('UPDATE "OrderMirror" SET "state" = \'VALIDATING\' WHERE "id" = $1', [draft.id]);
+      if (writerFirst) {
+        await editQuote();
+        const pending = leaveDraft();
+        const completed = pending.then(() => null, error => error as Error);
+        try {
+          await waitForBlock(observer, transitionPid, writerPid);
+          await writer.query("COMMIT");
+          assert.equal(await completed, null);
+          await transition.query("COMMIT");
+        } finally {
+          await writer.query("ROLLBACK");
+          await completed;
+        }
+        assert.equal((await prisma.orderQuoteLine.findUniqueOrThrow({ where: { id: line.id } })).variantId, "changed-variant");
+      } else {
+        await leaveDraft();
+        const pending = editQuote();
+        const completed = pending.then(() => null, error => error as Error);
+        try {
+          await waitForBlock(observer, writerPid, transitionPid);
+          await transition.query("COMMIT");
+          const error = await completed;
+          assert.ok(error);
+          assert.match(error.message, /immutable/i);
+          await writer.query("ROLLBACK");
+        } finally {
+          await transition.query("ROLLBACK");
+          await completed;
+        }
+        assert.equal((await prisma.orderQuoteLine.findUniqueOrThrow({ where: { id: line.id } })).variantId, line.variantId);
+      }
+      assert.equal((await prisma.orderMirror.findUniqueOrThrow({ where: { id: draft.id } })).state, "VALIDATING");
+      await rejects(editQuote, /immutable/i);
+    }
+  } finally {
+    await Promise.all([writer.query("ROLLBACK"), transition.query("ROLLBACK")]);
+    await Promise.all([writer.end(), transition.end(), observer.end()]);
+  }
 });
 
 test("a failed write rolls back with its transaction and does not half-replace the previous quote", async () => {
