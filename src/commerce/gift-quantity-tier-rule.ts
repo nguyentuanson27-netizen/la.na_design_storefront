@@ -6,13 +6,12 @@
  * - **Structure** (`validateTierRuleStructure`): malformed or unbounded input is refused on every
  *   write, Draft included -- integers only, bounds, allowlists, no duplicates, nothing the database
  *   would reject anyway. It never judges the *business* of a ladder.
- * - **Business** (`validateTierRuleForPublish`, added with the publish contract): strictly
- *   increasing thresholds, non-decreasing values, a selection priority for FROM, a priority and
- *   peers for stacking. A Draft may fail these and still be saved; until that validator exists a
- *   tier campaign cannot be published at all.
+ * - **Business** (`validateTierRuleForPublish`): strictly increasing thresholds, non-decreasing
+ *   values, a selection priority for FROM, a priority and peers for stacking. A Draft may fail
+ *   these and still be saved; publish and Scheduled edits are refused until they hold.
  */
 
-import { MAX_TIERS_PER_CAMPAIGN } from "./gift-quantity-tier.ts";
+import { MAX_TIERS_PER_CAMPAIGN, validateTierConfig, type QuantityTierConfig } from "./gift-quantity-tier.ts";
 import { MAX_STACK_PRIORITY } from "./gift-quantity-stack-priority.ts";
 import type { StackPeer, StackPeerKind } from "./gift-quantity-stack.ts";
 
@@ -233,4 +232,42 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
     seen.add(key);
   }
   return [...errors];
+}
+
+export type TierRulePublishError =
+  | "TIER_CONFIG_INCOMPLETE"
+  | "TIERS_EMPTY"
+  | "TIERS_TOO_MANY"
+  | "THRESHOLD_INVALID"
+  | "THRESHOLD_NOT_STRICTLY_INCREASING"
+  | "VALUE_INVALID"
+  | "VALUE_DECREASES_WITH_THRESHOLD"
+  | "SELECTION_PRIORITY_REQUIRED"
+  | "SELECTION_PRIORITY_NOT_APPLICABLE"
+  | "UNIT_INVALID"
+  | "DISCOUNTED_UNITS_INVALID"
+  | "STACK_PRIORITY_REQUIRED"
+  | "STACK_PEERS_REQUIRED";
+
+/** The engine configuration a stored rule describes, or null while a required choice is unset. */
+export function toQuantityTierConfig(rule: TierRuleInput): QuantityTierConfig | null {
+  if (rule.unit === null || rule.discountedUnits === null) return null;
+  return {
+    unit: rule.unit,
+    discountedUnits: rule.discountedUnits,
+    selectionPriority: rule.selectionPriority,
+    tiers: [...rule.tiers].sort((a, b) => a.minQuantity - b.minQuantity),
+  };
+}
+
+/** Business validation. Empty means the rule may become effective. */
+export function validateTierRuleForPublish(rule: TierRuleInput): readonly TierRulePublishError[] {
+  const config = toQuantityTierConfig(rule);
+  if (config === null) return ["TIER_CONFIG_INCOMPLETE"];
+  const errors: TierRulePublishError[] = [...validateTierConfig(config)];
+  if (rule.stackingEnabled) {
+    if (rule.stackPriority === null) errors.push("STACK_PRIORITY_REQUIRED");
+    if (rule.peers.length === 0) errors.push("STACK_PEERS_REQUIRED");
+  }
+  return errors;
 }

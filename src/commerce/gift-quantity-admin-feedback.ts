@@ -69,7 +69,6 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   WINDOW_NOT_POSITIVE: "Thời gian kết thúc phải sau thời gian bắt đầu.",
   WINDOW_ALREADY_ENDED: "Thời gian kết thúc đã qua.",
   INVALID_NAME: "Tên chiến dịch không hợp lệ.",
-  STACK_PRIORITY_OUT_OF_RANGE: "Mức ưu tiên cộng dồn nằm ngoài giới hạn cho phép.",
   TIER_FIELDS_ON_GIFT: "Chiến dịch quà tặng không có bậc giảm giá theo số lượng.",
   TIERS_TOO_MANY: "Có quá nhiều bậc giảm giá.",
   TIER_THRESHOLD_OUT_OF_RANGE: "Số lượng của bậc giảm giá nằm ngoài giới hạn cho phép.",
@@ -78,11 +77,13 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   TIER_THRESHOLD_DUPLICATE: "Có hai bậc giảm giá trùng số lượng.",
   TIER_UNIT_REQUIRED: "Hãy chọn đơn vị giảm giá (phần trăm hoặc số tiền cố định mỗi sản phẩm).",
   SELECTION_PRIORITY_NOT_APPLICABLE: "Thứ tự chọn sản phẩm chỉ dùng khi chỉ giảm từ mốc đạt được.",
+  STACK_PRIORITY_OUT_OF_RANGE: "Mức ưu tiên cộng dồn nằm ngoài giới hạn cho phép.",
   STACK_PEERS_TOO_MANY: "Có quá nhiều chiến dịch cộng dồn.",
   STACK_PEER_INVALID: "Có chiến dịch cộng dồn chưa hợp lệ.",
   STACK_PEER_DUPLICATE: "Có chiến dịch cộng dồn bị trùng.",
   STACK_PEER_SELF: "Chiến dịch không thể cộng dồn với chính nó.",
   STACK_PEER_UNKNOWN: "Có chiến dịch cộng dồn không tồn tại hoặc không đúng loại.",
+  STACK_FIELDS_CONFLICT: "Mức ưu tiên hoặc lựa chọn cộng dồn không khớp với cấu hình bậc giảm giá.",
 };
 
 const INVALID_SCOPE_REFINEMENTS: Readonly<Record<string, string>> = {
@@ -107,7 +108,25 @@ const FROZEN_REFINEMENTS: Readonly<Record<string, string>> = {
 
 const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   RULE_VALIDATION_NOT_AVAILABLE: BASE_MESSAGES.INVALID_RULE,
+  TIER_CONFIG_INCOMPLETE: "Hãy chọn đơn vị giảm giá và cách áp dụng (toàn bộ hoặc từ mốc đạt được) trước khi bật.",
+  TIERS_EMPTY: "Cần ít nhất một bậc giảm giá trước khi bật.",
+  TIERS_TOO_MANY: "Có quá nhiều bậc giảm giá.",
+  THRESHOLD_INVALID: "Số lượng của một bậc giảm giá không hợp lệ.",
+  THRESHOLD_NOT_STRICTLY_INCREASING: "Số lượng các bậc phải tăng dần, không trùng nhau.",
+  VALUE_INVALID: "Mức giảm của một bậc không hợp lệ.",
+  VALUE_DECREASES_WITH_THRESHOLD: "Mức giảm không được thấp đi khi số lượng tăng lên.",
+  SELECTION_PRIORITY_REQUIRED: "Hãy chọn thứ tự chọn sản phẩm được giảm (rẻ nhất hoặc đắt nhất trước).",
+  SELECTION_PRIORITY_NOT_APPLICABLE: "Thứ tự chọn sản phẩm chỉ dùng khi chỉ giảm từ mốc đạt được.",
+  UNIT_INVALID: "Đơn vị giảm giá không hợp lệ.",
+  DISCOUNTED_UNITS_INVALID: "Cách áp dụng giảm giá không hợp lệ.",
+  STACK_PRIORITY_REQUIRED: "Cộng dồn đang bật nên cần nhập mức ưu tiên.",
+  STACK_PEERS_REQUIRED: "Cộng dồn đang bật nên cần chọn ít nhất một chiến dịch được cộng dồn.",
   STACK_PRIORITY_CONFLICT: "Mức ưu tiên cộng dồn đã được chiến dịch đang hoạt động khác sử dụng. Hãy chọn mức khác.",
+  STACK_PEER_SELF: "Chiến dịch không thể cộng dồn với chính nó.",
+  STACK_PEER_UNKNOWN: "Có chiến dịch cộng dồn không tồn tại hoặc không đúng loại.",
+  TIER_PRICE_ELIGIBILITY_UNRESOLVED: "Không thể xác minh đầy đủ giá của sản phẩm thành phần trong phạm vi. Hãy thu hẹp phạm vi rồi thử lại.",
+  TIER_PRICE_BELOW_MINIMUM:
+    "Mức giảm cố định làm giá của một số sản phẩm trong phạm vi xuống dưới 1đ. Hãy giảm mức giảm hoặc thu hẹp phạm vi.",
 };
 
 export function describeGiftQuantityFailure(failure: GiftQuantityFailure): GiftQuantityFailureDescription {

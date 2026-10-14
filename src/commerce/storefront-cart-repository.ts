@@ -17,7 +17,8 @@ import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { readAdvisoryHeldQuantities, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
 import {
   compositeSubSetAuthorityComponentSelection,
-  resolveCompositeSubSetAuthorityFromRows,
+  cartVariantCommerceSelection,
+  resolveCartVariantCommerceFlags,
 } from "./composite-subset-authority.ts";
 
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -93,6 +94,7 @@ const productSelection = {
         orderBy: [{ pancakeWarehouseId: "asc" as const }],
         select: { quantity: true },
       },
+      ...cartVariantCommerceSelection,
       // Whether this variant is a composite PARENT (it has components), which is the §11
       // restriction's subject — distinct from `compositeParents` below, which asks whether this
       // variant is somebody else's component.
@@ -121,22 +123,7 @@ const productSelection = {
           },
         },
       },
-      compositeParents: {
-        select: {
-          parentVariant: {
-            select: {
-              isPresent: true,
-              isActive: true,
-              product: {
-                select: {
-                  isPresent: true,
-                  isActive: true,
-                },
-              },
-            },
-          },
-        },
-      },
+
     },
   },
 } satisfies Prisma.ProductMirrorSelect;
@@ -181,21 +168,7 @@ function toCartProduct(
       pancakeVariationId: variant.pancakeVariationId,
       isPresent: variant.isPresent,
       isActive: variant.isActive,
-      isCompositeComponentAvailable: variant.compositeParents.some(
-        ({ parentVariant }) =>
-          parentVariant.isPresent &&
-          parentVariant.isActive &&
-          parentVariant.product.isPresent &&
-          parentVariant.product.isActive,
-      ),
-      // PR #81 — an inactive SET VÁY / SET QUẦN sibling stays off /shop but is sellable when the
-      // shared authority proves it an exact subset of ONE active 3-piece combo.
-      isSubSetAvailable:
-        product.isPresent &&
-        resolveCompositeSubSetAuthorityFromRows({
-          subSetVariantId: variant.id,
-          components: variant.compositeComponents,
-        }) !== null,
+      ...resolveCartVariantCommerceFlags(product.isPresent, variant),
       color: variant.color,
       size: variant.size,
       // The advisory capacity read model (`capacity-advisory.ts`): mirrored stock less the units

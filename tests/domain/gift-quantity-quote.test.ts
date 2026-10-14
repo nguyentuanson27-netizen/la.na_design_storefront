@@ -213,6 +213,7 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
   const adminValidators: Record<string, readonly string[]> = {
     "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
     "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
+    "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
   };
   for (const file of sourceFiles(root)) {
     const path = relative(root, file).split("\\").join("/");

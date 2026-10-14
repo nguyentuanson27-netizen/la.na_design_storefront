@@ -5,10 +5,13 @@ import {
   formCarriesTierRule,
   MAX_STACK_PEERS,
   parseTierRuleForm,
+  toQuantityTierConfig,
+  validateTierRuleForPublish,
   validateTierRuleStructure,
   type TierRuleInput,
 } from "../../src/commerce/gift-quantity-tier-rule.ts";
 import { MAX_TIERS_PER_CAMPAIGN } from "../../src/commerce/gift-quantity-tier.ts";
+import { validateRuleForPublish } from "../../src/commerce/gift-quantity-rule-validation.ts";
 
 function form(entries: Array<[string, string]>): FormData {
   const data = new FormData();
@@ -153,6 +156,41 @@ test("structure: bounds, duplicates, percent range, unit and stack inputs", () =
   assert.ok(errors({ peers: [{ kind: "PROMOTION", campaignId: "x" }, { kind: "PROMOTION", campaignId: "x" }] }).includes("STACK_PEER_DUPLICATE"));
   const many = Array.from({ length: MAX_STACK_PEERS + 1 }, (_, index) => ({ kind: "PROMOTION" as const, campaignId: `p${index}` }));
   assert.ok(errors({ peers: many }).includes("STACK_PEERS_TOO_MANY"));
+});
+
+test("publish: a complete ladder is publishable and engine config is sorted by threshold", () => {
+  assert.deepEqual(validateTierRuleForPublish(rule()), []);
+  const config = toQuantityTierConfig(rule({ tiers: [{ minQuantity: 5, discountValue: 15 }, { minQuantity: 3, discountValue: 10 }] }));
+  assert.deepEqual(config?.tiers.map((tier) => tier.minQuantity), [3, 5]);
+});
+
+test("publish: incomplete or non-monotonic ladders are refused", () => {
+  assert.deepEqual(validateTierRuleForPublish(rule({ unit: null })), ["TIER_CONFIG_INCOMPLETE"]);
+  assert.deepEqual(validateTierRuleForPublish(rule({ discountedUnits: null })), ["TIER_CONFIG_INCOMPLETE"]);
+  assert.ok(validateTierRuleForPublish(rule({ tiers: [] })).includes("TIERS_EMPTY"));
+  // toQuantityTierConfig sorts, so only a real value regression surfaces.
+  assert.ok(validateTierRuleForPublish(rule({ tiers: [{ minQuantity: 3, discountValue: 20 }, { minQuantity: 5, discountValue: 10 }] })).includes("VALUE_DECREASES_WITH_THRESHOLD"));
+  assert.ok(validateTierRuleForPublish(rule({ discountedUnits: "FROM_REACHED_THRESHOLD" })).includes("SELECTION_PRIORITY_REQUIRED"));
+});
+
+test("publish: stacking needs a priority and at least one peer", () => {
+  const errors = validateTierRuleForPublish(rule({ stackingEnabled: true }));
+  assert.ok(errors.includes("STACK_PRIORITY_REQUIRED"));
+  assert.ok(errors.includes("STACK_PEERS_REQUIRED"));
+  assert.deepEqual(validateTierRuleForPublish(rule({ stackingEnabled: true, stackPriority: 1, peers: [{ kind: "PROMOTION", campaignId: "x" }] })), []);
+});
+
+test("dispatcher: tier rules use the tier validator, gift rules still refuse until GQ13a", () => {
+  const base = {
+    kind: "QUANTITY_TIER", giftTrigger: null, minimumQuantity: null, minimumSubtotalVnd: null, subtotalScope: null,
+    awardMode: null, maxGiftsPerOrder: null, allowDuplicateGifts: null,
+    tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", tierSelectionPriority: null,
+    tiers: [{ minQuantity: 3, discountValue: 10 }], giftVariantIds: [],
+    stackingEnabled: false, stackPriority: null, stackPeers: [],
+  } as const;
+  assert.deepEqual(validateRuleForPublish(base), []);
+  assert.deepEqual(validateRuleForPublish({ ...base, tierUnit: null }), ["TIER_CONFIG_INCOMPLETE"]);
+  assert.deepEqual(validateRuleForPublish({ ...base, kind: "GIFT_ITEM" }), ["RULE_VALIDATION_NOT_AVAILABLE"]);
 });
 
 test("structure: direct service inputs enforce enum and boolean allowlists before persistence", () => {
