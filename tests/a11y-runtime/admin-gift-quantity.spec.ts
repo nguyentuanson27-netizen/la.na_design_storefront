@@ -385,7 +385,7 @@ test("GQ09a-F1 real Server Actions reject tier fields on Gift create and edit wi
       }, payload);
       await page.getByRole("button", { name: edit ? "Lưu thay đổi" : "Tạo bản nháp" }).click();
       await expect(page).toHaveURL(`${PAGE}?status=error&reason=TIER_FIELDS_ON_GIFT`);
-      await expect(page.getByRole("alert")).toContainText("Chiến dịch quà tặng không có bậc giảm giá theo số lượng.");
+      await expect(page.locator("#promotion-admin-status")).toContainText("Chiến dịch quà tặng không có bậc giảm giá theo số lượng.");
     }
   }
   expect(await prisma.giftQuantityCampaign.count()).toBe(beforeCount);
