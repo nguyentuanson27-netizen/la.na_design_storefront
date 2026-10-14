@@ -7,11 +7,12 @@
  * resolver the checkout DRAFT used and compares it with the frozen rows here, instead of checking a
  * few ids. Any difference means the buyer did not prove what would now be sent.
  *
- * What is compared: every PAID and GIFT line (id, role, variation, quantity, unit price, campaign +
- * revision), the ordered discount ledger of each line, the totals, and per campaign what was entitled
- * and selected. What is not: the fulfillment state and the stock-derived shortfall counters. Those move
- * with the order's own stock hold (which exists by the time of submit but not at DRAFT time) and are
- * judged by the capacity gate and the live stock check, which are the authority on stock.
+ * What is compared: every PAID and GIFT line (id, role, variation, quantity, unit price, the READY /
+ * PREORDER promise the buyer signed, campaign + revision), the ordered discount ledger of each line,
+ * the totals, and per campaign what was entitled and selected. What is not: the stock-derived shortfall
+ * counters, which are judged by the capacity gate and the live stock check. The caller derives the fresh
+ * quote with the order's own stock hold excluded, so the fulfillment promise is compared on the same
+ * basis the buyer was quoted on; a promise that changed because stock or policy moved needs a new proof.
  */
 
 import type { QuoteStructure } from "./order-quote-rules.ts";
@@ -26,6 +27,7 @@ export type StoredBenefitQuote = Readonly<{
     pancakeVariationId: string;
     quantity: number;
     unitPriceVnd: bigint;
+    fulfillmentState: string;
     campaignId: string | null;
     campaignRevision: number | null;
     discountSteps: readonly Readonly<{
@@ -63,7 +65,7 @@ export function benefitQuoteStillHolds(stored: StoredBenefitQuote, fresh: QuoteS
     total: String(stored.totalVnd),
     lines: stored.lines.map((line) =>
       [
-        text(line.lineId), text(line.role), text(line.pancakeVariationId), text(line.quantity), text(line.unitPriceVnd),
+        text(line.lineId), text(line.role), text(line.pancakeVariationId), text(line.quantity), text(line.unitPriceVnd), text(line.fulfillmentState),
         text(line.campaignId), text(line.campaignRevision),
         ...line.discountSteps.map((step) =>
           [text(step.campaignId), text(step.source), text(step.campaignKind), text(step.priority), text(step.inputPriceVnd), text(step.outputPriceVnd), text(step.appliedQuantity)].join(","),
@@ -80,7 +82,7 @@ export function benefitQuoteStillHolds(stored: StoredBenefitQuote, fresh: QuoteS
     total: String(fresh.totalVnd),
     lines: fresh.lines.map((line) =>
       [
-        text(line.lineId), text(line.role), text(line.pancakeVariationId), text(line.quantity), text(line.unitPriceVnd),
+        text(line.lineId), text(line.role), text(line.pancakeVariationId), text(line.quantity), text(line.unitPriceVnd), text(line.fulfillmentState),
         text(line.campaign?.id ?? null), text(line.campaign?.revision ?? null),
         ...line.discountSteps.map((step) =>
           [text(step.campaignId), text(step.source), text(step.campaignKind), text(step.priority), text(step.inputPriceVnd), text(step.outputPriceVnd), text(step.appliedQuantity)].join(","),

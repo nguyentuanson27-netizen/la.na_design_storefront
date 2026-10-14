@@ -168,6 +168,13 @@ export function createPancakeOrderReconciliationService({
         : { kind: "AMBIGUOUS", reason: "a remote order id is recorded but the marker search found nothing" };
     }
 
+    // The marker search must agree with the id the create response gave. A different id is a second
+    // Pancake order (a duplicate under the same marker) or an incomplete search window; either way the
+    // recorded id is not overwritten, nothing is confirmed and no hold is released.
+    if (search.kind === "FOUND" && order.pancakeOrderId !== null && search.orderId !== order.pancakeOrderId) {
+      search = { kind: "AMBIGUOUS", reason: "the marker search found a different order id than the one recorded" };
+    }
+
     if (search.kind === "FOUND" && order.quoteSnapshot) {
       // A benefit order is settled on what Pancake stored, not on the marker: several lines of one
       // variation at different prices are exactly what a POS might merge. Without a match it stays

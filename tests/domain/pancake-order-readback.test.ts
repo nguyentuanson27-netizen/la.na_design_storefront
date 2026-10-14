@@ -28,11 +28,23 @@ test("anything it cannot read exactly is refused, never guessed", () => {
 test("a POS that re-orders lines still matches", () => {
   const readBack = { lines: [...expected].reverse(), totalPriceVnd: 291_003 };
   assert.deepEqual(compareOrderReadBack(expected, readBack), { kind: "MATCH" });
-  assert.deepEqual(compareOrderReadBack(expected, { lines: expected, totalPriceVnd: null }), { kind: "MATCH" });
+});
+
+test("an order total the POS did not report, or reported unreadably, confirms nothing even when every line matches", () => {
+  for (const totalPriceVnd of [null, Number.NaN, 291_003.5, Number.MAX_SAFE_INTEGER + 2]) {
+    const verdict = compareOrderReadBack(expected, { lines: expected, totalPriceVnd });
+    assert.equal(verdict.kind, "UNAVAILABLE", String(totalPriceVnd));
+  }
+  assert.deepEqual(compareOrderReadBack(expected, { lines: expected, totalPriceVnd: 291_003 }), { kind: "MATCH" });
+  // The parser maps a missing or string total to null, so the same lines read back from the wire are not a match either.
+  const wire = parsePancakeOrderReadBack({ items: expected.map((line) => item(line.pancakeVariationId, line.quantity, line.unitPriceVnd)) });
+  assert.equal(compareOrderReadBack(expected, wire).kind, "UNAVAILABLE");
+  const stringTotal = parsePancakeOrderReadBack({ items: expected.map((line) => item(line.pancakeVariationId, line.quantity, line.unitPriceVnd)), total_price: "291003" });
+  assert.equal(compareOrderReadBack(expected, stringTotal).kind, "UNAVAILABLE");
 });
 
 test("split quantities of one (variation, price) are summed before comparing", () => {
-  const readBack = { lines: [{ pancakeVariationId: "v", quantity: 1, unitPriceVnd: 100_001 }, { pancakeVariationId: "v", quantity: 1, unitPriceVnd: 100_001 }, ...expected.slice(1)], totalPriceVnd: null };
+  const readBack = { lines: [{ pancakeVariationId: "v", quantity: 1, unitPriceVnd: 100_001 }, { pancakeVariationId: "v", quantity: 1, unitPriceVnd: 100_001 }, ...expected.slice(1)], totalPriceVnd: 291_003 };
   assert.deepEqual(compareOrderReadBack(expected, readBack), { kind: "MATCH" });
 });
 

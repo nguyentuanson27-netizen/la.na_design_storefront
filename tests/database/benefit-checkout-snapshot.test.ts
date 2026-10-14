@@ -1225,3 +1225,84 @@ test("review P2: a tier before a legacy sale is a valid stack and is not re-quot
     assert.equal(pancake.calls.create[0]!.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0), facts.paidSubtotalVnd, order);
   }
 });
+
+// -- Second review round on PR #165 -------------------------------------------------------------------------------
+
+test("review2 P1: a READY promise that became PREORDER after the proof stops the order before the POS, and the holds go back", async () => {
+  await seed({ gift: false });
+  // A PREORDER-policy product: it sells with ready stock, and still sells (as a waiting order) with none.
+  await prisma.productSellingPolicy.create({ data: { productId: paid.productId, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  const facts = await renderedFacts();
+  assert.ok(facts.lines.every((line) => line.fulfillmentState === "READY"), "the buyer is quoted READY");
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  const pancake = fakePancake();
+  const service = submissionWithDrift(pancake, proof, async () => {
+    // A stock sync empties the ready stock; selling stays permitted, so a stock-only check would pass.
+    await prisma.warehouseStock.updateMany({ where: { variantId: paid.variantId }, data: { quantity: 0 } });
+  });
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.deepEqual(pancake.calls.create, [], "nothing is sent");
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "BENEFIT_REQUOTE_REQUIRED"]);
+  assert.ok((await holds()).every((hold) => hold.state === "RELEASED"));
+  const stored = (await readOrderQuoteSnapshot(prisma, order.id))!;
+  assert.ok(stored.lines.every((line) => line.fulfillmentState === "READY"), "the original promise is kept as audit");
+  // The next view quotes PREORDER honestly.
+  assert.ok((await renderedFacts()).lines.every((line) => line.fulfillmentState === "PREORDER"));
+});
+
+test("review2 P1: an order total the POS did not report never confirms a benefit order, at create or at reconciliation", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const noTotal = (request: PancakeCreateOrderRequest | undefined) =>
+    Promise.resolve<PancakeOrderReadBack>({
+      lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+      totalPriceVnd: null,
+    });
+  const pancake = fakePancake({}, { readBack: noTotal });
+  const { service } = submission(pancake, proof);
+  await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.pancakeOrderId, order.syncErrorCode], ["SYNC_UNKNOWN", "800001", "READBACK_UNAVAILABLE"]);
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+
+  const confirmed: string[] = [];
+  const gateway = {
+    searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }),
+    readOrder: () => noTotal(pancake.calls.create[0]),
+  };
+  const result = await reconciler(gateway, confirmed).reconcileOrder(order.publicCode);
+  assert.ok(!result.ok && result.reason === "DRIFT");
+  assert.equal((await lastOrder()).state, "SYNC_UNKNOWN");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+  assert.deepEqual(confirmed, []);
+});
+
+test("review2 P2: a marker search that finds another order id never replaces the recorded one, confirms, or releases", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const pancake = fakePancake({}, { readBack: () => { throw new Error("read-back timed out"); } });
+  const { service } = submission(pancake, proof);
+  await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  const order = await lastOrder();
+  assert.equal(order.pancakeOrderId, "800001");
+
+  const sent = pancake.calls.create[0]!;
+  const echo = async () => ({
+    lines: sent.items.map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+    totalPriceVnd: sent.items.reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+  });
+  const confirmed: string[] = [];
+  // Another order under the same marker whose lines and totals match exactly.
+  const result = await reconciler({ searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800002" }), readOrder: echo }, confirmed).reconcileOrder(order.publicCode);
+  assert.ok(!result.ok && result.state === "SYNC_UNKNOWN" && result.reason === "AMBIGUOUS");
+  const after = await lastOrder();
+  assert.deepEqual([after.state, after.pancakeOrderId], ["SYNC_UNKNOWN", "800001"], "the recorded id is untouched");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"]);
+  assert.deepEqual(confirmed, []);
+
+  // The same id from the marker search is the ordinary case and settles on the read-back.
+  const settled = await reconciler({ searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }), readOrder: echo }, confirmed).reconcileOrder(order.publicCode);
+  assert.deepEqual(settled, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
+});

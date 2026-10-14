@@ -1240,7 +1240,8 @@ export function createPancakeOrderSubmissionService(
         verifyCreatedOrder: async (pancakeOrderId) => {
           if (!gateway.readOrder) return "UNAVAILABLE";
           try {
-            return compareOrderReadBack(projection.lines, await gateway.readOrder(shopId, pancakeOrderId)).kind === "MATCH" ? "MATCH" : "DRIFT";
+            const verdict = compareOrderReadBack(projection.lines, await gateway.readOrder(shopId, pancakeOrderId)).kind;
+            return verdict === "MATCH" ? "MATCH" : verdict === "UNAVAILABLE" ? "UNAVAILABLE" : "DRIFT";
           } catch {
             return "UNAVAILABLE";
           }
