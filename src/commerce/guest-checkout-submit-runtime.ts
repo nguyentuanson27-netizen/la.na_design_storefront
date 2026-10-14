@@ -7,6 +7,8 @@ import { loadCheckoutCommunes, loadCheckoutProvinces } from "./checkout-geo.ts";
 import { createCapacityReservationRepository } from "./capacity-reservation.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
+  verifyBenefitQuoteProof,
+  verifyNonclaimAcknowledgement,
   verifyRenderedQuoteProof,
   type RenderedQuoteProofFacts,
   type RenderedQuoteProofRejection,
@@ -16,6 +18,7 @@ import { generateOrderPublicCode } from "./order-public-code.ts";
 import {
   createGuestCheckoutSnapshotService,
   requiresFreshGuestCheckoutSnapshot,
+  type BenefitQuoteAuthority,
 } from "./guest-checkout-snapshot.ts";
 import {
   createGuestCheckoutSubmitService,
@@ -33,6 +36,8 @@ type SnapshotAuthority = Readonly<{
   verifyRenderedQuote: (
     facts: RenderedQuoteProofFacts,
   ) => ReturnType<typeof verifyRenderedQuoteProof>;
+  /** GQ17 -- how a cart with gifts or tier segments is proven; the same cart-bound secret. */
+  benefits: BenefitQuoteAuthority;
 }>;
 
 type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
@@ -119,11 +124,14 @@ export function createGuestCheckoutSubmitRuntime(
     cartId,
     checkoutInput,
     quoteProof,
+    nonclaimAcknowledgement,
     metaContext,
   }: {
     cartId: string;
     checkoutInput: unknown;
     quoteProof: unknown;
+    /** GQ16: the buyer's signed acknowledgement of unclaimed gift slots, when the quote has any. */
+    nonclaimAcknowledgement?: unknown;
     metaContext?: MetaPurchaseRequestContext | null;
   }) {
     const now = clock();
@@ -160,6 +168,23 @@ export function createGuestCheckoutSubmitRuntime(
           currentQuote,
           secret: quoteProofSecret,
         }),
+      benefits: {
+        verifyBenefitQuote: (currentQuote) =>
+          verifyBenefitQuoteProof({
+            proof: quoteProof,
+            cartId,
+            currentQuote,
+            secret: quoteProofSecret,
+          }),
+        verifyNonclaimAcknowledgement: (currentQuote) =>
+          verifyNonclaimAcknowledgement({
+            token: nonclaimAcknowledgement,
+            cartId,
+            currentQuote,
+            secret: quoteProofSecret,
+            now,
+          }),
+      },
     });
     const service = createGuestCheckoutSubmitService({
       snapshot: {
@@ -195,6 +220,7 @@ export async function submitGuestCheckoutByCart(input: {
   cartId: string;
   checkoutInput: unknown;
   quoteProof: unknown;
+  nonclaimAcknowledgement?: unknown;
   metaContext?: MetaPurchaseRequestContext | null;
 }) {
   return createGuestCheckoutSubmitRuntime().submit(input);

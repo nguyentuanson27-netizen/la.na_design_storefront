@@ -11,10 +11,18 @@ import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
 import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
-import type {
-  RenderedQuoteProofFacts,
-  RenderedQuoteProofRejection,
+import {
+  benefitQuoteDigest,
+  benefitQuoteNeedsNonclaimAcknowledgement,
+  type BenefitQuoteProofFacts,
+  type NonclaimAcknowledgementRejection,
+  type NonclaimAcknowledgementVerification,
+  type RenderedQuoteProofFacts,
+  type RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
+import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
+import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { PromotionCampaignKind, PromotionPricingResult } from "./promotion-pricing.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
@@ -70,7 +78,11 @@ type CheckoutFailureReason =
   | "CART_EMPTY"
   | "CART_LINE_UNAVAILABLE"
   | "MONEY_UNSUPPORTED"
-  | "PUBLIC_CODE_UNAVAILABLE";
+  | "PUBLIC_CODE_UNAVAILABLE"
+  /** GQ17: the cart carries gifts or tier segments and this server cannot price them right now. */
+  | "BENEFIT_CHECKOUT_UNAVAILABLE"
+  /** GQ18: a stored gift choice no longer holds; it is left as it is for the buyer to decide again. */
+  | "GIFT_SELECTION_INVALID";
 
 type CheckoutSnapshotResult =
   | {
@@ -105,6 +117,20 @@ type CheckoutSnapshotResult =
       reason: "QUOTE_UNPROVEN";
       quoteReason: RenderedQuoteProofRejection;
       refreshedQuote: RenderedQuoteProofFacts;
+    }
+  /** GQ16/17: the benefit quote the server computed is not the one the buyer proved. */
+  | {
+      ok: false;
+      reason: "BENEFIT_QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
+    }
+  /** FR-06: slots are left unclaimed and the buyer has not acknowledged exactly this quote. */
+  | {
+      ok: false;
+      reason: "NONCLAIM_UNACKNOWLEDGED";
+      acknowledgementReason: NonclaimAcknowledgementRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
     };
 
 /**
@@ -117,9 +143,24 @@ export type RenderedQuoteVerifier = (
   facts: RenderedQuoteProofFacts,
 ) => Readonly<{ ok: true }> | Readonly<{ ok: false; reason: RenderedQuoteProofRejection }>;
 
+/**
+ * GQ17 -- how a cart with gifts or quantity-tier segments is proven. Absent means this service does
+ * not take benefit carts: one that has benefits is refused (`BENEFIT_CHECKOUT_UNAVAILABLE`) instead of
+ * being priced as a plain cart with its gifts and tier prices silently dropped.
+ */
+export type BenefitQuoteAuthority = Readonly<{
+  verifyBenefitQuote: (
+    facts: BenefitQuoteProofFacts,
+  ) => Readonly<{ ok: true }> | Readonly<{ ok: false; reason: RenderedQuoteProofRejection }>;
+  verifyNonclaimAcknowledgement: (facts: BenefitQuoteProofFacts) => NonclaimAcknowledgementVerification;
+}>;
+
 type GuestCheckoutSnapshotServiceOptions = Readonly<{
   checkoutInputValidated?: boolean;
   verifyRenderedQuote: RenderedQuoteVerifier;
+  benefits?: BenefitQuoteAuthority;
+  /** The environment the feature gate is read from; defaults to `process.env`. */
+  env?: Readonly<Record<string, string | undefined>>;
 }>;
 
 const snapshotOrderSelection = {
@@ -136,6 +177,11 @@ const snapshotOrderSelection = {
   // existing active checkout after a `P2002`) reports the same basket as the create path. A hold
   // taken against a basket the order does not actually have would be worse than no hold.
   lines: { select: { variantId: true, quantity: true } },
+  // GQ17 -- the gifts of a benefit order are not paid lines, but they hold stock like any other unit.
+  // Null for every legacy order, so nothing changes for them.
+  quoteSnapshot: {
+    select: { lines: { where: { role: "GIFT" as const }, select: { variantId: true, quantity: true } } },
+  },
 } satisfies Prisma.OrderMirrorSelect;
 
 const productSelection = {
@@ -259,7 +305,10 @@ function toSnapshotResult(order: SelectedSnapshotOrder): CheckoutSnapshotResult 
       merchandiseSubtotalVnd: order.merchandiseSubtotalVnd,
       shippingFeeVnd: order.shippingFeeVnd,
       totalVnd: order.totalVnd,
-      lines: order.lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
+      lines: [
+        ...order.lines.map(({ variantId, quantity }) => ({ variantId, quantity })),
+        ...(order.quoteSnapshot?.lines ?? []).map(({ variantId, quantity }) => ({ variantId, quantity })),
+      ],
     },
     // This path returns an order that already exists without re-authenticating a quote, so this
     // attempt made no promise about fulfillment state and declares none. See the field's doc.
@@ -416,6 +465,7 @@ export function createGuestCheckoutSnapshotService(
 ) {
   const checkoutInputValidated = options.checkoutInputValidated ?? false;
   const verifyRenderedQuote = options.verifyRenderedQuote;
+  const benefitEnv = options.env ?? process.env;
   if (typeof verifyRenderedQuote !== "function") {
     throw new TypeError("Guest checkout snapshot requires a rendered-quote verifier");
   }
@@ -510,7 +560,13 @@ export function createGuestCheckoutSnapshotService(
             where: { orderId: mutableDraft.id },
             select: { variantId: true, quantity: true, state: true },
           });
-          if (holds.length > 0 && !holdsAreLiveFor(holds, items)) {
+          // A benefit DRAFT also holds the units of the gifts the buyer chose, so the basket it is
+          // compared with is the paid items plus those stored choices (only read when the gate is ON).
+          const storedGifts = isGiftQuantityPromotionsEnabled(benefitEnv)
+            ? await tx.cartGiftSelection.findMany({ where: { cartId }, select: { variantId: true, quantity: true } })
+            : [];
+          const heldBasket = storedGifts.length === 0 ? items : [...items, ...storedGifts];
+          if (holds.length > 0 && !holdsAreLiveFor(holds, heldBasket)) {
             // Safe to supersede only when no hold is in a state where a write may have landed.
             // `RELEASED` joins `RESERVED` here: it is terminal *and* it is evidence nothing was
             // sent, so retiring the attempt around it frees nothing and hides nothing.
@@ -611,112 +667,199 @@ export function createGuestCheckoutSnapshotService(
         let merchandiseSubtotalVnd = 0;
         let totalQuantity = 0;
 
-        for (const line of lines) {
-          // Identity comes from the resolved line, which is the one projection that knows whether a
-          // real variation was resolved at all. Re-deriving it here from a side map was a second
-          // identity path that could disagree with the line it is describing. `pricingByVariantId`
-          // is deliberately not that: it carries money the line already agrees with (asserted
-          // below), never identity.
-          const pancakeVariationId = line.pancakeVariationId;
-          const pricing = pricingByVariantId.get(line.variantId);
-          if (
-            !line.available ||
-            line.price === null ||
-            line.productName === null ||
-            line.size === null ||
-            !pancakeVariationId ||
-            !pricing ||
-            pricing.basePriceVnd === null ||
-            pricing.effectivePriceVnd === null ||
-            line.price !== pricing.effectivePriceVnd
-          ) {
-            return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
-          }
-
-          const lineTotalVnd = checkedMultiplyVnd(line.price, line.quantity);
-          if (lineTotalVnd === null) {
-            return { ok: false, reason: "MONEY_UNSUPPORTED" };
-          }
-          const nextSubtotal = checkedAddVnd(merchandiseSubtotalVnd, lineTotalVnd);
-          const nextQuantity = totalQuantity + line.quantity;
-          if (nextSubtotal === null || !Number.isSafeInteger(nextQuantity) || nextQuantity <= 0) {
-            return { ok: false, reason: "MONEY_UNSUPPORTED" };
-          }
-
-          const promotion = pricing.promotion;
-          if (pricing.isDiscounted && promotion === null) {
-            return { ok: false, reason: "MONEY_UNSUPPORTED" };
-          }
-
-          merchandiseSubtotalVnd = nextSubtotal;
-          totalQuantity = nextQuantity;
-          snapshots.push({
-            variantId: line.variantId,
-            pancakeVariationId,
-            metaContentId: line.metaContentId ?? null,
-            productName: line.productName,
-            color: line.color,
-            size: line.size,
-            quantity: line.quantity,
-            baseUnitPriceVnd: BigInt(pricing.basePriceVnd),
-            unitPriceVnd: BigInt(line.price),
-            lineTotalVnd: BigInt(lineTotalVnd),
-            promotionCampaignId: promotion?.id ?? null,
-            promotionName: promotion?.name ?? null,
-            promotionKind: promotion?.kind ?? null,
-            promotionDiscountType: promotion?.discountType ?? null,
-            promotionPercentageValue: promotion?.percentageValue ?? null,
-            promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
-          });
-          quoteItems.push({
-            variantExternalId: pancakeVariationId,
-            quantity: line.quantity,
-            unitPriceVnd: line.price,
-            // Re-resolved here from the same canonical, quantity-aware rule the checkout render
-            // used — now that this path carries the real selling policy, the two agree whenever
-            // capacity has not moved. When it has, the refreshed quote no longer matches the
-            // proof and the buyer is asked to re-confirm, instead of the order committing under a
-            // fulfillment state they never saw.
-            fulfillmentState: line.isPreorderSale ? ("PREORDER" as const) : ("READY" as const),
-          });
-          // Same fact, keyed by the internal id I6b addresses lines by. The quote item carries the
-          // external identity, which the reservation ledger does not use.
-          verifiedFulfillmentStateByVariantId.set(
-            line.variantId,
-            line.isPreorderSale ? "PREORDER" : "READY",
-          );
-        }
-
-        const shippingFeeVnd = calculateGuestShippingFeeVnd({
-          subtotalVnd: merchandiseSubtotalVnd,
-          totalQuantity,
+        // GQ17 -- a cart with gifts or quantity-tier segments is priced from the same derivation the
+        // cart page shows, proven in the benefit format, and stored by lineId. Everything else (gate
+        // OFF, or nothing applies) runs the legacy path below exactly as before.
+        const resolution = await resolveBenefitCheckoutQuote({
+          tx,
+          cartId,
+          shopId: safeShopId,
+          now,
+          env: benefitEnv,
+          lines,
         });
-        const totalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
-        if (totalVnd === null) {
-          return { ok: false, reason: "MONEY_UNSUPPORTED" };
-        }
+        if (resolution.kind === "UNAVAILABLE") return { ok: false, reason: "BENEFIT_CHECKOUT_UNAVAILABLE" };
+        if (resolution.kind === "GIFT_SELECTION_INVALID") return { ok: false, reason: "GIFT_SELECTION_INVALID" };
+        let shippingFeeVnd = 0;
+        let totalVnd = 0;
+        let benefitQuoteWrite: ReturnType<typeof toOrderQuoteSnapshotInput> = null;
+        if (resolution.kind === "BENEFIT") {
+          const authority = options.benefits;
+          if (authority === undefined) return { ok: false, reason: "BENEFIT_CHECKOUT_UNAVAILABLE" };
+          const facts = resolution.facts;
+          // Same instant, same cart lock as the write: the proof is checked against the quote this
+          // transaction just computed, so a price or gift that moved cannot slip in between.
+          const verification = authority.verifyBenefitQuote(facts);
+          if (!verification.ok) {
+            return { ok: false, reason: "BENEFIT_QUOTE_UNPROVEN", quoteReason: verification.reason, refreshedBenefitQuote: facts };
+          }
+          let acknowledgedAt: Date | null = null;
+          if (benefitQuoteNeedsNonclaimAcknowledgement(facts)) {
+            const acknowledgement = authority.verifyNonclaimAcknowledgement(facts);
+            if (!acknowledgement.ok) {
+              return { ok: false, reason: "NONCLAIM_UNACKNOWLEDGED", acknowledgementReason: acknowledgement.reason, refreshedBenefitQuote: facts };
+            }
+            acknowledgedAt = acknowledgement.acknowledgedAt;
+          }
+          benefitQuoteWrite = toOrderQuoteSnapshotInput({
+            facts,
+            digest: benefitQuoteDigest(facts),
+            paid: resolution.paid,
+            gifts: resolution.gifts,
+            dropped: resolution.dropped,
+            acknowledgedAt,
+          });
+          if (benefitQuoteWrite === null || !validateOrderQuoteSnapshot(benefitQuoteWrite).ok) {
+            return { ok: false, reason: "MONEY_UNSUPPORTED" };
+          }
+          for (const row of resolution.paid) {
+            const line = lines.find((candidate) => candidate.variantId === row.variantId);
+            const pricing = pricingByVariantId.get(row.variantId);
+            if (!line || line.productName === null || line.size === null || !pricing) {
+              return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
+            }
+            // The legacy audit columns describe the legacy campaign only; a tier's provenance lives
+            // in the quote's discount ledger, never forced into columns that cannot express it.
+            const legacy = row.legacyCampaignId !== null && pricing.promotion?.id === row.legacyCampaignId ? pricing.promotion : null;
+            snapshots.push({
+              variantId: row.variantId,
+              pancakeVariationId: row.pancakeVariationId,
+              metaContentId: line.metaContentId ?? null,
+              productName: line.productName,
+              color: line.color,
+              size: line.size,
+              quantity: row.quantity,
+              baseUnitPriceVnd: BigInt(row.baseUnitPriceVnd),
+              unitPriceVnd: BigInt(row.unitPriceVnd),
+              lineTotalVnd: BigInt(row.lineTotalVnd),
+              promotionCampaignId: legacy?.id ?? null,
+              promotionName: legacy?.name ?? null,
+              promotionKind: legacy?.kind ?? null,
+              promotionDiscountType: legacy?.discountType ?? null,
+              promotionPercentageValue: legacy?.percentageValue ?? null,
+              promotionFixedPriceVnd: legacy?.fixedPriceVnd ?? null,
+            });
+            verifiedFulfillmentStateByVariantId.set(row.variantId, line.isPreorderSale ? "PREORDER" : "READY");
+          }
+          // A gift is delivered from READY stock only; declaring it lets the reservation refuse the
+          // merged quantity if paid + gift together could no longer be served as READY.
+          for (const gift of resolution.gifts) {
+            if (!verifiedFulfillmentStateByVariantId.has(gift.variantId)) verifiedFulfillmentStateByVariantId.set(gift.variantId, "READY");
+          }
+          merchandiseSubtotalVnd = facts.paidSubtotalVnd;
+          shippingFeeVnd = facts.shippingFeeVnd;
+          totalVnd = facts.totalVnd;
+        } else {
 
-        // The acknowledgement gate, deliberately inside this transaction rather than ahead of it.
-        // The quote is checked against the proof at the same instant, under the same cart lock, that
-        // it is about to be persisted — a check before the transaction could pass and then have the
-        // price move underneath it before the DRAFT was written, which is the exact substitution
-        // this unit exists to prevent. Nothing has been written for this attempt yet, so returning
-        // here leaves no submit-capable DRAFT, no `POS_SUBMITTING` and no Pancake call.
-        const refreshedQuote: RenderedQuoteProofFacts = Object.freeze({
-          items: Object.freeze(quoteItems.map((item) => Object.freeze({ ...item }))),
-          merchandiseSubtotalVnd,
-          shippingFeeVnd,
-          totalVnd,
-          totalQuantity,
-        });
-        const quoteVerification = verifyRenderedQuote(refreshedQuote);
-        if (!quoteVerification.ok) {
-          return {
-            ok: false,
-            reason: "QUOTE_UNPROVEN",
-            quoteReason: quoteVerification.reason,
-            refreshedQuote,
-          };
+            for (const line of lines) {
+              // Identity comes from the resolved line, which is the one projection that knows whether a
+              // real variation was resolved at all. Re-deriving it here from a side map was a second
+              // identity path that could disagree with the line it is describing. `pricingByVariantId`
+              // is deliberately not that: it carries money the line already agrees with (asserted
+              // below), never identity.
+              const pancakeVariationId = line.pancakeVariationId;
+              const pricing = pricingByVariantId.get(line.variantId);
+              if (
+                !line.available ||
+                line.price === null ||
+                line.productName === null ||
+                line.size === null ||
+                !pancakeVariationId ||
+                !pricing ||
+                pricing.basePriceVnd === null ||
+                pricing.effectivePriceVnd === null ||
+                line.price !== pricing.effectivePriceVnd
+              ) {
+                return { ok: false, reason: "CART_LINE_UNAVAILABLE" };
+              }
+
+              const lineTotalVnd = checkedMultiplyVnd(line.price, line.quantity);
+              if (lineTotalVnd === null) {
+                return { ok: false, reason: "MONEY_UNSUPPORTED" };
+              }
+              const nextSubtotal = checkedAddVnd(merchandiseSubtotalVnd, lineTotalVnd);
+              const nextQuantity = totalQuantity + line.quantity;
+              if (nextSubtotal === null || !Number.isSafeInteger(nextQuantity) || nextQuantity <= 0) {
+                return { ok: false, reason: "MONEY_UNSUPPORTED" };
+              }
+
+              const promotion = pricing.promotion;
+              if (pricing.isDiscounted && promotion === null) {
+                return { ok: false, reason: "MONEY_UNSUPPORTED" };
+              }
+
+              merchandiseSubtotalVnd = nextSubtotal;
+              totalQuantity = nextQuantity;
+              snapshots.push({
+                variantId: line.variantId,
+                pancakeVariationId,
+                metaContentId: line.metaContentId ?? null,
+                productName: line.productName,
+                color: line.color,
+                size: line.size,
+                quantity: line.quantity,
+                baseUnitPriceVnd: BigInt(pricing.basePriceVnd),
+                unitPriceVnd: BigInt(line.price),
+                lineTotalVnd: BigInt(lineTotalVnd),
+                promotionCampaignId: promotion?.id ?? null,
+                promotionName: promotion?.name ?? null,
+                promotionKind: promotion?.kind ?? null,
+                promotionDiscountType: promotion?.discountType ?? null,
+                promotionPercentageValue: promotion?.percentageValue ?? null,
+                promotionFixedPriceVnd: promotion?.fixedPriceVnd ?? null,
+              });
+              quoteItems.push({
+                variantExternalId: pancakeVariationId,
+                quantity: line.quantity,
+                unitPriceVnd: line.price,
+                // Re-resolved here from the same canonical, quantity-aware rule the checkout render
+                // used — now that this path carries the real selling policy, the two agree whenever
+                // capacity has not moved. When it has, the refreshed quote no longer matches the
+                // proof and the buyer is asked to re-confirm, instead of the order committing under a
+                // fulfillment state they never saw.
+                fulfillmentState: line.isPreorderSale ? ("PREORDER" as const) : ("READY" as const),
+              });
+              // Same fact, keyed by the internal id I6b addresses lines by. The quote item carries the
+              // external identity, which the reservation ledger does not use.
+              verifiedFulfillmentStateByVariantId.set(
+                line.variantId,
+                line.isPreorderSale ? "PREORDER" : "READY",
+              );
+            }
+
+            shippingFeeVnd = calculateGuestShippingFeeVnd({
+              subtotalVnd: merchandiseSubtotalVnd,
+              totalQuantity,
+            });
+            const checkedTotalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
+            if (checkedTotalVnd === null) {
+              return { ok: false, reason: "MONEY_UNSUPPORTED" };
+            }
+            totalVnd = checkedTotalVnd;
+
+            // The acknowledgement gate, deliberately inside this transaction rather than ahead of it.
+            // The quote is checked against the proof at the same instant, under the same cart lock, that
+            // it is about to be persisted — a check before the transaction could pass and then have the
+            // price move underneath it before the DRAFT was written, which is the exact substitution
+            // this unit exists to prevent. Nothing has been written for this attempt yet, so returning
+            // here leaves no submit-capable DRAFT, no `POS_SUBMITTING` and no Pancake call.
+            const refreshedQuote: RenderedQuoteProofFacts = Object.freeze({
+              items: Object.freeze(quoteItems.map((item) => Object.freeze({ ...item }))),
+              merchandiseSubtotalVnd,
+              shippingFeeVnd,
+              totalVnd,
+              totalQuantity,
+            });
+            const quoteVerification = verifyRenderedQuote(refreshedQuote);
+            if (!quoteVerification.ok) {
+              return {
+                ok: false,
+                reason: "QUOTE_UNPROVEN",
+                quoteReason: quoteVerification.reason,
+                refreshedQuote,
+              };
+            }
+
         }
 
         const draftFacts = {
@@ -756,7 +899,23 @@ export function createGuestCheckoutSnapshotService(
               select: snapshotOrderSelection,
             });
 
-        const snapshot = toSnapshotResult(order);
+        let persisted = order;
+        if (benefitQuoteWrite !== null) {
+          const written = await replaceOrderQuoteSnapshot(tx, order.id, benefitQuoteWrite);
+          // Validated above, so a refusal here is a defect; throwing rolls the whole attempt back
+          // rather than leaving an order whose quote rows are missing.
+          if (!written.ok) throw new Error(`Benefit quote snapshot refused: ${written.issue}`);
+          // The gifts live in the quote rows just written; read the order back so the reservation
+          // lines include them.
+          persisted = await tx.orderMirror.findUniqueOrThrow({ where: { id: order.id }, select: snapshotOrderSelection });
+        } else if (mutableDraft) {
+          // A re-quote that is no longer a benefit cart must not keep the previous quote's rows.
+          if (await clearOrderQuoteSnapshot(tx, order.id)) {
+            persisted = await tx.orderMirror.findUniqueOrThrow({ where: { id: order.id }, select: snapshotOrderSelection });
+          }
+        }
+
+        const snapshot = toSnapshotResult(persisted);
         if (snapshot === null || !snapshot.ok) {
           return snapshot ?? { ok: false, reason: "MONEY_UNSUPPORTED" };
         }

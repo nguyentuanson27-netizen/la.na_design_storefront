@@ -40,7 +40,14 @@ export type PancakeOrderSubmissionReason =
   | "VALIDATION_UNAVAILABLE"
   | "CREATE_OUTCOME_UNKNOWN"
   | "ORDER_REJECTED"
-  | "COMPOSITE_SELLING_MODE_UNSUPPORTED";
+  | "COMPOSITE_SELLING_MODE_UNSUPPORTED"
+  /**
+   * GQ18 -- the order carries a benefit quote (gifts or quantity-tier segments). The legacy submission
+   * would send the paid lines and silently drop the gifts, and the legacy reprice would rewrite prices
+   * the quote has signed, so such an order is held at DRAFT with nothing sent until the line-level
+   * Pancake projection (GQ20) exists. The reason is stable so that work can remove exactly this gate.
+   */
+  | "BENEFIT_SUBMISSION_UNAVAILABLE";
 
 type PancakeOrderValidationRejectionReason = Extract<
   PancakeOrderSubmissionReason,
@@ -76,6 +83,12 @@ export type PancakeOrderSubmissionEvent =
       correlationId: string;
       state: "DRAFT";
       reason: "VALIDATION_UNAVAILABLE";
+    }
+  | {
+      name: "pancake_order.benefit_submission_withheld";
+      correlationId: string;
+      state: "DRAFT";
+      reason: "BENEFIT_SUBMISSION_UNAVAILABLE";
     }
   | {
       name: "pancake_order.quote_repriced";
@@ -307,9 +320,27 @@ export function createPancakeOrderSubmissionService(
 
     const order = await client.orderMirror.findUniqueOrThrow({
       where: { publicCode: safePublicCode },
-      include: { lines: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] } },
+      include: {
+        lines: { orderBy: [{ createdAt: "asc" }, { id: "asc" }] },
+        quoteSnapshot: { select: { id: true } },
+      },
     });
     const correlationId = order.id;
+    if (order.quoteSnapshot) {
+      // Back to DRAFT before anything is read from Pancake or reserved for a write: no hold changes
+      // state, no external call is made, and the buyer can still re-quote or abandon the order.
+      await client.orderMirror.updateMany({
+        where: { id: order.id, state: "VALIDATING" },
+        data: { state: "DRAFT", syncErrorCode: "BENEFIT_SUBMISSION_UNAVAILABLE" },
+      });
+      emitSafely(options.onEvent, {
+        name: "pancake_order.benefit_submission_withheld",
+        correlationId,
+        state: "DRAFT",
+        reason: "BENEFIT_SUBMISSION_UNAVAILABLE",
+      });
+      return { ok: false, state: "DRAFT", reason: "BENEFIT_SUBMISSION_UNAVAILABLE" };
+    }
     emitSafely(options.onEvent, {
       name: "pancake_order.validation_started",
       correlationId,

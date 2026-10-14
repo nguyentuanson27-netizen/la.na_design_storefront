@@ -48,6 +48,22 @@ export type OrderQuoteLineInput = QuoteLineFacts & Readonly<{
 
 export type OrderQuoteEntitlementInput = QuoteEntitlementFacts;
 
+/** Why a campaign is not part of the quote (audit only), from the stack's closed vocabulary. */
+export const DROPPED_BENEFIT_REASONS = [
+  "STACK_NOT_PERMITTED",
+  "STACK_PRIORITY_CONFLICT",
+  "TIER_PRICE_INVALID",
+  "TIER_CONFIG_INVALID",
+  "TIER_INPUT_INVALID",
+] as const;
+export const MAX_DROPPED_BENEFITS = 50;
+
+export type DroppedBenefitInput = Readonly<{
+  campaignId: string;
+  reason: (typeof DROPPED_BENEFIT_REASONS)[number];
+  otherCampaignId: string | null;
+}>;
+
 export type OrderQuoteSnapshotInput = Readonly<{
   quoteFormat: string;
   /** SHA-256 hex of the canonical quote bytes the buyer proved. */
@@ -59,12 +75,15 @@ export type OrderQuoteSnapshotInput = Readonly<{
   entitlements: readonly OrderQuoteEntitlementInput[];
   /** Present only when a signed acknowledgement of exactly this quote was verified. */
   acknowledgedAt: Date | null;
+  /** Benefits the quote stepped aside from, with the reason (EX-21 keeps `TIER_PRICE_INVALID`). */
+  droppedBenefits?: readonly DroppedBenefitInput[];
 }>;
 
 export type OrderQuoteSnapshotIssue =
   | QuoteStructureIssue
   | "FORMAT_INVALID"
   | "DIGEST_INVALID"
+  | "DROPPED_BENEFITS_INVALID"
   | "ACKNOWLEDGEMENT_REQUIRED"
   | "ACKNOWLEDGEMENT_UNNEEDED";
 
@@ -77,6 +96,22 @@ export function validateOrderQuoteSnapshot(
   if (typeof input.quoteFormat !== "string" || !FORMAT_PATTERN.test(input.quoteFormat)) return fail("FORMAT_INVALID");
   if (typeof input.quoteDigest !== "string" || !DIGEST_PATTERN.test(input.quoteDigest)) return fail("DIGEST_INVALID");
 
+  const dropped = input.droppedBenefits ?? [];
+  if (
+    !Array.isArray(dropped) ||
+    dropped.length > MAX_DROPPED_BENEFITS ||
+    dropped.some(
+      (entry) =>
+        typeof entry !== "object" ||
+        entry === null ||
+        !isQuoteText(entry.campaignId, 200) ||
+        !(DROPPED_BENEFIT_REASONS as readonly string[]).includes(entry.reason) ||
+        !(entry.otherCampaignId === null || isQuoteText(entry.otherCampaignId, 200)),
+    )
+  ) {
+    return fail("DROPPED_BENEFITS_INVALID");
+  }
+
   const verdict = validateQuoteStructure(input);
   if (!verdict.ok) return verdict;
   // The stored line also keeps the internal variant id as history.
@@ -87,6 +122,20 @@ export function validateOrderQuoteSnapshot(
   if (verdict.totals.unclaimedSlots > 0 && !acknowledged) return fail("ACKNOWLEDGEMENT_REQUIRED");
   if (verdict.totals.unclaimedSlots === 0 && acknowledged) return fail("ACKNOWLEDGEMENT_UNNEEDED");
   return verdict;
+}
+
+/**
+ * Removes the order's quote (children before parents); returns whether there was one. Only a DRAFT
+ * accepts it: the database refuses the removal once the order has left DRAFT.
+ */
+export async function clearOrderQuoteSnapshot(tx: Prisma.TransactionClient, orderId: string): Promise<boolean> {
+  const previous = await tx.orderQuoteSnapshot.findUnique({ where: { orderId }, select: { id: true } });
+  if (previous === null) return false;
+  await tx.orderQuoteDiscountStep.deleteMany({ where: { line: { snapshotId: previous.id } } });
+  await tx.orderQuoteLine.deleteMany({ where: { snapshotId: previous.id } });
+  await tx.orderQuoteEntitlement.deleteMany({ where: { snapshotId: previous.id } });
+  await tx.orderQuoteSnapshot.delete({ where: { id: previous.id } });
+  return true;
 }
 
 export type OrderQuoteSnapshotWriteResult =
@@ -111,13 +160,7 @@ export async function replaceOrderQuoteSnapshot(
   const verdict = validateOrderQuoteSnapshot(input);
   if (!verdict.ok) return { ok: false, reason: "SNAPSHOT_INVALID", issue: verdict.issue };
 
-  const previous = await tx.orderQuoteSnapshot.findUnique({ where: { orderId }, select: { id: true } });
-  if (previous !== null) {
-    await tx.orderQuoteDiscountStep.deleteMany({ where: { line: { snapshotId: previous.id } } });
-    await tx.orderQuoteLine.deleteMany({ where: { snapshotId: previous.id } });
-    await tx.orderQuoteEntitlement.deleteMany({ where: { snapshotId: previous.id } });
-    await tx.orderQuoteSnapshot.delete({ where: { id: previous.id } });
-  }
+  await clearOrderQuoteSnapshot(tx, orderId);
 
   const { totals } = verdict;
   await tx.orderQuoteSnapshot.create({
@@ -133,6 +176,7 @@ export async function replaceOrderQuoteSnapshot(
       unclaimedSlots: totals.unclaimedSlots,
       nonclaimAcknowledged: input.acknowledgedAt !== null,
       acknowledgedAt: input.acknowledgedAt,
+      droppedBenefits: (input.droppedBenefits?.length ?? 0) === 0 ? undefined : input.droppedBenefits!.map((entry) => ({ ...entry })),
       lines: {
         create: input.lines.map((line) => ({
           lineId: line.lineId,
@@ -191,6 +235,7 @@ export type StoredOrderQuoteSnapshot = Readonly<{
   acknowledgedAt: Date | null;
   lines: readonly OrderQuoteLineInput[];
   entitlements: readonly OrderQuoteEntitlementInput[];
+  droppedBenefits: readonly DroppedBenefitInput[];
 }>;
 
 type ReadClient = Pick<Prisma.TransactionClient, "orderQuoteSnapshot">;
@@ -217,6 +262,7 @@ export async function readOrderQuoteSnapshot(client: ReadClient, orderId: string
     unclaimedSlots: row.unclaimedSlots,
     nonclaimAcknowledged: row.nonclaimAcknowledged,
     acknowledgedAt: row.acknowledgedAt,
+    droppedBenefits: Array.isArray(row.droppedBenefits) ? (row.droppedBenefits as unknown as DroppedBenefitInput[]) : [],
     lines: row.lines.map((line) => ({
       lineId: line.lineId,
       role: line.role,

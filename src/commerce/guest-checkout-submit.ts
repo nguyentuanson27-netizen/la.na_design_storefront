@@ -1,4 +1,6 @@
 import type {
+  BenefitQuoteProofFacts,
+  NonclaimAcknowledgementRejection,
   RenderedQuoteProofFacts,
   RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
@@ -19,7 +21,9 @@ type SnapshotFailureReason =
   | "CART_EMPTY"
   | "CART_LINE_UNAVAILABLE"
   | "MONEY_UNSUPPORTED"
-  | "PUBLIC_CODE_UNAVAILABLE";
+  | "PUBLIC_CODE_UNAVAILABLE"
+  | "BENEFIT_CHECKOUT_UNAVAILABLE"
+  | "GIFT_SELECTION_INVALID";
 
 type SnapshotResult =
   | {
@@ -47,6 +51,18 @@ type SnapshotResult =
       reason: "QUOTE_UNPROVEN";
       quoteReason: RenderedQuoteProofRejection;
       refreshedQuote: RenderedQuoteProofFacts;
+    }
+  | {
+      ok: false;
+      reason: "BENEFIT_QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
+    }
+  | {
+      ok: false;
+      reason: "NONCLAIM_UNACKNOWLEDGED";
+      acknowledgementReason: NonclaimAcknowledgementRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
     };
 
 type SnapshotService = {
@@ -117,6 +133,12 @@ export type GuestCheckoutPriceChange = Readonly<{
   merchandiseSubtotalVnd: number;
   shippingFeeVnd: number;
   totalVnd: number;
+  /**
+   * GQ18 -- present when the buyer has to do more than accept a number: the gift slots they are not
+   * taking must be acknowledged explicitly (FR-06) before the order can continue. Never a reason to
+   * guess; the refreshed server render says which slots.
+   */
+  requires?: "NONCLAIM_ACKNOWLEDGEMENT";
 }>;
 
 export type GuestCheckoutSubmitResult =
@@ -203,7 +225,11 @@ function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitR
       return { ok: false, status: "RETRYABLE", reason: "CART_UNAVAILABLE" };
     case "MONEY_UNSUPPORTED":
     case "PUBLIC_CODE_UNAVAILABLE":
+    case "BENEFIT_CHECKOUT_UNAVAILABLE":
       return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE" };
+    case "GIFT_SELECTION_INVALID":
+      // The stored gift choice is left exactly as it is; the buyer goes back to the cart to decide.
+      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED" };
   }
 }
 
@@ -238,6 +264,9 @@ function mapSubmissionResult(
     // resubmitting — the exact opposite of the explicit reconfirmation this outcome requires.
     if (result.reason === "PRICE_CHANGED" && "repricedQuote" in result) {
       return { ok: false, status: "PRICE_CHANGED", priceChange: result.repricedQuote };
+    }
+    if (result.reason === "BENEFIT_SUBMISSION_UNAVAILABLE") {
+      return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE", orderCode };
     }
     if (result.reason === "VALIDATION_UNAVAILABLE") {
       return {
@@ -357,6 +386,33 @@ export function createGuestCheckoutSubmitService({
             merchandiseSubtotalVnd: refreshedQuote.merchandiseSubtotalVnd,
             shippingFeeVnd: refreshedQuote.shippingFeeVnd,
             totalVnd: refreshedQuote.totalVnd,
+          },
+        };
+      }
+      if (snapshotResult.reason === "BENEFIT_QUOTE_UNPROVEN") {
+        onQuoteProofRejection?.(snapshotResult.quoteReason);
+        // Same convergence as above: whatever failed, the buyer sees the current quote and confirms it.
+        const { refreshedBenefitQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            merchandiseSubtotalVnd: refreshedBenefitQuote.paidSubtotalVnd,
+            shippingFeeVnd: refreshedBenefitQuote.shippingFeeVnd,
+            totalVnd: refreshedBenefitQuote.totalVnd,
+          },
+        };
+      }
+      if (snapshotResult.reason === "NONCLAIM_UNACKNOWLEDGED") {
+        const { refreshedBenefitQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            merchandiseSubtotalVnd: refreshedBenefitQuote.paidSubtotalVnd,
+            shippingFeeVnd: refreshedBenefitQuote.shippingFeeVnd,
+            totalVnd: refreshedBenefitQuote.totalVnd,
+            requires: "NONCLAIM_ACKNOWLEDGEMENT",
           },
         };
       }
