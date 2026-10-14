@@ -8,6 +8,9 @@ import {
 } from "@/app/admin/promotions/gift-quantity/actions";
 import type { AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
 import type { TierRuleInput } from "@/commerce/gift-quantity-tier-rule";
+import type { GiftOptionCandidate } from "@/commerce/gift-quantity-gift-options";
+import type { GiftRuleInput } from "@/commerce/gift-quantity-gift-rule";
+import { GiftQuantityGiftFields } from "./gift-quantity-gift-fields";
 import { GiftQuantityTierFields } from "./gift-quantity-tier-fields";
 import {
   MAX_SCOPE_EXCLUDED_PRODUCTS,
@@ -37,6 +40,9 @@ export type GiftQuantityCampaignFormProps = Readonly<{
     frozenCount: number;
     frozenPreview: readonly GiftQuantityProductRef[];
     tierRule?: TierRuleInput | null;
+    /** GIFT_ITEM: the stored threshold, cap, duplicate policy and allowlist, and the allowlist's labels. */
+    giftRule?: GiftRuleInput | null;
+    giftOptions?: readonly GiftOptionCandidate[];
   }>;
   action: (formData: FormData) => void | Promise<void>;
 }>;
@@ -312,11 +318,10 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
               Chiến dịch đã lên lịch nên không đổi được điều kiện nhận quà. Hãy tắt rồi sao chép thành bản nháp mới nếu cần đổi.
             </p>
           ) : null}
-          <p className="mt-3 text-xs text-neutral-700">
-            Số lượng/giá trị tối thiểu, số suất tối đa và danh sách quà được cấu hình ở bước quy tắc.
-          </p>
         </fieldset>
       ) : null}
+
+      {isGift ? <GiftQuantityGiftFields initialOptions={initialData?.giftOptions ?? []} initialRule={initialData?.giftRule ?? null} trigger={giftTrigger} /> : null}
 
       {!isGift ? <GiftQuantityTierFields campaignId={initialData?.id ?? null} initialRule={initialData?.tierRule ?? null} /> : null}
 

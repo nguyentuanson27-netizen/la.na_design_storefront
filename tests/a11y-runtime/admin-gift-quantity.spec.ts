@@ -89,6 +89,7 @@ async function stopServer() {
 async function cleanupDatabase() {
   await prisma.$executeRaw`DELETE FROM "GiftQuantityCampaign" WHERE "name" LIKE ${`%${runId}%`}`;
   await prisma.$executeRaw`DELETE FROM "ProductMirror" WHERE "id" = ${productId}`;
+  await prisma.$executeRaw`DELETE FROM "ProductMirror" WHERE "id" LIKE ${`gq13b-${runId}-%`}`;
   await prisma.user.deleteMany({ where: { email: adminEmail } });
 }
 
@@ -112,14 +113,16 @@ test.beforeAll(async () => {
   await prisma.giftQuantityCampaign.create({
     data: {
       id: scheduledId, kind: "GIFT_ITEM", name: scheduledName, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
-      giftTrigger: "QUANTITY", minimumQuantity: 2, isEnabled: true, enabledAt: new Date(), startsAt: scheduledStart, endsAt: scheduledEnd,
+      // A published campaign always has an explicit duplicate policy (publish refuses an unset one), so the
+      // fixture does too: an unset value would make an untouched form save look like a rule change.
+      giftTrigger: "QUANTITY", minimumQuantity: 2, allowDuplicateGifts: false, isEnabled: true, enabledAt: new Date(), startsAt: scheduledStart, endsAt: scheduledEnd,
     },
   });
 
   await prisma.giftQuantityCampaign.create({
     data: {
       id: preciseId, kind: "GIFT_ITEM", name: preciseName, scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"],
-      giftTrigger: "QUANTITY", minimumQuantity: 2, isEnabled: true, enabledAt: new Date(), startsAt: preciseStart, endsAt: preciseEnd,
+      giftTrigger: "QUANTITY", minimumQuantity: 2, allowDuplicateGifts: false, isEnabled: true, enabledAt: new Date(), startsAt: preciseStart, endsAt: preciseEnd,
     },
   });
 
@@ -640,4 +643,149 @@ test("GQ09b moving between Sửa links remounts the edit form and never writes c
   expect(savedB.stackPriority).toBe(32);
   expect(savedB.tiers.map((tier) => [tier.minQuantity, tier.discountValue])).toEqual([[3, 20000]]);
   expect(savedB.stackPeers.map((peer) => [peer.peerKind, peer.peerCampaignId])).toEqual([["CLEARANCE", "*"]]);
+});
+
+// --- GQ13b: the gift rule form (thresholds, cap, duplicates, allowlist, entitlement preview)
+
+async function giftProduct(suffix: string, options: Readonly<{ stock?: number }> = {}) {
+  const { stock = 5 } = options;
+  const id = `gq13b-${runId}-${suffix}`;
+  const created = await prisma.productMirror.create({
+    data: {
+      id, pancakeShopId: 920942, pancakeProductId: `${id}-ext`, slug: `${id}-slug`, name: `GQ13b ${suffix} ${runId}`,
+      isActive: true, isPresent: true, syncedAt: new Date(),
+      variants: {
+        create: {
+          id: `${id}-v`, pancakeVariationId: `${id}-var`, color: "Hồng", size: "M", sku: `GQ13B-${suffix}`, isActive: true, isPresent: true,
+          pancakeRetailPrice: 100_000, syncedAt: new Date(),
+          warehouseStocks: stock > 0 ? { create: { pancakeWarehouseId: `gq13b-${runId}`, quantity: stock, syncedAt: new Date() } } : undefined,
+        },
+      },
+    },
+    include: { variants: true },
+  });
+  return created.variants[0]!.id;
+}
+
+test("GQ13b gift form: threshold, cap, duplicates and allowlist round-trip through the real form, with a live entitlement preview", async ({ page, context }) => {
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  const okVariant = await giftProduct("ok", { stock: 5 });
+  await giftProduct("dry", { stock: 0 });
+  const comboVariant = await giftProduct("combo");
+  const partVariant = await giftProduct("part");
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: comboVariant, componentVariantId: partVariant, quantity: 1, syncedAt: new Date() } });
+
+  await context.addCookies(adminCookies);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await watchDocumentTitle(page);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  const name = "GQ13b Gift " + runId;
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(name);
+  await page.getByRole("combobox", { name: "Nhận quà khi" }).selectOption("QUANTITY");
+  await page.getByRole("checkbox", { name: "Set váy" }).check();
+  await page.getByRole("textbox", { name: "Số lượng tối thiểu (N)" }).fill("2");
+  await page.getByRole("textbox", { name: "Số quà tối đa mỗi đơn (tùy chọn)" }).fill("3");
+  await page.getByRole("checkbox", { name: /Cho phép tặng trùng quà/ }).check();
+
+  // Search is shop-scoped and tells the operator why a variant cannot be chosen.
+  const search = page.getByRole("searchbox", { name: "Tìm quà theo tên, SKU, màu hoặc size" });
+  await search.fill(runId);
+  await search.press("Enter");
+  await expect(page.getByRole("status").filter({ hasText: "Tìm thấy 4 phiên bản." })).toBeVisible();
+  const results = page.getByRole("list", { name: "Kết quả tìm quà" });
+  await expect(results.getByRole("listitem").filter({ hasText: "ok " + runId })).toContainText("kho 5");
+  await expect(results.getByRole("listitem").filter({ hasText: "dry " + runId })).toContainText("hết hàng sẵn sàng");
+  await expect(results.getByRole("listitem").filter({ hasText: "combo " + runId })).toContainText("là combo");
+  await expect(results.getByRole("button", { name: /Thêm .*dry/ })).toBeDisabled();
+  await expect(results.getByRole("button", { name: /Thêm .*combo/ })).toBeDisabled();
+  await results.getByRole("button", { name: /Thêm .*ok /i }).click();
+  const chosen = page.getByRole("list", { name: "Quà đã chọn" });
+  await expect(chosen.getByRole("listitem")).toHaveCount(1);
+  await expect(results.getByRole("button", { name: /Đã chọn/ })).toBeDisabled();
+
+  // The preview is the real entitlement engine on a sample line: floor(Q / N), then the per-order cap.
+  await page.getByRole("textbox", { name: "Thử thêm số lượng (tùy chọn)" }).fill("10");
+  await page.getByRole("button", { name: "Xem trước quyền lợi" }).click();
+  const table = page.getByRole("table", { name: "Số quà tặng theo số lượng minh họa" });
+  await expect(table.getByRole("row", { name: /Q=1 / })).toContainText("0");
+  await expect(table.getByRole("row", { name: /Q=2 / })).toContainText("Còn thiếu 2 chiếc");
+  await expect(table.getByRole("row", { name: /Q=4 / })).toContainText("Còn thiếu 2 chiếc");
+  const capped = table.getByRole("row", { name: /Q=10 / });
+  await expect(capped).toContainText("Đã chạm giới hạn quà mỗi đơn");
+  await expect(table.getByRole("row", { name: /Q=6 / }).getByRole("cell").nth(1)).toHaveText("3");
+  await expect(table.getByRole("row", { name: /Q=10 / }).getByRole("cell").nth(0)).toHaveText("5");
+  await expect(table.getByRole("row", { name: /Q=10 / }).getByRole("cell").nth(1)).toHaveText("3");
+
+  await expectSettledDocumentTitle(page);
+  const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
+  expect(accessibility.violations).toEqual([]);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)).toBe(false);
+
+  await page.getByRole("button", { name: "Tạo bản nháp" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+  const created = await prisma.giftQuantityCampaign.findFirstOrThrow({ where: { name }, include: { giftOptions: true } });
+  expect([created.giftTrigger, created.minimumQuantity, created.maxGiftsPerOrder, created.allowDuplicateGifts, created.isEnabled]).toEqual(["QUANTITY", 2, 3, true, false]);
+  expect(created.giftOptions.map((option) => option.variantId)).toEqual([okVariant]);
+
+  // Edit: everything is read back; swapping the allowlist keeps an unavailable variant visible with its reason.
+  await page.goto(PAGE + "?edit=" + created.id, { waitUntil: "networkidle" });
+  await expect(page.getByRole("textbox", { name: "Số lượng tối thiểu (N)" })).toHaveValue("2");
+  await expect(page.getByRole("textbox", { name: "Số quà tối đa mỗi đơn (tùy chọn)" })).toHaveValue("3");
+  await expect(page.getByRole("checkbox", { name: /Cho phép tặng trùng quà/ })).toBeChecked();
+  await expect(page.getByRole("list", { name: "Quà đã chọn" }).getByRole("listitem")).toContainText("ok " + runId);
+  await page.getByRole("textbox", { name: "Số lượng tối thiểu (N)" }).fill("4");
+  await page.getByRole("checkbox", { name: /Cho phép tặng trùng quà/ }).uncheck();
+  await page.getByRole("button", { name: /Bỏ .*ok / }).click();
+  await expect(page.getByRole("list", { name: "Quà đã chọn" })).toHaveCount(0);
+  const editSearch = page.getByRole("searchbox", { name: "Tìm quà theo tên, SKU, màu hoặc size" });
+  await editSearch.fill("part " + runId);
+  await editSearch.press("Enter");
+  await page.getByRole("list", { name: "Kết quả tìm quà" }).getByRole("button", { name: /Thêm/ }).click();
+  await page.getByRole("button", { name: "Lưu thay đổi" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=ok");
+  const edited = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: created.id }, include: { giftOptions: true } });
+  expect([edited.minimumQuantity, edited.maxGiftsPerOrder, edited.allowDuplicateGifts]).toEqual([4, 3, false]);
+  expect(edited.giftOptions.map((option) => option.variantId)).toEqual([partVariant]);
+
+  // A stored option that stops being giftable stays visible with its reason (the server refuses it at publish).
+  await prisma.warehouseStock.updateMany({ where: { variantId: partVariant }, data: { quantity: 0 } });
+  await page.goto(PAGE + "?edit=" + created.id, { waitUntil: "networkidle" });
+  await expect(page.getByRole("list", { name: "Quà đã chọn" })).toContainText("Hiện không tặng được: hết hàng sẵn sàng");
+  expect(errors).toEqual([]);
+});
+
+test("GQ13b gift form: a subtotal gift previews boundaries, and malformed input is refused by the server with a typed message and no write", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  const name = "GQ13b Subtotal " + runId;
+  await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(name);
+  await page.getByRole("combobox", { name: "Nhận quà khi" }).selectOption("ORDER_SUBTOTAL");
+  await page.getByRole("combobox", { name: "Giá trị đơn hàng tính trên" }).selectOption("ALL_PAID_LINES");
+  // Fields follow the trigger: the subtotal ones show, the quantity one does not.
+  await expect(page.getByRole("textbox", { name: "Số lượng tối thiểu (N)" })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "Giá trị đơn hàng tối thiểu (VND)" }).fill("880000");
+
+  await page.getByRole("button", { name: "Xem trước quyền lợi" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Hãy chọn cách tặng quà" })).toBeVisible();
+  await page.getByRole("combobox", { name: "Cách tặng quà" }).selectOption("REPEAT_PER_THRESHOLD");
+  await page.getByRole("button", { name: "Xem trước quyền lợi" }).click();
+  const table = page.getByRole("table", { name: "Số quà tặng theo giá trị đơn hàng minh họa" });
+  await expect(table.getByRole("row", { name: /879\.999đ/ }).getByRole("cell").nth(0)).toHaveText("0");
+  await expect(table.getByRole("row", { name: /^880\.000đ/ }).getByRole("cell").nth(0)).toHaveText("1");
+  await expect(table.getByRole("row", { name: /1\.760\.000đ/ }).getByRole("cell").nth(0)).toHaveText("2");
+  await page.getByRole("combobox", { name: "Cách tặng quà" }).selectOption("ONCE");
+  await page.getByRole("button", { name: "Xem trước quyền lợi" }).click();
+  await expect(table.getByRole("row", { name: /1\.760\.000đ/ }).getByRole("cell").nth(0)).toHaveText("1");
+
+  // The client only hints; a malformed value is refused by the server and nothing is written.
+  await page.getByRole("textbox", { name: "Giá trị đơn hàng tối thiểu (VND)" }).fill("12abc");
+  await page.getByRole("button", { name: "Xem trước quyền lợi" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "số nguyên dương" })).toBeVisible();
+  await page.getByRole("button", { name: "Tạo bản nháp" }).click();
+  await expect(page).toHaveURL(PAGE + "?status=error&reason=INVALID_GIFT_MINIMUM_SUBTOTAL");
+  const status = page.locator("#promotion-admin-status");
+  await expect(status).toHaveAttribute("role", "alert");
+  await expect(status).toContainText("Giá trị đơn hàng tối thiểu để nhận quà phải là số nguyên dương");
+  expect(await prisma.giftQuantityCampaign.count({ where: { name } })).toBe(0);
 });
