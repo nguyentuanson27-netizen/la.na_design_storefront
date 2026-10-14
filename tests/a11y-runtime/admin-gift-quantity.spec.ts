@@ -16,6 +16,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
+import { PROMOTION_REVISION_ID } from "../../src/commerce/promotion-activation-service.ts";
 import { auth } from "../../src/auth/server.ts";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags.ts";
@@ -358,4 +359,37 @@ test("R04 a Scheduled campaign whose times carry seconds can be renamed through 
   await expect(page.locator("#promotion-admin-status")).toContainText("Tính năng quà tặng và giảm giá theo số lượng đang tắt");
   const unchanged = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: preciseId } });
   expect(unchanged.endsAt?.getTime()).toBe(preciseEnd.getTime());
+});
+
+test("GQ09a-F1 real Server Actions reject tier fields on Gift create and edit without any write", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  const beforeCount = await prisma.giftQuantityCampaign.count();
+  const [revision] = await prisma.$queryRaw<Array<{ revision: bigint }>>`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}`;
+  const original = await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: seededId } });
+  const payloads = [
+    [["tierRuleForm", "on"], ["tierUnit", "PERCENTAGE"], ["tierMinQuantity", "2"], ["tierDiscountValue", "10"]],
+    [["tierUnit", "BOGUS"], ["tierMinQuantity", "1.5"]],
+    Array.from({ length: 101 }, () => ["stackPeer", "PROMOTION:x"]),
+  ];
+  for (const edit of [false, true]) {
+    for (const payload of payloads) {
+      await page.goto(edit ? `${PAGE}?edit=${seededId}` : `${PAGE}?new=1`, { waitUntil: "networkidle" });
+      await page.getByRole("textbox", { name: "Tên chiến dịch" }).fill(`GQ09a rejected ${runId}`);
+      await page.evaluate((entries) => {
+        const form = document.querySelector<HTMLInputElement>('input[name="name"]')!.form!;
+        for (const [name, value] of entries) {
+          const input = document.createElement("input");
+          input.type = "hidden"; input.name = name!; input.value = value!;
+          form.appendChild(input);
+        }
+      }, payload);
+      await page.getByRole("button", { name: edit ? "Lưu thay đổi" : "Tạo bản nháp" }).click();
+      await expect(page).toHaveURL(`${PAGE}?status=error&reason=TIER_FIELDS_ON_GIFT`);
+      await expect(page.getByRole("alert")).toContainText("Chiến dịch quà tặng không có bậc giảm giá theo số lượng.");
+    }
+  }
+  expect(await prisma.giftQuantityCampaign.count()).toBe(beforeCount);
+  expect(await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: seededId } })).toEqual(original);
+  const [after] = await prisma.$queryRaw<Array<{ revision: bigint }>>`SELECT "revision" FROM "PromotionPricingRevision" WHERE "id" = ${PROMOTION_REVISION_ID}`;
+  expect(after!.revision).toBe(revision!.revision);
 });

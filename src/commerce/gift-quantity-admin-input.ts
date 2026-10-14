@@ -54,6 +54,7 @@ export type GiftQuantityDraftValues = Readonly<{
 }>;
 
 export type GiftQuantityDraftParseReason =
+  | "TIER_FIELDS_ON_GIFT"
   | "INVALID_KIND"
   | "INVALID_SCOPE_MODE"
   | "INVALID_GIFT_TRIGGER"
@@ -82,6 +83,8 @@ function strings(formData: FormData, field: string, max: number): string[] {
 export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuantityDraft {
   const kind = allowlisted(formData.get("kind"), GIFT_QUANTITY_KINDS);
   if (kind === null) return { ok: false, reason: "INVALID_KIND" };
+  const carriesTierRule = formCarriesTierRule(formData);
+  if (kind !== "QUANTITY_TIER" && carriesTierRule) return { ok: false, reason: "TIER_FIELDS_ON_GIFT" };
 
   const scopeMode = allowlisted(formData.get("scopeMode"), GIFT_QUANTITY_SCOPE_MODES);
   if (scopeMode === null) return { ok: false, reason: "INVALID_SCOPE_MODE" };
@@ -108,7 +111,7 @@ export function parseGiftQuantityDraftForm(formData: FormData): ParsedGiftQuanti
   if (!startsAt.ok || !endsAt.ok) return { ok: false, reason: "INVALID_DATE_TIME" };
 
   let tierRule: TierRuleInput | null = null;
-  if (kind === "QUANTITY_TIER" && formCarriesTierRule(formData)) {
+  if (kind === "QUANTITY_TIER" && carriesTierRule) {
     const parsedRule = parseTierRuleForm(formData);
     if (!parsedRule.ok) return { ok: false, reason: parsedRule.reason };
     tierRule = parsedRule.value;

@@ -38,6 +38,7 @@ const BASE_MESSAGES: Record<GiftQuantityFailure["reason"], string> = {
   FROZEN_SET_INVALID: "Không thể chốt danh sách sản phẩm cho chiến dịch này.",
   KIND_IMMUTABLE: "Không thể đổi loại chiến dịch sau khi đã tạo. Hãy tạo chiến dịch mới.",
   INVALID_KIND: "Loại chiến dịch không hợp lệ.",
+  TIER_FIELDS_ON_GIFT: "Chiến dịch quà tặng không có bậc giảm giá theo số lượng.",
   INVALID_SCOPE_MODE: "Kiểu phạm vi áp dụng không hợp lệ.",
   INVALID_GIFT_TRIGGER: "Điều kiện nhận quà không hợp lệ.",
   INVALID_SUBTOTAL_SCOPE: "Phạm vi tính giá trị đơn hàng không hợp lệ.",
