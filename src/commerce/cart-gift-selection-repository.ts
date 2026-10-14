@@ -1,21 +1,41 @@
 /**
  * Persistence for the buyer's gift choices (GQ11).
  *
- * This module only stores and reads choices. It does not decide whether a choice is *allowed* --
- * campaign active, variant in the allowlist, within the entitlement, in stock -- which is GQ12's
- * authorization, recomputed from the live cart. Nothing read from here is ever a price or an
- * entitlement: a row says "the buyer picked this", and a row whose `campaignRevision` no longer
- * matches the campaign is reported stale for the buyer to re-confirm, never repaired in place.
+ * THIS IS A LOW-LEVEL PRIMITIVE, NOT AN AUTHORITY. It stores and reads choices; it does not decide
+ * whether a choice is *allowed* (campaign active, variant in the allowlist, within the entitlement,
+ * in stock, the buyer's cart). Only the gift selection mutation (GQ12) may call `setCartGiftSelection`,
+ * after it has read the live campaign and validated scope, entitlement and stock under the cart lock.
+ * Nothing read from here is a price or an entitlement.
+ *
+ * `freshness: "CURRENT"` means only that the stored revision equals the campaign's revision now. It
+ * does NOT mean the buyer approved the current rule, and an empty `issues` list does NOT mean the
+ * choice is valid or consented. Callers (GQ12, cart UI, checkout, quote proof) must recompute the
+ * entitlement and obtain the buyer's explicit confirmation themselves; they must never treat a row, a
+ * CURRENT freshness or an empty `issues` as consent.
+ *
+ * Revision rule (no silent re-approval): a write is accepted only when the revision it supplies is the
+ * campaign's LIVE revision, checked in the same statement while the campaign row is share-locked.
+ * A future revision is refused, so an admin bump can never turn an old choice CURRENT; a bump leaves
+ * existing rows STALE until a write supplies the live revision.
+ *
+ * Lifecycle rule (FR-06, nothing silently lost): rows cascade only from the cart (the cart is gone).
+ * A hard delete of a chosen variant or campaign is RESTRICTed by the database, so a choice is never
+ * erased as an implicit opt-out. Catalog sync only soft-deletes (`isPresent`/`isActive` false) and
+ * campaigns are disabled, not deleted; the list reports those as `issues` so the buyer is told.
  *
  * Writes are single statements keyed by the `(cart, campaign, variant)` unique key, so concurrent
  * writers cannot create a duplicate or push a quantity past its bound. They set an absolute quantity
  * (idempotent on retry) rather than add to one.
  */
 
+import { randomUUID } from "node:crypto";
+
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 
 /** A client or a transaction. */
-type Client = Pick<PrismaClient, "cartGiftSelection"> | Pick<Prisma.TransactionClient, "cartGiftSelection">;
+type Client =
+  | Pick<PrismaClient, "cartGiftSelection" | "giftQuantityCampaign" | "$queryRaw">
+  | Pick<Prisma.TransactionClient, "cartGiftSelection" | "giftQuantityCampaign" | "$queryRaw">;
 
 /** Same as the `CartGiftSelection_quantity_check` CHECK and the per-campaign gift cap (`maxGiftsPerOrder <= 100`). */
 export const MAX_GIFT_SELECTION_QUANTITY = 100;
@@ -23,7 +43,7 @@ export const MAX_GIFT_SELECTION_QUANTITY = 100;
 export const MAX_GIFT_SELECTION_LINES = 100;
 const MAX_ID_LENGTH = 64;
 const MAX_CAMPAIGN_REVISION = 2_147_483_647;
-const PRISMA_FOREIGN_KEY_VIOLATION = "P2003";
+const POSTGRES_FOREIGN_KEY_VIOLATION = "23503";
 
 export type GiftSelectionFreshness = "CURRENT" | "STALE";
 
@@ -31,18 +51,30 @@ export type GiftSelectionFreshness = "CURRENT" | "STALE";
  * A stored choice. `campaignRevision` is the revision the buyer chose under; `currentCampaignRevision`
  * is the campaign's revision now. Neither is a price or an entitlement.
  */
+/**
+ * Why a stored choice must be shown to the buyer rather than relied on. Empty does NOT mean valid or
+ * approved. Stock here is the mirrored warehouse total only (composite and reserved capacity are
+ * GQ10/GQ12's call), so `NO_MIRRORED_STOCK` is an advisory signal that errs towards telling the buyer.
+ */
+export type GiftSelectionIssue = "STALE_REVISION" | "CAMPAIGN_DISABLED" | "VARIANT_INACTIVE" | "NO_MIRRORED_STOCK";
+
 export type CartGiftSelectionRecord = Readonly<{
   campaignId: string;
   variantId: string;
   quantity: number;
   campaignRevision: number;
   currentCampaignRevision: number;
+  /** Revision match only. NOT buyer approval. */
   freshness: GiftSelectionFreshness;
+  campaignEnabled: boolean;
+  variantActive: boolean;
+  mirroredStock: number;
+  issues: readonly GiftSelectionIssue[];
 }>;
 
 export type CartGiftSelectionKey = Readonly<{ cartId: string; campaignId: string; variantId: string }>;
 
-export type GiftSelectionWriteFailure = "INVALID_KEY" | "INVALID_QUANTITY" | "INVALID_REVISION" | "REFERENCE_NOT_FOUND";
+export type GiftSelectionWriteFailure = "INVALID_KEY" | "INVALID_QUANTITY" | "INVALID_REVISION" | "REFERENCE_NOT_FOUND" | "REVISION_MISMATCH";
 
 function validKey(key: CartGiftSelectionKey): boolean {
   return [key.cartId, key.campaignId, key.variantId].every(
@@ -51,13 +83,18 @@ function validKey(key: CartGiftSelectionKey): boolean {
 }
 
 /**
- * Sets the buyer's chosen quantity for one gift. Absolute and idempotent: it is a single
- * `INSERT .. ON CONFLICT DO UPDATE` on the `(cart, campaign, variant)` key, so concurrent callers
- * leave exactly one row holding one writer's quantity and revision (last writer wins), never a sum.
+ * Sets the buyer's chosen quantity for one gift. Absolute and idempotent: one
+ * `INSERT .. SELECT .. ON CONFLICT DO UPDATE` on the `(cart, campaign, variant)` key, so concurrent
+ * callers leave exactly one row holding one writer's quantity and revision (last writer wins), never a sum.
  *
- * `REFERENCE_NOT_FOUND` means the cart, the variant or the campaign does not exist, or the campaign
- * is not a gift campaign. Inside an interactive transaction the failed statement also aborts that
- * transaction (PostgreSQL), so treat it as final there. Whether the choice is *allowed* is GQ12's call.
+ * `campaignRevision` must be the campaign's live revision (GIFT_ITEM campaigns only). The campaign row
+ * is share-locked in the same statement, so a concurrent admin bump waits for the write and a bump that
+ * already committed makes it fail: a wrong or future revision is never stored. Otherwise
+ * `REVISION_MISMATCH`. `REFERENCE_NOT_FOUND` means the campaign (or a gift campaign of that id), the cart
+ * or the variant does not exist. Inside an interactive transaction a database error aborts that
+ * transaction (PostgreSQL), so treat `REFERENCE_NOT_FOUND` from a missing cart/variant as final there.
+ *
+ * Authorization, scope, entitlement and stock are NOT checked here: see the module note.
  */
 export async function setCartGiftSelection(
   client: Client,
@@ -70,23 +107,36 @@ export async function setCartGiftSelection(
   if (!Number.isSafeInteger(input.campaignRevision) || input.campaignRevision < 1 || input.campaignRevision > MAX_CAMPAIGN_REVISION) {
     return { ok: false, reason: "INVALID_REVISION" };
   }
+  let written: Array<{ id: string }>;
   try {
-    await client.cartGiftSelection.upsert({
-      where: { cartId_campaignId_variantId: { cartId: input.cartId, campaignId: input.campaignId, variantId: input.variantId } },
-      create: {
-        cartId: input.cartId,
-        campaignId: input.campaignId,
-        variantId: input.variantId,
-        quantity: input.quantity,
-        campaignRevision: input.campaignRevision,
-      },
-      update: { quantity: input.quantity, campaignRevision: input.campaignRevision },
-    });
+    written = await client.$queryRaw<Array<{ id: string }>>`
+      INSERT INTO "CartGiftSelection" ("id", "cartId", "campaignId", "campaignKind", "variantId", "quantity", "campaignRevision", "updatedAt")
+      SELECT ${randomUUID()}, ${input.cartId}, c."id", 'GIFT_ITEM', ${input.variantId}, ${input.quantity}, c."revision", NOW()
+      FROM "GiftQuantityCampaign" c
+      WHERE c."id" = ${input.campaignId} AND c."kind" = 'GIFT_ITEM' AND c."revision" = ${input.campaignRevision}
+      FOR SHARE OF c
+      ON CONFLICT ("cartId", "campaignId", "variantId")
+      DO UPDATE SET "quantity" = EXCLUDED."quantity", "campaignRevision" = EXCLUDED."campaignRevision", "updatedAt" = NOW()
+      RETURNING "id"`;
   } catch (error) {
-    if ((error as { code?: unknown } | null)?.code === PRISMA_FOREIGN_KEY_VIOLATION) return { ok: false, reason: "REFERENCE_NOT_FOUND" };
+    if (isForeignKeyViolation(error)) return { ok: false, reason: "REFERENCE_NOT_FOUND" };
     throw error;
   }
-  return { ok: true };
+  if (written.length > 0) return { ok: true };
+  const campaign = await client.giftQuantityCampaign.findFirst({
+    where: { id: input.campaignId, kind: "GIFT_ITEM" },
+    select: { id: true },
+  });
+  return { ok: false, reason: campaign === null ? "REFERENCE_NOT_FOUND" : "REVISION_MISMATCH" };
+}
+
+function isForeignKeyViolation(error: unknown): boolean {
+  const e = error as { code?: unknown; meta?: { code?: unknown; driverAdapterError?: { cause?: { originalCode?: unknown } } } } | null;
+  return (
+    e?.meta?.code === POSTGRES_FOREIGN_KEY_VIOLATION ||
+    e?.meta?.driverAdapterError?.cause?.originalCode === POSTGRES_FOREIGN_KEY_VIOLATION ||
+    (typeof (error as { message?: unknown } | null)?.message === "string" && /foreign key constraint|23503/i.test((error as Error).message))
+  );
 }
 
 /** Removes one gift choice. Removing a choice that is not there is a successful no-op. */
@@ -118,8 +168,10 @@ export class CartGiftSelectionBoundError extends Error {
 }
 
 /**
- * The cart's gift choices in a stable order. Bounded: a cart with more than the bound is a defect,
- * not a case to truncate, so it fails closed instead of quietly dropping the rest.
+ * The cart's gift choices in a stable order, with the facts the buyer must be told about (stale
+ * revision, disabled campaign, inactive or unstocked variant). A choice is reported, never dropped or
+ * repaired. Bounded: a cart with more than the bound is a defect, not a case to truncate, so it fails
+ * closed instead of quietly dropping the rest.
  */
 export async function listCartGiftSelections(client: Client, cartId: string): Promise<readonly CartGiftSelectionRecord[]> {
   if (typeof cartId !== "string" || cartId.length === 0 || cartId.length > MAX_ID_LENGTH) return [];
@@ -127,17 +179,38 @@ export async function listCartGiftSelections(client: Client, cartId: string): Pr
     where: { cartId },
     orderBy: [{ campaignId: "asc" }, { variantId: "asc" }],
     take: MAX_GIFT_SELECTION_LINES + 1,
-    select: { campaignId: true, variantId: true, quantity: true, campaignRevision: true, campaign: { select: { revision: true } } },
+    select: {
+      campaignId: true,
+      variantId: true,
+      quantity: true,
+      campaignRevision: true,
+      campaign: { select: { revision: true, isEnabled: true } },
+      variant: { select: { isActive: true, isPresent: true, warehouseStocks: { select: { quantity: true } } } },
+    },
   });
   if (rows.length > MAX_GIFT_SELECTION_LINES) throw new CartGiftSelectionBoundError();
-  return rows.map((row) => ({
-    campaignId: row.campaignId,
-    variantId: row.variantId,
-    quantity: row.quantity,
-    campaignRevision: row.campaignRevision,
-    currentCampaignRevision: row.campaign.revision,
-    freshness: classifyGiftSelectionFreshness(row, row.campaign.revision),
-  }));
+  return rows.map((row) => {
+    const freshness = classifyGiftSelectionFreshness(row, row.campaign.revision);
+    const variantActive = row.variant.isActive && row.variant.isPresent;
+    const mirroredStock = row.variant.warehouseStocks.reduce((total, stock) => total + stock.quantity, 0);
+    const issues: GiftSelectionIssue[] = [];
+    if (freshness === "STALE") issues.push("STALE_REVISION");
+    if (!row.campaign.isEnabled) issues.push("CAMPAIGN_DISABLED");
+    if (!variantActive) issues.push("VARIANT_INACTIVE");
+    if (!(mirroredStock > 0)) issues.push("NO_MIRRORED_STOCK");
+    return {
+      campaignId: row.campaignId,
+      variantId: row.variantId,
+      quantity: row.quantity,
+      campaignRevision: row.campaignRevision,
+      currentCampaignRevision: row.campaign.revision,
+      freshness,
+      campaignEnabled: row.campaign.isEnabled,
+      variantActive,
+      mirroredStock,
+      issues,
+    };
+  });
 }
 
 /** A choice made under another revision of its campaign is stale: shown, never silently applied. */

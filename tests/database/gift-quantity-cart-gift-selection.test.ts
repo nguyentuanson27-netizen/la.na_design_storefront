@@ -38,6 +38,9 @@ async function seed() {
   for (const v of ["v1", "v2"]) {
     await prisma.variantMirror.create({ data: { id: `${P}-${v}`, pancakeVariationId: `${P}-${v}-var`, productId: `${P}-p`, pancakeRetailPrice: 100_000, syncedAt: NOW } });
   }
+  for (const v of ["v1", "v2"]) {
+    await prisma.warehouseStock.create({ data: { variantId: `${P}-${v}`, pancakeWarehouseId: `${P}-wh`, quantity: 10, syncedAt: NOW } });
+  }
   await prisma.cart.create({ data: { id: `${P}-cart`, expiresAt: new Date("2027-01-01T00:00:00Z") } });
   await prisma.cart.create({ data: { id: `${P}-cart2`, expiresAt: new Date("2027-01-01T00:00:00Z") } });
   await prisma.$executeRawUnsafe(
@@ -68,7 +71,7 @@ test("a gift choice is independent of the paid line for the same variant", async
   const paid = await prisma.cartItem.findMany({ where: { cartId: `${P}-cart` } });
   assert.deepEqual(paid.map((item) => [item.variantId, item.quantity]), [[`${P}-v1`, 2]], "the paid quantity is untouched");
   assert.deepEqual(await listCartGiftSelections(prisma, `${P}-cart`), [
-    { campaignId: `${P}-gift`, variantId: `${P}-v1`, quantity: 1, campaignRevision: 1, currentCampaignRevision: 1, freshness: "CURRENT" },
+    { campaignId: `${P}-gift`, variantId: `${P}-v1`, quantity: 1, campaignRevision: 1, currentCampaignRevision: 1, freshness: "CURRENT", campaignEnabled: false, variantActive: true, mirroredStock: 10, issues: ["CAMPAIGN_DISABLED"] },
   ]);
 });
 
@@ -76,10 +79,11 @@ test("set is absolute and idempotent: the same call twice leaves one row, a new 
   await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 1 });
   await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 1 });
   assert.equal(await count(), 1);
-  await setCartGiftSelection(prisma, { ...key(), quantity: 3, campaignRevision: 2 });
-  assert.deepEqual(await listCartGiftSelections(prisma, `${P}-cart`), [
-    { campaignId: `${P}-gift`, variantId: `${P}-v1`, quantity: 3, campaignRevision: 2, currentCampaignRevision: 1, freshness: "STALE" },
-  ]);
+  await setCartGiftSelection(prisma, { ...key(), quantity: 3, campaignRevision: 1 });
+  const [row] = await listCartGiftSelections(prisma, `${P}-cart`);
+  assert.equal(row?.quantity, 3);
+  assert.equal(row?.freshness, "CURRENT");
+  assert.equal(await count(), 1);
 });
 
 test("many gifts and campaigns per cart are kept apart and carts do not see each other's choices", async () => {
@@ -194,15 +198,83 @@ test("the unique key refuses a duplicate that bypasses the repository", async ()
   assert.equal(await count(), 1);
 });
 
-test("a choice goes stale when the campaign revision moves and is never repaired in place", async () => {
-  await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 1 });
-  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { revision: { increment: 1 } } });
+const bump = (by = 1) => prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { revision: { increment: by } } });
+const storedRevision = async () => (await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId: `${P}-cart` } })).campaignRevision;
+
+test("a revision the campaign does not have yet is refused, so a later bump cannot make a choice CURRENT", async () => {
+  // GQ11-F1: live revision is 1; the future revision 2 must not be storable.
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 2 }), { ok: false, reason: "REVISION_MISMATCH" });
+  assert.equal(await count(), 0);
+  // An existing row cannot be re-stamped with a future or an old revision either.
+  await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 });
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 5, campaignRevision: 2 }), { ok: false, reason: "REVISION_MISMATCH" });
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 5, campaignRevision: 99 }), { ok: false, reason: "REVISION_MISMATCH" });
   const [row] = await listCartGiftSelections(prisma, `${P}-cart`);
-  assert.deepEqual(row, { campaignId: `${P}-gift`, variantId: `${P}-v1`, quantity: 2, campaignRevision: 1, currentCampaignRevision: 2, freshness: "STALE" });
-  // Reading changed nothing; only an explicit set under the new revision makes it current again.
-  assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId: `${P}-cart` } })).campaignRevision, 1);
-  await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 2 });
-  assert.equal((await listCartGiftSelections(prisma, `${P}-cart`))[0]?.freshness, "CURRENT");
+  assert.equal(row?.quantity, 1, "a refused write changed nothing");
+  // The admin now bumps to 2: the old choice is STALE, not CURRENT.
+  await bump();
+  const [after] = await listCartGiftSelections(prisma, `${P}-cart`);
+  assert.deepEqual([after?.campaignRevision, after?.currentCampaignRevision, after?.freshness], [1, 2, "STALE"]);
+  assert.ok(after?.issues.includes("STALE_REVISION"));
+  // Refused for the old revision too once the campaign has moved on; the stored row is untouched.
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 }), { ok: false, reason: "REVISION_MISMATCH" });
+  assert.equal(await storedRevision(), 1);
+});
+
+test("stale becomes current only through a write that supplies the live revision, and a tier or unknown campaign stays distinct", async () => {
+  await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 1 });
+  await bump(2);
+  assert.equal((await listCartGiftSelections(prisma, `${P}-cart`))[0]?.freshness, "STALE");
+  assert.equal(await storedRevision(), 1, "reading and bumping never repaired the row");
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 2, campaignRevision: 3 }), { ok: true });
+  const [row] = await listCartGiftSelections(prisma, `${P}-cart`);
+  assert.deepEqual([row?.campaignRevision, row?.freshness], [3, "CURRENT"]);
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key({ campaignId: `${P}-tier` }), quantity: 1, campaignRevision: 1 }), { ok: false, reason: "REFERENCE_NOT_FOUND" });
+});
+
+test("a bump committing between the caller's read and its write cannot store a wrong revision", async () => {
+  // Deterministic: an admin transaction has bumped 1 -> 2 but not committed. A writer that read
+  // revision 1 must wait on the campaign row, then be refused once the bump commits.
+  let writerSettled = false;
+  let writer: Promise<unknown> = Promise.resolve();
+  await prisma.$transaction(async (tx) => {
+    await tx.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { revision: 2 } });
+    writer = setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 }).then((result) => {
+      writerSettled = true;
+      return result;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(writerSettled, false, "the write waits for the in-flight bump instead of racing it");
+  });
+  assert.deepEqual(await writer, { ok: false, reason: "REVISION_MISMATCH" });
+  assert.equal(await count(), 0);
+  // Statistical: writers that always read the live revision while bumps land never store a revision
+  // above the campaign's, and every stored row names a revision some writer legitimately held.
+  assert.deepEqual(await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 2 }), { ok: true });
+  const outcomes = await Promise.all([
+    ...Array.from({ length: 20 }, () => bump()),
+    ...Array.from({ length: 40 }, async (_, index) => {
+      const live = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: `${P}-gift` } })).revision;
+      return setCartGiftSelection(prisma, { ...key(), quantity: (index % 3) + 1, campaignRevision: live });
+    }),
+  ]);
+  const finalLive = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: `${P}-gift` } })).revision;
+  assert.ok((await storedRevision()) <= finalLive, "never a revision the campaign has not reached");
+  for (const outcome of outcomes) {
+    if (outcome !== undefined && "ok" in outcome) assert.ok(outcome.ok || outcome.reason === "REVISION_MISMATCH", "only a clean refusal, never an error");
+  }
+  assert.equal(await count(), 1);
+});
+
+test("a campaign disable (which bumps the revision) and an ended window keep the choice and report it", async () => {
+  await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 });
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { isEnabled: true } });
+  assert.deepEqual((await listCartGiftSelections(prisma, `${P}-cart`))[0]?.issues, []);
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { isEnabled: false, revision: { increment: 1 } } });
+  const [row] = await listCartGiftSelections(prisma, `${P}-cart`);
+  assert.equal(row?.quantity, 1);
+  assert.deepEqual(row?.issues, ["STALE_REVISION", "CAMPAIGN_DISABLED"]);
+  assert.equal(row?.campaignEnabled, false);
 });
 
 test("remove and clear are idempotent; clearing one campaign leaves the others", async () => {
@@ -221,19 +293,49 @@ test("remove and clear are idempotent; clearing one campaign leaves the others",
   assert.deepEqual(await clearCartGiftSelections(prisma, { cartId: "" }), { removed: 0 });
 });
 
-test("rows go with their cart, campaign or variant; the paid line goes only with its cart", async () => {
+test("a chosen variant or campaign cannot be hard-deleted away (no silent loss); only the cart cascades", async () => {
+  // GQ11-F2 / FR-06: the database refuses to erase the buyer's choice as an implicit opt-out.
   await prisma.cartItem.create({ data: { cartId: `${P}-cart`, variantId: `${P}-v1`, quantity: 1 } });
   await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 });
-  await setCartGiftSelection(prisma, { ...key({ variantId: `${P}-v2` }), quantity: 1, campaignRevision: 1 });
+  await assert.rejects(prisma.variantMirror.delete({ where: { id: `${P}-v1` } }));
+  await assert.rejects(prisma.productMirror.delete({ where: { id: `${P}-p` } }), "deleting the product would cascade to the chosen variant");
+  await assert.rejects(prisma.giftQuantityCampaign.delete({ where: { id: `${P}-gift` } }));
+  assert.equal(await count(), 1, "the choice is still there");
+  assert.equal(await prisma.cartItem.count({ where: { cartId: `${P}-cart` } }), 1, "and so is the paid line");
+  // An unrelated variant and campaign (no choice on them) delete as before.
   await prisma.variantMirror.delete({ where: { id: `${P}-v2` } });
-  assert.equal(await count(), 1);
-  await prisma.giftQuantityCampaign.delete({ where: { id: `${P}-gift` } });
-  assert.equal(await count(), 0);
-  await prisma.giftQuantityCampaign.create({ data: { id: `${P}-gift`, kind: "GIFT_ITEM", name: "GQ11 gift", scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["setVay"], giftTrigger: "QUANTITY", minimumQuantity: 2 } });
-  await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 });
+  await prisma.giftQuantityCampaign.delete({ where: { id: `${P}-tier` } });
+  // The cart is the only owner: when it goes, its choices and paid lines go with it.
   await prisma.cart.delete({ where: { id: `${P}-cart` } });
   assert.equal(await count(), 0);
   assert.equal(await prisma.cartItem.count({ where: { cartId: `${P}-cart` } }), 0);
+  // With the choice gone the explicit delete works.
+  await prisma.giftQuantityCampaign.delete({ where: { id: `${P}-gift` } });
+});
+
+test("a deactivated, removed-from-sync or out-of-stock variant keeps the choice and is reported", async () => {
+  await prisma.cartItem.create({ data: { cartId: `${P}-cart`, variantId: `${P}-v1`, quantity: 2 } });
+  await setCartGiftSelection(prisma, { ...key(), quantity: 1, campaignRevision: 1 });
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { isEnabled: true } });
+  const issues = async () => (await listCartGiftSelections(prisma, `${P}-cart`))[0]?.issues;
+  assert.deepEqual(await issues(), []);
+  // What catalog sync does to a variant that left Pancake: soft delete.
+  await prisma.variantMirror.update({ where: { id: `${P}-v1` }, data: { isPresent: false, isActive: false } });
+  assert.deepEqual(await issues(), ["VARIANT_INACTIVE"]);
+  await prisma.variantMirror.update({ where: { id: `${P}-v1` }, data: { isPresent: true, isActive: false } });
+  assert.deepEqual(await issues(), ["VARIANT_INACTIVE"]);
+  await prisma.variantMirror.update({ where: { id: `${P}-v1` }, data: { isActive: true } });
+  assert.deepEqual(await issues(), []);
+  // Out of stock: warehouse rows at zero, or sync removed them.
+  await prisma.warehouseStock.updateMany({ where: { variantId: `${P}-v1` }, data: { quantity: 0 } });
+  assert.deepEqual(await issues(), ["NO_MIRRORED_STOCK"]);
+  await prisma.warehouseStock.deleteMany({ where: { variantId: `${P}-v1` } });
+  const [row] = await listCartGiftSelections(prisma, `${P}-cart`);
+  assert.deepEqual([row?.quantity, row?.variantActive, row?.mirroredStock, row?.issues], [1, true, 0, ["NO_MIRRORED_STOCK"]]);
+  // Nothing was erased or repaired: the row and the paid line are exactly as written.
+  assert.equal(await count(), 1);
+  assert.equal(await storedRevision(), 1);
+  assert.equal((await prisma.cartItem.findFirstOrThrow({ where: { cartId: `${P}-cart` } })).quantity, 2);
 });
 
 test("a cart holding more than the bound fails closed instead of being truncated", async () => {
