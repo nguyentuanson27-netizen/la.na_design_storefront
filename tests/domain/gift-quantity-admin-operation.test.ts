@@ -49,6 +49,8 @@ const CONTRACT = {
   disableGiftQuantityAction: { operation: "disable", service: "disableGiftQuantityCampaign" },
   endGiftQuantityEarlyAction: { operation: "end-early", service: "endGiftQuantityCampaignEarly" },
   copyGiftQuantityAction: { operation: "copy", service: "copyGiftQuantityCampaign" },
+  setLegacyStackConsentAction: { operation: "set-legacy-consent", service: "setLegacyPromotionStackConsent" },
+  clearLegacyStackConsentAction: { operation: "clear-legacy-consent", service: "clearLegacyPromotionStackConsent" },
 } as const;
 
 test("every action reports under its own operation label and calls its own service", () => {
