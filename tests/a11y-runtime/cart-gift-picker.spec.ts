@@ -165,3 +165,27 @@ test("below-threshold shows shortfall; empty paid cart still shows stale gift to
   await expect(picker.getByRole("alert")).toHaveCount(0);
   await prisma.cart.delete({ where: { id: cartId } });
 });
+test("EX-21 after price sync with no gifts blocks checkout even at the legacy total; no-drop restores it", async ({ page }) => {
+  await prisma.giftQuantityCampaign.delete({ where: { id: campaignId } });
+  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 1 } });
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  const tierId = `${PREFIX}tier`;
+  await prisma.giftQuantityCampaign.create({ data: { id: tierId, kind: "QUANTITY_TIER", name: "Tier", isEnabled: true, enabledAt: new Date(),
+    scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], tierUnit: "FIXED_AMOUNT_PER_UNIT_VND", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+    tiers: { create: { minQuantity: 1, discountValue: 50_000 } } } });
+  await page.goto(`${URL}/cart`);
+  await expect(page.getByText("50.000", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
+  await prisma.variantMirror.update({ where: { id: paidId }, data: { pancakeRetailPrice: 40_000, pancakeRetailPriceAfterDiscount: 40_000 } });
+  await page.reload();
+  await expect(page.getByText("40.000", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText(/giảm giá theo số lượng không còn áp dụng.*giá hiện tại không hợp lệ/)).toBeVisible();
+  await expect(page.getByText(/Cần kiểm tra và xác nhận lại báo giá/)).toBeVisible();
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await prisma.giftQuantityCampaign.update({ where: { id: tierId }, data: { isEnabled: false } });
+  await page.reload();
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
+  await expect(page.getByText(/giảm giá theo số lượng không còn áp dụng/)).toHaveCount(0);
+});

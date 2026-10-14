@@ -136,8 +136,10 @@ export function buildCartViewModel(
   const state = input.giftState;
   const benefits = state?.quote.benefits;
   const paidBenefits = benefits?.enabled && benefits.ok ? benefits : null;
+  // EX-21: a successful recomputation is not buyer acknowledgement of the dropped tier.
+  const tierPriceInvalid = paidBenefits?.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID");
   // The current checkout proof/order snapshot cannot carry gifts or split paid segments yet.
-  const checkoutPending = input.benefitsUnavailable || (state && (!state.validation.ok || state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0))) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal);
+  const checkoutPending = input.benefitsUnavailable || tierPriceInvalid || (state && (!state.validation.ok || state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0))) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal);
 
   return Object.freeze({
     isEmpty: input.lines.length === 0,
@@ -170,7 +172,9 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
-    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Quyền lợi này chưa hỗ trợ đặt hàng; vui lòng quay lại khi bước đặt hàng đã sẵn sàng." } : {}),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : tierPriceInvalid
+      ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Cần kiểm tra và xác nhận lại báo giá trước khi đặt hàng; bước đặt hàng chưa hỗ trợ xác nhận thay đổi này."
+      : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Quyền lợi này chưa hỗ trợ đặt hàng; vui lòng quay lại khi bước đặt hàng đã sẵn sàng." } : {}),
   });
 }
 

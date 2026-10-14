@@ -12,7 +12,7 @@ function state(): CartGiftState {
   return {
     quote: { lines: [line], benefits: { enabled: true, ok: true, subtotalVnd: 290_003, groups: [
       { lineKey: "paid", quantity: 1, unitPriceVnd: 90_001 }, { lineKey: "paid", quantity: 2, unitPriceVnd: 100_001 },
-    ] } },
+    ], dropped: [] } },
     labels: [{ variantId: "gift", productId: "gift-product", productName: "Khăn", optionLabel: "Trắng / M" }],
     campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: [{ variantId: "gift", productId: "gift-product", composite: false, readyAvailable: 1 }] }],
     entitlements: [{ campaignId: "campaign", revision: 2, earned: 2, entitled: 2, unfulfillableForStock: 1, shortfallToNext: { quantity: 1, subtotalVnd: null } }],
@@ -27,6 +27,25 @@ test("cart displays split paid prices and total while gifts never increase paid 
   assert.equal(model.lineCount, 1);
   assert.equal(summarizeCartViewModel(model).count, 3);
   assert.equal(model.canCheckout, false, "checkout cannot silently lose gifts or charge the legacy tier price");
+});
+test("GQ14-F3: EX-21 blocks checkout and explains a dropped tier even when repriced total matches legacy", () => {
+  const paid = { ...line, quantity: 1, price: 40_000 };
+  const s = { ...state(), quote: { lines: [paid], benefits: { enabled: true, ok: true, subtotalVnd: 40_000,
+    groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 40_000 }],
+    dropped: [{ campaignId: "tier", reason: "TIER_PRICE_INVALID", otherCampaignId: null }],
+  } }, campaigns: [], entitlements: [], selections: [], validation: { ok: true, issues: [], summaries: [] } } as unknown as CartGiftState;
+  const model = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: s });
+  assert.match(model.subtotalText, /40.000/);
+  assert.equal(model.canCheckout, false);
+  assert.match(model.benefitsNotice!, /giảm giá theo số lượng không còn áp dụng.*giá.*không hợp lệ/i);
+  assert.match(model.benefitsNotice!, /xác nhận lại báo giá/i);
+  const unchanged = { ...s, quote: { ...s.quote, benefits: { ...s.quote.benefits, dropped: [] } } } as CartGiftState;
+  const noDrop = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: unchanged });
+  assert.equal(noDrop.canCheckout, true, "ON without dropped tiers retains checkout");
+  assert.equal(noDrop.benefitsNotice, undefined);
+  assert.equal(buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false }).canCheckout, true, "OFF parity");
+  const differentTotal = { ...unchanged, quote: { ...unchanged.quote, benefits: { ...unchanged.quote.benefits, subtotalVnd: 30_000 } } } as CartGiftState;
+  assert.equal(buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: differentTotal }).canCheckout, false, "different tier total remains blocked");
 });
 test("stale gifts preserve chosen revision/quantity and show stock, shortfall and duplicate policy", () => {
   const model = buildCartGiftPickerModel(state());
