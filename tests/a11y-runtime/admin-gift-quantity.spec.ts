@@ -430,7 +430,8 @@ test("GQ09b tier form previews EX-19 Q=3 to Q=4 and fails closed for invalid VND
   await page.getByRole("textbox", { name: "Giá mỗi chiếc trước tier (VND)" }).fill("40000");
   await previewButton.click();
   await expect(page.getByText(/TIER_PRICE_INVALID: bỏ toàn bậc/).first()).toBeVisible();
-  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("0đ");
+  // "Tiết kiệm" is exactly zero: the whole tier is dropped, not clamped to a 1đ unit price.
+  await expect(table.getByRole("row", { name: /Q=3/ }).getByRole("cell").nth(2)).toHaveText("0đ");
 
   await expectSettledDocumentTitle(page);
   const accessibility = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();

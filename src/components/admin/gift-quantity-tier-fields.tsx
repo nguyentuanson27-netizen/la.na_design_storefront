@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, useTransition } from "react";
+import { useId, useRef, useState, useTransition } from "react";
 
 import { checkGiftQuantityStackPriorityAction } from "@/app/admin/promotions/gift-quantity/actions";
 import {
@@ -140,6 +140,9 @@ export function GiftQuantityTierFields({
   const [preview, setPreview] = useState<Preview | null>(null);
   const [priorityNotice, setPriorityNotice] = useState<string | null>(null);
   const [checking, startChecking] = useTransition();
+  // Bumped whenever the priority input changes or a new check starts, so a slow answer for an old
+  // value can never be shown against the value the admin has typed since.
+  const checkToken = useRef(0);
 
   function changeTier(key: number, field: "min" | "value", value: string) {
     setTiers((previous) => previous.map((row) => row.key === key ? { ...row, [field]: value } : row));
@@ -152,15 +155,18 @@ export function GiftQuantityTierFields({
     const priority = plainInteger(stackPriority, MAX_STACK_PRIORITY, true);
     if (priority === null) { setPriorityNotice("Nhập số nguyên từ 0 đến " + MAX_STACK_PRIORITY + "."); return; }
     setPriorityNotice(null);
+    const token = ++checkToken.current;
     startChecking(async () => {
       try {
         const status = await checkGiftQuantityStackPriorityAction(priority, campaignId);
+        if (token !== checkToken.current) return;
         setPriorityNotice(status === "CONFLICT"
           ? "Priority này đã có chiến dịch còn hiệu lực sử dụng."
           : status === "AVAILABLE"
             ? "Chưa phát hiện xung đột; máy chủ sẽ kiểm tra lại khi bật chiến dịch."
             : "Không thể kiểm tra mức ưu tiên đã nhập.");
       } catch {
+        if (token !== checkToken.current) return;
         setPriorityNotice("Chưa thể kiểm tra; máy chủ vẫn sẽ kiểm tra khi bật chiến dịch.");
       }
     });
@@ -238,6 +244,7 @@ export function GiftQuantityTierFields({
           <input checked={stacking} name="stackingEnabled" onChange={(e) => {
             setStacking(e.target.checked);
             if (!e.target.checked) { setStackPriority(""); setPeers([]); }
+            checkToken.current += 1;
             setPriorityNotice(null);
           }} type="checkbox" />
           Cho phép cộng dồn khi cả hai chương trình đồng ý
@@ -246,7 +253,7 @@ export function GiftQuantityTierFields({
           <div className="mt-4 space-y-4">
             <div className="max-w-sm">
               <label className={labelClass} htmlFor={id + "-priority"}>Mức ưu tiên (0–{MAX_STACK_PRIORITY}, nhỏ hơn chạy trước)</label>
-              <input className={inputClass} id={id + "-priority"} inputMode="numeric" maxLength={10} name="stackPriority" onChange={(e) => { setStackPriority(e.target.value); setPriorityNotice(null); }} type="text" value={stackPriority} />
+              <input className={inputClass} id={id + "-priority"} inputMode="numeric" maxLength={10} name="stackPriority" onChange={(e) => { setStackPriority(e.target.value); checkToken.current += 1; setPriorityNotice(null); }} type="text" value={stackPriority} />
               <button className={buttonClass + " mt-3"} disabled={checking} onClick={preflightPriority} type="button">
                 {checking ? "Đang kiểm tra…" : "Kiểm tra mức ưu tiên"}
               </button>
