@@ -16,52 +16,37 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import {
+  isQuoteText,
+  MAX_QUOTE_ENTITLEMENTS,
+  MAX_QUOTE_GIFT_UNITS,
+  MAX_QUOTE_LINES,
+  MAX_QUOTE_STEPS_PER_LINE,
+  validateQuoteStructure,
+  type QuoteDiscountStepFacts,
+  type QuoteEntitlementFacts,
+  type QuoteLineFacts,
+  type QuoteStructureIssue,
+  type QuoteTotals,
+} from "./order-quote-rules.ts";
 
-export const MAX_ORDER_QUOTE_LINES = 200;
-export const MAX_ORDER_QUOTE_STEPS_PER_LINE = 8;
-export const MAX_ORDER_QUOTE_ENTITLEMENTS = 20;
-export const MAX_ORDER_QUOTE_GIFT_UNITS = 100;
-const MAX_VND = Number.MAX_SAFE_INTEGER;
-const LINE_ID_PATTERN = /^[A-Za-z0-9:_-]{1,200}$/;
+export const MAX_ORDER_QUOTE_LINES = MAX_QUOTE_LINES;
+export const MAX_ORDER_QUOTE_STEPS_PER_LINE = MAX_QUOTE_STEPS_PER_LINE;
+export const MAX_ORDER_QUOTE_ENTITLEMENTS = MAX_QUOTE_ENTITLEMENTS;
+export const MAX_ORDER_QUOTE_GIFT_UNITS = MAX_QUOTE_GIFT_UNITS;
 const FORMAT_PATTERN = /^laq[0-9]{1,3}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
-export type OrderQuoteDiscountStepInput = Readonly<{
-  campaignId: string;
-  source: "LEGACY" | "QUANTITY_TIER";
-  campaignKind: string;
-  priority: number | null;
-  inputPriceVnd: number;
-  outputPriceVnd: number;
-  appliedQuantity: number;
-}>;
+export type OrderQuoteDiscountStepInput = QuoteDiscountStepFacts;
 
-export type OrderQuoteLineInput = Readonly<{
-  lineId: string;
-  role: "PAID" | "GIFT";
+export type OrderQuoteLineInput = QuoteLineFacts & Readonly<{
   /** Internal variant id, kept as history; never shown to a browser. */
   variantId: string;
-  pancakeVariationId: string;
-  quantity: number;
-  unitPriceVnd: number;
-  lineTotalVnd: number;
   /** Unit price before any promotion step; null when the line was not discounted (and for gifts). */
   baseUnitPriceVnd: number | null;
-  fulfillmentState: "READY" | "PREORDER";
-  /** GIFT lines: the campaign and revision the gift was granted under. PAID lines: null. */
-  campaign: Readonly<{ id: string; revision: number }> | null;
-  discountSteps: readonly OrderQuoteDiscountStepInput[];
 }>;
 
-export type OrderQuoteEntitlementInput = Readonly<{
-  campaignId: string;
-  campaignRevision: number;
-  entitled: number;
-  selected: number;
-  skippedWhileAvailable: number;
-  contendedForSharedStock: number;
-  shortForStock: number;
-}>;
+export type OrderQuoteEntitlementInput = QuoteEntitlementFacts;
 
 export type OrderQuoteSnapshotInput = Readonly<{
   quoteFormat: string;
@@ -77,167 +62,31 @@ export type OrderQuoteSnapshotInput = Readonly<{
 }>;
 
 export type OrderQuoteSnapshotIssue =
+  | QuoteStructureIssue
   | "FORMAT_INVALID"
   | "DIGEST_INVALID"
-  | "MONEY_INVALID"
-  | "LINES_OUT_OF_BOUNDS"
-  | "LINE_ID_INVALID"
-  | "LINE_ID_DUPLICATE"
-  | "LINE_FIELDS_INVALID"
-  | "LINE_TOTAL_MISMATCH"
-  | "PAID_LINE_INVALID"
-  | "GIFT_LINE_INVALID"
-  | "DISCOUNT_CHAIN_INVALID"
-  | "PAID_SUBTOTAL_MISMATCH"
-  | "TOTAL_MISMATCH"
-  | "NO_PAID_LINES"
-  | "GIFT_UNITS_OUT_OF_BOUNDS"
-  | "ENTITLEMENT_INVALID"
-  | "ENTITLEMENT_MISMATCH"
   | "ACKNOWLEDGEMENT_REQUIRED"
   | "ACKNOWLEDGEMENT_UNNEEDED";
-
-const isUint = (value: unknown, max: number = MAX_VND): value is number =>
-  typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= max;
-const isPositive = (value: unknown, max: number = MAX_VND): value is number => isUint(value, max) && (value as number) >= 1;
-const isText = (value: unknown, max: number): value is string =>
-  typeof value === "string" && value.length >= 1 && value.length <= max;
-
-type Totals = Readonly<{ paidQuantity: number; giftQuantity: number; unclaimedSlots: number }>;
-
-function validateLine(line: OrderQuoteLineInput): OrderQuoteSnapshotIssue | null {
-  if (!isText(line.lineId, 200) || !LINE_ID_PATTERN.test(line.lineId)) return "LINE_ID_INVALID";
-  if (
-    (line.role !== "PAID" && line.role !== "GIFT") ||
-    (line.fulfillmentState !== "READY" && line.fulfillmentState !== "PREORDER") ||
-    !isText(line.variantId, 200) ||
-    !isText(line.pancakeVariationId, 200) ||
-    !isPositive(line.quantity, 2_147_483_647) ||
-    !isUint(line.unitPriceVnd) ||
-    !isUint(line.lineTotalVnd) ||
-    !Array.isArray(line.discountSteps) ||
-    line.discountSteps.length > MAX_ORDER_QUOTE_STEPS_PER_LINE
-  ) {
-    return "LINE_FIELDS_INVALID";
-  }
-  if (line.quantity * line.unitPriceVnd !== line.lineTotalVnd) return "LINE_TOTAL_MISMATCH";
-
-  if (line.role === "GIFT") {
-    if (
-      line.unitPriceVnd !== 0 ||
-      line.baseUnitPriceVnd !== null ||
-      line.fulfillmentState !== "READY" || // D-04: a free gift is never fulfilled from PREORDER/OVERSELL capacity
-      line.quantity > MAX_ORDER_QUOTE_GIFT_UNITS ||
-      line.discountSteps.length !== 0 ||
-      line.campaign === null ||
-      !isText(line.campaign.id, 200) ||
-      !isPositive(line.campaign.revision, 2_147_483_647)
-    ) {
-      return "GIFT_LINE_INVALID";
-    }
-    return null;
-  }
-
-  if (line.unitPriceVnd < 1 || line.campaign !== null) return "PAID_LINE_INVALID";
-  if (line.baseUnitPriceVnd !== null && (!isPositive(line.baseUnitPriceVnd) || line.baseUnitPriceVnd < line.unitPriceVnd)) {
-    return "PAID_LINE_INVALID";
-  }
-  // The ordered discount ledger must walk from the base price to the price the buyer pays.
-  const steps = line.discountSteps;
-  if (steps.length === 0) {
-    return line.baseUnitPriceVnd !== null && line.baseUnitPriceVnd !== line.unitPriceVnd ? "DISCOUNT_CHAIN_INVALID" : null;
-  }
-  if (line.baseUnitPriceVnd === null) return "DISCOUNT_CHAIN_INVALID";
-  let running = line.baseUnitPriceVnd;
-  for (const step of steps) {
-    if (
-      (step.source !== "LEGACY" && step.source !== "QUANTITY_TIER") ||
-      !isText(step.campaignId, 200) ||
-      !isText(step.campaignKind, 40) ||
-      !(step.priority === null || (typeof step.priority === "number" && Number.isSafeInteger(step.priority))) ||
-      !isPositive(step.inputPriceVnd) ||
-      !isPositive(step.outputPriceVnd) ||
-      !isPositive(step.appliedQuantity, 2_147_483_647) ||
-      step.outputPriceVnd > step.inputPriceVnd ||
-      step.inputPriceVnd !== running
-    ) {
-      return "DISCOUNT_CHAIN_INVALID";
-    }
-    running = step.outputPriceVnd;
-  }
-  return running === line.unitPriceVnd ? null : "DISCOUNT_CHAIN_INVALID";
-}
 
 /** Pure. Returns the first problem, or the derived totals the database will re-check at commit. */
 export function validateOrderQuoteSnapshot(
   input: OrderQuoteSnapshotInput,
-): Readonly<{ ok: true; totals: Totals }> | Readonly<{ ok: false; issue: OrderQuoteSnapshotIssue }> {
+): Readonly<{ ok: true; totals: QuoteTotals }> | Readonly<{ ok: false; issue: OrderQuoteSnapshotIssue }> {
   const fail = (issue: OrderQuoteSnapshotIssue) => ({ ok: false as const, issue });
   if (typeof input !== "object" || input === null) return fail("MONEY_INVALID");
   if (typeof input.quoteFormat !== "string" || !FORMAT_PATTERN.test(input.quoteFormat)) return fail("FORMAT_INVALID");
   if (typeof input.quoteDigest !== "string" || !DIGEST_PATTERN.test(input.quoteDigest)) return fail("DIGEST_INVALID");
-  if (!isPositive(input.paidSubtotalVnd) || !isUint(input.shippingFeeVnd) || !isPositive(input.totalVnd)) return fail("MONEY_INVALID");
-  if (input.paidSubtotalVnd + input.shippingFeeVnd !== input.totalVnd) return fail("TOTAL_MISMATCH");
-  if (!Array.isArray(input.lines) || input.lines.length === 0 || input.lines.length > MAX_ORDER_QUOTE_LINES) return fail("LINES_OUT_OF_BOUNDS");
-  if (!Array.isArray(input.entitlements) || input.entitlements.length > MAX_ORDER_QUOTE_ENTITLEMENTS) return fail("ENTITLEMENT_INVALID");
 
-  const seen = new Set<string>();
-  let paidTotal = 0;
-  let paidQuantity = 0;
-  let giftQuantity = 0;
-  const giftByCampaign = new Map<string, { revision: number; quantity: number }>();
-  for (const line of input.lines) {
-    const issue = validateLine(line);
-    if (issue !== null) return fail(issue);
-    if (seen.has(line.lineId)) return fail("LINE_ID_DUPLICATE");
-    seen.add(line.lineId);
-    if (line.role === "PAID") {
-      paidTotal += line.lineTotalVnd;
-      paidQuantity += line.quantity;
-      if (!Number.isSafeInteger(paidTotal) || !Number.isSafeInteger(paidQuantity)) return fail("MONEY_INVALID");
-    } else {
-      giftQuantity += line.quantity;
-      const campaign = line.campaign!;
-      const current = giftByCampaign.get(campaign.id);
-      if (current !== undefined && current.revision !== campaign.revision) return fail("ENTITLEMENT_MISMATCH");
-      giftByCampaign.set(campaign.id, { revision: campaign.revision, quantity: (current?.quantity ?? 0) + line.quantity });
-    }
-  }
-  if (paidQuantity === 0) return fail("NO_PAID_LINES");
-  if (giftQuantity > MAX_ORDER_QUOTE_GIFT_UNITS) return fail("GIFT_UNITS_OUT_OF_BOUNDS");
-  if (paidTotal !== input.paidSubtotalVnd) return fail("PAID_SUBTOTAL_MISMATCH");
-
-  const campaigns = new Set<string>();
-  let unclaimedSlots = 0;
-  for (const entitlement of input.entitlements) {
-    if (
-      !isText(entitlement?.campaignId, 200) ||
-      campaigns.has(entitlement.campaignId) ||
-      !isPositive(entitlement.campaignRevision, 2_147_483_647) ||
-      !isUint(entitlement.entitled, MAX_ORDER_QUOTE_GIFT_UNITS) ||
-      !isUint(entitlement.selected, MAX_ORDER_QUOTE_GIFT_UNITS) ||
-      !isUint(entitlement.skippedWhileAvailable, MAX_ORDER_QUOTE_GIFT_UNITS) ||
-      !isUint(entitlement.contendedForSharedStock, MAX_ORDER_QUOTE_GIFT_UNITS) ||
-      !isUint(entitlement.shortForStock, MAX_ORDER_QUOTE_GIFT_UNITS) ||
-      entitlement.selected > entitlement.entitled ||
-      entitlement.skippedWhileAvailable + entitlement.contendedForSharedStock + entitlement.shortForStock !== entitlement.entitled - entitlement.selected
-    ) {
-      return fail("ENTITLEMENT_INVALID");
-    }
-    campaigns.add(entitlement.campaignId);
-    const taken = giftByCampaign.get(entitlement.campaignId);
-    if (entitlement.selected !== (taken?.quantity ?? 0)) return fail("ENTITLEMENT_MISMATCH");
-    if (taken !== undefined && taken.revision !== entitlement.campaignRevision) return fail("ENTITLEMENT_MISMATCH");
-    unclaimedSlots += entitlement.entitled - entitlement.selected;
-  }
-  // A gift of a campaign that has no entitlement row would be a gift out of thin air.
-  for (const campaignId of giftByCampaign.keys()) if (!campaigns.has(campaignId)) return fail("ENTITLEMENT_MISMATCH");
+  const verdict = validateQuoteStructure(input);
+  if (!verdict.ok) return verdict;
+  // The stored line also keeps the internal variant id as history.
+  for (const line of input.lines) if (!isQuoteText(line.variantId, 200)) return fail("LINE_FIELDS_INVALID");
 
   const acknowledged = input.acknowledgedAt !== null;
   if (acknowledged && !(input.acknowledgedAt instanceof Date && Number.isFinite(input.acknowledgedAt.getTime()))) return fail("ACKNOWLEDGEMENT_REQUIRED");
-  if (unclaimedSlots > 0 && !acknowledged) return fail("ACKNOWLEDGEMENT_REQUIRED");
-  if (unclaimedSlots === 0 && acknowledged) return fail("ACKNOWLEDGEMENT_UNNEEDED");
-  return { ok: true, totals: { paidQuantity, giftQuantity, unclaimedSlots } };
+  if (verdict.totals.unclaimedSlots > 0 && !acknowledged) return fail("ACKNOWLEDGEMENT_REQUIRED");
+  if (verdict.totals.unclaimedSlots === 0 && acknowledged) return fail("ACKNOWLEDGEMENT_UNNEEDED");
+  return verdict;
 }
 
 export type OrderQuoteSnapshotWriteResult =
@@ -258,7 +107,7 @@ export async function replaceOrderQuoteSnapshot(
   orderId: string,
   input: OrderQuoteSnapshotInput,
 ): Promise<OrderQuoteSnapshotWriteResult> {
-  if (!isText(orderId, 200)) return { ok: false, reason: "SNAPSHOT_INVALID", issue: "LINES_OUT_OF_BOUNDS" };
+  if (!isQuoteText(orderId, 200)) return { ok: false, reason: "SNAPSHOT_INVALID", issue: "LINES_OUT_OF_BOUNDS" };
   const verdict = validateOrderQuoteSnapshot(input);
   if (!verdict.ok) return { ok: false, reason: "SNAPSHOT_INVALID", issue: verdict.issue };
 
@@ -348,7 +197,7 @@ type ReadClient = Pick<Prisma.TransactionClient, "orderQuoteSnapshot">;
 
 /** The stored quote, lines in a stable order, or `null` for an order that has none (every legacy order). */
 export async function readOrderQuoteSnapshot(client: ReadClient, orderId: string): Promise<StoredOrderQuoteSnapshot | null> {
-  if (!isText(orderId, 200)) return null;
+  if (!isQuoteText(orderId, 200)) return null;
   const row = await client.orderQuoteSnapshot.findUnique({
     where: { orderId },
     include: {

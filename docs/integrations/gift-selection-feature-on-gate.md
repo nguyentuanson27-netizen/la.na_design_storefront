@@ -60,3 +60,15 @@ equals legacy (EX-21). This is presentation protection, not a checkout authority
 Before feature-on, GQ16–GQ18 must re-quote and guard direct `/checkout` access and submission,
 reject stale proof even when totals match, and require buyer acknowledgement of changed provenance.
 Those integration checks remain pending; hiding the cart CTA does not satisfy them.
+
+## GQ15 / GQ16 -- order quote snapshot and signed quote proof
+
+Built and tested, **not yet wired**: nothing writes `OrderQuoteSnapshot` and nothing issues or verifies the `laq3` / `laa1` tokens until the checkout DRAFT step (GQ17) and the submit/reprice handshake (GQ18). Until then the buyer checkout link stays withheld for any cart that has a gift or a split-price tier segment, so the legacy checkout cannot silently lose a benefit.
+
+Release gates this adds before the flag is turned on:
+
+- The migration `20261014120000_add_order_quote_snapshot` is additive with a written rollback (drop four tables, one enum, three functions). Apply it, and read it, before any deploy that contains GQ17.
+- An order that leaves DRAFT freezes its quote rows. Any flow that must re-quote after `VALIDATING` (none exists today) would have to create a new order, not edit the snapshot.
+- The acknowledgement endpoint (GQ19) must verify the buyer's render proof for the quote being acknowledged before it issues `laa1`; the token module deliberately does not decide that.
+- `vendorProjectionHash` / `vendorProjection` are empty until GQ20 writes the Pancake projection (ADR 0016 D-08); reconciliation (GQ21) compares read-back against that projection.
+
