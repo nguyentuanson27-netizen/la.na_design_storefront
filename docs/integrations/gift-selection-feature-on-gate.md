@@ -7,17 +7,33 @@ merged, `StorefrontCartRepository.getQuote()` now binds the persisted `createLeg
 to its injected client by default; GQ12 uses the same repository within its cart transaction.
 This wiring alone is **not evidence of full stacking semantics**.
 
-Before enabling `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` or passing Checkpoint C, verify this
-transactional read path with real database evidence. Do not add an alternate price calculation.
+## Consent integration verification (satisfied, 2026-10-14)
 
-Required database evidence through `createCartGiftSelectionService(...).get()` and `.set()` without
-an injected test reader: persisted two-way Flash 10% + tier 5% consent yields 855.000đ from 1.000.000đ,
-so a gift threshold of 880.000đ grants no gift. Clearing consent yields 900.000đ and the corresponding
-entitlement. Reader failures must return `LOOKUP_FAILED`; gate OFF must preserve exact legacy
-output and read no consent. These integration checks remain pending, not satisfied by pure engine tests.
+Evidence: `tests/database/gift-quantity-consent-integration.test.ts` 7/7 against a real PostgreSQL 16
+with all migrations applied. Every case goes through `createCartGiftSelectionService(...).get()` and
+`.set()`; the service has no consent-reader parameter, so the persisted `LegacyPromotionStackConsent`
+rows written by `setLegacyPromotionStackConsent` / `clearLegacyPromotionStackConsent` are the only
+source. Fixture: Flash 10% on 1.000.000đ, a tier 5% that names `FLASH_SALE:*` and stacks, and a gift
+campaign with an 880.000đ threshold (`ORDER_SUBTOTAL`, `ALL_PAID_LINES`).
 
-GQ13 remains deferred. Checkout/proof/order/reservation work (GQ15–GQ18), live Pancake calls and
-production enablement are outside this review fix. H1/H5 and all other feature-on gates remain open.
+| Case | Result |
+| --- | --- |
+| Persisted two-way consent | `get()` quote 855.000đ, gift entitlement 0, `set()` returns `SELECTION_INVALID`, no row written |
+| Consent cleared | `get()` quote 900.000đ, entitlement 1, `set()` stores the choice, validation ok |
+| Consent set again after a choice | entitlement drops to 0; the stored row stays visible and invalid (never deleted or replaced); re-saving is refused; removal (`quantity 0`) still works |
+| One-way (tier does not name the Flash Sale, or the legacy campaign has no consent row) | the tier steps aside, 900.000đ |
+| Consent read failure | `get()` and `set()` return `LOOKUP_FAILED` with no cause in the payload; nothing written or deleted; removal still works |
+| Gate OFF (unset, legacy activation only, `"1"`) | `get()` returns `{ enabled: false }`, `set()` returns `FEATURE_DISABLED`, zero SQL statements are issued (so no consent row is read), and `getQuote().lines` is byte-identical to `getLines` with no consent or gift table queried |
+
+Mutation check: replacing the default reader in `storefront-cart-repository.ts` with an empty one
+makes the persisted-consent and read-failure cases fail (4 of 7); the file was restored.
+
+This closes the "required before feature-on" item for **consent integration only**. Every other
+feature-on gate is still open: H1/H5, the default-OFF flag, GQ15–GQ18 checkout/proof/order/reservation,
+live Pancake evidence and production enablement. Do not add an alternate price calculation.
+
+GQ13a (server write for gift campaigns) is built separately; see the todo entry. GQ13b (gift UI),
+checkout and production enablement remain outside this gate.
 
 ## GQ14: dropped-tier acknowledgement gate
 
