@@ -1445,3 +1445,65 @@ test("review4 P1: a failed local confirmation keeps the remote order id, so an e
   assert.deepEqual(settled, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
   assert.deepEqual((await holds()).map((hold) => hold.state), ["COMMITTED"]);
 });
+
+// -- Fifth review round on PR #165 --------------------------------------------------------------------------------
+
+async function otherOrderHolding(variantId: string, quantity: number, state: "RESERVED" | "COMMITTED") {
+  const other = await prisma.orderMirror.create({ data: { publicCode: `${P}-other-${process.pid}-${(publicCodeCounter += 1)}` } });
+  const reserved = await createCapacityReservationRepository(prisma).reserveOrderCapacity({ orderId: other.id, lines: [{ variantId, quantity }] });
+  assert.equal(reserved.ok, true);
+  if (state === "COMMITTED") {
+    await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "SUBMITTING" } });
+    await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "COMMITTED", committedAt: NOW } });
+  }
+  return other;
+}
+
+test("review5 P1: another order's pending hold counts against the fresh Pancake stock, so two orders that fit alone cannot both be sent", async () => {
+  await seed({ gift: false });
+  // The mirror says 30. Another order has 27 pending (not in Pancake yet); this order's 3 are held on top.
+  await otherOrderHolding(paid.variantId, 27, "RESERVED");
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  // An outside sale takes one unit; the mirror has not synced. 29 - 3 >= 0 passes alone, 29 - 27 - 3 does not.
+  const pancake = fakePancake({ [paid.variationId]: { sellableStock: 29 } });
+  const service = submissionWithDrift(pancake, proof, async () => undefined);
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.deepEqual(pancake.calls.create, [], "nothing is sent");
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "STOCK_UNAVAILABLE"]);
+  assert.ok((await holds()).every((hold) => hold.state === "RELEASED"), "this order's units go back");
+
+  // With the stock really there the same order goes through: the check refuses the oversell, not the order.
+  const fine = fakePancake({ [paid.variationId]: { sellableStock: 30 } });
+  const again = submission(fine, issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!);
+  assert.equal((await again.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+});
+
+test("review5 P2: a committed order is already out of Pancake's live stock and is not subtracted from it a second time", async () => {
+  await seed({ gift: false });
+  await prisma.productSellingPolicy.create({ data: { productId: paid.productId, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  // Mirror 30; another order committed 27 whose handoff to the mirror has not happened. Advisory READY: 30 - 27 = 3.
+  await otherOrderHolding(paid.variantId, 27, "COMMITTED");
+  const facts = await renderedFacts();
+  assert.ok(facts.lines.every((line) => line.fulfillmentState === "READY"), "quoted READY: 3 units are left");
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  // Pancake already took those 27: live 3. Subtracting the committed 27 again would call this PREORDER (3 - 27 - 3 < 0).
+  const pancake = fakePancake({ [paid.variationId]: { sellableStock: 3 } });
+  const { service } = submission(pancake, proof);
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: (await lastOrder()).publicCode });
+  assert.equal(pancake.calls.create.length, 1);
+
+  // And a live stock that really no longer covers the units is still refused as a changed promise.
+  await cleanup();
+  await seed({ gift: false });
+  await prisma.productSellingPolicy.create({ data: { productId: paid.productId, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  await otherOrderHolding(paid.variantId, 27, "COMMITTED");
+  const proof2 = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const short = fakePancake({ [paid.variationId]: { sellableStock: 2 } });
+  const second = submission(short, proof2);
+  assert.equal((await second.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, false);
+  assert.deepEqual(short.calls.create, []);
+  assert.equal((await lastOrder()).syncErrorCode, "BENEFIT_REQUOTE_REQUIRED");
+});

@@ -76,6 +76,32 @@ export async function readAdvisoryHeldQuantities(
   return held;
 }
 
+/**
+ * Units held by reservations that have **not** reached Pancake yet: `RESERVED`, and the `SUBMITTING` /
+ * `UNKNOWN` holds whose write may be in flight or may not have landed (counted, because not counting a
+ * hold that has not landed would let both orders through).
+ *
+ * `COMMITTED` is deliberately absent, whether or not the mirror has been told. `readAdvisoryHeldQuantities`
+ * counts an un-handed-off `COMMITTED` hold because it answers "what is the *mirror* missing?"; the
+ * order it belongs to already exists in Pancake, so its units are already out of Pancake's own
+ * `sellableStock`. This function answers the other question, "what is spoken for that Pancake's live
+ * stock does not know about yet?", and subtracting a committed hold from live stock would count it twice.
+ */
+export async function readPendingHeldQuantities(
+  client: AdvisoryHoldReadClient,
+  variantIds: readonly string[],
+): Promise<ReadonlyMap<string, number>> {
+  const ids = [...new Set(variantIds)];
+  const held = new Map<string, number>(ids.map((id) => [id, 0]));
+  if (ids.length === 0) return held;
+  const resources = await client.capacityReservationResource.findMany({
+    where: { variantId: { in: ids }, reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
+    select: { variantId: true, quantity: true },
+  });
+  for (const resource of resources) held.set(resource.variantId, (held.get(resource.variantId) ?? 0) + resource.quantity);
+  return held;
+}
+
 type AdvisoryStockVariant = Readonly<{
   id: string;
   sellableStock: number;

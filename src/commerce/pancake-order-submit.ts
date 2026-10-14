@@ -26,7 +26,7 @@ import {
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
 import { resolveBenefitCheckoutQuote } from "./benefit-checkout-quote.ts";
 import { benefitQuoteStillHolds } from "./benefit-quote-commitments.ts";
-import { readAdvisoryHeldQuantities, withoutOrderHolds, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
+import { readPendingHeldQuantities, withoutOrderHolds, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 import { compareOrderReadBack } from "./pancake-order-readback-check.ts";
@@ -698,6 +698,11 @@ export function createPancakeOrderSubmissionService(
         pancakeVariationId: string;
         units: number;
         floor: number;
+        /**
+         * Units other orders hold that Pancake's live stock does not know about yet (benefit orders only).
+         * Subtracted with this order's own demand, so two orders that each fit alone cannot both pass.
+         */
+        heldElsewhere?: number;
       }>[];
     }>;
     type FinalizeInput = Readonly<{
@@ -770,7 +775,7 @@ export function createPancakeOrderSubmissionService(
           !Number.isSafeInteger(total) ||
           !liveResource ||
           !Number.isFinite(liveResource.sellableStock) ||
-          liveResource.sellableStock - total < resource.floor
+          liveResource.sellableStock - total - (resource.heldElsewhere ?? 0) < resource.floor
         ) {
           return reject("STOCK_UNAVAILABLE");
         }
@@ -1177,14 +1182,15 @@ export function createPancakeOrderSubmissionService(
         liveByVariationId.set(variation.id, liveByVariationId.has(variation.id) ? null : variation);
       }
 
-      // Units other orders hold, so the READY / PREORDER promise is judged on the same basis the buyer was
-      // quoted on (stock minus what is already spoken for), against the fresh Pancake stock rather than
-      // the mirror. The order's own hold is excluded: it is the stock this order is asking for.
-      let heldByOthers: ReadonlyMap<string, number>;
+      // Units other orders have spoken for that Pancake's live stock does not know about yet (pending holds
+      // only: a committed order is already out of the live figure, so subtracting it again would count it
+      // twice). Judged against the fresh Pancake stock, not the mirror, for the stock gate and for the
+      // READY / PREORDER promise alike. The order's own hold is excluded: it is what this order asks for.
+      let pendingByOthers: ReadonlyMap<string, number>;
       try {
         const resourceVariantIds = new Set<string>(demandVariantIds);
         for (const meta of variantMetaById.values()) for (const component of meta.components) resourceVariantIds.add(component.variantId);
-        heldByOthers = await readAdvisoryHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds]);
+        pendingByOthers = await readPendingHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds]);
       } catch {
         return resetValidation();
       }
@@ -1219,8 +1225,8 @@ export function createPancakeOrderSubmissionService(
           if (demand.gift === 0 && meta.policy.sellingMode === "PREORDER") {
             const units = demand.paid;
             const resources = meta.isComposite
-              ? meta.components.map((component) => ({ stock: liveByVariationId.get(component.pancakeVariationId)?.sellableStock, held: heldByOthers.get(component.variantId) ?? 0, needed: units * component.requiredQuantity }))
-              : [{ stock: live.sellableStock, held: heldByOthers.get(demand.variantId) ?? 0, needed: units }];
+              ? meta.components.map((component) => ({ stock: liveByVariationId.get(component.pancakeVariationId)?.sellableStock, held: pendingByOthers.get(component.variantId) ?? 0, needed: units * component.requiredQuantity }))
+              : [{ stock: live.sellableStock, held: pendingByOthers.get(demand.variantId) ?? 0, needed: units }];
             if (resources.some((resource) => typeof resource.stock !== "number" || !Number.isFinite(resource.stock) || resource.stock - resource.held - resource.needed < 0)) liveState = "PREORDER";
           }
           if (signedStates.size !== 1 || !signedStates.has(liveState)) requote = true;
@@ -1230,7 +1236,7 @@ export function createPancakeOrderSubmissionService(
         // units may be flexible, the free ones may not. Otherwise the variant keeps its own policy.
         const floor = demand.gift > 0 ? 0 : capacityFloorForMode(meta.policy.sellingMode, meta.policy.negativeStockLimit);
         const units = demand.paid + demand.gift;
-        const resources: Array<{ pancakeVariationId: string; units: number; floor: number }> = [];
+        const resources: Array<{ pancakeVariationId: string; units: number; floor: number; heldElsewhere?: number }> = [];
         if (meta.isComposite) {
           if (demand.gift > 0) return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
           for (const component of meta.components) {
@@ -1243,15 +1249,16 @@ export function createPancakeOrderSubmissionService(
               !Number.isSafeInteger(componentUnits) ||
               !liveComponent ||
               !Number.isFinite(liveComponent.sellableStock) ||
-              liveComponent.sellableStock - componentUnits < floor
+              liveComponent.sellableStock - (pendingByOthers.get(component.variantId) ?? 0) - componentUnits < floor
             ) {
               return reject("STOCK_UNAVAILABLE");
             }
-            resources.push({ pancakeVariationId: component.pancakeVariationId, units: componentUnits, floor });
+            resources.push({ pancakeVariationId: component.pancakeVariationId, units: componentUnits, floor, heldElsewhere: pendingByOthers.get(component.variantId) ?? 0 });
           }
         } else {
-          if (!Number.isFinite(live.sellableStock) || live.sellableStock - units < floor) return reject("STOCK_UNAVAILABLE");
-          resources.push({ pancakeVariationId: demand.pancakeVariationId, units, floor });
+          const heldElsewhere = pendingByOthers.get(demand.variantId) ?? 0;
+          if (!Number.isFinite(live.sellableStock) || live.sellableStock - heldElsewhere - units < floor) return reject("STOCK_UNAVAILABLE");
+          resources.push({ pancakeVariationId: demand.pancakeVariationId, units, floor, heldElsewhere });
         }
         liveCapacityPlans.push({ variantId: demand.variantId, sellingMode: demand.gift > 0 ? "STANDARD" : meta.policy.sellingMode, resources });
       }
