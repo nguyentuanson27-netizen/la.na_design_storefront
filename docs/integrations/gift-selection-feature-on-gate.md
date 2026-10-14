@@ -18,3 +18,12 @@ output and read no consent. These integration checks remain pending, not satisfi
 
 GQ13 remains deferred. Checkout/proof/order/reservation work (GQ15–GQ18), live Pancake calls and
 production enablement are outside this review fix. H1/H5 and all other feature-on gates remain open.
+
+## GQ14: dropped-tier acknowledgement gate
+
+[PR #159, GQ14-F3 / comment 4266695929](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/159#discussion_r4266695929), 2026-10-14:
+the cart withholds checkout and explains `TIER_PRICE_INVALID`, even if the recomputed paid total
+equals legacy (EX-21). This is presentation protection, not a checkout authority guard.
+Before feature-on, GQ16–GQ18 must re-quote and guard direct `/checkout` access and submission,
+reject stale proof even when totals match, and require buyer acknowledgement of changed provenance.
+Those integration checks remain pending; hiding the cart CTA does not satisfy them.
