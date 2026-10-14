@@ -62,6 +62,12 @@ jobs:
           docker run --rm --entrypoint python "$PROJECT_SLUG:flow-worker-ci" -m pip check
           chrome_version="$(docker run --rm --entrypoint /opt/google/chrome/chrome "$PROJECT_SLUG:flow-worker-ci" --version)"
           echo "Image Chrome: $chrome_version"
+          {
+            echo "### Flow worker image"
+            echo "\`$chrome_version\`"
+            echo
+            echo "After one live Flow generation passes on this build, record the four-part version as \`LA_FLOW_WORKER_CHROME_VERSION\` in the VPS \`.env.production\`; \`deploy.sh\` refuses a build that reports a different Chrome."
+          } >> "$GITHUB_STEP_SUMMARY"
           # Google's apt repo serves only the current stable build, so the image carries whatever is
           # current; CI proves it is real Google Chrome at or above the major the worker was tested on.
           [[ "$chrome_version" =~ ^Google\ Chrome\ ([0-9]+)\. ]] || { echo "not Google Chrome: $chrome_version"; exit 1; }

@@ -203,13 +203,17 @@ export function priceStack(input: Readonly<{
   const sortedLines = [...lines].sort((a, b) => (a.lineKey < b.lineKey ? -1 : a.lineKey > b.lineKey ? 1 : 0));
   const sortedByIdTiers = [...tiers].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 
+  // A tier with an invalid configuration can price nothing, so it is set aside before any pairing:
+  // it is reported as TIER_CONFIG_INVALID (kept in `dropped` for audit) and never makes a valid
+  // campaign that merely shares a line with it step aside.
+  const invalidConfigTiers = sortedByIdTiers.filter((tier) => validateTierConfig(tier.config).length > 0);
+  const validConfigTiers = sortedByIdTiers.filter((tier) => validateTierConfig(tier.config).length === 0);
+
   // A tier whose in-scope paid quantity has not reached its first threshold changes no price, so it
   // takes no part in conflict detection: it can neither be dropped nor make another campaign drop.
   // Without this, an idle tier that merely shares a line with a valid one would cancel the valid
-  // tier's discount. Quantity is independent of price, so this is decided once, up front. A tier
-  // with an invalid configuration still participates, so it is reported as invalid, not silently idle.
-  const sortedTiers = sortedByIdTiers.filter((tier) => {
-    if (validateTierConfig(tier.config).length > 0) return true;
+  // tier's discount. Quantity is independent of price, so this is decided once, up front.
+  const sortedTiers = validConfigTiers.filter((tier) => {
     const startThreshold = tier.config.tiers[0]!.minQuantity;
     let eligible = 0;
     for (const line of sortedLines) if (tier.resolve(line.product)) eligible += line.quantity;
@@ -220,6 +224,7 @@ export function priceStack(input: Readonly<{
   const drop = (campaignId: string, reason: StackDropReason, otherCampaignId: string | null) => {
     if (!dropped.has(campaignId)) dropped.set(campaignId, { campaignId, reason, otherCampaignId });
   };
+  for (const tier of invalidConfigTiers) drop(tier.id, "TIER_CONFIG_INVALID", null);
 
   // Which lines each campaign touches.
   const tierLines = new Map<string, Set<string>>();

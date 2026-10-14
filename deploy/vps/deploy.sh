@@ -18,6 +18,8 @@ export DEPLOY_TARGET
 
 # shellcheck source=deploy/vps/project-identity.sh
 source "deploy/vps/project-identity.sh"
+# shellcheck source=deploy/vps/flow-chrome-gate.sh
+source "deploy/vps/flow-chrome-gate.sh"
 
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/$PROJECT_SLUG}"
 
@@ -26,6 +28,7 @@ RELEASE_SHA="$(grep -E '^RELEASE_SHA=' "$ENV_FILE" | tail -n 1 | cut -d= -f2-)"
 TRY_ON_ENABLED="$(grep -E '^LA_TRY_ON_ENABLED=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_PROVIDER="$(grep -E '^LA_TRY_ON_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_FLOW_URL="$(grep -E '^LA_TRY_ON_FLOW_URL=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
+FLOW_WORKER_CHROME_VERSION="$(grep -E '^LA_FLOW_WORKER_CHROME_VERSION=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_OVERFLOW_PROVIDER="$(grep -E '^LA_TRY_ON_OVERFLOW_PROVIDER=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_GCP_CREDENTIALS="$(grep -E '^GOOGLE_APPLICATION_CREDENTIALS=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
 TRY_ON_GCP_CREDENTIALS_DIR="$(grep -E '^LA_TRY_ON_GCP_CREDENTIALS_DIR=' "$ENV_FILE" | tail -n 1 | cut -d= -f2- || true)"
@@ -51,6 +54,13 @@ flow_services=()
 if [[ "$TRY_ON_ENABLED" == "true" && "$TRY_ON_PROVIDER" == "flow" ]]; then
   if [[ "$TRY_ON_FLOW_URL" != "http://flow-worker:8787" ]]; then
     echo "Flow try-on requires LA_TRY_ON_FLOW_URL=http://flow-worker:8787 on VPS" >&2
+    exit 1
+  fi
+  # The worker image is built on this host from Google's apt repo, which only serves the current
+  # Chrome. Production must run the browser CI verified and an operator smoke-tested, so the version
+  # is recorded in the env file and checked against the built image below. Fail before building.
+  if ! flow_chrome_version_is_valid "$FLOW_WORKER_CHROME_VERSION"; then
+    echo "Flow try-on requires LA_FLOW_WORKER_CHROME_VERSION=<four-part Chrome version> (see docs/integrations/google-flow-virtual-try-on.md)" >&2
     exit 1
   fi
   compose+=(--profile flow-try-on)
@@ -82,6 +92,19 @@ fi
 
 "${compose[@]}" config --quiet
 "${compose[@]}" build app ops "${flow_services[@]}"
+
+# The image just built must carry exactly the Chrome that was verified. Google can publish a newer
+# stable between that verification and this deploy; stop before any migration or cutover rather than
+# put an untested browser behind the signed-in Google session.
+if [[ "${#flow_services[@]}" -gt 0 ]]; then
+  flow_chrome_reported="$("${compose[@]}" run --rm --no-deps -e FLOW_WORKER_TOKEN= --entrypoint /opt/google/chrome/chrome flow-worker --version 2>/dev/null | tr -d '\r' | tail -n 1)"
+  if ! flow_chrome_matches "$flow_chrome_reported" "$FLOW_WORKER_CHROME_VERSION"; then
+    echo "Refusing deploy: the Flow worker image reports '${flow_chrome_reported:-no output}', but LA_FLOW_WORKER_CHROME_VERSION is $FLOW_WORKER_CHROME_VERSION." >&2
+    echo "Chrome moved since it was verified. Re-run the VPS container verification, live-smoke one Flow generation on the new build, then record the new version in $ENV_FILE." >&2
+    exit 1
+  fi
+  echo "Flow worker image carries the verified Chrome $FLOW_WORKER_CHROME_VERSION"
+fi
 
 # The host check above cannot see what the container sees: the app image runs as `node` (uid 1000)
 # with the credential mounted read-only, so a root-owned 0600 key passes there and fails here. Run in

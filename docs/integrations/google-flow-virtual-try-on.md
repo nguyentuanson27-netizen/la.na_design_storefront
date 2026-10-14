@@ -228,8 +228,15 @@ The image is intentionally reproducible at the credential-bearing boundary:
   build). The image therefore installs the current stable build; CI proves it is real Google Chrome at
   or above the tested major (155) and prints the version. To rebuild a specific browser, pass
   `--build-arg GOOGLE_CHROME_VERSION=<exact dpkg version>`: the build then fails if Google no longer
-  serves it. Reproducibility of the credential-bearing worker is the image itself, so deploy the image
-  CI verified rather than rebuilding it later.
+  serves it.
+- The VPS builds this image itself, so the tested browser is bound to production by a gate, not by the
+  build: `LA_FLOW_WORKER_CHROME_VERSION` in `deploy/vps/.env.production` must equal the version the
+  built image reports (`deploy.sh` runs `chrome --version` in it right after the build and refuses to
+  migrate or cut over on any difference). Record the four-part version printed as "Image Chrome" in the
+  CI run summary only after one live Flow generation passed on that build. When Google ships a newer
+  stable, the next deploy stops by design until CI and a smoke test have been repeated and the value
+  updated. This pins the browser version, not the image bytes: deploying a registry image by immutable
+  digest would be stricter and is not implemented.
 
 The worker runs real Chrome headed under Xvfb. Do not switch `GFLOW_CLI_HEADLESS=true`; that
 changes the browser mode gflow relies on for Flow/reCAPTCHA.

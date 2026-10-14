@@ -381,3 +381,23 @@ test("R03: quantity is counted over the tier's own scope, and an invalid configu
   const invalid = ok(priceStack({ lines: [line("a", 1, 100_000)], tiers: [tier("bad", { ...pctTier(10), tiers: [] })], legacyConsents: consents() }));
   assert.deepEqual(invalid.dropped.map((d) => [d.campaignId, d.reason]), [["bad", "TIER_CONFIG_INVALID"]]);
 });
+
+test("R03-F1: a tier with an invalid configuration is dropped as invalid and never makes a valid tier on the same lines step aside", () => {
+  // two products at 100.000d, both campaigns cover the whole cart, stacking OFF on both
+  const lines = [line("a", 1, 100_000, "p1"), line("b", 1, 100_000, "p2")];
+  const valid = tier("A", pctTier(10, 1));
+  const invalid = tier("B", { ...pctTier(10, 1), tiers: [] });
+  for (const tiers of [[valid, invalid], [invalid, valid]]) {
+    const result = ok(priceStack({ lines, tiers, legacyConsents: consents() }));
+    assert.equal(result.subtotalVnd, 180_000, "the valid tier still applies: 2 x 90.000d");
+    assert.deepEqual(result.dropped, [{ campaignId: "B", reason: "TIER_CONFIG_INVALID", otherCampaignId: null }]);
+  }
+  // an invalid config is reported even when it touches no line in the cart
+  const elsewhere = ok(priceStack({
+    lines,
+    tiers: [valid, tier("Z", { ...pctTier(10, 1), tiers: [] }, { resolve: productIn("nothing") })],
+    legacyConsents: consents(),
+  }));
+  assert.equal(elsewhere.subtotalVnd, 180_000);
+  assert.deepEqual(elsewhere.dropped.map((d) => [d.campaignId, d.reason]), [["Z", "TIER_CONFIG_INVALID"]]);
+});
