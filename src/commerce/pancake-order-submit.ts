@@ -26,6 +26,7 @@ import {
 import { PancakeHttpError } from "../integrations/pancake/client.ts";
 import { resolveBenefitCheckoutQuote } from "./benefit-checkout-quote.ts";
 import { benefitQuoteStillHolds } from "./benefit-quote-commitments.ts";
+import { readAdvisoryHeldQuantities, withoutOrderHolds, type AdvisoryHoldReadClient } from "./capacity-advisory.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 import { compareOrderReadBack } from "./pancake-order-readback-check.ts";
@@ -1091,7 +1092,7 @@ export function createPancakeOrderSubmissionService(
         {
           policy: ReturnType<typeof resolveSellingPolicy>;
           isComposite: boolean;
-          components: readonly Readonly<{ requiredQuantity: number; pancakeVariationId: string; isUsable: boolean }>[];
+          components: readonly Readonly<{ requiredQuantity: number; pancakeVariationId: string; variantId: string; isUsable: boolean }>[];
         }
       >;
       try {
@@ -1105,6 +1106,7 @@ export function createPancakeOrderSubmissionService(
                 orderBy: [{ componentVariantId: "asc" }],
                 select: {
                   quantity: true,
+                  componentVariantId: true,
                   componentVariant: {
                     select: {
                       pancakeVariationId: true,
@@ -1126,6 +1128,7 @@ export function createPancakeOrderSubmissionService(
               components: v.compositeComponents.map((edge) => ({
                 requiredQuantity: edge.quantity,
                 pancakeVariationId: edge.componentVariant.pancakeVariationId,
+                variantId: edge.componentVariantId,
                 isUsable: edge.componentVariant.isPresent && edge.componentVariant.product.isPresent && edge.componentVariant.product.pancakeShopId === shopId,
               })),
             },
@@ -1150,6 +1153,18 @@ export function createPancakeOrderSubmissionService(
         liveByVariationId.set(variation.id, liveByVariationId.has(variation.id) ? null : variation);
       }
 
+      // Units other orders hold, so the READY / PREORDER promise is judged on the same basis the buyer was
+      // quoted on (stock minus what is already spoken for), against the fresh Pancake stock rather than
+      // the mirror. The order's own hold is excluded: it is the stock this order is asking for.
+      let heldByOthers: ReadonlyMap<string, number>;
+      try {
+        const resourceVariantIds = new Set<string>(demandVariantIds);
+        for (const meta of variantMetaById.values()) for (const component of meta.components) resourceVariantIds.add(component.variantId);
+        heldByOthers = await readAdvisoryHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds]);
+      } catch {
+        return resetValidation();
+      }
+
       let requote = false;
       const mirrorRefresh: Array<{ variantId: string; freshBaseVnd: number; freshAfterDiscountVnd: number }> = [];
       const liveCapacityPlans: LiveCapacityPlan[] = [];
@@ -1168,6 +1183,23 @@ export function createPancakeOrderSubmissionService(
             requote = true;
             mirrorRefresh.push({ variantId: demand.variantId, freshBaseVnd: live.retailPrice, freshAfterDiscountVnd: live.retailPriceAfterDiscount });
           }
+        }
+
+        // The READY / PREORDER promise the buyer signed must still be true against the fresh Pancake stock:
+        // a preorder-policy item that was sold from ready stock but can no longer be covered by it now
+        // waits (and the reverse), which the buyer never accepted. The mirror comparison above cannot see
+        // a stock change Pancake has not yet synced; this one can.
+        if (demand.paid > 0) {
+          const signedStates = new Set(snapshot.lines.filter((line) => line.role === "PAID" && line.variantId === demand.variantId).map((line) => line.fulfillmentState));
+          let liveState: "READY" | "PREORDER" = "READY";
+          if (demand.gift === 0 && meta.policy.sellingMode === "PREORDER") {
+            const units = demand.paid;
+            const resources = meta.isComposite
+              ? meta.components.map((component) => ({ stock: liveByVariationId.get(component.pancakeVariationId)?.sellableStock, held: heldByOthers.get(component.variantId) ?? 0, needed: units * component.requiredQuantity }))
+              : [{ stock: live.sellableStock, held: heldByOthers.get(demand.variantId) ?? 0, needed: units }];
+            if (resources.some((resource) => typeof resource.stock !== "number" || !Number.isFinite(resource.stock) || resource.stock - resource.held - resource.needed < 0)) liveState = "PREORDER";
+          }
+          if (signedStates.size !== 1 || !signedStates.has(liveState)) requote = true;
         }
 
         // A variant that also carries a gift is judged as READY stock only (ADR 0016 D-04): the paid
@@ -1240,7 +1272,7 @@ export function createPancakeOrderSubmissionService(
         verifyCreatedOrder: async (pancakeOrderId) => {
           if (!gateway.readOrder) return "UNAVAILABLE";
           try {
-            const verdict = compareOrderReadBack(projection.lines, await gateway.readOrder(shopId, pancakeOrderId)).kind;
+            const verdict = compareOrderReadBack(projection.lines, await gateway.readOrder(shopId, pancakeOrderId), { orderId: pancakeOrderId, shopId }).kind;
             return verdict === "MATCH" ? "MATCH" : verdict === "UNAVAILABLE" ? "UNAVAILABLE" : "DRIFT";
           } catch {
             return "UNAVAILABLE";

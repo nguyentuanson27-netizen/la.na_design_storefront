@@ -140,7 +140,7 @@ export function createPancakeOrderGateway(
     async readOrder(shopId: number, orderId: string): Promise<PancakeOrderReadBack> {
       const checkedShopId = requireShopId(shopId);
       const checkedOrderId = requireOrderId(orderId);
-      return parsePancakeOrderReadBack(await client.getJson(`/shops/${checkedShopId}/orders/${checkedOrderId}`));
+      return parsePancakeOrderReadBack(await client.getJson(`/shops/${checkedShopId}/orders/${checkedOrderId}`), { shopId: checkedShopId, orderId: checkedOrderId });
     },
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {

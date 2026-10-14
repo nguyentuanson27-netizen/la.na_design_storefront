@@ -19,7 +19,16 @@ export type PancakeOrderReadBack = Readonly<{
   lines: readonly PancakeOrderReadBackLine[];
   /** `total_price` when the POS reports it as a safe integer, otherwise null. */
   totalPriceVnd: number | null;
+  /** The order's own `id`, as the canonical decimal string, when the POS reports one; otherwise null. */
+  orderId: string | null;
+  /** The order's own `shop_id` when reported as a positive safe integer; otherwise null. */
+  shopId: number | null;
+  /** The order's `status` when it is one of the documented numeric codes; otherwise null. */
+  status: number | null;
 }>;
+
+/** Pancake's numeric status for a canceled order (the same code `cancelOrder` writes and reads back). */
+export const PANCAKE_ORDER_CANCELED_STATUS = 7;
 
 export class PancakeOrderReadBackError extends Error {
   constructor(message: string) {
@@ -28,9 +37,15 @@ export class PancakeOrderReadBackError extends Error {
   }
 }
 
+import { PANCAKE_ORDER_STATUS_CODES } from "./order-status.ts";
+
 const MAX_READBACK_ITEMS = 500;
 
-export function parsePancakeOrderReadBack(payload: unknown): PancakeOrderReadBack {
+export function parsePancakeOrderReadBack(
+  payload: unknown,
+  /** When given, a reported `id` or `shop_id` that is not the one requested is refused outright. */
+  requested?: Readonly<{ shopId: number; orderId: string }>,
+): PancakeOrderReadBack {
   if (payload === null || typeof payload !== "object" || Array.isArray(payload)) {
     throw new PancakeOrderReadBackError("Order read-back payload is not an object");
   }
@@ -57,5 +72,15 @@ export function parsePancakeOrderReadBack(payload: unknown): PancakeOrderReadBac
     return { pancakeVariationId: record.variation_id, quantity: record.quantity, unitPriceVnd: price };
   });
   const total = order.total_price;
-  return { lines, totalPriceVnd: typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : null };
+  const reportedId = order.id;
+  const orderId = typeof reportedId === "number" && Number.isSafeInteger(reportedId) && reportedId > 0 ? String(reportedId) : null;
+  const reportedShop = order.shop_id;
+  const shopId = typeof reportedShop === "number" && Number.isSafeInteger(reportedShop) && reportedShop > 0 ? reportedShop : null;
+  const reportedStatus = order.status;
+  const status =
+    typeof reportedStatus === "number" && (PANCAKE_ORDER_STATUS_CODES as readonly number[]).includes(reportedStatus) ? reportedStatus : null;
+  if (requested !== undefined && ((orderId !== null && orderId !== requested.orderId) || (shopId !== null && shopId !== requested.shopId))) {
+    throw new PancakeOrderReadBackError("Order read-back is for another order or shop than the one requested");
+  }
+  return { lines, totalPriceVnd: typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : null, orderId, shopId, status };
 }

@@ -585,6 +585,10 @@ test("a benefit order is never sent to the POS by the legacy submission: it is c
 import type { PancakeCatalogVariation } from "../../src/integrations/pancake/catalog-contract.ts";
 import type { PancakeCreateOrderRequest } from "../../src/integrations/pancake/order-create.ts";
 import type { PancakeOrderReadBack } from "../../src/integrations/pancake/order-readback.ts";
+
+/** A read-back as a test writes it; the order's own identity defaults to the order that was asked about, status 0 (new). */
+type LooseReadBack = Omit<PancakeOrderReadBack, "orderId" | "shopId" | "status"> & Partial<Pick<PancakeOrderReadBack, "orderId" | "shopId" | "status">>;
+const identified = (readBack: LooseReadBack, orderId: string, shopId: number = SHOP): PancakeOrderReadBack => ({ orderId, shopId, status: 0, ...readBack });
 import { createPancakeOrderReconciliationService } from "../../src/commerce/pancake-order-reconciliation.ts";
 import { PancakeHttpError } from "../../src/integrations/pancake/client.ts";
 
@@ -596,7 +600,7 @@ function fakePancake(
   behaviour: Readonly<{
     create?: (request: PancakeCreateOrderRequest) => Promise<unknown>;
     /** What the POS reports for a created order; default echoes the request exactly. `null` removes the capability. */
-    readBack?: ((request: PancakeCreateOrderRequest | undefined) => Promise<PancakeOrderReadBack>) | null;
+    readBack?: ((request: PancakeCreateOrderRequest | undefined) => Promise<LooseReadBack>) | null;
   }> = {},
 ) {
   const calls = { fetch: 0, create: [] as PancakeCreateOrderRequest[], readBack: 0 };
@@ -621,14 +625,14 @@ function fakePancake(
       calls.create.push(request);
       return behaviour.create ? behaviour.create(request) : { id: 800_000 + calls.create.length };
     },
-    async readOrder(): Promise<PancakeOrderReadBack> {
+    async readOrder(_shopId: number, orderId: string): Promise<PancakeOrderReadBack> {
       calls.readBack += 1;
       const request = calls.create.at(-1);
-      if (behaviour.readBack) return behaviour.readBack(request);
-      return {
+      if (behaviour.readBack) return identified(await behaviour.readBack(request), orderId);
+      return identified({
         lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
         totalPriceVnd: (request?.items ?? []).reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
-      };
+      }, orderId);
     },
   };
   if (behaviour.readBack === null) delete (gateway as { readOrder?: unknown }).readOrder;
@@ -834,10 +838,17 @@ test("GQ20: a definite POS refusal rejects the order and releases the holds; the
 
 // -- GQ21: read-back, reconciliation and recovery of a benefit order ---------------------------------------------
 
-const reconciler = (gateway: Parameters<typeof createPancakeOrderReconciliationService>[0]["gateway"], confirmed: string[] = []) =>
+type ReconcilerGateway = Parameters<typeof createPancakeOrderReconciliationService>[0]["gateway"];
+const reconciler = (
+  loose: Omit<ReconcilerGateway, "readOrder"> & { readOrder?: (shopId: number, orderId: string) => Promise<LooseReadBack> },
+  confirmed: string[] = [],
+) =>
   createPancakeOrderReconciliationService({
     client: prisma,
-    gateway,
+    gateway: {
+      ...loose,
+      readOrder: loose.readOrder ? async (shopId: number, orderId: string) => identified(await loose.readOrder!(shopId, orderId), orderId, shopId) : undefined,
+    } as ReconcilerGateway,
     clock: () => NOW,
     absenceConfirmationAttempts: 1,
     absenceConfirmationDelayMs: 0,
@@ -907,7 +918,7 @@ test("GQ21: reconciliation settles a drifted order only once the POS matches; un
   assert.equal(order.state, "SYNC_UNKNOWN");
 
   const confirmed: string[] = [];
-  let stored: PancakeOrderReadBack = { lines: [{ pancakeVariationId: paid.variationId, quantity: 3, unitPriceVnd: 96_667 }], totalPriceVnd: 290_001 };
+  let stored: LooseReadBack = { lines: [{ pancakeVariationId: paid.variationId, quantity: 3, unitPriceVnd: 96_667 }], totalPriceVnd: 290_001 };
   const gateway = {
     searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }),
     readOrder: async () => stored,
@@ -1256,7 +1267,7 @@ test("review2 P1: an order total the POS did not report never confirms a benefit
   await seed({ gift: false });
   const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
   const noTotal = (request: PancakeCreateOrderRequest | undefined) =>
-    Promise.resolve<PancakeOrderReadBack>({
+    Promise.resolve<LooseReadBack>({
       lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
       totalPriceVnd: null,
     });
@@ -1305,4 +1316,68 @@ test("review2 P2: a marker search that finds another order id never replaces the
   // The same id from the marker search is the ordinary case and settles on the read-back.
   const settled = await reconciler({ searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }), readOrder: echo }, confirmed).reconcileOrder(order.publicCode);
   assert.deepEqual(settled, { ok: true, state: "CONFIRMED", pancakeOrderId: "800001", reservationsCommitted: 1 });
+});
+
+// -- Third review round on PR #165 --------------------------------------------------------------------------------
+
+test("review3 P1: a READY promise is judged against the fresh Pancake stock, not only the mirror", async () => {
+  await seed({ gift: false });
+  await prisma.productSellingPolicy.create({ data: { productId: paid.productId, sellingMode: "PREORDER", negativeStockLimit: -20 } });
+  const facts = await renderedFacts();
+  assert.ok(facts.lines.every((line) => line.fulfillmentState === "READY"), "mirrored stock 30: quoted READY");
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+
+  // Pancake already reports no ready stock; the mirror has not synced and still says 30. The PREORDER floor
+  // (-20) would let the old check pass: 0 - 3 >= -20.
+  const stale = fakePancake({ [paid.variationId]: { sellableStock: 0 } });
+  const first = submission(stale, proof);
+  const result = await first.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.deepEqual(stale.calls.create, [], "nothing is sent");
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "BENEFIT_REQUOTE_REQUIRED"]);
+  assert.ok((await holds()).every((hold) => hold.state === "RELEASED"));
+  assert.ok((await readOrderQuoteSnapshot(prisma, order.id))!.lines.every((line) => line.fulfillmentState === "READY"), "the signed promise is kept as audit");
+
+  // The same cart with fresh stock that really covers the units is not re-quoted: the order's own hold and
+  // the preorder floor do not make a true READY promise look false.
+  const healthy = fakePancake();
+  const again = submission(healthy, issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!);
+  assert.equal((await again.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.equal(healthy.calls.create.length, 1);
+});
+
+test("review3 P1: a canceled order, or one that is not the requested order and shop, is never CONFIRMED on a money match", async () => {
+  const cases: ReadonlyArray<readonly [string, Partial<Pick<PancakeOrderReadBack, "orderId" | "shopId" | "status">>]> = [
+    ["canceled (status 7)", { status: 7 }],
+    ["another order id", { orderId: "999" }],
+    ["another shop", { shopId: SHOP + 1 }],
+    ["no status", { status: null }],
+  ];
+  for (const [name, wrong] of cases) {
+    await cleanup();
+    await seed({ gift: false });
+    const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+    const exact = (request: PancakeCreateOrderRequest | undefined) =>
+      Promise.resolve<LooseReadBack>({
+        lines: (request?.items ?? []).map((item) => ({ pancakeVariationId: item.variation_id, quantity: item.quantity, unitPriceVnd: item.variation_info.retail_price })),
+        totalPriceVnd: (request?.items ?? []).reduce((sum, item) => sum + item.quantity * item.variation_info.retail_price, 0),
+        ...wrong,
+      });
+    const pancake = fakePancake({}, { readBack: exact });
+    const { service } = submission(pancake, proof);
+    await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+    const order = await lastOrder();
+    assert.equal(order.state, "SYNC_UNKNOWN", `create read-back: ${name}`);
+    assert.equal(order.pancakeOrderId, "800001", name);
+    assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], name);
+
+    // The same payload at reconciliation settles nothing either.
+    const confirmed: string[] = [];
+    const result = await reconciler({ searchOrderByMarker: async () => ({ kind: "FOUND" as const, orderId: "800001" }), readOrder: () => exact(pancake.calls.create[0]) }, confirmed).reconcileOrder(order.publicCode);
+    assert.equal(result.ok, false, `reconciliation: ${name}`);
+    assert.equal((await lastOrder()).state, "SYNC_UNKNOWN", name);
+    assert.deepEqual((await holds()).map((hold) => hold.state), ["UNKNOWN"], name);
+    assert.deepEqual(confirmed, [], name);
+  }
 });

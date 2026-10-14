@@ -186,7 +186,7 @@ export function createPancakeOrderReconciliationService({
       let detail = "read-back unavailable";
       if (expected !== null && gateway.readOrder) {
         try {
-          const comparison = compareOrderReadBack(expected, await gateway.readOrder(order.pancakeShopId, search.orderId));
+          const comparison = compareOrderReadBack(expected, await gateway.readOrder(order.pancakeShopId, search.orderId), { orderId: search.orderId, shopId: order.pancakeShopId });
           verdict = comparison.kind;
           if (comparison.kind === "DRIFT") detail = comparison.detail;
         } catch {

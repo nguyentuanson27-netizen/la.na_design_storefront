@@ -9,7 +9,7 @@
  * (`UNAVAILABLE`). Money is never compared "approximately": a one-đồng difference is a drift.
  */
 
-import type { PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
+import { PANCAKE_ORDER_CANCELED_STATUS, type PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
 
 export type ExpectedVendorLine = Readonly<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
 
@@ -17,6 +17,9 @@ export type ReadBackVerdict =
   | Readonly<{ kind: "MATCH" }>
   | Readonly<{ kind: "DRIFT"; detail: string }>
   | Readonly<{ kind: "UNAVAILABLE"; detail: string }>;
+
+/** Which remote order the read-back must be about; supplied by every production caller. */
+export type ReadBackIdentity = Readonly<{ orderId: string; shopId: number }>;
 
 const keyOf = (line: ExpectedVendorLine) => `${Buffer.byteLength(line.pancakeVariationId, "utf8")}:${line.pancakeVariationId}|${line.unitPriceVnd}`;
 
@@ -26,7 +29,22 @@ function summed(lines: readonly ExpectedVendorLine[]): Map<string, number> {
   return totals;
 }
 
-export function compareOrderReadBack(expected: readonly ExpectedVendorLine[], readBack: PancakeOrderReadBack): ReadBackVerdict {
+export function compareOrderReadBack(
+  expected: readonly ExpectedVendorLine[],
+  readBack: PancakeOrderReadBack,
+  identity?: ReadBackIdentity,
+): ReadBackVerdict {
+  // Money can match on an order that is not the one we mean, or one that no longer exists. The order's
+  // own id and shop must be reported and be the requested ones, its status must be a known code, and a
+  // canceled order (status 7) is never an order to confirm. No other status is given a meaning here: the
+  // repository has no evidence for one (docs/integrations/pancake-order-status-reconciliation.md).
+  if (identity !== undefined) {
+    if (readBack.orderId !== identity.orderId || readBack.shopId !== identity.shopId) {
+      return { kind: "UNAVAILABLE", detail: "the read-back does not identify the requested order and shop" };
+    }
+    if (readBack.status === null) return { kind: "UNAVAILABLE", detail: "the POS reported no readable order status" };
+    if (readBack.status === PANCAKE_ORDER_CANCELED_STATUS) return { kind: "DRIFT", detail: "the POS order is canceled" };
+  }
   const want = summed(expected);
   const have = summed(readBack.lines);
   if (want.size !== have.size) return { kind: "DRIFT", detail: "line set differs" };
