@@ -13,6 +13,7 @@ import {
   type MarkerSearchResult,
   type OrderSearchOptions,
 } from "./order-search.ts";
+import { parsePancakeOrderReadBack, type PancakeOrderReadBack } from "./order-readback.ts";
 import {
   isCanonicalPancakeOrderId,
   parsePancakeOrderStatusResponse,
@@ -130,6 +131,16 @@ export function createPancakeOrderGateway(
         shopId: checkedShopId,
         orderId: checkedOrderId,
       });
+    },
+
+    /**
+     * The lines and total the POS stored for an order (GQ21). A read; a payload it cannot read exactly
+     * throws, so the caller treats the order as unverified rather than guessing a match.
+     */
+    async readOrder(shopId: number, orderId: string): Promise<PancakeOrderReadBack> {
+      const checkedShopId = requireShopId(shopId);
+      const checkedOrderId = requireOrderId(orderId);
+      return parsePancakeOrderReadBack(await client.getJson(`/shops/${checkedShopId}/orders/${checkedOrderId}`));
     },
 
     async createOrder(request: PancakeCreateOrderRequest): Promise<unknown> {

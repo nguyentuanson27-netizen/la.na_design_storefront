@@ -23,9 +23,14 @@ export function parseGiftChoice(input: unknown): GiftChoiceInput | null {
   return r as GiftChoiceInput;
 }
 
-export type CartGiftState = Awaited<ReturnType<typeof readState>>;
+export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
 
-async function readState(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Readonly<Record<string, string | undefined>>) {
+/**
+ * The cart's quote, entitlements and validated gift selection, read inside the caller's transaction.
+ * Exported for the checkout DRAFT step (GQ17) so checkout prices a gift cart from the very same
+ * facts the cart page showed, not from a second derivation that could drift.
+ */
+export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Readonly<Record<string, string | undefined>>) {
   const cart = await tx.cart.findUniqueOrThrow({ where: { id: cartId }, select: { items: { select: { variantId: true, quantity: true, sourceProductSlug: true } } } });
   const quote = await createStorefrontCartRepository(tx as unknown as StorefrontCartReadClient).getQuote({ shopId, items: cart.items, now, env });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
@@ -105,7 +110,7 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
 
   async function get(now = new Date()) {
     if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false } as const;
-    return withCart(now, async (tx, cartId) => ({ ok: true, state: await readState(tx, cartId, shopId, now, env) } as const));
+    return withCart(now, async (tx, cartId) => ({ ok: true, state: await readCartGiftState(tx, cartId, shopId, now, env) } as const));
   }
 
   async function set(input: unknown, now = new Date()) {
@@ -118,7 +123,7 @@ export function createCartGiftSelectionService(client: PrismaClient, store: Cook
         await removeCartGiftSelection(tx, { cartId, ...choice });
         return { ok: true } as const;
       }
-      const state = await readState(tx, cartId, shopId, now, env);
+      const state = await readCartGiftState(tx, cartId, shopId, now, env);
       if (state.quote.lines.some((line) => !line.available)) return { ok: false, reason: "SELECTION_INVALID" } as const;
       const selection: GiftSelectionLine[] = [...state.selections.filter((row) => row.campaignId !== choice.campaignId || row.variantId !== choice.variantId), choice];
       const validation = validateGiftSelections({ campaigns: state.campaigns, entitlements: state.entitlements, selection });

@@ -1,7 +1,10 @@
 import type {
+  BenefitQuoteProofFacts,
+  NonclaimAcknowledgementRejection,
   RenderedQuoteProofFacts,
   RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
+import type { BenefitCheckoutOutcome } from "../operations/promotion-observability.ts";
 import type { ReservationState } from "./capacity-policy.ts";
 import type { HeldReservation, ReservationOutcome } from "./capacity-reservation.ts";
 import type { PancakeOrderSubmissionResult } from "./pancake-order-submit.ts";
@@ -19,7 +22,10 @@ type SnapshotFailureReason =
   | "CART_EMPTY"
   | "CART_LINE_UNAVAILABLE"
   | "MONEY_UNSUPPORTED"
-  | "PUBLIC_CODE_UNAVAILABLE";
+  | "PUBLIC_CODE_UNAVAILABLE"
+  | "BENEFIT_CHECKOUT_UNAVAILABLE"
+  | "VENDOR_PROJECTION_INFEASIBLE"
+  | "GIFT_SELECTION_INVALID";
 
 type SnapshotResult =
   | {
@@ -47,6 +53,18 @@ type SnapshotResult =
       reason: "QUOTE_UNPROVEN";
       quoteReason: RenderedQuoteProofRejection;
       refreshedQuote: RenderedQuoteProofFacts;
+    }
+  | {
+      ok: false;
+      reason: "BENEFIT_QUOTE_UNPROVEN";
+      quoteReason: RenderedQuoteProofRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
+    }
+  | {
+      ok: false;
+      reason: "NONCLAIM_UNACKNOWLEDGED";
+      acknowledgementReason: NonclaimAcknowledgementRejection;
+      refreshedBenefitQuote: BenefitQuoteProofFacts;
     };
 
 type SnapshotService = {
@@ -117,6 +135,12 @@ export type GuestCheckoutPriceChange = Readonly<{
   merchandiseSubtotalVnd: number;
   shippingFeeVnd: number;
   totalVnd: number;
+  /**
+   * GQ18 -- present when the buyer has to do more than accept a number: the gift slots they are not
+   * taking must be acknowledged explicitly (FR-06) before the order can continue. Never a reason to
+   * guess; the refreshed server render says which slots.
+   */
+  requires?: "NONCLAIM_ACKNOWLEDGEMENT";
 }>;
 
 export type GuestCheckoutSubmitResult =
@@ -136,6 +160,8 @@ export type GuestCheckoutSubmitDependencies = {
   orderSubmission: OrderSubmissionService;
   generatePublicCode: () => string;
   onQuoteProofRejection?: (reason: RenderedQuoteProofRejection) => void;
+  /** GQ24: a benefit checkout stopped or redirected before Pancake. Observation only; never throws into the order. */
+  onBenefitOutcome?: (outcome: BenefitCheckoutOutcome, proofReason?: RenderedQuoteProofRejection) => void;
   /**
    * I6b — optional so every existing caller keeps today's behaviour until it is wired. Absent means
    * no hold is taken, which is exactly the pre-I6b path; it is not a silent bypass, because the
@@ -193,6 +219,18 @@ function reservationStateForSubmission(
   return null;
 }
 
+function observeBenefitOutcome(
+  observer: GuestCheckoutSubmitDependencies["onBenefitOutcome"],
+  outcome: BenefitCheckoutOutcome,
+  proofReason?: RenderedQuoteProofRejection,
+): void {
+  try {
+    observer?.(outcome, proofReason);
+  } catch {
+    // Telemetry never changes a checkout outcome.
+  }
+}
+
 function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitResult {
   switch (reason) {
     case "INVALID_INPUT":
@@ -203,7 +241,12 @@ function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitR
       return { ok: false, status: "RETRYABLE", reason: "CART_UNAVAILABLE" };
     case "MONEY_UNSUPPORTED":
     case "PUBLIC_CODE_UNAVAILABLE":
+    case "BENEFIT_CHECKOUT_UNAVAILABLE":
+    case "VENDOR_PROJECTION_INFEASIBLE":
       return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE" };
+    case "GIFT_SELECTION_INVALID":
+      // The stored gift choice is left exactly as it is; the buyer goes back to the cart to decide.
+      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED" };
   }
 }
 
@@ -212,7 +255,9 @@ function isCartChangedReason(reason: string): boolean {
     reason === "VARIATION_UNAVAILABLE" ||
     reason === "PRICE_CHANGED" ||
     reason === "PRICE_UNAVAILABLE" ||
-    reason === "STOCK_UNAVAILABLE"
+    reason === "STOCK_UNAVAILABLE" ||
+    // GQ20: the quote the buyer proved no longer holds; the next submit creates a new order.
+    reason === "BENEFIT_REQUOTE_REQUIRED"
   );
 }
 
@@ -251,6 +296,9 @@ function mapSubmissionResult(
   }
 
   if (result.state === "REJECTED") {
+    if (result.reason === "VALIDATION_UNAVAILABLE") {
+      return { ok: false, status: "RETRYABLE", reason: "SERVICE_UNAVAILABLE", orderCode };
+    }
     return {
       ok: false,
       status: "RETRYABLE",
@@ -267,6 +315,7 @@ export function createGuestCheckoutSubmitService({
   orderSubmission,
   generatePublicCode,
   onQuoteProofRejection,
+  onBenefitOutcome,
   capacity,
   clock = () => new Date(),
 }: GuestCheckoutSubmitDependencies) {
@@ -359,6 +408,45 @@ export function createGuestCheckoutSubmitService({
             totalVnd: refreshedQuote.totalVnd,
           },
         };
+      }
+      if (snapshotResult.reason === "BENEFIT_QUOTE_UNPROVEN") {
+        onQuoteProofRejection?.(snapshotResult.quoteReason);
+        observeBenefitOutcome(onBenefitOutcome, "QUOTE_STALE", snapshotResult.quoteReason);
+        // Same convergence as above: whatever failed, the buyer sees the current quote and confirms it.
+        const { refreshedBenefitQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            merchandiseSubtotalVnd: refreshedBenefitQuote.paidSubtotalVnd,
+            shippingFeeVnd: refreshedBenefitQuote.shippingFeeVnd,
+            totalVnd: refreshedBenefitQuote.totalVnd,
+          },
+        };
+      }
+      if (snapshotResult.reason === "NONCLAIM_UNACKNOWLEDGED") {
+        observeBenefitOutcome(onBenefitOutcome, "NONCLAIM_UNACKNOWLEDGED");
+        const { refreshedBenefitQuote } = snapshotResult;
+        return {
+          ok: false,
+          status: "PRICE_CHANGED",
+          priceChange: {
+            merchandiseSubtotalVnd: refreshedBenefitQuote.paidSubtotalVnd,
+            shippingFeeVnd: refreshedBenefitQuote.shippingFeeVnd,
+            totalVnd: refreshedBenefitQuote.totalVnd,
+            requires: "NONCLAIM_ACKNOWLEDGEMENT",
+          },
+        };
+      }
+      if (
+        snapshotResult.reason === "GIFT_SELECTION_INVALID" ||
+        snapshotResult.reason === "BENEFIT_CHECKOUT_UNAVAILABLE" ||
+        snapshotResult.reason === "VENDOR_PROJECTION_INFEASIBLE"
+      ) {
+        observeBenefitOutcome(
+          onBenefitOutcome,
+          snapshotResult.reason === "BENEFIT_CHECKOUT_UNAVAILABLE" ? "CHECKOUT_UNAVAILABLE" : snapshotResult.reason,
+        );
       }
       return mapSnapshotFailure(snapshotResult.reason);
     }
