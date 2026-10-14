@@ -1534,3 +1534,27 @@ test("review6 P1: a hold that settles between the Pancake reading and the pendin
   assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "STOCK_UNAVAILABLE"]);
   assert.ok((await holds()).every((hold) => hold.state === "RELEASED"));
 });
+
+// -- Seventh review round on PR #165 ------------------------------------------------------------------------------
+
+test("review7 P1: a legacy order on the same inventory sees the pending holds of benefit orders, so the two flows cannot both be sent", async () => {
+  // A plain cart (no tier, no gift): the checkout is the legacy one and the order has no quote.
+  await seed({ tier: false, gift: false });
+  // Another order -- a benefit order, in the reviewer's scenario -- holds 27 that Pancake does not know about yet.
+  await otherOrderHolding(paid.variantId, 27, "RESERVED");
+  // An outside sale takes one unit; the mirror has not synced. Without the holds: 29 - 3 >= 0, sent.
+  const pancake = fakePancake({ [paid.variationId]: { sellableStock: 29 } });
+  const { service } = submission(pancake, undefined);
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.deepEqual(pancake.calls.create, [], "nothing is sent: 29 - 27 - 3 < 0");
+  const order = await lastOrder();
+  assert.equal(await prisma.orderQuoteSnapshot.count({ where: { orderId: order.id } }), 0, "this really was a legacy order");
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "STOCK_UNAVAILABLE"]);
+
+  // With the stock really there the legacy order is sent as before.
+  const fine = fakePancake({ [paid.variationId]: { sellableStock: 30 } });
+  const again = submission(fine, undefined);
+  assert.equal((await again.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.equal(fine.calls.create.length, 1);
+});

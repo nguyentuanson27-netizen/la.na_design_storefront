@@ -1365,6 +1365,7 @@ export function createPancakeOrderSubmissionService(
         components: readonly Readonly<{
           requiredQuantity: number;
           pancakeVariationId: string;
+          variantId: string;
           isUsable: boolean;
         }>[];
       }
@@ -1396,6 +1397,7 @@ export function createPancakeOrderSubmissionService(
               orderBy: [{ componentVariantId: "asc" }],
               select: {
                 quantity: true,
+                componentVariantId: true,
                 componentVariant: {
                   select: {
                     pancakeVariationId: true,
@@ -1418,6 +1420,7 @@ export function createPancakeOrderSubmissionService(
             components: v.compositeComponents.map((edge) => ({
               requiredQuantity: edge.quantity,
               pancakeVariationId: edge.componentVariant.pancakeVariationId,
+              variantId: edge.componentVariantId,
               isUsable:
                 edge.componentVariant.isPresent &&
                 edge.componentVariant.product.isPresent &&
@@ -1448,8 +1451,22 @@ export function createPancakeOrderSubmissionService(
     }
 
     let liveVariations: readonly PancakeCatalogVariation[];
+    // Taken before the reading starts: holds that settle after this instant are not in the figure.
+    const observationStartedAt = readNow();
     try {
       liveVariations = await gateway.fetchVariations(persistedShopId, [...liveVariationIds]);
+    } catch {
+      return resetValidation();
+    }
+
+    // What other orders (of either kind) have spoken for that this reading does not include. The benefit
+    // path subtracts the same figure, so two orders on one physical resource see each other whichever
+    // path each takes. The order's own hold is excluded.
+    let pendingByOthers: ReadonlyMap<string, number>;
+    try {
+      const resourceVariantIds = new Set<string>(order.lines.map(({ variantId }) => variantId));
+      for (const meta of variantMetaById.values()) for (const component of meta.components) resourceVariantIds.add(component.variantId);
+      pendingByOthers = await readPendingHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds], observationStartedAt);
     } catch {
       return resetValidation();
     }
@@ -1545,6 +1562,7 @@ export function createPancakeOrderSubmissionService(
         pancakeVariationId: string;
         units: number;
         floor: number;
+        heldElsewhere?: number;
       }> = [];
       if (variantMeta.isComposite) {
         // PR #81: a composite parent's own Pancake stock is not its capacity (a COMBO or an
@@ -1561,7 +1579,7 @@ export function createPancakeOrderSubmissionService(
             !Number.isSafeInteger(units) ||
             !liveComponent ||
             !Number.isFinite(liveComponent.sellableStock) ||
-            liveComponent.sellableStock - units < floor
+            liveComponent.sellableStock - (pendingByOthers.get(component.variantId) ?? 0) - units < floor
           ) {
             return reject("STOCK_UNAVAILABLE");
           }
@@ -1569,19 +1587,22 @@ export function createPancakeOrderSubmissionService(
             pancakeVariationId: component.pancakeVariationId,
             units,
             floor,
+            heldElsewhere: pendingByOthers.get(component.variantId) ?? 0,
           });
         }
       } else {
         if (!Number.isFinite(live.sellableStock)) {
           return reject("STOCK_UNAVAILABLE");
         }
-        if (live.sellableStock - line.quantity < floor) {
+        const heldElsewhere = pendingByOthers.get(line.variantId) ?? 0;
+        if (live.sellableStock - heldElsewhere - line.quantity < floor) {
           return reject("STOCK_UNAVAILABLE");
         }
         lineResources.push({
           pancakeVariationId: line.pancakeVariationId,
           units: line.quantity,
           floor,
+          heldElsewhere,
         });
       }
       liveCapacityPlans.push({
