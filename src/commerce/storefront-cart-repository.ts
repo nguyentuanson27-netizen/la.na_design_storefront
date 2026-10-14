@@ -1,6 +1,10 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
+import type { GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
+import { resolveGiftQuantityQuote, type LegacyConsentReader, type QuoteCartLine } from "./gift-quantity-quote.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import { buildStorefrontCartLines } from "./storefront-cart.ts";
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
@@ -61,6 +65,7 @@ function parseJsonStringArray(value: unknown): string[] {
 }
 
 const productSelection = {
+  id: true,
   slug: true,
   pancakeProductId: true,
   name: true,
@@ -246,18 +251,24 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
    * prices the whole option set to decide mapping/ambiguity/stock — pricing only the requested ids
    * would leave the rest on a different rule. The lookup is batched at the candidate repository's
    * safety cap, so this stays a fixed small number of queries rather than one per line.
+   *
+   * Shared by `getLines` and `getQuote`; `onPricing` is passed only by the gated quote path, so the
+   * legacy path runs exactly as before.
    */
-  async function getLines({
+  async function resolveCart({
     shopId,
     items,
-    now = new Date(),
+    now,
+    onPricing,
   }: {
     shopId: number;
     items: readonly CartItemIdentity[];
-    now?: Date;
+    now: Date;
+    /** Observes the legacy resolver's answer per variant; used only by the gated quote path. */
+    onPricing?: (variantId: string, pricing: PromotionPricingResult) => void;
   }) {
     const safeItems = parseItems(items);
-    if (safeItems.length === 0) return [];
+    if (safeItems.length === 0) return null;
 
     const safeShopId = parseShopId(shopId);
     const variantIds = safeItems.map(({ variantId }) => variantId);
@@ -287,12 +298,118 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       client: readClient,
     });
 
-    return buildStorefrontCartLines({
+    const lines = buildStorefrontCartLines({
       items: safeItems,
       products: cartProducts,
-      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
+      pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onResolved: onPricing }),
     });
+    return { lines, products };
   }
 
-  return { getLines };
+  async function getLines({
+    shopId,
+    items,
+    now = new Date(),
+  }: {
+    shopId: number;
+    items: readonly CartItemIdentity[];
+    now?: Date;
+  }) {
+    const resolved = await resolveCart({ shopId, items, now });
+    return resolved === null ? [] : resolved.lines;
+  }
+
+  /**
+   * The cart lines plus the cart-level quantity-tier benefits (GQ08).
+   *
+   * `lines` is exactly what `getLines` returns -- the legacy per-variant authority, unchanged, and
+   * it is what every existing consumer keeps reading. The tier result is a separate field and
+   * exists only while `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` is exactly `"true"`; with the gate OFF
+   * `benefits` is `{ enabled: false }` and the path is `getLines` with nothing added: no gift or
+   * quantity table is read and no extra statement is issued.
+   *
+   * When ON, only purchasable, priced lines take part (a line the buyer cannot buy has no paid
+   * price to tier), and each is priced from the legacy answer the resolver already produced for
+   * that very line, so the tier is stacked on exactly the price the cart shows. Everything is
+   * re-derived from current facts on every call, so a quantity change simply re-runs it.
+   */
+  async function getQuote({
+    shopId,
+    items,
+    now = new Date(),
+    env = process.env,
+    giftClient = readClient as unknown as GiftQuantityCandidateReadClient,
+    readLegacyConsents,
+  }: {
+    shopId: number;
+    items: readonly CartItemIdentity[];
+    now?: Date;
+    env?: Readonly<Record<string, string | undefined>>;
+    giftClient?: GiftQuantityCandidateReadClient;
+    readLegacyConsents?: LegacyConsentReader;
+  }) {
+    if (!isGiftQuantityPromotionsEnabled(env)) {
+      return { lines: await getLines({ shopId, items, now }), benefits: { enabled: false as const } };
+    }
+
+    const pricingByVariantId = new Map<string, PromotionPricingResult>();
+    const resolved = await resolveCart({
+      shopId,
+      items,
+      now,
+      onPricing: (variantId, pricing) => pricingByVariantId.set(variantId, pricing),
+    });
+    if (resolved === null) {
+      const benefits = await resolveGiftQuantityQuote({ lines: [], now, client: giftClient, env, readLegacyConsents });
+      return { lines: [] as Awaited<ReturnType<typeof getLines>>, benefits };
+    }
+
+    const productIdByVariantId = new Map<string, string>();
+    for (const product of resolved.products) {
+      for (const variant of product.variants) productIdByVariantId.set(variant.id, product.id);
+    }
+
+    const quoteLines: QuoteCartLine[] = [];
+    let consistent = true;
+    for (const line of resolved.lines) {
+      if (!line.available || line.price === null || line.pancakeVariationId === null) continue;
+      const productId = productIdByVariantId.get(line.variantId);
+      const pricing = pricingByVariantId.get(line.variantId);
+      // The line price IS the resolver's effective price for that variant. If the two ever differ
+      // the quote refuses to build a stack on a price the cart is not showing.
+      if (
+        productId === undefined ||
+        pricing === undefined ||
+        pricing.effectivePriceVnd !== line.price ||
+        !Number.isSafeInteger(pricing.basePriceVnd) ||
+        pricing.basePriceVnd === null
+      ) {
+        consistent = false;
+        break;
+      }
+      quoteLines.push({
+        variantId: line.variantId,
+        pancakeVariationId: line.pancakeVariationId,
+        productId,
+        quantity: line.quantity,
+        basePriceVnd: pricing.basePriceVnd,
+        legacy:
+          pricing.isDiscounted && pricing.promotion !== null && pricing.effectivePriceVnd !== null
+            ? { campaign: pricing.promotion, effectivePriceVnd: pricing.effectivePriceVnd }
+            : null,
+      });
+    }
+    if (!consistent) return { lines: resolved.lines, benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const } };
+
+    const benefits = await resolveGiftQuantityQuote({
+      lines: quoteLines,
+      now,
+      client: giftClient,
+      env,
+      readLegacyConsents,
+    });
+    return { lines: resolved.lines, benefits };
+  }
+
+  return { getLines, getQuote };
 }
