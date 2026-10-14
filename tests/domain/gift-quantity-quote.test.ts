@@ -4,7 +4,13 @@ import { join, relative } from "node:path";
 import test from "node:test";
 
 import type { GiftQuantityCandidateReadClient } from "../../src/commerce/gift-quantity-candidate-repository.ts";
-import { resolveGiftQuantityQuote, type QuoteCartLine } from "../../src/commerce/gift-quantity-quote.ts";
+import {
+  MAX_QUOTE_CART_ITEMS,
+  MAX_QUOTE_ITEM_QUANTITY,
+  resolveGiftQuantityQuote,
+  validateQuoteCartItems,
+  type QuoteCartLine,
+} from "../../src/commerce/gift-quantity-quote.ts";
 
 const ON = { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true" } as const;
 const NOW = new Date("2026-10-13T12:00:00.000Z");
@@ -107,6 +113,67 @@ test("a split line gets collision-free derived group keys and keeps its source l
   if (!quote.enabled || !quote.ok) return;
   assert.deepEqual(quote.groups.map((group) => group.groupKey).sort(), ["a|disc", "a|full"]);
   assert.deepEqual([...new Set(quote.groups.map((group) => group.lineKey))], ["a"]);
+});
+
+const LOOKUP_FAILED = { enabled: true, ok: false, reason: "LOOKUP_FAILED" } as const;
+
+test("every read boundary failure resolves to the typed LOOKUP_FAILED, never a throw or a legacy-priced quote", async () => {
+  const boom = () => Promise.reject(new Error("postgresql://user:secret@db.internal/prod connection reset"));
+  const base = fakeClient([tierRecord("t1", [[1, 10]])]);
+  const fixed = { ...tierRecord("t2", [[1, 10]]), scopeMode: "FIXED_PRODUCT_SET", frozenAt: PAST, frozenCampaignRevision: 1 };
+
+  const campaignFails: GiftQuantityCandidateReadClient = { ...base, giftQuantityCampaign: { findMany: boom } };
+  const membershipFails: GiftQuantityCandidateReadClient = { ...base, productCategoryMembership: { findMany: boom } };
+  const frozenFails: GiftQuantityCandidateReadClient = { ...fakeClient([fixed]), giftQuantityFrozenProduct: { findMany: boom } };
+  for (const client of [campaignFails, membershipFails, frozenFails]) {
+    const result = await resolveGiftQuantityQuote({ lines: [line("a", 2)], now: NOW, client, env: ON });
+    assert.deepEqual(result, LOOKUP_FAILED);
+    assert.equal(JSON.stringify(result).includes("secret"), false, "the cause is not echoed");
+  }
+});
+
+test("a failing or malformed legacy-consent reader is LOOKUP_FAILED / INPUT_INVALID, and OFF never calls it", async () => {
+  const client = fakeClient([tierRecord("t1", [[1, 10]])]);
+  const legacyLine: QuoteCartLine = {
+    ...line("a", 2),
+    legacy: {
+      campaign: { id: "flash-1", kind: "FLASH_SALE", discountType: "PERCENTAGE", percentageValue: 10, fixedPriceVnd: null } as never,
+      effectivePriceVnd: 90_000,
+    },
+  };
+  assert.deepEqual(
+    await resolveGiftQuantityQuote({ lines: [legacyLine], now: NOW, client, env: ON, readLegacyConsents: async () => { throw new Error("consent store down"); } }),
+    LOOKUP_FAILED,
+  );
+  assert.deepEqual(
+    await resolveGiftQuantityQuote({ lines: [legacyLine], now: NOW, client, env: ON, readLegacyConsents: async () => ({}) as never }),
+    { enabled: true, ok: false, reason: "INPUT_INVALID" },
+  );
+  assert.deepEqual(
+    await resolveGiftQuantityQuote({ lines: [legacyLine], now: NOW, client, env: ON, readLegacyConsents: async () => new Map([["flash-1", { priority: 1.5 }]]) }),
+    { enabled: true, ok: false, reason: "INPUT_INVALID" },
+  );
+  let calls = 0;
+  const counting = async () => { calls += 1; return new Map(); };
+  assert.deepEqual(await resolveGiftQuantityQuote({ lines: [legacyLine], now: NOW, client, env: {}, readLegacyConsents: counting }), { enabled: false });
+  assert.equal(calls, 0, "gate OFF never reaches the reader");
+});
+
+test("validateQuoteCartItems: unique well-formed variant ids, positive safe-integer quantities, bounded count", () => {
+  const ok = (items: unknown) => validateQuoteCartItems(items);
+  assert.equal(ok([]), true);
+  assert.equal(ok([{ variantId: "a", quantity: 1 }, { variantId: "b", quantity: MAX_QUOTE_ITEM_QUANTITY }]), true);
+  assert.equal(ok(Array.from({ length: MAX_QUOTE_CART_ITEMS }, (_, i) => ({ variantId: `v${i}`, quantity: 1 }))), true);
+
+  assert.equal(ok(Array.from({ length: MAX_QUOTE_CART_ITEMS + 1 }, (_, i) => ({ variantId: `v${i}`, quantity: 1 }))), false);
+  assert.equal(ok([{ variantId: "a", quantity: 1 }, { variantId: "a", quantity: 2 }]), false, "duplicate variant");
+  for (const quantity of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, MAX_QUOTE_ITEM_QUANTITY + 1, Number.MAX_SAFE_INTEGER + 1, "2", null, undefined]) {
+    assert.equal(ok([{ variantId: "a", quantity }]), false, String(quantity));
+  }
+  for (const variantId of ["", "a|disc", "a b", "x".repeat(65), 7, null, undefined]) {
+    assert.equal(ok([{ variantId, quantity: 1 }]), false, String(variantId));
+  }
+  for (const items of [null, undefined, "x", {}, [null], [7], [[]]]) assert.equal(ok(items), false);
 });
 
 // A price that exists only once a cart reaches a quantity must never reach a surface that publishes

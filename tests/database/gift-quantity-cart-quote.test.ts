@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { MAX_ACTIVE_GIFT_QUANTITY_CAMPAIGNS } from "../../src/commerce/gift-quantity-candidate-repository.ts";
+import { MAX_ACTIVE_GIFT_QUANTITY_CAMPAIGNS, type GiftQuantityCandidateReadClient } from "../../src/commerce/gift-quantity-candidate-repository.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { createStorefrontCatalogRepository } from "../../src/commerce/storefront-catalog.ts";
 import { createStorefrontProductDetailRepository } from "../../src/commerce/storefront-product-detail.ts";
@@ -295,12 +295,75 @@ test("no cart-tier price leaks into the PDP or listing projections, with the gat
   assert.equal(quote.benefits.enabled && quote.benefits.ok && quote.benefits.subtotalVnd, 500_000, "the tier applies only in the cart quote");
 });
 
-test("a duplicate cart variant fails closed rather than pricing one of them", async () => {
-  const seed = await seedProduct("dup", [500_000]);
+const INPUT_INVALID = { enabled: true, ok: false, reason: "INPUT_INVALID" } as const;
+
+test("invalid raw items refuse the whole quote even when availability would hide the defect", async () => {
+  const seed = await seedProduct("dup", [500_000, 500_000]);
   await tierCampaign({ id: "dup-tier", tiers: [[1, 10]] });
-  const variantId = seed.variantIds[0]!;
-  const quote = await repository.getQuote({ shopId: SHOP, items: [{ variantId, quantity: 1 }, { variantId, quantity: 2 }], now: NOW, env: ON });
-  assert.deepEqual(quote.benefits, { enabled: true, ok: false, reason: "INPUT_INVALID" });
+  const [v, w] = seed.variantIds as [string, string];
+  // stock V = 1: the second duplicate row resolves as INSUFFICIENT_STOCK and used to just drop out
+  await prisma.warehouseStock.updateMany({ where: { variantId: v }, data: { quantity: 1 } });
+  const quote = (cart: Array<{ variantId: string; quantity: number }>) => repository.getQuote({ shopId: SHOP, items: cart, now: NOW, env: ON });
+
+  for (const cart of [
+    [{ variantId: v, quantity: 1 }, { variantId: v, quantity: 2 }],      // second row unavailable
+    [{ variantId: w, quantity: 1 }, { variantId: w, quantity: 1 }],      // both rows would be available
+    [{ variantId: w, quantity: 0 }],
+    [{ variantId: w, quantity: -1 }],
+    [{ variantId: w, quantity: 1.5 }],
+    [{ variantId: w, quantity: 1 }, { variantId: v, quantity: 0 }],
+    [{ variantId: "bad|key", quantity: 1 }],
+    Array.from({ length: 51 }, (_, i) => ({ variantId: `x${i}`, quantity: 1 })),
+  ]) {
+    const result = await quote(cart);
+    assert.deepEqual(result.benefits, INPUT_INVALID);
+    assert.deepEqual(result.lines, [], "nothing is resolved for refused input");
+  }
+
+  // a single unavailable line WITHOUT a duplicate keeps the existing contract: it is simply not priced
+  const single = await quote([{ variantId: w, quantity: 1 }, { variantId: v, quantity: 2 }]);
+  assert.ok(single.benefits.enabled && single.benefits.ok);
+  if (single.benefits.enabled && single.benefits.ok) {
+    assert.equal(single.benefits.groups.length, 1);
+    assert.equal(single.benefits.subtotalVnd, 450_000);
+  }
+  // and gate OFF is still exactly getLines for the same raw (even duplicate) items
+  const raw = [{ variantId: v, quantity: 1 }, { variantId: v, quantity: 2 }];
+  const off = await repository.getQuote({ shopId: SHOP, items: raw, now: NOW, env: {} });
+  assert.equal(JSON.stringify(off.lines), JSON.stringify(await repository.getLines({ shopId: SHOP, items: raw, now: NOW })));
+  assert.deepEqual(off.benefits, { enabled: false });
+});
+
+test("read failures through the repository resolve to LOOKUP_FAILED, never a throw or a legacy-priced paid quote", async () => {
+  const seed = await seedProduct("fail", [1_000_000]);
+  await flash("fail-flash", seed.productId, 10);
+  await tierCampaign({ id: "fail-tier", tiers: [[1, 5]], stackPriority: 2, stackingEnabled: true, peers: [{ peerKind: "FLASH_SALE", peerCampaignId: "*" }] });
+  const boom = () => Promise.reject(new Error("connection reset"));
+  const real = prisma as unknown as GiftQuantityCandidateReadClient;
+  const clients: GiftQuantityCandidateReadClient[] = [
+    { ...real, giftQuantityCampaign: { findMany: boom } },
+    { ...real, productCategoryMembership: { findMany: boom } },
+  ];
+  const LOOKUP_FAILED = { enabled: true, ok: false, reason: "LOOKUP_FAILED" };
+  for (const giftClient of clients) {
+    const result = await repository.getQuote({ shopId: SHOP, items: items(seed, [1]), now: NOW, env: ON, giftClient });
+    assert.deepEqual(result.benefits, LOOKUP_FAILED);
+  }
+  const consentDown = await repository.getQuote({
+    shopId: SHOP, items: items(seed, [1]), now: NOW, env: ON,
+    readLegacyConsents: async () => { throw new Error("consent store down"); },
+  });
+  assert.deepEqual(consentDown.benefits, LOOKUP_FAILED);
+
+  // gate OFF never touches the reader or the gift client
+  let calls = 0;
+  const off = await repository.getQuote({
+    shopId: SHOP, items: items(seed, [1]), now: NOW, env: {},
+    giftClient: new Proxy({}, { get: () => { throw new Error("must not read"); } }) as never,
+    readLegacyConsents: async () => { calls += 1; return new Map(); },
+  });
+  assert.deepEqual(off.benefits, { enabled: false });
+  assert.equal(calls, 0);
 });
 
 test("a cart of only unpurchasable lines yields an empty valid quote", async () => {

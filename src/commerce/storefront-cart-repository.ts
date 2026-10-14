@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
-import { resolveGiftQuantityQuote, type LegacyConsentReader, type QuoteCartLine } from "./gift-quantity-quote.ts";
+import { resolveGiftQuantityQuote, validateQuoteCartItems, type LegacyConsentReader, type QuoteCartLine } from "./gift-quantity-quote.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { PromotionPricingResult } from "./promotion-pricing.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
@@ -350,6 +350,17 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
   }) {
     if (!isGiftQuantityPromotionsEnabled(env)) {
       return { lines: await getLines({ shopId, items, now }), benefits: { enabled: false as const } };
+    }
+
+    // The raw items are validated BEFORE anything is resolved or filtered: a duplicate variant, a
+    // zero/negative/fractional quantity or an oversized cart must refuse the whole paid quote, not
+    // quietly drop out as an "unavailable" line and leave a smaller, apparently valid subtotal.
+    // Nothing is resolved for such input, so `lines` is empty alongside the refusal.
+    if (!validateQuoteCartItems(items)) {
+      return {
+        lines: [] as Awaited<ReturnType<typeof getLines>>,
+        benefits: { enabled: true as const, ok: false as const, reason: "INPUT_INVALID" as const },
+      };
     }
 
     const pricingByVariantId = new Map<string, PromotionPricingResult>();

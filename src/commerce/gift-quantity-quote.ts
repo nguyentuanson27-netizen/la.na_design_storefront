@@ -26,7 +26,6 @@
 
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import {
-  GiftQuantityCandidateLookupError,
   readActiveGiftQuantityCampaigns,
   readScopeProductFacts,
   type ActiveGiftQuantityCampaign,
@@ -35,6 +34,7 @@ import {
 import { buildScopeResolver, type ScopeProductFacts } from "./gift-quantity-scope.ts";
 import {
   priceStack,
+  STACK_LINE_KEY_PATTERN,
   type StackDroppedCampaign,
   type StackedGroup,
   type StackInputLine,
@@ -100,7 +100,39 @@ function toLegacy(campaign: ApplicablePromotionCampaign): StackLegacyCampaign {
   };
 }
 
+/** A cart item as the cart repository receives it, before any availability decision. */
+export type QuoteCartItem = Readonly<{ variantId: string; quantity: number }>;
+
+/** The most distinct lines a cart quote accepts; the same bound the anonymous cart enforces. */
+export const MAX_QUOTE_CART_ITEMS = 50;
+/** PostgreSQL INTEGER, the domain a stored cart quantity lives in. */
+export const MAX_QUOTE_ITEM_QUANTITY = 2_147_483_647;
+
+/**
+ * Validates the RAW cart items a quote is asked for, before availability filtering can hide a
+ * defect (an unavailable duplicate or a zero quantity would otherwise just drop out of the quote).
+ *
+ * Rules, all required: an array of at most `MAX_QUOTE_CART_ITEMS` entries; each `variantId` a
+ * well-formed line key (`STACK_LINE_KEY_PATTERN`, the same token the stack uses as its line key);
+ * every `variantId` unique across the list; each `quantity` a positive safe integer no greater than
+ * `MAX_QUOTE_ITEM_QUANTITY`. An empty list is valid (an empty cart). Pure; reads nothing and echoes
+ * nothing of the input.
+ */
+export function validateQuoteCartItems(items: unknown): items is readonly QuoteCartItem[] {
+  if (!Array.isArray(items) || items.length > MAX_QUOTE_CART_ITEMS) return false;
+  const seen = new Set<string>();
+  for (const item of items as unknown[]) {
+    if (typeof item !== "object" || item === null) return false;
+    const { variantId, quantity } = item as { variantId?: unknown; quantity?: unknown };
+    if (typeof variantId !== "string" || !STACK_LINE_KEY_PATTERN.test(variantId) || seen.has(variantId)) return false;
+    seen.add(variantId);
+    if (typeof quantity !== "number" || !Number.isSafeInteger(quantity) || quantity < 1 || quantity > MAX_QUOTE_ITEM_QUANTITY) return false;
+  }
+  return true;
+}
+
 function validConsents(consents: StackLegacyConsent): boolean {
+  if (!(consents instanceof Map)) return false;
   for (const [id, consent] of consents) {
     if (typeof id !== "string" || !Number.isSafeInteger(consent.priority)) return false;
   }
@@ -129,22 +161,31 @@ export async function resolveGiftQuantityQuote({
   }
 
   const productIds = [...new Set(lines.map((line) => line.productId))];
+  const legacyIds = [...new Set(lines.flatMap((line) => (line.legacy === null ? [] : [line.legacy.campaign.id])))];
+
+  // Every read boundary -- active campaigns, scope facts, legacy consents -- is inside this one
+  // try. Anything those reads throw (a database or transport error, a bound exceeded, a failing
+  // injected reader) is an abnormal read and becomes the typed LOOKUP_FAILED. The caught cause is
+  // deliberately discarded: it may carry connection details, and callers need only the reason.
+  // It is never converted into "no tier applies" or a legacy-priced paid quote. Only these I/O
+  // calls are covered; the pure computation after them is not, so a programming error there
+  // still throws instead of being reported as an outage.
   let tierCampaigns: ActiveGiftQuantityCampaign[];
   let facts: readonly ScopeProductFacts[] = [];
+  let legacyConsents: StackLegacyConsent = new Map();
   try {
     const lookup = await readActiveGiftQuantityCampaigns({ now, productIds, client, env });
     if (!lookup.enabled) return { enabled: false };
     // Gift campaigns are read by the same bounded lookup but price nothing here (GQ10).
     tierCampaigns = lookup.campaigns.filter((entry) => entry.campaign.kind === "QUANTITY_TIER");
-    if (tierCampaigns.length > 0) facts = await readScopeProductFacts({ productIds, client });
-  } catch (error) {
-    if (error instanceof GiftQuantityCandidateLookupError) return { enabled: true, ok: false, reason: "LOOKUP_FAILED" };
-    throw error;
+    if (tierCampaigns.length > 0) {
+      facts = await readScopeProductFacts({ productIds, client });
+      if (legacyIds.length > 0) legacyConsents = await readLegacyConsents(legacyIds);
+    }
+  } catch {
+    return { enabled: true, ok: false, reason: "LOOKUP_FAILED" };
   }
   const factsByProduct = new Map(facts.map((fact) => [fact.productId, fact]));
-
-  const legacyIds = [...new Set(lines.flatMap((line) => (line.legacy === null ? [] : [line.legacy.campaign.id])))];
-  const legacyConsents = legacyIds.length === 0 || tierCampaigns.length === 0 ? new Map() : await readLegacyConsents(legacyIds);
   if (!validConsents(legacyConsents)) return { enabled: true, ok: false, reason: "INPUT_INVALID" };
 
   const tiers: StackTierParticipant[] = tierCampaigns.map((entry): StackTierParticipant => ({
