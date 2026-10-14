@@ -87,11 +87,12 @@
   - [ ] Cùng product khác size/variant áp duplicate policy đúng R-03; quà chỉ từ biến thể READY/cấp được đúng R-04.
   - [ ] Gift không được tính paid quantity, revenue hoặc subtotal; gắn campaign/version cho entitlement.
   - [ ] **Evidence:** Focused `tests/domain/gift-quantity-entitlement.test.ts` ; `pnpm test:domain`
-- [ ] **GQ11 — Persist cart gift selections tách paid CartItem** _(deps: GQ03, GQ10; gate: MIGRATION)_
-  - [ ] Giữ nhiều gift choices/campaigns với quantity, một cart paid variant vẫn độc lập gift cùng variant.
-  - [ ] FK/uniqueness/bounds, cascade/revision, không lưu stale gift selection thành paid price authority.
-  - [ ] Concurrent insert/update không tạo duplicate selection hoặc quantity vượt 2^31 boundary.
-  - [ ] **Evidence:** `pnpm prisma:validate` ; focused DB selection tests ; `pnpm test:db`
+- [x] **GQ11 — Persist cart gift selections tách paid CartItem** _(deps: GQ03, GQ10; gate: MIGRATION)_
+  - [x] Giữ nhiều gift choices/campaigns với quantity, một cart paid variant vẫn độc lập gift cùng variant.
+  - [x] FK/uniqueness/bounds, cascade/revision, không lưu stale gift selection thành paid price authority.
+  - [x] Concurrent insert/update không tạo duplicate selection hoặc quantity vượt 2^31 boundary.
+  - [x] **Evidence:** `pnpm prisma:validate` ; focused DB selection tests ; `pnpm test:db`
+  - Evidence: `prisma/migrations/20261014110000_add_cart_gift_selection` (additive `CartGiftSelection`; no existing table or `CartItem` semantics touched; rollback = `DROP TABLE "CartGiftSelection"`; `prisma migrate diff` migrations-vs-schema empty) + `src/commerce/cart-gift-selection-repository.ts` (`setCartGiftSelection`/`removeCartGiftSelection`/`clearCartGiftSelections`/`listCartGiftSelections`/`classifyGiftSelectionFreshness`); `tests/database/gift-quantity-cart-gift-selection.test.ts` 15/15: a gift for variant V coexists with the paid line for V and never changes it (also under concurrent gift+paid writes), set is absolute/idempotent (single `INSERT..ON CONFLICT`), many gifts/campaigns per cart, carts isolated, 24 concurrent writers on one key and 32 on two keys leave one row per key with no unique-violation error, 150 racing raw `quantity+1` stop at exactly 100 by the CHECK, quantity 0/101/2^31 and revision 0 refused in code and by CHECK, tier campaign / unknown cart, campaign, variant refused by the composite FK (`REFERENCE_NOT_FOUND`), duplicate raw insert refused by the unique key, revision bump reads STALE and is never repaired in place, remove/clear idempotent, cascade from cart/campaign/variant, >100 selections fails closed, no price/entitlement column. Mutation proof: dropping the quantity CHECK fails 2 tests; replacing the upsert by find-then-create fails 3 concurrency tests. No code dependency on GQ10 (limits are local constants: 100 = `maxGiftsPerOrder` bound). `pnpm prisma:validate` ok; `pnpm test` 2952 (2951 pass, 0 fail, 1 not run (skipped/todo)); `pnpm test:db` 683/683; typecheck clean; lint 0 errors.
 - [ ] **GQ12 — Server gift selection mutation + capacity authorization** _(deps: GQ10, GQ11, GQ08; gate: AUTH/INVENTORY)_
   - [ ] Không thể forged cart ID, campaign, variant, quantity hay gift out of scope; Admin can change rule so old selection becomes stale.
   - [ ] Partial/zero selection được phép, nhưng checkout phải cần separate explicit nonclaim acknowledgement.
