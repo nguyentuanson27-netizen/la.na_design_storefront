@@ -441,6 +441,37 @@ test("GQ09b tier form previews EX-19 Q=3 to Q=4 and fails closed for invalid VND
   expect(errors).toEqual([]);
 });
 
+test("GQ09b preview names a tier beyond the engine cap instead of silently dropping it", async ({ page, context }) => {
+  await context.addCookies(adminCookies);
+  await page.goto(PAGE + "?new=1", { waitUntil: "networkidle" });
+  await page.getByRole("combobox", { name: "Loại chiến dịch" }).selectOption("QUANTITY_TIER");
+  await page.getByRole("combobox", { name: "Đơn vị giảm giá" }).selectOption("PERCENTAGE");
+  await page.getByRole("combobox", { name: "Chiếc được giảm", exact: true }).selectOption("ALL_ELIGIBLE_UNITS");
+  await page.getByRole("textbox", { name: "Bậc 1: từ số chiếc" }).fill("2");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).fill("10");
+  await page.getByRole("button", { name: "+ Thêm bậc" }).click();
+  await page.getByRole("textbox", { name: "Bậc 2: từ số chiếc" }).fill("6000");
+  await page.getByRole("textbox", { name: "Mức giảm (%)" }).nth(1).fill("15");
+  await page.getByRole("button", { name: "Xem trước giá" }).click();
+
+  // The warning is in the live region, so a screen reader hears it, and names the threshold and the cap.
+  const warning = page.getByRole("status").filter({ hasText: "Cảnh báo" });
+  await expect(warning).toContainText("6.000");
+  await expect(warning).toContainText("5.000");
+  await expect(warning).toContainText("không giỏ hợp lệ nào đạt tới");
+
+  // The reachable steps are still computed exactly: only the 10% step applies, never the 15% one.
+  const table = page.getByRole("table", { name: "So sánh số lượng và mức giảm giá minh họa" });
+  await expect(table.getByRole("row", { name: /Q=2/ })).toContainText("100.000đ");
+  await expect(table.getByRole("row", { name: /Q=3/ })).toContainText("150.000đ");
+  await expect(table.getByRole("row", { name: /Q=4/ })).toContainText("200.000đ");
+  // The step beyond the cap is shown as not previewable, not as a simulated result.
+  const beyond = table.getByRole("row", { name: /Q=6\.000/ });
+  await expect(beyond).toContainText("Không thể xem trước");
+  await expect(beyond).not.toContainText(/\d\s*đ/);
+  await expect(table.getByRole("row", { name: /Q=5\.999|Q=6000/ })).toHaveCount(0);
+});
+
 test("GQ09b Draft tier rule persists, reads back, and edits without bumping pricing revision", async ({ page, context }) => {
   const name = "GQ09b Draft " + runId;
   const before = await prisma.promotionPricingRevision.findUniqueOrThrow({ where: { id: PROMOTION_REVISION_ID } });

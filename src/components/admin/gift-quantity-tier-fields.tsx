@@ -30,7 +30,8 @@ type SampleRow = Readonly<{
   segments: string;
   invalidPrice: boolean;
 }>;
-type Preview = { ok: false; error: string } | { ok: true; rows: SampleRow[] };
+/** `unreachable`: ladder thresholds above the engine's cap, which no valid cart can reach or preview. */
+type Preview = { ok: false; error: string } | { ok: true; rows: SampleRow[]; unreachable: number[] };
 
 const inputClass = "w-full border-b border-black/30 bg-transparent px-0 py-2 text-base outline-none focus-visible:border-black focus-visible:outline-2 focus-visible:outline-offset-4";
 const buttonClass = "inline-flex min-h-11 items-center justify-center border border-black/30 px-4 text-xs font-semibold uppercase tracking-[0.14em] hover:border-black focus-visible:outline-2 focus-visible:outline-offset-4 disabled:cursor-not-allowed disabled:opacity-35";
@@ -93,6 +94,9 @@ function calculatePreview(
   if (extraInput !== "" && extra === null) {
     return { ok: false, error: "Chỉ xem trước số lượng từ 1 đến " + MAX_TIER_UNITS + " chiếc." };
   }
+  // The engine refuses a cart above MAX_TIER_UNITS, so a step beyond it can neither apply nor be
+  // simulated. It is reported, never silently dropped (the server still accepts such a threshold).
+  const unreachable = ladder.filter((tier) => tier.minQuantity > MAX_TIER_UNITS).map((tier) => tier.minQuantity);
   // Both sides of every reachable step, plus the EX-19 Q=3 -> Q=4 boundary.
   const quantities = [...new Set([
     3, 4,
@@ -116,7 +120,7 @@ function calculatePreview(
       invalidPrice,
     });
   }
-  return { ok: true, rows };
+  return { ok: true, rows, unreachable };
 }
 
 export function GiftQuantityTierFields({
@@ -322,8 +326,21 @@ export function GiftQuantityTierFields({
                     <td className="py-3 pr-4">{row.discounted}</td><td className="py-3 pr-4">{money.format(row.discount)}đ</td>
                     <td className="py-3">{money.format(row.total)}đ</td>
                   </tr>
+                ))}
+                {preview.unreachable.map((threshold) => (
+                  <tr className="border-b border-black/10" key={"unreachable-" + threshold}>
+                    <th className="py-3 pr-4" scope="row">Q={money.format(threshold)}</th>
+                    <td className="py-3 text-amber-900" colSpan={4}>Không thể xem trước hoặc đạt tới: vượt giới hạn {money.format(MAX_TIER_UNITS)} chiếc.</td>
+                  </tr>
                 ))}</tbody>
               </table>
+              {preview.unreachable.length > 0 ? (
+                <p className="mt-3 border-l-2 border-amber-800 pl-3 text-amber-900">
+                  Cảnh báo: bậc từ {preview.unreachable.map((threshold) => money.format(threshold)).join(", ")} chiếc vượt giới hạn hiện hành
+                  ({money.format(MAX_TIER_UNITS)} chiếc trả tiền mỗi giỏ). Xem trước và báo giá chỉ mô phỏng tới {money.format(MAX_TIER_UNITS)} chiếc,
+                  nên không giỏ hợp lệ nào đạt tới bậc này và bậc đó sẽ không bao giờ được áp dụng, dù vẫn có thể lưu hoặc bật.
+                </p>
+              ) : null}
               {preview.rows.map((row) => (
                 <p className={row.invalidPrice ? "mt-2 text-red-800" : "mt-2 text-neutral-700"} key={row.quantity}>
                   Q={row.quantity}: {row.segments}
