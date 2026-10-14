@@ -1454,7 +1454,8 @@ async function otherOrderHolding(variantId: string, quantity: number, state: "RE
   assert.equal(reserved.ok, true);
   if (state === "COMMITTED") {
     await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "SUBMITTING" } });
-    await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "COMMITTED", committedAt: NOW } });
+    // Committed well before any stock reading below: Pancake's figure already has it.
+    await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "COMMITTED", committedAt: new Date(NOW.getTime() - 10 * 60_000) } });
   }
   return other;
 }
@@ -1506,4 +1507,30 @@ test("review5 P2: a committed order is already out of Pancake's live stock and i
   assert.equal((await second.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, false);
   assert.deepEqual(short.calls.create, []);
   assert.equal((await lastOrder()).syncErrorCode, "BENEFIT_REQUOTE_REQUIRED");
+});
+
+test("review6 P1: a hold that settles between the Pancake reading and the pending-hold read is not lost from both figures", async () => {
+  await seed({ gift: false });
+  // Another order has 27 SUBMITTING (its write may be in flight); this order's 3 are held on top.
+  const other = await otherOrderHolding(paid.variantId, 27, "RESERVED");
+  await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "SUBMITTING" } });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+
+  // The reading says 28 (an outside sale; the mirror still says 30). Right after it, the other order's create
+  // lands and its hold turns COMMITTED -- after the reading began, so the reading does not include it. Real
+  // stock is 28 - 27 = 1; sending this order's 3 would oversell.
+  const pancake = fakePancake({ [paid.variationId]: { sellableStock: 28 } });
+  const read = pancake.gateway.fetchVariations;
+  pancake.gateway.fetchVariations = async (shopId: number, ids: readonly string[]) => {
+    const rows = await read(shopId, ids);
+    await prisma.variantCapacityReservation.updateMany({ where: { orderId: other.id }, data: { state: "COMMITTED", committedAt: NOW } });
+    return rows;
+  };
+  const { service } = submission(pancake, proof);
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.equal(result.ok, false);
+  assert.deepEqual(pancake.calls.create, [], "nothing is sent: 28 - 27 - 3 < 0 once the settled hold is counted");
+  const order = await lastOrder();
+  assert.deepEqual([order.state, order.syncErrorCode], ["REJECTED", "STOCK_UNAVAILABLE"]);
+  assert.ok((await holds()).every((hold) => hold.state === "RELEASED"));
 });

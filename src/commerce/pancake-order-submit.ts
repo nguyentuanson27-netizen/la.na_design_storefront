@@ -1171,6 +1171,8 @@ export function createPancakeOrderSubmissionService(
       for (const demand of demandByVariant.values()) liveVariationIds.add(demand.pancakeVariationId);
       for (const meta of variantMetaById.values()) for (const component of meta.components) liveVariationIds.add(component.pancakeVariationId);
       let liveVariations: readonly PancakeCatalogVariation[];
+      // Taken before the reading starts: holds that settle after this instant are not in the figure.
+      const observationStartedAt = readNow();
       try {
         liveVariations = await gateway.fetchVariations(shopId, [...liveVariationIds]);
       } catch {
@@ -1182,15 +1184,15 @@ export function createPancakeOrderSubmissionService(
         liveByVariationId.set(variation.id, liveByVariationId.has(variation.id) ? null : variation);
       }
 
-      // Units other orders have spoken for that Pancake's live stock does not know about yet (pending holds
-      // only: a committed order is already out of the live figure, so subtracting it again would count it
-      // twice). Judged against the fresh Pancake stock, not the mirror, for the stock gate and for the
-      // READY / PREORDER promise alike. The order's own hold is excluded: it is what this order asks for.
+      // Units other orders have spoken for that the Pancake reading above did not include: holds that have
+      // not reached Pancake, and holds that settled after the reading began (a hold committed before it is
+      // already out of the figure, so subtracting it again would count it twice). Judged against the fresh
+      // Pancake stock, not the mirror, for the stock gate and for the READY / PREORDER promise alike. The order's own hold is excluded: it is what this order asks for.
       let pendingByOthers: ReadonlyMap<string, number>;
       try {
         const resourceVariantIds = new Set<string>(demandVariantIds);
         for (const meta of variantMetaById.values()) for (const component of meta.components) resourceVariantIds.add(component.variantId);
-        pendingByOthers = await readPendingHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds]);
+        pendingByOthers = await readPendingHeldQuantities(withoutOrderHolds(client, order.id) as unknown as AdvisoryHoldReadClient, [...resourceVariantIds], observationStartedAt);
       } catch {
         return resetValidation();
       }

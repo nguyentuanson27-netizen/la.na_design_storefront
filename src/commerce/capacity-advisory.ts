@@ -77,25 +77,49 @@ export async function readAdvisoryHeldQuantities(
 }
 
 /**
- * Units held by reservations that have **not** reached Pancake yet: `RESERVED`, and the `SUBMITTING` /
- * `UNKNOWN` holds whose write may be in flight or may not have landed (counted, because not counting a
- * hold that has not landed would let both orders through).
+ * How far the clock of the process that settled a hold may trail the clock that starts an observation
+ * (two app processes, one database). Over-counting inside this window can only refuse an order.
+ */
+export const OBSERVATION_CLOCK_SKEW_MS = 30_000;
+
+/**
+ * Units other orders have spoken for that **a Pancake stock reading did not include**.
  *
- * `COMMITTED` is deliberately absent, whether or not the mirror has been told. `readAdvisoryHeldQuantities`
- * counts an un-handed-off `COMMITTED` hold because it answers "what is the *mirror* missing?"; the
- * order it belongs to already exists in Pancake, so its units are already out of Pancake's own
- * `sellableStock`. This function answers the other question, "what is spoken for that Pancake's live
- * stock does not know about yet?", and subtracting a committed hold from live stock would count it twice.
+ * Pancake's live `sellableStock` already has every order that was created before the reading, so what
+ * must be subtracted from it is exactly what the reading could not have seen:
+ *  - holds that have not reached Pancake: `RESERVED`, and the `SUBMITTING` / `UNKNOWN` holds whose write
+ *    may be in flight or may not have landed (counted -- not counting one that has not landed would let
+ *    both orders through);
+ *  - holds that settled `COMMITTED` **after the reading began** (`observationStartedAt`, minus a small
+ *    clock-skew margin): their order was created after the snapshot was taken, so the snapshot does not
+ *    include it even though the hold is no longer pending.
+ *
+ * A hold that was `COMMITTED` before the reading began is deliberately absent, whether or not the mirror
+ * has been told: that order is already out of the live figure, and subtracting it again counts it twice.
+ * `readAdvisoryHeldQuantities` counts an un-handed-off `COMMITTED` hold because it answers "what is the
+ * *mirror* missing?"; this answers "what is the *reading* missing?".
+ *
+ * Read this **after** the Pancake reading, with `observationStartedAt` taken **before** it: a hold that
+ * moves from `SUBMITTING` to `COMMITTED` between the two is then caught by its `committedAt`, instead of
+ * dropping out of both figures.
  */
 export async function readPendingHeldQuantities(
   client: AdvisoryHoldReadClient,
   variantIds: readonly string[],
+  observationStartedAt: Date,
 ): Promise<ReadonlyMap<string, number>> {
   const ids = [...new Set(variantIds)];
   const held = new Map<string, number>(ids.map((id) => [id, 0]));
   if (ids.length === 0) return held;
+  const since = new Date(observationStartedAt.getTime() - OBSERVATION_CLOCK_SKEW_MS);
   const resources = await client.capacityReservationResource.findMany({
-    where: { variantId: { in: ids }, reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
+    where: {
+      variantId: { in: ids },
+      OR: [
+        { reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
+        { reservation: { state: "COMMITTED", committedAt: { gte: since } } },
+      ],
+    },
     select: { variantId: true, quantity: true },
   });
   for (const resource of resources) held.set(resource.variantId, (held.get(resource.variantId) ?? 0) + resource.quantity);
