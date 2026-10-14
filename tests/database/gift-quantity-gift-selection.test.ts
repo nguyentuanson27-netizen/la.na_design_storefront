@@ -147,3 +147,21 @@ test("racing paid reduction and gift write leaves a recomputed invalid choice or
     assert.equal(state.state.validation.ok, false);
   }
 });
+test("earning gift campaigns require mutual stack consent and share the same stock", async () => {
+  const otherId = `${PREFIX}other`;
+  await prisma.giftQuantityCampaign.create({ data: { id: otherId, kind: "GIFT_ITEM", name: "Other",
+    isEnabled: true, enabledAt: NOW, scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL",
+    minimumSubtotalVnd: 100_000, subtotalScope: "ALL_PAID_LINES", awardMode: "REPEAT_PER_THRESHOLD", allowDuplicateGifts: true,
+    giftOptions: { create: { variantId: giftId } } } });
+  assert.equal((await service().set(choice(), NOW)).ok, false);
+  let state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.equal(state.state.giftStackDropped.length, 2);
+  for (const id of [campaignId, otherId]) await prisma.giftQuantityCampaign.update({ where: { id }, data: { stackingEnabled: true, stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: "*" } } } });
+  assert.deepEqual(await service().set(choice(giftId, 2), NOW), { ok: true });
+  assert.equal((await service().set({ ...choice(giftId, 2), campaignId: otherId }, NOW)).ok, false);
+  assert.deepEqual(await service().set({ ...choice(), campaignId: otherId }, NOW), { ok: true });
+  state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.equal(state.state.validation.ok, true);
+});

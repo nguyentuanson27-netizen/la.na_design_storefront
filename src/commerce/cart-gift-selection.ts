@@ -6,6 +6,7 @@ import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection }
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { evaluateGiftEntitlements, validateGiftSelections, type GiftCampaignFacts, type GiftSelectionLine } from "./gift-quantity-entitlement.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { resolveGiftCampaignStacking } from "./gift-quantity-stack.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
 
 type CookieReader = { get(name: string): { value: string } | undefined };
@@ -68,9 +69,16 @@ async function readState(tx: Prisma.TransactionClient, cartId: string, shopId: n
   }));
   const evaluation = evaluateGiftEntitlements({ campaigns, paidGroups: quote.benefits.groups.map((group) => ({ ...group, product: productByVariant.get(group.lineKey)! })) });
   if (!evaluation.ok) throw new Error("Invalid gift configuration");
+  const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
+  const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
+    id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+  })));
+  const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
+  const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)
+    ? { ...entry, entitled: 0, grantable: 0, unfulfillableForStock: 0, selectableOptions: [], shortfallToNext: null } : entry);
   const selections = await listCartGiftSelections(tx, cartId);
-  const validation = validateGiftSelections({ campaigns, entitlements: evaluation.entitlements, selection: selections });
-  return { quote, campaigns, entitlements: evaluation.entitlements, selections, validation,
+  const validation = validateGiftSelections({ campaigns, entitlements, selection: selections });
+  return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
 }
 
