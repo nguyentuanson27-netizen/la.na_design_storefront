@@ -229,6 +229,10 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
     }
   }
   assert.deepEqual(importers.get("quote")?.sort(), ["commerce/storefront-cart-repository.ts"]);
-  assert.deepEqual(importers.get("stack")?.sort(), ["commerce/gift-quantity-quote.ts"]);
+  // Gift selection may import only the gift stack-consent resolver, not paid tier arithmetic.
+  assert.deepEqual(importers.get("stack")?.sort(), ["commerce/cart-gift-selection.ts", "commerce/gift-quantity-quote.ts"]);
+  const selectionSource = readFileSync(join(root, "commerce", "cart-gift-selection.ts"), "utf8");
+  assert.match(selectionSource, /resolveGiftCampaignStacking/);
+  assert.doesNotMatch(selectionSource, /\bpriceStack\b/);
   assert.deepEqual(importers.get("tier")?.sort(), ["commerce/gift-quantity-stack.ts"]);
 });
