@@ -122,11 +122,11 @@ test("EX-15: only the variants the admin allowed are selectable; out-of-stock an
   const result = one(campaign, [paid("a", 2, 100_000)]);
   assert.deepEqual(result.selectableOptions.map((option) => option.variantId), ["black-s", "red-m"]);
   const validation = validateGiftSelections({
-    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "red-l", quantity: 1 }],
+    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "red-l", quantity: 1, campaignRevision: 3 }],
   });
   assert.deepEqual(validation, { ok: false, issues: [{ error: "VARIANT_NOT_ALLOWED", lineIndex: 0, campaignId: "gift-q", variantId: null }] });
   const notReady = validateGiftSelections({
-    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "red-l-not-ready", quantity: 1 }],
+    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "red-l-not-ready", quantity: 1, campaignRevision: 3 }],
   });
   assert.equal(notReady.ok, false);
   assert.equal(!notReady.ok && notReady.issues[0]!.error, "OUT_OF_STOCK");
@@ -138,23 +138,23 @@ test("R-03: with duplicates off at most one unit per product even across variant
   assert.equal(offEntitlement.entitled, 2);
   const sameProduct = validateGiftSelections({
     entitlements: [offEntitlement], campaigns: [off],
-    selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 1 }, { campaignId: "gift-q", variantId: "black-s", quantity: 1 }],
+    selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-q", variantId: "black-s", quantity: 1, campaignRevision: 3 }],
   });
   assert.deepEqual(sameProduct, { ok: false, issues: [{ error: "DUPLICATE_PRODUCT_NOT_ALLOWED", lineIndex: null, campaignId: "gift-q", variantId: null }] });
   const twoQuantity = validateGiftSelections({
-    entitlements: [offEntitlement], campaigns: [off], selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 2 }],
+    entitlements: [offEntitlement], campaigns: [off], selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 2, campaignRevision: 3 }],
   });
   assert.equal(!twoQuantity.ok && twoQuantity.issues[0]!.error, "DUPLICATE_PRODUCT_NOT_ALLOWED");
   const differentProducts = validateGiftSelections({
     entitlements: [offEntitlement], campaigns: [off],
-    selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 1 }, { campaignId: "gift-q", variantId: "other", quantity: 1 }],
+    selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-q", variantId: "other", quantity: 1, campaignRevision: 3 }],
   });
   assert.equal(differentProducts.ok, true);
 
   const on = qtyCampaign(2, { options: off.options, allowDuplicateGifts: true });
   const onEntitlement = one(on, [paid("a", 4, 100_000)]);
   const duplicates = validateGiftSelections({
-    entitlements: [onEntitlement], campaigns: [on], selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 2 }],
+    entitlements: [onEntitlement], campaigns: [on], selection: [{ campaignId: "gift-q", variantId: "red-m", quantity: 2, campaignRevision: 3 }],
   });
   assert.equal(duplicates.ok, true);
 });
@@ -173,7 +173,7 @@ test("EX-11: earned 3 but stock gives 1 — buying 1 and confirming the shortfal
   assert.equal(result.entitled, 3);
   assert.equal(result.grantable, 1);
   const validation = validateGiftSelections({
-    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "only", quantity: 1 }],
+    entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "only", quantity: 1, campaignRevision: 3 }],
   });
   assert.equal(validation.ok, true);
   const summary = (validation as unknown as { summaries: readonly { requiresAcknowledgement: boolean; unclaimed: number; shortForStock: number; skippedWhileAvailable: number }[] }).summaries[0]!;
@@ -189,7 +189,7 @@ test("EX-12: earned 2, stock available, buyer takes none — allowed, with an ac
   const validation = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [] });
   assert.equal(validation.ok, true);
   const [summary] = (validation as unknown as { summaries: readonly { selected: number; unclaimed: number; skippedWhileAvailable: number; shortForStock: number; requiresAcknowledgement: boolean }[] }).summaries;
-  assert.deepEqual(summary, { campaignId: "gift-q", revision: 3, entitled: 2, selected: 0, unclaimed: 2, skippedWhileAvailable: 2, shortForStock: 0, requiresAcknowledgement: true });
+  assert.deepEqual(summary, { campaignId: "gift-q", revision: 3, entitled: 2, selected: 0, unclaimed: 2, skippedWhileAvailable: 2, shortForStock: 0, contendedForSharedStock: 0, requiresAcknowledgement: true });
 });
 
 test("taking every slot needs no acknowledgement", () => {
@@ -197,7 +197,7 @@ test("taking every slot needs no acknowledgement", () => {
   const result = one(campaign, [paid("x", 4, 100_000)]);
   const validation = validateGiftSelections({
     entitlements: [result], campaigns: [campaign],
-    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1 }, { campaignId: "gift-q", variantId: "b", quantity: 1 }],
+    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-q", variantId: "b", quantity: 1, campaignRevision: 3 }],
   });
   assert.equal(validation.ok, true);
   assert.equal((validation as unknown as { summaries: readonly { requiresAcknowledgement: boolean }[] }).summaries[0]!.requiresAcknowledgement, false);
@@ -208,32 +208,32 @@ test("selection above the entitlement, for a campaign with no slots, or malforme
   const result = one(campaign, [paid("x", 2, 100_000)]); // 1 slot
   const over = validateGiftSelections({
     entitlements: [result], campaigns: [campaign],
-    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1 }, { campaignId: "gift-q", variantId: "b", quantity: 1 }],
+    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-q", variantId: "b", quantity: 1, campaignRevision: 3 }],
   });
   assert.deepEqual(over, { ok: false, issues: [{ error: "OVER_ENTITLEMENT", lineIndex: null, campaignId: "gift-q", variantId: null }] });
 
   const empty = one(campaign, [paid("x", 1, 100_000)]); // 0 slots
   assert.equal(
-    (validateGiftSelections({ entitlements: [empty], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1 }] }) as unknown as { issues: { error: string }[] }).issues[0]!.error,
+    (validateGiftSelections({ entitlements: [empty], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 3 }] }) as unknown as { issues: { error: string }[] }).issues[0]!.error,
     "CAMPAIGN_NOT_ENTITLED",
   );
   assert.equal(
-    (validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "unknown", variantId: "a", quantity: 1 }] }) as unknown as { issues: { error: string }[] }).issues[0]!.error,
+    (validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "unknown", variantId: "a", quantity: 1, campaignRevision: 3 }] }) as unknown as { issues: { error: string }[] }).issues[0]!.error,
     "CAMPAIGN_NOT_ENTITLED",
     "a forged campaign id is not entitled",
   );
   for (const bad of [{ quantity: 0 }, { quantity: -1 }, { quantity: 1.5 }]) {
-    const outcome = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "a", ...bad }] });
+    const outcome = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "a", campaignRevision: 3, ...bad }] });
     assert.equal(!outcome.ok && outcome.issues[0]!.error, "SELECTION_INVALID");
   }
   const dup = validateGiftSelections({
     entitlements: [result], campaigns: [campaign],
-    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1 }, { campaignId: "gift-q", variantId: "a", quantity: 1 }],
+    selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 3 }],
   });
   assert.equal(!dup.ok && dup.issues[0]!.error, "SELECTION_INVALID", "the same line twice is malformed, not summed");
   const tooMany = validateGiftSelections({
     entitlements: [result], campaigns: [campaign],
-    selection: Array.from({ length: 101 }, (_, i) => ({ campaignId: "gift-q", variantId: `v${i}`, quantity: 1 })),
+    selection: Array.from({ length: 101 }, (_, i) => ({ campaignId: "gift-q", variantId: `v${i}`, quantity: 1, campaignRevision: 3 })),
   });
   assert.equal(!tooMany.ok && tooMany.issues[0]!.error, "SELECTION_INVALID");
 });
@@ -244,7 +244,7 @@ test("physical stock is one pool across campaigns: the same variant under two ca
   const entitlements = evaluate([a, b], [paid("x", 2, 100_000)]);
   const both = validateGiftSelections({
     entitlements, campaigns: [a, b],
-    selection: [{ campaignId: "gift-a", variantId: "shared", quantity: 1 }, { campaignId: "gift-b", variantId: "shared", quantity: 1 }],
+    selection: [{ campaignId: "gift-a", variantId: "shared", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-b", variantId: "shared", quantity: 1, campaignRevision: 3 }],
   });
   assert.deepEqual(both, { ok: false, issues: [{ error: "OUT_OF_STOCK", lineIndex: null, campaignId: null, variantId: "shared" }] });
 });
@@ -299,7 +299,7 @@ test("entitlement carries the campaign id and revision; a selection made under a
   const stale = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 6 }] });
   assert.deepEqual(stale, { ok: false, issues: [{ error: "STALE_CAMPAIGN_REVISION", lineIndex: 0, campaignId: "gift-q", variantId: null }] });
   // The campaign was edited after the entitlement was computed.
-  const edited = validateGiftSelections({ entitlements: [result], campaigns: [{ ...campaign, revision: 8 }], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1 }] });
+  const edited = validateGiftSelections({ entitlements: [result], campaigns: [{ ...campaign, revision: 8 }], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 7 }] });
   assert.equal(!edited.ok && edited.issues[0]!.error, "STALE_CAMPAIGN_REVISION");
 });
 
@@ -308,7 +308,7 @@ test("R-04: composite variants are never selectable even with stock", () => {
   const result = one(campaign, [paid("x", 3, 100_000)]);
   assert.deepEqual(result.selectableOptions.map((option) => option.variantId), ["simple"]);
   assert.equal(result.grantable, 1, "distinct selectable products only");
-  const outcome = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "set", quantity: 1 }] });
+  const outcome = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "set", quantity: 1, campaignRevision: 3 }] });
   assert.equal(!outcome.ok && outcome.issues[0]!.error, "VARIANT_NOT_ALLOWED");
 });
 
@@ -325,19 +325,19 @@ test("result and issues do not depend on input order; forged ids are not echoed"
   const forged = validateGiftSelections({
     entitlements, campaigns: [a],
     selection: [
-      { campaignId: "FORGED-<script>", variantId: "x", quantity: 1 },
-      { campaignId: "gift-a", variantId: "FORGED-VARIANT", quantity: 1 },
-      { campaignId: "gift-a", variantId: "z", quantity: 1.5 },
+      { campaignId: "FORGED-<script>", variantId: "x", quantity: 1, campaignRevision: 3 },
+      { campaignId: "gift-a", variantId: "FORGED-VARIANT", quantity: 1, campaignRevision: 3 },
+      { campaignId: "gift-a", variantId: "z", quantity: 1.5, campaignRevision: 3 },
     ],
   });
   assert.equal(forged.ok, false);
   assert.doesNotMatch(JSON.stringify(forged), /FORGED/);
   assert.deepEqual(!forged.ok && forged.issues.map((issue) => [issue.error, issue.lineIndex]), [["CAMPAIGN_NOT_ENTITLED", 0], ["SELECTION_INVALID", 2], ["VARIANT_NOT_ALLOWED", 1]]);
   const reversed = validateGiftSelections({ entitlements, campaigns: [a], selection: [
-    { campaignId: "gift-a", variantId: "z", quantity: 1 }, { campaignId: "gift-a", variantId: "a", quantity: 1 },
+    { campaignId: "gift-a", variantId: "z", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-a", variantId: "a", quantity: 1, campaignRevision: 3 },
   ] });
   const swapped = validateGiftSelections({ entitlements, campaigns: [a], selection: [
-    { campaignId: "gift-a", variantId: "a", quantity: 1 }, { campaignId: "gift-a", variantId: "z", quantity: 1 },
+    { campaignId: "gift-a", variantId: "a", quantity: 1, campaignRevision: 3 }, { campaignId: "gift-a", variantId: "z", quantity: 1, campaignRevision: 3 },
   ] });
   assert.deepEqual(reversed, swapped);
 });
@@ -345,7 +345,7 @@ test("result and issues do not depend on input order; forged ids are not echoed"
 test("malformed selection lines never throw", () => {
   const campaign = qtyCampaign(1);
   const entitlements = evaluate([campaign], [paid("x", 1, 100)]);
-  for (const line of [null, undefined, 7, "x", {}, { campaignId: 1, variantId: 2, quantity: "1" }]) {
+  for (const line of [null, undefined, 7, "x", {}, { campaignId: 1, variantId: 2, quantity: "1", campaignRevision: 3 }]) {
     const outcome = validateGiftSelections({ entitlements, campaigns: [campaign], selection: [line as never] });
     assert.equal(!outcome.ok && outcome.issues[0]!.error, "SELECTION_INVALID");
   }
@@ -375,7 +375,117 @@ test("a gift unit in the input is just another paid group: the engine has no gif
   const result = one(campaign, [paid("x", 3, 100_000)]);
   assert.equal(result.eligibleQuantity, 3);
   assert.equal(result.entitled, 1);
-  const validation = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "g", quantity: 1 }] });
+  const validation = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "g", quantity: 1, campaignRevision: 3 }] });
   assert.equal(validation.ok, true);
   assert.equal(one(campaign, [paid("x", 3, 100_000)]).eligibleQuantity, 3, "selecting a gift changes nothing");
+});
+
+// ---- GQ10-F1: skipped / short / contended split on the stock LEFT after the chosen gifts ----
+
+type SummaryRow = { campaignId: string; selected: number; unclaimed: number; skippedWhileAvailable: number; shortForStock: number; contendedForSharedStock: number };
+function summarize(campaigns: GiftCampaignFacts[], selection: { campaignId: string; variantId: string; quantity: number }[], groups = [paid("x", 4, 100_000)]): SummaryRow[] {
+  const entitlements = evaluate(campaigns, groups);
+  const outcome = validateGiftSelections({
+    entitlements, campaigns,
+    selection: selection.map((line) => ({ ...line, campaignRevision: campaigns.find((c) => c.id === line.campaignId)!.revision })),
+  });
+  assert.equal(outcome.ok, true, JSON.stringify(outcome));
+  return (outcome as unknown as { summaries: SummaryRow[] }).summaries.map((row) => ({
+    campaignId: row.campaignId, selected: row.selected, unclaimed: row.unclaimed, skippedWhileAvailable: row.skippedWhileAvailable,
+    shortForStock: row.shortForStock, contendedForSharedStock: row.contendedForSharedStock,
+  }));
+}
+const campaignA = (options: GiftOptionFacts[], extra: Partial<GiftCampaignFacts> = {}) => qtyCampaign(4, { id: "gift-a", options, ...extra });
+const campaignB = (options: GiftOptionFacts[], extra: Partial<GiftCampaignFacts> = {}) => qtyCampaign(4, { id: "gift-b", options, ...extra });
+// qtyCampaign(4) with Q=4 => every campaign is entitled to exactly 1 slot.
+
+test("F1(1): A takes the only unit of V, B takes nothing — B is short for stock, not 'skipped while available'", () => {
+  const a = campaignA([opt("V", "p", 1)]);
+  const b = campaignB([opt("V", "p", 1)]);
+  const rows = summarize([a, b], [{ campaignId: "gift-a", variantId: "V", quantity: 1 }]);
+  assert.deepEqual(rows, [
+    { campaignId: "gift-a", selected: 1, unclaimed: 0, skippedWhileAvailable: 0, shortForStock: 0, contendedForSharedStock: 0 },
+    { campaignId: "gift-b", selected: 0, unclaimed: 1, skippedWhileAvailable: 0, shortForStock: 1, contendedForSharedStock: 0 },
+  ]);
+});
+
+test("F1(2): B also has another variant with stock left — that slot really was skipped", () => {
+  const a = campaignA([opt("V", "p", 1)]);
+  const b = campaignB([opt("V", "p", 1), opt("W", "p2", 1)]);
+  const rows = summarize([a, b], [{ campaignId: "gift-a", variantId: "V", quantity: 1 }]);
+  assert.deepEqual(rows[1], { campaignId: "gift-b", selected: 0, unclaimed: 1, skippedWhileAvailable: 1, shortForStock: 0, contendedForSharedStock: 0 });
+});
+
+test("F1: two campaigns, nobody chose, one unit between them — contention is reported as such, never as a skip or a shortage", () => {
+  const a = campaignA([opt("V", "p", 1)]);
+  const b = campaignB([opt("V", "p", 1)]);
+  const rows = summarize([a, b], []);
+  for (const row of rows) {
+    assert.deepEqual([row.skippedWhileAvailable, row.shortForStock, row.contendedForSharedStock], [0, 0, 1], row.campaignId);
+  }
+  // Enough stock for both: each slot is a genuine skip.
+  const plenty = summarize([campaignA([opt("V", "p", 2)]), campaignB([opt("V", "p", 2)])], []);
+  for (const row of plenty) assert.deepEqual([row.skippedWhileAvailable, row.shortForStock, row.contendedForSharedStock], [1, 0, 0], row.campaignId);
+});
+
+test("F1(3): reversing the campaigns and the selection lines changes nothing", () => {
+  const a = campaignA([opt("V", "p", 2), opt("W", "p2", 1)], { id: "gift-a", maxGiftsPerOrder: 2, minimumQuantity: 2 });
+  const b = campaignB([opt("V", "p", 2), opt("X", "p3", 1)], { minimumQuantity: 2 });
+  const c = qtyCampaign(2, { id: "gift-c", options: [opt("V", "p", 2)], allowDuplicateGifts: true });
+  const selection = [
+    { campaignId: "gift-a", variantId: "V", quantity: 1 },
+    { campaignId: "gift-b", variantId: "X", quantity: 1 },
+  ];
+  const groups = [paid("x", 4, 100_000)];
+  const forward = summarize([a, b, c], selection, groups);
+  const reverse = summarize([c, b, a], [...selection].reverse(), groups);
+  assert.deepEqual(forward, reverse);
+  for (const row of forward) assert.equal(row.unclaimed, row.skippedWhileAvailable + row.shortForStock + row.contendedForSharedStock, row.campaignId);
+});
+
+test("F1(4): duplicates off — a chosen variant uses up its whole ProductMirror, other variants of it do not count as available", () => {
+  const sameProduct = [opt("p-red", "p"), opt("p-black", "p")];
+  // Entitled to 2, took p-red: p-black is the same product, so the second slot is short, not skipped.
+  const taken = summarize([campaignA(sameProduct, { minimumQuantity: 2 })], [{ campaignId: "gift-a", variantId: "p-red", quantity: 1 }]);
+  assert.deepEqual(taken, [{ campaignId: "gift-a", selected: 1, unclaimed: 1, skippedWhileAvailable: 0, shortForStock: 1, contendedForSharedStock: 0 }]);
+  // Took nothing: two slots but only one distinct product, so one skip and one shortage.
+  const nothing = summarize([campaignA(sameProduct, { minimumQuantity: 2 })], []);
+  assert.deepEqual(nothing, [{ campaignId: "gift-a", selected: 0, unclaimed: 2, skippedWhileAvailable: 1, shortForStock: 1, contendedForSharedStock: 0 }]);
+  // A second product with stock makes the other slot a real skip.
+  const two = summarize([campaignA([...sameProduct, opt("q-1", "q")], { minimumQuantity: 2 })], [{ campaignId: "gift-a", variantId: "p-red", quantity: 1 }]);
+  assert.deepEqual(two[0]!.skippedWhileAvailable, 1);
+  // Duplicates on: the same product's other variants are available again.
+  const dupOn = summarize([campaignA(sameProduct, { minimumQuantity: 2, allowDuplicateGifts: true })], [{ campaignId: "gift-a", variantId: "p-red", quantity: 1 }]);
+  assert.deepEqual(dupOn[0]!.skippedWhileAvailable, 1);
+});
+
+// ---- GQ10-F2: campaignRevision is mandatory on every selection line ----
+
+test("F2: a line without a revision is refused; the stored revision must equal the current one", () => {
+  const campaign = qtyCampaign(2, { revision: 8, options: [opt("a", "pa")] });
+  const entitlements = evaluate([campaign], [paid("x", 2, 100_000)]);
+  const run = (line: Record<string, unknown>) => validateGiftSelections({ entitlements, campaigns: [campaign], selection: [line as never] });
+  const base = { campaignId: "gift-q", variantId: "a", quantity: 1 };
+
+  for (const revision of [undefined, null, "8", 0, -1, 8.5, Number.NaN]) {
+    const outcome = run({ ...base, campaignRevision: revision });
+    assert.deepEqual(outcome, { ok: false, issues: [{ error: "SELECTION_REVISION_INVALID", lineIndex: 0, campaignId: null, variantId: null }] }, String(revision));
+  }
+  assert.deepEqual(run(base), { ok: false, issues: [{ error: "SELECTION_REVISION_INVALID", lineIndex: 0, campaignId: null, variantId: null }] }, "omission cannot skip the check");
+  assert.deepEqual(run({ ...base, campaignRevision: 7 }), { ok: false, issues: [{ error: "STALE_CAMPAIGN_REVISION", lineIndex: 0, campaignId: "gift-q", variantId: null }] });
+  assert.equal(run({ ...base, campaignRevision: 8 }).ok, true);
+});
+
+test("F2: the campaign changed right after evaluation — stale with or without selection lines", () => {
+  const campaign = qtyCampaign(2, { revision: 8, options: [opt("a", "pa")] });
+  const entitlements = evaluate([campaign], [paid("x", 2, 100_000)]);
+  const edited = { ...campaign, revision: 9 };
+  const withLine = validateGiftSelections({ entitlements, campaigns: [edited], selection: [{ campaignId: "gift-q", variantId: "a", quantity: 1, campaignRevision: 8 }] });
+  assert.equal(!withLine.ok && withLine.issues.some((issue) => issue.error === "STALE_CAMPAIGN_REVISION"), true);
+  // An opt-out acknowledgement built on the old entitlement is stale too.
+  const noLines = validateGiftSelections({ entitlements, campaigns: [edited], selection: [] });
+  assert.deepEqual(noLines, { ok: false, issues: [{ error: "STALE_CAMPAIGN_REVISION", lineIndex: null, campaignId: "gift-q", variantId: null }] });
+  // The campaign is gone entirely.
+  const gone = validateGiftSelections({ entitlements, campaigns: [], selection: [] });
+  assert.equal(!gone.ok && gone.issues[0]!.error, "STALE_CAMPAIGN_REVISION");
 });

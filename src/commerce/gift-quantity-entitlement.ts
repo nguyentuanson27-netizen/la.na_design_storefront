@@ -256,12 +256,19 @@ export type GiftSelectionLine = Readonly<{
   campaignId: string;
   variantId: string;
   quantity: number;
-  /** Revision the buyer chose under; when present it must equal the entitlement's revision. */
-  campaignRevision?: number;
+  /**
+   * REQUIRED. The campaign revision this choice was made (or stored) under. It must equal the
+   * entitlement's revision, so a persisted or replayed choice cannot silently survive an edit of
+   * the campaign. A missing / non-integer value is refused, never defaulted. GQ12 maps the stored
+   * `CartGiftSelection.campaignRevision` straight through; a fresh choice sends the revision of
+   * the entitlement it was shown.
+   */
+  campaignRevision: number;
 }>;
 
 export type GiftSelectionError =
   | "SELECTION_INVALID"
+  | "SELECTION_REVISION_INVALID"
   | "CAMPAIGN_NOT_ENTITLED"
   | "STALE_CAMPAIGN_REVISION"
   | "VARIANT_NOT_ALLOWED"
@@ -288,10 +295,22 @@ export type CampaignSelectionSummary = Readonly<{
   selected: number;
   /** `entitled - selected`: slots the buyer is not taking, whatever the reason. */
   unclaimed: number;
-  /** Unclaimed slots that stock would still have allowed (the buyer skipped them). */
+  /**
+   * Unclaimed slots the buyer skipped although stock was **guaranteed** for them: still claimable
+   * after the chosen gifts, and even if every other campaign took all it could from the same stock.
+   */
   skippedWhileAvailable: number;
-  /** Unclaimed slots that cannot be given for stock or distinct-product reasons. */
+  /**
+   * Unclaimed slots that cannot be given even if no other campaign claimed anything more: no
+   * stock left after the chosen gifts (of this or any campaign), or no distinct product left (R-03).
+   */
   shortForStock: number;
+  /**
+   * Unclaimed slots that exist in the remaining stock only if other campaigns do not take it
+   * first. Not attributable to a skip or to a shortage, so neither is asserted.
+   * `unclaimed = skippedWhileAvailable + contendedForSharedStock + shortForStock`.
+   */
+  contendedForSharedStock: number;
   /** Selecting fewer than entitled always needs an explicit buyer confirmation (FR-06). */
   requiresAcknowledgement: boolean;
 }>;
@@ -316,7 +335,8 @@ function compareIssues(a: GiftSelectionIssue, b: GiftSelectionIssue): number {
  * Physical stock is shared: the same variant picked under two campaigns draws from one pool. The
  * campaign options already carry `readyAvailable` net of paid demand, so the pool check sums the
  * units asked for per variant across campaigns against the smallest `readyAvailable` any campaign
- * reports for it.
+ * reports for it. The skipped / short / contended split of the unclaimed slots is computed on the
+ * stock **left after the chosen gifts** and never depends on campaign or selection order.
  */
 export function validateGiftSelections(input: Readonly<{
   entitlements: readonly GiftEntitlement[];
@@ -337,14 +357,26 @@ export function validateGiftSelections(input: Readonly<{
   const stockByVariant = new Map<string, number>();
   const seenLines = new Map<string, Set<string>>();
 
+  // An entitlement computed from another revision (or for a campaign that is gone) is stale as a
+  // whole, with or without selection lines: the acknowledgement would describe the wrong rule.
+  for (const entry of entitlements) {
+    if (campaignById.get(entry.campaignId)?.revision !== entry.revision) {
+      issues.push({ error: "STALE_CAMPAIGN_REVISION", lineIndex: null, campaignId: entry.campaignId, variantId: null });
+    }
+  }
+
   selection.forEach((line, lineIndex) => {
     if (
       line === null || typeof line !== "object" ||
       typeof line.campaignId !== "string" || typeof line.variantId !== "string" ||
-      !isSafePositive(line.quantity) || line.quantity > MAX_GIFTS_PER_ORDER_TECHNICAL_CAP ||
-      (line.campaignRevision !== undefined && !isSafePositive(line.campaignRevision))
+      !isSafePositive(line.quantity) || line.quantity > MAX_GIFTS_PER_ORDER_TECHNICAL_CAP
     ) {
       issues.push({ error: "SELECTION_INVALID", lineIndex, campaignId: null, variantId: null });
+      return;
+    }
+    // Fail closed: a choice without a revision cannot prove it is not a replay of an older one.
+    if (!isSafePositive(line.campaignRevision)) {
+      issues.push({ error: "SELECTION_REVISION_INVALID", lineIndex, campaignId: null, variantId: null });
       return;
     }
     let variantsSeen = seenLines.get(line.campaignId);
@@ -361,7 +393,7 @@ export function validateGiftSelections(input: Readonly<{
       issues.push({ error: "CAMPAIGN_NOT_ENTITLED", lineIndex, campaignId: null, variantId: null });
       return;
     }
-    if (entitlement.revision !== campaign.revision || (line.campaignRevision !== undefined && line.campaignRevision !== entitlement.revision)) {
+    if (entitlement.revision !== campaign.revision || line.campaignRevision !== entitlement.revision) {
       issues.push({ error: "STALE_CAMPAIGN_REVISION", lineIndex, campaignId: entitlement.campaignId, variantId: null });
       return;
     }
@@ -403,23 +435,93 @@ export function validateGiftSelections(input: Readonly<{
   }
   if (issues.length > 0) return { ok: false, issues: issues.sort(compareIssues) };
 
-  const summaries: CampaignSelectionSummary[] = [...entitlements]
-    .sort((a, b) => compareText(a.campaignId, b.campaignId))
+  // Stock left once every chosen gift is taken, per variant: the smallest `readyAvailable` any
+  // campaign reports for it, minus all chosen units (campaigns draw from one physical pool).
+  const poolByVariant = new Map<string, number>();
+  for (const campaign of campaigns) {
+    for (const option of campaign.options) {
+      if (option.composite) continue;
+      poolByVariant.set(option.variantId, Math.min(poolByVariant.get(option.variantId) ?? Number.MAX_SAFE_INTEGER, option.readyAvailable));
+    }
+  }
+  const remainingByVariant = new Map<string, number>();
+  for (const [variantId, pool] of poolByVariant) {
+    remainingByVariant.set(variantId, Math.max(0, pool - (unitsByVariant.get(variantId) ?? 0)));
+  }
+
+  type Open = Readonly<{
+    entry: GiftEntitlement;
+    campaign: GiftCampaignFacts | undefined;
+    selected: number;
+    unclaimed: number;
+    /** Options this campaign could still take from, with the product units already chosen excluded (R-03). */
+    usable: readonly GiftOptionFacts[];
+  }>;
+  const sortedEntitlements = [...entitlements].sort((a, b) => compareText(a.campaignId, b.campaignId));
+  const open: Open[] = sortedEntitlements
     .filter((entry) => entry.entitled > 0)
     .map((entry) => {
+      const campaign = campaignById.get(entry.campaignId);
       const selected = selectedByCampaign.get(entry.campaignId) ?? 0;
-      const unclaimed = entry.entitled - selected;
-      const skippedWhileAvailable = Math.max(0, Math.min(unclaimed, entry.grantable - selected));
-      return {
-        campaignId: entry.campaignId,
-        revision: entry.revision,
-        entitled: entry.entitled,
-        selected,
-        unclaimed,
-        skippedWhileAvailable,
-        shortForStock: unclaimed - skippedWhileAvailable,
-        requiresAcknowledgement: unclaimed > 0,
-      };
+      const chosenProducts = unitsByCampaignProduct.get(entry.campaignId);
+      const usable = (campaign?.options ?? []).filter(
+        (option) =>
+          !option.composite &&
+          (remainingByVariant.get(option.variantId) ?? 0) >= 1 &&
+          (campaign!.allowDuplicateGifts || !chosenProducts?.has(option.productId)),
+      );
+      return { entry, campaign, selected, unclaimed: entry.entitled - selected, usable };
     });
+
+  /** The most further slots `item` could take from `pool` (variant -> units still free to it). */
+  const capacityFrom = (item: Open, pool: ReadonlyMap<string, number>): number => {
+    if (item.unclaimed <= 0) return 0;
+    const free = item.usable.filter((option) => (pool.get(option.variantId) ?? 0) >= 1);
+    if (item.campaign!.allowDuplicateGifts) {
+      let total = 0;
+      for (const option of free) total += pool.get(option.variantId)!;
+      return Math.min(item.unclaimed, total);
+    }
+    return Math.min(item.unclaimed, new Set(free.map((option) => option.productId)).size);
+  };
+  /** The most units of a variant `item` could still take, whatever it does elsewhere. */
+  const maxUseOf = (item: Open, option: GiftOptionFacts): number =>
+    item.unclaimed <= 0
+      ? 0
+      : Math.min(item.unclaimed, item.campaign!.allowDuplicateGifts ? remainingByVariant.get(option.variantId)! : 1);
+
+  const summaries: CampaignSelectionSummary[] = open.map((item) => {
+    // Attribution rule (order independent). With the stock left after the chosen gifts:
+    //  - `alone`: what this campaign could still take if no other campaign took anything more.
+    //  - `guaranteed`: the same, after setting aside, per variant, the most every OTHER campaign
+    //    could take of it. Only that part is certainly the buyer's to skip.
+    //  - short = unclaimed - alone; contended = alone - guaranteed.
+    const alone = item.campaign === undefined ? 0 : capacityFrom(item, remainingByVariant);
+    let guaranteed = 0;
+    if (item.campaign !== undefined && alone > 0) {
+      const reduced = new Map<string, number>();
+      for (const [variantId, remaining] of remainingByVariant) {
+        let others = 0;
+        for (const other of open) {
+          if (other === item || other.campaign === undefined) continue;
+          const option = other.usable.find((candidate) => candidate.variantId === variantId);
+          if (option !== undefined) others += maxUseOf(other, option);
+        }
+        reduced.set(variantId, Math.max(0, remaining - others));
+      }
+      guaranteed = Math.min(alone, capacityFrom(item, reduced));
+    }
+    return {
+      campaignId: item.entry.campaignId,
+      revision: item.entry.revision,
+      entitled: item.entry.entitled,
+      selected: item.selected,
+      unclaimed: item.unclaimed,
+      skippedWhileAvailable: guaranteed,
+      shortForStock: item.unclaimed - alone,
+      contendedForSharedStock: alone - guaranteed,
+      requiresAcknowledgement: item.unclaimed > 0,
+    };
+  });
   return { ok: true, summaries };
 }
