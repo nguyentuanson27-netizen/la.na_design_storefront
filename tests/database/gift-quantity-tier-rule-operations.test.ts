@@ -207,7 +207,7 @@ test("publish: a complete tier rule publishes with the production validator, adv
   assert.equal((await stored(id)).isEnabled, true);
 });
 
-test("publish: gate OFF still refuses, and gift rules still fail closed until their validator lands", async () => {
+test("publish: gate OFF still refuses, and an unfinished gift rule is refused with the exact missing pieces", async () => {
   const id = await createTier("off", rule());
   const off = await publishGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN, env: {} });
   assert.equal(off.ok === false && off.failure.reason, "FEATURE_DISABLED");
@@ -215,7 +215,10 @@ test("publish: gate OFF still refuses, and gift rules still fail closed until th
   assert.equal(gift.ok, true);
   if (!gift.ok) return;
   const refused = await publish(gift.campaignId);
-  assert.equal(refused.ok === false && refused.failure.reason === "INVALID_RULE" ? refused.failure.errors[0] : null, "RULE_VALIDATION_NOT_AVAILABLE");
+  assert.deepEqual(
+    refused.ok === false && refused.failure.reason === "INVALID_RULE" ? refused.failure.errors : null,
+    ["GIFT_MINIMUM_QUANTITY_REQUIRED", "GIFT_DUPLICATE_POLICY_REQUIRED", "GIFT_OPTIONS_EMPTY"],
+  );
 });
 
 test("stack priority must be unique among effective stacking campaigns; ending one frees its slot", async () => {

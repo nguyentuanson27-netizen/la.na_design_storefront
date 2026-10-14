@@ -20,6 +20,7 @@ import {
   clearLegacyPromotionStackConsent,
   setLegacyPromotionStackConsent,
 } from "@/commerce/gift-quantity-legacy-consent";
+import { giftQuantityFailureQuery } from "@/commerce/gift-quantity-admin-feedback";
 import { createGiftQuantityAdminRepository, type AdminScopePreview } from "@/commerce/gift-quantity-admin-repository";
 import { isBoundedPromotionIdentifier } from "@/commerce/promotion-activation";
 import { preflightStackPriority, type StackPriorityPreflight } from "@/commerce/gift-quantity-stack-priority";
@@ -62,7 +63,7 @@ function campaignIdFrom(formData: FormData): string {
 /** `redirect` throws by design, so it is called only after the operation has fully settled. */
 function completeWith(outcome: GiftQuantityActionOutcome): never {
   if (outcome.ok) redirect(`${LIST_PATH}?status=ok`);
-  redirect(`${LIST_PATH}?status=error&reason=${encodeURIComponent(outcome.failure.reason)}`);
+  redirect(`${LIST_PATH}?${giftQuantityFailureQuery(outcome.failure)}`);
 }
 
 export async function createGiftQuantityAction(formData: FormData): Promise<void> {
@@ -121,6 +122,8 @@ export async function editGiftQuantityAction(formData: FormData): Promise<void> 
           },
           // Only when the submission described the rule (GQ09a); a form without tier fields leaves it.
           ...(submitted.tierRule ? { tierRule: submitted.tierRule } : {}),
+          // Likewise a gift submission that described its rule (GQ13a); one without gift fields leaves it.
+          ...(submitted.giftRule ? { giftRule: submitted.giftRule } : {}),
         },
       });
     }
