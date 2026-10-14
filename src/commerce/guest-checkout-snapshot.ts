@@ -21,6 +21,7 @@ import {
   type RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
 import { resolveBenefitCheckoutQuote, toOrderQuoteSnapshotInput } from "./benefit-checkout-quote.ts";
+import { summarizeBenefitQuote, type BenefitQuoteSummary } from "./benefit-quote-summary.ts";
 import { clearOrderQuoteSnapshot, replaceOrderQuoteSnapshot, validateOrderQuoteSnapshot } from "./order-quote-snapshot.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { projectBenefitQuoteForVendor } from "./pancake-gift-projection.ts";
@@ -156,6 +157,11 @@ export type BenefitQuoteAuthority = Readonly<{
     facts: BenefitQuoteProofFacts,
   ) => Readonly<{ ok: true }> | Readonly<{ ok: false; reason: RenderedQuoteProofRejection }>;
   verifyNonclaimAcknowledgement: (facts: BenefitQuoteProofFacts) => NonclaimAcknowledgementVerification;
+  /**
+   * GQ24 -- told once per DRAFT attempt that resolved to a benefit quote, with counts only. It must not
+   * throw into the order path: a failure here is swallowed, never a reason to refuse a checkout.
+   */
+  onBenefitQuote?: (summary: BenefitQuoteSummary) => void;
 }>;
 
 type GuestCheckoutSnapshotServiceOptions = Readonly<{
@@ -690,6 +696,11 @@ export function createGuestCheckoutSnapshotService(
           const authority = options.benefits;
           if (authority === undefined) return { ok: false, reason: "BENEFIT_CHECKOUT_UNAVAILABLE" };
           const facts = resolution.facts;
+          try {
+            authority.onBenefitQuote?.(summarizeBenefitQuote(resolution));
+          } catch {
+            // Telemetry never decides a checkout.
+          }
           // Same instant, same cart lock as the write: the proof is checked against the quote this
           // transaction just computed, so a price or gift that moved cannot slip in between.
           const verification = authority.verifyBenefitQuote(facts);

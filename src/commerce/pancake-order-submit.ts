@@ -86,6 +86,8 @@ export type PancakeOrderSubmissionEvent =
   | {
       name: "pancake_order.create_rejected";
       correlationId: string;
+      /** Present on events of a benefit (gift/tier) order, so its POS outcomes can be counted apart. */
+      benefit?: true;
       state: "REJECTED";
       reason: "ORDER_REJECTED";
     }
@@ -122,6 +124,8 @@ export type PancakeOrderSubmissionEvent =
   | {
       name: "pancake_order.create_started";
       correlationId: string;
+      /** Present on events of a benefit (gift/tier) order, so its POS outcomes can be counted apart. */
+      benefit?: true;
       state: "POS_SUBMITTING";
       dependency: "pancake";
       operation: "create_order";
@@ -129,12 +133,16 @@ export type PancakeOrderSubmissionEvent =
   | {
       name: "pancake_order.create_unknown";
       correlationId: string;
+      /** Present on events of a benefit (gift/tier) order, so its POS outcomes can be counted apart. */
+      benefit?: true;
       state: "SYNC_UNKNOWN";
       reason: "CREATE_OUTCOME_UNKNOWN";
     }
   | {
       name: "pancake_order.confirmed";
       correlationId: string;
+      /** Present on events of a benefit (gift/tier) order, so its POS outcomes can be counted apart. */
+      benefit?: true;
       state: "CONFIRMED";
     };
 
@@ -814,9 +822,11 @@ export function createPancakeOrderSubmissionService(
       return existingResult(current);
     }
 
+    const benefitTag = verifyCreatedOrder === undefined ? {} : ({ benefit: true } as const);
     emitSafely(options.onEvent, {
       name: "pancake_order.create_started",
       correlationId,
+      ...benefitTag,
       state: "POS_SUBMITTING",
       dependency: "pancake",
       operation: "create_order",
@@ -842,6 +852,7 @@ export function createPancakeOrderSubmissionService(
         emitSafely(options.onEvent, {
           name: "pancake_order.create_rejected",
           correlationId,
+          ...benefitTag,
           state: "REJECTED",
           reason: "ORDER_REJECTED",
         });
@@ -855,6 +866,7 @@ export function createPancakeOrderSubmissionService(
       emitSafely(options.onEvent, {
         name: "pancake_order.create_unknown",
         correlationId,
+        ...benefitTag,
         state: "SYNC_UNKNOWN",
         reason: "CREATE_OUTCOME_UNKNOWN",
       });
@@ -916,6 +928,7 @@ export function createPancakeOrderSubmissionService(
       emitSafely(options.onEvent, {
         name: "pancake_order.create_unknown",
         correlationId,
+        ...benefitTag,
         state: "SYNC_UNKNOWN",
         reason: "CREATE_OUTCOME_UNKNOWN",
       });
@@ -925,6 +938,7 @@ export function createPancakeOrderSubmissionService(
     emitSafely(options.onEvent, {
       name: "pancake_order.confirmed",
       correlationId,
+      ...benefitTag,
       state: "CONFIRMED",
     });
     return { ok: true, state: "CONFIRMED", pancakeOrderId };

@@ -4,6 +4,7 @@ import type {
   RenderedQuoteProofFacts,
   RenderedQuoteProofRejection,
 } from "./checkout-quote-proof.ts";
+import type { BenefitCheckoutOutcome } from "../operations/promotion-observability.ts";
 import type { ReservationState } from "./capacity-policy.ts";
 import type { HeldReservation, ReservationOutcome } from "./capacity-reservation.ts";
 import type { PancakeOrderSubmissionResult } from "./pancake-order-submit.ts";
@@ -159,6 +160,8 @@ export type GuestCheckoutSubmitDependencies = {
   orderSubmission: OrderSubmissionService;
   generatePublicCode: () => string;
   onQuoteProofRejection?: (reason: RenderedQuoteProofRejection) => void;
+  /** GQ24: a benefit checkout stopped or redirected before Pancake. Observation only; never throws into the order. */
+  onBenefitOutcome?: (outcome: BenefitCheckoutOutcome, proofReason?: RenderedQuoteProofRejection) => void;
   /**
    * I6b — optional so every existing caller keeps today's behaviour until it is wired. Absent means
    * no hold is taken, which is exactly the pre-I6b path; it is not a silent bypass, because the
@@ -214,6 +217,18 @@ function reservationStateForSubmission(
   if (result.state === "SYNC_UNKNOWN") return "UNKNOWN";
   if (result.state === "REJECTED") return "RELEASED";
   return null;
+}
+
+function observeBenefitOutcome(
+  observer: GuestCheckoutSubmitDependencies["onBenefitOutcome"],
+  outcome: BenefitCheckoutOutcome,
+  proofReason?: RenderedQuoteProofRejection,
+): void {
+  try {
+    observer?.(outcome, proofReason);
+  } catch {
+    // Telemetry never changes a checkout outcome.
+  }
 }
 
 function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitResult {
@@ -303,6 +318,7 @@ export function createGuestCheckoutSubmitService({
   orderSubmission,
   generatePublicCode,
   onQuoteProofRejection,
+  onBenefitOutcome,
   capacity,
   clock = () => new Date(),
 }: GuestCheckoutSubmitDependencies) {
@@ -398,6 +414,7 @@ export function createGuestCheckoutSubmitService({
       }
       if (snapshotResult.reason === "BENEFIT_QUOTE_UNPROVEN") {
         onQuoteProofRejection?.(snapshotResult.quoteReason);
+        observeBenefitOutcome(onBenefitOutcome, "QUOTE_STALE", snapshotResult.quoteReason);
         // Same convergence as above: whatever failed, the buyer sees the current quote and confirms it.
         const { refreshedBenefitQuote } = snapshotResult;
         return {
@@ -411,6 +428,7 @@ export function createGuestCheckoutSubmitService({
         };
       }
       if (snapshotResult.reason === "NONCLAIM_UNACKNOWLEDGED") {
+        observeBenefitOutcome(onBenefitOutcome, "NONCLAIM_UNACKNOWLEDGED");
         const { refreshedBenefitQuote } = snapshotResult;
         return {
           ok: false,
@@ -422,6 +440,16 @@ export function createGuestCheckoutSubmitService({
             requires: "NONCLAIM_ACKNOWLEDGEMENT",
           },
         };
+      }
+      if (
+        snapshotResult.reason === "GIFT_SELECTION_INVALID" ||
+        snapshotResult.reason === "BENEFIT_CHECKOUT_UNAVAILABLE" ||
+        snapshotResult.reason === "VENDOR_PROJECTION_INFEASIBLE"
+      ) {
+        observeBenefitOutcome(
+          onBenefitOutcome,
+          snapshotResult.reason === "BENEFIT_CHECKOUT_UNAVAILABLE" ? "CHECKOUT_UNAVAILABLE" : snapshotResult.reason,
+        );
       }
       return mapSnapshotFailure(snapshotResult.reason);
     }

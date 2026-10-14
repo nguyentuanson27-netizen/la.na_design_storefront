@@ -25,6 +25,8 @@ import {
   type GuestCheckoutSubmitDependencies,
 } from "./guest-checkout-submit.ts";
 import {
+  describeBenefitCheckoutOutcome,
+  describeBenefitQuoteSummary,
   describeRenderedQuoteProofRejection,
   emitPromotionSignal,
 } from "../operations/promotion-observability.ts";
@@ -59,6 +61,9 @@ type GuestCheckoutSubmitRuntimeDependencies = Readonly<{
   recoverStranded: (input: { cartId: string; now: Date }) => Promise<void>;
   generatePublicCode: () => string;
   onQuoteProofRejection: (reason: RenderedQuoteProofRejection) => void;
+  /** GQ24: benefit checkout outcome and quote-summary observers; default to the NDJSON signal stream. */
+  onBenefitOutcome: NonNullable<GuestCheckoutSubmitDependencies["onBenefitOutcome"]>;
+  onBenefitQuote: NonNullable<BenefitQuoteAuthority["onBenefitQuote"]>;
   /**
    * The server-only key material for the rendered-quote proof. Injected as a reader rather than
    * read at module load so a test can supply its own secret without touching process env, and so a
@@ -120,6 +125,17 @@ export function createGuestCheckoutSubmitRuntime(
       emitPromotionSignal(describeRenderedQuoteProofRejection({ reason }));
     });
 
+  const onBenefitOutcome =
+    options.onBenefitOutcome ??
+    ((outcome, proofReason) => {
+      emitPromotionSignal(describeBenefitCheckoutOutcome({ outcome, proofReason }));
+    });
+  const onBenefitQuote =
+    options.onBenefitQuote ??
+    ((summary) => {
+      emitPromotionSignal(describeBenefitQuoteSummary(summary));
+    });
+
   async function submit({
     cartId,
     checkoutInput,
@@ -169,6 +185,7 @@ export function createGuestCheckoutSubmitRuntime(
           secret: quoteProofSecret,
         }),
       benefits: {
+        onBenefitQuote,
         verifyBenefitQuote: (currentQuote) =>
           verifyBenefitQuoteProof({
             proof: quoteProof,
@@ -197,6 +214,7 @@ export function createGuestCheckoutSubmitRuntime(
       orderSubmission: createOrderSubmission(config),
       generatePublicCode,
       onQuoteProofRejection,
+      onBenefitOutcome,
       // I6b — the production path holds capacity. This wiring is what makes the ADR 0014 §6.2 gate
       // real for a buyer: the dependency is optional on the service below so unit tests can describe
       // the pre-I6b path, and defaulting it to the real repository here is what stops that being a

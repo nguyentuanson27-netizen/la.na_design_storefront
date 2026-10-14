@@ -40,6 +40,7 @@ import type {
   CampaignRuntimeStatus,
 } from "../commerce/promotion-runtime-health.ts";
 import type { RenderedQuoteProofRejection } from "../commerce/checkout-quote-proof.ts";
+import type { BenefitQuoteSummary } from "../commerce/benefit-quote-summary.ts";
 
 /**
  * Bounds the reason list so one malformed submission cannot turn a diagnostic into a flood.
@@ -167,7 +168,32 @@ export type RenderedQuoteProofRejectionSignal = Readonly<{
   reason: RenderedQuoteProofRejection;
 }>;
 
+/**
+ * GQ24 -- the closed vocabulary of buyer-visible benefit checkout outcomes that stop or redirect a
+ * submit before anything reaches Pancake. POS-side outcomes (rejected, unknown, drift, requote,
+ * withheld) are the existing `pancake_order.*` events, tagged `benefit: true`.
+ */
+export const BENEFIT_CHECKOUT_OUTCOMES = [
+  "QUOTE_STALE",
+  "NONCLAIM_UNACKNOWLEDGED",
+  "GIFT_SELECTION_INVALID",
+  "CHECKOUT_UNAVAILABLE",
+  "VENDOR_PROJECTION_INFEASIBLE",
+] as const;
+export type BenefitCheckoutOutcome = (typeof BENEFIT_CHECKOUT_OUTCOMES)[number];
+
+export type BenefitCheckoutOutcomeSignal = Readonly<{
+  name: "benefit.checkout_outcome";
+  outcome: BenefitCheckoutOutcome;
+  /** Why the proof failed, when the outcome is a proof failure; the same bounded vocabulary as the legacy signal. */
+  proofReason?: RenderedQuoteProofRejection;
+}>;
+
+export type BenefitQuoteSummarySignal = Readonly<{ name: "benefit.quote_summary" } & BenefitQuoteSummary>;
+
 export type PromotionObservabilitySignal =
+  | BenefitCheckoutOutcomeSignal
+  | BenefitQuoteSummarySignal
   | PromotionActivationGateSignal
   | PromotionActivationRejectionSignal
   | PromotionRuntimeHealthSignal
@@ -377,6 +403,34 @@ export function describeRenderedQuoteProofRejection({
   });
 }
 
+export function describeBenefitCheckoutOutcome({
+  outcome,
+  proofReason,
+}: Readonly<{ outcome: BenefitCheckoutOutcome; proofReason?: RenderedQuoteProofRejection }>): BenefitCheckoutOutcomeSignal {
+  return Object.freeze({
+    name: "benefit.checkout_outcome" as const,
+    outcome,
+    ...(proofReason === undefined ? {} : { proofReason }),
+  });
+}
+
+/** Counts only, each clamped to a small non-negative integer so a malformed input cannot widen a log line. */
+export function describeBenefitQuoteSummary(summary: BenefitQuoteSummary): BenefitQuoteSummarySignal {
+  const bounded = (value: number) => (Number.isSafeInteger(value) && value >= 0 ? Math.min(value, 100_000) : 0);
+  return Object.freeze({
+    name: "benefit.quote_summary" as const,
+    paidLines: bounded(summary.paidLines),
+    giftLines: bounded(summary.giftLines),
+    stackConflicts: bounded(summary.stackConflicts),
+    tierPriceInvalid: bounded(summary.tierPriceInvalid),
+    tierConfigInvalid: bounded(summary.tierConfigInvalid),
+    entitledSlots: bounded(summary.entitledSlots),
+    selectedSlots: bounded(summary.selectedSlots),
+    unclaimedSlots: bounded(summary.unclaimedSlots),
+    stockShortSlots: bounded(summary.stockShortSlots),
+  });
+}
+
 /** Where a signal is written. Injectable so tests assert real emission rather than a spy on stdout. */
 export type PromotionSignalWriter = (line: string) => void;
 
@@ -464,6 +518,11 @@ function normalizeSignalForBudget(
         enabled: signal.enabled,
       };
 
+    case "benefit.checkout_outcome":
+    case "benefit.quote_summary":
+      // Fixed-shape, counts and enum values only: already far below the budget.
+      return { ...signal };
+
     case "checkout.quote_proof_rejected":
       return {
         name: signal.name,
@@ -517,6 +576,11 @@ function minimalFallbackSignal(
         operation: signal.operation,
         enabled: signal.enabled,
       };
+
+    case "benefit.checkout_outcome":
+    case "benefit.quote_summary":
+      // Fixed-shape, counts and enum values only: already far below the budget.
+      return { ...signal };
 
     case "checkout.quote_proof_rejected":
       return {

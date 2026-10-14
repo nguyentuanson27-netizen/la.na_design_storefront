@@ -5,6 +5,7 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { setLegacyPromotionStackConsent } from "../../src/commerce/gift-quantity-legacy-consent.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
+import type { BenefitQuoteSummary } from "../../src/commerce/benefit-quote-summary.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import {
   issueBenefitQuoteProof,
@@ -16,7 +17,7 @@ import {
 import { createGuestCheckoutSnapshotService } from "../../src/commerce/guest-checkout-snapshot.ts";
 import { createGuestCheckoutSubmitService } from "../../src/commerce/guest-checkout-submit.ts";
 import { readOrderQuoteSnapshot } from "../../src/commerce/order-quote-snapshot.ts";
-import { createPancakeOrderSubmissionService } from "../../src/commerce/pancake-order-submit.ts";
+import { createPancakeOrderSubmissionService, type PancakeOrderSubmissionEvent } from "../../src/commerce/pancake-order-submit.ts";
 import { createStorefrontCartRepository } from "../../src/commerce/storefront-cart-repository.ts";
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
 
@@ -153,8 +154,8 @@ async function renderedFacts(at: Date = NOW): Promise<BenefitQuoteProofFacts> {
   return resolution.facts;
 }
 
-function snapshotService(options: Readonly<{ proof?: unknown; acknowledgement?: unknown; env?: Record<string, string | undefined>; at?: Date; withBenefits?: boolean }> = {}) {
-  const { proof, acknowledgement, env = ON, at = NOW, withBenefits = true } = options;
+function snapshotService(options: Readonly<{ proof?: unknown; acknowledgement?: unknown; env?: Record<string, string | undefined>; at?: Date; withBenefits?: boolean; onBenefitQuote?: (summary: BenefitQuoteSummary) => void }> = {}) {
+  const { proof, acknowledgement, env = ON, at = NOW, withBenefits = true, onBenefitQuote } = options;
   return createGuestCheckoutSnapshotService(prisma, {
     checkoutInputValidated: true,
     env,
@@ -162,6 +163,7 @@ function snapshotService(options: Readonly<{ proof?: unknown; acknowledgement?: 
     verifyRenderedQuote: () => ({ ok: true }),
     benefits: withBenefits
       ? {
+          onBenefitQuote,
           verifyBenefitQuote: (currentQuote) => verifyBenefitQuoteProof({ proof, cartId, currentQuote, secret }),
           verifyNonclaimAcknowledgement: (currentQuote) => verifyNonclaimAcknowledgement({ token: acknowledgement, cartId, currentQuote, secret, now: at }),
         }
@@ -616,7 +618,7 @@ function fakePancake(
       calls.create.push(request);
       return behaviour.create ? behaviour.create(request) : { id: 800_000 + calls.create.length };
     },
-    async readOrder(_shopId: number, _orderId: string): Promise<PancakeOrderReadBack> {
+    async readOrder(): Promise<PancakeOrderReadBack> {
       calls.readBack += 1;
       const request = calls.create.at(-1);
       if (behaviour.readBack) return behaviour.readBack(request);
@@ -633,11 +635,12 @@ function fakePancake(
 function submission(pancake: ReturnType<typeof fakePancake>, proof: unknown, options: Readonly<{ verifiedShops?: readonly number[]; acknowledgement?: unknown; at?: Date }> = {}) {
   const { verifiedShops = [SHOP], acknowledgement, at = NOW } = options;
   const events: string[] = [];
+  const rawEvents: PancakeOrderSubmissionEvent[] = [];
   const pos = createPancakeOrderSubmissionService(prisma, pancake.gateway, {
     lineLevelPricingVerifiedShopIds: verifiedShops,
     env: ON,
     now: () => at,
-    onEvent: (event) => events.push(event.name),
+    onEvent: (event) => { events.push(event.name); rawEvents.push(event); },
     onConfirmed: async () => undefined,
   });
   const service = createGuestCheckoutSubmitService({
@@ -647,7 +650,7 @@ function submission(pancake: ReturnType<typeof fakePancake>, proof: unknown, opt
     capacity: createCapacityReservationRepository(prisma),
     clock: () => at,
   });
-  return { service, events };
+  return { service, events, rawEvents };
 }
 
 const items = (request: PancakeCreateOrderRequest) => request.items.map((item) => [item.variation_id, item.quantity, item.variation_info.retail_price]);
@@ -976,4 +979,110 @@ test("GQ21: a timeout that never reached the POS is rejected on reconciliation, 
   // Stock accounting: a different cart can still reserve what the rejected order released.
   const other = await createCapacityReservationRepository(prisma).reserveOrderCapacity({ orderId: (await prisma.orderMirror.create({ data: { publicCode: `${P}-other-${process.pid}` } })).id, lines: [{ variantId: giftItem.variantId, quantity: 3 }] });
   assert.equal(other.ok, true);
+});
+
+// -- GQ24: telemetry, kill switch and audit traceability --------------------------------------------------------
+
+test("GQ24: the POS events of a benefit order are tagged so confirmed, unknown and rejected can be counted apart", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const ok = submission(fakePancake(), proof);
+  assert.equal((await ok.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.deepEqual(ok.rawEvents.filter((event) => event.name !== "pancake_order.validation_started").map((event) => [event.name, "benefit" in event ? event.benefit : undefined]), [
+    ["pancake_order.create_started", true],
+    ["pancake_order.confirmed", true],
+  ]);
+
+  await cleanup();
+  await seed({ gift: false });
+  const unknown = submission(fakePancake({}, { create: async () => { throw new Error("socket hang up"); } }), issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!);
+  await unknown.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.ok(unknown.rawEvents.some((event) => event.name === "pancake_order.create_unknown" && "benefit" in event && event.benefit === true));
+
+  await cleanup();
+  await seed({ gift: false });
+  const rejected = submission(fakePancake({}, { create: async () => { throw new PancakeHttpError(422, "no"); } }), issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!);
+  await rejected.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.ok(rejected.rawEvents.some((event) => event.name === "pancake_order.create_rejected" && "benefit" in event && event.benefit === true));
+});
+
+test("GQ24: the quote summary counts entitled, selected and unclaimed slots and carries nothing identifying", async () => {
+  await seed();
+  await chooseGift(1);
+  const facts = await renderedFacts();
+  const summaries: BenefitQuoteSummary[] = [];
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  const acknowledgement = issueNonclaimAcknowledgement({ quote: facts, cartId, secret, now: NOW })!;
+  const drafted = await create(snapshotService({ proof, acknowledgement, onBenefitQuote: (summary) => summaries.push(summary) }));
+  assert.ok(drafted.ok);
+  assert.equal(summaries.length, 1);
+  const summary = summaries[0]!;
+  assert.equal(summary.giftLines, 1);
+  assert.equal(summary.selectedSlots, 1);
+  assert.equal(summary.entitledSlots, 2); // one slot per unit, capped at 2 by the campaign
+  assert.equal(summary.unclaimedSlots, 1);
+  assert.deepEqual(Object.keys(summary).sort(), [
+    "entitledSlots", "giftLines", "paidLines", "selectedSlots", "stackConflicts", "stockShortSlots", "tierConfigInvalid", "tierPriceInvalid", "unclaimedSlots",
+  ]);
+  assert.ok(Object.values(summary).every((value) => Number.isSafeInteger(value) && value >= 0));
+});
+
+test("GQ24: a telemetry observer that throws never changes the checkout", async () => {
+  await seed({ gift: false });
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const drafted = await create(snapshotService({ proof, onBenefitQuote: () => { throw new Error("log sink down"); } }));
+  assert.ok(drafted.ok);
+});
+
+test("GQ24 kill switch: turning the gate OFF stops new quotes using the new rules, re-quotes a draft, and leaves a confirmed order and its audit trail untouched", async () => {
+  await seed();
+  await chooseGift(2);
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+
+  // An older order, confirmed while the rules were live.
+  const live = submission(fakePancake(), proof);
+  assert.equal((await live.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  const confirmed = await lastOrder();
+  assert.equal(confirmed.state, "CONFIRMED");
+  const before = await readOrderQuoteSnapshot(prisma, confirmed.id);
+  assert.ok(before);
+
+  // A draft taken while live, then the gate goes OFF before the POS step.
+  await cleanup();
+  await seed();
+  await chooseGift(2);
+  const proof2 = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  assert.ok((await create(snapshotService({ proof: proof2 }))).ok);
+  const draft = await lastOrder();
+  const pancake = fakePancake();
+  const off = createPancakeOrderSubmissionService(prisma, pancake.gateway, { lineLevelPricingVerifiedShopIds: [SHOP], env: {}, now: () => NOW, onConfirmed: async () => undefined });
+  assert.deepEqual(await off.submit({ publicCode: draft.publicCode, shopId: SHOP }), { ok: false, state: "DRAFT", reason: "BENEFIT_REQUOTE_REQUIRED" });
+  assert.deepEqual(pancake.calls.create, []);
+  assert.equal((await lastOrder()).state, "DRAFT");
+
+  // A new quote with the gate OFF is the legacy one: no gift, no tier price, no quote rows.
+  const legacyFacts = await resolveBenefitCheckoutQuote({
+    tx: prisma as never, cartId, shopId: SHOP, now: NOW, env: {}, lines: [],
+  });
+  assert.deepEqual(legacyFacts, { kind: "LEGACY" });
+});
+
+test("GQ24 audit: a stored order names the campaign and revision of every gift and tier step it was priced with, after the campaign moves on", async () => {
+  await seed();
+  await chooseGift(2);
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  const live = submission(fakePancake(), proof);
+  assert.equal((await live.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  const order = await lastOrder();
+  const campaignRevisionBefore = (await prisma.giftQuantityCampaign.findUniqueOrThrow({ where: { id: `${P}-gift` } })).revision;
+
+  // The campaign is edited and disabled afterwards; the order keeps what it was priced with.
+  await prisma.giftQuantityCampaign.update({ where: { id: `${P}-gift` }, data: { revision: { increment: 1 }, isEnabled: false } });
+  const stored = await readOrderQuoteSnapshot(prisma, order.id);
+  assert.ok(stored);
+  const giftLine = stored.lines.find((line) => line.role === "GIFT");
+  assert.deepEqual(giftLine?.campaign, { id: `${P}-gift`, revision: campaignRevisionBefore });
+  const tierStep = stored.lines.flatMap((line) => line.discountSteps).find((step) => step.source === "QUANTITY_TIER");
+  assert.equal(tierStep?.campaignId, `${P}-tier`);
+  assert.match(stored.quoteDigest, /^[0-9a-f]{64}$/);
 });
