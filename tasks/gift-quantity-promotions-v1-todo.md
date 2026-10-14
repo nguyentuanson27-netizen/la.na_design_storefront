@@ -6,7 +6,7 @@
 
 ## Hard approvals / blockers
 - [x] **H0 Owner (ADR 0016, 13/10/2026):** R-01..R-05/R-07 **và quyết định riêng rounding/granularity** (BigInt half-up **mỗi chiếc** vs cách khác) có owner sign-off; update spec/EX/AC/ADR trước GQ06/GQ07 `/build` nếu khác phương án đề xuất.
-- [ ] **H1 POS (OPEN — API-level; owner amended gift representation to 1.000đ per unit, ADR 0016 D-08):** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
+- [x] **H1 POS (API-level gating evidence RECORDED 2026-10-14, shop 715077776 — both gating cases PASS, see runbook Evidence log; owner decision to enable the flag and the other release gates remain open; superseded text follows: owner amended gift representation to 1.000đ per unit, ADR 0016 D-08):** per-case live evidence (GIFT 0đ; PAID+GIFT duplicate variant; PAID+PAID different prices) **or** owner-approved exact-money alternative; no build of vendor-dependent path before this gate.
 - [x] **H2 Plan (owner issued `/build` 13/10/2026):** Owner reviews/approves this plan and PR sizing/dependency graph.
 - [ ] **H3 Core:** GQ03 tạo gate `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` độc lập default-OFF; GQ04 chứng minh OFF chặn new publish/candidates, không bump revision, legacy activation/quote parity trước Checkpoint A; GQ07/08 reverify cart OFF parity sau wiring.
 - [ ] **H4 Checkout:** HMAC+nonclaim consent, reservation race/idempotency, Pancake read-back/reconcile.
@@ -21,11 +21,11 @@
   - [x] R-06 được giữ là gate riêng cần evidence POS; không coi custom-price dương là evidence đủ.
   - [x] **Evidence:** Owner link sign-off cho R-01..R-05/R-07 **và rounding**; spec/ADR/EX/AC nhất quán; không cần runtime tests.
   - Evidence (13/10/2026): owner answers captured in `/build` session; recorded in [ADR 0016](../docs/decisions/0016-gift-quantity-promotions-v1-decisions.md); spec status updated. Owner chose the spec's proposal for every item, so EX/AC values are unchanged. R-06 remains an open POS gate.
-- [ ] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_ — **BUILD DONE (probe + runbook + tests); LIVE EVIDENCE PENDING (H1/R-06) — task stays open**
+- [x] **GQ01 — Khảo sát ba trường hợp Pancake POS và phương án thay thế** _(deps: none; gate: POS)_ — **DONE 2026-10-14: hai case gating PASS trên shop 715077776 (H1/R-06)**
   - [x] Trước thao tác POS có explicit operator consent (`GQ_POS_PROBE_APPROVED=shop:<id>` + danh sách case), preflight stock, một lần tạo duy nhất (không retry; run id trong note), cleanup bằng huỷ đơn mọi đường thoát, log không PII/secret (tests với fake client).
-  - [ ] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ — **cần operator chạy live**; chưa có kết quả, không ngụy tạo vendor support.
+  - [x] Mỗi case ghi chính xác request/response/read-back tổng tiền/số lượng, gồm case 290.003đ — chạy live 2026-10-14 (run `ab50e3dd`): `PAID_PAID_DIFFERENT_PRICE` 290.003đ và `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` 100.000đ đều PASS, read-back không gộp dòng, tổng khớp, hai đơn thử huỷ về status 7; case 0đ không chạy (không gating).
   - [x] Case không được hỗ trợ có phương án thay thế đề xuất trong runbook (cần owner duyệt trước khi xây luồng phụ thuộc). Cases theo ADR 0016 D-08: `PAID_PAID_DIFFERENT_PRICE` (290.003đ), `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` (99.000đ + quà 1.000đ), `GIFT_ZERO_PRICE_INFORMATIONAL` (không gating).
-  - [x] **Evidence (offline):** `tests/domain/pancake-gift-quantity-capability-probe.test.ts` 16/16 pass; runbook [`docs/integrations/pancake-gift-quantity-acceptance.md`](../docs/integrations/pancake-gift-quantity-acceptance.md). **Live evidence log: NOT RUN.**
+  - [x] **Evidence (offline):** `tests/domain/pancake-gift-quantity-capability-probe.test.ts` 16/16 pass; runbook [`docs/integrations/pancake-gift-quantity-acceptance.md`](../docs/integrations/pancake-gift-quantity-acceptance.md). **Live evidence log: RUN 2026-10-14, 2/2 gating PASS (một lần chạy, một shop; xem Evidence log trong runbook).**
 
 ### Scope & persistence
 - [x] **GQ02 — Quy ước scope Dynamic/Fixed/Global theo taxonomy hiện có** _(deps: GQ00; gate: R-07)_
