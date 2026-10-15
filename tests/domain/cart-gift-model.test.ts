@@ -38,7 +38,7 @@ test("GQ14-F3: EX-21 blocks checkout and explains a dropped tier even when repri
   assert.match(model.subtotalText, /40.000/);
   assert.equal(model.canCheckout, false);
   assert.match(model.benefitsNotice!, /giảm giá theo số lượng không còn áp dụng.*giá.*không hợp lệ/i);
-  assert.match(model.benefitsNotice!, /xác nhận lại báo giá/i);
+  assert.match(model.benefitsNotice!, /chưa thể đặt trực tuyến/i, "GQ19: held back only where the POS shop is not verified; see checkout-benefit-ui.test.ts for the open case");
   const unchanged = { ...s, quote: { ...s.quote, benefits: { ...s.quote.benefits, dropped: [] } } } as CartGiftState;
   const noDrop = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: unchanged });
   assert.equal(noDrop.canCheckout, true, "ON without dropped tiers retains checkout");

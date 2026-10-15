@@ -5,10 +5,12 @@ import { PrismaPg } from "@prisma/adapter-pg";
 
 import { setLegacyPromotionStackConsent } from "../../src/commerce/gift-quantity-legacy-consent.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
+import { readBenefitCheckoutRender } from "../../src/commerce/benefit-checkout-render.ts";
 import type { BenefitQuoteSummary } from "../../src/commerce/benefit-quote-summary.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import {
   issueBenefitQuoteProof,
+  benefitQuoteDigest,
   issueNonclaimAcknowledgement,
   verifyBenefitQuoteProof,
   verifyNonclaimAcknowledgement,
@@ -1557,4 +1559,84 @@ test("review7 P1: a legacy order on the same inventory sees the pending holds of
   const again = submission(fine, undefined);
   assert.equal((await again.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
   assert.equal(fine.calls.create.length, 1);
+});
+
+// -- GQ19: the checkout page renders what the submit will prove --------------------------------------------------
+
+const VERIFIED = { ...ON, LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) } as const;
+
+async function checkoutRender(env: Record<string, string | undefined> = VERIFIED, at: Date = NOW) {
+  const items = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items, now: at });
+  return readBenefitCheckoutRender({ client: prisma, cartId, lines, shopId: SHOP, now: at, secret, env });
+}
+
+test("GQ19: the proof the checkout page issues is exactly the one the DRAFT step verifies, and the tick is then required", async () => {
+  await seed();
+  await chooseGift(1); // 2 slots earned at Q=3 (max 2), 1 taken, 1 left unclaimed
+  const rendered = await checkoutRender();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") throw new Error("unreachable");
+  assert.equal(rendered.needsAcknowledgement, true);
+  assert.equal(rendered.digest, benefitQuoteDigest(rendered.facts));
+  assert.deepEqual([...rendered.giftLabels.values()], ["GQ17 giftitem — Black / M"]);
+  assert.equal(rendered.tierDropped, false);
+
+  // Read-only: rendering writes no order, no quote and no hold.
+  assert.equal(await orderCount(), 0);
+  assert.deepEqual(await holds(), []);
+
+  // Without the tick the server asks for it -- and says it asks, with the quote it just computed.
+  const unticked = await create(snapshotService({ proof: rendered.proof }));
+  assert.equal(unticked.ok, false);
+  assert.ok(!unticked.ok && unticked.reason === "NONCLAIM_UNACKNOWLEDGED");
+  assert.equal(await orderCount(), 0, "no order exists until the buyer has said yes");
+
+  // The tick, minted for the recomputed quote exactly as the runtime does, completes the DRAFT.
+  const acknowledgement = issueNonclaimAcknowledgement({ quote: rendered.facts, cartId, secret, now: NOW })!;
+  const ticked = await create(snapshotService({ proof: rendered.proof, acknowledgement }));
+  assert.equal(ticked.ok, true);
+  assert.ok(ticked.ok);
+  const stored = (await readOrderQuoteSnapshot(prisma, ticked.order.id))!;
+  assert.equal(stored.nonclaimAcknowledged, true);
+  assert.equal(stored.quoteDigest, rendered.digest, "the order stores the digest of the quote the page showed");
+});
+
+test("GQ19: a quote that moves after the page rendered is not redeemable with the old proof, whatever the tick", async () => {
+  await seed();
+  await chooseGift(1);
+  const rendered = await checkoutRender();
+  assert.equal(rendered.kind, "BENEFIT");
+  if (rendered.kind !== "BENEFIT") throw new Error("unreachable");
+  // The buyer swaps a gift unit for nothing in another tab: the total is unchanged, the quote is not.
+  await chooseGift(2);
+  const stale = await create(snapshotService({ proof: rendered.proof, acknowledgement: issueNonclaimAcknowledgement({ quote: rendered.facts, cartId, secret, now: NOW })! }));
+  assert.equal(stale.ok, false);
+  assert.ok(!stale.ok && stale.reason === "BENEFIT_QUOTE_UNPROVEN");
+  const refreshed = await checkoutRender();
+  assert.ok(refreshed.kind === "BENEFIT" && refreshed.digest !== rendered.digest, "the refreshed page carries a new digest, so its box starts unticked");
+});
+
+test("GQ19: gate OFF, or a cart with no benefit, renders the ordinary checkout and reads nothing extra", async () => {
+  await seed();
+  await chooseGift(1);
+  assert.deepEqual(await checkoutRender({ LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) }), { kind: "LEGACY" });
+  await cleanup();
+  await seed({ tier: false, gift: false });
+  assert.deepEqual(await checkoutRender(), { kind: "LEGACY" });
+});
+
+test("GQ19: a shop without line-level pricing evidence is not offered a benefit checkout the POS would close", async () => {
+  await seed();
+  await chooseGift(1);
+  assert.deepEqual(await checkoutRender(ON), { kind: "UNAVAILABLE", reason: "POS_NOT_ACCEPTED" });
+  assert.deepEqual(await checkoutRender({ ...ON, LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: "1,2,3" }), { kind: "UNAVAILABLE", reason: "POS_NOT_ACCEPTED" });
+});
+
+test("GQ19: a stored gift choice that no longer holds sends the buyer back; nothing is swapped", async () => {
+  await seed();
+  await chooseGift(2);
+  await prisma.warehouseStock.updateMany({ where: { variantId: giftItem.variantId }, data: { quantity: 0 } });
+  assert.deepEqual(await checkoutRender(), { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID" });
+  assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId } })).quantity, 2, "the choice is left exactly as the buyer made it");
 });

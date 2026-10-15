@@ -1,12 +1,17 @@
 import { connection } from "next/server";
 
 import { readAuthServerConfig } from "@/auth/config";
+import { readBenefitCheckoutRender } from "@/commerce/benefit-checkout-render";
 import { buildRenderedCheckoutQuoteFacts } from "@/commerce/checkout-quote";
 import { issueRenderedQuoteProof } from "@/commerce/checkout-quote-proof";
 import { getCurrentStorefrontCheckoutContext } from "@/commerce/storefront-cart-runtime";
 import { buildCheckoutBeginEvent } from "@/components/analytics/cart-funnel-tracking";
+import { prisma } from "@/db/prisma";
+import { readPancakeShopId } from "@/integrations/pancake/config";
 
 import {
+  buildBenefitCheckoutViewModel,
+  buildBenefitUnavailableCheckoutViewModel,
   buildCheckoutViewModel,
   checkoutPixelContentIds,
   type CheckoutViewModel,
@@ -21,6 +26,37 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
   await connection();
   const checkoutContext = await getCurrentStorefrontCheckoutContext();
   const lines = checkoutContext?.lines ?? [];
+
+  // GQ19 -- a cart with gifts or quantity-tier segments is quoted and proven by the very derivation the
+  // submit re-runs. With the gate OFF (or nothing applying) this is `LEGACY` after reading nothing but
+  // the gate, and the rest of this loader is the ordinary checkout, unchanged.
+  const benefitRender =
+    checkoutContext && lines.length > 0
+      ? await readBenefitCheckoutRender({
+          client: prisma,
+          cartId: checkoutContext.cartId,
+          lines,
+          shopId: readPancakeShopId(),
+          now: new Date(),
+          secret: readAuthServerConfig().secret,
+        })
+      : ({ kind: "LEGACY" } as const);
+  if (benefitRender.kind !== "LEGACY") {
+    const data =
+      benefitRender.kind === "BENEFIT"
+        ? buildBenefitCheckoutViewModel({ lines, render: benefitRender })
+        : buildBenefitUnavailableCheckoutViewModel(benefitRender);
+    // The funnel and pixel events price one unit per variation, which a split-price or gift order
+    // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
+    // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
+    return sealRoute({
+      data,
+      refreshAfterMs: 60_000,
+      trackingEvent: null,
+      structuredData: [],
+      pixelEvents: [],
+    });
+  }
 
   const totals = lines.length > 0 ? buildRenderedCheckoutQuoteFacts(lines) : null;
   // Issued over exactly the facts the page renders, bound to the cart the cookie names. Submission

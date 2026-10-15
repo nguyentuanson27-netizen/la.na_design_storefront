@@ -34,7 +34,8 @@ function render(data: CheckoutViewModel) {
           <div className="mt-8 max-w-2xl" data-ui-state="empty">
             <p className="font-display text-xl md:text-2xl">Giỏ hàng cần được kiểm tra lại.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục.
+              {data.unavailableNotice ??
+                "Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục."}
             </p>
             <Link className="text-link mt-6 inline-block" href="/cart">
               Quay lại giỏ hàng ↗
@@ -46,12 +47,13 @@ function render(data: CheckoutViewModel) {
   }
 
   const { lines, totals, quoteProof } = data;
-  const itemCount = lines.reduce((count, line) => count + line.quantity, 0);
+  const benefit = data.benefit;
+  const itemCount = lines.reduce((count, line) => count + line.quantity, 0) + (benefit?.giftQuantity ?? 0);
 
   const orderLines = (
     <div className="divide-y divide-black/15 border-b border-black/15">
       {lines.map((line) => (
-        <div className="flex items-start gap-4 py-4 first:pt-0" key={line.variantId}>
+        <div className="flex items-start gap-4 py-4 first:pt-0" data-line-role="paid" key={line.lineKey}>
           <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden border border-black/10 bg-black/[0.04]">
             {line.primaryImage ? (
               <Image
@@ -74,6 +76,7 @@ function render(data: CheckoutViewModel) {
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
               {line.optionLabel} · SL {line.quantity}
+              {line.unitPriceText === null ? null : ` × ${line.unitPriceText}`}
             </p>
             {line.preorderLabel === null ? null : (
               <p
@@ -87,6 +90,21 @@ function render(data: CheckoutViewModel) {
           <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
         </div>
       ))}
+      {benefit?.giftLines.map((gift) => (
+        <div className="flex items-start gap-4 py-4" data-line-role="gift" key={gift.lineKey}>
+          <div
+            className="flex aspect-[3/4] w-14 shrink-0 items-center justify-center border border-black/10 bg-black/[0.04] text-[9px] font-semibold uppercase tracking-wider text-black/75"
+            aria-hidden="true"
+          >
+            Quà
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold uppercase tracking-[0.05em]">{gift.label}</p>
+            <p className="mt-1 text-xs leading-5 text-black/75">Quà tặng · SL {gift.quantity}</p>
+          </div>
+          <p className="shrink-0 text-sm font-medium">{gift.priceText}</p>
+        </div>
+      ))}
     </div>
   );
 
@@ -96,6 +114,12 @@ function render(data: CheckoutViewModel) {
         <dt className="text-black/75">Tạm tính</dt>
         <dd>{totals.subtotalText}</dd>
       </div>
+      {benefit && benefit.giftQuantity > 0 ? (
+        <div className="flex justify-between gap-5">
+          <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>
+          <dd>0 ₫</dd>
+        </div>
+      ) : null}
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">Phí vận chuyển</dt>
         <dd>{totals.shippingText}</dd>
@@ -169,6 +193,17 @@ function render(data: CheckoutViewModel) {
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
+          benefit={
+            benefit === null
+              ? undefined
+              : {
+                  digest: benefit.digest,
+                  needsAcknowledgement: benefit.needsAcknowledgement,
+                  unclaimedText: benefit.unclaimedText,
+                  acknowledgementLabel: benefit.acknowledgementLabel,
+                  tierNotice: benefit.tierNotice,
+                }
+          }
           summaryLabel={`Đơn hàng (${itemCount}) · ${totals.totalText}`}
           summarySlot={summaryContent}
           totalsSlot={totalsContent}

@@ -7,6 +7,7 @@ import { loadCheckoutCommunes, loadCheckoutProvinces } from "./checkout-geo.ts";
 import { createCapacityReservationRepository } from "./capacity-reservation.ts";
 import { validateCheckoutGeoSelection } from "./checkout-geo-validation.ts";
 import {
+  issueNonclaimAcknowledgement,
   verifyBenefitQuoteProof,
   verifyNonclaimAcknowledgement,
   verifyRenderedQuoteProof,
@@ -141,6 +142,7 @@ export function createGuestCheckoutSubmitRuntime(
     checkoutInput,
     quoteProof,
     nonclaimAcknowledgement,
+    nonclaimAcknowledged = false,
     metaContext,
   }: {
     cartId: string;
@@ -148,6 +150,14 @@ export function createGuestCheckoutSubmitRuntime(
     quoteProof: unknown;
     /** GQ16: the buyer's signed acknowledgement of unclaimed gift slots, when the quote has any. */
     nonclaimAcknowledgement?: unknown;
+    /**
+     * GQ19: the checkout form's tick. Not evidence on its own -- the snapshot asks for an
+     * acknowledgement only after the quote proof has verified against the quote it just recomputed, so
+     * minting one here for that quote records "this buyer, having seen exactly this quote, said yes"
+     * (`acknowledgedAt` comes from the signed payload). A tick for a quote that moved never gets here:
+     * the proof fails first and the buyer is shown the refreshed quote, unticked.
+     */
+    nonclaimAcknowledged?: boolean;
     metaContext?: MetaPurchaseRequestContext | null;
   }) {
     const now = clock();
@@ -195,7 +205,11 @@ export function createGuestCheckoutSubmitRuntime(
           }),
         verifyNonclaimAcknowledgement: (currentQuote) =>
           verifyNonclaimAcknowledgement({
-            token: nonclaimAcknowledgement,
+            token:
+              nonclaimAcknowledgement ??
+              (nonclaimAcknowledged
+                ? issueNonclaimAcknowledgement({ quote: currentQuote, cartId, secret: quoteProofSecret, now })
+                : undefined),
             cartId,
             currentQuote,
             secret: quoteProofSecret,
@@ -239,6 +253,7 @@ export async function submitGuestCheckoutByCart(input: {
   checkoutInput: unknown;
   quoteProof: unknown;
   nonclaimAcknowledgement?: unknown;
+  nonclaimAcknowledged?: boolean;
   metaContext?: MetaPurchaseRequestContext | null;
 }) {
   return createGuestCheckoutSubmitRuntime().submit(input);

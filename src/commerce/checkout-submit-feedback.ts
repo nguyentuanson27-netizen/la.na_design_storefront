@@ -30,6 +30,17 @@ export function checkoutSubmitFeedback(
   // The buyer is being asked to accept a price they have not seen yet, so this is the one failure
   // that must state the new number and stay retryable. Every unproven-proof outcome lands here;
   // from the buyer's side there is nothing to distinguish and only one thing to do.
+  if (result.status === "PRICE_CHANGED" && result.priceChange.requires === "NONCLAIM_ACKNOWLEDGEMENT") {
+    // GQ19 -- the quote is fine; what is missing is the buyer's own tick for the gift slots they are
+    // not taking. The refreshed page shows which slots, and its box starts unticked.
+    return {
+      tone: "warning",
+      title: "Cần xác nhận quà tặng",
+      message: `Đơn hàng còn suất quà chưa nhận. Hãy tích xác nhận không nhận đủ quà tặng rồi đặt hàng với tổng thanh toán ${vnd.format(result.priceChange.totalVnd)}.`,
+      mayRetry: true,
+    };
+  }
+
   if (result.status === "PRICE_CHANGED") {
     return {
       tone: "warning",

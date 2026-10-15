@@ -9,6 +9,8 @@ type SubmitCheckout = (input: {
   cartId: string;
   checkoutInput: unknown;
   quoteProof: unknown;
+  /** GQ19: the buyer ticked "I am not taking every gift slot". Only ever the literal checkbox value. */
+  nonclaimAcknowledged: boolean;
 }) => Promise<GuestCheckoutSubmitResult>;
 
 type ConsumeAttempt = (cartId: string) => Promise<boolean>;
@@ -69,6 +71,9 @@ export async function submitGuestCheckoutPublicAction(
     // allowed to matter, and it matters only by failing to verify — it is authenticated against the
     // server-read cart before it can say anything, and it never carries a price into the server.
     quoteProof: formData.get("quoteProof"),
+    // A claim, not a fact: the runtime honours it only after the quote proof has verified, and only by
+    // minting the signed acknowledgement for the quote the server just recomputed.
+    nonclaimAcknowledged: formData.get("nonclaimAcknowledged") === "yes",
   });
 
   if (result.ok) {

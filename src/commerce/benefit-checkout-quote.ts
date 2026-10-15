@@ -57,6 +57,8 @@ export type BenefitCheckoutResolution =
       paid: readonly BenefitPaidRow[];
       gifts: readonly BenefitGiftRow[];
       dropped: readonly DroppedBenefitInput[];
+      /** Display only (GQ19): `Sản phẩm — Màu / Cỡ` of every chosen gift, by Pancake variation id. Never part of the proof. */
+      giftLabels: ReadonlyMap<string, string>;
     }>;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -188,7 +190,13 @@ export async function resolveBenefitCheckoutQuote({
       droppedAll.push({ campaignId: entry.campaignId, reason: entry.reason as DroppedBenefitInput["reason"], otherCampaignId: entry.otherCampaignId ?? null });
     }
   }
-  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50) };
+  const labelOf = new Map(state.labels.map((label) => [label.variantId, label]));
+  const giftLabels = new Map<string, string>();
+  for (const gift of gifts) {
+    const label = labelOf.get(gift.variantId);
+    giftLabels.set(gift.pancakeVariationId, label ? [label.productName, label.optionLabel].filter(Boolean).join(" — ") : "Quà tặng");
+  }
+  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50), giftLabels };
 }
 
 /**

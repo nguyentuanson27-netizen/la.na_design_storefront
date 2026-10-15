@@ -1,3 +1,4 @@
+import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
 import {
   buildPreorderFulfillmentNotice,
@@ -34,12 +35,16 @@ const currency = new Intl.NumberFormat("vi-VN", {
 export type CheckoutState = "empty" | "unquotable" | "ready";
 
 export type CheckoutLineView = Readonly<{
+  /** React key. A benefit quote can list one variation twice (two paid price segments), so `variantId` is not unique. */
+  lineKey: string;
   variantId: string;
   productName: string;
   primaryImage: TrustedProductImage | null;
   /** `Màu / Kích cỡ`, or the fallback when the line resolved to no option pair. */
   optionLabel: string;
   quantity: number;
+  /** Benefit quotes only: the price of one unit of this segment, so split prices read as `2 × 400.000 ₫`. */
+  unitPriceText: string | null;
   lineTotalText: string;
   /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
@@ -57,6 +62,35 @@ export type CheckoutTotalsView = Readonly<{
   totalText: string;
 }>;
 
+/** A gift on the order: priced 0đ for the buyer, never part of what they pay. */
+export type CheckoutGiftLineView = Readonly<{
+  lineKey: string;
+  label: string;
+  quantity: number;
+  priceText: string;
+}>;
+
+/**
+ * GQ19 -- what a gift or quantity-tier checkout shows beyond the plain order lines.
+ *
+ * Present exactly when the page renders a benefit quote. `digest` identifies that exact quote: the
+ * acknowledgement the buyer ticks is keyed on it, so a refreshed quote always starts unticked
+ * (FR-06: an acknowledgement is never carried over to a quote the buyer has not seen).
+ */
+export type CheckoutBenefitView = Readonly<{
+  digest: string;
+  giftLines: readonly CheckoutGiftLineView[];
+  giftQuantity: number;
+  /** Slots earned, taken and left. All zero for a tier-only quote. */
+  slots: Readonly<{ entitled: number; selected: number; unclaimed: number; skippedWhileAvailable: number; shortForStock: number }>;
+  needsAcknowledgement: boolean;
+  /** Plain-language account of the slots the order will not include; `null` when nothing is left unclaimed. */
+  unclaimedText: string | null;
+  acknowledgementLabel: string | null;
+  /** EX-21: shown when a quantity tier no longer applies and the price was recomputed. */
+  tierNotice: string | null;
+}>;
+
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
   /** Empty unless `state` is `ready`; the other two states render no order summary. */
@@ -71,6 +105,10 @@ export type CheckoutViewModel = Readonly<{
    * one would be a claim about a basket that is not going to be submitted as it stands.
    */
   preorderNotice: PreorderFulfillmentNotice | null;
+  /** `null` for an ordinary checkout: the gift / quantity-tier section is simply not rendered. */
+  benefit: CheckoutBenefitView | null;
+  /** Why the cart cannot be offered for checkout, when that is more specific than "check your cart". */
+  unavailableNotice: string | null;
 }>;
 
 /**
@@ -99,6 +137,8 @@ export function buildCheckoutViewModel(
       totals: null,
       quoteProof: null,
       preorderNotice: null,
+      benefit: null,
+      unavailableNotice: null,
     });
   }
 
@@ -111,6 +151,8 @@ export function buildCheckoutViewModel(
       totals: null,
       quoteProof: null,
       preorderNotice: null,
+      benefit: null,
+      unavailableNotice: null,
     });
   }
 
@@ -125,6 +167,8 @@ export function buildCheckoutViewModel(
           productName: line.productName ?? "Sản phẩm không còn trong catalog",
           primaryImage: line.media.primary,
           optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
+          lineKey: line.variantId,
+          unitPriceText: null,
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
@@ -140,5 +184,121 @@ export function buildCheckoutViewModel(
     }),
     quoteProof: input.quoteProof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
+    benefit: null,
+    unavailableNotice: null,
+  });
+}
+
+const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>["reason"], string> = {
+  BENEFITS_UNAVAILABLE: "Chưa thể kiểm tra quyền lợi (ưu đãi theo số lượng, quà tặng) của giỏ hàng. Hãy quay lại giỏ hàng và thử lại.",
+  GIFT_SELECTION_INVALID: "Quà bạn đã chọn không còn hợp lệ (hết hàng hoặc chương trình đã đổi). Hãy quay lại giỏ hàng để chọn lại; chúng tôi không tự đổi quà thay bạn.",
+  POS_NOT_ACCEPTED: "Đơn hàng có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến. Bạn có thể bỏ các sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau.",
+  PROOF_UNAVAILABLE: "Giỏ hàng có quá nhiều dòng ưu đãi để xác nhận báo giá. Hãy giảm bớt sản phẩm rồi thử lại.",
+};
+
+/** The page for a cart whose benefits cannot be offered: back to the cart, with the specific reason. */
+export function buildBenefitUnavailableCheckoutViewModel(
+  render: Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>,
+): CheckoutViewModel {
+  return Object.freeze({
+    state: "unquotable",
+    lines: Object.freeze([]),
+    totals: null,
+    quoteProof: null,
+    preorderNotice: null,
+    benefit: null,
+    unavailableNotice: UNAVAILABLE_NOTICES[render.reason],
+  });
+}
+
+function slotText(slots: CheckoutBenefitView["slots"]): string | null {
+  if (slots.unclaimed === 0) return null;
+  const parts = [`Bạn được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
+  if (slots.skippedWhileAvailable > 0) parts.push(`${slots.skippedWhileAvailable} suất bạn chọn bỏ qua dù còn hàng.`);
+  if (slots.shortForStock > 0) parts.push(`${slots.shortForStock} suất không đủ tồn kho để tặng.`);
+  return parts.join(" ");
+}
+
+/**
+ * The checkout of a cart with gifts or quantity-tier segments.
+ *
+ * Every paid segment is its own line (a variation bought at two prices appears twice, each with its
+ * own unit price), gifts are listed at 0đ and kept out of the subtotal, and the totals are the
+ * quote's own: nothing here re-adds or re-prices. The proof and digest come from the render that
+ * signed exactly these facts.
+ */
+export function buildBenefitCheckoutViewModel(
+  input: Readonly<{ lines: readonly StorefrontCartLine[]; render: Extract<BenefitCheckoutRender, { kind: "BENEFIT" }> }>,
+): CheckoutViewModel {
+  const { render } = input;
+  const facts = render.facts;
+  const lineByVariation = new Map(input.lines.flatMap((line) => (line.pancakeVariationId === null ? [] : [[line.pancakeVariationId, line] as const])));
+
+  const paidLines: CheckoutLineView[] = [];
+  const giftLines: CheckoutGiftLineView[] = [];
+  for (const fact of facts.lines) {
+    if (fact.role === "GIFT") {
+      giftLines.push(
+        Object.freeze({
+          lineKey: fact.lineId,
+          label: render.giftLabels.get(fact.pancakeVariationId) ?? "Quà tặng",
+          quantity: fact.quantity,
+          priceText: currency.format(0),
+        }),
+      );
+      continue;
+    }
+    const cartLine = lineByVariation.get(fact.pancakeVariationId);
+    paidLines.push(
+      Object.freeze({
+        lineKey: fact.lineId,
+        variantId: cartLine?.variantId ?? fact.lineId,
+        productName: cartLine?.productName ?? "Sản phẩm không còn trong catalog",
+        primaryImage: cartLine?.media.primary ?? null,
+        optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
+        quantity: fact.quantity,
+        unitPriceText: currency.format(fact.unitPriceVnd),
+        lineTotalText: currency.format(fact.lineTotalVnd),
+        preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
+      }),
+    );
+  }
+
+  const slots = facts.entitlements.reduce(
+    (sum, entry) => ({
+      entitled: sum.entitled + entry.entitled,
+      selected: sum.selected + entry.selected,
+      unclaimed: sum.unclaimed + (entry.entitled - entry.selected),
+      skippedWhileAvailable: sum.skippedWhileAvailable + entry.skippedWhileAvailable,
+      shortForStock: sum.shortForStock + entry.shortForStock,
+    }),
+    { entitled: 0, selected: 0, unclaimed: 0, skippedWhileAvailable: 0, shortForStock: 0 },
+  );
+
+  return Object.freeze({
+    state: "ready",
+    lines: Object.freeze(paidLines),
+    totals: Object.freeze({
+      subtotalText: currency.format(facts.paidSubtotalVnd),
+      shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
+      totalText: currency.format(facts.totalVnd),
+    }),
+    quoteProof: render.proof,
+    preorderNotice: buildPreorderFulfillmentNotice(input.lines),
+    benefit: Object.freeze({
+      digest: render.digest,
+      giftLines: Object.freeze(giftLines),
+      giftQuantity: giftLines.reduce((sum, line) => sum + line.quantity, 0),
+      slots: Object.freeze(slots),
+      needsAcknowledgement: render.needsAcknowledgement,
+      unclaimedText: slotText(slots),
+      acknowledgementLabel: render.needsAcknowledgement
+        ? `Tôi xác nhận không nhận ${slots.unclaimed} suất quà còn lại và muốn đặt hàng như trên.`
+        : null,
+      tierNotice: render.tierDropped
+        ? "Ưu đãi giảm theo số lượng không còn áp dụng vì mức giảm không còn hợp lệ với giá hiện tại. Giá bên dưới đã được tính lại; hãy kiểm tra trước khi đặt hàng."
+        : null,
+    }),
+    unavailableNotice: null,
   });
 }

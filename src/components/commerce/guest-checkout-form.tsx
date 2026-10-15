@@ -86,14 +86,33 @@ const geoFailures = {
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
+/**
+ * GQ19 -- what the form needs to carry a gift / quantity-tier checkout.
+ *
+ * `digest` identifies the exact quote on screen. The acknowledgement is stored against it, so when a
+ * refreshed render brings a different quote the box is unticked by construction -- there is no
+ * effect that has to remember to reset it.
+ */
+export type GuestCheckoutBenefit = Readonly<{
+  digest: string;
+  needsAcknowledgement: boolean;
+  unclaimedText: string | null;
+  acknowledgementLabel: string | null;
+  tierNotice: string | null;
+}>;
+
+const ACK_MISSING_MESSAGE = "Hãy tích xác nhận không nhận đủ quà tặng nếu bạn muốn đặt hàng như trên.";
+
 export function GuestCheckoutForm({
   quoteProof,
+  benefit,
   summaryLabel,
   summarySlot,
   totalsSlot,
   preorderSlot,
 }: Readonly<{
   quoteProof: string;
+  benefit?: GuestCheckoutBenefit;
   summaryLabel?: string;
   summarySlot?: ReactNode;
   totalsSlot?: ReactNode;
@@ -120,6 +139,13 @@ export function GuestCheckoutForm({
   // update live as they fix each field, so a corrected field clears its own message immediately.
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
+  // The digest of the quote the buyer ticked the non-claim box for; null when unticked. Comparing it
+  // with the digest on screen is what makes a refreshed (different) quote start unticked.
+  const [acknowledgedDigest, setAcknowledgedDigest] = useState<string | null>(null);
+  const acknowledged = benefit !== undefined && acknowledgedDigest === benefit.digest;
+  const ackRequired = benefit?.needsAcknowledgement === true;
+  const ackMissing = ackRequired && !acknowledged;
+  const ackInputId = useId();
   const summaryContentId = useId();
   const errorSummaryRef = useRef<HTMLParagraphElement>(null);
   const provinceRequest = useRef(0);
@@ -258,6 +284,8 @@ export function GuestCheckoutForm({
       ? { phone: fieldErrors.phone }
       : {};
   const hasMissingFields = showAllErrors && Object.keys(fieldErrors).length > 0;
+  // Shown once the buyer has tried to order, and cleared the moment they tick the box.
+  const showAckError = showAllErrors && ackMissing;
 
   function errorId(field: RequiredField): string {
     return `${FIELD_INPUT_IDS[field]}-error`;
@@ -279,7 +307,7 @@ export function GuestCheckoutForm({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (Object.keys(fieldErrors).length === 0) return;
+    if (Object.keys(fieldErrors).length === 0 && !ackMissing) return;
     // Stop the Server Action: nothing about this attempt could succeed, and the buyer should see
     // every missing field at once rather than one server refusal at a time.
     event.preventDefault();
@@ -288,6 +316,7 @@ export function GuestCheckoutForm({
     requestAnimationFrame(() => {
       errorSummaryRef.current?.scrollIntoView({ block: "center" });
       if (first) document.getElementById(FIELD_INPUT_IDS[first])?.focus();
+      else document.getElementById(ackInputId)?.focus();
     });
   }
 
@@ -522,6 +551,37 @@ export function GuestCheckoutForm({
       {/* Same breakpoint split as the summary above: the shipping/total block and the fulfillment
           notice belong between the fields and the submit button below `lg`, and inside the sticky
           aside at `lg+`. */}
+      {benefit && (benefit.tierNotice || benefit.unclaimedText) ? (
+        <section aria-label="Quà tặng và ưu đãi" className="checkout-benefits space-y-4 border border-black/25 px-5 py-4 text-sm leading-6">
+          {benefit.tierNotice ? <p role="status">{benefit.tierNotice}</p> : null}
+          {benefit.unclaimedText ? <p>{benefit.unclaimedText}</p> : null}
+          {ackRequired && benefit.acknowledgementLabel ? (
+            <div>
+              {/* Never pre-checked (FR-06). A native checkbox, so Space toggles it and the label is its name. */}
+              <label className="flex items-start gap-3 font-medium" htmlFor={ackInputId}>
+                <input
+                  aria-describedby={showAckError ? `${ackInputId}-error` : undefined}
+                  aria-invalid={showAckError ? true : undefined}
+                  checked={acknowledged}
+                  className="mt-1 h-5 w-5 shrink-0 accent-black"
+                  id={ackInputId}
+                  name="nonclaimAcknowledged"
+                  onChange={(event) => setAcknowledgedDigest(event.target.checked ? benefit.digest : null)}
+                  type="checkbox"
+                  value="yes"
+                />
+                <span>{benefit.acknowledgementLabel}</span>
+              </label>
+              {showAckError ? (
+                <span className="mt-2 block text-sm font-normal text-[#b42318]" id={`${ackInputId}-error`}>
+                  {ACK_MISSING_MESSAGE}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
+
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
       {preorderSlot ? <div className="checkout-preorder lg:hidden">{preorderSlot}</div> : null}
 
@@ -542,13 +602,13 @@ export function GuestCheckoutForm({
       ) : null}
 
       {/* One line beside the button; which fields need attention is shown in red on each field above. */}
-      {hasMissingFields ? (
+      {hasMissingFields || showAckError ? (
         <p
           className="border border-[#b42318] px-5 py-4 text-sm font-semibold text-[#b42318]"
           ref={errorSummaryRef}
           role="alert"
         >
-          Vui lòng điền đầy đủ thông tin.
+          {hasMissingFields ? "Vui lòng điền đầy đủ thông tin." : ACK_MISSING_MESSAGE}
         </p>
       ) : null}
 
