@@ -50,13 +50,13 @@
 - Nếu pool bị cắt, chỉ nói “Gợi ý thêm để đạt ưu đãi”, **không** tuyên bố “rẻ nhất toàn cửa hàng”; 1–2 mẫu là hợp lệ, 0 mẫu thì ẩn. Giới hạn query/time cụ thể chọn theo dữ liệu thật trong U-03, không đoán trước.
 
 ### FR-07 — Giá và lựa chọn biến thể
-- Card hiển thị tên/ảnh đáng tin; mỗi `variantId` có giá hiện tại và **ước tính chi phí tăng thêm của chính biến thể đó** từ quote giả lập. Chọn lại kind/màu/size phải cập nhật giá, estimate và token đồng bộ; biến thể không đủ điều kiện ⇒ không có CTA add hợp lệ.
+- Card hiển thị tên/ảnh đáng tin; mỗi `variantId` có giá hiện tại và **ước tính chi phí tăng thêm của chính biến thể đó** từ quote giả lập. Chọn lại kind/màu/size phải cập nhật giá, estimate và lựa chọn add tương ứng; biến thể không đủ điều kiện ⇒ không có CTA add hợp lệ.
 - Chưa chọn variant chỉ hiển thị giá **“Từ …”** hoặc không hiện estimate. Estimate có thể bằng 0/âm khi toàn giỏ đổi ưu đãi; **không gọi món miễn phí**. Tổng tiền chốt chỉ từ quote/proof sau commit. Cách tính estimate và shipping fallback chờ owner U-01.
 
 ### FR-08 — Thêm 1 chiếc an toàn
-- Public action chỉ nhận token đã ký và lựa chọn định danh bounded (`variantId`/slug nếu cần), **không** nhận tiền, cart ID hoặc mốc do browser khai. Token ngắn hạn ràng buộc server-cart, paid-cart version/snapshot, quote, campaign revision, **rung đích**, biến thể và hạn dùng.
-- Dùng HMAC key/domain riêng; payload ký **đọc được, không phải mã hóa**. UUID của cookie HttpOnly `la_cart` **chỉ ở MAC context trên server**, tuyệt đối không serialize vào token, HTML, URL, log hoặc analytics. Chỉ nội dung public đã allowlist được đưa lên wire; token không thay session auth hoặc COD proof.
-- Trong **cùng transaction/cart lock**, kiểm tra token + current quote/stock/campaign/rung và chạy lại FR-04, rồi commit **đúng +1** hoặc trả lỗi có kiểu **trước khi ghi**. Chống double-click, hai tab, replay và A→B→A bằng **một nguồn write-version/nonce đáng tin** dùng lại ở các luồng cart, không dựa duy nhất vào `Cart.updatedAt` hay fingerprint. U-05 phải xác minh nguồn này; chỉ thêm persistence nếu thực sự thiếu.
+- Public action chỉ nhận **biến thể được chọn** và bằng chứng ngữ cảnh giỏ/quote cần thiết; campaign/rung nếu client gửi chỉ là ý định, **không phải authority**. Không nhận tiền hoặc raw cart ID từ browser. **Ưu tiên kiểm tra xem COD checkout quote-proof HMAC hiện có có tái sử dụng được không**; chỉ tạo signed offer token riêng nếu U-05 chứng minh proof hiện tại không đủ ràng buộc thao tác.
+- Trong **cùng transaction/cart lock**, đối chiếu bằng chứng với current cart/quote, campaign/rung, READY stock và chạy lại FR-04, rồi commit **đúng +1** hoặc từ chối **trước khi ghi**. Double-click/hai tab/replay/A→B→A không được ghi sai; U-05 phải chốt guard snapshot/write-version hoặc cách tương đương dựa trên source hiện có, **không** mặc định tạo nonce table/migration.
+- Nếu cần token mới: HMAC signed ngắn hạn, public payload chỉ chứa field không nhạy cảm; cookie HttpOnly `la_cart` UUID chỉ dùng làm **MAC context phía server**, không nằm trong token/HTML/URL/log/analytics. HMAC không mã hóa và token không thay session auth hoặc COD proof.
 - Sau commit: refresh checkout quote/proof/summary/gift, giữ tên/SĐT/địa chỉ, khóa submit trong lúc add/refresh, reset acknowledgement theo quote mới; không tạo đơn/Pancake ở thao tác add, không phát event add-to-cart trùng, không auto-retry khi kết quả không rõ.
 
 ### FR-09 — Quà vừa được mở
@@ -80,14 +80,14 @@
 Chỉ cần ba trách nhiệm; tách thành file/module **khi code thực tế cần**, không bắt buộc tạo nhiều lớp pass-through:
 
 1. **Đọc gợi ý (read-only):** lấy cart/campaign/candidate bounded, dùng chung PR169 `gift-quantity-*`, entitlement, checkout price/proof để mô phỏng +1, lọc rồi chọn một campaign + tối đa 5 mẫu.
-2. **Action thêm 1:** reuse anonymous-cart/session/lock/stock/quote authority. Verify token và điều kiện trong một transaction, không gọi hành động add độc lập rồi kiểm tra ưu đãi sau.
+2. **Action thêm 1:** reuse anonymous-cart/session/lock/stock/quote authority. Verify current quote/intent và điều kiện trong một transaction, không gọi hành động add độc lập rồi kiểm tra ưu đãi sau.
 3. **UI checkout:** một widget variant picker, add/skip, refresh signed quote và giữ form. Reuse `PromotionBanner`, `OrderSummary` và gift selection service; không fork pricing/discount/shipping.
 
 **Nguyên tắc:** Không thêm thư viện, bảng campaign, pricing engine, hàng đợi hay tầng API mới nếu hợp đồng hiện tại đủ dùng. Không mặc định cần migration Upsell; U-05 kiểm tra version/cart writes trước, nếu thiếu mới trình bày **thay đổi nhỏ nhất** để owner duyệt. Chỉ giới hạn candidate/timeout, log lỗi/tỷ lệ add/độ trễ cơ bản; benchmark/tuning chi tiết khi có dữ liệu thay vì đặt dashboard/phần trăm p95 từ đầu.
 
 ## 4. Nghiệm thu: 12 nhóm test, không phải 50 test độc lập
 
-Các ID `AC-01…AC-50` từ spec v1.4 được **gom nhóm để giữ truy vết**, không tự động đòi mỗi AC có một unit test + DB test + E2E riêng. Mỗi nhóm cần ít test nhất chứng minh được hành vi (unit cho quy tắc thuần, DB/integration cho mutation/quote, E2E cho checkout UX).
+Các ID `AC-01…AC-50` từ [spec v1.4 trước khi rút gọn](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/3369944118fa8a19a1924bce26d28fae60f103c4/docs/specs/smart-promotion-upsell-v1.md#L349-L402) được **gom nhóm để giữ truy vết**, không tự động đòi mỗi AC có một unit test + DB test + E2E riêng. Mỗi nhóm cần ít test nhất chứng minh được hành vi (unit cho quy tắc thuần, DB/integration cho mutation/quote, E2E cho checkout UX).
 
 | Nhóm | AC cũ bao phủ | Hành vi phải chứng minh |
 | --- | --- | --- |
@@ -97,9 +97,9 @@ Các ID `AC-01…AC-50` từ spec v1.4 được **gom nhóm để giữ truy v�
 | TG-04 — Stacking | AC-26, AC-27, AC-29, AC-36, AC-41, AC-45, AC-46 | Order ladder stage, fixed-total segments, Flash Sale, conflict/drop; bảo toàn từng benefit và tiền/proof. |
 | TG-05 — Winner/ranking | AC-09, AC-28, AC-37, AC-40 | Một winner, rank theo U-01 trong bounded verified pool; không claim rẻ nhất toàn catalog. |
 | TG-06 — Catalog | AC-10, AC-11, AC-38 | Không trùng mẫu; tối đa 5, fallback 1–2, exclude hết hàng; kind/màu/size typed. |
-| TG-07 — Variant price | AC-13, AC-44 | Đổi size ⇒ đúng price/estimate/token; variant không đủ ngưỡng bị khóa. |
+| TG-07 — Variant price | AC-13, AC-44 | Đổi size ⇒ đúng price/estimate và lựa chọn add; variant không đủ ngưỡng bị khóa. |
 | TG-08 — Checkout add | AC-14, AC-30 | Commit +1; totals/proof/gift refresh; form giữ nguyên, không đếm event hai lần. |
-| TG-09 — Token/races | AC-15, AC-32, AC-33, AC-34, AC-35, AC-42, AC-43 | HMAC bound cart/variant/rung, không lộ cart UUID; stale, double click/two tab/ABA không ghi sai. |
+| TG-09 — Quote/races | AC-15, AC-32, AC-33, AC-34, AC-35, AC-42, AC-43 | Proof/guard gắn đúng cart và quote; variant/rung được server kiểm lại; không lộ cart UUID; stale, double click/two tab/ABA không ghi sai. Nếu phát token mới, kiểm HMAC/cross-cart/tampering. |
 | TG-10 — Gifts | AC-18, AC-39 | Gift mới unclaimed vẫn được offer với flow U-02; ack/proof mới, không tự chọn. |
 | TG-11 — Dismissal | AC-16, AC-17, AC-31, AC-47, AC-48, AC-49, AC-50 | Cùng lượt reload/requote vẫn ẩn; paid mutation/new cart/new lượt reset; không flash khi hydration. |
 | TG-12 — Accessibility | AC-21 | Một form/CTA, keyboard/screen reader, thông báo trạng thái, mobile không tràn. |
@@ -113,7 +113,7 @@ Các ID `AC-01…AC-50` từ spec v1.4 được **gom nhóm để giữ truy v�
 | U-01 | **Owner** | Chi phí tăng thêm: **A** = chênh tổng phải trả trước/sau (bao gồm ship), hay **B** = giá thực trả chiếc mới? Nếu chưa đủ địa chỉ tính ship thì fallback nào? Chỉ sau đó khóa ranking/estimate/tests. |
 | U-02 | **Owner** | Quà mở ở checkout: **A** chọn quà ngay checkout, hay **B** qua cart rồi quay lại không mất form? |
 | U-03 | **Kỹ thuật ở /plan** | Chọn bounded candidate pool/budget phù hợp catalog thật, deterministic rank trên pool đã mô phỏng; không benchmark/thiết kế index lớn khi chưa đo. |
-| U-05 | **Kỹ thuật + security ở /plan** | Kiểm tra cart lock/version, signed token (cart UUID chỉ MAC context), replay/ABA; reuse **một** revision an toàn cho write và invalidation UI nếu phù hợp. Chỉ xin schema/ADR khi hiện trạng thiếu cơ chế cần thiết. |
+| U-05 | **Kỹ thuật + security ở /plan** | Kiểm tra cart lock, **quote-proof HMAC hiện có**, stale/replay/ABA và version/guard phù hợp. Chỉ tạo offer token riêng hoặc thêm DB revision khi có trường hợp thực tế mà cơ chế hiện có không chặn được; nếu có token, cart UUID chỉ làm MAC context. Dismissal là UI state, không tự tạo version riêng. |
 
 **G-01:** PR169 **đã merge** vào Git `main@6ba8e2d`; SQL migrations nằm trong repo. **Chưa có bằng chứng ở đây** rằng migrations đã chạy trên production DB, Pancake đã xác nhận line-level pricing, hoặc checkout Upsell đã chạy E2E. Đây là **release gates**, không phải lý do mở thêm subsystem trong spec.
 
