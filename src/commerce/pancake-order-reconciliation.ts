@@ -5,6 +5,8 @@ import type {
   MarkerSearchResult,
   OrderSearchOptions,
 } from "../integrations/pancake/order-search.ts";
+import type { PancakeOrderReadBack } from "../integrations/pancake/order-readback.ts";
+import { compareOrderReadBack, type ExpectedVendorLine } from "./pancake-order-readback-check.ts";
 
 export type PancakeOrderReconciliationGateway = {
   searchOrderByMarker(
@@ -12,6 +14,11 @@ export type PancakeOrderReconciliationGateway = {
     marker: string,
     options?: OrderSearchOptions,
   ): Promise<MarkerSearchResult>;
+  /**
+   * The lines and total the POS stored for an order (GQ21). Required to settle a benefit order: one
+   * whose lines cannot be read back stays `SYNC_UNKNOWN`, it is never confirmed on the marker alone.
+   */
+  readOrder?(shopId: number, orderId: string): Promise<PancakeOrderReadBack>;
 };
 
 export type PancakeOrderReconciliationDependencies = {
@@ -31,6 +38,18 @@ export type OrderReconciliationResult =
       ok: false;
       state: "SYNC_UNKNOWN";
       reason: "AMBIGUOUS";
+      detail: string;
+      reservationsUnknown: number;
+    }
+  /**
+   * GQ21 -- the order exists in Pancake but what it stored is not what was sent (or cannot be read to
+   * prove it). The order stays `SYNC_UNKNOWN` with its holds `UNKNOWN`, the Pancake id is recorded for
+   * the operator, and nothing is confirmed, reported as a purchase, or released.
+   */
+  | {
+      ok: false;
+      state: "SYNC_UNKNOWN";
+      reason: "DRIFT";
       detail: string;
       reservationsUnknown: number;
     }
@@ -84,6 +103,8 @@ export function createPancakeOrderReconciliationService({
         state: true,
         pancakeShopId: true,
         pancakeOrderId: true,
+        // GQ21 -- present only for an order that carries a benefit quote.
+        quoteSnapshot: { select: { vendorProjection: true } },
       },
     });
 
@@ -135,7 +156,65 @@ export function createPancakeOrderReconciliationService({
     }
 
     const marker = `[ORDER:${order.publicCode}]`;
-    const search = await searchWithAbsenceConfirmation(order.pancakeShopId, marker);
+    let search: MarkerSearchResult = await searchWithAbsenceConfirmation(order.pancakeShopId, marker);
+
+    // A recorded remote id is evidence that a Pancake order exists. A marker search that finds nothing
+    // (not indexed yet, a different search field, a short page) is not evidence that it does not, so
+    // it must never release the holds of an order we already hold an id for. A benefit order is then
+    // verified by that id through the read-back below; any other order stays unknown for the operator.
+    if (search.kind === "ABSENT" && order.pancakeOrderId !== null) {
+      search = order.quoteSnapshot
+        ? { kind: "FOUND", orderId: order.pancakeOrderId }
+        : { kind: "AMBIGUOUS", reason: "a remote order id is recorded but the marker search found nothing" };
+    }
+
+    // The marker search must agree with the id the create response gave. A different id is a second
+    // Pancake order (a duplicate under the same marker) or an incomplete search window; either way the
+    // recorded id is not overwritten, nothing is confirmed and no hold is released.
+    if (search.kind === "FOUND" && order.pancakeOrderId !== null && search.orderId !== order.pancakeOrderId) {
+      search = { kind: "AMBIGUOUS", reason: "the marker search found a different order id than the one recorded" };
+    }
+
+    if (search.kind === "FOUND" && order.quoteSnapshot) {
+      // A benefit order is settled on what Pancake stored, not on the marker: several lines of one
+      // variation at different prices are exactly what a POS might merge. Without a match it stays
+      // unconfirmed and holds its stock, which is the safe failure.
+      const expected = Array.isArray(order.quoteSnapshot.vendorProjection)
+        ? (order.quoteSnapshot.vendorProjection as unknown as ExpectedVendorLine[])
+        : null;
+      let verdict: "MATCH" | "DRIFT" | "UNAVAILABLE" = "UNAVAILABLE";
+      let detail = "read-back unavailable";
+      if (expected !== null && gateway.readOrder) {
+        try {
+          const comparison = compareOrderReadBack(expected, await gateway.readOrder(order.pancakeShopId, search.orderId), { orderId: search.orderId, shopId: order.pancakeShopId });
+          verdict = comparison.kind;
+          if (comparison.kind === "DRIFT") detail = comparison.detail;
+        } catch {
+          verdict = "UNAVAILABLE";
+        }
+      }
+      if (verdict !== "MATCH") {
+        await client.variantCapacityReservation.updateMany({
+          where: { orderId: order.id, state: "SUBMITTING" },
+          data: { state: "UNKNOWN" },
+        });
+        try {
+          await client.orderMirror.updateMany({
+            where: { id: order.id, state: "SYNC_UNKNOWN" },
+            data: { pancakeOrderId: search.orderId, syncErrorCode: verdict === "DRIFT" ? "RECONCILE_DRIFT" : "READBACK_UNAVAILABLE" },
+          });
+        } catch {
+          // The id is a convenience for the operator; the state and the holds are what matter.
+        }
+        return {
+          ok: false,
+          state: "SYNC_UNKNOWN",
+          reason: "DRIFT",
+          detail: verdict === "DRIFT" ? detail : "read-back unavailable",
+          reservationsUnknown: await client.variantCapacityReservation.count({ where: { orderId: order.id, state: "UNKNOWN" } }),
+        };
+      }
+    }
 
     if (search.kind === "FOUND") {
       const committedAt = clock();

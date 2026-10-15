@@ -876,6 +876,8 @@ model OrderQuoteSnapshot {
   /// Pancake projection that was sent (ADR 0016 D-08): lines and their hash. Written by GQ20, both or neither.
   vendorProjectionHash String?
   vendorProjection     Json?
+  /// GQ18 -- campaigns the quote stepped aside from and why (for example `TIER_PRICE_INVALID`); audit only.
+  droppedBenefits      Json?
   createdAt            DateTime                @default(now())
   order                OrderMirror             @relation(fields: [orderId], references: [id], onDelete: Restrict, onUpdate: Restrict)
   lines                OrderQuoteLine[]

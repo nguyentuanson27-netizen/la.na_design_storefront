@@ -76,6 +76,56 @@ export async function readAdvisoryHeldQuantities(
   return held;
 }
 
+/**
+ * How far the clock of the process that settled a hold may trail the clock that starts an observation
+ * (two app processes, one database). Over-counting inside this window can only refuse an order.
+ */
+export const OBSERVATION_CLOCK_SKEW_MS = 30_000;
+
+/**
+ * Units other orders have spoken for that **a Pancake stock reading did not include**.
+ *
+ * Pancake's live `sellableStock` already has every order that was created before the reading, so what
+ * must be subtracted from it is exactly what the reading could not have seen:
+ *  - holds that have not reached Pancake: `RESERVED`, and the `SUBMITTING` / `UNKNOWN` holds whose write
+ *    may be in flight or may not have landed (counted -- not counting one that has not landed would let
+ *    both orders through);
+ *  - holds that settled `COMMITTED` **after the reading began** (`observationStartedAt`, minus a small
+ *    clock-skew margin): their order was created after the snapshot was taken, so the snapshot does not
+ *    include it even though the hold is no longer pending.
+ *
+ * A hold that was `COMMITTED` before the reading began is deliberately absent, whether or not the mirror
+ * has been told: that order is already out of the live figure, and subtracting it again counts it twice.
+ * `readAdvisoryHeldQuantities` counts an un-handed-off `COMMITTED` hold because it answers "what is the
+ * *mirror* missing?"; this answers "what is the *reading* missing?".
+ *
+ * Read this **after** the Pancake reading, with `observationStartedAt` taken **before** it: a hold that
+ * moves from `SUBMITTING` to `COMMITTED` between the two is then caught by its `committedAt`, instead of
+ * dropping out of both figures.
+ */
+export async function readPendingHeldQuantities(
+  client: AdvisoryHoldReadClient,
+  variantIds: readonly string[],
+  observationStartedAt: Date,
+): Promise<ReadonlyMap<string, number>> {
+  const ids = [...new Set(variantIds)];
+  const held = new Map<string, number>(ids.map((id) => [id, 0]));
+  if (ids.length === 0) return held;
+  const since = new Date(observationStartedAt.getTime() - OBSERVATION_CLOCK_SKEW_MS);
+  const resources = await client.capacityReservationResource.findMany({
+    where: {
+      variantId: { in: ids },
+      OR: [
+        { reservation: { state: { in: ["RESERVED", "SUBMITTING", "UNKNOWN"] } } },
+        { reservation: { state: "COMMITTED", committedAt: { gte: since } } },
+      ],
+    },
+    select: { variantId: true, quantity: true },
+  });
+  for (const resource of resources) held.set(resource.variantId, (held.get(resource.variantId) ?? 0) + resource.quantity);
+  return held;
+}
+
 type AdvisoryStockVariant = Readonly<{
   id: string;
   sellableStock: number;
@@ -160,4 +210,36 @@ export async function withAdvisorySellableStock<
       return { ...variant, sellableStock, compositeCapacity };
     }),
   }));
+}
+
+/**
+ * The same transaction client, except that the advisory hold reads ignore one order's own
+ * reservations.
+ *
+ * At checkout DRAFT the order's hold does not exist yet; by the time the POS submit re-derives the
+ * quote it does. Counted, it would make the last unit of a paid item or a gift look sold out to the
+ * very order that holds it, and the re-derived quote would differ forever. Only the hold read is
+ * narrowed -- every other model and method is the client's own.
+ */
+export function withoutOrderHolds<T extends object>(client: T, orderId: string): T {
+  const resources = (client as unknown as { capacityReservationResource?: object }).capacityReservationResource;
+  if (resources === undefined) return client;
+  const narrowed = new Proxy(resources, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (prop !== "findMany" || typeof value !== "function") return typeof value === "function" ? value.bind(target) : value;
+      return (args: { where?: object } = {}) =>
+        (value as (a: unknown) => unknown).call(target, {
+          ...args,
+          where: { AND: [args.where ?? {}, { reservation: { orderId: { not: orderId } } }] },
+        });
+    },
+  });
+  return new Proxy(client, {
+    get(target, prop) {
+      if (prop === "capacityReservationResource") return narrowed;
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  });
 }

@@ -158,6 +158,12 @@ function buildMockPrisma({
         return null;
       },
     },
+    // Holds other orders have not yet got into Pancake's live stock; none in these single-order cases.
+    capacityReservationResource: {
+      async findMany() {
+        return [];
+      },
+    },
     variantMirror: {
       async findMany() {
         return [
@@ -174,6 +180,7 @@ function buildMockPrisma({
               ? [
                   {
                     quantity: 1,
+                    componentVariantId: "component-var-01",
                     componentVariant: {
                       pancakeVariationId: componentVariationId,
                       isPresent: true,
