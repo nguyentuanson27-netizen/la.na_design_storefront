@@ -1,12 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 
 export function BrandCartGiftPicker({ model, onBusyChange, locked = false }: Readonly<{ model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean }>) {
-  const { pending, message, products, setProducts, change } = useCartGifts(onBusyChange);
-  useEffect(() => { onBusyChange?.(pending); }, [pending, onBusyChange]);
+  const { pending, message, products, setProducts, change } = useCartGifts(onBusyChange, locked);
   if (!model.campaigns.length && !model.selections.length) return null;
   return <section id="cart-gifts" className="mt-8 scroll-mt-24 border border-black/20 p-5" aria-label="Quà tặng trong giỏ" aria-busy={pending}>
     <h2 className="text-xl font-semibold">Quà tặng trong giỏ</h2>

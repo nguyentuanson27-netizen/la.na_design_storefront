@@ -19,8 +19,8 @@ async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
 test.beforeAll(async () => {
-  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", "3390"], {
-    cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), PANCAKE_API_KEY: "checkout-a11y-test-key", NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${resolve(import.meta.dirname, "pancake-fetch-fixture.cjs")}`].filter(Boolean).join(" "), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_PROMOTION_UPSELL_ENABLED: "true", LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP), APP_DOMAIN: "127.0.0.1:3390", SEARCH_INDEXING_ENABLED: "false", BETTER_AUTH_URL: BASE, BETTER_AUTH_IP_HEADER: "x-ci-client-ip", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", "3390"], {
+    cwd: ROOT, env: { ...process.env, NEXT_DIST_DIR: ".next-test/promotion-upsell", PANCAKE_SHOP_ID: String(SHOP), PANCAKE_API_KEY: "checkout-a11y-test-key", NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${resolve(import.meta.dirname, "pancake-fetch-fixture.cjs")}`].filter(Boolean).join(" "), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_PROMOTION_UPSELL_ENABLED: "true", LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP), APP_DOMAIN: "127.0.0.1:3390", SEARCH_INDEXING_ENABLED: "false", BETTER_AUTH_URL: BASE, BETTER_AUTH_IP_HEADER: "x-ci-client-ip", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
   server.stdout?.on("data", (c) => { output = (output + c).slice(-16000); });
   server.stderr?.on("data", (c) => { output = (output + c).slice(-16000); });
@@ -104,6 +104,91 @@ test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attemp
   const newCart = await prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86400000), items: { create: { variantId: paidId, quantity: 2 } } } });
   await context.addCookies([{ name: "la_cart", value: newCart.id, url: BASE, httpOnly: true, sameSite: "Lax" }]);
   await page.reload(); await expect(offer).toBeVisible();
+});
+test("TG-10: a committed add with a lost response recovers manual gifts on reload", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  await offer.getByLabel("Phân loại / màu / kích cỡ").selectOption({ label: "Hồng / S" });
+  await expect(offer.getByRole("button", { name: "Thêm 1 chiếc" })).toBeEnabled();
+  await page.route(`${BASE}/checkout`, async (route) => {
+    if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) return route.continue();
+    await route.fetch(); // Let the server commit, then lose the entire action/refresh response.
+    await route.abort("failed");
+  });
+  await offer.getByRole("button", { name: "Thêm 1 chiếc" }).click();
+  await expect(page.getByText("Chưa xác nhận được kết quả thêm hàng.", { exact: false })).toBeVisible();
+  expect(await prisma.cartItem.count({ where: { cartId } })).toBe(2);
+  await page.unroute(`${BASE}/checkout`);
+  await page.reload();
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await expect(picker).toBeVisible();
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
+  await picker.getByRole("button", { name: "Chọn Hồng / S" }).click();
+  await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 0");
+  expect(await prisma.cartItem.count({ where: { cartId } })).toBe(2);
+});
+test("TG-08/10: gift and upsell transitions share a lock until the refreshed quote arrives", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  await offer.getByLabel("Phân loại / màu / kích cỡ").selectOption({ label: "Hồng / S" });
+  await expect(offer.getByRole("button", { name: "Thêm 1 chiếc" })).toBeEnabled();
+  await offer.getByRole("button", { name: "Thêm 1 chiếc" }).click();
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await expect(picker).toBeVisible();
+  const other = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: P + "other", slug: P + "other", name: "Áo thêm", syncedAt: new Date(), variants: { create: { pancakeVariationId: P + "otherS", color: "Hồng", size: "S", pancakeRetailPrice: 100000, pancakeRetailPriceAfterDiscount: 100000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: P + "wh", quantity: 20, syncedAt: new Date() } } } } } });
+  const paidProducts = await prisma.cartItem.findMany({ where: { cartId }, select: { variant: { select: { productId: true } } } });
+  const gift = await prisma.giftOption.findFirstOrThrow({ where: { campaignId } });
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { stackingEnabled: true, stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: P + "next" } } } });
+  await prisma.giftQuantityCampaign.create({ data: { id: P + "next", name: "Mua 4 tặng khăn", kind: "GIFT_ITEM", isEnabled: true, enabledAt: new Date(), stackingEnabled: true, stackPeers: { create: { peerKind: "GIFT_ITEM", peerCampaignId: campaignId } }, scopeMode: "DYNAMIC_CATEGORY", targets: { create: [...paidProducts.map((p) => p.variant.productId), other.id].map((productId) => ({ productId, role: "INCLUDE" })) }, giftTrigger: "QUANTITY", minimumQuantity: 4, maxGiftsPerOrder: 1, allowDuplicateGifts: true, giftOptions: { create: { variantId: gift.variantId } } } });
+  await page.reload();
+  await expect(offer).toBeVisible();
+  await offer.getByLabel("Phân loại / màu / kích cỡ").selectOption({ label: "Hồng / S" });
+  const add = offer.getByRole("button", { name: "Thêm 1 chiếc" });
+  await expect(add).toBeEnabled();
+  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
+  const choose = picker.getByRole("button", { name: "Chọn Hồng / S" });
+  const submit = page.locator('button[type="submit"]');
+  await expect(submit).toBeEnabled();
+  let release!: () => void;
+  const held = new Promise<void>((r) => release = r);
+  let responseReady!: () => void;
+  const ready = new Promise<void>((r) => responseReady = r);
+  let requests = 0;
+  await page.route(`${BASE}/checkout`, async (route) => {
+    if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) return route.continue();
+    requests++;
+    const response = await route.fetch();
+    responseReady(); await held;
+    await route.fulfill({ response });
+  });
+  try {
+    await choose.click(); await ready;
+    await expect(add).toBeDisabled(); await expect(submit).toBeDisabled();
+    await add.evaluate((button: HTMLButtonElement) => button.click());
+    expect(requests).toBe(1);
+    release();
+    await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 0");
+    await expect(submit).toBeEnabled();
+    await page.unroute(`${BASE}/checkout`);
+    // The inverse direction also locks gift controls while the paid add is pending.
+    await offer.getByLabel("Phân loại / màu / kích cỡ").selectOption({ label: "Hồng / S" });
+    await expect(add).toBeEnabled();
+    let releaseAdd!: () => void;
+    const heldAdd = new Promise<void>((r) => releaseAdd = r);
+    await page.route(`${BASE}/checkout`, async (route) => {
+      if (route.request().method() !== "POST" || !route.request().headers()["next-action"]) return route.continue();
+      const response = await route.fetch();
+      await heldAdd; await route.fulfill({ response });
+    });
+    try {
+      await add.click();
+      await expect(picker.getByRole("button", { name: /^Bỏ / })).toBeDisabled();
+      await expect(submit).toBeDisabled();
+    } finally { releaseAdd(); }
+    await expect(offer).toHaveCount(0);
+    await expect(submit).toBeEnabled();
+  } finally { release(); await page.unroute(`${BASE}/checkout`); }
 });
 test("TG-01/09: stale offer fails without adding or discarding entered fields", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);

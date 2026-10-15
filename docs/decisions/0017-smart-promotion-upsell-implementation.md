@@ -35,9 +35,11 @@ and rollout remain separate gates.
 3. Hold the existing shop catalog advisory lock in shared mode. Catalog synchronization and selling
    policy writes already take its exclusive form. Category membership replacement now joins the
    same exclusive boundary before deleting/recreating memberships.
-4. Lock sorted VariantMirror resource rows FOR SHARE, including paid, gift, candidate and composite
-   component resources. Capacity reservation takes FOR UPDATE on these same rows. Re-read after
-   acquiring them so reservations committed while waiting are visible.
+4. Lock sorted ProductMirror rows FOR SHARE for paid, gift, candidate and composite component
+   products. Publication-only admin actions update these rows without taking the catalog guard.
+   Then lock sorted VariantMirror resource rows FOR SHARE. Capacity reservation takes FOR UPDATE
+   on these same variant rows. Re-read after acquiring both sets so publication changes and
+   reservations committed while waiting are visible; hold both sets through commit.
 5. Recompute canonical before/+1 quotes, verify intent/version/expiry, actual rung gain, existing
    per-campaign savings, gift entitlement/grantability/choices and READY aggregate component demand.
    Insert exactly one paid line. The revision trigger runs in the same commit.
@@ -72,12 +74,18 @@ failures retain their existing fail-closed behavior.
 
 The shared checkout form remains mounted across Server Action refreshes. Its receiving fields stay
 in React state, its proof comes from the current server render, and submission is locked throughout
-Upsell/gift mutation and refresh. Gift selection uses the existing cart service, hook and picker;
-all picker buttons explicitly use `type=button` inside checkout.
+Upsell/gift mutation and refresh. Separate Upsell and gift pending states are combined before
+notifying the form; each locks the other's controls, and action handlers also guard pending writes.
+Gift selection uses the existing cart service, hook and picker; all picker buttons explicitly use
+`type=button` inside checkout.
 
-Session storage contains only an opaque HMAC paid-cart key, dismissal and newly unlocked campaign
-IDs. It grants no permission. Hydration hides the widget until this state is known. Reload may
-restore the same attempt, quote-only refresh preserves it, paid revision changes invalidate it
+Session storage contains an opaque HMAC paid-cart key, dismissal and newly unlocked campaign
+IDs. Before add it also records the server's opaque next-revision key and current entitlement
+counts. If the add response is lost, a reload matching that expected key recovers newly unlocked
+campaigns from the current server gift model. A different cart/revision resets the attempt. These
+UI markers grant no permission and cannot authorize a gift or paid write. Hydration hides the widget
+until this state is known. Reload may restore the same attempt, quote-only refresh preserves it,
+paid revision changes invalidate it
 (including A→B→A), and client navigation/Activity exit ends it. New gifts from successful Upsell can
 be selected inline; gifts already earned before checkout continue using the cart picker. No gift is
 automatically selected. An unknown add outcome disables further adds until reload.

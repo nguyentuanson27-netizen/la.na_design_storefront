@@ -39,14 +39,18 @@ same scripts and files. No application dependency or lockfile changed.
 | Typecheck | Passed. |
 | Production build | Passed. |
 | Full database regression | 936 passed, 0 failed (484 seconds); PR169/checkout/capacity/admin regressions included. |
-| Final focused Upsell DB | 20 passed, 0 failed; includes double click/two tabs/ABA, proof corruption/cross-cart/expiry, stock sync, category reassignment, global promotion locking through commit, scope/ranking/rungs/quote parity. |
+| Final focused Upsell DB | 22 passed, 0 failed; includes double click/two tabs/ABA, proof corruption/cross-cart/expiry, stock sync, category reassignment, global promotion and publication-only product locking through commit, recovery-key parity, scope/ranking/rungs/quote parity. |
 | Full domain/integration | 3,241 passed, 1 intentionally skipped; one existing HTTP-smoke cleanup failed with ENOTEMPTY on `.next/dev`. That exact HTTP test then passed in isolation (85.7 seconds), without changing the unrelated script. |
 | Final focused domain/PR169 | 52 passed, 0 failed; includes exact money boundaries, tied winners, inherited split ledger preservation, proof/context/expiry and the demonstrated old ABA gap. |
-| Browser | 4 passed: variant re-quote/add/proof refresh + inline gifts preserve fields; skip/reload/ABA/new attempt; stale rejection; negative payable estimate. Keyboard and axe checks at 320/390/1280px; one checkout form, no horizontal overflow. |
+| Browser | 6 passed: variant re-quote/add/proof refresh + inline gifts preserve fields; skip/reload/ABA/new attempt; lost-response gift recovery; gift/Upsell mutual locking through delayed refresh; stale rejection; negative payable estimate. Keyboard and axe checks at 320/390/1280px; one checkout form, no horizontal overflow. |
 
 Initial browser harness problems (missing runtime APP_DOMAIN, single-process Chromium context
 shutdown, and a mobile selector targeting the hidden desktop summary) were corrected in the harness;
 all four scenarios subsequently passed. They are not counted as application acceptance evidence.
+The review follow-up runs all six scenarios on the isolated dev server used by CI. Local font
+downloads were unavailable, so the final local run used Next's Google Fonts test response hook with
+local fallback faces; CI retains its normal font loading. The overlapping-campaign fixture was
+corrected to include mutual gift stacking consent before the final six-scenario pass.
 
 ### Local budget measurement
 
@@ -78,6 +82,24 @@ These are fixture measurements, not live-catalog or production percentile claims
 Independent review is requested only after the completed implementation is pushed to the new PR.
 Review/CI links and any resulting fixes are recorded on that PR. Local checks are not a substitute
 for exact-commit CI or target-environment release acceptance.
+
+### PR #172 review follow-up
+
+- P2 publication race: lock sorted owning ProductMirror rows as well as variant resources through
+  commit. DB tests cover disables that win before the re-read and publication-only writers blocked
+  at the CartItem insert until commit (both paid and candidate products).
+- P2 uncertain outcome: save the expected next opaque paid key and pre-add entitlement counts
+  before sending the action. Recovery uses the current server gift model only when that key matches;
+  no new schema or write authority is introduced.
+- P2 overlapping transitions: track gift and Upsell pending states separately, combine them for COD
+  locking, and lock each other's controls through the Server Action refresh. The shared gift hook
+  also guards duplicate starts and clears pending notification on unmount.
+- P1 CI setup: the Upsell spec now follows the existing `next dev` pattern with its own
+  `.next-test/promotion-upsell` directory. It no longer assumes a production build from another job.
+
+The first follow-up DB run had one fixture benchmark exceed the 2-second recommendation deadline
+while local compilation was running. The sequential rerun passed all 22 tests; fixture timings were
+1,013 / 1,095 / 1,453 ms. The deadline and fail-closed behavior were not relaxed.
 
 Outstanding before production enablement:
 

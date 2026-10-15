@@ -81,6 +81,17 @@ test("TG-08/09/10: two tabs/double click commit exactly one, new gift is manual 
   const success = results.find((r) => r.ok)!;
   assert.ok(success.ok); assert.deepEqual(success.newGiftCampaignIds, [campaignId]);
 });
+test("TG-10: recovery marker matches only the next paid revision and reload exposes actual unlocked gifts", async () => {
+  const model = await offer();
+  assert.notEqual(model.nextPaidCartKey, model.paidCartKey);
+  const added = await service().add(model.offer!.products[0]!.variants[0]!.intent);
+  assert.ok(added.ok);
+  const reloaded = await service().get(await proof());
+  assert.equal(reloaded?.paidCartKey, model.nextPaidCartKey);
+  assert.equal(reloaded?.giftPicker.campaigns.find((c) => c.campaignId === campaignId)?.entitled, 1);
+  await prisma.cartItem.updateMany({ where: { cartId, variantId: paidId }, data: { quantity: 1 } });
+  assert.notEqual((await service().get(await proof()))?.paidCartKey, model.nextPaidCartKey);
+});
 test("TG-09/11: revision survives A→B→A and invalidates intent and UI key", async () => {
   const model = await offer(); const i = model.offer!.products[0]!.variants[0]!.intent;
   const carts = createAnonymousCartService(prisma);
@@ -115,6 +126,20 @@ test("TG-09: catalog stock synchronization serialized before add rejects a stale
   const [, result] = await Promise.all([sync, add]);
   assert.equal(result.ok, false);
   assert.equal(await prisma.cartItem.count({ where: { cartId } }), 1);
+});
+test("TG-09: a publication disable committed while add waits invalidates candidate and paid products", async () => {
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId }, select: { productId: true } });
+  for (const productId of [candidateProductId, paid.productId]) {
+    const i = await intent(); let release!: () => void; let ready!: () => void;
+    const isReady = new Promise<void>((r) => ready = r); const released = new Promise<void>((r) => release = r);
+    const edit = prisma.$transaction(async (tx) => { await tx.productMirror.update({ where: { id: productId }, data: { isActive: false } }); ready(); await released; });
+    await isReady; const add = service().add(i);
+    await new Promise((r) => setTimeout(r, 50)); release();
+    const [, result] = await Promise.all([edit, add]);
+    assert.equal(result.ok, false);
+    assert.equal(await prisma.cartItem.count({ where: { cartId } }), 1);
+    await prisma.productMirror.update({ where: { id: productId }, data: { isActive: true } });
+  }
 });
 test("TG-09: global promotion edit lock covers concurrent disable, including rows not yet active", async () => {
   const i = await intent(); let release!: () => void; let ready!: () => void;
@@ -221,6 +246,7 @@ test("TG-06: a sold-out candidate does not suppress a different valid product", 
 });
 test("TG-09: locks remain held through the CartItem write, blocking global publish and stock sync until commit", async () => {
   const i = await intent();
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId }, select: { productId: true } });
   await prisma.$executeRawUnsafe(`CREATE FUNCTION upsell_test_pause_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW."cartId" = '${cartId}' THEN PERFORM pg_sleep(0.8); END IF; RETURN NEW; END; $$`);
   await prisma.$executeRaw`CREATE TRIGGER upsell_test_pause_insert BEFORE INSERT ON "CartItem" FOR EACH ROW EXECUTE FUNCTION upsell_test_pause_insert()`;
   try {
@@ -232,12 +258,14 @@ test("TG-09: locks remain held through the CartItem write, blocking global publi
       await new Promise((r) => setTimeout(r, 10));
     }
     assert.ok(paused);
-    let published = false, synced = false;
+    let published = false, synced = false, disabled = 0;
     const publish = prisma.$transaction(async (tx) => { await lockRevision(tx); published = true; await tx.giftQuantityCampaign.create({ data: { id: `${PREFIX}phantom`, kind: "GIFT_ITEM", name: "Published", isEnabled: true, enabledAt: new Date(), scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 100000, subtotalScope: "ALL_PAID_LINES", awardMode: "ONCE", allowDuplicateGifts: true, giftOptions: { create: { variantId: giftId } } } }); });
     const sync = prisma.$transaction(async (tx) => { await acquireCatalogSyncLock(tx, SHOP); synced = true; await tx.warehouseStock.updateMany({ where: { variantId: i.variantId }, data: { quantity: 0 } }); });
+    // Publication-only writers do not take the catalog advisory lock or touch VariantMirror.
+    const disable = Promise.all([candidateProductId, paid.productId].map((id) => prisma.productMirror.updateMany({ where: { id }, data: { isActive: false } }).then(() => { disabled++; })));
     await new Promise((r) => setTimeout(r, 100));
-    assert.equal(published, false); assert.equal(synced, false);
-    const [result] = await Promise.all([add, publish, sync]); assert.equal(result.ok, true);
+    assert.equal(published, false); assert.equal(synced, false); assert.equal(disabled, 0);
+    const [result] = await Promise.all([add, publish, sync, disable]); assert.equal(result.ok, true);
     assert.equal(await prisma.cartItem.count({ where: { cartId } }), 2);
   } finally {
     await prisma.$executeRaw`DROP TRIGGER upsell_test_pause_insert ON "CartItem"`;

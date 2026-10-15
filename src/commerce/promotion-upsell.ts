@@ -27,6 +27,8 @@ type Snapshot = { state: CartGiftState; quote: UpsellQuote; totalVnd: number };
 export type UpsellVariantView = Readonly<{ variantId: string; label: string; priceVnd: number; deltaVnd: number; intent: UpsellIntent }>;
 export type CheckoutUpsellModel = Readonly<{
   paidCartKey: string;
+  // UI-only recovery marker for one committed CartItem insert; never authorizes a mutation.
+  nextPaidCartKey: string;
   giftPicker: CartGiftPickerModel;
   offer: null | Readonly<{ campaignId: string; name: string; products: readonly Readonly<{ productId: string; name: string; imageUrl: string | null; variants: readonly UpsellVariantView[] }>[] }>;
 }>;
@@ -133,7 +135,7 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         const before = await snapshot(tx, cartId, shopId, now, env);
         if (!verifiesUpsellQuote(before.quote, checkoutProof, cartId, secret)) return null;
         const opportunities = findUpsellOpportunities(before.state);
-        const model: CheckoutUpsellModel = { paidCartKey: upsellPaidCartKey(cartId, cart.paidRevision, secret), giftPicker: buildCartGiftPickerModel(before.state), offer: null };
+        const model: CheckoutUpsellModel = { paidCartKey: upsellPaidCartKey(cartId, cart.paidRevision, secret), nextPaidCartKey: upsellPaidCartKey(cartId, cart.paidRevision + BigInt(1), secret), giftPicker: buildCartGiftPickerModel(before.state), offer: null };
         if (!opportunities.length) return model;
         const products = await discover(tx, before.state, opportunities, shopId);
         const verified: { campaignId: string; productId: string; variantId: string; deltaVnd: number; view: UpsellVariantView }[] = [];
@@ -224,6 +226,9 @@ export function createPromotionUpsellService(client: PrismaClient, store: { get(
         if (!opportunity) return { ok: false, reason: "QUOTE_CHANGED" } as const;
         const optionIds = before.state.campaigns.flatMap((c) => c.options.map((o) => o.variantId));
         const resourceIds = [...new Set([...before.state.items.map((i) => i.variantId), intent.variantId, ...optionIds])];
+        // Publication actions can update only ProductMirror without taking the catalog guard.
+        // Protect paid, candidate, gift and component products before the authoritative re-read.
+        await tx.$queryRawUnsafe('SELECT "id" FROM "ProductMirror" WHERE "id" IN (SELECT "productId" FROM "VariantMirror" WHERE "id" = ANY($1::text[]) OR "id" IN (SELECT "componentVariantId" FROM "CompositeComponentMirror" WHERE "parentVariantId" = ANY($1::text[]))) ORDER BY "id" FOR SHARE', resourceIds);
         await tx.$queryRawUnsafe('SELECT "id" FROM "VariantMirror" WHERE "id" = ANY($1::text[]) OR "id" IN (SELECT "componentVariantId" FROM "CompositeComponentMirror" WHERE "parentVariantId" = ANY($1::text[])) ORDER BY "id" FOR SHARE', resourceIds);
         // Re-read after resource locks: a reservation may have committed while we waited.
         const lockedBefore = await snapshot(tx, cartId, shopId, now, env);
