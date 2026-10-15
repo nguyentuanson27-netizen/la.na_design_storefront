@@ -4,11 +4,12 @@ import { useState, useTransition } from "react";
 import { setStorefrontCartGift } from "@/commerce/cart-gift-selection-actions";
 
 /** Action coordination and feedback stay outside brand presentation. */
-export function useCartGifts() {
+export function useCartGifts(onBusyChange?: (pending: boolean) => void) {
   const [pending, startTransition] = useTransition();
   const [message, setMessage] = useState("");
   const [products, setProducts] = useState<Record<string, string>>({});
   function change(campaignId: string, variantId: string, campaignRevision: number, quantity: number) {
+    onBusyChange?.(true);
     startTransition(async () => {
       try {
         const result = await setStorefrontCartGift({ campaignId, variantId, campaignRevision, quantity });

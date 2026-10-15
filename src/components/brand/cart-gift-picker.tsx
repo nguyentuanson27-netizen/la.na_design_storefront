@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 
-export function BrandCartGiftPicker({ model }: Readonly<{ model: CartGiftPickerModel }>) {
-  const { pending, message, products, setProducts, change } = useCartGifts();
+export function BrandCartGiftPicker({ model, onBusyChange, locked = false }: Readonly<{ model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean }>) {
+  const { pending, message, products, setProducts, change } = useCartGifts(onBusyChange);
+  useEffect(() => { onBusyChange?.(pending); }, [pending, onBusyChange]);
   if (!model.campaigns.length && !model.selections.length) return null;
   return <section id="cart-gifts" className="mt-8 scroll-mt-24 border border-black/20 p-5" aria-label="Quà tặng trong giỏ" aria-busy={pending}>
     <h2 className="text-xl font-semibold">Quà tặng trong giỏ</h2>
@@ -13,12 +15,12 @@ export function BrandCartGiftPicker({ model }: Readonly<{ model: CartGiftPickerM
     {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà đã chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Hãy bỏ lựa chọn cũ rồi chọn lại; chúng tôi không tự thay quà.</p> : null}
     {model.selections.map((row) => <div className="mt-4 flex flex-wrap items-center justify-between gap-3" key={`${row.campaignId}-${row.variantId}`}>
       <p className="text-sm">{row.label} · {row.quantity} quà</p>
-      {row.quantity > 1 ? <button className="text-link" disabled={pending} onClick={() => change(row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1)}>Giảm {row.label}</button> : null}
-      <button className="text-link" disabled={pending} onClick={() => change(row.campaignId, row.variantId, row.campaignRevision, 0)}>Bỏ {row.label}</button>
+      {row.quantity > 1 ? <button type="button" className="text-link" disabled={pending || locked} onClick={() => change(row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1)}>Giảm {row.label}</button> : null}
+      <button type="button" className="text-link" disabled={pending || locked} onClick={() => change(row.campaignId, row.variantId, row.campaignRevision, 0)}>Bỏ {row.label}</button>
     </div>)}
     {model.campaigns.map((campaign, index) => {
       const product = campaign.products.find((row) => row.productId === products[campaign.campaignId]);
-      return <fieldset className="mt-5 border-t border-black/15 pt-4" disabled={pending} key={campaign.campaignId}>
+      return <fieldset className="mt-5 border-t border-black/15 pt-4" disabled={pending || locked} key={campaign.campaignId}>
         <legend className="font-semibold">Quà tặng theo giỏ hàng {index + 1}</legend>
         <p className="text-sm leading-6">Đạt {campaign.earned} suất · Được nhận {campaign.entitled} · Đã chọn {campaign.selected} · Chưa chọn {campaign.unclaimed}</p>
         {campaign.shortageText ? <p className="mt-2 text-sm">{campaign.shortageText} Bạn có thể chọn hàng còn hoặc để trống.</p> : null}
@@ -36,7 +38,7 @@ export function BrandCartGiftPicker({ model }: Readonly<{ model: CartGiftPickerM
             const stockChosen = model.selections.filter((row) => row.variantId === option.variantId).reduce((sum, row) => sum + row.quantity, 0);
             return <div className="flex flex-wrap items-center justify-between gap-3" key={option.variantId}>
               <p className="text-sm">{option.label} · Còn {option.stock}</p>
-              <button className="btn btn--secondary" disabled={pending || option.stock <= stockChosen || campaign.selected >= campaign.entitled || model.invalid || (!campaign.allowDuplicateGifts && productChosen)} onClick={() => change(campaign.campaignId, option.variantId, campaign.revision, selected + 1)}>Chọn {option.label}</button>
+              <button type="button" className="btn btn--secondary" disabled={pending || locked || option.stock <= stockChosen || campaign.selected >= campaign.entitled || model.invalid || (!campaign.allowDuplicateGifts && productChosen)} onClick={() => change(campaign.campaignId, option.variantId, campaign.revision, selected + 1)}>Chọn {option.label}</button>
             </div>;
           })}</div> : null}
         </>}

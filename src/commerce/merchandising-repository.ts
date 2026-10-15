@@ -1,3 +1,4 @@
+import { acquireCatalogSyncLock } from "./catalog-sync-lock.ts";
 /**
  * Persistence for the five website-owned merchandising models (ADR 0013).
  *
@@ -229,6 +230,8 @@ export function createMerchandisingRepository(client: PrismaClient) {
     const membership = parseCategoryMembership(categoryKeys, APPROVED_CATEGORY_MEMBERSHIP_POLICY);
 
     return client.$transaction(async (tx) => {
+      // Join catalog synchronization so a verified Upsell cannot race delete/reinsert membership.
+      await acquireCatalogSyncLock(tx, shopId);
       await requireVisibleProducts(tx, shopId, [productId]);
       await tx.productCategoryMembership.deleteMany({ where: { productId } });
       if (membership.categoryKeys.length > 0) {

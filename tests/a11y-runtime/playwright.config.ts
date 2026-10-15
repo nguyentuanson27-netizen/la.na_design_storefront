@@ -19,6 +19,7 @@ export default defineConfig({
     "admin-gift-quantity.spec.ts",
     "admin-promotions.spec.ts",
     "checkout.spec.ts",
+    "promotion-upsell.spec.ts",
     "checkout-benefit.spec.ts",
     "cart-gift-picker.spec.ts",
     "collection-breadcrumb.spec.ts",
@@ -57,6 +58,10 @@ export default defineConfig({
     "variant-deep-link.spec.ts",
     "zalo-ads-pixel.spec.ts",
   ],
+  use: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ? { launchOptions: {
+    executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH,
+    args: JSON.parse(process.env.PLAYWRIGHT_CHROMIUM_ARGS ?? "[]"),
+  } } : {},
   workers: 1,
   /*
    * One retry on CI, none locally.

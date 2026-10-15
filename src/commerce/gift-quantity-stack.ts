@@ -543,3 +543,16 @@ export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandida
     dropped: sorted.filter((campaign) => dropped.has(campaign.id)).map((campaign) => dropped.get(campaign.id)!),
   };
 }
+
+/** Authoritative stage value, shared by progress and checkout +1 verification (including the top rung). */
+export function orderValueTierInputSubtotal(groups: readonly StackedGroup[], id: string, order: readonly { id: string; priority: number | null }[]): number {
+  const mine = order.find((tier) => tier.id === id);
+  const myPriority = mine?.priority ?? Number.MAX_SAFE_INTEGER;
+  const later = new Set(order.filter((tier) => (tier.priority ?? Number.MAX_SAFE_INTEGER) > myPriority
+    || ((tier.priority ?? Number.MAX_SAFE_INTEGER) === myPriority && tier.id > id)).map((tier) => tier.id));
+  return groups.reduce((sum, group) => {
+    const ownStep = group.steps.find((step) => step.source === "QUANTITY_TIER" && step.campaignId === id);
+    const laterStep = group.steps.find((step) => step.source === "QUANTITY_TIER" && later.has(step.campaignId));
+    return sum + group.quantity * (ownStep?.inputPriceVnd ?? laterStep?.inputPriceVnd ?? group.unitPriceVnd);
+  }, 0);
+}

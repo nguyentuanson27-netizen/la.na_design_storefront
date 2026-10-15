@@ -207,11 +207,13 @@ test("engine import boundary distinguishes erased types from runtime pricing imp
 });
 
 // Modules allowed to import part of the engines without becoming a price surface.
+// Checkout Upsell reads the canonical stage value and validates config; it cannot call pricing.
 // - Validators check configuration or price safety; they never calculate a cart price.
 // - The tier editor's preview (GQ09b) is a simulated, admin-only illustration: it runs the pure
 //   tier function on one sample line and is never a buyer-authoritative cart price. It may import
 //   exactly these runtime symbols and nothing from the quote/stack engines.
 const adminEngineImports: Record<string, readonly string[]> = {
+  "commerce/promotion-upsell-policy.ts": ["orderValueTierInputSubtotal", "validateTierConfig"],
   "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
   "commerce/gift-quantity-tier-rule.ts": ["MAX_ORDER_SUBTOTAL_THRESHOLD_VND", "MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
   "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
@@ -263,4 +265,8 @@ test("the admin tier preview exception is exact: any other importer still breaks
   // The preview never gains the cart quote or stack engines.
   assert.throws(() => engineImporters([{ path: previewPath, text: 'import { priceStack } from "@/commerce/gift-quantity-stack";' }]));
   assert.throws(() => engineImporters([{ path: previewPath, text: 'import { quoteGiftQuantity } from "@/commerce/gift-quantity-quote";' }]));
+});
+
+test("Upsell policy may inspect stages but cannot calculate a cart price", () => {
+  assert.throws(() => engineImporters([{ path: "commerce/promotion-upsell-policy.ts", text: 'import { priceStack } from "./gift-quantity-stack.ts";' }]));
 });
