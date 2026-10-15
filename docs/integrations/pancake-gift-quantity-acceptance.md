@@ -49,6 +49,23 @@ Safety properties (covered by `tests/domain/pancake-gift-quantity-capability-pro
 - the created order is cancelled on every path after creation; a case whose cancellation is not proven is reported `CLEANUP_NOT_CONFIRMED`, never `PASS`, and **stops the run**; the cancel call's own `success: true` is not proof, the order is read back and must report status 7 so no further order is created while one is still open;
 - the report contains no API key and no customer data beyond the fixed test constants.
 
+## Adapter-flow acceptance (acceptance record O-2)
+
+The probe above proves the vendor behaviour with its own parser. `scripts/pancake-gift-quantity-adapter-acceptance.ts` runs **the code a benefit order really uses** on the same kind of controlled test order, so the read-back contract (`id`, `shop_id`, `status`, `total_price`, line prices) is exercised against the live POS rather than a fake:
+
+quote lines -> D-08 projection -> `buildPancakeCreateOrderRequest` -> `gateway.createOrder` -> `parsePancakeCreateOrderResponse` -> `gateway.readOrder` -> `compareOrderReadBack(projection, readBack, { orderId, shopId })` must be `MATCH` -> `gateway.cancelOrder` -> read again: the production comparison must call it `canceled` (status 7).
+
+Cases: `ADAPTER_TIER_SPLIT_PAID` (2 x 100.001đ + 1 x 90.001đ, 3 units) and `ADAPTER_PAID_PLUS_GIFT_SAME_VARIATION` (paid 100.000đ + gift, projected to 99.000đ + 1.000đ, 2 units). Same safety model and the same approval variables as the probe (`GQ_POS_PROBE_APPROVED=shop:<id>`, variation and product code, run id; refuses CI; one create per case, never retried; cancelled on every path; an unproven cancellation is never a pass and stops the run; no API key in the report).
+
+```bash
+GQ_POS_PROBE_APPROVED=shop:<PANCAKE_SHOP_ID> \
+GQ_POS_PROBE_VARIATION_ID=<variation uuid> \
+GQ_POS_PROBE_PRODUCT_CODE=<product code> \
+pnpm pancake:gift-quantity:adapter
+```
+
+Exit codes: `0` both cases `PASS` and no order may be open; `2` a case did not pass; `3` an order may still be open (find it by the run id in the order note `TEST AUTOMATION GQ ADAPTER <runId> ...` and cancel it first); `1` refused or crashed. Covered by `tests/domain/pancake-gift-quantity-adapter-acceptance.test.ts` with a fake gateway. A `PASS` here is what lets the operator list the shop in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`; a `FAIL_READBACK_NOT_MATCH` or `FAIL_CANCEL_NOT_OBSERVED` means the parser's assumption about a field is wrong for this POS and the shop must stay unlisted.
+
 ## Interpreting results and the fallback if a case fails
 
 | Result | Consequence |
@@ -71,6 +88,7 @@ The project never averages or re-rounds prices to dodge a vendor limitation (spe
 | Date | Operator | Shop | Cases run | Outcomes | Report location |
 |---|---|---|---|---|---|
 | 2026-10-14 | Repository owner (run through a Claude Code session) | 715077776 | `PAID_PAID_DIFFERENT_PRICE`, `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` (run id `ab50e3dd`; variation `9e7a1103-6e08-4580-be46-41678726f1dd`, SKU `SQ069S`, stock 5 before the run) | Both **PASS**, exit 0. Case 1: lines 2 × 100.001đ + 1 × 90.001đ read back unmerged, `total_price` 290.003đ. Case 2: lines 1 × 99.000đ + 1 × 1.000đ read back unmerged, `total_price` 100.000đ. Both test orders (POS ids 1 and 2) were cancelled and read back as status 7; `noOrderMayBeOpen: true`. `GIFT_ZERO_PRICE_INFORMATIONAL` was not run (not gating under D-08). | Report below |
+| 2026-10-15 | Repository owner (run through a Claude Code session) | 715077776 | **Adapter flow** (`pnpm pancake:gift-quantity:adapter`): `ADAPTER_TIER_SPLIT_PAID`, `ADAPTER_PAID_PLUS_GIFT_SAME_VARIATION` (run id `8715fdf5`; same variation `9e7a1103-…`, SKU `SQ069S`) | Both **PASS**, exit 0. Through the production code (projection, request builder, gateway create, `parsePancakeOrderReadBack`, `compareOrderReadBack` with identity): case 1 sent 2 × 100.001đ + 1 × 90.001đ, read back unmerged, `total_price` 290.003đ, order id and `shop_id` reported and equal to the requested ones, `status` 0 while open → `MATCH`. Case 2 sent 1 × 99.000đ + 1 × 1.000đ (D-08), read back unmerged, `total_price` 100.000đ → `MATCH`. Both test orders (POS ids 3 and 4) were cancelled through the production `cancelOrder` and read back as status 7 (`DRIFT: the POS order is canceled`); `noOrderMayBeOpen: true`. | Report below |
 
 ### Run report (2026-10-14, run id `ab50e3dd`)
 
@@ -82,3 +100,14 @@ Raw probe output, no key and no customer data (the probe prints neither). Produc
 | `PAID_GIFT_VENDOR_PRICE_SAME_VARIATION` | 1 × 99.000đ, 1 × 1.000đ | 1 × 99.000đ, 1 × 1.000đ (same variation, not merged) | 100.000đ / 100.000đ / 100.000đ | status 7 |
 
 What this proves: on this shop the create-order API accepts several lines of one variation at different unit prices and reports them back unmerged with the merchandise total equal to the sum of the lines. What it does not prove: behaviour on any other shop or variation, a variation that also has a discount or voucher, shipping, or stock reservation effects (the probe measures none of them), or that the same shape survives a later edit of the order in the POS UI. One run is one observation; re-run before enabling the flag in production if the POS integration or the shop changes.
+
+### Adapter-flow run report (2026-10-15, run id `8715fdf5`)
+
+Facts the production read-back parser relies on and had not been seen on the live POS before: the order read exposes `id` (numeric), `shop_id` (numeric), `status` (numeric; `0` for a new test order, `7` after cancellation), `total_price` (merchandise total, shipping not included), and `items[].variation_id`, `items[].quantity`, `items[].variation_info.retail_price`. All were present and read exactly as the parser expects.
+
+| Case | Sent | Read back while open | Verdict while open | After cancel |
+|---|---|---|---|---|
+| `ADAPTER_TIER_SPLIT_PAID` | 2 × 100.001đ, 1 × 90.001đ | same two lines, `total_price` 290.003đ, id `3`, shop 715077776, status 0 | `MATCH` | status 7, `DRIFT: the POS order is canceled` |
+| `ADAPTER_PAID_PLUS_GIFT_SAME_VARIATION` | 1 × 99.000đ, 1 × 1.000đ | same two lines, `total_price` 100.000đ, id `4`, shop 715077776, status 0 | `MATCH` | status 7, `DRIFT: the POS order is canceled` |
+
+The run does not list the shop in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`; that is the operator's separate step. The API key used was the one shared in chat on 2026-10-13 and must still be rotated.

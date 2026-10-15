@@ -18,7 +18,7 @@ actually run.
 | # | Open item | Why it blocks |
 |---|---|---|
 | O-1 | **GQ19 — buyer checkout UX: built; manual staging run not done.** The checkout page renders the benefit quote (paid segments at their own prices, gifts at 0đ, unclaimed-slot account, never-pre-checked acknowledgement keyed to the quote digest) and submits the proof and the tick; the cart offers the link only where the POS shop is listed in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` (empty today). Proven by `tests/domain/checkout-benefit-ui.test.ts`, the GQ19 cases of `tests/database/benefit-checkout-snapshot.test.ts` and `tests/a11y-runtime/checkout-benefit.spec.ts` (390 px, keyboard, Axe). | Nobody has used it as a buyer against a live POS: the browser spec stops before submit (the address lists come from a fixture), and the end-to-end order needs the adapter-flow acceptance (O-2) on a verified shop. |
-| O-2 | **Live adapter-flow acceptance not run.** The two GQ01 gating cases ran live on shop 715077776 and passed (PAID+PAID different price; PAID + GIFT at 1.000đ, same variation). The production adapter (`createOrder` → `readOrder` read-back → confirm) has only run against fakes. | The read-back parser was written from the observed contract, not exercised against the live POS. |
+| O-2 | **Live adapter-flow acceptance: run 2026-10-15 (run id `8715fdf5`) on shop 715077776, both cases PASS.** The production adapter (projection, `buildPancakeCreateOrderRequest`, `gateway.createOrder`, `parsePancakeOrderReadBack`, `compareOrderReadBack` with order/shop identity, `gateway.cancelOrder`) matched the live POS: lines kept apart, `total_price`, `id`, `shop_id` and `status` (0 open, 7 cancelled) all read as the parser expects; both test orders were cancelled and read back as status 7. Evidence: `docs/integrations/pancake-gift-quantity-acceptance.md` (Adapter-flow run report). | This proves the read-back contract on the live POS for this shop and variation. It does not exercise the full checkout (a buyer's order through the website, reservation, reconciliation of a recorded id after a crash) and it does not list the shop in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`; that remains the operator's step. |
 | O-3 | **`LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` is empty** (by design). | Until the owner lists a shop, benefit orders are withheld before any POS write. |
 | O-4 | **Alert thresholds are proposals** with no production baseline; no dashboard exists. | See rollback record §4. |
 | O-5 | **H5:** exact-head CI on the final PR(s), owner go/no-go, independent `/ship` approval. | Required by the todo; cannot be inferred from this document. |
@@ -105,7 +105,7 @@ present on benefit orders, and every existing event assertion still passes).
 ## Staged ON path (for the owner, after O-1…O-3)
 
 1. GQ19 is merged; run the browser flow by hand on staging with the flag ON and the shop listed (0 / partial / all gifts, then place the order).
-2. Run the adapter-flow live acceptance with explicit operator approval (creates and cancels test orders).
+2. ~~Run the adapter-flow live acceptance~~ done 2026-10-15 (O-2). Next: one end-to-end buyer order on staging with the shop listed (step 1).
 3. List the verified shop id in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`.
 4. Confirm the alert thresholds and wire the alerts. (R-05 was approved by the owner at H0 on 13/10/2026, recorded in ADR 0016 and the spec status.)
 5. Flag ON with a single low-risk campaign; watch the rollback record §4 for 30 minutes; keep §6 ready.
