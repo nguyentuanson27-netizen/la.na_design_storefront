@@ -10,7 +10,7 @@
 - **U-01/A — chi phí = tổng phải trả sau − trước** với hai canonical quotes và **cùng chính sách phí ship server**; không xếp theo giá niêm yết. `guest-shipping-policy.ts` mặc định 30.000đ; miễn ship khi subtotal sau giảm **>** 1.000.000đ hoặc paid quantity **≥** 3; env override vẫn là authority. Không cộng cứng 30.000đ. Estimate không phải giá chốt.
 - **U-02/A — quà mới do Upsell mở được chọn ngay checkout**, reuse `cart-gift-selection.ts`; giỏ vốn đủ mốc **vẫn chọn ở `/cart`** như hiện tại. Không tự chọn quà, không chuyển sang cart rồi quay lại, giữ nguyên thông tin form.
 - Bốn loại: gift/tier × quantity/order-subtotal; quantity thiếu đúng 1, tiền ở [80%,100%) **đúng pricing stage**. Gift `S_gift` và tier `S_tier` không bị ép cùng một subtotal. Mọi +1 chạy PR169 full stacking/entitlement/quote.
-- Giữ `LA_PROMOTION_UPSELL_ENABLED` **OFF mặc định** và không hoạt động nếu Gift & Quantity gate OFF. Error gợi ý không được phá checkout thường; POS/shop capability và production migration là release gates riêng.
+- Giữ `LA_PROMOTION_UPSELL_ENABLED` **OFF mặc định** và không hoạt động nếu Gift & Quantity gate OFF. **Kiểm POS line-level capability của shop trước khi tìm/render gợi ý và kiểm lại khi add**; shop chưa được xác nhận thì ẩn Upsell. Lỗi gợi ý không phá checkout thường; production migration/POS acceptance vẫn là release gates.
 - Không thêm pricing engine, offer admin, queue, catalog-wide optimizer, schema, secret hay dependency theo mặc định. **Không viết code ứng dụng trong PR /plan.** Các thay đổi schema/token (nếu thực sự cần) sẽ có bằng chứng và phê duyệt riêng ở task UP-00.
 
 ## 2. Source assessment (đã đọc, chưa chạy runtime)
@@ -28,11 +28,11 @@
 
 ## 3. U-03 và U-05: hướng tối thiểu + stop rules
 
-**U-03 — tìm ứng viên:** sau khi xác định near campaigns từ quote cart hiện có, query **bounded** các `ProductMirror` ngoài cart cùng shop/active/present. Fixed scope dùng `GiftQuantityFrozenProduct`; dynamic dùng `ProductCategoryMembership` + taxonomy; global chỉ quét pool có `take`, không toàn catalog. Exclude-wins, product uniqueness, READY/capacity và loại đang mua theo product ID. Batch queries, stable ordering campaign priority/id → product ID → variant ID. **Budget khởi điểm để test:** tối đa **24 product IDs đọc** và **24 lần full hypothetical variant quote** trên một checkout read, **tối đa 5 mẫu hiện**. Đây là engineering cap sơ bộ, **không phải số đo hay owner promise**; UP-00/UP-02 phải thử bằng catalog thật, nếu thiếu coverage/latency thì chỉnh một hằng số có test trước bật flag. Với nhiều campaign, phân bổ pool ổn định, không cho một campaign nuốt hết budget. Rank cheapest **chỉ trong tập đã verify**; không claim cheapest toàn catalog. Variant chưa verify chỉ được phép CTA sau server re-quote khi khách chọn.
+**U-03 — tìm ứng viên:** sau khi xác định near campaigns và kiểm POS capability, query **bounded** các `ProductMirror` ngoài cart, cùng shop/active/present. Fixed scope dùng `GiftQuantityFrozenProduct`; dynamic là **category membership UNION explicit `INCLUDE` targets**, kể cả mẫu không có category, rồi áp `EXCLUDE` thắng trước khi cắt pool; global dùng query có `take`, không quét toàn catalog. Lọc trùng product, READY/capacity và mẫu đã mua. Phân bổ pool ổn định giữa campaigns, batch reads; **query/quote budget chọn ở UP-00 bằng dữ liệu catalog thật, không đoán số trước**; hiển thị tối đa **5 mẫu**. Thứ tự discovery (có thể theo priority/id) **không phải tie-break winner**: chọn chi phí U-01/A thấp nhất trong tập đã quote; nếu bằng nhau dùng đúng `campaignId → productId → variantId` theo spec. Không claim rẻ nhất toàn catalog. Variant chưa verified chỉ bật CTA sau server re-quote.
 
-**U-05 — thêm an toàn:** ưu tiên dùng **checkout quote-proof** hiện có làm bằng chứng giỏ/giá mà khách thấy; server tự xét target/variant, không lấy tiền/discount hay raw cartId từ client. Action nằm trong **một cart-locked transaction**, recompute current quote, +1 hypothetical, gift/stack/stock/POS checks, rồi ghi đúng 1 lần. Không gọi public add action xong mới xác nhận offer.
+**U-05 — thêm an toàn:** ưu tiên dùng **checkout quote-proof** hiện có làm bằng chứng giỏ/giá đã hiển thị; server tự xét target/variant, không lấy tiền/discount hay raw cartId từ action input. Trong **cùng transaction**, khóa cart `FOR UPDATE`, khóa các campaign liên quan **`FOR SHARE` theo thứ tự ổn định** (reuse pattern `cart-gift-selection.ts`), rồi kiểm ACTIVE/revision, current quote, +1 hypothetical, gift/stack/stock/POS **trước khi ghi** đúng 1 chiếc. Kiểm lại lock order với admin writes để tránh deadlock. Không gọi public add action rồi mới kiểm ưu đãi.
 
-**Security stop rule UP-00:** thử 2 click, 2 tab, token/quote cũ, cross-cart, campaign revision change và **A→B→A**. Quote-proof chỉ so canonical bytes ⇒ không tự suy diễn replay-proof qua ABA. Nếu hiện trạng không đáp ứng TG-09/AC-34, đề xuất **một guard bền vững nhỏ nhất** (ví dụ cart-scoped monotonic paid-write revision được tăng bởi *mọi* paid-line mutation) cùng scope/migration/revert + tests để duyệt **trước UP-03**; không tự xây nonce table, token stack hay riêng revision cho dismiss. Chỉ tạo HMAC offer token mới nếu test chứng minh existing quote-proof + guard không thể ràng buộc intent an toàn. Nếu không chứng minh được ⇒ block write slice, UI read-only vẫn có thể phát triển OFF.
+**Security stop rule UP-00:** thử 2 click, 2 tab, token/quote cũ, cross-cart, **admin đổi/tắt campaign đồng thời với add**, và **A→B→A**. Quote-proof chỉ so canonical bytes ⇒ không tự suy diễn replay-proof qua ABA. Nếu hiện trạng không đáp ứng TG-09/AC-34, đề xuất **một guard bền vững nhỏ nhất** (ví dụ cart-scoped monotonic paid-write revision được tăng bởi *mọi* paid-line mutation) cùng scope/migration/revert + tests để duyệt **trước UP-03**; không tự xây nonce table, token stack hay riêng revision cho dismiss. Chỉ tạo HMAC offer token mới nếu test chứng minh existing quote-proof + guard không thể ràng buộc intent an toàn. Nếu không chứng minh được ⇒ block write slice, UI read-only vẫn có thể phát triển OFF.
 
 ## 4. Dependency / vertical slices
 
@@ -42,31 +42,31 @@ Các slice tách biệt tối đa ở boundary và tests, ưu tiên PR implement
 
 ### UP-00 — Characterization & technical gate (first)
 
-- **Work:** Đọc source tại HEAD thực, đo/truy vấn catalog representative cho U-03, viết proof-of-gap tests U-05 (stale/double-click/2-tab/ABA). Quyết định caps sau measurement; ghi rõ có/không cần cart revision và phạm vi ảnh hưởng mọi mutations.
+- **Work:** Đọc source tại HEAD thực, đo/truy vấn catalog đại diện cho U-03 (chọn cap query/full quote), viết proof-of-gap tests U-05 (stale/double-click/2-tab/ABA và concurrent admin campaign edit). Kiểm thứ tự cart → campaign locks so với admin writes; ghi rõ có/không cần paid-cart revision.
 - **Acceptance:** Không giả định quota/time budget đã đo; U-05 có test chứng minh guard ngăn +2/replay hoặc blocker với minimal migration/approval rõ. Quote-proof vẫn là proof hiển thị, không phải money authority.
 - **Verification:** focused domain/DB tests: `checkout-quote-proof`, `anonymous-cart-concurrency`, `pdp-atomic-add-to-cart`; source-level review of Prisma locking. **Block UP-03** nếu còn gap. Files dự kiến: focused tests + quyết định kỹ thuật ngắn trong plan/ADR *chỉ nếu cần*.
 
 ### UP-01 — Flag OFF + near policy
 
-- **Work:** Pure policy cho bốn campaign/basis, thiếu 1 quantity, money 80%; feature gate chỉ đúng literal true. Không hỏi catalog khi OFF.
-- **Acceptance:** Gift cap/ONCE và top rung không gợi ý; `S_gift`/`S_tier` đúng stage (PR169), threshold biên chính xác; OFF parity/cart/checkout không có side effects.
+- **Work:** Pure policy cho bốn campaign/basis, thiếu 1 quantity, money 80%; feature gate chỉ đúng literal true. Khi OFF hoặc **shop thiếu POS line-level verification**, không tìm/render Upsell.
+- **Acceptance:** Gift cap/ONCE và top rung không gợi ý; `S_gift`/`S_tier` đúng stage (PR169), threshold biên chính xác; OFF/thiếu POS capability không có Upsell và không ảnh hưởng checkout hiện có.
 - **Verification:** new `tests/domain/promotion-upsell-policy.test.ts`, existing `gift-quantity-order-subtotal-tier.test.ts` và `gift-quantity-gate.test.ts`. Touch policy + gate + focused tests.
 
 ### UP-02 — Bounded read-only +1, filter và winner
 
-- **Work:** Bounded batched product discovery theo scope U-03; cho từng candidate đã giới hạn, dùng `getQuote(items)` + entitlement/checkout quote adapter **đọc-only**, không insert; bảo toàn lợi ích từng campaign và gift selections. Tính U-01 trên hai canonical totals + shipping policy.
-- **Acceptance:** Chỉ đúng +1 đạt rung thực, không mất Flash Sale/tier/gift; chọn 1 winner + ≤5 mẫu khác cart, 1–2 vẫn hợp lệ, không eligible thì ẩn. Quote-on-select cho variant khác giá, không dùng price preview làm commit authority. Stable result/truncation; query/quote budgets có test và mẫu catalog.
-- **Verification:** unit threshold/ranking + DB hypothetical parity, fixed/dynamic/global scope, order-to-order reachability, 30k→free ship edge; `tests/database/gift-quantity-order-value*.test.ts` regressions. Likely files: read service, small repository query, domain/DB tests; split if scope grows.
+- **Work:** Bounded batched product discovery theo scope U-03 (dynamic = category ∪ explicit INCLUDE, rồi EXCLUDE); cho từng candidate đã giới hạn, dùng `getQuote(items)` + entitlement/checkout quote adapter **read-only**, không insert; bảo toàn lợi ích từng campaign và gift selections. Tính U-01 trên hai canonical totals + shipping policy.
+- **Acceptance:** Chỉ đúng +1 đạt rung thực, không mất Flash Sale/tier/gift; chọn 1 winner + ≤5 mẫu khác cart, 1–2 vẫn hợp lệ, không eligible thì ẩn. Sort winner theo **chi phí tăng thêm rồi `campaignId → productId → variantId`**, độc lập discovery order; variant khác giá re-quote trước CTA. Query/quote caps dựa trên catalog và có test.
+- **Verification:** unit threshold/ranking + DB hypothetical parity, fixed/dynamic **(bao gồm explicit INCLUDE ngoài category)**/global scope, tie-break khi 2 campaigns đồng chi phí, order-to-order reachability, 30k→free ship edge; PR169 order-value DB regressions. Files dự kiến: read service, scoped query, focused tests.
 
 ### UP-03 — Atomic verified add +1 (security checkpoint)
 
-- **Work:** Narrow extension/reuse of existing `anonymous-cart.ts` transaction guard, verify cart-bound quote proof and target/campaign revision/selected variant, re-run full quote + stock + gift preservation **before mutation**, commit exactly one paid unit; refresh checkout proof afterward.
-- **Acceptance:** Corrupted/expired/cross-cart/stale/race/ABA cannot change cart incorrectly; no two-step read→public add gap, no forged money, no cart UUID in wire, no Pancake/order submit on add. No new token/schema unless UP-00 tests require and approved.
-- **Verification:** new `tests/database/promotion-upsell-add.test.ts` (double click, 2 tabs, A→B→A, stock/campaign edit, rollback) and domain boundary tests. Gate: tests actually run before UP-04; document any migration separately.
+- **Work:** Reuse `anonymous-cart.ts` cart transaction lock; thêm `FOR SHARE` cho campaign rows liên quan **trước khi re-quote/so revision**, giữ đến commit (như `cart-gift-selection.ts`). Verify cart-bound proof, ACTIVE/revision, target/variant, full quote, stock và gift preservation **trước mutation**, commit đúng +1 rồi refresh checkout proof.
+- **Acceptance:** Corrupted/cross-cart/stale/race/ABA hoặc admin sửa/tắt campaign đồng thời không ghi sai; không có read→public add gap, không tin tiền client. Raw cart UUID chỉ truyền qua **HttpOnly `la_cart` cookie** hiện có; **không** nhận trong action fields hay lộ qua public token/HTML/URL/log/analytics. Không tạo order/Pancake khi add; không token/schema mới nếu chưa có test chứng minh và duyệt.
+- **Verification:** focused DB integration (double click, 2 tabs, A→B→A, stock, **admin campaign revision/disable race**, rollback) + domain input tests; kiểm thứ tự lock để không deadlock. Chạy trước UP-04; migration chỉ khi UP-00 có bằng chứng và approval.
 
 ### UP-04 — Checkout offer + variant UX (one form)
 
-- **Work:** One server-rendered optional offer near checkout shipping details; variant selector with server re-quote on change; add/skip CTA, loading/error; `router.refresh`/existing model update without remounting checkout fields. Do not duplicate achieved `PromotionBanner` or `OrderSummary`.
+- **Work:** One optional offer near checkout shipping details; variant selector re-quote server khi đổi; add/skip, loading/error; cập nhật checkout quote và **kiểm bằng browser rằng form không mất state** (không mặc định refresh luôn giữ form). Không nhân đôi `PromotionBanner` hay `OrderSummary`.
 - **Acceptance:** Price, estimate, CTA correspond to selected size; confirmed +1 updates total/shipping/proof and preserves name/phone/address, old proof cannot submit; flag OFF leaves existing experience.
 - **Verification:** view-model/unit test + browser scenario (mobile 390, desktop 1280, keyboard/aria-live); no nested form, add `type=button`. Checkout tests under `tests/a11y-runtime/` when available.
 
@@ -85,7 +85,7 @@ Các slice tách biệt tối đa ở boundary và tests, ưu tiên PR implement
 ## 5. Human checkpoints / definition of done
 
 1. **Plan PR:** owner/reviewer chấp nhận scope & technical path; **no /build automatically**.
-2. **UP-00 U-05 gate:** technical/security reviewer approves any newly proven need for migration/persistent revision/token. Scope/test impact recorded before implementation; U-03 cap can change only based on measured data, not speculation.
+2. **UP-00 U-05 gate:** technical/security reviewer xác nhận caps U-03 từ catalog và an toàn lock/proof + campaign edit race; chỉ duyệt migration/revision/token khi test chứng minh cần, không xây trước.
 3. **UP-03 merge gate:** all money/cart mutation proof/race tests pass, no unsafe replay; mandatory because checkout is high stakes.
 4. **Before production:** Gift/Quantity & Upsell gates default OFF; confirm applied DB migrations (if any), real Pancake line-level pricing/POS, checkout/browser, staging pilot and flag rollback. Merging a docs PR is **not** runtime signoff.
 
