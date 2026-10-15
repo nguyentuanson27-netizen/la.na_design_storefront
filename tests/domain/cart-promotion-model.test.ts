@@ -66,7 +66,7 @@ test("a reached tier is announced with what it saved, and the footer gets the sa
   assert.equal(view.items.length, 1);
   assert.equal(view.items[0]!.state, "achieved");
   assert.equal(view.items[0]!.kind, "TIER");
-  assert.match(view.items[0]!.detail, /267\.000/);
+  assert.equal(view.items[0]!.title, "Đã áp dụng ưu đãi mua nhiều");
 });
 
 test("nothing reached and nothing near gives no banner at all", () => {
@@ -84,10 +84,9 @@ test("gift slots are celebrated, unclaimed ones ask for a choice, and reached it
   }))!;
   assert.deepEqual(view.items.map((item) => [item.state, item.kind]), [["achieved", "GIFT"], ["progress", "GIFT"]]);
   const [reached, next] = view.items;
-  assert.equal(reached!.title, "Bạn nhận được 1 suất quà tặng");
+  assert.equal(reached!.title, "Bạn nhận được 1 quà tặng");
   assert.equal(reached!.needsGiftChoice, true);
-  assert.match(reached!.detail, /Còn 1 suất chưa chọn/);
-  assert.equal(next!.title, "Mua thêm 3 sản phẩm để nhận thêm quà tặng");
+  assert.equal(next!.title, "Mua thêm 3 sản phẩm để nhận thêm quà");
   assert.equal(next!.progress!.percent, 25, "1 of 4 units toward the next slot");
   assert.equal(view.savingsText, null);
 });
@@ -98,8 +97,7 @@ test("a chosen gift reads as done, not as a task", () => {
     entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 4, earned: 1, entitled: 1, shortfallToNext: { quantity: 4, subtotalVnd: null } }],
     selections: [{ campaignId: "gift-a", variantId: "g", campaignRevision: 1, quantity: 1 }],
   }))!;
-  assert.equal(view.items[0]!.needsGiftChoice, false);
-  assert.match(view.items[0]!.detail, /Đã chọn đủ quà/);
+  assert.equal(view.items[0]!.needsGiftChoice, false, "a chosen gift offers no 'Chọn quà' link");
 });
 
 test("progress toward a first gift by order value shows the missing amount and a bar that is never full early", () => {
@@ -110,9 +108,21 @@ test("progress toward a first gift by order value shows the missing amount and a
   assert.equal(view.items.length, 1);
   const only = view.items[0]!;
   assert.equal(only.state, "progress");
-  assert.equal(only.title, `Mua thêm ${vnd("555.000")} để nhận quà tặng`);
+  assert.equal(only.title, `Mua thêm ${vnd("555.000")} để nhận quà`);
   assert.equal(only.progress!.percent, 86);
   assert.equal(only.progress!.label, `Còn thiếu ${vnd("555.000")}`);
+});
+
+test("several campaigns on the way show only the nearest bar", () => {
+  const view = buildCartPromotionView(state({
+    campaigns: [quantityCampaign, subtotalCampaign],
+    entitlements: [
+      { campaignId: "gift-a", revision: 1, eligibleQuantity: 1, earned: 0, entitled: 0, shortfallToNext: { quantity: 3, subtotalVnd: null } },
+      { campaignId: "gift-b", revision: 1, eligibleSubtotalVnd: 3_445_000, earned: 0, entitled: 0, shortfallToNext: { quantity: null, subtotalVnd: 555_000 } },
+    ],
+  }))!;
+  assert.equal(view.items.length, 1);
+  assert.equal(view.items[0]!.id, "gift-next-gift-b", "86% beats 25%");
 });
 
 test("a campaign with no next slot (cap reached, or a once-only gift already earned) shows no bar", () => {

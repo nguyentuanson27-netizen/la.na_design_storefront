@@ -22,7 +22,6 @@ export type PromotionBannerItem = Readonly<{
   state: "achieved" | "progress";
   kind: "TIER" | "GIFT";
   title: string;
-  detail: string;
   /** Present for `progress` items only: how close the basket is to the next slot. */
   progress: Readonly<{ percent: number; label: string }> | null;
   /** Gift slots still waiting for a choice; the cart page offers the picker for these. */
@@ -68,7 +67,6 @@ function tierItem(savingsVnd: number): PromotionBannerItem | null {
     state: "achieved",
     kind: "TIER",
     title: "Đã áp dụng ưu đãi mua nhiều",
-    detail: `Giá đã được giảm tự động, bạn tiết kiệm ${currency.format(savingsVnd)}.`,
     progress: null,
     needsGiftChoice: false,
   });
@@ -76,11 +74,15 @@ function tierItem(savingsVnd: number): PromotionBannerItem | null {
 
 function view(items: readonly PromotionBannerItem[], savingsVnd: number): PromotionBannerView | null {
   if (items.length === 0 && savingsVnd <= 0) return null;
+  // Reached conditions read first. Of the bars toward what is not yet reached, only the nearest one
+  // is shown: several competing "buy more" nudges is noise, and the nearest is the one worth acting on.
+  const nearest = items
+    .filter((item) => item.state === "progress")
+    .reduce<PromotionBannerItem | null>((best, item) => (best === null || (item.progress?.percent ?? 0) > (best.progress?.percent ?? 0) ? item : best), null);
   return Object.freeze({
     savingsVnd,
     savingsText: savingsVnd > 0 ? currency.format(savingsVnd) : null,
-    // Reached conditions read first; the bar toward the next one comes after them.
-    items: Object.freeze([...items.filter((item) => item.state === "achieved"), ...items.filter((item) => item.state === "progress")]),
+    items: Object.freeze([...items.filter((item) => item.state === "achieved"), ...(nearest ? [nearest] : [])]),
   });
 }
 
@@ -118,10 +120,7 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
         id: `gift-${entry.campaignId}`,
         state: "achieved",
         kind: "GIFT",
-        title: `Bạn nhận được ${entry.entitled} suất quà tặng`,
-        detail: unclaimed === 0
-          ? "Đã chọn đủ quà. Quà sẽ được tặng kèm đơn hàng."
-          : `Còn ${unclaimed} suất chưa chọn quà. Hãy chọn quà trong giỏ hàng trước khi đặt hàng.`,
+        title: entry.entitled === 1 ? "Bạn nhận được 1 quà tặng" : `Bạn nhận được ${entry.entitled} quà tặng`,
         progress: null,
         needsGiftChoice: unclaimed > 0,
       }));
@@ -135,8 +134,7 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
         id: `gift-next-${entry.campaignId || index}`,
         state: "progress",
         kind: "GIFT",
-        title: `Mua thêm ${shortfall.quantity} sản phẩm để nhận ${more}quà tặng`,
-        detail: "Chỉ tính các sản phẩm thuộc chương trình.",
+        title: `Mua thêm ${shortfall.quantity} sản phẩm để nhận ${more}quà`,
         progress: Object.freeze({
           percent: progressPercent(shortfall.quantity, campaign.minimumQuantity),
           label: `Còn thiếu ${shortfall.quantity} sản phẩm`,
@@ -148,8 +146,7 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
         id: `gift-next-${entry.campaignId || index}`,
         state: "progress",
         kind: "GIFT",
-        title: `Mua thêm ${currency.format(shortfall.subtotalVnd)} để nhận ${more}quà tặng`,
-        detail: "Chỉ tính các sản phẩm thuộc chương trình.",
+        title: `Mua thêm ${currency.format(shortfall.subtotalVnd)} để nhận ${more}quà`,
         progress: Object.freeze({
           percent: progressPercent(shortfall.subtotalVnd, Number(campaign.minimumSubtotalVnd)),
           label: `Còn thiếu ${currency.format(shortfall.subtotalVnd)}`,
@@ -185,7 +182,6 @@ export function buildCheckoutPromotionView(facts: CheckoutPromotionFacts, giftQu
       state: "achieved",
       kind: "GIFT",
       title: `Đơn hàng được tặng ${giftQuantity} quà`,
-      detail: "Quà tặng có giá 0 ₫ và không nằm trong số tiền bạn thanh toán.",
       progress: null,
       needsGiftChoice: false,
     }));

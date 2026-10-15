@@ -3,12 +3,13 @@ import Link from "next/link";
 import type { PromotionBannerItem, PromotionBannerView } from "@/routes/cart-promotion-model";
 
 /**
- * The promotion banner shared by the cart drawer, the cart page and checkout.
+ * The promotion lines shared by the cart drawer, the cart page and checkout.
  *
- * Markup only -- every word and number comes from the view model, which comes from the server quote.
- * Reached conditions get a filled check and the brand's deep green so they read as "done" at a
- * glance; the bar toward the next gift slot stays in the brand's chocolate. Nothing here is a
- * colour-only signal: each item carries its own title, and the bar has a value and a label.
+ * Deliberately quiet: no card, no tinted fill, one line per item. A reached condition gets a small
+ * green tick, the way a receipt marks a done thing; the way to the next gift slot is a hairline bar
+ * under one short sentence. The amount saved is not repeated here -- it sits beside the subtotal.
+ * Every word and number comes from the view model, which comes from the server quote, and nothing is
+ * a colour-only signal: each line carries its own text, and the bar has a value.
  */
 
 export type PromotionBannerProps = Readonly<{
@@ -22,17 +23,19 @@ export type PromotionBannerProps = Readonly<{
   className?: string;
 }>;
 
-function CheckIcon() {
+function Tick() {
   return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" viewBox="0 0 24 24">
-      <path d="M5 12.5l4.5 4.5L19 7.5" />
-    </svg>
+    <span aria-hidden="true" className="inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-[#2F5D3A] text-white">
+      <svg className="h-2.5 w-2.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="3.5" viewBox="0 0 24 24">
+        <path d="M5 12.5l4.5 4.5L19 7.5" />
+      </svg>
+    </span>
   );
 }
 
-function GiftIcon() {
+function Gift() {
   return (
-    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24">
+    <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-[#70584B]" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 24 24">
       <rect height="5" width="18" x="3" y="8" />
       <path d="M12 8v13M5 13v8h14v-8M7.5 8a2.5 2.5 0 010-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 010 5" />
     </svg>
@@ -41,48 +44,18 @@ function GiftIcon() {
 
 function Item({
   item,
-  compact,
   giftHref,
   onNavigate,
-}: Readonly<{ item: PromotionBannerItem; compact: boolean; giftHref?: string; onNavigate?: () => void }>) {
+}: Readonly<{ item: PromotionBannerItem; giftHref?: string; onNavigate?: () => void }>) {
   const achieved = item.state === "achieved";
   return (
-    <li className="flex gap-3" data-promotion-state={item.state} data-promotion-kind={item.kind}>
-      <span
-        aria-hidden="true"
-        className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${
-          achieved ? "bg-[#2F5D3A] text-white" : "border border-[#3B2219]/35 text-[#3B2219]"
-        }`}
-      >
-        {achieved ? <CheckIcon /> : <GiftIcon />}
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className={`${compact ? "text-[0.8rem]" : "text-sm"} font-semibold leading-5 ${achieved ? "text-[#24472D]" : "text-[#2A1810]"}`}>
-          {item.title}
-        </p>
-        <p className={`mt-0.5 ${compact ? "text-[0.72rem] leading-[1.15rem]" : "text-xs leading-5"} text-[#70584B]`}>{item.detail}</p>
-        {item.progress ? (
-          <div className="mt-2">
-            <div
-              aria-label={item.title}
-              aria-valuemax={100}
-              aria-valuemin={0}
-              aria-valuenow={item.progress.percent}
-              aria-valuetext={item.progress.label}
-              className="h-1.5 w-full overflow-hidden rounded-full bg-[#3B2219]/12"
-              role="progressbar"
-            >
-              <div
-                className="h-full rounded-full bg-[#3B2219] transition-[width] duration-500 motion-reduce:transition-none"
-                style={{ width: `${item.progress.percent}%` }}
-              />
-            </div>
-            <p className="mt-1 text-[0.7rem] uppercase tracking-[0.08em] text-[#70584B]">{item.progress.label}</p>
-          </div>
-        ) : null}
+    <li data-promotion-state={item.state} data-promotion-kind={item.kind}>
+      <div className="flex items-center gap-2">
+        {achieved ? <Tick /> : <Gift />}
+        <p className={`min-w-0 flex-1 text-[0.8rem] leading-5 ${achieved ? "text-[#24472D]" : "text-[#3B2219]"}`}>{item.title}</p>
         {item.needsGiftChoice && giftHref ? (
           <Link
-            className="mt-1.5 inline-block text-xs font-semibold uppercase tracking-[0.08em] text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
+            className="shrink-0 text-[0.7rem] font-semibold uppercase tracking-[0.08em] text-[#2A1810] underline underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
             href={giftHref}
             onClick={onNavigate}
           >
@@ -90,24 +63,38 @@ function Item({
           </Link>
         ) : null}
       </div>
+      {item.progress ? (
+        <div
+          aria-label={item.title}
+          aria-valuemax={100}
+          aria-valuemin={0}
+          aria-valuenow={item.progress.percent}
+          aria-valuetext={item.progress.label}
+          className="ml-6 mt-1.5 h-[3px] overflow-hidden rounded-full bg-[#3B2219]/10"
+          role="progressbar"
+        >
+          <div
+            className="h-full rounded-full bg-[#3B2219]/70 transition-[width] duration-500 motion-reduce:transition-none"
+            style={{ width: `${item.progress.percent}%` }}
+          />
+        </div>
+      ) : null}
     </li>
   );
 }
 
 export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, className = "" }: PromotionBannerProps) {
   if (!view || view.items.length === 0) return null;
-  const compact = variant === "compact";
-  const earned = view.items.some((item) => item.state === "achieved");
   return (
     <section
       aria-label="Ưu đãi của bạn"
       aria-live="polite"
-      className={`border ${earned ? "border-[#2F5D3A]/35 bg-[#2F5D3A]/[0.06]" : "border-[#3B2219]/15 bg-[#F5F0E8]"} ${compact ? "rounded px-3 py-3" : "rounded px-4 py-4"} ${className}`}
+      className={`border-y border-[#3B2219]/10 py-3 ${variant === "full" ? "max-w-xl" : ""} ${className}`}
       data-promotion-banner={variant}
     >
-      <ul className={compact ? "space-y-3" : "space-y-4"}>
+      <ul className="space-y-2.5">
         {view.items.map((item) => (
-          <Item compact={compact} giftHref={giftHref} item={item} key={item.id} onNavigate={onNavigate} />
+          <Item giftHref={giftHref} item={item} key={item.id} onNavigate={onNavigate} />
         ))}
       </ul>
     </section>
