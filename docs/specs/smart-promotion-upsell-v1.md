@@ -1,10 +1,10 @@
 # SPEC-UPS-001 — Smart Promotion Upsell v1
 
 **Project:** La.na Design Storefront  
-**Status:** DRAFT v1.2 — đã xử lý các finding của self-review ở mức **hợp đồng/spec**, còn chờ owner xác nhận U-01/U-02 và review kỹ thuật U-03/U-05 trước `/plan`/`/build`. Không phải spec đã được phê duyệt implementation.  
-**Revision:** v1.2 (15/10/2026) — harden offer freshness, bảo toàn benefit cũ, bounded ranking, variant UX và flag matrix; giữ nguyên 8 quyết định nghiệp vụ. **Chưa implement**.  
+**Status:** DRAFT v1.3 — xử lý ba inline findings PR170 ở mức spec (MAC context không lộ cart, giá từng biến thể, re-review PR169 HEAD). U-01/U-02 vẫn chờ owner; U-03/U-05 vẫn cần review kỹ thuật trước `/plan`/`/build`. **Chưa implement**.  
+**Revision:** v1.3 (15/10/2026) — review comment closure; giữ nguyên 8 quyết định đã chốt, không tự phê duyệt U-01/U-02.  
 **Repository:** `nguyentuanson27-netizen/la.na_design_storefront`  
-**Evidence baseline:** `main@4c46488b180acd44481858a8a32f9e848368df24` + PR [#169](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/169) `head@c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3` (PR đang **open/chưa merge** ở lần kiểm tra; đây là kiểm tra source, không phải runtime).  
+**Evidence baseline:** `main@4c46488b180acd44481858a8a32f9e848368df24` + PR [#169](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/169) `head@89428fd7ca7543a6dc4c34715dcf80f2a9584fd8` (**open/chưa merge** lúc kiểm tra). PR169 đã có **4 commits mới/17 files thay đổi** so với `c6b11af`, gồm fixes order→order reachability, stage-aware progress, savings và cart/checkout presentation; chỉ kiểm source, không xác nhận runtime.  
 **Proposed repo path:** `docs/specs/smart-promotion-upsell-v1.md`  
 **Phase:** `/spec` — PR tài liệu độc lập nhắm `main`; việc implement các contract PR169 vẫn phụ thuộc PR169 được review/merge/verify. Không bao gồm `/plan`, `/build` hoặc deploy.
 
@@ -40,13 +40,13 @@ Khi khách có giỏ hàng **gần đạt một mốc khuyến mãi**, checkout 
 - `src/commerce/gift-quantity-entitlement.ts`: `evaluateGiftEntitlements`, `GiftEntitlement.shortfallToNext`, `earned/entitled/grantable`, `QUANTITY`, `ORDER_SUBTOTAL`, `ONCE/REPEAT_PER_THRESHOLD`.
 - `src/commerce/gift-quantity-tier.ts`: bậc số lượng và (PR169) bậc **giá trị đơn** với `tierBasis = QUANTITY | ORDER_SUBTOTAL`, `FIXED_AMOUNT_TOTAL_VND`, xử lý chia discount vào paid segments; invalid tier bị loại nguyên bước. `QuantityTier.minQuantity` trong DB lưu **số chiếc hoặc VND tùy basis**, tuyệt đối không suy luận từ tên cột.
 - `src/commerce/gift-quantity-scope.ts`: `DYNAMIC_CATEGORY`, `FIXED_PRODUCT_SET`, exclude thắng. Theo PR169, `QUANTITY_TIER/ORDER_SUBTOTAL` **bắt buộc** `GLOBAL_ALL_PAID_LINES`; gift theo subtotal có thể toàn giỏ hoặc scope đủ điều kiện như hợp đồng của gift; tier số lượng có scope sản phẩm thực.
-- `src/commerce/gift-quantity-stack.ts`, `gift-quantity-quote.ts`, `storefront-cart-repository.ts`: stacking, paid quote, flag. PR169 thêm `orderValueProgress` để **hiển thị mốc tiếp theo**, có thử stacking trong một số trường hợp; **không** xác nhận rằng một biến thể cụ thể thêm 1 sẽ tạo quyền lợi, do đó không phải eligibility authority của Upsell.
+- `src/commerce/gift-quantity-stack.ts`, `gift-quantity-quote.ts`, `storefront-cart-repository.ts`: stacking, paid quote, flag. PR169 HEAD mới giải quyết **reachability nhiều order-value ladders theo (priority, id)**, rerun stack khi campaign bị loại và đọc `orderValueProgress.currentVnd` ngay trước **ladder đang xét** (không nhầm giá bị ladder chạy sau giảm). `orderValueProgress` vẫn chỉ dùng cho display/hints, **không** xác nhận candidate +1 cụ thể.
 - `src/commerce/cart-gift-selection.ts`, `src/routes/cart-gift-model.ts`, `src/components/brand/cart-gift-picker.tsx`: lưu và xác thực lựa chọn quà; picker hiện nằm ở `/cart`.
 - `src/routes/checkout.ts`, `src/routes/checkout-model.ts`, `src/app/checkout/page.tsx`, `src/components/commerce/guest-checkout-form.tsx`: route/model/render và biểu mẫu checkout. PR169 đặt `PromotionBanner` **trên** checkout nhưng `buildCheckoutPromotionView` chỉ quảng bá ưu đãi **đã đạt**, không đưa next-milestone vào checkout; đây là thiết kế PR169 cần giữ tách biệt với `CheckoutUpsell`.
 - `src/commerce/benefit-checkout-quote.ts`, `benefit-checkout-render.ts`, `checkout-quote-proof.ts`, `guest-checkout-submit-runtime.ts`: quote/proof và bước xác nhận lại khi quote thay đổi.
 - `src/commerce/storefront-actions.ts`, `storefront-purchase-public-actions.ts`, `anonymous-cart-mutation.ts`: precedent cho thêm **1 chiếc** và analytics từ mutation đã commit; không dùng giá truyền từ browser.
 - `src/commerce/gift-quantity-gate.ts`, `pancake-line-level-contract.ts`: Gift/Quantity gate mặc định OFF; benefit checkout, bao gồm **đơn sau khi Upsell mở order-value tier**, phụ thuộc bằng chứng line-level POS theo shop.
-- PR169 thêm `src/routes/cart-promotion-model.ts`, `src/components/brand/promotion-banner.tsx`, `src/routes/order-summary-model.ts`, `src/components/brand/order-summary.tsx`, `src/commerce/storefront-cart-actions.ts#getStorefrontCartView`; đây là **presentation/read-model** có thể tái sử dụng, không phải nguồn tính giá đặt hàng.
+- PR169 thêm `src/routes/cart-promotion-model.ts`, `src/components/brand/promotion-banner.tsx`, `src/routes/order-summary-model.ts`, `src/components/brand/order-summary.tsx` và `getStorefrontCartView`. HEAD mới reconcile tier saving theo **listed price** khi tier/Flash Sale chạy nhiều thứ tự và checkout summary kiểm cả listed-value/total; đây là presentation/read-model, không phải quote authority.
 - Nguồn nghiệp vụ ưu tiên: `docs/specs/gift-quantity-promotions-v1.md`, `docs/decisions/0016-gift-quantity-promotions-v1-decisions.md`, `docs/specs/la-na-design-master-spec.md`; trong **PR169**, ADR 0016 được thêm D-11…D-13 cho order-value ladder. Các quyết định này còn ở nhánh PR cho tới khi merge; không diễn giải là authority đã nằm trên `main`. Không thay tài liệu bằng suy đoán từ mockup.
 
 **Stack đọc từ `package.json` tại baseline:** Next.js `16.3.3`, React `19.2.0`, TypeScript `^5.9.0`, Prisma `7.9.1`, PostgreSQL, Tailwind v4, pnpm `11.4.0`, Node `>=22.14.0`. Một số phần mô tả trong README/master spec còn ghi Next `16.2.11`; **`package.json`/lockfile của commit triển khai** là nguồn xác minh phiên bản, không sao chép API từ trí nhớ. `AGENTS.md` yêu cầu đọc tài liệu Next trong `node_modules/next/dist/docs/` trước khi code.
@@ -56,17 +56,19 @@ Khi khách có giỏ hàng **gần đạt một mốc khuyến mãi**, checkout 
 | Mảng thay đổi của PR169 | Contract đã đọc | Phần Upsell được phép làm |
 | --- | --- | --- |
 | `cart-promotion-model.ts`, `PromotionBanner` | Cart/drawer chỉ giữ progress gần nhất theo **tỷ lệ %**, checkout chỉ có `achieved` và không có next milestone. | **Giữ nguyên banner thông tin**; thêm đúng một `CheckoutUpsell` action riêng tại checkout. Không dùng `view().nearest` để chọn campaign. |
-| `gift-quantity-quote.ts#orderValueProgress` | Trả next rung/shortfall cho `QUANTITY_TIER/ORDER_SUBTOTAL`; chỉ là **display-only**, không nằm trong proof. | Dùng như dữ liệu sàng lọc ban đầu nếu phù hợp; phải xác thực từng candidate qua canonical full hypothetical quote. |
-| `gift-quantity-tier.ts`, `gift-quantity-stack.ts` | Bậc giá trị đơn chạy **sau** legacy + quantity ladder; ngưỡng xét trên tiền hàng **trước chính discount của nó**, sau các bước trước, không có ship/quà. | Không tự tính subtotal hoặc áp dụng discount riêng; gọi đúng price chain cho từng mô phỏng. |
-| `order-summary-model.ts`, `OrderSummary` | Hiển thị tổng đơn + từng discount + ship + total, từ server facts; checkout kiểm khớp signed total, có fallback nếu không khớp. | Re-render đồng bộ sau add, **không** dùng tổng hiển thị làm nguồn xác minh eligibility/price. |
+| `gift-quantity-quote.ts#orderValueProgress` | Trả next rung/shortfall cho `QUANTITY_TIER/ORDER_SUBTOTAL` tại **stage trước chính ladder**, kể cả khi ladder sau còn giảm giá dòng. Vẫn **display-only**, không ở signed proof. | Dùng để gợi ý việc enumerate rung, nhưng phải verify full hypothetical +1 per variant trên canonical quote/stack. |
+| `gift-quantity-tier.ts`, `gift-quantity-stack.ts` | Order-value ladders chạy **sau legacy/quantity**, lần lượt theo `(priority, id)`. Reachability/conflict xét trên giá sau các bước trước; nếu campaign bị drop thì rerun fail-closed. | Tính `S_tier` tại đúng stage, không dùng final subtotal hoặc phỏng đoán từ price không có ladder. |
+| `order-summary-model.ts`, `OrderSummary` | Savings rows tại PR169 HEAD mới reconcile với listed unit price; checkout kiểm **expected listed value** và **signed total**, mismatch => fallback. | Sau add đồng bộ display, không dùng saving row làm eligibility hay estimated incremental price. |
 | `guest-shipping-policy.ts` + benefit checkout/proof | Shipping tính từ quote sau discount; tiền hàng tier chia thành price segments, snapshot/proof phải giữ đúng giá. | Tính `deltaPayableVnd` từ hai full canonical quotes (bao gồm shipping); sau commit bắt buộc có proof mới. |
 | `getStorefrontCartView()` | Drawer đọc same server view as cart khi gift/tier gate ON; flag OFF bảo toàn old path. | Không fork một `cart view` riêng cho checkout Upsell; không cần thay drawer trong MVP. |
+
+**Evidence refresh (PR169 `89428fd7`):** Đã so với `c6b11af` (+4 commits, 17 files): `priceStack/priceWithReachedLadders` đánh giá reachability nhiều order-value ladders theo thứ tự, `readOrderValueProgress` phục hồi stage trước ladder, `tierSavingRows` reconcile với listed price, checkout `buildOrderSummary` kiểm `expectedValueVnd`. Những read-model thay đổi này không thay thế +1 hypothetical authority. **Khi PR169 đổi HEAD phải re-review spec trước technical signoff**, sau merge verify trên merged SHA.
 
 **Khác biệt có chủ đích:** PR169 có thể vẫn hiển thị *một progress banner ở cart/drawer* chọn theo % hoàn thành; SPEC-UPS-001 chỉ yêu cầu *một offer hành động ở checkout* chọn theo **chi phí tăng thêm thấp nhất**. Hai bề mặt có mục tiêu khác nhau, nên không ép dùng một ranking; nhưng **không được để checkout hiển thị hai lời mời mua thêm trái nhau**.
 
 ### 3.2. Dependency/gate trước implementation
 
-1. **PR169 chưa merge:** source baseline cho tính năng mới là `head@c6b11af…`, không phải các module đã có trong `main`. `/plan` phải quyết định phụ thuộc PR169 và **rebase lên merged main** trước khi xây Upsell; nếu PR169 đổi contract, cập nhật lại spec/AC trước `/build`.
+1. **PR169 chưa merge:** spec đối chiếu `head@89428fd7…` nhưng các module này **chưa có trên `main`**. PR169 đổi HEAD ⇒ bắt buộc re-review diff/FR/AC **trước technical signoff** (không chỉ trước merge/build). `/plan` ghi dependency; sau merge lấy merged SHA để verify trước `/build`.
 2. **PR169 có migration:** enum `FIXED_AMOUNT_TOTAL_VND` và `tierBasis`, ràng buộc scope/bounds. Migration này **thuộc PR169**, không tạo migration thứ hai cho Upsell nếu không có yêu cầu riêng; rollout phải bảo đảm deploy/migrate PR169 trước khi bật campaign order-value.
 3. PR169 tự ghi nhận **chưa hoàn tất Playwright và chưa xác nhận POS end-to-end**, và có test fail được nêu trong PR. Đây là release gate còn mở, **không** được dùng mô tả PR làm bằng chứng production-ready.
 4. **Không sửa PR169 trong spec này.** Nếu quá trình build phát hiện bug thật trong nguồn PR169, ghi finding/test và xử lý qua PR phù hợp thay vì ngầm nới lỏng ngữ nghĩa Upsell.
@@ -91,7 +93,7 @@ Khi khách có giỏ hàng **gần đạt một mốc khuyến mãi**, checkout 
 
 1. Hỗ trợ **hai loại threshold tiền khác nhau**, tuyệt đối không dùng một `subtotal` chung:
    - `GIFT_ITEM` + `giftTrigger=ORDER_SUBTOTAL`: `S_gift` = tổng tiền **PAID sau tất cả discount/stacking có hiệu lực**, trước shipping, không gồm gift; áp dụng `ALL_PAID_LINES` hoặc `ELIGIBLE_PAID_LINES` theo gift scope. Lấy `shortfallToNext.subtotalVnd`/ngưỡng thực từ gift entitlement.
-   - `QUANTITY_TIER` + `tierBasis=ORDER_SUBTOTAL` (PR169): `S_tier` = tiền hàng **toàn giỏ** tại điểm trước bước order-value tier **đang xét**, sau các bước pricing đứng trước theo chain PR169; không gồm shipping/gift và **không trừ discount của chính rung đó**. Rung tiếp theo là `QuantityTier.minQuantity` có đơn vị VND; `scopeMode` bắt buộc `GLOBAL_ALL_PAID_LINES`.
+   - `QUANTITY_TIER` + `tierBasis=ORDER_SUBTOTAL` (PR169): `S_tier` = paid goods **ngay trước ladder đó**, sau legacy/quantity và **các order-value ladders trước nó theo (priority, id)**; không gồm gift/ship và không trừ discount của chính nó hoặc các ladder chạy sau. `QuantityTier.minQuantity` là VND, `scopeMode=GLOBAL_ALL_PAID_LINES`. Nhiều ladder phải re-evaluate reachability/stacking theo chuỗi thực; không lấy final subtotal của cả cart để đo tất cả.
 2. Không lấy `OrderSummary.valueText`, `CartViewModel.subtotalText` hoặc giá catalog làm input cho eligibility. `orderValueProgress.currentVnd/next` của PR169 có thể giúp liệt kê rung cần xét **nhưng chỉ là hint display**; nếu thiếu/stale/conflict thì lấy chính pricing authority để đánh giá, không đoán.
 3. Với **từng campaign** xác định `S`/`T` theo đúng basis và **ngưỡng thưởng tiếp theo**: gift ONCE đã nhận thì không có rung tiếp; gift REPEAT sử dụng bội số kế, tôn trọng cap; tier dùng rung kế chưa đạt, kể cả khi đã ở một rung thấp hơn.
 4. Near iff `0 <= S < T` và `5*S >= 4*T`, so sánh VND bằng integer/`BigInt` (80% **bao gồm**). Đây là **80% của mốc T tuyệt đối**, KHÔNG phải `progress.percent` của banner PR169 tính tiến độ từ rung trước tới rung sau.
@@ -103,7 +105,7 @@ Khi khách có giỏ hàng **gần đạt một mốc khuyến mãi**, checkout 
 
 1. Với **mỗi biến thể** gợi ý, server dựng **hypothetical cart read-only** = cart hiện tại + đúng `1 READY` unit thuộc **mẫu khác** (không ghi Cart/Order/GiftSelection, không giữ hàng, không phát quote proof). Đánh giá bằng **canonical cart/checkout pricing, stacking, gift entitlement** trên đầy đủ trước/sau; không đủ nếu chỉ cộng gap, xem banner hoặc áp dụng một công thức tại client.
 2. Campaign đích hợp lệ khi **(a)** thật sự vượt rung chưa đạt **và (b)** sau re-evaluation có quyền lợi tăng: gift tăng entitlement có thể cấp (`grantable`) và còn lựa chọn quà thực sự, hoặc quantity/order-value tier có rung mới **áp dụng** với mức giảm **thực tế tạo thêm lợi ích** của campaign, không chỉ thay label/rung có cùng discount value.
-3. Giữ nguyên các contract PR169: stacking bilateral consent, legacy Flash Sale không bị mất ưu đãi, order-value tier chạy cuối, fixed-total discount phân bổ trên dòng và `TIER_PRICE_INVALID` drop entire tier. `STACK_NOT_PERMITTED`, `STACK_PRIORITY_CONFLICT`, invalid price/scope hoặc rung không đạt trong simulated final quote => loại candidate.
+3. Giữ nguyên contract PR169: stacking song phương, Flash Sale không mất ưu đãi, **order-value ladders chạy sau legacy/quantity theo (priority, id)** với stage-specific reachability/re-run nếu drop; fixed-total allocation đúng từng paid unit và `TIER_PRICE_INVALID` drop nguyên bước. `STACK_NOT_PERMITTED`, `STACK_PRIORITY_CONFLICT`, invalid price/scope hoặc ladder đích không còn reachable trong simulated final quote ⇒ loại candidate.
 4. **Quà mới được hưởng nhưng chưa chọn không phải lỗi eligibility**: offer vẫn hợp lệ nếu có gift `grantable` và checkout có đường chọn quà/acknowledgement được duyệt (FR-09); không tự chọn quà. Chỉ loại candidate nếu quà **không thể cấp** theo stock/capacity, selection **đã lưu** trở nên không hợp lệ, POS shop chưa verify cho post-add benefit order, hoặc quote/shipping không thể xác minh. Không được đưa khách vào trạng thái mua thêm xong nhưng không thể đặt hàng.
 5. **Bảo toàn quyền lợi hiện có (MVP, fail-closed):** so sánh ledger/entitlement trước và sau **theo campaign**, không chỉ so tổng tiền hoặc campaign đích. Loại candidate nếu bất kỳ discount/campaign vốn đang áp dụng bị drop, giảm số tiền lợi ích đã có, làm giá của paid units cũ tăng vì mất khuyến mãi, giảm `entitled`/`grantable` của quà đã hưởng, vô hiệu gift selection hiện tại, hoặc tạo `TIER_PRICE_INVALID`/stack conflict mới ảnh hưởng ưu đãi cũ. Một ưu đãi mục tiêu mới không được dùng để che khoản ưu đãi khác đã mất; **không** cố tính “bù trừ lợi ích” trong MVP. Quy tắc chỉ áp dụng chọn gợi ý, **không** cấm khách tự chỉnh giỏ hay đặt checkout bình thường.
 6. Simulation chỉ là **advisory**. Mutation vẫn phải xác minh dưới cùng lock/revision/capacity authority và đối chiếu cùng ngữ nghĩa FR-04, **bao gồm bảo toàn quyền lợi cũ**; client token/preview không phải chứng cứ giá hay quyền lợi. Khi quyền lợi/gift availability đổi giữa preview và click, từ chối **trước commit**, không âm thầm áp dụng giỏ mới.
@@ -125,24 +127,27 @@ Khi khách có giỏ hàng **gần đạt một mốc khuyến mãi**, checkout 
 5. **Bounded ranking contract U-03:** catalog/scope/stock/capacity cần query có giới hạn, sort ổn định, có index/batching, không N+1. Với `ORDER_SUBTOTAL` global của PR169, **không** được coi `ORDER BY giá niêm yết LIMIT 5` là chứng cứ tìm được chi phí tăng thêm tốt nhất; mô phỏng có thể làm đổi tier/ship/stacking. Chạy full quote cho từng biến thể trong **tập ứng viên đã lấy**, xếp hạng deterministic rồi chọn tối đa 5 mẫu. Giới hạn số candidate, thời gian/DB query budget phải được chọn và benchmark ở `/plan` (chưa có ngưỡng số do owner duyệt).
 6. Nếu bị truncate/budget hết, có thể hiện **các mẫu thực sự vượt qua FR-04 trong tập đã xác minh** và dùng copy trung tính “Gợi ý thêm để đạt ưu đãi”; **không** nói “rẻ nhất toàn cửa hàng”. Nếu không xác minh được candidate nào thì ẩn module, không thay bằng gợi ý chưa mô phỏng. Ghi telemetry sampled `candidate_pool_truncated`, số candidate đã đánh giá, nhưng không có dữ liệu khách/secret. **Không** coi kết quả catalog search là entitlement authority.
 7. Ưu tiên hiện 3–5 sản phẩm; **1–2 sản phẩm là fallback hợp lệ** nếu tập đã xác minh chỉ có vậy. Nếu không có sản phẩm hợp lệ thì ẩn Upsell (D-08); không nhân bản card/variant để đủ số.
+8. **Per-variant price:** Mỗi option được kiểm phải có `currentUnitPriceVnd` và `estimatedIncrementalCostVnd` dựa trên **hypothetical quote của chính `variantId` đó** theo U-01 đã duyệt; nếu chưa có số phù hợp phải re-quote read-only trước khi bật CTA. Thay kind/màu/size phải đổi đúng giá/estimate/token; stale quote/token ⇒ xóa estimate cũ, không giữ minimum của sản phẩm để làm giá của option mới.
 
 ### FR-07 — “Chi phí mua thêm” và cách hiển thị (**U-01: đề xuất, chờ owner xác nhận**)
 
 - **Phương án A, đề xuất nhưng chưa được duyệt:** `deltaPayableVnd = quoteAfter.totalVnd - quoteBefore.totalVnd`, từ pricing/fulfillment/shipping authority cho **cùng địa chỉ/chính sách ship tại thời điểm hiển thị** (after = hypothetical, chưa signed; quote ký cuối chỉ cấp sau commit). Nếu địa chỉ chưa đầy đủ để tính phí ship, **không** được tự giả định phí 0đ hoặc tùy tiện thay đổi basis; cần thiết kế fallback được owner duyệt trước triển khai. Campaign eligibility luôn dựa trên `Q`/`S_gift`/`S_tier`, **không** dùng total gồm ship. **Phương án B chưa duyệt:** chỉ dùng giá thực trả của đúng chiếc mới, không đưa thay đổi ship/benefit toàn giỏ vào thứ tự ranking.
-- PR169 có `OrderSummary` để **trình bày** bill và `expectedTotalVnd` để chống hiển thị số không khớp. Không lấy giá/discount row trình bày làm nguồn canonical cho ranking; phải dựa vào quote facts thật, bao gồm ảnh hưởng phân bổ `FIXED_AMOUNT_TOTAL_VND` và thay đổi shipping theo subtotal.
+- PR169 có `OrderSummary` chỉ để trình bày bill, kiểm `expectedTotalVnd` và (HEAD mới) `expectedValueVnd` của listed-price lines. Ranking phải lấy canonical before/after quote, không dùng presentation saving; account for `FIXED_AMOUNT_TOTAL_VND`, thứ tự Flash Sale/tier và shipping.
 - Nếu `deltaPayableVnd` là 0 hoặc âm khi unlock promotion, hiển thị minh bạch “Dự kiến tổng thanh toán thay đổi…”/“Dự kiến tiết kiệm…” kèm tổng mới; không khẳng định món mới miễn phí hay giá chắc chắn được bảo đảm. Nếu delta dương, không đồng nhất `delta` với **giá lẻ** sản phẩm. Tất cả candidate vẫn phải giữ nguyên quyền lợi cũ theo FR-04.
-- Card hiện tên, trusted image, current price/option/availability; khi mutation thành công, hiển thị total mới qua quote/proof và `OrderSummary` PR169. Không dùng hypothetical preview để authorize COD.
+- Card có tên, trusted image, **current unit price của biến thể được chọn** và **incremental cost estimate của đúng biến thể** (hai số có thể khác). Chưa chọn option thì chỉ hiển thị minimum dạng **'Từ …'** trong eligible pool, không gọi đó là giá variant được chọn; nếu estimate <=0 diễn đạt thay đổi tổng dự kiến thay vì 'món miễn phí'. Chuyển option phải cập nhật price/estimate và signed token cùng snapshot hoặc re-quote trên server; cấm hiển thị giá cũ của size khác. Tổng chốt chỉ từ fresh checkout quote/proof, không từ preview. Phương pháp tính estimate chờ owner U-01.
 - **Hard gate U-01:** Trước `/plan`/`/build`, owner xác nhận A hay B và hành vi khi chưa biết shipping. Khi chưa được xác nhận, AC-09/AC-40 kiểm tra phương án A **ở mức đề xuất**, không có quyền dùng làm acceptance release gate. Sau xác nhận, cập nhật ranking/copy/test; không được tự ngầm chọn một cách tính.
 
 ### FR-08 — Inline add trên checkout; **offer token theo ngữ cảnh**
 
 1. Khách chọn kind/color/size và **“Thêm vào giỏ để nhận ưu đãi”** trong checkout; thêm **đúng 1 chiếc**. Không yêu cầu mở PDP/cart cho happy path; không tạo checkout form thứ hai và không tự chọn quà.
-2. **Tạo token cho từng biến thể đã kiểm chứng** từ read-only opportunity server; token opaque, được ký server-side (domain-separated/HMAC hoặc tương đương) và có TTL hữu hạn, không phải quote-proof của nút “Đặt hàng”. Payload có ràng buộc: **server-owned cart identity**, snapshot paid cart **có xác định thứ tự**, hash/version canonical quote hiện tại, campaign ID/**revision**, kind/basis/trigger, **mốc đích chính xác**, variant ID được kiểm, shop ID, issued-at và expiry. Không tin payload do browser tự khai. Token không chứa plaintext cart cookie, PII, secret, giá do browser gửi; bounded size/length. Giỏ đã thay đổi nhưng sau đó khôi phục về cùng tổ hợp (ABA) phải có cơ chế write-version/nonce đáng tin; không tuyên bố chống replay tuyệt đối chỉ dựa vào hash paid lines hoặc `Cart.updatedAt` nếu child mutation không tăng trường đó.
-3. Public Server Action chỉ nhận `{ offerToken, productSlug, variantId }` (hoặc tối thiểu hơn nếu token đã ràng buộc đủ); không nhận cart ID, giá, subtotal, threshold, discount hoặc số lượng tùy ý. **`campaignId` rời rạc không đủ** để authorize; nếu xuất hiện ở payload thì chỉ là hint và phải khớp token đã ký. Input validation trước I/O; không dùng signed offer token làm thay thế anonymous-cart auth hay signed checkout quote-proof.
+2. Token cho **từng variant đã verify** là **HMAC-signed với payload đọc được** (KHÔNG encrypted, KHÔNG thực sự opaque), domain-separated key, canonical bounded payload và TTL. Chỉ serialize **strict allowlist** `PublicUpsellOfferPayload` ở `6: token version, server-derived non-secret cart/quote hashes, monotonic write-version tag **không chứa cart UUID**, shop, campaign kind/basis/id/revision, exact target, variant và timestamps. **`cartId` lấy từ HttpOnly `la_cart` cookie tuyệt đối không có trong base64url payload/token bytes, DOM, URL, logs hoặc analytics**: nó chỉ là **MAC context từ server**, length-framed như `computeMac` trong `checkout-quote-proof.ts`. HMAC bảo đảm authenticity/integrity và bind với cart, **không giấu** nội dung payload; muốn ẩn payload phải dùng AEAD hoặc server-side random handle (không chọn cho MVP). U-05 về version/ABA độc lập với ràng buộc bảo mật này.
+3. Public Server Action chỉ nhận `{ offerToken, productSlug, variantId }` (hoặc ít hơn nếu đã bind trong signed payload), không nhận cart ID/giá/subtotal/threshold/discount/quantity từ client. Verify HMAC bằng `cartId` đọc từ cookie server, rồi re-evaluate mọi payload field với current canonical quote/campaign/variant. Không deserialize signed payload thành pricing authority; signed offer token **không** là session auth hay COD quote-proof. Validate shape/size trước I/O, failed verification không leak internal/session ID.
 4. Trong **cùng transaction, dưới cart lock**, đọc đúng shop/cart/paid lines/campaign revision và current canonical quote; xác minh token chưa hết hạn, snapshot/quote/mốc/campaign/biến thể vẫn khớp, sau đó re-evaluate chính **mốc đã hiển thị** và FR-03/04/benefit-preservation + READY capacity. Mọi điều kiện fail => typed `STALE_OFFER`/`CART_CHANGED` **trước khi ghi**. Không dùng `addStorefrontItemToBag()` như một write độc lập rồi mới kiểm campaign; phải bổ sung seam conditional read+add quanh existing `addItemUnit` semantics. Nếu implementation không có write-version/nonce để giải quyết ABA, phải ghi tradeoff và review trước `/build` thay vì suy đoán từ `updatedAt`.
 5. Accepted = commit đúng **1 paid unit**, không tạo Order/Pancake. Double-click / cùng token ở hai tab được serialize; token cũ không thể commit thêm sau khi giỏ đã đổi. Nếu response thành công bị mất, **không tự retry mutation**; refresh quote/cart để khách biết kết quả. Emit `add_to_cart`/Meta đúng một lần từ committed facts; không phát từ giá render.
 6. Trong cùng tab, vô hiệu add/submit trong lúc mutation + refresh; checkout re-render `PromotionBanner` (achieved), PR169 `OrderSummary`, **signed checkout quote-proof mới**, và gift state hiện tại. Giữ tên/SĐT/địa chỉ người nhận; không submit proof cũ. Reset acknowledgement theo **quote digest mới** (không mang tick qua giữa hai quote).
 7. Race hai tab/submit đồng thời phải fail closed nhờ server serialization, fresh quote-proof và capacity gate; pending UI **không** thay thế concurrency authority. Error/stale hiển thị nguyên nhân tổng quát, không leak campaign internals, không tự retry add.
+
+**Offer wire/MAC invariant:** `token = base64url(canonical(PublicUpsellOfferPayload)) + '.' + base64url(HMAC(upsellDomainKey, lengthFramed(cartIdFromHttpOnlyCookie, payloadBytes)))`. Chỉ `PublicUpsellOfferPayload` nằm trên wire; cookie UUID **chỉ dùng bên trong HMAC input**, không phải payload, URL hoặc server action argument. HMAC key tách domain với COD quote proof; verifier phải đọc HttpOnly cookie hiện tại rồi verify token và current facts trước transaction add. Đây là design contract; U-05 cần chốt source write-version/replay/ABA trước build.
 
 ### FR-09 — Quà vừa mở khóa (**U-02: UX chờ owner xác nhận**)
 
@@ -192,8 +197,9 @@ Checkout request (main + PR169 merged, existing signed quote flow)
   -> render existing PR169 achieved PromotionBanner + separate CheckoutUpsell
      -> reuse PR169 OrderSummary / total display, never as price authority
 
-Buyer selects option (typed kind/color/size) -> click Add with signed variant-specific offer token
-  -> bounded input -> cart lock -> verify cart/version + current quote + exact rung + campaign revision
+Buyer selects option (typed kind/color/size) -> show matching variant price/estimate -> click Add with HMAC-signed (readable) variant-specific offer token
+  -> bounded input -> verify signed payload with cookie cart ID used only as MAC context
+  -> cart lock -> verify cart/version + current quote + exact rung + campaign revision + variant
   -> re-evaluate new benefit AND preserve existing benefits; reject stale before write
   -> exactly +1 paid unit committed OR typed no-write refusal
   -> refresh checkout quote/proof and PR169 summary/banner; preserve input fields
@@ -231,6 +237,8 @@ export type UpsellThreshold =
 export type PromotionUpsellView = Readonly<{
   campaign: PromotionUpsellCampaign;
   threshold: UpsellThreshold;
+  /** Chosen by owner U-01 before build; all estimates/ranking use the same approved basis. */
+  costBasis: "TOTAL_PAYABLE_DELTA" | "ADDED_UNIT_EFFECTIVE_PRICE";
   /** UI dismissal only; NOT a server authorization condition. */
   cartFingerprint: string;
   /** Partial catalog evaluation is never claimed to cover the whole shop. */
@@ -239,7 +247,7 @@ export type PromotionUpsellView = Readonly<{
     slug: string; // public presentation key; actual ProductMirror.id stays server-owned
     name: string;
     image: { url: string; alt: string } | null; // trusted media only
-    minDeltaPayableVnd: number; // proposed U-01; hypothetical, NOT a final unit price
+    minEstimatedIncrementalCostVnd: number; // minimum across VERIFIED options only; 'Từ …' before selecting a variant
     options: readonly Readonly<{
       variantId: string;
       kindKey: string | null;
@@ -247,6 +255,10 @@ export type PromotionUpsellView = Readonly<{
       color: string | null;
       size: string | null;
       label: string; // display only, never parsed as option authority
+      currentUnitPriceVnd: number; // listed server price of THIS variant; informational, not final COD price
+      originalUnitPriceVnd?: number; // optional catalog markdown, if real
+      estimatedIncrementalCostVnd: number; // hypothetical quote for THIS variant, in costBasis; may be <=0
+      estimatedTotalAfterVnd: number | null; // available only if chosen U-01 basis can quote total/ship
       available: boolean;
       achievesThreshold: boolean;
       /** Issued only for server-verified eligible variant, scoped to exact offer context. */
@@ -262,20 +274,27 @@ export type AddUpsellInput = Readonly<{
   variantId: string;
 }>;
 
-/** Server-only conceptual signed fields; do not send this structure as trusted client JSON. */
-export type ServerOfferContext = Readonly<{
-  cartId: string;
-  paidCartSnapshotHash: string;
-  /** Authoritatively incremented cart write-version/nonce; exact source to verify at /plan. */
-  cartWriteVersion: string;
-  canonicalQuoteHash: string;
+/** Only these NON-SECRET fields may be serialized in the signed, readable token payload. */
+export type PublicUpsellOfferPayload = Readonly<{
+  tokenVersion: 1;
+  paidCartSnapshotHash: string; // non-secret digest, NOT raw cart contents or cart UUID
+  cartWriteVersion: string; // non-secret monotonic tag; NOT Cart.id/cookie UUID
+  canonicalQuoteHash: string; // non-secret digest; NOT quote/proof/prices
   shopId: number;
   campaignId: string;
   campaignRevision: number;
+  campaignKind: "GIFT_ITEM" | "QUANTITY_TIER";
+  campaignRuleBasis: "QUANTITY" | "ORDER_SUBTOTAL"; // trigger for gift, tierBasis for tier
   target: UpsellThreshold;
   variantId: string;
   issuedAt: number;
   expiresAt: number;
+}>;
+
+/** Server-only MAC context. NEVER serialize this object into a public token. */
+export type ServerOfferMacContext = Readonly<{
+  cartIdFromHttpOnlyCookie: string; // secret session handle used ONLY as length-framed MAC input
+  payload: PublicUpsellOfferPayload; // ONLY this member is on the wire
 }>;
 
 export type AddUpsellResult =
@@ -293,7 +312,7 @@ export type AddUpsellResult =
     }>;
 ```
 
-**Contract notes:** đây là **đích thiết kế**, chưa có functions/files trên `main`. `basis` thiếu/null trên tier của PR169 có nghĩa **`QUANTITY`**, không phải `ORDER_SUBTOTAL`; `GIFT_ITEM` không có tier basis. Browser chỉ nhận `offerToken` opaque + typed variant metadata; giải mã/kiểm chữ ký và đối chiếu `ServerOfferContext` chỉ tại server. Việc có `cartWriteVersion` hiện mới là **yêu cầu thiết kế**, không chứng minh repository đang có monotonic version qua child cart writes; phải kiểm tra U-05 trong `/plan`. Quote-proof COD và offer token là hai authority/kiểu token **khác nhau**, không tái sử dụng lẫn nhau. Validate/limit mọi input, không lộ cart ID/quote proof/PII/secret từ token, lỗi hoặc analytics. Giá được dựng từ typed canonical quote facts, không từ HTML/banner text.
+**Contract notes:** proposed contract, không có Upsell source trên `main`. Null `tierBasis` của PR169 là `QUANTITY`. `offerToken` là **signed-readable payload**, không encrypted/opaque; người dùng có thể decode `PublicUpsellOfferPayload`, nhưng bytes không được chứa `cartId`/cookie UUID/PII/secret/price authority. `ServerOfferMacContext.cartIdFromHttpOnlyCookie` chỉ lấy từ cookie server và đưa vào MAC input theo length framing; token cart X phải fail với cookie cart Y. Sau HMAC verify vẫn phải đối chiếu mọi trường với canonical current facts, giữ COD quote-proof độc lập. `cartWriteVersion` là U-05 chưa được xác minh về ABA. Mỗi variant estimate lấy từ cùng hypothetical quote của token chính variant đó; U-01 còn chờ quyết định cách tính. Validate/limit input và tuyệt đối không leak cart ID/quote proof/PII/secret trong log/errors/analytics.
 
 ## 7. Ownership dự kiến, không phát sinh subsystem trùng
 
@@ -301,9 +320,9 @@ export type AddUpsellResult =
 | --- | --- |
 | `src/commerce/promotion-upsell-policy.ts` *(new)* | Pure near filter cho `GIFT_ITEM/trigger` và `QUANTITY_TIER/basis`, winner ranking, deterministic tie-break, safe-money comparisons; **không dùng** PR169 `nearest` để chọn offer. |
 | `src/commerce/promotion-upsell-service.ts` *(new)* | Gated read-only opportunity; bounded search + full hypothetical canonical quote/entitlement/stacking (bao gồm PR169 order-value tier); optional hint từ `orderValueProgress`. |
-| `src/commerce/promotion-upsell-actions.ts` *(new)* | Input boundary cho opaque signed offer token, verify cart/quote/campaign/rung/variant/write-version trong **cùng** transaction với conditional add 1 chiếc; reuse locked cart/capacity authority, quote-proof COD độc lập. |
+| `src/commerce/promotion-upsell-actions.ts` *(new)* | Boundary cho strict public signed-readable token, `cartIdFromHttpOnlyCookie` chỉ là server-only HMAC context; verify cart/quote/campaign/rung/variant/write-version và transactional conditional +1; COD signed proof độc lập. |
 | `src/routes/checkout.ts` + `checkout-model.ts` | Extend optional checkout Upsell model **trên contract PR169**; giữ nguyên achieved `PromotionBanner` và signed benefit quote, không đưa `progress` mới vào builder PR169. |
-| `src/components/brand/checkout-upsell.tsx` *(new)* | Một module UI action duy nhất: progress đúng basis, typed `kindKey/color/size`, add/skip/pending/error; không parse option label hay fork `PromotionBanner`. |
+| `src/components/brand/checkout-upsell.tsx` *(new)* | Một module UI duy nhất: typed `kindKey/color/size`, per-variant unit price/estimate gắn với own offer token, add/skip/pending; không dùng minimum product làm selected option price. |
 | `src/components/commerce/guest-checkout-form.tsx` và brand adapter | Một seam cho Upsell trong **cùng một form**, preserve field state, phối hợp pending with checkout submit. |
 | PR169 `cart-promotion-model.ts`, `promotion-banner.tsx`, `order-summary-model.ts`, `order-summary.tsx`, `getStorefrontCartView()` | **Reuse presentation** trong cart/drawer/checkout; không dùng các view models để authorize tiền/offer. |
 | Existing `gift-quantity-*`, `checkout-quote-*`, `storefront-cart-*`, `storefront-actions.ts` | **Reuse business authority** qua typed seams; không fork PR169 order-value allocation, không phá proof/stacking/stock; nếu cần extract pure hypothetical evaluator, characterization tests trước. |
@@ -356,6 +375,11 @@ export type AddUpsellResult =
 | AC-39 | Upsell mở suất quà mới và khách muốn chọn quà tại checkout | **Nếu U-02 chọn phương án A:** gift selection inline, refresh proof sau chọn, không điều hướng/không mất form. **Nếu chọn B:** test flow cart→checkout và bảo toàn form riêng; không tự chọn quà. |
 | AC-40 | Với proposal U-01 A, 2 candidate có giá món khác nhau, discount/ship thay đổi, delta payable có thể âm/0 | Rank bằng **total delta** từ cùng quote/shipping basis, label không gọi là giá món miễn phí; nếu shipping chưa xác định, block ranking theo A cho đến khi chốt fallback. Nếu chọn B, thay test trước build. |
 | AC-41 | PR169 `GIFT_ITEM/ORDER_SUBTOTAL` và `QUANTITY_TIER/ORDER_SUBTOTAL` đồng thời near; selected gift không hợp lệ hoặc campaign mới conflict | Phân biệt `S_gift`/`S_tier`, preserve lợi ích cũ; không chọn offer chỉ theo `orderValueProgress`/banner. |
+| AC-42 | Decode base64url payload của HMAC signed offer, biết trước cookie `la_cart`/`Cart.id` | Bytes payload/token, DOM, response/log/analytics không có **raw cart UUID**; strict public allowlist; HMAC không phải encryption. |
+| AC-43 | Offer token ký cho cart X, server đọc cookie cart Y; payload bị sửa/expired | MAC sai theo cart context => reject trước write, không đọc/chuyển giỏ của X, không leak UUID. |
+| AC-44 | Cùng mẫu size S giá 150.000đ, L giá 250.000đ, mỗi variant có verified hypothetical cost khác nhau; đổi S→L | Selected price + `estimatedIncrementalCostVnd` + token đổi theo **L**, không tiếp tục hiện product minimum/giá của S; trước khi chọn chỉ copy **'Từ …'** hoặc ẩn estimate; test theo lựa chọn U-01 sau owner signoff. |
+| AC-45 | PR169 `89428fd7`: hai order-value ladders A/B active, A chạy trước làm subtotal dưới ngưỡng B; stack/drop re-run | `S_tier` tính tại stage của B; B không được quảng bá sai, hypothetical +1 phải dùng `priceStack` đầy đủ và preserve benefits. |
+| AC-46 | PR169 `89428fd7`: tier chạy trước Flash Sale, ledger tier saving khác listed-price delta | PR169 cart/checkout saving rows và `OrderSummary.expectedValueVnd` reconcile chính xác; Upsell không lấy presentation saving làm variant cost authority. |
 
 ## 9. Verification commands và chiến lược
 
@@ -374,17 +398,17 @@ pnpm test:db
 pnpm build
 ```
 
-**Regression PR169 phải giữ:** `tests/domain/cart-promotion-model.test.ts`, `tests/domain/order-summary-model.test.ts`, `tests/domain/gift-quantity-order-subtotal-tier.test.ts`, `tests/database/gift-quantity-order-value.test.ts`, `tests/database/gift-quantity-order-value-checkout.test.ts` và các checkout-benefit/gift/promotion tests cũ. Khi PR169 thay đổi trong thời gian Upsell build, chạy regression tại **merged SHA**, không lấy kết quả ở PR cũ làm thay thế.
+**Regression PR169 phải giữ (HEAD `89428fd7`):** `tests/domain/cart-promotion-model.test.ts`, `tests/domain/order-summary-model.test.ts`, `tests/domain/gift-quantity-order-subtotal-tier.test.ts`, `tests/domain/gift-quantity-tier-basis.test.ts`, `tests/database/gift-quantity-order-value.test.ts`, `tests/database/gift-quantity-order-value-checkout.test.ts` cùng regression cũ. Thêm regression order→order reachability, stage-aware progress, listed-price savings, selected variant estimate, token decode không leak UUID và cross-cart replay. PR169 đổi HEAD phải re-review trước signoff; build verify trên merged SHA.
 
 **Browser:** tại `tests/a11y-runtime/` dùng Playwright (`@playwright/test`), thêm `checkout-upsell.spec.ts` vào `testMatch` nếu cần; kiểm tra mobile 390, desktop 1280, keyboard, form-state. Assert `PromotionBanner` chỉ hiện earned states trên checkout và `CheckoutUpsell` là action riêng, không duplicate CTA. Test Postgres mutation/requote/race và PR169 order-value price segments/proof. `pnpm release:check`/Pancake POS cần môi trường, credentials được phê duyệt; không đưa key vào log.
 
-**TDD:** (1) RED typed basis/near 80% (absolute rung)/bounded ranking; (2) GREEN full hypothetical quote dùng PR169 engine **và so benefit trước/sau theo campaign**; (3) DB conditional mutation/token freshness/replay/2 tabs/ABA + fixed-total allocation; (4) PR169 checkout banner/summary + typed kind/color/size + gift picker theo U-02 + input persistence; (5) Playwright/a11y; (6) ma trận **2 flag**, POS capability + existing regression/build. Kịch bản phải chứng minh signed quote, gift selections, paid line segments, saved discount rows và shipping không drift sau add.
+**TDD:** (1) RED tier basis/near/rank + multiple order-value reachability; (2) GREEN full hypothetical + preserve campaign entitlements; (3) security token payload decode/cross-cart MAC tests và database conditional add/replay/ABA; (4) UI selected variant unit-price/estimated cost/token sync, quote proof & PR169 savings/OrderSummary, gift picker theo U-02; (5) Playwright/a11y; (6) flags/POS + regression. Không suy giá từ browser/banner.
 
-**Tình trạng kiểm chứng tài liệu v1.2:** đã **đọc PR169 source/diff và source `main`**, kiểm tra metadata PR open; kiểm tra cấu trúc/chỉ dẫn spec cục bộ. **Không chạy** command của repository, database, browser, benchmark hay POS live; các số test nêu trong mô tả PR169 là lời tác giả PR, không phải kết quả đã xác minh trong tác vụ này. POS evidence cũ cũng không chứng minh Upsell production-ready.
+**Tình trạng kiểm chứng tài liệu v1.3:** đã đọc PR170 review và đối chiếu `main` với PR169 `89428fd7` (+4 commits từ `c6b11af`) ở core stack/progress/savings/checkout, cùng `checkout-quote-proof.ts` và `anonymous-cart-cookie.ts`. Static review/spec diff; **không chạy** repo tests/build/DB/browser/POS ở tác vụ docs-only này.
 
 ## 10. Security, hiệu năng, telemetry, rollout
 
-- **Security:** browser input là untrusted; validate identifiers, lengths, enum và quan hệ product/variant/shop; lấy anonymous cart từ cookie server, không nhận cart ID từ browser; không tin client price/stock/threshold; chỉ server decides stock and promotion. Server-issued **signed offer token** bind cart/version/current quote/campaign revision/exact rung/variant, short TTL, replay test (incl. ABA); token là advisory authorization cho add, không thay thế signed COD proof. No secrets/PII/cart cookie contents trong UI analytics/logs. Cart lock và revalidation chung transaction là gate cho double click/two tabs; **không** tin UI pending để chống replay.
+- **Security:** Client input untrusted, server validates IDs/lengths/relations. Offer token ký HMAC **không mã hóa**, chỉ serialize strict `PublicUpsellOfferPayload`, không bao giờ cookie/cart UUID/PII/secret/price authority. `cartIdFromHttpOnlyCookie` là MAC context length-framed từ server như checkout quote-proof; distinct key domain, TTL; tampering, token X on cookie Y => fail before write; U-05 xử lý replay/ABA + cart lock. Token không thay anonymous-cart auth/COD proof; không log/display cart UUID, full offer token, secret hoặc buyer PII.
 - **Performance:** một opportunity read tối đa 1 lần/checkout load; global order-value tiers PR169 có thể tăng candidate pool nên phải batched/indexed/bounded, deterministic, no N+1 và có cơ chế tắt/timeout module Upsell **không ảnh hưởng checkout**. Không tìm cách tối ưu toàn catalog theo giá niêm yết khi delta payable là non-monotonic; báo “rẻ nhất trong pool đã xác minh”, ghi truncation. Đo p95 checkout, DB query count, candidate truncation/near false negatives trên catalog thực; chưa tự đặt lời hứa “nhanh” khi chưa benchmark.
 - **Analytics:** `upsell_impression`, `upsell_select_variant`, `upsell_add_attempt`, `upsell_add_accepted`, `upsell_dismiss`, `upsell_stale` là proposal. Campaign kind/id + banded amounts hợp lệ, không PII; existing `add_to_cart` dùng committed snapshot như PDP, tránh đếm hai lần và không tự tạo Meta/browser event từ giá render.
 - **Telemetry:** error rate của eval/action, latency p95, candidate counts/truncation, offer→add ratio, quote-invalid/retry; high-cardinality request IDs chỉ trong structured trace/log nội bộ, không dùng làm metric labels.
@@ -412,7 +436,7 @@ export function isNearMoneyThreshold(currentVnd: bigint, nextVnd: bigint): boole
 
 ## 12. Definition of Done (gate khi triển khai, không phải đã hoàn thành)
 
-- AC-01…AC-41 được chứng minh bằng RED/GREEN, integration và E2E thích hợp; **AC-09/AC-39/AC-40 phụ thuộc owner chọn U-01/U-02**; PR169-specific cases bắt buộc khi PR169 là merged dependency.
+- AC-01…AC-46 phải có test RED/GREEN, integration và E2E; **AC-09/AC-39/AC-40/AC-44 phụ thuộc owner U-01/U-02**; PR169 cases verify trên merged SHA.
 - Flag OFF bảo toàn contract/cart/checkout byte-for-byte khi có thể kiểm thử; không gây thêm side effect.
 - Lint/typecheck/domain/integration/database/build/browser-a11y + live conditional POS gates (nếu có) được chạy thực tế và ghi kết quả.
 - Route/quote/variant/basis/price/security/race, gift preservation và token freshness/ABA được review; không có drift giữa hypothetical, PR169 order-value stack và committed quote; docs ADR D-11…D-13/Gift&Quantity spec được đồng bộ theo merged SHA trước ship.
@@ -422,13 +446,13 @@ export function isNearMoneyThreshold(currentVnd: bigint, nextVnd: bigint): boole
 
 | ID | Chủ sở hữu | Quyết định / bằng chứng cần cung cấp | Gate |
 | --- | --- | --- | --- |
-| **U-01** | **Owner** | Chốt “chi phí mua thêm thấp nhất”: **A (đề xuất)** = `totalPayableAfter - totalPayableBefore` gồm thay đổi giảm giá/ship, hoặc **B** = giá thực trả của chiếc mua thêm. Nếu ship chưa xác định, chốt fallback (không ngầm giả định 0đ). Đồng bộ FR-05/07, AC-09/28/40 theo lựa chọn. | **Block `/plan`/`/build` pricing & ranking** |
+| **U-01** | **Owner** | Chốt cost basis A (đề xuất) = `totalPayableAfter - totalPayableBefore` gồm discounts/shipping, hoặc B = giá thực trả chiếc mới, và fallback khi thiếu shipping. Rank và **per-variant estimate/label `costBasis`** phải nhất quán; card chưa chọn chỉ 'Từ …' hoặc ẩn estimate, chọn S/L phải cập nhật theo variant/token. Đồng bộ FR-05/06/07, AC-09/28/40/44 sau owner quyết định. | **Block `/plan`/`/build` pricing/ranking** |
 | **U-02** | **Owner** | Chốt quà sau Upsell: **A (đề xuất)** chọn quà ngay checkout bằng service hiện có; hoặc **B** qua cart và quay lại checkout có bảo toàn dữ liệu. Không tự chọn quà; cập nhật FR-09 và AC-18/39. | **Block `/plan`/`/build` gift UX** |
 | **U-03** | Kỹ thuật / reviewer | Thiết kế bounded candidate enumeration/query, index và measure; xác minh pool truncation, deterministic rank theo **full quote**; copy UI không claim cheapest toàn catalog. | Phải có bằng chứng trước build |
 | **U-04** | Owner khi scope thay đổi | Free-shipping threshold/legacy PROMOTION/FLASH_SALE/CLEARANCE không có mốc riêng trong v1; chúng vẫn tác động price. Không tự mở thêm loại khuyến mãi ngoài D-01. | Scope guard |
-| **U-05** | Kỹ thuật / security reviewer | Thiết kế `ServerOfferContext` signed + TTL + verified exact rung; nguồn **monotonic cart write-version/nonce** qua mọi child writes để tránh ABA, hoặc quyết định rõ cơ chế an toàn thay thế; verify conditional simulation + add trong **cùng transaction/cart lock**, proof mới sau commit, replay tests. Không khẳng định `Cart.updatedAt` tự tăng từ `CartItem` mutation nếu chưa chứng minh. Nếu cần schema, xin owner/ADR trước code. | **Block `/build` mutation** |
+| **U-05** | Kỹ thuật / security reviewer | Duyệt strict `PublicUpsellOfferPayload` signed-readable vs `ServerOfferMacContext` (cookie UUID MAC context only, never wire), domain key separation, cross-cart rejection, TTL. Chốt nguồn monotonic cart write-version/nonce qua child writes hoặc giải pháp tương đương; transactional re-eval + add, replay/ABA tests. Không coi token HMAC là encrypted hoặc session auth; schema nếu cần phải xin owner/ADR. | **Block `/build` mutation** |
 
-**G-01 (dependency, không phải câu hỏi mới):** PR169 phải được review, merge + migration, đồng bộ docs và verify trên **merged SHA** trước khi `/build` tính năng order-value Upsell. PR spec này **được phép độc lập target `main` khi PR169 còn open**, nhưng không được coi các API của PR169 là đã hiện diện trên `main`.
+**G-01 (dependency, không phải câu hỏi mới):** PR169 phải được review/merge+migrate/verify trên merged SHA trước `/build` order-value Upsell. **Nếu HEAD khác `89428fd7`, bắt buộc re-review diff và AC-23…29/41/45/46 trước technical signoff**; không chờ tới merge. PR170 docs-only target `main` khi PR169 còn open.
 
 **Tình trạng P1 self-review:** P1 token/context đã có contract testable ở FR-08/AC-32…35 nhưng chưa implement; P1 ranking đã phân biệt bound và **đang chờ U-01**; P1 gift picker đã có hai flow đề xuất và **đang chờ U-02**; P1 bảo toàn lợi ích đã được chốt thành fail-closed invariant trong FR-04/AC-36. Không tuyên bố self-review findings đều “closed” khi owner gate chưa được duyệt.
 
@@ -442,19 +466,23 @@ export function isNearMoneyThreshold(currentVnd: bigint, nextVnd: bigint): boole
 - [Checkout form](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/4c46488b180acd44481858a8a32f9e848368df24/src/components/commerce/guest-checkout-form.tsx)
 - [POS evidence](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/4c46488b180acd44481858a8a32f9e848368df24/docs/integrations/pancake-gift-quantity-acceptance.md)
 
-**PR169 baseline (`c6b11afb…`, open tại thời điểm kiểm tra)**
+**PR169 re-reviewed HEAD (`89428fd7…`, PR vẫn open; snapshot `c6b11af` đã cũ)**
 
 - [PR169 — source, discussion, checks](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/169)
-- [ADR 0016 D-11…D-13](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/docs/decisions/0016-gift-quantity-promotions-v1-decisions.md)
-- [Tier basis và order subtotal pricing](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/commerce/gift-quantity-tier.ts)
-- [Order-value progress/read model](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/commerce/gift-quantity-quote.ts)
-- [Cart banner logic and ranking](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/routes/cart-promotion-model.ts)
-- [Checkout model, only achieved promo banner](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/routes/checkout-model.ts)
-- [PR169 checkout render](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/app/checkout/page.tsx)
-- [PR169 order summary](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/src/routes/order-summary-model.ts)
-- [PR169 order-value checkout DB test](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/c6b11afbb262aeb4d5d31981b6b0a59a869d6ad3/tests/database/gift-quantity-order-value-checkout.test.ts)
+- [Stack ordered order-to-order reachability](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/commerce/gift-quantity-stack.ts)
+- [Stage-aware progress](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/commerce/gift-quantity-quote.ts)
+- [New order-to-order regressions](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/tests/domain/gift-quantity-order-subtotal-tier.test.ts)
+- [PR169 savings reconciliation regressions](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/tests/domain/cart-promotion-model.test.ts)
+- [ADR 0016 D-11…D-13](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/docs/decisions/0016-gift-quantity-promotions-v1-decisions.md)
+- [Tier basis và order subtotal pricing](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/commerce/gift-quantity-tier.ts)
+- [Order-value progress/read model](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/commerce/gift-quantity-quote.ts)
+- [Cart banner logic and ranking](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/routes/cart-promotion-model.ts)
+- [Checkout model, only achieved promo banner](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/routes/checkout-model.ts)
+- [PR169 checkout render](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/app/checkout/page.tsx)
+- [PR169 order summary](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/src/routes/order-summary-model.ts)
+- [PR169 order-value checkout DB test](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/blob/89428fd7ca7543a6dc4c34715dcf80f2a9584fd8/tests/database/gift-quantity-order-value-checkout.test.ts)
 
 
 ---
 
-**Handoff v1.2:** PR tài liệu cho owner review U-01/U-02 và kỹ thuật review U-03/U-05 → PR169 hoàn tất merge/verification (G-01) → `/plan` từ merged SHA → `/build` test-first → `/review` → `/ship` theo gates. Spec v1.2 là tài liệu, **không** đổi code/flag/migration/deploy; review/approve riêng trước khi implement.
+**Handoff v1.3:** PR170 docs-only, owner U-01/U-02 và technical U-03/U-05 vẫn mở; các review comments đã xử lý **trong spec, chưa implement**. Mọi PR169 HEAD sau `89428fd7` phải re-review trước technical signoff → PR169 merged & verified → `/plan` → `/build` test-first → `/review` → `/ship`. Không bật flag/migrate/deploy qua PR này.
