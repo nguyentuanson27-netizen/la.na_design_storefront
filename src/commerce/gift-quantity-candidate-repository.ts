@@ -53,6 +53,7 @@ export const giftQuantityCampaignSelection = {
   awardMode: true,
   maxGiftsPerOrder: true,
   allowDuplicateGifts: true,
+  tierBasis: true,
   tierUnit: true,
   tierDiscountedUnits: true,
   tierSelectionPriority: true,

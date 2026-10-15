@@ -213,9 +213,9 @@ test("engine import boundary distinguishes erased types from runtime pricing imp
 //   exactly these runtime symbols and nothing from the quote/stack engines.
 const adminEngineImports: Record<string, readonly string[]> = {
   "commerce/gift-quantity-stack-peers.ts": ["STACK_PEER_ANY"],
-  "commerce/gift-quantity-tier-rule.ts": ["MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
+  "commerce/gift-quantity-tier-rule.ts": ["MAX_ORDER_SUBTOTAL_THRESHOLD_VND", "MAX_TIERS_PER_CAMPAIGN", "validateTierConfig"],
   "commerce/gift-quantity-publish-guards.ts": ["findPricesInvalidForTier"],
-  "components/admin/gift-quantity-tier-fields.tsx": ["MAX_TIER_UNITS", "MAX_TIERS_PER_CAMPAIGN", "priceQuantityTier", "validateTierConfig"],
+  "components/admin/gift-quantity-tier-fields.tsx": ["MAX_ORDER_SUBTOTAL_THRESHOLD_VND", "MAX_TIER_UNITS", "MAX_TIERS_PER_CAMPAIGN", "priceTier", "validateTierConfig"],
 };
 
 /** Importers per engine kind; a declared admin module exceeding its symbols fails immediately. */
@@ -252,7 +252,7 @@ test("only the cart repository consumes the tier quote engine (no PDP/PLP/feed/s
 });
 
 test("the admin tier preview exception is exact: any other importer still breaks the boundary", () => {
-  const tierImport = 'import { priceQuantityTier } from "@/commerce/gift-quantity-tier";';
+  const tierImport = 'import { priceTier } from "@/commerce/gift-quantity-tier";';
   const previewPath = "components/admin/gift-quantity-tier-fields.tsx";
   // The declared preview may use the pure tier function, so it is not counted as an importer.
   assert.equal(engineImporters([{ path: previewPath, text: tierImport }]).get("tier"), undefined);

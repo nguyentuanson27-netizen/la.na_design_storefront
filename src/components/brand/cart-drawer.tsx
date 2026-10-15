@@ -6,6 +6,9 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
+import { LinePrice } from "@/components/brand/line-price";
+import { OrderSummary } from "@/components/brand/order-summary";
+import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import {
   handleDrawerFocusTrap,
   isMeaningfulReturnFocusTarget,
@@ -172,108 +175,129 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 </Link>
               </div>
             ) : cart ? (
-              <ul className="divide-y divide-[#3B2219]/10">
-                {cart.lines.map((line) => (
-                  <li key={line.variantId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
-                    {/* Visual */}
-                    <div className="relative aspect-[3/4] w-20 flex-shrink-0 overflow-hidden rounded bg-[#3B2219]/5">
-                      {line.primaryImage ? (
-                        <Image
-                          src={line.primaryImage.url}
-                          alt={line.primaryImage.alt || line.productName}
-                          fill
-                          sizes="80px"
-                          className="object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-[0.65rem] font-medium text-[#70584B]">
-                          {BRAND.identity.displayNameUpper}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Content */}
-                    <div className="flex flex-1 flex-col justify-between">
-                      <div>
-                        {line.productSlug ? (
-                          <Link
-                            href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                            onClick={onClose}
-                            className="font-display text-sm font-medium text-[#2A1810] underline underline-offset-4"
-                          >
-                            {line.productName}
-                          </Link>
+              <>
+                <PromotionBanner className="mb-5" giftHref="/cart#cart-gifts" onNavigate={onClose} variant="compact" view={cart.promotions} />
+                <ul className="divide-y divide-[#3B2219]/10">
+                  {cart.lines.map((line) => (
+                    <li key={line.variantId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
+                      {/* Visual */}
+                      <div className="relative aspect-[3/4] w-20 flex-shrink-0 overflow-hidden rounded bg-[#3B2219]/5">
+                        {line.primaryImage ? (
+                          <Image
+                            src={line.primaryImage.url}
+                            alt={line.primaryImage.alt || line.productName}
+                            fill
+                            sizes="80px"
+                            className="object-cover"
+                          />
                         ) : (
-                          <span className="font-display text-sm font-medium text-[#2A1810]">
-                            {line.productName}
-                          </span>
+                          <div className="flex h-full w-full items-center justify-center text-[0.65rem] font-medium text-[#70584B]">
+                            {BRAND.identity.displayNameUpper}
+                          </div>
                         )}
-                        <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
-                        <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
-                          {line.priceText}
-                        </p>
-                        {!line.available ? (
-                          <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
-                            {line.availabilityLabel}
-                          </p>
-                        ) : null}
                       </div>
 
-                      {/* Quantity & Remove */}
-                      <div className="mt-3 flex items-center justify-between">
-                        <div className="flex items-center rounded border border-[#3B2219]/20 bg-white">
-                          <button
-                            type="button"
-                            disabled={isPending || line.quantity <= 1}
-                            onClick={() => updateQuantity(line.variantId, line.quantity - 1)}
-                            aria-label={`Giảm số lượng ${line.productName}`}
-                            className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-                          >
-                            -
-                          </button>
-                          <span className="w-8 text-center text-xs font-medium text-[#2A1810]">
-                            {line.quantity}
-                          </span>
-                          <button
-                            type="button"
-                            disabled={isPending || !line.canUpdate}
-                            onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
-                            aria-label={`Tăng số lượng ${line.productName}`}
-                            className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
-                          >
-                            +
-                          </button>
+                      {/* Content */}
+                      <div className="flex flex-1 flex-col justify-between">
+                        <div>
+                          {line.productSlug ? (
+                            <Link
+                              href={`/shop/${encodeURIComponent(line.productSlug)}`}
+                              onClick={onClose}
+                              className="font-display text-sm font-medium text-[#2A1810] underline underline-offset-4"
+                            >
+                              {line.productName}
+                            </Link>
+                          ) : (
+                            <span className="font-display text-sm font-medium text-[#2A1810]">
+                              {line.productName}
+                            </span>
+                          )}
+                          <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
+                          <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
+                            <LinePrice
+                              discountPercent={line.discountPercent}
+                              originalPriceText={line.originalPriceText}
+                              priceText={line.priceText}
+                            />
+                          </p>
+                          {line.paidSegments ? (
+                            <p className="mt-0.5 text-[0.7rem] text-[#70584B]" data-line-segments>
+                              Giá sau ưu đãi: {line.paidSegments.join(" + ")}
+                            </p>
+                          ) : null}
+                          {!line.available ? (
+                            <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
+                              {line.availabilityLabel}
+                            </p>
+                          ) : null}
                         </div>
 
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => removeItem(line.variantId)}
-                          aria-label={`Xóa ${line.productName} khỏi giỏ hàng`}
-                          className="inline-flex min-h-11 items-center px-2 text-xs text-[#70584B] hover:text-red-700 hover:underline transition-colors disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Xóa
-                        </button>
+                        {/* Quantity & Remove */}
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex items-center rounded border border-[#3B2219]/20 bg-white">
+                            <button
+                              type="button"
+                              disabled={isPending || line.quantity <= 1}
+                              onClick={() => updateQuantity(line.variantId, line.quantity - 1)}
+                              aria-label={`Giảm số lượng ${line.productName}`}
+                              className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+                            >
+                              -
+                            </button>
+                            <span className="w-8 text-center text-xs font-medium text-[#2A1810]">
+                              {line.quantity}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isPending || !line.canUpdate}
+                              onClick={() => updateQuantity(line.variantId, line.quantity + 1)}
+                              aria-label={`Tăng số lượng ${line.productName}`}
+                              className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
+                            >
+                              +
+                            </button>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => removeItem(line.variantId)}
+                            aria-label={`Xóa ${line.productName} khỏi giỏ hàng`}
+                            className="inline-flex min-h-11 items-center px-2 text-xs text-[#70584B] hover:text-red-700 hover:underline transition-colors disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            Xóa
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : null}
           </div>
 
           {/* Footer */}
           {cart && !cart.isEmpty ? (
             <div className="border-t border-[#3B2219]/10 bg-[#FAF7F2] p-6 space-y-4">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs uppercase tracking-wider text-[#70584B]">Tạm tính</span>
-                <span className="font-sans text-base font-semibold text-[#2A1810]">
-                  {cart.subtotalText}
-                </span>
-              </div>
-              <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
-                Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán.
-              </p>
+              {cart.summary ? (
+                <OrderSummary summary={cart.summary} variant="compact" />
+              ) : (
+                <>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs uppercase tracking-wider text-[#70584B]">Tạm tính</span>
+                  <span className="font-sans text-base font-semibold text-[#2A1810]">
+                    {cart.subtotalText}
+                  </span>
+                </div>
+                <PromotionSavings rows={cart.promotions?.savings} />
+                <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
+                  {cart.promotions
+                    ? "Phí vận chuyển sẽ được tính toán tại bước thanh toán."
+                    : "Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán."}
+                </p>
+                </>
+              )}
 
               <div className="space-y-2 pt-2">
                 {cart.canCheckout ? (

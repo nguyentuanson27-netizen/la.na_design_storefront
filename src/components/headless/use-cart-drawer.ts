@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState, useTransition } from "react";
 
 import {
-  getStorefrontCartLines,
+  getStorefrontCartView,
   removeStorefrontCartLine,
   updateStorefrontCartLine,
 } from "@/commerce/storefront-cart-actions";
 import { publishCartSummary } from "@/components/headless/cart-summary-store";
-import { buildCartViewModel, summarizeCartViewModel, type CartViewModel } from "@/routes/cart-model";
+import { summarizeCartViewModel, type CartViewModel } from "@/routes/cart-model";
 import { trackCommittedMetaAddToCart } from "@/components/analytics/meta-browser-client";
 
 export function useCartDrawer(isOpen: boolean) {
@@ -36,9 +36,7 @@ export function useCartDrawer(isOpen: boolean) {
     setIsLoading(true);
     setError(null);
     try {
-      const lines = await getStorefrontCartLines();
-      const model = buildCartViewModel({ lines, commerceTrackingEnabled: false });
-      setCart(model);
+      setCart(await getStorefrontCartView());
     } catch {
       setError("Không thể tải thông tin giỏ hàng. Vui lòng thử lại.");
     } finally {
@@ -53,10 +51,8 @@ export function useCartDrawer(isOpen: boolean) {
 
     void (async () => {
       try {
-        const lines = await getStorefrontCartLines();
-        if (isMounted) {
-          setCart(buildCartViewModel({ lines, commerceTrackingEnabled: false }));
-        }
+        const view = await getStorefrontCartView();
+        if (isMounted) setCart(view);
       } catch {
         if (isMounted) {
           setError("Không thể tải thông tin giỏ hàng. Vui lòng thử lại.");
@@ -82,8 +78,7 @@ export function useCartDrawer(isOpen: boolean) {
             const result = await updateStorefrontCartLine({ variantId, quantity });
             if (result.ok) {
               trackCommittedMetaAddToCart(result.metaEvent);
-              const lines = await getStorefrontCartLines();
-              setCart(buildCartViewModel({ lines, commerceTrackingEnabled: false }));
+              setCart(await getStorefrontCartView());
               resolve(true);
             } else {
               setError("Không thể cập nhật số lượng sản phẩm.");
@@ -106,8 +101,7 @@ export function useCartDrawer(isOpen: boolean) {
           try {
             const result = await removeStorefrontCartLine({ variantId });
             if (result.ok) {
-              const lines = await getStorefrontCartLines();
-              setCart(buildCartViewModel({ lines, commerceTrackingEnabled: false }));
+              setCart(await getStorefrontCartView());
               resolve(true);
             } else {
               setError("Không thể xóa sản phẩm khỏi giỏ hàng.");

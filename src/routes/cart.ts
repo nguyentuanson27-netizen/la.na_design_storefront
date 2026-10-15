@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 
+import { tryReadGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 import { getCurrentStorefrontCartBenefits } from "@/commerce/storefront-cart-runtime";
 import { buildCartViewEvent } from "@/components/analytics/cart-funnel-tracking";
 import { isCommerceTrackingEnabled } from "@/components/analytics/commerce-event-reporter";
@@ -17,7 +18,7 @@ export async function loadCartRoute(): Promise<RouteHandle<CartViewModel>> {
   const { lines } = cart;
 
   return sealRoute({
-    data: buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled() }),
+    data: buildCartViewModel({ ...cart, commerceTrackingEnabled: isCommerceTrackingEnabled(), shippingPolicy: tryReadGuestShippingPolicy() }),
     // Cart prices are re-resolved on every request, so nothing here is promotion-cached; the shared
     // default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

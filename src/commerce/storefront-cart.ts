@@ -99,6 +99,13 @@ export type StorefrontCartLine = {
   size: string | null;
   quantity: number;
   price: number | null;
+  /**
+   * The catalog price before a per-product promotion (Flash Sale, clearance...), present ONLY when
+   * the line is actually priced below it. Presentation only: `price` is the money, this lets a
+   * surface strike the old price through. Absent -- not `null` -- on an undiscounted line, so a line
+   * without a promotion is exactly the object it was before this field existed.
+   */
+  basePrice?: number;
   available: boolean;
   /**
    * F8b / master spec §30 — whether this line is a `Đặt trước` sale, as the capacity authority
@@ -335,6 +342,9 @@ export function buildStorefrontCartLines({
     return {
       ...base,
       price: option.price,
+      ...(option.isDiscounted && option.price !== null && option.basePriceVnd !== null && option.basePriceVnd > option.price
+        ? { basePrice: option.basePriceVnd }
+        : {}),
       available: option.purchasable,
       // Quantity-aware, from the same authority the reservation writes history with. The option's
       // own `isPreorderSale` answers "is one more unit a preorder sale", which is the wrong

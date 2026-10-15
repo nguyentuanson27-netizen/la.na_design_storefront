@@ -3,6 +3,7 @@ import { validateTierRuleForPublish, type TierRuleInput } from "./gift-quantity-
 import type { StackPeer } from "./gift-quantity-stack.ts";
 import type {
   GiftAwardMode,
+  QuantityTierBasis,
   GiftQuantityCampaignKind,
   GiftSubtotalScope,
   GiftTrigger,
@@ -34,6 +35,8 @@ export type RuleValidationInput = Readonly<{
   awardMode: GiftAwardMode | null;
   maxGiftsPerOrder: number | null;
   allowDuplicateGifts: boolean | null;
+  /** NULL is read as QUANTITY. */
+  tierBasis?: QuantityTierBasis | null;
   tierUnit: QuantityTierDiscountUnit | null;
   tierDiscountedUnits: QuantityTierDiscountedUnits | null;
   tierSelectionPriority: QuantityTierSelectionPriority | null;
@@ -53,6 +56,7 @@ export const refuseUnvalidatedRules: RuleValidator = () => [RULE_VALIDATION_NOT_
 
 function tierRuleOf(input: RuleValidationInput): TierRuleInput {
   return {
+    basis: input.tierBasis ?? null,
     unit: input.tierUnit,
     discountedUnits: input.tierDiscountedUnits,
     selectionPriority: input.tierSelectionPriority,

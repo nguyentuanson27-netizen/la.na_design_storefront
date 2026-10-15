@@ -49,6 +49,7 @@ const BASE_MESSAGES: Record<GiftQuantityFailure["reason"], string> = {
   INVALID_GIFT_TRIGGER: "Điều kiện nhận quà không hợp lệ.",
   INVALID_SUBTOTAL_SCOPE: "Phạm vi tính giá trị đơn hàng không hợp lệ.",
   INVALID_DATE_TIME: "Thời gian không hợp lệ. Vui lòng nhập ngày giờ theo định dạng hợp lệ.",
+  INVALID_TIER_BASIS: "Cách tính mốc giảm giá không hợp lệ (theo số lượng hoặc theo giá trị đơn hàng).",
   INVALID_TIER_UNIT: "Đơn vị giảm giá không hợp lệ.",
   INVALID_TIER_DISCOUNTED_UNITS: "Cách áp dụng giảm giá không hợp lệ.",
   INVALID_TIER_SELECTION_PRIORITY: "Thứ tự chọn sản phẩm được giảm không hợp lệ.",
@@ -71,7 +72,15 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   NAME_TOO_LONG: "Tên chiến dịch quá dài (tối đa 120 ký tự).",
   UNSUPPORTED_NAME_CHARACTER: "Tên chiến dịch chứa ký tự không được hỗ trợ.",
   GLOBAL_SCOPE_NOT_ALLOWED:
-    "Phạm vi toàn đơn chỉ dùng cho quà tặng theo giá trị đơn hàng tính trên tất cả sản phẩm trả tiền.",
+    "Phạm vi toàn đơn chỉ dùng cho quà tặng theo giá trị đơn hàng tính trên tất cả sản phẩm trả tiền, và cho giảm giá theo giá trị đơn hàng.",
+  ORDER_BASIS_NEEDS_GLOBAL_SCOPE: "Giảm giá theo giá trị đơn hàng luôn áp dụng cho toàn bộ giỏ hàng; hãy chọn phạm vi toàn đơn.",
+  TIER_BASIS_NOT_EDITABLE_WHEN_SCHEDULED:
+    "Không thể đổi cách tính mốc (số lượng hoặc giá trị đơn hàng) khi chiến dịch đã lên lịch, vì các mốc đã nhập sẽ đổi nghĩa. Hãy tắt chiến dịch rồi sao chép thành bản nháp mới.",
+  INVALID_TIER_BASIS: "Cách tính mốc giảm giá không hợp lệ (theo số lượng hoặc theo giá trị đơn hàng).",
+  TIER_UNIT_BASIS_MISMATCH:
+    "Đơn vị giảm không khớp cách tính mốc: giảm theo giá trị đơn hàng dùng phần trăm hoặc số tiền cố định cho cả đơn; giảm theo số lượng dùng phần trăm hoặc số tiền cố định mỗi sản phẩm.",
+  TIER_ORDER_BASIS_WHOLE_ORDER_ONLY: "Giảm giá theo giá trị đơn hàng luôn áp dụng cho toàn bộ sản phẩm của đơn, không chọn thứ tự hay “từ mốc đạt được”.",
+  TIER_TOTAL_NOT_BELOW_THRESHOLD: "Số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn hàng tối thiểu của bậc đó.",
   SUBTOTAL_SCOPE_MISMATCH:
     "Phạm vi tính giá trị không khớp với kiểu phạm vi: “Tất cả dòng trả tiền” dùng phạm vi toàn đơn, còn “Chỉ dòng thuộc phạm vi” cần chọn danh mục hoặc sản phẩm.",
   GIFT_FIELDS_ON_TIER: "Chiến dịch giảm giá theo số lượng không có điều kiện nhận quà.",
@@ -84,7 +93,7 @@ const INVALID_INPUT_REFINEMENTS: Readonly<Record<string, string>> = {
   INVALID_NAME: "Tên chiến dịch không hợp lệ.",
   TIER_FIELDS_ON_GIFT: "Chiến dịch quà tặng không có bậc giảm giá theo số lượng.",
   TIERS_TOO_MANY: "Có quá nhiều bậc giảm giá.",
-  TIER_THRESHOLD_OUT_OF_RANGE: "Số lượng của bậc giảm giá nằm ngoài giới hạn cho phép.",
+  TIER_THRESHOLD_OUT_OF_RANGE: "Mốc (số lượng hoặc giá trị đơn hàng) của bậc giảm giá nằm ngoài giới hạn cho phép.",
   TIER_VALUE_OUT_OF_RANGE: "Mức giảm của bậc nằm ngoài giới hạn cho phép.",
   TIER_PERCENT_OUT_OF_RANGE: "Giảm theo phần trăm phải từ 1% đến 99%.",
   TIER_THRESHOLD_DUPLICATE: "Có hai bậc giảm giá trùng số lượng.",
@@ -144,6 +153,8 @@ const INVALID_RULE_REFINEMENTS: Readonly<Record<string, string>> = {
   SELECTION_PRIORITY_NOT_APPLICABLE: "Thứ tự chọn sản phẩm chỉ dùng khi chỉ giảm từ mốc đạt được.",
   UNIT_INVALID: "Đơn vị giảm giá không hợp lệ.",
   DISCOUNTED_UNITS_INVALID: "Cách áp dụng giảm giá không hợp lệ.",
+  BASIS_INVALID: "Cách tính mốc giảm giá không hợp lệ.",
+  DISCOUNT_NOT_BELOW_THRESHOLD: "Số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn hàng tối thiểu của bậc đó.",
   STACK_PRIORITY_REQUIRED: "Cộng dồn đang bật nên cần nhập mức ưu tiên.",
   STACK_PEERS_REQUIRED: "Cộng dồn đang bật nên cần chọn ít nhất một chiến dịch được cộng dồn.",
   STACK_PRIORITY_CONFLICT: "Mức ưu tiên cộng dồn đã được chiến dịch đang hoạt động khác sử dụng. Hãy chọn mức khác.",

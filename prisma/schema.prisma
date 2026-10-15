@@ -115,6 +115,17 @@ enum QuantityTierDiscountUnit {
   PERCENTAGE
   /// VND taken off each discounted unit. Never a total, never a fixed sale price.
   FIXED_AMOUNT_PER_UNIT_VND
+  /// ORDER_SUBTOTAL ladders only: VND taken off the whole order once, split over its units in
+  /// proportion to price (the POS only takes line prices). Never valid on a QUANTITY ladder.
+  FIXED_AMOUNT_TOTAL_VND
+}
+
+/// What a ladder's thresholds count. QUANTITY: units in the basket. ORDER_SUBTOTAL: the paid order
+/// value in whole VND after every other discount, before shipping, gifts excluded. A NULL column
+/// means QUANTITY (every ladder written before the order-value basis existed).
+enum QuantityTierBasis {
+  QUANTITY
+  ORDER_SUBTOTAL
 }
 
 enum QuantityTierDiscountedUnits {
@@ -481,6 +492,8 @@ model GiftQuantityCampaign {
   allowDuplicateGifts Boolean?
 
   // QUANTITY_TIER rule. One unit for the whole campaign: methods are never mixed.
+  /// NULL on GIFT_ITEM; on a QUANTITY_TIER row NULL is read as QUANTITY.
+  tierBasis             QuantityTierBasis?
   tierUnit              QuantityTierDiscountUnit?
   tierDiscountedUnits   QuantityTierDiscountedUnits?
   tierSelectionPriority QuantityTierSelectionPriority?
@@ -535,8 +548,9 @@ model QuantityTier {
   /// only be written once the campaign has chosen its unit, and the unit cannot be switched to
   /// `PERCENTAGE` while any tier holds a value above 99.
   unit          QuantityTierDiscountUnit
+  /// The threshold: units for a QUANTITY ladder, VND of paid order value for an ORDER_SUBTOTAL one.
   minQuantity   Int
-  /// Percent (1..99) or VND per discounted unit, per `unit`.
+  /// Percent (1..99), VND per discounted unit, or VND off the whole order, per `unit`.
   discountValue Int
   createdAt     DateTime                 @default(now())
   campaign      GiftQuantityCampaign     @relation(fields: [campaignId, campaignKind, unit], references: [id, kind, tierUnit], onDelete: Cascade, onUpdate: Cascade)

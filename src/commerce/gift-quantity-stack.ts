@@ -1,5 +1,5 @@
 import {
-  priceQuantityTier,
+  priceTier,
   validateTierConfig,
   type QuantityTierConfig,
   type TierPriceSegment,
@@ -172,6 +172,11 @@ export function applyLegacyStackStep(campaign: StackLegacyCampaign, currentPrice
   return next;
 }
 
+/** Whether a ladder's configuration can price anything; the quote asks this through the stack, which owns the tier engine. */
+export function isValidTierConfig(config: QuantityTierConfig): boolean {
+  return validateTierConfig(config).length === 0;
+}
+
 /** Whether a peer list accepts a campaign of `kind` with `campaignId` (by id, or by kind with `*`). */
 export function stackPeersAllow(peers: readonly StackPeer[], kind: StackPeerKind, campaignId: string): boolean {
   return peers.some((peer) => peer.kind === kind && (peer.campaignId === STACK_PEER_ANY || peer.campaignId === campaignId));
@@ -181,11 +186,72 @@ type Participant =
   | Readonly<{ source: "TIER"; id: string; tier: StackTierParticipant; priority: number | null }>
   | Readonly<{ source: "LEGACY"; id: string; campaign: StackLegacyCampaign; priority: number | null; consented: boolean }>;
 
-export function priceStack(input: Readonly<{
+type StackInput = Readonly<{
   lines: readonly StackInputLine[];
   tiers: readonly StackTierParticipant[];
   legacyConsents: StackLegacyConsent;
-}>): StackResult {
+}>;
+
+export function priceStack(input: StackInput): StackResult {
+  if (!input.tiers.some(isOrderLadder)) return solveStack(input);
+
+  // Which order-value ladders are reached depends on which campaigns end up applying, and which campaigns
+  // end up applying can depend on which ladders were reached (a refused pair drops BOTH). So the two are
+  // settled together: price the cart, set aside every campaign the run dropped, and judge the ladders again
+  // on what is left, until a run drops nothing new. A campaign set aside stays aside (fail closed), and the
+  // order the caller listed things in cannot matter because every step below sorts.
+  const dropped = new Map<string, StackDroppedCampaign>();
+  const excluded = new Set<string>();
+  for (let attempt = 0; attempt <= input.tiers.length; attempt += 1) {
+    const result = priceWithReachedLadders({ ...input, tiers: input.tiers.filter((tier) => !excluded.has(tier.id)) });
+    if (!result.ok) return result;
+    for (const entry of result.dropped) if (!dropped.has(entry.campaignId)) dropped.set(entry.campaignId, entry);
+    const fresh = result.dropped.filter((entry) => entry.reason !== "TIER_CONFIG_INVALID" && !excluded.has(entry.campaignId));
+    if (fresh.length === 0) {
+      return { ...result, dropped: [...dropped.values()].sort((x, y) => (x.campaignId < y.campaignId ? -1 : x.campaignId > y.campaignId ? 1 : 0)) };
+    }
+    for (const entry of fresh) excluded.add(entry.campaignId);
+  }
+  // Unreachable: every pass sets aside at least one more campaign, and there are finitely many.
+  return { ok: false, reason: "INPUT_INVALID" };
+}
+
+function isOrderLadder(tier: StackTierParticipant): boolean {
+  return tier.config.basis === "ORDER_SUBTOTAL";
+}
+
+/**
+ * One pass: an order-value ladder is judged on what the shopper would pay after every other step, so whether
+ * it is reached is decided on the cart priced WITHOUT it, and only a ladder that really is reached joins
+ * conflict detection (one that is not can never make a valid tier step aside). Ladders run last in
+ * (priority, id) order, so each is judged on the cart as the ladders before it left it -- an earlier ladder
+ * that brings the goods under a later one's rung leaves that later ladder idle.
+ */
+function priceWithReachedLadders(input: StackInput): StackResult {
+  const nonLadders = input.tiers.filter((tier) => !isOrderLadder(tier));
+  const productOf = new Map(input.lines.map((line) => [line.lineKey, line.product]));
+  const inOrder = input.tiers.filter(isOrderLadder).sort((a, b) => {
+    const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
+    const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
+    return pa !== pb ? pa - pb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  const reached: StackTierParticipant[] = [];
+  for (const tier of inOrder) {
+    // A ladder with an invalid configuration is passed on so it is reported as such.
+    if (validateTierConfig(tier.config).length > 0) {
+      reached.push(tier);
+      continue;
+    }
+    const before = solveStack({ ...input, tiers: [...nonLadders, ...reached] });
+    if (!before.ok) return before;
+    let goods = 0;
+    for (const group of before.groups) if (tier.resolve(productOf.get(group.lineKey)!)) goods += group.lineTotalVnd;
+    if (goods >= tier.config.tiers[0]!.minQuantity) reached.push(tier);
+  }
+  return solveStack({ ...input, tiers: [...nonLadders, ...reached] });
+}
+
+function solveStack(input: StackInput): StackResult {
   const { lines, tiers, legacyConsents } = input;
   if (!Array.isArray(lines) || lines.length === 0 || lines.length > MAX_STACK_LINES) return { ok: false, reason: "INPUT_INVALID" };
   const keys = new Set<string>();
@@ -215,6 +281,8 @@ export function priceStack(input: Readonly<{
   // tier's discount. Quantity is independent of price, so this is decided once, up front.
   const sortedTiers = validConfigTiers.filter((tier) => {
     const startThreshold = tier.config.tiers[0]!.minQuantity;
+    // An order-value ladder was already judged against the cart priced without it (see `priceStack`).
+    if (tier.config.basis === "ORDER_SUBTOTAL") return true;
     let eligible = 0;
     for (const line of sortedLines) if (tier.resolve(line.product)) eligible += line.quantity;
     return eligible >= startThreshold;
@@ -324,10 +392,14 @@ export function priceStack(input: Readonly<{
       };
     });
 
+    // An order-value ladder always runs last, whatever its priority: its threshold is "what the shopper
+    // would pay for goods", which only exists once every other step has priced the lines.
+    const rankOf = (tier: StackTierParticipant) => (tier.config.basis === "ORDER_SUBTOTAL" ? 1 : 0);
     const chain = [
-      ...activeTiers.map((tier) => ({ source: "TIER" as const, id: tier.id, priority: tier.priority })),
-      ...[...chainLegacy].map((id) => ({ source: "LEGACY" as const, id, priority: legacyConsents.get(id)!.priority })),
+      ...activeTiers.map((tier) => ({ source: "TIER" as const, id: tier.id, priority: tier.priority, rank: rankOf(tier) })),
+      ...[...chainLegacy].map((id) => ({ source: "LEGACY" as const, id, priority: legacyConsents.get(id)!.priority, rank: 0 })),
     ].sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
       // Tiers that share nothing may have no priority; they sort last, then by id.
       const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
       const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
@@ -357,7 +429,7 @@ export function priceStack(input: Readonly<{
       const tier = activeTiers.find((candidate) => candidate.id === step.id)!;
       const inScope = working.filter((group) => tier.resolve(group.product));
       if (inScope.length === 0) continue;
-      const result = priceQuantityTier(
+      const result = priceTier(
         tier.config,
         inScope.map((group) => ({
           lineKey: group.groupKey,

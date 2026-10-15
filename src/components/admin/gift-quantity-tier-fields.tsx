@@ -4,9 +4,10 @@ import { useId, useRef, useState, useTransition } from "react";
 
 import { checkGiftQuantityStackPriorityAction } from "@/app/admin/promotions/gift-quantity/actions";
 import {
+  MAX_ORDER_SUBTOTAL_THRESHOLD_VND,
   MAX_TIER_UNITS,
   MAX_TIERS_PER_CAMPAIGN,
-  priceQuantityTier,
+  priceTier,
   validateTierConfig,
   type QuantityTierConfig,
   type TierConfigIssue,
@@ -17,6 +18,7 @@ import {
   type TierRuleInput,
 } from "@/commerce/gift-quantity-tier-rule";
 import { MAX_STACK_PRIORITY } from "@/commerce/gift-quantity-stack-priority";
+import { tiersAfterBasisChange } from "@/components/admin/gift-quantity-tier-basis";
 
 type TierRow = { key: number; min: string; value: string };
 type PeerKind = (typeof TIER_STACK_PEER_KINDS)[number];
@@ -47,9 +49,13 @@ const issueMessage: Record<TierConfigIssue, string> = {
   VALUE_DECREASES_WITH_THRESHOLD: "Mức giảm không được thấp hơn bậc trước.",
   SELECTION_PRIORITY_REQUIRED: "Hãy chọn thứ tự giảm khi dùng FROM.",
   SELECTION_PRIORITY_NOT_APPLICABLE: "Thứ tự chỉ áp dụng khi dùng FROM.",
-  UNIT_INVALID: "Hãy chọn đơn vị giảm giá.",
+  UNIT_INVALID: "Hãy chọn đơn vị giảm giá phù hợp với cách tính mốc.",
   DISCOUNTED_UNITS_INVALID: "Hãy chọn cách áp dụng giảm giá.",
+  BASIS_INVALID: "Cách tính mốc giảm giá không hợp lệ.",
+  DISCOUNT_NOT_BELOW_THRESHOLD: "Số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn hàng tối thiểu của bậc đó.",
 };
+
+type Basis = NonNullable<TierRuleInput["basis"]>;
 
 function plainInteger(raw: string, max: number, allowZero = false): number | null {
   if (!/^(0|[1-9][0-9]*)$/.test(raw)) return null;
@@ -59,6 +65,7 @@ function plainInteger(raw: string, max: number, allowZero = false): number | nul
 
 /** Illustration only, not a buyer quote. Reuses the exact pure price engine (per-unit VND rounding). */
 function calculatePreview(
+  basis: Basis,
   tiers: readonly TierRow[],
   unit: TierRuleInput["unit"] | "",
   discountedUnits: TierRuleInput["discountedUnits"] | "",
@@ -68,6 +75,7 @@ function calculatePreview(
 ): Preview {
   const price = plainInteger(priceInput, 2_000_000_000);
   if (price === null) return { ok: false, error: "Giá minh họa phải từ 1 đến 2.000.000.000đ." };
+  if (basis === "ORDER_SUBTOTAL") return calculateOrderValuePreview(tiers, unit, price, extraInput);
   if (!unit || !discountedUnits) return { ok: false, error: "Hãy chọn đơn vị và cách áp dụng giảm giá." };
 
   const ladder: { minQuantity: number; discountValue: number }[] = [];
@@ -105,7 +113,7 @@ function calculatePreview(
   ])].filter((q) => q >= 1 && q <= MAX_TIER_UNITS).sort((a, b) => a - b);
   const rows: SampleRow[] = [];
   for (const quantity of quantities) {
-    const result = priceQuantityTier(config, [{ lineKey: "sample", pancakeVariationId: "sample", quantity, unitPriceVnd: price }]);
+    const result = priceTier(config, [{ lineKey: "sample", pancakeVariationId: "sample", quantity, unitPriceVnd: price }]);
     if (result.status === "INVALID_CONFIG" || result.status === "INVALID_INPUT") {
       return { ok: false, error: "Không tính được preview với dữ liệu đã nhập." };
     }
@@ -123,13 +131,80 @@ function calculatePreview(
   return { ok: true, rows, unreachable };
 }
 
+/**
+ * Illustration for an order-value ladder: one line, one unit, whose price IS the order value, on both
+ * sides of every rung. Same pure engine the shop quotes with; not a buyer quote.
+ */
+function calculateOrderValuePreview(
+  tiers: readonly TierRow[],
+  unit: TierRuleInput["unit"] | "",
+  extraValue: number,
+  extraInput: string,
+): Preview {
+  if (unit !== "PERCENTAGE" && unit !== "FIXED_AMOUNT_TOTAL_VND") return { ok: false, error: "Hãy chọn đơn vị giảm giá: phần trăm hoặc số tiền cố định cho cả đơn." };
+  const ladder: { minQuantity: number; discountValue: number }[] = [];
+  for (const row of tiers) {
+    if (row.min === "" && row.value === "") continue;
+    const minQuantity = plainInteger(row.min, MAX_ORDER_SUBTOTAL_THRESHOLD_VND);
+    const discountValue = plainInteger(row.value, 2_000_000_000);
+    if (minQuantity === null || discountValue === null) {
+      return { ok: false, error: "Mỗi bậc phải có giá trị đơn hàng và mức giảm là số nguyên dương trong giới hạn." };
+    }
+    ladder.push({ minQuantity, discountValue });
+  }
+  ladder.sort((a, b) => a.minQuantity - b.minQuantity);
+  const config: QuantityTierConfig = { basis: "ORDER_SUBTOTAL", unit, discountedUnits: "ALL_ELIGIBLE_UNITS", selectionPriority: null, tiers: ladder };
+  const issues = validateTierConfig(config);
+  if (issues.length > 0) return { ok: false, error: issueMessage[issues[0]!] };
+
+  // The "thêm" field is an order value here; blank falls back to the single sample price field.
+  const extra = extraInput === "" ? null : plainInteger(extraInput, MAX_ORDER_SUBTOTAL_THRESHOLD_VND);
+  if (extraInput !== "" && extra === null) return { ok: false, error: "Giá trị đơn thử phải từ 1 đến 2.000.000.000đ." };
+  const values = [...new Set([
+    extraValue,
+    ...(extra === null ? [] : [extra]),
+    ...ladder.flatMap((tier) => [tier.minQuantity - 1, tier.minQuantity]),
+  ])].filter((value) => value >= 1 && value <= MAX_ORDER_SUBTOTAL_THRESHOLD_VND).sort((a, b) => a - b);
+  const rows: SampleRow[] = [];
+  for (const value of values) {
+    const result = priceTier(config, [{ lineKey: "sample", pancakeVariationId: "sample", quantity: 1, unitPriceVnd: value }]);
+    if (result.status === "INVALID_CONFIG" || result.status === "INVALID_INPUT") {
+      return { ok: false, error: "Không tính được preview với dữ liệu đã nhập." };
+    }
+    rows.push({
+      quantity: value,
+      tier: result.status === "NOT_REACHED" ? "Chưa đạt" : "Từ " + money.format(result.winningTier.minQuantity) + "đ",
+      discounted: result.discountedUnitCount,
+      discount: result.totalDiscountVnd,
+      total: result.segments.reduce((sum, segment) => sum + segment.lineTotalVnd, 0),
+      segments: result.segments.map((segment) => money.format(segment.unitPriceVnd) + "đ").join(" + "),
+      invalidPrice: result.status === "TIER_PRICE_INVALID",
+    });
+  }
+  return { ok: true, rows, unreachable: [] };
+}
+
 export function GiftQuantityTierFields({
   initialRule,
   campaignId,
-}: Readonly<{ initialRule: TierRuleInput | null; campaignId: string | null }>) {
+  basis,
+  onBasisChange,
+  basisLocked = false,
+}: Readonly<{
+  initialRule: TierRuleInput | null;
+  campaignId: string | null;
+  /** What the thresholds count. Owned by the campaign form, which also owns the scope it implies. */
+  basis: Basis;
+  onBasisChange: (next: Basis) => void;
+  /** A Scheduled campaign cannot change what its stored thresholds mean. */
+  basisLocked?: boolean;
+}>) {
   const id = useId();
+  const byOrderValue = basis === "ORDER_SUBTOTAL";
   const [unit, setUnit] = useState<NonNullable<TierRuleInput["unit"]> | "">(initialRule?.unit ?? "");
   const [discountedUnits, setDiscountedUnits] = useState<NonNullable<TierRuleInput["discountedUnits"]> | "">(initialRule?.discountedUnits ?? "");
+  // An order value is discounted as a whole, so the choice is not offered and is always sent as ALL.
+  const effectiveDiscountedUnits = byOrderValue ? "ALL_ELIGIBLE_UNITS" : discountedUnits;
   const [selection, setSelection] = useState<NonNullable<TierRuleInput["selectionPriority"]> | "">(initialRule?.selectionPriority ?? "");
   const [tiers, setTiers] = useState<TierRow[]>(() => initialRule?.tiers.length
     ? initialRule.tiers.map((tier, key) => ({ key, min: String(tier.minQuantity), value: String(tier.discountValue) }))
@@ -148,6 +223,16 @@ export function GiftQuantityTierFields({
   // value can never be shown against the value the admin has typed since.
   const checkToken = useRef(0);
 
+  function chooseBasis(next: Basis) {
+    onBasisChange(next);
+    // The two bases do not share a unit that means the same thing, so a stale one is cleared, not carried.
+    const unitCleared = (next === "ORDER_SUBTOTAL" && unit === "FIXED_AMOUNT_PER_UNIT_VND") || (next === "QUANTITY" && unit === "FIXED_AMOUNT_TOTAL_VND");
+    if (unitCleared) setUnit("");
+    // A threshold in pieces is not a threshold in VND: the admin types the rungs again for the new basis.
+    setTiers((previous) => tiersAfterBasisChange(previous, basis, next, unitCleared));
+    setSelection("");
+    setPreview(null);
+  }
   function changeTier(key: number, field: "min" | "value", value: string) {
     setTiers((previous) => previous.map((row) => row.key === key ? { ...row, [field]: value } : row));
     setPreview(null);
@@ -178,36 +263,58 @@ export function GiftQuantityTierFields({
 
   return (
     <fieldset className="min-w-0 border-t border-black/20 pt-6">
-      <legend className={labelClass}>Quy tắc giảm giá theo số lượng</legend>
+      <legend className={labelClass}>{byOrderValue ? "Quy tắc giảm giá theo giá trị đơn hàng" : "Quy tắc giảm giá theo số lượng"}</legend>
       <input name="tierRuleForm" type="hidden" value="on" />
       <p className="mt-2 text-sm leading-6 text-neutral-700">
         Chỉ áp dụng mức giảm của bậc cao nhất đã đạt. Nháp chưa đủ quy tắc vẫn lưu được; khi bật, máy chủ kiểm tra lại tất cả.
       </p>
 
       <div className="mt-5 grid gap-6 md:grid-cols-2">
+        <div className="md:col-span-2">
+          <label className={labelClass} htmlFor={id + "-basis"}>Mốc tính theo</label>
+          {basisLocked ? <input name="tierBasis" type="hidden" value={basis} /> : null}
+          <select className={inputClass} disabled={basisLocked} id={id + "-basis"} name={basisLocked ? undefined : "tierBasis"} onChange={(e) => chooseBasis(e.target.value as Basis)} value={basis}>
+            <option value="QUANTITY">Số lượng sản phẩm trong giỏ</option>
+            <option value="ORDER_SUBTOTAL">Giá trị đơn hàng (toàn bộ giỏ)</option>
+          </select>
+          <p className="mt-2 text-xs leading-5 text-neutral-700">
+            {byOrderValue
+              ? "Tính trên số tiền hàng khách phải trả sau Flash Sale và các giảm giá khác, chưa gồm phí vận chuyển và không tính quà 0đ. Luôn áp dụng cho toàn bộ giỏ hàng và chạy sau cùng. Giảm cố định cho cả đơn được chia theo giá từng chiếc, tổng giảm luôn đúng bằng số đã nhập."
+              : "Tính trên số chiếc thuộc phạm vi đã chọn."}
+          </p>
+          {basisLocked ? (
+            <p className="mt-2 text-xs text-neutral-700">Chiến dịch đã lên lịch nên không đổi được cách tính mốc. Hãy tắt rồi sao chép thành bản nháp mới nếu cần đổi.</p>
+          ) : null}
+        </div>
         <div>
           <label className={labelClass} htmlFor={id + "-unit"}>Đơn vị giảm giá</label>
           <select className={inputClass} id={id + "-unit"} name="tierUnit" onChange={(e) => { setUnit(e.target.value as typeof unit); setPreview(null); }} value={unit}>
             <option value="">Chưa chọn</option>
             <option value="PERCENTAGE">Phần trăm (%)</option>
-            <option value="FIXED_AMOUNT_PER_UNIT_VND">VND cố định mỗi chiếc</option>
+            {byOrderValue
+              ? <option value="FIXED_AMOUNT_TOTAL_VND">VND cố định cho cả đơn</option>
+              : <option value="FIXED_AMOUNT_PER_UNIT_VND">VND cố định mỗi chiếc</option>}
           </select>
         </div>
-        <div>
-          <label className={labelClass} htmlFor={id + "-units"}>Chiếc được giảm</label>
-          <select className={inputClass} id={id + "-units"} name="tierDiscountedUnits" onChange={(e) => {
-            const next = e.target.value as typeof discountedUnits;
-            setDiscountedUnits(next);
-            if (next !== "FROM_REACHED_THRESHOLD") setSelection("");
-            setPreview(null);
-          }} value={discountedUnits}>
-            <option value="">Chưa chọn</option>
-            <option value="ALL_ELIGIBLE_UNITS">ALL — mọi chiếc đủ điều kiện</option>
-            <option value="FROM_REACHED_THRESHOLD">FROM — từ ngưỡng đầu tiên N0</option>
-          </select>
-        </div>
+        {byOrderValue ? (
+          <input name="tierDiscountedUnits" type="hidden" value="ALL_ELIGIBLE_UNITS" />
+        ) : (
+          <div>
+            <label className={labelClass} htmlFor={id + "-units"}>Chiếc được giảm</label>
+            <select className={inputClass} id={id + "-units"} name="tierDiscountedUnits" onChange={(e) => {
+              const next = e.target.value as typeof discountedUnits;
+              setDiscountedUnits(next);
+              if (next !== "FROM_REACHED_THRESHOLD") setSelection("");
+              setPreview(null);
+            }} value={discountedUnits}>
+              <option value="">Chưa chọn</option>
+              <option value="ALL_ELIGIBLE_UNITS">ALL — mọi chiếc đủ điều kiện</option>
+              <option value="FROM_REACHED_THRESHOLD">FROM — từ ngưỡng đầu tiên N0</option>
+            </select>
+          </div>
+        )}
       </div>
-      {discountedUnits === "FROM_REACHED_THRESHOLD" ? (
+      {!byOrderValue && discountedUnits === "FROM_REACHED_THRESHOLD" ? (
         <div className="mt-5">
           <label className={labelClass} htmlFor={id + "-selection"}>Ưu tiên chiếc được giảm</label>
           <select className={inputClass} id={id + "-selection"} name="tierSelectionPriority" onChange={(e) => { setSelection(e.target.value as typeof selection); setPreview(null); }} value={selection}>
@@ -222,15 +329,15 @@ export function GiftQuantityTierFields({
       ) : null}
 
       <div className="mt-6 space-y-4">
-        <h3 className={labelClass}>Bậc số lượng ({tiers.length}/{MAX_TIERS_PER_CAMPAIGN})</h3>
+        <h3 className={labelClass}>{byOrderValue ? "Bậc giá trị đơn hàng" : "Bậc số lượng"} ({tiers.length}/{MAX_TIERS_PER_CAMPAIGN})</h3>
         {tiers.map((row, index) => (
           <div className="grid items-end gap-3 border-l-2 border-black/20 pl-4 sm:grid-cols-[1fr_1fr_auto]" key={row.key}>
             <div>
-              <label className={labelClass} htmlFor={id + "-min-" + row.key}>Bậc {index + 1}: từ số chiếc</label>
+              <label className={labelClass} htmlFor={id + "-min-" + row.key}>Bậc {index + 1}: {byOrderValue ? "từ giá trị đơn (VND)" : "từ số chiếc"}</label>
               <input className={inputClass} id={id + "-min-" + row.key} inputMode="numeric" maxLength={16} name="tierMinQuantity" onChange={(e) => changeTier(row.key, "min", e.target.value)} type="text" value={row.min} />
             </div>
             <div>
-              <label className={labelClass} htmlFor={id + "-value-" + row.key}>Mức giảm {unit === "PERCENTAGE" ? "(%)" : "(VND/chiếc)"}</label>
+              <label className={labelClass} htmlFor={id + "-value-" + row.key}>Mức giảm {unit === "PERCENTAGE" ? "(%)" : byOrderValue ? "(VND cho cả đơn)" : "(VND/chiếc)"}</label>
               <input className={inputClass} id={id + "-value-" + row.key} inputMode="numeric" maxLength={16} name="tierDiscountValue" onChange={(e) => changeTier(row.key, "value", e.target.value)} type="text" value={row.value} />
             </div>
             <button aria-label={"Bỏ bậc " + (index + 1)} className={buttonClass} onClick={() => { setTiers((old) => old.filter((r) => r.key !== row.key)); setPreview(null); }} type="button">Bỏ</button>
@@ -240,7 +347,10 @@ export function GiftQuantityTierFields({
           setTiers((old) => [...old, { key: Math.max(0, ...old.map((r) => r.key + 1)), min: "", value: "" }]);
           setPreview(null);
         }} type="button">+ Thêm bậc</button>
-        <p className="text-xs text-neutral-700">Tối đa 20 bậc, mỗi ngưỡng khác nhau; mức giảm không được giảm khi lên bậc. % từ 1–99; VND tối đa 2 tỷ mỗi chiếc.</p>
+        <p className="text-xs text-neutral-700">
+          Tối đa 20 bậc, mỗi ngưỡng khác nhau; mức giảm không được giảm khi lên bậc. % từ 1–99.
+          {byOrderValue ? " Giá trị đơn tối đa 2 tỷ; số tiền giảm cho cả đơn phải nhỏ hơn giá trị đơn của chính bậc đó." : " VND tối đa 2 tỷ mỗi chiếc."}
+        </p>
       </div>
 
       <div className="mt-6 border-t border-black/10 pt-6">
@@ -292,22 +402,22 @@ export function GiftQuantityTierFields({
       </div>
 
       <section aria-labelledby={id + "-preview"} className="mt-6 border-t border-black/10 pt-6">
-        <h3 className={labelClass} id={id + "-preview"}>Xem trước tiền (EX-19: Q=3 → Q=4)</h3>
+        <h3 className={labelClass} id={id + "-preview"}>{byOrderValue ? "Xem trước tiền (hai phía mỗi bậc)" : "Xem trước tiền (EX-19: Q=3 → Q=4)"}</h3>
         <p className="mt-2 text-xs leading-5 text-neutral-700">
           Mô phỏng một loại hàng đồng giá và đủ điều kiện, trước bước tier. Không phải báo giá thực của giỏ;
           scope, ưu đãi trước tier, giá thật và ưu tiên vẫn được máy chủ tính lại.
         </p>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div>
-            <label className={labelClass} htmlFor={id + "-price"}>Giá mỗi chiếc trước tier (VND)</label>
+            <label className={labelClass} htmlFor={id + "-price"}>{byOrderValue ? "Giá trị đơn hàng thử (VND)" : "Giá mỗi chiếc trước tier (VND)"}</label>
             <input className={inputClass} id={id + "-price"} inputMode="numeric" maxLength={10} onChange={(e) => { setSamplePrice(e.target.value); setPreview(null); }} type="text" value={samplePrice} />
           </div>
           <div>
-            <label className={labelClass} htmlFor={id + "-extra"}>Thử thêm số lượng (tùy chọn)</label>
-            <input className={inputClass} id={id + "-extra"} inputMode="numeric" maxLength={5} onChange={(e) => { setExtraQuantity(e.target.value); setPreview(null); }} type="text" value={extraQuantity} />
+            <label className={labelClass} htmlFor={id + "-extra"}>{byOrderValue ? "Thử thêm giá trị đơn (tùy chọn)" : "Thử thêm số lượng (tùy chọn)"}</label>
+            <input className={inputClass} id={id + "-extra"} inputMode="numeric" maxLength={byOrderValue ? 10 : 5} onChange={(e) => { setExtraQuantity(e.target.value); setPreview(null); }} type="text" value={extraQuantity} />
           </div>
         </div>
-        <button className={buttonClass + " mt-4"} onClick={() => setPreview(calculatePreview(tiers, unit, discountedUnits, selection, samplePrice, extraQuantity))} type="button">Xem trước giá</button>
+        <button className={buttonClass + " mt-4"} onClick={() => setPreview(calculatePreview(basis, tiers, unit, effectiveDiscountedUnits, selection, samplePrice, extraQuantity))} type="button">Xem trước giá</button>
         <div aria-live="polite" className="mt-4 text-sm" role="status">
           {preview === null ? null : !preview.ok ? (
             <p className="text-red-800">{preview.error}</p>
@@ -316,13 +426,13 @@ export function GiftQuantityTierFields({
               <table className="w-full min-w-[34rem] border-collapse text-left">
                 <caption className="sr-only">So sánh số lượng và mức giảm giá minh họa</caption>
                 <thead><tr className="border-b border-black/20">
-                  <th className="py-2 pr-4" scope="col">Số chiếc</th><th className="py-2 pr-4" scope="col">Bậc áp dụng</th>
+                  <th className="py-2 pr-4" scope="col">{byOrderValue ? "Giá trị đơn" : "Số chiếc"}</th><th className="py-2 pr-4" scope="col">Bậc áp dụng</th>
                   <th className="py-2 pr-4" scope="col">Chiếc giảm</th><th className="py-2 pr-4" scope="col">Tiết kiệm</th>
                   <th className="py-2" scope="col">Tổng sau giảm</th>
                 </tr></thead>
                 <tbody>{preview.rows.map((row) => (
                   <tr className="border-b border-black/10" key={row.quantity}>
-                    <th className="py-3 pr-4" scope="row">Q={row.quantity}</th><td className="py-3 pr-4">{row.tier}</td>
+                    <th className="py-3 pr-4" scope="row">{byOrderValue ? money.format(row.quantity) + "đ" : "Q=" + row.quantity}</th><td className="py-3 pr-4">{row.tier}</td>
                     <td className="py-3 pr-4">{row.discounted}</td><td className="py-3 pr-4">{money.format(row.discount)}đ</td>
                     <td className="py-3">{money.format(row.total)}đ</td>
                   </tr>
@@ -343,7 +453,7 @@ export function GiftQuantityTierFields({
               ) : null}
               {preview.rows.map((row) => (
                 <p className={row.invalidPrice ? "mt-2 text-red-800" : "mt-2 text-neutral-700"} key={row.quantity}>
-                  Q={row.quantity}: {row.segments}
+                  {byOrderValue ? money.format(row.quantity) + "đ" : "Q=" + row.quantity}: {row.segments}
                   {row.invalidPrice ? " — TIER_PRICE_INVALID: bỏ toàn bậc, không ép giá về 1đ." : ""}
                 </p>
               ))}
