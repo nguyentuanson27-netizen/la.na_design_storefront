@@ -120,11 +120,9 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  // The bill in reading order. The older block below is only the fallback for a quote the summary could not
-  // be made to add up for, so a shopper never sees lines that do not sum to the total.
-  const totalsBlock = data.summary ? (
-    <OrderSummary summary={data.summary} />
-  ) : (
+  // The older block is only the fallback for a quote the bill below could not be made to add up for, so a
+  // shopper never sees lines that do not sum to the total.
+  const fallbackTotals = (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">Tạm tính</dt>
@@ -151,6 +149,11 @@ function render(data: CheckoutViewModel) {
         <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
       </div>
     </dl>
+  );
+
+  // The bill in reading order: value, each discount, shipping, total.
+  const totalsBlock = (
+    data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals
   );
 
   const summaryContent = (
