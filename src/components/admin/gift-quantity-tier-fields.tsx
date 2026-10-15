@@ -18,6 +18,7 @@ import {
   type TierRuleInput,
 } from "@/commerce/gift-quantity-tier-rule";
 import { MAX_STACK_PRIORITY } from "@/commerce/gift-quantity-stack-priority";
+import { tiersAfterBasisChange } from "@/components/admin/gift-quantity-tier-basis";
 
 type TierRow = { key: number; min: string; value: string };
 type PeerKind = (typeof TIER_STACK_PEER_KINDS)[number];
@@ -225,8 +226,10 @@ export function GiftQuantityTierFields({
   function chooseBasis(next: Basis) {
     onBasisChange(next);
     // The two bases do not share a unit that means the same thing, so a stale one is cleared, not carried.
-    if (next === "ORDER_SUBTOTAL" && unit === "FIXED_AMOUNT_PER_UNIT_VND") setUnit("");
-    if (next === "QUANTITY" && unit === "FIXED_AMOUNT_TOTAL_VND") setUnit("");
+    const unitCleared = (next === "ORDER_SUBTOTAL" && unit === "FIXED_AMOUNT_PER_UNIT_VND") || (next === "QUANTITY" && unit === "FIXED_AMOUNT_TOTAL_VND");
+    if (unitCleared) setUnit("");
+    // A threshold in pieces is not a threshold in VND: the admin types the rungs again for the new basis.
+    setTiers((previous) => tiersAfterBasisChange(previous, basis, next, unitCleared));
     setSelection("");
     setPreview(null);
   }

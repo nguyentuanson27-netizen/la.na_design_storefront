@@ -445,3 +445,41 @@ test("the order the ladders are listed in never changes the outcome", () => {
   const run = (list: StackTierParticipant[]) => ok(priceStack({ lines: [sline("a", 1, 1_100_000)], tiers: list, legacyConsents: noConsent }));
   assert.deepEqual(run([...tiers]), run([...tiers].reverse()));
 });
+
+/* ------------------------------------------------------------------ three ladders: reachability settles after conflicts */
+
+// A -20 % from 1.000.000 (1st), B -10 % from 900.000 (2nd), C -1 % from 800.000 (3rd). B and C stack, A and B
+// stack, but A and C do not. On 1.100.000, A applies (880.000) so B is idle and C is reached -> A and C refuse
+// each other and BOTH are set aside; with them gone B is reached at 1.100.000 and nothing conflicts with it.
+const threeLadders = (): StackTierParticipant[] => [
+  participant("a", orderPct([[1_000_000, 20]]), { priority: 1, stackingEnabled: true, peers: peers(["QUANTITY_TIER", "b"]) }),
+  participant("b", orderPct([[900_000, 10]]), { priority: 2, stackingEnabled: true, peers: peers(["QUANTITY_TIER", "a"], ["QUANTITY_TIER", "c"]) }),
+  participant("c", orderPct([[800_000, 1]]), { priority: 3, stackingEnabled: true, peers: peers(["QUANTITY_TIER", "b"]) }),
+];
+
+test("a ladder judged idle is judged again once the ladders that refused each other are set aside", () => {
+  const result = ok(priceStack({ lines: [sline("a", 1, 1_100_000)], tiers: threeLadders(), legacyConsents: noConsent }));
+  assert.equal(result.subtotalVnd, 990_000, "B applies on the full 1.100.000");
+  assert.deepEqual(result.dropped.map((d) => [d.campaignId, d.reason]), [["a", "STACK_NOT_PERMITTED"], ["c", "STACK_NOT_PERMITTED"]]);
+  assert.deepEqual(result.groups.flatMap((g) => g.steps).map((s) => s.campaignId), ["b"]);
+});
+
+test("three ladders: the listing order never changes the outcome", () => {
+  const run = (list: StackTierParticipant[]) => ok(priceStack({ lines: [sline("a", 1, 1_100_000)], tiers: list, legacyConsents: noConsent }));
+  const forward = run(threeLadders());
+  for (const order of [[0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+    const all = threeLadders();
+    assert.deepEqual(run(order.map((index) => all[index]!)), forward, `order ${order.join(",")}`);
+  }
+});
+
+test("settling the ladders again never brings back a campaign that was refused with a quantity ladder", () => {
+  // The order ladder and the quantity ladder would both apply and have not agreed: both stay set aside.
+  const result = ok(priceStack({
+    lines: [sline("a", 4, 400_000)],
+    tiers: [participant("order", orderPct([[1_000_000, 10]])), participant("qty", qtyPct(4, 10))],
+    legacyConsents: noConsent,
+  }));
+  assert.equal(result.subtotalVnd, 1_600_000);
+  assert.deepEqual(result.dropped.map((d) => d.campaignId), ["order", "qty"]);
+});

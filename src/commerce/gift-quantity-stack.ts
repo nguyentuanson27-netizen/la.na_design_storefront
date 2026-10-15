@@ -193,18 +193,44 @@ type StackInput = Readonly<{
 }>;
 
 export function priceStack(input: StackInput): StackResult {
-  const isOrderLadder = (tier: StackTierParticipant) => tier.config.basis === "ORDER_SUBTOTAL";
-  const ladders = input.tiers.filter(isOrderLadder);
-  if (ladders.length === 0) return solveStack(input);
+  if (!input.tiers.some(isOrderLadder)) return solveStack(input);
 
-  // An order-value ladder is judged on what the shopper would pay after every other step, so whether it is
-  // reached is decided on the cart priced WITHOUT it: only a ladder that really is reached joins conflict
-  // detection, and one that is not can never make a valid tier step aside. Ladders run last in
-  // (priority, id) order, so each one is judged on the cart as the ladders before it left it -- an earlier
-  // ladder that brings the goods under a later one's rung leaves that later ladder idle.
+  // Which order-value ladders are reached depends on which campaigns end up applying, and which campaigns
+  // end up applying can depend on which ladders were reached (a refused pair drops BOTH). So the two are
+  // settled together: price the cart, set aside every campaign the run dropped, and judge the ladders again
+  // on what is left, until a run drops nothing new. A campaign set aside stays aside (fail closed), and the
+  // order the caller listed things in cannot matter because every step below sorts.
+  const dropped = new Map<string, StackDroppedCampaign>();
+  const excluded = new Set<string>();
+  for (let attempt = 0; attempt <= input.tiers.length; attempt += 1) {
+    const result = priceWithReachedLadders({ ...input, tiers: input.tiers.filter((tier) => !excluded.has(tier.id)) });
+    if (!result.ok) return result;
+    for (const entry of result.dropped) if (!dropped.has(entry.campaignId)) dropped.set(entry.campaignId, entry);
+    const fresh = result.dropped.filter((entry) => entry.reason !== "TIER_CONFIG_INVALID" && !excluded.has(entry.campaignId));
+    if (fresh.length === 0) {
+      return { ...result, dropped: [...dropped.values()].sort((x, y) => (x.campaignId < y.campaignId ? -1 : x.campaignId > y.campaignId ? 1 : 0)) };
+    }
+    for (const entry of fresh) excluded.add(entry.campaignId);
+  }
+  // Unreachable: every pass sets aside at least one more campaign, and there are finitely many.
+  return { ok: false, reason: "INPUT_INVALID" };
+}
+
+function isOrderLadder(tier: StackTierParticipant): boolean {
+  return tier.config.basis === "ORDER_SUBTOTAL";
+}
+
+/**
+ * One pass: an order-value ladder is judged on what the shopper would pay after every other step, so whether
+ * it is reached is decided on the cart priced WITHOUT it, and only a ladder that really is reached joins
+ * conflict detection (one that is not can never make a valid tier step aside). Ladders run last in
+ * (priority, id) order, so each is judged on the cart as the ladders before it left it -- an earlier ladder
+ * that brings the goods under a later one's rung leaves that later ladder idle.
+ */
+function priceWithReachedLadders(input: StackInput): StackResult {
   const nonLadders = input.tiers.filter((tier) => !isOrderLadder(tier));
   const productOf = new Map(input.lines.map((line) => [line.lineKey, line.product]));
-  const inOrder = [...ladders].sort((a, b) => {
+  const inOrder = input.tiers.filter(isOrderLadder).sort((a, b) => {
     const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
     const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
     return pa !== pb ? pa - pb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
