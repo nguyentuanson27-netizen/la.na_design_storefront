@@ -71,6 +71,8 @@ export type GiftQuantityQuote =
       dropped: readonly StackDroppedCampaign[];
       /** Revisions of the tier campaigns that were evaluated, for quote provenance. */
       campaignRevisions: ReadonlyMap<string, number>;
+      /** Admin-given names of those campaigns, for display only (never part of any proof). */
+      campaignNames: ReadonlyMap<string, string>;
     }>
   | Readonly<{ enabled: true; ok: false; reason: "LOOKUP_FAILED" | "INPUT_INVALID" }>;
 
@@ -157,7 +159,7 @@ export async function resolveGiftQuantityQuote({
 
   // A cart with nothing purchasable has no paid lines to price; that is a valid, empty quote.
   if (lines.length === 0) {
-    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map() };
+    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map() };
   }
 
   const productIds = [...new Set(lines.map((line) => line.productId))];
@@ -216,5 +218,6 @@ export async function resolveGiftQuantityQuote({
     subtotalVnd: result.subtotalVnd,
     dropped: result.dropped,
     campaignRevisions: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.revision])),
+    campaignNames: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.name])),
   };
 }

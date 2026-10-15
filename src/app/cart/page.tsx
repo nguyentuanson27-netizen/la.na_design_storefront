@@ -5,7 +5,8 @@ import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
-import { PromotionBanner } from "@/components/brand/promotion-banner";
+import { LinePrice } from "@/components/brand/line-price";
+import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
@@ -114,7 +115,17 @@ function render(data: CartViewModel) {
                     )}
                   </div>
                   <div className="text-right">
-                    <p className="font-medium">{line.paidSegments ? "Giá theo số lượng" : line.priceText}</p>
+                    <p className="font-medium">
+                      {line.paidSegments ? (
+                        "Giá theo số lượng"
+                      ) : (
+                        <LinePrice
+                          discountPercent={line.discountPercent}
+                          originalPriceText={line.originalPriceText}
+                          priceText={line.priceText}
+                        />
+                      )}
+                    </p>
                     <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
                       {line.availabilityLabel}
                     </p>
@@ -139,12 +150,7 @@ function render(data: CartViewModel) {
             </span>
             <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
           </div>
-          {data.promotions?.savingsText ? (
-            <p className="mt-4 flex items-baseline justify-between gap-6 text-sm font-medium text-[#24472D]" data-promotion-savings>
-              <span>Bạn đã tiết kiệm</span>
-              <span>-{data.promotions.savingsText}</span>
-            </p>
-          ) : null}
+          <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
           {data.hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
               Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi giỏ hàng.

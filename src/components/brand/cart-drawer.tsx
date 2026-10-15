@@ -6,7 +6,8 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BRAND } from "@/brand";
-import { PromotionBanner } from "@/components/brand/promotion-banner";
+import { LinePrice } from "@/components/brand/line-price";
+import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import {
   handleDrawerFocusTrap,
   isMeaningfulReturnFocusTarget,
@@ -213,7 +214,15 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                           )}
                           <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
                           <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
-                            {line.priceText}
+                            {line.paidSegments ? (
+                              line.paidSegments.join(" + ")
+                            ) : (
+                              <LinePrice
+                                discountPercent={line.discountPercent}
+                                originalPriceText={line.originalPriceText}
+                                priceText={line.priceText}
+                              />
+                            )}
                           </p>
                           {!line.available ? (
                             <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
@@ -275,12 +284,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   {cart.subtotalText}
                 </span>
               </div>
-              {cart.promotions?.savingsText ? (
-                <div className="flex items-baseline justify-between text-xs font-medium text-[#24472D]" data-promotion-savings>
-                  <span>Bạn đã tiết kiệm</span>
-                  <span>-{cart.promotions.savingsText}</span>
-                </div>
-              ) : null}
+              <PromotionSavings rows={cart.promotions?.savings} />
               <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
                 {cart.promotions
                   ? "Phí vận chuyển sẽ được tính toán tại bước thanh toán."

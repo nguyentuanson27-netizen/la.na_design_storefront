@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import type { PromotionBannerItem, PromotionBannerView } from "@/routes/cart-promotion-model";
+import type { PromotionBannerItem, PromotionBannerView, PromotionSavingRow } from "@/routes/cart-promotion-model";
 
 /**
  * The promotion lines shared by the cart drawer, the cart page and checkout.
@@ -98,5 +98,26 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
         ))}
       </ul>
     </section>
+  );
+}
+
+/**
+ * What each cart-level campaign took off, one line per campaign and named by it ("Mua 5 giảm 10%").
+ * Sits beside the subtotal, where the shopper reads the arithmetic; the banner above never repeats it.
+ */
+export function PromotionSavings({
+  rows,
+  className = "",
+}: Readonly<{ rows: readonly PromotionSavingRow[] | undefined; className?: string }>) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <ul aria-label="Ưu đãi đã áp dụng" className={`space-y-1.5 ${className}`} data-promotion-savings>
+      {rows.map((row) => (
+        <li className="flex items-baseline justify-between gap-4 text-xs font-medium text-[#24472D]" key={row.id}>
+          <span className="min-w-0">{row.label}</span>
+          <span className="shrink-0">−{row.amountText}</span>
+        </li>
+      ))}
+    </ul>
   );
 }

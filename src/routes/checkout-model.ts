@@ -8,6 +8,7 @@ import {
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
+import { describeLineDiscount } from "./line-discount-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -46,6 +47,10 @@ export type CheckoutLineView = Readonly<{
   quantity: number;
   /** Benefit quotes only: the price of one unit of this segment, so split prices read as `2 × 400.000 ₫`. */
   unitPriceText: string | null;
+  /** A per-product promotion on this line: the catalog price to strike through. Absent when there is none. */
+  originalPriceText?: string;
+  /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
+  discountPercent?: number;
   lineTotalText: string;
   /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
@@ -126,6 +131,17 @@ export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): r
   return lines.map((line) => (line.metaContentId ?? line.productSlug)!);
 }
 
+function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; discountPercent?: number } {
+  if (!discount) return {};
+  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+}
+
+/** The per-product (legacy) step on a quote line: catalog price in, price after the promotion out. */
+function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[]) {
+  const step = steps.find((candidate) => candidate.source === "LEGACY");
+  return step ? describeLineDiscount(step.inputPriceVnd, step.outputPriceVnd) : null;
+}
+
 export function buildCheckoutViewModel(
   input: Readonly<{
     lines: readonly StorefrontCartLine[];
@@ -172,6 +188,7 @@ export function buildCheckoutViewModel(
           optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
           lineKey: line.variantId,
           unitPriceText: null,
+          ...checkoutDiscountEntry(describeLineDiscount(line.basePrice, line.price)),
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
@@ -261,6 +278,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
+        ...checkoutDiscountEntry(legacyStepDiscount(fact.discountSteps)),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
@@ -279,7 +297,7 @@ export function buildBenefitCheckoutViewModel(
   );
 
   const giftQuantity = giftLines.reduce((sum, line) => sum + line.quantity, 0);
-  const promotions = buildCheckoutPromotionView(facts, giftQuantity);
+  const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames);
 
   return Object.freeze({
     state: "ready",

@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { LinePrice } from "@/components/brand/line-price";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -79,6 +80,15 @@ function render(data: CheckoutViewModel) {
               {line.optionLabel} · SL {line.quantity}
               {line.unitPriceText === null ? null : ` × ${line.unitPriceText}`}
             </p>
+            {line.originalPriceText ? (
+              <p className="mt-1 text-xs leading-5 text-black/75">
+                <LinePrice
+                  discountPercent={line.discountPercent}
+                  originalPriceText={line.originalPriceText}
+                  priceText={line.unitPriceText ?? ""}
+                />
+              </p>
+            ) : null}
             {line.preorderLabel === null ? null : (
               <p
                 className="mt-1 inline-flex items-center border border-black px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]"
@@ -115,12 +125,12 @@ function render(data: CheckoutViewModel) {
         <dt className="text-black/75">Tạm tính</dt>
         <dd>{totals.subtotalText}</dd>
       </div>
-      {data.promotions?.savingsText ? (
-        <div className="flex justify-between gap-5 font-medium text-[#24472D]" data-promotion-savings>
-          <dt>Ưu đãi mua nhiều</dt>
-          <dd>-{data.promotions.savingsText}</dd>
+      {data.promotions?.savings.map((saving) => (
+        <div className="flex justify-between gap-5 font-medium text-[#24472D]" data-promotion-savings key={saving.id}>
+          <dt>{saving.label}</dt>
+          <dd>−{saving.amountText}</dd>
         </div>
-      ) : null}
+      ))}
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
           <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>

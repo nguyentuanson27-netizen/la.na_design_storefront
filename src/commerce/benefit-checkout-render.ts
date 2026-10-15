@@ -40,6 +40,8 @@ export type BenefitCheckoutRender =
       digest: string;
       needsAcknowledgement: boolean;
       giftLabels: ReadonlyMap<string, string>;
+      /** Display only: campaign names by id, so the checkout can name each saving line. Optional so a render built without it still shows. */
+      campaignNames?: ReadonlyMap<string, string>;
       /** EX-21: a quantity tier whose price became invalid was dropped whole; the buyer is told. */
       tierDropped: boolean;
     }>;
@@ -87,6 +89,7 @@ export async function readBenefitCheckoutRender({
     digest: benefitQuoteDigest(resolution.facts),
     needsAcknowledgement: benefitQuoteNeedsNonclaimAcknowledgement(resolution.facts),
     giftLabels: resolution.giftLabels,
+    campaignNames: resolution.campaignNames,
     tierDropped: resolution.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID"),
   };
 }

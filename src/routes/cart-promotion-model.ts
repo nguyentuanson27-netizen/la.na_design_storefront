@@ -28,40 +28,64 @@ export type PromotionBannerItem = Readonly<{
   needsGiftChoice: boolean;
 }>;
 
+/** One saving the basket has earned, named by the campaign that gave it ("Mua 5 giảm 10%"). */
+export type PromotionSavingRow = Readonly<{
+  /** The campaign id; stable React key. */
+  id: string;
+  label: string;
+  amountVnd: number;
+  /** `amountVnd` as shown. */
+  amountText: string;
+}>;
+
 export type PromotionBannerView = Readonly<{
-  /** What the basket saves through quantity tiers, whole VND; 0 when none applied. */
+  /** Everything the basket saves through cart-level campaigns, whole VND; 0 when none applied. */
   savingsVnd: number;
-  /** `savingsVnd` as shown, or `null` when nothing was saved. */
-  savingsText: string | null;
+  /** One row per campaign that saved something, largest first; empty when nothing was saved. */
+  savings: readonly PromotionSavingRow[];
   items: readonly PromotionBannerItem[];
 }>;
 
-type DiscountStepLike = Pick<StackStep, "source" | "inputPriceVnd" | "outputPriceVnd" | "appliedQuantity">;
+/** What a saving line says when the campaign's own name is unknown (a render built without names). */
+const FALLBACK_TIER_LABEL = "Ưu đãi mua nhiều";
+
+type StepGroup = Readonly<{ steps?: readonly StepLike[]; discountSteps?: readonly StepLike[] }>;
+type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "outputPriceVnd" | "appliedQuantity">;
 
 /**
- * VND a set of paid groups/lines saves through quantity-tier steps only.
+ * VND each quantity-tier campaign saves across a set of paid groups/lines, one row per campaign.
  *
  * Legacy (flash sale / clearance) steps are excluded on purpose: that price is already the price the
- * shopper sees on the line, so counting it again as "savings from a tier" would claim a discount the
+ * shopper sees on the line, so counting it again as a cart-level saving would claim a discount the
  * shopper never had to earn. A step that raises the price (malformed input) contributes nothing, and
- * a non-finite total gives up rather than print a number nobody was charged.
+ * a non-finite total drops that campaign's row rather than print a number nobody was charged.
  */
-export function tierSavingsVnd(groups: readonly Readonly<{ steps?: readonly DiscountStepLike[]; discountSteps?: readonly DiscountStepLike[] }>[]): number {
-  let total = 0;
+export function tierSavingRows(groups: readonly StepGroup[], names?: ReadonlyMap<string, string>): PromotionSavingRow[] {
+  const byCampaign = new Map<string, number>();
   for (const group of groups) {
     for (const step of group.steps ?? group.discountSteps ?? []) {
       if (step.source !== "QUANTITY_TIER") continue;
       const perUnit = step.inputPriceVnd - step.outputPriceVnd;
       if (!(perUnit > 0)) continue;
-      total += perUnit * step.appliedQuantity;
-      if (!Number.isSafeInteger(total)) return 0;
+      byCampaign.set(step.campaignId, (byCampaign.get(step.campaignId) ?? 0) + perUnit * step.appliedQuantity);
     }
   }
-  return total;
+  const rows: PromotionSavingRow[] = [];
+  for (const [campaignId, amountVnd] of byCampaign) {
+    if (!Number.isSafeInteger(amountVnd) || amountVnd <= 0) continue;
+    const name = names?.get(campaignId)?.trim();
+    rows.push(Object.freeze({ id: campaignId, label: name ? name : FALLBACK_TIER_LABEL, amountVnd, amountText: currency.format(amountVnd) }));
+  }
+  return rows.sort((a, b) => b.amountVnd - a.amountVnd || a.label.localeCompare(b.label) || a.id.localeCompare(b.id));
 }
 
-function tierItem(savingsVnd: number): PromotionBannerItem | null {
-  if (savingsVnd <= 0) return null;
+/** The total of {@link tierSavingRows}. */
+export function tierSavingsVnd(groups: readonly StepGroup[]): number {
+  return tierSavingRows(groups).reduce((sum, row) => sum + row.amountVnd, 0);
+}
+
+function tierItem(savings: readonly PromotionSavingRow[]): PromotionBannerItem | null {
+  if (savings.length === 0) return null;
   return Object.freeze({
     id: "tier",
     state: "achieved",
@@ -72,16 +96,16 @@ function tierItem(savingsVnd: number): PromotionBannerItem | null {
   });
 }
 
-function view(items: readonly PromotionBannerItem[], savingsVnd: number): PromotionBannerView | null {
-  if (items.length === 0 && savingsVnd <= 0) return null;
+function view(items: readonly PromotionBannerItem[], savings: readonly PromotionSavingRow[]): PromotionBannerView | null {
+  if (items.length === 0 && savings.length === 0) return null;
   // Reached conditions read first. Of the bars toward what is not yet reached, only the nearest one
   // is shown: several competing "buy more" nudges is noise, and the nearest is the one worth acting on.
   const nearest = items
     .filter((item) => item.state === "progress")
     .reduce<PromotionBannerItem | null>((best, item) => (best === null || (item.progress?.percent ?? 0) > (best.progress?.percent ?? 0) ? item : best), null);
   return Object.freeze({
-    savingsVnd,
-    savingsText: savingsVnd > 0 ? currency.format(savingsVnd) : null,
+    savingsVnd: savings.reduce((sum, row) => sum + row.amountVnd, 0),
+    savings: Object.freeze([...savings]),
     items: Object.freeze([...items.filter((item) => item.state === "achieved"), ...(nearest ? [nearest] : [])]),
   });
 }
@@ -103,9 +127,9 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
   const benefits = state?.quote.benefits;
   if (!state || !benefits?.enabled || !benefits.ok) return null;
 
-  const savingsVnd = tierSavingsVnd(benefits.groups);
+  const savings = tierSavingRows(benefits.groups, benefits.campaignNames);
   const items: PromotionBannerItem[] = [];
-  const tier = tierItem(savingsVnd);
+  const tier = tierItem(savings);
   if (tier) items.push(tier);
 
   const selectedBy = new Map<string, number>();
@@ -156,12 +180,12 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
     }
   });
 
-  return view(items, savingsVnd);
+  return view(items, savings);
 }
 
 /** The checkout facts the banner reads: each line's role and discount steps. */
 export type CheckoutPromotionFacts = Readonly<{
-  lines: readonly Readonly<{ role: "PAID" | "GIFT"; discountSteps: readonly DiscountStepLike[] }>[];
+  lines: readonly Readonly<{ role: "PAID" | "GIFT"; discountSteps: readonly StepLike[] }>[];
 }>;
 
 /**
@@ -171,10 +195,14 @@ export type CheckoutPromotionFacts = Readonly<{
  * the gift slots the quote includes. There is no "next milestone" here -- checkout is where the
  * basket stops changing, so nudging toward more items would be the wrong place for it.
  */
-export function buildCheckoutPromotionView(facts: CheckoutPromotionFacts, giftQuantity: number): PromotionBannerView | null {
-  const savingsVnd = tierSavingsVnd(facts.lines.filter((line) => line.role === "PAID"));
+export function buildCheckoutPromotionView(
+  facts: CheckoutPromotionFacts,
+  giftQuantity: number,
+  names?: ReadonlyMap<string, string>,
+): PromotionBannerView | null {
+  const savings = tierSavingRows(facts.lines.filter((line) => line.role === "PAID"), names);
   const items: PromotionBannerItem[] = [];
-  const tier = tierItem(savingsVnd);
+  const tier = tierItem(savings);
   if (tier) items.push(tier);
   if (giftQuantity > 0) {
     items.push(Object.freeze({
@@ -186,5 +214,5 @@ export function buildCheckoutPromotionView(facts: CheckoutPromotionFacts, giftQu
       needsGiftChoice: false,
     }));
   }
-  return view(items, savingsVnd);
+  return view(items, savings);
 }

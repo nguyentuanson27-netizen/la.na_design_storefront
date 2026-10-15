@@ -9,6 +9,7 @@ import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
 import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
+import { describeLineDiscount } from "./line-discount-model.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -33,6 +34,10 @@ export type CartLineView = Readonly<{
   optionLabel: string;
   quantity: number;
   priceText: string;
+  /** A per-product promotion: the catalog price to strike through. Absent on an undiscounted line. */
+  originalPriceText?: string;
+  /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
+  discountPercent?: number;
   available: boolean;
   /** "Có thể mua", or the reason it is not. */
   availabilityLabel: string;
@@ -127,6 +132,12 @@ export function canTrackLegacyCartPrices(input: Readonly<{
     paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
 }
 
+function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
+  const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
+  if (!discount) return {};
+  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+}
+
 /**
  * The banner is withheld while benefits cannot be trusted: a cart whose quote is unreadable or whose
  * stored gift choice no longer validates already says so through `benefitsNotice`, and a green
@@ -180,6 +191,7 @@ export function buildCartViewModel(
             [line.color, line.size].filter(Boolean).join(" / ") || "Màu / Kích cỡ không khả dụng",
           quantity: line.quantity,
           priceText: line.price === null ? "Giá đang cập nhật" : currency.format(line.price),
+          ...lineDiscountEntry(line),
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
