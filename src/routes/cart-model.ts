@@ -8,6 +8,7 @@ import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
+import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -68,6 +69,8 @@ export type CartViewModel = Readonly<{
    */
   preorderNotice: PreorderFulfillmentNotice | null;
   gifts?: CartGiftPickerModel;
+  /** Reached promotions and progress toward the next gift slot; absent when there is nothing to say. */
+  promotions?: PromotionBannerView;
   benefitsNotice?: string;
 }>;
 
@@ -122,6 +125,17 @@ export function canTrackLegacyCartPrices(input: Readonly<{
   const paid = input.lines.filter((line) => line.available && line.price !== null);
   return benefits.groups.every((group) => paid.some((line) => line.variantId === group.lineKey && line.price === group.unitPriceVnd)) &&
     paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
+}
+
+/**
+ * The banner is withheld while benefits cannot be trusted: a cart whose quote is unreadable or whose
+ * stored gift choice no longer validates already says so through `benefitsNotice`, and a green
+ * "reached" banner beside that notice would contradict it.
+ */
+function promotionsEntry(state: CartGiftState | undefined, blocked: boolean | undefined): { promotions?: PromotionBannerView } {
+  if (blocked || !state) return {};
+  const promotions = buildCartPromotionView(state);
+  return promotions ? { promotions } : {};
 }
 
 export function buildCartViewModel(
@@ -183,6 +197,7 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
+    ...promotionsEntry(state, benefitBlocked),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
       : tierPriceInvalid

@@ -7,6 +7,7 @@ import {
 } from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
+import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -107,6 +108,8 @@ export type CheckoutViewModel = Readonly<{
   preorderNotice: PreorderFulfillmentNotice | null;
   /** `null` for an ordinary checkout: the gift / quantity-tier section is simply not rendered. */
   benefit: CheckoutBenefitView | null;
+  /** The reached-promotions banner; present only for a benefit checkout that has something to say. */
+  promotions?: PromotionBannerView;
   /** Why the cart cannot be offered for checkout, when that is more specific than "check your cart". */
   unavailableNotice: string | null;
 }>;
@@ -275,6 +278,9 @@ export function buildBenefitCheckoutViewModel(
     { entitled: 0, selected: 0, unclaimed: 0, skippedWhileAvailable: 0, shortForStock: 0 },
   );
 
+  const giftQuantity = giftLines.reduce((sum, line) => sum + line.quantity, 0);
+  const promotions = buildCheckoutPromotionView(facts, giftQuantity);
+
   return Object.freeze({
     state: "ready",
     lines: Object.freeze(paidLines),
@@ -288,7 +294,7 @@ export function buildBenefitCheckoutViewModel(
     benefit: Object.freeze({
       digest: render.digest,
       giftLines: Object.freeze(giftLines),
-      giftQuantity: giftLines.reduce((sum, line) => sum + line.quantity, 0),
+      giftQuantity,
       slots: Object.freeze(slots),
       needsAcknowledgement: render.needsAcknowledgement,
       unclaimedText: slotText(slots),
@@ -299,6 +305,7 @@ export function buildBenefitCheckoutViewModel(
         ? "Ưu đãi giảm theo số lượng không còn áp dụng vì mức giảm không còn hợp lệ với giá hiện tại. Giá bên dưới đã được tính lại; hãy kiểm tra trước khi đặt hàng."
         : null,
     }),
+    ...(promotions ? { promotions } : {}),
     unavailableNotice: null,
   });
 }

@@ -26,11 +26,12 @@ const OPAQUE_TOKEN = /^[A-Za-z0-9_-]{1,128}$/;
 const PHONE_SHAPED = /^\+?[0-9]{8,15}$/;
 const ORDER_CODE_SHAPED = /^la-/i;
 
-// The in-page anchors the site itself links to (skip link, policy hub sections). A fragment is
+// The in-page anchors the site itself links to (skip link, policy hub sections, the cart's gift picker). A fragment is
 // otherwise free text in the address bar, so every other fragment is unsafe.
 export const ZALO_SAFE_ANCHORS: ReadonlySet<string> = new Set([
   "main-content",
   "thanh-toan",
+  "cart-gifts",
   "dieu-khoan-chung",
   "chinh-sach-gia",
   "bao-mat",

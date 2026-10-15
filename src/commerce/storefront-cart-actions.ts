@@ -11,6 +11,9 @@ import { createCartLineAuthorityResolver } from "./cart-line-authority.ts";
 import { createStorefrontCartPublicActions } from "./storefront-cart-public-actions.ts";
 import { createStorefrontCartRepository } from "./storefront-cart-repository.ts";
 import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { getCurrentStorefrontCartBenefits } from "./storefront-cart-runtime.ts";
+import { buildCartViewModel, type CartViewModel } from "../routes/cart-model.ts";
 
 async function createActionRuntime() {
   const cookieStore = await cookies();
@@ -65,6 +68,30 @@ async function createActionRuntime() {
 
 export async function getStorefrontCartLines() {
   return (await createActionRuntime()).getLines();
+}
+
+/**
+ * The cart as the drawer and the header badge draw it, benefits included.
+ *
+ * The drawer used to rebuild its view from bare lines in the browser, so it could never show a
+ * promotion and, with quantity tiers on, quoted a subtotal the cart page did not. This builds the
+ * same view model the cart page does, on the server, from the same quote. With the gift / quantity
+ * gate OFF it is exactly the old lines-only path, so nothing changes until a campaign is live.
+ *
+ * The gift picker's model is dropped: the drawer has no picker, and it carries campaign and variant
+ * ids the drawer has no reason to receive.
+ */
+export async function getStorefrontCartView(): Promise<CartViewModel> {
+  if (!isGiftQuantityPromotionsEnabled()) {
+    return buildCartViewModel({ lines: await getStorefrontCartLines(), commerceTrackingEnabled: false });
+  }
+  const model = buildCartViewModel({
+    ...(await getCurrentStorefrontCartBenefits(new Date())),
+    commerceTrackingEnabled: false,
+  });
+  const view: { -readonly [K in keyof CartViewModel]: CartViewModel[K] } = { ...model };
+  delete view.gifts;
+  return view;
 }
 
 export async function updateStorefrontCartLine(input: unknown) {

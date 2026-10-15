@@ -3,6 +3,7 @@ import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadCheckoutRoute, type CheckoutRouteProps } from "@/routes/checkout";
@@ -114,6 +115,12 @@ function render(data: CheckoutViewModel) {
         <dt className="text-black/75">Tạm tính</dt>
         <dd>{totals.subtotalText}</dd>
       </div>
+      {data.promotions?.savingsText ? (
+        <div className="flex justify-between gap-5 font-medium text-[#24472D]" data-promotion-savings>
+          <dt>Ưu đãi mua nhiều</dt>
+          <dd>-{data.promotions.savingsText}</dd>
+        </div>
+      ) : null}
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
           <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>
@@ -190,6 +197,7 @@ function render(data: CheckoutViewModel) {
         breakpoint, keep one of each region in the accessibility tree and leave the hidden copy's
         images unfetched.
       */}
+      <PromotionBanner className="mt-8" view={data.promotions} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}

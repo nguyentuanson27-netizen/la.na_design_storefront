@@ -5,6 +5,7 @@ import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
 import type { CartLineView, CartViewModel } from "@/routes/cart-model";
@@ -61,6 +62,9 @@ function render(data: CartViewModel) {
     <PageShell>
       <PageBreadcrumbs items={CART_BREADCRUMBS} />
       <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" meta={`${data.lineCount} sản phẩm`} />
+      {/* Above the lines, not in the summary column: below `lg` that column is the last thing on the
+          page, and a reached promotion should be the first thing the shopper sees. */}
+      <PromotionBanner className="mt-8" giftHref="#cart-gifts" view={data.promotions} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="divide-y divide-black/15">
           {data.lines.map((line, index) => (
@@ -135,6 +139,12 @@ function render(data: CartViewModel) {
             </span>
             <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
           </div>
+          {data.promotions?.savingsText ? (
+            <p className="mt-4 flex items-baseline justify-between gap-6 text-sm font-medium text-[#24472D]" data-promotion-savings>
+              <span>Bạn đã tiết kiệm</span>
+              <span>-{data.promotions.savingsText}</span>
+            </p>
+          ) : null}
           {data.hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
               Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi giỏ hàng.
