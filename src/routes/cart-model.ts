@@ -3,6 +3,7 @@ import {
   PREORDER_LABEL,
   type PreorderFulfillmentNotice,
 } from "../commerce/preorder-fulfillment-presentation.ts";
+import { hasQuantityTierSegment } from "../commerce/benefit-tier-segment.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
@@ -146,7 +147,7 @@ export function buildCartViewModel(
   // faithfully (unreadable benefits, a stored gift choice that no longer validates) still stops at the cart.
   const benefitCheckoutOpen = input.benefitCheckoutOpen === true;
   const hasBenefitSegments = Boolean(
-    state && (state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal) || tierPriceInvalid),
+    state && (state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0) || (paidBenefits && (hasQuantityTierSegment(paidBenefits.groups) || paidBenefits.subtotalVnd !== subtotal)) || tierPriceInvalid),
   );
   const benefitBlocked = input.benefitsUnavailable || (state && !state.validation.ok) || (hasBenefitSegments && !benefitCheckoutOpen);
   const checkoutPending = Boolean(benefitBlocked);

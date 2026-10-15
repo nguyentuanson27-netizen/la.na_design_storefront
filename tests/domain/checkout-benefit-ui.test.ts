@@ -152,7 +152,7 @@ test("feedback: a missing acknowledgement is its own message, not a price change
 function benefitState(overrides: Record<string, unknown> = {}): CartGiftState {
   return {
     quote: { lines: [cartLine], benefits: { enabled: true, ok: true, subtotalVnd: 290_003, groups: [
-      { lineKey: "paid", quantity: 1, unitPriceVnd: 90_001 }, { lineKey: "paid", quantity: 2, unitPriceVnd: 100_001 },
+      { lineKey: "paid", quantity: 1, unitPriceVnd: 90_001, steps: [] }, { lineKey: "paid", quantity: 2, unitPriceVnd: 100_001, steps: [] },
     ], dropped: [] } },
     labels: [{ variantId: "gift", productId: "gift-product", productName: "Khăn", optionLabel: "Trắng / M" }],
     campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: [{ variantId: "gift", productId: "gift-product", composite: false, readyAvailable: 1 }] }],
@@ -188,7 +188,7 @@ test("cart: an invalid stored gift choice or unreadable benefits still stop at t
 test("cart: EX-21 (tier dropped) reaches checkout, which re-quotes it, only where the shop is verified", () => {
   const paid = { ...cartLine, quantity: 1, price: 40_000 };
   const dropped = benefitState({
-    quote: { lines: [paid], benefits: { enabled: true, ok: true, subtotalVnd: 40_000, groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 40_000 }], dropped: [{ campaignId: "tier", reason: "TIER_PRICE_INVALID", otherCampaignId: null }] } },
+    quote: { lines: [paid], benefits: { enabled: true, ok: true, subtotalVnd: 40_000, groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 40_000, steps: [] }], dropped: [{ campaignId: "tier", reason: "TIER_PRICE_INVALID", otherCampaignId: null }] } },
     campaigns: [], entitlements: [], selections: [], validation: { ok: true, issues: [], summaries: [] },
   });
   assert.equal(buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: dropped }).canCheckout, false);
@@ -255,4 +255,43 @@ test("an acknowledgement minted for one quote does not verify for another", () =
   const proof = issueBenefitQuoteProof({ quote, cartId, secret })!;
   assert.equal(verifyBenefitQuoteProof({ proof, cartId, currentQuote: other, secret }).ok, false);
   assert.equal(verifyNonclaimAcknowledgement({ token: undefined, cartId, currentQuote: quote, secret, now: NOW }).ok, false);
+});
+
+// --------------------------------------------------- cart and checkout agree on what a tier benefit is
+
+/** 1 unit at 1.000.000đ; a 10% tier runs first (-> 900.000đ), then a legacy ceiling of 900.000đ changes nothing. */
+function tierThenCeilingState(): CartGiftState {
+  const step = (source: "QUANTITY_TIER" | "LEGACY", input: number, output: number) => ({ campaignId: source, source, kind: source, priority: 1, inputPriceVnd: input, outputPriceVnd: output, appliedQuantity: 1 });
+  const paid = { ...cartLine, quantity: 1, price: 900_000 };
+  return {
+    quote: { lines: [paid], benefits: { enabled: true, ok: true, subtotalVnd: 900_000, dropped: [], groups: [
+      { lineKey: "paid", quantity: 1, unitPriceVnd: 900_000, steps: [step("QUANTITY_TIER", 1_000_000, 900_000), step("LEGACY", 900_000, 900_000)] },
+    ] } },
+    labels: [], campaigns: [], entitlements: [], selections: [], validation: { ok: true, issues: [], summaries: [] },
+  } as unknown as CartGiftState;
+}
+
+test("cart: a tier that lands on the legacy total is still a benefit cart, so an unverified shop gets no link", () => {
+  const state = tierThenCeilingState();
+  const paid = state.quote.lines[0]!;
+  assert.equal(
+    (state.quote.benefits as { subtotalVnd: number }).subtotalVnd,
+    paid.price! * paid.quantity,
+    "the money alone cannot tell: this is the reviewer's same-total stack",
+  );
+
+  const closed = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: state });
+  assert.equal(closed.canCheckout, false);
+  assert.match(closed.benefitsNotice!, /chưa thể đặt trực tuyến/);
+
+  const open = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: state, benefitCheckoutOpen: true });
+  assert.equal(open.canCheckout, true);
+});
+
+test("cart: a legacy-only step at the same total is not a benefit, so the link stays (flag ON parity)", () => {
+  const state = tierThenCeilingState();
+  const groups = (state.quote.benefits as unknown as { groups: { steps: { source: string }[] }[] }).groups;
+  groups[0]!.steps = groups[0]!.steps.filter((step) => step.source === "LEGACY");
+  const paid = state.quote.lines[0]!;
+  assert.equal(buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: state }).canCheckout, true);
 });

@@ -18,6 +18,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import { hasQuantityTierSegment } from "./benefit-tier-segment.ts";
 import { withoutOrderHolds } from "./capacity-advisory.ts";
 import { readCartGiftState } from "./cart-gift-selection.ts";
 import { buildBenefitCheckoutQuoteFacts, type BenefitQuoteGift, type BenefitQuotePaidGroup } from "./checkout-quote.ts";
@@ -97,7 +98,7 @@ export async function resolveBenefitCheckoutQuote({
   const benefits = state.quote.benefits;
   if (!benefits.enabled || !benefits.ok) return { kind: "UNAVAILABLE" };
 
-  const hasTierSegment = benefits.groups.some((group) => group.steps.some((step) => step.source === "QUANTITY_TIER"));
+  const hasTierSegment = hasQuantityTierSegment(benefits.groups);
   const earnsGift = state.entitlements.some((entry) => entry.entitled > 0);
   // EX-21: a tier whose runtime price became invalid is dropped whole. The cart is then an ordinary
   // one, but the buyer was promised that tier at render time, so the quote is still proven and stored

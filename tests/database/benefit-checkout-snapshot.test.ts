@@ -6,6 +6,8 @@ import { PrismaPg } from "@prisma/adapter-pg";
 import { setLegacyPromotionStackConsent } from "../../src/commerce/gift-quantity-legacy-consent.ts";
 import { resolveBenefitCheckoutQuote } from "../../src/commerce/benefit-checkout-quote.ts";
 import { readBenefitCheckoutRender } from "../../src/commerce/benefit-checkout-render.ts";
+import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
+import { buildCartViewModel } from "../../src/routes/cart-model.ts";
 import type { BenefitQuoteSummary } from "../../src/commerce/benefit-quote-summary.ts";
 import { createCapacityReservationRepository } from "../../src/commerce/capacity-reservation.ts";
 import {
@@ -1639,4 +1641,46 @@ test("GQ19: a stored gift choice that no longer holds sends the buyer back; noth
   await prisma.warehouseStock.updateMany({ where: { variantId: giftItem.variantId }, data: { quantity: 0 } });
   assert.deepEqual(await checkoutRender(), { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID" });
   assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId } })).quantity, 2, "the choice is left exactly as the buyer made it");
+});
+
+test("GQ19 review: cart and checkout classify a tier-then-ceiling stack alike, even though its total equals the legacy price", async () => {
+  // 1 unit at 1.000.000đ. A 10% tier runs first (-> 900.000đ), then a legacy 900.000đ ceiling changes nothing, so the
+  // benefit total equals what the legacy resolver charges. The money cannot tell this cart from an ordinary one.
+  await seed({ tier: false, gift: false, quantity: 1 });
+  await prisma.variantMirror.update({ where: { id: paid.variantId }, data: { pancakeRetailPrice: 1_000_000, pancakeRetailPriceAfterDiscount: 1_000_000 } });
+  await prisma.giftQuantityCampaign.create({
+    data: {
+      id: `${P}-tier`, kind: "QUANTITY_TIER", name: "GQ17 10% tier", startsAt: PAST, endsAt: FUTURE, isEnabled: true, enabledAt: PAST,
+      scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+      stackPriority: 1, stackingEnabled: true, tiers: { create: [{ minQuantity: 1, discountValue: 10 }] },
+      stackPeers: { create: [{ peerKind: "FLASH_SALE", peerCampaignId: "*" }] },
+    },
+  });
+  await prisma.promotionCampaign.create({
+    data: { id: `${P}-ceiling`, kind: "FLASH_SALE", name: "GQ17 ceiling", discountType: "FIXED_PRICE", fixedPriceVnd: BigInt(900_000), startsAt: PAST, endsAt: FUTURE, isEnabled: true, enabledAt: PAST, targets: { create: [{ productId: paid.productId }] } },
+  });
+  await setLegacyPromotionStackConsent({ campaignId: `${P}-ceiling`, stackPriority: 2, now: NOW, session: { user: { id: "admin", role: "ADMIN" }, session: { id: "s" } }, client: prisma, env: ON });
+
+  const items = await prisma.cartItem.findMany({ where: { cartId }, select: { variantId: true, quantity: true } });
+  const lines = await createStorefrontCartRepository(prisma).getLines({ shopId: SHOP, items, now: NOW });
+  const legacyTotal = lines.reduce((sum, line) => sum + (line.price ?? 0) * line.quantity, 0);
+
+  // Checkout's authority: a benefit cart, because a QUANTITY_TIER step was applied.
+  const resolution = await render();
+  assert.equal(resolution.kind, "BENEFIT");
+  if (resolution.kind !== "BENEFIT") return;
+  // The ceiling that changes nothing leaves no step; the tier that did the work is on the ledger.
+  assert.deepEqual(resolution.facts.lines[0]!.discountSteps.map((step) => step.source), ["QUANTITY_TIER"]);
+  assert.equal(resolution.facts.paidSubtotalVnd, legacyTotal, "the same-total stack: money alone cannot distinguish it");
+
+  // The cart's authority must reach the same verdict: no link for a shop the POS has no evidence for.
+  const state = await prisma.$transaction((tx) => readCartGiftState(tx, cartId, SHOP, NOW, ON));
+  const closed = buildCartViewModel({ lines: state.quote.lines, commerceTrackingEnabled: false, giftState: state });
+  assert.equal(closed.canCheckout, false, "the cart must not offer a link the checkout would dead-end");
+  const open = buildCartViewModel({ lines: state.quote.lines, commerceTrackingEnabled: false, giftState: state, benefitCheckoutOpen: true });
+  assert.equal(open.canCheckout, true);
+
+  // And the two ends agree on that dead end.
+  assert.deepEqual(await checkoutRender(ON), { kind: "UNAVAILABLE", reason: "POS_NOT_ACCEPTED" });
+  assert.equal((await checkoutRender()).kind, "BENEFIT");
 });
