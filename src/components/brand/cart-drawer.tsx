@@ -215,16 +215,17 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                           )}
                           <p className="mt-0.5 text-xs text-[#70584B]">{line.optionLabel}</p>
                           <p className="mt-1 font-sans text-xs font-semibold text-[#2A1810]">
-                            {line.paidSegments ? (
-                              line.paidSegments.join(" + ")
-                            ) : (
-                              <LinePrice
-                                discountPercent={line.discountPercent}
-                                originalPriceText={line.originalPriceText}
-                                priceText={line.priceText}
-                              />
-                            )}
+                            <LinePrice
+                              discountPercent={line.discountPercent}
+                              originalPriceText={line.originalPriceText}
+                              priceText={line.priceText}
+                            />
                           </p>
+                          {line.paidSegments ? (
+                            <p className="mt-0.5 text-[0.7rem] text-[#70584B]" data-line-segments>
+                              Giá sau ưu đãi: {line.paidSegments.join(" + ")}
+                            </p>
+                          ) : null}
                           {!line.available ? (
                             <p className="mt-1 text-[0.7rem] font-medium text-amber-800">
                               {line.availabilityLabel}

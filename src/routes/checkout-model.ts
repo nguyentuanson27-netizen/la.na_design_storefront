@@ -52,6 +52,12 @@ export type CheckoutLineView = Readonly<{
   originalPriceText?: string;
   /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
   discountPercent?: number;
+  /**
+   * Set only when a quantity / order-value price lowered this line BELOW the price its per-product promotion
+   * left: that promotion price, the one `originalPriceText` and `discountPercent` are measured against.
+   * `unitPriceText` is then the further price after those offers, shown apart from the sale.
+   */
+  promotionPriceText?: string;
   lineTotalText: string;
   /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
@@ -143,6 +149,29 @@ function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>
 function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[]) {
   const step = steps.find((candidate) => candidate.source === "LEGACY");
   return step ? describeLineDiscount(step.inputPriceVnd, step.outputPriceVnd) : null;
+}
+
+/**
+ * The per-product promotion of a benefit-checkout line, on one basis: the catalog price struck through, the
+ * price its Flash Sale / clearance leaves, and the percentage between exactly those two. Both come from the
+ * cart line (a per-product promotion priced alone), never from the quote's legacy step, whose input is the
+ * price after any tier ordered before it. A quantity or order-value price below that is named separately
+ * (`promotionPriceText`), so no label ever sits beside a price it was not computed for.
+ */
+function paidLineDiscount(
+  cartLine: StorefrontCartLine | undefined,
+  fact: Readonly<{ unitPriceVnd: number; discountSteps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[] }>,
+): { originalPriceText?: string; discountPercent?: number; promotionPriceText?: string } {
+  const tierApplied = fact.discountSteps.some((step) => step.source === "QUANTITY_TIER");
+  // Without the cart line's own catalog price the quote's legacy step is the only evidence, and it is a
+  // sound one only when no tier ran before it (a tier's output is then not the catalog price).
+  if (cartLine?.basePrice === undefined || cartLine.basePrice === null) return tierApplied ? {} : checkoutDiscountEntry(legacyStepDiscount(fact.discountSteps));
+  const discount = describeLineDiscount(cartLine.basePrice, cartLine.price);
+  if (!discount) return {};
+  return {
+    ...checkoutDiscountEntry(discount),
+    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price) } : {}),
+  };
 }
 
 export function buildCheckoutViewModel(
@@ -290,7 +319,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
-        ...checkoutDiscountEntry(legacyStepDiscount(fact.discountSteps)),
+        ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),

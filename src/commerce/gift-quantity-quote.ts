@@ -188,10 +188,27 @@ function readOrderValueProgress({
 
     // The value the ladder is judged on: each group at the price it had just before this ladder's own step
     // (the ladder runs last, so a group it did not touch is simply at its final price).
+    // Order ladders run last, in (priority, id) order. A group this ladder left whole has no step of its own,
+    // yet a ladder that ran AFTER it may have cut that group's price further, so its final price is not what
+    // this ladder saw: it is the input of the first later ladder's step, else (nothing ran after) its final price.
+    const sortKey = (tier: StackTierParticipant): [number, string] => [tier.priority ?? Number.MAX_SAFE_INTEGER, tier.id];
+    const mine = tiers.find((tier) => tier.id === id);
+    const [myPriority, myId] = mine === undefined ? [Number.MAX_SAFE_INTEGER, id] : sortKey(mine);
+    const laterLadders = new Set(
+      tiers
+        .filter((tier) => tier.id !== id && tier.config.basis === "ORDER_SUBTOTAL")
+        .filter((tier) => {
+          const [priority, tierId] = sortKey(tier);
+          return priority > myPriority || (priority === myPriority && tierId > myId);
+        })
+        .map((tier) => tier.id),
+    );
     let currentVnd = 0;
     for (const group of result.groups) {
       const own = group.steps.find((step) => step.campaignId === id && step.source === "QUANTITY_TIER");
-      currentVnd += group.quantity * (own === undefined ? group.unitPriceVnd : own.inputPriceVnd);
+      const later = group.steps.find((step) => step.source === "QUANTITY_TIER" && laterLadders.has(step.campaignId));
+      const before = own?.inputPriceVnd ?? later?.inputPriceVnd ?? group.unitPriceVnd;
+      currentVnd += group.quantity * before;
     }
     if (!Number.isSafeInteger(currentVnd)) continue;
 

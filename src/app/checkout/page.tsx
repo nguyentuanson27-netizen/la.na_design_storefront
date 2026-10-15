@@ -86,8 +86,13 @@ function render(data: CheckoutViewModel) {
                 <LinePrice
                   discountPercent={line.discountPercent}
                   originalPriceText={line.originalPriceText}
-                  priceText={line.unitPriceText ?? ""}
+                  priceText={line.promotionPriceText ?? line.unitPriceText ?? ""}
                 />
+                {line.promotionPriceText && line.unitPriceText ? (
+                  <span className="ml-1.5" data-line-after-offers>
+                    · Giá sau ưu đãi: {line.unitPriceText}
+                  </span>
+                ) : null}
               </p>
             ) : null}
             {line.preorderLabel === null ? null : (

@@ -116,16 +116,14 @@ function render(data: CartViewModel) {
                     )}
                   </div>
                   <div className="text-right">
+                    {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
+                        price is the breakdown beside the name, never a replacement for it. */}
                     <p className="font-medium">
-                      {line.paidSegments ? (
-                        "Giá sau ưu đãi"
-                      ) : (
-                        <LinePrice
-                          discountPercent={line.discountPercent}
-                          originalPriceText={line.originalPriceText}
-                          priceText={line.priceText}
-                        />
-                      )}
+                      <LinePrice
+                        discountPercent={line.discountPercent}
+                        originalPriceText={line.originalPriceText}
+                        priceText={line.priceText}
+                      />
                     </p>
                     <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
                       {line.availabilityLabel}

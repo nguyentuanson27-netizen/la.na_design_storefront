@@ -421,3 +421,67 @@ test("the checkout fallback never prints a saving beneath an already-net 'Tạm 
   assert.equal(fallback.includes("savings"), false, "so it must not subtract the savings again");
   assert.equal(fallback.includes("data-promotion-savings"), false);
 });
+
+/* -------------------------------------------------------------------------- Flash Sale AND tier on one line */
+
+const flashLine = { ...cartLine, quantity: 1, price: 900_000, basePrice: 1_000_000 } as StorefrontCartLine;
+const flashThenTier = [
+  { campaignId: "flash", source: "LEGACY", campaignKind: "FLASH_SALE", priority: 1, inputPriceVnd: 1_000_000, outputPriceVnd: 900_000, appliedQuantity: 1 },
+  { ...quoteTierStep, priority: 2, inputPriceVnd: 900_000, outputPriceVnd: 810_000, appliedQuantity: 1 },
+];
+const tierThenFlash = [
+  { ...quoteTierStep, priority: 1, inputPriceVnd: 1_000_000, outputPriceVnd: 900_000, appliedQuantity: 1 },
+  { campaignId: "flash", source: "LEGACY", campaignKind: "FLASH_SALE", priority: 2, inputPriceVnd: 900_000, outputPriceVnd: 810_000, appliedQuantity: 1 },
+];
+
+function stackedCheckout(steps: readonly unknown[]): Extract<BenefitCheckoutRender, { kind: "BENEFIT" }> {
+  const facts = buildBenefitCheckoutQuoteFacts({
+    paid: [{ groupKey: "g", pancakeVariationId: "var-1", quantity: 1, unitPriceVnd: 810_000, fulfillmentState: "READY", steps: steps as never }],
+    gifts: [], entitlements: [],
+  });
+  assert.ok(facts, "the checkout fixture must be a valid quote");
+  return { kind: "BENEFIT", facts, proof: "proof", digest: "digest", needsAcknowledgement: false, giftLabels: new Map(), tierDropped: false, campaignNames: new Map([["tier", "Giảm 100k"]]) };
+}
+
+for (const [order, steps] of [["Flash Sale then tier", flashThenTier], ["tier then Flash Sale", tierThenFlash]] as const) {
+  test(`checkout (${order}): the −10% sits beside the price it was measured to, and the tier price is shown apart`, () => {
+    const line = buildBenefitCheckoutViewModel({ lines: [flashLine], render: stackedCheckout(steps) }).lines[0]!;
+    assert.equal(line.originalPriceText, vnd("1.000.000"));
+    assert.equal(line.discountPercent, 10, "catalog → sale price, exactly the two numbers beside it");
+    assert.equal(line.promotionPriceText, vnd("900.000"), "the price the −10% leads to");
+    assert.equal(line.unitPriceText, vnd("810.000"), "the price finally charged, not mislabelled as the sale");
+  });
+}
+
+test("checkout: a tier alone gives no sale badge, and a sale alone needs no second price", () => {
+  const tierOnly = buildBenefitCheckoutViewModel({ lines: [{ ...cartLine, quantity: 1, price: 1_000_000, basePrice: undefined } as StorefrontCartLine], render: stackedCheckout([{ ...quoteTierStep, inputPriceVnd: 1_000_000, outputPriceVnd: 810_000, appliedQuantity: 1 }]) }).lines[0]!;
+  assert.equal(tierOnly.originalPriceText, undefined);
+  assert.equal(tierOnly.promotionPriceText, undefined);
+  const saleOnlyFacts = buildBenefitCheckoutQuoteFacts({
+    paid: [{ groupKey: "g", pancakeVariationId: "var-1", quantity: 1, unitPriceVnd: 900_000, fulfillmentState: "READY", steps: [flashThenTier[0]] as never }],
+    gifts: [], entitlements: [],
+  })!;
+  const saleOnly = buildBenefitCheckoutViewModel({ lines: [flashLine], render: { kind: "BENEFIT", facts: saleOnlyFacts, proof: "p", digest: "d", needsAcknowledgement: false, giftLabels: new Map(), tierDropped: false } }).lines[0]!;
+  assert.deepEqual([saleOnly.originalPriceText, saleOnly.discountPercent, saleOnly.promotionPriceText], [vnd("1.000.000"), 10, undefined]);
+});
+
+test("cart: a line with a Flash Sale AND a tier keeps the sale on the line and lists the tier price apart", () => {
+  const giftState = state({ benefits: { enabled: true, ok: true, subtotalVnd: 810_000, dropped: [], campaignNames: new Map(), groups: [
+    { groupKey: "paid", lineKey: "paid", quantity: 1, unitPriceVnd: 810_000, steps: tierFirstSteps },
+  ] } });
+  const model = buildCartViewModel({ lines: [flashLine], commerceTrackingEnabled: false, benefitCheckoutOpen: true, giftState });
+  const line = model.lines[0]!;
+  assert.equal(line.originalPriceText, vnd("1.000.000"));
+  assert.equal(line.discountPercent, 10);
+  assert.equal(line.priceText, vnd("900.000"));
+  assert.deepEqual(line.paidSegments, [`1 × ${vnd("810.000")}`]);
+});
+
+test("the cart page and the drawer render the sale price whether or not a tier price is also listed", () => {
+  for (const path of ["../../src/app/cart/page.tsx", "../../src/components/brand/cart-drawer.tsx"]) {
+    const source = readFileSync(new URL(path, import.meta.url), "utf8");
+    assert.equal(/paidSegments\s*\?\s*\(?\s*(?:"|line\.paidSegments\.join)/.test(source.replace(/\{line\.paidSegments \? <p/g, "")), false, `${path}: paidSegments must not replace the LinePrice`);
+    assert.ok(source.includes("<LinePrice"), `${path} renders LinePrice`);
+    assert.match(source, /Giá sau ưu đãi/);
+  }
+});

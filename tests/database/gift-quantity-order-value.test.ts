@@ -423,3 +423,16 @@ test("progress: gate OFF has no progress field to read", async () => {
   const quote = await repository.getQuote({ shopId: SHOP, items: items(seed, [2]), now: NOW, env: {} });
   assert.deepEqual(quote.benefits, { enabled: false });
 });
+
+test("progress: a ladder is measured on the price just before ITS step, even for units it allocated 0 ₫ and a later ladder then cut", async () => {
+  // 40 × 1.000 + 1 × 10.000 = 50.000. Ladder A (first): 1 ₫ off from 40.000, 2 ₫ from 60.000; the single ₫ lands on
+  // the 10.000 unit, so the 1.000 units get no step of A's own. Ladder B (second) then halves them.
+  const seed = await seedProduct("zero", [1_000, 10_000]);
+  const peers = [{ peerKind: "QUANTITY_TIER" as const, peerCampaignId: "*" }];
+  await orderCampaign({ id: "zero-a", unit: "FIXED_AMOUNT_TOTAL_VND", tiers: [[40_000, 1], [60_000, 2]], stackingEnabled: true, stackPriority: 1, peers });
+  await orderCampaign({ id: "zero-b", tiers: [[40_000, 50]], stackingEnabled: true, stackPriority: 2, peers });
+  const quote = await benefits(seed, [40, 1]);
+  const a = quote.orderValueProgress.find((entry) => entry.campaignId === `${P}-zero-a`);
+  assert.ok(a, "A is on its first rung, so the next one is offered");
+  assert.deepEqual([a.currentVnd, a.reachedThresholdVnd, a.next.thresholdVnd, a.next.shortfallVnd], [50_000, 40_000, 60_000, 10_000]);
+});
