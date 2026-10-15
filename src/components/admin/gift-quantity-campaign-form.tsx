@@ -177,6 +177,8 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
   const [kind, setKind] = useState<"GIFT_ITEM" | "QUANTITY_TIER">(initialData?.kind ?? "GIFT_ITEM");
   const [giftTrigger, setGiftTrigger] = useState<"" | "QUANTITY" | "ORDER_SUBTOTAL">(initialData?.giftTrigger ?? "");
   const [subtotalScope, setSubtotalScope] = useState<"" | "ALL_PAID_LINES" | "ELIGIBLE_PAID_LINES">(initialData?.subtotalScope ?? "");
+  // What a tier campaign's thresholds count. An order-value ladder is global by definition (owner decision).
+  const [tierBasis, setTierBasis] = useState<"QUANTITY" | "ORDER_SUBTOTAL">(initialData?.tierRule?.basis ?? "QUANTITY");
   const [scopeMode, setScopeMode] = useState<"GLOBAL_ALL_PAID_LINES" | "DYNAMIC_CATEGORY" | "FIXED_PRODUCT_SET">(
     initialData?.scopeMode ?? "DYNAMIC_CATEGORY",
   );
@@ -190,9 +192,19 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
   // Once Scheduled, the trigger decides what the stored thresholds mean, so it is shown but fixed.
   const locked = mode === "edit" && initialData?.status === "SCHEDULED";
   // The global scope is the answer to exactly one question: gift value of the whole order.
-  const globalAllowed = isGift && giftTrigger === "ORDER_SUBTOTAL" && subtotalScope === "ALL_PAID_LINES";
+  const globalAllowed = isGift
+    ? giftTrigger === "ORDER_SUBTOTAL" && subtotalScope === "ALL_PAID_LINES"
+    : tierBasis === "ORDER_SUBTOTAL";
   const isGlobal = scopeMode === "GLOBAL_ALL_PAID_LINES";
 
+  function chooseBasis(next: "QUANTITY" | "ORDER_SUBTOTAL") {
+    setTierBasis(next);
+    setPreview(null);
+    // The database requires an order-value ladder to be global and a quantity ladder not to be, so the
+    // scope follows the basis here and the form can never submit the pairing the server would refuse.
+    if (next === "ORDER_SUBTOTAL") setScopeMode("GLOBAL_ALL_PAID_LINES");
+    else if (isGlobal) setScopeMode("DYNAMIC_CATEGORY");
+  }
   function chooseSubtotalScope(next: "" | "ALL_PAID_LINES" | "ELIGIBLE_PAID_LINES") {
     setSubtotalScope(next);
     setPreview(null);
@@ -252,7 +264,7 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
             <>
               <input name="kind" type="hidden" value={kind} />
               <p className="py-2 text-base" id={`${formId}-kind`}>
-                {isGift ? "Tặng sản phẩm" : "Giảm giá theo số lượng"}
+                {isGift ? "Tặng sản phẩm" : tierBasis === "ORDER_SUBTOTAL" ? "Giảm giá theo giá trị đơn hàng" : "Giảm giá theo số lượng"}
               </p>
               <p className="text-xs text-neutral-700">Không thể đổi loại sau khi đã tạo.</p>
             </>
@@ -271,7 +283,7 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
               value={kind}
             >
               <option value="GIFT_ITEM">Tặng sản phẩm (theo số lượng hoặc giá trị đơn)</option>
-              <option value="QUANTITY_TIER">Giảm giá theo bậc số lượng</option>
+              <option value="QUANTITY_TIER">Giảm giá theo bậc (số lượng hoặc giá trị đơn hàng)</option>
             </select>
           )}
         </div>
@@ -323,13 +335,21 @@ export function GiftQuantityCampaignForm({ mode, categories, initialData, action
 
       {isGift ? <GiftQuantityGiftFields initialOptions={initialData?.giftOptions ?? []} initialRule={initialData?.giftRule ?? null} trigger={giftTrigger} /> : null}
 
-      {!isGift ? <GiftQuantityTierFields campaignId={initialData?.id ?? null} initialRule={initialData?.tierRule ?? null} /> : null}
+      {!isGift ? (
+        <GiftQuantityTierFields
+          basis={tierBasis}
+          basisLocked={locked}
+          campaignId={initialData?.id ?? null}
+          initialRule={initialData?.tierRule ?? null}
+          onBasisChange={chooseBasis}
+        />
+      ) : null}
 
       <fieldset className="border-t border-black/20 pt-6">
         <legend className={labelClassName}>Phạm vi áp dụng</legend>
         {globalAllowed ? (
           <p className="mt-3 border-l-2 border-black bg-black/[0.03] px-4 py-3 text-sm" id={`${formId}-global`} role="note">
-            <strong>Áp dụng giá trị toàn đơn.</strong> Tính trên tất cả sản phẩm trả tiền, không cần chọn danh mục
+            <strong>{isGift ? "Áp dụng giá trị toàn đơn." : "Áp dụng cho toàn bộ giỏ hàng."}</strong> Tính trên tất cả sản phẩm trả tiền, không cần chọn danh mục
             hay sản phẩm.
           </p>
         ) : (

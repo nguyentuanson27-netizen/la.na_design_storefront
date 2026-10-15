@@ -104,7 +104,12 @@ test("draft shape: global scope exists only for gift ORDER_SUBTOTAL + ALL_PAID_L
   assert.deepEqual(validateDraftShape(v({ scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "ORDER_SUBTOTAL" })), ["SUBTOTAL_SCOPE_MISMATCH"]);
   assert.deepEqual(validateDraftShape(v({ scopeMode: "GLOBAL_ALL_PAID_LINES", giftTrigger: "QUANTITY" })), ["GLOBAL_SCOPE_NOT_ALLOWED"]);
   assert.deepEqual(validateDraftShape(v({ scopeMode: "GLOBAL_ALL_PAID_LINES" })), ["GLOBAL_SCOPE_NOT_ALLOWED"]);
-  assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER", scopeMode: "GLOBAL_ALL_PAID_LINES" })), ["GLOBAL_SCOPE_NOT_ALLOWED"]);
+  // A tier campaign may be global only as an order-value ladder. A form with no tier fields leaves the stored rule
+  // alone, so the stored basis decides and the write path (create/edit) answers; the shape check does not guess.
+  assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER", scopeMode: "GLOBAL_ALL_PAID_LINES" })), []);
+  const quantityRule = { unit: "PERCENTAGE", discountedUnits: "ALL_ELIGIBLE_UNITS", selectionPriority: null, tiers: [{ minQuantity: 3, discountValue: 10 }], stackingEnabled: false, stackPriority: null, peers: [] } as const;
+  assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER", scopeMode: "GLOBAL_ALL_PAID_LINES", tierRule: quantityRule })), ["GLOBAL_SCOPE_NOT_ALLOWED"]);
+  assert.deepEqual(validateDraftShape(v({ kind: "QUANTITY_TIER", scopeMode: "GLOBAL_ALL_PAID_LINES", tierRule: { ...quantityRule, basis: "ORDER_SUBTOTAL" } })), []);
 });
 
 test("draft shape: ALL_PAID_LINES needs global, ELIGIBLE_PAID_LINES needs a real scope; incomplete drafts are fine", () => {

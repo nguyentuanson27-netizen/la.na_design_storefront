@@ -6,7 +6,7 @@ import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 export function BrandCartGiftPicker({ model }: Readonly<{ model: CartGiftPickerModel }>) {
   const { pending, message, products, setProducts, change } = useCartGifts();
   if (!model.campaigns.length && !model.selections.length) return null;
-  return <section className="mt-8 border border-black/20 p-5" aria-label="Quà tặng trong giỏ" aria-busy={pending}>
+  return <section id="cart-gifts" className="mt-8 scroll-mt-24 border border-black/20 p-5" aria-label="Quà tặng trong giỏ" aria-busy={pending}>
     <h2 className="text-xl font-semibold">Quà tặng trong giỏ</h2>
     <p className="mt-2 text-sm leading-6">Bạn tự chọn quà muốn nhận, hoặc để trống. Bỏ quà ở đây chưa phải xác nhận bỏ quyền lợi khi đặt hàng.</p>
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà; vui lòng thử lại sau.</p> : null}

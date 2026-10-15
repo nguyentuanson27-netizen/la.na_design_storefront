@@ -154,9 +154,15 @@ function scopeFromRow(row: CampaignRow, override?: ScopePatch): unknown {
   };
 }
 
-/** The global scope exists only for gift + ORDER_SUBTOTAL + ALL_PAID_LINES. */
-function allowsGlobalScope(row: Pick<CampaignRow, "kind" | "giftTrigger" | "subtotalScope">): boolean {
-  return row.kind === "GIFT_ITEM" && row.giftTrigger === "ORDER_SUBTOTAL" && row.subtotalScope === "ALL_PAID_LINES";
+/**
+ * The global scope exists for gift + ORDER_SUBTOTAL + ALL_PAID_LINES, and for an order-value ladder
+ * (which discounts the whole basket and can have no other scope).
+ */
+function allowsGlobalScope(row: Pick<CampaignRow, "kind" | "giftTrigger" | "subtotalScope" | "tierBasis">): boolean {
+  return (
+    (row.kind === "GIFT_ITEM" && row.giftTrigger === "ORDER_SUBTOTAL" && row.subtotalScope === "ALL_PAID_LINES") ||
+    (row.kind === "QUANTITY_TIER" && row.tierBasis === "ORDER_SUBTOTAL")
+  );
 }
 
 /**
@@ -247,7 +253,7 @@ function validateWindow(
 type RuleSource = Pick<
   CampaignRow,
   | "kind" | "giftTrigger" | "minimumQuantity" | "minimumSubtotalVnd" | "subtotalScope" | "awardMode"
-  | "maxGiftsPerOrder" | "allowDuplicateGifts" | "tierUnit" | "tierDiscountedUnits" | "tierSelectionPriority"
+  | "maxGiftsPerOrder" | "allowDuplicateGifts" | "tierBasis" | "tierUnit" | "tierDiscountedUnits" | "tierSelectionPriority"
   | "tiers" | "giftOptions" | "stackingEnabled" | "stackPriority" | "stackPeers"
 >;
 
@@ -261,6 +267,7 @@ function ruleInputOf(row: RuleSource): RuleValidationInput {
     awardMode: row.awardMode,
     maxGiftsPerOrder: row.maxGiftsPerOrder,
     allowDuplicateGifts: row.allowDuplicateGifts,
+    tierBasis: row.tierBasis,
     tierUnit: row.tierUnit,
     tierDiscountedUnits: row.tierDiscountedUnits,
     tierSelectionPriority: row.tierSelectionPriority,
@@ -274,6 +281,7 @@ function ruleInputOf(row: RuleSource): RuleValidationInput {
 
 function tierRuleOfRow(row: RuleSource): TierRuleInput {
   return {
+    basis: row.tierBasis ?? "QUANTITY",
     unit: row.tierUnit,
     discountedUnits: row.tierDiscountedUnits,
     selectionPriority: row.tierSelectionPriority,
@@ -546,6 +554,7 @@ function sameTierRule(a: TierRuleInput, b: TierRuleInput): boolean {
     [...rule.tiers].sort((x, y) => x.minQuantity - y.minQuantity).map((tier) => `${tier.minQuantity}:${tier.discountValue}`).join(",");
   const peers = (rule: TierRuleInput) => JSON.stringify(rule.peers.map((peer) => JSON.stringify([peer.kind, peer.campaignId])).sort());
   return (
+    (a.basis ?? "QUANTITY") === (b.basis ?? "QUANTITY") &&
     a.unit === b.unit &&
     a.discountedUnits === b.discountedUnits &&
     selection(a) === selection(b) &&
@@ -682,6 +691,14 @@ export async function editScheduledGiftQuantityCampaign({
     // A tier rule belongs to a tier campaign; a gift campaign has none to replace.
     if (patch.tierRule !== undefined && row.kind !== "QUANTITY_TIER") {
       return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["TIER_FIELDS_ON_GIFT"] } } as const;
+    }
+    // What a ladder counts decides what its thresholds mean (3 units or 3.000.000 ₫) and which scope it may
+    // have, so, like a gift trigger, it cannot change under a Scheduled campaign: copy it to a new Draft.
+    if (patch.tierRule !== undefined && (patch.tierRule.basis ?? "QUANTITY") !== (row.tierBasis ?? "QUANTITY")) {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["TIER_BASIS_NOT_EDITABLE_WHEN_SCHEDULED"] } } as const;
+    }
+    if (row.tierBasis === "ORDER_SUBTOTAL" && patch.scope !== undefined && patch.scope.scopeMode !== "GLOBAL_ALL_PAID_LINES") {
+      return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["ORDER_BASIS_NEEDS_GLOBAL_SCOPE"] } } as const;
     }
     // ... and a gift rule belongs to a gift campaign. Its fields must fit the stored trigger, which
     // a Scheduled campaign cannot change: a threshold the trigger does not own is refused, not dropped.

@@ -7,6 +7,9 @@ import {
 } from "../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
+import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
+import { describeLineDiscount } from "./line-discount-model.ts";
+import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -45,6 +48,16 @@ export type CheckoutLineView = Readonly<{
   quantity: number;
   /** Benefit quotes only: the price of one unit of this segment, so split prices read as `2 × 400.000 ₫`. */
   unitPriceText: string | null;
+  /** A per-product promotion on this line: the catalog price to strike through. Absent when there is none. */
+  originalPriceText?: string;
+  /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
+  discountPercent?: number;
+  /**
+   * Set only when a quantity / order-value price lowered this line BELOW the price its per-product promotion
+   * left: that promotion price, the one `originalPriceText` and `discountPercent` are measured against.
+   * `unitPriceText` is then the further price after those offers, shown apart from the sale.
+   */
+  promotionPriceText?: string;
   lineTotalText: string;
   /**
    * F8b / §30 — the same `Đặt trước` marker the cart showed for this line, or `null`.
@@ -107,6 +120,10 @@ export type CheckoutViewModel = Readonly<{
   preorderNotice: PreorderFulfillmentNotice | null;
   /** `null` for an ordinary checkout: the gift / quantity-tier section is simply not rendered. */
   benefit: CheckoutBenefitView | null;
+  /** The reached-promotions banner; present only for a benefit checkout that has something to say. */
+  promotions?: PromotionBannerView;
+  /** The bill in reading order (value, discounts, shipping, total). Absent if it could not be made to add up. */
+  summary?: OrderSummaryView;
   /** Why the cart cannot be offered for checkout, when that is more specific than "check your cart". */
   unavailableNotice: string | null;
 }>;
@@ -121,6 +138,40 @@ export function checkoutPixelContentIds(lines: readonly StorefrontCartLine[]): r
   // Preserve the existing slug scheme. Never substitute an internal ID or guess a catalog ID.
   if (lines.some((line) => !(line.metaContentId ?? line.productSlug))) return null;
   return lines.map((line) => (line.metaContentId ?? line.productSlug)!);
+}
+
+function checkoutDiscountEntry(discount: ReturnType<typeof describeLineDiscount>): { originalPriceText?: string; discountPercent?: number } {
+  if (!discount) return {};
+  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+}
+
+/** The per-product (legacy) step on a quote line: catalog price in, price after the promotion out. */
+function legacyStepDiscount(steps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[]) {
+  const step = steps.find((candidate) => candidate.source === "LEGACY");
+  return step ? describeLineDiscount(step.inputPriceVnd, step.outputPriceVnd) : null;
+}
+
+/**
+ * The per-product promotion of a benefit-checkout line, on one basis: the catalog price struck through, the
+ * price its Flash Sale / clearance leaves, and the percentage between exactly those two. Both come from the
+ * cart line (a per-product promotion priced alone), never from the quote's legacy step, whose input is the
+ * price after any tier ordered before it. A quantity or order-value price below that is named separately
+ * (`promotionPriceText`), so no label ever sits beside a price it was not computed for.
+ */
+function paidLineDiscount(
+  cartLine: StorefrontCartLine | undefined,
+  fact: Readonly<{ unitPriceVnd: number; discountSteps: readonly Readonly<{ source: string; inputPriceVnd: number; outputPriceVnd: number }>[] }>,
+): { originalPriceText?: string; discountPercent?: number; promotionPriceText?: string } {
+  const tierApplied = fact.discountSteps.some((step) => step.source === "QUANTITY_TIER");
+  // Without the cart line's own catalog price the quote's legacy step is the only evidence, and it is a
+  // sound one only when no tier ran before it (a tier's output is then not the catalog price).
+  if (cartLine?.basePrice === undefined || cartLine.basePrice === null) return tierApplied ? {} : checkoutDiscountEntry(legacyStepDiscount(fact.discountSteps));
+  const discount = describeLineDiscount(cartLine.basePrice, cartLine.price);
+  if (!discount) return {};
+  return {
+    ...checkoutDiscountEntry(discount),
+    ...(cartLine.price !== null && fact.unitPriceVnd < cartLine.price ? { promotionPriceText: currency.format(cartLine.price) } : {}),
+  };
 }
 
 export function buildCheckoutViewModel(
@@ -157,6 +208,12 @@ export function buildCheckoutViewModel(
   }
 
   const totals = input.totals;
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: totals.merchandiseSubtotalVnd,
+    discounts: [],
+    shippingFeeVnd: totals.shippingFeeVnd,
+    expectedTotalVnd: totals.totalVnd,
+  });
 
   return Object.freeze({
     state: "ready",
@@ -168,7 +225,10 @@ export function buildCheckoutViewModel(
           primaryImage: line.media.primary,
           optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
           lineKey: line.variantId,
-          unitPriceText: null,
+          // The charged unit price: a struck-through catalog price is only honest beside the price paid, and
+          // the line total on the right cannot stand in for it when more than one is bought.
+          unitPriceText: line.price === null ? null : currency.format(line.price),
+          ...checkoutDiscountEntry(describeLineDiscount(line.basePrice, line.price)),
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
           lineTotalText: currency.format((line.price ?? 0) * line.quantity),
@@ -185,6 +245,7 @@ export function buildCheckoutViewModel(
     quoteProof: input.quoteProof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     benefit: null,
+    ...(summary ? { summary } : {}),
     unavailableNotice: null,
   });
 }
@@ -258,6 +319,7 @@ export function buildBenefitCheckoutViewModel(
         optionLabel: cartLine ? [cartLine.color, cartLine.size].filter(Boolean).join(" / ") || "Biến thể" : "Biến thể",
         quantity: fact.quantity,
         unitPriceText: currency.format(fact.unitPriceVnd),
+        ...paidLineDiscount(cartLine, fact),
         lineTotalText: currency.format(fact.lineTotalVnd),
         preorderLabel: fact.fulfillmentState === "PREORDER" ? PREORDER_LABEL : null,
       }),
@@ -275,6 +337,28 @@ export function buildBenefitCheckoutViewModel(
     { entitled: 0, selected: 0, unclaimed: 0, skippedWhileAvailable: 0, shortForStock: 0 },
   );
 
+  const giftQuantity = giftLines.reduce((sum, line) => sum + line.quantity, 0);
+  // Savings are measured against the price each line is listed at (per-product promotions only), which
+  // is also what "Tổng giá trị đơn hàng" must come to; a paid line with no listed price proves nothing.
+  const listedUnitPrices = new Map(
+    input.lines.flatMap((line) => (line.pancakeVariationId === null || !line.available || line.price === null ? [] : [[line.pancakeVariationId, line.price] as const])),
+  );
+  const paidFacts = facts.lines.filter((fact) => fact.role === "PAID");
+  const listedValueVnd = paidFacts.every((fact) => listedUnitPrices.has(fact.pancakeVariationId))
+    ? paidFacts.reduce((sum, fact) => sum + listedUnitPrices.get(fact.pancakeVariationId)! * fact.quantity, 0)
+    : null;
+  const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames, listedUnitPrices);
+  const summary = listedValueVnd === null
+    ? null
+    : buildOrderSummary({
+        goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
+        discounts: promotions?.savings ?? [],
+        shippingFeeVnd: facts.shippingFeeVnd,
+        giftQuantity,
+        expectedTotalVnd: facts.totalVnd,
+        expectedValueVnd: listedValueVnd,
+      });
+
   return Object.freeze({
     state: "ready",
     lines: Object.freeze(paidLines),
@@ -288,7 +372,7 @@ export function buildBenefitCheckoutViewModel(
     benefit: Object.freeze({
       digest: render.digest,
       giftLines: Object.freeze(giftLines),
-      giftQuantity: giftLines.reduce((sum, line) => sum + line.quantity, 0),
+      giftQuantity,
       slots: Object.freeze(slots),
       needsAcknowledgement: render.needsAcknowledgement,
       unclaimedText: slotText(slots),
@@ -299,6 +383,8 @@ export function buildBenefitCheckoutViewModel(
         ? "Ưu đãi giảm theo số lượng không còn áp dụng vì mức giảm không còn hợp lệ với giá hiện tại. Giá bên dưới đã được tính lại; hãy kiểm tra trước khi đặt hàng."
         : null,
     }),
+    ...(promotions ? { promotions } : {}),
+    ...(summary ? { summary } : {}),
     unavailableNotice: null,
   });
 }

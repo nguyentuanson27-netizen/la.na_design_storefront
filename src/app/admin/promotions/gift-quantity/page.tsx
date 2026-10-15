@@ -31,6 +31,8 @@ const STATUS_LABELS: Record<string, string> = {
   DISABLED: "Đã tắt",
 };
 const KIND_LABELS = { GIFT_ITEM: "Tặng sản phẩm", QUANTITY_TIER: "Giảm giá theo số lượng" } as const;
+const kindLabel = (campaign: { kind: keyof typeof KIND_LABELS; tierBasis: "QUANTITY" | "ORDER_SUBTOTAL" | null }) =>
+  campaign.tierBasis === "ORDER_SUBTOTAL" ? "Giảm giá theo giá trị đơn hàng" : KIND_LABELS[campaign.kind];
 const SCOPE_LABELS = {
   GLOBAL_ALL_PAID_LINES: "Toàn đơn",
   DYNAMIC_CATEGORY: "Theo danh mục (tự cập nhật)",
@@ -230,7 +232,7 @@ export default async function GiftQuantityAdminPage({ searchParams }: PageProps)
               {campaigns.map((campaign) => (
                 <tr className="border-b border-black/10 align-top" key={campaign.id}>
                   <th className="py-4 pr-4 font-medium" scope="row">{campaign.name}</th>
-                  <td className="py-4 pr-4">{KIND_LABELS[campaign.kind]}</td>
+                  <td className="py-4 pr-4">{kindLabel(campaign)}</td>
                   <td className="py-4 pr-4">
                     {SCOPE_LABELS[campaign.scopeMode]}
                     {campaign.scopeMode !== "GLOBAL_ALL_PAID_LINES"

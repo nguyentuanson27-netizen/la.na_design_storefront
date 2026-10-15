@@ -3,6 +3,9 @@ import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { LinePrice } from "@/components/brand/line-price";
+import { OrderSummary } from "@/components/brand/order-summary";
+import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
 import { loadCheckoutRoute, type CheckoutRouteProps } from "@/routes/checkout";
@@ -76,8 +79,22 @@ function render(data: CheckoutViewModel) {
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
               {line.optionLabel} · SL {line.quantity}
-              {line.unitPriceText === null ? null : ` × ${line.unitPriceText}`}
+              {line.unitPriceText === null || line.originalPriceText ? null : ` × ${line.unitPriceText}`}
             </p>
+            {line.originalPriceText ? (
+              <p className="mt-1 text-xs leading-5 text-black/75">
+                <LinePrice
+                  discountPercent={line.discountPercent}
+                  originalPriceText={line.originalPriceText}
+                  priceText={line.promotionPriceText ?? line.unitPriceText ?? ""}
+                />
+                {line.promotionPriceText && line.unitPriceText ? (
+                  <span className="ml-1.5" data-line-after-offers>
+                    · Giá sau ưu đãi: {line.unitPriceText}
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
             {line.preorderLabel === null ? null : (
               <p
                 className="mt-1 inline-flex items-center border border-black px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.12em]"
@@ -108,7 +125,10 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  const totalsBlock = (
+  // The older block is only the fallback for a quote the bill below could not be made to add up for, so a
+  // shopper never sees lines that do not sum to the total. "Tạm tính" is already net of every cart-level
+  // discount, so no saving is printed beneath it: that would take the same discount off twice.
+  const fallbackTotals = (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">Tạm tính</dt>
@@ -125,10 +145,15 @@ function render(data: CheckoutViewModel) {
         <dd>{totals.shippingText}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
-        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng dự kiến</dt>
+        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng thanh toán</dt>
         <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
       </div>
     </dl>
+  );
+
+  // The bill in reading order: value, each discount, shipping, total.
+  const totalsBlock = (
+    data.summary ? <OrderSummary summary={data.summary} /> : fallbackTotals
   );
 
   const summaryContent = (
@@ -190,6 +215,7 @@ function render(data: CheckoutViewModel) {
         breakpoint, keep one of each region in the accessibility tree and leave the hidden copy's
         images unfetched.
       */}
+      <PromotionBanner className="mt-8" view={data.promotions} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}

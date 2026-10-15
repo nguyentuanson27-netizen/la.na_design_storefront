@@ -30,6 +30,8 @@ export type AdminGiftQuantityCampaignRow = Readonly<{
   id: string;
   name: string;
   kind: "GIFT_ITEM" | "QUANTITY_TIER";
+  /** What a QUANTITY_TIER campaign's thresholds count; null for a gift campaign. NULL in storage reads as QUANTITY. */
+  tierBasis: "QUANTITY" | "ORDER_SUBTOTAL" | null;
   status: CampaignLifecycleStatus;
   canReEnable: boolean;
   isTerminal: boolean;
@@ -81,7 +83,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       orderBy: [{ createdAt: "desc" }, { id: "asc" }],
       take,
       select: {
-        id: true, name: true, kind: true, startsAt: true, endsAt: true, isEnabled: true, enabledAt: true, disabledAt: true,
+        id: true, name: true, kind: true, tierBasis: true, startsAt: true, endsAt: true, isEnabled: true, enabledAt: true, disabledAt: true,
         scopeMode: true, categoryKeys: true, frozenAt: true, revision: true,
         targets: { select: { role: true } },
       },
@@ -92,6 +94,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
         id: row.id,
         name: row.name,
         kind: row.kind,
+        tierBasis: row.kind === "QUANTITY_TIER" ? row.tierBasis ?? "QUANTITY" : null,
         status: lifecycle.status,
         canReEnable: lifecycle.canReEnable,
         isTerminal: lifecycle.isTerminal,
@@ -114,7 +117,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       select: {
         id: true, name: true, kind: true, startsAt: true, endsAt: true, isEnabled: true, enabledAt: true, disabledAt: true,
         scopeMode: true, categoryKeys: true, frozenAt: true, revision: true, giftTrigger: true, subtotalScope: true,
-        tierUnit: true, tierDiscountedUnits: true, tierSelectionPriority: true, stackingEnabled: true, stackPriority: true,
+        tierBasis: true, tierUnit: true, tierDiscountedUnits: true, tierSelectionPriority: true, stackingEnabled: true, stackPriority: true,
         minimumQuantity: true, minimumSubtotalVnd: true, awardMode: true, maxGiftsPerOrder: true, allowDuplicateGifts: true,
         giftOptions: { select: { variantId: true }, orderBy: { variantId: "asc" } },
         tiers: { select: { minQuantity: true, discountValue: true }, orderBy: { minQuantity: "asc" } },
@@ -139,6 +142,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       id: row.id,
       name: row.name,
       kind: row.kind,
+      tierBasis: row.kind === "QUANTITY_TIER" ? row.tierBasis ?? "QUANTITY" : null,
       status: lifecycle.status,
       canReEnable: lifecycle.canReEnable,
       isTerminal: lifecycle.isTerminal,
@@ -158,6 +162,7 @@ export function createGiftQuantityAdminRepository(client: PrismaClient) {
       frozenCount,
       frozenPreview: frozenRows.map((entry) => entry.product),
       tierRule: row.kind === "QUANTITY_TIER" ? {
+        basis: row.tierBasis ?? "QUANTITY",
         unit: row.tierUnit,
         discountedUnits: row.tierDiscountedUnits,
         selectionPriority: row.tierSelectionPriority,

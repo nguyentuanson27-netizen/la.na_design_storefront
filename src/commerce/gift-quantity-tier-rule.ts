@@ -11,11 +11,18 @@
  *   these and still be saved; publish and Scheduled edits are refused until they hold.
  */
 
-import { MAX_TIERS_PER_CAMPAIGN, validateTierConfig, type QuantityTierConfig } from "./gift-quantity-tier.ts";
+import {
+  MAX_ORDER_SUBTOTAL_THRESHOLD_VND,
+  MAX_TIERS_PER_CAMPAIGN,
+  validateTierConfig,
+  type QuantityTierConfig,
+} from "./gift-quantity-tier.ts";
 import { MAX_STACK_PRIORITY } from "./gift-quantity-stack-priority.ts";
 import type { StackPeer, StackPeerKind } from "./gift-quantity-stack.ts";
 
-export const TIER_UNITS = ["PERCENTAGE", "FIXED_AMOUNT_PER_UNIT_VND"] as const;
+export const TIER_UNITS = ["PERCENTAGE", "FIXED_AMOUNT_PER_UNIT_VND", "FIXED_AMOUNT_TOTAL_VND"] as const;
+/** What a ladder's thresholds count: units in the basket, or the paid order value in VND. */
+export const TIER_BASES = ["QUANTITY", "ORDER_SUBTOTAL"] as const;
 export const TIER_DISCOUNTED_UNITS = ["ALL_ELIGIBLE_UNITS", "FROM_REACHED_THRESHOLD"] as const;
 export const TIER_SELECTION_PRIORITIES = ["CHEAPEST_FIRST", "MOST_EXPENSIVE_FIRST"] as const;
 /**
@@ -33,6 +40,11 @@ const MAX_TIER_THRESHOLD = 1_000_000;
 const MAX_TIER_VALUE = 2_000_000_000;
 
 export type TierRuleInput = Readonly<{
+  /**
+   * What the thresholds count. Absent or `null` means `QUANTITY`: a rule that does not name a basis
+   * is the rule every ladder was before the order-value basis existed.
+   */
+  basis?: (typeof TIER_BASES)[number] | null;
   unit: (typeof TIER_UNITS)[number] | null;
   discountedUnits: (typeof TIER_DISCOUNTED_UNITS)[number] | null;
   selectionPriority: (typeof TIER_SELECTION_PRIORITIES)[number] | null;
@@ -43,6 +55,7 @@ export type TierRuleInput = Readonly<{
 }>;
 
 export type TierRuleParseReason =
+  | "INVALID_TIER_BASIS"
   | "INVALID_TIER_UNIT"
   | "INVALID_TIER_DISCOUNTED_UNITS"
   | "INVALID_TIER_SELECTION_PRIORITY"
@@ -96,6 +109,7 @@ function boundedStrings(formData: FormData, field: string, limit: number): strin
 /** The form fields that make up the tier rule. A form that carries none of them leaves a stored rule alone. */
 const TIER_RULE_FIELDS = [
   "tierRuleForm",
+  "tierBasis",
   "tierUnit",
   "tierDiscountedUnits",
   "tierSelectionPriority",
@@ -112,6 +126,8 @@ export function formCarriesTierRule(formData: FormData): boolean {
 
 /** Parses the tier fields of an admin form. Everything is strict: nothing is coerced or repaired. */
 export function parseTierRuleForm(formData: FormData): ParsedTierRule {
+  const basis = optionalAllowlisted(formData, "tierBasis", TIER_BASES);
+  if (basis === undefined) return { ok: false, reason: "INVALID_TIER_BASIS" };
   const unit = optionalAllowlisted(formData, "tierUnit", TIER_UNITS);
   if (unit === undefined) return { ok: false, reason: "INVALID_TIER_UNIT" };
   const discountedUnits = optionalAllowlisted(formData, "tierDiscountedUnits", TIER_DISCOUNTED_UNITS);
@@ -167,10 +183,14 @@ export function parseTierRuleForm(formData: FormData): ParsedTierRule {
     peers.push({ kind: entry.slice(0, separator) as StackPeerKind, campaignId: entry.slice(separator + 1) });
   }
 
-  return { ok: true, value: { unit, discountedUnits, selectionPriority, tiers, stackingEnabled, stackPriority, peers } };
+  return { ok: true, value: { basis, unit, discountedUnits, selectionPriority, tiers, stackingEnabled, stackPriority, peers } };
 }
 
 export type TierRuleStructureError =
+  | "INVALID_TIER_BASIS"
+  | "TIER_UNIT_BASIS_MISMATCH"
+  | "TIER_ORDER_BASIS_WHOLE_ORDER_ONLY"
+  | "TIER_TOTAL_NOT_BELOW_THRESHOLD"
   | "INVALID_TIER_UNIT"
   | "INVALID_TIER_DISCOUNTED_UNITS"
   | "INVALID_TIER_SELECTION_PRIORITY"
@@ -191,7 +211,18 @@ export type TierRuleStructureError =
 export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRuleStructureError[] {
   const errors = new Set<TierRuleStructureError>();
   // Services also accept typed inputs directly; the form parser is not their validation boundary.
+  const basis = rule.basis ?? "QUANTITY";
+  if (!(TIER_BASES as readonly string[]).includes(basis)) errors.add("INVALID_TIER_BASIS");
+  const byOrderValue = basis === "ORDER_SUBTOTAL";
   if (rule.unit !== null && !(TIER_UNITS as readonly string[]).includes(rule.unit)) errors.add("INVALID_TIER_UNIT");
+  // The database refuses these pairings, so a Draft must not be able to hold them: a per-unit amount is
+  // a quantity idea, a total off the order is an order-value idea.
+  if (byOrderValue && rule.unit === "FIXED_AMOUNT_PER_UNIT_VND") errors.add("TIER_UNIT_BASIS_MISMATCH");
+  if (!byOrderValue && rule.unit === "FIXED_AMOUNT_TOTAL_VND") errors.add("TIER_UNIT_BASIS_MISMATCH");
+  // An order value is discounted as a whole: no "from the threshold" slice and no ordering of units.
+  if (byOrderValue && ((rule.discountedUnits !== null && rule.discountedUnits !== "ALL_ELIGIBLE_UNITS") || rule.selectionPriority !== null)) {
+    errors.add("TIER_ORDER_BASIS_WHOLE_ORDER_ONLY");
+  }
   if (rule.discountedUnits !== null && !(TIER_DISCOUNTED_UNITS as readonly string[]).includes(rule.discountedUnits)) errors.add("INVALID_TIER_DISCOUNTED_UNITS");
   if (rule.selectionPriority !== null && !(TIER_SELECTION_PRIORITIES as readonly string[]).includes(rule.selectionPriority)) errors.add("INVALID_TIER_SELECTION_PRIORITY");
   if (typeof rule.stackingEnabled !== "boolean") errors.add("INVALID_STACKING_FLAG");
@@ -200,7 +231,7 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
 
   const thresholds = new Set<number>();
   for (const tier of rule.tiers) {
-    if (!Number.isSafeInteger(tier.minQuantity) || tier.minQuantity < 1 || tier.minQuantity > MAX_TIER_THRESHOLD) {
+    if (!Number.isSafeInteger(tier.minQuantity) || tier.minQuantity < 1 || tier.minQuantity > (byOrderValue ? MAX_ORDER_SUBTOTAL_THRESHOLD_VND : MAX_TIER_THRESHOLD)) {
       errors.add("TIER_THRESHOLD_OUT_OF_RANGE");
     }
     if (thresholds.has(tier.minQuantity)) errors.add("TIER_THRESHOLD_DUPLICATE");
@@ -209,6 +240,9 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
       errors.add("TIER_VALUE_OUT_OF_RANGE");
     } else if (rule.unit === "PERCENTAGE" && tier.discountValue > 99) {
       errors.add("TIER_PERCENT_OUT_OF_RANGE");
+    } else if (rule.unit === "FIXED_AMOUNT_TOTAL_VND" && tier.discountValue >= tier.minQuantity) {
+      // Also a database check: an order must stay above the amount taken off it.
+      errors.add("TIER_TOTAL_NOT_BELOW_THRESHOLD");
     }
   }
 
@@ -235,6 +269,8 @@ export function validateTierRuleStructure(rule: TierRuleInput): readonly TierRul
 }
 
 export type TierRulePublishError =
+  | "BASIS_INVALID"
+  | "DISCOUNT_NOT_BELOW_THRESHOLD"
   | "TIER_CONFIG_INCOMPLETE"
   | "TIERS_EMPTY"
   | "TIERS_TOO_MANY"
@@ -253,6 +289,7 @@ export type TierRulePublishError =
 export function toQuantityTierConfig(rule: TierRuleInput): QuantityTierConfig | null {
   if (rule.unit === null || rule.discountedUnits === null) return null;
   return {
+    ...(rule.basis === "ORDER_SUBTOTAL" ? { basis: "ORDER_SUBTOTAL" as const } : {}),
     unit: rule.unit,
     discountedUnits: rule.discountedUnits,
     selectionPriority: rule.selectionPriority,

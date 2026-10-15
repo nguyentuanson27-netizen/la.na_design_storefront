@@ -8,6 +8,10 @@ import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
+import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
+import { describeLineDiscount } from "./line-discount-model.ts";
+import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
+import { calculateGuestShippingFeeVnd, type GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -32,6 +36,10 @@ export type CartLineView = Readonly<{
   optionLabel: string;
   quantity: number;
   priceText: string;
+  /** A per-product promotion: the catalog price to strike through. Absent on an undiscounted line. */
+  originalPriceText?: string;
+  /** Whole percent off for that promotion; absent when there is none or it rounds under 1%. */
+  discountPercent?: number;
   available: boolean;
   /** "Có thể mua", or the reason it is not. */
   availabilityLabel: string;
@@ -68,6 +76,14 @@ export type CartViewModel = Readonly<{
    */
   preorderNotice: PreorderFulfillmentNotice | null;
   gifts?: CartGiftPickerModel;
+  /** Reached promotions and progress toward the next gift slot; absent when there is nothing to say. */
+  promotions?: PromotionBannerView;
+  /**
+   * The bill, in reading order: order value, each discount, shipping, total. Present only when the server
+   * supplied the shipping policy and the basket has nothing the bill could not honestly add up (every line
+   * buyable, benefits readable), so a cart that cannot be bought never shows a total.
+   */
+  summary?: OrderSummaryView;
   benefitsNotice?: string;
 }>;
 
@@ -124,6 +140,63 @@ export function canTrackLegacyCartPrices(input: Readonly<{
     paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
 }
 
+/**
+ * The unit price each cart line is listed at -- the price its per-product promotion leaves, which is what
+ * the line shows. Cart-level savings are measured against this, so the money block adds up to the lines.
+ */
+function listedUnitPrices(lines: readonly StorefrontCartLine[]): ReadonlyMap<string, number> {
+  return new Map(lines.flatMap((line) => (line.available && line.price !== null ? [[line.variantId, line.price] as const] : [])));
+}
+
+function summaryEntry(
+  input: Readonly<{ lines: readonly StorefrontCartLine[]; shippingPolicy?: GuestShippingPolicy; benefitsUnavailable?: boolean }>,
+  subtotal: number | null,
+  benefitSubtotal: number | undefined,
+  state: CartGiftState | undefined,
+  blocked: boolean,
+  hasUnavailableLines: boolean,
+): { summary?: OrderSummaryView } {
+  if (input.shippingPolicy === undefined || input.benefitsUnavailable || blocked || hasUnavailableLines || subtotal === null) return {};
+  const quantity = input.lines.reduce((sum, line) => sum + line.quantity, 0);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return {};
+  const goodsAfterDiscounts = benefitSubtotal ?? subtotal;
+  let shippingFeeVnd: number;
+  try {
+    // Same rule checkout applies: on the goods after discounts and the paid quantity.
+    shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: goodsAfterDiscounts, totalQuantity: quantity }, input.shippingPolicy);
+  } catch {
+    return {};
+  }
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: goodsAfterDiscounts,
+    discounts: buildCartPromotionView(state, listedUnitPrices(input.lines))?.savings ?? [],
+    shippingFeeVnd,
+  });
+  // The lines' own prices are the order value: if the discounts do not close the gap exactly, say nothing.
+  return summary === null || (state !== undefined && summary.valueText !== currency.format(subtotal)) ? {} : { summary };
+}
+
+function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
+  const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
+  if (!discount) return {};
+  return { originalPriceText: discount.originalPriceText, ...(discount.percent === null ? {} : { discountPercent: discount.percent }) };
+}
+
+/**
+ * The banner is withheld while benefits cannot be trusted: a cart whose quote is unreadable or whose
+ * stored gift choice no longer validates already says so through `benefitsNotice`, and a green
+ * "reached" banner beside that notice would contradict it.
+ */
+function promotionsEntry(
+  state: CartGiftState | undefined,
+  blocked: boolean | undefined,
+  lines: readonly StorefrontCartLine[],
+): { promotions?: PromotionBannerView } {
+  if (blocked || !state) return {};
+  const promotions = buildCartPromotionView(state, listedUnitPrices(lines));
+  return promotions ? { promotions } : {};
+}
+
 export function buildCartViewModel(
   input: Readonly<{
     lines: readonly StorefrontCartLine[];
@@ -132,6 +205,11 @@ export function buildCartViewModel(
     benefitsUnavailable?: boolean;
     /** GQ19: checkout can take a cart with gifts or split-price segments (the POS shop is verified for them). */
     benefitCheckoutOpen?: boolean;
+    /**
+     * The shipping policy, read on the server (it comes from the environment, which a browser bundle cannot
+     * see). Without it the model builds no `summary`.
+     */
+    shippingPolicy?: GuestShippingPolicy;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -166,6 +244,7 @@ export function buildCartViewModel(
             [line.color, line.size].filter(Boolean).join(" / ") || "Màu / Kích cỡ không khả dụng",
           quantity: line.quantity,
           priceText: line.price === null ? "Giá đang cập nhật" : currency.format(line.price),
+          ...lineDiscountEntry(line),
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
@@ -183,6 +262,8 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
+    ...promotionsEntry(state, benefitBlocked, input.lines),
+    ...summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
       : tierPriceInvalid

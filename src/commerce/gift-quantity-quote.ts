@@ -33,6 +33,7 @@ import {
 } from "./gift-quantity-candidate-repository.ts";
 import { buildScopeResolver, type ScopeProductFacts } from "./gift-quantity-scope.ts";
 import {
+  isValidTierConfig,
   priceStack,
   STACK_LINE_KEY_PATTERN,
   type StackDroppedCampaign,
@@ -43,7 +44,7 @@ import {
   type StackPeer,
   type StackTierParticipant,
 } from "./gift-quantity-stack.ts";
-import type { QuantityTierConfig } from "./gift-quantity-tier.ts";
+import type { QuantityTierConfig, TierDiscountUnit } from "./gift-quantity-tier.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
 /** A purchasable, priced cart line as the legacy authority resolved it. */
@@ -60,6 +61,20 @@ export type QuoteCartLine = Readonly<{
   legacy: Readonly<{ campaign: ApplicablePromotionCampaign; effectivePriceVnd: number }> | null;
 }>;
 
+/**
+ * How far the cart is from the next rung of an order-value ladder (a "spend X more to take Y off" nudge).
+ * Only ever produced for a ladder that would genuinely apply on this cart: one that would be dropped for
+ * not being allowed to stack with what the cart already carries is never advertised.
+ */
+export type OrderValueProgress = Readonly<{
+  campaignId: string;
+  /** The paid order value the ladder is judged on, at its place in the chain (after every other step). */
+  currentVnd: number;
+  /** The highest rung already reached, or `null` before the first. */
+  reachedThresholdVnd: number | null;
+  next: Readonly<{ thresholdVnd: number; unit: TierDiscountUnit; value: number; shortfallVnd: number }>;
+}>;
+
 export type GiftQuantityQuote =
   | Readonly<{ enabled: false }>
   | Readonly<{
@@ -71,6 +86,10 @@ export type GiftQuantityQuote =
       dropped: readonly StackDroppedCampaign[];
       /** Revisions of the tier campaigns that were evaluated, for quote provenance. */
       campaignRevisions: ReadonlyMap<string, number>;
+      /** Admin-given names of those campaigns, for display only (never part of any proof). */
+      campaignNames: ReadonlyMap<string, string>;
+      /** Display only: the next rung of each order-value ladder that could still apply. Never part of a proof. */
+      orderValueProgress: readonly OrderValueProgress[];
     }>
   | Readonly<{ enabled: true; ok: false; reason: "LOOKUP_FAILED" | "INPUT_INVALID" }>;
 
@@ -81,6 +100,8 @@ export const readNoLegacyConsents: LegacyConsentReader = async () => new Map();
 
 function tierConfigOf(record: ActiveGiftQuantityCampaign["campaign"]): QuantityTierConfig {
   return {
+    // NULL is a ladder written before the order-value basis existed: it counts units.
+    ...(record.tierBasis === "ORDER_SUBTOTAL" ? { basis: "ORDER_SUBTOTAL" as const } : {}),
     // An incomplete campaign carries nulls; the tier validator rejects it and the stack drops it
     // with TIER_CONFIG_INVALID rather than pricing from a guess.
     unit: record.tierUnit as QuantityTierConfig["unit"],
@@ -139,6 +160,85 @@ function validConsents(consents: StackLegacyConsent): boolean {
   return true;
 }
 
+/** An order-value ladder forced to apply to any non-empty cart, to ask the stack whether it may stack. */
+const FORCED_ORDER_LADDER: QuantityTierConfig = {
+  basis: "ORDER_SUBTOTAL", unit: "PERCENTAGE", discountedUnits: "ALL_ELIGIBLE_UNITS", selectionPriority: null,
+  tiers: [{ minQuantity: 1, discountValue: 1 }],
+};
+
+function readOrderValueProgress({
+  tierCampaigns,
+  tiers,
+  stackLines,
+  legacyConsents,
+  result,
+}: Readonly<{
+  tierCampaigns: readonly ActiveGiftQuantityCampaign[];
+  tiers: readonly StackTierParticipant[];
+  stackLines: readonly StackInputLine[];
+  legacyConsents: StackLegacyConsent;
+  result: Extract<ReturnType<typeof priceStack>, { ok: true }>;
+}>): readonly OrderValueProgress[] {
+  const dropped = new Set(result.dropped.map((entry) => entry.campaignId));
+  const progress: OrderValueProgress[] = [];
+  for (const entry of tierCampaigns) {
+    const config = tierConfigOf(entry.campaign);
+    const id = entry.campaign.id;
+    if (config.basis !== "ORDER_SUBTOTAL" || dropped.has(id) || !isValidTierConfig(config)) continue;
+
+    // The value the ladder is judged on: each group at the price it had just before this ladder's own step
+    // (the ladder runs last, so a group it did not touch is simply at its final price).
+    // Order ladders run last, in (priority, id) order. A group this ladder left whole has no step of its own,
+    // yet a ladder that ran AFTER it may have cut that group's price further, so its final price is not what
+    // this ladder saw: it is the input of the first later ladder's step, else (nothing ran after) its final price.
+    const sortKey = (tier: StackTierParticipant): [number, string] => [tier.priority ?? Number.MAX_SAFE_INTEGER, tier.id];
+    const mine = tiers.find((tier) => tier.id === id);
+    const [myPriority, myId] = mine === undefined ? [Number.MAX_SAFE_INTEGER, id] : sortKey(mine);
+    const laterLadders = new Set(
+      tiers
+        .filter((tier) => tier.id !== id && tier.config.basis === "ORDER_SUBTOTAL")
+        .filter((tier) => {
+          const [priority, tierId] = sortKey(tier);
+          return priority > myPriority || (priority === myPriority && tierId > myId);
+        })
+        .map((tier) => tier.id),
+    );
+    let currentVnd = 0;
+    for (const group of result.groups) {
+      const own = group.steps.find((step) => step.campaignId === id && step.source === "QUANTITY_TIER");
+      const later = group.steps.find((step) => step.source === "QUANTITY_TIER" && laterLadders.has(step.campaignId));
+      const before = own?.inputPriceVnd ?? later?.inputPriceVnd ?? group.unitPriceVnd;
+      currentVnd += group.quantity * before;
+    }
+    if (!Number.isSafeInteger(currentVnd)) continue;
+
+    const rungs = [...config.tiers].sort((a, b) => a.minQuantity - b.minQuantity);
+    const reached = [...rungs].reverse().find((rung) => rung.minQuantity <= currentVnd) ?? null;
+    const next = rungs.find((rung) => rung.minQuantity > currentVnd);
+    if (next === undefined) continue; // already on the top rung: nothing left to advertise
+
+    // A ladder still under its first rung took no part in conflict detection, so the real run cannot say
+    // whether it may stack with this cart. Ask the same engine with the ladder forced on: if it would be
+    // set aside, promising it would be a promise the checkout then breaks.
+    if (reached === null) {
+      const forced = priceStack({
+        lines: stackLines,
+        tiers: tiers.map((tier) => (tier.id === id ? { ...tier, config: FORCED_ORDER_LADDER } : tier)),
+        legacyConsents,
+      });
+      if (!forced.ok || forced.dropped.some((entry) => entry.campaignId === id)) continue;
+    }
+
+    progress.push(Object.freeze({
+      campaignId: id,
+      currentVnd,
+      reachedThresholdVnd: reached === null ? null : reached.minQuantity,
+      next: Object.freeze({ thresholdVnd: next.minQuantity, unit: config.unit, value: next.discountValue, shortfallVnd: next.minQuantity - currentVnd }),
+    }));
+  }
+  return progress.sort((a, b) => (a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0));
+}
+
 export async function resolveGiftQuantityQuote({
   lines,
   now,
@@ -157,7 +257,7 @@ export async function resolveGiftQuantityQuote({
 
   // A cart with nothing purchasable has no paid lines to price; that is a valid, empty quote.
   if (lines.length === 0) {
-    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map() };
+    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map(), orderValueProgress: [] };
   }
 
   const productIds = [...new Set(lines.map((line) => line.productId))];
@@ -209,6 +309,8 @@ export async function resolveGiftQuantityQuote({
   const result = priceStack({ lines: stackLines, tiers, legacyConsents });
   if (!result.ok) return { enabled: true, ok: false, reason: "INPUT_INVALID" };
 
+  const orderValueProgress = readOrderValueProgress({ tierCampaigns, tiers, stackLines, legacyConsents, result });
+
   return {
     enabled: true,
     ok: true,
@@ -216,5 +318,7 @@ export async function resolveGiftQuantityQuote({
     subtotalVnd: result.subtotalVnd,
     dropped: result.dropped,
     campaignRevisions: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.revision])),
+    campaignNames: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.name])),
+    orderValueProgress,
   };
 }

@@ -56,7 +56,7 @@ test("parse: a full tier form becomes a typed rule; blank rows are skipped", () 
 
 test("parse: an empty form is an empty, unset rule", () => {
   const value = parsed([]);
-  assert.deepEqual(value, { unit: null, discountedUnits: null, selectionPriority: null, tiers: [], stackingEnabled: false, stackPriority: null, peers: [] });
+  assert.deepEqual(value, { basis: null, unit: null, discountedUnits: null, selectionPriority: null, tiers: [], stackingEnabled: false, stackPriority: null, peers: [] });
 });
 
 test("parse: refuses unknown enums, non-integers, ragged rows and bad priorities without repairing them", () => {
