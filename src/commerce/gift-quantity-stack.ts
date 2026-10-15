@@ -197,20 +197,32 @@ export function priceStack(input: StackInput): StackResult {
   const ladders = input.tiers.filter(isOrderLadder);
   if (ladders.length === 0) return solveStack(input);
 
-  // An order-value ladder is judged on what the shopper would pay after every other step. Whether it
-  // is reached is therefore decided on the cart priced WITHOUT any ladder: only a ladder that really is
-  // reached joins conflict detection, so one that is not reached can never make a valid tier step aside.
-  const first = solveStack({ ...input, tiers: input.tiers.filter((tier) => !isOrderLadder(tier)) });
-  if (!first.ok) return first;
+  // An order-value ladder is judged on what the shopper would pay after every other step, so whether it is
+  // reached is decided on the cart priced WITHOUT it: only a ladder that really is reached joins conflict
+  // detection, and one that is not can never make a valid tier step aside. Ladders run last in
+  // (priority, id) order, so each one is judged on the cart as the ladders before it left it -- an earlier
+  // ladder that brings the goods under a later one's rung leaves that later ladder idle.
+  const nonLadders = input.tiers.filter((tier) => !isOrderLadder(tier));
   const productOf = new Map(input.lines.map((line) => [line.lineKey, line.product]));
-  const reached = ladders.filter((tier) => {
-    // A ladder with an invalid configuration is passed on so it is reported as such.
-    if (validateTierConfig(tier.config).length > 0) return true;
-    let goods = 0;
-    for (const group of first.groups) if (tier.resolve(productOf.get(group.lineKey)!)) goods += group.lineTotalVnd;
-    return goods >= tier.config.tiers[0]!.minQuantity;
+  const inOrder = [...ladders].sort((a, b) => {
+    const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
+    const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
+    return pa !== pb ? pa - pb : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
   });
-  return solveStack({ ...input, tiers: [...input.tiers.filter((tier) => !isOrderLadder(tier)), ...reached] });
+  const reached: StackTierParticipant[] = [];
+  for (const tier of inOrder) {
+    // A ladder with an invalid configuration is passed on so it is reported as such.
+    if (validateTierConfig(tier.config).length > 0) {
+      reached.push(tier);
+      continue;
+    }
+    const before = solveStack({ ...input, tiers: [...nonLadders, ...reached] });
+    if (!before.ok) return before;
+    let goods = 0;
+    for (const group of before.groups) if (tier.resolve(productOf.get(group.lineKey)!)) goods += group.lineTotalVnd;
+    if (goods >= tier.config.tiers[0]!.minQuantity) reached.push(tier);
+  }
+  return solveStack({ ...input, tiers: [...nonLadders, ...reached] });
 }
 
 function solveStack(input: StackInput): StackResult {

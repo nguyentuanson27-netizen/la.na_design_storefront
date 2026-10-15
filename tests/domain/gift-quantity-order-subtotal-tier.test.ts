@@ -407,3 +407,41 @@ test("the same holds when an earlier discount is a Flash Sale that the ladder ha
   assert.deepEqual(result.dropped, []);
   assert.equal(result.subtotalVnd, 1_080_000);
 });
+
+test("an order ladder that an EARLIER order ladder brings under its rung is idle: no conflict, the earlier one keeps its discount", () => {
+  // 1.100.000 clears A (1.000.000, 20 %, first) which makes it 880.000 -- under B's 900.000 -- so B never applies.
+  const result = ok(priceStack({
+    lines: [sline("a", 1, 1_100_000)],
+    tiers: [
+      participant("a", orderPct([[1_000_000, 20]]), { priority: 1 }),
+      participant("b", orderPct([[900_000, 10]]), { priority: 2 }),
+    ],
+    legacyConsents: noConsent,
+  }));
+  assert.deepEqual(result.dropped, []);
+  assert.equal(result.subtotalVnd, 880_000);
+  assert.deepEqual(result.groups.flatMap((g) => g.steps).map((s) => s.campaignId), ["a"]);
+});
+
+test("two order ladders that both really apply and have not agreed to stack still drop each other", () => {
+  // 2.000.000: A (20 %) leaves 1.600.000, which still clears B's 900.000, so both would apply.
+  const result = ok(priceStack({
+    lines: [sline("a", 1, 2_000_000)],
+    tiers: [
+      participant("a", orderPct([[1_000_000, 20]]), { priority: 1 }),
+      participant("b", orderPct([[900_000, 10]]), { priority: 2 }),
+    ],
+    legacyConsents: noConsent,
+  }));
+  assert.deepEqual(result.dropped.map((d) => [d.campaignId, d.reason]), [["a", "STACK_NOT_PERMITTED"], ["b", "STACK_NOT_PERMITTED"]]);
+  assert.equal(result.subtotalVnd, 2_000_000, "nothing applied: fail closed");
+});
+
+test("the order the ladders are listed in never changes the outcome", () => {
+  const tiers = [
+    participant("a", orderPct([[1_000_000, 20]]), { priority: 1 }),
+    participant("b", orderPct([[900_000, 10]]), { priority: 2 }),
+  ];
+  const run = (list: StackTierParticipant[]) => ok(priceStack({ lines: [sline("a", 1, 1_100_000)], tiers: list, legacyConsents: noConsent }));
+  assert.deepEqual(run([...tiers]), run([...tiers].reverse()));
+});
