@@ -6,7 +6,7 @@ Owning sources: `docs/specs/gift-quantity-promotions-v1.md` (§EX-01..EX-22, §A
 
 ## Verdict
 
-**NOT READY TO SHIP — build complete except GQ19 (buyer checkout UX); feature stays default OFF.**
+**NOT READY TO SHIP — build complete (GQ19 buyer checkout UX built, not yet run by a person on staging); feature stays default OFF.**
 This record is a map from each requirement to the test that proves it, plus an explicit list of what is
 **not** proven. It is not a go/no-go and it does not enable anything: the flag
 `LA_GIFT_QUANTITY_PROMOTIONS_ENABLED` stays unset, and the owner's go/no-go and the independent `/ship`
@@ -17,7 +17,7 @@ actually run.
 
 | # | Open item | Why it blocks |
 |---|---|---|
-| O-1 | **GQ19 — checkout UX not built.** Nothing in the buyer UI submits the benefit proof or the non-claim acknowledgement; the checkout link stays withheld for carts with gifts or split tier prices. | A buyer cannot complete a benefit order end to end in the browser. Server side (GQ17/18/20/21) is proven; the screen is not. |
+| O-1 | **GQ19 — buyer checkout UX: built; manual staging run not done.** The checkout page renders the benefit quote (paid segments at their own prices, gifts at 0đ, unclaimed-slot account, never-pre-checked acknowledgement keyed to the quote digest) and submits the proof and the tick; the cart offers the link only where the POS shop is listed in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` (empty today). Proven by `tests/domain/checkout-benefit-ui.test.ts`, the GQ19 cases of `tests/database/benefit-checkout-snapshot.test.ts` and `tests/a11y-runtime/checkout-benefit.spec.ts` (390 px, keyboard, Axe). | Nobody has used it as a buyer against a live POS: the browser spec stops before submit (the address lists come from a fixture), and the end-to-end order needs the adapter-flow acceptance (O-2) on a verified shop. |
 | O-2 | **Live adapter-flow acceptance not run.** The two GQ01 gating cases ran live on shop 715077776 and passed (PAID+PAID different price; PAID + GIFT at 1.000đ, same variation). The production adapter (`createOrder` → `readOrder` read-back → confirm) has only run against fakes. | The read-back parser was written from the observed contract, not exercised against the live POS. |
 | O-3 | **`LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS` is empty** (by design). | Until the owner lists a shop, benefit orders are withheld before any POS write. |
 | O-4 | **Alert thresholds are proposals** with no production baseline; no dashboard exists. | See rollback record §4. |
@@ -104,7 +104,7 @@ present on benefit orders, and every existing event assertion still passes).
 
 ## Staged ON path (for the owner, after O-1…O-3)
 
-1. Build/merge GQ19; run the browser flow on staging with the flag ON.
+1. GQ19 is merged; run the browser flow by hand on staging with the flag ON and the shop listed (0 / partial / all gifts, then place the order).
 2. Run the adapter-flow live acceptance with explicit operator approval (creates and cancels test orders).
 3. List the verified shop id in `LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS`.
 4. Confirm the alert thresholds and wire the alerts. (R-05 was approved by the owner at H0 on 13/10/2026, recorded in ADR 0016 and the spec status.)

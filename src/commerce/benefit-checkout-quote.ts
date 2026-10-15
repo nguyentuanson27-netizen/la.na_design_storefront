@@ -18,6 +18,7 @@
  */
 
 import type { Prisma } from "../generated/prisma/client.ts";
+import { hasQuantityTierSegment } from "./benefit-tier-segment.ts";
 import { withoutOrderHolds } from "./capacity-advisory.ts";
 import { readCartGiftState } from "./cart-gift-selection.ts";
 import { buildBenefitCheckoutQuoteFacts, type BenefitQuoteGift, type BenefitQuotePaidGroup } from "./checkout-quote.ts";
@@ -57,6 +58,8 @@ export type BenefitCheckoutResolution =
       paid: readonly BenefitPaidRow[];
       gifts: readonly BenefitGiftRow[];
       dropped: readonly DroppedBenefitInput[];
+      /** Display only (GQ19): `Sản phẩm — Màu / Cỡ` of every chosen gift, by Pancake variation id. Never part of the proof. */
+      giftLabels: ReadonlyMap<string, string>;
     }>;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -95,7 +98,7 @@ export async function resolveBenefitCheckoutQuote({
   const benefits = state.quote.benefits;
   if (!benefits.enabled || !benefits.ok) return { kind: "UNAVAILABLE" };
 
-  const hasTierSegment = benefits.groups.some((group) => group.steps.some((step) => step.source === "QUANTITY_TIER"));
+  const hasTierSegment = hasQuantityTierSegment(benefits.groups);
   const earnsGift = state.entitlements.some((entry) => entry.entitled > 0);
   // EX-21: a tier whose runtime price became invalid is dropped whole. The cart is then an ordinary
   // one, but the buyer was promised that tier at render time, so the quote is still proven and stored
@@ -188,7 +191,13 @@ export async function resolveBenefitCheckoutQuote({
       droppedAll.push({ campaignId: entry.campaignId, reason: entry.reason as DroppedBenefitInput["reason"], otherCampaignId: entry.otherCampaignId ?? null });
     }
   }
-  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50) };
+  const labelOf = new Map(state.labels.map((label) => [label.variantId, label]));
+  const giftLabels = new Map<string, string>();
+  for (const gift of gifts) {
+    const label = labelOf.get(gift.variantId);
+    giftLabels.set(gift.pancakeVariationId, label ? [label.productName, label.optionLabel].filter(Boolean).join(" — ") : "Quà tặng");
+  }
+  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50), giftLabels };
 }
 
 /**

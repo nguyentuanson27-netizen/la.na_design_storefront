@@ -5,12 +5,26 @@ import { createStorefrontCartRepository } from "./storefront-cart-repository.ts"
 import { cookies } from "next/headers";
 import { createCartGiftSelectionService } from "./cart-gift-selection.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 
-/** Buyer cart only; checkout keeps its authority until GQ16–18. */
+/**
+ * The buyer's cart with its gift / quantity-tier state.
+ *
+ * `benefitCheckoutOpen` (GQ19) says whether checkout may be offered for a benefit cart: the POS shop
+ * has line-level pricing evidence (GQ20), the same condition under which the submit would send such an
+ * order at all. Offering the link while the submit is certain to close the order would cost the buyer
+ * a form and an order number for nothing.
+ */
 export async function getCurrentStorefrontCartBenefits(now = new Date()) {
   if (!isGiftQuantityPromotionsEnabled()) return { lines: await getCurrentStorefrontCartLines(now) };
   const result = await createCartGiftSelectionService(prisma, await cookies(), { shopId: readPancakeShopId() }).get(now);
-  if ("state" in result) return { lines: result.state.quote.lines, giftState: result.state };
+  if ("state" in result) {
+    return {
+      lines: result.state.quote.lines,
+      giftState: result.state,
+      benefitCheckoutOpen: readLineLevelPricingVerifiedShopIds().includes(readPancakeShopId()),
+    };
+  }
   return { lines: await getCurrentStorefrontCartLines(now), benefitsUnavailable: "ok" in result && result.reason !== "CART_UNAVAILABLE" };
 }
 

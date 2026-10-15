@@ -11,7 +11,7 @@ const line = { variantId: "paid", pancakeVariationId: "paid-ext", pancakeProduct
 function state(): CartGiftState {
   return {
     quote: { lines: [line], benefits: { enabled: true, ok: true, subtotalVnd: 290_003, groups: [
-      { lineKey: "paid", quantity: 1, unitPriceVnd: 90_001 }, { lineKey: "paid", quantity: 2, unitPriceVnd: 100_001 },
+      { lineKey: "paid", quantity: 1, unitPriceVnd: 90_001, steps: [] }, { lineKey: "paid", quantity: 2, unitPriceVnd: 100_001, steps: [] },
     ], dropped: [] } },
     labels: [{ variantId: "gift", productId: "gift-product", productName: "Khăn", optionLabel: "Trắng / M" }],
     campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: [{ variantId: "gift", productId: "gift-product", composite: false, readyAvailable: 1 }] }],
@@ -31,14 +31,14 @@ test("cart displays split paid prices and total while gifts never increase paid 
 test("GQ14-F3: EX-21 blocks checkout and explains a dropped tier even when repriced total matches legacy", () => {
   const paid = { ...line, quantity: 1, price: 40_000 };
   const s = { ...state(), quote: { lines: [paid], benefits: { enabled: true, ok: true, subtotalVnd: 40_000,
-    groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 40_000 }],
+    groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 40_000, steps: [] }],
     dropped: [{ campaignId: "tier", reason: "TIER_PRICE_INVALID", otherCampaignId: null }],
   } }, campaigns: [], entitlements: [], selections: [], validation: { ok: true, issues: [], summaries: [] } } as unknown as CartGiftState;
   const model = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: s });
   assert.match(model.subtotalText, /40.000/);
   assert.equal(model.canCheckout, false);
   assert.match(model.benefitsNotice!, /giảm giá theo số lượng không còn áp dụng.*giá.*không hợp lệ/i);
-  assert.match(model.benefitsNotice!, /xác nhận lại báo giá/i);
+  assert.match(model.benefitsNotice!, /chưa thể đặt trực tuyến/i, "GQ19: held back only where the POS shop is not verified; see checkout-benefit-ui.test.ts for the open case");
   const unchanged = { ...s, quote: { ...s.quote, benefits: { ...s.quote.benefits, dropped: [] } } } as CartGiftState;
   const noDrop = buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: unchanged });
   assert.equal(noDrop.canCheckout, true, "ON without dropped tiers retains checkout");
@@ -64,10 +64,10 @@ test("GQ14-F1: tier split and failed benefits suppress legacy tracking; OFF and 
   assert.equal(canTrackLegacyCartPrices({ lines: [line] }), true, "OFF parity");
   const s = state();
   const noTier = { ...s, quote: { lines: [line], benefits: { enabled: true, ok: true, subtotalVnd: 300_003,
-    groups: [{ lineKey: "paid", quantity: 3, unitPriceVnd: 100_001 }] } } } as unknown as CartGiftState;
+    groups: [{ lineKey: "paid", quantity: 3, unitPriceVnd: 100_001, steps: [] }] } } } as unknown as CartGiftState;
   assert.equal(canTrackLegacyCartPrices({ lines: [line], giftState: noTier }), true, "gift selections never enter paid analytics");
   const changedSegments = { ...noTier, quote: { ...noTier.quote, benefits: { enabled: true, ok: true, subtotalVnd: 300_003,
-    groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 90_001 }, { lineKey: "paid", quantity: 2, unitPriceVnd: 105_001 }] } } } as unknown as CartGiftState;
+    groups: [{ lineKey: "paid", quantity: 1, unitPriceVnd: 90_001, steps: [] }, { lineKey: "paid", quantity: 2, unitPriceVnd: 105_001, steps: [] }] } } } as unknown as CartGiftState;
   assert.equal(canTrackLegacyCartPrices({ lines: [line], giftState: changedSegments }), false, "matching subtotal cannot hide changed item prices");
   const failed = { ...s, quote: { lines: [line], benefits: { enabled: true, ok: false, error: "LOOKUP_FAILED" } } } as unknown as CartGiftState;
   assert.equal(canTrackLegacyCartPrices({ lines: [line], giftState: failed }), false);

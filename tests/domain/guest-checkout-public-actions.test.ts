@@ -54,8 +54,30 @@ test("browser checkout uses the HttpOnly cart identity and forwards only allowli
     // Absent from this form, and forwarded as the absence rather than silently defaulted: an
     // unproven submission has to reach the verifier and fail there, not be waved through here.
     quoteProof: null,
+    // GQ19: no tick in the form is no tick in the claim.
+    nonclaimAcknowledged: false,
   });
   assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: "LA-001" });
+});
+
+test("GQ19: only the literal checkbox value counts as the buyer's non-claim tick", async () => {
+  const seen: unknown[] = [];
+  for (const value of ["yes", "on", "true", "1", "", "YES"]) {
+    const formData = makeFormData();
+    formData.set("nonclaimAcknowledged", value);
+    await submitGuestCheckoutPublicAction(
+      {
+        cartSession: { read: () => "server-cart-id", clear: () => undefined },
+        consumeAttempt: allowAttempt,
+        submitCheckout: async (input) => {
+          seen.push(input.nonclaimAcknowledged);
+          return { ok: false as const, status: "RETRYABLE" as const, reason: "CHECKOUT_UNAVAILABLE" as const };
+        },
+      },
+      formData,
+    );
+  }
+  assert.deepEqual(seen, [true, false, false, false, false, false]);
 });
 
 test("the rendered-quote proof is forwarded verbatim and is the only browser field that may be opaque", async () => {

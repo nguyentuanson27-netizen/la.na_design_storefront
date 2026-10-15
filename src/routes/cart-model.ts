@@ -3,6 +3,7 @@ import {
   PREORDER_LABEL,
   type PreorderFulfillmentNotice,
 } from "../commerce/preorder-fulfillment-presentation.ts";
+import { hasQuantityTierSegment } from "../commerce/benefit-tier-segment.ts";
 import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
@@ -129,6 +130,8 @@ export function buildCartViewModel(
     commerceTrackingEnabled: boolean;
     giftState?: CartGiftState;
     benefitsUnavailable?: boolean;
+    /** GQ19: checkout can take a cart with gifts or split-price segments (the POS shop is verified for them). */
+    benefitCheckoutOpen?: boolean;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -138,8 +141,16 @@ export function buildCartViewModel(
   const paidBenefits = benefits?.enabled && benefits.ok ? benefits : null;
   // EX-21: a successful recomputation is not buyer acknowledgement of the dropped tier.
   const tierPriceInvalid = paidBenefits?.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID");
-  // The current checkout proof/order snapshot cannot carry gifts or split paid segments yet.
-  const checkoutPending = input.benefitsUnavailable || tierPriceInvalid || (state && (!state.validation.ok || state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0))) || (paidBenefits && paidBenefits.subtotalVnd !== subtotal);
+  // GQ19: checkout renders and proves the benefit quote (gifts at 0đ, split paid prices, the non-claim
+  // acknowledgement, an EX-21 re-quote), so a consistent benefit cart is no longer held back here --
+  // but only where the POS would actually accept such an order. Anything the checkout could not render
+  // faithfully (unreadable benefits, a stored gift choice that no longer validates) still stops at the cart.
+  const benefitCheckoutOpen = input.benefitCheckoutOpen === true;
+  const hasBenefitSegments = Boolean(
+    state && (state.selections.length > 0 || state.entitlements.some((entry) => entry.entitled > 0) || (paidBenefits && (hasQuantityTierSegment(paidBenefits.groups) || paidBenefits.subtotalVnd !== subtotal)) || tierPriceInvalid),
+  );
+  const benefitBlocked = input.benefitsUnavailable || (state && !state.validation.ok) || (hasBenefitSegments && !benefitCheckoutOpen);
+  const checkoutPending = Boolean(benefitBlocked);
 
   return Object.freeze({
     isEmpty: input.lines.length === 0,
@@ -172,9 +183,11 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
-    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : tierPriceInvalid
-      ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Cần kiểm tra và xác nhận lại báo giá trước khi đặt hàng; bước đặt hàng chưa hỗ trợ xác nhận thay đổi này."
-      : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Quyền lợi này chưa hỗ trợ đặt hàng; vui lòng quay lại khi bước đặt hàng đã sẵn sàng." } : {}),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
+      ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
+      : tierPriceInvalid
+        ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến."
+        : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; vui lòng quay lại sau." } : {}),
   });
 }
 

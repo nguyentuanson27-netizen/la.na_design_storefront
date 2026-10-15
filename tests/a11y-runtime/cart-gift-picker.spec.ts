@@ -181,7 +181,9 @@ test("EX-21 after price sync with no gifts blocks checkout even at the legacy to
   await page.reload();
   await expect(page.getByText("40.000", { exact: false }).first()).toBeVisible();
   await expect(page.getByText(/giảm giá theo số lượng không còn áp dụng.*giá hiện tại không hợp lệ/)).toBeVisible();
-  await expect(page.getByText(/Cần kiểm tra và xác nhận lại báo giá/)).toBeVisible();
+  // GQ19: held back only because this shop has no line-level pricing evidence (the env list is empty here);
+  // where the shop is verified the checkout re-quotes the dropped tier itself (checkout-benefit.spec.ts).
+  await expect(page.getByText(/chưa thể đặt trực tuyến/)).toBeVisible();
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   await prisma.giftQuantityCampaign.update({ where: { id: tierId }, data: { isEnabled: false } });

@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 
-import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
+import { GuestCheckoutForm, type GuestCheckoutBenefit } from "@/components/commerce/guest-checkout-form";
 
 /**
  * The brand layer's checkout entry point -- deliberately an adapter, not a split.
@@ -24,6 +24,7 @@ import { GuestCheckoutForm } from "@/components/commerce/guest-checkout-form";
 export function BrandGuestCheckoutForm(
   props: Readonly<{
     quoteProof: string;
+    benefit?: GuestCheckoutBenefit;
     summaryLabel?: string;
     summarySlot?: ReactNode;
     totalsSlot?: ReactNode;
