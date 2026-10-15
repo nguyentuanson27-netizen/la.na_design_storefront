@@ -68,6 +68,19 @@ export function readGuestShippingPolicy(
   });
 }
 
+/**
+ * The policy, or `undefined` when the environment holds an invalid one. For display surfaces that show an
+ * estimate: a misconfigured fee must hide the estimate, not take the cart page down. Checkout and the order
+ * path keep calling `readGuestShippingPolicy`, which fails loudly.
+ */
+export function tryReadGuestShippingPolicy(env: ShippingPolicyEnvironment = process.env): GuestShippingPolicy | undefined {
+  try {
+    return readGuestShippingPolicy(env);
+  } catch {
+    return undefined;
+  }
+}
+
 export function calculateGuestShippingFeeVnd(
   {
     subtotalVnd,

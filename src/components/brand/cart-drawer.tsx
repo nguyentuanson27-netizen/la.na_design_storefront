@@ -7,6 +7,7 @@ import Link from "next/link";
 
 import { BRAND } from "@/brand";
 import { LinePrice } from "@/components/brand/line-price";
+import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import {
   handleDrawerFocusTrap,
@@ -278,18 +279,24 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
           {/* Footer */}
           {cart && !cart.isEmpty ? (
             <div className="border-t border-[#3B2219]/10 bg-[#FAF7F2] p-6 space-y-4">
-              <div className="flex items-baseline justify-between">
-                <span className="text-xs uppercase tracking-wider text-[#70584B]">Tạm tính</span>
-                <span className="font-sans text-base font-semibold text-[#2A1810]">
-                  {cart.subtotalText}
-                </span>
-              </div>
-              <PromotionSavings rows={cart.promotions?.savings} />
-              <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
-                {cart.promotions
-                  ? "Phí vận chuyển sẽ được tính toán tại bước thanh toán."
-                  : "Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán."}
-              </p>
+              {cart.summary ? (
+                <OrderSummary summary={cart.summary} variant="compact" />
+              ) : (
+                <>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-xs uppercase tracking-wider text-[#70584B]">Tạm tính</span>
+                  <span className="font-sans text-base font-semibold text-[#2A1810]">
+                    {cart.subtotalText}
+                  </span>
+                </div>
+                <PromotionSavings rows={cart.promotions?.savings} />
+                <p className="text-[0.72rem] text-[#70584B] leading-relaxed">
+                  {cart.promotions
+                    ? "Phí vận chuyển sẽ được tính toán tại bước thanh toán."
+                    : "Phí vận chuyển và ưu đãi sẽ được tính toán tại bước thanh toán."}
+                </p>
+                </>
+              )}
 
               <div className="space-y-2 pt-2">
                 {cart.canCheckout ? (

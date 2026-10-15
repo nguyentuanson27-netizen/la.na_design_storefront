@@ -576,7 +576,7 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   await expect(page.locator(".checkout-order-summary a[href='/cart']")).toBeVisible();
   // `:visible` is load-bearing: the desktop sticky aside is in the DOM at every width and carries
   // its own copy of these regions, hidden below `lg`. One *visible* total is the contract.
-  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng thanh toán" })).toHaveCount(1);
   await expect(page.locator(".checkout-order-panel")).toBeHidden();
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
 
@@ -621,13 +621,13 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
   await expect(summary).toBeVisible();
   await expect(summary.getByText("Đơn hàng", { exact: true })).toBeVisible();
   await expect(summary.locator("a[href='/cart']")).toBeVisible();
-  await expect(summary.locator("dl > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  await expect(summary.locator("dl > div").filter({ hasText: "Tổng thanh toán" })).toHaveCount(1);
 
   // The mobile composition is off, so neither region is announced twice.
   await expect(page.locator(".checkout-order-summary")).toBeHidden();
   await expect(page.locator(".checkout-totals")).toBeHidden();
   await expect(page.getByRole("button", { name: /Đơn hàng \(3\) ·/ })).toBeHidden();
-  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng dự kiến" })).toHaveCount(1);
+  await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng thanh toán" })).toHaveCount(1);
 
   // Right column: the summary starts to the right of the form, not under it.
   const [summaryBox, formBox] = await Promise.all([
@@ -677,7 +677,7 @@ test("P9a a price change between render and submit forces an explicit second con
   const submit = page.getByRole("button", { name: "Đặt hàng COD" });
   const totalValue = page
     .locator("dl:visible > div")
-    .filter({ hasText: "Tổng dự kiến" })
+    .filter({ hasText: "Tổng thanh toán" })
     .locator("dd");
   const quotedTotal = (await totalValue.textContent())?.trim() ?? "";
   expect(quotedTotal).not.toEqual("");

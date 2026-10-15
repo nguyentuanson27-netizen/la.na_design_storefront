@@ -4,6 +4,7 @@ import Link from "next/link";
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
+import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -119,7 +120,11 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  const totalsBlock = (
+  // The bill in reading order. The older block below is only the fallback for a quote the summary could not
+  // be made to add up for, so a shopper never sees lines that do not sum to the total.
+  const totalsBlock = data.summary ? (
+    <OrderSummary summary={data.summary} />
+  ) : (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">Tạm tính</dt>
@@ -142,7 +147,7 @@ function render(data: CheckoutViewModel) {
         <dd>{totals.shippingText}</dd>
       </div>
       <div className="flex items-baseline justify-between gap-5 border-t border-black pt-4">
-        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng dự kiến</dt>
+        <dt className="font-semibold uppercase tracking-[0.08em]">Tổng thanh toán</dt>
         <dd className="text-xl font-semibold tracking-[-0.02em]">{totals.totalText}</dd>
       </div>
     </dl>

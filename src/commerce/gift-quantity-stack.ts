@@ -172,6 +172,11 @@ export function applyLegacyStackStep(campaign: StackLegacyCampaign, currentPrice
   return next;
 }
 
+/** Whether a ladder's configuration can price anything; the quote asks this through the stack, which owns the tier engine. */
+export function isValidTierConfig(config: QuantityTierConfig): boolean {
+  return validateTierConfig(config).length === 0;
+}
+
 /** Whether a peer list accepts a campaign of `kind` with `campaignId` (by id, or by kind with `*`). */
 export function stackPeersAllow(peers: readonly StackPeer[], kind: StackPeerKind, campaignId: string): boolean {
   return peers.some((peer) => peer.kind === kind && (peer.campaignId === STACK_PEER_ANY || peer.campaignId === campaignId));

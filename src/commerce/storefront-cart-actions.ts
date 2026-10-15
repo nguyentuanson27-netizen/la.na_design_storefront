@@ -12,6 +12,7 @@ import { createStorefrontCartPublicActions } from "./storefront-cart-public-acti
 import { createStorefrontCartRepository } from "./storefront-cart-repository.ts";
 import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { tryReadGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { getCurrentStorefrontCartBenefits } from "./storefront-cart-runtime.ts";
 import { buildCartViewModel, type CartViewModel } from "../routes/cart-model.ts";
 
@@ -83,11 +84,12 @@ export async function getStorefrontCartLines() {
  */
 export async function getStorefrontCartView(): Promise<CartViewModel> {
   if (!isGiftQuantityPromotionsEnabled()) {
-    return buildCartViewModel({ lines: await getStorefrontCartLines(), commerceTrackingEnabled: false });
+    return buildCartViewModel({ lines: await getStorefrontCartLines(), commerceTrackingEnabled: false, shippingPolicy: tryReadGuestShippingPolicy() });
   }
   const model = buildCartViewModel({
     ...(await getCurrentStorefrontCartBenefits(new Date())),
     commerceTrackingEnabled: false,
+    shippingPolicy: tryReadGuestShippingPolicy(),
   });
   const view: { -readonly [K in keyof CartViewModel]: CartViewModel[K] } = { ...model };
   delete view.gifts;

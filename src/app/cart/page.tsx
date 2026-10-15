@@ -6,6 +6,7 @@ import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
+import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import { BrandPreorderFulfillmentNotice } from "@/components/brand/preorder-fulfillment-notice";
 import { loadCartRoute, type CartRouteProps } from "@/routes/cart";
@@ -144,20 +145,28 @@ function render(data: CartViewModel) {
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
-          <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
-            <span className="text-sm text-black/75">
-              {data.hasUnavailableLines ? "Tạm tính khả dụng" : "Tạm tính"}
-            </span>
-            <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
-          </div>
-          <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
+          {data.summary ? (
+            <OrderSummary className="mt-5" summary={data.summary} />
+          ) : (
+            <>
+            <div className="mt-5 flex items-baseline justify-between gap-6 border-b border-black/15 pb-5">
+              <span className="text-sm text-black/75">
+                {data.hasUnavailableLines ? "Tạm tính khả dụng" : "Tạm tính"}
+              </span>
+              <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
+            </div>
+            <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
+            </>
+          )}
           {data.hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
               Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi giỏ hàng.
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây.
+            {data.summary
+              ? "Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại trước khi tạo đơn."
+              : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây."}
           </p>
           {data.preorderNotice === null ? null : (
             <BrandPreorderFulfillmentNotice

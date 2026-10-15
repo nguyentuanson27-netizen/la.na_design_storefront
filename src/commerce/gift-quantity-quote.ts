@@ -33,6 +33,7 @@ import {
 } from "./gift-quantity-candidate-repository.ts";
 import { buildScopeResolver, type ScopeProductFacts } from "./gift-quantity-scope.ts";
 import {
+  isValidTierConfig,
   priceStack,
   STACK_LINE_KEY_PATTERN,
   type StackDroppedCampaign,
@@ -43,7 +44,7 @@ import {
   type StackPeer,
   type StackTierParticipant,
 } from "./gift-quantity-stack.ts";
-import { validateTierConfig, type QuantityTierConfig, type TierDiscountUnit } from "./gift-quantity-tier.ts";
+import type { QuantityTierConfig, TierDiscountUnit } from "./gift-quantity-tier.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
 /** A purchasable, priced cart line as the legacy authority resolved it. */
@@ -183,7 +184,7 @@ function readOrderValueProgress({
   for (const entry of tierCampaigns) {
     const config = tierConfigOf(entry.campaign);
     const id = entry.campaign.id;
-    if (config.basis !== "ORDER_SUBTOTAL" || dropped.has(id) || validateTierConfig(config).length > 0) continue;
+    if (config.basis !== "ORDER_SUBTOTAL" || dropped.has(id) || !isValidTierConfig(config)) continue;
 
     // The value the ladder is judged on: each group at the price it had just before this ladder's own step
     // (the ladder runs last, so a group it did not touch is simply at its final price).

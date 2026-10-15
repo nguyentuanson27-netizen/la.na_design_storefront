@@ -9,6 +9,7 @@ import type { StorefrontCartLine } from "../commerce/storefront-cart.ts";
 import type { TrustedProductImage } from "../commerce/product-media.ts";
 import { buildCheckoutPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
+import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
 
 /**
  * Everything the checkout route decides, as one pure function.
@@ -115,6 +116,8 @@ export type CheckoutViewModel = Readonly<{
   benefit: CheckoutBenefitView | null;
   /** The reached-promotions banner; present only for a benefit checkout that has something to say. */
   promotions?: PromotionBannerView;
+  /** The bill in reading order (value, discounts, shipping, total). Absent if it could not be made to add up. */
+  summary?: OrderSummaryView;
   /** Why the cart cannot be offered for checkout, when that is more specific than "check your cart". */
   unavailableNotice: string | null;
 }>;
@@ -176,6 +179,12 @@ export function buildCheckoutViewModel(
   }
 
   const totals = input.totals;
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: totals.merchandiseSubtotalVnd,
+    discounts: [],
+    shippingFeeVnd: totals.shippingFeeVnd,
+    expectedTotalVnd: totals.totalVnd,
+  });
 
   return Object.freeze({
     state: "ready",
@@ -205,6 +214,7 @@ export function buildCheckoutViewModel(
     quoteProof: input.quoteProof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     benefit: null,
+    ...(summary ? { summary } : {}),
     unavailableNotice: null,
   });
 }
@@ -298,6 +308,13 @@ export function buildBenefitCheckoutViewModel(
 
   const giftQuantity = giftLines.reduce((sum, line) => sum + line.quantity, 0);
   const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames);
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
+    discounts: promotions?.savings ?? [],
+    shippingFeeVnd: facts.shippingFeeVnd,
+    giftQuantity,
+    expectedTotalVnd: facts.totalVnd,
+  });
 
   return Object.freeze({
     state: "ready",
@@ -324,6 +341,7 @@ export function buildBenefitCheckoutViewModel(
         : null,
     }),
     ...(promotions ? { promotions } : {}),
+    ...(summary ? { summary } : {}),
     unavailableNotice: null,
   });
 }

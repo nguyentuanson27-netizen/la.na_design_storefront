@@ -10,6 +10,8 @@ import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-model.ts";
 import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
+import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
+import { calculateGuestShippingFeeVnd, type GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -76,6 +78,12 @@ export type CartViewModel = Readonly<{
   gifts?: CartGiftPickerModel;
   /** Reached promotions and progress toward the next gift slot; absent when there is nothing to say. */
   promotions?: PromotionBannerView;
+  /**
+   * The bill, in reading order: order value, each discount, shipping, total. Present only when the server
+   * supplied the shipping policy and the basket has nothing the bill could not honestly add up (every line
+   * buyable, benefits readable), so a cart that cannot be bought never shows a total.
+   */
+  summary?: OrderSummaryView;
   benefitsNotice?: string;
 }>;
 
@@ -132,6 +140,34 @@ export function canTrackLegacyCartPrices(input: Readonly<{
     paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
 }
 
+function summaryEntry(
+  input: Readonly<{ lines: readonly StorefrontCartLine[]; shippingPolicy?: GuestShippingPolicy; benefitsUnavailable?: boolean }>,
+  subtotal: number | null,
+  benefitSubtotal: number | undefined,
+  state: CartGiftState | undefined,
+  blocked: boolean,
+  hasUnavailableLines: boolean,
+): { summary?: OrderSummaryView } {
+  if (input.shippingPolicy === undefined || input.benefitsUnavailable || blocked || hasUnavailableLines || subtotal === null) return {};
+  const quantity = input.lines.reduce((sum, line) => sum + line.quantity, 0);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return {};
+  const goodsAfterDiscounts = benefitSubtotal ?? subtotal;
+  let shippingFeeVnd: number;
+  try {
+    // Same rule checkout applies: on the goods after discounts and the paid quantity.
+    shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: goodsAfterDiscounts, totalQuantity: quantity }, input.shippingPolicy);
+  } catch {
+    return {};
+  }
+  const summary = buildOrderSummary({
+    goodsAfterDiscountsVnd: goodsAfterDiscounts,
+    discounts: buildCartPromotionView(state)?.savings ?? [],
+    shippingFeeVnd,
+  });
+  // The lines' own prices are the order value: if the discounts do not close the gap exactly, say nothing.
+  return summary === null || (state !== undefined && summary.valueText !== currency.format(subtotal)) ? {} : { summary };
+}
+
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
   const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
   if (!discount) return {};
@@ -157,6 +193,11 @@ export function buildCartViewModel(
     benefitsUnavailable?: boolean;
     /** GQ19: checkout can take a cart with gifts or split-price segments (the POS shop is verified for them). */
     benefitCheckoutOpen?: boolean;
+    /**
+     * The shipping policy, read on the server (it comes from the environment, which a browser bundle cannot
+     * see). Without it the model builds no `summary`.
+     */
+    shippingPolicy?: GuestShippingPolicy;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -210,6 +251,7 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked),
+    ...summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
       : tierPriceInvalid
