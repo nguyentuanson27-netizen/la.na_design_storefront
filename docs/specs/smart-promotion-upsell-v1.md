@@ -1,8 +1,8 @@
 # SPEC-UPS-001 — Smart Promotion Upsell (MVP)
 
-**Trạng thái:** DRAFT v1.5 (15/10/2026), tài liệu để owner và kỹ thuật chốt; **chưa triển khai Upsell**.  
+**Trạng thái:** DRAFT v1.6 (15/10/2026). **Owner đã duyệt U-01/A (tính chênh lệch tổng thanh toán, phí ship cơ bản mặc định 30.000đ) và U-02/A (chọn quà ngay checkout)**. U-03/U-05 còn chờ kiểm tra kỹ thuật trong `/plan`; **chưa triển khai Upsell**.  
 **Nguồn đã merge:** `main@6ba8e2d209f6298ed1ebcb7f84a73acefa7d7f5a` (PR #169, order-value tiers + cart/checkout promotion). Source đã merge **không đồng nghĩa** production DB đã migrate hoặc Pancake POS đã được nghiệm thu.  
-**Phạm vi PR #170:** chỉ sửa spec. Không thay code, schema, CI, feature flag hay deploy.
+**Phạm vi:** tài liệu nghiệp vụ cho Upsell; ghi nhận quyết định owner, không thay code, schema, feature flag hay deploy.
 
 **Mục tiêu:** Khách gần đạt mốc ưu đãi thấy **một** lời mời mua thêm hợp lệ ở checkout, chọn mẫu/size/màu và thêm **đúng một chiếc** mà không mất dữ liệu nhận hàng hoặc quyền lợi hiện có. Nếu không có gợi ý an toàn, checkout vẫn hoạt động như cũ.
 
@@ -39,10 +39,10 @@
 ### FR-04 — Mỗi gợi ý phải mở quyền lợi thật
 - Với từng biến thể READY của mẫu khác giỏ, **mô phỏng read-only cart +1**, chạy **chính** canonical pricing/stacking/entitlement/checkout quote của merged main, không ghi giỏ, giữ hàng, phát COD proof hoặc dùng giá browser.
 - Chỉ chấp nhận khi rung quảng bá được áp dụng và gift `grantable` thực sự tăng / tier giảm giá thực có lợi. **So lợi ích trước–sau theo từng campaign**: không làm mất Flash Sale, tier, gift `entitled/grantable` hay vô hiệu gift selection đã lưu. Conflict, `TIER_PRICE_INVALID`, hết READY stock/POS capability hoặc quote không chứng minh được ⇒ bỏ ứng viên.
-- Gift mới chưa chọn vẫn hợp lệ **nếu** có lối chọn quà/xác nhận không nhận quà theo U-02. Bảo toàn quyền lợi chỉ ràng buộc *gợi ý*, không cấm khách tự chỉnh giỏ bình thường.
+- Gift mới chưa chọn vẫn hợp lệ khi có lối chọn quà/xác nhận không nhận quà theo **U-02/A đã duyệt: chọn ngay ở checkout**. Bảo toàn quyền lợi chỉ ràng buộc *gợi ý*, không cấm khách tự chỉnh giỏ bình thường.
 
 ### FR-05 — Chọn campaign
-- Chọn đúng một campaign có **chi phí thấp nhất trong tập ứng viên đã kiểm chứng**, tie-break cố định `campaignId → productId → variantId`. Chi phí tính theo **U-01 do owner chốt**; không xếp theo % progress hoặc giá niêm yết.
+- Chọn đúng một campaign có **chi phí thấp nhất trong tập ứng viên đã kiểm chứng**, tie-break cố định `campaignId → productId → variantId`. **U-01/A đã duyệt:** chi phí = `totalPayableAfter - totalPayableBefore` từ hai quote server cùng chính sách ship hiện hành; không xếp theo % progress hoặc giá niêm yết.
 - `PromotionBanner` của PR169 vẫn hiển thị ưu đãi đã đạt, không được tạo CTA Upsell thứ hai.
 
 ### FR-06 — Chọn sản phẩm
@@ -51,7 +51,7 @@
 
 ### FR-07 — Giá và lựa chọn biến thể
 - Card hiển thị tên/ảnh đáng tin; mỗi `variantId` có giá hiện tại và **ước tính chi phí tăng thêm của chính biến thể đó** từ quote giả lập. Chọn lại kind/màu/size phải cập nhật giá, estimate và lựa chọn add tương ứng; biến thể không đủ điều kiện ⇒ không có CTA add hợp lệ.
-- Chưa chọn variant chỉ hiển thị giá **“Từ …”** hoặc không hiện estimate. Estimate có thể bằng 0/âm khi toàn giỏ đổi ưu đãi; **không gọi món miễn phí**. Tổng tiền chốt chỉ từ quote/proof sau commit. Cách tính estimate và shipping fallback chờ owner U-01.
+- Chưa chọn variant chỉ hiển thị giá **“Từ …”** hoặc không hiện estimate. Estimate có thể bằng 0/âm khi toàn giỏ đổi ưu đãi; **không gọi món miễn phí**. Tổng tiền chốt chỉ từ quote/proof sau commit. **Shipping U-01/A:** dùng `calculateGuestShippingFeeVnd` cho cả quote trước/sau. Chính sách mặc định của checkout là **30.000đ khi không đủ điều kiện miễn ship** (miễn ship với đơn trên 1.000.000đ hoặc từ 3 sản phẩm); nếu cấu hình shop thay đổi thì dùng chính sách hiện hành từ server, **không cộng cứng 30.000đ**. Việc tính ship hiện không cần địa chỉ; nếu policy/quote không hợp lệ thì ẩn gợi ý thay vì đoán.
 
 ### FR-08 — Thêm 1 chiếc an toàn
 - Public action chỉ nhận **biến thể được chọn** và bằng chứng ngữ cảnh giỏ/quote cần thiết; campaign/rung nếu client gửi chỉ là ý định, **không phải authority**. Không nhận tiền hoặc raw cart ID từ browser. **Ưu tiên kiểm tra xem COD checkout quote-proof HMAC hiện có có tái sử dụng được không**; chỉ tạo signed offer token riêng nếu U-05 chứng minh proof hiện tại không đủ ràng buộc thao tác.
@@ -61,7 +61,7 @@
 
 ### FR-09 — Quà vừa được mở
 - Không tự chọn quà. Nếu Upsell mở gift mới thì cho khách thấy quyền lợi, chọn hoặc xác nhận không nhận quà theo **flow U-02 owner duyệt**; luôn refresh proof sau đổi gift selection.
-- U-02 đang chọn giữa **A: picker tại checkout** (đề xuất) và **B: qua cart rồi quay lại giữ nguyên form**. Không ship gift Upsell nếu chưa có flow hoạt động.
+- **U-02/A đã duyệt:** khi Upsell làm phát sinh suất quà mới, hiển thị picker **ngay tại checkout**, dùng lại gift selection authority hiện có, không điều hướng về cart và không mất form. **Nếu giỏ đã đạt mốc tặng quà trước checkout, khách vẫn chọn quà ở `/cart` như hiện tại.** Không tạo picker thứ hai nếu không cần; không ship gift Upsell khi luồng chọn quà tại checkout chưa hoạt động.
 
 ### FR-10 — Bỏ qua
 - “Không mua thêm, tiếp tục thanh toán” chỉ ẩn module, không đổi giỏ/proof hay `nonclaimAcknowledged`. Một bản ghi **UI-only theo lượt checkout** trong tab có thể giữ qua reload/quote-only refresh để không hiện lại.
@@ -95,23 +95,23 @@ Các ID `AC-01…AC-50` từ [spec v1.4 trước khi rút gọn](https://github.
 | TG-02 — Quantity | AC-01, AC-02, AC-06, AC-07, AC-08 | Thiếu đúng một chiếc, rung kế có lợi, gift caps/ONCE và tier invalid. |
 | TG-03 — Money | AC-03, AC-04, AC-05, AC-23, AC-24, AC-25 | Biên 80%, hai monetary basis, rung tiếp và simulated +1 thực đạt. |
 | TG-04 — Stacking | AC-26, AC-27, AC-29, AC-36, AC-41, AC-45, AC-46 | Order ladder stage, fixed-total segments, Flash Sale, conflict/drop; bảo toàn từng benefit và tiền/proof. |
-| TG-05 — Winner/ranking | AC-09, AC-28, AC-37, AC-40 | Một winner, rank theo U-01 trong bounded verified pool; không claim rẻ nhất toàn catalog. |
+| TG-05 — Winner/ranking | AC-09, AC-28, AC-37, AC-40 | Một winner, rank theo U-01/A bằng chênh tổng thanh toán gồm ship theo policy hiện hành trong bounded verified pool; không claim rẻ nhất toàn catalog. |
 | TG-06 — Catalog | AC-10, AC-11, AC-38 | Không trùng mẫu; tối đa 5, fallback 1–2, exclude hết hàng; kind/màu/size typed. |
 | TG-07 — Variant price | AC-13, AC-44 | Đổi size ⇒ đúng price/estimate và lựa chọn add; variant không đủ ngưỡng bị khóa. |
 | TG-08 — Checkout add | AC-14, AC-30 | Commit +1; totals/proof/gift refresh; form giữ nguyên, không đếm event hai lần. |
 | TG-09 — Quote/races | AC-15, AC-32, AC-33, AC-34, AC-35, AC-42, AC-43 | Proof/guard gắn đúng cart và quote; variant/rung được server kiểm lại; không lộ cart UUID; stale, double click/two tab/ABA không ghi sai. Nếu phát token mới, kiểm HMAC/cross-cart/tampering. |
-| TG-10 — Gifts | AC-18, AC-39 | Gift mới unclaimed vẫn được offer với flow U-02; ack/proof mới, không tự chọn. |
+| TG-10 — Gifts | AC-18, AC-39 | Gift đã đạt trước checkout chọn ở cart; gift mới nhờ Upsell chọn ngay checkout (U-02/A); ack/proof mới, không tự chọn. |
 | TG-11 — Dismissal | AC-16, AC-17, AC-31, AC-47, AC-48, AC-49, AC-50 | Cùng lượt reload/requote vẫn ẩn; paid mutation/new cart/new lượt reset; không flash khi hydration. |
 | TG-12 — Accessibility | AC-21 | Một form/CTA, keyboard/screen reader, thông báo trạng thái, mobile không tràn. |
 
 **Regression tối thiểu:** giữ tests PR169 về order-value tiers/stacking, quote proof, order-summary và gift selection. Khi implement, viết unit tests cho threshold/ranking, integration/DB cho +1/quote/rollback/replay, vài Playwright scenarios cho add, dismiss và lỗi; không nhân 50 AC thành 50 bộ E2E. Test fixture và commands lấy từ `package.json`, `AGENTS.md` trên commit build, không đoán API Next.js.
 
-## 5. Quyết định còn mở (không tự chốt)
+## 5. Quyết định owner đã duyệt và kiểm tra kỹ thuật còn mở
 
 | ID | Người chốt | Quyết định nhỏ nhất cần có |
 | --- | --- | --- |
-| U-01 | **Owner** | Chi phí tăng thêm: **A** = chênh tổng phải trả trước/sau (bao gồm ship), hay **B** = giá thực trả chiếc mới? Nếu chưa đủ địa chỉ tính ship thì fallback nào? Chỉ sau đó khóa ranking/estimate/tests. |
-| U-02 | **Owner** | Quà mở ở checkout: **A** chọn quà ngay checkout, hay **B** qua cart rồi quay lại không mất form? |
+| U-01 | **Owner — ĐÃ DUYỆT A** | Tính bằng **tổng phải trả sau − tổng phải trả trước**, gồm giảm giá và phí ship. Phí ship cơ bản mặc định **30.000đ** theo `guest-shipping-policy.ts`; giữ nguyên miễn ship, cấu hình server và cùng chính sách checkout trên cả hai quote. Không cần chờ địa chỉ để lấy 30.000đ vì chính sách hiện tại không phụ thuộc địa chỉ; nếu chính sách không đọc được thì không tự đoán. |
+| U-02 | **Owner — ĐÃ DUYỆT A** | Nếu Upsell mở suất quà mới, **chọn quà ngay tại checkout** mà không mất dữ liệu form. Quà đã đạt từ trước vẫn chọn ở `/cart` qua picker hiện có. Không tự chọn quà thay khách. |
 | U-03 | **Kỹ thuật ở /plan** | Chọn bounded candidate pool/budget phù hợp catalog thật, deterministic rank trên pool đã mô phỏng; không benchmark/thiết kế index lớn khi chưa đo. |
 | U-05 | **Kỹ thuật + security ở /plan** | Kiểm tra cart lock, **quote-proof HMAC hiện có**, stale/replay/ABA và version/guard phù hợp. Chỉ tạo offer token riêng hoặc thêm DB revision khi có trường hợp thực tế mà cơ chế hiện có không chặn được; nếu có token, cart UUID chỉ làm MAC context. Dismissal là UI state, không tự tạo version riêng. |
 
@@ -119,7 +119,7 @@ Các ID `AC-01…AC-50` từ [spec v1.4 trước khi rút gọn](https://github.
 
 ## 6. Chất lượng, rollout và handoff
 
-- **Trước build:** owner chốt U-01/U-02; kỹ thuật giải quyết U-03/U-05 trong `/plan` từ merged main, đọc `AGENTS.md` + tài liệu Next theo version thật. Không đoán quyền lợi/quyết định quan trọng.
+- **Trước build:** U-01/A và U-02/A đã được owner chốt; kỹ thuật giải quyết U-03/U-05 trong `/plan` từ merged main, đọc `AGENTS.md` + tài liệu Next theo version thật. Không đổi các quyết định đã duyệt bằng giả định.
 - **Trước merge code:** chạy thực tế lint, typecheck, tests cần thiết và build theo scripts repo; DB integration cho race/proof; Playwright các luồng checkout quan trọng; giữ PR169 regression. Ghi kết quả, không coi docs CI là E2E.
 - **Trước bật production:** chứng minh migrations ở môi trường đích, POS line-level capability, signed quote parity và checkout flow; feature flag Upsell mặc định OFF, bật staging/pilot trước và rollback độc lập qua flag. Đo lỗi add/quote-change, latency và offer→add cơ bản, **không** gửi PII/secrets.
 - **Luôn:** validate mọi input ngoài, không để giá phía client quyết định đơn, giữ signed COD proof, không tự chọn quà, không tăng quyền bán stock, không làm checkout hiện có lỗi vì gợi ý. Thay schema, payment/stock/POS contract hoặc production flag phải xin duyệt.
@@ -132,4 +132,4 @@ Các ID `AC-01…AC-50` từ [spec v1.4 trước khi rút gọn](https://github.
 - Code authority: `src/commerce/gift-quantity-stack.ts`, `gift-quantity-quote.ts`, `gift-quantity-entitlement.ts`, `benefit-checkout-quote.ts`, `checkout-quote-proof.ts`, `anonymous-cart-mutation.ts`.
 - UI hiện hữu: `src/routes/checkout.ts`, `src/components/commerce/guest-checkout-form.tsx`, `src/routes/order-summary-model.ts`.
 
-**Handoff:** Đây là MVP spec, **không phải U-01/U-02 đã duyệt hay implementation hoàn thành**. Đừng mở rộng thiết kế phòng ngừa nếu chưa có dữ liệu hoặc test buộc phải làm.
+**Handoff:** Đây là MVP spec với **U-01/A và U-02/A đã được owner duyệt**; **U-03/U-05 còn chờ thiết kế kỹ thuật** và Upsell **chưa implement**. Đừng mở rộng thiết kế phòng ngừa nếu chưa có dữ liệu hoặc test buộc phải làm.
