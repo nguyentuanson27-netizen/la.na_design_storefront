@@ -39,6 +39,8 @@ export function buildOrderSummary(input: Readonly<{
   giftQuantity?: number;
   /** An authoritative total to check the sum against (checkout's quote); a mismatch returns `null`. */
   expectedTotalVnd?: number;
+  /** An authoritative "Tổng giá trị đơn hàng" (the lines at their listed prices); a mismatch returns `null`. */
+  expectedValueVnd?: number;
 }>): OrderSummaryView | null {
   const { goodsAfterDiscountsVnd, discounts, shippingFeeVnd } = input;
   if (![goodsAfterDiscountsVnd, shippingFeeVnd].every((value) => Number.isSafeInteger(value) && value >= 0)) return null;
@@ -47,6 +49,7 @@ export function buildOrderSummary(input: Readonly<{
   const totalVnd = goodsAfterDiscountsVnd + shippingFeeVnd;
   if (!Number.isSafeInteger(valueVnd) || !Number.isSafeInteger(totalVnd)) return null;
   if (input.expectedTotalVnd !== undefined && input.expectedTotalVnd !== totalVnd) return null;
+  if (input.expectedValueVnd !== undefined && input.expectedValueVnd !== valueVnd) return null;
   return Object.freeze({
     valueText: currency.format(valueVnd),
     discounts: Object.freeze(discounts.map((row) => Object.freeze({ id: row.id, label: row.label, amountText: `−${row.amountText}` }))),

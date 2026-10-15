@@ -8,7 +8,9 @@ import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 import { buildCartViewModel } from "../../src/routes/cart-model.ts";
 import { buildCartPromotionView, buildCheckoutPromotionView, tierSavingRows, tierSavingsVnd } from "../../src/routes/cart-promotion-model.ts";
 import { describeLineDiscount } from "../../src/routes/line-discount-model.ts";
-import { buildBenefitCheckoutViewModel } from "../../src/routes/checkout-model.ts";
+import { buildBenefitCheckoutViewModel, buildCheckoutViewModel } from "../../src/routes/checkout-model.ts";
+import { DEFAULT_GUEST_SHIPPING_POLICY } from "../../src/commerce/guest-shipping-policy.ts";
+import { readFileSync } from "node:fs";
 
 /** The promotion banner's words and numbers: reached conditions first, then the bar to the next slot. */
 
@@ -320,4 +322,102 @@ test("only the nearest bar is shown across gifts and order-value ladders", () =>
   }))!;
   assert.equal(view.items.length, 1);
   assert.equal(view.items[0]!.id, "order-next-order", "94 % beats 25 %");
+});
+
+/* -------------------------------------------------------------------------- tier ordered BEFORE a Flash Sale */
+
+// Listed at 1.000.000 ₫, the Flash Sale alone makes it 900.000 ₫ (what the line shows). Ordered tier-first,
+// a 100.000 ₫ tier comes off the catalog price and the sale then takes 10 % of 900.000: 810.000 ₫ is paid.
+// The ledger's tier step says 100.000 ₫, but the shopper gained 90.000 ₫ over the listed price.
+const tierFirstSteps = [
+  { campaignId: "tier", source: "QUANTITY_TIER" as const, kind: "QUANTITY_TIER", priority: 1, inputPriceVnd: 1_000_000, outputPriceVnd: 900_000, appliedQuantity: 1 },
+  { campaignId: "flash", source: "LEGACY" as const, kind: "FLASH_SALE", priority: 2, inputPriceVnd: 900_000, outputPriceVnd: 810_000, appliedQuantity: 1 },
+];
+
+test("savings are measured against the listed price, not the tier step's own input", () => {
+  const group = { quantity: 1, unitPriceVnd: 810_000, steps: tierFirstSteps };
+  assert.equal(tierSavingsVnd([group]), 100_000, "unmeasured, the ledger amount");
+  assert.deepEqual(tierSavingRows([group], undefined, () => 900_000).map((row) => row.amountVnd), [90_000]);
+  assert.deepEqual(tierSavingRows([group], undefined, () => 810_000), [], "the tier added nothing over the listed price");
+  assert.deepEqual(tierSavingRows([group], undefined, () => 800_000), [], "a price paid above the listed price saves nothing");
+});
+
+test("the gain over the listed price is split across tier campaigns exactly, in proportion to the ledger", () => {
+  const steps = [
+    { campaignId: "a", source: "QUANTITY_TIER" as const, kind: "QUANTITY_TIER", priority: 1, inputPriceVnd: 1_000_000, outputPriceVnd: 940_000, appliedQuantity: 3 },
+    { campaignId: "b", source: "QUANTITY_TIER" as const, kind: "QUANTITY_TIER", priority: 2, inputPriceVnd: 940_000, outputPriceVnd: 900_000, appliedQuantity: 3 },
+    { campaignId: "flash", source: "LEGACY" as const, kind: "FLASH_SALE", priority: 3, inputPriceVnd: 900_000, outputPriceVnd: 810_000, appliedQuantity: 3 },
+  ];
+  const rows = tierSavingRows([{ quantity: 3, unitPriceVnd: 810_000, steps }], undefined, () => 900_000);
+  assert.equal(rows.reduce((sum, row) => sum + row.amountVnd, 0), 3 * 90_000, "rows add up to listed minus paid");
+  assert.deepEqual(rows.map((row) => row.id), ["a", "b"].sort((x, y) => rows.find((r) => r.id === y)!.amountVnd - rows.find((r) => r.id === x)!.amountVnd));
+});
+
+test("cart: tier-before-legacy reconciles, so the money block closes on the lines' own total", () => {
+  const line = { ...cartLine, quantity: 1, price: 900_000, basePrice: 1_000_000 } as StorefrontCartLine;
+  const giftState = {
+    ...state({ benefits: { enabled: true, ok: true, subtotalVnd: 810_000, dropped: [], campaignNames: new Map([["tier", "Giảm 100k"]]), groups: [
+      { groupKey: "paid", lineKey: "paid", quantity: 1, unitPriceVnd: 810_000, steps: tierFirstSteps },
+    ] } }),
+  } as CartGiftState;
+  const model = buildCartViewModel({ lines: [line], commerceTrackingEnabled: false, benefitCheckoutOpen: true, giftState, shippingPolicy: DEFAULT_GUEST_SHIPPING_POLICY });
+  assert.ok(model.summary, "the summary is shown rather than withheld");
+  assert.equal(model.summary.valueText, vnd("900.000"), "Tổng giá trị = the line, not 910.000");
+  assert.deepEqual(model.summary.discounts.map((row) => [row.label, row.amountText]), [["Giảm 100k", `−${vnd("90.000")}`]]);
+  assert.equal(model.promotions?.savingsVnd, 90_000);
+});
+
+function tierFirstCheckout(): Extract<BenefitCheckoutRender, { kind: "BENEFIT" }> {
+  const facts = buildBenefitCheckoutQuoteFacts({
+    paid: [{
+      groupKey: "g", pancakeVariationId: "var-1", quantity: 1, unitPriceVnd: 810_000, fulfillmentState: "READY",
+      steps: [
+        { ...quoteTierStep, inputPriceVnd: 1_000_000, outputPriceVnd: 900_000, appliedQuantity: 1 },
+        { campaignId: "flash", source: "LEGACY", campaignKind: "FLASH_SALE", priority: 2, inputPriceVnd: 900_000, outputPriceVnd: 810_000, appliedQuantity: 1 },
+      ] as never,
+    }],
+    gifts: [],
+    entitlements: [],
+  });
+  assert.ok(facts, "the checkout fixture must be a valid quote");
+  return { kind: "BENEFIT", facts, proof: "proof", digest: "digest", needsAcknowledgement: false, giftLabels: new Map(), tierDropped: false, campaignNames: new Map([["tier", "Giảm 100k"]]) };
+}
+
+test("checkout: tier-before-legacy shows 900.000 as the value and 90.000 as the saving", () => {
+  const line = { ...cartLine, quantity: 1, price: 900_000, basePrice: 1_000_000 } as StorefrontCartLine;
+  const model = buildBenefitCheckoutViewModel({ lines: [line], render: tierFirstCheckout() });
+  assert.equal(model.summary?.valueText, vnd("900.000"));
+  assert.deepEqual(model.summary?.discounts.map((row) => row.amountText), [`−${vnd("90.000")}`]);
+  assert.equal(model.promotions?.savingsVnd, 90_000);
+});
+
+test("checkout: with no listed price to prove the value against, no summary is claimed", () => {
+  const model = buildBenefitCheckoutViewModel({ lines: [], render: tierFirstCheckout() });
+  assert.equal(model.summary, undefined);
+});
+
+/* -------------------------------------------------------------------------- ordinary checkout, per-line price */
+
+test("ordinary checkout: a sale line carries its charged unit price beside the struck price, for quantity > 1", () => {
+  const line = { ...cartLine, quantity: 3, price: 600_000, basePrice: 800_000, pancakeVariationId: "var-1" } as StorefrontCartLine;
+  const model = buildCheckoutViewModel({
+    lines: [line],
+    totals: { items: [{ variantExternalId: "var-1", quantity: 3, unitPriceVnd: 600_000, fulfillmentState: "READY" }], merchandiseSubtotalVnd: 1_800_000, shippingFeeVnd: 0, totalVnd: 1_800_000, totalQuantity: 3 } as never,
+    quoteProof: "proof",
+  });
+  const paid = model.lines[0]!;
+  assert.equal(paid.unitPriceText, vnd("600.000"), "the new price, not null");
+  assert.equal(paid.originalPriceText, vnd("800.000"));
+  assert.equal(paid.discountPercent, 25);
+  assert.equal(paid.lineTotalText, vnd("1.800.000"));
+});
+
+/* -------------------------------------------------------------------------- checkout fallback block */
+
+test("the checkout fallback never prints a saving beneath an already-net 'Tạm tính'", () => {
+  const source = readFileSync(new URL("../../src/app/checkout/page.tsx", import.meta.url), "utf8");
+  const fallback = source.slice(source.indexOf("const fallbackTotals"), source.indexOf("const totalsBlock"));
+  assert.ok(fallback.includes("totals.subtotalText"), "the fallback shows the quote's own subtotal");
+  assert.equal(fallback.includes("savings"), false, "so it must not subtract the savings again");
+  assert.equal(fallback.includes("data-promotion-savings"), false);
 });

@@ -411,7 +411,7 @@ export function GiftQuantityTierFields({
           </div>
           <div>
             <label className={labelClass} htmlFor={id + "-extra"}>{byOrderValue ? "Thử thêm giá trị đơn (tùy chọn)" : "Thử thêm số lượng (tùy chọn)"}</label>
-            <input className={inputClass} id={id + "-extra"} inputMode="numeric" maxLength={5} onChange={(e) => { setExtraQuantity(e.target.value); setPreview(null); }} type="text" value={extraQuantity} />
+            <input className={inputClass} id={id + "-extra"} inputMode="numeric" maxLength={byOrderValue ? 10 : 5} onChange={(e) => { setExtraQuantity(e.target.value); setPreview(null); }} type="text" value={extraQuantity} />
           </div>
         </div>
         <button className={buttonClass + " mt-4"} onClick={() => setPreview(calculatePreview(basis, tiers, unit, effectiveDiscountedUnits, selection, samplePrice, extraQuantity))} type="button">Xem trước giá</button>

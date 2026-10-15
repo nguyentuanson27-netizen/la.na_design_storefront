@@ -186,11 +186,34 @@ type Participant =
   | Readonly<{ source: "TIER"; id: string; tier: StackTierParticipant; priority: number | null }>
   | Readonly<{ source: "LEGACY"; id: string; campaign: StackLegacyCampaign; priority: number | null; consented: boolean }>;
 
-export function priceStack(input: Readonly<{
+type StackInput = Readonly<{
   lines: readonly StackInputLine[];
   tiers: readonly StackTierParticipant[];
   legacyConsents: StackLegacyConsent;
-}>): StackResult {
+}>;
+
+export function priceStack(input: StackInput): StackResult {
+  const isOrderLadder = (tier: StackTierParticipant) => tier.config.basis === "ORDER_SUBTOTAL";
+  const ladders = input.tiers.filter(isOrderLadder);
+  if (ladders.length === 0) return solveStack(input);
+
+  // An order-value ladder is judged on what the shopper would pay after every other step. Whether it
+  // is reached is therefore decided on the cart priced WITHOUT any ladder: only a ladder that really is
+  // reached joins conflict detection, so one that is not reached can never make a valid tier step aside.
+  const first = solveStack({ ...input, tiers: input.tiers.filter((tier) => !isOrderLadder(tier)) });
+  if (!first.ok) return first;
+  const productOf = new Map(input.lines.map((line) => [line.lineKey, line.product]));
+  const reached = ladders.filter((tier) => {
+    // A ladder with an invalid configuration is passed on so it is reported as such.
+    if (validateTierConfig(tier.config).length > 0) return true;
+    let goods = 0;
+    for (const group of first.groups) if (tier.resolve(productOf.get(group.lineKey)!)) goods += group.lineTotalVnd;
+    return goods >= tier.config.tiers[0]!.minQuantity;
+  });
+  return solveStack({ ...input, tiers: [...input.tiers.filter((tier) => !isOrderLadder(tier)), ...reached] });
+}
+
+function solveStack(input: StackInput): StackResult {
   const { lines, tiers, legacyConsents } = input;
   if (!Array.isArray(lines) || lines.length === 0 || lines.length > MAX_STACK_LINES) return { ok: false, reason: "INPUT_INVALID" };
   const keys = new Set<string>();
@@ -220,16 +243,8 @@ export function priceStack(input: Readonly<{
   // tier's discount. Quantity is independent of price, so this is decided once, up front.
   const sortedTiers = validConfigTiers.filter((tier) => {
     const startThreshold = tier.config.tiers[0]!.minQuantity;
-    if (tier.config.basis === "ORDER_SUBTOTAL") {
-      // An order-value ladder is judged on prices after every other step, which are not known yet. Prices
-      // only fall along the chain, so the cart at its legacy-effective (else catalog) prices is an upper
-      // bound: below the first threshold even there, the ladder certainly changes nothing.
-      let bestCase = 0;
-      for (const line of sortedLines) {
-        if (tier.resolve(line.product)) bestCase += line.quantity * (line.legacy?.effectivePriceVnd ?? line.basePriceVnd);
-      }
-      return bestCase >= startThreshold;
-    }
+    // An order-value ladder was already judged against the cart priced without it (see `priceStack`).
+    if (tier.config.basis === "ORDER_SUBTOTAL") return true;
     let eligible = 0;
     for (const line of sortedLines) if (tier.resolve(line.product)) eligible += line.quantity;
     return eligible >= startThreshold;

@@ -140,6 +140,14 @@ export function canTrackLegacyCartPrices(input: Readonly<{
     paid.every((line) => benefits.groups.filter((group) => group.lineKey === line.variantId).reduce((sum, group) => sum + group.quantity, 0) === line.quantity);
 }
 
+/**
+ * The unit price each cart line is listed at -- the price its per-product promotion leaves, which is what
+ * the line shows. Cart-level savings are measured against this, so the money block adds up to the lines.
+ */
+function listedUnitPrices(lines: readonly StorefrontCartLine[]): ReadonlyMap<string, number> {
+  return new Map(lines.flatMap((line) => (line.available && line.price !== null ? [[line.variantId, line.price] as const] : [])));
+}
+
 function summaryEntry(
   input: Readonly<{ lines: readonly StorefrontCartLine[]; shippingPolicy?: GuestShippingPolicy; benefitsUnavailable?: boolean }>,
   subtotal: number | null,
@@ -161,7 +169,7 @@ function summaryEntry(
   }
   const summary = buildOrderSummary({
     goodsAfterDiscountsVnd: goodsAfterDiscounts,
-    discounts: buildCartPromotionView(state)?.savings ?? [],
+    discounts: buildCartPromotionView(state, listedUnitPrices(input.lines))?.savings ?? [],
     shippingFeeVnd,
   });
   // The lines' own prices are the order value: if the discounts do not close the gap exactly, say nothing.
@@ -179,9 +187,13 @@ function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: stri
  * stored gift choice no longer validates already says so through `benefitsNotice`, and a green
  * "reached" banner beside that notice would contradict it.
  */
-function promotionsEntry(state: CartGiftState | undefined, blocked: boolean | undefined): { promotions?: PromotionBannerView } {
+function promotionsEntry(
+  state: CartGiftState | undefined,
+  blocked: boolean | undefined,
+  lines: readonly StorefrontCartLine[],
+): { promotions?: PromotionBannerView } {
   if (blocked || !state) return {};
-  const promotions = buildCartPromotionView(state);
+  const promotions = buildCartPromotionView(state, listedUnitPrices(lines));
   return promotions ? { promotions } : {};
 }
 
@@ -250,7 +262,7 @@ export function buildCartViewModel(
     commerceTrackingEnabled: input.commerceTrackingEnabled,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
-    ...promotionsEntry(state, benefitBlocked),
+    ...promotionsEntry(state, benefitBlocked, input.lines),
     ...summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."

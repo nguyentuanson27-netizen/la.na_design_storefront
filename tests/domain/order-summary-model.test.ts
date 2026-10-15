@@ -110,7 +110,8 @@ test("no bill while the cart cannot be bought or its benefits cannot be trusted"
 });
 
 test("a discount ledger that does not close the gap to the lines' prices yields no bill", () => {
-  const s = state({ steps: [{ ...tierStep, outputPriceVnd: 650_000 }] }); // says 117.000 saved, but the groups sum to 3.178.000
+  // The discounted group is paid at 600.000 but no tier step explains the 89.000 each: nothing names that saving.
+  const s = state({ steps: [] });
   const model = buildCartViewModel({ lines: [line()], commerceTrackingEnabled: false, benefitCheckoutOpen: true, giftState: s, shippingPolicy: DEFAULT_GUEST_SHIPPING_POLICY });
   assert.equal("summary" in model, false);
 });

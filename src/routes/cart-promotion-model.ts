@@ -55,8 +55,41 @@ const FALLBACK_TIER_LABEL = "Ưu đãi mua nhiều";
  * `appliedQuantity` is not used for money because a group split by a later step keeps the earlier steps
  * it inherited with the quantity of the group it was split from.
  */
-type StepGroup = Readonly<{ quantity: number; steps?: readonly StepLike[]; discountSteps?: readonly StepLike[] }>;
+type StepGroup = Readonly<{
+  quantity: number;
+  /** What one unit of the group finally costs; read only to reconcile against a baseline. */
+  unitPriceVnd?: number;
+  steps?: readonly StepLike[];
+  discountSteps?: readonly StepLike[];
+}>;
 type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "outputPriceVnd">;
+
+/**
+ * The per-unit price a group is measured against: the price its line is listed at once only per-product
+ * promotions are applied (what the line shows), or `undefined` when the caller has none for the group.
+ */
+export type SavingBaseline<G extends StepGroup = StepGroup> = (group: G) => number | undefined;
+
+/** `total` split over `weights` in proportion, whole VND, the remainders going to the largest fractions. */
+function splitProportionally(total: number, weights: readonly number[]): number[] {
+  const sum = weights.reduce((acc, weight) => acc + weight, 0);
+  if (sum === total) return [...weights];
+  const bigTotal = BigInt(total);
+  const bigSum = BigInt(sum);
+  const shares = weights.map((weight) => {
+    const exact = bigTotal * BigInt(weight);
+    return { floor: exact / bigSum, rest: exact % bigSum };
+  });
+  let left = total - shares.reduce((acc, share) => acc + Number(share.floor), 0);
+  const order = shares.map((_, index) => index).sort((a, b) => (shares[b]!.rest > shares[a]!.rest ? 1 : shares[b]!.rest < shares[a]!.rest ? -1 : a - b));
+  const out = shares.map((share) => Number(share.floor));
+  for (const index of order) {
+    if (left <= 0) break;
+    out[index] = out[index]! + 1;
+    left -= 1;
+  }
+  return out;
+}
 
 /**
  * VND each quantity-tier campaign saves across a set of paid groups/lines, one row per campaign.
@@ -65,16 +98,44 @@ type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "out
  * shopper sees on the line, so counting it again as a cart-level saving would claim a discount the
  * shopper never had to earn. A step that raises the price (malformed input) contributes nothing, and
  * a non-finite total drops that campaign's row rather than print a number nobody was charged.
+ *
+ * With a `baseline`, the saving is measured against the price the line is LISTED at, not against the
+ * step's own input. The two differ when a tier is ordered before a Flash Sale: the tier then takes its
+ * amount off the catalog price and the sale takes a percentage of what is left, so the ledger's tier
+ * step (100.000 ₫) overstates what the shopper gained over the listed price (90.000 ₫). The group's real
+ * gain over its baseline is split across its tier steps in proportion to their ledger amounts, so the
+ * rows always add up to listed price minus price paid.
  */
-export function tierSavingRows(groups: readonly StepGroup[], names?: ReadonlyMap<string, string>): PromotionSavingRow[] {
+export function tierSavingRows<G extends StepGroup>(
+  groups: readonly G[],
+  names?: ReadonlyMap<string, string>,
+  baseline?: SavingBaseline<G>,
+): PromotionSavingRow[] {
   const byCampaign = new Map<string, number>();
+  const add = (campaignId: string, amountVnd: number) => byCampaign.set(campaignId, (byCampaign.get(campaignId) ?? 0) + amountVnd);
   for (const group of groups) {
+    const raw = new Map<string, number>();
     for (const step of group.steps ?? group.discountSteps ?? []) {
       if (step.source !== "QUANTITY_TIER") continue;
       const perUnit = step.inputPriceVnd - step.outputPriceVnd;
       if (!(perUnit > 0)) continue;
-      byCampaign.set(step.campaignId, (byCampaign.get(step.campaignId) ?? 0) + perUnit * group.quantity);
+      raw.set(step.campaignId, (raw.get(step.campaignId) ?? 0) + perUnit * group.quantity);
     }
+    if (raw.size === 0) continue;
+
+    const listed = baseline?.(group);
+    const paid = group.unitPriceVnd;
+    if (listed === undefined || paid === undefined) {
+      for (const [campaignId, amountVnd] of raw) add(campaignId, amountVnd);
+      continue;
+    }
+    const gain = (listed - paid) * group.quantity;
+    if (!Number.isSafeInteger(gain) || gain <= 0) continue;
+    const ids = [...raw.keys()].sort();
+    const weights = ids.map((id) => raw.get(id)!);
+    if (!weights.every((weight) => Number.isSafeInteger(weight))) continue;
+    const parts = splitProportionally(gain, weights);
+    ids.forEach((id, index) => add(id, parts[index]!));
   }
   const rows: PromotionSavingRow[] = [];
   for (const [campaignId, amountVnd] of byCampaign) {
@@ -129,11 +190,19 @@ function progressPercent(shortfall: number, target: number): number {
  * `null` when the basket has reached nothing and is on the way to nothing -- the surface then renders
  * no banner at all rather than an empty frame.
  */
-export function buildCartPromotionView(state: CartGiftState | undefined): PromotionBannerView | null {
+export function buildCartPromotionView(
+  state: CartGiftState | undefined,
+  /** The unit price each cart line is listed at (per-product promotions only), by `lineKey`. */
+  listedUnitPriceVnd?: ReadonlyMap<string, number>,
+): PromotionBannerView | null {
   const benefits = state?.quote.benefits;
   if (!state || !benefits?.enabled || !benefits.ok) return null;
 
-  const savings = tierSavingRows(benefits.groups, benefits.campaignNames);
+  const savings = tierSavingRows(
+    benefits.groups,
+    benefits.campaignNames,
+    listedUnitPriceVnd ? (group) => listedUnitPriceVnd.get(group.lineKey) : undefined,
+  );
   const items: PromotionBannerItem[] = [];
   const tier = tierItem(savings);
   if (tier) items.push(tier);
@@ -210,7 +279,13 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
 
 /** The checkout facts the banner reads: each line's role and discount steps. */
 export type CheckoutPromotionFacts = Readonly<{
-  lines: readonly Readonly<{ role: "PAID" | "GIFT"; quantity: number; discountSteps: readonly StepLike[] }>[];
+  lines: readonly Readonly<{
+    role: "PAID" | "GIFT";
+    quantity: number;
+    pancakeVariationId?: string;
+    unitPriceVnd?: number;
+    discountSteps: readonly StepLike[];
+  }>[];
 }>;
 
 /**
@@ -224,8 +299,14 @@ export function buildCheckoutPromotionView(
   facts: CheckoutPromotionFacts,
   giftQuantity: number,
   names?: ReadonlyMap<string, string>,
+  /** The unit price each variation is listed at (per-product promotions only), by Pancake variation id. */
+  listedUnitPriceVnd?: ReadonlyMap<string, number>,
 ): PromotionBannerView | null {
-  const savings = tierSavingRows(facts.lines.filter((line) => line.role === "PAID"), names);
+  const savings = tierSavingRows(
+    facts.lines.filter((line) => line.role === "PAID"),
+    names,
+    listedUnitPriceVnd ? (line) => (line.pancakeVariationId === undefined ? undefined : listedUnitPriceVnd.get(line.pancakeVariationId)) : undefined,
+  );
   const items: PromotionBannerItem[] = [];
   const tier = tierItem(savings);
   if (tier) items.push(tier);

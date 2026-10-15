@@ -196,7 +196,9 @@ export function buildCheckoutViewModel(
           primaryImage: line.media.primary,
           optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
           lineKey: line.variantId,
-          unitPriceText: null,
+          // The charged unit price: a struck-through catalog price is only honest beside the price paid, and
+          // the line total on the right cannot stand in for it when more than one is bought.
+          unitPriceText: line.price === null ? null : currency.format(line.price),
           ...checkoutDiscountEntry(describeLineDiscount(line.basePrice, line.price)),
           quantity: line.quantity,
           // `ready` means every line priced, so the fallback is unreachable rather than lenient.
@@ -307,14 +309,26 @@ export function buildBenefitCheckoutViewModel(
   );
 
   const giftQuantity = giftLines.reduce((sum, line) => sum + line.quantity, 0);
-  const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames);
-  const summary = buildOrderSummary({
-    goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
-    discounts: promotions?.savings ?? [],
-    shippingFeeVnd: facts.shippingFeeVnd,
-    giftQuantity,
-    expectedTotalVnd: facts.totalVnd,
-  });
+  // Savings are measured against the price each line is listed at (per-product promotions only), which
+  // is also what "Tổng giá trị đơn hàng" must come to; a paid line with no listed price proves nothing.
+  const listedUnitPrices = new Map(
+    input.lines.flatMap((line) => (line.pancakeVariationId === null || !line.available || line.price === null ? [] : [[line.pancakeVariationId, line.price] as const])),
+  );
+  const paidFacts = facts.lines.filter((fact) => fact.role === "PAID");
+  const listedValueVnd = paidFacts.every((fact) => listedUnitPrices.has(fact.pancakeVariationId))
+    ? paidFacts.reduce((sum, fact) => sum + listedUnitPrices.get(fact.pancakeVariationId)! * fact.quantity, 0)
+    : null;
+  const promotions = buildCheckoutPromotionView(facts, giftQuantity, render.campaignNames, listedUnitPrices);
+  const summary = listedValueVnd === null
+    ? null
+    : buildOrderSummary({
+        goodsAfterDiscountsVnd: facts.paidSubtotalVnd,
+        discounts: promotions?.savings ?? [],
+        shippingFeeVnd: facts.shippingFeeVnd,
+        giftQuantity,
+        expectedTotalVnd: facts.totalVnd,
+        expectedValueVnd: listedValueVnd,
+      });
 
   return Object.freeze({
     state: "ready",

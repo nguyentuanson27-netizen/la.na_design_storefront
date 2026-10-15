@@ -79,7 +79,7 @@ function render(data: CheckoutViewModel) {
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{line.productName}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">
               {line.optionLabel} · SL {line.quantity}
-              {line.unitPriceText === null ? null : ` × ${line.unitPriceText}`}
+              {line.unitPriceText === null || line.originalPriceText ? null : ` × ${line.unitPriceText}`}
             </p>
             {line.originalPriceText ? (
               <p className="mt-1 text-xs leading-5 text-black/75">
@@ -121,19 +121,14 @@ function render(data: CheckoutViewModel) {
   );
 
   // The older block is only the fallback for a quote the bill below could not be made to add up for, so a
-  // shopper never sees lines that do not sum to the total.
+  // shopper never sees lines that do not sum to the total. "Tạm tính" is already net of every cart-level
+  // discount, so no saving is printed beneath it: that would take the same discount off twice.
   const fallbackTotals = (
     <dl className="space-y-3 text-sm">
       <div className="flex justify-between gap-5">
         <dt className="text-black/75">Tạm tính</dt>
         <dd>{totals.subtotalText}</dd>
       </div>
-      {data.promotions?.savings.map((saving) => (
-        <div className="flex justify-between gap-5 font-medium text-[#24472D]" data-promotion-savings key={saving.id}>
-          <dt>{saving.label}</dt>
-          <dd>−{saving.amountText}</dd>
-        </div>
-      ))}
       {benefit && benefit.giftQuantity > 0 ? (
         <div className="flex justify-between gap-5">
           <dt className="text-black/75">Quà tặng ({benefit.giftQuantity})</dt>

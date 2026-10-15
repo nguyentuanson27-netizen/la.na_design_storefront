@@ -384,3 +384,26 @@ test("a Flash Sale, a quantity ladder and an order-value total chain into one va
   const tampered = { ...facts, lines: facts.lines.map((line) => ({ ...line, discountSteps: line.discountSteps.filter((step) => step.campaignId !== "order") })) };
   assert.equal(verifyBenefitQuoteProof({ proof, cartId: CART, currentQuote: tampered as never, secret: SECRET }).ok, false);
 });
+
+test("a ladder reachable only BEFORE another discount is not reached, so it cannot make a valid tier step aside", () => {
+  // 4 × 300.000 = 1.200.000 clears 1.100.000, but the 10 % quantity ladder takes it to 1.080.000: the
+  // order ladder never applies, so neither campaign conflicts and the quantity ladder keeps its discount.
+  const result = ok(priceStack({
+    lines: [sline("a", 4, 300_000)],
+    tiers: [participant("order", orderPct([[1_100_000, 5]])), participant("qty", qtyPct(4, 10))],
+    legacyConsents: noConsent,
+  }));
+  assert.deepEqual(result.dropped, []);
+  assert.equal(result.subtotalVnd, 1_080_000);
+  assert.deepEqual(result.groups.flatMap((g) => g.steps).map((s) => s.campaignId), ["qty"]);
+});
+
+test("the same holds when an earlier discount is a Flash Sale that the ladder has no consent to stack with", () => {
+  const result = ok(priceStack({
+    lines: [sline("a", 4, 300_000, "p1", flash)], // 270.000 -> 1.080.000 after the sale
+    tiers: [participant("order", orderPct([[1_100_000, 5]]))],
+    legacyConsents: new Map([["flash", { priority: 1 }]]),
+  }));
+  assert.deepEqual(result.dropped, []);
+  assert.equal(result.subtotalVnd, 1_080_000);
+});
