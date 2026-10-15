@@ -102,7 +102,7 @@ function render(data: CartViewModel) {
                       <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
                     )}
                     <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
-                    {line.paidSegments ? <p className="mt-2 text-sm">Giá theo số lượng: {line.paidSegments.join(" + ")}</p> : null}
+                    {line.paidSegments ? <p className="mt-2 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
                     {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
                         it belongs to rather than only the basket-level notice below. */}
                     {line.preorderLabel === null ? null : (
@@ -117,7 +117,7 @@ function render(data: CartViewModel) {
                   <div className="text-right">
                     <p className="font-medium">
                       {line.paidSegments ? (
-                        "Giá theo số lượng"
+                        "Giá sau ưu đãi"
                       ) : (
                         <LinePrice
                           discountPercent={line.discountPercent}

@@ -72,7 +72,15 @@ export function validateDraftShape(values: GiftQuantityDraftValues): readonly st
 
   const global = values.scopeMode === "GLOBAL_ALL_PAID_LINES";
   if (values.kind === "QUANTITY_TIER") {
-    if (global) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
+    // An order-value ladder discounts the whole basket (owner decision), so it has the global scope and
+    // no other; a quantity ladder needs a real one. A form that carries no tier fields leaves the stored
+    // rule alone, so what that scope means depends on the stored basis: `create` refuses it (nothing is
+    // stored) and `edit` checks it against the stored row, where this shape check cannot see.
+    if (values.tierRule) {
+      const orderValue = values.tierRule.basis === "ORDER_SUBTOTAL";
+      if (global && !orderValue) errors.push("GLOBAL_SCOPE_NOT_ALLOWED");
+      if (!global && orderValue) errors.push("ORDER_BASIS_NEEDS_GLOBAL_SCOPE");
+    }
     if (values.giftTrigger !== null || values.subtotalScope !== null || values.giftRule) errors.push("GIFT_FIELDS_ON_TIER");
     if (values.tierRule) errors.push(...validateTierRuleStructure(values.tierRule));
     return errors;
@@ -106,7 +114,12 @@ function validateDraftScope(values: GiftQuantityDraftValues): readonly ScopeIssu
       includeProductIds: values.includeProductIds,
       excludeProductIds: values.excludeProductIds,
     },
-    { allowGlobal: values.kind === "GIFT_ITEM" && values.giftTrigger === "ORDER_SUBTOTAL" && values.subtotalScope === "ALL_PAID_LINES" },
+    {
+      allowGlobal:
+        (values.kind === "GIFT_ITEM" && values.giftTrigger === "ORDER_SUBTOTAL" && values.subtotalScope === "ALL_PAID_LINES") ||
+        // With no tier fields the stored basis decides; the write path re-checks it against the stored row.
+        (values.kind === "QUANTITY_TIER" && (values.tierRule == null || values.tierRule.basis === "ORDER_SUBTOTAL")),
+    },
   );
   if (result.ok) return [];
   // An empty selection is an unfinished Draft, not a contradiction.
@@ -126,6 +139,8 @@ async function unknownProductIds(
 /** The persisted columns a tier rule describes (children are written separately). */
 function tierRuleColumns(rule: TierRuleInput) {
   return {
+    // Written explicitly once a rule is described, so a stored tier campaign states what it counts.
+    tierBasis: rule.basis === "ORDER_SUBTOTAL" ? ("ORDER_SUBTOTAL" as const) : ("QUANTITY" as const),
     tierUnit: rule.unit,
     tierDiscountedUnits: rule.discountedUnits,
     // The database allows a selection priority only for FROM; the structure check already refused
@@ -182,6 +197,10 @@ export async function createDraftGiftQuantityCampaign({
   const name = normalizePromotionCampaignName(values.name);
   if (!name.ok) return { ok: false, failure: { reason: "INVALID_INPUT", errors: [name.error] } };
   const tierRule = values.kind === "QUANTITY_TIER" ? values.tierRule ?? null : null;
+  // Nothing is stored yet to say this ladder counts order value, so a global scope has no basis to rest on.
+  if (values.kind === "QUANTITY_TIER" && tierRule === null && values.scopeMode === "GLOBAL_ALL_PAID_LINES") {
+    return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GLOBAL_SCOPE_NOT_ALLOWED"] } };
+  }
   if (tierRule !== null) {
     const peerErrors = await invalidStackPeers(client, tierRule, null);
     if (peerErrors.length > 0) return { ok: false, failure: { reason: "INVALID_INPUT", errors: peerErrors } };
@@ -255,12 +274,20 @@ export async function editDraftGiftQuantityCampaign({
     await lockRows(tx, "GiftQuantityCampaign", [campaignId]);
     const row = await tx.giftQuantityCampaign.findUnique({
       where: { id: campaignId },
-      select: { id: true, kind: true, isEnabled: true, enabledAt: true, disabledAt: true, startsAt: true, endsAt: true },
+      select: { id: true, kind: true, tierBasis: true, isEnabled: true, enabledAt: true, disabledAt: true, startsAt: true, endsAt: true },
     });
     if (row === null) return { ok: false, failure: { reason: "CAMPAIGN_NOT_FOUND" } } as const;
     const lifecycle = deriveCampaignLifecycle({ ...row, now });
     if (lifecycle.status !== "DRAFT") return { ok: false, failure: { reason: "ILLEGAL_TRANSITION", from: lifecycle.status } } as const;
     if (row.kind !== values.kind) return { ok: false, failure: { reason: "KIND_IMMUTABLE" } } as const;
+    // A form without tier fields keeps the stored rule, including what it counts: an order-value ladder
+    // keeps the global scope the database requires of it, so the scope cannot be moved out from under it.
+    if (values.kind === "QUANTITY_TIER" && tierRule === null) {
+      const stillOrderValue = row.tierBasis === "ORDER_SUBTOTAL";
+      const global = values.scopeMode === "GLOBAL_ALL_PAID_LINES";
+      if (stillOrderValue && !global) return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["ORDER_BASIS_NEEDS_GLOBAL_SCOPE"] } } as const;
+      if (!stillOrderValue && global) return { ok: false, failure: { reason: "INVALID_INPUT", errors: ["GLOBAL_SCOPE_NOT_ALLOWED"] } } as const;
+    }
 
     await tx.giftQuantityTarget.deleteMany({ where: { campaignId } });
     await tx.giftQuantityTarget.createMany({
@@ -276,7 +303,10 @@ export async function editDraftGiftQuantityCampaign({
       await tx.giftQuantityStackPeer.deleteMany({ where: { campaignId } });
       await tx.giftQuantityCampaign.update({
         where: { id: campaignId },
-        data: { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule) },
+        // The scope moves with the basis in this one statement: the database requires an order-value
+        // ladder to be global and a quantity ladder not to be, so a two-step write would pass through a
+        // state it refuses.
+        data: { ...tierRuleColumns(tierRule), ...tierRuleChildren(tierRule), scopeMode: values.scopeMode, categoryKeys: [...values.categoryKeys] },
       });
     }
     // The whole gift allowlist is replaced in this transaction, never merged into the stored one.
@@ -352,6 +382,7 @@ export async function copyGiftQuantityCampaign({
         awardMode: source.awardMode,
         maxGiftsPerOrder: source.maxGiftsPerOrder,
         allowDuplicateGifts: source.allowDuplicateGifts,
+        tierBasis: source.tierBasis,
         tierUnit: source.tierUnit,
         tierDiscountedUnits: source.tierDiscountedUnits,
         tierSelectionPriority: source.tierSelectionPriority,

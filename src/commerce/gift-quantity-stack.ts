@@ -1,5 +1,5 @@
 import {
-  priceQuantityTier,
+  priceTier,
   validateTierConfig,
   type QuantityTierConfig,
   type TierPriceSegment,
@@ -215,6 +215,16 @@ export function priceStack(input: Readonly<{
   // tier's discount. Quantity is independent of price, so this is decided once, up front.
   const sortedTiers = validConfigTiers.filter((tier) => {
     const startThreshold = tier.config.tiers[0]!.minQuantity;
+    if (tier.config.basis === "ORDER_SUBTOTAL") {
+      // An order-value ladder is judged on prices after every other step, which are not known yet. Prices
+      // only fall along the chain, so the cart at its legacy-effective (else catalog) prices is an upper
+      // bound: below the first threshold even there, the ladder certainly changes nothing.
+      let bestCase = 0;
+      for (const line of sortedLines) {
+        if (tier.resolve(line.product)) bestCase += line.quantity * (line.legacy?.effectivePriceVnd ?? line.basePriceVnd);
+      }
+      return bestCase >= startThreshold;
+    }
     let eligible = 0;
     for (const line of sortedLines) if (tier.resolve(line.product)) eligible += line.quantity;
     return eligible >= startThreshold;
@@ -324,10 +334,14 @@ export function priceStack(input: Readonly<{
       };
     });
 
+    // An order-value ladder always runs last, whatever its priority: its threshold is "what the shopper
+    // would pay for goods", which only exists once every other step has priced the lines.
+    const rankOf = (tier: StackTierParticipant) => (tier.config.basis === "ORDER_SUBTOTAL" ? 1 : 0);
     const chain = [
-      ...activeTiers.map((tier) => ({ source: "TIER" as const, id: tier.id, priority: tier.priority })),
-      ...[...chainLegacy].map((id) => ({ source: "LEGACY" as const, id, priority: legacyConsents.get(id)!.priority })),
+      ...activeTiers.map((tier) => ({ source: "TIER" as const, id: tier.id, priority: tier.priority, rank: rankOf(tier) })),
+      ...[...chainLegacy].map((id) => ({ source: "LEGACY" as const, id, priority: legacyConsents.get(id)!.priority, rank: 0 })),
     ].sort((a, b) => {
+      if (a.rank !== b.rank) return a.rank - b.rank;
       // Tiers that share nothing may have no priority; they sort last, then by id.
       const pa = a.priority ?? Number.MAX_SAFE_INTEGER;
       const pb = b.priority ?? Number.MAX_SAFE_INTEGER;
@@ -357,7 +371,7 @@ export function priceStack(input: Readonly<{
       const tier = activeTiers.find((candidate) => candidate.id === step.id)!;
       const inScope = working.filter((group) => tier.resolve(group.product));
       if (inScope.length === 0) continue;
-      const result = priceQuantityTier(
+      const result = priceTier(
         tier.config,
         inScope.map((group) => ({
           lineKey: group.groupKey,

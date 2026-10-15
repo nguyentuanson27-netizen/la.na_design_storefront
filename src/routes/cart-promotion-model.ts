@@ -49,8 +49,14 @@ export type PromotionBannerView = Readonly<{
 /** What a saving line says when the campaign's own name is unknown (a render built without names). */
 const FALLBACK_TIER_LABEL = "Ưu đãi mua nhiều";
 
-type StepGroup = Readonly<{ steps?: readonly StepLike[]; discountSteps?: readonly StepLike[] }>;
-type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "outputPriceVnd" | "appliedQuantity">;
+/**
+ * A paid group (cart) or quote line (checkout). `quantity` is the group's OWN unit count: every unit of a
+ * group is identical, so a step's saving is its per-unit drop times that count. A step's own
+ * `appliedQuantity` is not used for money because a group split by a later step keeps the earlier steps
+ * it inherited with the quantity of the group it was split from.
+ */
+type StepGroup = Readonly<{ quantity: number; steps?: readonly StepLike[]; discountSteps?: readonly StepLike[] }>;
+type StepLike = Pick<StackStep, "campaignId" | "source" | "inputPriceVnd" | "outputPriceVnd">;
 
 /**
  * VND each quantity-tier campaign saves across a set of paid groups/lines, one row per campaign.
@@ -67,7 +73,7 @@ export function tierSavingRows(groups: readonly StepGroup[], names?: ReadonlyMap
       if (step.source !== "QUANTITY_TIER") continue;
       const perUnit = step.inputPriceVnd - step.outputPriceVnd;
       if (!(perUnit > 0)) continue;
-      byCampaign.set(step.campaignId, (byCampaign.get(step.campaignId) ?? 0) + perUnit * step.appliedQuantity);
+      byCampaign.set(step.campaignId, (byCampaign.get(step.campaignId) ?? 0) + perUnit * group.quantity);
     }
   }
   const rows: PromotionSavingRow[] = [];
@@ -90,7 +96,7 @@ function tierItem(savings: readonly PromotionSavingRow[]): PromotionBannerItem |
     id: "tier",
     state: "achieved",
     kind: "TIER",
-    title: "Đã áp dụng ưu đãi mua nhiều",
+    title: "Đã áp dụng ưu đãi",
     progress: null,
     needsGiftChoice: false,
   });
@@ -180,12 +186,31 @@ export function buildCartPromotionView(state: CartGiftState | undefined): Promot
     }
   });
 
+  // How far the basket is from the next rung of an order-value ladder. The quote only reports a ladder that
+  // would genuinely apply, so what is shown here is a promise the checkout will keep.
+  for (const progress of benefits.orderValueProgress ?? []) {
+    const { next } = progress;
+    const base = progress.reachedThresholdVnd ?? 0;
+    const off = next.unit === "PERCENTAGE" ? `${next.value}%` : currency.format(next.value);
+    items.push(Object.freeze({
+      id: `order-next-${progress.campaignId}`,
+      state: "progress",
+      kind: "TIER",
+      title: `Mua thêm ${currency.format(next.shortfallVnd)} để được giảm ${off}`,
+      progress: Object.freeze({
+        percent: progressPercent(next.shortfallVnd, next.thresholdVnd - base),
+        label: `Còn thiếu ${currency.format(next.shortfallVnd)}`,
+      }),
+      needsGiftChoice: false,
+    }));
+  }
+
   return view(items, savings);
 }
 
 /** The checkout facts the banner reads: each line's role and discount steps. */
 export type CheckoutPromotionFacts = Readonly<{
-  lines: readonly Readonly<{ role: "PAID" | "GIFT"; discountSteps: readonly StepLike[] }>[];
+  lines: readonly Readonly<{ role: "PAID" | "GIFT"; quantity: number; discountSteps: readonly StepLike[] }>[];
 }>;
 
 /**

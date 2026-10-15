@@ -54,10 +54,10 @@ const quantityCampaign = { id: "gift-a", trigger: "QUANTITY", minimumQuantity: 4
 const subtotalCampaign = { id: "gift-b", trigger: "ORDER_SUBTOTAL", minimumQuantity: null, minimumSubtotalVnd: 4_000_000, awardMode: "ONCE", options: [] };
 
 test("only quantity-tier steps count as savings; the flash-sale price is already on the line", () => {
-  assert.equal(tierSavingsVnd([{ steps: [tierStep] }]), (689_000 - 600_000) * 3);
-  assert.equal(tierSavingsVnd([{ steps: [legacyStep] }]), 0, "a legacy step is not a tier saving");
-  assert.equal(tierSavingsVnd([{ steps: [{ ...tierStep, outputPriceVnd: 700_000 }] }]), 0, "a step that raises the price saves nothing");
-  assert.equal(tierSavingsVnd([{ discountSteps: [tierStep] }, { steps: [tierStep] }]), 2 * (689_000 - 600_000) * 3, "checkout facts and cart groups read the same");
+  assert.equal(tierSavingsVnd([{ quantity: 3, steps: [tierStep] }]), (689_000 - 600_000) * 3);
+  assert.equal(tierSavingsVnd([{ quantity: 5, steps: [legacyStep] }]), 0, "a legacy step is not a tier saving");
+  assert.equal(tierSavingsVnd([{ quantity: 3, steps: [{ ...tierStep, outputPriceVnd: 700_000 }] }]), 0, "a step that raises the price saves nothing");
+  assert.equal(tierSavingsVnd([{ quantity: 3, discountSteps: [tierStep] }, { quantity: 3, steps: [tierStep] }]), 2 * (689_000 - 600_000) * 3, "checkout facts and cart groups read the same");
   assert.equal(tierSavingsVnd([]), 0);
 });
 
@@ -68,7 +68,7 @@ test("a reached tier is announced, and its saving line is named by the campaign"
   assert.equal(view.items.length, 1);
   assert.equal(view.items[0]!.state, "achieved");
   assert.equal(view.items[0]!.kind, "TIER");
-  assert.equal(view.items[0]!.title, "Đã áp dụng ưu đãi mua nhiều");
+  assert.equal(view.items[0]!.title, "Đã áp dụng ưu đãi");
 });
 
 test("nothing reached and nothing near gives no banner at all", () => {
@@ -192,26 +192,25 @@ test("a benefit checkout with neither a tier nor a gift has no banner", () => {
 });
 
 test("a legacy flash-sale step on a paid line is not reported as an earned tier", () => {
-  const view = buildCheckoutPromotionView({ lines: [{ role: "PAID", discountSteps: [legacyStep as never] }] }, 0);
+  const view = buildCheckoutPromotionView({ lines: [{ role: "PAID", quantity: 5, discountSteps: [legacyStep as never] }] }, 0);
   assert.equal(view, null);
 });
 
 /* -------------------------------------------------------------------------- one row per campaign */
 
 test("two campaigns give two named rows, the larger first, each its own amount", () => {
-  const steps = [
-    { ...tierStep, campaignId: "small", inputPriceVnd: 100_000, outputPriceVnd: 95_000, appliedQuantity: 2 },
-    { ...tierStep, campaignId: "big", inputPriceVnd: 689_000, outputPriceVnd: 600_000, appliedQuantity: 3 },
-    { ...tierStep, campaignId: "big", inputPriceVnd: 500_000, outputPriceVnd: 450_000, appliedQuantity: 1 },
-  ];
-  const rows = tierSavingRows([{ steps }], new Map([["small", "Mua 2 giảm 5k"], ["big", "Mua 5 giảm 10%"]]));
+  const small = { ...tierStep, campaignId: "small", inputPriceVnd: 100_000, outputPriceVnd: 95_000 };
+  const bigA = { ...tierStep, campaignId: "big", inputPriceVnd: 689_000, outputPriceVnd: 600_000 };
+  const bigB = { ...tierStep, campaignId: "big", inputPriceVnd: 500_000, outputPriceVnd: 450_000 };
+  const groups = [{ quantity: 2, steps: [small] }, { quantity: 3, steps: [bigA] }, { quantity: 1, steps: [bigB] }];
+  const rows = tierSavingRows(groups, new Map([["small", "Mua 2 giảm 5k"], ["big", "Mua 5 giảm 10%"]]));
   assert.deepEqual(rows.map((row) => [row.label, row.amountVnd]), [["Mua 5 giảm 10%", 267_000 + 50_000], ["Mua 2 giảm 5k", 10_000]]);
-  assert.equal(tierSavingsVnd([{ steps }]), 317_000 + 10_000, "the total is the sum of the rows");
+  assert.equal(tierSavingsVnd(groups), 317_000 + 10_000, "the total is the sum of the rows");
 });
 
 test("a campaign whose name is unknown still gets an honest line, and a blank name does too", () => {
-  assert.equal(tierSavingRows([{ steps: [tierStep] }])[0]!.label, "Ưu đãi mua nhiều");
-  assert.equal(tierSavingRows([{ steps: [tierStep] }], new Map([["tier", "   "]]))[0]!.label, "Ưu đãi mua nhiều");
+  assert.equal(tierSavingRows([{ quantity: 3, steps: [tierStep] }])[0]!.label, "Ưu đãi mua nhiều");
+  assert.equal(tierSavingRows([{ quantity: 3, steps: [tierStep] }], new Map([["tier", "   "]]))[0]!.label, "Ưu đãi mua nhiều");
 });
 
 test("the view model carries every campaign's row, not one merged number", () => {
@@ -264,4 +263,61 @@ test("checkout names the per-product promotion on the line, from the quote's leg
   assert.equal(model.lines[0]!.originalPriceText, vnd("800.000"));
   assert.equal(model.lines[0]!.discountPercent, 14);
   assert.deepEqual(model.promotions?.savings, [], "a per-product promotion is on the line, not a cart-level saving row");
+});
+
+test("a group split by a later step is not counted twice: savings use the group's own quantity", () => {
+  // 3 units: a quantity ladder took 89.000 off each (step recorded with appliedQuantity 3), then an order-value
+  // total split them into 1 + 2 units. Both halves inherited the quantity step with appliedQuantity 3.
+  const quantityStep = { ...tierStep, campaignId: "qty", appliedQuantity: 3 };
+  const orderA = { ...tierStep, campaignId: "order", inputPriceVnd: 600_000, outputPriceVnd: 599_000, appliedQuantity: 1 };
+  const orderB = { ...tierStep, campaignId: "order", inputPriceVnd: 600_000, outputPriceVnd: 598_000, appliedQuantity: 2 };
+  const rows = tierSavingRows(
+    [{ quantity: 1, steps: [quantityStep, orderA] }, { quantity: 2, steps: [quantityStep, orderB] }],
+    new Map([["qty", "Mua 3 giảm 13%"], ["order", "Đơn từ 1 triệu giảm 5.000 ₫"]]),
+  );
+  const byLabel = new Map(rows.map((row) => [row.label, row.amountVnd]));
+  assert.equal(byLabel.get("Mua 3 giảm 13%"), 89_000 * 3, "3 units, not 6");
+  assert.equal(byLabel.get("Đơn từ 1 triệu giảm 5.000 ₫"), 1_000 * 1 + 2_000 * 2);
+});
+
+/* -------------------------------------------------------------------------- progress to the next order-value rung */
+
+const orderProgress = (over: Record<string, unknown> = {}) => ({
+  campaignId: "order", currentVnd: 940_000, reachedThresholdVnd: null,
+  next: { thresholdVnd: 1_000_000, unit: "PERCENTAGE", value: 5, shortfallVnd: 60_000 }, ...over,
+});
+const withProgress = (...entries: unknown[]) => state({ benefits: { enabled: true, ok: true, subtotalVnd: 940_000, dropped: [], campaignNames: new Map(), orderValueProgress: entries, groups: [] } });
+
+test("the next order-value rung is a bar: what is missing and what it would take off", () => {
+  const view = buildCartPromotionView(withProgress(orderProgress()))!;
+  assert.equal(view.items.length, 1);
+  const item = view.items[0]!;
+  assert.equal(item.state, "progress");
+  assert.equal(item.title, `Mua thêm ${vnd("60.000")} để được giảm 5%`);
+  assert.equal(item.progress!.percent, 94, "940.000 of 1.000.000 from nothing");
+  assert.equal(item.progress!.label, `Còn thiếu ${vnd("60.000")}`);
+});
+
+test("a fixed total reads as money, and the bar runs from the rung already reached", () => {
+  const view = buildCartPromotionView(withProgress(orderProgress({
+    currentVnd: 2_500_000, reachedThresholdVnd: 2_000_000,
+    next: { thresholdVnd: 3_000_000, unit: "FIXED_AMOUNT_TOTAL_VND", value: 200_000, shortfallVnd: 500_000 },
+  })))!;
+  assert.equal(view.items[0]!.title, `Mua thêm ${vnd("500.000")} để được giảm ${vnd("200.000")}`);
+  assert.equal(view.items[0]!.progress!.percent, 50, "halfway between the 2.000.000 rung and the 3.000.000 one");
+});
+
+test("a ladder with nothing left to reach adds no bar, and no progress field means none", () => {
+  assert.equal(buildCartPromotionView(withProgress()), null);
+  assert.equal(buildCartPromotionView(state()), null);
+});
+
+test("only the nearest bar is shown across gifts and order-value ladders", () => {
+  const view = buildCartPromotionView(state({
+    benefits: { enabled: true, ok: true, subtotalVnd: 1, dropped: [], campaignNames: new Map(), groups: [], orderValueProgress: [orderProgress()] },
+    campaigns: [quantityCampaign],
+    entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 1, earned: 0, entitled: 0, shortfallToNext: { quantity: 3, subtotalVnd: null } }],
+  }))!;
+  assert.equal(view.items.length, 1);
+  assert.equal(view.items[0]!.id, "order-next-order", "94 % beats 25 %");
 });
