@@ -399,6 +399,9 @@ test("a component group with its own PREORDER policy enables preorder sale withi
   const component = projection.options.find((option) => option.id === "shirt-m");
   assert.equal(component?.purchasable, true, "component option is purchasable under preorder within limit");
   assert.equal(component?.isPreorderSale, true, "component option is flagged as preorder sale");
-  assert.equal(component?.availability.availabilityDate, "2026-11-20");
+  assert.equal(
+    component?.availability.published ? component.availability.availabilityDate : null,
+    "2026-11-20",
+  );
 });
 

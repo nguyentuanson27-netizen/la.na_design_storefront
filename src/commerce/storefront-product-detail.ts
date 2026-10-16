@@ -5,6 +5,7 @@ import {
   resolveCompositeComponentGroupLabel,
   type StorefrontCompositeComponentGroup,
   type StorefrontCompositeSubSetGroup,
+  type StorefrontSellingPolicy,
 } from "./storefront-projection.ts";
 import {
   COMPOSITE_SUB_SET_KIND_KEYS,
