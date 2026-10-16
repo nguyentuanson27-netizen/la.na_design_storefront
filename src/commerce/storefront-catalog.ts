@@ -273,6 +273,19 @@ function visibleProductWhere(shopId: number) {
   } satisfies Prisma.ProductMirrorWhereInput;
 }
 
+function publicListingProductWhere(shopId: number) {
+  return {
+    ...visibleProductWhere(shopId),
+    variants: {
+      none: {
+        compositeParents: {
+          some: {},
+        },
+      },
+    },
+  } satisfies Prisma.ProductMirrorWhereInput;
+}
+
 /**
  * The SQL projection of the advisory capacity read model (`capacity-advisory.ts`), for the surfaces
  * that must decide availability before they paginate: `/shop`'s in-stock filter and the sale
@@ -517,6 +530,12 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
     Prisma.sql`p."pancakeShopId" = ${safeShopId}`,
     Prisma.sql`p."isPresent" = TRUE`,
     Prisma.sql`p."isActive" = TRUE`,
+    Prisma.sql`NOT EXISTS (
+      SELECT 1
+      FROM "CompositeComponentMirror" ccm
+      JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
+      WHERE cv."productId" = p."id"
+    )`,
   ];
 
   if (discovery.query) {
@@ -688,7 +707,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
 
   async function listProducts({ shopId, limit }: { shopId: number; limit: number }) {
     const products = await client.productMirror.findMany({
-      where: visibleProductWhere(shopId),
+      where: publicListingProductWhere(shopId),
       take: parseListLimit(limit),
       orderBy: [{ name: "asc" }, { id: "asc" }],
       select: productSelection,
@@ -721,7 +740,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
    */
   async function listNewestProducts({ shopId, limit }: { shopId: number; limit: number }) {
     const products = await client.productMirror.findMany({
-      where: visibleProductWhere(shopId),
+      where: publicListingProductWhere(shopId),
       take: parseListLimit(limit),
       // `id` breaks ties, so a re-sync that gives many rows the same instant still returns a
       // stable page rather than one that reshuffles between requests.
@@ -765,7 +784,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
   }) {
     const safePageSize = parseListLimit(pageSize);
     const offset = parsePageOffset(page, safePageSize);
-    const where = visibleProductWhere(shopId);
+    const where = publicListingProductWhere(shopId);
     const [totalProducts, products] = await Promise.all([
       client.productMirror.count({ where }),
       client.productMirror.findMany({
@@ -841,7 +860,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
   }) {
     const safePageSize = parseListLimit(pageSize);
     const offset = parsePageOffset(page, safePageSize);
-    const where = visibleProductWhere(shopId);
+    const where = publicListingProductWhere(shopId);
     const [totalProducts, products] = await Promise.all([
       client.productMirror.count({ where }),
       client.productMirror.findMany({
@@ -1023,6 +1042,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
           AND v."isActive" = TRUE
           AND v."color" IS NOT NULL
           AND BTRIM(v."color") <> ''
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "CompositeComponentMirror" ccm
+            WHERE ccm."componentVariantId" = v."id"
+          )
           ${categoryClause}
         ORDER BY "value" ASC
       `),
@@ -1037,6 +1061,11 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
           AND v."isActive" = TRUE
           AND v."size" IS NOT NULL
           AND BTRIM(v."size") <> ''
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "CompositeComponentMirror" ccm
+            WHERE ccm."componentVariantId" = v."id"
+          )
           ${categoryClause}
         ORDER BY "value" ASC
       `),
@@ -1049,6 +1078,12 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
         WHERE p."pancakeShopId" = ${safeShopId}
           AND p."isPresent" = TRUE
           AND p."isActive" = TRUE
+          AND NOT EXISTS (
+            SELECT 1
+            FROM "CompositeComponentMirror" ccm
+            JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
+            WHERE cv."productId" = p."id"
+          )
         ORDER BY "value" ASC
       `),
     ]);
