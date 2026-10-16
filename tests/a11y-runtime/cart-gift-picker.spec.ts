@@ -101,6 +101,62 @@ test("stale selection is retained and announced after paid reduction or rule cha
   await expect(picker.getByRole("alert")).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
+
+test("F4: keyboard removal of one gift preserves the other gift and focus in the gift area", async ({ page }) => {
+  const other = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: PREFIX + "other", slug: PREFIX + "other", name: "Quà còn lại", syncedAt: new Date(),
+    variants: { create: { pancakeVariationId: PREFIX + "other", color: "Xanh", size: "M", syncedAt: new Date(),
+      warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: new Date() } } } } }, include: { variants: true } });
+  const otherId = other.variants[0].id;
+  await prisma.giftOption.create({ data: { campaignId, variantId: otherId } });
+  await prisma.cartGiftSelection.createMany({ data: [giftId, otherId].map(variantId => ({ cartId, campaignId, variantId, campaignRevision: 1, quantity: 1 })) });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  const orders = await prisma.orderMirror.count(), holds = await prisma.variantCapacityReservation.count();
+  const remove = picker.locator(`[data-gift-selection="${campaignId}/${giftId}"]`).getByRole("button", { name: /^Bỏ quà để chọn lại/ });
+  await remove.focus();
+  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("status")).toContainText("Đã bỏ 1 quà");
+  await expect(remove).toHaveCount(0);
+  await expect(picker).toBeFocused();
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+  expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: otherId, quantity: 1 })]);
+  expect(await prisma.cartItem.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: paidId, quantity: 2 })]);
+  expect(await prisma.orderMirror.count()).toBe(orders);
+  expect(await prisma.variantCapacityReservation.count()).toBe(holds);
+});
+
+test("F4: keyboard reduction from two gifts to one restores focus after the reduce button disappears", async ({ page }) => {
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, campaignRevision: 1, quantity: 2 } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  const reduce = picker.getByRole("button", { name: /^Bỏ 1 chiếc/ });
+  await reduce.focus();
+  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("status")).toContainText("Đã bỏ 1 quà");
+  await expect(reduce).toHaveCount(0);
+  await expect(picker).toBeFocused();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: giftId, quantity: 1 })]);
+  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});
+
+test("F4: a refused reduction keeps the saved quantity, reports refusal and retains a usable control", async ({ page }) => {
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, campaignRevision: 1, quantity: 2 } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { revision: 2 } });
+  const reduce = picker.getByRole("button", { name: /^Bỏ 1 chiếc/ });
+  await reduce.focus();
+  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("status")).toContainText("Chưa bỏ quà");
+  await expect(picker.getByRole("status")).not.toContainText("Đã bỏ");
+  await expect(reduce).toBeEnabled();
+  await expect(reduce).toBeFocused();
+  expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: giftId, campaignRevision: 1, quantity: 2 })]);
+});
 test("all-out gifts show stock shortage and allow leaving choices empty", async ({ page }) => {
   await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
   await page.goto(`${URL}/cart`);

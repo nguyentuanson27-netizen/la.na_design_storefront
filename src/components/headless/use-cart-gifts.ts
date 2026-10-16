@@ -34,7 +34,7 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
     startTransition(readback);
   }
   function change(campaignId: string, variantId: string, campaignRevision: number, quantity: number, label: string, removed: number) {
-    if (locked || isLocked?.() || busy.current || unknown.current) return;
+    if (locked || isLocked?.() || busy.current || unknown.current) return false;
     busy.current = true; onBusyChange?.(true);
     setMessage(quantity === 0 || removed > 0 ? "Đang bỏ quà…" : "Đang thêm quà…");
     startTransition(async () => {
@@ -51,6 +51,7 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
         if (!unknown.current) setMessage(`Chưa ${removed > 0 ? "bỏ" : "thêm"} quà ${label}. Lựa chọn và số suất hiện tại được cập nhật bên trên.`);
       }
     });
+    return true;
   }
   return { pending, uncertain, message, change, retryRead };
 }

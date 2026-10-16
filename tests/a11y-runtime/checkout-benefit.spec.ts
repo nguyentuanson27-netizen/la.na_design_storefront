@@ -299,6 +299,128 @@ test("F2: one invalid gift is identified; removing it preserves the valid gift, 
   expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("la-checkout-gift-reminder-v1")!).seen)).toBe(true);
 });
 
+for (const readback of [false, true]) {
+  test(`F4: final invalid gift removal retains a named focus anchor without entitlement (${readback ? "lost response and retry" : "confirmed response"})`, async ({ page }) => {
+    await chooseGift(1);
+    await startServer(3350, true);
+    await page.goto(`${baseUrl}/checkout`);
+    await fillReceiving(page);
+    await page.getByRole("button", { name: "Đặt hàng COD", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false } });
+    await refreshQuote(page);
+    await expect(page.locator('input[name="quoteProof"]')).toHaveValue("");
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    await picker.getByRole("button", { name: "Kiểm tra quà đã chọn", exact: true }).click();
+    const orders = await prisma.orderMirror.count(), holds = await prisma.variantCapacityReservation.count();
+    let writes = 0, mutationId: string | undefined, failRead = true;
+    if (readback) await page.route("**/checkout", async route => {
+      const request = route.request();
+      if (request.method() !== "POST" || !request.headers()["next-action"]) return route.continue();
+      const action = request.headers()["next-action"];
+      if (!mutationId || action === mutationId) {
+        mutationId = action; writes++;
+        await route.fetch();
+        return route.abort("failed");
+      }
+      return failRead ? route.abort("failed") : route.continue();
+    });
+    const remove = picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ });
+    await remove.focus();
+    await page.keyboard.press("Enter");
+    if (readback) {
+      const retry = picker.getByRole("button", { name: "Kiểm tra lại quà trong đơn", exact: true });
+      await expect(retry).toBeVisible();
+      await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+      await expect(picker.getByRole("status")).not.toContainText("Đã bỏ");
+      failRead = false;
+      await retry.focus();
+      await page.keyboard.press("Enter");
+    }
+    await expect(page.locator('input[name="quoteProof"]')).not.toHaveValue("");
+    await expect(remove).toHaveCount(0);
+    await expect(picker).toBeVisible();
+    await expect(picker).toBeFocused();
+    await expect(picker.getByRole("status")).toContainText(readback ? "Đã kiểm tra lại quà" : "Đã bỏ 1 quà");
+    await expect(picker.getByRole("heading", { name: "Quà dành cho bạn" })).toHaveCount(0);
+    await expect(picker.locator("article")).toHaveCount(0);
+    await expectReceiving(page);
+    expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+    expect(await prisma.orderMirror.count()).toBe(orders);
+    expect(await prisma.variantCapacityReservation.count()).toBe(holds);
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("la-checkout-gift-reminder-v1")!).seen)).toBe(true);
+    if (readback) expect(writes).toBe(1);
+    await page.unroute("**/checkout");
+  });
+}
+
+for (const scenario of ["delayed", "committed-readback", "uncommitted-readback", "tab-away"] as const) {
+  test(`F4: ${scenario} removal never steals focus after the buyer leaves gift management`, async ({ page }) => {
+    await chooseGift(1);
+    await startServer(3350, true);
+    await page.goto(`${baseUrl}/checkout`);
+    await fillReceiving(page);
+    await page.getByRole("button", { name: "Đặt hàng COD", exact: true }).click();
+    await page.keyboard.press("Escape");
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    await picker.getByRole("button", { name: "Chọn quà ngay", exact: true }).click();
+    const orders = await prisma.orderMirror.count(), holds = await prisma.variantCapacityReservation.count();
+    const before = await page.locator("form").getAttribute("data-checkout-render");
+    let release!: () => void, responseReady!: () => void;
+    const held = new Promise<void>(resolve => { release = resolve; });
+    const ready = new Promise<void>(resolve => { responseReady = resolve; });
+    let mutationId: string | undefined, writes = 0;
+    await page.route("**/checkout", async route => {
+      const request = route.request();
+      if (request.method() !== "POST" || !request.headers()["next-action"]) return route.continue();
+      const action = request.headers()["next-action"];
+      if (!mutationId || mutationId === action) {
+        mutationId = action; writes++;
+        if (scenario === "uncommitted-readback") return route.abort("failed");
+        const response = await route.fetch();
+        if (scenario === "committed-readback") return route.abort("failed");
+        responseReady();
+        await held;
+        return route.fulfill({ response });
+      }
+      const response = await route.fetch(); // Hold the read response, not another write.
+      responseReady();
+      await held;
+      return route.fulfill({ response });
+    });
+    try {
+      await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).focus();
+      await page.keyboard.press("Enter");
+      await ready;
+      const destination = scenario === "uncommitted-readback"
+        ? page.getByLabel("Ghi chú", { exact: false })
+        : scenario === "tab-away" ? page.getByLabel("Họ và tên", { exact: false })
+          : page.getByRole("heading", { name: "Tổng kết thanh toán", exact: true });
+      if (scenario === "uncommitted-readback") await destination.click();
+      else {
+        await picker.getByRole("button", { name: "Quay lại thanh toán", exact: true }).focus();
+        await page.keyboard.press(scenario === "tab-away" ? "Tab" : "Enter");
+      }
+      await expect(destination).toBeFocused();
+      await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+      release();
+      await expect(picker).toHaveAttribute("aria-busy", "false");
+      await expect.poll(async () => (await page.locator("form").getAttribute("data-checkout-render")) !== before).toBe(true);
+      await expect(destination).toBeFocused();
+      await expectReceiving(page);
+      await expect(page.locator('input[name="quoteProof"]')).not.toHaveValue("");
+      if (scenario === "uncommitted-readback") {
+        await expect(picker.getByRole("status")).not.toContainText("Đã bỏ");
+        expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: giftVariantId, quantity: 1 })]);
+      } else expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+      expect(writes).toBe(1);
+      expect(await prisma.orderMirror.count()).toBe(orders);
+      expect(await prisma.variantCapacityReservation.count()).toBe(holds);
+      expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("la-checkout-gift-reminder-v1")!).seen)).toBe(true);
+    } finally { release(); await page.unroute("**/checkout"); }
+  });
+}
+
 test("verified shop: every slot taken means no acknowledgement is asked", async ({ page }) => {
   await startServer(3350, true);
   await chooseGift(2);

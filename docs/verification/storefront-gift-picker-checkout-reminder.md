@@ -40,6 +40,29 @@ The new upsell regressions count mutation requests and stored paid quantities, h
 
 Automated descriptions and Axe do not establish human screen-reader output. The existing screen-reader, physical-device and image-handoff gates remain open; this follow-up does not mark the Draft ready for release.
 
+## Re-review follow-up: F4 focus persistence
+
+The [re-review at `3e2dbd3`](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/175#issuecomment-6214698960) accepts F1–F3 and requests F4 under UI-05. This follow-up changes only the picker focus lifecycle and the client hook's indication that an operation was started; it does not change server actions, schema, pricing, proof, ownership or the removal/readback contract.
+
+The picker records the actual focused remove/reduce button only when the existing mutation guard accepts starting the transition. After pending and uncertainty both clear, it restores that control if still usable, otherwise focuses the named gift area. This also retains a usable control after a known refusal without claiming a successful removal. The effect is tied to that recorded operation and its transition, not every model/message update. Explicit focus movement, pointer activity elsewhere or Tab relinquishes the recorded focus intent; effect cleanup clears it when the area is deactivated/unmounted. Focus changes use `preventScroll` and never target submit. Explicit retry-read inside the gift area can establish a new origin for the unresolved removal; it does not repeat the write.
+
+The same labelled, focusable `section#cart-gifts` and atomic status remain when the final stale gift is removed with zero entitlement. Its cards, management controls and gift heading are omitted in that state; only the useful result message remains. Receiving fields, note and reminder metadata stay with the existing checkout owner.
+
+Application browser RED was observed before changing implementation: **5 failed / 3 passed** against the reviewed source with pinned Playwright Chromium, including removal among multiple gifts, 2 → 1 reduction, known refusal and final-invalid-gift removal with both confirmed and lost responses. Failures showed missing focus recovery or a missing named anchor. The three cases preserving focus after deliberately leaving management already passed and remain regression requirements. The initial eight scenarios then passed after the fix; a ninth adds actual Tab navigation to a receiving field.
+
+Local validation uses Node 24.19.0 / pnpm 11.4.0 / PostgreSQL 16 / Playwright 1.62.0 with pinned Chromium 151, and separately migrated disposable browser/domain/database databases. Existing sandbox POS/geo fixtures are retained; production services are not used.
+
+- `pnpm lint`: passed, **0 errors / 21 existing warnings**.
+- `pnpm typecheck`: passed.
+- `pnpm test`: **3,253 passed**, no failures/skips/cancellations.
+- `pnpm test:db`: **939 passed**, no failures/skips/cancellations (**462 seconds**); test auth settings and `x-ci-client-ip` match the CI contract.
+- `pnpm build`: passed, including the final intent-cleanup change; the three existing product-image-cache tracing warnings remain.
+- The requested three-file browser command: **44 passed**, no retries/failures/skips (**4.8 minutes**). This run covers the nine F4 scenarios and the existing F1–F3, quote/reminder, explicit sandbox-order, responsive, zoom and Axe assertions. After adding deactivation cleanup of the deferred intent, the final F4 selection was repeated: **9 passed**, no retries/failures/skips (**1.4 minutes**).
+
+The new browser checks use Enter for removal/reduction/retry, Tab to leave management, and a real pointer click into the note field. They inspect persisted gifts and paid quantities; preserve the valid neighbouring gift, form/note, current proof and reminder; count the single mutation across lost-response readback; and assert no early order/reservation. Delayed/committed-readback replies preserve the payment-heading focus; uncommitted readback preserves the input focus and stored gift without announcing a removal. Known refusal retains its quantity and a usable focus point.
+
+Human screen-reader output, physical-device checks and the existing image-handoff/release gates remain pending. Browser focus, DOM descriptions and Axe are automated evidence, not substitutes for those gates. The PR remains Draft.
+
 ## AC traceability
 
 Browser references below are in `tests/a11y-runtime/checkout-benefit.spec.ts` unless noted. Tests inspect persisted selections/orders, not only copy or screenshots.
