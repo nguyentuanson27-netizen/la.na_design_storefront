@@ -1,5 +1,6 @@
 "use client";
 
+import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
 import type { ReactNode } from "react";
 
 import { GuestCheckoutForm, type GuestCheckoutBenefit } from "@/components/commerce/guest-checkout-form";
@@ -24,6 +25,7 @@ import { GuestCheckoutForm, type GuestCheckoutBenefit } from "@/components/comme
 export function BrandGuestCheckoutForm(
   props: Readonly<{
     quoteProof: string;
+    upsell?: CheckoutUpsellModel;
     benefit?: GuestCheckoutBenefit;
     summaryLabel?: string;
     summarySlot?: ReactNode;

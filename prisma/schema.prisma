@@ -717,6 +717,8 @@ model PancakeInventorySignal {
 }
 
 model Cart {
+  /// Monotonic paid-line write version, maintained by the CartItem database trigger (ABA guard).
+  paidRevision BigInt @default(0)
   id        String     @id @default(uuid())
   userId    String?
   expiresAt DateTime

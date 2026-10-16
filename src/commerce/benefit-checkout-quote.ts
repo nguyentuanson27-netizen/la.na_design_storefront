@@ -74,6 +74,7 @@ export async function resolveBenefitCheckoutQuote({
   env = process.env,
   lines,
   excludeOrderHolds,
+  giftState,
 }: Readonly<{
   tx: Prisma.TransactionClient;
   cartId: string;
@@ -87,13 +88,15 @@ export async function resolveBenefitCheckoutQuote({
   lines?: readonly StorefrontCartLine[];
   /** The POS submit re-derives the quote while the order's own stock hold exists; that hold must not count against it. */
   excludeOrderHolds?: string;
+  /** Read-only hypothetical state from the same gift authority; never persisted to quote +1. */
+  giftState?: Awaited<ReturnType<typeof readCartGiftState>>;
 }>): Promise<BenefitCheckoutResolution> {
   // Gate OFF: not one statement beyond the legacy checkout's own.
   if (!isGiftQuantityPromotionsEnabled(env)) return { kind: "LEGACY" };
 
   let state: Awaited<ReturnType<typeof readCartGiftState>>;
   try {
-    state = await readCartGiftState(excludeOrderHolds === undefined ? tx : withoutOrderHolds(tx, excludeOrderHolds), cartId, shopId, now, env);
+    state = giftState ?? await readCartGiftState(excludeOrderHolds === undefined ? tx : withoutOrderHolds(tx, excludeOrderHolds), cartId, shopId, now, env);
   } catch {
     return { kind: "UNAVAILABLE" };
   }

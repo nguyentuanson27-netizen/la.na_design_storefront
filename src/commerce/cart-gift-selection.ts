@@ -30,8 +30,10 @@ export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
  * Exported for the checkout DRAFT step (GQ17) so checkout prices a gift cart from the very same
  * facts the cart page showed, not from a second derivation that could drift.
  */
-export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Readonly<Record<string, string | undefined>>) {
-  const cart = await tx.cart.findUniqueOrThrow({ where: { id: cartId }, select: { items: { select: { variantId: true, quantity: true, sourceProductSlug: true } } } });
+export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: string, shopId: number, now: Date, env: Readonly<Record<string, string | undefined>>, paidItems?: readonly { variantId: string; quantity: number; sourceProductSlug?: string | null }[]) {
+  const cart = paidItems === undefined
+    ? await tx.cart.findUniqueOrThrow({ where: { id: cartId }, select: { items: { select: { variantId: true, quantity: true, sourceProductSlug: true } } } })
+    : { items: paidItems };
   const quote = await createStorefrontCartRepository(tx as unknown as StorefrontCartReadClient).getQuote({ shopId, items: cart.items, now, env });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
   const paidVariants = await tx.variantMirror.findMany({ where: { id: { in: cart.items.map((item) => item.variantId) } }, select: { id: true, productId: true } });
@@ -84,6 +86,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const selections = await listCartGiftSelections(tx, cartId);
   const validation = validateGiftSelections({ campaigns, entitlements, selection: selections });
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
+    items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
 }
 

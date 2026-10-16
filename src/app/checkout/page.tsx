@@ -219,6 +219,7 @@ function render(data: CheckoutViewModel) {
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
+          upsell={data.upsell}
           benefit={
             benefit === null
               ? undefined

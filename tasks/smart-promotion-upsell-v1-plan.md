@@ -1,6 +1,6 @@
 # Smart Promotion Upsell v1 — implementation plan
 
-**Status:** PROPOSED /plan — owner đã duyệt **U-01/A, U-02/A**; chờ human review kế hoạch trước `/build`. Không phải bằng chứng đã triển khai.
+**Status:** IMPLEMENTED on the feature branch following the owner’s explicit end-to-end build request; independent review and production release gates remain separate. See [implementation evidence](./smart-promotion-upsell-v1-evidence.md) and [ADR 0017](../docs/decisions/0017-smart-promotion-upsell-implementation.md).
 **Source:** [SPEC-UPS-001 v1.6](../docs/specs/smart-promotion-upsell-v1.md), `main@17d34e0cb7dc40f9f36bce6b6c46903b0e18e2ee` (15/10/2026), PR #169/#170 đã merge.
 **Checklist:** [smart-promotion-upsell-v1-todo.md](./smart-promotion-upsell-v1-todo.md). Giữ nguyên `tasks/plan.md` và `tasks/todo.md` (workstream khác).
 **Scope:** một module checkout Upsell, chỉ offer variant READY khi server chứng minh **thêm đúng 1 PAID unit** mở lợi ích, không làm mất ưu đãi/quà cũ.

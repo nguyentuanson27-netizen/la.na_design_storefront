@@ -1,3 +1,5 @@
+import { cookies } from "next/headers";
+import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
 import { connection } from "next/server";
 
 import { readAuthServerConfig } from "@/auth/config";
@@ -21,6 +23,12 @@ import { sealRoute, type RouteHandle, type RoutePixelEvent } from "./core.tsx";
 /** Checkout's loader: the cart being ordered, the quote over it, and the proof binding the two. */
 
 export type CheckoutRouteProps = Readonly<Record<string, never>>;
+
+async function withUpsell(data: CheckoutViewModel): Promise<CheckoutViewModel> {
+  if (data.state !== "ready" || !data.quoteProof) return data;
+  const upsell = await createPromotionUpsellService(prisma, await cookies(), { shopId: readPancakeShopId(), secret: readAuthServerConfig().secret }).get(data.quoteProof);
+  return upsell ? { ...data, upsell } : data;
+}
 
 export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel>> {
   await connection();
@@ -50,7 +58,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
     // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
     return sealRoute({
-      data,
+      data: await withUpsell(data),
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -101,7 +109,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data,
+    data: await withUpsell(data),
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

@@ -1,3 +1,4 @@
+import type { CheckoutUpsellModel } from "../commerce/promotion-upsell.ts";
 import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
 import {
@@ -106,6 +107,7 @@ export type CheckoutBenefitView = Readonly<{
 
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
+  upsell?: CheckoutUpsellModel;
   /** Empty unless `state` is `ready`; the other two states render no order summary. */
   lines: readonly CheckoutLineView[];
   totals: CheckoutTotalsView | null;

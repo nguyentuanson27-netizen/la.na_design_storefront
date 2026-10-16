@@ -24,6 +24,9 @@ import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
 import { isVietnamPhone, VIETNAM_PHONE_ERROR } from "@/commerce/vietnam-phone";
 
+import { CheckoutUpsell } from "./checkout-upsell";
+import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
+
 type GeoError = Readonly<{
   level: "provinces" | "communes";
   message: string;
@@ -106,12 +109,14 @@ const ACK_MISSING_MESSAGE = "Hãy tích xác nhận không nhận đủ quà t�
 export function GuestCheckoutForm({
   quoteProof,
   benefit,
+  upsell,
   summaryLabel,
   summarySlot,
   totalsSlot,
   preorderSlot,
 }: Readonly<{
   quoteProof: string;
+  upsell?: CheckoutUpsellModel;
   benefit?: GuestCheckoutBenefit;
   summaryLabel?: string;
   summarySlot?: ReactNode;
@@ -123,6 +128,7 @@ export function GuestCheckoutForm({
     null,
   );
   const router = useRouter();
+  const [upsellPending, setUpsellPending] = useState(false);
   const [isRefreshingQuote, startQuoteRefresh] = useTransition();
   const [provinces, setProvinces] = useState<CheckoutProvince[]>([]);
   const [communes, setCommunes] = useState<CheckoutCommune[]>([]);
@@ -269,7 +275,7 @@ export function GuestCheckoutForm({
   // submission or quote refresh is in flight, after a final outcome, or when the address lists
   // could not be loaded at all (the retry button is the way forward then).
   const submitDisabled =
-    isSubmitting || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    isSubmitting || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
 
   const fieldErrors = findFieldErrors({
     name,
@@ -307,6 +313,7 @@ export function GuestCheckoutForm({
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (submitDisabled) { event.preventDefault(); return; }
     if (Object.keys(fieldErrors).length === 0 && !ackMissing) return;
     // Stop the Server Action: nothing about this attempt could succeed, and the buyer should see
     // every missing field at once rather than one server refusal at a time.
@@ -379,6 +386,8 @@ export function GuestCheckoutForm({
           </div>
         </section>
       ) : null}
+
+      {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || isRefreshingQuote || lockSubmission} onBusyChange={setUpsellPending} /> : null}
 
       <div className="checkout-receiving-fields space-y-8">
       <div>
