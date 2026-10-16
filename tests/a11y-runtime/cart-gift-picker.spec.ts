@@ -132,6 +132,56 @@ test("duplicate product policy disables selecting the same gift again", async ({
   await expect(picker).toContainText("Đã thêm 1");
   await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
 });
+
+test("F3: unavailable size explains disabled receive, another size stays browsable and chip-only never saves", async ({ page }) => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({ where: { id: giftId } });
+  await prisma.variantMirror.update({ where: { id: giftId }, data: { size: "S" } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
+  const medium = await prisma.variantMirror.create({ data: { productId: gift.productId, pancakeVariationId: PREFIX + "gift-M", color: "Trắng", size: "M", syncedAt: new Date(),
+    pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000, warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: new Date() } } } });
+  await prisma.giftOption.create({ data: { campaignId, variantId: medium.id } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
+  await expect(receive).toBeDisabled();
+  await expect(receive).toHaveAccessibleDescription("Chọn phiên bản trước khi nhận quà.");
+  await picker.getByRole("button", { name: "Trắng / S", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(receive).toBeDisabled();
+  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác.");
+  await picker.getByRole("button", { name: "Trắng / M", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(receive).toBeEnabled();
+  await expect(receive).not.toHaveAttribute("aria-describedby");
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
+  await receive.click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await receive.click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
+  await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
+  await expect(receive).toHaveAccessibleDescription(/Đã đủ suất/);
+  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});
+
+test("F3: duplicate-product restriction describes the chosen model, not stock exhaustion", async ({ page }) => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({ where: { id: giftId } });
+  const medium = await prisma.variantMirror.create({ data: { productId: gift.productId, pancakeVariationId: PREFIX + "gift-S", color: "Trắng", size: "S", syncedAt: new Date(),
+    warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 10, syncedAt: new Date() } } } });
+  await prisma.giftOption.create({ data: { campaignId, variantId: medium.id } });
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { allowDuplicateGifts: false } });
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, campaignRevision: 1, quantity: 1 } });
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
+  const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
+  await expect(receive).toBeDisabled();
+  await expect(receive).toHaveAccessibleDescription("Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
+  await expect(picker).not.toContainText("không còn số lượng có thể nhận thêm");
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+});
 test("view_cart retains the no-tier paid total once across refresh, and emits nothing for EX-17", async ({ page }) => {
   const events = () => page.evaluate(() => ((window as { dataLayer?: { event?: string; ecommerce?: { value?: number } }[] }).dataLayer ?? []).filter((entry) => entry.event === "view_cart"));
   await page.goto(`${URL}/cart`);

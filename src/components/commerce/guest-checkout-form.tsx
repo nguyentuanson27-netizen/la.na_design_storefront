@@ -157,15 +157,20 @@ export function GuestCheckoutForm({
   const [note, setNote] = useState("");
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [giftPending, setGiftPending] = useState(false);
-  const coordinatedBusy = useRef(false);
+  const coordinatedBusy = useRef({ gifts: false, upsell: false, quote: false });
   const submissionBusy = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const paymentRef = useRef<HTMLHeadingElement>(null);
   const submitButton = useRef<HTMLButtonElement>(null);
   const reminder = useCheckoutGiftReminder(attemptKey);
-  const onGiftBusyChange = useCallback((value: boolean) => { coordinatedBusy.current = value; setGiftPending(value); }, []);
-  const onUpsellBusyChange = useCallback((value: boolean) => { coordinatedBusy.current = value; setUpsellPending(value); }, []);
-  const isInteractionLocked = useCallback(() => coordinatedBusy.current || submissionBusy.current, []);
+  const onGiftBusyChange = useCallback((value: boolean) => { coordinatedBusy.current.gifts = value; setGiftPending(value); }, []);
+  const onUpsellBusyChange = useCallback((value: boolean) => { coordinatedBusy.current.upsell = value; setUpsellPending(value); }, []);
+  const isInteractionLocked = useCallback(() => Object.values(coordinatedBusy.current).some(Boolean) || submissionBusy.current, []);
+  const refreshQuote = useCallback(() => {
+    coordinatedBusy.current.quote = true;
+    startQuoteRefresh(() => router.refresh());
+  }, [router]);
+  useEffect(() => { coordinatedBusy.current.quote = isRefreshingQuote; }, [isRefreshingQuote]);
   const [provinceLoading, setProvinceLoading] = useState(true);
   const [communeLoading, setCommuneLoading] = useState(false);
   const [geoError, setGeoError] = useState<GeoError | null>(null);
@@ -286,9 +291,9 @@ export function GuestCheckoutForm({
   // leaves that boolean true, and an effect keyed on it would never fire again.
   useEffect(() => {
     if (submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired))) {
-      startQuoteRefresh(() => router.refresh());
+      refreshQuote();
     }
-  }, [submitState, router]);
+  }, [submitState, refreshQuote]);
 
   const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
@@ -337,7 +342,7 @@ export function GuestCheckoutForm({
   // One pipeline for form, Enter and dialog intent. Claim is attached only to this FormData.
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (submitDisabled || coordinatedBusy.current || submissionBusy.current || reminder.current.current === "open") return;
+    if (submitDisabled || isInteractionLocked() || reminder.current.current === "open") return;
     if (Object.keys(fieldErrors).length > 0) {
       setShowAllErrors(true);
       const first = REQUIRED_FIELDS.find((field) => fieldErrors[field]);
@@ -622,7 +627,7 @@ export function GuestCheckoutForm({
           aside at `lg+`. */}
       <div className="min-w-0 space-y-5">
       <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
-      {unavailableNotice ? <div role="alert"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2">{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending} onClick={() => startQuoteRefresh(() => router.refresh())}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
+      {unavailableNotice ? <div role="alert"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2">{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending || upsellPending || isSubmitting} onClick={refreshQuote}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
       {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}

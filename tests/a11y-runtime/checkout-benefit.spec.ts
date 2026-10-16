@@ -265,6 +265,40 @@ test("AC21: invalid gifts retain all receiving data across route refresh and can
   await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeEnabled();
 });
 
+test("F2: one invalid gift is identified; removing it preserves the valid gift, form, reminder and fresh proof", async ({ page }) => {
+  const other = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: PREFIX + "other-gift", slug: PREFIX + "other-gift", name: "Quà còn hợp lệ", syncedAt: new Date(),
+    variants: { create: { pancakeVariationId: PREFIX + "other-gift", color: "Xanh", size: "M", pancakeRetailPrice: 1_000, pancakeRetailPriceAfterDiscount: 1_000, syncedAt: new Date(),
+      warehouseStocks: { create: { pancakeWarehouseId: PREFIX + "wh", quantity: 10, syncedAt: new Date() } } } } }, include: { variants: true } });
+  const validId = other.variants[0].id;
+  await prisma.giftOption.create({ data: { campaignId, variantId: validId } });
+  await chooseGift(1);
+  await startServer(3350, true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button", { name: "Đặt hàng COD", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: validId, campaignRevision: 1, quantity: 1 } });
+  await prisma.warehouseStock.updateMany({ where: { variantId: giftVariantId }, data: { quantity: 0 } });
+  await refreshQuote(page);
+  const orders = await prisma.orderMirror.count(), holds = await prisma.variantCapacityReservation.count();
+  await expect(page.locator('input[name="quoteProof"]')).toHaveValue("");
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await picker.getByRole("button", { name: "Kiểm tra quà đã chọn", exact: true }).click();
+  const bad = picker.locator(`[data-gift-selection="${campaignId}/${giftVariantId}"]`);
+  const good = picker.locator(`[data-gift-selection="${campaignId}/${validId}"]`);
+  await expect(bad.locator("[data-gift-problem]")).toContainText("không còn số lượng");
+  await expect(good.locator("[data-gift-problem]")).toHaveCount(0);
+  await bad.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
+  await expect(page.locator('input[name="quoteProof"]')).not.toHaveValue("");
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expectReceiving(page);
+  await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
+  expect(await prisma.cartGiftSelection.findMany({ where: { cartId } })).toEqual([expect.objectContaining({ variantId: validId, quantity: 1 })]);
+  expect(await prisma.orderMirror.count()).toBe(orders);
+  expect(await prisma.variantCapacityReservation.count()).toBe(holds);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem("la-checkout-gift-reminder-v1")!).seen)).toBe(true);
+});
+
 test("verified shop: every slot taken means no acknowledgement is asked", async ({ page }) => {
   await startServer(3350, true);
   await chooseGift(2);
@@ -390,6 +424,8 @@ test("AC11/22/25: committed gift with lost responses stays locked until readback
   await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
   const retry=picker.getByRole("button",{name:"Kiểm tra lại quà trong đơn",exact:true});
   await expect(retry).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Nhận quà này", exact: true })).toHaveAccessibleDescription("Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục.");
+  await expect(picker.getByText("Đã thêm vào đơn", { exact: true })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
   await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();

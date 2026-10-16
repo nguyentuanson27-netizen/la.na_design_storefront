@@ -45,11 +45,16 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button>
     <div id={detailsId} hidden={!expanded}>
-      {model.selections.map((row) => <div className="mt-4 border-t border-black/15 pt-4" key={`${row.campaignId}-${row.variantId}`}>
+      {model.repairGroups?.map((group, index) => <div key={index} role="group" aria-label="Nhóm quà cần kiểm tra" className="mt-4 border border-[#b42318]/40 p-3 text-sm">
+        <p>{group.message}</p>
+        <ul className="mt-2 list-disc pl-5">{model.selections.filter(row => group.selectionKeys.includes(`${row.campaignId}/${row.variantId}`)).map(row => <li key={`${row.campaignId}/${row.variantId}`}>{row.label} · {row.quantity} quà</li>)}</ul>
+      </div>)}
+      {model.selections.map((row) => <div className="mt-4 border-t border-black/15 pt-4" key={`${row.campaignId}-${row.variantId}`} data-gift-selection={`${row.campaignId}/${row.variantId}`}>
         <div className="flex items-center gap-3">
           {row.imageUrl ? <Image src={row.imageUrl} alt="" width={40} height={50} className="h-[50px] w-10 object-cover" /> : null}
           <p className="min-w-0 break-words text-sm">{row.label} · {row.quantity} quà</p>
         </div>
+        {row.problems?.map((problem, index) => <p key={index} data-gift-problem className="mt-2 text-sm text-[#b42318]">Cần xử lý: {problem}</p>)}
         <p className="mt-2 text-xs leading-5">Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.</p>
         <div className="mt-2 flex flex-wrap gap-3">
           {row.quantity > 1 ? <button type="button" className="min-h-11 text-sm underline" disabled={busy || locked} onClick={() => change(row.campaignId, row.variantId, row.campaignRevision, row.quantity - 1, row.label, 1)}>Bỏ 1 chiếc để chọn lại: {row.label}</button> : null}
@@ -65,15 +70,24 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
           const productChosen = model.selections.some((r) => r.campaignId === campaign.campaignId && product.options.some((o) => o.variantId === r.variantId));
           const stockChosen = model.selections.filter((r) => r.variantId === option?.variantId).reduce((sum, r) => sum + r.quantity, 0);
-          const receiveDisabled = busy || locked || model.invalid || campaign.selected >= campaign.entitled || !option || option.stock <= stockChosen || (!campaign.allowDuplicateGifts && productChosen);
+          const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục."
+            : pending ? "Đang cập nhật quà. Vui lòng chờ xác nhận."
+            : locked ? "Giỏ hàng đang được cập nhật hoặc cần kiểm tra lại. Hãy hoàn tất bước kiểm tra trước khi nhận quà."
+            : model.invalid ? "Cần sửa quà đã chọn. Hãy bỏ lựa chọn không còn hợp lệ trước khi nhận thêm."
+            : campaign.selected >= campaign.entitled ? "Đã đủ suất. Bạn vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
+            : !option ? "Chọn phiên bản trước khi nhận quà."
+            : !campaign.allowDuplicateGifts && productChosen ? "Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
+            : option.stock <= stockChosen ? "Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác."
+            : null;
+          const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
           return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={() => {
             setCard(card === key ? "" : key);
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
           }}>
             <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
-            {option ? <p className="mt-3 text-sm">{pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
-            {campaign.selected >= campaign.entitled ? <p className="mt-2 text-xs">Đã đủ suất. Bạn vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại.</p> : null}
-            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveDisabled} onClick={() => option && change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)}>Nhận quà này</button>
+            {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
+            {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
+            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => option && change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)}>Nhận quà này</button>
           </GiftProductCard>;
         })}</div>
       </div>)}

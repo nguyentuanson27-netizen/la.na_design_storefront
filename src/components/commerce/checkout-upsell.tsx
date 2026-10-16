@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { addCheckoutUpsell, requoteCheckoutUpsell } from "@/commerce/promotion-upsell-actions";
+import { readStorefrontCartGifts } from "@/commerce/cart-gift-selection-actions";
 import type { UpsellIntent } from "@/commerce/promotion-upsell-proof";
 import type { CheckoutUpsellModel, UpsellVariantView } from "@/commerce/promotion-upsell";
 
@@ -44,6 +45,7 @@ export function CheckoutUpsell({ model, locked, onBusyChange, isLocked }: Readon
     };
   }, []);
   const busy = useRef(false);
+  const unknown = useRef(false);
   const [uncertain, setUncertain] = useState(false);
   useEffect(() => {
     let active = true;
@@ -68,7 +70,29 @@ export function CheckoutUpsell({ model, locked, onBusyChange, isLocked }: Readon
     });
     return () => { active = false; };
   }, [model.paidCartKey, model.giftPicker.campaigns]);
-  useEffect(() => { busy.current = pending; onBusyChange(pending); }, [pending, onBusyChange]);
+  useEffect(() => {
+    busy.current = pending || unknown.current;
+    onBusyChange(busy.current);
+  }, [pending, uncertain, onBusyChange]);
+
+  function retryRead() {
+    if (pending || !unknown.current) return;
+    busy.current = true; onBusyChange(true);
+    startTransition(async () => {
+      try {
+        // This cookie-owned read resolves the entire paid cart and gift state, then refreshes
+        // the route in the same response. A size requote cannot establish what the add wrote.
+        const result = await readStorefrontCartGifts();
+        if (result.ok) {
+          unknown.current = false; setUncertain(false);
+          setVariants({}); setVerified({});
+          setMessage("Đã kiểm tra lại giỏ hàng và báo giá. Hãy xem số lượng và quyền nhận hiện tại trước khi tiếp tục.");
+          return;
+        }
+      } catch { /* Remain locked; only retry a read, never replay the add. */ }
+      setMessage("Chưa xác nhận được kết quả thêm hàng. Vui lòng kiểm tra lại giỏ hàng và báo giá; không bấm thêm lại lúc này.");
+    });
+  }
 
   function selectVariant(productId: string, variantId: string) {
     setVariants((current) => ({ ...current, [productId]: variantId }));
@@ -106,11 +130,14 @@ export function CheckoutUpsell({ model, locked, onBusyChange, isLocked }: Readon
           saveAttempt(next); setAttempt(next);
           setMessage("Giỏ hàng, ưu đãi hoặc tồn kho đã thay đổi. Hãy kiểm tra báo giá mới trước khi thử lại.");
         }
-      } catch { setUncertain(true); setMessage("Chưa xác nhận được kết quả thêm hàng. Hãy tải lại để kiểm tra giỏ; không bấm thêm lại ngay."); }
+      } catch {
+        unknown.current = true; setUncertain(true);
+        setMessage("Chưa xác nhận được kết quả thêm hàng. Hãy kiểm tra lại giỏ hàng và báo giá; không bấm thêm lại ngay.");
+      }
     });
   }
   if (!attempt || attempt.paidCartKey !== model.paidCartKey) return null;
-  return <div className="space-y-5" aria-busy={pending}>
+  return <div className="space-y-5" aria-busy={pending || uncertain}>
     {model.offer && !attempt.dismissed ? <section className="border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" aria-label="Gợi ý mua thêm">
       <h2 className="font-display text-2xl">Gợi ý thêm để đạt ưu đãi</h2>
       <p className="mt-2 text-sm">{model.offer.name} · Thêm đúng 1 chiếc phù hợp.</p>
@@ -134,5 +161,6 @@ export function CheckoutUpsell({ model, locked, onBusyChange, isLocked }: Readon
       <button className="mt-5 text-left text-sm underline underline-offset-4" type="button" disabled={pending || locked || uncertain} onClick={dismiss}>Không mua thêm, tiếp tục thanh toán</button>
     </section> : null}
     <p className="text-sm" role="status" aria-live="polite">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}</p>
+    {uncertain ? <button type="button" className="min-h-11 text-sm underline" disabled={pending} onClick={retryRead}>Kiểm tra lại giỏ hàng và báo giá</button> : null}
   </div>;
 }
