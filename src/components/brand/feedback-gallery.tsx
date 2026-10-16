@@ -146,7 +146,12 @@ function FeedbackViewer({
       ref={dialogRef}
       className="feedback-viewer"
       aria-label="Xem ảnh feedback"
-      onClose={onClose}
+      onCancel={(event) => {
+        // Keep Escape on the same state-driven path as the close button. Native close()
+        // queues a close event; it must not become a second state write after Enter reopens it.
+        event.preventDefault();
+        onClose();
+      }}
       onKeyDown={onKeyDown}
       onClick={onBackdrop}
     >
