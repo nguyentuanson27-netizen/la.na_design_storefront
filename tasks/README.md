@@ -16,12 +16,12 @@ If an older plan, audit or task note conflicts with these current authorities, t
 
 ## Feature plan awaiting approval — gift picker / checkout reminder
 
-The [gift-picker specification](../docs/specs/storefront-gift-picker-checkout-reminder.md) was merged in PR #173 at `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646` at the owner's request. Its implementation is planned separately:
+The original [gift-picker specification](../docs/specs/storefront-gift-picker-checkout-reminder.md) was merged in PR #173 at `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646` at the owner's request. PR #174 updates that spec with UX follow-up acceptance before implementation:
 
-- [Implementation plan](./storefront-gift-picker-checkout-reminder-plan.md) — dependencies, checkout safety boundaries, verification checkpoints and known CI baseline failures.
-- [Task checklist](./storefront-gift-picker-checkout-reminder-todo.md) — T00..T13, acceptance criteria and AC-01..AC-24 traceability; implementation tasks are not completed.
+- [Implementation plan](./storefront-gift-picker-checkout-reminder-plan.md) — dependencies, checkout safety boundaries, UX-01..UX-04 review dispositions, early C2 UX checks and known CI baseline failures.
+- [Task checklist](./storefront-gift-picker-checkout-reminder-todo.md) — the same T00..T13 tasks, acceptance criteria and AC-01..AC-28 traceability; AC-25..AC-28 cover the UX follow-up and implementation tasks are not completed.
 
-This workstream awaits plan approval before implementation. It does not replace the master plan/checklist, change unrelated policy authority, or claim that the feature has shipped.
+This workstream awaits approval of both the plan and the UX spec additions before implementation. T13 records verified results; it is not permission to defer UX decisions until after coding. The workstream does not replace the master plan/checklist, change unrelated policy authority, or claim that the feature has shipped.
 
 ## Legacy plans and audits
 
