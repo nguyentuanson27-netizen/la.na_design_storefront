@@ -25,6 +25,7 @@ export type StorefrontSellingPolicy = Omit<StorefrontProductCapacity, "isComposi
 export type StorefrontCompositeComponentGroup = Readonly<{
   label: string;
   variants: readonly StorefrontVariantFacts[];
+  sellingPolicy?: StorefrontSellingPolicy;
 }>;
 
 export type StorefrontCompositeSubSetGroup = Readonly<{
@@ -230,14 +231,24 @@ export function buildStorefrontProductProjection({
    */
   const mergedComponentGroups = new Map<
     string,
-    { label: string; variants: Map<string, StorefrontVariantFacts> }
+    {
+      label: string;
+      variants: Map<string, StorefrontVariantFacts>;
+      sellingPolicy?: StorefrontSellingPolicy;
+    }
   >();
   for (const group of componentGroups) {
     const key = normalizedLabelKey(group.label);
     let merged = mergedComponentGroups.get(key);
     if (!merged) {
-      merged = { label: normalizeLabel(group.label), variants: new Map() };
+      merged = {
+        label: normalizeLabel(group.label),
+        variants: new Map(),
+        sellingPolicy: group.sellingPolicy,
+      };
       mergedComponentGroups.set(key, merged);
+    } else if (!merged.sellingPolicy && group.sellingPolicy) {
+      merged.sellingPolicy = group.sellingPolicy;
     }
     for (const variant of group.variants) {
       if (!merged.variants.has(variant.id)) merged.variants.set(variant.id, variant);
@@ -284,12 +295,9 @@ export function buildStorefrontProductProjection({
         group.label,
         group.label.length === 0 ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
-        // Deliberately NOT the parent's policy. A component is its own product with its own
-        // `ProductSellingPolicy` row, or none, and none means `STANDARD` — so a component this
-        // projection cannot resolve a policy for stays at the default rather than inheriting a
-        // `PREORDER`/`OVERSELL` the operator set on the set. Reading each component's own policy is
-        // I2's job; until then the default is the correct answer, not a placeholder.
-        STANDARD_STANDALONE_CAPACITY,
+        group.sellingPolicy ?? STANDARD_STANDALONE_CAPACITY,
+        false,
+        availabilityDates,
       ),
     );
   });

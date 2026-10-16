@@ -94,6 +94,12 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
                     name: true,
                     pancakeShopId: true,
                     isPresent: true,
+                    sellingPolicy: {
+                      select: {
+                        sellingMode: true,
+                        negativeStockLimit: true,
+                      },
+                    },
                   },
                 },
                 warehouseStocks: {
@@ -125,6 +131,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
         sortLabel: string;
         skus: (string | null)[];
         variants: Map<string, StorefrontVariantFacts>;
+        sellingPolicy: StorefrontSellingPolicy;
       }
     >();
 
@@ -190,6 +197,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
             sortLabel: component.product.name,
             skus: [],
             variants: new Map(),
+            sellingPolicy: resolveSellingPolicy(component.product.sellingPolicy),
           };
           groups.set(component.product.id, group);
         }
@@ -226,7 +234,7 @@ export function createStorefrontProductDetailRepository(client: PrismaClient | P
         const label = resolveCompositeComponentGroupLabel(group.skus);
         return label === null
           ? []
-          : [{ label, variants: [...group.variants.values()] }];
+          : [{ label, variants: [...group.variants.values()], sellingPolicy: group.sellingPolicy }];
       });
 
     // PR #81 — discover sibling SET VÁY / SET QUẦN composites of this combo. Which siblings are

@@ -378,3 +378,27 @@ test("projection preserves custom colorDimensionLabel when provided or defaults 
   });
   assert.equal(fallback.colorDimensionLabel, "Màu");
 });
+
+test("a component group with its own PREORDER policy enables preorder sale within limit and with availability date", () => {
+  const projection = buildStorefrontProductProjection({
+    parentVariants: [variant("set-m", "M", { sellableStock: 5 })],
+    componentGroups: [
+      {
+        label: "ÁO LẺ",
+        variants: [variant("shirt-m", "M", { sellableStock: -2 })],
+        sellingPolicy: { sellingMode: "PREORDER", negativeStockLimit: -200 },
+      },
+    ],
+    hasCompositeGraph: true,
+    availabilityDates: {
+      byVariantId: new Map([["shirt-m", "2026-11-20"]]),
+      today: "2026-10-09",
+    },
+  });
+
+  const component = projection.options.find((option) => option.id === "shirt-m");
+  assert.equal(component?.purchasable, true, "component option is purchasable under preorder within limit");
+  assert.equal(component?.isPreorderSale, true, "component option is flagged as preorder sale");
+  assert.equal(component?.availability.availabilityDate, "2026-11-20");
+});
+

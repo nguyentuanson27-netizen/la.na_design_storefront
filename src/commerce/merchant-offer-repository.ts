@@ -251,7 +251,13 @@ function toCandidateProduct(
   );
   const resolvedSellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => {
-    const stock = stockByVariantId.get(variant.id) ?? Number.NaN;
+    let stock = stockByVariantId.get(variant.id) ?? Number.NaN;
+    if (variant.isCompositeParent && Number.isNaN(stock)) {
+      const raw = variant.warehouseStocks.reduce((sum, s) => sum + s.quantity, 0);
+      if (Number.isSafeInteger(raw)) {
+        stock = raw;
+      }
+    }
     let compositeCapacity: CompositeCapacitySnapshot | undefined = undefined;
     if (variant.isCompositeParent && Number.isSafeInteger(stock)) {
       const floor = capacityFloorForMode(

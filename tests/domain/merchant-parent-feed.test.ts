@@ -224,6 +224,39 @@ test("supports composite/combo products with PREORDER mode and availability date
   assert.equal(items[0]!.availabilityDate, "2026-11-20");
 });
 
+test("supports composite/combo products when sold out (out of stock)", () => {
+  const soldOut = projectionOption({
+    kindKey: "parent",
+    price: 649_000,
+    purchasable: false,
+    unavailableReason: "OUT_OF_STOCK",
+  });
+  const soldOutOption = {
+    ...soldOut,
+    availability: {
+      published: true as const,
+      merchant: "out_of_stock" as const,
+      schema: "OutOfStock" as const,
+      availabilityDate: null,
+    },
+  };
+  const combo = candidate({
+    pancakeProductId: "prod-van-nha",
+    slug: "set-vay-van-nha",
+    name: "Set Váy Vân Nhã",
+    projection: {
+      mode: "composite",
+      options: [soldOutOption],
+    },
+  });
+  const items = buildMerchantParentItems([combo], ORIGIN);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.id, "prod-van-nha");
+  assert.equal(items[0]!.priceVnd, 649_000);
+  assert.equal(items[0]!.availability, "out_of_stock");
+});
+
+
 test("serializes Google Merchant Parent feed with XML escaping and proper RSS 2.0 structure", () => {
   const items = buildMerchantParentItems([candidate()], ORIGIN);
   const feed = serializeGoogleMerchantParentFeed({ items, market: MARKET, origin: ORIGIN });
