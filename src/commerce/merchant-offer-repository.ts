@@ -1,8 +1,8 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
-import { capacityFloorForMode, resolveSellingPolicy } from "./capacity-policy.ts";
-import type { CompositeCapacitySnapshot } from "./composite-capacity.ts";
+import { resourceHoldsCapacity, resolveSellingPolicy, type ReservationState } from "./capacity-policy.ts";
+import { deriveCompositeCapacitySnapshot, type CompositeCapacityComponent } from "./composite-capacity.ts";
 
 import {
   mapMerchantOffers,
@@ -30,9 +30,10 @@ export const MAX_MERCHANT_CANDIDATE_PRODUCTS = 5_000;
 export class MerchantOfferReadError extends Error {}
 
 /**
- * U26 keeps the public feed inside eight whole-generation DB operations without enabling Prisma's
+ * U26/I9 keep the public feed inside nine whole-generation DB operations without enabling Prisma's
  * preview relation-join feature. The coordinator owns two durable promotion-revision reads (capture
- * and pre-publish recheck), so this repository is capped at six flat/bounded data reads. Two pairs
+ * and pre-publish recheck), so this repository uses six flat/bounded catalog reads plus one cycle
+ * date read. Two pairs
  * that used to need separate Prisma model reads are deliberately folded into parameterized SQL:
  * product editorial+Merchant facts, and promotion target+enabled-campaign facts.
  */
@@ -79,10 +80,16 @@ const stockSelection = {
   quantity: true,
 } satisfies Prisma.WarehouseStockSelect;
 
-const compositeSelection = {
-  parentVariantId: true,
-  componentVariantId: true,
-} satisfies Prisma.CompositeComponentMirrorSelect;
+type CompositeResourceRow = Readonly<{
+  parentVariantId: string;
+  componentVariantId: string;
+  quantity: number;
+  isPresent: boolean;
+  pancakeShopId: number;
+  productIsPresent: boolean;
+  warehouseStocks: readonly { quantity: number }[];
+  heldResources: readonly { quantity: number; state: ReservationState; mirroredAt: string | null }[];
+}>;
 
 type SelectedProduct = Prisma.ProductMirrorGetPayload<{ select: typeof productSelection }>;
 type SelectedVariant = Prisma.VariantMirrorGetPayload<{ select: typeof variantSelection }>;
@@ -118,7 +125,7 @@ type JoinedPromotionRow = Readonly<{
 type LoadedCandidateVariant = SelectedVariant &
   Readonly<{
     warehouseStocks: readonly SelectedWarehouseStock[];
-    isCompositeParent: boolean;
+    compositeComponents: readonly CompositeCapacityComponent[];
     isCompositeComponent: boolean;
   }>;
 
@@ -224,6 +231,7 @@ function nextRelevantPricingTransitionAtMs(
 
 function toCandidateProduct(
   product: LoadedCandidateProduct,
+  shopId: number,
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
   now: Date,
   availabilityDates: StorefrontAvailabilityDates,
@@ -251,29 +259,16 @@ function toCandidateProduct(
   );
   const resolvedSellingPolicy = resolveSellingPolicy(product.sellingPolicy);
   const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => {
-    let stock = stockByVariantId.get(variant.id) ?? Number.NaN;
-    if (variant.isCompositeParent && Number.isNaN(stock)) {
-      const raw = variant.warehouseStocks.reduce((sum, s) => sum + s.quantity, 0);
-      if (Number.isSafeInteger(raw)) {
-        stock = raw;
-      }
-    }
-    let compositeCapacity: CompositeCapacitySnapshot | undefined = undefined;
-    if (variant.isCompositeParent && Number.isSafeInteger(stock)) {
-      const floor = capacityFloorForMode(
-        resolvedSellingPolicy.sellingMode,
-        resolvedSellingPolicy.negativeStockLimit,
-      );
-      const readyQuantity = Math.max(0, stock);
-      const reservableQuantity = Math.max(0, stock - floor);
-      compositeCapacity = Object.freeze({
-        sellingMode: resolvedSellingPolicy.sellingMode,
-        negativeStockLimit: resolvedSellingPolicy.negativeStockLimit,
-        readyQuantity,
-        reservableQuantity,
-        reason: reservableQuantity > 0 ? "capacity-available" : "negative-limit-reached",
-      });
-    }
+    const compositeCapacity = variant.compositeComponents.length === 0
+      ? undefined
+      : deriveCompositeCapacitySnapshot({
+          shopId,
+          components: variant.compositeComponents,
+          sellingMode: resolvedSellingPolicy.sellingMode,
+          negativeStockLimit: resolvedSellingPolicy.negativeStockLimit,
+        });
+    // Parent WarehouseStock is a verbatim mirror, never a second claim on component resources.
+    const stock = compositeCapacity?.readyQuantity ?? stockByVariantId.get(variant.id) ?? Number.NaN;
     return {
       id: variant.id,
       pancakeVariationId: variant.pancakeVariationId,
@@ -285,12 +280,12 @@ function toCandidateProduct(
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
     };
   });
-  const hasCompositeGraph = product.variants.some((variant) => variant.isCompositeParent);
+  const hasCompositeGraph = product.variants.some((variant) => variant.compositeComponents.length > 0);
   const variations: MerchantCandidateVariation[] = product.variants.map((variant) => ({
     variantId: variant.id,
     pancakeVariationId: variant.pancakeVariationId,
     pancakeDisplayId: variant.pancakeDisplayId,
-    isComposite: variant.isCompositeParent || variant.isCompositeComponent,
+    isComposite: variant.compositeComponents.length > 0 || variant.isCompositeComponent,
     stockQuantity: stockByVariantId.get(variant.id) ?? Number.NaN,
   }));
 
@@ -390,15 +385,33 @@ export function createMerchantOfferRepository(client: PrismaClient) {
     const compositeEdges =
       variantIds.length === 0
         ? []
-        : await client.compositeComponentMirror.findMany({
-            where: {
-              OR: [
-                { parentVariantId: { in: variantIds } },
-                { componentVariantId: { in: variantIds } },
-              ],
-            },
-            select: compositeSelection,
-          });
+        : await client.$queryRawUnsafe<CompositeResourceRow[]>(
+            `SELECT e."parentVariantId", e."componentVariantId", e."quantity",
+                    v."isPresent", p."pancakeShopId", p."isPresent" AS "productIsPresent",
+                    COALESCE(s.stocks, '[]'::jsonb) AS "warehouseStocks",
+                    COALESCE(h.resources, '[]'::jsonb) AS "heldResources"
+             FROM "CompositeComponentMirror" e
+             JOIN "VariantMirror" v ON v."id" = e."componentVariantId"
+             JOIN "ProductMirror" p ON p."id" = v."productId"
+             LEFT JOIN LATERAL (
+               SELECT jsonb_agg(jsonb_build_object('quantity', w."quantity")) AS stocks
+               FROM "WarehouseStock" w WHERE w."variantId" = v."id"
+             ) s ON TRUE
+             LEFT JOIN LATERAL (
+               SELECT jsonb_agg(jsonb_build_object(
+                 'quantity', r."quantity", 'state', l."state", 'mirroredAt', r."mirroredAt"
+               )) AS resources
+               FROM "CapacityReservationResource" r
+               JOIN "VariantCapacityReservation" l ON l."id" = r."reservationId"
+               WHERE r."variantId" = v."id"
+                 AND (l."state" IN ('RESERVED', 'SUBMITTING', 'UNKNOWN')
+                   OR (l."state" = 'COMMITTED' AND r."mirroredAt" IS NULL))
+             ) h ON TRUE
+             WHERE e."parentVariantId" = ANY($1::text[])
+                OR e."componentVariantId" = ANY($1::text[])
+             ORDER BY e."parentVariantId", e."componentVariantId"`,
+            variantIds,
+          );
 
     // 6/6 — target membership and enabled campaign facts in one parameterized bounded-domain read.
     // This is also where the next known pricing boundary is discovered for cache-expiry capping.
@@ -452,14 +465,35 @@ export function createMerchantOfferRepository(client: PrismaClient) {
       if (existing === undefined) stocksByVariantId.set(stock.variantId, [stock]);
       else existing.push(stock);
     }
-    const compositeParentIds = new Set(compositeEdges.map((edge) => edge.parentVariantId));
+    // Keep one flat, candidate-bounded graph read, including absent/cross-shop resources so the
+    // shared authority can refuse them. Nested per-product PDP reads would exceed the feed budget.
+    const componentsByParentId = new Map<string, CompositeCapacityComponent[]>();
+    for (const edge of compositeEdges) {
+      const components = componentsByParentId.get(edge.parentVariantId) ?? [];
+      const activeReservedQuantity = edge.heldResources.reduce((held, resource) => held + (
+        resourceHoldsCapacity({
+          state: resource.state,
+          mirroredAt: resource.mirroredAt === null ? null : new Date(resource.mirroredAt),
+        }) ? resource.quantity : 0
+      ), 0);
+      components.push({
+        requiredQuantity: edge.quantity,
+        activeReservedQuantity,
+        componentVariant: {
+          isPresent: edge.isPresent,
+          product: { pancakeShopId: edge.pancakeShopId, isPresent: edge.productIsPresent },
+          warehouseStocks: edge.warehouseStocks,
+        },
+      });
+      componentsByParentId.set(edge.parentVariantId, components);
+    }
     const compositeComponentIds = new Set(compositeEdges.map((edge) => edge.componentVariantId));
     const variantsByProductId = new Map<string, LoadedCandidateVariant[]>();
     for (const variant of variants) {
       const loaded: LoadedCandidateVariant = {
         ...variant,
         warehouseStocks: stocksByVariantId.get(variant.id) ?? [],
-        isCompositeParent: compositeParentIds.has(variant.id),
+        compositeComponents: componentsByParentId.get(variant.id) ?? [],
         isCompositeComponent: compositeComponentIds.has(variant.id),
       };
       const existing = variantsByProductId.get(variant.productId);
@@ -488,7 +522,7 @@ export function createMerchantOfferRepository(client: PrismaClient) {
 
     return Object.freeze({
       products: loadedProducts.map((product) =>
-        toCandidateProduct(product, campaignsByVariantId, now, availabilityDates),
+        toCandidateProduct(product, shopId, campaignsByVariantId, now, availabilityDates),
       ),
       nextPricingTransitionAtMs: nextRelevantPricingTransitionAtMs(promotionRows, now),
     });

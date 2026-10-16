@@ -121,6 +121,7 @@ function projectOptions(
   sellingPolicy: StorefrontSellingPolicy = STANDARD_STANDALONE_CAPACITY,
   isComposite = false,
   availabilityDates: StorefrontAvailabilityDates = NO_AVAILABILITY_DATES,
+  capacityByVariantId?: ReadonlyMap<string, StorefrontProductCapacity>,
 ): StorefrontProjectionOption[] {
   // This module is the only one that can tell a set apart from its parts, so it is the only one
   // that can tell the capacity rule — the caller supplies the policy, never the composite flag.
@@ -131,7 +132,7 @@ function projectOptions(
   };
 
   return toStorefrontSelectableOptions(
-    buildStorefrontVariantOptions(variants, pricingRule, productCapacity, availabilityDates),
+    buildStorefrontVariantOptions(variants, pricingRule, productCapacity, availabilityDates, capacityByVariantId),
   ).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
@@ -234,7 +235,7 @@ export function buildStorefrontProductProjection({
     {
       label: string;
       variants: Map<string, StorefrontVariantFacts>;
-      sellingPolicy?: StorefrontSellingPolicy;
+      capacityByVariantId: Map<string, StorefrontProductCapacity>;
     }
   >();
   for (const group of componentGroups) {
@@ -244,14 +245,18 @@ export function buildStorefrontProductProjection({
       merged = {
         label: normalizeLabel(group.label),
         variants: new Map(),
-        sellingPolicy: group.sellingPolicy,
+        capacityByVariantId: new Map(),
       };
       mergedComponentGroups.set(key, merged);
-    } else if (!merged.sellingPolicy && group.sellingPolicy) {
-      merged.sellingPolicy = group.sellingPolicy;
     }
     for (const variant of group.variants) {
-      if (!merged.variants.has(variant.id)) merged.variants.set(variant.id, variant);
+      if (!merged.variants.has(variant.id)) {
+        merged.variants.set(variant.id, variant);
+        merged.capacityByVariantId.set(variant.id, {
+          ...(group.sellingPolicy ?? STANDARD_STANDALONE_CAPACITY),
+          isComposite: false,
+        });
+      }
     }
   }
 
@@ -295,9 +300,10 @@ export function buildStorefrontProductProjection({
         group.label,
         group.label.length === 0 ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
-        group.sellingPolicy ?? STANDARD_STANDALONE_CAPACITY,
+        STANDARD_STANDALONE_CAPACITY,
         false,
         availabilityDates,
+        group.capacityByVariantId,
       ),
     );
   });

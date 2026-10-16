@@ -288,6 +288,9 @@ export function buildStorefrontVariantOptions(
   pricingRule: StorefrontPricingRule = defaultStorefrontPricingRule,
   productCapacity: StorefrontProductCapacity = STANDARD_STANDALONE_CAPACITY,
   availabilityDates: StorefrontAvailabilityDates = NO_AVAILABILITY_DATES,
+  // A merged presentation kind can span products. Keep collision detection over the entire kind
+  // while applying the policy of each variant's owning product.
+  capacityByVariantId?: ReadonlyMap<string, StorefrontProductCapacity>,
 ): StorefrontVariantOption[] {
   const normalized = variants.map((variant) => ({
     ...variant,
@@ -304,15 +307,16 @@ export function buildStorefrontVariantOptions(
   }
 
   return normalized.map((variant) => {
+    const variantCapacity = capacityByVariantId?.get(variant.id) ?? productCapacity;
     const { price, basePriceVnd, isDiscounted } = pricingRule(variant);
     // Advisory: ADR 0014 §2 keeps the authoritative check at the commit boundary. Surfaces that show
     // buyers capacity pass `sellableStock` from the capacity read model (`capacity-advisory.ts`),
     // which has already subtracted active holds, so none is subtracted again here. A page cannot
     // bind a decision made later, and trusting it to is the oversell master spec §31 forbids.
-    const compositeCapacity = productCapacity.isComposite ? variant.compositeCapacity : undefined;
+    const compositeCapacity = variantCapacity.isComposite ? variant.compositeCapacity : undefined;
     const missingFlexibleCompositeCapacity =
-      productCapacity.isComposite &&
-      productCapacity.sellingMode !== "STANDARD" &&
+      variantCapacity.isComposite &&
+      variantCapacity.sellingMode !== "STANDARD" &&
       compositeCapacity === undefined;
     const sellability = missingFlexibleCompositeCapacity
       ? {
@@ -332,9 +336,9 @@ export function buildStorefrontVariantOptions(
         : resolveVariantSellability({
             mirroredStock: variant.sellableStock,
             activeReservedQuantity: 0,
-            sellingMode: productCapacity.sellingMode,
-            negativeStockLimit: productCapacity.negativeStockLimit,
-            isComposite: productCapacity.isComposite,
+            sellingMode: variantCapacity.sellingMode,
+            negativeStockLimit: variantCapacity.negativeStockLimit,
+            isComposite: variantCapacity.isComposite,
           });
     let unavailableReason: StorefrontVariantUnavailableReason | null = null;
 

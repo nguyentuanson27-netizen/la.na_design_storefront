@@ -405,3 +405,45 @@ test("a component group with its own PREORDER policy enables preorder sale withi
   );
 });
 
+test("merged component labels preserve each owner's policy, floor and date in either order", () => {
+  const groups = [
+    { label: "ÁO LẺ", variants: [variant("standard", "M", { color: "Black", sellableStock: 0 })],
+      sellingPolicy: { sellingMode: "STANDARD" as const, negativeStockLimit: -20 } },
+    { label: " áo lẻ ", variants: [variant("preorder", "M", { color: "White", sellableStock: 0 })],
+      sellingPolicy: { sellingMode: "PREORDER" as const, negativeStockLimit: -20 } },
+    { label: "ÁO LẺ", variants: [variant("at-floor", "M", { color: "Red", sellableStock: -1 })],
+      sellingPolicy: { sellingMode: "PREORDER" as const, negativeStockLimit: -1 } },
+    { label: "ÁO LẺ", variants: [variant("within-floor", "M", { color: "Blue", sellableStock: -1 })],
+      sellingPolicy: { sellingMode: "PREORDER" as const, negativeStockLimit: -2 } },
+    { label: "ÁO LẺ", variants: [variant("missing-policy", "M", { color: "Green", sellableStock: 0 })] },
+  ];
+  for (const componentGroups of [groups, [...groups].reverse()]) {
+    const options = buildStorefrontProductProjection({
+      parentVariants: [], componentGroups, hasCompositeGraph: true,
+      availabilityDates: {
+        today: "2026-10-16",
+        byVariantId: new Map([["preorder", "2026-10-25"], ["within-floor", "2026-10-27"]]),
+      },
+    }).options;
+    assert.equal(new Set(options.map(o => o.kindKey)).size, 1);
+    assert.deepEqual(Object.fromEntries(options.map(o => [o.id, o.purchasable])), {
+      standard: false, preorder: true, "at-floor": false, "within-floor": true, "missing-policy": false,
+    });
+    for (const [id, date] of [["preorder", "2026-10-25"], ["within-floor", "2026-10-27"]]) {
+      const option = options.find(o => o.id === id)!;
+      assert.equal(option.isPreorderSale, true);
+      assert.deepEqual(option.availability, { published: true, merchant: "backorder", schema: "BackOrder", availabilityDate: date });
+    }
+  }
+});
+
+test("merged component policy overrides still detect collisions across source products", () => {
+  const options = buildStorefrontProductProjection({
+    parentVariants: [], hasCompositeGraph: true,
+    componentGroups: [
+      { label: "ÁO LẺ", variants: [variant("a", "M")], sellingPolicy: { sellingMode: "STANDARD", negativeStockLimit: -20 } },
+      { label: "ÁO LẺ", variants: [variant("b", "M")], sellingPolicy: { sellingMode: "PREORDER", negativeStockLimit: -20 } },
+    ],
+  }).options;
+  assert.equal(options.every(o => !o.purchasable && o.unavailableReason === "AMBIGUOUS_OPTION" && !o.availability.published), true);
+});
