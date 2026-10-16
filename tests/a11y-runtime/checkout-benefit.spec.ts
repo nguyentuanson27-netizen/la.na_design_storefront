@@ -234,7 +234,7 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
     // The real submit/quote/proof/snapshot pipeline ran, not a UI counter.
     expect(order.guestName).toBe("Nguyễn Văn A");
     expect(order.note).toBe("Giữ nguyên ghi chú");
-    await expect.poll(async () => (await prisma.orderMirror.findUniqueOrThrow({where:{id:order.id}})).state).toBe("CONFIRMED");
+    await expect.poll(async () => { const row=await prisma.orderMirror.findUniqueOrThrow({where:{id:order.id}});return {state:row.state,code:row.syncErrorCode}; }).toEqual({state:"CONFIRMED",code:null});
     await expect(page).toHaveURL(/checkout\/success/);
   });
 }
@@ -278,7 +278,121 @@ test("a shop without line-level pricing evidence: the cart withholds the link an
 
   // Typing the URL does not get around it: the page offers no form for a quote the POS would close.
   await page.goto(`${baseUrl}/checkout`);
-  await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeDisabled();
   await expect(page.getByText(/hiện chưa thể đặt trực tuyến/)).toBeVisible();
   await expect(page.getByRole("link", { name: /Quay lại giỏ hàng/ })).toBeVisible();
+});
+
+test("AC07/18: dialog continuation shares the submit lock and confirms one order with current quote acknowledgement", async({page}) => {
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  const before=await prisma.orderMirror.count();
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  const proceed=page.getByRole("dialog").getByRole("button",{name:"Vẫn đặt hàng",exact:true});
+  await expect(proceed).toBeEnabled();
+  await proceed.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
+  await expect(page).toHaveURL(/checkout\/success/);
+  expect(await prisma.orderMirror.count()).toBe(before+1);
+  const order=await prisma.orderMirror.findFirstOrThrow({orderBy:{createdAt:"desc"},include:{quoteSnapshot:true}});
+  expect(order.state).toBe("CONFIRMED");
+  expect(order.quoteSnapshot!.nonclaimAcknowledged).toBe(true);
+  expect(order.quoteSnapshot!.acknowledgedAt).not.toBeNull();
+});
+
+test("AC12/13: quote refresh and reload keep only reminder metadata; client navigation ends the visit", async({page}) => {
+  await startServer(3350,true);
+  await page.setViewportSize({width:1440,height:900});
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await page.keyboard.press("Escape");
+  const readMetadata=()=>page.evaluate(()=>sessionStorage.getItem("la-checkout-gift-reminder-v1"));
+  const metadata=JSON.parse((await readMetadata())!);
+  expect(Object.keys(metadata).sort()).toEqual(["key","seen","version"]);
+  expect(metadata.seen).toBe(true);
+  await chooseGift(1);
+  await refreshQuote(page);
+  await expectReceiving(page);
+  expect(JSON.parse((await readMetadata())!).key).toBe(metadata.key);
+  await page.reload();
+  await expect(page.getByLabel("Ghi chú",{exact:false})).toHaveValue("");
+  await expect.poll(readMetadata).not.toBeNull();
+  expect(JSON.parse((await readMetadata())!).seen).toBe(true);
+  await page.locator('aside a[href="/cart"]:visible').click();
+  await expect(page).toHaveURL(/\/cart$/);
+  await expect.poll(readMetadata).toBeNull();
+  await page.getByRole("link",{name:"Tiến hành đặt hàng",exact:true}).click();
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+});
+
+test("AC13: blocked tab storage falls back to memory without repeating the reminder in the same mount", async({page}) => {
+  await page.addInitScript(()=>{
+    Storage.prototype.setItem=()=>{throw new DOMException("blocked","SecurityError");};
+    Storage.prototype.getItem=()=>{throw new DOMException("blocked","SecurityError");};
+  });
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page).toHaveURL(/checkout\/success/);
+  expect(await prisma.orderMirror.count()).toBe(1);
+});
+
+test("AC14: changed quote is displayed and waits for a fresh explicit submit without another reminder", async({page}) => {
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await page.keyboard.press("Escape");
+  const proof=page.locator('input[name="quoteProof"]');
+  const old=await proof.inputValue();
+  const paid=await prisma.cartItem.findFirstOrThrow({where:{cartId}});
+  await prisma.variantMirror.update({where:{id:paid.variantId},data:{pancakeRetailPrice:110000,pancakeRetailPriceAfterDiscount:110000}});
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByText("Giá đã thay đổi",{exact:true})).toBeVisible();
+  await expect(proof).not.toHaveValue(old);
+  await expectReceiving(page);
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  expect(await prisma.orderMirror.count()).toBe(0);
+});
+
+test("AC11/22/25: committed gift with lost responses stays locked until readback; never repeat the write", async({page}) => {
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  const picker=page.getByRole("region",{name:"Quà tặng trong giỏ"});
+  await picker.getByRole("button",{name:"Chọn quà ngay",exact:true}).click();
+  await picker.getByRole("button",{name:"Khăn quà",exact:true}).click();
+  let mutationId:string|undefined; let writes=0; let loseRead=true;
+  await page.route("**/checkout",async route=>{
+    const req=route.request();
+    if(req.method()!=="POST") return route.continue();
+    const action=req.headers()["next-action"];
+    if(!mutationId || action===mutationId) {
+      mutationId=action; writes++;
+      await route.fetch();
+      return route.abort("failed");
+    }
+    if(loseRead) return route.abort("failed");
+    return route.continue();
+  });
+  await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
+  const retry=picker.getByRole("button",{name:"Kiểm tra lại quà trong đơn",exact:true});
+  await expect(retry).toBeVisible();
+  expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
+  await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeDisabled();
+  loseRead=false;
+  await retry.click();
+  await expect(picker).toHaveAttribute("aria-busy","false");
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  expect(writes).toBe(1);
+  await expectReceiving(page);
 });

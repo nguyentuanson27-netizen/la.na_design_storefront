@@ -72,7 +72,10 @@ export async function readBenefitCheckoutRender({
   try {
     resolution = await client.$transaction(async (tx) => {
       const giftState = isGiftQuantityPromotionsEnabled(env) ? await readCartGiftState(tx, cartId, shopId, now, env) : undefined;
-      if (giftState) giftPicker = buildCartGiftPickerModel(giftState);
+      if (giftState) {
+        const picker = buildCartGiftPickerModel(giftState);
+        if (picker.selections.length || picker.campaigns.some((c) => c.entitled > 0)) giftPicker = picker;
+      }
       return resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, lines, giftState });
     });
   } catch {
@@ -80,7 +83,7 @@ export async function readBenefitCheckoutRender({
     // submit then refuses. Fail closed instead.
     return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
   }
-  if (resolution.kind === "LEGACY") return { kind: "LEGACY", giftPicker };
+  if (resolution.kind === "LEGACY") return giftPicker ? { kind: "LEGACY", giftPicker } : { kind: "LEGACY" };
   if (resolution.kind === "UNAVAILABLE") return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
   if (resolution.kind === "GIFT_SELECTION_INVALID") return { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker: giftPicker ? { ...giftPicker, invalid: true } : undefined };
 

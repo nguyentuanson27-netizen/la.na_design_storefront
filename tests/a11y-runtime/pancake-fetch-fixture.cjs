@@ -151,7 +151,12 @@ async function pancakeResponse(url, init) {
     if (benefitFixture) {
       const paid=body?.items?.filter(item=>item.variation_id==="gq19-browser-paid");
       const gift=body?.items?.filter(item=>item.variation_id==="gq19-browser-gift");
-      if(body?.shop_id!==Number(SHOP_ID) || body.shipping_address?.render_type!=="new" || body.shipping_address?.province_id!==PROVINCE_CURRENT || body.shipping_address?.commune_id!==COMMUNE_CURRENT || body.bill_phone_number!=="0901234567" || paid?.length!==1 || paid[0].quantity!==2 || paid[0].variation_info?.retail_price!==100000 || body.items.length!==paid.length+gift.length || gift.some(item=>!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>2||item.variation_info?.retail_price!==0)) return json({error:"unexpected benefit order"},400);
+      const giftCount=(gift??[]).reduce((sum,item)=>sum+item.quantity,0);
+      // ADR 0016 D-08: Pancake accounts gifts at 1,000đ and deducts that exact amount
+      // from paid units. The buyer quote/snapshot still carries gifts at 0đ.
+      const paidUnits=(paid??[]).reduce((sum,item)=>sum+item.quantity,0);
+      const paidTotal=(paid??[]).reduce((sum,item)=>sum+item.quantity*item.variation_info?.retail_price,0);
+      if(body?.shop_id!==Number(SHOP_ID) || body.shipping_address?.render_type!=="new" || body.shipping_address?.province_id!==PROVINCE_CURRENT || body.shipping_address?.commune_id!==COMMUNE_CURRENT || body.bill_phone_number!=="0901234567" || paidUnits!==2 || paidTotal!==200000-giftCount*1000 || body.items.length!==paid.length+gift.length || gift.some(item=>!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>2||item.variation_info?.retail_price!==1000)) return json({error:"unexpected benefit order"},400);
       const id=nextOrderId++;
       benefitOrders.set(String(id),{id,shop_id:Number(SHOP_ID),status:0,items:body.items,total_price:200000});
       return json({id});

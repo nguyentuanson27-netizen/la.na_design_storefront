@@ -412,7 +412,7 @@ export function GuestCheckoutForm({
           or swapped value simply fails closed into re-confirmation. */}
       <input name="quoteProof" type="hidden" value={quoteProof ?? ""} />
 
-      <aside className="checkout-order-panel min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-24 lg:self-start">
+      <aside className="checkout-order-panel min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-24 lg:self-start">
       {summarySlot ? <div className="hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>{summarySlot}</div> : null}
       {/* Below `lg` only: at `lg+` the page's sticky aside is the order summary, already expanded,
           so a second collapsible copy would be two summaries of one order. */}
@@ -439,7 +439,8 @@ export function GuestCheckoutForm({
       {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
       </aside>
 
-      <div className="checkout-receiving-fields min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
+      <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
+      <div className="checkout-receiving-fields min-w-0 space-y-8">
       {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || giftPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onBusyChange={onUpsellBusyChange} /> : null}
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
@@ -613,7 +614,7 @@ export function GuestCheckoutForm({
       {/* Same breakpoint split as the summary above: the shipping/total block and the fulfillment
           notice belong between the fields and the submit button below `lg`, and inside the sticky
           aside at `lg+`. */}
-      <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-2">
+      <div className="min-w-0 space-y-5">
       <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
       {unavailableNotice ? <div role="alert"><p>{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending} onClick={() => startQuoteRefresh(() => router.refresh())}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
@@ -660,6 +661,7 @@ export function GuestCheckoutForm({
       <p className="text-xs leading-5 text-black/60">
         Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
+      </div>
       </div>
       <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Bạn còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
