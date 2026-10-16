@@ -1,7 +1,8 @@
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { vietnamCalendarDate } from "./availability-cycle.ts";
 import { readVariantAvailabilityDates } from "./availability-cycle-repository.ts";
-import { resolveSellingPolicy } from "./capacity-policy.ts";
+import { capacityFloorForMode, resolveSellingPolicy } from "./capacity-policy.ts";
+import type { CompositeCapacitySnapshot } from "./composite-capacity.ts";
 
 import {
   mapMerchantOffers,
@@ -248,15 +249,36 @@ function toCandidateProduct(
       aggregateWarehouseStock(variant.warehouseStocks.map((stock) => stock.quantity)),
     ]),
   );
-  const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => ({
-    id: variant.id,
-    pancakeVariationId: variant.pancakeVariationId,
-    color: variant.color,
-    size: variant.size,
-    sellableStock: stockByVariantId.get(variant.id) ?? Number.NaN,
-    retailPrice: variant.pancakeRetailPrice,
-    retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
-  }));
+  const resolvedSellingPolicy = resolveSellingPolicy(product.sellingPolicy);
+  const parentVariants: StorefrontVariantFacts[] = product.variants.map((variant) => {
+    const stock = stockByVariantId.get(variant.id) ?? Number.NaN;
+    let compositeCapacity: CompositeCapacitySnapshot | undefined = undefined;
+    if (variant.isCompositeParent && Number.isSafeInteger(stock)) {
+      const floor = capacityFloorForMode(
+        resolvedSellingPolicy.sellingMode,
+        resolvedSellingPolicy.negativeStockLimit,
+      );
+      const readyQuantity = Math.max(0, stock);
+      const reservableQuantity = Math.max(0, stock - floor);
+      compositeCapacity = Object.freeze({
+        sellingMode: resolvedSellingPolicy.sellingMode,
+        negativeStockLimit: resolvedSellingPolicy.negativeStockLimit,
+        readyQuantity,
+        reservableQuantity,
+        reason: reservableQuantity > 0 ? "capacity-available" : "negative-limit-reached",
+      });
+    }
+    return {
+      id: variant.id,
+      pancakeVariationId: variant.pancakeVariationId,
+      color: variant.color,
+      size: variant.size,
+      sellableStock: stock,
+      compositeCapacity,
+      retailPrice: variant.pancakeRetailPrice,
+      retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
+    };
+  });
   const hasCompositeGraph = product.variants.some((variant) => variant.isCompositeParent);
   const variations: MerchantCandidateVariation[] = product.variants.map((variant) => ({
     variantId: variant.id,
@@ -279,7 +301,7 @@ function toCandidateProduct(
       componentGroups: [],
       hasCompositeGraph,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now }),
-      sellingPolicy: resolveSellingPolicy(product.sellingPolicy),
+      sellingPolicy: resolvedSellingPolicy,
       availabilityDates,
     }),
     apparelOverrides:

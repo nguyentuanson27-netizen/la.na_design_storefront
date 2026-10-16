@@ -193,6 +193,37 @@ test("supports composite/combo products without getting blocked", () => {
   assert.equal(items[0]!.availability, "in_stock");
 });
 
+test("supports composite/combo products with PREORDER mode and availability date", () => {
+  const preorder = projectionOption({
+    kindKey: "parent",
+    price: 1_389_000,
+    purchasable: true,
+    isPreorderSale: true,
+  });
+  const preorderOption = {
+    ...preorder,
+    availability: fixtureAvailability(preorder, {
+      availabilityDate: "2026-11-20",
+      today: "2026-10-09",
+    }),
+  };
+  const combo = candidate({
+    pancakeProductId: "prod-sd1724",
+    slug: "ao-dai-kieu-van-sd1724",
+    name: "Áo dài Kiều Vân",
+    projection: {
+      mode: "composite",
+      options: [preorderOption],
+    },
+  });
+  const items = buildMerchantParentItems([combo], ORIGIN);
+  assert.equal(items.length, 1);
+  assert.equal(items[0]!.id, "prod-sd1724");
+  assert.equal(items[0]!.priceVnd, 1_389_000);
+  assert.equal(items[0]!.availability, "backorder");
+  assert.equal(items[0]!.availabilityDate, "2026-11-20");
+});
+
 test("serializes Google Merchant Parent feed with XML escaping and proper RSS 2.0 structure", () => {
   const items = buildMerchantParentItems([candidate()], ORIGIN);
   const feed = serializeGoogleMerchantParentFeed({ items, market: MARKET, origin: ORIGIN });
