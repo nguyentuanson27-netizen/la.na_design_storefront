@@ -14,6 +14,15 @@ For active La.na Design work, use these sources in this order:
 
 If an older plan, audit or task note conflicts with these current authorities, the current La.na Design source wins for brand truth and current execution state.
 
+## Feature plan awaiting approval — gift picker / checkout reminder
+
+The [gift-picker specification](../docs/specs/storefront-gift-picker-checkout-reminder.md) was merged in PR #173 at `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646` at the owner's request. Its implementation is planned separately:
+
+- [Implementation plan](./storefront-gift-picker-checkout-reminder-plan.md) — dependencies, checkout safety boundaries, verification checkpoints and known CI baseline failures.
+- [Task checklist](./storefront-gift-picker-checkout-reminder-todo.md) — T00..T13, acceptance criteria and AC-01..AC-24 traceability; implementation tasks are not completed.
+
+This workstream awaits plan approval before implementation. It does not replace the master plan/checklist, change unrelated policy authority, or claim that the feature has shipped.
+
 ## Legacy plans and audits
 
 This repository preserves Core Kit / Brand #1 history. Older files such as the growth-commerce, marketing, storefront-refinement and other completed workstream plans may mention LA Clothing, previous domains, previous databases or old owner gates.
