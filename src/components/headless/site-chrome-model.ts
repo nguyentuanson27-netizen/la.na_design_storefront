@@ -60,15 +60,19 @@ export type SiteChromeContent = Readonly<{
   footer: SiteFooterModel;
 }>;
 
+export const DEFAULT_SITE_PROMOTION_HEADLINE = "Mua 3 tặng 1 - Mua 5 giảm 10% tổng hóa đơn";
+
 export function buildSiteChromeContent(
   headerMedia: readonly CategoryMegaMedia[] = [],
+  env: Readonly<Record<string, string | undefined>> = process.env,
 ): SiteChromeContent {
-  const policy = readGuestShippingPolicy();
+  const policy = readGuestShippingPolicy(env);
+  const headline = env.LA_TOP_PROMOTION_HEADLINE?.trim() || DEFAULT_SITE_PROMOTION_HEADLINE;
 
   return {
     promotion: {
-      label: describeGuestShippingPromotion(policy).title,
-      headline: describeGuestShippingPromotionHeadline(policy),
+      label: "Chương trình khuyến mại",
+      headline,
     },
     header: {
       megaMedia: headerMedia,
