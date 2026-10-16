@@ -27,6 +27,10 @@ export function checkoutSubmitFeedback(
     };
   }
 
+  if (result.status === "RETRYABLE" && result.giftRepairRequired) {
+    return { tone: "warning", title: "Kiểm tra lại quà đã chọn", message: "Quà đã chọn không còn hợp lệ. Hãy bỏ lựa chọn cũ ngay tại đây rồi kiểm tra báo giá mới; thông tin nhận hàng được giữ nguyên.", mayRetry: true };
+  }
+
   // The buyer is being asked to accept a price they have not seen yet, so this is the one failure
   // that must state the new number and stay retryable. Every unproven-proof outcome lands here;
   // from the buyer's side there is nothing to distinguish and only one thing to do.

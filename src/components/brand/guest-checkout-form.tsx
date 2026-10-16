@@ -28,6 +28,7 @@ export function BrandGuestCheckoutForm(
     quoteProof: string | null;
     giftPicker?: CartGiftPickerModel;
     attemptKey?: string;
+    quoteRenderId?: string;
     unavailableNotice?: string | null;
     upsell?: CheckoutUpsellModel;
     benefit?: GuestCheckoutBenefit;

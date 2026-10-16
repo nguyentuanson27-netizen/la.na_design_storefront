@@ -577,7 +577,7 @@ test("mobile checkout summary counts units and renders one semantic total", asyn
   // `:visible` is load-bearing: the desktop sticky aside is in the DOM at every width and carries
   // its own copy of these regions, hidden below `lg`. One *visible* total is the contract.
   await expect(page.locator("dl:visible > div").filter({ hasText: "Tổng thanh toán" })).toHaveCount(1);
-  await expect(page.locator(".checkout-order-panel")).toBeHidden();
+  await expect(page.locator(".checkout-desktop-lines")).toBeHidden();
   await expect(page.getByRole("button", { name: "Đặt hàng COD" })).toBeVisible();
 
   const order = await page.evaluate(() => {
@@ -620,7 +620,7 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
   const summary = page.locator(".checkout-order-panel");
   await expect(summary).toBeVisible();
   await expect(summary.getByText("Đơn hàng", { exact: true })).toBeVisible();
-  await expect(summary.locator("a[href='/cart']")).toBeVisible();
+  await expect(summary.locator("a[href='/cart']:visible")).toBeVisible();
   await expect(summary.locator("dl > div").filter({ hasText: "Tổng thanh toán" })).toHaveCount(1);
 
   // The mobile composition is off, so neither region is announced twice.
@@ -632,7 +632,7 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
   // Right column: the summary starts to the right of the form, not under it.
   const [summaryBox, formBox] = await Promise.all([
     summary.boundingBox(),
-    page.locator("form").first().boundingBox(),
+    page.locator(".checkout-receiving-fields").boundingBox(),
   ]);
   expect(summaryBox!.x).toBeGreaterThan(formBox!.x + formBox!.width - 1);
 

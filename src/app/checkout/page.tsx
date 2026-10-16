@@ -181,6 +181,7 @@ function render(data: CheckoutViewModel) {
           quoteProof={quoteProof}
           giftPicker={data.giftPicker}
           attemptKey={data.attemptKey}
+          quoteRenderId={data.quoteRenderId}
           unavailableNotice={data.state === "unquotable" ? data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng." : null}
           upsell={data.upsell}
           benefit={

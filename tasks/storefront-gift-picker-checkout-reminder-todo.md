@@ -1,8 +1,8 @@
 # Todo — Chọn quà tại chỗ và nhắc một lần
 
-**Trạng thái:** CHỜ DUYỆT PLAN VÀ BỔ SUNG SPEC UX; 0/14 task implementation hoàn thành.  
+**Trạng thái:** Đã duyệt qua PR #174; implementation ở [PR #175](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/175), đang nghiệm thu. Các checkbox chỉ đóng khi có evidence.
 **Plan:** [storefront-gift-picker-checkout-reminder-plan.md](storefront-gift-picker-checkout-reminder-plan.md), mục “Tiếp thu review UX” ghi quyết định UX-01..UX-04.  
-**Spec gốc đã merge:** [PR #173](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/173), baseline `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646`. [Spec bổ sung trong PR #174](../docs/specs/storefront-gift-picker-checkout-reminder.md) thêm AC-25..AC-28 sau review `87b7cd5`, chờ duyệt trước `/build`.
+**Spec gốc đã merge:** [PR #173](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/173), baseline `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646`. [Spec bổ sung trong PR #174](../docs/specs/storefront-gift-picker-checkout-reminder.md) thêm AC-25..AC-28 sau review `87b7cd5`, đã được owner duyệt cùng plan; xem PR #174 và yêu cầu triển khai ngày 16/10/2026.
 
 Tất cả lệnh bên dưới là bước cần chạy khi triển khai, không phải kết quả đã chạy trong PR plan. Tests dùng database/fixture riêng theo plan mục 5. File ghi “mới” là tên dự kiến; kiểm tra tiện ích hiện có trước khi thêm. Mỗi task hành vi đi RED → GREEN → review; không đánh dấu xong chỉ từ source inspection. Giữ 14 task; nghiệm thu UX được gắn vào task hiện có, không dồn quyết định spec tới T13.
 
@@ -17,7 +17,7 @@ Tất cả lệnh bên dưới là bước cần chạy khi triển khai, không
 - [ ] Không nới gate/test; lỗi required chưa giải quyết được ghi là blocker merge implementation, không trộn sửa CI không liên quan vào feature.
 **Verification:** chạy setup trong plan, `pnpm lint`, `pnpm typecheck`, `pnpm test`, `pnpm test:db`, `pnpm build`; đối chiếu jobs/logs CI và ghi rõ bước chưa chạy/lỗi. Không tự rerun vô hạn hoặc gọi lỗi là flaky chưa chứng minh.
 
-**C0:** [ ] Plan và spec bổ sung UX-01..UX-04/AC-25..AC-28 được duyệt; baseline và môi trường test đã được kiểm tra trước T01. Không đợi T13 mới sửa hợp đồng UX.
+**C0:** [x] Plan và spec bổ sung UX-01..UX-04/AC-25..AC-28 được duyệt; baseline và môi trường test đã được kiểm tra trước T01. Không đợi T13 mới sửa hợp đồng UX.
 
 ## T01 — Cấp dữ liệu quà độc lập với quote khả dụng
 
@@ -206,3 +206,8 @@ Mỗi AC phải có test hoặc quan sát runtime được ghi vào evidence khi
 | 26 | T08, T10, T12 | UX-02: nhận đủ/một phần → quay lại, focus/form nguyên, không order trước submit chủ động; pending/uncertain còn khóa và response muộn không cướp focus. |
 | 27 | T06, T12 | UX-03: đủ suất vẫn duyệt, cảnh báo trước bỏ, thông báo sau bỏ/nhận mới thất bại đúng suất trống; readback, không swap/restore. C2 trước, T12 hồi quy checkout. |
 | 28 | T06, T08, T12 | UX-04: count thu gọn, mở quản lý hữu ích, không tự đóng món cuối hoặc xóa dòng quà trong đơn; ảnh mở/thu gọn 390/1440px. |
+
+
+## Theo dõi implementation PR #175
+
+Owner yêu cầu triển khai end to end và mở PR mới ngày 16/10/2026. [Evidence hiện hành](../docs/verification/storefront-gift-picker-checkout-reminder.md) ghi lệnh, CI, AC và giới hạn kiểm tra. Các ghi chú chờ duyệt và CI lỗi ở phần lịch sử không thay thế trạng thái hiện hành này. Không coi merge plan là release chức năng.

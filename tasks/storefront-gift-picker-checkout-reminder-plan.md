@@ -1,9 +1,9 @@
 # Plan — Chọn quà tại chỗ và nhắc một lần trước đặt hàng
 
-**Trạng thái:** PLAN VÀ BỔ SUNG SPEC UX CHỜ DUYỆT — chưa triển khai chức năng.  
+**Trạng thái:** ĐÃ DUYỆT tại PR #174; implementation và verification đang thực hiện tại PR #175. Chưa phát hành.
 **Ngày:** 16/10/2026.  
 **Spec:** [storefront-gift-picker-checkout-reminder.md](../docs/specs/storefront-gift-picker-checkout-reminder.md), UI-01..UI-06, FLOW-01..FLOW-03, DATA-01..DATA-04, AC-01..AC-28; AC-25..AC-28 bổ sung sau review `87b7cd5`.  
-**Quyết định đầu vào:** chủ dự án yêu cầu merge PR #173 và lập plan ở PR mới. PR #173 đã merge tại `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646`, chứa bản spec sửa `437904b`. Đây là checkpoint duyệt spec gốc, không phải duyệt bổ sung UX ở PR #174, implementation hoặc release.  
+**Quyết định đầu vào:** chủ dự án yêu cầu merge PR #173 và lập plan ở PR mới. PR #173 đã merge tại `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646`, chứa bản spec sửa `437904b`. PR #174 cùng bổ sung UX đã được owner duyệt và merge tại `8cac527`; yêu cầu ngày 16/10/2026 cho phép triển khai toàn bộ và mở PR mới, chưa cho phép release.
 **Baseline của plan:** `main@6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646`.  
 **Task list:** [storefront-gift-picker-checkout-reminder-todo.md](storefront-gift-picker-checkout-reminder-todo.md).
 
@@ -188,3 +188,8 @@ T13 ghi commit/test results/ảnh và lỗi còn lại vào `docs/verification/s
 Không deploy trong PR plan hoặc tự động sau khi duyệt plan. Trước release, owner chốt phiên bản triển khai và người theo dõi; dùng tín hiệu checkout/benefit hiện có. Rollback khi mất form, popup lặp/chặn submit, đơn trùng hoặc vi phạm quote/stock: dừng rollout và quay lại bản ứng dụng tốt gần nhất đã xác định, xác minh checkout cũ; không xóa giỏ/order/snapshot hoặc sửa sổ audit để rollback. Không có schema change nên không yêu cầu migration rollback; kết quả POS chưa rõ tiếp tục qua reconciliation hiện có, không gửi lại mù.
 
 **Verification của tài liệu:** bản đầu đã đối chiếu spec/source/CI tại baseline nêu trên. Bản sửa UX đọc lại spec/plan/todo/README ở `87b7cd5`, đối chiếu review và hai nguồn W3C; chạy kiểm tra manifest được trích thủ công cho 14 task, DAG/phụ thuộc, coverage 28 AC và phân công UX/checkpoint. Đây là kiểm chứng cấu trúc kế hoạch, không phải kiểm thử chức năng hoặc parser toàn bộ Markdown. Rà soát bản sửa là tự review, chưa có reviewer độc lập cho revision mới. Container không tải được raw repository do DNS; không có local app build/lint/test/browser/screen reader mới. Kết quả CI mục 2 vẫn là run lịch sử, không phải kết quả của bản sửa UX.
+
+
+## Theo dõi implementation PR #175
+
+Owner yêu cầu triển khai end to end và mở PR mới ngày 16/10/2026. [Evidence hiện hành](../docs/verification/storefront-gift-picker-checkout-reminder.md) ghi lệnh, CI, AC và giới hạn kiểm tra. Các ghi chú chờ duyệt và CI lỗi ở phần lịch sử không thay thế trạng thái hiện hành này. Không coi merge plan là release chức năng.

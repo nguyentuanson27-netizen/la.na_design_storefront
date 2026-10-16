@@ -2,7 +2,7 @@
 
 **Project:** La.na Design Storefront
 **Ngày:** 16/10/2026
-**Trạng thái:** Spec gốc và các mặc định R-01..R-04 đã được duyệt qua yêu cầu merge PR #173 tại `6c75d5e`. Bổ sung UX-01..UX-04 sau review `87b7cd5` đang chờ duyệt cùng PR #174 trước `/build`; chưa triển khai chức năng.
+**Trạng thái:** Spec và UX-01..UX-04 đã được owner duyệt qua PR #173/#174. Implementation theo yêu cầu ngày 16/10/2026 nằm ở PR #175; đang nghiệm thu, chưa phát hành.
 **Baseline đã đối chiếu:** `main@e08715493c224a76e078d4c42b2565294e493d0d`.
 **Phạm vi PR #174:** Cập nhật đặc tả UX cùng plan/checklist. Không sửa giao diện, logic đặt hàng, database, cấu hình hoặc dependency; không triển khai tính năng.
 
@@ -357,3 +357,8 @@ Rủi ro chính là trộn “đã nhắc” với “đã đồng ý quote”, 
 Definition of Done cho implementation: AC-01..AC-28 đạt; unit/integration phù hợp, lint/typecheck/build đạt; kiểm tra browser và đường lỗi có bằng chứng; không hồi quy quote/stock/snapshot; cập nhật tài liệu cũ liên quan; review security và rollout/rollback của thay đổi checkout trước release. Không coi một bộ test xanh là đủ khi chưa xác minh runtime.
 
 Gate của PR #174: spec bổ sung UX và plan/checklist thống nhất, có task/kiểm chứng cho AC-25..AC-28, giữ đủ AC-01..AC-24; diff chỉ có tài liệu. Người phụ trách duyệt phần spec bổ sung và plan trước `/build`; T13 chỉ ghi kết quả thực hiện, không phải thời điểm mới quyết định UX. Không tự chuyển sang implementation, merge hoặc deploy trong PR này.
+
+
+## Theo dõi implementation PR #175
+
+Owner yêu cầu triển khai end to end và mở PR mới ngày 16/10/2026. [Evidence hiện hành](../verification/storefront-gift-picker-checkout-reminder.md) ghi lệnh, CI, AC và giới hạn kiểm tra. Các ghi chú chờ duyệt và CI lỗi ở phần lịch sử không thay thế trạng thái hiện hành này. Không coi merge plan là release chức năng.

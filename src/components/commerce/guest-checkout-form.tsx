@@ -115,6 +115,7 @@ export function GuestCheckoutForm({
   quoteProof,
   giftPicker,
   attemptKey,
+  quoteRenderId,
   unavailableNotice,
   benefit,
   upsell,
@@ -127,6 +128,7 @@ export function GuestCheckoutForm({
   quoteProof: string | null;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
+  quoteRenderId?: string;
   unavailableNotice?: string | null;
   upsell?: CheckoutUpsellModel;
   benefit?: GuestCheckoutBenefit;
@@ -147,6 +149,7 @@ export function GuestCheckoutForm({
   const [communes, setCommunes] = useState<CheckoutCommune[]>([]);
   const [provinceRef, setProvinceRef] = useState("");
   const [communeRef, setCommuneRef] = useState("");
+  const [submittedRenderId, setSubmittedRenderId] = useState<string | undefined>();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
@@ -281,7 +284,7 @@ export function GuestCheckoutForm({
   // Keyed on the response itself rather than on `priceChanged`: a second consecutive price change
   // leaves that boolean true, and an effect keyed on it would never fire again.
   useEffect(() => {
-    if (submitState && !submitState.ok && submitState.status === "PRICE_CHANGED") {
+    if (submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired))) {
       startQuoteRefresh(() => router.refresh());
     }
   }, [submitState, router]);
@@ -292,8 +295,9 @@ export function GuestCheckoutForm({
   // left, so it stays pressable and answers with the warnings below. It is disabled only while a
   // submission or quote refresh is in flight, after a final outcome, or when the address lists
   // could not be loaded at all (the retry button is the way forward then).
+  const waitingForNewRender = Boolean(submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired)) && submittedRenderId === quoteRenderId);
   const submitDisabled =
-    !quoteProof || isSubmitting || giftPending || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    waitingForNewRender || !quoteProof || isSubmitting || giftPending || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
 
   const fieldErrors = findFieldErrors({
     name,
@@ -346,14 +350,15 @@ export function GuestCheckoutForm({
     if (decision === "remind") { reminder.open(); return; }
     if (decision !== "submit") return;
     submissionBusy.current = true;
+    setSubmittedRenderId(quoteRenderId);
     const formData = new FormData(event.currentTarget);
     if (benefit?.needsAcknowledgement && reminder.current.current === "seen") formData.set("nonclaimAcknowledged", "yes");
     startTransition(() => submitAction(formData));
   }
   useEffect(() => {
-    if (!isSubmitting) submissionBusy.current = false;
+    if (!isSubmitting && !isRefreshingQuote && !waitingForNewRender) submissionBusy.current = false;
     if (submitState?.ok) reminder.clear();
-  }, [isSubmitting, submitState, reminder]);
+  }, [isSubmitting, isRefreshingQuote, waitingForNewRender, submitState, reminder]);
   // Do not leave a modal presenting an old quote after the route becomes unavailable.
   useEffect(() => {
     if (!quoteProof && reminder.current.current === "open") reminder.markSeen();
@@ -413,7 +418,7 @@ export function GuestCheckoutForm({
       <input name="quoteProof" type="hidden" value={quoteProof ?? ""} />
 
       <aside className="checkout-order-panel min-w-0 lg:col-start-2 lg:row-start-1 lg:sticky lg:top-24 lg:self-start">
-      {summarySlot ? <div className="hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>{summarySlot}</div> : null}
+      {summarySlot ? <div className="checkout-desktop-lines hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>{summarySlot}</div> : null}
       {/* Below `lg` only: at `lg+` the page's sticky aside is the order summary, already expanded,
           so a second collapsible copy would be two summaries of one order. */}
       {summarySlot && summaryLabel ? (

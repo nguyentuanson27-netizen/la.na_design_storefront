@@ -26,6 +26,7 @@ const TEST_API_KEY = "checkout-a11y-test-key";
 const TRUSTED_CLIENT_IP = "203.0.113.45";
 const PANCAKE_FETCH_FIXTURE = resolve(import.meta.dirname, "pancake-fetch-fixture.cjs");
 const PREFIX = "gq19-browser-";
+const runtimeId = `${Date.now()}-${process.pid}`;
 const campaignId = `${PREFIX}gift`;
 
 let server: ChildProcess | undefined;
@@ -35,6 +36,7 @@ let cartId = "";
 let giftVariantId = "";
 
 async function cleanup() {
+  await prisma.rateLimit.deleteMany({});
   const orders = await prisma.orderMirror.findMany({where:{pancakeShopId:SHOP, lines:{some:{pancakeVariationId:{startsWith:PREFIX}}}},select:{id:true}});
   for(const {id} of orders) await prisma.$transaction(async tx => {
     await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
@@ -56,6 +58,7 @@ async function cleanup() {
 }
 
 async function startServer(port: number, verified: boolean) {
+  port += Number(process.env.PLAYWRIGHT_PORT_OFFSET ?? 0);
   baseUrl = `http://${HOST}:${port}`;
   output = "";
   server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", HOST, "--port", String(port)], {
@@ -70,7 +73,7 @@ async function startServer(port: number, verified: boolean) {
       LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: verified ? String(SHOP) : "",
       BETTER_AUTH_URL: baseUrl,
       BETTER_AUTH_IP_HEADER: "x-ci-client-ip",
-      NEXT_DIST_DIR: `.next-test/gq19-${port}`,
+      NEXT_DIST_DIR: `.next-test/gq19-${port}-${runtimeId}`,
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -228,7 +231,7 @@ for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
     await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
     await expect(page.getByRole("dialog")).not.toBeVisible();
     await expect.poll(() => prisma.orderMirror.count()).toBe(ordersBefore+1);
-    const order = await prisma.orderMirror.findFirstOrThrow({orderBy:{createdAt:"desc"},include:{quoteSnapshot:{include:{lines:true,entitlements:true}}}});
+    const order = await prisma.orderMirror.findFirstOrThrow({where:{sourceCartId:cartId},orderBy:{createdAt:"desc"},include:{quoteSnapshot:{include:{lines:true,entitlements:true}}}});
     expect(order.quoteSnapshot!.lines.filter(l=>l.role==="GIFT").reduce((sum,l)=>sum+l.quantity,0)).toBe(quantity);
     expect(order.quoteSnapshot!.entitlements[0]!.selected).toBe(quantity);
     // The real submit/quote/proof/snapshot pipeline ran, not a UI counter.
@@ -294,7 +297,7 @@ test("AC07/18: dialog continuation shares the submit lock and confirms one order
   await proceed.evaluate(button => { (button as HTMLButtonElement).click(); (button as HTMLButtonElement).click(); });
   await expect(page).toHaveURL(/checkout\/success/);
   expect(await prisma.orderMirror.count()).toBe(before+1);
-  const order=await prisma.orderMirror.findFirstOrThrow({orderBy:{createdAt:"desc"},include:{quoteSnapshot:true}});
+  const order=await prisma.orderMirror.findFirstOrThrow({where:{sourceCartId:cartId},orderBy:{createdAt:"desc"},include:{quoteSnapshot:true}});
   expect(order.state).toBe("CONFIRMED");
   expect(order.quoteSnapshot!.nonclaimAcknowledged).toBe(true);
   expect(order.quoteSnapshot!.acknowledgedAt).not.toBeNull();
@@ -341,7 +344,7 @@ test("AC13: blocked tab storage falls back to memory without repeating the remin
   await page.keyboard.press("Escape");
   await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
   await expect(page).toHaveURL(/checkout\/success/);
-  expect(await prisma.orderMirror.count()).toBe(1);
+  expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(1);
 });
 
 test("AC14: changed quote is displayed and waits for a fresh explicit submit without another reminder", async({page}) => {
@@ -356,10 +359,10 @@ test("AC14: changed quote is displayed and waits for a fresh explicit submit wit
   await prisma.variantMirror.update({where:{id:paid.variantId},data:{pancakeRetailPrice:110000,pancakeRetailPriceAfterDiscount:110000}});
   await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
   await expect(page.getByText("Giá đã thay đổi",{exact:true})).toBeVisible();
-  await expect(proof).not.toHaveValue(old);
+  await expect.poll(async()=> (await proof.inputValue()) !== old).toBe(true);
   await expectReceiving(page);
   await expect(page.getByRole("dialog")).not.toBeVisible();
-  expect(await prisma.orderMirror.count()).toBe(0);
+  expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
 });
 
 test("AC11/22/25: committed gift with lost responses stays locked until readback; never repeat the write", async({page}) => {
@@ -395,4 +398,78 @@ test("AC11/22/25: committed gift with lost responses stays locked until readback
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
   expect(writes).toBe(1);
   await expectReceiving(page);
+});
+
+test("AC20/24/28: one gift area, responsive states and useful expanded/collapsed management", async({page}) => {
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  const picker=page.getByRole("region",{name:"Quà tặng trong giỏ"});
+  for(const width of [320,375,390,768,1024,1440]) {
+    await page.setViewportSize({width,height:900});
+    expect(await page.locator("#cart-gifts").count()).toBe(1);
+    expect(await page.locator("form form").count()).toBe(0);
+    expect(await picker.locator('[data-line-role="paid"]').count()).toBe(0);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+    if(width===390 || width===1440) await page.screenshot({path:`test-results/gift-layout-${width}-unopened.png`,fullPage:true});
+  }
+  for(const width of [390,1440]) {
+    await page.setViewportSize({width,height:900});
+    await chooseGift(1);
+    await refreshQuote(page);
+    const toggle=picker.locator("button[aria-controls]");
+    if(await toggle.getAttribute("aria-expanded")==="false") await toggle.click();
+    const card=picker.getByRole("button",{name:"Khăn quà",exact:true});
+    if(await card.getAttribute("aria-expanded")==="false") await card.click();
+    await page.screenshot({path:`test-results/gift-layout-${width}-choosing.png`,fullPage:true});
+    await chooseGift(2);
+    await refreshQuote(page);
+    await expect(toggle).toHaveAttribute("aria-expanded","true");
+    await page.screenshot({path:`test-results/gift-layout-${width}-full-open.png`,fullPage:true});
+    await toggle.click();
+    await expect(picker.getByRole("button",{name:/^Bỏ /})).toHaveCount(0);
+    await expect(picker.locator('[data-gift-progress]')).toContainText("Đã thêm 2/2");
+    const summary=page.locator('.checkout-order-summary button[aria-controls]');
+    if(width===390 && await summary.getAttribute("aria-expanded")==="false") await summary.click();
+    await expect(page.locator('[data-line-role="gift"]:visible')).toHaveCount(1);
+    await page.screenshot({path:`test-results/gift-layout-${width}-full-collapsed.png`,fullPage:true});
+    await chooseGift(1);
+    await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{allowDuplicateGifts:false}});
+    await refreshQuote(page);
+    await expect(picker).toContainText("Hiện chưa có lựa chọn phù hợp cho 1 suất");
+    await expect(picker.getByRole("button",{name:"Chọn quà ngay",exact:true})).toHaveCount(0);
+    await page.screenshot({path:`test-results/gift-layout-${width}-limited.png`,fullPage:true});
+    await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{isEnabled:false}});
+    await refreshQuote(page);
+    await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeDisabled();
+    await expectReceiving(page);
+    await page.screenshot({path:`test-results/gift-layout-${width}-repair.png`,fullPage:true});
+    await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{isEnabled:true,allowDuplicateGifts:true}});
+    await refreshQuote(page);
+  }
+  await page.setViewportSize({width:390,height:900});
+  await page.evaluate(()=>{document.documentElement.style.fontSize="200%";});
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.evaluate(()=>{document.documentElement.style.fontSize="";});
+  expect((await new AxeBuilder({page}).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});
+
+test("AC16/21: gift invalidated at submit refreshes into inline repair rather than locking the buyer out", async({page}) => {
+  await startServer(3350,true);
+  await chooseGift(1);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await page.keyboard.press("Escape");
+  await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{isEnabled:false}});
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByText("Kiểm tra lại quà đã chọn",{exact:true})).toBeVisible();
+  await expect.poll(async()=> Boolean(await page.locator('input[name="quoteProof"]').inputValue())).toBe(false);
+  await expectReceiving(page);
+  const picker=page.getByRole("region",{name:"Quà tặng trong giỏ"});
+  await picker.getByRole("button",{name:"Kiểm tra quà đã chọn",exact:true}).click();
+  await picker.getByRole("button",{name:/^Bỏ quà để chọn lại/}).click();
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeEnabled();
+  await expectReceiving(page);
+  expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
 });

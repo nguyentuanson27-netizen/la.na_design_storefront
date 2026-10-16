@@ -110,6 +110,8 @@ export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
+  /** UI refresh identity, never a form key or quote authority. */
+  quoteRenderId?: string;
   upsell?: CheckoutUpsellModel;
   /** Empty unless `state` is `ready`; the other two states render no order summary. */
   lines: readonly CheckoutLineView[];

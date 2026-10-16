@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { checkoutAttemptKey } from "@/commerce/checkout-attempt-key";
 import { cookies } from "next/headers";
 import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
@@ -33,6 +34,7 @@ async function withUpsell(data: CheckoutViewModel): Promise<CheckoutViewModel> {
 
 export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel>> {
   await connection();
+  const quoteRenderId = randomUUID();
   const checkoutContext = await getCurrentStorefrontCheckoutContext();
   const lines = checkoutContext?.lines ?? [];
 
@@ -59,7 +61,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
     // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
     return sealRoute({
-      data: { ...await withUpsell(data), giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+      data: { ...await withUpsell(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -110,7 +112,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: { ...await withUpsell(data), giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
+    data: { ...await withUpsell(data), quoteRenderId, giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,
