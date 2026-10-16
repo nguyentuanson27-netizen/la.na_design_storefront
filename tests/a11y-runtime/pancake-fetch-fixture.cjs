@@ -35,6 +35,8 @@ if (!Number.isSafeInteger(configuredOrderIdSeed) || configuredOrderIdSeed <= 0) 
   throw new Error("PANCAKE_A11Y_ORDER_ID_SEED must be a positive safe integer");
 }
 let nextOrderId = configuredOrderIdSeed;
+const benefitOrders = new Map();
+const benefitFixture = process.env.PANCAKE_A11Y_BENEFIT_ORDER === "true";
 
 async function pancakeResponse(url, init) {
   if (url.pathname === `${API_PREFIX}/geo/provinces`) {
@@ -86,6 +88,14 @@ async function pancakeResponse(url, init) {
     if (!queryMatches(url, expectedQuery)) {
       return json({ error: "unexpected catalog query" }, 400);
     }
+    if (benefitFixture) {
+      const ids = ["gq19-browser-paid", "gq19-browser-gift"];
+      if (requestedIds.some(id => !ids.includes(id))) return json({error:"unknown benefit fixture variation"},400);
+      return json({success:true,page_number:1,page_size:100,total_pages:1,total_entries:2,data:ids.filter(id=>!targeted||requestedIds.includes(id)).map(id=>({
+        id, product_id:id, display_id:id, barcode:"", fields:[],images:[],is_hidden:false,is_locked:false,
+        retail_price:100000,retail_price_after_discount:100000,product:{id,name:id},variations_warehouses:[{warehouse_id:"gq19-wh",remain_quantity:10}]
+      }))});
+    }
     const productId = process.env.PANCAKE_A11Y_PRODUCT_ID;
     const variationId = process.env.PANCAKE_A11Y_VARIATION_ID;
     const warehouseId = process.env.PANCAKE_A11Y_WAREHOUSE_ID;
@@ -120,6 +130,11 @@ async function pancakeResponse(url, init) {
     });
   }
 
+  if (benefitFixture && url.pathname.startsWith(`${API_PREFIX}/shops/${SHOP_ID}/orders/`)) {
+    if (!queryMatches(url, {})) return json({error:"unexpected readback query"},400);
+    const order = benefitOrders.get(url.pathname.split("/").at(-1));
+    return order ? json(order) : json({error:"unknown fixture order"},404);
+  }
   if (url.pathname === `${API_PREFIX}/shops/${SHOP_ID}/orders`) {
     if (url.searchParams.get("api_key") !== TEST_API_KEY || url.searchParams.size !== 1) {
       return json({ error: "unexpected create-order query" }, 400);
@@ -132,6 +147,14 @@ async function pancakeResponse(url, init) {
       body = JSON.parse(init.body);
     } catch {
       return json({ error: "malformed create-order body" }, 400);
+    }
+    if (benefitFixture) {
+      const paid=body?.items?.filter(item=>item.variation_id==="gq19-browser-paid");
+      const gift=body?.items?.filter(item=>item.variation_id==="gq19-browser-gift");
+      if(body?.shop_id!==Number(SHOP_ID) || body.shipping_address?.render_type!=="new" || body.shipping_address?.province_id!==PROVINCE_CURRENT || body.shipping_address?.commune_id!==COMMUNE_CURRENT || body.bill_phone_number!=="0901234567" || paid?.length!==1 || paid[0].quantity!==2 || paid[0].variation_info?.retail_price!==100000 || body.items.length!==paid.length+gift.length || gift.some(item=>!Number.isInteger(item.quantity)||item.quantity<1||item.quantity>2||item.variation_info?.retail_price!==0)) return json({error:"unexpected benefit order"},400);
+      const id=nextOrderId++;
+      benefitOrders.set(String(id),{id,shop_id:Number(SHOP_ID),status:0,items:body.items,total_price:200000});
+      return json({id});
     }
     const variationId = process.env.PANCAKE_A11Y_VARIATION_ID;
     if (

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   useActionState,
+  startTransition,
   useCallback,
   useEffect,
   useId,
@@ -24,6 +25,11 @@ import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
 import { isVietnamPhone, VIETNAM_PHONE_ERROR } from "@/commerce/vietnam-phone";
 
+import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
+import { CheckoutGiftReminderDialog } from "@/components/brand/checkout-gift-reminder-dialog";
+import { useCheckoutGiftReminder } from "@/components/headless/use-checkout-gift-reminder";
+import { reminderSubmitDecision } from "@/components/headless/checkout-gift-reminder-model";
+import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
 
@@ -104,24 +110,31 @@ export type GuestCheckoutBenefit = Readonly<{
   tierNotice: string | null;
 }>;
 
-const ACK_MISSING_MESSAGE = "Hãy tích xác nhận không nhận đủ quà tặng nếu bạn muốn đặt hàng như trên.";
 
 export function GuestCheckoutForm({
   quoteProof,
+  giftPicker,
+  attemptKey,
+  unavailableNotice,
   benefit,
   upsell,
   summaryLabel,
   summarySlot,
   totalsSlot,
   preorderSlot,
+  desktopPreorderSlot,
 }: Readonly<{
-  quoteProof: string;
+  quoteProof: string | null;
+  giftPicker?: CartGiftPickerModel;
+  attemptKey?: string;
+  unavailableNotice?: string | null;
   upsell?: CheckoutUpsellModel;
   benefit?: GuestCheckoutBenefit;
   summaryLabel?: string;
   summarySlot?: ReactNode;
   totalsSlot?: ReactNode;
   preorderSlot?: ReactNode;
+    desktopPreorderSlot?: ReactNode;
 }>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
@@ -137,6 +150,18 @@ export function GuestCheckoutForm({
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
+  const [note, setNote] = useState("");
+  const [draftNotice, setDraftNotice] = useState<string | null>(null);
+  const [giftPending, setGiftPending] = useState(false);
+  const coordinatedBusy = useRef(false);
+  const submissionBusy = useRef(false);
+  const formRef = useRef<HTMLFormElement>(null);
+  const paymentRef = useRef<HTMLHeadingElement>(null);
+  const submitButton = useRef<HTMLButtonElement>(null);
+  const reminder = useCheckoutGiftReminder(attemptKey);
+  const onGiftBusyChange = useCallback((value: boolean) => { coordinatedBusy.current = value; setGiftPending(value); }, []);
+  const onUpsellBusyChange = useCallback((value: boolean) => { coordinatedBusy.current = value; setUpsellPending(value); }, []);
+  const isInteractionLocked = useCallback(() => coordinatedBusy.current || submissionBusy.current, []);
   const [provinceLoading, setProvinceLoading] = useState(true);
   const [communeLoading, setCommuneLoading] = useState(false);
   const [geoError, setGeoError] = useState<GeoError | null>(null);
@@ -145,13 +170,6 @@ export function GuestCheckoutForm({
   // update live as they fix each field, so a corrected field clears its own message immediately.
   const [showAllErrors, setShowAllErrors] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
-  // The digest of the quote the buyer ticked the non-claim box for; null when unticked. Comparing it
-  // with the digest on screen is what makes a refreshed (different) quote start unticked.
-  const [acknowledgedDigest, setAcknowledgedDigest] = useState<string | null>(null);
-  const acknowledged = benefit !== undefined && acknowledgedDigest === benefit.digest;
-  const ackRequired = benefit?.needsAcknowledgement === true;
-  const ackMissing = ackRequired && !acknowledged;
-  const ackInputId = useId();
   const summaryContentId = useId();
   const errorSummaryRef = useRef<HTMLParagraphElement>(null);
   const provinceRequest = useRef(0);
@@ -275,7 +293,7 @@ export function GuestCheckoutForm({
   // submission or quote refresh is in flight, after a final outcome, or when the address lists
   // could not be loaded at all (the retry button is the way forward then).
   const submitDisabled =
-    isSubmitting || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    !quoteProof || isSubmitting || giftPending || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
 
   const fieldErrors = findFieldErrors({
     name,
@@ -290,8 +308,7 @@ export function GuestCheckoutForm({
       ? { phone: fieldErrors.phone }
       : {};
   const hasMissingFields = showAllErrors && Object.keys(fieldErrors).length > 0;
-  // Shown once the buyer has tried to order, and cleared the moment they tick the box.
-  const showAckError = showAllErrors && ackMissing;
+
 
   function errorId(field: RequiredField): string {
     return `${FIELD_INPUT_IDS[field]}-error`;
@@ -312,18 +329,46 @@ export function GuestCheckoutForm({
     ) : null;
   }
 
+  // One pipeline for form, Enter and dialog intent. Claim is attached only to this FormData.
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (submitDisabled) { event.preventDefault(); return; }
-    if (Object.keys(fieldErrors).length === 0 && !ackMissing) return;
-    // Stop the Server Action: nothing about this attempt could succeed, and the buyer should see
-    // every missing field at once rather than one server refusal at a time.
     event.preventDefault();
-    setShowAllErrors(true);
-    const first = REQUIRED_FIELDS.find((field) => fieldErrors[field] !== undefined);
+    if (submitDisabled || coordinatedBusy.current || submissionBusy.current || reminder.current.current === "open") return;
+    if (Object.keys(fieldErrors).length > 0) {
+      setShowAllErrors(true);
+      const first = REQUIRED_FIELDS.find((field) => fieldErrors[field]);
+      requestAnimationFrame(() => {
+        errorSummaryRef.current?.scrollIntoView({block: "center"});
+        if (first) document.getElementById(FIELD_INPUT_IDS[first])?.focus();
+      });
+      return;
+    }
+    const decision = reminderSubmitDecision({ state: reminder.current.current, valid: true, busy: false, needsReminder: benefit?.needsAcknowledgement === true });
+    if (decision === "remind") { reminder.open(); return; }
+    if (decision !== "submit") return;
+    submissionBusy.current = true;
+    const formData = new FormData(event.currentTarget);
+    if (benefit?.needsAcknowledgement && reminder.current.current === "seen") formData.set("nonclaimAcknowledged", "yes");
+    startTransition(() => submitAction(formData));
+  }
+  useEffect(() => {
+    if (!isSubmitting) submissionBusy.current = false;
+    if (submitState?.ok) reminder.clear();
+  }, [isSubmitting, submitState, reminder]);
+  // Do not leave a modal presenting an old quote after the route becomes unavailable.
+  useEffect(() => {
+    if (!quoteProof && reminder.current.current === "open") reminder.markSeen();
+  }, [quoteProof, reminder]);
+  function returnToPayment() {
+    paymentRef.current?.focus();
+    paymentRef.current?.scrollIntoView({block: "center", behavior: "smooth"});
+  }
+  function chooseGifts() {
+    reminder.markSeen();
     requestAnimationFrame(() => {
-      errorSummaryRef.current?.scrollIntoView({ block: "center" });
-      if (first) document.getElementById(FIELD_INPUT_IDS[first])?.focus();
-      else document.getElementById(ackInputId)?.focus();
+      const section = document.getElementById("cart-gifts");
+      const toggle = section?.querySelector<HTMLButtonElement>("button[aria-controls]");
+      if (toggle?.getAttribute("aria-expanded") === "false") toggle.click();
+      section?.focus(); section?.scrollIntoView({block: "start", behavior: "smooth"});
     });
   }
 
@@ -360,13 +405,15 @@ export function GuestCheckoutForm({
         : "border-black bg-transparent text-black";
 
   return (
-    <form action={submitAction} className="space-y-8" noValidate onSubmit={handleSubmit}>
+    <form ref={formRef} action={submitAction} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16" noValidate onSubmit={handleSubmit}>
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
           or swapped value simply fails closed into re-confirmation. */}
-      <input name="quoteProof" type="hidden" value={quoteProof} />
+      <input name="quoteProof" type="hidden" value={quoteProof ?? ""} />
 
+      <aside className="checkout-order-panel min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2 lg:sticky lg:top-24 lg:self-start">
+      {summarySlot ? <div className="hidden lg:block"><p className="mb-5 text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>{summarySlot}</div> : null}
       {/* Below `lg` only: at `lg+` the page's sticky aside is the order summary, already expanded,
           so a second collapsible copy would be two summaries of one order. */}
       {summarySlot && summaryLabel ? (
@@ -387,9 +434,13 @@ export function GuestCheckoutForm({
         </section>
       ) : null}
 
-      {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || isRefreshingQuote || lockSubmission} onBusyChange={setUpsellPending} /> : null}
+      {giftPicker ? <BrandCartGiftPicker model={giftPicker} onBusyChange={onGiftBusyChange} locked={isSubmitting || upsellPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} /> : null}
+      {totalsSlot ? <div className="hidden lg:block">{totalsSlot}</div> : null}
+      {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
+      </aside>
 
-      <div className="checkout-receiving-fields space-y-8">
+      <div className="checkout-receiving-fields min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
+      {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || giftPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onBusyChange={onUpsellBusyChange} /> : null}
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-display text-3xl md:text-4xl">Giao hàng COD</h2>
@@ -552,6 +603,8 @@ export function GuestCheckoutForm({
             id="checkout-note"
             maxLength={2048}
             name="note"
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
           />
         </label>
       </fieldset>
@@ -560,37 +613,11 @@ export function GuestCheckoutForm({
       {/* Same breakpoint split as the summary above: the shipping/total block and the fulfillment
           notice belong between the fields and the submit button below `lg`, and inside the sticky
           aside at `lg+`. */}
-      {benefit && (benefit.tierNotice || benefit.unclaimedText) ? (
-        <section aria-label="Quà tặng và ưu đãi" className="checkout-benefits space-y-4 border border-black/25 px-5 py-4 text-sm leading-6">
-          {benefit.tierNotice ? <p role="status">{benefit.tierNotice}</p> : null}
-          {benefit.unclaimedText ? <p>{benefit.unclaimedText}</p> : null}
-          {ackRequired && benefit.acknowledgementLabel ? (
-            <div>
-              {/* Never pre-checked (FR-06). A native checkbox, so Space toggles it and the label is its name. */}
-              <label className="flex items-start gap-3 font-medium" htmlFor={ackInputId}>
-                <input
-                  aria-describedby={showAckError ? `${ackInputId}-error` : undefined}
-                  aria-invalid={showAckError ? true : undefined}
-                  checked={acknowledged}
-                  className="mt-1 h-5 w-5 shrink-0 accent-black"
-                  id={ackInputId}
-                  name="nonclaimAcknowledged"
-                  onChange={(event) => setAcknowledgedDigest(event.target.checked ? benefit.digest : null)}
-                  type="checkbox"
-                  value="yes"
-                />
-                <span>{benefit.acknowledgementLabel}</span>
-              </label>
-              {showAckError ? (
-                <span className="mt-2 block text-sm font-normal text-[#b42318]" id={`${ackInputId}-error`}>
-                  {ACK_MISSING_MESSAGE}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-
+      <div className="min-w-0 space-y-5 lg:col-start-1 lg:row-start-2">
+      <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
+      {unavailableNotice ? <div role="alert"><p>{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending} onClick={() => startQuoteRefresh(() => router.refresh())}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
+      {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
+      {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
       {preorderSlot ? <div className="checkout-preorder lg:hidden">{preorderSlot}</div> : null}
 
@@ -611,19 +638,20 @@ export function GuestCheckoutForm({
       ) : null}
 
       {/* One line beside the button; which fields need attention is shown in red on each field above. */}
-      {hasMissingFields || showAckError ? (
+      {hasMissingFields ? (
         <p
           className="border border-[#b42318] px-5 py-4 text-sm font-semibold text-[#b42318]"
           ref={errorSummaryRef}
           role="alert"
         >
-          {hasMissingFields ? "Vui lòng điền đầy đủ thông tin." : ACK_MISSING_MESSAGE}
+          Vui lòng điền đầy đủ thông tin.
         </p>
       ) : null}
 
       <button
         className="btn btn--primary w-full py-4"
         disabled={submitDisabled}
+        ref={submitButton}
         type="submit"
       >
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
@@ -632,6 +660,8 @@ export function GuestCheckoutForm({
       <p className="text-xs leading-5 text-black/60">
         Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
+      </div>
+      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Bạn còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
   );
 }

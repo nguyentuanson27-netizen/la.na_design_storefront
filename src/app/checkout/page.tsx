@@ -21,35 +21,21 @@ const CHECKOUT_BREADCRUMBS = [
 ] as const;
 
 function render(data: CheckoutViewModel) {
-  if (data.state !== "ready" || !data.totals || data.quoteProof === null) {
+  if (data.state === "empty") {
     return (
       <PageShell>
         <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
         <PageHeader eyebrow="Mua sắm" title="Thanh toán" />
-        {data.state === "empty" ? (
-          <div className="mt-8" data-ui-state="empty">
-            <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
-            <Link className="text-link mt-6 inline-block" href="/shop">
-              Tiếp tục mua sắm ↗
-            </Link>
-          </div>
-        ) : (
-          <div className="mt-8 max-w-2xl" data-ui-state="empty">
-            <p className="font-display text-xl md:text-2xl">Giỏ hàng cần được kiểm tra lại.</p>
-            <p className="mt-4 text-sm leading-6 text-black/75">
-              {data.unavailableNotice ??
-                "Có sản phẩm, giá hoặc tồn kho chưa sẵn sàng để đặt hàng. Hãy quay lại giỏ hàng để cập nhật trước khi tiếp tục."}
-            </p>
-            <Link className="text-link mt-6 inline-block" href="/cart">
-              Quay lại giỏ hàng ↗
-            </Link>
-          </div>
-        )}
+        <div className="mt-8" data-ui-state="empty">
+          <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
+          <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
+        </div>
       </PageShell>
     );
   }
 
-  const { lines, totals, quoteProof } = data;
+  const { lines, quoteProof } = data;
+  const totals = data.totals ?? { subtotalText: "Chưa thể tính", shippingText: "Chưa thể tính", totalText: "Chờ kiểm tra báo giá" };
   const benefit = data.benefit;
   const itemCount = lines.reduce((count, line) => count + line.quantity, 0) + (benefit?.giftQuantity ?? 0);
 
@@ -107,7 +93,7 @@ function render(data: CheckoutViewModel) {
           <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
         </div>
       ))}
-      {benefit?.giftLines.map((gift) => (
+      {(benefit?.giftLines ?? data.giftPicker?.selections.map((row) => ({ lineKey: `${row.campaignId}/${row.variantId}`, label: row.label, quantity: row.quantity, priceText: "Cần kiểm tra" })) ?? []).map((gift) => (
         <div className="flex items-start gap-4 py-4" data-line-role="gift" key={gift.lineKey}>
           <div
             className="flex aspect-[3/4] w-14 shrink-0 items-center justify-center border border-black/10 bg-black/[0.04] text-[9px] font-semibold uppercase tracking-wider text-black/75"
@@ -181,44 +167,21 @@ function render(data: CheckoutViewModel) {
     </div>
   );
 
-  /**
-   * One notice, authored once, rendered once per breakpoint composition -- each with its own
-   * heading id, so the two copies are two well-formed regions rather than one ambiguous IDREF.
-   */
-  const preorderNoticeFor = (surface: "mobile" | "desktop") =>
-    data.preorderNotice === null ? null : (
-      <BrandPreorderFulfillmentNotice
-        notice={data.preorderNotice}
-        titleId={`preorder-fulfillment-title-${surface}`}
-      />
-    );
+  const preorderNoticeFor = (surface: "mobile" | "desktop") => data.preorderNotice === null ? null : <BrandPreorderFulfillmentNotice notice={data.preorderNotice} titleId={`preorder-fulfillment-title-${surface}`} />;
 
   return (
     <PageShell>
       <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
       <PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" />
 
-      {/*
-        Two compositions of one order, and only ever one of them live.
-
-        Below `lg` the mobile spec owns the reading order -- collapsed summary, receiving
-        information, shipping/total, preorder notice, then submit -- so those regions are real DOM
-        siblings inside the form, in that order. At `lg+` that same order would put the summary
-        above a full-width form and leave the right column empty, which is not the desktop this
-        spec was scoped to touch, so the aside below restores it: right column, sticky, order lines
-        and totals and notice in one panel.
-
-        The alternative was a single DOM reordered by CSS. It cannot work here: a grid item can only
-        stick inside its own grid area, so a summary sized to its own content has nowhere to travel,
-        and reordering the regions visually would put the submit button ahead of the total in the
-        reading order the spec exists to fix. Two compositions, each `display: none` outside its own
-        breakpoint, keep one of each region in the accessibility tree and leave the hidden copy's
-        images unfetched.
-      */}
+      {/* The form owns one interactive gift area and the responsive order/receiving layout. */}
       <PromotionBanner className="mt-8" view={data.promotions} />
-      <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-16">
+      <div className="mt-8">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
+          giftPicker={data.giftPicker}
+          attemptKey={data.attemptKey}
+          unavailableNotice={data.state === "unquotable" ? data.unavailableNotice ?? "Có sản phẩm, giá hoặc tồn kho cần được kiểm tra lại trước khi đặt hàng." : null}
           upsell={data.upsell}
           benefit={
             benefit === null
@@ -235,24 +198,10 @@ function render(data: CheckoutViewModel) {
           summarySlot={summaryContent}
           totalsSlot={totalsContent}
           preorderSlot={preorderNoticeFor("mobile")}
+          desktopPreorderSlot={preorderNoticeFor("desktop")}
         />
 
-        <aside className="checkout-order-panel hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">
-          <div className="flex items-baseline justify-between gap-4">
-            <p className="text-xs font-semibold uppercase tracking-[0.14em]">Đơn hàng</p>
-            <Link
-              className="text-xs font-semibold uppercase tracking-[0.1em] underline underline-offset-4 hover:text-black focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-              href="/cart"
-            >
-              Sửa giỏ hàng
-            </Link>
-          </div>
 
-          <div className="mt-6">{orderLines}</div>
-          <div className="mt-5">{totalsBlock}</div>
-          <div className="mt-5">{estimateNote}</div>
-          {preorderNoticeFor("desktop")}
-        </aside>
       </div>
     </PageShell>
   );

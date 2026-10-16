@@ -1,3 +1,4 @@
+import { checkoutAttemptKey } from "@/commerce/checkout-attempt-key";
 import { cookies } from "next/headers";
 import { createPromotionUpsellService } from "@/commerce/promotion-upsell";
 import { connection } from "next/server";
@@ -48,7 +49,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
           now: new Date(),
           secret: readAuthServerConfig().secret,
         })
-      : ({ kind: "LEGACY" } as const);
+      : ({ kind: "LEGACY", giftPicker: undefined } as const);
   if (benefitRender.kind !== "LEGACY") {
     const data =
       benefitRender.kind === "BENEFIT"
@@ -58,7 +59,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
     // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)
     return sealRoute({
-      data: await withUpsell(data),
+      data: { ...await withUpsell(data), giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
       refreshAfterMs: 60_000,
       trackingEvent: null,
       structuredData: [],
@@ -109,7 +110,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
       : [];
 
   return sealRoute({
-    data: await withUpsell(data),
+    data: { ...await withUpsell(data), giftPicker: benefitRender.giftPicker, attemptKey: checkoutContext ? checkoutAttemptKey(checkoutContext.cartId, readAuthServerConfig().secret) : undefined },
     // Checkout prices are re-resolved on every request, so nothing here is promotion-cached; the
     // shared default cadence is what the shell mounts.
     refreshAfterMs: 60_000,

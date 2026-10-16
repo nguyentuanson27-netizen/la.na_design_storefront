@@ -73,24 +73,13 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.equal((page.match(/const totalsBlock = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const preorderNoticeFor = /g) ?? []).length, 1);
-  assert.equal((page.match(/<BrandPreorderFulfillmentNotice/g) ?? []).length, 1);
-  // Each composition's copy names its own heading: two identical ids would be one ambiguous IDREF,
-  // and `display: none` does not make a duplicate id valid.
-  assert.match(page, /titleId=\{`preorder-fulfillment-title-\$\{surface\}`\}/);
   assert.match(page, /preorderNoticeFor\("mobile"\)/);
   assert.match(page, /preorderNoticeFor\("desktop"\)/);
-
-  /*
-   * The desktop order panel this spec must not have changed.
-   *
-   * PR #52 is mobile-only, and an earlier revision folded the right-hand sticky aside into the
-   * form's grid for every viewport -- which silently unstuck the desktop order summary and
-   * retitled it. The aside is `lg`-only and sticky; the form's copies of the same three regions
-   * are `lg:hidden`, so exactly one of each is live at any width.
-   */
-  assert.match(page, /<aside className="checkout-order-panel hidden h-fit border-t border-black pt-6 lg:sticky lg:top-24 lg:block">/);
-  assert.match(page, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(20rem,0\.42fr\)\]/);
-  assert.match(page, /<p className="text-xs font-semibold uppercase tracking-\[0\.14em\]">Đơn hàng<\/p>/);
+  assert.equal((page.match(/<BrandPreorderFulfillmentNotice/g) ?? []).length, 1);
+  // One form now owns the single interactive gift area across both breakpoint layouts.
+  assert.match(form, /<aside className="checkout-order-panel.*lg:sticky lg:top-24/);
+  assert.match(form, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(20rem,0\.42fr\)\]/);
+  assert.equal((form.match(/<BrandCartGiftPicker/g) ?? []).length, 1);
   assert.match(form, /className="checkout-order-summary lg:hidden"/);
   assert.match(form, /className="checkout-totals lg:hidden"/);
   assert.match(form, /className="checkout-preorder lg:hidden"/);

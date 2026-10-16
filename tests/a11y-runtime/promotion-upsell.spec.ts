@@ -12,7 +12,7 @@ const SHOP = 920007;
 const P = "upsell-browser-";
 const campaignId = `${P}gift`;
 let server: ChildProcess; let output = "";
-let cartId = "", paidId = "", giftProductId = "";
+let cartId = "", paidId = "";
 async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: P } } });
@@ -38,7 +38,7 @@ test.beforeEach(async ({ context }) => {
     return prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: P + id, slug: P + id, name: `Áo ${id}`, syncedAt: new Date(), variants: { create: sizes.map((size, n) => ({ pancakeVariationId: P + id + size, color: "Hồng", size, pancakeRetailPrice: price + n * 10000, pancakeRetailPriceAfterDiscount: price + n * 10000, syncedAt: new Date(), warehouseStocks: { create: { pancakeWarehouseId: P + "wh", quantity: 20, syncedAt: new Date() } } })) } }, include: { variants: true } });
   }
   const paid = await product("paid", 100000); const candidate = await product("candidate", 100000, ["S", "M"]); const gift = await product("gift", 1000);
-  paidId = paid.variants[0]!.id; giftProductId = gift.id;
+  paidId = paid.variants[0]!.id;
   cartId = (await prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86400000), items: { create: { variantId: paidId, quantity: 2 } } } })).id;
   await prisma.giftQuantityCampaign.create({ data: { id: campaignId, name: "Mua 3 tặng khăn", kind: "GIFT_ITEM", isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", targets: { create: [paid.id, candidate.id].map((productId) => ({ productId, role: "INCLUDE" })) }, giftTrigger: "QUANTITY", minimumQuantity: 3, maxGiftsPerOrder: 1, allowDuplicateGifts: true, giftOptions: { create: { variantId: gift.variants[0]!.id } } } });
   await context.addCookies([{ name: "la_cart", value: cartId, url: BASE, httpOnly: true, sameSite: "Lax" }]);
@@ -72,9 +72,10 @@ test("TG-07/08/10/12: sizes, atomic add, inline gift and quote refresh preserve 
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker).toBeVisible();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
-  await picker.getByRole("button", { name: "Chọn Hồng / S" }).click();
-  await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 0");
+  await picker.getByRole("button", {name: "Chọn quà ngay", exact:true}).click();
+  await picker.getByRole("button", {name: "Áo gift", exact:true}).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker).toContainText("Đã thêm 1/1");
   await expect(fields[0]).toHaveValue("Nàng La.na");
   expect(await page.locator("form").count()).toBe(1);
   for (const width of [320, 390, 1280]) {
@@ -123,9 +124,10 @@ test("TG-10: a committed add with a lost response recovers manual gifts on reloa
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker).toBeVisible();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
-  await picker.getByRole("button", { name: "Chọn Hồng / S" }).click();
-  await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 0");
+  await picker.getByRole("button", {name: "Chọn quà ngay", exact:true}).click();
+  await picker.getByRole("button", {name: "Áo gift", exact:true}).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker).toContainText("Đã thêm 1/1");
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(2);
 });
 test("TG-08/10: gift and upsell transitions share a lock until the refreshed quote arrives", async ({ page }) => {
@@ -146,8 +148,9 @@ test("TG-08/10: gift and upsell transitions share a lock until the refreshed quo
   await offer.getByLabel("Phân loại / màu / kích cỡ").selectOption({ label: "Hồng / S" });
   const add = offer.getByRole("button", { name: "Thêm 1 chiếc" });
   await expect(add).toBeEnabled();
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
-  const choose = picker.getByRole("button", { name: "Chọn Hồng / S" });
+  await picker.getByRole("button", {name: "Chọn quà ngay", exact:true}).click();
+  await picker.getByRole("button", {name: "Áo gift", exact:true}).click();
+  const choose = picker.getByRole("button", { name: "Nhận quà này" });
   const submit = page.locator('button[type="submit"]');
   await expect(submit).toBeEnabled();
   let release!: () => void;
@@ -168,7 +171,7 @@ test("TG-08/10: gift and upsell transitions share a lock until the refreshed quo
     await add.evaluate((button: HTMLButtonElement) => button.click());
     expect(requests).toBe(1);
     release();
-    await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 0");
+    await expect(picker).toContainText("Đã thêm 1/1");
     await expect(submit).toBeEnabled();
     await page.unroute(`${BASE}/checkout`);
     // The inverse direction also locks gift controls while the paid add is pending.

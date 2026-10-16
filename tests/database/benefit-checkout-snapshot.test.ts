@@ -1639,7 +1639,11 @@ test("GQ19: a stored gift choice that no longer holds sends the buyer back; noth
   await seed();
   await chooseGift(2);
   await prisma.warehouseStock.updateMany({ where: { variantId: giftItem.variantId }, data: { quantity: 0 } });
-  assert.deepEqual(await checkoutRender(), { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID" });
+  const repair = await checkoutRender();
+  assert.equal(repair.kind, "UNAVAILABLE");
+  assert.equal(repair.kind === "UNAVAILABLE" && repair.reason, "GIFT_SELECTION_INVALID");
+  assert.equal(repair.giftPicker?.invalid, true);
+  assert.equal(repair.giftPicker?.selections.length, 1);
   assert.equal((await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId } })).quantity, 2, "the choice is left exactly as the buyer made it");
 });
 

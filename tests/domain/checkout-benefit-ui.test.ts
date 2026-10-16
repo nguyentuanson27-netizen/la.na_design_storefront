@@ -83,7 +83,7 @@ test("FR-06: earned, chosen and left-over slots are stated, and the acknowledgem
   assert.deepEqual(benefit.slots, { entitled: 3, selected: 1, unclaimed: 2, skippedWhileAvailable: 2, shortForStock: 0 });
   assert.equal(benefit.needsAcknowledgement, true);
   assert.match(benefit.unclaimedText!, /hưởng 3 suất quà, đã chọn 1, chưa nhận 2/);
-  assert.match(benefit.unclaimedText!, /2 suất bạn chọn bỏ qua dù còn hàng/);
+  assert.match(benefit.unclaimedText!, /2 suất còn có thể chọn/);
   assert.match(benefit.acknowledgementLabel!, /không nhận 2 suất quà/);
 });
 
@@ -294,4 +294,14 @@ test("cart: a legacy-only step at the same total is not a benefit, so the link s
   groups[0]!.steps = groups[0]!.steps.filter((step) => step.source === "LEGACY");
   const paid = state.quote.lines[0]!;
   assert.equal(buildCartViewModel({ lines: [paid], commerceTrackingEnabled: false, giftState: state }).canCheckout, true);
+});
+
+
+test("gift repair retains removals without issuing proof or a submit-capable quote", () => {
+  const giftPicker = { campaigns: [], selections: [{ campaignId: "gone", variantId: "gift", campaignRevision: 1, quantity: 1, label: "Quà cũ", imageUrl: null }], invalid: true, stackConflict: false };
+  const model = buildBenefitUnavailableCheckoutViewModel({ kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker });
+  assert.equal(model.giftPicker, giftPicker);
+  assert.equal(model.quoteProof, null);
+  assert.equal(model.totals, null);
+  assert.match(model.unavailableNotice!, /bỏ.*tại đây/i);
 });

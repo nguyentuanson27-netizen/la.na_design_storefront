@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
@@ -13,7 +13,7 @@ const PREFIX = "gq14-browser-";
 const campaignId = `${PREFIX}gift`;
 let server: ChildProcess;
 let output = "";
-let cartId: string, paidId: string, giftId: string, giftProductId: string;
+let cartId: string, paidId: string, giftId: string;
 async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId } });
@@ -44,7 +44,6 @@ test.beforeEach(async ({ context }) => {
   paidId = (await product("paid")).variants[0].id;
   const gift = await product("gift");
   giftId = gift.variants[0].id;
-  giftProductId = gift.id;
   cartId = (await prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86400000), items: { create: { variantId: paidId, quantity: 2 } } } })).id;
   await prisma.giftQuantityCampaign.create({ data: { id: campaignId, kind: "GIFT_ITEM", name: "Quà", isEnabled: true, enabledAt: now, scopeMode: "GLOBAL_ALL_PAID_LINES",
     giftTrigger: "ORDER_SUBTOTAL", minimumSubtotalVnd: 100_000, subtotalScope: "ALL_PAID_LINES", awardMode: "REPEAT_PER_THRESHOLD", maxGiftsPerOrder: 3, allowDuplicateGifts: true,
@@ -56,29 +55,36 @@ test.afterAll(async () => {
   await cleanup();
   await prisma.$disconnect();
 });
+async function openPicker(picker: Locator) {
+  const toggle = picker.locator("button[aria-controls]");
+  if (await toggle.getAttribute("aria-expanded") === "false") await toggle.click();
+  const product = picker.getByRole("button", {name: "Khăn quà", exact: true});
+  if (await product.count() && await product.getAttribute("aria-expanded") === "false") await product.click();
+}
 test("mobile keyboard picker saves partial/full/zero choices without changing paid items; Axe clean", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await expect(picker).toContainText("Được nhận 2 · Đã chọn 0 · Chưa chọn 2");
-  const select = picker.getByLabel("Sản phẩm quà");
-  await select.focus();
-  await select.selectOption(giftProductId);
-  await page.keyboard.press("Tab");
-  await expect(picker.getByRole("button", { name: "Chọn Trắng / M" })).toBeFocused();
+  await expect(picker).toContainText("Đã thêm 0/2");
+  await openPicker(picker);
+  await picker.getByRole("button", {name: "Trắng / M", exact:true}).focus();
   await page.keyboard.press("Enter");
-  await expect(picker.getByRole("status")).toHaveText("Đã lưu lựa chọn quà.");
-  await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 1");
-  await picker.getByRole("button", { name: "Chọn Trắng / M" }).click();
-  await expect(picker).toContainText("Đã chọn 2 · Chưa chọn 0");
-  await expect(picker.getByRole("button", { name: "Chọn Trắng / M" })).toBeDisabled();
+  await expect(picker).toContainText("Chưa thêm vào đơn");
+  expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
+  await picker.getByRole("button", { name: "Nhận quà này" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(picker.getByRole("status")).toContainText("Đã thêm vào đơn");
+  await expect(picker).toContainText("Đã thêm 1/2");
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker).toContainText("Đã thêm 2/2");
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
   await expect.poll(() => prisma.cartItem.count({ where: { cartId } })).toBe(1);
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
   expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
   await page.screenshot({ path: "test-results/gq14-mobile.png", fullPage: true });
-  await picker.getByRole("button", { name: /^Giảm / }).click();
-  await expect(picker).toContainText("Đã chọn 1 · Chưa chọn 1");
-  await picker.getByRole("button", { name: /^Bỏ / }).click();
-  await expect(picker).toContainText("Đã chọn 0 · Chưa chọn 2");
+  await picker.getByRole("button", { name: /^Bỏ 1 chiếc/ }).click();
+  await expect(picker).toContainText("Đã thêm 1/2");
+  await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
+  await expect(picker).toContainText("Đã thêm 0/2");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -89,8 +95,9 @@ test("stale selection is retained and announced after paid reduction or rule cha
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker.getByRole("alert")).toContainText("không còn phù hợp");
+  await openPicker(picker);
   await expect(picker).toContainText("2 quà");
-  await picker.getByRole("button", { name: /^Bỏ / }).click();
+  await picker.getByRole("button", { name: /^Bỏ toàn bộ/ }).click();
   await expect(picker.getByRole("alert")).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
@@ -98,32 +105,32 @@ test("all-out gifts show stock shortage and allow leaving choices empty", async 
   await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await expect(picker).toContainText("Thiếu tồn kho cho 2 suất quà");
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
-  await expect(picker.getByRole("button", { name: "Chọn Trắng / M" })).toBeDisabled();
+  await expect(picker).toContainText("Hiện chưa có lựa chọn phù hợp cho 2 suất quà");
+  await openPicker(picker);
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
 test("stock changed after rendering refuses the click and announces an error", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
+  await openPicker(picker);
   await prisma.warehouseStock.updateMany({ where: { variantId: giftId }, data: { quantity: 0 } });
-  await picker.getByRole("button", { name: "Chọn Trắng / M" }).click();
-  await expect(picker.getByRole("status")).toContainText("Không thể lưu quà");
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.getByRole("status")).toContainText("Chưa thêm quà");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
 });
 test("duplicate product policy disables selecting the same gift again", async ({ page }) => {
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { allowDuplicateGifts: false } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await expect(picker).toContainText("Không đủ lựa chọn quà hợp lệ cho 1 suất");
+  await expect(picker).toContainText("Hiện chưa có lựa chọn phù hợp cho 1 suất");
   await expect(picker).not.toContainText("Thiếu tồn kho");
-  await expect(picker).toContainText("Mỗi sản phẩm được chọn tối đa 1 chiếc quà");
-  await picker.getByLabel("Sản phẩm quà").selectOption(giftProductId);
-  await expect(picker).toContainText("Còn 10");
-  await picker.getByRole("button", { name: "Chọn Trắng / M" }).click();
-  await expect(picker).toContainText("Đã chọn 1");
-  await expect(picker.getByRole("button", { name: "Chọn Trắng / M" })).toBeDisabled();
+  await expect(picker).toContainText("Mỗi mẫu được chọn 1 lần");
+  await openPicker(picker);
+  expect(await prisma.warehouseStock.findFirst({where:{variantId:giftId}})).toHaveProperty("quantity",10);
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker).toContainText("Đã thêm 1");
+  await expect(picker.getByRole("button", { name: "Nhận quà này" })).toBeDisabled();
 });
 test("view_cart retains the no-tier paid total once across refresh, and emits nothing for EX-17", async ({ page }) => {
   const events = () => page.evaluate(() => ((window as { dataLayer?: { event?: string; ecommerce?: { value?: number } }[] }).dataLayer ?? []).filter((entry) => entry.event === "view_cart"));
@@ -153,15 +160,15 @@ test("below-threshold shows shortfall; empty paid cart still shows stale gift to
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 300_000 } });
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-  await expect(picker).toContainText("Được nhận 0");
-  await expect(picker).toContainText("Mua thêm 100.000");
+  await expect(picker).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
   await prisma.cartItem.deleteMany({ where: { cartId } });
   await page.reload();
   await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
   await expect(picker.getByRole("alert")).toBeVisible();
-  await picker.getByRole("button", { name: /^Bỏ / }).click();
+  await openPicker(picker);
+  await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
   await expect(picker.getByRole("alert")).toHaveCount(0);
   await prisma.cart.delete({ where: { id: cartId } });
 });

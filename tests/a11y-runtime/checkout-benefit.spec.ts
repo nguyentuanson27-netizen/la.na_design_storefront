@@ -35,6 +35,20 @@ let cartId = "";
 let giftVariantId = "";
 
 async function cleanup() {
+  const orders = await prisma.orderMirror.findMany({where:{pancakeShopId:SHOP, lines:{some:{pancakeVariationId:{startsWith:PREFIX}}}},select:{id:true}});
+  for(const {id} of orders) await prisma.$transaction(async tx => {
+    await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+    await tx.$executeRaw`DELETE FROM "OrderPreorderLineSnapshot" WHERE "snapshotId" IN (SELECT "id" FROM "OrderPreorderSnapshot" WHERE "orderId" = ${id})`;
+    await tx.$executeRaw`DELETE FROM "OrderPreorderSnapshot" WHERE "orderId" = ${id}`;
+    await tx.$executeRaw`DELETE FROM "OrderQuoteDiscountStep" WHERE "lineRowId" IN (SELECT l."id" FROM "OrderQuoteLine" l JOIN "OrderQuoteSnapshot" s ON s."id" = l."snapshotId" WHERE s."orderId" = ${id})`;
+    await tx.$executeRaw`DELETE FROM "OrderQuoteLine" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ${id})`;
+    await tx.$executeRaw`DELETE FROM "OrderQuoteEntitlement" WHERE "snapshotId" IN (SELECT "id" FROM "OrderQuoteSnapshot" WHERE "orderId" = ${id})`;
+    await tx.$executeRaw`DELETE FROM "OrderQuoteSnapshot" WHERE "orderId" = ${id}`;
+    await tx.$executeRaw`DELETE FROM "CapacityReservationResource" WHERE "reservationId" IN (SELECT "id" FROM "VariantCapacityReservation" WHERE "orderId" = ${id})`;
+    await tx.$executeRaw`DELETE FROM "VariantCapacityReservation" WHERE "orderId" = ${id}`;
+    await tx.$executeRaw`DELETE FROM "OrderLineSnapshot" WHERE "orderId" = ${id}`;
+    await tx.$executeRaw`DELETE FROM "OrderMirror" WHERE "id" = ${id}`;
+  });
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
@@ -50,6 +64,7 @@ async function startServer(port: number, verified: boolean) {
       ...process.env,
       PANCAKE_SHOP_ID: String(SHOP),
       PANCAKE_API_KEY: TEST_API_KEY,
+      PANCAKE_A11Y_BENEFIT_ORDER: "true",
       NODE_OPTIONS: [process.env.NODE_OPTIONS, `--require=${PANCAKE_FETCH_FIXTURE}`].filter(Boolean).join(" "),
       LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true",
       LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: verified ? String(SHOP) : "",
@@ -129,48 +144,120 @@ const chooseGift = (quantity: number) =>
     update: { quantity },
   });
 
-test("verified shop: gift lines at 0đ, unclaimed slots stated, the acknowledgement starts unticked and is required", async ({ page }) => {
+async function fillReceiving(page: import("@playwright/test").Page) {
+  await page.getByLabel("Họ và tên", {exact:false}).fill("Nguyễn Văn A");
+  await page.getByLabel("Số điện thoại", {exact:false}).fill("0901234567");
+  await page.getByLabel("Tỉnh / Thành phố", {exact:false}).selectOption({label:"Tỉnh Current"});
+  await page.getByLabel("Phường / Xã", {exact:false}).selectOption({label:"Phường Current"});
+  await page.getByLabel("Số nhà, tên đường", {exact:false}).fill("12 Đường A");
+  await page.getByLabel("Ghi chú", {exact:false}).fill("Giữ nguyên ghi chú");
+}
+async function expectReceiving(page: import("@playwright/test").Page) {
+  await expect(page.getByLabel("Họ và tên", {exact:false})).toHaveValue("Nguyễn Văn A");
+  await expect(page.getByLabel("Số điện thoại", {exact:false})).toHaveValue("0901234567");
+  await expect(page.getByLabel("Tỉnh / Thành phố", {exact:false})).toHaveValue("84_VN902");
+  await expect(page.getByLabel("Phường / Xã", {exact:false})).toHaveValue("84_VN90201");
+  await expect(page.getByLabel("Số nhà, tên đường", {exact:false})).toHaveValue("12 Đường A");
+  await expect(page.getByLabel("Ghi chú", {exact:false})).toHaveValue("Giữ nguyên ghi chú");
+}
+async function refreshQuote(page: import("@playwright/test").Page) {
+  const response = page.waitForResponse((r) => r.url().includes("/checkout?") && r.request().headers()["rsc"] === "1");
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await response;
+}
+
+test("AC06/08/10/19: validation precedes one reminder; Escape restores focus and creates no order", async ({ page }) => {
   await startServer(3350, true);
   await chooseGift(1);
+  await page.goto(`${baseUrl}/checkout`);
+  const ordersBefore = await prisma.orderMirror.count();
+  const holdsBefore = await prisma.variantCapacityReservation.count();
+  const submit = page.getByRole("button", {name:"Đặt hàng COD",exact:true});
+  await submit.click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(page.getByLabel("Họ và tên", {exact:false})).toBeFocused();
+  await fillReceiving(page);
+  await submit.click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading")).toBeFocused();
+  await expect(page.getByRole("checkbox", {name:/không nhận/})).toHaveCount(0);
+  expect(await prisma.orderMirror.count()).toBe(ordersBefore);
+  expect(await prisma.variantCapacityReservation.count()).toBe(holdsBefore);
+  await page.keyboard.press("Enter");
+  expect(await prisma.orderMirror.count()).toBe(ordersBefore);
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await expect(submit).toBeFocused();
+  await expectReceiving(page);
+  expect((await new AxeBuilder({page}).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});
 
-  await page.goto(`${baseUrl}/cart`);
-  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
-  await page.getByRole("link", { name: "Tiến hành đặt hàng" }).click();
-  await expect(page).toHaveURL(/\/checkout$/);
+for (const [quantity, width] of [[0,390],[1,1440],[2,390]] as const) {
+  test(`AC25/26: popup → picker → ${quantity === 0 ? "chip only" : `receive ${quantity}`} → payment → one explicit order (${width}px)`, async ({page}) => {
+    await startServer(3350, true);
+    await page.setViewportSize({width,height:900});
+    await page.goto(`${baseUrl}/checkout`);
+    await fillReceiving(page);
+    const ordersBefore = await prisma.orderMirror.count();
+    const holdsBefore = await prisma.variantCapacityReservation.count();
+    await page.getByRole("button", {name:"Đặt hàng COD",exact:true}).click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole("button",{name:"Chọn quà ngay",exact:true}).click();
+    const picker = page.getByRole("region", {name:"Quà tặng trong giỏ"});
+    await expect(picker).toBeFocused();
+    await picker.getByRole("button", {name:"Khăn quà",exact:true}).click();
+    await picker.getByRole("button", {name:"Trắng / M",exact:true}).click();
+    await expect(picker).toContainText("Chưa thêm vào đơn");
+    expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
+    for(let n=1;n<=quantity;n++) {
+      await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
+      await expect(picker.locator("[data-gift-progress]")).toContainText(`Đã thêm ${n}/2`);
+      await expect(picker).toHaveAttribute("aria-busy","false");
+    }
+    // Receiving the last gift never collapses management.
+    await expect(picker.getByRole("button",{name:"Thu gọn quà tặng",exact:true})).toHaveAttribute("aria-expanded","true");
+    await picker.getByRole("button",{name:"Quay lại thanh toán",exact:true}).click();
+    await expect(page.getByRole("heading",{name:"Tổng kết thanh toán",exact:true})).toBeFocused();
+    await expectReceiving(page);
+    if(quantity===0) await expect(page.locator("[data-payment-gift-draft]")).toContainText("chưa được thêm");
+    expect(await prisma.orderMirror.count()).toBe(ordersBefore);
+    expect(await prisma.variantCapacityReservation.count()).toBe(holdsBefore);
+    await page.screenshot({path:`test-results/gift-checkout-${width}-${quantity}.png`,fullPage:true});
+    await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
+    await expect.poll(() => prisma.orderMirror.count()).toBe(ordersBefore+1);
+    const order = await prisma.orderMirror.findFirstOrThrow({orderBy:{createdAt:"desc"},include:{quoteSnapshot:{include:{lines:true,entitlements:true}}}});
+    expect(order.quoteSnapshot!.lines.filter(l=>l.role==="GIFT").reduce((sum,l)=>sum+l.quantity,0)).toBe(quantity);
+    expect(order.quoteSnapshot!.entitlements[0]!.selected).toBe(quantity);
+    // The real submit/quote/proof/snapshot pipeline ran, not a UI counter.
+    expect(order.guestName).toBe("Nguyễn Văn A");
+    expect(order.note).toBe("Giữ nguyên ghi chú");
+    await expect.poll(async () => (await prisma.orderMirror.findUniqueOrThrow({where:{id:order.id}})).state).toBe("CONFIRMED");
+    await expect(page).toHaveURL(/checkout\/success/);
+  });
+}
 
-  const benefits = page.getByRole("region", { name: "Quà tặng và ưu đãi" });
-  await expect(benefits).toContainText("hưởng 2 suất quà, đã chọn 1, chưa nhận 1");
-
-  // The summary: one paid line, the gift at 0đ; the gift is not in the subtotal.
-  const summary = page.locator("aside.checkout-order-panel");
-  if (await summary.isVisible()) {
-    await expect(summary.locator('[data-line-role="gift"]')).toContainText("Khăn quà");
-    await expect(summary.locator('[data-line-role="gift"]')).toContainText("0");
-    await expect(summary).toContainText("200.000");
-    await expect(summary).toContainText("Quà tặng (1)");
-  } else {
-    await page.getByRole("button", { name: /Đơn hàng \(3\)/ }).click();
-    await expect(page.locator('[data-line-role="gift"]').first()).toContainText("Khăn quà");
-  }
-
-  const box = benefits.getByRole("checkbox", { name: /không nhận 1 suất quà/ });
-  await expect(box).not.toBeChecked();
-
-  // Placing the order without the tick is refused in the page, with the reason next to the box.
-  await page.getByRole("button", { name: "Đặt hàng COD" }).click();
-  await expect(benefits.getByText("Hãy tích xác nhận không nhận đủ quà tặng")).toBeVisible();
-  await expect(box).toHaveAttribute("aria-invalid", "true");
-  await box.check();
-  await expect(box).toBeChecked();
-  await expect(box).not.toHaveAttribute("aria-invalid", "true");
-
-  // Keyboard: Space toggles it back off, and the box is reachable in tab order.
-  await box.focus();
-  await page.keyboard.press("Space");
-  await expect(box).not.toBeChecked();
-
-  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
-  await page.screenshot({ path: "test-results/gq19-checkout-mobile.png", fullPage: true });
+test("AC21: invalid gifts retain all receiving data across route refresh and can be removed without proof", async({page}) => {
+  await startServer(3350,true);
+  await chooseGift(1);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await page.keyboard.press("Escape");
+  await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{isEnabled:false,revision:2}});
+  await refreshQuote(page);
+  await expect(page.locator('input[name="quoteProof"]')).toHaveValue("");
+  await expectReceiving(page);
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeDisabled();
+  const picker=page.getByRole("region",{name:"Quà tặng trong giỏ"});
+  await picker.getByRole("button",{name:"Kiểm tra quà đã chọn",exact:true}).click();
+  await picker.getByRole("button",{name:/^Bỏ quà để chọn lại/}).click();
+  await expect(page.locator('input[name="quoteProof"]')).not.toHaveValue("");
+  await expectReceiving(page);
+  expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeEnabled();
 });
 
 test("verified shop: every slot taken means no acknowledgement is asked", async ({ page }) => {

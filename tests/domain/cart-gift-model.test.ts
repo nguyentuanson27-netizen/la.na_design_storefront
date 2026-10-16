@@ -110,3 +110,13 @@ test("missing gift label stays visible; lookup failure blocks checkout; OFF keep
   assert.equal(Object.hasOwn(off, "gifts"), false);
   assert.equal(Object.hasOwn(off.lines[0], "paidSegments"), false);
 });
+
+
+test("gift images share the trusted media boundary; missing or foreign URLs fall back", () => {
+  const fixture = state();
+  for (const [raw, expected] of [["https://content.pancake.vn/images/1/2/3/gift.jpg", "https://content.pancake.vn/images/1/2/3/gift.jpg"], ["https://evil.example/gift.jpg",null],[null,null]] as const) {
+    const model = buildCartGiftPickerModel({...fixture, labels:fixture.labels.map(l=>({...l,imageUrl:raw}))});
+    assert.equal(model.campaigns[0]!.products[0]!.imageUrl,expected);
+    assert.equal(model.selections[0]!.imageUrl,expected);
+  }
+});
