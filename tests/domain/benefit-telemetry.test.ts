@@ -66,7 +66,7 @@ test("GQ24: an observer that throws never changes what the buyer is told", async
     onBenefitOutcome: () => { throw new Error("log sink down"); },
   });
   const result = await service.submit({ cartId: CART_UUID, shopId: 1, checkoutInput: {}, now: new Date() });
-  assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "CART_CHANGED" });
+  assert.deepEqual(result, { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", giftRepairRequired: true });
 });
 
 test("GQ24: signals are single short NDJSON lines with no cart id, token, money or campaign identifier", () => {

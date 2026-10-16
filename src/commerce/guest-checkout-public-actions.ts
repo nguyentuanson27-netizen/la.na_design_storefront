@@ -9,7 +9,7 @@ type SubmitCheckout = (input: {
   cartId: string;
   checkoutInput: unknown;
   quoteProof: unknown;
-  /** GQ19: the buyer ticked "I am not taking every gift slot". Only ever the literal checkbox value. */
+  /** GQ19: explicit submit intent after the gift reminder. Only the literal transport value is accepted. */
   nonclaimAcknowledged: boolean;
 }) => Promise<GuestCheckoutSubmitResult>;
 

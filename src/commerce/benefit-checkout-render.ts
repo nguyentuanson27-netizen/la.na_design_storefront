@@ -11,11 +11,14 @@
  *  - `LEGACY`      the gate is OFF or nothing applies: the page renders the ordinary quote, untouched.
  *  - `UNAVAILABLE` the benefits cannot be offered right now (cannot price, a stored gift choice no
  *                  longer holds, the POS shop has no line-level pricing evidence, or the proof does
- *                  not fit its envelope). The buyer is sent back to the cart; nothing is guessed.
+ *                  not fit its envelope). Gift-choice errors retain the picker for inline repair; nothing is guessed.
  *  - `BENEFIT`     the facts to show, the proof that binds them, and whether the buyer still owes an
  *                  explicit non-claim acknowledgement (FR-06).
  */
 
+import { readCartGiftState } from "./cart-gift-selection.ts";
+import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { buildCartGiftPickerModel, type CartGiftPickerModel } from "../routes/cart-gift-model.ts";
 import type { PrismaClient } from "../generated/prisma/client.ts";
 import { resolveBenefitCheckoutQuote } from "./benefit-checkout-quote.ts";
 import {
@@ -29,14 +32,15 @@ import type { StorefrontCartLine } from "./storefront-cart.ts";
 
 type Env = Readonly<Record<string, string | undefined>>;
 
-export type BenefitCheckoutRender =
+type GiftDisplay = Readonly<{ giftPicker?: CartGiftPickerModel }>;
+export type BenefitCheckoutRender = GiftDisplay & (
   | Readonly<{ kind: "LEGACY" }>
   | Readonly<{ kind: "UNAVAILABLE"; reason: "BENEFITS_UNAVAILABLE" | "GIFT_SELECTION_INVALID" | "POS_NOT_ACCEPTED" | "PROOF_UNAVAILABLE" }>
   | Readonly<{
       kind: "BENEFIT";
       facts: BenefitQuoteProofFacts;
       proof: string;
-      /** Identifies this exact quote; the form keys the acknowledgement on it so a new quote starts unchecked. */
+      /** Identifies this exact quote; display identity only; reminder state never authorizes this quote. */
       digest: string;
       needsAcknowledgement: boolean;
       giftLabels: ReadonlyMap<string, string>;
@@ -44,7 +48,7 @@ export type BenefitCheckoutRender =
       campaignNames?: ReadonlyMap<string, string>;
       /** EX-21: a quantity tier whose price became invalid was dropped whole; the buyer is told. */
       tierDropped: boolean;
-    }>;
+    }>);
 
 export async function readBenefitCheckoutRender({
   client,
@@ -63,17 +67,25 @@ export async function readBenefitCheckoutRender({
   secret: string;
   env?: Env;
 }>): Promise<BenefitCheckoutRender> {
+  let giftPicker: CartGiftPickerModel | undefined;
   let resolution: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>>;
   try {
-    resolution = await client.$transaction((tx) => resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, lines }));
+    resolution = await client.$transaction(async (tx) => {
+      const giftState = isGiftQuantityPromotionsEnabled(env) ? await readCartGiftState(tx, cartId, shopId, now, env) : undefined;
+      if (giftState) {
+        const picker = buildCartGiftPickerModel(giftState);
+        if (picker.selections.length || picker.campaigns.some((c) => c.entitled > 0)) giftPicker = picker;
+      }
+      return resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, lines, giftState });
+    });
   } catch {
     // A read that failed is not "no benefits": quoting the plain cart here would show a price the
     // submit then refuses. Fail closed instead.
     return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
   }
-  if (resolution.kind === "LEGACY") return { kind: "LEGACY" };
+  if (resolution.kind === "LEGACY") return giftPicker ? { kind: "LEGACY", giftPicker } : { kind: "LEGACY" };
   if (resolution.kind === "UNAVAILABLE") return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
-  if (resolution.kind === "GIFT_SELECTION_INVALID") return { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID" };
+  if (resolution.kind === "GIFT_SELECTION_INVALID") return { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker: giftPicker ? { ...giftPicker, invalid: true } : undefined };
 
   // The POS withholds a benefit order for any shop without line-level pricing evidence (GQ20). Offering
   // a checkout the submit is certain to close would only cost the buyer a form and an order number.
@@ -84,6 +96,7 @@ export async function readBenefitCheckoutRender({
 
   return {
     kind: "BENEFIT",
+    giftPicker,
     facts: resolution.facts,
     proof,
     digest: benefitQuoteDigest(resolution.facts),

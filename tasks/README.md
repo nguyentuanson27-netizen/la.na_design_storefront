@@ -14,14 +14,14 @@ For active La.na Design work, use these sources in this order:
 
 If an older plan, audit or task note conflicts with these current authorities, the current La.na Design source wins for brand truth and current execution state.
 
-## Feature plan awaiting approval — gift picker / checkout reminder
+## Gift picker / checkout reminder — implementation PR #175
 
 The original [gift-picker specification](../docs/specs/storefront-gift-picker-checkout-reminder.md) was merged in PR #173 at `6c75d5e9d8bbb582bcd5438e04f02c0bbfff9646` at the owner's request. PR #174 updates that spec with UX follow-up acceptance before implementation:
 
 - [Implementation plan](./storefront-gift-picker-checkout-reminder-plan.md) — dependencies, checkout safety boundaries, UX-01..UX-04 review dispositions, early C2 UX checks and known CI baseline failures.
 - [Task checklist](./storefront-gift-picker-checkout-reminder-todo.md) — the same T00..T13 tasks, acceptance criteria and AC-01..AC-28 traceability; AC-25..AC-28 cover the UX follow-up and implementation tasks are not completed.
 
-This workstream awaits approval of both the plan and the UX spec additions before implementation. T13 records verified results; it is not permission to defer UX decisions until after coding. The workstream does not replace the master plan/checklist, change unrelated policy authority, or claim that the feature has shipped.
+The owner approved PR #174 and requested end-to-end implementation in [PR #175](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/175). [Current verification](../docs/verification/storefront-gift-picker-checkout-reminder.md) records results and remaining checks. T13 records verified results; it is not permission to defer UX decisions until after coding. The workstream does not replace the master plan/checklist, change unrelated policy authority, or claim that the feature has shipped.
 
 ## Legacy plans and audits
 

@@ -150,6 +150,8 @@ export type GuestCheckoutSubmitResult =
       ok: false;
       status: "RETRYABLE";
       reason: GuestCheckoutBrowserReason;
+      /** No order exists: refresh and repair the stored gift choices in the same form. */
+      giftRepairRequired?: true;
       orderCode?: string;
     }
   | { ok: false; status: "PROCESSING"; orderCode: string }
@@ -245,8 +247,8 @@ function mapSnapshotFailure(reason: SnapshotFailureReason): GuestCheckoutSubmitR
     case "VENDOR_PROJECTION_INFEASIBLE":
       return { ok: false, status: "RETRYABLE", reason: "CHECKOUT_UNAVAILABLE" };
     case "GIFT_SELECTION_INVALID":
-      // The stored gift choice is left exactly as it is; the buyer goes back to the cart to decide.
-      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED" };
+      // The stored gift choice is left untouched; the checkout can refresh into repair without losing the form.
+      return { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", giftRepairRequired: true };
   }
 }
 

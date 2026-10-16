@@ -90,6 +90,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 
 ### FR-06. Không nhận đủ quà và xác nhận
 
+**Bổ sung đã duyệt (PR #174, implementation PR #175):** [Đặc tả chọn quà và nhắc một lần](storefront-gift-picker-checkout-reminder.md) thay checkbox bằng lời nhắc ở lần submit hợp lệ đầu tiên, rồi chỉ tạo claim cho quote hiện hành khi khách chủ động gửi tiếp. Không gửi đơn khi chỉ đóng popup/chọn chip/quay lại thanh toán; signed acknowledgement và proof phía server giữ nguyên. Nội dung bên dưới mô tả hợp đồng gốc; bổ sung mới có ưu tiên về giao diện và lifetime.
+
 - Khách được chọn từ **0 đến `entitled` suất**; không bắt buộc nhận hết.
 - Nếu hàng trong danh sách chỉ còn đủ cấp ít hơn `entitled`, cho phép nhận phần còn lại; nếu hết toàn bộ, cho phép đặt đơn không có quà.
 - Trước khi đặt đơn với `selected < entitled`, checkout phải hiển thị **số suất được hưởng / số đã chọn / số bỏ qua hoặc thiếu** và yêu cầu **xác nhận tường minh**. Bao gồm trường hợp khách tự bỏ qua dù còn hàng.
@@ -141,6 +143,8 @@ Các chương trình có phạm vi sản phẩm/danh mục, thời gian, điều
 - **Đề xuất để tránh lời hứa tồn kho sai:** quà chỉ chọn từ variant có khả năng giao `READY` được xác minh; hỗ trợ quà composite chỉ khi có kiểm tra/giữ chỗ tài nguyên cấu thành; không mặc định sử dụng quy tắc PREORDER/OVERSELL của hàng mua để cấp quà miễn phí.
 
 ### FR-11. Giỏ hàng, checkout và snapshot
+
+**Bổ sung PR #175:** một picker bằng ảnh ngay dưới vùng danh sách trên cart/checkout, độc lập upsell; form được giữ qua lỗi quà và refresh; được bỏ lựa chọn lỗi tại checkout. DTO/identity UI không cấp quyền đặt hàng. Chi tiết và AC-01..AC-28 theo đặc tả bổ sung liên kết tại FR-06.
 
 - Cart và checkout hiển thị rõ điều kiện hiện tại, mức thiếu tới mốc tiếp theo, mức giảm áp dụng, số suất quà đạt được, lựa chọn quà còn hàng và số chưa nhận.
 - Khách chọn quà trong UI riêng, các quà **không** tự thêm thành `CartItem` trả tiền. Khi lượng mua giảm hoặc campaign hết hạn, quyền lợi được tính lại và lựa chọn không hợp lệ phải được hiển thị/đề nghị chọn lại.
