@@ -1,26 +1,57 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
-import { setStorefrontCartGift } from "@/commerce/cart-gift-selection-actions";
+import { readStorefrontCartGifts, setStorefrontCartGift } from "@/commerce/cart-gift-selection-actions";
+import { giftMutationOutcome } from "./cart-gift-mutation-model";
 
-/** Action coordination and feedback stay outside brand presentation. */
-export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked = false) {
+/** No optimistic choices. The action's refreshed route installs the new quote before releasing busy. */
+export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked = false, isLocked?: () => boolean) {
   const [pending, startTransition] = useTransition();
+  const [uncertain, setUncertain] = useState(false);
   const [message, setMessage] = useState("");
-  const [products, setProducts] = useState<Record<string, string>>({});
   const busy = useRef(false);
-  useEffect(() => { busy.current = pending; onBusyChange?.(pending); }, [pending, onBusyChange]);
+  const unknown = useRef(false);
+  useEffect(() => {
+    busy.current = pending || unknown.current;
+    onBusyChange?.(busy.current);
+  }, [pending, onBusyChange]);
   useEffect(() => () => onBusyChange?.(false), [onBusyChange]);
-  function change(campaignId: string, variantId: string, campaignRevision: number, quantity: number) {
-    if (locked || busy.current) return;
-    busy.current = true;
-    onBusyChange?.(true);
-    startTransition(async () => {
-      try {
-        const result = await setStorefrontCartGift({ campaignId, variantId, campaignRevision, quantity });
-        setMessage(result.ok ? quantity === 0 ? "Đã bỏ quà đã chọn." : "Đã lưu lựa chọn quà." : "Không thể lưu quà. Quyền nhận hoặc tồn kho đã thay đổi; hãy tải lại giỏ hàng và kiểm tra lựa chọn.");
-      } catch { setMessage("Chưa thể lưu quà. Vui lòng thử lại."); }
-    });
+  async function readback() {
+    try {
+      const result = await readStorefrontCartGifts();
+      if (result.ok) {
+        unknown.current = false; setUncertain(false);
+        setMessage("Đã kiểm tra lại quà trong đơn. Hãy xem lựa chọn và báo giá hiện tại trước khi tiếp tục.");
+        return;
+      }
+    } catch { /* Result remains unknown: retry reads only. */ }
+    unknown.current = true; setUncertain(true);
+    setMessage("Chưa xác nhận được kết quả lưu quà. Vui lòng kiểm tra lại; không nhận hoặc bỏ quà lần nữa lúc này.");
   }
-  return { pending, message, products, setProducts, change };
+  function retryRead() {
+    if (pending) return;
+    busy.current = true; onBusyChange?.(true);
+    startTransition(readback);
+  }
+  function change(campaignId: string, variantId: string, campaignRevision: number, quantity: number, label: string, removed: number) {
+    if (locked || isLocked?.() || busy.current || unknown.current) return false;
+    busy.current = true; onBusyChange?.(true);
+    setMessage(quantity === 0 || removed > 0 ? "Đang bỏ quà…" : "Đang thêm quà…");
+    startTransition(async () => {
+      let result: Awaited<ReturnType<typeof setStorefrontCartGift>> | null = null;
+      try { result = await setStorefrontCartGift({ campaignId, variantId, campaignRevision, quantity }); } catch { /* ambiguous */ }
+      const outcome = giftMutationOutcome(result);
+      if (outcome === "readback") { await readback(); return; }
+      if (outcome === "saved") {
+        setMessage(removed > 0 ? `Đã bỏ ${removed} quà ${label} khỏi đơn.` : `Đã thêm vào đơn: ${label}.`);
+      } else {
+        setMessage(`Chưa ${removed > 0 ? "bỏ" : "thêm"} quà ${label}. Quyền nhận hoặc tồn kho đã thay đổi. Đang kiểm tra lại số suất thực tế.`);
+        // The refusal is known, but the visible eligibility/stock may be stale.
+        await readback();
+        if (!unknown.current) setMessage(`Chưa ${removed > 0 ? "bỏ" : "thêm"} quà ${label}. Lựa chọn và số suất hiện tại được cập nhật bên trên.`);
+      }
+    });
+    return true;
+  }
+  return { pending, uncertain, message, change, retryRead };
 }

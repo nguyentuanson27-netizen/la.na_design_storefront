@@ -110,3 +110,89 @@ test("missing gift label stays visible; lookup failure blocks checkout; OFF keep
   assert.equal(Object.hasOwn(off, "gifts"), false);
   assert.equal(Object.hasOwn(off.lines[0], "paidSegments"), false);
 });
+
+
+test("gift images share the trusted media boundary; missing or foreign URLs fall back", () => {
+  const fixture = state();
+  for (const [raw, expected] of [["https://content.pancake.vn/images/1/2/3/gift.jpg", "https://content.pancake.vn/images/1/2/3/gift.jpg"], ["https://evil.example/gift.jpg",null],[null,null]] as const) {
+    const model = buildCartGiftPickerModel({...fixture, labels:fixture.labels.map(l=>({...l,imageUrl:raw}))});
+    assert.equal(model.campaigns[0]!.products[0]!.imageUrl,expected);
+    assert.equal(model.selections[0]!.imageUrl,expected);
+  }
+});
+
+function repairState(): CartGiftState {
+  const campaigns: GiftCampaignFacts[] = [{ id: "campaign", revision: 2, trigger: "ORDER_SUBTOTAL", minimumQuantity: null,
+    minimumSubtotalVnd: 100_000, subtotalScope: "ALL_PAID_LINES", awardMode: "REPEAT_PER_THRESHOLD", maxGiftsPerOrder: null,
+    allowDuplicateGifts: true, scope: { mode: "GLOBAL_ALL_PAID_LINES" }, frozen: null,
+    options: [
+      { variantId: "good", productId: "good-product", composite: false, readyAvailable: 10 },
+      { variantId: "bad", productId: "bad-product", composite: false, readyAvailable: 0 },
+    ] }];
+  const evaluation = evaluateGiftEntitlements({ campaigns, paidGroups: [{ groupKey: "paid", product: { productId: "paid", categoryKeys: [] }, quantity: 2, unitPriceVnd: 100_000 }] });
+  if (!evaluation.ok) throw new Error("invalid repair fixture");
+  const selections: CartGiftState["selections"] = ["good", "bad"].map(variantId => ({ campaignId: "campaign", variantId, campaignRevision: 2, quantity: 1,
+    currentCampaignRevision: 2, freshness: "CURRENT", campaignEnabled: true, variantActive: true, mirroredStock: variantId === "good" ? 10 : 0, issues: [] }));
+  return { ...state(), campaigns, entitlements: [...evaluation.entitlements], selections,
+    validation: validateGiftSelections({ campaigns, entitlements: evaluation.entitlements, selection: selections }) };
+}
+
+test("F2: repair projects OUT_OF_STOCK onto the validated line while keeping the valid choice", () => {
+  const s = repairState();
+  const model = buildCartGiftPickerModel(s);
+  assert.equal(model.invalid, true);
+  assert.deepEqual(model.selections[0].problems, []);
+  assert.match(model.selections[1].problems!.join(" "), /không còn số lượng.*bỏ.*chọn lại/i);
+  assert.deepEqual(model.selections.map(({ campaignId, variantId, quantity }) => ({ campaignId, variantId, quantity })), s.selections.map(({ campaignId, variantId, quantity }) => ({ campaignId, variantId, quantity })));
+});
+
+test("F2: lineIndex maps the original validated order, including null issue identities and missing labels", () => {
+  const s = repairState();
+  for (const error of ["CAMPAIGN_NOT_ENTITLED", "STALE_CAMPAIGN_REVISION", "SELECTION_REVISION_INVALID"] as const) {
+    const model = buildCartGiftPickerModel({ ...s, labels: [], validation: { ok: false, issues: [{ error, lineIndex: 1, campaignId: null, variantId: null }] } });
+    assert.deepEqual(model.selections[0].problems, []);
+    assert.equal(model.selections[1].problems!.length, 1);
+    assert.equal(model.selections[1].variantId, "bad");
+    assert.equal(model.selections[1].campaignRevision, 2);
+    assert.match(model.selections[1].label, /không còn khả dụng/);
+  }
+});
+
+test("F2: aggregate entitlement, duplicate and shared-stock issues identify a group, not a singled-out row", () => {
+  const s = repairState();
+  for (const issue of [
+    { error: "OVER_ENTITLEMENT", campaignId: "campaign", variantId: null },
+    { error: "DUPLICATE_PRODUCT_NOT_ALLOWED", campaignId: "campaign", variantId: null },
+    { error: "OUT_OF_STOCK", campaignId: null, variantId: "good" },
+    { error: "STALE_CAMPAIGN_REVISION", campaignId: "campaign", variantId: null },
+    { error: "SELECTION_INVALID", campaignId: null, variantId: null },
+  ] as const) {
+    const model = buildCartGiftPickerModel({ ...s, validation: { ok: false, issues: [{ ...issue, lineIndex: null }] } });
+    assert.ok(model.selections.every(row => row.problems?.length === 0));
+    assert.equal(model.repairGroups!.length, 1);
+    assert.deepEqual(model.repairGroups![0].selectionKeys, issue.variantId ? ["campaign/good"] : ["campaign/good", "campaign/bad"]);
+    assert.match(model.repairGroups![0].message, /giảm|bỏ/i);
+  }
+});
+
+test("F2: real validator aggregate failures preserve every member of the repair group", () => {
+  const s = repairState();
+  for (const kind of ["OVER_ENTITLEMENT", "DUPLICATE_PRODUCT_NOT_ALLOWED", "OUT_OF_STOCK"] as const) {
+    const base = s.campaigns[0];
+    const campaigns = kind === "OUT_OF_STOCK"
+      ? ["campaign", "other-campaign"].map(id => ({ ...base, id, options: [{ ...base.options[0], readyAvailable: 1 }] }))
+      : [{ ...base, allowDuplicateGifts: kind !== "DUPLICATE_PRODUCT_NOT_ALLOWED", options: base.options.map(option => ({ ...option, productId: "one-product", readyAvailable: 10 })) }];
+    const evaluation = evaluateGiftEntitlements({ campaigns, paidGroups: [{ groupKey: "paid", product: { productId: "paid", categoryKeys: [] }, quantity: 2, unitPriceVnd: 100_000 }] });
+    if (!evaluation.ok) throw new Error("invalid aggregate fixture");
+    const selections = kind === "OUT_OF_STOCK"
+      ? campaigns.map(c => ({ ...s.selections[0], campaignId: c.id, mirroredStock: 1 }))
+      : kind === "OVER_ENTITLEMENT" ? [{ ...s.selections[0], quantity: 3 }] : s.selections;
+    const validation = validateGiftSelections({ campaigns, entitlements: evaluation.entitlements, selection: selections });
+    assert.equal(validation.ok, false);
+    if (validation.ok) throw new Error("expected aggregate refusal");
+    assert.equal(validation.issues[0].error, kind);
+    const model = buildCartGiftPickerModel({ ...s, campaigns, entitlements: [...evaluation.entitlements], selections, validation });
+    assert.ok(model.selections.every(row => row.problems?.length === 0));
+    assert.deepEqual(model.repairGroups![0].selectionKeys, selections.map(row => `${row.campaignId}/${row.variantId}`));
+  }
+});

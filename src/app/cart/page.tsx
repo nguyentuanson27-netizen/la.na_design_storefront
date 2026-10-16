@@ -139,9 +139,9 @@ function render(data: CartViewModel) {
               </div>
             </article>
           ))}
+          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
-          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
           {data.summary ? (
             <OrderSummary className="mt-5" summary={data.summary} />

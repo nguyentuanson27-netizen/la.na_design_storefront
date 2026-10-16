@@ -1,3 +1,4 @@
+import type { CartGiftPickerModel } from "./cart-gift-model.ts";
 import type { CheckoutUpsellModel } from "../commerce/promotion-upsell.ts";
 import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
@@ -88,8 +89,8 @@ export type CheckoutGiftLineView = Readonly<{
  * GQ19 -- what a gift or quantity-tier checkout shows beyond the plain order lines.
  *
  * Present exactly when the page renders a benefit quote. `digest` identifies that exact quote: the
- * acknowledgement the buyer ticks is keyed on it, so a refreshed quote always starts unticked
- * (FR-06: an acknowledgement is never carried over to a quote the buyer has not seen).
+ * proof and explicit submit intent are bound to it; UI reminder state never supplies consent
+ * for a refreshed quote (FR-06).
  */
 export type CheckoutBenefitView = Readonly<{
   digest: string;
@@ -107,8 +108,12 @@ export type CheckoutBenefitView = Readonly<{
 
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
+  giftPicker?: CartGiftPickerModel;
+  attemptKey?: string;
+  /** UI refresh identity, never a form key or quote authority. */
+  quoteRenderId?: string;
   upsell?: CheckoutUpsellModel;
-  /** Empty unless `state` is `ready`; the other two states render no order summary. */
+  /** Physical items remain visible during gift repair; prices are withheld without a valid quote. */
   lines: readonly CheckoutLineView[];
   totals: CheckoutTotalsView | null;
   /** The token the form submits with. Present exactly when `state` is `ready`. */
@@ -254,22 +259,32 @@ export function buildCheckoutViewModel(
 
 const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>["reason"], string> = {
   BENEFITS_UNAVAILABLE: "Chưa thể kiểm tra quyền lợi (ưu đãi theo số lượng, quà tặng) của giỏ hàng. Hãy quay lại giỏ hàng và thử lại.",
-  GIFT_SELECTION_INVALID: "Quà bạn đã chọn không còn hợp lệ (hết hàng hoặc chương trình đã đổi). Hãy quay lại giỏ hàng để chọn lại; chúng tôi không tự đổi quà thay bạn.",
+  GIFT_SELECTION_INVALID: "Quà bạn đã chọn không còn hợp lệ (hết hàng hoặc chương trình đã đổi). Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự đổi quà thay bạn.",
   POS_NOT_ACCEPTED: "Đơn hàng có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến. Bạn có thể bỏ các sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau.",
   PROOF_UNAVAILABLE: "Giỏ hàng có quá nhiều dòng ưu đãi để xác nhận báo giá. Hãy giảm bớt sản phẩm rồi thử lại.",
 };
 
-/** The page for a cart whose benefits cannot be offered: back to the cart, with the specific reason. */
+/** Keep physical items and gift repair available without issuing prices or checkout authority. */
 export function buildBenefitUnavailableCheckoutViewModel(
   render: Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>,
+  lines: readonly StorefrontCartLine[] = [],
 ): CheckoutViewModel {
   return Object.freeze({
     state: "unquotable",
-    lines: Object.freeze([]),
+    // Keep physical paid items visible without claiming an unproven price/discount allocation.
+    lines: Object.freeze(lines.map((line) => ({
+      lineKey: line.variantId, variantId: line.variantId,
+      productName: line.productName ?? "Sản phẩm không còn trong catalog",
+      primaryImage: line.media.primary,
+      optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
+      quantity: line.quantity, unitPriceText: null, lineTotalText: "Chờ tính lại",
+      preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
+    }))),
     totals: null,
     quoteProof: null,
     preorderNotice: null,
     benefit: null,
+    giftPicker: render.giftPicker,
     unavailableNotice: UNAVAILABLE_NOTICES[render.reason],
   });
 }
@@ -277,8 +292,8 @@ export function buildBenefitUnavailableCheckoutViewModel(
 function slotText(slots: CheckoutBenefitView["slots"]): string | null {
   if (slots.unclaimed === 0) return null;
   const parts = [`Bạn được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
-  if (slots.skippedWhileAvailable > 0) parts.push(`${slots.skippedWhileAvailable} suất bạn chọn bỏ qua dù còn hàng.`);
-  if (slots.shortForStock > 0) parts.push(`${slots.shortForStock} suất không đủ tồn kho để tặng.`);
+  if (slots.skippedWhileAvailable > 0) parts.push(`${slots.skippedWhileAvailable} suất còn có thể chọn.`);
+  if (slots.shortForStock > 0) parts.push(`${slots.shortForStock} suất hiện chưa có lựa chọn phù hợp.`);
   return parts.join(" ");
 }
 
@@ -369,6 +384,7 @@ export function buildBenefitCheckoutViewModel(
       shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
       totalText: currency.format(facts.totalVnd),
     }),
+    giftPicker: render.giftPicker,
     quoteProof: render.proof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     benefit: Object.freeze({

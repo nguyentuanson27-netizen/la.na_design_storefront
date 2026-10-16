@@ -48,7 +48,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
     select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true,
-      product: { select: { name: true, isActive: true, isPresent: true } },
+      product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
       warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
   });
   // Paid composite lines consume component stock, even when the gift is a standalone component.
@@ -87,7 +87,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const validation = validateGiftSelections({ campaigns, entitlements, selection: selections });
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
-    labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
+    labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, imageUrl: v.product.primaryImageUrl, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
 }
 
 export function createCartGiftSelectionService(client: PrismaClient, store: CookieReader, { shopId, env = process.env }: { shopId: number; env?: Readonly<Record<string, string | undefined>> }) {
