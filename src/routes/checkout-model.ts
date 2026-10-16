@@ -113,7 +113,7 @@ export type CheckoutViewModel = Readonly<{
   /** UI refresh identity, never a form key or quote authority. */
   quoteRenderId?: string;
   upsell?: CheckoutUpsellModel;
-  /** Empty unless `state` is `ready`; the other two states render no order summary. */
+  /** Physical items remain visible during gift repair; prices are withheld without a valid quote. */
   lines: readonly CheckoutLineView[];
   totals: CheckoutTotalsView | null;
   /** The token the form submits with. Present exactly when `state` is `ready`. */
@@ -264,7 +264,7 @@ const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAI
   PROOF_UNAVAILABLE: "Giỏ hàng có quá nhiều dòng ưu đãi để xác nhận báo giá. Hãy giảm bớt sản phẩm rồi thử lại.",
 };
 
-/** The page for a cart whose benefits cannot be offered: back to the cart, with the specific reason. */
+/** Keep physical items and gift repair available without issuing prices or checkout authority. */
 export function buildBenefitUnavailableCheckoutViewModel(
   render: Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>,
   lines: readonly StorefrontCartLine[] = [],
@@ -273,7 +273,8 @@ export function buildBenefitUnavailableCheckoutViewModel(
     state: "unquotable",
     // Keep physical paid items visible without claiming an unproven price/discount allocation.
     lines: Object.freeze(lines.map((line) => ({
-      lineKey: line.variantId, variantId: line.variantId, productName: line.productName,
+      lineKey: line.variantId, variantId: line.variantId,
+      productName: line.productName ?? "Sản phẩm không còn trong catalog",
       primaryImage: line.media.primary,
       optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
       quantity: line.quantity, unitPriceText: null, lineTotalText: "Chờ tính lại",
