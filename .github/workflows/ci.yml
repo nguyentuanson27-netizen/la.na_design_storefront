@@ -223,14 +223,15 @@ jobs:
             exit 1
           fi
 
-          # Every page, the homepage included, still carries the compact masthead headline.
+          # The masthead carries the campaign headline, independently of shipping thresholds.
+          # /shipping below owns the runtime-vs-build-time shipping policy assertions.
           curl --fail --silent --show-error http://127.0.0.1:3218/ > "$RUNNER_TEMP/storefront.html"
           if grep -Fq "5 sản phẩm hoặc đơn trên 650 nghìn" "$RUNNER_TEMP/storefront.html"; then
             echo "Homepage promotion headline rendered the build-time policy instead of the runtime policy"
             exit 1
           fi
-          if ! grep -Fq "Free ship từ 4 sản phẩm hoặc đơn trên 750 nghìn" "$RUNNER_TEMP/storefront.html"; then
-            echo "Homepage promotion headline rendered an unexpected policy state"
+          if ! grep -Fq "Mua 3 tặng 1 - Mua 5 giảm 10% tổng hóa đơn" "$RUNNER_TEMP/storefront.html"; then
+            echo "Homepage promotion did not render the campaign headline"
             exit 1
           fi
 

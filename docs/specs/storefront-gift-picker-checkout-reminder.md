@@ -2,9 +2,9 @@
 
 **Project:** La.na Design Storefront
 **Ngày:** 16/10/2026
-**Trạng thái:** Đề xuất để review; yêu cầu chính đã được chủ cửa hàng xác nhận trong trao đổi, các mặc định chi tiết ở mục 2 cần được duyệt cùng spec.
+**Trạng thái:** Spec gốc và các mặc định R-01..R-04 đã được duyệt qua yêu cầu merge PR #173 tại `6c75d5e`. Bổ sung UX-01..UX-04 sau review `87b7cd5` đang chờ duyệt cùng PR #174 trước `/build`; chưa triển khai chức năng.
 **Baseline đã đối chiếu:** `main@e08715493c224a76e078d4c42b2565294e493d0d`.
-**Phạm vi PR này:** Chỉ bổ sung tài liệu đặc tả. Không sửa giao diện, logic đặt hàng, database, cấu hình hoặc dependency; không triển khai tính năng.
+**Phạm vi PR #174:** Cập nhật đặc tả UX cùng plan/checklist. Không sửa giao diện, logic đặt hàng, database, cấu hình hoặc dependency; không triển khai tính năng.
 
 ## 1. Mục tiêu và phạm vi
 
@@ -26,7 +26,7 @@ Không thuộc phạm vi: thiết kế lại toàn bộ checkout, thay luật t�
 
 Đây là bản bổ sung cho [gift-quantity-promotions-v1.md](gift-quantity-promotions-v1.md), đặc biệt FR-06 và phần trình bày cart/checkout của FR-11. Sau khi spec này được duyệt, thao tác đặt hàng chủ động lần hai sau lời nhắc thay thế checkbox xác nhận. Không sửa ý nghĩa chọn từ 0 đến `entitled`, không tự thay quà và không chuyển quyền chưa nhận thành nợ quà. Giữ tài liệu cũ làm lịch sử; khi triển khai phải cập nhật các tham chiếu/checklist còn mô tả checkbox bắt buộc.
 
-Các mặc định dưới đây là đề xuất cụ thể cho review, không phải các quyết định bổ sung đã được chủ cửa hàng xác nhận riêng:
+Các mặc định dưới đây ban đầu được đề xuất để review và đã được duyệt cùng spec qua yêu cầu merge PR #173; không coi đó là các xác nhận riêng trước thời điểm merge:
 
 - **R-01 — Phạm vi một lần:** một lượt checkout của cùng giỏ trong cùng tab; không reset vì render lại, refresh quote, đổi lựa chọn quà, mua thêm trong cùng lượt hoặc lỗi gửi đơn. Tải lại cùng lượt được khôi phục bằng trạng thái UI theo tab khi storage khả dụng. Rời checkout kết thúc lượt, đơn thành công/giỏ được xóa hoặc đổi sang giỏ khác bắt đầu lượt mới. Không lưu “đã nhắc” vĩnh viễn theo khách.
 - **R-02 — Đếm lần bấm:** xét lần submit hợp lệ về các trường bắt buộc, không phải bộ đếm mọi click. Popup có nút “Chọn quà ngay” và “Vẫn đặt hàng”; nút thứ hai chính là lần đặt hàng thứ hai, không thêm bước xác nhận thứ ba. Đóng popup rồi bấm nút đặt hàng của form cũng là lần tiếp tục hợp lệ.
@@ -36,6 +36,8 @@ Các mặc định dưới đây là đề xuất cụ thể cho review, không 
 Bản sửa sau review chọn hợp đồng đơn giản **bỏ rồi chọn lại** tại UI-04, không hứa đổi nguyên tử hoặc tự khôi phục quà cũ. Bố cục theo trạng thái và mẫu sắp xếp mobile/desktop tại UI-06 được duyệt cùng PR spec; không cần một vòng duyệt bộ mockup riêng để bắt đầu implementation.
 
 Phê duyệt PR spec là checkpoint để chốt các mặc định này trước implementation. Không tự diễn giải “đã mở popup” thành xác nhận đặt đơn.
+
+**Bổ sung sau review PR #174:** UX-01 phân biệt phiên bản đang xem với quà đã lưu; UX-02 nối đường quay lại thanh toán; UX-03 làm rõ xem trước/bỏ/chọn lại; UX-04 phân vai danh sách đơn và bộ chọn thu gọn. Hợp đồng được cập nhật ngay tại UI-04..UI-06/FLOW-02 và AC-25..AC-28, không đợi T13. Quyết định tiếp thu và task chịu trách nhiệm nằm ở mục “Tiếp thu review UX” của [plan](../../tasks/storefront-gift-picker-checkout-reminder-plan.md). Đây là bản sửa tài liệu để duyệt, không phải kết quả browser hoặc phê duyệt implementation. Tên nút/câu ví dụ mới có thể diễn đạt tương đương nếu giữ đúng ý nghĩa và kết quả nghiệm thu.
 
 ## 3. Hiện trạng đã đối chiếu trong repository
 
@@ -96,9 +98,21 @@ Luồng: chọn mẫu quà → mở tùy chọn của mẫu đó → chọn phi�
 
 Hiện tại có thể dùng `option.label` làm chip. Chỉ tách màu/size khi dữ liệu thuộc tính rõ ràng; không cắt chuỗi để đoán. Thao tác chọn chip chưa ghi nhận quà; nút nhận mới gọi cơ chế lưu hiện có. Giữ lưu theo từng thao tác, không thêm “Lưu tất cả”.
 
-Chỉ báo đã thêm sau kết quả lưu thành công. Pending khóa thao tác xung đột và nút đặt hàng; lỗi giữ ngữ cảnh để thử lại. Quà đã chọn có ảnh nhỏ, tên, phiên bản, số lượng khi cần và thao tác bỏ/chọn lại rõ nghĩa. Giảm số lượng vẫn khả dụng khi chương trình cho nhận nhiều chiếc cùng mẫu và tập lựa chọn sau giảm hợp lệ.
+**UX-01 — Phiên bản đang xem khác quà đã thêm.** Ba trạng thái phải phân biệt bằng chữ/nhãn, không chỉ màu:
 
-**Hợp đồng v1: bỏ rồi chọn lại, không đổi trực tiếp.** “Xem quà đã chọn” chỉ mở phần tổng kết; không ghi dữ liệu. Với dòng một chiếc, dùng nút **“Bỏ quà để chọn lại”** và lời phụ ngay cạnh: “Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.” Không gọi thao tác này là “Đổi quà”/“Sửa” hoặc ngụ ý giữ chỗ quà cũ cho tới khi đổi thành công. Dòng nhiều chiếc phải phân biệt “Bỏ 1 chiếc để chọn lại” (giảm một) với “Bỏ toàn bộ {Q} chiếc”, không âm thầm xóa cả dòng khi khách chỉ muốn bỏ một.
+| Trạng thái | Phản hồi bắt buộc |
+|---|---|
+| Chưa thêm | Chip/phiên bản có thể được đánh dấu đang xem nhưng có dòng “Chưa thêm vào đơn”; không mang nhãn thành công, không tăng số quà trong đơn. Nút nhận vẫn dễ thấy khi được phép nhận. |
+| Đang thêm | Hiện trạng thái chờ, khóa thao tác xung đột; giữ số lượng đã lưu gần nhất, không tăng lạc quan. |
+| Đã thêm | Chỉ sau xác nhận lưu hoặc readback xác định thành công mới đổi tổng kết/số lượng và báo “Đã thêm vào đơn” kèm món/phiên bản. Nếu quote còn refresh, đặt hàng vẫn khóa theo DATA-03. |
+
+Kết quả chưa rõ không được gọi là thành công hoặc thất bại chắc chắn: hiển thị đang kiểm tra và readback theo hợp đồng bên dưới. Lỗi giữ ngữ cảnh để thử lại sau khi kết quả đã xác định. Phiên bản đang xem chưa nhận không được âm thầm xóa dấu hiệu khi thu gọn/quay lại thanh toán; ở vùng thanh toán phải còn thông báo ngắn, không chặn, ví dụ “Phiên bản {label} chưa được thêm. Đơn chỉ gồm quà đã lưu.” Thông báo không phải lỗi form hoặc bước xác nhận mới. Lần submit chủ động sau nhắc vẫn được tiếp tục với quà thực sự đã lưu nếu các kiểm tra khác đạt; không tự lưu chip, không thêm popup thứ ba.
+
+Quà đã chọn có ảnh nhỏ, tên, phiên bản, số lượng khi cần và thao tác bỏ/chọn lại rõ nghĩa trong phần quản lý mở rộng theo UI-06. Giảm số lượng vẫn khả dụng khi chương trình cho nhận nhiều chiếc cùng mẫu và tập lựa chọn sau giảm hợp lệ.
+
+**Hợp đồng v1: bỏ rồi chọn lại, không đổi trực tiếp.** “Xem quà đã chọn” mở phần quản lý: các quà đã lưu, thao tác bỏ/chọn lại và đường xem lựa chọn khác; không ghi dữ liệu. Với dòng một chiếc, dùng nút **“Bỏ quà để chọn lại”** và lời phụ ngay cạnh, thấy trước khi bấm: “Quà cũ sẽ được bỏ trước. Món chọn lại tùy tình trạng còn hàng.” Cảnh báo và nút dài nằm trong phần quản lý mở rộng, không trải cạnh mọi món khi thu gọn. Không gọi thao tác này là “Đổi quà”/“Sửa” hoặc ngụ ý giữ chỗ quà cũ cho tới khi đổi thành công. Dòng nhiều chiếc phải phân biệt “Bỏ 1 chiếc để chọn lại” (giảm một) với “Bỏ toàn bộ {Q} chiếc”, không âm thầm xóa cả dòng khi khách chỉ muốn bỏ một.
+
+**UX-03 — Xem trước khi bỏ.** Dù đã đủ suất, trong phần mở rộng khách vẫn mở thẻ, xem mẫu và phiên bản khác được; chỉ thao tác nhận thêm bị khóa với lý do đúng. Xem/chọn chip không mutation, không giữ chỗ, không nới entitlement/stock. Sau bỏ thành công, báo cụ thể món/số lượng đã bỏ, ví dụ “Đã bỏ quà cũ khỏi đơn.” Chỉ mời chọn lại nếu dữ liệu mới còn quyền/lựa chọn. Nếu nhận thay thế bị từ chối và đã xác định không ghi, nói rõ món mới chưa được thêm và số suất thực tế chưa chọn; không chỉ báo lỗi chung, không tự phục hồi quà cũ. Mất phản hồi phải đọc lại trước khi đưa kết luận này.
 
 | Thao tác/kết quả | Lựa chọn được giữ |
 |---|---|
@@ -113,17 +127,21 @@ Không thêm transaction đổi nhiều dòng, API swap hoặc cơ chế rollbac
 
 ### UI-05 — Hình thức và thông báo
 
-Dùng nâu–kem hiện có, viền mảnh, bo nhẹ và ít bóng; tham khảo `purchase-panel.tsx` thay vì tạo design system mới. Bình thường chỉ hiện “Đã chọn X/Y quà”; điều kiện và mốc mua thêm ở mức phụ. Không trải số tồn kho cùng nút nhận cho mọi biến thể trên toàn trang.
+Dùng nâu–kem hiện có, viền mảnh, bo nhẹ và ít bóng; tham khảo `purchase-panel.tsx` thay vì tạo design system mới. Bình thường chỉ hiện “Đã thêm X/Y quà” theo số đã lưu; điều kiện và mốc mua thêm ở mức phụ. Không trải số tồn kho cùng nút nhận cho mọi biến thể trên toàn trang.
 
 Nút không khả dụng có lý do đúng: đã hết, đã chọn mẫu này, đã đủ quà hoặc đang lưu. Trạng thái chọn có dấu tích/nhãn, không chỉ màu. Không tự cuộn hoặc tự đóng ngay sau món cuối khiến khách mất vị trí.
 
+Phản hồi lưu/bỏ thành công phải nhìn thấy và được công nghệ hỗ trợ nhận biết mà không chuyển focus khỏi thao tác. Có thể dùng vùng `role="status"` tồn tại trước cập nhật, với nội dung đủ món/số lượng và `aria-atomic="true"`; không đánh dấu cả picker làm live region hoặc đọc lại toàn bộ danh sách mỗi lần. Nếu control cũ bị gỡ, giữ focus ở điểm hợp lý trong cùng khu vực, không nhảy sang nút đặt hàng. [W3C ARIA22](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA22) là kỹ thuật tham khảo, không bắt buộc một cách viết markup duy nhất. Nghiệm thu có kiểm tra screen reader thủ công; axe/DOM assertions không chứng minh lời đọc thực tế.
+
 ### UI-06 — Lượng thông tin và bố cục đối chiếu
+
+**UX-04 — Hai vai trò:** danh sách đơn cho khách kiểm tra những món sẽ nhận, bao gồm dòng quà; khu vực quà dùng chọn/quản lý. Khi khách chủ động thu gọn, hoặc vào checkout với quà đã đủ và hợp lệ, khối quà chỉ cần trạng thái số lượng ngắn và nút mở chi tiết, ví dụ “Đã thêm đủ 2 quà vào đơn — Xem lựa chọn quà”. Không render lại ảnh/tên/phiên bản/số lượng và nút bỏ của từng dòng trong khối thu gọn. Mở chi tiết mới hiện quản lý và duyệt lựa chọn khác theo UI-04; “Xem” không chỉ lặp nội dung đang hiện. Không xóa dòng quà khỏi danh sách đơn và không tự thu gọn ngay sau khi nhận món cuối. Trạng thái chưa thêm, chưa rõ kết quả hoặc cần sửa vẫn phải có thông báo ngắn khi thu gọn; không dùng nhãn “đủ” cho quà lỗi/thiếu lựa chọn.
 
 | Trạng thái | Nội dung chính hiển thị | Hành động chính của khu vực quà |
 |---|---|---|
 | Chưa mở, còn lựa chọn hợp lệ | “Quà dành cho bạn”, một dòng số còn có thể chọn; không dàn điều kiện hoặc biến thể | “Chọn quà ngay” |
-| Đang chọn | Một dòng tiến độ; tổng kết quà đã chọn nếu có; thẻ ảnh + tên. Chỉ mẫu đang mở có phiên bản và nút nhận | “Nhận quà này” ở mẫu đang mở |
-| Đã chọn đủ, hợp lệ | Tổng kết ngắn với ảnh nhỏ, tên, phiên bản, số lượng; không còn lời mời nhận thêm | “Xem quà đã chọn”; nút bỏ/chọn lại tại từng dòng theo UI-04 |
+| Đang chọn | Một dòng tiến độ theo số đã lưu; tổng kết quà đã thêm nếu có; thẻ ảnh + tên. Chỉ mẫu đang mở có phiên bản và trạng thái chưa thêm/đang thêm/đã thêm | “Nhận quà này” ở mẫu đang mở khi hợp lệ; checkout có đường quay lại theo FLOW-02 |
+| Đã chọn đủ, hợp lệ | Thu gọn: số quà đã thêm và nút mở, không lặp từng món. Đang mở: giữ phần quản lý, không tự đóng sau món cuối | “Xem quà đã chọn”/“Xem lựa chọn quà” mở quản lý, xem mẫu khác; bỏ/chọn lại chỉ trong phần mở rộng |
 | Có phần không thể cấp | Tổng kết nếu có, số còn chọn được và thông báo trung tính cho phần không thể cấp | Chỉ “Chọn quà ngay” nếu còn lựa chọn; nếu không thì chỉ xem/bỏ quà đã chọn |
 | Quà đã chọn mất hiệu lực | Chỉ rõ dòng cần bỏ/chọn lại; thông báo đặt hàng đang tạm khóa; form nhận hàng vẫn giữ | Bỏ dòng lỗi, sau đó chọn lại nếu còn quyền/lựa chọn |
 
@@ -135,7 +153,7 @@ Mẫu sắp xếp để duyệt trong spec (không phải ảnh giao diện đã
 | Desktop checkout, mẫu 1440px | Giữ form ở cột hiện có; trong cột danh sách đơn: hàng mua/quà trong đơn → khối quà → tổng kết tiền. Nếu cột hẹp, thẻ quà một cột; không ép hai cột hoặc thêm bản sao picker bên form. |
 | Cart | Danh sách hàng mua → khối quà trong cùng cột nội dung; aside chỉ giữ phần tổng kết hiện có. |
 
-Điều kiện chương trình nằm trong phần phụ có thể mở rộng; quy tắc đang trực tiếp giới hạn thao tác phải hiện cạnh lựa chọn liên quan. Gợi ý mua thêm nằm ở khu vực riêng, không chèn giữa các thẻ quà. Quà có nhãn “Quà tặng”, không dùng cách hiển thị giá khuyến mãi/nút mua làm khách tưởng phải trả thêm tiền. Mỗi vùng đang thao tác chỉ có một hành động nhận quà nổi bật. Khi implementation, đối chiếu ảnh chụp mobile/desktop với bảng này và AC-24; không thêm yêu cầu một bộ thiết kế độ chi tiết cao hoặc duyệt từng pixel.
+Điều kiện chương trình nằm trong phần phụ có thể mở rộng; quy tắc đang trực tiếp giới hạn thao tác phải hiện cạnh lựa chọn liên quan. Gợi ý mua thêm nằm ở khu vực riêng, không chèn giữa các thẻ quà. Quà có nhãn “Quà tặng”, không dùng cách hiển thị giá khuyến mãi/nút mua làm khách tưởng phải trả thêm tiền. Mỗi vùng đang thao tác chỉ có một hành động nhận quà nổi bật. Khi implementation, đối chiếu ảnh chụp mobile/desktop với bảng này và AC-24/AC-28; không thêm yêu cầu một bộ thiết kế độ chi tiết cao hoặc duyệt từng pixel.
 
 ## 5. Popup nhắc một lần và lần đặt hàng tiếp theo
 
@@ -156,6 +174,10 @@ Nội dung bình thường: “Bạn còn {N} món quà chưa chọn. Bạn có 
 - **Chọn quà ngay:** đóng popup, mở bộ chọn tại chỗ, đưa focus tới khu vực quà; không gửi đơn, không xóa dữ liệu form.
 - **Vẫn đặt hàng:** là hành động đặt hàng thứ hai; tiếp tục bằng chính luồng submit của form với dữ liệu và quote đang hiển thị. Không hiện lại popup hoặc thêm checkbox/xác nhận thứ ba.
 - **Đóng/X/Escape:** chỉ đóng, không gửi đơn và không xác nhận từ bỏ. Trả focus về nút đã mở popup. Lượt đã được nhắc; nếu khách sau đó chủ động bấm đặt hàng, tiếp tục không popup.
+
+**UX-02 — Có đường quay lại thanh toán.** Khi bộ chọn mở tại checkout, kể cả mở từ popup, có thao tác phụ dễ thấy như “Quay lại thanh toán”. Đây là điều hướng trong trang tới vùng tổng kết thanh toán, không phải submit: không ghi/xóa lựa chọn, không cấp claim, không tạo đơn, không reset cờ đã nhắc và không tự thu gọn picker. Được quay lại khi đã nhận đủ, mới nhận một phần hoặc chưa nhận gì. Pending/refresh/kết quả ghi chưa rõ không khóa điều hướng này nhưng vẫn khóa mọi lối đặt hàng; kết quả trả về muộn không được lấy focus khỏi vị trí khách đã chuyển tới.
+
+Thao tác quay lại chuyển cả focus và vị trí nhìn tới một điểm ổn định có tên trong vùng tổng kết, ưu tiên tiêu đề “Tổng kết thanh toán” hoặc tương đương, không chỉ scroll trong khi bàn phím còn ở picker và không focus thẳng vào nút submit. Có thể dùng tiêu đề với `tabIndex={-1}`; tên nút/markup cụ thể không phải điều kiện cứng. Thông báo phiên bản chưa thêm ở UI-04 vẫn nhìn thấy tại đây. Lần gửi đơn tiếp theo vẫn cần hành động chủ động và quote hợp lệ; không bắt nhận đủ quà. Đường này khác với X/Escape trả focus về nút mở popup. [WAI-ARIA dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) hỗ trợ lựa chọn focus theo bước hợp lý tiếp theo, không quy định phải có nút mang đúng tên ví dụ.
 
 Nếu toàn bộ phần chưa nhận không thể cấp, dùng tiêu đề **“Một phần quà chưa thể nhận”** và nội dung mặc định “Hiện chưa có lựa chọn phù hợp cho {U} suất quà còn lại. Bạn vẫn có thể tiếp tục đặt hàng.” Không hiện CTA nhận thêm khi không còn lựa chọn. Chỉ thay bằng thông báo thiếu hàng cụ thể khi có dữ liệu chứng minh; không suy nguyên nhân từ tên trường đếm. Nếu vừa còn lựa chọn vừa có phần không thể cấp, nêu riêng “Bạn còn có thể chọn {A} món quà” và câu trung tính cho {U}; chỉ mời chọn phần có thể cấp. Cùng một popup, không mở thêm popup theo từng nguyên nhân/campaign. Việc tiếp tục vẫn đi qua luồng chuẩn; audit không ghi phần không thể cấp thành khách tự bỏ qua dù còn lựa chọn.
 
@@ -256,12 +278,20 @@ Các abuse case bắt buộc: giả `nonclaimAcknowledged`, đổi giá/count/ca
 | AC-22 | Đã đủ 1 suất S: chỉ xem/hủy giữ S, không mutation; bỏ thất bại có xác nhận không ghi giữ S; bỏ thành công rồi nhận M hoặc mẫu khác thành công chỉ giữ lựa chọn mới. Bỏ thành công rồi hủy/nhận mới bị từ chối để suất trống, không tự phục hồi S; quà khác không mất. Mất phản hồi phải đọc lại server trước khi cho thao tác tiếp. Dòng nhiều chiếc dùng đúng giảm một hoặc bỏ toàn bộ theo nhãn. |
 | AC-23 | Entitled 2, chỉ 1 mẫu còn 10 chiếc, cấm trùng: trước chọn chỉ có thể chọn 1, suất còn lại có copy trung tính; sau chọn 1 thì số còn có thể chọn là 0, giữ tiến độ 1/2 và không hiện CTA nhận thêm/“hết hàng”/“đã chọn đủ”. Popup một lần dùng copy phần chưa thể nhận; không ghi suất không thể cấp thành tự bỏ dù còn lựa chọn. Kiểm tra thêm thiếu stock thật và nhiều campaign dùng chung stock. |
 | AC-24 | Ảnh chụp implementation mobile 390px và desktop 1440px đối chiếu UI-06 ở các trạng thái chưa mở, đang chọn, đủ, thiếu lựa chọn và cần sửa. Thứ tự thông tin/CTA đúng, phần phụ không lấn nội dung chính; chỉ một picker hoạt động, không trùng ID hoặc render lại danh sách hàng mua trong picker. Không coi ảnh mẫu trong spec là bằng chứng runtime. |
+| AC-25 | UX-01: form hợp lệ → popup → chọn quà ngay → chỉ bấm size M → quay lại thanh toán: không mutation, số quà đã lưu không tăng, không nhãn thành công; “chưa thêm” nhìn thấy cả ở thẻ và vùng thanh toán. Lần submit chủ động tiếp theo không nhắc lại và chỉ dùng quà đã lưu, không tự thêm M. Nhánh bấm nhận: thấy pending, count chưa tăng; xác nhận lưu/readback mới cập nhật count/tổng kết và thông báo thành công, focus không bị cướp. Kiểm tra mất phản hồi không báo thành công sớm và quote refresh vẫn khóa submit. |
+| AC-26 | UX-02: điền đầy đủ cả note → đặt hàng → popup → mở picker → nhận quà và chờ quote mới → quay lại thanh toán: dữ liệu nguyên, focus ở điểm có tên trong vùng thanh toán, chưa tạo order/reservation/POS/purchase; lần đặt hàng chủ động tiếp theo đi qua pipeline chuẩn một lần, không nhắc lại. Chạy cả nhận đủ và nhận một phần, mobile/desktop và bàn phím. Khi quay lại lúc pending/uncertain, vẫn khóa submit tới khi readback/quote hợp lệ; không tự submit hay lấy lại focus khi response tới. |
+| AC-27 | UX-03: đã đủ suất vẫn xem được mẫu/size khác, nhưng không nhận thêm và không mutation khi xem/hủy. Cảnh báo bỏ trước nhìn thấy cạnh hành động trong phần mở rộng trước khi bấm; sau bỏ thành công có thông báo món/số lượng đã bỏ. Nhận mới bị từ chối đã xác định không ghi: thông báo món mới chưa thêm, count và suất trống đúng server, không tự khôi phục cũ; các quà khác nguyên vẹn. Bao phủ giảm một/bỏ toàn bộ và mất phản hồi bằng readback. |
+| AC-28 | UX-04: vào checkout với quà đủ hợp lệ hoặc chủ động thu gọn thấy count ngắn + nút mở, không danh sách ảnh/tên/phiên bản và nút bỏ lặp trong khối thu gọn; dòng quà trong danh sách đơn vẫn còn. Mở chi tiết có quản lý/bỏ/chọn lại và duyệt mẫu khác thực sự hữu ích. Nhận món cuối không tự thu gọn/cuộn; pending/chưa thêm/quà lỗi không bị nhãn đủ che đi. Chụp cả mở/thu gọn ở 390/1440px, đối chiếu cùng AC-24. |
+
+AC-25..AC-28 là phần nghiệm thu mới sau review `87b7cd5`, không được suy là đã có chỉ vì ma trận AC-01..AC-24 đầy đủ. Cần duyệt phần spec bổ sung này cùng plan trước task triển khai liên quan.
 
 Unit/domain: kiểm tra state machine, projection quyền nhận, parsing/claim, proof và các chuyển trạng thái. Tách logic điều phối đủ nhỏ để test bằng `node:test`, không mock thay engine quyền nhận. Tái dùng fixture thiếu mẫu hợp lệ trong `tests/domain/cart-gift-model.test.ts`; cập nhật test `GIFT_SELECTION_INVALID` ở `tests/domain/checkout-benefit-ui.test.ts` cho lối sửa tại chỗ nhưng vẫn giữ coverage chặn submit và các lỗi không liên quan.
 
 Integration/database: kiểm tra snapshot/audit, reservation, lỗi quote và chống đơn trùng bằng môi trường test riêng. Update bài test mô tả checkbox sang hành động sau nhắc, nhưng giữ coverage bảo mật của strict parsing/proof. Tham khảo `tests/domain/guest-checkout-public-actions.test.ts`.
 
 Browser: kiểm tra DOM thực, trạng thái modal, bàn phím/focus, responsive, nội dung form và network của hai lần bấm. AC-21 phải đi qua nhánh route/page sau refresh, không chỉ mock boolean lỗi trong picker; AC-22 phải kiểm tra lựa chọn đã lưu sau từng kết quả. Mã nguồn có chuỗi “popup” hay test snapshot HTML không thay thế được kiểm tra first-click không gửi request tạo đơn và second-click đi hết luồng. Chỉ chạy tạo đơn/POS với test fixture hoặc sandbox được cho phép, không dùng checkout production để thử.
+
+C2 kiểm tra sớm trạng thái thẻ/thông báo của AC-25, xem trước và phản hồi AC-27, quản lý mở/thu gọn AC-28. Hành trình trọn vẹn popup → picker → thanh toán ở AC-25/AC-26 được nối tại T08/T10 và nghiệm thu lại T12; không coi các bài test modal/picker riêng lẻ là thay thế. Ghi kết quả screen reader/browser thực tế cho status và focus; phần chưa có công cụ/người kiểm tra phải ghi pending, không suy pass từ axe.
 
 ## 8. Stack, lệnh, cấu trúc và quy ước code
 
@@ -312,7 +342,7 @@ export type CheckoutGiftLineView = Readonly<{
 
 Giữ TypeScript readonly/discriminated states khi hữu ích, naming đang có, semantic button/form và framework escaping. Không thêm thư viện modal/state management chỉ cho thay đổi này. API framework khi build phải kiểm tra theo đúng phiên bản và tài liệu bundled/official, không sao chép ví dụ phiên bản khác.
 
-Tham khảo chính thức đã tra khi soạn spec: [WAI-ARIA modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) cho focus/keyboard/nền inert; [Next.js Forms](https://nextjs.org/docs/app/guides/forms) cho form, validation và pending. Bản sửa đã đối chiếu thêm [React: Preserving and Resetting State](https://react.dev/learn/preserving-and-resetting-state): tháo component khỏi cây render làm mất state, là lý do DATA-03 phải giữ owner dữ liệu ổn định. Đây không phải bằng chứng đã chạy component trên Next `16.3.3`.
+Tham khảo chính thức đã tra khi soạn spec: [WAI-ARIA modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/) cho focus/keyboard/nền inert; [Next.js Forms](https://nextjs.org/docs/app/guides/forms) cho form, validation và pending. Bản sửa đã đối chiếu thêm [React: Preserving and Resetting State](https://react.dev/learn/preserving-and-resetting-state): tháo component khỏi cây render làm mất state, là lý do DATA-03 phải giữ owner dữ liệu ổn định. Đây không phải bằng chứng đã chạy component trên Next `16.3.3`. Bổ sung UX tại PR #174 đã đọc lại WAI-ARIA dialog và [W3C ARIA22 — status messages](https://www.w3.org/WAI/WCAG21/Techniques/aria/ARIA22); không coi hướng dẫn này là bắt buộc tên nút hoặc bố cục cụ thể.
 
 ## 9. Ranh giới, rủi ro và quality gate
 
@@ -322,8 +352,8 @@ Tham khảo chính thức đã tra khi soạn spec: [WAI-ARIA modal dialog patte
 
 **Không làm:** tự chọn/thay/xóa quà, default acknowledgement thành true, bỏ test bảo mật để pass, force-push main, commit secret/PII, tạo đơn thử production, hoặc gọi bản đặc tả là tính năng đã hoàn thành.
 
-Rủi ro chính là trộn “đã nhắc” với “đã đồng ý quote”, mất form khi quà lỗi, kỳ vọng sai khi bỏ/chọn lại, gọi thiếu mẫu là hết hàng, bộ chọn bị khóa theo upsell, mount trùng ở hai breakpoint và hai đường submit tạo đơn trùng. Các hợp đồng UI-02/UI-04/DATA-03 và AC-05..AC-24 là chốt kiểm soát. Không yêu cầu migration để ghi nhớ popup hoặc sửa các khoảng trống này; mọi nhu cầu migration phát hiện khi build phải quay lại review.
+Rủi ro chính là trộn “đã nhắc” với “đã đồng ý quote”, mất form khi quà lỗi, kỳ vọng sai khi bỏ/chọn lại, gọi thiếu mẫu là hết hàng, bộ chọn bị khóa theo upsell, mount trùng ở hai breakpoint và hai đường submit tạo đơn trùng. Các hợp đồng UI-02/UI-04/DATA-03 và AC-05..AC-24 là chốt kiểm soát. AC-25..AC-28 bổ sung rủi ro nhầm chip là đã lưu, thiếu đường quay lại/focus và lặp thông tin khi quản lý quà. Không yêu cầu migration để ghi nhớ popup hoặc sửa các khoảng trống này; mọi nhu cầu migration phát hiện khi build phải quay lại review.
 
-Definition of Done cho implementation: AC-01..AC-24 đạt; unit/integration phù hợp, lint/typecheck/build đạt; kiểm tra browser và đường lỗi có bằng chứng; không hồi quy quote/stock/snapshot; cập nhật tài liệu cũ liên quan; review security và rollout/rollback của thay đổi checkout trước release. Không coi một bộ test xanh là đủ khi chưa xác minh runtime.
+Definition of Done cho implementation: AC-01..AC-28 đạt; unit/integration phù hợp, lint/typecheck/build đạt; kiểm tra browser và đường lỗi có bằng chứng; không hồi quy quote/stock/snapshot; cập nhật tài liệu cũ liên quan; review security và rollout/rollback của thay đổi checkout trước release. Không coi một bộ test xanh là đủ khi chưa xác minh runtime.
 
-Gate của PR spec này: tài liệu bao phủ mục tiêu, trạng thái/luồng hai lần bấm, nguồn dữ liệu, commands, cấu trúc, style, test, boundaries và những điểm cần review; diff chỉ có tài liệu; người phụ trách duyệt spec trước `/plan` hoặc `/build`. Không tự chuyển sang implementation, merge hoặc deploy trong PR này.
+Gate của PR #174: spec bổ sung UX và plan/checklist thống nhất, có task/kiểm chứng cho AC-25..AC-28, giữ đủ AC-01..AC-24; diff chỉ có tài liệu. Người phụ trách duyệt phần spec bổ sung và plan trước `/build`; T13 chỉ ghi kết quả thực hiện, không phải thời điểm mới quyết định UX. Không tự chuyển sang implementation, merge hoặc deploy trong PR này.
