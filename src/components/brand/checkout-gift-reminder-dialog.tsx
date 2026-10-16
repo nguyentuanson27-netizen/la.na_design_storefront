@@ -21,6 +21,10 @@ export function CheckoutGiftReminderDialog({ open, disabled, description, canCho
       dialog.current?.showModal(); heading.current?.focus(); onShown();
     } else if (!open && dialog.current?.open) dialog.current.close();
   }, [open, onShown]);
+  useEffect(() => {
+    const element = dialog.current;
+    return () => { if (element?.open) element.close(); };
+  }, []);
   return <dialog ref={dialog} aria-labelledby={titleId} aria-describedby={descriptionId} onCancel={(e) => { e.preventDefault(); onClose(); }} className="m-auto max-h-[85dvh] w-[calc(100%-2rem)] max-w-lg overflow-y-auto border border-black/25 bg-[#fcf8f6] p-5 text-[#30251f] backdrop:bg-black/45 sm:p-7" onKeyDown={(event) => { if (event.key === "Enter" && (event.repeat || event.target === heading.current)) event.preventDefault(); }}>
     <h2 id={titleId} ref={heading} tabIndex={-1} className="font-display text-2xl">{canChoose ? "Bạn còn quà chưa chọn" : "Một phần quà chưa thể nhận"}</h2>
     <p id={descriptionId} className="mt-4 text-sm leading-6">{description} Bạn vẫn có thể tiếp tục đặt hàng. Quà đã lưu được giữ nguyên.</p>

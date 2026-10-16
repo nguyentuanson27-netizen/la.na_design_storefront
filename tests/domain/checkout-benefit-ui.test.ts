@@ -299,7 +299,10 @@ test("cart: a legacy-only step at the same total is not a benefit, so the link s
 
 test("gift repair retains removals without issuing proof or a submit-capable quote", () => {
   const giftPicker = { campaigns: [], selections: [{ campaignId: "gone", variantId: "gift", campaignRevision: 1, quantity: 1, label: "Quà cũ", imageUrl: null }], invalid: true, stackConflict: false };
-  const model = buildBenefitUnavailableCheckoutViewModel({ kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker });
+  const model = buildBenefitUnavailableCheckoutViewModel({ kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker }, [cartLine]);
+  assert.equal(model.lines[0]!.quantity, 3);
+  assert.equal(model.lines[0]!.lineTotalText, "Chờ tính lại");
+  assert.equal(model.lines[0]!.unitPriceText, null);
   assert.equal(model.giftPicker, giftPicker);
   assert.equal(model.quoteProof, null);
   assert.equal(model.totals, null);

@@ -28,7 +28,10 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const draftNotice = draft && !draftSaved ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const present = entitled > 0 || model.selections.length > 0;
-  if (!present) return null;
+  if (!present) return message ? <div className="my-4 text-sm">
+    <p role="status" aria-live="polite">{pending ? "Đang kiểm tra và làm mới báo giá…" : message}</p>
+    {uncertain ? <button type="button" className="min-h-11 underline" disabled={pending} onClick={retryRead}>Kiểm tra lại quà trong đơn</button> : null}
+  </div> : null;
   const busy = pending || uncertain;
   return <section id="cart-gifts" tabIndex={-1} className="my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" aria-label="Quà tặng trong giỏ" aria-busy={busy}>
     <h2 className="font-display text-2xl">Quà dành cho bạn</h2>
@@ -68,7 +71,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             if (product.options.length === 1) setDraft({campaignId: campaign.campaignId, variantId: product.options[0]!.variantId, label: `${product.name} — ${product.options[0]!.label}`});
           }}>
             <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
-            {option ? <p className="mt-3 text-sm">{chosen > 0 ? "Đã thêm vào đơn" : pending ? "Đang thêm…" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
+            {option ? <p className="mt-3 text-sm">{pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {campaign.selected >= campaign.entitled ? <p className="mt-2 text-xs">Đã đủ suất. Bạn vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại.</p> : null}
             <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveDisabled} onClick={() => option && change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)}>Nhận quà này</button>
           </GiftProductCard>;

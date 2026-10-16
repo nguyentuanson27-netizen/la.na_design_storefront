@@ -11,7 +11,7 @@
  *  - `LEGACY`      the gate is OFF or nothing applies: the page renders the ordinary quote, untouched.
  *  - `UNAVAILABLE` the benefits cannot be offered right now (cannot price, a stored gift choice no
  *                  longer holds, the POS shop has no line-level pricing evidence, or the proof does
- *                  not fit its envelope). The buyer is sent back to the cart; nothing is guessed.
+ *                  not fit its envelope). Gift-choice errors retain the picker for inline repair; nothing is guessed.
  *  - `BENEFIT`     the facts to show, the proof that binds them, and whether the buyer still owes an
  *                  explicit non-claim acknowledgement (FR-06).
  */
@@ -40,7 +40,7 @@ export type BenefitCheckoutRender = GiftDisplay & (
       kind: "BENEFIT";
       facts: BenefitQuoteProofFacts;
       proof: string;
-      /** Identifies this exact quote; the form keys the acknowledgement on it so a new quote starts unchecked. */
+      /** Identifies this exact quote; display identity only; reminder state never authorizes this quote. */
       digest: string;
       needsAcknowledgement: boolean;
       giftLabels: ReadonlyMap<string, string>;

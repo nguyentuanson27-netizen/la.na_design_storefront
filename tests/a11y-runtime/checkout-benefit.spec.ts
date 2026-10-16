@@ -164,9 +164,11 @@ async function expectReceiving(page: import("@playwright/test").Page) {
   await expect(page.getByLabel("Ghi chú", {exact:false})).toHaveValue("Giữ nguyên ghi chú");
 }
 async function refreshQuote(page: import("@playwright/test").Page) {
+  const before=await page.locator("form").getAttribute("data-checkout-render");
   const response = page.waitForResponse((r) => r.url().includes("/checkout?") && r.request().headers()["rsc"] === "1");
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
   await response;
+  await expect.poll(async()=> (await page.locator("form").getAttribute("data-checkout-render")) !== before).toBe(true);
 }
 
 test("AC06/08/10/19: validation precedes one reminder; Escape restores focus and creates no order", async ({ page }) => {
@@ -415,7 +417,7 @@ test("AC20/24/28: one gift area, responsive states and useful expanded/collapsed
   }
   for(const width of [390,1440]) {
     await page.setViewportSize({width,height:900});
-    await chooseGift(1);
+    await prisma.cartGiftSelection.deleteMany({where:{cartId}});
     await refreshQuote(page);
     const toggle=picker.locator("button[aria-controls]");
     if(await toggle.getAttribute("aria-expanded")==="false") await toggle.click();
@@ -449,7 +451,8 @@ test("AC20/24/28: one gift area, responsive states and useful expanded/collapsed
   }
   await page.setViewportSize({width:390,height:900});
   await page.evaluate(()=>{document.documentElement.style.fontSize="200%";});
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  const overflow = await page.evaluate(() => [...document.querySelectorAll("body *")].map(el => { const r=el.getBoundingClientRect(); return {tag:el.tagName,cls:String(el.className).slice(0,180),right:Math.round(r.right),width:Math.round(r.width)}; }).filter(r=>r.width>0 && r.right>window.innerWidth+1).sort((a,b)=>b.right-a.right).slice(0,8));
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),JSON.stringify(overflow)).toBe(true);
   await page.evaluate(()=>{document.documentElement.style.fontSize="";});
   expect((await new AxeBuilder({page}).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
@@ -471,5 +474,47 @@ test("AC16/21: gift invalidated at submit refreshes into inline repair rather th
   await picker.getByRole("button",{name:/^Bỏ quà để chọn lại/}).click();
   await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeEnabled();
   await expectReceiving(page);
+  expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
+});
+
+test("AC21: several invalid gift rows keep the form and proof closed until the last explicit removal", async({page}) => {
+  const now=new Date();
+  const other=await prisma.productMirror.create({data:{pancakeShopId:SHOP,pancakeProductId:`${PREFIX}other`,slug:`${PREFIX}other`,name:"Quà thứ hai",syncedAt:now,variants:{create:{pancakeVariationId:`${PREFIX}other`,color:"Kem",size:"S",pancakeRetailPrice:100000,pancakeRetailPriceAfterDiscount:100000,syncedAt:now,warehouseStocks:{create:{pancakeWarehouseId:"gq19-wh",quantity:10,syncedAt:now}}}}},include:{variants:true}});
+  await prisma.giftOption.create({data:{campaignId,variantId:other.variants[0]!.id}});
+  await chooseGift(1);
+  await prisma.cartGiftSelection.create({data:{cartId,campaignId,variantId:other.variants[0]!.id,campaignRevision:1,quantity:1}});
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/checkout`);
+  await fillReceiving(page);
+  await prisma.giftQuantityCampaign.update({where:{id:campaignId},data:{isEnabled:false}});
+  await refreshQuote(page);
+  const picker=page.getByRole("region",{name:"Quà tặng trong giỏ"});
+  await picker.getByRole("button",{name:"Kiểm tra quà đã chọn",exact:true}).click();
+  const remove=picker.getByRole("button",{name:/^Bỏ quà để chọn lại/});
+  await expect(remove).toHaveCount(2);
+  await remove.first().click();
+  await expect.poll(()=>prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeDisabled();
+  await expectReceiving(page);
+  await remove.first().click();
+  await expect(page.getByRole("button",{name:"Đặt hàng COD",exact:true})).toBeEnabled();
+  await expectReceiving(page);
+  await expect(page.getByRole("status").filter({hasText:/Đã bỏ 1 quà/})).toBeVisible();
+  expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(0);
+});
+
+test("AC12/19: browser back while modal is open releases the modal and a return starts a new reminder visit", async({page}) => {
+  await startServer(3350,true);
+  await page.goto(`${baseUrl}/cart`);
+  await page.getByRole("link",{name:"Tiến hành đặt hàng",exact:true}).click();
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/cart$/);
+  await page.getByRole("link",{name:"Tiến hành đặt hàng",exact:true}).click();
+  await fillReceiving(page);
+  await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
+  await expect(page.getByRole("dialog")).toBeVisible();
   expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
 });

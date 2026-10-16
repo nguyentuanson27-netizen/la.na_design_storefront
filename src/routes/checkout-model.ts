@@ -89,8 +89,8 @@ export type CheckoutGiftLineView = Readonly<{
  * GQ19 -- what a gift or quantity-tier checkout shows beyond the plain order lines.
  *
  * Present exactly when the page renders a benefit quote. `digest` identifies that exact quote: the
- * acknowledgement the buyer ticks is keyed on it, so a refreshed quote always starts unticked
- * (FR-06: an acknowledgement is never carried over to a quote the buyer has not seen).
+ * proof and explicit submit intent are bound to it; UI reminder state never supplies consent
+ * for a refreshed quote (FR-06).
  */
 export type CheckoutBenefitView = Readonly<{
   digest: string;
@@ -267,10 +267,18 @@ const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAI
 /** The page for a cart whose benefits cannot be offered: back to the cart, with the specific reason. */
 export function buildBenefitUnavailableCheckoutViewModel(
   render: Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>,
+  lines: readonly StorefrontCartLine[] = [],
 ): CheckoutViewModel {
   return Object.freeze({
     state: "unquotable",
-    lines: Object.freeze([]),
+    // Keep physical paid items visible without claiming an unproven price/discount allocation.
+    lines: Object.freeze(lines.map((line) => ({
+      lineKey: line.variantId, variantId: line.variantId, productName: line.productName,
+      primaryImage: line.media.primary,
+      optionLabel: [line.color, line.size].filter(Boolean).join(" / ") || "Biến thể",
+      quantity: line.quantity, unitPriceText: null, lineTotalText: "Chờ tính lại",
+      preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
+    }))),
     totals: null,
     quoteProof: null,
     preorderNotice: null,

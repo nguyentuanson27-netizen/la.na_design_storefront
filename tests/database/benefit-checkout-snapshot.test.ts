@@ -394,14 +394,14 @@ test("a gift choice that no longer holds is reported, never swapped: nothing is 
   const row = await prisma.cartGiftSelection.findFirstOrThrow({ where: { cartId } });
   assert.deepEqual([row.variantId, row.quantity], [giftItem.variantId, 2]);
 
-  // Through the submit service this is a cart change the buyer resolves in the cart.
+  // Through the submit service this is a repairable gift change; no order/POS write is allowed.
   const submit = createGuestCheckoutSubmitService({
     snapshot: snapshotService({ proof }),
     orderSubmission: { submit: async () => { throw new Error("must not be reached"); } },
     generatePublicCode: code,
     clock: () => NOW,
   });
-  assert.deepEqual(await submit.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW }), { ok: false, status: "RETRYABLE", reason: "CART_CHANGED" });
+  assert.deepEqual(await submit.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW }), { ok: false, status: "RETRYABLE", reason: "CART_CHANGED", giftRepairRequired: true });
 });
 
 test("a category change that removes the entitlement is reported against the stored gift choice and never swapped", async () => {

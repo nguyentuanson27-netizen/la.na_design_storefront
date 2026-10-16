@@ -56,7 +56,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     const data =
       benefitRender.kind === "BENEFIT"
         ? buildBenefitCheckoutViewModel({ lines, render: benefitRender })
-        : buildBenefitUnavailableCheckoutViewModel(benefitRender);
+        : buildBenefitUnavailableCheckoutViewModel(benefitRender, lines);
     // The funnel and pixel events price one unit per variation, which a split-price or gift order
     // cannot say truthfully, so a benefit checkout reports neither rather than a number that disagrees
     // with the page. (The purchase itself is reported from the order, money paid only -- GQ22.)

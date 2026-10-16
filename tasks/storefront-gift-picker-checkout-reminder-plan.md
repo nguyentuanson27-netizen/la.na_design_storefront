@@ -181,7 +181,7 @@ Trước khi sửa API framework, đọc guide bundled của Next đúng phiên 
 
 ## 7. Hoàn thành và rollback
 
-Plan được duyệt chưa đồng nghĩa T00..T13 đã hoàn thành. Mọi task trong todo còn mở. Khi implementation đạt AC-01..AC-28, tests/lint/typecheck/build và browser có evidence, review không còn Critical/Required, các lỗi CI bắt buộc đã được giải quyết, mới đủ điều kiện đề nghị merge chức năng.
+Plan được duyệt chưa đồng nghĩa T00..T13 đã hoàn thành. Trạng thái từng tiêu chí triển khai và các gate thủ công còn chờ được cập nhật trong todo và evidence của PR #175. Khi implementation đạt AC-01..AC-28, tests/lint/typecheck/build và browser có evidence, review không còn Critical/Required, các lỗi CI bắt buộc đã được giải quyết, mới đủ điều kiện đề nghị merge chức năng.
 
 T13 ghi commit/test results/ảnh và lỗi còn lại vào `docs/verification/storefront-gift-picker-checkout-reminder.md` (file dự kiến, chưa tạo trong PR plan). Cập nhật tham chiếu FR-06/FR-11/GQ19 còn nói checkbox sau khi cutover được kiểm chứng; giữ lịch sử và không đánh dấu feature đã ship chỉ vì spec merge. Quyết định UX phải đã nằm trong spec được duyệt trước implementation; T13 chỉ cập nhật kết quả, không hợp thức hóa UX tự quyết khi code.
 

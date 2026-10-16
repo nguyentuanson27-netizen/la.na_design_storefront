@@ -33,6 +33,8 @@ import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
 
+const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
+
 type GeoError = Readonly<{
   level: "provinces" | "communes";
   message: string;
@@ -98,9 +100,8 @@ const geoFailures = {
 /**
  * GQ19 -- what the form needs to carry a gift / quantity-tier checkout.
  *
- * `digest` identifies the exact quote on screen. The acknowledgement is stored against it, so when a
- * refreshed render brings a different quote the box is unticked by construction -- there is no
- * effect that has to remember to reset it.
+ * `digest` identifies the exact quote on screen. Reminder lifetime uses the separate cart-bound UI
+ * key; acknowledgement is attached only to an explicit submit, never stored with the reminder.
  */
 export type GuestCheckoutBenefit = Readonly<{
   digest: string;
@@ -136,7 +137,7 @@ export function GuestCheckoutForm({
   summarySlot?: ReactNode;
   totalsSlot?: ReactNode;
   preorderSlot?: ReactNode;
-    desktopPreorderSlot?: ReactNode;
+  desktopPreorderSlot?: ReactNode;
 }>) {
   const [submitState, submitAction, isSubmitting] = useActionState(
     submitGuestCheckoutAction,
@@ -410,7 +411,7 @@ export function GuestCheckoutForm({
         : "border-black bg-transparent text-black";
 
   return (
-    <form ref={formRef} action={submitAction} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16" noValidate onSubmit={handleSubmit}>
+    <form ref={formRef} data-checkout-render={quoteRenderId} action={submitAction} className="grid min-w-0 gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.42fr)] lg:gap-x-16" noValidate onSubmit={handleSubmit}>
       {/* Opaque, server-authenticated, and always the token issued by the render currently on
           screen. Editing it cannot change what the buyer is charged: the server recomputes the price
           itself and only asks this token whether that price is the one it already showed. A tampered
@@ -439,7 +440,7 @@ export function GuestCheckoutForm({
         </section>
       ) : null}
 
-      {giftPicker ? <BrandCartGiftPicker model={giftPicker} onBusyChange={onGiftBusyChange} locked={isSubmitting || upsellPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} /> : null}
+      <BrandCartGiftPicker model={giftPicker ?? EMPTY_GIFT_PICKER} onBusyChange={onGiftBusyChange} locked={isSubmitting || upsellPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} />
       {totalsSlot ? <div className="hidden lg:block">{totalsSlot}</div> : null}
       {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
       </aside>
@@ -621,7 +622,7 @@ export function GuestCheckoutForm({
           aside at `lg+`. */}
       <div className="min-w-0 space-y-5">
       <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
-      {unavailableNotice ? <div role="alert"><p>{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending} onClick={() => startQuoteRefresh(() => router.refresh())}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
+      {unavailableNotice ? <div role="alert"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2">{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending} onClick={() => startQuoteRefresh(() => router.refresh())}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
       {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}

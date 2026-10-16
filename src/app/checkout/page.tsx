@@ -37,7 +37,7 @@ function render(data: CheckoutViewModel) {
   const { lines, quoteProof } = data;
   const totals = data.totals ?? { subtotalText: "Chưa thể tính", shippingText: "Chưa thể tính", totalText: "Chờ kiểm tra báo giá" };
   const benefit = data.benefit;
-  const itemCount = lines.reduce((count, line) => count + line.quantity, 0) + (benefit?.giftQuantity ?? 0);
+  const itemCount = lines.reduce((count, line) => count + line.quantity, 0) + (benefit?.giftQuantity ?? data.giftPicker?.selections.reduce((count, row) => count + row.quantity, 0) ?? 0);
 
   const orderLines = (
     <div className="divide-y divide-black/15 border-b border-black/15">
