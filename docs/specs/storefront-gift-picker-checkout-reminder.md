@@ -59,9 +59,11 @@ Phê duyệt PR spec là checkpoint để chốt các mặc định này trướ
 
 ## 4. Giao diện và chọn quà
 
-### UI-01 — Một khu vực quà ngay dưới danh sách sản phẩm
+### UI-01 — Một khu vực quà, vị trí theo bề mặt
 
-Cart: chuyển khu vực quà khỏi aside xuống ngay sau danh sách hàng mua. Checkout: lời nhắc nằm ngay sau vùng danh sách đơn; không để sau địa chỉ/ghi chú hoặc chen giữa các dòng tổng tiền.
+Cart (cập nhật theo phản hồi người dùng 2026-10-17): đặt **bộ chọn quà đang hoạt động trước danh sách hàng mua**, ngay đầu cột nội dung dưới tiêu đề Giỏ hàng, trên cả mobile và desktop. Dòng banner thông báo quà đã đạt cùng liên kết chỉ cuộn `#cart-gifts` không được hiển thị lần hai trên trang Cart: chính bộ chọn phải hiển thị tiến độ và nút mở lựa chọn. Vẫn giữ thông báo ưu đãi giảm giá và tiến độ hướng tới mốc tiếp theo của banner nếu có, giữ một controller/ID `cart-gifts`, không tạo bản sao ở dưới danh sách. Liên kết quà từ mini-cart vẫn có thể điều hướng về bộ chọn trên trang Cart.
+
+Checkout: lời nhắc nằm ngay sau vùng danh sách đơn; không để sau địa chỉ/ghi chú hoặc chen giữa các dòng tổng tiền. Thay đổi vị trí trên Cart không thay đổi hành trình popup và giữ form ở Checkout.
 
 Lời nhắc và bộ chọn mở rộng là cùng một khu vực. Khi danh sách đơn trên mobile thu gọn, lời nhắc vẫn nhìn thấy ngay sau vùng thu gọn đó; không bắt khách mở danh sách mới biết có quà. Trên desktop giữ cấu trúc checkout hiện có, chỉ điều chỉnh vị trí/điểm gắn của khu vực quà.
 
@@ -151,7 +153,7 @@ Mẫu sắp xếp để duyệt trong spec (không phải ảnh giao diện đã
 |---|---|
 | Mobile checkout, mẫu 390px | Vùng danh sách đơn có thể thu gọn → khối quà luôn thấy, bộ chọn mở ngay bên dưới → các phần checkout còn lại. Thẻ ảnh ngang một cột, phiên bản nằm dưới thẻ đang mở; không lặp lại hàng mua trong khối quà. |
 | Desktop checkout, mẫu 1440px | Giữ form ở cột hiện có; trong cột danh sách đơn: hàng mua/quà trong đơn → khối quà → tổng kết tiền. Nếu cột hẹp, thẻ quà một cột; không ép hai cột hoặc thêm bản sao picker bên form. |
-| Cart | Danh sách hàng mua → khối quà trong cùng cột nội dung; aside chỉ giữ phần tổng kết hiện có. |
+| Cart (cập nhật 2026-10-17) | Khối quà tương tác → thông báo ưu đãi khác nếu có → danh sách hàng mua trong cùng cột nội dung; aside chỉ giữ phần tổng kết. Không có thêm banner đạt quà với nút “Chọn quà” trùng lặp. |
 
 Điều kiện chương trình nằm trong phần phụ có thể mở rộng; quy tắc đang trực tiếp giới hạn thao tác phải hiện cạnh lựa chọn liên quan. Gợi ý mua thêm nằm ở khu vực riêng, không chèn giữa các thẻ quà. Quà có nhãn “Quà tặng”, không dùng cách hiển thị giá khuyến mãi/nút mua làm khách tưởng phải trả thêm tiền. Mỗi vùng đang thao tác chỉ có một hành động nhận quà nổi bật. Khi implementation, đối chiếu ảnh chụp mobile/desktop với bảng này và AC-24/AC-28; không thêm yêu cầu một bộ thiết kế độ chi tiết cao hoặc duyệt từng pixel.
 
