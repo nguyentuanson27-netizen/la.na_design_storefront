@@ -257,7 +257,7 @@ Các abuse case bắt buộc: giả `nonclaimAcknowledged`, đổi giá/count/ca
 | ID | Kịch bản và kết quả bắt buộc |
 |---|---|
 | AC-01 | Hàng đang mua không lặp trong picker; paid segments khác đơn giá vẫn nguyên vẹn; quà đã chọn vẫn kiểm tra được. |
-| AC-02 | Lời nhắc nằm dưới vùng danh sách trên cart và checkout, nhìn thấy khi mobile summary thu gọn; không còn checkbox/khối từ bỏ sau ghi chú. |
+| AC-02 | Cart (cập nhật 2026-10-17): một bộ chọn hoạt động ở trên danh sách hàng mua, không có CTA quà trùng lặp; Checkout: lời nhắc nằm ngay dưới vùng danh sách đơn, nhìn thấy khi mobile summary thu gọn; không còn checkbox/khối từ bỏ sau ghi chú. |
 | AC-03 | Tổng tiền, giảm giá, ship, tier notice cần thiết và nội dung form không bị mất/sửa ngoài phạm vi. |
 | AC-04 | Thẻ ảnh/fallback, nhãn, lựa chọn phiên bản và nhận/bỏ/giảm số quà đúng theo UI-04; không đoán thuộc tính từ chuỗi hoặc ngụ ý đổi nguyên tử. |
 | AC-05 | Không mua thêm hoặc đã dismiss upsell vẫn chọn được mọi quyền nhận hợp lệ, kể cả nhiều campaign. |
@@ -321,7 +321,7 @@ Những vùng dự kiến cần sửa trong implementation, không phải danh s
 | `src/components/brand/cart-gift-picker.tsx`, `purchase-panel.tsx` | Làm lại presentation quà; tham khảo style/chip hiện có, không refactor purchase panel ngoài phạm vi. |
 | `src/components/headless/use-cart-gifts.ts` | Tái sử dụng mutation/pending; phối hợp bỏ/chọn lại và đọc lại khi mất phản hồi, không tạo đường lưu song song. |
 | `src/commerce/cart-gift-selection.ts`, `src/commerce/product-media.ts`, `src/routes/cart-gift-model.ts` | Bổ sung ảnh an toàn và dữ liệu hiển thị, giữ định danh dòng lỗi để bỏ; dùng đúng số khả năng cấp và copy trung tính. Không thêm API swap. |
-| `src/app/cart/page.tsx`, `src/app/checkout/page.tsx` | Đặt khu vực quà dưới danh sách; giữ paid segments, totals và bố cục theo breakpoint; không tháo owner dữ liệu form khi chuyển sang sửa quà. |
+| `src/app/cart/page.tsx`, `src/app/checkout/page.tsx` | Cart đặt khu vực quà trên danh sách hàng mua, ẩn banner đạt quà trùng; checkout giữ khu vực quà ngay dưới danh sách đơn. Giữ paid segments, totals, bố cục theo breakpoint và owner dữ liệu form khi sửa quà. |
 | `src/routes/checkout.ts`, `src/routes/checkout-model.ts` | Đưa toàn bộ dữ liệu picker/count vào checkout độc lập upsell; tách lỗi quà có thể sửa khỏi nhánh unquotable chung, giữ submit khóa nếu chưa có proof hiện hành. |
 | `src/components/commerce/guest-checkout-form.tsx`, `src/components/brand/guest-checkout-form.tsx` | Owner luồng submit/modal và dữ liệu nhận hàng kể cả ghi chú qua ready → sửa quà → ready; không lưu PII vào storage. |
 | `src/components/commerce/checkout-upsell.tsx` | Gỡ coupling/filter picker theo quà mới mở khóa; giữ chức năng mua thêm và busy coordination. |
