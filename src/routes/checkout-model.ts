@@ -1,5 +1,4 @@
 import type { CartGiftPickerModel } from "./cart-gift-model.ts";
-import type { CheckoutUpsellModel } from "../commerce/promotion-upsell.ts";
 import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
 import {
@@ -75,6 +74,11 @@ export type CheckoutTotalsView = Readonly<{
   /** "Miễn phí" where shipping costs nothing, so the page never re-decides that. */
   shippingText: string;
   totalText: string;
+  /**
+   * The same total as a number, so a price-change notice can name the total the buyer submitted against
+   * beside the server's new one. Display only: the server never reads it back.
+   */
+  totalVnd: number;
 }>;
 
 /** A gift on the order: priced 0đ for the buyer, never part of what they pay. */
@@ -83,6 +87,8 @@ export type CheckoutGiftLineView = Readonly<{
   label: string;
   quantity: number;
   priceText: string;
+  /** The gift product's own photo (a trusted catalog URL), or `null` to show the placeholder. */
+  imageUrl?: string | null;
 }>;
 
 /**
@@ -106,13 +112,20 @@ export type CheckoutBenefitView = Readonly<{
   tierNotice: string | null;
 }>;
 
+/**
+ * AM-01 (OD-01 = A): all the checkout banner shows. The server's full upsell model (variants, signed
+ * intents, gift state) stays on the server; the browser gets the paid-cart key for the D-06 skip and
+ * the programme name, nothing it could replay.
+ */
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
+
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
   /** UI refresh identity, never a form key or quote authority. */
   quoteRenderId?: string;
-  upsell?: CheckoutUpsellModel;
+  upsell?: CheckoutUpsellBanner;
   /** Physical items remain visible during gift repair; prices are withheld without a valid quote. */
   lines: readonly CheckoutLineView[];
   totals: CheckoutTotalsView | null;
@@ -248,6 +261,7 @@ export function buildCheckoutViewModel(
       shippingText:
         totals.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(totals.shippingFeeVnd),
       totalText: currency.format(totals.totalVnd),
+      totalVnd: totals.totalVnd,
     }),
     quoteProof: input.quoteProof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
@@ -258,10 +272,10 @@ export function buildCheckoutViewModel(
 }
 
 const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>["reason"], string> = {
-  BENEFITS_UNAVAILABLE: "Chưa thể kiểm tra quyền lợi (ưu đãi theo số lượng, quà tặng) của giỏ hàng. Hãy quay lại giỏ hàng và thử lại.",
-  GIFT_SELECTION_INVALID: "Quà bạn đã chọn không còn hợp lệ (hết hàng hoặc chương trình đã đổi). Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự đổi quà thay bạn.",
-  POS_NOT_ACCEPTED: "Đơn hàng có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến. Bạn có thể bỏ các sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau.",
-  PROOF_UNAVAILABLE: "Giỏ hàng có quá nhiều dòng ưu đãi để xác nhận báo giá. Hãy giảm bớt sản phẩm rồi thử lại.",
+  BENEFITS_UNAVAILABLE: "La.na chưa kiểm tra được ưu đãi và quà tặng của giỏ hàng. Nàng quay lại giỏ hàng rồi thử lại nhé.",
+  GIFT_SELECTION_INVALID: "Quà nàng chọn không còn phù hợp (hết hàng hoặc chương trình đã đổi). Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; La.na không tự đổi quà thay nàng.",
+  POS_NOT_ACCEPTED: "Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa đặt trực tuyến được. Nàng có thể bỏ sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau nhé.",
+  PROOF_UNAVAILABLE: "Giỏ hàng có nhiều dòng ưu đãi quá nên chưa xác nhận được giá. Nàng bớt vài sản phẩm rồi thử lại nhé.",
 };
 
 /** Keep physical items and gift repair available without issuing prices or checkout authority. */
@@ -291,7 +305,7 @@ export function buildBenefitUnavailableCheckoutViewModel(
 
 function slotText(slots: CheckoutBenefitView["slots"]): string | null {
   if (slots.unclaimed === 0) return null;
-  const parts = [`Bạn được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
+  const parts = [`Nàng được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
   if (slots.skippedWhileAvailable > 0) parts.push(`${slots.skippedWhileAvailable} suất còn có thể chọn.`);
   if (slots.shortForStock > 0) parts.push(`${slots.shortForStock} suất hiện chưa có lựa chọn phù hợp.`);
   return parts.join(" ");
@@ -320,6 +334,7 @@ export function buildBenefitCheckoutViewModel(
         Object.freeze({
           lineKey: fact.lineId,
           label: render.giftLabels.get(fact.pancakeVariationId) ?? "Quà tặng",
+          imageUrl: render.giftImages?.get(fact.pancakeVariationId) ?? null,
           quantity: fact.quantity,
           priceText: currency.format(0),
         }),
@@ -383,6 +398,7 @@ export function buildBenefitCheckoutViewModel(
       subtotalText: currency.format(facts.paidSubtotalVnd),
       shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
       totalText: currency.format(facts.totalVnd),
+      totalVnd: facts.totalVnd,
     }),
     giftPicker: render.giftPicker,
     quoteProof: render.proof,

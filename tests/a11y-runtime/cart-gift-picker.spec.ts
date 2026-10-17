@@ -407,7 +407,7 @@ test("F3: unavailable size explains disabled receive, another size stays browsab
   await picker.getByRole("button", { name: "Trắng / S", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác.");
+  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé.");
   await picker.getByRole("button", { name: "Trắng / M", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(receive).toBeEnabled();
@@ -436,7 +436,7 @@ test("F3: duplicate-product restriction describes the chosen model, not stock ex
   await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
   const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
   await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
+  await expect(receive).toHaveAccessibleDescription("Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
   await expect(picker).not.toContainText("không còn số lượng có thể nhận thêm");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
 });
@@ -505,4 +505,102 @@ test("EX-21 after price sync with no gifts blocks checkout even at the legacy to
   await page.reload();
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toBeVisible();
   await expect(page.getByText(/giảm giá theo số lượng không còn áp dụng/)).toHaveCount(0);
+});
+
+test("UX-05/AC-02: arriving on #cart-gifts opens the picker and focuses it without choosing anything", async ({ page }) => {
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  const toggle = picker.locator("button[aria-controls]");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(viewport);
+    // A full load without the hash: collapsed, as before.
+    await page.goto(`${URL}/cart`);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(picker).not.toBeFocused();
+    // Same document: a link to the anchor while already on /cart. Next's <Link> (the mini-cart) moves the
+    // hash with pushState, which fires no hashchange, so the click itself must be enough.
+    await page.evaluate(() => {
+      const link = Object.assign(document.createElement("a"), { href: "#cart-gifts", textContent: "Chọn quà" });
+      link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "#cart-gifts"); });
+      document.body.append(link);
+      link.click();
+      link.remove();
+    });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(picker).toBeFocused();
+    await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
+    // A fresh document that arrives with the hash: the load path.
+    await page.reload();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(picker).toBeFocused();
+    expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  }
+});
+
+test("UX-04/AC-04: receiving then removing a gift does not revive the unsaved-draft warning", async ({ page }) => {
+  await page.goto(`${URL}/cart`);
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await openPicker(picker);
+  // The only version is the draft as soon as the card opens: unsaved, so the warning is accurate.
+  await expect(picker.locator("[data-gift-draft]")).toBeVisible();
+  await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
+  await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  await expect(picker.locator("[data-gift-draft]")).toHaveCount(0);
+  // Picking another version afterwards is a new intent and is warned about again until saved.
+  await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
+  await expect(picker.locator("[data-gift-draft]")).toBeVisible();
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+});
+
+test("UX-08/AC-19 + OD-06: a blocked cart lists each line to fix, links focus it, and shows the basic shipping fee", async ({ page }) => {
+  await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
+  const second = await prisma.productMirror.create({ data: { pancakeShopId: SHOP, pancakeProductId: `${PREFIX}second`, slug: `${PREFIX}second`, name: "Váy hết hàng", syncedAt: new Date(),
+    variants: { create: { pancakeVariationId: `${PREFIX}second`, color: "Đen", size: "S", syncedAt: new Date(), pancakeRetailPrice: 200_000, pancakeRetailPriceAfterDiscount: 200_000,
+      warehouseStocks: { create: { pancakeWarehouseId: "gq14-wh", quantity: 0, syncedAt: new Date() } } } } }, include: { variants: true } });
+  await prisma.cartItem.create({ data: { cartId, variantId: second.variants[0]!.id, quantity: 1 } });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${URL}/cart`);
+  const notice = page.locator("[data-cart-problem-lines]");
+  await expect(notice).toContainText("Nàng xem lại 1 sản phẩm trước khi đặt hàng nhé");
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
+  await expect(page.locator("[data-mobile-sticky-cta]")).toHaveCount(0);
+  const problem = page.locator("article").filter({ hasText: "Váy hết hàng" });
+  await expect(problem.locator("[data-line-problem]")).toHaveText("Cần xử lý: Tạm hết hàng");
+  await notice.getByRole("link", { name: "Váy hết hàng — Tạm hết hàng" }).click();
+  await expect(problem).toBeFocused();
+  await expect(page.locator("[data-cart-shipping-estimate]")).toContainText("Phí vận chuyển (tạm tính)");
+  await expect(page.locator("[data-cart-shipping-estimate]")).toContainText("₫");
+  await expect(page.getByText("Phí vận chuyển chính xác sẽ hiện ở bước thanh toán.")).toBeVisible();
+  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+});
+
+test("UX-02/AC-18: the cart's mobile bottom bar shows only while the checkout button is off screen", async ({ page }) => {
+  await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
+  await page.setViewportSize({ width: 390, height: 600 });
+  await page.goto(`${URL}/cart`);
+  const bar = page.locator("[data-mobile-sticky-cta]");
+  const cta = page.getByRole("link", { name: "Tiến hành đặt hàng" });
+  await expect(bar).toBeVisible();
+  await expect(bar.getByRole("link", { name: "Thanh toán", exact: true })).toHaveAttribute("href", "/checkout");
+  await expect(bar).toContainText("₫");
+  // The floating chat button rides above the bar instead of covering its action.
+  const chat = page.locator(".messenger-fab, .pancake-chat-facade").first();
+  await expect(chat).toBeVisible();
+  const [chatBox, barBox] = [await chat.boundingBox(), await bar.boundingBox()];
+  expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(barBox!.y);
+  await cta.scrollIntoViewIfNeeded();
+  await expect(bar).toHaveCount(0);
+  // Typing in the quantity field hides it as well, so it never covers the keyboard.
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(bar).toBeVisible();
+  await page.getByRole("spinbutton", { name: "Số lượng" }).focus();
+  await expect(bar).toHaveCount(0);
+  // Desktop has no bar at all, even with the checkout button scrolled out of view.
+  await page.getByRole("spinbutton", { name: "Số lượng" }).blur();
+  await expect(bar).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await expect(bar).toHaveCount(0);
 });

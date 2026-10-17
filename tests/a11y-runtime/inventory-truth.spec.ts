@@ -602,7 +602,9 @@ test("F8b the server stays the authority when the policy changes under a filled 
     await page.reload({ waitUntil: "networkidle" });
     await expect(page.locator('[data-preorder-notice="true"]')).toHaveCount(0);
     await expect(page.locator('[data-line-state="preorder"]')).toHaveCount(0);
-    await expect(page.getByText("Tạm hết hàng")).toBeVisible();
+    // AC-19: the line carries its reason in words, and the checkout notice links to it.
+    await expect(page.locator("[data-line-problem]")).toHaveText("Cần xử lý: Tạm hết hàng");
+    await expect(page.locator("[data-cart-problem-lines]").getByRole("link")).toContainText("Tạm hết hàng");
   } finally {
     await prisma.productSellingPolicy.update({
       where: { productId: product.id },

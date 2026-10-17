@@ -342,7 +342,7 @@ for (const readback of [false, true]) {
     await expect(picker).toBeVisible();
     await expect(picker).toBeFocused();
     await expect(picker.getByRole("status")).toContainText(readback ? "Đã kiểm tra lại quà" : "Đã bỏ 1 quà");
-    await expect(picker.getByRole("heading", { name: "Quà dành cho bạn" })).toHaveCount(0);
+    await expect(picker.getByRole("heading", { name: "Quà dành cho nàng" })).toHaveCount(0);
     await expect(picker.locator("article")).toHaveCount(0);
     await expectReceiving(page);
     expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
@@ -546,7 +546,7 @@ test("AC11/22/25: committed gift with lost responses stays locked until readback
   await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
   const retry=picker.getByRole("button",{name:"Kiểm tra lại quà trong đơn",exact:true});
   await expect(retry).toBeVisible();
-  await expect(picker.getByRole("button", { name: "Nhận quà này", exact: true })).toHaveAccessibleDescription("Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục.");
+  await expect(picker.getByRole("button", { name: "Nhận quà này", exact: true })).toHaveAccessibleDescription("Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong đơn trước khi tiếp tục nhé.");
   await expect(picker.getByText("Đã thêm vào đơn", { exact: true })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");
@@ -675,4 +675,37 @@ test("AC12/19: browser back while modal is open releases the modal and a return 
   await page.getByRole("button",{name:"Đặt hàng COD",exact:true}).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
+});
+
+test("UX-10/AC-11: the line above the button names unchosen gifts and opens the picker without counting as the reminder", async ({ page }) => {
+  await startServer(3350, true);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(`${baseUrl}/checkout`);
+  const hint = page.locator("[data-checkout-gift-hint]");
+  await expect(hint).toContainText("Nàng còn 2 món quà chưa chọn.");
+  await hint.getByRole("button", { name: "Chọn quà", exact: true }).click();
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await expect(picker).toBeFocused();
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  // Information only: the one-time reminder still opens on the first valid submit -- here asked for from
+  // the mobile bottom bar, which goes through the same submit pipeline as the primary button.
+  await fillReceiving(page);
+  await page.getByLabel("Ghi chú", { exact: false }).blur();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.locator("[data-mobile-sticky-cta]").getByRole("button", { name: "Đặt hàng", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expect(hint).toContainText("Nàng còn 1 món quà chưa chọn.");
+  await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
+  await expect(hint).toHaveCount(0);
+  await expectReceiving(page);
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);
 });

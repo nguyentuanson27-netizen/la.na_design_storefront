@@ -44,6 +44,8 @@ export type BenefitCheckoutRender = GiftDisplay & (
       digest: string;
       needsAcknowledgement: boolean;
       giftLabels: ReadonlyMap<string, string>;
+      /** Display only: the gift product's trusted photo URL by Pancake variation id. */
+      giftImages?: ReadonlyMap<string, string | null>;
       /** Display only: campaign names by id, so the checkout can name each saving line. Optional so a render built without it still shows. */
       campaignNames?: ReadonlyMap<string, string>;
       /** EX-21: a quantity tier whose price became invalid was dropped whole; the buyer is told. */
@@ -102,6 +104,7 @@ export async function readBenefitCheckoutRender({
     digest: benefitQuoteDigest(resolution.facts),
     needsAcknowledgement: benefitQuoteNeedsNonclaimAcknowledgement(resolution.facts),
     giftLabels: resolution.giftLabels,
+    giftImages: resolution.giftImages,
     campaignNames: resolution.campaignNames,
     tierDropped: resolution.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID"),
   };

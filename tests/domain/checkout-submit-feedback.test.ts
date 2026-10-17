@@ -27,7 +27,7 @@ test("processing and sync-unknown feedback never suggests a blind resubmit", () 
   ]) {
     const feedback = checkoutSubmitFeedback(result);
     assert.equal(feedback.mayRetry, false);
-    assert.match(feedback.message, /không gửi lại/i);
+    assert.match(feedback.message, /đừng gửi lại đơn/i);
     assert.match(feedback.message, new RegExp(result.orderCode));
   }
 });
@@ -38,7 +38,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "error",
       title: "Kiểm tra lại thông tin",
-      message: "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại tỉnh/thành phố và phường/xã, rồi kiểm tra số nhà, tên đường.",
+      message: "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra số nhà, tên đường giúp La.na nhé.",
       mayRetry: true,
     },
   );
@@ -58,7 +58,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "warning",
       title: "Giỏ hàng đã thay đổi",
-      message: "Giá hoặc tồn kho đã thay đổi. Hãy quay lại giỏ hàng để kiểm tra trước khi đặt lại.",
+      message: "Giá hoặc tồn kho vừa thay đổi. Nàng quay lại giỏ hàng xem lại trước khi đặt nhé.",
       mayRetry: false,
     },
   );
@@ -68,7 +68,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "warning",
       title: "Giỏ hàng không còn sẵn sàng",
-      message: "Giỏ hàng hiện không thể thanh toán. Hãy quay lại giỏ hàng và kiểm tra sản phẩm.",
+      message: "Giỏ hàng hiện chưa thể thanh toán. Nàng quay lại giỏ hàng xem lại sản phẩm nhé.",
       mayRetry: false,
     },
   );
@@ -87,4 +87,23 @@ test("guest checkout recovery link uses Giỏ hàng terminology", async () => {
 
   assert.equal(source.includes("Quay lại giỏ hàng"), true);
   assert.equal(source.includes("Quay lại túi hàng"), false);
+});
+
+test("UX-08/AC-10: a price change names the submitted total and the server's new total", () => {
+  const result = {
+    ok: false as const,
+    status: "PRICE_CHANGED" as const,
+    priceChange: { merchandiseSubtotalVnd: 515_000, shippingFeeVnd: 30_000, totalVnd: 545_000 },
+  };
+  const changed = checkoutSubmitFeedback(result, { submittedTotalVnd: 520_000 });
+  assert.equal(changed.mayRetry, true);
+  assert.match(changed.message, /Tổng thanh toán: 520\.000\s₫ → 545\.000\s₫/);
+  assert.match(changed.message, /Đặt hàng COD/);
+
+  // Without a submitted total, or when the total did not move, only the current total is stated.
+  for (const context of [{}, { submittedTotalVnd: 545_000 }]) {
+    const feedback = checkoutSubmitFeedback(result, context);
+    assert.doesNotMatch(feedback.message, /→/);
+    assert.match(feedback.message, /Tổng thanh toán hiện tại là 545\.000\s₫/);
+  }
 });
