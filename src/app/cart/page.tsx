@@ -187,7 +187,7 @@ function render(data: CartViewModel) {
           )}
           {data.hasUnavailableLines ? (
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Sản phẩm không khả dụng không được tính vào tạm tính. Bạn có thể giảm số lượng khi tồn kho không đủ hoặc xóa dòng khỏi giỏ hàng.
+              Sản phẩm không khả dụng chưa được tính vào tạm tính. Nàng giảm số lượng nếu không đủ hàng, hoặc xóa sản phẩm khỏi giỏ nhé.
             </p>
           ) : null}
           <p className="mt-4 text-sm leading-6 text-black/75">
