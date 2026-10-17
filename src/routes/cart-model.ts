@@ -85,8 +85,9 @@ export type CartViewModel = Readonly<{
    */
   summary?: OrderSummaryView;
   /**
-   * OD-06 — shown only where `summary` is not: the policy's basic fee, from the server, as an estimate the
-   * checkout makes exact. Absent when the policy cannot be read, or when there is a summary to show instead.
+   * OD-06 — shown only where `summary` is not: the shipping the server policy gives the buyable lines, as an
+   * estimate the checkout makes exact. Absent when the policy cannot be read, nothing can be bought, or there
+   * is a summary to show instead.
    */
   shippingBaseFeeText?: string;
   benefitsNotice?: string;
@@ -181,12 +182,26 @@ function summaryEntry(
   return summary === null || (state !== undefined && summary.valueText !== currency.format(subtotal)) ? {} : { summary };
 }
 
+/**
+ * OD-06: where no bill is shown, the shipping the policy would charge on the lines that can be bought, by the
+ * same rule checkout applies (so a basket already past the free-shipping threshold reads "Miễn phí", not the
+ * basic fee). An estimate only: checkout re-quotes it. Withheld when nothing can be bought or the rule fails.
+ */
 function withShippingEstimate(
   policy: GuestShippingPolicy | undefined,
+  lines: readonly StorefrontCartLine[],
+  goodsSubtotalVnd: number | null,
   entry: { summary?: OrderSummaryView },
 ): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
-  if (entry.summary || policy === undefined || !Number.isSafeInteger(policy.feeVnd) || policy.feeVnd < 0) return entry;
-  return { shippingBaseFeeText: currency.format(policy.feeVnd) };
+  if (entry.summary || policy === undefined || goodsSubtotalVnd === null) return entry;
+  const quantity = lines.reduce((sum, line) => sum + (line.available ? line.quantity : 0), 0);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return entry;
+  try {
+    const feeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: goodsSubtotalVnd, totalQuantity: quantity }, policy);
+    return { shippingBaseFeeText: feeVnd === 0 ? "Miễn phí" : currency.format(feeVnd) };
+  } catch {
+    return entry;
+  }
 }
 
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
@@ -276,7 +291,7 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
-    ...withShippingEstimate(input.shippingPolicy, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
+    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
       : tierPriceInvalid

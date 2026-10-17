@@ -211,12 +211,13 @@ function render(data: CartViewModel) {
             >
               Tiến hành đặt hàng
             </Link>
-          ) : data.benefitsNotice || problemLines.length === 0 ? (
+          ) : problemLines.length === 0 ? (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
               {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}
             </p>
           ) : (
-            /* UX-08 / AC-19: every line that blocks checkout, by name and reason, each a way to that line. */
+            /* UX-08 / AC-19: every line that blocks checkout, by name and reason, each a way to that line --
+               shown even when a benefits notice also applies, which then follows the list. */
             <div className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6" data-cart-problem-lines>
               <p className="font-semibold">
                 {`Nàng xem lại ${problemLines.length} sản phẩm trước khi đặt hàng nhé:`}
@@ -228,6 +229,7 @@ function render(data: CartViewModel) {
                   </li>
                 ))}
               </ul>
+              {data.benefitsNotice ? <p className="mt-3 text-black/75">{data.benefitsNotice}</p> : null}
             </div>
           )}
           <Link className="text-link mt-7 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
@@ -237,7 +239,11 @@ function render(data: CartViewModel) {
         <>
           {/* Room for the bottom bar, so it never sits over the end of the page. */}
           <div aria-hidden="true" className="h-24 lg:hidden" />
-          <MobileStickyCta targetId={CHECKOUT_CTA_ID} totalText={data.summary?.totalText ?? data.subtotalText}>
+          <MobileStickyCta
+            targetId={CHECKOUT_CTA_ID}
+            totalText={data.summary?.totalText ?? data.subtotalText}
+            totalLabel={data.summary ? "Tổng thanh toán" : "Tạm tính"}
+          >
             <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
           </MobileStickyCta>
         </>

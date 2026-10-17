@@ -756,14 +756,30 @@ test("AC-18 the mobile bottom bar stands in for the submit button through the sa
   // With the primary button on screen only one primary action is shown.
   await page.getByLabel("Họ và tên").blur();
   await submit.scrollIntoViewIfNeeded();
-  await page.waitForTimeout(500);
   await expect(bar).toHaveCount(0);
-
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(bar).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 
-  await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(bar).toBeHidden();
+  // Desktop has no bar at all, even with the submit button scrolled out of view.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await expect(bar).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  // A valid form ordered from the bar -- tapped twice -- places exactly one order through the one pipeline.
+  await page.getByLabel("Tỉnh / Thành phố").selectOption(PROVINCE_CURRENT);
+  await page.getByLabel("Phường / Xã").selectOption(COMMUNE_CURRENT);
+  await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
+  await page.getByLabel("Số điện thoại").fill("0901234567");
+  await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
+  await page.getByLabel("Số nhà, tên đường").blur();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const barButton = bar.getByRole("button", { name: "Đặt hàng", exact: true });
+  await expect(barButton).toBeEnabled();
+  await barButton.dblclick();
+  await page.waitForURL((url) => url.pathname === "/checkout/success" && Boolean(url.searchParams.get("order")));
+  await waitForConfirmedOrder();
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(1);
 });

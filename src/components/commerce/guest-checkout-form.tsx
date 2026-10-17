@@ -31,7 +31,7 @@ import { reminderSubmitDecision } from "@/components/headless/checkout-gift-remi
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
 import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
-import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
+import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
 
@@ -139,7 +139,7 @@ export function GuestCheckoutForm({
   attemptKey?: string;
   quoteRenderId?: string;
   unavailableNotice?: string | null;
-  upsell?: CheckoutUpsellModel;
+  upsell?: CheckoutUpsellBanner;
   benefit?: GuestCheckoutBenefit;
   summaryLabel?: string;
   summarySlot?: ReactNode;
@@ -315,7 +315,7 @@ export function GuestCheckoutForm({
   // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
   // A final outcome is already explained by the feedback block right above the button.
   const submitLockReason = isSubmitting || lockSubmission ? null
-    : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng bấm “Cập nhật giá” nhé.")
+    : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng tải lại trang giúp La.na nhé.")
     : giftPending ? "Đang lưu quà tặng…"
     : isRefreshingQuote || waitingForNewRender ? "Đang cập nhật giá mới…"
     : geoError ? "Chưa tải được địa chỉ, nàng bấm “Thử lại” ở phần địa chỉ nhé."
@@ -327,8 +327,11 @@ export function GuestCheckoutForm({
   const giftModel = giftPicker ?? EMPTY_GIFT_PICKER;
   const choosableGifts = giftModel.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const unclaimedGifts = giftModel.campaigns.reduce((sum, row) => sum + row.unclaimed, 0);
+  // Campaigns that share gift stock each count the shared slots, so their sum overstates what can be
+  // taken; like the picker, name no number then (never sum competing campaign maxima).
+  const sharedGiftStock = giftModel.campaigns.some((row) => row.contendedSlots > 0);
   const giftHint = !quoteProof || giftModel.invalid || unclaimedGifts === 0 ? null
-    : choosableGifts > 0 ? { canChoose: true, text: `Nàng còn ${choosableGifts} món quà chưa chọn.` }
+    : choosableGifts > 0 ? { canChoose: true, text: sharedGiftStock ? "Nàng còn quà chưa chọn." : `Nàng còn ${choosableGifts} món quà chưa chọn.` }
     : { canChoose: false, text: "Một phần quà tạm chưa có mẫu phù hợp." };
 
   const fieldErrors = findFieldErrors({
@@ -691,7 +694,8 @@ export function GuestCheckoutForm({
         </div>
       ) : null}
 
-      {submitLockReason ? <p id={submitReasonId} className="text-sm" aria-live="polite" data-checkout-submit-reason>{submitLockReason}</p> : null}
+      {/* Always mounted, so a reason that appears later is announced; empty and out of layout otherwise. */}
+      <p id={submitReasonId} className="text-sm empty:hidden" aria-live="polite" data-checkout-submit-reason>{submitLockReason}</p>
 
       <button
         aria-describedby={submitLockReason ? submitReasonId : undefined}

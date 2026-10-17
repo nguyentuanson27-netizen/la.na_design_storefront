@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
+import type { CheckoutUpsellBanner } from "@/routes/checkout-model";
 
 /**
  * OD-01/A (UX-COMMERCE-001, amendment to SPEC-UPS-001): the checkout no longer adds the +1 itself. It
@@ -25,7 +25,7 @@ function saveAttempt(value: Attempt) {
   try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* UI-only; never authorizes a write */ }
 }
 
-export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellModel }>) {
+export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellBanner }>) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const initialized = useRef(false);
   const mounted = useRef(false);
@@ -68,7 +68,7 @@ export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellModel 
     setAttempt(next);
   }
 
-  if (!attempt || attempt.paidCartKey !== model.paidCartKey || !model.offer || attempt.dismissed) {
+  if (!attempt || attempt.paidCartKey !== model.paidCartKey || attempt.dismissed) {
     return null;
   }
 
@@ -78,7 +78,7 @@ export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellModel 
     <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label="Gợi ý mua thêm">
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
-        <p className="text-xs leading-5 text-black/70">{model.offer.name}</p>
+        <p className="text-xs leading-5 text-black/70">{model.offerName}</p>
         <Link href="/sale" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
           Chọn thêm món
         </Link>

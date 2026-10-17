@@ -27,7 +27,7 @@ test("processing and sync-unknown feedback never suggests a blind resubmit", () 
   ]) {
     const feedback = checkoutSubmitFeedback(result);
     assert.equal(feedback.mayRetry, false);
-    assert.match(feedback.message, /không gửi lại/i);
+    assert.match(feedback.message, /không cần gửi lại/i);
     assert.match(feedback.message, new RegExp(result.orderCode));
   }
 });
@@ -38,7 +38,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "error",
       title: "Kiểm tra lại thông tin",
-      message: "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại tỉnh/thành phố và phường/xã, rồi kiểm tra số nhà, tên đường.",
+      message: "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra số nhà, tên đường giúp La.na nhé.",
       mayRetry: true,
     },
   );
@@ -58,7 +58,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "warning",
       title: "Giỏ hàng đã thay đổi",
-      message: "Giá hoặc tồn kho đã thay đổi. Hãy quay lại giỏ hàng để kiểm tra trước khi đặt lại.",
+      message: "Giá hoặc tồn kho vừa thay đổi. Nàng quay lại giỏ hàng xem lại trước khi đặt nhé.",
       mayRetry: false,
     },
   );
@@ -68,7 +68,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "warning",
       title: "Giỏ hàng không còn sẵn sàng",
-      message: "Giỏ hàng hiện không thể thanh toán. Hãy quay lại giỏ hàng và kiểm tra sản phẩm.",
+      message: "Giỏ hàng hiện chưa thể thanh toán. Nàng quay lại giỏ hàng xem lại sản phẩm nhé.",
       mayRetry: false,
     },
   );

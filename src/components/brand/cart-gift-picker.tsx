@@ -78,28 +78,39 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const present = entitled > 0 || model.selections.length > 0;
   // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
   // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf.
+  // Only on arrival and on a hash change: a picker that reappears later (gifts earned again) while the URL
+  // still carries the hash must not scroll the page or take focus on its own.
+  const arrivedViaHash = useRef(false);
   useEffect(() => {
     if (!present) return;
+    let frame = 0;
     const reveal = () => {
       if (window.location.hash !== "#cart-gifts") return;
       setExpanded(true);
-      requestAnimationFrame(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
         giftArea.current?.scrollIntoView({ block: "start" });
         giftArea.current?.focus({ preventScroll: true });
       });
     };
-    reveal();
+    if (!arrivedViaHash.current) {
+      arrivedViaHash.current = true;
+      reveal();
+    }
     window.addEventListener("hashchange", reveal);
-    return () => window.removeEventListener("hashchange", reveal);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("hashchange", reveal);
+    };
   }, [present]);
   if (!present && !message) return null;
   const busy = pending || uncertain;
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
     {present ? <>
-    <h2 className="font-display text-2xl">Quà dành cho bạn</h2>
+    <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
     {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà đã chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự thay quà.</p> : <>
-      {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Bạn còn quà chưa chọn. Các chương trình dùng chung lượng quà; hãy chọn từng món để cập nhật quyền nhận." : `Bạn còn có thể chọn ${available} món quà.`}</p> : null}
+      {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
     {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà; vui lòng thử lại sau.</p> : null}
@@ -136,9 +147,9 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             : pending ? "Đang cập nhật quà. Vui lòng chờ xác nhận."
             : locked ? "Giỏ hàng đang được cập nhật hoặc cần kiểm tra lại. Hãy hoàn tất bước kiểm tra trước khi nhận quà."
             : model.invalid ? "Cần sửa quà đã chọn. Hãy bỏ lựa chọn không còn hợp lệ trước khi nhận thêm."
-            : campaign.selected >= campaign.entitled ? "Đã đủ suất. Bạn vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
+            : campaign.selected >= campaign.entitled ? "Đã đủ suất. Nàng vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
             : !option ? "Chọn phiên bản trước khi nhận quà."
-            : !campaign.allowDuplicateGifts && productChosen ? "Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
+            : !campaign.allowDuplicateGifts && productChosen ? "Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
             : option.stock <= stockChosen ? "Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
@@ -149,7 +160,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
-            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => option && change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)}>Nhận quà này</button>
+            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
+              if (!option) return;
+              // A new receive is a new intent: until the server confirms it, an earlier save no longer covers it.
+              if (draft?.committed) setDraft({ ...draft, committed: false });
+              change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0);
+            }}>Nhận quà này</button>
           </GiftProductCard>;
         })}</div>
       </div>)}

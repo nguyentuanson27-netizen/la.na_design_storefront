@@ -54,7 +54,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 ### Phụ thuộc
 
 - **PR #177 — đã merge vào baseline `c6058a1`:** bố cục cart một picker ở đầu trang là hiện trạng, được `tests/a11y-runtime/cart-gift-picker.spec.ts` khóa; AC-01/02 là regression.
-- **PR #181 — đề xuất runtime cho phương án A (banner `/sale`).** Owner chọn A (OD-01); PR implementation của spec này mang banner đó cùng cảnh báo rời form và test thay thế (AC-07/16), nên #181 không cần merge riêng.
+- **PR #181 — đề xuất runtime cho phương án A (banner `/sale`).** Owner chọn A (OD-01); PR implementation của spec này mang banner gọn và test thay thế (AC-16), nên #181 không cần merge riêng. Owner đã bỏ cảnh báo rời form (AC-07) ngày 17/10/2026.
 - **PR #182 — đã merge (`d1d49bc`):** tiến độ `QUANTITY_TIER` chưa đạt (quote trả `quantityProgress`, model hiển thị “Mua thêm N sản phẩm áp dụng để được giảm …”), kèm regression 2 → 3 → 4 → 5. Là phần runtime của UX-01/AC-01b, nghiệm thu bằng test của chính #182 trên baseline mới.
 - **PR #178/#180:** chỉ là lịch sử thiết kế, nội dung không thuộc `main` hiện tại và không thay phê duyệt nghiệp vụ.
 - **Khi baseline đổi:** nếu `main` di chuyển hoặc #181 đổi hướng/merge/đóng, kiểm tra lại §3 với source mới trước khi triển khai phần phụ thuộc; không suy bản cũ đã được nghiệm thu.
@@ -140,7 +140,7 @@ Không thêm toast/modal chỉ để lặp cùng status; dùng phản hồi cạ
 
 **Đối chiếu:** spec upsell gốc quy định `D-03` chọn biến thể và thêm một chiếc **tại checkout**, `D-04` hiển thị tối đa 3–5 mẫu hợp lệ, `U-02/A` chọn quà do upsell mở **ngay checkout**. `FR-07/08/09/12` chi tiết hóa giá, biến thể, thêm hàng, quà và accessibility. Baseline hiện vẫn có tương tác inline. PR #181 đề xuất bỏ tương tác này để dùng banner `/sale`; **không phải hiện trạng hay quyết định đã được phê duyệt qua #179**.
 
-**Phương án A — đề xuất banner trong PR #181, CHƯA được duyệt thay yêu cầu:** nút “Tiếp tục mua sắm” đến `/sale`; có xử lý khi rời form đã nhập. `/sale` không được hứa chỉ có ứng viên đã chứng minh hay cho thêm +1 ngay checkout. Chọn A đòi owner phê duyệt thay `D-03`, `D-04` và hành trình unlock gift của `U-02/A`; không bỏ picker quà ở checkout. Nội dung #181 chưa tự chứng minh mọi tiêu chí A, nhất là giữ/đóng form, accessibility và test thay thế.
+**Phương án A — owner đã chọn (OD-01, 17/10/2026; amendment AM-01). Mô tả gốc của đề xuất #181:** nút “Tiếp tục mua sắm” đến `/sale`; có xử lý khi rời form đã nhập. `/sale` không được hứa chỉ có ứng viên đã chứng minh hay cho thêm +1 ngay checkout. Chọn A đòi owner phê duyệt thay `D-03`, `D-04` và hành trình unlock gift của `U-02/A`; không bỏ picker quà ở checkout. Nội dung #181 chưa tự chứng minh mọi tiêu chí A, nhất là giữ/đóng form, accessibility và test thay thế.
 
 **Phương án B — cải thiện presentation inline hiện có, chỉ triển khai sau khi duyệt:** phần mở rộng **một ứng viên mỗi lần**, có ảnh/tên/variant/giá/chênh tổng tiền do server xác minh, add đúng +1 qua action/proof hiện có. Vẫn truy cập được tập tối đa 5 mẫu hợp lệ, không mở nhiều form. Quà mới chọn ngay checkout, giữ thông tin nhận hàng và khóa submit tới quote mới. Không tạo engine giá hoặc auto-add. Chọn B không đồng nghĩa lấy code banner #181; cần điều phối để hai hướng không ghi đè nhau.
 
@@ -245,7 +245,7 @@ Các AC không là lời xác nhận feature đã chạy. AC-07 chỉ áp dụng
 | AC-04 | Chip-only → quay lại; nhận → bỏ thành công → quay lại | Chip-only không tăng quà; bỏ xong không draft sai; giữ quote/form/focus và draft mới nếu khách đã đổi ý định |
 | AC-05 | Đủ suất vẫn xem mẫu; bỏ lỗi; giảm 2→1; mất phản hồi | Không tự swap/mất quà khác; readback và focus đúng; không gửi trùng mutation |
 | AC-06 | Gợi ý theo phương án đã duyệt; dismiss/reload/quay lại; offer mất | Gợi ý tùy chọn, không flash trái intent, không chặn checkout hợp lệ; thiếu offer không hiển thị lời mời. Không mặc định baseline đã là banner |
-| AC-07 | **Chỉ A:** banner `/sale` được duyệt/triển khai qua #181 hoặc PR kế tiếp; form đã nhập | Cảnh báo đúng trước exit, ở lại giữ form/focus, tiếp tục đến đúng `/sale`; không lưu PII vào storage và không hứa mọi sản phẩm tại đích đều mở ưu đãi |
+| AC-07 | **Chỉ A:** banner gọn dẫn `/sale` (AM-01); form đã nhập | Link đi thẳng `/sale` không cảnh báo (owner bỏ cảnh báo ngày 17/10/2026); không lưu PII vào storage; không hứa mọi sản phẩm tại đích đều mở ưu đãi; banner không khóa submit |
 | AC-08 | **Chỉ B:** gợi ý thu gọn → mở → chọn ứng viên/variant (chip) → add +1 tại checkout; 390 và 1280px | Ở mobile, gợi ý không đứng trước ô nhập đầu tiên mà nằm sau địa chỉ, trước tổng kết; trạng thái thu gọn nêu lợi ích được quote chứng minh, không dùng tên campaign làm tiêu đề. Một panel mở nhưng các mẫu hợp lệ vẫn truy cập được; delta gồm ship đúng variant, form nguyên, quà mới ở cùng checkout, khóa tới proof mới và có lý do hiện cạnh nút đặt hàng khi bị khóa |
 | AC-09 | `unquotable`/quà invalid/proof thiếu ngay khi vào checkout | Lý do và hành động sửa trước form; không điền hết mới thấy disabled; không bypass proof |
 | AC-10 | Giá đổi giữa render/submit (một lần và hai lần liên tiếp); refresh hoặc readback lỗi | Hiện tổng cũ → tổng mới đều từ server, cần submit chủ động, giữ form, không tạo đơn bằng quote stale; lần đổi thứ hai so với tổng của lần submit gần nhất |

@@ -22,8 +22,12 @@ function isTyping(): boolean {
   const active = document.activeElement;
   if (active instanceof HTMLElement && active.matches(TEXT_ENTRY)) return true;
   const viewport = window.visualViewport;
-  return viewport !== null && window.innerHeight - viewport.height > KEYBOARD_VIEWPORT_LOSS_PX;
+  // A pinch-zoom also shrinks the visual viewport; only an unzoomed shrink is the keyboard.
+  return viewport !== null && viewport.scale <= 1.01 && window.innerHeight - viewport.height > KEYBOARD_VIEWPORT_LOSS_PX;
 }
+
+// The bar is a below-`lg` affordance; on wider screens nothing is observed at all.
+const BELOW_LG = "(max-width: 1023.98px)";
 
 function hasOpenModal(): boolean {
   return document.querySelector('dialog[open], [aria-modal="true"]') !== null;
@@ -34,18 +38,30 @@ export function useStickyCtaVisible(targetId: string, suppressed = false): boole
   const [offscreen, setOffscreen] = useState(false);
   const [typing, setTyping] = useState(false);
   const [modal, setModal] = useState(false);
+  const [narrow, setNarrow] = useState(false);
 
   useEffect(() => {
+    const query = window.matchMedia(BELOW_LG);
+    const update = () => setNarrow(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    if (!narrow) return;
     const target = document.getElementById(targetId);
     if (!target || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(([entry]) => setOffscreen(!entry?.isIntersecting));
     observer.observe(target);
     return () => observer.disconnect();
-  }, [targetId]);
+  }, [targetId, narrow]);
 
   useEffect(() => {
+    if (!narrow) return;
     const update = () => setTyping(isTyping());
-    // Focus moving between fields fires focusout before focusin; read the settled element.
+    // focusout reports the element being left; `focusin` on the next field corrects any reading taken
+    // in between, and the show delay below absorbs the gap.
     const settle = () => queueMicrotask(update);
     document.addEventListener("focusin", update);
     document.addEventListener("focusout", settle);
@@ -55,17 +71,18 @@ export function useStickyCtaVisible(targetId: string, suppressed = false): boole
       document.removeEventListener("focusout", settle);
       window.visualViewport?.removeEventListener("resize", update);
     };
-  }, []);
+  }, [narrow]);
 
   useEffect(() => {
+    if (!narrow) return;
     const update = () => setModal(hasOpenModal());
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["open", "aria-modal"] });
     return () => observer.disconnect();
-  }, []);
+  }, [narrow]);
 
-  const wanted = offscreen && !typing && !modal && !suppressed;
+  const wanted = narrow && offscreen && !typing && !modal && !suppressed;
   const [shown, setShown] = useState(false);
   useEffect(() => {
     // Hiding is immediate (the keyboard or a modal is already there); showing waits a beat.
@@ -75,11 +92,13 @@ export function useStickyCtaVisible(targetId: string, suppressed = false): boole
   return wanted && shown;
 }
 
-export function MobileStickyCta({ targetId, totalText, suppressed = false, note, children }: Readonly<{
+export function MobileStickyCta({ targetId, totalText, totalLabel = "Tổng thanh toán", suppressed = false, note, children }: Readonly<{
   /** The primary control this bar stands in for while it is off screen. */
   targetId: string;
-  /** The total of the quote the page is showing, as the page already formatted it. */
+  /** The amount the page is showing, as the page already formatted it. */
   totalText: string;
+  /** What that amount is: a page without a full bill shows its subtotal, and must say so. */
+  totalLabel?: string;
   suppressed?: boolean;
   /** A short reason the action is unavailable, the same one shown beside the primary control. */
   note?: string | null;
@@ -95,7 +114,7 @@ export function MobileStickyCta({ targetId, totalText, suppressed = false, note,
     >
       <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
         <div className="min-w-0 flex-1">
-          <p className="text-xs text-black/70">Tổng thanh toán</p>
+          <p className="text-xs text-black/70">{totalLabel}</p>
           <p className="truncate text-base font-semibold">{totalText}</p>
           {note ? <p className="truncate text-xs text-black/70">{note}</p> : null}
         </div>

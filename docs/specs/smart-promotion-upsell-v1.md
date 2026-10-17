@@ -142,7 +142,7 @@ Nguồn quyết định: OD-01 = **A** trong [storefront-promotion-upsell-checko
 
 | Mục gốc | Thay bằng |
 | --- | --- |
-| **D-03** chọn biến thể và thêm 1 chiếc tại checkout | Checkout **không** thêm hàng. Khi server có cơ hội hợp lệ (FR-01…FR-05 không đổi), checkout hiện một banner nêu chương trình và nút **“Tiếp tục mua sắm”** dẫn tới `/sale`. Khách tự chọn sản phẩm ở PDP; giỏ và checkout báo giá lại như mọi thay đổi giỏ khác. |
+| **D-03** chọn biến thể và thêm 1 chiếc tại checkout | Checkout **không** thêm hàng. Khi server có cơ hội hợp lệ (FR-01…FR-05 không đổi), checkout hiện một banner nêu chương trình và link **“Chọn thêm món”** dẫn tới `/sale`. Khách tự chọn sản phẩm ở PDP; giỏ và checkout báo giá lại như mọi thay đổi giỏ khác. |
 | **D-04 / FR-06 (UI)** hiển thị 1–5 mẫu | Banner không liệt kê mẫu. Giới hạn query/pool của FR-06 vẫn giữ để server chỉ phát banner khi có ứng viên đã chứng minh; không nới giới hạn. |
 | **FR-07** giá/estimate từng biến thể | Không hiển thị giá hay chênh tổng tiền ở banner. Copy không hứa mọi sản phẩm ở `/sale` đều thuộc chương trình. |
 | **FR-08** thêm an toàn tại checkout | Không có thao tác ghi giỏ từ checkout. Action/proof add của Upsell không còn được UI gọi; giữ ở server cùng test DB cho tới khi có quyết định gỡ riêng. |

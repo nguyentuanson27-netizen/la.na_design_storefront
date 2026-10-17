@@ -1,5 +1,4 @@
 import type { CartGiftPickerModel } from "./cart-gift-model.ts";
-import type { CheckoutUpsellModel } from "../commerce/promotion-upsell.ts";
 import type { BenefitCheckoutRender } from "../commerce/benefit-checkout-render.ts";
 import type { RenderedCheckoutQuoteFacts } from "../commerce/checkout-quote.ts";
 import {
@@ -113,13 +112,20 @@ export type CheckoutBenefitView = Readonly<{
   tierNotice: string | null;
 }>;
 
+/**
+ * AM-01 (OD-01 = A): all the checkout banner shows. The server's full upsell model (variants, signed
+ * intents, gift state) stays on the server; the browser gets the paid-cart key for the D-06 skip and
+ * the programme name, nothing it could replay.
+ */
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string }>;
+
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
   /** UI refresh identity, never a form key or quote authority. */
   quoteRenderId?: string;
-  upsell?: CheckoutUpsellModel;
+  upsell?: CheckoutUpsellBanner;
   /** Physical items remain visible during gift repair; prices are withheld without a valid quote. */
   lines: readonly CheckoutLineView[];
   totals: CheckoutTotalsView | null;

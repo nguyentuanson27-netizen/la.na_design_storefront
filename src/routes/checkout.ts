@@ -29,7 +29,8 @@ export type CheckoutRouteProps = Readonly<Record<string, never>>;
 async function withUpsell(data: CheckoutViewModel): Promise<CheckoutViewModel> {
   if (data.state !== "ready" || !data.quoteProof) return data;
   const upsell = await createPromotionUpsellService(prisma, await cookies(), { shopId: readPancakeShopId(), secret: readAuthServerConfig().secret }).get(data.quoteProof);
-  return upsell ? { ...data, upsell } : data;
+  // Only what the banner shows crosses to the browser (AM-01): no variants, intents or proofs.
+  return upsell?.offer ? { ...data, upsell: { paidCartKey: upsell.paidCartKey, offerName: upsell.offer.name } } : data;
 }
 
 export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel>> {

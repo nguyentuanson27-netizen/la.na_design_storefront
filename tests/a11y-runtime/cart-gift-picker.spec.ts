@@ -436,7 +436,7 @@ test("F3: duplicate-product restriction describes the chosen model, not stock ex
   await picker.getByRole("button", { name: "Trắng / S", exact: true }).click();
   const receive = picker.getByRole("button", { name: "Nhận quà này", exact: true });
   await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
+  await expect(receive).toHaveAccessibleDescription("Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ.");
   await expect(picker).not.toContainText("không còn số lượng có thể nhận thêm");
   expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
 });
@@ -508,20 +508,25 @@ test("EX-21 after price sync with no gifts blocks checkout even at the legacy to
 });
 
 test("UX-05/AC-02: arriving on #cart-gifts opens the picker and focuses it without choosing anything", async ({ page }) => {
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  const toggle = picker.locator("button[aria-controls]");
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
+    // A full load without the hash: collapsed, as before.
+    await page.goto(`${URL}/cart`);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(picker).not.toBeFocused();
+    // Same document, hash added (the mini-cart link while already on /cart): the hashchange path.
     await page.goto(`${URL}/cart#cart-gifts`);
-    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
-    await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(picker).toBeFocused();
     await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
-    // A reload with the hash behaves the same; nothing is saved on the buyer's behalf.
+    // A fresh document that arrives with the hash: the load path.
     await page.reload();
-    await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(picker).toBeFocused();
     expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   }
-  await page.goto(`${URL}/cart`);
-  await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" }).locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "false");
 });
 
 test("UX-04/AC-04: receiving then removing a gift does not revive the unsaved-draft warning", async ({ page }) => {
@@ -576,10 +581,9 @@ test("UX-02/AC-18: the cart's mobile bottom bar shows only while the checkout bu
   await expect(bar).toContainText("₫");
   // The floating chat button rides above the bar instead of covering its action.
   const chat = page.locator(".messenger-fab, .pancake-chat-facade").first();
-  if (await chat.count()) {
-    const [chatBox, barBox] = [await chat.boundingBox(), await bar.boundingBox()];
-    expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(barBox!.y);
-  }
+  await expect(chat).toBeVisible();
+  const [chatBox, barBox] = [await chat.boundingBox(), await bar.boundingBox()];
+  expect(chatBox!.y + chatBox!.height).toBeLessThanOrEqual(barBox!.y);
   await cta.scrollIntoViewIfNeeded();
   await expect(bar).toHaveCount(0);
   // Typing in the quantity field hides it as well, so it never covers the keyboard.
@@ -587,7 +591,9 @@ test("UX-02/AC-18: the cart's mobile bottom bar shows only while the checkout bu
   await expect(bar).toBeVisible();
   await page.getByRole("spinbutton", { name: "Số lượng" }).focus();
   await expect(bar).toHaveCount(0);
-  await page.setViewportSize({ width: 1280, height: 800 });
+  // Desktop has no bar at all, even with the checkout button scrolled out of view.
   await page.getByRole("spinbutton", { name: "Số lượng" }).blur();
-  await expect(bar).toBeHidden();
+  await expect(bar).toBeVisible();
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await expect(bar).toHaveCount(0);
 });

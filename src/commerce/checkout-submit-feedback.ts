@@ -34,7 +34,7 @@ export function checkoutSubmitFeedback(
   }
 
   if (result.status === "RETRYABLE" && result.giftRepairRequired) {
-    return { tone: "warning", title: "Kiểm tra lại quà đã chọn", message: "Quà đã chọn không còn hợp lệ. Hãy bỏ lựa chọn cũ ngay tại đây rồi kiểm tra báo giá mới; thông tin nhận hàng được giữ nguyên.", mayRetry: true };
+    return { tone: "warning", title: "Kiểm tra lại quà đã chọn", message: "Quà nàng chọn không còn phù hợp. Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; thông tin nhận hàng vẫn được giữ nguyên.", mayRetry: true };
   }
 
   // The buyer is being asked to accept a price they have not seen yet, so this is the one failure
@@ -46,7 +46,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Cần xác nhận quà tặng",
-      message: `Đơn hàng còn suất quà chưa nhận. Hãy kiểm tra quà và chủ động đặt hàng lại với tổng thanh toán ${vnd.format(result.priceChange.totalVnd)}.`,
+      message: `Đơn còn suất quà chưa nhận. Nàng xem lại quà rồi bấm “Đặt hàng COD” để đặt với tổng thanh toán ${vnd.format(result.priceChange.totalVnd)} nhé.`,
       mayRetry: true,
     };
   }
@@ -58,7 +58,7 @@ export function checkoutSubmitFeedback(
       title: "Giá đã thay đổi",
       message: previous !== undefined && Number.isSafeInteger(previous) && previous !== result.priceChange.totalVnd
         ? `Tổng thanh toán: ${vnd.format(previous)} → ${vnd.format(result.priceChange.totalVnd)}. Nàng xem lại đơn rồi bấm “Đặt hàng COD” để xác nhận nhé.`
-        : `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Vui lòng xác nhận lại để đặt hàng với mức giá này.`,
+        : `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Nàng xem lại đơn rồi bấm “Đặt hàng COD” để xác nhận nhé.`,
       mayRetry: true,
     };
   }
@@ -67,7 +67,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Đơn hàng đang được xử lý",
-      message: `Mã đơn ${result.orderCode} đang được xử lý. Vui lòng không gửi lại đơn để tránh tạo yêu cầu trùng.`,
+      message: `Mã đơn ${result.orderCode} đang được xử lý. Nàng không cần gửi lại đơn để tránh tạo đơn trùng nhé.`,
       mayRetry: false,
     };
   }
@@ -76,7 +76,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Chưa xác định trạng thái đồng bộ",
-      message: `Mã đơn ${result.orderCode} đã được tiếp nhận nhưng chưa xác định trạng thái tại Pancake. Vui lòng không gửi lại đơn; ${BRAND.identity.name} sẽ kiểm tra và liên hệ xác nhận.`,
+      message: `${BRAND.identity.name} đã nhận mã đơn ${result.orderCode} và đang kiểm tra lại. Nàng không cần gửi lại đơn; La.na sẽ liên hệ xác nhận với nàng.`,
       mayRetry: false,
     };
   }
@@ -87,7 +87,7 @@ export function checkoutSubmitFeedback(
         tone: "error",
         title: "Kiểm tra lại thông tin",
         message:
-          "Địa chỉ hoặc thông tin nhận hàng chưa hợp lệ. Hãy chọn lại tỉnh/thành phố và phường/xã, rồi kiểm tra số nhà, tên đường.",
+          "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra số nhà, tên đường giúp La.na nhé.",
         mayRetry: true,
       };
     case "INVALID_PHONE":
@@ -102,14 +102,14 @@ export function checkoutSubmitFeedback(
         tone: "warning",
         title: "Giỏ hàng đã thay đổi",
         message:
-          "Giá hoặc tồn kho đã thay đổi. Hãy quay lại giỏ hàng để kiểm tra trước khi đặt lại.",
+          "Giá hoặc tồn kho vừa thay đổi. Nàng quay lại giỏ hàng xem lại trước khi đặt nhé.",
         mayRetry: false,
       };
     case "CART_UNAVAILABLE":
       return {
         tone: "warning",
         title: "Giỏ hàng không còn sẵn sàng",
-        message: "Giỏ hàng hiện không thể thanh toán. Hãy quay lại giỏ hàng và kiểm tra sản phẩm.",
+        message: "Giỏ hàng hiện chưa thể thanh toán. Nàng quay lại giỏ hàng xem lại sản phẩm nhé.",
         mayRetry: false,
       };
     case "SERVICE_UNAVAILABLE":
@@ -117,7 +117,7 @@ export function checkoutSubmitFeedback(
       return {
         tone: "error",
         title: "Chưa thể đặt hàng",
-        message: "Hệ thống thanh toán đang tạm thời không sẵn sàng. Bạn có thể thử lại sau.",
+        message: "Hệ thống đặt hàng đang tạm gián đoạn. Nàng thử lại sau ít phút nhé.",
         mayRetry: true,
       };
   }
