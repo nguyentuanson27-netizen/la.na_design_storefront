@@ -55,6 +55,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 
 - **PR #177 — đã merge vào baseline `c6058a1`:** bố cục cart một picker ở đầu trang là hiện trạng, được `tests/a11y-runtime/cart-gift-picker.spec.ts` khóa; AC-01/02 là regression.
 - **PR #181 — đang mở:** là đề xuất runtime cho phương án A (banner `/sale`). Không phải hiện trạng, không phải phê duyệt; quan hệ với spec ở UX-06/07 và AC-06/07/16.
+- **PR #182 — đang mở:** sửa tiến độ `QUANTITY_TIER` chưa đạt (quote trả `quantityProgress`, model hiển thị “Mua thêm N sản phẩm áp dụng để được giảm …”), kèm regression 2 → 3 → 4 → 5. Là phần runtime của UX-01/AC-01b; khi #182 merge, §3 cập nhật hiện trạng và AC-01b nghiệm thu trên baseline mới.
 - **PR #178/#180:** chỉ là lịch sử thiết kế, nội dung không thuộc `main` hiện tại và không thay phê duyệt nghiệp vụ.
 - **Khi baseline đổi:** nếu `main` di chuyển hoặc #181 đổi hướng/merge/đóng, kiểm tra lại §3 với source mới trước khi triển khai phần phụ thuộc; không suy bản cũ đã được nghiệm thu.
 
@@ -65,7 +66,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 | PDP / listing | Thẻ sản phẩm có giá sale/badge, purchase panel dùng state biến thể dùng chung | Kiểm tra tên ưu đãi/giá; không gộp giá Flash Sale với thưởng cart nếu không có quote |
 | Mini-cart | `PromotionBanner` liên kết `/cart#cart-gifts`, hàng mua và totals trong drawer | Đích là picker thật ở đầu cart (#177), nhưng picker mặc định thu gọn và không đọc hash: khách tới nơi còn phải bấm “Chọn quà ngay”. Yêu cầu mở sẵn khi tới qua anchor: UX-05; không mô tả link cuộn như thao tác nhận quà |
 | Cart | Một picker ở đầu cột chính, trước `PromotionBanner` và hàng mua (#177); `GIFT achieved` bị lọc khi picker hiện, TIER/progress giữ. Ở mobile, summary và “Tiến hành đặt hàng” xếp sau toàn bộ hàng mua | Giữ bố cục làm regression; xác minh khách vẫn thấy tổng/CTA mà không phải cuộn quá xa khi giỏ nhiều dòng |
-| Tiến độ ưu đãi | `cart-promotion-model.ts` dựng progress cho GIFT (số lượng/giá trị) và mốc giá trị đơn (`orderValueProgress`); **chưa có progress cho `QUANTITY_TIER` chưa đạt** (chỉ có trạng thái đã đạt). Banner chỉ hiện mốc chưa đạt gần nhất theo % | Ví dụ mua 3 tặng quà + mua 5 giảm 10%: giỏ 4 món chỉ báo đã nhận quà, không nhắc còn 1 món để giảm 10%. Cần AC-01b; sửa engine/model ở PR bug riêng |
+| Tiến độ ưu đãi | `cart-promotion-model.ts` dựng progress cho GIFT (số lượng/giá trị) và mốc giá trị đơn (`orderValueProgress`); **chưa có progress cho `QUANTITY_TIER` chưa đạt** (chỉ có trạng thái đã đạt). Banner chỉ hiện mốc chưa đạt gần nhất theo % | Ví dụ mua 3 tặng quà + mua 5 giảm 10%: giỏ 4 món chỉ báo đã nhận quà, không nhắc còn 1 món để giảm 10%. Cần AC-01b. [PR #182](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/182) (đang mở) bổ sung `quantityProgress` từ quote server và hiển thị trong model; chưa thuộc baseline |
 | Checkout | Banner ưu đãi trước form; picker ở order panel; mobile summary thu gọn, desktop summary sticky | Kiểm tra thông báo cùng quyền lợi bị lặp giữa banner, danh sách đơn và picker |
 | Checkout upsell | Còn danh sách sản phẩm (tối đa 5), mỗi mẫu có ảnh, `<select>` biến thể, estimate và nút “Thêm 1 chiếc”; tiêu đề dùng tên campaign. Render **đầu cột trái, trước “Thông tin nhận hàng”**; ở mobile nằm sau summary + picker, nên khách gặp khối gợi ý trước ô nhập đầu tiên. Đổi biến thể gọi requote và khóa cả form | Rà soát mật độ, vị trí, lựa chọn đang chờ báo giá và vị trí feedback; không mô tả như banner dẫn `/sale`. Đây là đầu vào cho khuyến nghị B (UX-07) |
 | Test upsell | `tests/a11y-runtime/promotion-upsell.spec.ts` kiểm tra chọn variant, thêm inline, refresh proof và giữ form | Các control đó **có trong baseline**; mismatch do bỏ control là rủi ro của phương án A/#181, không phải kết luận lỗi hiện tại của `main` |
@@ -274,7 +275,7 @@ Cỡ là ước lượng tương đối để chọn đợt (S ≈ một compone
 | 2 | Mở picker khi tới qua `#cart-gifts` | UX-05, AC-02 | S | — |
 | 2 | Cart không cho thanh toán: liệt kê và link dòng cần xử lý | UX-08, AC-19 | S | — |
 | 2 | Vòng đời trạng thái picker quà (draft, bỏ/chọn lại, focus) | UX-04/05, AC-03/04/05 | M | — |
-| 2 | Tiến độ `QUANTITY_TIER` chưa đạt từ quote server (PR bug riêng, không thuộc PR tài liệu) | UX-01, AC-01b | M | — |
+| 2 | Tiến độ `QUANTITY_TIER` chưa đạt từ quote server — đang làm ở [PR #182](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/182) | UX-01, AC-01b | M | Review/merge #182 |
 | 3 | Upsell phương án B (vị trí, thu gọn, chip, phản hồi) | UX-06/07, AC-06/08/16 | L | OD-01; baseline Mức 0 đã thu (OD-03) |
 | 3 | Thanh dính đáy mobile cart/checkout | UX-02, AC-18 | M | — (nên đi cùng/sau B vì cùng vùng nút) |
 | 4 | Ô chọn phường/xã có tìm kiếm | UX-09, AC-12 | M | OD-04 |
