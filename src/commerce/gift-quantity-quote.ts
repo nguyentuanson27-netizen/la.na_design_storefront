@@ -198,10 +198,16 @@ function readQuantityProgress({ tiers, stackLines, legacyConsents, result, canAd
   preservesQuantityGifts?: QuantityGiftGuard;
 }>): readonly QuantityProgress[] {
   const dropped = new Set(result.dropped.map((entry) => entry.campaignId));
-  const applied = new Set(result.groups.flatMap((group) => group.steps.map((step) => step.campaignId)));
+  // Explicit drops of an earned tier are conflicts, unlike a legacy price ceiling becoming a no-op.
+  const protectedTiers = new Set(result.groups.flatMap((group) => group.steps.filter((step) => step.source === "QUANTITY_TIER").map((step) => step.campaignId)));
   const progress: QuantityProgress[] = [];
   // Campaigns often share a threshold/scope: the same addition must be priced/validated only once.
-  const trials = new Map<string, ReadonlySet<string> | null>();
+  const trials = new Map<string, Readonly<{
+    quote: Extract<ReturnType<typeof priceStack>, { ok: true }>;
+    lines: readonly StackInputLine[];
+    eligibility: Map<string, boolean>;
+  }> | null>();
+  let pricingRuns = 0;
   for (const tier of [...tiers].sort((a, b) => a.id.localeCompare(b.id))) {
     const { config, id } = tier;
     if (config.basis === "ORDER_SUBTOTAL" || dropped.has(id) || !isValidTierConfig(config)) continue;
@@ -219,22 +225,36 @@ function readQuantityProgress({ tiers, stackLines, legacyConsents, result, canAd
     // Try existing eligible variants, since prices and overlapping scopes can differ by product.
     const reachable = eligible.some((candidate) => {
       const key = `${candidate.lineKey}|${shortfallQuantity}`;
-      if (trials.has(key)) return trials.get(key)?.has(id) ?? false;
-      if (trials.size >= MAX_QUANTITY_PROGRESS_TRIALS) return false;
-      trials.set(key, null);
-      const addition = { variantId: candidate.lineKey, quantity: shortfallQuantity };
-      if (!canAddQuantity(addition)) return false;
-      const trial = priceStack({
-        lines: stackLines.map((line) => line === candidate ? { ...line, quantity: line.quantity + shortfallQuantity } : line),
-        tiers,
-        legacyConsents,
-      });
-      if (!trial.ok) return false;
-      const trialApplied = new Set(trial.groups.flatMap((group) => group.steps.map((step) => step.campaignId)));
-      if (![...applied].every((campaignId) => trialApplied.has(campaignId))
-        || (preservesQuantityGifts && !preservesQuantityGifts({ before: result.groups, after: trial.groups, addition }))) return false;
-      trials.set(key, trialApplied);
-      return trialApplied.has(id);
+      if (!trials.has(key)) {
+        if (trials.size >= MAX_QUANTITY_PROGRESS_TRIALS || pricingRuns >= MAX_QUANTITY_PROGRESS_TRIALS) return false;
+        trials.set(key, null);
+        const addition = { variantId: candidate.lineKey, quantity: shortfallQuantity };
+        if (!canAddQuantity(addition)) return false;
+        const lines = stackLines.map((line) => line === candidate ? { ...line, quantity: line.quantity + shortfallQuantity } : line);
+        pricingRuns++;
+        const trial = priceStack({ lines, tiers, legacyConsents });
+        if (!trial.ok || trial.dropped.some((entry) => protectedTiers.has(entry.campaignId))
+          || (preservesQuantityGifts && !preservesQuantityGifts({ before: result.groups, after: trial.groups, addition }))) return false;
+        trials.set(key, { quote: trial, lines, eligibility: new Map() });
+      }
+      const trial = trials.get(key);
+      if (!trial) return false;
+      if (trial.eligibility.has(id)) return trial.eligibility.get(id)!;
+      trial.eligibility.set(id, false);
+      if (trial.quote.dropped.some((entry) => entry.campaignId === id)
+        || !trial.quote.groups.some((group) => group.steps.some((step) => step.source === "QUANTITY_TIER" && step.campaignId === id))
+        || pricingRuns >= MAX_QUANTITY_PROGRESS_TRIALS) return false;
+
+      // Compare the SAME future basket through the authority without the new rung. Keep any rung
+      // already earned: its saving is not a new benefit. A ledger entry alone can be erased by a
+      // later FIXED_PRICE ceiling, or that ceiling can itself disappear because the tier priced lower.
+      const previousTiers = tiers.flatMap((participant) => participant.id !== id ? [participant] : reached
+        ? [{ ...participant, config: { ...config, tiers: config.tiers.filter((rung) => rung.minQuantity <= reached.minQuantity) } }] : []);
+      pricingRuns++;
+      const withoutNext = priceStack({ lines: trial.lines, tiers: previousTiers, legacyConsents });
+      const improvesPrice = withoutNext.ok && trial.quote.subtotalVnd < withoutNext.subtotalVnd;
+      trial.eligibility.set(id, improvesPrice);
+      return improvesPrice;
     });
     if (!reachable) continue;
     progress.push(Object.freeze({

@@ -3,6 +3,8 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import type { CartGiftState } from "../../src/commerce/cart-gift-selection.ts";
+import { buildCartPromotionView } from "../../src/routes/cart-promotion-model.ts";
 
 import type { GiftQuantityCandidateReadClient } from "../../src/commerce/gift-quantity-candidate-repository.ts";
 import {
@@ -149,6 +151,80 @@ test("quantity progress uses the legacy campaign's consent without changing its 
     assert.equal(quote.subtotalVnd, 360_000);
     assert.equal(quote.quantityProgress.length, consented ? 1 : 0);
   }
+});
+
+for (const { fixedPriceVnd, discount, expectedProgress, expectedFutureTotal } of [
+  { fixedPriceVnd: 50_000, discount: 10, expectedProgress: false, expectedFutureTotal: 250_000 },
+  { fixedPriceVnd: 90_000, discount: 20, expectedProgress: true, expectedFutureTotal: 400_000 },
+]) {
+  test(`legacy FIXED_PRICE ${fixedPriceVnd} after tier ${discount}%: quote and banner use the real additional saving`, async () => {
+    const legacy = { campaign: { id: "ceiling", kind: "FLASH_SALE", discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(fixedPriceVnd) } as NonNullable<QuoteCartLine["legacy"]>["campaign"], effectivePriceVnd: fixedPriceVnd };
+    const tier = { ...tierRecord("next", [[5, discount]]), stackingEnabled: true, stackPriority: 1,
+      stackPeers: [{ peerKind: "FLASH_SALE", peerCampaignId: "ceiling" }] };
+    const quote = async (quantity: number, includeTier = true) => {
+      const result = await resolveGiftQuantityQuote({ lines: [{ ...line("a", quantity), legacy }], now: NOW, env: ON,
+        client: fakeClient(includeTier ? [tier] : []), readLegacyConsents: async () => new Map([["ceiling", { priority: 2 }]]),
+      });
+      assert.ok(result.enabled && result.ok);
+      return result;
+    };
+    const current = await quote(4);
+    const reached = await quote(5);
+    const withoutTier = await quote(5, false);
+    assert.equal(current.subtotalVnd, fixedPriceVnd * 4);
+    assert.equal(reached.subtotalVnd, expectedFutureTotal);
+    assert.equal(withoutTier.subtotalVnd - reached.subtotalVnd, expectedProgress ? 50_000 : 0);
+    assert.deepEqual(reached.dropped, []);
+    assert.equal(reached.groups.some((group) => group.steps.some((step) => step.source === "LEGACY" && step.campaignId === "ceiling")), !expectedProgress,
+      "the legacy ledger step disappears only when the tier beats its price ceiling");
+    assert.equal(current.quantityProgress.length, expectedProgress ? 1 : 0);
+    const view = buildCartPromotionView({ quote: { benefits: current }, entitlements: [], selections: [], campaigns: [] } as unknown as CartGiftState);
+    assert.equal(view?.items.some((item) => item.state === "progress" && item.kind === "TIER") ?? false, expectedProgress);
+    if (expectedProgress) assert.equal(view!.items[0]!.title, "Mua thêm 1 sản phẩm áp dụng để được giảm 20%");
+  });
+}
+
+test("an already-earned tier is the baseline: its next rung must add a real saving", async () => {
+  // Both 6% and 7% on 10 VND round to 9 VND. Removing the whole campaign would falsely
+  // attribute its already-earned 1 VND/unit saving to the next rung.
+  const quote = await resolveGiftQuantityQuote({ lines: [line("a", 4, 10)], now: NOW, env: ON, client: fakeClient([tierRecord("next", [[3, 6], [5, 7]])]) });
+  assert.ok(quote.enabled && quote.ok);
+  assert.equal(quote.subtotalVnd, 36);
+  assert.deepEqual(quote.quantityProgress, [], "7% saves nothing beyond the already-earned 6% after canonical rounding");
+});
+
+test("an explicit conflict dropping an earned tier still blocks a financially better milestone", async () => {
+  const first = { ...tierRecord("earned", [[1, 5]]), scopeMode: "DYNAMIC_CATEGORY", targets: [{ productId: "p-a", role: "INCLUDE" }] };
+  const next = { ...tierRecord("next", [[3, 50]]), scopeMode: "DYNAMIC_CATEGORY", targets: [{ productId: "p-b", role: "INCLUDE" }],
+    stackingEnabled: true, stackPriority: 2, stackPeers: [{ peerKind: "QUANTITY_TIER", peerCampaignId: "conflict" }] };
+  const conflict = { ...tierRecord("conflict", [[4, 1]]), stackingEnabled: true, stackPriority: 3,
+    stackPeers: [{ peerKind: "QUANTITY_TIER", peerCampaignId: "next" }] };
+  const quote = async (bQuantity: number) => {
+    const result = await resolveGiftQuantityQuote({ lines: [line("a", 1), line("b", bQuantity)], now: NOW, env: ON, client: fakeClient([first, next, conflict]) });
+    assert.ok(result.enabled && result.ok);
+    return result;
+  };
+  const current = await quote(2), future = await quote(3);
+  assert.equal(current.subtotalVnd, 295_000);
+  assert.equal(future.subtotalVnd, 250_000);
+  assert.ok(future.dropped.some((entry) => entry.campaignId === "earned" && entry.reason === "STACK_NOT_PERMITTED"));
+  assert.equal(future.dropped.some((entry) => entry.campaignId === "next"), false);
+  assert.deepEqual(current.quantityProgress, [], "a missing no-op ledger step and an explicit conflict are different");
+});
+
+test("counterfactual pricing consumes the same quote-wide 50-run budget", async () => {
+  let probes = 0;
+  const legacy = { campaign: { id: "ceiling", kind: "FLASH_SALE", discountType: "FIXED_PRICE", percentageValue: null, fixedPriceVnd: BigInt(50_000) } as NonNullable<QuoteCartLine["legacy"]>["campaign"], effectivePriceVnd: 50_000 };
+  const tier = { ...tierRecord("next", [[51, 10]]), stackingEnabled: true, stackPriority: 1,
+    stackPeers: [{ peerKind: "FLASH_SALE", peerCampaignId: "ceiling" }] };
+  const quote = await resolveGiftQuantityQuote({ lines: Array.from({ length: 50 }, (_, i) => ({ ...line(`v${i}`, 1), legacy })), now: NOW, env: ON,
+    client: fakeClient([tier]), readLegacyConsents: async () => new Map([["ceiling", { priority: 2 }]]),
+    canAddQuantity: () => { probes++; return true; },
+  });
+  assert.ok(quote.enabled && quote.ok);
+  assert.equal(probes, MAX_QUANTITY_PROGRESS_TRIALS / 2, "each addition spends one future run and one comparison run");
+  assert.deepEqual(quote.quantityProgress, []);
+  assert.equal(quote.subtotalVnd, 2_500_000);
 });
 
 test("partial-unit milestones retain selection rules and can be reached using an eligible variant", async () => {

@@ -17,6 +17,7 @@ let cartId: string, paidId: string;
 async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: P } } });
+  await prisma.promotionCampaign.deleteMany({ where: { id: { startsWith: P } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
 
@@ -175,3 +176,29 @@ test("an exhausted eligible variant does not hide a milestone reachable with ano
   assert.equal(state.quote.benefits.subtotalVnd, 400_000);
   assert.equal(state.quote.benefits.quantityProgress[0]?.next.shortfallQuantity, 1);
 });
+
+for (const [fixedPrice, discount, expectedProgress, expectedFutureTotal] of [[50_000, 10, false, 250_000], [90_000, 20, true, 400_000]] as const) {
+  test(`stored FIXED_PRICE ${fixedPrice} after tier ${discount}% uses final prices for the banner`, async () => {
+    const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+    const legacyId = `${P}-ceiling`;
+    await prisma.promotionCampaign.create({ data: {
+      id: legacyId, kind: "FLASH_SALE", name: "Legacy ceiling", discountType: "FIXED_PRICE", fixedPriceVnd: BigInt(fixedPrice),
+      startsAt: NOW, endsAt: new Date("2026-12-01T00:00:00Z"), isEnabled: true, enabledAt: NOW,
+      targets: { create: { productId: paid.productId } }, stackConsent: { create: { stackPriority: 2 } },
+    } });
+    await prisma.giftQuantityCampaign.update({ where: { id: `${P}-tier` }, data: {
+      stackingEnabled: true, stackPriority: 1, stackPeers: { create: { peerKind: "FLASH_SALE", peerCampaignId: legacyId } },
+    } });
+    await prisma.quantityTier.updateMany({ where: { campaignId: `${P}-tier` }, data: { discountValue: discount } });
+    const state = await read(4);
+    assert.ok(state.quote.benefits.enabled && state.quote.benefits.ok);
+    assert.equal(state.quote.benefits.subtotalVnd, fixedPrice * 4);
+    assert.equal(state.entitlements[0]!.entitled, 1);
+    const view = buildCartPromotionView(state)!;
+    assert.equal(view.items.some((item) => item.state === "progress" && item.kind === "TIER"), expectedProgress);
+    const future = await read(5);
+    assert.ok(future.quote.benefits.enabled && future.quote.benefits.ok);
+    assert.equal(future.quote.benefits.subtotalVnd, expectedFutureTotal);
+    assert.equal(future.entitlements[0]!.entitled, 1);
+  });
+}

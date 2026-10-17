@@ -19,6 +19,7 @@ async function cleanup() {
   await prisma.cart.deleteMany({ where: { items: { some: { variant: { product: { pancakeShopId: SHOP } } } } } });
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
+  await prisma.promotionCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
 async function startCartServer(port: number, verified = false): Promise<ChildProcess> {
@@ -226,6 +227,39 @@ test("quantity hints disappear if the milestone loses an earned gift or cannot b
     await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 5 } });
     await page.reload();
     await expect(progress).toContainText("Mua thêm 1 sản phẩm áp dụng để được giảm 50%");
+  } finally { await stopCartServer(verifiedServer); }
+});
+
+test("quantity hints follow real savings when a legacy FIXED_PRICE runs after the tier", async ({ page }) => {
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 4 } });
+  const legacyId = `${PREFIX}ceiling`, tierId = `${PREFIX}ceiling-tier`;
+  const now = new Date();
+  await prisma.promotionCampaign.create({ data: {
+    id: legacyId, kind: "FLASH_SALE", name: "Legacy ceiling", discountType: "FIXED_PRICE", fixedPriceVnd: BigInt(50_000),
+    startsAt: now, endsAt: new Date(now.getTime() + 86400000), isEnabled: true, enabledAt: now,
+    targets: { create: { productId: paid.productId } }, stackConsent: { create: { stackPriority: 2 } },
+  } });
+  await prisma.giftQuantityCampaign.create({ data: {
+    id: tierId, kind: "QUANTITY_TIER", name: "Mua 5 giảm giá", isEnabled: true, enabledAt: now,
+    scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+    stackingEnabled: true, stackPriority: 1, stackPeers: { create: { peerKind: "FLASH_SALE", peerCampaignId: legacyId } },
+    tiers: { create: { minQuantity: 5, discountValue: 10 } },
+  } });
+  const verifiedServer = await startCartServer(3399, true);
+  try {
+    const progress = page.locator('[data-promotion-banner="full"] [data-promotion-kind="TIER"][data-promotion-state="progress"]');
+    for (const [fixedPrice, discount, expectedHint, futureTotal] of [[50_000, 10, false, 250_000], [90_000, 20, true, 400_000]] as const) {
+      await prisma.promotionCampaign.update({ where: { id: legacyId }, data: { fixedPriceVnd: BigInt(fixedPrice) } });
+      await prisma.quantityTier.updateMany({ where: { campaignId: tierId }, data: { discountValue: discount } });
+      await page.goto("http://127.0.0.1:3399/cart");
+      await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" })).toBeVisible();
+      if (expectedHint) await expect(progress).toContainText("Mua thêm 1 sản phẩm áp dụng để được giảm 20%");
+      else await expect(progress).toHaveCount(0);
+      const future = await prisma.$transaction(tx => readCartGiftState(tx, cartId, SHOP, new Date(), { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true" }, [{ variantId: paidId, quantity: 5 }]));
+      expect(future.quote.benefits.enabled && future.quote.benefits.ok && future.quote.benefits.subtotalVnd).toBe(futureTotal);
+    }
   } finally { await stopCartServer(verifiedServer); }
 });
 
