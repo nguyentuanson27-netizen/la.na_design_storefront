@@ -1,7 +1,7 @@
 # Spec — Trải nghiệm ưu đãi, gợi ý mua thêm và thanh toán COD (UX-COMMERCE-001)
 
 **Ngày cập nhật:** 2026-10-17
-**Trạng thái:** DRAFT v1.3 — spec-only, để owner review; chưa phê duyệt implementation. **Khuyến nghị của spec cho upsell: phương án B** (§6, UX-07) — là khuyến nghị, không phải phê duyệt.
+**Trạng thái:** DRAFT v1.4 — spec-only, để owner review; chưa phê duyệt implementation. **Khuyến nghị của spec cho upsell: phương án B** (§6, UX-07) — là khuyến nghị, không phải phê duyệt.
 **Baseline hiện tại:** `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d` — sau khi `main` được đưa về trước PR #178/#180 (`3cbbbaec`) và PR #177 đã merge. Checkout upsell tại baseline vẫn có chọn biến thể và thêm hàng trực tiếp; cart đã có một picker quà ở đầu trang, trước hàng mua.
 **Phụ thuộc:** PR #181 (phương án A — banner `/sale`) chưa merge; chi tiết ở §2. Trạng thái PR, lịch sử nhánh và quality gate của PR tài liệu nằm trong mô tả PR, không ghi trong spec.
 **Phạm vi:** spec-only, đi cùng [storefront-funnel-measurement-v1.md](storefront-funnel-measurement-v1.md). Không kèm thay đổi runtime, test, database, CI, dependency package hoặc feature flag.
@@ -13,7 +13,7 @@ Mọi điểm cần owner chốt gom tại đây; mỗi dòng ghi phần nào b�
 | ID | Quyết định | Khuyến nghị của spec | Chặn phần nào |
 | --- | --- | --- | --- |
 | OD-01 | Phương án upsell checkout: A (banner `/sale`, PR #181) hay B (inline thu gọn) — UX-07 | **B**; A cần amendment `D-03/D-04`, `U-02/A`, `FR-06/07/08/09/12` | Toàn bộ implementation upsell (UX-06/07, AC-06/07/08) |
-| OD-02 | Gate đo lường MEAS-06: sink/schema UX, khóa lượt ngẫu nhiên và consent, cửa sổ attribution ([spec đo lường](storefront-funnel-measurement-v1.md)) | Duyệt nếu muốn đánh giá B bằng chỉ số Mức 1; nếu không, chỉ đo Mức 0 | Chỉ số Mức 1 (M-03, M-04, M-07 và M-02/M-06 theo lượt) |
+| OD-02 | Gate đo lường MEAS-06: sink/schema UX, khóa lượt ngẫu nhiên và consent, cửa sổ attribution ([spec đo lường](storefront-funnel-measurement-v1.md)) | Duyệt nếu muốn đánh giá B bằng chỉ số Mức 1; nếu không, chỉ đo Mức 0 | Chỉ số Mức 1 (M-02c — guardrail hoàn tất theo cohort, M-03a/b, M-04, M-07, M-06 theo lượt) |
 | OD-03 | Độ dài cửa sổ baseline số đo trước khi đổi UI | Đủ số lượt checkout để ổn định; tránh trùng đợt sale lớn hoặc ghi rõ khi trùng | So sánh trước/sau cho B |
 | OD-04 | Chọn phường/xã: giữ `<select>` gốc hay đổi sang ô chọn có tìm kiếm (danh sách sau sáp nhập có thể dài hàng trăm dòng) | Combobox tự xây theo mẫu ARIA combobox/listbox, **không thêm package**; giữ `<select>` gốc khi script lỗi; giá trị gửi vẫn là id từ geo action | Phần địa chỉ của UX-09 và AC-12 |
 | OD-05 | Thông tin tin cậy COD cạnh nút đặt hàng: thời gian giao dự kiến, đổi trả, “không cần trả trước” | Chỉ dùng câu và link đã có trong [la-na-design-policy-authority.md](la-na-design-policy-authority.md) (`/shipping`, `/returns`); thời gian giao chỉ khi có số liệu owner xác nhận; owner duyệt từng câu | Khối tin cậy COD trong UX-09 |
@@ -65,6 +65,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 | PDP / listing | Thẻ sản phẩm có giá sale/badge, purchase panel dùng state biến thể dùng chung | Kiểm tra tên ưu đãi/giá; không gộp giá Flash Sale với thưởng cart nếu không có quote |
 | Mini-cart | `PromotionBanner` liên kết `/cart#cart-gifts`, hàng mua và totals trong drawer | Đích là picker thật ở đầu cart (#177), nhưng picker mặc định thu gọn và không đọc hash: khách tới nơi còn phải bấm “Chọn quà ngay”. Yêu cầu mở sẵn khi tới qua anchor: UX-05; không mô tả link cuộn như thao tác nhận quà |
 | Cart | Một picker ở đầu cột chính, trước `PromotionBanner` và hàng mua (#177); `GIFT achieved` bị lọc khi picker hiện, TIER/progress giữ. Ở mobile, summary và “Tiến hành đặt hàng” xếp sau toàn bộ hàng mua | Giữ bố cục làm regression; xác minh khách vẫn thấy tổng/CTA mà không phải cuộn quá xa khi giỏ nhiều dòng |
+| Tiến độ ưu đãi | `cart-promotion-model.ts` dựng progress cho GIFT (số lượng/giá trị) và mốc giá trị đơn (`orderValueProgress`); **chưa có progress cho `QUANTITY_TIER` chưa đạt** (chỉ có trạng thái đã đạt). Banner chỉ hiện mốc chưa đạt gần nhất theo % | Ví dụ mua 3 tặng quà + mua 5 giảm 10%: giỏ 4 món chỉ báo đã nhận quà, không nhắc còn 1 món để giảm 10%. Cần AC-01b; sửa engine/model ở PR bug riêng |
 | Checkout | Banner ưu đãi trước form; picker ở order panel; mobile summary thu gọn, desktop summary sticky | Kiểm tra thông báo cùng quyền lợi bị lặp giữa banner, danh sách đơn và picker |
 | Checkout upsell | Còn danh sách sản phẩm (tối đa 5), mỗi mẫu có ảnh, `<select>` biến thể, estimate và nút “Thêm 1 chiếc”; tiêu đề dùng tên campaign. Render **đầu cột trái, trước “Thông tin nhận hàng”**; ở mobile nằm sau summary + picker, nên khách gặp khối gợi ý trước ô nhập đầu tiên. Đổi biến thể gọi requote và khóa cả form | Rà soát mật độ, vị trí, lựa chọn đang chờ báo giá và vị trí feedback; không mô tả như banner dẫn `/sale`. Đây là đầu vào cho khuyến nghị B (UX-07) |
 | Test upsell | `tests/a11y-runtime/promotion-upsell.spec.ts` kiểm tra chọn variant, thêm inline, refresh proof và giữ form | Các control đó **có trong baseline**; mismatch do bỏ control là rủi ro của phương án A/#181, không phải kết luận lỗi hiện tại của `main` |
@@ -81,6 +82,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 - Tại từng vùng thao tác, **chỉ một CTA chính cho cùng hành động**. Banner được chứa TIER/progress nhưng không lặp CTA “Chọn quà” khi đã có picker tương tác ngay tại đó.
 - Không ẩn mất `TIER achieved` hoặc `GIFT progress` chỉ để bỏ `GIFT achieved` lặp; không ẩn lỗi/quyền lợi không khả dụng.
 - Mini-cart có thể dẫn tới `/cart#cart-gifts` khi cart có picker/anchor thật tương ứng; không đủ quyền nhận thì không render lời mời nhận quà giả.
+- Mọi mốc chưa đạt mà server báo sẽ thực sự áp dụng — quà (`GIFT`), giá trị đơn và **bậc số lượng (`QUANTITY_TIER`)** — đều là ứng viên tiến độ ở cart/mini-cart, theo cùng quy tắc chọn mốc gần nhất đang có. Tiến độ và khoảng thiếu lấy từ quote server (như `orderValueProgress`), không tính ở client; stacking/eligibility theo server. Checkout giữ nguyên quy tắc không nhắc mốc tiếp theo.
 - Số tiền, điều kiện đạt mốc, số suất, phần trăm và giá lấy từ model/quote canonical, không tính từ DOM, text badge hay client.
 
 ### UX-02 — Ưu tiên việc khách đến để làm
@@ -188,7 +190,7 @@ HIỆN TẠI (main@c6058a1)                 ĐỀ XUẤT (B + UX-02/08/10)
 3. **Tận dụng phần đã kiểm chứng.** Proof, khóa phối hợp, readback khi mất phản hồi và stale-offer đã có test DB/browser; B chỉ đổi presentation và vị trí, phạm vi rủi ro nhỏ hơn A.
 4. **Đúng mục tiêu “gọn”.** Vấn đề chính ở baseline là mật độ và vị trí (khối gợi ý đứng trước ô nhập ở mobile), không phải bản thân việc thêm hàng inline; B xử lý trực tiếp hai điểm đó.
 
-Điều kiện xem lại khuyến nghị: nếu số đo theo [spec đo lường](storefront-funnel-measurement-v1.md) sau khi triển khai B cho thấy upsell vẫn làm giảm tỉ lệ hoàn tất checkout (so với baseline) mà tỉ lệ thêm hàng thấp, owner có thể cân nhắc A hoặc bỏ upsell ở checkout qua amendment riêng; quyết định dựa trên số đo, không dựa trên lịch sử merge #178/#180.
+Điều kiện xem lại khuyến nghị: nếu số đo theo [spec đo lường](storefront-funnel-measurement-v1.md) sau khi triển khai B cho thấy upsell vẫn làm giảm tỉ lệ hoàn tất theo cohort (M-02c, so với baseline) mà tỉ lệ lượt có thêm hàng (M-03a) thấp, hoặc làm xấu chỉ số an toàn M-08, owner có thể cân nhắc A hoặc bỏ upsell ở checkout qua amendment riêng; quyết định dựa trên số đo, không dựa trên lịch sử merge #178/#180.
 
 **Decision gate:** chốt **A hoặc B tường minh** trước implementation phần upsell. A cần amendment/supersession được duyệt cho `docs/specs/smart-promotion-upsell-v1.md`, nêu `D-03/D-04`, `U-02/A`, `FR-06/07/08/09/12`, luồng `/sale` và test; thiếu bước này không coi A đáp ứng spec gốc. B cần duyệt cách thu gọn inline và kết luận phối hợp #181. Không mặc định A/B, không dùng việc #178/#180 từng merge làm approval; những thay đổi runtime và amendment thực thi nằm ở PR riêng.
 
@@ -236,6 +238,7 @@ Các AC không là lời xác nhận feature đã chạy. AC-07 chỉ áp dụng
 | ID | Kịch bản | Kết quả chấp nhận |
 | --- | --- | --- |
 | AC-01 | Cart có GIFT achieved + GIFT progress + TIER achieved; đối chiếu mini-cart | Không CTA quà trùng trong mỗi surface; TIER/progress không mất; giá/quà đúng quote; giữ hành vi #177 đã merge |
+| AC-01b | Hai campaign cùng áp dụng: mua 3 tặng quà + mua 5 giảm 10% tổng hóa đơn (hoặc fixture tương đương); giỏ 2 → 3 → 4 → 5 món ở cart và mini-cart; thêm ca stacking không cho phép kết hợp | 2 món: tiến độ tới quà; 3 món: quà đã đạt và nhắc còn 2 món để giảm 10% khi đó là mốc chưa đạt gần nhất theo quy tắc hiện có; 4 món: vẫn nhắc còn 1 món để giảm 10%; 5 món: cả hai đã đạt, không còn tiến độ của bậc đó. Khoảng thiếu, phần trăm và khả năng áp dụng đúng quote server; khi stacking không cho phép, không hứa ưu đãi không áp dụng được |
 | AC-02 | Regression bố cục cart của #177 trên `c6058a1` hoặc mới hơn; 390 và 1280/1440px | Một picker/anchor thật ở đầu trang, trước hàng mua; drawer “Chọn quà” tới đúng vùng và picker **đã mở rộng, có focus** (UX-05), không tự chọn/lưu quà; reload với hash cũng vậy; hàng mua/summary đủ. Không tách lại hai picker hoặc hồi CTA quà trùng |
 | AC-03 | Entitlement 2, selected 0/1/2; thiếu lựa chọn do cấm trùng/stock chung | CTA/copy đúng số còn chọn được; không suy hết stock, không tự thêm quà |
 | AC-04 | Chip-only → quay lại; nhận → bỏ thành công → quay lại | Chip-only không tăng quà; bỏ xong không draft sai; giữ quote/form/focus và draft mới nếu khách đã đổi ý định |
@@ -271,6 +274,7 @@ Cỡ là ước lượng tương đối để chọn đợt (S ≈ một compone
 | 2 | Mở picker khi tới qua `#cart-gifts` | UX-05, AC-02 | S | — |
 | 2 | Cart không cho thanh toán: liệt kê và link dòng cần xử lý | UX-08, AC-19 | S | — |
 | 2 | Vòng đời trạng thái picker quà (draft, bỏ/chọn lại, focus) | UX-04/05, AC-03/04/05 | M | — |
+| 2 | Tiến độ `QUANTITY_TIER` chưa đạt từ quote server (PR bug riêng, không thuộc PR tài liệu) | UX-01, AC-01b | M | — |
 | 3 | Upsell phương án B (vị trí, thu gọn, chip, phản hồi) | UX-06/07, AC-06/08/16 | L | OD-01; baseline Mức 0 đã thu (OD-03) |
 | 3 | Thanh dính đáy mobile cart/checkout | UX-02, AC-18 | M | — (nên đi cùng/sau B vì cùng vùng nút) |
 | 4 | Ô chọn phường/xã có tìm kiếm | UX-09, AC-12 | M | OD-04 |
