@@ -61,6 +61,40 @@ async function openPicker(picker: Locator) {
   const product = picker.getByRole("button", {name: "Khăn quà", exact: true});
   if (await product.count() && await product.getAttribute("aria-expanded") === "false") await product.click();
 }
+test("cart has one functional gift picker above paid products on mobile and desktop", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${URL}/cart`);
+
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    await expect(picker).toHaveCount(1);
+    await expect(page.locator("#cart-gifts")).toHaveCount(1);
+    await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+    await expect(page.locator('[data-promotion-banner="full"] a[href="#cart-gifts"]')).toHaveCount(0);
+
+    const beforePaidLines = await picker.evaluate((region) => {
+      const paidLine = [...document.querySelectorAll("article")].find((item) => item.textContent?.includes("Áo mua"));
+      return paidLine !== undefined && (region.compareDocumentPosition(paidLine) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(beforePaidLines).toBe(true);
+
+    const toggle = picker.getByRole("button", { name: "Chọn quà ngay" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
+  }
+
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" })).toHaveCount(1);
+  await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+});
+
 test("mobile keyboard picker saves partial/full/zero choices without changing paid items; Axe clean", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
