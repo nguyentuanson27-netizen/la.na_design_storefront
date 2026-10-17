@@ -154,7 +154,7 @@ Thứ tự khối ở checkout mobile (~390px), trước và sau B (kèm các y�
 HIỆN TẠI (main@c6058a1)                 ĐỀ XUẤT (B + UX-02/08/10)
 ┌───────────────────────────────┐       ┌───────────────────────────────┐
 │ Ưu đãi của bạn (banner)       │       │ Ưu đãi của bạn (banner)       │
-│ Đơn hàng (n) · tổng      [+]  │       │ Lý do chặn + cách sửa (UX-08)  │
+│ Đơn hàng (n) · tổng      [+]  │       │ Lý do chặn + cách sửa (UX-08) │
 │ Quà dành cho bạn (picker)     │       │ Đơn hàng (n) · tổng      [+]  │
 │ GỢI Ý THÊM ĐỂ ĐẠT ƯU ĐÃI      │       │ Quà dành cho bạn (picker)     │
 │  · tối đa 5 mẫu, mỗi mẫu:     │       │ Thông tin nhận hàng           │
