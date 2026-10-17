@@ -45,7 +45,7 @@ import {
   type StackPeer,
   type StackTierParticipant,
 } from "./gift-quantity-stack.ts";
-import type { QuantityTierConfig, TierDiscountUnit } from "./gift-quantity-tier.ts";
+import type { QuantityTierConfig, TierDiscountedUnits, TierDiscountUnit } from "./gift-quantity-tier.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
 /** A purchasable, priced cart line as the legacy authority resolved it. */
@@ -76,6 +76,15 @@ export type OrderValueProgress = Readonly<{
   next: Readonly<{ thresholdVnd: number; unit: TierDiscountUnit; value: number; shortfallVnd: number }>;
 }>;
 
+/** Display-only progress, counted from paid units in the campaign's actual scope. */
+export type QuantityProgress = Readonly<{
+  campaignId: string;
+  currentQuantity: number;
+  reachedThresholdQuantity: number | null;
+  discountedUnits: TierDiscountedUnits;
+  next: Readonly<{ thresholdQuantity: number; unit: TierDiscountUnit; value: number; shortfallQuantity: number }>;
+}>;
+
 export type GiftQuantityQuote =
   | Readonly<{ enabled: false }>
   | Readonly<{
@@ -91,6 +100,8 @@ export type GiftQuantityQuote =
       campaignNames: ReadonlyMap<string, string>;
       /** Display only: the next rung of each order-value ladder that could still apply. Never part of a proof. */
       orderValueProgress: readonly OrderValueProgress[];
+      /** Next quantity milestones verified by the same pricing/stacking authority; never part of a proof. */
+      quantityProgress: readonly QuantityProgress[];
     }>
   | Readonly<{ enabled: true; ok: false; reason: "LOOKUP_FAILED" | "INPUT_INVALID" }>;
 
@@ -167,6 +178,52 @@ const FORCED_ORDER_LADDER: QuantityTierConfig = {
   tiers: [{ minQuantity: 1, discountValue: 1 }],
 };
 
+function readQuantityProgress({ tiers, stackLines, legacyConsents, result }: Readonly<{
+  tiers: readonly StackTierParticipant[];
+  stackLines: readonly StackInputLine[];
+  legacyConsents: StackLegacyConsent;
+  result: Extract<ReturnType<typeof priceStack>, { ok: true }>;
+}>): readonly QuantityProgress[] {
+  const dropped = new Set(result.dropped.map((entry) => entry.campaignId));
+  const applied = new Set(result.groups.flatMap((group) => group.steps.map((step) => step.campaignId)));
+  const progress: QuantityProgress[] = [];
+  for (const tier of tiers) {
+    const { config, id } = tier;
+    if (config.basis === "ORDER_SUBTOTAL" || dropped.has(id) || !isValidTierConfig(config)) continue;
+    const eligible = stackLines.filter((line) => tier.resolve(line.product));
+    const currentQuantity = eligible.reduce((sum, line) => sum + line.quantity, 0);
+    if (currentQuantity === 0) continue;
+    const reached = [...config.tiers].reverse().find((rung) => rung.minQuantity <= currentQuantity);
+    const next = config.tiers.find((rung) => rung.minQuantity > currentQuantity && (!reached || rung.discountValue > reached.discountValue));
+    if (!next) continue;
+    const shortfallQuantity = next.minQuantity - currentQuantity;
+
+    // Idle ladders do not participate in today's conflict checks. Price a hypothetical addition
+    // with the ORIGINAL rules instead: another idle campaign may become active at that milestone,
+    // and fixed discounts/partial-unit rules must also remain valid. No probe changes the paid quote.
+    // Try existing eligible variants, since prices and overlapping scopes can differ by product.
+    const reachable = eligible.some((candidate) => {
+      const trial = priceStack({
+        lines: stackLines.map((line) => line === candidate ? { ...line, quantity: line.quantity + shortfallQuantity } : line),
+        tiers,
+        legacyConsents,
+      });
+      if (!trial.ok || trial.dropped.some((entry) => entry.campaignId === id)) return false;
+      const trialApplied = new Set(trial.groups.flatMap((group) => group.steps.map((step) => step.campaignId)));
+      return trialApplied.has(id) && [...applied].every((campaignId) => trialApplied.has(campaignId));
+    });
+    if (!reachable) continue;
+    progress.push(Object.freeze({
+      campaignId: id,
+      currentQuantity,
+      reachedThresholdQuantity: reached?.minQuantity ?? null,
+      discountedUnits: config.discountedUnits,
+      next: Object.freeze({ thresholdQuantity: next.minQuantity, unit: config.unit, value: next.discountValue, shortfallQuantity }),
+    }));
+  }
+  return progress.sort((a, b) => a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0);
+}
+
 function readOrderValueProgress({
   tierCampaigns,
   tiers,
@@ -235,7 +292,7 @@ export async function resolveGiftQuantityQuote({
 
   // A cart with nothing purchasable has no paid lines to price; that is a valid, empty quote.
   if (lines.length === 0) {
-    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map(), orderValueProgress: [] };
+    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map(), orderValueProgress: [], quantityProgress: [] };
   }
 
   const productIds = [...new Set(lines.map((line) => line.productId))];
@@ -298,5 +355,6 @@ export async function resolveGiftQuantityQuote({
     campaignRevisions: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.revision])),
     campaignNames: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.name])),
     orderValueProgress,
+    quantityProgress: readQuantityProgress({ tiers, stackLines, legacyConsents, result }),
   };
 }

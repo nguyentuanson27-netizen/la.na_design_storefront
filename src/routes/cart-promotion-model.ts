@@ -11,7 +11,7 @@ import type { StackStep } from "../commerce/gift-quantity-stack.ts";
  *
  * Two states, in this order on screen:
  *  - `achieved`  a condition the basket already meets (a quantity-tier price, gift slots earned);
- *  - `progress`  how far the basket is from the next gift slot, with a bar.
+ *  - `progress`  how far the basket is from the next gift or discount milestone, with a bar.
  */
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
@@ -254,6 +254,25 @@ export function buildCartPromotionView(
       }));
     }
   });
+
+  for (const progress of benefits.quantityProgress ?? []) {
+    const { next } = progress;
+    const partial = progress.discountedUnits === "FROM_REACHED_THRESHOLD";
+    const off = next.unit === "PERCENTAGE"
+      ? `${next.value}%${partial ? " cho sản phẩm được ưu đãi" : ""}`
+      : `${currency.format(next.value)}/sản phẩm${partial ? " được ưu đãi" : ""}`;
+    items.push(Object.freeze({
+      id: `quantity-next-${progress.campaignId}`,
+      state: "progress",
+      kind: "TIER",
+      title: `Mua thêm ${next.shortfallQuantity} sản phẩm áp dụng để được giảm ${off}`,
+      progress: Object.freeze({
+        percent: progressPercent(next.shortfallQuantity, next.thresholdQuantity - (progress.reachedThresholdQuantity ?? 0)),
+        label: `Còn thiếu ${next.shortfallQuantity} sản phẩm áp dụng`,
+      }),
+      needsGiftChoice: false,
+    }));
+  }
 
   // How far the basket is from the next rung of an order-value ladder. The quote only reports a ladder that
   // would genuinely apply, so what is shown here is a promise the checkout will keep.

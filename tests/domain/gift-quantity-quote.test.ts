@@ -40,6 +40,88 @@ const line = (variantId: string, quantity: number, basePriceVnd = 100_000): Quot
   variantId, pancakeVariationId: `pv-${variantId}`, productId: `p-${variantId}`, quantity, basePriceVnd, legacy: null,
 });
 
+test("quantity progress follows the stored ladder at 2 → 3 → 4 → 5 without discounting early", async () => {
+  for (const quantity of [2, 3, 4, 5]) {
+    const quote = await resolveGiftQuantityQuote({ lines: [line("a", quantity)], now: NOW, client: fakeClient([tierRecord("five", [[5, 10]])]), env: ON });
+    assert.ok(quote.enabled && quote.ok);
+    assert.equal(quote.subtotalVnd, quantity === 5 ? 450_000 : quantity * 100_000);
+    assert.deepEqual(quote.quantityProgress, quantity === 5 ? [] : [{
+      campaignId: "five", currentQuantity: quantity, reachedThresholdQuantity: null,
+      discountedUnits: "ALL_ELIGIBLE_UNITS",
+      next: { thresholdQuantity: 5, unit: "PERCENTAGE", value: 10, shortfallQuantity: 5 - quantity },
+    }]);
+  }
+});
+
+test("quantity progress counts scoped paid units and skips equal-value rungs", async () => {
+  const record = { ...tierRecord("scoped", [[3, 5], [5, 5], [8, 12]]), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: [], targets: [{ productId: "p-a", role: "INCLUDE" }] };
+  const quote = await resolveGiftQuantityQuote({ lines: [line("a", 4), line("outside", 20)], now: NOW, client: fakeClient([record]), env: ON });
+  assert.ok(quote.enabled && quote.ok);
+  assert.deepEqual(quote.quantityProgress, [{
+    campaignId: "scoped", currentQuantity: 4, reachedThresholdQuantity: 3, discountedUnits: "ALL_ELIGIBLE_UNITS",
+    next: { thresholdQuantity: 8, unit: "PERCENTAGE", value: 12, shortfallQuantity: 4 },
+  }]);
+  const outside = await resolveGiftQuantityQuote({ lines: [line("outside", 4)], now: NOW, client: fakeClient([record]), env: ON });
+  assert.ok(outside.enabled && outside.ok);
+  assert.deepEqual(outside.quantityProgress, []);
+});
+
+test("quantity progress promises no milestone that would conflict with another campaign at that quantity", async () => {
+  for (const activeThreshold of [1, 5]) {
+    const first = tierRecord("first", [[activeThreshold, 5]]);
+    const next = tierRecord("next", [[5, 10]]);
+    const quote = await resolveGiftQuantityQuote({ lines: [line("a", 4)], now: NOW, client: fakeClient([first, next]), env: ON });
+    assert.ok(quote.enabled && quote.ok);
+    assert.equal(quote.subtotalVnd, activeThreshold === 1 ? 380_000 : 400_000);
+    assert.deepEqual(quote.quantityProgress, [], "idle tiers must also obey stacking at the advertised threshold");
+  }
+});
+
+test("quantity progress needs mutual consent and distinct priorities, then advertises both active and idle ladders", async () => {
+  for (const [consented, priority, expected] of [[false, 2, false], [true, 1, false], [true, 2, true]] as const) {
+    const first = { ...tierRecord("first", [[1, 5]]), stackingEnabled: true, stackPriority: 1, stackPeers: [{ peerKind: "QUANTITY_TIER", peerCampaignId: "next" }] };
+    const next = { ...tierRecord("next", [[5, 10]]), stackingEnabled: consented, stackPriority: priority, stackPeers: [{ peerKind: "QUANTITY_TIER", peerCampaignId: "first" }] };
+    const quote = await resolveGiftQuantityQuote({ lines: [line("a", 4)], now: NOW, client: fakeClient([first, next]), env: ON });
+    assert.ok(quote.enabled && quote.ok);
+    assert.deepEqual(quote.quantityProgress.map((entry) => entry.campaignId), expected ? ["next"] : []);
+    assert.equal(quote.subtotalVnd, 380_000, "a progress probe never changes the actual paid quote");
+  }
+});
+
+test("quantity progress does not advertise invalid prices or invalid campaigns", async () => {
+  const invalidPrice = { ...tierRecord("fixed", [[5, 100_000]]), tierUnit: "FIXED_AMOUNT_PER_UNIT_VND" };
+  for (const campaign of [invalidPrice, tierRecord("bad", [[5, 100]])]) {
+    const quote = await resolveGiftQuantityQuote({ lines: [line("a", 4)], now: NOW, client: fakeClient([campaign]), env: ON });
+    assert.ok(quote.enabled && quote.ok);
+    assert.deepEqual(quote.quantityProgress, []);
+  }
+});
+
+test("quantity progress uses the legacy campaign's consent without changing its charged price", async () => {
+  const legacy = {
+    campaign: { id: "flash", kind: "FLASH_SALE", discountType: "PERCENTAGE", percentageValue: 10, fixedPriceVnd: null } as NonNullable<QuoteCartLine["legacy"]>["campaign"],
+    effectivePriceVnd: 90_000,
+  };
+  const tier = { ...tierRecord("next", [[5, 10]]), stackPriority: 2, stackingEnabled: true, stackPeers: [{ peerKind: "FLASH_SALE", peerCampaignId: "flash" }] };
+  for (const consented of [false, true]) {
+    const quote = await resolveGiftQuantityQuote({ lines: [{ ...line("a", 4), legacy }], now: NOW, client: fakeClient([tier]), env: ON,
+      readLegacyConsents: async () => consented ? new Map([["flash", { priority: 1 }]]) : new Map(),
+    });
+    assert.ok(quote.enabled && quote.ok);
+    assert.equal(quote.subtotalVnd, 360_000);
+    assert.equal(quote.quantityProgress.length, consented ? 1 : 0);
+  }
+});
+
+test("partial-unit milestones retain selection rules and can be reached using an eligible variant", async () => {
+  const tier = { ...tierRecord("partial", [[5, 50_000]]), tierUnit: "FIXED_AMOUNT_PER_UNIT_VND", tierDiscountedUnits: "FROM_REACHED_THRESHOLD", tierSelectionPriority: "MOST_EXPENSIVE_FIRST" };
+  const quote = await resolveGiftQuantityQuote({ lines: [line("cheap", 3, 30_000), line("expensive", 1)], now: NOW, client: fakeClient([tier]), env: ON });
+  assert.ok(quote.enabled && quote.ok);
+  assert.equal(quote.subtotalVnd, 190_000);
+  assert.equal(quote.quantityProgress[0]?.next.shortfallQuantity, 1);
+  assert.equal(quote.quantityProgress[0]?.discountedUnits, "FROM_REACHED_THRESHOLD");
+});
+
 test("gate OFF/unset/malformed: nothing is read and the result is disabled", async () => {
   const throwing = new Proxy({}, { get: () => { throw new Error("must not read while OFF"); } }) as never;
   for (const env of [{}, { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "1" }, { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "TRUE" }, { LA_PROMOTION_ACTIVATION_ENABLED: "true" }]) {
