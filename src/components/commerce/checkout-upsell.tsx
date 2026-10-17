@@ -95,7 +95,7 @@ export function CheckoutUpsell({ model, onBusyChange }: Readonly<{ model: Checko
           </p>
           <div className="pt-2 flex flex-wrap items-center gap-4">
             <Link
-              href="/shop"
+              href="/sale"
               className="btn btn--outline btn--sm text-xs"
             >
               Tiếp tục mua sắm
