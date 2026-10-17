@@ -75,6 +75,11 @@ export type CheckoutTotalsView = Readonly<{
   /** "Miễn phí" where shipping costs nothing, so the page never re-decides that. */
   shippingText: string;
   totalText: string;
+  /**
+   * The same total as a number, so a price-change notice can name the total the buyer submitted against
+   * beside the server's new one. Display only: the server never reads it back.
+   */
+  totalVnd: number;
 }>;
 
 /** A gift on the order: priced 0đ for the buyer, never part of what they pay. */
@@ -248,6 +253,7 @@ export function buildCheckoutViewModel(
       shippingText:
         totals.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(totals.shippingFeeVnd),
       totalText: currency.format(totals.totalVnd),
+      totalVnd: totals.totalVnd,
     }),
     quoteProof: input.quoteProof,
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
@@ -383,6 +389,7 @@ export function buildBenefitCheckoutViewModel(
       subtotalText: currency.format(facts.paidSubtotalVnd),
       shippingText: facts.shippingFeeVnd === 0 ? "Miễn phí" : currency.format(facts.shippingFeeVnd),
       totalText: currency.format(facts.totalVnd),
+      totalVnd: facts.totalVnd,
     }),
     giftPicker: render.giftPicker,
     quoteProof: render.proof,

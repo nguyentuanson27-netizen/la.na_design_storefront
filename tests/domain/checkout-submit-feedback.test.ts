@@ -88,3 +88,22 @@ test("guest checkout recovery link uses Giỏ hàng terminology", async () => {
   assert.equal(source.includes("Quay lại giỏ hàng"), true);
   assert.equal(source.includes("Quay lại túi hàng"), false);
 });
+
+test("UX-08/AC-10: a price change names the submitted total and the server's new total", () => {
+  const result = {
+    ok: false as const,
+    status: "PRICE_CHANGED" as const,
+    priceChange: { merchandiseSubtotalVnd: 515_000, shippingFeeVnd: 30_000, totalVnd: 545_000 },
+  };
+  const changed = checkoutSubmitFeedback(result, { submittedTotalVnd: 520_000 });
+  assert.equal(changed.mayRetry, true);
+  assert.match(changed.message, /Tổng thanh toán đã đổi: 520\.000\s₫ → 545\.000\s₫/);
+  assert.match(changed.message, /bấm đặt hàng lại/);
+
+  // Without a submitted total, or when the total did not move, only the current total is stated.
+  for (const context of [{}, { submittedTotalVnd: 545_000 }]) {
+    const feedback = checkoutSubmitFeedback(result, context);
+    assert.doesNotMatch(feedback.message, /→/);
+    assert.match(feedback.message, /Tổng thanh toán hiện tại là 545\.000\s₫/);
+  }
+});

@@ -26,6 +26,8 @@ import { GuestCheckoutForm, type GuestCheckoutBenefit } from "@/components/comme
 export function BrandGuestCheckoutForm(
   props: Readonly<{
     quoteProof: string | null;
+    totalVnd?: number;
+    totalText?: string;
     giftPicker?: CartGiftPickerModel;
     attemptKey?: string;
     quoteRenderId?: string;

@@ -4,6 +4,8 @@ import Link from "next/link";
 import { BRAND } from "@/brand";
 import { BrandCartLineControls } from "@/components/brand/cart-line-controls";
 import { BrandCartGiftPicker } from "@/components/brand/cart-gift-picker";
+import { CartLineJumpLink } from "@/components/brand/cart-line-jump-link";
+import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
@@ -17,6 +19,8 @@ import { buildCartMetadata } from "@/routes/metadata/cart";
 /** Markup only. The lines, the subtotal and the `view_cart` event live in `@/routes/cart`. */
 
 const CART_BREADCRUMBS = [{ label: "Trang chủ", href: "/" }, { label: "Giỏ hàng" }] as const;
+const CHECKOUT_CTA_ID = "cart-checkout-cta";
+const lineAnchor = (line: CartLineView) => `cart-line-${line.variantId}`;
 
 function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority: boolean }>) {
   return (
@@ -74,6 +78,7 @@ function render(data: CartViewModel) {
         ),
       }
     : data.promotions;
+  const problemLines = data.lines.filter((line) => !line.available);
 
   return (
     <PageShell>
@@ -86,8 +91,11 @@ function render(data: CartViewModel) {
           <div className="divide-y divide-black/15">
             {data.lines.map((line, index) => (
               <article
-                className="grid gap-6 py-8 first:pt-0 sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
+                className="grid scroll-mt-32 gap-6 py-8 outline-offset-4 first:pt-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-black sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
+                id={lineAnchor(line)}
                 key={line.variantId}
+                tabIndex={line.available ? undefined : -1}
+                aria-label={line.available ? undefined : `${line.productName}, cần xử lý: ${line.availabilityLabel}`}
               >
                 <div>
                   {line.productSlug ? (
@@ -140,8 +148,8 @@ function render(data: CartViewModel) {
                           priceText={line.priceText}
                         />
                       </p>
-                      <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
-                        {line.availabilityLabel}
+                      <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`} data-line-problem={line.available ? undefined : ""}>
+                        {line.available ? line.availabilityLabel : `Cần xử lý: ${line.availabilityLabel}`}
                       </p>
                     </div>
                   </div>
@@ -169,6 +177,12 @@ function render(data: CartViewModel) {
               <strong className="text-xl font-medium tracking-[-0.02em]">{data.subtotalText}</strong>
             </div>
             <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
+            {data.shippingBaseFeeText ? (
+              <div className="mt-4 flex items-baseline justify-between gap-6 text-sm" data-cart-shipping-estimate>
+                <span className="text-black/75">Phí vận chuyển cơ bản</span>
+                <span>{data.shippingBaseFeeText}</span>
+              </div>
+            ) : null}
             </>
           )}
           {data.hasUnavailableLines ? (
@@ -179,7 +193,9 @@ function render(data: CartViewModel) {
           <p className="mt-4 text-sm leading-6 text-black/75">
             {data.summary
               ? "Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại trước khi tạo đơn."
-              : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây."}
+              : data.shippingBaseFeeText
+                ? "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng vào tạm tính và được tính chính xác ở bước thanh toán."
+                : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây."}
           </p>
           {data.preorderNotice === null ? null : (
             <BrandPreorderFulfillmentNotice
@@ -191,17 +207,41 @@ function render(data: CartViewModel) {
             <Link
               className="btn btn--primary mt-7 w-full"
               href="/checkout"
+              id={CHECKOUT_CTA_ID}
             >
               Tiến hành đặt hàng
             </Link>
-          ) : (
+          ) : data.benefitsNotice || problemLines.length === 0 ? (
             <p className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6 text-black/75">
               {data.benefitsNotice ?? "Hãy xử lý các dòng chưa khả dụng trước khi thanh toán."}
             </p>
+          ) : (
+            /* UX-08 / AC-19: every line that blocks checkout, by name and reason, each a way to that line. */
+            <div className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6" data-cart-problem-lines>
+              <p className="font-semibold">
+                {problemLines.length === 1 ? "Cần xử lý 1 sản phẩm trước khi thanh toán:" : `Cần xử lý ${problemLines.length} sản phẩm trước khi thanh toán:`}
+              </p>
+              <ul className="mt-2 space-y-1">
+                {problemLines.map((line) => (
+                  <li key={line.variantId}>
+                    <CartLineJumpLink targetId={lineAnchor(line)}>{`${line.productName} — ${line.availabilityLabel}`}</CartLineJumpLink>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           <Link className="text-link mt-7 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </aside>
       </div>
+      {data.canCheckout ? (
+        <>
+          {/* Room for the bottom bar, so it never sits over the end of the page. */}
+          <div aria-hidden="true" className="h-24 lg:hidden" />
+          <MobileStickyCta targetId={CHECKOUT_CTA_ID} totalText={data.summary?.totalText ?? data.subtotalText}>
+            <Link className="btn btn--primary px-4" href="/checkout">Thanh toán</Link>
+          </MobileStickyCta>
+        </>
+      ) : null}
     </PageShell>
   );
 }

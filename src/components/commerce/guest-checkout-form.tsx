@@ -31,6 +31,7 @@ import { useCheckoutGiftReminder } from "@/components/headless/use-checkout-gift
 import { reminderSubmitDecision } from "@/components/headless/checkout-gift-reminder-model";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { CheckoutUpsell } from "./checkout-upsell";
+import { MobileStickyCta } from "@/components/brand/mobile-sticky-cta";
 import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
 
 const EMPTY_GIFT_PICKER: CartGiftPickerModel = { campaigns: [], selections: [], invalid: false, stackConflict: false };
@@ -112,8 +113,12 @@ export type GuestCheckoutBenefit = Readonly<{
 }>;
 
 
+const SUBMIT_BUTTON_ID = "checkout-submit";
+
 export function GuestCheckoutForm({
   quoteProof,
+  totalVnd,
+  totalText,
   giftPicker,
   attemptKey,
   quoteRenderId,
@@ -127,6 +132,10 @@ export function GuestCheckoutForm({
   desktopPreorderSlot,
 }: Readonly<{
   quoteProof: string | null;
+  /** The total of the quote on screen; only used to say "old → new" after a price change. */
+  totalVnd?: number;
+  /** The same total, formatted, for the mobile bottom bar. */
+  totalText?: string;
   giftPicker?: CartGiftPickerModel;
   attemptKey?: string;
   quoteRenderId?: string;
@@ -144,27 +153,26 @@ export function GuestCheckoutForm({
     null,
   );
   const router = useRouter();
-  const [upsellPending, setUpsellPending] = useState(false);
   const [isRefreshingQuote, startQuoteRefresh] = useTransition();
   const [provinces, setProvinces] = useState<CheckoutProvince[]>([]);
   const [communes, setCommunes] = useState<CheckoutCommune[]>([]);
   const [provinceRef, setProvinceRef] = useState("");
   const [communeRef, setCommuneRef] = useState("");
   const [submittedRenderId, setSubmittedRenderId] = useState<string | undefined>();
+  const [submittedTotalVnd, setSubmittedTotalVnd] = useState<number | undefined>();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [detail, setDetail] = useState("");
   const [note, setNote] = useState("");
   const [draftNotice, setDraftNotice] = useState<string | null>(null);
   const [giftPending, setGiftPending] = useState(false);
-  const coordinatedBusy = useRef({ gifts: false, upsell: false, quote: false });
+  const coordinatedBusy = useRef({ gifts: false, quote: false });
   const submissionBusy = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const paymentRef = useRef<HTMLHeadingElement>(null);
   const submitButton = useRef<HTMLButtonElement>(null);
   const reminder = useCheckoutGiftReminder(attemptKey);
   const onGiftBusyChange = useCallback((value: boolean) => { coordinatedBusy.current.gifts = value; setGiftPending(value); }, []);
-  const onUpsellBusyChange = useCallback((value: boolean) => { coordinatedBusy.current.upsell = value; setUpsellPending(value); }, []);
   const isInteractionLocked = useCallback(() => Object.values(coordinatedBusy.current).some(Boolean) || submissionBusy.current, []);
   const refreshQuote = useCallback(() => {
     coordinatedBusy.current.quote = true;
@@ -295,7 +303,7 @@ export function GuestCheckoutForm({
     }
   }, [submitState, refreshQuote]);
 
-  const feedback = submitState ? checkoutSubmitFeedback(submitState) : null;
+  const feedback = submitState ? checkoutSubmitFeedback(submitState, { submittedTotalVnd }) : null;
   const lockSubmission = feedback ? !feedback.mayRetry : false;
   // Missing fields no longer disable the button: pressing it is how the buyer finds out what is
   // left, so it stays pressable and answers with the warnings below. It is disabled only while a
@@ -303,7 +311,26 @@ export function GuestCheckoutForm({
   // could not be loaded at all (the retry button is the way forward then).
   const waitingForNewRender = Boolean(submitState && !submitState.ok && (submitState.status === "PRICE_CHANGED" || (submitState.status === "RETRYABLE" && submitState.giftRepairRequired)) && submittedRenderId === quoteRenderId);
   const submitDisabled =
-    waitingForNewRender || !quoteProof || isSubmitting || giftPending || upsellPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+    waitingForNewRender || !quoteProof || isSubmitting || giftPending || Boolean(geoError) || isRefreshingQuote || lockSubmission;
+
+  // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
+  // A final outcome is already explained by the feedback block right above the button.
+  const submitLockReason = isSubmitting || lockSubmission ? null
+    : !quoteProof ? (unavailableNotice ? "Chưa thể đặt hàng: giỏ hàng cần được kiểm tra lại (xem hướng dẫn ở đầu trang)." : "Chưa có báo giá hợp lệ. Hãy kiểm tra lại báo giá trước khi đặt hàng.")
+    : giftPending ? "Đang cập nhật quà tặng. Nút đặt hàng sẽ mở lại khi báo giá mới sẵn sàng."
+    : isRefreshingQuote || waitingForNewRender ? "Đang tải báo giá mới. Vui lòng chờ trong giây lát."
+    : geoError ? "Chưa tải được danh sách địa chỉ. Hãy bấm “Thử lại” ở phần địa chỉ giao hàng."
+    : null;
+  const submitReasonId = useId();
+
+  // UX-10: a standing line above the button. Information only -- it is not the one-time reminder,
+  // never marks the reminder as shown and never acknowledges a gift the buyer is not taking.
+  const giftModel = giftPicker ?? EMPTY_GIFT_PICKER;
+  const choosableGifts = giftModel.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
+  const unclaimedGifts = giftModel.campaigns.reduce((sum, row) => sum + row.unclaimed, 0);
+  const giftHint = !quoteProof || giftModel.invalid || unclaimedGifts === 0 ? null
+    : choosableGifts > 0 ? { canChoose: true, text: `Bạn còn ${choosableGifts} quà chưa chọn.` }
+    : { canChoose: false, text: "Một phần quà chưa thể nhận vì hiện chưa có lựa chọn phù hợp." };
 
   const fieldErrors = findFieldErrors({
     name,
@@ -357,6 +384,8 @@ export function GuestCheckoutForm({
     if (decision !== "submit") return;
     submissionBusy.current = true;
     setSubmittedRenderId(quoteRenderId);
+    // The total of the render this submit is made against, so a refusal can say "old → new".
+    setSubmittedTotalVnd(totalVnd);
     const formData = new FormData(event.currentTarget);
     if (benefit?.needsAcknowledgement && reminder.current.current === "seen") formData.set("nonclaimAcknowledged", "yes");
     startTransition(() => submitAction(formData));
@@ -375,6 +404,9 @@ export function GuestCheckoutForm({
   }
   function chooseGifts() {
     reminder.markSeen();
+    openGiftPicker();
+  }
+  function openGiftPicker() {
     requestAnimationFrame(() => {
       const section = document.getElementById("cart-gifts");
       const toggle = section?.querySelector<HTMLButtonElement>("button[aria-controls]");
@@ -382,6 +414,12 @@ export function GuestCheckoutForm({
       section?.focus(); section?.scrollIntoView({block: "start", behavior: "smooth"});
     });
   }
+
+  // Read at the moment the buyer asks to leave: anything typed or chosen would be lost.
+  const hasEnteredDetails = useCallback(
+    () => [name, phone, detail, note, provinceRef].some((value) => value.trim().length > 0),
+    [name, phone, detail, note, provinceRef],
+  );
 
   function handleProvinceChange(value: string) {
     setProvinceRef(value);
@@ -445,14 +483,16 @@ export function GuestCheckoutForm({
         </section>
       ) : null}
 
-      <BrandCartGiftPicker model={giftPicker ?? EMPTY_GIFT_PICKER} onBusyChange={onGiftBusyChange} locked={isSubmitting || upsellPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} />
+      <BrandCartGiftPicker model={giftPicker ?? EMPTY_GIFT_PICKER} onBusyChange={onGiftBusyChange} locked={isSubmitting || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onDraftChange={setDraftNotice} onReturnToPayment={returnToPayment} />
       {totalsSlot ? <div className="hidden lg:block">{totalsSlot}</div> : null}
       {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
       </aside>
 
       <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
       <div className="checkout-receiving-fields min-w-0 space-y-8">
-      {upsell ? <CheckoutUpsell model={upsell} locked={isSubmitting || giftPending || isRefreshingQuote || lockSubmission} isLocked={isInteractionLocked} onBusyChange={onUpsellBusyChange} /> : null}
+      {/* UX-08: why the order cannot be placed, and how to fix it, before the first field. */}
+      {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-4 text-sm sm:px-5"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2 leading-6">{unavailableNotice}</p><div className="mt-2 flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Kiểm tra lại báo giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
+      {upsell ? <CheckoutUpsell model={upsell} hasEnteredDetails={hasEnteredDetails} /> : null}
       <div>
         <p className="eyebrow">Thông tin nhận hàng</p>
         <h2 className="mt-3 font-display text-3xl md:text-4xl">Giao hàng COD</h2>
@@ -627,7 +667,6 @@ export function GuestCheckoutForm({
           aside at `lg+`. */}
       <div className="min-w-0 space-y-5">
       <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
-      {unavailableNotice ? <div role="alert"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2">{unavailableNotice}</p><button type="button" className="mt-2 min-h-11 underline" disabled={isRefreshingQuote || giftPending || upsellPending || isSubmitting} onClick={refreshQuote}>Kiểm tra lại báo giá</button><Link href="/cart" className="ml-4 text-sm underline">Quay lại giỏ hàng</Link></div> : null}
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
       {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
       {totalsSlot ? <div className="checkout-totals lg:hidden">{totalsSlot}</div> : null}
@@ -660,9 +699,20 @@ export function GuestCheckoutForm({
         </p>
       ) : null}
 
+      {giftHint ? (
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-black/15 pt-4 text-sm" data-checkout-gift-hint>
+          <p>{giftHint.text}</p>
+          {giftHint.canChoose ? <button type="button" className="min-h-11 font-semibold underline underline-offset-4" onClick={openGiftPicker}>Chọn quà</button> : null}
+        </div>
+      ) : null}
+
+      {submitLockReason ? <p id={submitReasonId} className="text-sm" aria-live="polite" data-checkout-submit-reason>{submitLockReason}</p> : null}
+
       <button
+        aria-describedby={submitLockReason ? submitReasonId : undefined}
         className="btn btn--primary w-full py-4"
         disabled={submitDisabled}
+        id={SUBMIT_BUTTON_ID}
         ref={submitButton}
         type="submit"
       >
@@ -672,8 +722,20 @@ export function GuestCheckoutForm({
       <p className="text-xs leading-5 text-black/60">
         Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
       </p>
+      {/* Room for the bottom bar, so it never sits over the last of the page. */}
+      {totalText ? <div aria-hidden="true" className="h-24 lg:hidden" /> : null}
       </div>
       </div>
+      {totalText ? (
+        <MobileStickyCta targetId={SUBMIT_BUTTON_ID} totalText={totalText} suppressed={reminder.state === "open"} note={submitLockReason}>
+          {/* Not a second submit: it asks the form to submit, so validation, the reminder and the single
+              order all run through `handleSubmit` exactly as the primary button does. */}
+          {/* Named apart from the primary button so assistive tech and tests can tell the two apart. */}
+          <button type="button" className="btn btn--primary px-4" disabled={submitDisabled} onClick={() => formRef.current?.requestSubmit()}>
+            {isSubmitting ? "Đang gửi…" : "Đặt hàng"}
+          </button>
+        </MobileStickyCta>
+      ) : null}
       <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Bạn còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
   );

@@ -84,6 +84,11 @@ export type CartViewModel = Readonly<{
    * buyable, benefits readable), so a cart that cannot be bought never shows a total.
    */
   summary?: OrderSummaryView;
+  /**
+   * OD-06 — shown only where `summary` is not: the policy's basic fee, from the server, as an estimate the
+   * checkout makes exact. Absent when the policy cannot be read, or when there is a summary to show instead.
+   */
+  shippingBaseFeeText?: string;
   benefitsNotice?: string;
 }>;
 
@@ -176,6 +181,14 @@ function summaryEntry(
   return summary === null || (state !== undefined && summary.valueText !== currency.format(subtotal)) ? {} : { summary };
 }
 
+function withShippingEstimate(
+  policy: GuestShippingPolicy | undefined,
+  entry: { summary?: OrderSummaryView },
+): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
+  if (entry.summary || policy === undefined || !Number.isSafeInteger(policy.feeVnd) || policy.feeVnd < 0) return entry;
+  return { shippingBaseFeeText: currency.format(policy.feeVnd) };
+}
+
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
   const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
   if (!discount) return {};
@@ -263,7 +276,7 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
-    ...summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines),
+    ...withShippingEstimate(input.shippingPolicy, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
       ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
       : tierPriceInvalid

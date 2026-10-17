@@ -1,7 +1,7 @@
 # Spec — Trải nghiệm ưu đãi, gợi ý mua thêm và thanh toán COD (UX-COMMERCE-001)
 
 **Ngày cập nhật:** 2026-10-17
-**Trạng thái:** DRAFT v1.4 — spec-only, để owner review; chưa phê duyệt implementation. **Khuyến nghị của spec cho upsell: phương án B** (§6, UX-07) — là khuyến nghị, không phải phê duyệt.
+**Trạng thái:** v1.5 — owner đã chốt OD-01..OD-06 ngày 17/10/2026 (bảng §0, cột “Quyết định owner”); implementation theo các quyết định đó nằm ở PR implementation của nhánh `claude/inspiring-edison-hxupbu`. Khuyến nghị B ở UX-07 được giữ làm lịch sử; **owner chọn A**.
 **Baseline hiện tại:** `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d` — sau khi `main` được đưa về trước PR #178/#180 (`3cbbbaec`) và PR #177 đã merge. Checkout upsell tại baseline vẫn có chọn biến thể và thêm hàng trực tiếp; cart đã có một picker quà ở đầu trang, trước hàng mua.
 **Phụ thuộc:** PR #181 (phương án A — banner `/sale`) chưa merge; chi tiết ở §2. Trạng thái PR, lịch sử nhánh và quality gate của PR tài liệu nằm trong mô tả PR, không ghi trong spec.
 **Phạm vi:** spec-only, đi cùng [storefront-funnel-measurement-v1.md](storefront-funnel-measurement-v1.md). Không kèm thay đổi runtime, test, database, CI, dependency package hoặc feature flag.
@@ -10,14 +10,14 @@
 
 Mọi điểm cần owner chốt gom tại đây; mỗi dòng ghi phần nào bị chặn nếu chưa quyết. Khuyến nghị của spec không phải phê duyệt.
 
-| ID | Quyết định | Khuyến nghị của spec | Chặn phần nào |
-| --- | --- | --- | --- |
-| OD-01 | Phương án upsell checkout: A (banner `/sale`, PR #181) hay B (inline thu gọn) — UX-07 | **B**; A cần amendment `D-03/D-04`, `U-02/A`, `FR-06/07/08/09/12` | Toàn bộ implementation upsell (UX-06/07, AC-06/07/08) |
-| OD-02 | Gate đo lường MEAS-06: sink/schema UX, khóa lượt ngẫu nhiên và consent, cửa sổ attribution ([spec đo lường](storefront-funnel-measurement-v1.md)) | Duyệt nếu muốn đánh giá B bằng chỉ số Mức 1; nếu không, chỉ đo Mức 0 | Chỉ số Mức 1 (M-02c — guardrail hoàn tất theo cohort, M-03a/b, M-04, M-07, M-06 theo lượt) |
-| OD-03 | Độ dài cửa sổ baseline số đo trước khi đổi UI | Đủ số lượt checkout để ổn định; tránh trùng đợt sale lớn hoặc ghi rõ khi trùng | So sánh trước/sau cho B |
-| OD-04 | Chọn phường/xã: giữ `<select>` gốc hay đổi sang ô chọn có tìm kiếm (danh sách sau sáp nhập có thể dài hàng trăm dòng) | Combobox tự xây theo mẫu ARIA combobox/listbox, **không thêm package**; giữ `<select>` gốc khi script lỗi; giá trị gửi vẫn là id từ geo action | Phần địa chỉ của UX-09 và AC-12 |
-| OD-05 | Thông tin tin cậy COD cạnh nút đặt hàng: thời gian giao dự kiến, đổi trả, “không cần trả trước” | Chỉ dùng câu và link đã có trong [la-na-design-policy-authority.md](la-na-design-policy-authority.md) (`/shipping`, `/returns`); thời gian giao chỉ khi có số liệu owner xác nhận; owner duyệt từng câu | Khối tin cậy COD trong UX-09 |
-| OD-06 | Hiện phí ship ở cart trước khi có quote; có thanh tiến độ freeship hay không | Hiện mức cơ bản theo chính sách server (U-01/A đã duyệt 30.000đ, `guest-shipping-policy.ts`) với chú thích “tính chính xác ở bước thanh toán”; không hiện khi không đọc được chính sách. Thanh tiến độ freeship chỉ khi có chính sách freeship được duyệt | Phần phí ship của UX-02 |
+| ID | Quyết định | Khuyến nghị của spec | Quyết định owner (17/10/2026) | Chặn phần nào |
+| --- | --- | --- | --- | --- |
+| OD-01 | Phương án upsell checkout: A (banner `/sale`, PR #181) hay B (inline thu gọn) — UX-07 | **B**; A cần amendment `D-03/D-04`, `U-02/A`, `FR-06/07/08/09/12` | **A** — amendment AM-01 ghi trong [smart-promotion-upsell-v1.md](smart-promotion-upsell-v1.md) §8; AC-07 thay AC-08 | Toàn bộ implementation upsell (UX-06/07, AC-06/07/08) |
+| OD-02 | Gate đo lường MEAS-06: sink/schema UX, khóa lượt ngẫu nhiên và consent, cửa sổ attribution ([spec đo lường](storefront-funnel-measurement-v1.md)) | Duyệt nếu muốn đánh giá B bằng chỉ số Mức 1; nếu không, chỉ đo Mức 0 | **Chỉ Mức 0**; không sink, khóa lượt hay binding | Chỉ số Mức 1 (M-02c — guardrail hoàn tất theo cohort, M-03a/b, M-04, M-07, M-06 theo lượt) |
+| OD-03 | Độ dài cửa sổ baseline số đo trước khi đổi UI | Đủ số lượt checkout để ổn định; tránh trùng đợt sale lớn hoặc ghi rõ khi trùng | Chưa đặt số ngày; báo cáo Mức 0 ghi rõ khoảng thời gian và trùng đợt sale nếu có | So sánh trước/sau |
+| OD-04 | Chọn phường/xã: giữ `<select>` gốc hay đổi sang ô chọn có tìm kiếm (danh sách sau sáp nhập có thể dài hàng trăm dòng) | Combobox tự xây theo mẫu ARIA combobox/listbox, **không thêm package**; giữ `<select>` gốc khi script lỗi; giá trị gửi vẫn là id từ geo action | **Chưa làm** — giữ `<select>` gốc | Phần địa chỉ của UX-09 và AC-12 |
+| OD-05 | Thông tin tin cậy COD cạnh nút đặt hàng: thời gian giao dự kiến, đổi trả, “không cần trả trước” | Chỉ dùng câu và link đã có trong [la-na-design-policy-authority.md](la-na-design-policy-authority.md) (`/shipping`, `/returns`); thời gian giao chỉ khi có số liệu owner xác nhận; owner duyệt từng câu | **Chưa làm** — không thêm khối tin cậy | Khối tin cậy COD trong UX-09 |
+| OD-06 | Hiện phí ship ở cart trước khi có quote; có thanh tiến độ freeship hay không | Hiện mức cơ bản theo chính sách server (U-01/A đã duyệt 30.000đ, `guest-shipping-policy.ts`) với chú thích “tính chính xác ở bước thanh toán”; không hiện khi không đọc được chính sách. Thanh tiến độ freeship chỉ khi có chính sách freeship được duyệt | **Duyệt phí cơ bản** khi cart chưa có bảng tổng; **không** có thanh tiến độ freeship | Phần phí ship của UX-02 |
 
 ## 1. Mục tiêu, người dùng và kết quả mong muốn
 
@@ -54,8 +54,8 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 ### Phụ thuộc
 
 - **PR #177 — đã merge vào baseline `c6058a1`:** bố cục cart một picker ở đầu trang là hiện trạng, được `tests/a11y-runtime/cart-gift-picker.spec.ts` khóa; AC-01/02 là regression.
-- **PR #181 — đang mở:** là đề xuất runtime cho phương án A (banner `/sale`). Không phải hiện trạng, không phải phê duyệt; quan hệ với spec ở UX-06/07 và AC-06/07/16.
-- **PR #182 — đang mở:** sửa tiến độ `QUANTITY_TIER` chưa đạt (quote trả `quantityProgress`, model hiển thị “Mua thêm N sản phẩm áp dụng để được giảm …”), kèm regression 2 → 3 → 4 → 5. Là phần runtime của UX-01/AC-01b; khi #182 merge, §3 cập nhật hiện trạng và AC-01b nghiệm thu trên baseline mới.
+- **PR #181 — đề xuất runtime cho phương án A (banner `/sale`).** Owner chọn A (OD-01); PR implementation của spec này mang banner đó cùng cảnh báo rời form và test thay thế (AC-07/16), nên #181 không cần merge riêng.
+- **PR #182 — đã merge (`d1d49bc`):** tiến độ `QUANTITY_TIER` chưa đạt (quote trả `quantityProgress`, model hiển thị “Mua thêm N sản phẩm áp dụng để được giảm …”), kèm regression 2 → 3 → 4 → 5. Là phần runtime của UX-01/AC-01b, nghiệm thu bằng test của chính #182 trên baseline mới.
 - **PR #178/#180:** chỉ là lịch sử thiết kế, nội dung không thuộc `main` hiện tại và không thay phê duyệt nghiệp vụ.
 - **Khi baseline đổi:** nếu `main` di chuyển hoặc #181 đổi hướng/merge/đóng, kiểm tra lại §3 với source mới trước khi triển khai phần phụ thuộc; không suy bản cũ đã được nghiệm thu.
 
@@ -344,3 +344,22 @@ Ví dụ nguyên tắc presentation: text + native control, không suy entitleme
 - [ ] Implementation đạt các AC áp dụng và Definition of Done của project: test/lint/build, tích hợp, bảo mật, accessibility/runtime và tài liệu; bằng chứng chưa chạy phải ghi chưa chạy.
 
 **Giới hạn verification:** spec này chỉ được đối chiếu với source, không chứng nhận browser, screen reader, database hoặc tính sẵn sàng production. Approve tài liệu cho phép lập kế hoạch ở phạm vi đã chốt; không tự cho phép merge #181, sửa runtime, bỏ quality gate hoặc deploy.
+
+## 12. Trạng thái implementation theo quyết định owner (17/10/2026)
+
+Ghi lại phần runtime đã làm theo §0; bằng chứng chạy test nằm trong mô tả PR implementation, không ghi ở đây.
+
+| Hạng mục | Spec / AC | Trạng thái | Nơi thực hiện |
+| --- | --- | --- | --- |
+| Lý do chặn checkout trước form + cạnh nút | UX-08, AC-09 | Đã làm | `guest-checkout-form.tsx`: khối `#checkout-blocking-notice` trước trường đầu tiên; dòng lý do khóa `aria-describedby` cạnh nút “Đặt hàng COD” |
+| Tổng cũ → mới khi giá đổi | UX-08, AC-10 | Đã làm | `checkout-submit-feedback.ts` nhận tổng của render đã submit (`totalVnd` từ server); lần đổi thứ hai so với lần submit gần nhất |
+| Dòng nhắc quà trên nút | UX-10, AC-11 | Đã làm | `guest-checkout-form.tsx` `data-checkout-gift-hint`; “Chọn quà” mở picker, không đánh dấu đã nhắc, không tạo acknowledgement |
+| Mở picker khi tới qua `#cart-gifts` | UX-05, AC-02 | Đã làm | `cart-gift-picker.tsx` (load + `hashchange`), không tự chọn/lưu |
+| Cart liệt kê và link dòng cần xử lý | UX-08, AC-19 | Đã làm | `src/app/cart/page.tsx` + `cart-line-jump-link.tsx`; dòng có nhãn chữ “Cần xử lý: …” và nhận focus |
+| Vòng đời draft picker (nhận → bỏ không hồi sinh cảnh báo) | UX-04, AC-04 | Đã làm | `cart-gift-picker.tsx`: draft đã được server xác nhận lưu thì kết thúc intent |
+| Tiến độ `QUANTITY_TIER` chưa đạt | UX-01, AC-01b | Đã có từ #182 | — |
+| Upsell phương án A | UX-06/07, AC-06/07/16 | Đã làm | `checkout-upsell.tsx` (banner, dismiss D-06, cảnh báo rời form đã nhập); amendment AM-01; `promotion-upsell.spec.ts` viết lại |
+| Thanh dính đáy mobile cart/checkout | UX-02, AC-18 | Đã làm | `src/components/brand/mobile-sticky-cta.tsx`; checkout gọi `requestSubmit()` của cùng form |
+| Phí ship cơ bản ở cart | UX-02, OD-06 | Đã làm | `cart-model.ts` `shippingBaseFeeText` khi chưa có bảng tổng |
+| Đo lường Mức 0 | MEAS-AC-01 | Không cần code mới | Phương án A bỏ thao tác add ở checkout nên khoảng trống `add_to_cart` của upsell không còn; M-01/M-02/M-05/M-06/M-08 tính từ event và dữ liệu đơn hiện có |
+| Combobox phường/xã, khối tin cậy COD, đo lường Mức 1 | UX-09, AC-12, MEAS-AC-02..05 | Không làm | OD-04, OD-05 chưa duyệt; OD-02 chỉ Mức 0 |

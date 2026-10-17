@@ -1,7 +1,7 @@
 # Spec — Đo lường phễu cart → checkout (MEAS-FUNNEL-001)
 
 **Ngày cập nhật:** 2026-10-17
-**Trạng thái:** DRAFT v1.3 — spec-only, để owner review; chưa phê duyệt implementation, sink hay khóa tương quan.
+**Trạng thái:** v1.4 — owner chốt OD-02 ngày 17/10/2026: **chỉ đo Mức 0**. Sink UX, khóa lượt, binding lượt ↔ đơn và đăng ký lượt (MEAS-04a/b/c, MEAS-05, MEAS-AC-02..05) **không triển khai**; giữ làm đặc tả cho lần duyệt sau. Upsell checkout theo phương án A không còn thao tác add tại checkout, nên khoảng trống `add_to_cart` ở MEAS-02 không còn áp dụng.
 **Baseline:** `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d`.
 **Quan hệ:** tách từ §8 của [storefront-promotion-upsell-checkout-ux-v1.md](storefront-promotion-upsell-checkout-ux-v1.md) (UX-COMMERCE-001) để phần UX được duyệt độc lập. Spec UX dùng chỉ số ở đây để đánh giá thay đổi (đặc biệt khuyến nghị B); spec này không đổi hợp đồng UX nào. Kế thừa contract [marketing-analytics-shopping.md](marketing-analytics-shopping.md) §4; điểm nào khác contract đó phải được duyệt như mở rộng contract.
 

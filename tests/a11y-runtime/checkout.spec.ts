@@ -699,6 +699,8 @@ test("P9a a price change between render and submit forces an explicit second con
   await submit.click();
 
   await expect(page.getByRole("status")).toContainText("Giá đã thay đổi");
+  // UX-08 / AC-10: both totals are the server's -- the one this render showed, and the refreshed one.
+  await expect(page.getByRole("status")).toContainText(`Tổng thanh toán đã đổi: ${quotedTotal} → `);
   expect(
     await prisma.orderMirror.count({ where: { sourceCartId: cartId } }),
     "a quote the buyer has not acknowledged must create no order at all",
@@ -726,4 +728,46 @@ test("P9a a price change between render and submit forces an explicit second con
   // than P9a's question of whether the buyer acknowledged the website's price. That the acknowledged
   // proof is accepted and the acknowledged price persisted is covered against the real snapshot
   // transaction in tests/database/guest-checkout-p9a-quote-proof.test.ts.
+});
+
+test("AC-18 the mobile bottom bar stands in for the submit button through the same pipeline", async ({
+  page,
+  context,
+}) => {
+  await cleanupRateLimits();
+  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+  await createTestCart();
+  await prepareBrowser(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  const bar = page.locator("[data-mobile-sticky-cta]");
+  const submit = page.getByRole("button", { name: "Đặt hàng COD", exact: true });
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText("Tổng thanh toán");
+  const total = (await page.locator("dl:visible > div").filter({ hasText: "Tổng thanh toán" }).locator("dd").textContent())?.trim() ?? "";
+  expect(total).not.toEqual("");
+  await expect(bar).toContainText(total);
+
+  // Same validation as the primary button: nothing is sent, the first missing field takes focus,
+  // and the bar steps aside while the buyer types.
+  await bar.getByRole("button", { name: "Đặt hàng", exact: true }).click();
+  await expect(page.getByText("Vui lòng điền đầy đủ thông tin.")).toBeVisible();
+  await expect(page.getByLabel("Họ và tên")).toBeFocused();
+  await expect(bar).toHaveCount(0);
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);
+
+  // With the primary button on screen only one primary action is shown.
+  await page.getByLabel("Họ và tên").blur();
+  await submit.scrollIntoViewIfNeeded();
+  await page.waitForTimeout(500);
+  await expect(bar).toHaveCount(0);
+
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(bar).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(bar).toBeHidden();
 });

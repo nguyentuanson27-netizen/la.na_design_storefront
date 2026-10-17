@@ -6,7 +6,11 @@ import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { GiftProductCard } from "./gift-product-card";
 
-type Draft = { campaignId: string; variantId: string; label: string };
+/**
+ * The version the buyer is looking at. `committed` marks a draft the server has confirmed saving at
+ * least once: removing that gift later is a finished action, not an unsaved choice to warn about.
+ */
+type Draft = { campaignId: string; variantId: string; label: string; committed?: boolean };
 export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLocked, onDraftChange, onReturnToPayment }: Readonly<{
   model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean;
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
@@ -66,9 +70,28 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const available = model.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const complete = !model.invalid && selected >= entitled && entitled > 0;
   const draftSaved = draft && model.selections.some((row) => row.campaignId === draft.campaignId && row.variantId === draft.variantId);
-  const draftNotice = draft && !draftSaved ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
+  // UX-04: the intent ends only on a confirmed (or read-back) model that contains it. A newer chip the
+  // buyer picks replaces the draft object, so it starts uncommitted and keeps its own notice.
+  if (draft && draftSaved && !draft.committed) setDraft({ ...draft, committed: true });
+  const draftNotice = draft && !draftSaved && !draft.committed ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const present = entitled > 0 || model.selections.length > 0;
+  // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
+  // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf.
+  useEffect(() => {
+    if (!present) return;
+    const reveal = () => {
+      if (window.location.hash !== "#cart-gifts") return;
+      setExpanded(true);
+      requestAnimationFrame(() => {
+        giftArea.current?.scrollIntoView({ block: "start" });
+        giftArea.current?.focus({ preventScroll: true });
+      });
+    };
+    reveal();
+    window.addEventListener("hashchange", reveal);
+    return () => window.removeEventListener("hashchange", reveal);
+  }, [present]);
   if (!present && !message) return null;
   const busy = pending || uncertain;
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>

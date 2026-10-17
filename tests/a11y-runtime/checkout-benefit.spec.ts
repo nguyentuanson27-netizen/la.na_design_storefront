@@ -676,3 +676,33 @@ test("AC12/19: browser back while modal is open releases the modal and a return 
   await expect(page.getByRole("dialog")).toBeVisible();
   expect(await prisma.orderMirror.count({where:{sourceCartId:cartId}})).toBe(0);
 });
+
+test("UX-10/AC-11: the line above the button names unchosen gifts and opens the picker without counting as the reminder", async ({ page }) => {
+  await startServer(3350, true);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await page.goto(`${baseUrl}/checkout`);
+  const hint = page.locator("[data-checkout-gift-hint]");
+  await expect(hint).toContainText("Bạn còn 2 quà chưa chọn.");
+  await hint.getByRole("button", { name: "Chọn quà", exact: true }).click();
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await expect(picker).toBeFocused();
+  await expect(picker.locator("button[aria-controls]")).toHaveAttribute("aria-expanded", "true");
+  expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
+  // Information only: the one-time reminder still opens on the first valid submit.
+  await fillReceiving(page);
+  await page.getByRole("button", { name: "Đặt hàng COD", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(dialog).not.toBeVisible();
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expect(hint).toContainText("Bạn còn 1 quà chưa chọn.");
+  await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
+  await expect(hint).toHaveCount(0);
+  await expectReceiving(page);
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);
+});

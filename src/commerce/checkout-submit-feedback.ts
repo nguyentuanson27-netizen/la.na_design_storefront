@@ -15,8 +15,14 @@ export type CheckoutSubmitFeedback = Readonly<{
   mayRetry: boolean;
 }>;
 
+/**
+ * `submittedTotalVnd` is the total of the render the buyer submitted against -- itself a server number,
+ * read from that render, never computed here. With it a price change reads "old → new"; without it (or
+ * when the two agree) only the new total is stated.
+ */
 export function checkoutSubmitFeedback(
   result: GuestCheckoutSubmitResult,
+  context: Readonly<{ submittedTotalVnd?: number }> = {},
 ): CheckoutSubmitFeedback {
   if (result.ok) {
     return {
@@ -46,10 +52,13 @@ export function checkoutSubmitFeedback(
   }
 
   if (result.status === "PRICE_CHANGED") {
+    const previous = context.submittedTotalVnd;
     return {
       tone: "warning",
       title: "Giá đã thay đổi",
-      message: `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Vui lòng xác nhận lại để đặt hàng với mức giá này.`,
+      message: previous !== undefined && Number.isSafeInteger(previous) && previous !== result.priceChange.totalVnd
+        ? `Tổng thanh toán đã đổi: ${vnd.format(previous)} → ${vnd.format(result.priceChange.totalVnd)}. Giá, tồn kho hoặc phí vận chuyển vừa được cập nhật; vui lòng kiểm tra rồi bấm đặt hàng lại để xác nhận mức giá này.`
+        : `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Vui lòng xác nhận lại để đặt hàng với mức giá này.`,
       mayRetry: true,
     };
   }

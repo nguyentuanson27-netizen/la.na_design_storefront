@@ -175,3 +175,24 @@ test("an unavailable line still counts as being in the cart but not toward the t
     totalText: vnd("100.000"),
   });
 });
+
+/* ----------------------------------------------------------------------- OD-06 shipping estimate */
+
+const policy = { feeVnd: 30_000, freeShippingSubtotalVnd: 1_000_000, freeShippingMinQuantity: 3 };
+
+test("OD-06: a cart without a bill shows the policy's basic shipping fee as an estimate", () => {
+  const model = buildCartViewModel({
+    lines: [line(), line({ variantId: "variant-2", available: false, unavailableReason: "OUT_OF_STOCK" })],
+    commerceTrackingEnabled: false,
+    shippingPolicy: policy,
+  });
+  assert.equal(model.summary, undefined);
+  assert.equal(model.shippingBaseFeeText, vnd("30.000"));
+});
+
+test("OD-06: the estimate gives way to the full bill, and is absent when the policy cannot be read", () => {
+  const withBill = buildCartViewModel({ lines: [line()], commerceTrackingEnabled: false, shippingPolicy: policy });
+  assert.ok(withBill.summary);
+  assert.equal(withBill.shippingBaseFeeText, undefined);
+  assert.equal(build([line({ available: false, unavailableReason: "OUT_OF_STOCK" })]).shippingBaseFeeText, undefined);
+});

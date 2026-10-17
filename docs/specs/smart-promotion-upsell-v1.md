@@ -4,6 +4,8 @@
 **Nguồn đã merge:** `main@6ba8e2d209f6298ed1ebcb7f84a73acefa7d7f5a` (PR #169, order-value tiers + cart/checkout promotion). Source đã merge **không đồng nghĩa** production DB đã migrate hoặc Pancake POS đã được nghiệm thu.  
 **Phạm vi:** tài liệu nghiệp vụ cho Upsell; ghi nhận quyết định owner, không thay code, schema, feature flag hay deploy.
 
+> **Amendment AM-01 (17/10/2026) — owner chọn phương án A ở OD-01 của [UX-COMMERCE-001](storefront-promotion-upsell-checkout-ux-v1.md).** Phần trình bày ở checkout **thay** D-03, D-04 (phần hiển thị), FR-06 (phần UI), FR-07, FR-08 (phần thao tác tại checkout), FR-09 (hành trình unlock) và FR-12 theo §8 bên dưới. D-01/02/05/06/07/08, U-01/A, FR-01…FR-05, FR-10, FR-11 và mọi authority server (quote, proof, stock, stacking) **giữ nguyên**. Các mục bị thay vẫn để nguyên văn bên dưới làm lịch sử; khi đọc, §8 thắng.
+
 **Mục tiêu:** Khách gần đạt mốc ưu đãi thấy **một** lời mời mua thêm hợp lệ ở checkout, chọn mẫu/size/màu và thêm **đúng một chiếc** mà không mất dữ liệu nhận hàng hoặc quyền lợi hiện có. Nếu không có gợi ý an toàn, checkout vẫn hoạt động như cũ.
 
 ## 1. Yêu cầu nghiệp vụ đã duyệt (giữ nguyên D-01…D-08)
@@ -133,3 +135,18 @@ Các ID `AC-01…AC-50` từ [spec v1.4 trước khi rút gọn](https://github.
 - UI hiện hữu: `src/routes/checkout.ts`, `src/components/commerce/guest-checkout-form.tsx`, `src/routes/order-summary-model.ts`.
 
 **Handoff:** Đây là MVP spec với **U-01/A và U-02/A đã được owner duyệt**; **U-03/U-05 còn chờ thiết kế kỹ thuật** và Upsell **chưa implement**. Đừng mở rộng thiết kế phòng ngừa nếu chưa có dữ liệu hoặc test buộc phải làm.
+
+## 8. Amendment AM-01 — phương án A: banner dẫn `/sale` (owner duyệt 17/10/2026)
+
+Nguồn quyết định: OD-01 = **A** trong [storefront-promotion-upsell-checkout-ux-v1.md](storefront-promotion-upsell-checkout-ux-v1.md) §0/UX-07. Đề xuất runtime ban đầu là PR #181; triển khai thực tế đi cùng PR implementation của UX-COMMERCE-001.
+
+| Mục gốc | Thay bằng |
+| --- | --- |
+| **D-03** chọn biến thể và thêm 1 chiếc tại checkout | Checkout **không** thêm hàng. Khi server có cơ hội hợp lệ (FR-01…FR-05 không đổi), checkout hiện một banner nêu chương trình và nút **“Tiếp tục mua sắm”** dẫn tới `/sale`. Khách tự chọn sản phẩm ở PDP; giỏ và checkout báo giá lại như mọi thay đổi giỏ khác. |
+| **D-04 / FR-06 (UI)** hiển thị 1–5 mẫu | Banner không liệt kê mẫu. Giới hạn query/pool của FR-06 vẫn giữ để server chỉ phát banner khi có ứng viên đã chứng minh; không nới giới hạn. |
+| **FR-07** giá/estimate từng biến thể | Không hiển thị giá hay chênh tổng tiền ở banner. Copy không hứa mọi sản phẩm ở `/sale` đều thuộc chương trình. |
+| **FR-08** thêm an toàn tại checkout | Không có thao tác ghi giỏ từ checkout. Action/proof add của Upsell không còn được UI gọi; giữ ở server cùng test DB cho tới khi có quyết định gỡ riêng. |
+| **FR-09 / U-02/A** chọn quà mở nhờ Upsell ngay checkout | Quà mở thêm do khách tự mua thêm được chọn ở `/cart` (picker đầu trang) hoặc ở picker checkout khi quay lại; **picker checkout giữ nguyên**, không tự chọn quà. |
+| **FR-12** UI/a11y | Banner là một `section` có tên trong cùng form; nút đóng và “Không mua thêm, tiếp tục thanh toán” giữ ngữ nghĩa dismiss D-06/FR-10. **Rời form đã nhập:** nếu khách đã nhập/chọn bất kỳ trường nhận hàng nào, bấm “Tiếp tục mua sắm” mở cảnh báo tại chỗ (không `window.confirm`) nêu thông tin chưa gửi sẽ không được lưu; “Ở lại thanh toán” trả focus về nút, giữ form; “Vẫn đến trang Sale” đi `/sale`. Không lưu PII vào storage, không tự thêm hàng. Click có phím bổ trợ (mở tab mới) không bị chặn. |
+
+**Test thay thế (AC-16 của UX-COMMERCE-001):** `tests/a11y-runtime/promotion-upsell.spec.ts` kiểm banner, dismiss/reload/A→B→A, cảnh báo rời form, đích `/sale` và a11y; an toàn của add/proof/race vẫn ở `tests/database/promotion-upsell.test.ts`.

@@ -179,6 +179,8 @@ function render(data: CheckoutViewModel) {
       <div className="mt-8">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
+          totalVnd={data.totals?.totalVnd}
+          totalText={data.totals?.totalText}
           giftPicker={data.giftPicker}
           attemptKey={data.attemptKey}
           quoteRenderId={data.quoteRenderId}

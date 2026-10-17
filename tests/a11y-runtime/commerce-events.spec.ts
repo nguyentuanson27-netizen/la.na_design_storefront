@@ -463,6 +463,14 @@ test("U19 an unsafe cart emits no view_cart and no begin_checkout, and checkout 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
   expect(await readEvents(page, "begin_checkout")).toEqual([]);
   await expect(page.getByText("Giỏ hàng cần được kiểm tra lại.")).toBeVisible();
+  // UX-08 / AC-09: the reason and the fix come before the first field, and the disabled button says why.
+  expect(await page.evaluate(() => {
+    const notice = document.getElementById("checkout-blocking-notice");
+    const firstField = document.getElementById("checkout-name");
+    return Boolean(notice && firstField && notice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
+  await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+  await expect(page.locator("[data-checkout-submit-reason]")).toContainText("giỏ hàng cần được kiểm tra lại");
 
   await prisma.variantMirror.update({
     where: { id: coatVariantId },
