@@ -127,7 +127,7 @@ Dùng fixture isolated/test DB; không tạo đơn production để nghiệm thu
 ## Code ownership
 
 - `src/tracking/commerce-events.ts`, `event-boundary.ts`, `consent.ts`, `src/components/analytics/`: business event theo contract hiện có; UX observation qua boundary UX riêng (MEAS-05), không định tuyến vendor khi chưa duyệt.
-- Điểm phát event business: `src/commerce/promotion-upsell-actions.ts` (add upsell), `src/commerce/cart-gift-selection-actions.ts` (lưu/bỏ quà), `src/commerce/guest-checkout-actions.ts` (outcome submit không thành công; binding MEAS-04b ở nhánh `result.ok` trước `redirect`), luồng confirmed order (`purchase`).
+- Điểm phát event business: `src/commerce/promotion-upsell-actions.ts` (add upsell), `src/commerce/cart-gift-selection-actions.ts` (lưu/bỏ quà), `src/commerce/guest-checkout-actions.ts` (outcome submit không thành công; binding MEAS-04b khi server xác định đơn thuộc lần submit, trước khi trả kết quả hoặc `redirect`), luồng confirmed order (`purchase`).
 
 ## Review checklist
 
