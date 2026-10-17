@@ -316,7 +316,14 @@ test.afterEach(async () => {
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
-
+  // Tests share one variant, and some (P9a) move its price: every test starts from the price the Pancake
+  // fixture accepts, so none is re-quoted because of another test's leftovers.
+  if (testVariantId) {
+    await prisma.variantMirror.update({
+      where: { id: testVariantId },
+      data: { pancakeRetailPrice: 500_000, pancakeRetailPriceAfterDiscount: 500_000 },
+    });
+  }
 });
 
 test.afterAll(async () => {
@@ -731,12 +738,6 @@ test("AC-18 the mobile bottom bar stands in for the submit button through the sa
   context,
 }) => {
   await cleanupRateLimits();
-  // P9a moves this shared variant's price and does not put it back; the Pancake fixture still prices it at
-  // 500.000, so start from the price the fixture will accept or the order is (correctly) re-quoted.
-  await prisma.variantMirror.update({
-    where: { id: testVariantId },
-    data: { pancakeRetailPrice: 500_000, pancakeRetailPriceAfterDiscount: 500_000 },
-  });
   await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
   await createTestCart();
   await prepareBrowser(context);
