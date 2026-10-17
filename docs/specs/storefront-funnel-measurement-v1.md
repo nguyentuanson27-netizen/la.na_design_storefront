@@ -1,7 +1,7 @@
 # Spec — Đo lường phễu cart → checkout (MEAS-FUNNEL-001)
 
 **Ngày cập nhật:** 2026-10-17
-**Trạng thái:** DRAFT v1.1 — spec-only, để owner review; chưa phê duyệt implementation, sink hay khóa tương quan.
+**Trạng thái:** DRAFT v1.2 — spec-only, để owner review; chưa phê duyệt implementation, sink hay khóa tương quan.
 **Baseline:** `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d`.
 **Quan hệ:** tách từ §8 của [storefront-promotion-upsell-checkout-ux-v1.md](storefront-promotion-upsell-checkout-ux-v1.md) (UX-COMMERCE-001) để phần UX được duyệt độc lập. Spec UX dùng chỉ số ở đây để đánh giá thay đổi (đặc biệt khuyến nghị B); spec này không đổi hợp đồng UX nào. Kế thừa contract [marketing-analytics-shopping.md](marketing-analytics-shopping.md) §4; điểm nào khác contract đó phải được duyệt như mở rộng contract.
 
@@ -25,7 +25,8 @@ Mục tiêu: có số đo **trước** (baseline hiện tại) và **sau** mỗi
 
 - **Không hứa exactly-once delivery.** `CommerceEventPublisher` (`src/components/analytics/commerce-event-publisher.tsx`) chỉ chống trùng trong vòng đời component; `src/routes/checkout-success.ts` dựng lại `purchase` từ đơn `CONFIRMED` mỗi lần trang thành công được tải. Reload, mở lại tab hay quay lại trang có thể phát lại cùng một event.
 - **`purchase`:** có thể được phát lại khi trang thành công tải lại. Đếm giao dịch duy nhất dựa trên identity bền `publicCode` (`transaction_id = event_id`) như contract hiện có: vendor dedup theo `event_id`; báo cáo first-party đếm theo identity đơn, không theo số lần phát. Không thêm cơ chế "đã phát" ở client hay storage nếu chưa đặc tả và duyệt một cơ chế bền.
-- **Event không có identity bền** (`add_to_cart` upsell, `gift_selection_*`, `checkout_submit_outcome`): chỉ phát từ **phản hồi xác nhận của chính action** trong vòng đời trang đó. Readback sau mất phản hồi, reload hay refresh quote **không** phát bù, vì không phân biệt được commit nào đã xảy ra; chấp nhận đếm thiếu và theo dõi các ca đó qua M-08 (dữ liệu server). Các chỉ số dùng event này phải ghi rõ là số **lần phát quan sát được**, không phải số mutation chính xác.
+- **Event không có identity bền** (`add_to_cart` upsell, `gift_selection_*`, `checkout_submit_outcome` cho kết quả **không thành công**): chỉ phát từ **phản hồi xác nhận của chính action** trong vòng đời trang đó. Readback sau mất phản hồi, reload hay refresh quote **không** phát bù, vì không phân biệt được commit nào đã xảy ra; chấp nhận đếm thiếu và theo dõi các ca đó qua M-08 (dữ liệu server). Các chỉ số dùng event này phải ghi rõ là số **lần phát quan sát được**, không phải số mutation chính xác.
+- **Submit thành công không có phản hồi ở trang checkout:** `src/commerce/guest-checkout-actions.ts` `redirect` sang `/checkout/success?order=…` ngay khi đơn được tạo, nên form (`useActionState`) không nhận state thành công. Vì vậy `checkout_submit_outcome` **không** có giá trị “thành công”. Tín hiệu thành công là: (a) **binding lượt ↔ đơn ghi phía server** ngay khi đơn được tạo, trước `redirect` (MEAS-04b), và (b) `purchase` từ đơn `CONFIRMED` ở trang thành công theo contract hiện có. Reload trang thành công không tạo thêm binding; POS chưa rõ thì đơn chưa `CONFIRMED`, không tính hoàn tất.
 - Số chính xác về đơn, dòng hàng và quà luôn lấy từ dữ liệu server/order snapshot, không từ đếm event.
 
 Các event có sẵn trong `src/tracking/commerce-events.ts` theo đúng truth point của contract analytics: `view_cart`, `begin_checkout` là quan sát trạng thái cart/checkout đã resolve (canonical rendered facts); `add_to_cart`/`remove_from_cart` chỉ sau committed delta; `purchase` chỉ sau confirmed order. **Khoảng trống:** add từ checkout upsell hiện chưa phát `add_to_cart` (`checkout-upsell.tsx`, `promotion-upsell-actions.ts`); khi bổ sung, phát từ committed +1 trả về bởi action, không từ click.
@@ -38,7 +39,7 @@ Các event có sẵn trong `src/tracking/commerce-events.ts` theo đúng truth p
 | --- | --- | --- |
 | `add_to_cart` (nguồn checkout upsell) | Action add trả về commit +1 | item canonical + ngữ cảnh nguồn nếu contract cho phép |
 | `gift_selection_saved` / `gift_selection_removed` | Phản hồi xác nhận lưu/bỏ quà của chính action (readback không phát bù, MEAS-02a) | bề mặt (cart/checkout), campaign, số lượng thay đổi |
-| `checkout_submit_outcome` | Server trả kết quả submit | thành công / giá đổi / thử lại được / kết thúc / chưa rõ |
+| `checkout_submit_outcome` | Server trả kết quả submit **không thành công** về form (thành công là `redirect`, xem MEAS-02a) | giá đổi / thử lại được / kết thúc / chưa rõ |
 | `purchase` | Confirmed order (không đổi); có thể phát lại khi trang thành công tải lại | như contract hiện có; đếm duy nhất theo `publicCode` |
 
 **UX observations** — chỉ qua sink UX riêng (MEAS-05):
@@ -61,10 +62,16 @@ Hiện **chưa có khóa tương quan nào được duyệt** cho analytics. Vì
 - **Cửa sổ attribution** (đề xuất mặc định, owner chốt): một lượt checkout trong cùng tab, tối đa 24 giờ. Event ngoài cửa sổ không ghép.
 - **Confirm POS bất đồng bộ:** chỉ `purchase` đã xác nhận mới tính là hoàn tất. Đơn đang xử lý hoặc kết quả chưa rõ không tính; nếu xác nhận đến sau khi lượt đã đóng hoặc ngoài cửa sổ, đơn được tính trong tỉ lệ tổng hợp theo kỳ nhưng **không** được ghép vào lượt. Không tự phát `purchase` từ UI.
 - **MEAS-04a — Ghép kết quả server với lượt UX (chỉ ở sink first-party, sau OD-02):**
-  - Khóa lượt chỉ đi trong bản ghi gửi tới **sink first-party**; **không bao giờ** nằm trong payload commerce/vendor (`dataLayer`, GA4 ecommerce, Meta/TikTok) hay trong action thương mại.
+  - Khóa lượt chỉ đi trong bản ghi gửi tới **sink first-party** và, riêng cho MEAS-04b, trong một trường đo lường của form đặt hàng; **không bao giờ** nằm trong payload commerce/vendor (`dataLayer`, GA4 ecommerce, Meta/TikTok), trong dữ liệu đơn/POS/Pancake hay trong các action khác.
   - Khi trang nhận phản hồi xác nhận của một action (add upsell, lưu/bỏ quà, outcome submit), trang gửi thêm một **bản ghi kết quả** tới sink first-party gồm khóa lượt, loại kết quả và một **mã thao tác ngẫu nhiên** sinh ở client trước khi gọi action. Sink dedup theo (khóa lượt, mã thao tác); readback không tạo bản ghi.
-  - Hoàn tất: trang thành công gửi bản ghi (khóa lượt, mã đơn); server sink thay mã đơn bằng HMAC trước khi lưu và dedup theo (khóa lượt, HMAC đơn), nên reload trang thành công không tạo lượt hoàn tất thứ hai. Đơn chỉ tính hoàn tất khi đơn đó ở trạng thái `CONFIRMED` trong dữ liệu server; xác nhận đến sau cửa sổ attribution không ghép.
-  - Consent: chỉ tạo khóa lượt và gửi bản ghi khi tín hiệu consent cho đo lường là `granted` theo `src/tracking/consent.ts`; khi `denied`, không tạo khóa, xóa khóa đang có và không gửi bản ghi.
+  - Hoàn tất: **không** lấy từ bản ghi trình duyệt gửi ở trang thành công. Trang thành công chỉ tra `publicCode` từ URL và kiểm tra `CONFIRMED` (`src/routes/checkout-success.ts`), không chứng minh lượt nào đã tạo đơn; HMAC chỉ bảo vệ dữ liệu lưu. Hoàn tất dùng binding phía server ở MEAS-04b. Đơn chỉ tính hoàn tất khi đơn đó ở trạng thái `CONFIRMED` trong dữ liệu server; xác nhận đến sau cửa sổ attribution không ghép.
+- **MEAS-04b — Binding lượt ↔ đơn phía server (server-authoritative):**
+  - Khi submit, form gửi kèm khóa lượt trong một trường đo lường riêng (chỉ khi consent `granted`). Action đặt hàng **không** dùng trường này cho bất kỳ quyết định thương mại nào và không ghi nó vào đơn, snapshot, POS hay log.
+  - Chỉ khi action tạo đơn thành công (nhánh `result.ok`, trước `redirect`, cùng chỗ đang chạy báo cáo `after()`), server ghi **một** bản ghi binding vào kho đo lường first-party: (định danh đơn nội bộ hoặc HMAC của nó, khóa lượt, thời điểm). **Ràng buộc duy nhất theo đơn**: một đơn quy thuộc tối đa một lượt; ghi lần hai cho cùng đơn bị bỏ qua, không ghi đè. Lỗi ghi binding không ảnh hưởng đơn hay `redirect`.
+  - Tử số M-02c chỉ đếm đơn có binding **và** đã `CONFIRMED` trong dữ liệu server trong cửa sổ attribution. Đơn không có binding (khách từ chối consent, lỗi ghi, đơn tạo ngoài luồng) không tăng tử số; mã đơn đưa vào từ trình duyệt không thể tạo binding.
+  - Nếu chưa triển khai MEAS-04b, mọi số hoàn tất theo lượt phải gắn nhãn **client-observed** và **không** được dùng làm guardrail conversion chính.
+- **Consent (cho MEAS-04a/04b):**
+  - Chỉ tạo khóa lượt và gửi bản ghi khi tín hiệu consent cho đo lường là `granted` theo `src/tracking/consent.ts`; khi `denied`, không tạo khóa, xóa khóa đang có và không gửi bản ghi.
 - **Dedup UX observation:** `upsell_view`, `gift_reminder_shown` một lần mỗi phần tử trong một lần tải trang; `upsell_expand`/`upsell_dismiss`/`gift_reminder_outcome` một lần mỗi hành động; quay lại trang hoặc reload là lần hiển thị mới. Không phát lại khi model chỉ refresh quote mà phần tử vẫn đang hiển thị.
 
 ## MEAS-05 — Sink và schema
@@ -81,11 +88,11 @@ Owner duyệt trước khi triển khai phần tương ứng: (1) sink/schema UX
 | --- | --- | --- | --- |
 | M-01 | Cart → checkout | số `begin_checkout` / số `view_cart` theo kỳ (tỉ lệ tổng hợp, không ghép) | 0 |
 | M-02 | Tỉ số hoàn tất **tổng hợp tham khảo** | số đơn `CONFIRMED` duy nhất (theo identity đơn, dữ liệu server) / số `begin_checkout` theo kỳ. Không cùng cohort: xác nhận có thể rơi sang kỳ khác, reload/quay lại checkout tạo nhiều `begin_checkout`. **Chỉ để theo dõi xu hướng, không dùng riêng làm guardrail** | 0 |
-| M-02c | Hoàn tất theo cohort lượt | số lượt checkout có bản ghi hoàn tất hợp lệ (MEAS-04a) trong cửa sổ attribution / số lượt checkout (mỗi khóa lượt đếm một lần dù reload). **Guardrail conversion chính** khi đánh giá B | 1 |
+| M-02c | Hoàn tất theo cohort lượt | số lượt có binding phía server (MEAS-04b) tới một đơn `CONFIRMED` trong cửa sổ attribution / số lượt checkout (mỗi khóa lượt đếm một lần dù reload; mỗi đơn quy thuộc tối đa một lượt). **Guardrail conversion chính** khi đánh giá B — chỉ khi MEAS-04b đã triển khai; nếu không thì là chỉ số client-observed, không làm guardrail | 1 |
 | M-05 | Giá trị và số món mỗi đơn | từ order snapshot / `purchase` theo kỳ; tách đơn có add upsell chỉ khi snapshot ghi nguồn dòng (chưa có, cần duyệt) | 0 (tổng); 1 (tách) |
 | M-08 | An toàn | đơn trùng, outcome chưa rõ, lỗi add/requote từ dữ liệu server/vận hành, không từ UX event. **Guardrail Mức 0 đáng tin**: vượt ngưỡng là dừng rollout bất kể chỉ số khác | 0 |
-| M-03a | Tỉ lệ lượt có thêm từ upsell | số lượt có ≥1 bản ghi kết quả add upsell / số lượt có `upsell_view` (luôn 0–100%); kèm tỉ lệ lượt dismiss, expand (B) | 1 |
-| M-03b | Số món thêm mỗi lượt xem | tổng bản ghi kết quả add upsell / số lượt có `upsell_view` (có thể > 1); chỉ đọc cùng M-03a | 1 |
+| M-03a | Tỉ lệ lượt có thêm từ upsell | số lượt có **cả** `upsell_view` **và** ≥1 bản ghi kết quả add upsell / số lượt có `upsell_view` (tử số là tập con của mẫu nên luôn 0–100%); kèm tỉ lệ lượt dismiss, expand (B). Báo riêng **số lượt có add nhưng không thấy view** (dấu hiệu mất observation), không cộng vào M-03a | 1 |
+| M-03b | Số món thêm mỗi lượt xem | tổng bản ghi kết quả add upsell **trong các lượt có `upsell_view`** / số lượt có `upsell_view` (có thể > 1); chỉ đọc cùng M-03a | 1 |
 | M-04 | Hoàn tất khi có upsell | M-02c tách lượt có / không `upsell_view` (quan sát, có thiên lệch — không suy nhân quả) | 1 |
 | M-06 | Nhận đủ quà | đơn chọn đủ suất / đơn có suất (Mức 0 từ order snapshot, số chính xác); lượt có popup → lượt có bản ghi lưu quà sau đó (Mức 1) | 0 / 1 |
 | M-07 | Ma sát submit | `checkout_submit_blocked` theo lý do mỗi lượt; tần suất giá đổi | 1 |
@@ -103,16 +110,17 @@ Owner duyệt trước khi triển khai phần tương ứng: (1) sink/schema UX
 
 | ID | Kịch bản | Kết quả chấp nhận |
 | --- | --- | --- |
-| MEAS-AC-01 | **Business event**: add upsell, lưu/bỏ quà, outcome submit, purchase; reload, readback, mất phản hồi, POS chưa rõ, tracking lỗi | Event không có identity bền chỉ phát từ phản hồi xác nhận của chính action; readback/refresh quote không phát bù; `purchase` chỉ từ đơn `CONFIRMED`, reload trang thành công có thể phát lại nhưng mang cùng `transaction_id = event_id = publicCode`, và báo cáo đếm duy nhất theo identity đơn; không phát `purchase` từ UI; payload không PII, không `la_cart`/cart ID/`attemptKey`; tracking lỗi không chặn hay đổi checkout |
+| MEAS-AC-01 | **Business event**: add upsell, lưu/bỏ quà, outcome submit không thành công, submit thành công (redirect), purchase; reload, readback, mất phản hồi, POS chưa rõ, tracking lỗi | Event không có identity bền chỉ phát từ phản hồi xác nhận của chính action; `checkout_submit_outcome` không có giá trị thành công, submit thành công chỉ tạo binding phía server (nếu có MEAS-04b) và `purchase` khi đơn `CONFIRMED`; readback/refresh quote không phát bù; `purchase` chỉ từ đơn `CONFIRMED`, reload trang thành công có thể phát lại nhưng mang cùng `transaction_id = event_id = publicCode`, và báo cáo đếm duy nhất theo identity đơn; không phát `purchase` từ UI; payload không PII, không `la_cart`/cart ID/`attemptKey`; tracking lỗi không chặn hay đổi checkout |
 | MEAS-AC-02 | **UX observation**, chỉ sau gate MEAS-06: view/expand/dismiss upsell, popup, submit bị chặn; reload, refresh quote, sink từ chối | Đi qua boundary UX riêng, không nới vocabulary commerce; payload chỉ lấy từ view model/kết quả validation, không giá/entitlement từ DOM, không giá trị trường form; dedup đúng MEAS-04; khóa lượt (nếu duyệt) ngẫu nhiên, không suy ra từ cart/PII; không bị dùng làm conversion |
-| MEAS-AC-03 | **Ghép lượt** (MEAS-04a), chỉ sau gate MEAS-06: xem upsell → add 2 món → đặt hàng → reload trang thành công; mất phản hồi add rồi readback; consent `denied`; xác nhận POS đến sau cửa sổ | Khóa lượt không xuất hiện trong bất kỳ payload vendor/commerce hay action nào; sink dedup theo (khóa, mã thao tác) và (khóa, HMAC đơn) nên reload không tạo hoàn tất thứ hai; mã đơn thô không được lưu hay log; readback không tạo bản ghi; M-03a của lượt = 100%, M-03b = 2; consent `denied` không tạo khóa/bản ghi; xác nhận ngoài cửa sổ không ghép vào lượt |
+| MEAS-AC-03 | **Ghép lượt** (MEAS-04a), chỉ sau gate MEAS-06: xem upsell → add 2 món → đặt hàng → reload trang thành công; mất phản hồi add rồi readback; consent `denied`; xác nhận POS đến sau cửa sổ | Khóa lượt không xuất hiện trong payload vendor/commerce, dữ liệu đơn/POS hay log; sink dedup theo (khóa, mã thao tác); mã đơn thô không được lưu hay log; readback không tạo bản ghi; M-03a của lượt = 100%, M-03b = 2; add có ghi nhưng view thất lạc không làm M-03a > 100% mà xuất hiện ở số “add không có view”; consent `denied` không tạo khóa/bản ghi; xác nhận ngoài cửa sổ không ghép vào lượt |
+| MEAS-AC-04 | **Binding lượt ↔ đơn** (MEAS-04b), chỉ sau gate MEAS-06: đặt hàng thành công rồi reload trang thành công; cùng một mã đơn được gửi từ hai khóa lượt khác nhau; mở trang thành công bằng mã đơn không thuộc lượt; lỗi ghi binding; POS chưa rõ rồi xác nhận trong / ngoài cửa sổ | Binding chỉ được ghi phía server ở nhánh tạo đơn thành công, một đơn tối đa một lượt; reload và mã đơn gửi từ trình duyệt **không tăng tử số** M-02c; lỗi ghi binding không ảnh hưởng đơn hay `redirect`; đơn chỉ được tính khi `CONFIRMED` trong cửa sổ; trường đo lường không xuất hiện trong đơn, snapshot, POS hay log |
 
 Dùng fixture isolated/test DB; không tạo đơn production để nghiệm thu. Không suy pass từ source hoặc kết quả của PR khác.
 
 ## Code ownership
 
 - `src/tracking/commerce-events.ts`, `event-boundary.ts`, `consent.ts`, `src/components/analytics/`: business event theo contract hiện có; UX observation qua boundary UX riêng (MEAS-05), không định tuyến vendor khi chưa duyệt.
-- Điểm phát event business: `src/commerce/promotion-upsell-actions.ts` (add upsell), `src/commerce/cart-gift-selection-actions.ts` (lưu/bỏ quà), `src/commerce/guest-checkout-actions.ts` (outcome submit), luồng confirmed order (`purchase`).
+- Điểm phát event business: `src/commerce/promotion-upsell-actions.ts` (add upsell), `src/commerce/cart-gift-selection-actions.ts` (lưu/bỏ quà), `src/commerce/guest-checkout-actions.ts` (outcome submit không thành công; binding MEAS-04b ở nhánh `result.ok` trước `redirect`), luồng confirmed order (`purchase`).
 
 ## Review checklist
 
@@ -120,6 +128,8 @@ Dùng fixture isolated/test DB; không tạo đơn production để nghiệm thu
 - [ ] Business event và UX observation tách nguồn; phát và đếm tách nhau (MEAS-02a), không hứa exactly-once ở client; UX observation không bao giờ là conversion.
 - [ ] M-02 ghi là tỉ số tham khảo; guardrail hoàn tất là M-02c (Mức 1) hoặc M-08; M-03a/M-03b định nghĩa rõ.
 - [ ] Ghép lượt chỉ ở sink first-party, khóa không vào payload vendor, mã đơn chỉ dạng HMAC, có consent.
+- [ ] Hoàn tất theo lượt dựa trên binding phía server (một đơn tối đa một lượt); không có binding thì gắn nhãn client-observed, không làm guardrail.
+- [ ] Submit thành công không có `checkout_submit_outcome`; truth point thành công là binding phía server và `purchase` từ đơn `CONFIRMED`.
 - [ ] `event-boundary.ts` giữ vocabulary đóng; UX observation có boundary/schema riêng.
 - [ ] Không đặt chỉ tiêu; chỉ số ghi rõ Mức 0 / Mức 1 và gate MEAS-06.
 - [ ] Owner duyệt gate MEAS-06 (sink/schema UX, khóa lượt và consent, cửa sổ attribution) trước khi triển khai Mức 1.
