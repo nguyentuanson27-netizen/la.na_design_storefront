@@ -682,7 +682,7 @@ test("UX-10/AC-11: the line above the button names unchosen gifts and opens the 
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto(`${baseUrl}/checkout`);
   const hint = page.locator("[data-checkout-gift-hint]");
-  await expect(hint).toContainText("Bạn còn 2 quà chưa chọn.");
+  await expect(hint).toContainText("Nàng còn 2 món quà chưa chọn.");
   await hint.getByRole("button", { name: "Chọn quà", exact: true }).click();
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   await expect(picker).toBeFocused();
@@ -699,7 +699,7 @@ test("UX-10/AC-11: the line above the button names unchosen gifts and opens the 
   await picker.getByRole("button", { name: "Trắng / M", exact: true }).click();
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
-  await expect(hint).toContainText("Bạn còn 1 quà chưa chọn.");
+  await expect(hint).toContainText("Nàng còn 1 món quà chưa chọn.");
   await picker.getByRole("button", { name: "Nhận quà này", exact: true }).click();
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 2/2");
   await expect(hint).toHaveCount(0);

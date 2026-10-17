@@ -57,7 +57,7 @@ export function checkoutSubmitFeedback(
       tone: "warning",
       title: "Giá đã thay đổi",
       message: previous !== undefined && Number.isSafeInteger(previous) && previous !== result.priceChange.totalVnd
-        ? `Tổng thanh toán đã đổi: ${vnd.format(previous)} → ${vnd.format(result.priceChange.totalVnd)}. Giá, tồn kho hoặc phí vận chuyển vừa được cập nhật; vui lòng kiểm tra rồi bấm đặt hàng lại để xác nhận mức giá này.`
+        ? `Tổng thanh toán: ${vnd.format(previous)} → ${vnd.format(result.priceChange.totalVnd)}. Nàng xem lại đơn rồi bấm “Đặt hàng COD” để xác nhận nhé.`
         : `Tổng thanh toán hiện tại là ${vnd.format(result.priceChange.totalVnd)}. Vui lòng xác nhận lại để đặt hàng với mức giá này.`,
       mayRetry: true,
     };

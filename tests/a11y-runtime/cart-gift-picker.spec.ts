@@ -552,16 +552,16 @@ test("UX-08/AC-19 + OD-06: a blocked cart lists each line to fix, links focus it
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${URL}/cart`);
   const notice = page.locator("[data-cart-problem-lines]");
-  await expect(notice).toContainText("Cần xử lý 1 sản phẩm trước khi thanh toán");
+  await expect(notice).toContainText("Nàng xem lại 1 sản phẩm trước khi đặt hàng nhé");
   await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
   await expect(page.locator("[data-mobile-sticky-cta]")).toHaveCount(0);
   const problem = page.locator("article").filter({ hasText: "Váy hết hàng" });
   await expect(problem.locator("[data-line-problem]")).toHaveText("Cần xử lý: Tạm hết hàng");
   await notice.getByRole("link", { name: "Váy hết hàng — Tạm hết hàng" }).click();
   await expect(problem).toBeFocused();
-  await expect(page.locator("[data-cart-shipping-estimate]")).toContainText("Phí vận chuyển cơ bản");
+  await expect(page.locator("[data-cart-shipping-estimate]")).toContainText("Phí vận chuyển (tạm tính)");
   await expect(page.locator("[data-cart-shipping-estimate]")).toContainText("₫");
-  await expect(page.getByText("được tính chính xác ở bước thanh toán")).toBeVisible();
+  await expect(page.getByText("Phí vận chuyển chính xác sẽ hiện ở bước thanh toán.")).toBeVisible();
   expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
 });
 

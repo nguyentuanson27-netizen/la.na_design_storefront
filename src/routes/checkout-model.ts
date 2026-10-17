@@ -88,6 +88,8 @@ export type CheckoutGiftLineView = Readonly<{
   label: string;
   quantity: number;
   priceText: string;
+  /** The gift product's own photo (a trusted catalog URL), or `null` to show the placeholder. */
+  imageUrl?: string | null;
 }>;
 
 /**
@@ -326,6 +328,7 @@ export function buildBenefitCheckoutViewModel(
         Object.freeze({
           lineKey: fact.lineId,
           label: render.giftLabels.get(fact.pancakeVariationId) ?? "Quà tặng",
+          imageUrl: render.giftImages?.get(fact.pancakeVariationId) ?? null,
           quantity: fact.quantity,
           priceText: currency.format(0),
         }),

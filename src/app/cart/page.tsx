@@ -179,7 +179,7 @@ function render(data: CartViewModel) {
             <PromotionSavings className="mt-4" rows={data.promotions?.savings} />
             {data.shippingBaseFeeText ? (
               <div className="mt-4 flex items-baseline justify-between gap-6 text-sm" data-cart-shipping-estimate>
-                <span className="text-black/75">Phí vận chuyển cơ bản</span>
+                <span className="text-black/75">Phí vận chuyển (tạm tính)</span>
                 <span>{data.shippingBaseFeeText}</span>
               </div>
             ) : null}
@@ -194,7 +194,7 @@ function render(data: CartViewModel) {
             {data.summary
               ? "Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại trước khi tạo đơn."
               : data.shippingBaseFeeText
-                ? "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng vào tạm tính và được tính chính xác ở bước thanh toán."
+                ? "Phí vận chuyển chính xác sẽ hiện ở bước thanh toán."
                 : "Giá và tồn kho hiện tại sẽ được kiểm tra lại trước khi tạo đơn. Phí vận chuyển chưa được cộng ở đây."}
           </p>
           {data.preorderNotice === null ? null : (
@@ -219,7 +219,7 @@ function render(data: CartViewModel) {
             /* UX-08 / AC-19: every line that blocks checkout, by name and reason, each a way to that line. */
             <div className="mt-6 border border-black/20 px-4 py-3 text-sm leading-6" data-cart-problem-lines>
               <p className="font-semibold">
-                {problemLines.length === 1 ? "Cần xử lý 1 sản phẩm trước khi thanh toán:" : `Cần xử lý ${problemLines.length} sản phẩm trước khi thanh toán:`}
+                {`Nàng xem lại ${problemLines.length} sản phẩm trước khi đặt hàng nhé:`}
               </p>
               <ul className="mt-2 space-y-1">
                 {problemLines.map((line) => (

@@ -358,7 +358,9 @@ Ghi lại phần runtime đã làm theo §0; bằng chứng chạy test nằm tr
 | Cart liệt kê và link dòng cần xử lý | UX-08, AC-19 | Đã làm | `src/app/cart/page.tsx` + `cart-line-jump-link.tsx`; dòng có nhãn chữ “Cần xử lý: …” và nhận focus |
 | Vòng đời draft picker (nhận → bỏ không hồi sinh cảnh báo) | UX-04, AC-04 | Đã làm | `cart-gift-picker.tsx`: draft đã được server xác nhận lưu thì kết thúc intent |
 | Tiến độ `QUANTITY_TIER` chưa đạt | UX-01, AC-01b | Đã có từ #182 | — |
-| Upsell phương án A | UX-06/07, AC-06/07/16 | Đã làm | `checkout-upsell.tsx` (banner, dismiss D-06, cảnh báo rời form đã nhập); amendment AM-01; `promotion-upsell.spec.ts` viết lại |
+| Upsell phương án A | UX-06/07, AC-06/07/16 | Đã làm | `checkout-upsell.tsx` (banner gọn, dismiss D-06); amendment AM-01; `promotion-upsell.spec.ts` viết lại. Owner bỏ cảnh báo rời form (AC-07) ngày 17/10/2026 |
+| Câu chữ theo giọng La.na, form gọn | UX-03, UX-09 | Đã làm | Owner duyệt 17/10/2026: xưng “nàng”, bỏ đoạn giới thiệu “Giao hàng COD”, câu hướng dẫn địa chỉ, ghi chú “số tiền dự kiến”; thu gọn khoảng cách/ô nhập |
+| Ảnh quà trong danh sách đơn checkout | UX-04 | Đã làm | `benefit-checkout-quote.ts` `giftImages` → `checkout-model.ts` → dòng quà |
 | Thanh dính đáy mobile cart/checkout | UX-02, AC-18 | Đã làm | `src/components/brand/mobile-sticky-cta.tsx`; checkout gọi `requestSubmit()` của cùng form |
 | Phí ship cơ bản ở cart | UX-02, OD-06 | Đã làm | `cart-model.ts` `shippingBaseFeeText` khi chưa có bảng tổng |
 | Đo lường Mức 0 | MEAS-AC-01 | Không cần code mới | Phương án A bỏ thao tác add ở checkout nên khoảng trống `add_to_cart` của upsell không còn; M-01/M-02/M-05/M-06/M-08 tính từ event và dữ liệu đơn hiện có |

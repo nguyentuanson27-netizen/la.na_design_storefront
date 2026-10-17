@@ -337,11 +337,11 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Thông tin nhận hàng" })).toBeVisible();
   await expect(page.getByLabel("Tỉnh / Thành phố")).toBeVisible();
 
   const geoStatus = page.getByRole("status").filter({
-    hasText: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
+    hasText: "Chưa tải được danh sách tỉnh/thành, nàng thử lại nhé.",
   });
   await expect(geoStatus).toBeVisible();
   await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
@@ -386,12 +386,8 @@ for (const { name, viewport } of [
     const submit = page.getByRole("button", { name: "Đặt hàng COD" });
 
     await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
-    await expect(
-      page.getByText(
-        "Địa chỉ theo đơn vị hành chính mới: chọn tỉnh/thành phố, phường/xã, rồi nhập số nhà, tên đường.",
-      ),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Thông tin nhận hàng" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Địa chỉ giao hàng (địa chỉ mới)" })).toBeVisible();
     // The post-2025 address has no district level.
     await expect(page.getByLabel("Quận / Huyện")).toHaveCount(0);
     await expect(page.getByText(/Pancake|máy chủ/i)).toHaveCount(0);
@@ -403,15 +399,15 @@ for (const { name, viewport } of [
     await expect(submit).toBeEnabled();
     await submit.click();
     // One short line by the button; each missing field is flagged in red where it is.
-    const missing = page.getByRole("alert").filter({ hasText: "Vui lòng điền đầy đủ thông tin." });
+    const missing = page.getByRole("alert").filter({ hasText: "Nàng điền giúp La.na các ô còn trống nhé." });
     await expect(missing).toBeVisible();
     await expect(missing.getByRole("listitem")).toHaveCount(0);
     for (const [field, message] of [
-      [name, "Vui lòng nhập họ và tên người nhận."],
-      [phone, "Vui lòng nhập số điện thoại."],
-      [province, "Vui lòng chọn tỉnh/thành phố."],
-      [commune, "Vui lòng chọn phường/xã."],
-      [street, "Vui lòng nhập số nhà, tên đường."],
+      [name, "Nàng nhập họ tên người nhận nhé."],
+      [phone, "Nàng nhập số điện thoại nhé."],
+      [province, "Nàng chọn tỉnh/thành phố nhé."],
+      [commune, "Nàng chọn phường/xã nhé."],
+      [street, "Nàng nhập số nhà, tên đường nhé."],
     ] as const) {
       await expect(field).toHaveAttribute("aria-invalid", "true");
       await expect(page.getByText(message, { exact: true })).toBeVisible();
@@ -700,7 +696,7 @@ test("P9a a price change between render and submit forces an explicit second con
 
   await expect(page.getByRole("status")).toContainText("Giá đã thay đổi");
   // UX-08 / AC-10: both totals are the server's -- the one this render showed, and the refreshed one.
-  await expect(page.getByRole("status")).toContainText(`Tổng thanh toán đã đổi: ${quotedTotal} → `);
+  await expect(page.getByRole("status")).toContainText(`Tổng thanh toán: ${quotedTotal} → `);
   expect(
     await prisma.orderMirror.count({ where: { sourceCartId: cartId } }),
     "a quote the buyer has not acknowledged must create no order at all",
@@ -752,7 +748,7 @@ test("AC-18 the mobile bottom bar stands in for the submit button through the sa
   // Same validation as the primary button: nothing is sent, the first missing field takes focus,
   // and the bar steps aside while the buyer types.
   await bar.getByRole("button", { name: "Đặt hàng", exact: true }).click();
-  await expect(page.getByText("Vui lòng điền đầy đủ thông tin.")).toBeVisible();
+  await expect(page.getByText("Nàng điền giúp La.na các ô còn trống nhé.")).toBeVisible();
   await expect(page.getByLabel("Họ và tên")).toBeFocused();
   await expect(bar).toHaveCount(0);
   expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);

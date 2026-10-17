@@ -97,8 +97,8 @@ test("UX-08/AC-10: a price change names the submitted total and the server's new
   };
   const changed = checkoutSubmitFeedback(result, { submittedTotalVnd: 520_000 });
   assert.equal(changed.mayRetry, true);
-  assert.match(changed.message, /Tổng thanh toán đã đổi: 520\.000\s₫ → 545\.000\s₫/);
-  assert.match(changed.message, /bấm đặt hàng lại/);
+  assert.match(changed.message, /Tổng thanh toán: 520\.000\s₫ → 545\.000\s₫/);
+  assert.match(changed.message, /Đặt hàng COD/);
 
   // Without a submitted total, or when the total did not move, only the current total is stated.
   for (const context of [{}, { submittedTotalVnd: 545_000 }]) {

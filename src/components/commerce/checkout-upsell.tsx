@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useId, useRef, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CheckoutUpsellModel } from "@/commerce/promotion-upsell";
 
 /**
@@ -25,19 +25,10 @@ function saveAttempt(value: Attempt) {
   try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* UI-only; never authorizes a write */ }
 }
 
-export function CheckoutUpsell({ model, hasEnteredDetails }: Readonly<{
-  model: CheckoutUpsellModel;
-  /** Whether the receiving form holds anything the buyer typed; leaving would discard it (it is never stored). */
-  hasEnteredDetails: () => boolean;
-}>) {
+export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellModel }>) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
-  const [confirmingExit, setConfirmingExit] = useState(false);
   const initialized = useRef(false);
   const mounted = useRef(false);
-  const exitLink = useRef<HTMLAnchorElement>(null);
-  const warningHeading = useRef<HTMLParagraphElement>(null);
-  const returnFocus = useRef(false);
-  const warningId = useId();
 
   useEffect(() => {
     mounted.current = true;
@@ -71,92 +62,35 @@ export function CheckoutUpsell({ model, hasEnteredDetails }: Readonly<{
     return () => { active = false; };
   }, [model.paidCartKey]);
 
-  useEffect(() => {
-    if (confirmingExit) warningHeading.current?.focus();
-    else if (returnFocus.current) {
-      returnFocus.current = false;
-      exitLink.current?.focus();
-    }
-  }, [confirmingExit]);
-
   function dismiss() {
     const next = { paidCartKey: model.paidCartKey, dismissed: true };
     saveAttempt(next);
     setAttempt(next);
   }
 
-  function requestExit(event: MouseEvent<HTMLAnchorElement>) {
-    // Nothing typed: nothing to lose, so the link simply goes. Modified clicks open a new tab and
-    // leave this form where it is.
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
-    if (!hasEnteredDetails()) return;
-    event.preventDefault();
-    setConfirmingExit(true);
-  }
-
-  function stay() {
-    returnFocus.current = true;
-    setConfirmingExit(false);
-  }
-
   if (!attempt || attempt.paidCartKey !== model.paidCartKey || !model.offer || attempt.dismissed) {
     return null;
   }
 
+  // "1 món" and "ưu đãi" promise only what the server proved: one more qualifying piece reaches the
+  // named programme. The cart and checkout quote decide again whatever the buyer brings back.
   return (
-    <section className="border border-[#e7ded7] bg-[#fbf8f5] p-4 sm:p-5" aria-label="Gợi ý mua thêm">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1.5">
-          <h2 className="font-display text-base leading-snug text-black sm:text-lg">
-            Thêm 1 sản phẩm phù hợp để đạt ưu đãi
-          </h2>
-          <p className="text-xs leading-relaxed text-black/70 sm:text-sm">
-            Chương trình: {model.offer.name}. Không phải mọi sản phẩm ở trang Sale đều thuộc chương trình; giỏ hàng và
-            bước thanh toán sẽ kiểm tra lại ưu đãi.
-          </p>
-          {confirmingExit ? null : (
-            <div className="flex flex-wrap items-center gap-4 pt-2">
-              <Link ref={exitLink} href="/sale" className="btn btn--outline btn--sm min-h-11 text-xs" onClick={requestExit}>
-                Tiếp tục mua sắm
-              </Link>
-              <button
-                className="min-h-11 text-left text-xs text-black/70 underline underline-offset-4 transition-colors hover:text-black sm:text-sm"
-                type="button"
-                onClick={dismiss}
-              >
-                Không mua thêm, tiếp tục thanh toán
-              </button>
-            </div>
-          )}
-        </div>
-        <button
-          type="button"
-          className="-mr-1 -mt-1 min-h-11 min-w-11 p-1 text-lg leading-none text-black/60 transition-colors hover:text-black"
-          aria-label="Đóng gợi ý ưu đãi"
-          onClick={dismiss}
-        >
-          ×
-        </button>
+    <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label="Gợi ý mua thêm">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
+        <p className="text-xs leading-5 text-black/70">{model.offer.name}</p>
+        <Link href="/sale" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
+          Chọn thêm món
+        </Link>
       </div>
-      {confirmingExit ? (
-        <div className="mt-4 border border-black/25 bg-white p-4" role="group" aria-labelledby={warningId} data-upsell-exit-warning>
-          <p id={warningId} ref={warningHeading} tabIndex={-1} className="text-sm font-semibold">
-            Rời trang thanh toán?
-          </p>
-          <p className="mt-2 text-sm leading-6">
-            Thông tin nhận hàng bạn đã nhập chưa được gửi và sẽ không được lưu khi rời trang. Sản phẩm trong giỏ và quà đã
-            lưu vẫn được giữ.
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <button type="button" className="btn btn--primary btn--sm min-h-11" onClick={stay}>
-              Ở lại thanh toán
-            </button>
-            <Link href="/sale" className="min-h-11 content-center text-sm underline underline-offset-4">
-              Vẫn đến trang Sale
-            </Link>
-          </div>
-        </div>
-      ) : null}
+      <button
+        type="button"
+        className="-mr-2 -mt-1 min-h-11 min-w-11 text-lg leading-none text-black/60 transition-colors hover:text-black"
+        aria-label="Đóng gợi ý ưu đãi"
+        onClick={dismiss}
+      >
+        ×
+      </button>
     </section>
   );
 }

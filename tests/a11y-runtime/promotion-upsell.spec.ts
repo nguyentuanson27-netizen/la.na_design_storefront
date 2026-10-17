@@ -51,17 +51,16 @@ test.afterAll(async () => {
 // AM-01 (OD-01 = A): checkout shows the proven opportunity and the way to /sale; it never adds a
 // paid unit itself. The +1 action, its proof and its races stay covered by
 // tests/database/promotion-upsell.test.ts, which this browser suite no longer duplicates.
-test("AM-01/A: the banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
+test("AM-01/A: the compact banner names the proven offer, links to /sale and offers no inline add", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
   await expect(offer, output).toBeVisible();
-  await expect(offer.getByRole("heading", { name: "Thêm 1 sản phẩm phù hợp để đạt ưu đãi" })).toBeVisible();
-  await expect(offer).toContainText("Chương trình: Mua 3 tặng khăn");
-  await expect(offer).toContainText("Không phải mọi sản phẩm ở trang Sale đều thuộc chương trình");
+  await expect(offer.getByRole("heading", { name: "Thêm 1 món để nhận ưu đãi" })).toBeVisible();
+  await expect(offer).toContainText("Mua 3 tặng khăn");
   await expect(offer.getByRole("combobox")).toHaveCount(0);
   await expect(offer.getByRole("button", { name: "Thêm 1 chiếc" })).toHaveCount(0);
-  await expect(offer.getByRole("link", { name: "Tiếp tục mua sắm" })).toHaveAttribute("href", "/sale");
-  // UX-08: the offer never sits in front of a blocking reason or locks submit.
+  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveAttribute("href", "/sale");
+  // UX-08: the offer never locks submit.
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
   expect(await page.locator("form").count()).toBe(1);
   for (const width of [320, 390, 1280]) {
@@ -71,40 +70,15 @@ test("AM-01/A: the banner names the proven offer, links to /sale and offers no i
   }
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.screenshot({ path: "test-results/upsell-checkout-banner.png", fullPage: true });
-  // Nothing typed: the link simply goes.
-  await offer.getByRole("link", { name: "Tiếp tục mua sắm" }).click();
+  // Owner decision (17/10/2026): the link goes straight to /sale, without a leave warning, even when
+  // receiving details were typed. Nothing typed is written to storage on the way.
+  await page.getByLabel("Họ và tên", { exact: false }).fill("Nàng La.na");
+  await page.getByLabel("Số điện thoại", { exact: false }).fill("0901234567");
+  await offer.getByRole("link", { name: "Chọn thêm món" }).click();
   await expect(page).toHaveURL(`${BASE}/sale`);
-  expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
-});
-
-test("AC-07: leaving a filled form warns first; staying keeps fields and focus; continuing reaches /sale", async ({ page }) => {
-  await page.goto(`${BASE}/checkout`);
-  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
-  await expect(offer).toBeVisible();
-  const fields = [page.getByLabel("Họ và tên", { exact: false }), page.getByLabel("Số điện thoại", { exact: false }), page.getByLabel("Số nhà", { exact: false })];
-  await fields[0]!.fill("Nàng La.na");
-  await fields[1]!.fill("0901234567");
-  await fields[2]!.fill("171 đường hoa");
-  const exit = offer.getByRole("link", { name: "Tiếp tục mua sắm" });
-  await exit.focus();
-  await page.keyboard.press("Enter");
-  const warning = offer.getByRole("group", { name: "Rời trang thanh toán?" });
-  await expect(warning).toBeVisible();
-  await expect(warning).toContainText("chưa được gửi và sẽ không được lưu");
-  await expect(page).toHaveURL(`${BASE}/checkout`);
-  await expect(warning.getByText("Rời trang thanh toán?")).toBeFocused();
-  await warning.getByRole("button", { name: "Ở lại thanh toán" }).click();
-  await expect(warning).toHaveCount(0);
-  await expect(exit).toBeFocused();
-  await expect(fields[0]!).toHaveValue("Nàng La.na"); await expect(fields[1]!).toHaveValue("0901234567"); await expect(fields[2]!).toHaveValue("171 đường hoa");
-  // The details live only in the mounted form: nothing typed is written to storage.
   const stored = await page.evaluate(() => JSON.stringify({ ...sessionStorage }) + JSON.stringify({ ...localStorage }));
   expect(stored).not.toContain("0901234567");
   expect(stored).not.toContain("Nàng La.na");
-  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
-  await exit.click();
-  await warning.getByRole("link", { name: "Vẫn đến trang Sale" }).click();
-  await expect(page).toHaveURL(`${BASE}/sale`);
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
 });
 
@@ -112,34 +86,30 @@ test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attemp
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
   await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Không mua thêm, tiếp tục thanh toán" }).click();
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
   await expect(offer).toHaveCount(0);
-  await page.reload(); await expect(page.getByRole("heading", { name: "Giao hàng COD" })).toBeVisible();
+  await page.reload(); await expect(page.getByRole("heading", { name: "Thông tin nhận hàng" })).toBeVisible();
   await expect(offer).toHaveCount(0);
   await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 1 } });
   await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 2 } });
   await page.reload(); await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Không mua thêm, tiếp tục thanh toán" }).click();
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
   await page.getByRole("link", { name: "Giỏ hàng", exact: true }).click();
   await page.getByRole("link", { name: "Tiến hành đặt hàng" }).click();
   await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Không mua thêm, tiếp tục thanh toán" }).click();
+  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
   const newCart = await prisma.cart.create({ data: { expiresAt: new Date(Date.now() + 86400000), items: { create: { variantId: paidId, quantity: 2 } } } });
   await context.addCookies([{ name: "la_cart", value: newCart.id, url: BASE, httpOnly: true, sameSite: "Lax" }]);
   await page.reload(); await expect(offer).toBeVisible();
 });
-test("D-06: the close button dismisses like the skip link; a withdrawn offer shows no invitation", async ({ page }) => {
+test("D-06: a withdrawn offer shows no invitation and leaves checkout usable", async ({ page }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
   await expect(offer).toBeVisible();
-  await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
-  await expect(offer).toHaveCount(0);
-  await page.reload(); await expect(page.getByRole("heading", { name: "Giao hàng COD" })).toBeVisible();
-  await expect(offer).toHaveCount(0);
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { isEnabled: false, revision: { increment: 1 } } });
   await page.goto(`${BASE}/cart`);
   await page.goto(`${BASE}/checkout`);
-  await expect(page.getByRole("heading", { name: "Giao hàng COD" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Thông tin nhận hàng" })).toBeVisible();
   await expect(offer).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
 });

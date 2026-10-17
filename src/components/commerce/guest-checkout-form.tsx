@@ -19,7 +19,6 @@ import {
   loadCheckoutCommunesAction,
   loadCheckoutProvincesAction,
 } from "@/commerce/checkout-geo-actions";
-import { BRAND } from "@/brand";
 import type { CheckoutCommune, CheckoutProvince } from "@/commerce/checkout-geo";
 import { checkoutSubmitFeedback } from "@/commerce/checkout-submit-feedback";
 import { submitGuestCheckoutAction } from "@/commerce/guest-checkout-actions";
@@ -54,11 +53,11 @@ const FIELD_INPUT_IDS: Record<RequiredField, string> = {
 };
 
 const MISSING_MESSAGES: Record<RequiredField, string> = {
-  name: "Vui lòng nhập họ và tên người nhận.",
-  phone: "Vui lòng nhập số điện thoại.",
-  province: "Vui lòng chọn tỉnh/thành phố.",
-  commune: "Vui lòng chọn phường/xã.",
-  detail: "Vui lòng nhập số nhà, tên đường.",
+  name: "Nàng nhập họ tên người nhận nhé.",
+  phone: "Nàng nhập số điện thoại nhé.",
+  province: "Nàng chọn tỉnh/thành phố nhé.",
+  commune: "Nàng chọn phường/xã nhé.",
+  detail: "Nàng nhập số nhà, tên đường nhé.",
 };
 
 type FieldValues = Readonly<{
@@ -85,16 +84,16 @@ function findFieldErrors(values: FieldValues): Partial<Record<RequiredField, str
 }
 
 const fieldClassName =
-  "mt-2 w-full border border-black/25 bg-transparent px-4 py-3 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
+  "mt-1.5 min-h-11 w-full border border-black/25 bg-transparent px-3.5 py-2.5 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
 
 const geoFailures = {
   provinces: {
     level: "provinces",
-    message: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
+    message: "Chưa tải được danh sách tỉnh/thành, nàng thử lại nhé.",
   },
   communes: {
     level: "communes",
-    message: "Chưa tải được danh sách phường/xã. Vui lòng thử lại.",
+    message: "Chưa tải được danh sách phường/xã, nàng thử lại nhé.",
   },
 } as const satisfies Record<GeoError["level"], GeoError>;
 
@@ -316,10 +315,10 @@ export function GuestCheckoutForm({
   // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
   // A final outcome is already explained by the feedback block right above the button.
   const submitLockReason = isSubmitting || lockSubmission ? null
-    : !quoteProof ? (unavailableNotice ? "Chưa thể đặt hàng: giỏ hàng cần được kiểm tra lại (xem hướng dẫn ở đầu trang)." : "Chưa có báo giá hợp lệ. Hãy kiểm tra lại báo giá trước khi đặt hàng.")
-    : giftPending ? "Đang cập nhật quà tặng. Nút đặt hàng sẽ mở lại khi báo giá mới sẵn sàng."
-    : isRefreshingQuote || waitingForNewRender ? "Đang tải báo giá mới. Vui lòng chờ trong giây lát."
-    : geoError ? "Chưa tải được danh sách địa chỉ. Hãy bấm “Thử lại” ở phần địa chỉ giao hàng."
+    : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng bấm “Cập nhật giá” nhé.")
+    : giftPending ? "Đang lưu quà tặng…"
+    : isRefreshingQuote || waitingForNewRender ? "Đang cập nhật giá mới…"
+    : geoError ? "Chưa tải được địa chỉ, nàng bấm “Thử lại” ở phần địa chỉ nhé."
     : null;
   const submitReasonId = useId();
 
@@ -329,8 +328,8 @@ export function GuestCheckoutForm({
   const choosableGifts = giftModel.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const unclaimedGifts = giftModel.campaigns.reduce((sum, row) => sum + row.unclaimed, 0);
   const giftHint = !quoteProof || giftModel.invalid || unclaimedGifts === 0 ? null
-    : choosableGifts > 0 ? { canChoose: true, text: `Bạn còn ${choosableGifts} quà chưa chọn.` }
-    : { canChoose: false, text: "Một phần quà chưa thể nhận vì hiện chưa có lựa chọn phù hợp." };
+    : choosableGifts > 0 ? { canChoose: true, text: `Nàng còn ${choosableGifts} món quà chưa chọn.` }
+    : { canChoose: false, text: "Một phần quà tạm chưa có mẫu phù hợp." };
 
   const fieldErrors = findFieldErrors({
     name,
@@ -415,12 +414,6 @@ export function GuestCheckoutForm({
     });
   }
 
-  // Read at the moment the buyer asks to leave: anything typed or chosen would be lost.
-  const hasEnteredDetails = useCallback(
-    () => [name, phone, detail, note, provinceRef].some((value) => value.trim().length > 0),
-    [name, phone, detail, note, provinceRef],
-  );
-
   function handleProvinceChange(value: string) {
     setProvinceRef(value);
     setCommuneRef("");
@@ -488,20 +481,14 @@ export function GuestCheckoutForm({
       {desktopPreorderSlot ? <div className="hidden lg:block">{desktopPreorderSlot}</div> : null}
       </aside>
 
-      <div className="min-w-0 space-y-8 lg:col-start-1 lg:row-start-1">
-      <div className="checkout-receiving-fields min-w-0 space-y-8">
+      <div className="min-w-0 space-y-6 lg:col-start-1 lg:row-start-1">
+      <div className="checkout-receiving-fields min-w-0 space-y-5">
       {/* UX-08: why the order cannot be placed, and how to fix it, before the first field. */}
-      {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-4 text-sm sm:px-5"><p className="font-semibold">Giỏ hàng cần được kiểm tra lại.</p><p className="mt-2 leading-6">{unavailableNotice}</p><div className="mt-2 flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Kiểm tra lại báo giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
-      {upsell ? <CheckoutUpsell model={upsell} hasEnteredDetails={hasEnteredDetails} /> : null}
-      <div>
-        <p className="eyebrow">Thông tin nhận hàng</p>
-        <h2 className="mt-3 font-display text-3xl md:text-4xl">Giao hàng COD</h2>
-        <p className="mt-3 max-w-2xl text-sm leading-6 text-black/60">
-          Không cần đăng ký tài khoản. {BRAND.identity.name} sẽ liên hệ qua số điện thoại để xác nhận đơn trước khi giao.
-        </p>
-      </div>
+      {unavailableNotice ? <div id="checkout-blocking-notice" tabIndex={-1} role="alert" className="border border-[#b42318]/50 px-4 py-3 text-sm"><p className="font-semibold">Giỏ hàng cần xem lại một chút</p><p className="mt-1 leading-6">{unavailableNotice}</p><div className="flex flex-wrap items-center gap-x-4"><button type="button" className="min-h-11 underline" disabled={isRefreshingQuote || giftPending || isSubmitting} onClick={refreshQuote}>Cập nhật giá</button><Link href="/cart" className="min-h-11 content-center underline">Quay lại giỏ hàng</Link></div></div> : null}
+      {upsell ? <CheckoutUpsell model={upsell} /> : null}
+      <h2 className="font-display text-2xl">Thông tin nhận hàng</h2>
 
-      <div className="grid gap-5 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2">
         <div>
           <label className="block text-sm font-medium" htmlFor="checkout-name">
             Họ và tên <RequiredMark />
@@ -543,15 +530,12 @@ export function GuestCheckoutForm({
         </div>
       </div>
 
-      <fieldset className="space-y-5" disabled={isSubmitting || lockSubmission}>
-        <legend className="text-sm font-semibold uppercase tracking-[0.12em]">
-          Địa chỉ giao hàng
+      <fieldset className="space-y-4" disabled={isSubmitting || lockSubmission}>
+        <legend className="mb-3 text-sm font-semibold uppercase tracking-[0.12em]">
+          Địa chỉ giao hàng <span className="font-normal normal-case tracking-normal text-black/60">(địa chỉ mới)</span>
         </legend>
-        <p className="text-sm leading-6 text-black/60">
-          Địa chỉ theo đơn vị hành chính mới: chọn tỉnh/thành phố, phường/xã, rồi nhập số nhà, tên đường.
-        </p>
 
-        <div className="grid gap-5 md:grid-cols-2">
+        <div className="grid gap-4 md:grid-cols-2">
           <div>
             <label className="block text-sm font-medium" htmlFor="checkout-province">
               Tỉnh / Thành phố <RequiredMark />
@@ -651,7 +635,8 @@ export function GuestCheckoutForm({
         <label className="block text-sm font-medium" htmlFor="checkout-note">
           Ghi chú <span className="font-normal text-black/60">(không bắt buộc)</span>
           <textarea
-            className={`${fieldClassName} min-h-28 resize-y`}
+            className={`${fieldClassName} min-h-16 resize-y`}
+            rows={2}
             id="checkout-note"
             maxLength={2048}
             name="note"
@@ -665,7 +650,7 @@ export function GuestCheckoutForm({
       {/* Same breakpoint split as the summary above: the shipping/total block and the fulfillment
           notice belong between the fields and the submit button below `lg`, and inside the sticky
           aside at `lg+`. */}
-      <div className="min-w-0 space-y-5">
+      <div className="min-w-0 space-y-4">
       <h2 ref={paymentRef} tabIndex={-1} className="scroll-mt-32 font-display text-2xl">Tổng kết thanh toán</h2>
       {benefit?.tierNotice ? <p role="status" className="text-sm">{benefit.tierNotice}</p> : null}
       {draftNotice ? <p className="text-sm" data-payment-gift-draft>{draftNotice}</p> : null}
@@ -691,16 +676,16 @@ export function GuestCheckoutForm({
       {/* One line beside the button; which fields need attention is shown in red on each field above. */}
       {hasMissingFields ? (
         <p
-          className="border border-[#b42318] px-5 py-4 text-sm font-semibold text-[#b42318]"
+          className="border border-[#b42318] px-4 py-3 text-sm font-semibold text-[#b42318]"
           ref={errorSummaryRef}
           role="alert"
         >
-          Vui lòng điền đầy đủ thông tin.
+          Nàng điền giúp La.na các ô còn trống nhé.
         </p>
       ) : null}
 
       {giftHint ? (
-        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 border-t border-black/15 pt-4 text-sm" data-checkout-gift-hint>
+        <div className="flex flex-wrap items-center justify-between gap-x-4 border-t border-black/15 pt-2 text-sm" data-checkout-gift-hint>
           <p>{giftHint.text}</p>
           {giftHint.canChoose ? <button type="button" className="min-h-11 font-semibold underline underline-offset-4" onClick={openGiftPicker}>Chọn quà</button> : null}
         </div>
@@ -719,9 +704,6 @@ export function GuestCheckoutForm({
         {isSubmitting ? "Đang đặt hàng…" : "Đặt hàng COD"}
       </button>
 
-      <p className="text-xs leading-5 text-black/60">
-        Giá, tồn kho, phí vận chuyển và địa chỉ sẽ được kiểm tra lại khi bạn đặt hàng.
-      </p>
       {/* Room for the bottom bar, so it never sits over the last of the page. */}
       {totalText ? <div aria-hidden="true" className="h-24 lg:hidden" /> : null}
       </div>

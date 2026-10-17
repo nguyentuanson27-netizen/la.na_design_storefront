@@ -71,7 +71,9 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   // or the totals is a second place for them to drift from the view model.
   assert.equal((page.match(/const orderLines = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const totalsBlock = \(/g) ?? []).length, 1);
-  assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 1);
+  // Owner request 2026-10-17: the "estimate" note under the total is gone; the total speaks for itself.
+  assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 0);
+  assert.doesNotMatch(page, /Đây là số tiền dự kiến/);
   assert.equal((page.match(/const preorderNoticeFor = /g) ?? []).length, 1);
   assert.match(page, /preorderNoticeFor\("mobile"\)/);
   assert.match(page, /preorderNoticeFor\("desktop"\)/);
