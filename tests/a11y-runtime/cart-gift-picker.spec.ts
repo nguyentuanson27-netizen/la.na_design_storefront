@@ -78,11 +78,13 @@ test("cart has one functional gift picker above paid products on mobile and desk
     });
     expect(beforePaidLines).toBe(true);
 
-    const toggle = picker.getByRole("button", { name: "Chọn quà ngay" });
+    // The accessible name changes after opening; locate the same control by its stable relationship.
+    const toggle = picker.locator("button[aria-controls]");
     await expect(page.getByRole("button", { name: "Chọn quà ngay", exact: true })).toHaveCount(1);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveText("Thu gọn quà tặng");
     await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
   }
 
