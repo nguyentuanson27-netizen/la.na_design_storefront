@@ -48,7 +48,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 | Quote không sẵn sàng | Form khóa submit nếu thiếu `quoteProof`, cảnh báo `unavailableNotice` gần vùng tổng kết cuối | Có thể thấy cảnh báo muộn sau khi nhập các trường; cần nâng thông báo đến đúng vị trí |
 | Gift picker | `draft` và `selections` là hai nguồn trạng thái riêng; nhãn “chưa thêm” dựa trên `draftSaved` | Cần tái hiện trường hợp nhận rồi bỏ quà để đảm bảo không còn thông báo draft sai ngữ cảnh |
 
-Không khẳng định các rủi ro UI trên đã tái hiện bằng browser hoặc đã xảy ra ở production. Các trường hợp phải được kiểm tra và chỉ xác nhận bug khi có bằng chứng runtime nằm ở `8.
+Không khẳng định các rủi ro UI trên đã tái hiện bằng browser hoặc đã xảy ra ở production. Các trường hợp phải được kiểm tra và chỉ xác nhận bug khi có bằng chứng runtime nằm ở §8.
 
 ## 4. Hợp đồng UX liên bề mặt
 
