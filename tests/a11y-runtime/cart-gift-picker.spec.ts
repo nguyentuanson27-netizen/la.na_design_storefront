@@ -106,7 +106,7 @@ test("cart preserves tier achievement and next gift progress when the earned gif
   await prisma.giftQuantityCampaign.create({ data: {
     id: `${PREFIX}tier-preserve`, kind: "QUANTITY_TIER", name: "Mua 2 giảm 1%",
     isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"],
-    tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+    tierUnit: "PERCENTAGE", tierDiscountedUnits: "FROM_REACHED_THRESHOLD",
     tierSelectionPriority: "CHEAPEST_FIRST",
     tiers: { create: { minQuantity: 2, discountValue: 1 } },
   } });
