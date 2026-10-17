@@ -697,6 +697,43 @@ test("pressing a feedback photograph opens it enlarged in a keyboard-operable vi
   }
 });
 
+test("a queued native close event cannot dismiss a reopened feedback viewer", async ({ page }) => {
+  await serveFeedbackAtNaturalSize(page);
+  for (const [path, viewport, list] of [
+    ["/", DESKTOP, '[data-homepage-region="feedback"] .feedback-rail__item'],
+    ["/feedback", MOBILE, ".feedback-gallery__item"],
+  ] as const) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${BASE_URL}${path}`, { waitUntil: "networkidle" });
+    const trigger = page.locator(`${list} button.feedback-zoom`).nth(1);
+    const dialog = page.locator("dialog.feedback-viewer");
+    const viewer = page.getByRole("dialog", { name: "Xem ảnh feedback" });
+    await trigger.click();
+    await expect(viewer).toBeVisible();
+    // Native close() restores focus immediately but queues its close event. Hold that event
+    // until after Enter reopens the viewer, so this ordering is deterministic even on a fast CPU.
+    await dialog.evaluate(element => {
+      element.addEventListener("close", event => {
+        if (event.isTrusted) {
+          event.stopImmediatePropagation();
+          (element as HTMLElement).dataset.closeQueued = "true";
+        }
+      }, { capture: true });
+    });
+    await viewer.getByRole("button", { name: "Đóng", exact: true }).click();
+    await expect(viewer).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(dialog).toHaveAttribute("data-close-queued", "true");
+    await trigger.press("Enter");
+    await expect(viewer).toBeVisible();
+    await dialog.evaluate(element => element.dispatchEvent(new Event("close")));
+    await expect(viewer).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(viewer).toBeHidden();
+    await expect(trigger).toBeFocused();
+  }
+});
+
 test("/feedback is an uncropped masonry: natural ratios, 4 columns on desktop and 2 on a phone", async ({
   page,
 }) => {

@@ -25,6 +25,7 @@ export type StorefrontSellingPolicy = Omit<StorefrontProductCapacity, "isComposi
 export type StorefrontCompositeComponentGroup = Readonly<{
   label: string;
   variants: readonly StorefrontVariantFacts[];
+  sellingPolicy?: StorefrontSellingPolicy;
 }>;
 
 export type StorefrontCompositeSubSetGroup = Readonly<{
@@ -120,6 +121,7 @@ function projectOptions(
   sellingPolicy: StorefrontSellingPolicy = STANDARD_STANDALONE_CAPACITY,
   isComposite = false,
   availabilityDates: StorefrontAvailabilityDates = NO_AVAILABILITY_DATES,
+  capacityByVariantId?: ReadonlyMap<string, StorefrontProductCapacity>,
 ): StorefrontProjectionOption[] {
   // This module is the only one that can tell a set apart from its parts, so it is the only one
   // that can tell the capacity rule — the caller supplies the policy, never the composite flag.
@@ -130,7 +132,7 @@ function projectOptions(
   };
 
   return toStorefrontSelectableOptions(
-    buildStorefrontVariantOptions(variants, pricingRule, productCapacity, availabilityDates),
+    buildStorefrontVariantOptions(variants, pricingRule, productCapacity, availabilityDates, capacityByVariantId),
   ).map((option) =>
     forcedUnavailableReason === null
       ? { ...option, kindKey, kindLabel }
@@ -230,17 +232,31 @@ export function buildStorefrontProductProjection({
    */
   const mergedComponentGroups = new Map<
     string,
-    { label: string; variants: Map<string, StorefrontVariantFacts> }
+    {
+      label: string;
+      variants: Map<string, StorefrontVariantFacts>;
+      capacityByVariantId: Map<string, StorefrontProductCapacity>;
+    }
   >();
   for (const group of componentGroups) {
     const key = normalizedLabelKey(group.label);
     let merged = mergedComponentGroups.get(key);
     if (!merged) {
-      merged = { label: normalizeLabel(group.label), variants: new Map() };
+      merged = {
+        label: normalizeLabel(group.label),
+        variants: new Map(),
+        capacityByVariantId: new Map(),
+      };
       mergedComponentGroups.set(key, merged);
     }
     for (const variant of group.variants) {
-      if (!merged.variants.has(variant.id)) merged.variants.set(variant.id, variant);
+      if (!merged.variants.has(variant.id)) {
+        merged.variants.set(variant.id, variant);
+        merged.capacityByVariantId.set(variant.id, {
+          ...(group.sellingPolicy ?? STANDARD_STANDALONE_CAPACITY),
+          isComposite: false,
+        });
+      }
     }
   }
 
@@ -284,12 +300,10 @@ export function buildStorefrontProductProjection({
         group.label,
         group.label.length === 0 ? "AMBIGUOUS_OPTION" : null,
         pricingRule,
-        // Deliberately NOT the parent's policy. A component is its own product with its own
-        // `ProductSellingPolicy` row, or none, and none means `STANDARD` — so a component this
-        // projection cannot resolve a policy for stays at the default rather than inheriting a
-        // `PREORDER`/`OVERSELL` the operator set on the set. Reading each component's own policy is
-        // I2's job; until then the default is the correct answer, not a placeholder.
         STANDARD_STANDALONE_CAPACITY,
+        false,
+        availabilityDates,
+        group.capacityByVariantId,
       ),
     );
   });

@@ -57,7 +57,6 @@ describe("Merchant public-feed repository query envelope", () => {
           })),
         ),
       },
-      compositeComponentMirror: { findMany: counted("compositeComponentMirror", []) },
       // I9 — the availability-cycle read. One flat query for the whole page, exactly like the
       // warehouse and promotion reads, so it cannot become per-offer as the catalog grows.
       variantAvailabilityCycle: { findMany: counted("variantAvailabilityCycle", []) },
@@ -75,6 +74,10 @@ describe("Merchant public-feed repository query envelope", () => {
               merchantCondition: null,
             },
           ];
+        }
+        if (sql.includes('FROM "CompositeComponentMirror" e')) {
+          count("compositeResourcesJoin");
+          return [];
         }
         if (sql.includes('FROM "PromotionTarget" t')) {
           count("promotionJoin");
@@ -133,7 +136,7 @@ describe("Merchant public-feed repository query envelope", () => {
       variantMirror: 1,
       productFactsJoin: 1,
       warehouseStock: 1,
-      compositeComponentMirror: 1,
+      compositeResourcesJoin: 1,
       promotionJoin: 1,
       // I9 — one per generation, not one per offer. That is the property this envelope exists to
       // hold, and the reason the constant could move from eight to nine without weakening it.
