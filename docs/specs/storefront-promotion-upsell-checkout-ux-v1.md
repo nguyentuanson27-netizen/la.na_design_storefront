@@ -184,56 +184,85 @@ Thiết kế B đề xuất (presentation; logic, proof và mutation giữ nguy�
 
 ## 8. Đo lường phễu — định nghĩa trước khi thay đổi UI
 
-Mục tiêu: có số đo **trước** (baseline hiện tại) và **sau** mỗi thay đổi UX, để owner đánh giá B và mọi quyết định A/B sau này bằng dữ liệu. Mục này định nghĩa sự kiện và chỉ số, **không đặt chỉ tiêu** và không là kế hoạch GTM đã duyệt.
+Mục tiêu: có số đo **trước** (baseline hiện tại) và **sau** mỗi thay đổi UX, để owner đánh giá B và mọi quyết định A/B sau này bằng dữ liệu. Mục này định nghĩa loại event, nguồn hợp lệ, định danh và chỉ số; **không đặt chỉ tiêu** và không là kế hoạch GTM đã duyệt. Phần nào cần sink hoặc khóa tương quan mới chỉ được triển khai sau gate MEAS-06.
 
-### MEAS-01 — Nguyên tắc (kế thừa `marketing-analytics-shopping.md` §4)
+### MEAS-01 — Nguyên tắc chung (kế thừa `marketing-analytics-shopping.md` §4)
 
-- Business code sở hữu sự thật của event; event chỉ phát từ **kết quả server đã xác nhận** (committed mutation, quote/readback, outcome submit), không từ click, DOM hay giá render.
-- **Không PII** trong payload: không tên, SĐT, địa chỉ, ghi chú, nội dung form; không cookie `la_cart` hay giá trị suy ra từ nó (kể cả `attemptKey` hiện là HMAC theo cart) nếu chưa được duyệt riêng cho analytics.
-- Fail-safe: lỗi tracking không chặn, không làm chậm checkout, không đổi kết quả mutation; thiếu snapshot an toàn thì bỏ event, không đoán.
-- Mỗi truth point phát **một lần**; reload/readback không phát lại. Không đếm trùng add của upsell với add PDP/cart.
-- Event mới dưới đây là **chẩn đoán UX nội bộ**: định tuyến sang GA4/Ads/TikTok, đặt tên chính thức và mapping vendor là quyết định riêng theo contract GTM hiện có; mặc định không dùng làm conversion quảng cáo.
+- **Không PII** trong mọi payload: không tên, SĐT, địa chỉ, ghi chú, nội dung hay giá trị trường form; không cookie `la_cart`, cart ID, `attemptKey` (HMAC theo cart) hay bất kỳ giá trị suy ra từ chúng.
+- Không suy giá, entitlement, số suất hay trạng thái quà từ DOM/text; mọi giá trị trong payload lấy từ view model hoặc kết quả server.
+- Fail-safe: lỗi tracking không chặn, không làm chậm checkout, không đổi kết quả mutation; thiếu dữ liệu an toàn thì bỏ event, không đoán.
+- Tracking không là bước phân quyền: event không mở hay khóa bất kỳ thao tác nào.
 
-### MEAS-02 — Event dùng lại (đã có trong `src/tracking/commerce-events.ts`)
+### MEAS-02 — Hai loại event và nguồn hợp lệ
 
-| Event | Dùng cho chỉ số |
-| --- | --- |
-| `view_cart` | Mẫu số của tỉ lệ cart → checkout |
-| `begin_checkout` | Bắt đầu lượt checkout hợp lệ |
-| `add_to_cart` | Thêm hàng; **khoảng trống hiện tại:** add từ checkout upsell chưa phát event (`checkout-upsell.tsx`, `promotion-upsell-actions.ts`). Khi bổ sung, phát từ committed delta (+1) và gắn ngữ cảnh nguồn checkout upsell nếu contract cho phép |
-| `purchase` | Hoàn tất đơn; giá trị đơn, số món lấy từ order snapshot |
-
-### MEAS-03 — Event chẩn đoán đề xuất (tên tạm, chốt khi implementation)
-
-| Event | Truth point | Payload tối thiểu, không PII |
-| --- | --- | --- |
-| `upsell_view` | Offer hợp lệ hiển thị, chưa dismiss, một lần mỗi lượt/giỏ trả tiền | phương án (A/B), số ứng viên, vị trí, campaign của offer |
-| `upsell_expand` | Chỉ B: khách mở phần gợi ý thu gọn | phương án |
-| `upsell_dismiss` | Khách chọn “Không mua thêm” | phương án |
-| `upsell_exit_to_sale` | Chỉ A: khách đi theo link `/sale` (kèm việc đã quay lại checkout hay không, nếu đo được không PII) | form đã có dữ liệu hay chưa (boolean) |
-| `gift_selection_saved` / `gift_selection_removed` | Server xác nhận lưu/bỏ quà | bề mặt (cart/checkout), campaign, số lượng thay đổi |
-| `gift_reminder_shown` / `gift_reminder_outcome` | Popup UX-10 mở / khách chọn | nhánh `canChoose` true/false/hỗn hợp; outcome chọn quà / vẫn đặt / đóng |
-| `checkout_submit_blocked` | Submit bị chặn trước khi gửi | lớp lý do: thiếu trường (chỉ **tên trường**, không giá trị), quote/proof chưa sẵn sàng, đang chờ quà/upsell/báo giá, lỗi địa chỉ |
-| `checkout_submit_outcome` | Server trả kết quả submit | thành công / giá đổi / thử lại được / kết thúc / chưa rõ |
-
-### MEAS-04 — Chỉ số
-
-| ID | Chỉ số | Cách tính | Đọc cùng |
+| Loại | Định nghĩa | Nguồn hợp lệ | Dedup |
 | --- | --- | --- | --- |
-| M-01 | Cart → checkout | phiên có `begin_checkout` / phiên có `view_cart` | — |
-| M-02 | Hoàn tất checkout | lượt có `purchase` / lượt có `begin_checkout` | **Guardrail chính** cho mọi thay đổi upsell |
-| M-03 | Tỉ lệ thêm từ upsell | add từ upsell / `upsell_view`; kèm tỉ lệ dismiss, tỉ lệ expand (B) | M-02 |
-| M-04 | Hoàn tất khi có upsell | M-02 tách theo lượt có / không `upsell_view` (quan sát, có thiên lệch chọn mẫu — không suy nhân quả) | M-03 |
-| M-05 | Giá trị và số món mỗi đơn | từ `purchase`, tách đơn có / không add upsell | M-02 |
-| M-06 | Nhận đủ quà | đơn đã chọn đủ suất / đơn có suất quà; tỉ lệ popup → chọn quà | UX-10 |
-| M-07 | Ma sát submit | `checkout_submit_blocked` theo lý do mỗi lượt; tần suất giá đổi; kết quả chưa rõ | UX-08/09 |
-| M-08 | An toàn | đơn trùng, outcome chưa rõ, lỗi add/requote | Phải giữ bằng 0 hoặc không tăng; vượt là chặn rollout |
+| **Business event** | Kết quả thương mại đã xảy ra | Chỉ sau kết quả server đã xác nhận: committed mutation, readback, outcome submit, confirmed order | Một lần mỗi kết quả commit; reload/readback chỉ đọc lại trạng thái, **không phát lại**; kết quả chưa rõ không phát cho tới khi readback xác nhận |
+| **UX observation** | Điều khách thấy hoặc làm trên UI | Sự kiện UI xảy ra trên một trạng thái do **server view model** cung cấp (offer hợp lệ, picker, popup, kết quả validation phía client). Đây là quan sát, **không phải kết quả server xác nhận** và không bao giờ được dùng làm conversion hay bằng chứng giao dịch | Theo MEAS-04: một lần mỗi phần tử hiển thị trong một lần tải trang; reload là lượt hiển thị mới và được đếm riêng, ghi rõ trong báo cáo |
 
-### MEAS-05 — So sánh và quyết định
+Các event có sẵn trong `src/tracking/commerce-events.ts` theo đúng truth point của contract analytics: `view_cart`, `begin_checkout` là quan sát trạng thái cart/checkout đã resolve (canonical rendered facts); `add_to_cart`/`remove_from_cart` chỉ sau committed delta; `purchase` chỉ sau confirmed order. **Khoảng trống:** add từ checkout upsell hiện chưa phát `add_to_cart` (`checkout-upsell.tsx`, `promotion-upsell-actions.ts`); khi bổ sung, phát từ committed +1 trả về bởi action, không từ click.
 
-- Thu baseline trên `main` hiện tại **trước** khi đổi upsell; owner chọn độ dài cửa sổ (ví dụ đủ số lượt checkout để ổn định) và tránh trùng đợt sale lớn, hoặc ghi rõ khi trùng.
-- Mặc định so sánh **trước/sau** cho B. Chia ngẫu nhiên theo lượt (thực nghiệm A/B) cần quyết định riêng về flag và đủ lưu lượng; PR này không thêm feature flag.
-- Báo cáo nêu số mẫu, khoảng thời gian và các thay đổi khác cùng lúc; không kết luận khi mẫu quá nhỏ.
+### MEAS-03 — Danh sách event đề xuất (tên tạm, chốt khi implementation)
+
+**Business events** — đi qua vocabulary commerce hiện có hoặc mở rộng có review:
+
+| Event | Truth point | Payload tối thiểu |
+| --- | --- | --- |
+| `add_to_cart` (nguồn checkout upsell) | Action add trả về commit +1 | item canonical + ngữ cảnh nguồn nếu contract cho phép |
+| `gift_selection_saved` / `gift_selection_removed` | Server xác nhận lưu/bỏ quà (kể cả qua readback sau mất phản hồi) | bề mặt (cart/checkout), campaign, số lượng thay đổi |
+| `checkout_submit_outcome` | Server trả kết quả submit | thành công / giá đổi / thử lại được / kết thúc / chưa rõ |
+| `purchase` | Confirmed order (không đổi) | như contract hiện có |
+
+**UX observations** — chỉ qua sink UX riêng (MEAS-05):
+
+| Event | Khi nào xảy ra | Payload tối thiểu |
+| --- | --- | --- |
+| `upsell_view` | Khối gợi ý hiển thị lần đầu với offer do server cung cấp, chưa dismiss | phương án (A/B), số ứng viên, vị trí; campaign lấy từ view model |
+| `upsell_expand` | Chỉ B: khách mở phần thu gọn | phương án |
+| `upsell_dismiss` | Khách chọn “Không mua thêm” | phương án |
+| `upsell_exit_to_sale` | Chỉ A: khách đi theo link `/sale` | form đã có dữ liệu hay chưa (boolean, không giá trị) |
+| `gift_reminder_shown` / `gift_reminder_outcome` | Popup UX-10 mở / khách chọn | nhánh `canChoose` true/false/hỗn hợp từ model; outcome chọn quà / vẫn đặt / đóng |
+| `checkout_submit_blocked` | Submit bị chặn trước khi gửi (validation client hoặc trạng thái khóa) | lớp lý do: thiếu trường (chỉ **tên trường**), quote/proof chưa sẵn sàng, đang chờ quà/upsell/báo giá, lỗi địa chỉ |
+
+### MEAS-04 — Định danh, ghép event, attribution và dedup
+
+Hiện **chưa có khóa tương quan nào được duyệt** cho analytics. Vì vậy:
+
+- **Không** dùng `la_cart`, cart ID, HMAC từ cart (`attemptKey`), số điện thoại hay mã đơn để ghép UX observation với giao dịch; `publicCode` chỉ là identity của `purchase` như contract hiện có.
+- **Đề xuất cần owner duyệt (MEAS-06):** một **khóa lượt checkout ngẫu nhiên, không suy ra từ dữ liệu nào** (ví dụ UUID sinh ở client khi vào checkout, sống trong phạm vi tab, xóa khi hoàn tất đơn hoặc rời lượt). Khóa chỉ dùng để ghép event trong cùng lượt, không gửi cho vendor quảng cáo nếu chưa duyệt, tuân theo consent abstraction trong `src/tracking/consent.ts`.
+- **Cửa sổ attribution** (đề xuất mặc định, owner chốt): một lượt checkout trong cùng tab, tối đa 24 giờ. Event ngoài cửa sổ không ghép.
+- **Confirm POS bất đồng bộ:** chỉ `purchase` đã xác nhận mới tính là hoàn tất. Đơn đang xử lý hoặc kết quả chưa rõ không tính; nếu xác nhận đến sau khi lượt đã đóng hoặc ngoài cửa sổ, đơn được tính trong tỉ lệ tổng hợp theo kỳ nhưng **không** được ghép vào lượt. Không tự phát `purchase` từ UI.
+- **Dedup UX observation:** `upsell_view`, `gift_reminder_shown` một lần mỗi phần tử trong một lần tải trang; `upsell_expand`/`upsell_dismiss`/`gift_reminder_outcome` một lần mỗi hành động; quay lại trang hoặc reload là lần hiển thị mới. Không phát lại khi model chỉ refresh quote mà phần tử vẫn đang hiển thị.
+
+### MEAS-05 — Sink và schema
+
+- `src/tracking/event-boundary.ts` hiện chỉ nhận vocabulary commerce đóng và **từ chối** mọi tên khác. UX observation **không** được đi qua boundary này bằng cách nới vocabulary commerce.
+- Cần một **boundary UX riêng** với vocabulary đóng, schema từng event, field set cố định và cùng nguyên tắc canonicalize (bỏ field lạ, field sai thì fail closed). Định tuyến (GA4 custom event, sink first-party hay chỉ log nội bộ) là quyết định MEAS-06; mặc định không map sang conversion quảng cáo.
+- Business event mới (`gift_selection_*`, `checkout_submit_outcome`) cần review như mở rộng contract commerce, hoặc đưa vào boundary UX nếu owner quyết định không gửi vendor.
+
+### MEAS-06 — Gate đo lường và chỉ số theo mức sẵn sàng
+
+Owner duyệt trước khi triển khai phần tương ứng: (1) sink/schema UX và nơi lưu; (2) khóa lượt ngẫu nhiên, phạm vi, thời hạn và quan hệ với consent; (3) cửa sổ attribution. Khi chưa duyệt, chỉ đo **Mức 0**.
+
+| ID | Chỉ số | Cách tính | Mức |
+| --- | --- | --- | --- |
+| M-01 | Cart → checkout | số `begin_checkout` / số `view_cart` theo kỳ (tỉ lệ tổng hợp, không ghép) | 0 |
+| M-02 | Hoàn tất checkout | số `purchase` đã xác nhận / số `begin_checkout` theo kỳ — **guardrail chính** | 0 (tổng hợp); 1 nếu tính theo lượt |
+| M-05 | Giá trị và số món mỗi đơn | từ order snapshot / `purchase` theo kỳ; tách đơn có add upsell chỉ khi snapshot ghi nguồn dòng (chưa có, cần duyệt) | 0 (tổng); 1 (tách) |
+| M-08 | An toàn | đơn trùng, outcome chưa rõ, lỗi add/requote từ dữ liệu server/vận hành, không từ UX event | 0 |
+| M-03 | Tỉ lệ thêm từ upsell | add upsell đã commit / `upsell_view` trong cùng lượt; kèm tỉ lệ dismiss, expand (B) | 1 |
+| M-04 | Hoàn tất khi có upsell | M-02 theo lượt, tách lượt có / không `upsell_view` (quan sát, có thiên lệch — không suy nhân quả) | 1 |
+| M-06 | Nhận đủ quà | đơn chọn đủ suất / đơn có suất (Mức 0 từ order snapshot); popup → chọn quà theo lượt (Mức 1) | 0 / 1 |
+| M-07 | Ma sát submit | `checkout_submit_blocked` theo lý do mỗi lượt; tần suất giá đổi | 1 |
+
+**Mức 0:** tính được từ event commerce và dữ liệu đơn hiện có, không cần khóa tương quan hay sink mới. **Mức 1:** cần gate MEAS-06 đã duyệt và đã chạy trước khi đổi UI để có baseline.
+
+### MEAS-07 — So sánh và quyết định
+
+- Thu baseline **Mức 0** trên `main` hiện tại trước khi đổi upsell. Nếu owner muốn đánh giá B bằng M-03/M-04, triển khai sink/khóa Mức 1 **trước** thay đổi UI, đủ thời gian để có baseline.
+- Owner chọn độ dài cửa sổ baseline (đủ số lượt checkout để ổn định), tránh trùng đợt sale lớn hoặc ghi rõ khi trùng.
+- Mặc định so sánh **trước/sau** cho B. Chia ngẫu nhiên theo lượt cần quyết định riêng về flag và đủ lưu lượng; PR này không thêm feature flag.
+- Báo cáo nêu số mẫu, khoảng thời gian, mức chỉ số và các thay đổi khác cùng lúc; không kết luận khi mẫu quá nhỏ.
 
 ## 9. Acceptance Criteria — dành cho PR implementation sau khi duyệt
 
@@ -258,14 +287,15 @@ Các AC không là lời xác nhận feature đã chạy trong PR #179. AC-07 ch
 | AC-15 | Upsell timeout/stale; quà đã lưu; submit processing/unknown POS | Recommendation lỗi không cản checkout hợp lệ, không mất quà, không tự gửi lại thao tác có thể đã tạo đơn |
 | AC-16 | Đối chiếu baseline thật và phần triển khai liên quan #177/#181 | Tại `main@c6058a1`, giữ test cart #177 và test inline upsell vì control còn tồn tại. Nếu chọn A, PR runtime phải thay assertion UI bằng kịch bản đã duyệt và bảo toàn coverage an toàn ở tầng phù hợp; không xóa/skip test để xanh. Với B giữ hành vi inline và bổ sung test presentation compact |
 | AC-17 | Ảnh cùng fixture/viewport ở trạng thái chưa mở/đang chọn/đã lưu/lỗi | Reviewer đối chiếu thứ tự, CTA, mật độ, copy ở mobile/desktop trước sign-off; không dùng ảnh mẫu/spec thay bằng chứng runtime |
-| AC-18 | Đo lường §8: view/dismiss/add upsell, lưu/bỏ quà, popup, submit bị chặn, outcome; reload, readback, mất phản hồi, tracking lỗi | Mỗi truth point phát đúng một lần từ kết quả server; payload không có PII, cookie `la_cart` hay giá trị suy ra chưa duyệt; add upsell không bị đếm trùng; tracking lỗi không chặn hay làm đổi checkout. Baseline số đo được thu trước khi đổi UI upsell |
+| AC-18 | **Business event** §8: add upsell, lưu/bỏ quà, outcome submit, purchase; reload, readback, mất phản hồi, POS chưa rõ, tracking lỗi | Mỗi kết quả commit phát đúng một lần, chỉ sau xác nhận server; readback/reload không phát lại; kết quả chưa rõ không phát cho tới khi xác nhận; không phát `purchase` từ UI; payload không PII, không `la_cart`/cart ID/`attemptKey`; tracking lỗi không chặn hay đổi checkout |
+| AC-19 | **UX observation** §8, chỉ sau gate MEAS-06: view/expand/dismiss upsell, popup, submit bị chặn; reload, refresh quote, sink từ chối | Đi qua boundary UX riêng, không nới vocabulary commerce; payload chỉ lấy từ view model/kết quả validation, không giá/entitlement từ DOM, không giá trị trường form; dedup đúng MEAS-04; khóa lượt (nếu duyệt) ngẫu nhiên, không suy ra từ cart/PII; không bị dùng làm conversion |
 
 Dùng fixture isolated/test DB và Pancake sandbox/giả lập được phép; không tạo COD order production để nghiệm thu. Screenshot, focus và screen reader cần runtime, không suy pass từ source hoặc kết quả của PR khác.
 
 ## 10. Phạm vi triển khai sau spec và quy ước kỹ thuật
 
 Đây là định hướng để lập kế hoạch sau phê duyệt, **không phải kế hoạch đã được duyệt hoặc code của PR này**:
-1. Đo lường: §8, AC-18 — triển khai **trước** thay đổi upsell để có baseline số đo.
+1. Đo lường: §8 — baseline Mức 0 và business event (AC-18) **trước** thay đổi upsell; Mức 1 (AC-19) chỉ sau gate MEAS-06 và cũng chạy trước thay đổi UI nếu dùng để đánh giá B.
 2. Trạng thái/lỗi: UX-04/08, AC-04/09/10; cần regression chứng minh vấn đề.
 3. Ưu đãi/cart/picker: UX-01/02/03/05, AC-01/02/03/05; dựng trên bố cục #177 đã merge, không làm lại.
 4. Upsell: UX-06/07, AC-06 và AC-08 nếu owner duyệt B như khuyến nghị (AC-07 nếu chọn A); điều phối #181; A cần amendment nghiệp vụ trước implementation.
@@ -276,7 +306,7 @@ Dùng fixture isolated/test DB và Pancake sandbox/giả lập được phép; k
 - Presentation: `src/components/brand/promotion-banner.tsx`, `cart-gift-picker.tsx`, `cart-drawer.tsx`; `src/components/commerce/checkout-upsell.tsx`, `guest-checkout-form.tsx`.
 - Route/layout: `src/app/cart/page.tsx`, `src/app/checkout/page.tsx`.
 - Read models: `src/routes/cart-promotion-model.ts`, `cart-gift-model.ts`, `checkout-model.ts`; chỉ bổ sung dữ liệu có nguồn authority, không tái tính tiền.
-- Tracking: `src/tracking/commerce-events.ts`, `event-boundary.ts`, `src/components/analytics/`; event mới theo contract `marketing-analytics-shopping.md`, không định tuyến vendor khi chưa duyệt.
+- Tracking: `src/tracking/commerce-events.ts`, `event-boundary.ts`, `src/components/analytics/`; business event theo contract `marketing-analytics-shopping.md`; UX observation qua boundary UX riêng (MEAS-05), không định tuyến vendor khi chưa duyệt.
 - Tests: `tests/a11y-runtime/cart-gift-picker.spec.ts`, `promotion-upsell.spec.ts`, `checkout-benefit.spec.ts`, `checkout.spec.ts`; domain/DB cho logic và các bất biến liên quan.
 - Docs: file này là đề xuất mới; amendment của spec upsell gốc được phê duyệt riêng khi quyết định thay hợp đồng, không âm thầm sửa qua runtime.
 
@@ -317,7 +347,7 @@ Ví dụ nguyên tắc presentation: text + native control, không suy entitleme
 - [ ] Diff với baseline chỉ thêm `docs/specs/storefront-promotion-upsell-checkout-ux-v1.md`; **không có `src/`, `tests/`, workflow/config/lockfile**.
 - [ ] Nhánh spec bắt đầu từ baseline hiện tại (`c6058a1`), không mang commit runtime #178/#180 theo ancestry; kiểm tra lại diff nếu `main` đổi.
 - [ ] Header, hiện trạng, bảng dependency, UX-06/07 và AC-01/02/06/07/08/16 nhất quán: baseline inline upsell; #181 là đề xuất banner `/sale`; #177 đã merge và là hiện trạng cart.
-- [ ] Khuyến nghị B ghi rõ là khuyến nghị, không là phê duyệt; mục đo lường §8 không đặt chỉ tiêu và không có PII.
+- [ ] Khuyến nghị B ghi rõ là khuyến nghị, không là phê duyệt; mục đo lường §8 không đặt chỉ tiêu, không có PII, tách business event và UX observation, có contract định danh/dedup và gate cho sink/khóa lượt.
 - [ ] Giữ bảng tác động `D-03/D-04/U-02/A` và gate owner; không coi việc tách PR hoặc lịch sử merge là duyệt A/B.
 - [ ] UX-10/AC-11 có đủ `canChoose=true/false` và hỗn hợp, giữ quyền tiếp tục/đóng, không tạo đơn ngoài ý muốn.
 - [ ] Các đường dẫn, lệnh và AC đối chiếu được; kết quả CI phải gắn đúng HEAD, không kế thừa trạng thái của bản branch cũ.
@@ -325,7 +355,7 @@ Ví dụ nguyên tắc presentation: text + native control, không suy entitleme
 ### Còn cần chốt trước implementation phần tương ứng
 
 - [ ] Owner chọn A hoặc B (spec khuyến nghị B); A cần amendment spec upsell về `D-03/D-04`, `U-02/A`, `FR-06/07/08/09/12`; B cần chốt presentation compact, vị trí mới và phối hợp kết luận #181.
-- [ ] Owner duyệt danh sách event §8, nơi lưu/định tuyến số đo và độ dài cửa sổ baseline.
+- [ ] Owner duyệt gate MEAS-06 (sink/schema UX, khóa lượt ngẫu nhiên và consent, cửa sổ attribution) nếu cần chỉ số Mức 1, và độ dài cửa sổ baseline.
 - [ ] Thay đổi cart sau này đối chiếu bố cục #177 đã merge; không làm lại.
 - [ ] Với A, duyệt wording/interaction rời checkout có dữ liệu; kiểm tra không mất form ngoài lựa chọn chủ động của khách.
 - [ ] Implementation đạt các AC áp dụng và Definition of Done của project: test/lint/build, tích hợp, bảo mật, accessibility/runtime và tài liệu; bằng chứng chưa chạy phải ghi chưa chạy.
