@@ -98,6 +98,41 @@ test("cart has one functional gift picker above paid products on mobile and desk
   await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
 });
 
+test("cart preserves tier achievement and next gift progress when the earned gift CTA is consolidated", async ({ page }) => {
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  // A small tier saving leaves two earned gifts and a shortfall before the third.
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 90_000 } });
+  await prisma.giftQuantityCampaign.create({ data: {
+    id: `${PREFIX}tier-preserve`, kind: "QUANTITY_TIER", name: "Mua 2 giảm 1%",
+    isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"],
+    tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+    tierSelectionPriority: "CHEAPEST_FIRST",
+    tiers: { create: { minQuantity: 2, discountValue: 1 } },
+  } });
+
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${URL}/cart`);
+
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    await expect(picker).toContainText("Đã thêm 0/2 quà vào đơn.");
+    const banner = page.locator('[data-promotion-banner="full"]');
+    const tierAchieved = banner.locator('[data-promotion-kind="TIER"][data-promotion-state="achieved"]');
+    const giftProgress = banner.locator('[data-promotion-kind="GIFT"][data-promotion-state="progress"]');
+
+    // Both non-duplicate promotions are still visible and meaningful.
+    await expect(tierAchieved).toHaveCount(1);
+    await expect(tierAchieved).toContainText("Đã áp dụng ưu đãi");
+    await expect(giftProgress).toHaveCount(1);
+    await expect(giftProgress).toContainText("Mua thêm");
+    await expect(giftProgress.getByRole("progressbar")).toHaveCount(1);
+    // Only the reached-gift banner was replaced by the real interactive picker.
+    await expect(banner.locator('[data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Chọn quà ngay", exact: true })).toHaveCount(1);
+  }
+});
+
 test("mobile keyboard picker saves partial/full/zero choices without changing paid items; Axe clean", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
