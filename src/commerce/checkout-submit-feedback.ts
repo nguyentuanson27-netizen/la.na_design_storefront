@@ -87,7 +87,7 @@ export function checkoutSubmitFeedback(
         tone: "error",
         title: "Kiểm tra lại thông tin",
         message:
-          "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra số nhà, tên đường giúp La.na nhé.",
+          "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra lại số nhà, tên đường nhé.",
         mayRetry: true,
       };
     case "INVALID_PHONE":

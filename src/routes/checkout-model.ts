@@ -272,8 +272,8 @@ export function buildCheckoutViewModel(
 }
 
 const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>["reason"], string> = {
-  BENEFITS_UNAVAILABLE: "La.na chưa kiểm tra được ưu đãi và quà tặng của giỏ hàng. Nàng quay lại giỏ hàng rồi thử lại nhé.",
-  GIFT_SELECTION_INVALID: "Quà nàng chọn không còn phù hợp (hết hàng hoặc chương trình đã đổi). Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; La.na không tự đổi quà thay nàng.",
+  BENEFITS_UNAVAILABLE: "Chưa kiểm tra được ưu đãi và quà tặng của giỏ hàng. Nàng quay lại giỏ hàng rồi thử lại nhé.",
+  GIFT_SELECTION_INVALID: "Quà nàng chọn không còn phù hợp (hết hàng hoặc chương trình đã đổi). Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; hệ thống không tự đổi quà thay nàng.",
   POS_NOT_ACCEPTED: "Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa đặt trực tuyến được. Nàng có thể bỏ sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau nhé.",
   PROOF_UNAVAILABLE: "Giỏ hàng có nhiều dòng ưu đãi quá nên chưa xác nhận được giá. Nàng bớt vài sản phẩm rồi thử lại nhé.",
 };

@@ -294,7 +294,7 @@ export function buildCartViewModel(
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
-    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "La.na chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
       ? "Quà nàng chọn không còn hợp lệ. Nàng chọn lại quà trong giỏ trước khi đặt hàng nhé."
       : tierPriceInvalid
         ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến."

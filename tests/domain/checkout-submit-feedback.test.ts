@@ -38,7 +38,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "error",
       title: "Kiểm tra lại thông tin",
-      message: "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra số nhà, tên đường giúp La.na nhé.",
+      message: "Địa chỉ hoặc thông tin nhận hàng chưa đúng. Nàng chọn lại tỉnh/thành phố, phường/xã rồi kiểm tra lại số nhà, tên đường nhé.",
       mayRetry: true,
     },
   );

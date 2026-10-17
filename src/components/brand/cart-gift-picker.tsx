@@ -77,39 +77,42 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const present = entitled > 0 || model.selections.length > 0;
   // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
-  // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf.
-  // Only on arrival and on a hash change: a picker that reappears later (gifts earned again) while the URL
-  // still carries the hash must not scroll the page or take focus on its own.
-  const arrivedViaHash = useRef(false);
+  // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf. Focus is asked
+  // for through state and applied after the commit that shows the picker, so no effect cleanup can drop it.
+  const [focusRequest, setFocusRequest] = useState(0);
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    giftArea.current?.scrollIntoView({ block: "start" });
+    giftArea.current?.focus({ preventScroll: true });
+  }, [focusRequest]);
+  const arrivalChecked = useRef(false);
   useEffect(() => {
     if (!present) return;
-    let frame = 0;
-    const reveal = () => {
-      if (window.location.hash !== "#cart-gifts") return;
-      setExpanded(true);
-      cancelAnimationFrame(frame);
-      frame = requestAnimationFrame(() => {
-        giftArea.current?.scrollIntoView({ block: "start" });
-        giftArea.current?.focus({ preventScroll: true });
-      });
-    };
-    if (!arrivedViaHash.current) {
-      arrivedViaHash.current = true;
-      reveal();
+    const page = window.location.pathname;
+    const open = () => { setExpanded(true); setFocusRequest((n) => n + 1); };
+    // Only for this page: a history event that lands on another page's `#cart-gifts` is not ours.
+    const openIfTargeted = () => { if (window.location.pathname === page && window.location.hash === "#cart-gifts") open(); };
+    // Once per mount, on the first render that has a picker: a picker that reappears later while the URL
+    // still carries the hash must not scroll the page or take focus on its own.
+    if (!arrivalChecked.current) {
+      arrivalChecked.current = true;
+      openIfTargeted();
     }
-    // A plain anchor fires `hashchange`; Next's <Link> on the same page moves the hash with pushState,
-    // which does not, so a click on any `#cart-gifts` link is read once the URL has been updated.
+    // Next's <Link> commits its URL change later, inside a transition, so the click is judged by the link's
+    // own target rather than by `location`: a plain left click on a same-page `#cart-gifts` link opens now.
     const linkClicked = (event: MouseEvent) => {
-      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
-      if (link?.getAttribute("href")?.endsWith("#cart-gifts")) setTimeout(reveal, 0);
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || (link.target && link.target !== "_self")) return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin === window.location.origin && url.pathname === page && url.hash === "#cart-gifts") open();
     };
-    window.addEventListener("hashchange", reveal);
-    window.addEventListener("popstate", reveal);
+    window.addEventListener("hashchange", openIfTargeted);
+    window.addEventListener("popstate", openIfTargeted);
     document.addEventListener("click", linkClicked);
     return () => {
-      cancelAnimationFrame(frame);
-      window.removeEventListener("hashchange", reveal);
-      window.removeEventListener("popstate", reveal);
+      window.removeEventListener("hashchange", openIfTargeted);
+      window.removeEventListener("popstate", openIfTargeted);
       document.removeEventListener("click", linkClicked);
     };
   }, [present]);
@@ -119,7 +122,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {present ? <>
     <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
-    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Nàng bỏ lựa chọn cũ tại đây rồi chọn lại nhé; La.na không tự thay quà.</p> : <>
+    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Nàng bỏ lựa chọn cũ tại đây rồi chọn lại nhé; quà sẽ không tự được thay.</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}

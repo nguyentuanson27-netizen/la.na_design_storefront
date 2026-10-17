@@ -315,7 +315,7 @@ export function GuestCheckoutForm({
   // UX-08: a disabled button always says why, beside it, in the same words the bar below repeats.
   // A final outcome is already explained by the feedback block right above the button.
   const submitLockReason = isSubmitting || lockSubmission ? null
-    : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng tải lại trang giúp La.na nhé.")
+    : !quoteProof ? (unavailableNotice ? "Giỏ hàng cần xem lại một chút, nàng xem hướng dẫn ở đầu trang nhé." : "Giá chưa được cập nhật, nàng tải lại trang nhé.")
     : giftPending ? "Đang lưu quà tặng…"
     : isRefreshingQuote || waitingForNewRender ? "Đang cập nhật giá mới…"
     : geoError ? "Chưa tải được địa chỉ, nàng bấm “Thử lại” ở phần địa chỉ nhé."
@@ -683,7 +683,7 @@ export function GuestCheckoutForm({
           ref={errorSummaryRef}
           role="alert"
         >
-          Nàng điền giúp La.na các ô còn trống nhé.
+          Nàng điền nốt các ô còn trống nhé.
         </p>
       ) : null}
 

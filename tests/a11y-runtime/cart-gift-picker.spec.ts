@@ -508,32 +508,37 @@ test("EX-21 after price sync with no gifts blocks checkout even at the legacy to
 });
 
 test("UX-05/AC-02: arriving on #cart-gifts opens the picker and focuses it without choosing anything", async ({ page }) => {
+  // The mini-cart offers "Chọn quà" only where a benefit cart can be checked out (a verified shop).
+  const verifiedServer = await startCartServer(3405, true);
+  const base = "http://127.0.0.1:3405";
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
   const toggle = picker.locator("button[aria-controls]");
+  try {
   for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
     await page.setViewportSize(viewport);
     // A full load without the hash: collapsed, as before.
-    await page.goto(`${URL}/cart`);
+    await page.goto(`${base}/cart`);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(picker).not.toBeFocused();
-    // Same document: a link to the anchor while already on /cart. Next's <Link> (the mini-cart) moves the
-    // hash with pushState, which fires no hashchange, so the click itself must be enough.
-    await page.evaluate(() => {
-      const link = Object.assign(document.createElement("a"), { href: "#cart-gifts", textContent: "Chọn quà" });
-      link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "#cart-gifts"); });
-      document.body.append(link);
-      link.click();
-      link.remove();
-    });
+    // Same document: the mini-cart's real "Chọn quà" <Link> while already on /cart. Next commits that URL
+    // change later, inside a transition, so this is the path a timing-dependent handler would miss.
+    await page.getByRole("button", { name: /^Giỏ hàng/ }).filter({ visible: true }).first().click();
+    const drawer = page.getByRole("dialog", { name: "Giỏ hàng" });
+    await expect(drawer).toBeVisible();
+    await drawer.getByRole("link", { name: "Chọn quà", exact: true }).click();
+    await expect(drawer).toHaveCount(0);
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(picker).toBeFocused();
     await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
-    // A fresh document that arrives with the hash: the load path.
+    // The picker opened on the click itself; Next writes the hash into the URL only when its transition
+    // commits, a moment later. Reload once it has: a fresh document that arrives with the hash.
+    await expect(page).toHaveURL(/\/cart#cart-gifts$/);
     await page.reload();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(picker).toBeFocused();
     expect(await prisma.cartGiftSelection.count({ where: { cartId } })).toBe(0);
   }
+  } finally { await stopCartServer(verifiedServer); }
 });
 
 test("UX-04/AC-04: receiving then removing a gift does not revive the unsaved-draft warning", async ({ page }) => {

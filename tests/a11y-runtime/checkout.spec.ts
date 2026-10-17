@@ -399,7 +399,7 @@ for (const { name, viewport } of [
     await expect(submit).toBeEnabled();
     await submit.click();
     // One short line by the button; each missing field is flagged in red where it is.
-    const missing = page.getByRole("alert").filter({ hasText: "Nàng điền giúp La.na các ô còn trống nhé." });
+    const missing = page.getByRole("alert").filter({ hasText: "Nàng điền nốt các ô còn trống nhé." });
     await expect(missing).toBeVisible();
     await expect(missing.getByRole("listitem")).toHaveCount(0);
     for (const [field, message] of [
@@ -731,6 +731,12 @@ test("AC-18 the mobile bottom bar stands in for the submit button through the sa
   context,
 }) => {
   await cleanupRateLimits();
+  // P9a moves this shared variant's price and does not put it back; the Pancake fixture still prices it at
+  // 500.000, so start from the price the fixture will accept or the order is (correctly) re-quoted.
+  await prisma.variantMirror.update({
+    where: { id: testVariantId },
+    data: { pancakeRetailPrice: 500_000, pancakeRetailPriceAfterDiscount: 500_000 },
+  });
   await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
   await createTestCart();
   await prepareBrowser(context);
@@ -748,7 +754,7 @@ test("AC-18 the mobile bottom bar stands in for the submit button through the sa
   // Same validation as the primary button: nothing is sent, the first missing field takes focus,
   // and the bar steps aside while the buyer types.
   await bar.getByRole("button", { name: "Đặt hàng", exact: true }).click();
-  await expect(page.getByText("Nàng điền giúp La.na các ô còn trống nhé.")).toBeVisible();
+  await expect(page.getByText("Nàng điền nốt các ô còn trống nhé.")).toBeVisible();
   await expect(page.getByLabel("Họ và tên")).toBeFocused();
   await expect(bar).toHaveCount(0);
   expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);
