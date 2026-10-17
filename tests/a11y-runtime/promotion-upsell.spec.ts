@@ -63,6 +63,10 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   // UX-08: the offer never locks submit.
   await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeEnabled();
   expect(await page.locator("form").count()).toBe(1);
+  // Scan the settled page: the province list loads after hydration, and the field's colour transition
+  // from its loading (disabled) look must finish before contrast is measured.
+  await expect(page.getByLabel("Tỉnh / Thành phố", { exact: false })).toBeEnabled();
+  await page.waitForFunction(() => document.getAnimations().length === 0);
   for (const width of [320, 390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
