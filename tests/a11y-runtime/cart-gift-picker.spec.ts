@@ -79,6 +79,7 @@ test("cart has one functional gift picker above paid products on mobile and desk
     expect(beforePaidLines).toBe(true);
 
     const toggle = picker.getByRole("button", { name: "Chọn quà ngay" });
+    await expect(page.getByRole("button", { name: "Chọn quà ngay", exact: true })).toHaveCount(1);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
