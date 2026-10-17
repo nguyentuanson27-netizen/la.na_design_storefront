@@ -558,6 +558,22 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
     }),
   ).toBeVisible();
 
+  // Past stock (2 in the warehouse), "+" says how many are left beside the stepper and the drawer
+  // keeps showing the cart instead of swapping it for an error.
+  const increase = cartDrawer.getByRole("button", { name: `Tăng số lượng ${productName}`, exact: true });
+  const lineNotice = cartDrawer.locator("[data-line-notice]");
+  await increase.click();
+  await expect(cartDrawer.getByText("2", { exact: true })).toBeVisible();
+  await expect(increase).toBeEnabled();
+  await increase.click();
+  await expect(lineNotice).toHaveText("Chỉ còn 2 sản phẩm");
+  await expect(cartDrawer.getByText("Black / M")).toBeVisible();
+  await expect(cartDrawer.getByRole("alert")).toHaveCount(0);
+  await expect(increase).toBeDisabled();
+  await cartDrawer.getByRole("button", { name: `Giảm số lượng ${productName}`, exact: true }).click();
+  await expect(cartDrawer.getByText("1", { exact: true })).toBeVisible();
+  await expect(lineNotice).toBeEmpty();
+
   /*
    * Closing the cart returns focus to a real control. The sheet unmounted before the cart opened,
    * so there was no focused element for the drawer to remember -- without a fallback this lands on

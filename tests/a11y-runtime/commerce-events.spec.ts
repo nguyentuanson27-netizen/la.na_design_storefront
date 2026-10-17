@@ -414,7 +414,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
   const removed = ecommerceOf((await readEvents(page, "remove_from_cart"))[0]).items?.[0];
   expect(removed?.item_id).toBe(shirt.variationM);
   expect(removed?.quantity).toBe(1);
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
 });
 
 test("U19 an unsafe cart emits no view_cart and no begin_checkout, and checkout still works", async ({

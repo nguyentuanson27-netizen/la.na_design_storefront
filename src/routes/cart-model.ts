@@ -93,13 +93,18 @@ export type CartViewModel = Readonly<{
   benefitsNotice?: string;
 }>;
 
+/** What a shopper is told when a quantity outruns stock and the count that would sell is known. */
+export function cartStockLimitText(maxQuantity: number): string {
+  return `Chỉ còn ${maxQuantity} sản phẩm`;
+}
+
 /** Why a line cannot be bought, in the shopper's words. */
 export function cartUnavailableLabel(line: StorefrontCartLine): string {
   switch (line.unavailableReason) {
     case "OUT_OF_STOCK":
       return "Tạm hết hàng";
     case "INSUFFICIENT_STOCK":
-      return "Không đủ tồn kho cho số lượng này";
+      return line.maxQuantity ? cartStockLimitText(line.maxQuantity) : "Không đủ tồn kho cho số lượng này";
     case "PRICE_UNRESOLVED":
       return "Giá đang cập nhật";
     case "MAPPING_REQUIRED":

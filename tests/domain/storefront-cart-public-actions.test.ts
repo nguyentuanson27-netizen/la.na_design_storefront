@@ -354,3 +354,39 @@ test("cart public actions reject malformed input and normalize downstream failur
     reason: "REMOVE_FAILED",
   });
 });
+
+test("a stock refusal names the largest quantity that would sell, and only a real count", async () => {
+  const refusals = new Map<string, unknown>([
+    ["insufficient", { allowed: false, maxQuantity: 2 }],
+    ["unavailable", false],
+    ["malformed", { allowed: false, maxQuantity: -1 }],
+  ]);
+  const actions = createStorefrontCartPublicActions({
+    async getLines() {
+      return [...lines, { variantId: "malformed", available: true }];
+    },
+    async canSetQuantity(input) {
+      return refusals.get(input.variantId) as boolean | { allowed: false; maxQuantity: number };
+    },
+    async setQuantity() {
+      throw new Error("setQuantity should not be called");
+    },
+    async remove() {
+      throw new Error("remove should not be called");
+    },
+  });
+
+  assert.deepEqual(await actions.update({ variantId: "insufficient", quantity: 3 }), {
+    ok: false,
+    reason: "LINE_UNAVAILABLE",
+    maxQuantity: 2,
+  });
+  assert.deepEqual(await actions.update({ variantId: "unavailable", quantity: 3 }), {
+    ok: false,
+    reason: "LINE_UNAVAILABLE",
+  });
+  assert.deepEqual(await actions.update({ variantId: "malformed", quantity: 3 }), {
+    ok: false,
+    reason: "LINE_UNAVAILABLE",
+  });
+});

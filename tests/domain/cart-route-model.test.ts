@@ -84,6 +84,11 @@ test("every unavailable reason has shopper wording, and an unknown one still say
   for (const [reason, expected] of cases) {
     assert.equal(cartUnavailableLabel(line({ unavailableReason: reason })), expected, String(reason));
   }
+  // When the count that would sell is known, the shopper is told it.
+  assert.equal(
+    cartUnavailableLabel(line({ unavailableReason: "INSUFFICIENT_STOCK", maxQuantity: 2 })),
+    "Chỉ còn 2 sản phẩm",
+  );
 });
 
 /* ------------------------------------------------------------------ editable rows */

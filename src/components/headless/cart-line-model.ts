@@ -3,6 +3,7 @@ import type {
   StorefrontCartRemoveResult,
   StorefrontCartUpdateResult,
 } from "../../commerce/storefront-cart-public-actions.ts";
+import { cartStockLimitText } from "../../routes/cart-model.ts";
 
 /**
  * Every decision the cart line editor makes, as pure functions.
@@ -13,8 +14,8 @@ import type {
  * again: which typed quantity is worth sending, what a shopper is told when the server refuses,
  * and when the route is re-read.
  *
- * None of it is new. The quantity bound is the column's, and every message is the one the editor
- * already showed.
+ * The quantity bound is the column's. A stock refusal that names the count says "Chỉ còn N sản
+ * phẩm", worded once in the cart model so the line label and the editor agree.
  */
 
 /** The largest quantity the cart column can hold. A larger one is refused before any request. */
@@ -55,7 +56,7 @@ export function resolveCartLineUpdateOutcome(result: StorefrontCartUpdateResult)
   return Object.freeze({
     message:
       result.reason === "LINE_UNAVAILABLE"
-        ? "Số lượng này hiện không khả dụng. Hãy thử số lượng thấp hơn."
+        ? result.maxQuantity ? `${cartStockLimitText(result.maxQuantity)}.` : "Số lượng này hiện không khả dụng. Hãy thử số lượng thấp hơn."
         : "Không thể cập nhật số lượng lúc này.",
     refreshes: true,
     analytics: undefined,

@@ -53,7 +53,7 @@ function render(data: CartViewModel) {
         <PageBreadcrumbs items={CART_BREADCRUMBS} />
         <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" />
         <div className="mt-8" data-ui-state="empty">
-          <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
+          <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
             Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
           </p>

@@ -490,7 +490,7 @@ test("F8c browser surfaces distinguish ready, preorder, mixed and legacy confirm
   await page.goto(`${BASE_URL}/checkout/success?order=${encodeURIComponent(legacyCode)}`, {
     waitUntil: "networkidle",
   });
-  await expect(page.getByText("Cảm ơn bạn đã đặt hàng.")).toBeVisible();
+  await expect(page.getByText("Cảm ơn nàng đã đặt hàng.")).toBeVisible();
   await expect(page.locator('[data-historical-preorder="true"]')).toHaveCount(0);
 
   await page.setViewportSize({ width: 390, height: 844 });

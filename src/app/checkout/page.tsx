@@ -27,7 +27,7 @@ function render(data: CheckoutViewModel) {
         <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
         <PageHeader eyebrow="Mua sắm" title="Thanh toán" />
         <div className="mt-8" data-ui-state="empty">
-          <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
+          <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </div>
       </PageShell>

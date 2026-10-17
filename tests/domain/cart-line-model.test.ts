@@ -79,6 +79,11 @@ test("an unavailable line gets the precise message, other refusals the generic o
     "Số lượng này hiện không khả dụng. Hãy thử số lượng thấp hơn.",
   );
 
+  assert.equal(
+    resolveCartLineUpdateOutcome({ ok: false, reason: "LINE_UNAVAILABLE", maxQuantity: 2 }).message,
+    "Chỉ còn 2 sản phẩm.",
+  );
+
   for (const reason of ["INVALID_INPUT", "UPDATE_FAILED"] as const) {
     assert.equal(
       resolveCartLineUpdateOutcome({ ok: false, reason }).message,

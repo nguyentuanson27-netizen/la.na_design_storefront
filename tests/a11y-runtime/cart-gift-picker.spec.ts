@@ -473,7 +473,7 @@ test("below-threshold shows shortfall; empty paid cart still shows stale gift to
   await prisma.cartGiftSelection.create({ data: { cartId, campaignId, variantId: giftId, quantity: 1, campaignRevision: 1 } });
   await prisma.cartItem.deleteMany({ where: { cartId } });
   await page.reload();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await expect(picker.getByRole("alert")).toBeVisible();
   await openPicker(picker);
   await picker.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();

@@ -455,7 +455,7 @@ for (const { name, viewport } of [
     await waitForConfirmedOrder();
 
     await expect(page.getByRole("heading", { level: 1, name: "ĐẶT HÀNG THÀNH CÔNG" })).toBeVisible();
-    const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn bạn đã đặt hàng." });
+    const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn nàng đã đặt hàng." });
     await expect(successStatus).toContainText("Mã đơn LA-");
     expect((await context.cookies(BASE_URL)).some(({ name }) => name === "la_cart")).toBe(false);
 
@@ -549,13 +549,13 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "GIỎ HÀNG" })).toBeVisible();
   await expect(page.locator('[data-ui-state="empty"]')).toBeVisible();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await assertCheckoutAccessibility(page);
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await expect(page.locator('[data-ui-state="empty"]')).toBeVisible();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await assertCheckoutAccessibility(page);
 
   expect(browserErrors).toEqual([]);

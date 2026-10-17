@@ -173,6 +173,19 @@ export function evaluateVariantCapacity(
 }
 
 /**
+ * The largest quantity `evaluateVariantCapacity()` would allow right now, or `0` when none would.
+ *
+ * Derived from the same floor and projection rather than a second stock comparison, so the number
+ * a shopper is told ("chỉ còn N") is exactly the count the capacity rule accepts. Advisory like
+ * every read before the reservation transaction.
+ */
+export function maxAllowedQuantity(input: VariantCapacityInput): number {
+  const max = input.mirroredStock - input.activeReservedQuantity
+    - capacityFloorForMode(input.sellingMode, input.negativeStockLimit);
+  return Number.isSafeInteger(max) && max > 0 && evaluateVariantCapacity(input, max).allowed ? max : 0;
+}
+
+/**
  * The fulfillment state an accepted line of `quantity` units carries — the one rule, one place.
  *
  * Master spec §30 is about whether the buyer waits, and that depends on **how many units** they
