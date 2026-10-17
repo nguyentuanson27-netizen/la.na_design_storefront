@@ -546,7 +546,7 @@ test("AC11/22/25: committed gift with lost responses stays locked until readback
   await picker.getByRole("button",{name:"Nhận quà này",exact:true}).click();
   const retry=picker.getByRole("button",{name:"Kiểm tra lại quà trong đơn",exact:true});
   await expect(retry).toBeVisible();
-  await expect(picker.getByRole("button", { name: "Nhận quà này", exact: true })).toHaveAccessibleDescription("Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục.");
+  await expect(picker.getByRole("button", { name: "Nhận quà này", exact: true })).toHaveAccessibleDescription("Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong đơn trước khi tiếp tục nhé.");
   await expect(picker.getByText("Đã thêm vào đơn", { exact: true })).toHaveCount(0);
   expect(await prisma.cartGiftSelection.count({where:{cartId}})).toBe(1);
   await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 0/2");

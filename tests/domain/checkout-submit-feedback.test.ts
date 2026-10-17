@@ -27,7 +27,7 @@ test("processing and sync-unknown feedback never suggests a blind resubmit", () 
   ]) {
     const feedback = checkoutSubmitFeedback(result);
     assert.equal(feedback.mayRetry, false);
-    assert.match(feedback.message, /không cần gửi lại/i);
+    assert.match(feedback.message, /đừng gửi lại đơn/i);
     assert.match(feedback.message, new RegExp(result.orderCode));
   }
 });

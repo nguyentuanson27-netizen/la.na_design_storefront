@@ -67,7 +67,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Đơn hàng đang được xử lý",
-      message: `Mã đơn ${result.orderCode} đang được xử lý. Nàng không cần gửi lại đơn để tránh tạo đơn trùng nhé.`,
+      message: `Mã đơn ${result.orderCode} đang được xử lý. Nàng đừng gửi lại đơn nhé, để không tạo đơn trùng.`,
       mayRetry: false,
     };
   }
@@ -76,7 +76,7 @@ export function checkoutSubmitFeedback(
     return {
       tone: "warning",
       title: "Chưa xác định trạng thái đồng bộ",
-      message: `${BRAND.identity.name} đã nhận mã đơn ${result.orderCode} và đang kiểm tra lại. Nàng không cần gửi lại đơn; La.na sẽ liên hệ xác nhận với nàng.`,
+      message: `${BRAND.identity.name} đã nhận mã đơn ${result.orderCode} và đang kiểm tra lại. Nàng đừng gửi lại đơn nhé; ${BRAND.identity.name} sẽ liên hệ xác nhận với nàng.`,
       mayRetry: false,
     };
   }

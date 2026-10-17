@@ -191,9 +191,11 @@ function withShippingEstimate(
   policy: GuestShippingPolicy | undefined,
   lines: readonly StorefrontCartLine[],
   goodsSubtotalVnd: number | null,
+  // Without readable benefits the goods total after discounts is unknown ("Chưa thể tính"), so is shipping.
+  benefitsUnavailable: boolean,
   entry: { summary?: OrderSummaryView },
 ): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
-  if (entry.summary || policy === undefined || goodsSubtotalVnd === null) return entry;
+  if (entry.summary || policy === undefined || goodsSubtotalVnd === null || benefitsUnavailable) return entry;
   const quantity = lines.reduce((sum, line) => sum + (line.available ? line.quantity : 0), 0);
   if (!Number.isSafeInteger(quantity) || quantity < 1) return entry;
   try {
@@ -291,12 +293,12 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
-    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
-    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
-      ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
+    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "La.na chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
+      ? "Quà nàng chọn không còn hợp lệ. Nàng chọn lại quà trong giỏ trước khi đặt hàng nhé."
       : tierPriceInvalid
         ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến."
-        : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; vui lòng quay lại sau." } : {}),
+        : "Nàng vẫn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; nàng quay lại sau nhé." } : {}),
   });
 }
 

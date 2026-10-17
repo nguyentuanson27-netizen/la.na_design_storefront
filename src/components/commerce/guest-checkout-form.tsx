@@ -722,7 +722,7 @@ export function GuestCheckoutForm({
           </button>
         </MobileStickyCta>
       ) : null}
-      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Bạn còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
+      <CheckoutGiftReminderDialog open={reminder.state === "open"} disabled={submitDisabled} description={benefit?.unclaimedText ?? "Nàng còn quà chưa chọn."} canChoose={Boolean(giftPicker?.campaigns.some((c) => (c.selectable ?? 0) > 0))} onShown={reminder.recordShown} onClose={() => { reminder.markSeen(); submitButton.current?.focus(); }} onChoose={chooseGifts} onContinue={() => { reminder.markSeen(); formRef.current?.requestSubmit(); }} />
     </form>
   );
 }

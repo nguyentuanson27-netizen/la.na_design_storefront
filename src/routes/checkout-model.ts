@@ -117,7 +117,7 @@ export type CheckoutBenefitView = Readonly<{
  * intents, gift state) stays on the server; the browser gets the paid-cart key for the D-06 skip and
  * the programme name, nothing it could replay.
  */
-export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string }>;
+export type CheckoutUpsellBanner = Readonly<{ paidCartKey: string; offerName: string | null }>;
 
 export type CheckoutViewModel = Readonly<{
   state: CheckoutState;
@@ -272,10 +272,10 @@ export function buildCheckoutViewModel(
 }
 
 const UNAVAILABLE_NOTICES: Record<Extract<BenefitCheckoutRender, { kind: "UNAVAILABLE" }>["reason"], string> = {
-  BENEFITS_UNAVAILABLE: "Chưa thể kiểm tra quyền lợi (ưu đãi theo số lượng, quà tặng) của giỏ hàng. Hãy quay lại giỏ hàng và thử lại.",
-  GIFT_SELECTION_INVALID: "Quà bạn đã chọn không còn hợp lệ (hết hàng hoặc chương trình đã đổi). Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự đổi quà thay bạn.",
-  POS_NOT_ACCEPTED: "Đơn hàng có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến. Bạn có thể bỏ các sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau.",
-  PROOF_UNAVAILABLE: "Giỏ hàng có quá nhiều dòng ưu đãi để xác nhận báo giá. Hãy giảm bớt sản phẩm rồi thử lại.",
+  BENEFITS_UNAVAILABLE: "La.na chưa kiểm tra được ưu đãi và quà tặng của giỏ hàng. Nàng quay lại giỏ hàng rồi thử lại nhé.",
+  GIFT_SELECTION_INVALID: "Quà nàng chọn không còn phù hợp (hết hàng hoặc chương trình đã đổi). Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; La.na không tự đổi quà thay nàng.",
+  POS_NOT_ACCEPTED: "Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa đặt trực tuyến được. Nàng có thể bỏ sản phẩm áp dụng ưu đãi khỏi giỏ hoặc quay lại sau nhé.",
+  PROOF_UNAVAILABLE: "Giỏ hàng có nhiều dòng ưu đãi quá nên chưa xác nhận được giá. Nàng bớt vài sản phẩm rồi thử lại nhé.",
 };
 
 /** Keep physical items and gift repair available without issuing prices or checkout authority. */
@@ -305,7 +305,7 @@ export function buildBenefitUnavailableCheckoutViewModel(
 
 function slotText(slots: CheckoutBenefitView["slots"]): string | null {
   if (slots.unclaimed === 0) return null;
-  const parts = [`Bạn được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
+  const parts = [`Nàng được hưởng ${slots.entitled} suất quà, đã chọn ${slots.selected}, chưa nhận ${slots.unclaimed}.`];
   if (slots.skippedWhileAvailable > 0) parts.push(`${slots.skippedWhileAvailable} suất còn có thể chọn.`);
   if (slots.shortForStock > 0) parts.push(`${slots.shortForStock} suất hiện chưa có lựa chọn phù hợp.`);
   return parts.join(" ");

@@ -60,6 +60,8 @@ export function useStickyCtaVisible(targetId: string, suppressed = false): boole
   useEffect(() => {
     if (!narrow) return;
     const update = () => setTyping(isTyping());
+    // Re-read on entering the narrow layout: focus may have moved while nothing was listening.
+    update();
     // focusout reports the element being left; `focusin` on the next field corrects any reading taken
     // in between, and the show delay below absorbs the gap.
     const settle = () => queueMicrotask(update);

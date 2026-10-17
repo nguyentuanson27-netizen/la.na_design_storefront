@@ -97,10 +97,20 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       arrivedViaHash.current = true;
       reveal();
     }
+    // A plain anchor fires `hashchange`; Next's <Link> on the same page moves the hash with pushState,
+    // which does not, so a click on any `#cart-gifts` link is read once the URL has been updated.
+    const linkClicked = (event: MouseEvent) => {
+      const link = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (link?.getAttribute("href")?.endsWith("#cart-gifts")) setTimeout(reveal, 0);
+    };
     window.addEventListener("hashchange", reveal);
+    window.addEventListener("popstate", reveal);
+    document.addEventListener("click", linkClicked);
     return () => {
       cancelAnimationFrame(frame);
       window.removeEventListener("hashchange", reveal);
+      window.removeEventListener("popstate", reveal);
+      document.removeEventListener("click", linkClicked);
     };
   }, [present]);
   if (!present && !message) return null;
@@ -109,7 +119,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {present ? <>
     <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
-    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà đã chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự thay quà.</p> : <>
+    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Nàng bỏ lựa chọn cũ tại đây rồi chọn lại nhé; La.na không tự thay quà.</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
@@ -143,14 +153,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
           const productChosen = model.selections.some((r) => r.campaignId === campaign.campaignId && product.options.some((o) => o.variantId === r.variantId));
           const stockChosen = model.selections.filter((r) => r.variantId === option?.variantId).reduce((sum, r) => sum + r.quantity, 0);
-          const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục."
-            : pending ? "Đang cập nhật quà. Vui lòng chờ xác nhận."
-            : locked ? "Giỏ hàng đang được cập nhật hoặc cần kiểm tra lại. Hãy hoàn tất bước kiểm tra trước khi nhận quà."
-            : model.invalid ? "Cần sửa quà đã chọn. Hãy bỏ lựa chọn không còn hợp lệ trước khi nhận thêm."
+          const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong đơn trước khi tiếp tục nhé."
+            : pending ? "Đang lưu quà, nàng chờ một chút nhé."
+            : locked ? "Giỏ hàng đang được cập nhật hoặc cần xem lại. Nàng hoàn tất bước đó trước khi nhận quà nhé."
+            : model.invalid ? "Quà đã chọn cần sửa. Nàng bỏ lựa chọn không còn phù hợp trước khi nhận thêm nhé."
             : campaign.selected >= campaign.entitled ? "Đã đủ suất. Nàng vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
             : !option ? "Chọn phiên bản trước khi nhận quà."
             : !campaign.allowDuplicateGifts && productChosen ? "Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
-            : option.stock <= stockChosen ? "Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác."
+            : option.stock <= stockChosen ? "Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
           return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={() => {

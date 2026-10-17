@@ -68,7 +68,7 @@ export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellBanner
     setAttempt(next);
   }
 
-  if (!attempt || attempt.paidCartKey !== model.paidCartKey || attempt.dismissed) {
+  if (!attempt || attempt.paidCartKey !== model.paidCartKey || attempt.dismissed || model.offerName === null) {
     return null;
   }
 

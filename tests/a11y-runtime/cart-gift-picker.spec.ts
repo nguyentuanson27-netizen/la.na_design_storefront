@@ -407,7 +407,7 @@ test("F3: unavailable size explains disabled receive, another size stays browsab
   await picker.getByRole("button", { name: "Trắng / S", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(receive).toBeDisabled();
-  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác.");
+  await expect(receive).toHaveAccessibleDescription("Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé.");
   await picker.getByRole("button", { name: "Trắng / M", exact: true }).focus();
   await page.keyboard.press("Enter");
   await expect(receive).toBeEnabled();
@@ -516,8 +516,15 @@ test("UX-05/AC-02: arriving on #cart-gifts opens the picker and focuses it witho
     await page.goto(`${URL}/cart`);
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(picker).not.toBeFocused();
-    // Same document, hash added (the mini-cart link while already on /cart): the hashchange path.
-    await page.goto(`${URL}/cart#cart-gifts`);
+    // Same document: a link to the anchor while already on /cart. Next's <Link> (the mini-cart) moves the
+    // hash with pushState, which fires no hashchange, so the click itself must be enough.
+    await page.evaluate(() => {
+      const link = Object.assign(document.createElement("a"), { href: "#cart-gifts", textContent: "Chọn quà" });
+      link.addEventListener("click", (event) => { event.preventDefault(); history.pushState(null, "", "#cart-gifts"); });
+      document.body.append(link);
+      link.click();
+      link.remove();
+    });
     await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(picker).toBeFocused();
     await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
