@@ -13,7 +13,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 3. Nhìn thấy gợi ý mua thêm **như một lựa chọn phụ, có giá trị được chứng minh**, không bị kéo khỏi luồng thanh toán ngoài ý muốn.
 4. Điền thông tin, thấy tổng tiền chính xác theo báo giá hiện hành, xử lý lỗi và hoàn tất COD **không mất dữ liệu đã nhập hoặc tạo đơn trùng**.
 
-Đây là **spec cải thiện presentation và interaction**, không viết engine ưu đãi mới. Thành công được đánh giá qua các hành vi và kịch bản AC ở `8; không tự gán chỉ tiêu tăng conversion hoặc điểm Lighthouse khi chưa có số đo.
+Đây là **spec cải thiện presentation và interaction**, không viết engine ưu đãi mới. Thành công được đánh giá qua các hành vi và kịch bản AC ở §8; không tự gán chỉ tiêu tăng conversion hoặc điểm Lighthouse khi chưa có số đo.
 
 ### Giả định và điểm cần owner duyệt
 
