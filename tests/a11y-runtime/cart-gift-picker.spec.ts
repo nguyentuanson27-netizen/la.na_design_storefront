@@ -199,6 +199,36 @@ test("quantity milestones refresh at 2 → 3 → 4 → 5 alongside the earned gi
   } finally { await stopCartServer(verifiedServer); }
 });
 
+test("quantity hints disappear if the milestone loses an earned gift or cannot be bought", async ({ page }) => {
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 4 } });
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 400_000, awardMode: "ONCE" } });
+  await prisma.giftQuantityCampaign.create({ data: {
+    id: `${PREFIX}unsafe-tier`, kind: "QUANTITY_TIER", name: "Mua 5 giảm 50%", isEnabled: true, enabledAt: new Date(),
+    scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"], tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS",
+    tiers: { create: { minQuantity: 5, discountValue: 50 } },
+  } });
+  const verifiedServer = await startCartServer(3399, true);
+  try {
+    await page.goto("http://127.0.0.1:3399/cart");
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    const progress = page.locator('[data-promotion-banner="full"] [data-promotion-kind="TIER"][data-promotion-state="progress"]');
+    await expect(picker).toContainText("Đã thêm 0/1 quà vào đơn.");
+    await expect(progress).toHaveCount(0);
+    await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 100_000 } });
+    await page.reload();
+    await expect(progress).toContainText("Mua thêm 1 sản phẩm áp dụng để được giảm 50%");
+    await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 4 } });
+    await page.reload();
+    await expect(picker).toContainText("Đã thêm 0/1 quà vào đơn.");
+    await expect(progress).toHaveCount(0);
+    await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 5 } });
+    await page.reload();
+    await expect(progress).toContainText("Mua thêm 1 sản phẩm áp dụng để được giảm 50%");
+  } finally { await stopCartServer(verifiedServer); }
+});
+
 test("mobile keyboard picker saves partial/full/zero choices without changing paid items; Axe clean", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });

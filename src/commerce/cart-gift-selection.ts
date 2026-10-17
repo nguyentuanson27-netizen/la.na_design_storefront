@@ -6,7 +6,8 @@ import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection }
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { evaluateGiftEntitlements, validateGiftSelections, type GiftCampaignFacts, type GiftSelectionLine } from "./gift-quantity-entitlement.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
-import { resolveGiftCampaignStacking } from "./gift-quantity-stack.ts";
+import { resolveGiftCampaignStacking, type StackedGroup } from "./gift-quantity-stack.ts";
+import type { QuantityAddition } from "./gift-quantity-quote.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
 
 type CookieReader = { get(name: string): { value: string } | undefined };
@@ -34,8 +35,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const cart = paidItems === undefined
     ? await tx.cart.findUniqueOrThrow({ where: { id: cartId }, select: { items: { select: { variantId: true, quantity: true, sourceProductSlug: true } } } })
     : { items: paidItems };
-  const quote = await createStorefrontCartRepository(tx as unknown as StorefrontCartReadClient).getQuote({ shopId, items: cart.items, now, env });
-  if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
+  if (!isGiftQuantityPromotionsEnabled(env)) throw new Error("Quote unavailable");
   const paidVariants = await tx.variantMirror.findMany({ where: { id: { in: cart.items.map((item) => item.variantId) } }, select: { id: true, productId: true } });
   const productIds = [...new Set(paidVariants.map((variant) => variant.productId))];
   const client = tx as unknown as GiftQuantityCandidateReadClient;
@@ -74,17 +74,40 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     maxGiftsPerOrder: c.maxGiftsPerOrder, allowDuplicateGifts: c.allowDuplicateGifts as boolean, scope, frozen,
     options: c.giftOptions.flatMap((option) => optionById.has(option.variantId) ? [optionById.get(option.variantId)!] : []),
   }));
-  const evaluation = evaluateGiftEntitlements({ campaigns, paidGroups: quote.benefits.groups.map((group) => ({ ...group, product: productByVariant.get(group.lineKey)! })) });
-  if (!evaluation.ok) throw new Error("Invalid gift configuration");
-  const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
-  const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
-    id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
-  })));
-  const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
-  const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)
-    ? { ...entry, entitled: 0, grantable: 0, unfulfillableForStock: 0, selectableOptions: [], shortfallToNext: null } : entry);
   const selections = await listCartGiftSelections(tx, cartId);
-  const validation = validateGiftSelections({ campaigns, entitlements, selection: selections });
+  // Use the same entitlement/stack/selection authority for today's cart and each proposed milestone.
+  function evaluateGifts(groups: readonly StackedGroup[], addition?: QuantityAddition) {
+    const components = addition ? edges.filter((edge) => edge.parentVariantId === addition.variantId) : [];
+    const extraDemand = new Map(components.length
+      ? components.map((edge) => [edge.componentVariantId, edge.quantity * addition!.quantity] as const)
+      : addition ? [[addition.variantId, addition.quantity] as const] : []);
+    const futureCampaigns = addition ? campaigns.map((campaign) => ({ ...campaign,
+      options: campaign.options.map((option) => ({ ...option, readyAvailable: Math.max(0, option.readyAvailable - (extraDemand.get(option.variantId) ?? 0)) })),
+    })) : campaigns;
+    const evaluation = evaluateGiftEntitlements({ campaigns: futureCampaigns, paidGroups: groups.map((group) => ({ ...group, product: productByVariant.get(group.lineKey)! })) });
+    if (!evaluation.ok) throw new Error("Invalid gift configuration");
+    const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
+    const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
+      id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+    })));
+    const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
+    const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)
+      ? { ...entry, entitled: 0, grantable: 0, unfulfillableForStock: 0, selectableOptions: [], shortfallToNext: null } : entry);
+    return { entitlements, stack, validation: validateGiftSelections({ campaigns: futureCampaigns, entitlements, selection: selections }) };
+  }
+  let currentGifts: ReturnType<typeof evaluateGifts> | undefined;
+  const quote = await createStorefrontCartRepository(tx as unknown as StorefrontCartReadClient).getQuote({ shopId, items: cart.items, now, env,
+    preservesQuantityGifts: ({ before, after, addition }) => {
+      currentGifts ??= evaluateGifts(before);
+      const future = evaluateGifts(after, addition);
+      return future.validation.ok && currentGifts.entitlements.every((entry) => {
+        const next = future.entitlements.find((row) => row.campaignId === entry.campaignId);
+        return next && next.entitled >= entry.entitled && next.grantable >= entry.grantable;
+      });
+    },
+  });
+  if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
+  const { entitlements, validation, stack } = currentGifts ?? evaluateGifts(quote.benefits.groups);
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, imageUrl: v.product.primaryImageUrl, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };

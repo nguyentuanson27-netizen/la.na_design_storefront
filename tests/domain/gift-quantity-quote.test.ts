@@ -8,7 +8,8 @@ import type { GiftQuantityCandidateReadClient } from "../../src/commerce/gift-qu
 import {
   MAX_QUOTE_CART_ITEMS,
   MAX_QUOTE_ITEM_QUANTITY,
-  resolveGiftQuantityQuote,
+  resolveGiftQuantityQuote as resolveQuote,
+  MAX_QUANTITY_PROGRESS_TRIALS,
   validateQuoteCartItems,
   type QuoteCartLine,
 } from "../../src/commerce/gift-quantity-quote.ts";
@@ -16,6 +17,9 @@ import {
 const ON = { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true" } as const;
 const NOW = new Date("2026-10-13T12:00:00.000Z");
 const PAST = new Date("2026-10-01T00:00:00.000Z");
+
+// Unit fixtures have unlimited sellability; repository/database tests supply the real authority.
+const resolveGiftQuantityQuote = (input: Parameters<typeof resolveQuote>[0]) => resolveQuote({ canAddQuantity: () => true, ...input });
 
 function tierRecord(id: string, tiers: Array<[number, number]>) {
   return {
@@ -51,6 +55,40 @@ test("quantity progress follows the stored ladder at 2 → 3 → 4 → 5 without
       next: { thresholdQuantity: 5, unit: "PERCENTAGE", value: 10, shortfallQuantity: 5 - quantity },
     }]);
   }
+});
+
+test("price-only calls with no capacity authority cannot promise quantity milestones", async () => {
+  const quote = await resolveQuote({ lines: [line("a", 4)], now: NOW, client: fakeClient([tierRecord("five", [[5, 10]])]), env: ON });
+  assert.ok(quote.enabled && quote.ok);
+  assert.deepEqual(quote.quantityProgress, []);
+  assert.equal(quote.subtotalVnd, 400_000);
+});
+
+test("50 campaigns × 50 lines reuse identical additions and obey the quote-wide trial budget", async () => {
+  for (const differentThresholds of [false, true]) {
+    let probes = 0;
+    const quote = await resolveGiftQuantityQuote({
+      lines: Array.from({ length: 50 }, (_, i) => line(`v${i}`, 1)), now: NOW, env: ON,
+      client: fakeClient(Array.from({ length: 50 }, (_, i) => tierRecord(`tier${i}`, [[differentThresholds ? 51 + i : 51, 10]]))),
+      canAddQuantity: () => { probes++; return true; },
+      preservesQuantityGifts: () => false,
+    });
+    assert.ok(quote.enabled && quote.ok);
+    assert.deepEqual(quote.quantityProgress, []);
+    assert.equal(probes, MAX_QUANTITY_PROGRESS_TRIALS, "at most 50 unique additions reach pricing, never 2.500");
+    assert.equal(quote.subtotalVnd, 5_000_000);
+  }
+});
+
+test("campaigns sharing a milestone price each identical addition once", async () => {
+  let probes = 0;
+  const quote = await resolveGiftQuantityQuote({ lines: [line("a", 2), line("b", 2)], now: NOW, env: ON,
+    client: fakeClient([tierRecord("first", [[5, 10]]), tierRecord("second", [[5, 10]])]),
+    canAddQuantity: () => { probes++; return true; },
+  });
+  assert.ok(quote.enabled && quote.ok);
+  assert.equal(probes, 2, "two campaigns share two additions; not four separate priceStack calls");
+  assert.deepEqual(quote.quantityProgress, []);
 });
 
 test("quantity progress counts scoped paid units and skips equal-value rungs", async () => {
