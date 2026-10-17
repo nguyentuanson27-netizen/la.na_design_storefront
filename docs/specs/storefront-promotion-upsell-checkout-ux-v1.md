@@ -1,10 +1,10 @@
 # Spec — Trải nghiệm ưu đãi, gợi ý mua thêm và thanh toán COD (UX-COMMERCE-001)
 
 **Ngày cập nhật:** 2026-10-17
-**Trạng thái:** DRAFT v1.2 — spec-only, để owner review; chưa phê duyệt implementation. **Khuyến nghị của spec cho upsell: phương án B** (§6, UX-07) — là khuyến nghị, không phải phê duyệt.
+**Trạng thái:** DRAFT v1.3 — spec-only, để owner review; chưa phê duyệt implementation. **Khuyến nghị của spec cho upsell: phương án B** (§6, UX-07) — là khuyến nghị, không phải phê duyệt.
 **Baseline hiện tại:** `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d` — sau khi `main` được đưa về trước PR #178/#180 (`3cbbbaec`) và PR #177 đã merge. Checkout upsell tại baseline vẫn có chọn biến thể và thêm hàng trực tiếp; cart đã có một picker quà ở đầu trang, trước hàng mua.
-**Phụ thuộc đang review:** PR #181 — banner upsell gọn và điều hướng `/sale`, chưa merge tại lần đối chiếu này. PR #177 (vị trí picker trong cart) **đã merge** vào baseline.
-**Phạm vi PR #179:** chỉ thêm tài liệu này và spec đo lường tách riêng [storefront-funnel-measurement-v1.md](storefront-funnel-measurement-v1.md). Không đưa thay đổi runtime, test, database, CI, dependency package hoặc feature flag vào diff; không merge/deploy các PR liên quan.
+**Phụ thuộc:** PR #181 (phương án A — banner `/sale`) chưa merge; chi tiết ở §2. Trạng thái PR, lịch sử nhánh và quality gate của PR tài liệu nằm trong mô tả PR, không ghi trong spec.
+**Phạm vi:** spec-only, đi cùng [storefront-funnel-measurement-v1.md](storefront-funnel-measurement-v1.md). Không kèm thay đổi runtime, test, database, CI, dependency package hoặc feature flag.
 
 ## 0. Owner cần quyết
 
@@ -37,7 +37,7 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 - **G-04 (bảo toàn):** giữ hợp đồng quyền nhận, không nhận đủ quà, quote/proof, không tự thay quà, chống race và điều kiện POS đã duyệt ở các spec trước.
 - **G-05 (approval gate):** spec upsell gốc đã ghi `D-03` (chọn biến thể và thêm trực tiếp tại checkout), `D-04` (hiển thị tối đa 3–5 mẫu) và `U-02/A` (quà mở qua upsell được chọn ngay checkout). Phương án A khác những quyết định này; PR #181 đang mở và lịch sử merge #178/#180 **không thay thế phê duyệt nghiệp vụ**. Bảng UX-07 nêu phạm vi phải chốt.
 
-## 2. Tài liệu, baseline và dependencies
+## 2. Tài liệu và phụ thuộc
 
 | Nguồn | Vai trò |
 | --- | --- |
@@ -51,17 +51,12 @@ Khách mua hàng thời trang trên mobile hoặc desktop cần:
 
 **Nguyên tắc ưu tiên:** business/security rules ở spec hiện hành tiếp tục có hiệu lực. Tài liệu này đề xuất UX bổ sung; điểm nào đụng một quyết định đã duyệt phải quay lại owner. Không lấy trạng thái PR hoặc code của một nhánh chưa merge làm hợp đồng đang áp dụng.
 
-### Dependency register — đối chiếu ngày 2026-10-17
+### Phụ thuộc
 
-| ID | Nguồn và trạng thái đã đọc | Ảnh hưởng và điều kiện sử dụng |
-| --- | --- | --- |
-| DEP-01 | `main@c6058a1c938df31fcff04108da9cee8e8b4bca4d` | Baseline của PR #179 (gồm #177); cây mã nguồn, test và cấu hình phải giữ nguyên. Chỉ thêm spec. |
-| DEP-02 | [PR #177](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/177), **đã merge** thành `c6058a1` | Bố cục cart là hiện trạng: một picker ở đầu trang, lọc `GIFT achieved` trùng, giữ TIER/progress; `tests/a11y-runtime/cart-gift-picker.spec.ts` khóa hành vi này. AC-01/02 là regression trên baseline. Bằng chứng CI của #177 (`docs/verification/cart-gift-picker-pr177-ci.md`) thuộc PR đó, không là verification cho #179. |
-| DEP-03 | [PR #181](https://github.com/nguyentuanson27-netizen/la.na_design_storefront/pull/181), **open**, HEAD `7d26440c9af660c3d75117ed7ca1d561b9709c38` | Review runtime riêng cho banner compact và link `/sale`, kế thừa #178/#180. Liên quan UX-06/07 và AC-06/07/16; không là prerequisite để tách #179 về spec-only, không tự merge hoặc mang code #181 vào #179. |
-| DEP-04 | PR #178/#180: **đã từng merge**, nhưng nội dung không thuộc `main` hiện tại | Chỉ là lịch sử thiết kế. `61cea3b` và `7d26440` là baseline cũ, không phải baseline hiện hành; nội dung đó đang được review lại ở #181. |
-| DEP-05 | Quyết định owner về A/B và amendment spec upsell | Còn mở. Chốt trước implementation phần upsell; chọn A phải phê duyệt thay các yêu cầu trong bảng UX-07. Chọn B phải điều phối kết luận #181, không âm thầm thay đổi hướng thiết kế. |
-
-**Thứ tự phối hợp:** review/phê duyệt spec #179 và quyết định A/B → lập kế hoạch phần tương ứng → triển khai ở PR riêng; cart dựng trên bố cục #177 đã merge, upsell điều phối kết luận #181. Đây không phải yêu cầu merge #181 để làm PR tài liệu xanh. Nếu một PR đổi HEAD, bị đóng hoặc `main` di chuyển, kiểm tra lại source/diff và cập nhật bảng trước khi thực hiện phần phụ thuộc; không suy bản cũ đã được nghiệm thu.
+- **PR #177 — đã merge vào baseline `c6058a1`:** bố cục cart một picker ở đầu trang là hiện trạng, được `tests/a11y-runtime/cart-gift-picker.spec.ts` khóa; AC-01/02 là regression.
+- **PR #181 — đang mở:** là đề xuất runtime cho phương án A (banner `/sale`). Không phải hiện trạng, không phải phê duyệt; quan hệ với spec ở UX-06/07 và AC-06/07/16.
+- **PR #178/#180:** chỉ là lịch sử thiết kế, nội dung không thuộc `main` hiện tại và không thay phê duyệt nghiệp vụ.
+- **Khi baseline đổi:** nếu `main` di chuyển hoặc #181 đổi hướng/merge/đóng, kiểm tra lại §3 với source mới trước khi triển khai phần phụ thuộc; không suy bản cũ đã được nghiệm thu.
 
 ## 3. Hiện trạng kiểm tra từ source (không phải kết quả browser)
 
@@ -132,7 +127,7 @@ Không thêm toast/modal chỉ để lặp cùng status; dùng phản hồi cạ
 
 ### UX-06 — Không thay runtime bằng việc duyệt spec
 
-- **Hiện trạng:** baseline vẫn có upsell inline. PR #179 giữ nguyên nó; không bỏ dropdown/nút thêm, không đổi link, không sửa test để phù hợp một giao diện chưa được duyệt.
+- **Hiện trạng:** baseline vẫn có upsell inline. Spec này không đổi runtime; không bỏ dropdown/nút thêm, không đổi link, không sửa test để phù hợp một giao diện chưa được duyệt.
 - **Mục tiêu:** làm gợi ý gọn và không bắt buộc. Cách trình bày theo A/B chỉ được triển khai sau quyết định UX-07 và kết luận phần liên quan của PR #181; spec khuyến nghị B.
 - Không khẳng định thêm đúng một chiếc sẽ mở quyền lợi khi server không còn offer hợp lệ; chỉ công bố estimate dựa trên variant/quote đã xác minh.
 - **Chỉ với A:** banner dẫn `/sale` là đường rời checkout được đề xuất trong #181. Nếu form đã nhập, cần xử lý dễ hiểu và dùng được bằng bàn phím trước exit; đề xuất cảnh báo mất thông tin chưa gửi, chọn ở lại giữ form/focus. Không tự lưu PII vào storage và không tự thêm hàng.
@@ -152,6 +147,31 @@ Thiết kế B đề xuất (presentation; logic, proof và mutation giữ nguy�
 - **Mở rộng:** một ứng viên hiển thị đầy đủ (ảnh, tên, giá “từ”), các ứng viên còn lại dạng danh sách gọn chọn được để đổi card mở (vẫn đủ `D-04`). Chọn biến thể bằng **chip** giống gift picker và `storefront-variant-selector-ui.md` thay cho `<select>`; chỉ sau requote thành công mới hiện chênh tổng tiền và bật “Thêm 1 chiếc”.
 - **Phản hồi:** trạng thái requote/add hiện cạnh card, đồng thời một dòng trạng thái ngắn cạnh nút “Đặt hàng COD” khi submit bị khóa vì upsell đang chờ, để khách không thấy nút tắt mà không có lý do.
 - **Sau khi thêm:** card thu lại thành xác nhận “Đã thêm …”, picker quà mới mở ở cùng checkout theo `U-02/A`, focus đến vùng quà hoặc thông báo kết quả, form giữ nguyên.
+
+Thứ tự khối ở checkout mobile (~390px), trước và sau B (kèm các yêu cầu UX-02/08/10 liên quan). Đây là sơ đồ thứ tự, không phải thiết kế hình ảnh; AC-17 vẫn cần ảnh runtime.
+
+```text
+HIỆN TẠI (main@c6058a1)                 ĐỀ XUẤT (B + UX-02/08/10)
+┌───────────────────────────────┐       ┌───────────────────────────────┐
+│ Ưu đãi của bạn (banner)       │       │ Ưu đãi của bạn (banner)       │
+│ Đơn hàng (n) · tổng      [+]  │       │ Lý do chặn + cách sửa (UX-08)  │
+│ Quà dành cho bạn (picker)     │       │ Đơn hàng (n) · tổng      [+]  │
+│ GỢI Ý THÊM ĐỂ ĐẠT ƯU ĐÃI      │       │ Quà dành cho bạn (picker)     │
+│  · tối đa 5 mẫu, mỗi mẫu:     │       │ Thông tin nhận hàng           │
+│    ảnh, <select>, giá,        │       │  Họ tên · SĐT                 │
+│    “Thêm 1 chiếc”             │       │  Tỉnh · Phường/xã · Địa chỉ   │
+│ Thông tin nhận hàng           │       │  Ghi chú                      │
+│  Họ tên · SĐT                 │       │ ▸ Thêm 1 món để nhận thêm 1   │
+│  Tỉnh · Phường/xã · Địa chỉ   │       │   quà            [Xem gợi ý]  │
+│  Ghi chú                      │       │ Tổng kết thanh toán           │
+│ Tổng kết thanh toán           │       │ Còn 1 quà chưa chọn [Chọn quà]│
+│  (lý do chặn hiện ở đây)      │       │ Lý do khóa (nếu có)           │
+│ [ Đặt hàng COD ]              │       │ [ Đặt hàng COD ]              │
+└───────────────────────────────┘       ├───────────────────────────────┤
+                                        │ dính đáy khi nút ngoài màn    │
+                                        │ hình: Tổng · [Đặt hàng COD]   │
+                                        └───────────────────────────────┘
+```
 
 | Yêu cầu/decision đang được ghi nhận | A — banner tới `/sale` | B — inline compact | Phê duyệt/cập nhật bắt buộc |
 | --- | --- | --- | --- |
@@ -211,7 +231,7 @@ Thiết kế B đề xuất (presentation; logic, proof và mutation giữ nguy�
 
 ## 9. Acceptance Criteria — dành cho PR implementation sau khi duyệt
 
-Các AC không là lời xác nhận feature đã chạy trong PR #179. AC-07 chỉ áp dụng nếu chọn A; AC-08 cho B (phương án khuyến nghị); AC-01/02 là regression của bố cục cart #177 đã merge. Các bất biến tiền/quà/submit không phụ thuộc phương án và không được bỏ.
+Các AC không là lời xác nhận feature đã chạy. AC-07 chỉ áp dụng nếu chọn A; AC-08 cho B (phương án khuyến nghị); AC-01/02 là regression của bố cục cart #177 đã merge. Các bất biến tiền/quà/submit không phụ thuộc phương án và không được bỏ.
 
 | ID | Kịch bản | Kết quả chấp nhận |
 | --- | --- | --- |
@@ -239,12 +259,26 @@ Dùng fixture isolated/test DB và Pancake sandbox/giả lập được phép; k
 
 ## 10. Phạm vi triển khai sau spec và quy ước kỹ thuật
 
-Đây là định hướng để lập kế hoạch sau phê duyệt, **không phải kế hoạch đã được duyệt hoặc code của PR này**:
-1. Đo lường: theo [spec đo lường](storefront-funnel-measurement-v1.md) — baseline Mức 0 và business event (MEAS-AC-01) **trước** thay đổi upsell; Mức 1 (MEAS-AC-02) chỉ sau OD-02 và cũng chạy trước thay đổi UI nếu dùng để đánh giá B.
-2. Trạng thái/lỗi: UX-04/08 (gồm tổng cũ → mới và dòng hàng cần xử lý), AC-04/09/10/19; cần regression chứng minh vấn đề.
-3. Ưu đãi/cart/picker: UX-01/02/03/05 (gồm mở picker qua anchor), AC-01/02/03/05; dựng trên bố cục #177 đã merge, không làm lại. Phí ship ở cart chỉ sau OD-06.
-4. Upsell: UX-06/07, AC-06 và AC-08 nếu owner duyệt B như khuyến nghị (AC-07 nếu chọn A); điều phối #181; A cần amendment nghiệp vụ trước implementation.
-5. Checkout/a11y/E2E: UX-02 thanh dính đáy, UX-09/10 (gồm dòng nhắc trên nút), AC-11..18; ô chọn phường/xã sau OD-04, khối tin cậy COD sau OD-05; nghiệm thu bản tích hợp thật.
+Đây là định hướng để lập kế hoạch sau phê duyệt, **không phải kế hoạch đã được duyệt hay code đã có**:
+Cỡ là ước lượng tương đối để chọn đợt (S ≈ một component/ít file, M ≈ vài component hoặc có test mới đáng kể, L ≈ đổi luồng có mutation/proof hoặc nhiều bề mặt), không phải cam kết thời gian.
+
+| Đợt | Hạng mục | Spec / AC | Cỡ | Chặn bởi |
+| --- | --- | --- | --- | --- |
+| 1 | Đo lường Mức 0 + business event (gồm `add_to_cart` cho add upsell) | [spec đo lường](storefront-funnel-measurement-v1.md), MEAS-AC-01 | M | — (phải chạy trước đợt 3) |
+| 1 | Lý do chặn checkout hiện trước form và cạnh nút đặt hàng | UX-08, AC-09 | S | — |
+| 2 | Tổng cũ → mới khi giá đổi | UX-08, AC-10 | S | — |
+| 2 | Dòng nhắc quà trên nút đặt hàng | UX-10, AC-11 | S | — |
+| 2 | Mở picker khi tới qua `#cart-gifts` | UX-05, AC-02 | S | — |
+| 2 | Cart không cho thanh toán: liệt kê và link dòng cần xử lý | UX-08, AC-19 | S | — |
+| 2 | Vòng đời trạng thái picker quà (draft, bỏ/chọn lại, focus) | UX-04/05, AC-03/04/05 | M | — |
+| 3 | Upsell phương án B (vị trí, thu gọn, chip, phản hồi) | UX-06/07, AC-06/08/16 | L | OD-01; baseline Mức 0 đã thu (OD-03) |
+| 3 | Thanh dính đáy mobile cart/checkout | UX-02, AC-18 | M | — (nên đi cùng/sau B vì cùng vùng nút) |
+| 4 | Ô chọn phường/xã có tìm kiếm | UX-09, AC-12 | M | OD-04 |
+| 4 | Khối tin cậy COD | UX-09 | S | OD-05 |
+| 4 | Phí ship ở cart | UX-02 | S | OD-06 |
+| 4 | Đo lường Mức 1 | MEAS-AC-02 | M | OD-02 (nếu dùng đánh giá B thì phải chạy trước đợt 3) |
+
+Lý do thứ tự: đợt 1 lấy baseline và gỡ ma sát lớn nhất với chi phí nhỏ; đợt 2 là các sửa nhỏ, độc lập, không cần quyết định mới; đợt 3 là thay đổi lớn nhất, chỉ làm khi đã chốt OD-01 và có baseline; đợt 4 chờ quyết định nội dung/chính sách. Mỗi đợt tự nghiệm thu a11y/E2E theo AC-13/14/15/17 cho phần mình đổi; AC-07 chỉ thay AC-08 nếu OD-01 chọn A.
 
 ### Code ownership / cấu trúc
 
@@ -283,20 +317,18 @@ Ví dụ nguyên tắc presentation: text + native control, không suy entitleme
 
 - **Always:** một owner state/submit, semantics a11y, quote server, giữ PII trong form đang mount; test phản ánh đúng hành vi được duyệt.
 - **Ask first:** A/B, thay policy/entitlement, schema/dependency/flag hoặc flow đã được owner duyệt.
-- **Never:** price/stock/proof authority ở client, PII/secret trong storage/log/analytics, auto-submit sau refresh, tự đổi quà, skip test để xanh, đưa runtime #181 hoặc code khác vào PR #179.
+- **Never:** price/stock/proof authority ở client, PII/secret trong storage/log/analytics, auto-submit sau refresh, tự đổi quà, skip test để xanh, trộn thay đổi runtime vào PR tài liệu.
 
 ## 11. Review checklist và Definition of Done
 
-### Quality gate của PR #179 — tài liệu độc lập
+### Review checklist nội dung spec
 
-- [ ] Diff với baseline chỉ thêm `docs/specs/storefront-promotion-upsell-checkout-ux-v1.md` và `docs/specs/storefront-funnel-measurement-v1.md`; **không có `src/`, `tests/`, workflow/config/lockfile**.
-- [ ] Nhánh spec bắt đầu từ baseline hiện tại (`c6058a1`), không mang commit runtime #178/#180 theo ancestry; kiểm tra lại diff nếu `main` đổi.
-- [ ] Header, hiện trạng, bảng dependency, UX-06/07 và AC-01/02/06/07/08/16 nhất quán: baseline inline upsell; #181 là đề xuất banner `/sale`; #177 đã merge và là hiện trạng cart.
+- [ ] Hiện trạng (§3), phụ thuộc (§2), UX-06/07 và AC-01/02/06/07/08/16 nhất quán: baseline inline upsell; #181 là đề xuất banner `/sale`; #177 đã merge và là hiện trạng cart.
 - [ ] Khuyến nghị B ghi rõ là khuyến nghị, không là phê duyệt; mọi điểm cần owner chốt nằm trong bảng §0; spec đo lường tách riêng, duyệt UX không ngầm duyệt sink/khóa lượt.
 - [ ] Yêu cầu mới (thanh dính đáy, mở picker qua anchor, tổng cũ → mới, dòng hàng cần xử lý, dòng nhắc trên nút) không tạo submit thứ hai, không tạo acknowledgement và không tính tiền ở client.
-- [ ] Giữ bảng tác động `D-03/D-04/U-02/A` và gate owner; không coi việc tách PR hoặc lịch sử merge là duyệt A/B.
+- [ ] Giữ bảng tác động `D-03/D-04/U-02/A` và gate owner; không coi lịch sử merge là duyệt A/B.
 - [ ] UX-10/AC-11 có đủ `canChoose=true/false` và hỗn hợp, giữ quyền tiếp tục/đóng, không tạo đơn ngoài ý muốn.
-- [ ] Các đường dẫn, lệnh và AC đối chiếu được; kết quả CI phải gắn đúng HEAD, không kế thừa trạng thái của bản branch cũ.
+- [ ] Đường dẫn file, lệnh và AC đối chiếu được với source tại baseline.
 
 ### Còn cần chốt trước implementation phần tương ứng
 
@@ -306,4 +338,4 @@ Ví dụ nguyên tắc presentation: text + native control, không suy entitleme
 - [ ] Với A, duyệt wording/interaction rời checkout có dữ liệu; kiểm tra không mất form ngoài lựa chọn chủ động của khách.
 - [ ] Implementation đạt các AC áp dụng và Definition of Done của project: test/lint/build, tích hợp, bảo mật, accessibility/runtime và tài liệu; bằng chứng chưa chạy phải ghi chưa chạy.
 
-**Giới hạn verification:** PR này chỉ hoàn thiện và kiểm tra spec/diff/dependencies, không chứng nhận browser, screen reader, database hoặc tính sẵn sàng production. Approve tài liệu cho phép lập kế hoạch ở phạm vi đã chốt; không tự cho phép merge #181, sửa runtime, bỏ quality gate hoặc deploy.
+**Giới hạn verification:** spec này chỉ được đối chiếu với source, không chứng nhận browser, screen reader, database hoặc tính sẵn sàng production. Approve tài liệu cho phép lập kế hoạch ở phạm vi đã chốt; không tự cho phép merge #181, sửa runtime, bỏ quality gate hoặc deploy.
