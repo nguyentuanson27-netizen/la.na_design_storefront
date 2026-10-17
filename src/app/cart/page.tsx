@@ -60,86 +60,101 @@ function render(data: CartViewModel) {
     );
   }
 
+  // The earned-gift banner was a second, anchor-only "Chọn quà" action. The actual picker
+  // now owns that message and action above the paid lines; other promotion progress stays visible.
+  const hasGiftPicker = Boolean(data.gifts && (
+    data.gifts.selections.length > 0 ||
+    data.gifts.campaigns.some((campaign) => campaign.entitled > 0)
+  ));
+  const promotions = hasGiftPicker && data.promotions
+    ? {
+        ...data.promotions,
+        items: data.promotions.items.filter(
+          (item) => !(item.kind === "GIFT" && item.state === "achieved"),
+        ),
+      }
+    : data.promotions;
+
   return (
     <PageShell>
       <PageBreadcrumbs items={CART_BREADCRUMBS} />
       <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" meta={`${data.lineCount} sản phẩm`} />
-      {/* Above the lines, not in the summary column: below `lg` that column is the last thing on the
-          page, and a reached promotion should be the first thing the shopper sees. */}
-      <PromotionBanner className="mt-8" giftHref="#cart-gifts" view={data.promotions} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
-        <div className="divide-y divide-black/15">
-          {data.lines.map((line, index) => (
-            <article
-              className="grid gap-6 py-8 first:pt-0 sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
-              key={line.variantId}
-            >
-              <div>
-                {line.productSlug ? (
-                  <Link
-                    className="group block overflow-hidden border border-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-                    href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                    aria-label={`Xem ${line.productName}`}
-                  >
-                    <LineVisual line={line} priority={index === 0} />
-                  </Link>
-                ) : (
-                  <div className="overflow-hidden border border-black/10">
-                    <LineVisual line={line} priority={index === 0} />
-                  </div>
-                )}
-              </div>
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div>
-                    {line.productSlug ? (
-                      <Link
-                        className="text-lg font-semibold uppercase tracking-[0.06em] underline underline-offset-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-                        href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                      >
-                        {line.productName}
-                      </Link>
-                    ) : (
-                      <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
-                    )}
-                    <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
-                    {line.paidSegments ? <p className="mt-2 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
-                    {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
-                        it belongs to rather than only the basket-level notice below. */}
-                    {line.preorderLabel === null ? null : (
-                      <p
-                        className="mt-2 inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
-                        data-line-state="preorder"
-                      >
-                        {line.preorderLabel}
-                      </p>
-                    )}
-                  </div>
-                  <div className="text-right">
-                    {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
-                        price is the breakdown beside the name, never a replacement for it. */}
-                    <p className="font-medium">
-                      <LinePrice
-                        discountPercent={line.discountPercent}
-                        originalPriceText={line.originalPriceText}
-                        priceText={line.priceText}
-                      />
-                    </p>
-                    <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
-                      {line.availabilityLabel}
-                    </p>
-                  </div>
-                </div>
-                <BrandCartLineControls
-                  variantId={line.variantId}
-                  initialQuantity={line.quantity}
-                  canUpdate={line.canUpdate}
-                  commerceTrackingEnabled={data.commerceTrackingEnabled}
-                />
-              </div>
-            </article>
-          ))}
+        <div className="min-w-0">
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
+          <PromotionBanner className="mb-5" view={promotions} />
+          <div className="divide-y divide-black/15">
+            {data.lines.map((line, index) => (
+              <article
+                className="grid gap-6 py-8 first:pt-0 sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
+                key={line.variantId}
+              >
+                <div>
+                  {line.productSlug ? (
+                    <Link
+                      className="group block overflow-hidden border border-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                      href={`/shop/${encodeURIComponent(line.productSlug)}`}
+                      aria-label={`Xem ${line.productName}`}
+                    >
+                      <LineVisual line={line} priority={index === 0} />
+                    </Link>
+                  ) : (
+                    <div className="overflow-hidden border border-black/10">
+                      <LineVisual line={line} priority={index === 0} />
+                    </div>
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      {line.productSlug ? (
+                        <Link
+                          className="text-lg font-semibold uppercase tracking-[0.06em] underline underline-offset-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                          href={`/shop/${encodeURIComponent(line.productSlug)}`}
+                        >
+                          {line.productName}
+                        </Link>
+                      ) : (
+                        <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
+                      )}
+                      <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
+                      {line.paidSegments ? <p className="mt-2 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                      {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
+                          it belongs to rather than only the basket-level notice below. */}
+                      {line.preorderLabel === null ? null : (
+                        <p
+                          className="mt-2 inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
+                          data-line-state="preorder"
+                        >
+                          {line.preorderLabel}
+                        </p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
+                          price is the breakdown beside the name, never a replacement for it. */}
+                      <p className="font-medium">
+                        <LinePrice
+                          discountPercent={line.discountPercent}
+                          originalPriceText={line.originalPriceText}
+                          priceText={line.priceText}
+                        />
+                      </p>
+                      <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`}>
+                        {line.availabilityLabel}
+                      </p>
+                    </div>
+                  </div>
+                  <BrandCartLineControls
+                    variantId={line.variantId}
+                    initialQuantity={line.quantity}
+                    canUpdate={line.canUpdate}
+                    commerceTrackingEnabled={data.commerceTrackingEnabled}
+                  />
+                </div>
+              </article>
+            ))}
+          </div>
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>

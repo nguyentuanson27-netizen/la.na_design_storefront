@@ -4,6 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Locator } from "@playwright/test";
 import { prisma } from "../../src/db/prisma.ts";
+import { readCartGiftState } from "../../src/commerce/cart-gift-selection.ts";
 import { BUYER_AXE_TAGS } from "./axe-tags";
 
 const ROOT = resolve(import.meta.dirname, "../..");
@@ -20,19 +21,30 @@ async function cleanup() {
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: PREFIX } } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
-test.beforeAll(async () => {
-  server = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", "3348"], {
-    cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_TRACKING_MODE: "preview", LA_GTM_CONTAINER_ID: "GTM-GQ14TEST", BETTER_AUTH_URL: URL, NEXT_DIST_DIR: ".next-test/gq14", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
+async function startCartServer(port: number, verified = false): Promise<ChildProcess> {
+  const base = `http://127.0.0.1:${port}`;
+  const child = spawn(process.execPath, [resolve(ROOT, "node_modules/next/dist/bin/next"), "dev", "--hostname", "127.0.0.1", "--port", String(port)], {
+    cwd: ROOT, env: { ...process.env, PANCAKE_SHOP_ID: String(SHOP), LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true", LA_TRACKING_MODE: "preview", LA_GTM_CONTAINER_ID: "GTM-GQ14TEST", BETTER_AUTH_URL: base,
+      LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: verified ? String(SHOP) : "",
+      NEXT_DIST_DIR: verified ? ".next-test/gq14-verified" : ".next-test/gq14", NEXT_TELEMETRY_DISABLED: "1" }, stdio: ["ignore", "pipe", "pipe"],
   });
-  server.stdout?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
-  server.stderr?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
+  child.stdout?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
+  child.stderr?.on("data", (chunk) => { output = (output + chunk).slice(-12000); });
   for (let i = 0; i < 100; i++) {
-    try { if ((await fetch(`${URL}/cart`)).ok && (await fetch(`${URL}/api/auth/get-session`)).ok) return; } catch { /* compiling */ }
-    if (server.exitCode !== null) throw new Error(output);
+    try { if ((await fetch(`${base}/cart`)).ok && (await fetch(`${base}/api/auth/get-session`)).ok) return child; } catch { /* compiling */ }
+    if (child.exitCode !== null) throw new Error(output);
     await delay(500);
   }
+  await stopCartServer(child);
   throw new Error(output);
-});
+}
+async function stopCartServer(child: ChildProcess) {
+  if (child.exitCode !== null) return;
+  child.kill("SIGTERM");
+  await Promise.race([new Promise(resolve => child.once("exit", resolve)), delay(5000)]);
+  if (child.exitCode === null) child.kill("SIGKILL");
+}
+test.beforeAll(async () => { server = await startCartServer(3348); });
 test.beforeEach(async ({ context }) => {
   await cleanup();
   const now = new Date();
@@ -51,7 +63,7 @@ test.beforeEach(async ({ context }) => {
   await context.addCookies([{ name: "la_cart", value: cartId, url: URL, httpOnly: true, sameSite: "Lax" }]);
 });
 test.afterAll(async () => {
-  server?.kill("SIGTERM");
+  if (server) await stopCartServer(server);
   await cleanup();
   await prisma.$disconnect();
 });
@@ -61,6 +73,93 @@ async function openPicker(picker: Locator) {
   const product = picker.getByRole("button", {name: "Khăn quà", exact: true});
   if (await product.count() && await product.getAttribute("aria-expanded") === "false") await product.click();
 }
+test("cart has one functional gift picker above paid products on mobile and desktop", async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto(`${URL}/cart`);
+
+    const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+    await expect(picker).toHaveCount(1);
+    await expect(page.locator("#cart-gifts")).toHaveCount(1);
+    await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+    await expect(page.locator('[data-promotion-banner="full"] a[href="#cart-gifts"]')).toHaveCount(0);
+
+    const beforePaidLines = await picker.evaluate((region) => {
+      const paidLine = [...document.querySelectorAll("article")].find((item) => item.textContent?.includes("Áo mua"));
+      return paidLine !== undefined && (region.compareDocumentPosition(paidLine) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+    });
+    expect(beforePaidLines).toBe(true);
+
+    // The accessible name changes after opening; locate the same control by its stable relationship.
+    const toggle = picker.locator("button[aria-controls]");
+    await expect(page.getByRole("button", { name: "Chọn quà ngay", exact: true })).toHaveCount(1);
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+    await expect(toggle).toHaveText("Thu gọn quà tặng");
+    await expect(picker.getByRole("button", { name: "Khăn quà", exact: true })).toBeVisible();
+  }
+
+  const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+  await picker.getByRole("button", { name: "Khăn quà", exact: true }).click();
+  await picker.getByRole("button", { name: "Nhận quà này" }).click();
+  await expect(picker.locator("[data-gift-progress]")).toContainText("Đã thêm 1/2");
+  await expect.poll(() => prisma.cartGiftSelection.count({ where: { cartId } })).toBe(1);
+  await page.reload();
+  await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" })).toHaveCount(1);
+  await expect(page.locator('[data-promotion-banner="full"] [data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+});
+
+test("cart preserves tier achievement and next gift progress when the earned gift CTA is consolidated", async ({ page }) => {
+  const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId } });
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  // A small tier saving leaves two earned gifts and a shortfall before the third.
+  await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { minimumSubtotalVnd: 90_000 } });
+  await prisma.giftQuantityCampaign.create({ data: {
+    id: `${PREFIX}tier-preserve`, kind: "QUANTITY_TIER", name: "Mua 2 giảm 1%",
+    isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: ["vayDam"],
+    tierUnit: "PERCENTAGE", tierDiscountedUnits: "FROM_REACHED_THRESHOLD",
+    tierSelectionPriority: "CHEAPEST_FIRST",
+    tiers: { create: { minQuantity: 2, discountValue: 1 } },
+  } });
+
+  const state = await prisma.$transaction(tx => readCartGiftState(tx, cartId, SHOP, new Date(), { LA_GIFT_QUANTITY_PROMOTIONS_ENABLED: "true" }));
+  // This is a real discounted quote. An unverified POS shop deliberately withholds promotion
+  // banners, so this case uses its own verified server instead of weakening the production gate.
+  expect(state.quote.benefits.enabled && state.quote.benefits.ok && state.quote.benefits.subtotalVnd).toBe(199_000);
+
+  await page.goto(`${URL}/cart`);
+  await expect(page.getByRole("region", { name: "Quà tặng trong giỏ" })).toContainText("Đã thêm 0/2");
+  await expect(page.getByText("Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến", { exact: false })).toBeVisible();
+  await expect(page.locator('[data-promotion-banner="full"]')).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Tiến hành đặt hàng" })).toHaveCount(0);
+
+  const verifiedServer = await startCartServer(3399, true);
+  try {
+    for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 800 }]) {
+      await page.setViewportSize(viewport);
+      await page.goto("http://127.0.0.1:3399/cart");
+
+      const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });
+      await expect(picker).toContainText("Đã thêm 0/2 quà vào đơn.");
+      const banner = page.locator('[data-promotion-banner="full"]');
+      const tierAchieved = banner.locator('[data-promotion-kind="TIER"][data-promotion-state="achieved"]');
+      const giftProgress = banner.locator('[data-promotion-kind="GIFT"][data-promotion-state="progress"]');
+
+      // Both non-duplicate promotions are still visible and meaningful.
+      await expect(tierAchieved).toHaveCount(1);
+      await expect(tierAchieved).toContainText("Đã áp dụng ưu đãi");
+      await expect(giftProgress).toHaveCount(1);
+      await expect(giftProgress).toContainText("Mua thêm");
+      await expect(giftProgress.getByRole("progressbar")).toHaveCount(1);
+      // Only the reached-gift banner was replaced by the real interactive picker.
+      await expect(banner.locator('[data-promotion-kind="GIFT"][data-promotion-state="achieved"]')).toHaveCount(0);
+      await expect(page.getByRole("button", { name: "Chọn quà ngay", exact: true })).toHaveCount(1);
+      await page.screenshot({ path: `test-results/cart-promos-${viewport.width}.png`, fullPage: true });
+    }
+  } finally { await stopCartServer(verifiedServer); }
+});
+
 test("mobile keyboard picker saves partial/full/zero choices without changing paid items; Axe clean", async ({ page }) => {
   await page.goto(`${URL}/cart`);
   const picker = page.getByRole("region", { name: "Quà tặng trong giỏ" });

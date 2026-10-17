@@ -59,9 +59,11 @@ Phê duyệt PR spec là checkpoint để chốt các mặc định này trướ
 
 ## 4. Giao diện và chọn quà
 
-### UI-01 — Một khu vực quà ngay dưới danh sách sản phẩm
+### UI-01 — Một khu vực quà, vị trí theo bề mặt
 
-Cart: chuyển khu vực quà khỏi aside xuống ngay sau danh sách hàng mua. Checkout: lời nhắc nằm ngay sau vùng danh sách đơn; không để sau địa chỉ/ghi chú hoặc chen giữa các dòng tổng tiền.
+Cart (cập nhật theo phản hồi người dùng 2026-10-17): đặt **bộ chọn quà đang hoạt động trước danh sách hàng mua**, ngay đầu cột nội dung dưới tiêu đề Giỏ hàng, trên cả mobile và desktop. Dòng banner thông báo quà đã đạt cùng liên kết chỉ cuộn `#cart-gifts` không được hiển thị lần hai trên trang Cart: chính bộ chọn phải hiển thị tiến độ và nút mở lựa chọn. Vẫn giữ thông báo ưu đãi giảm giá và tiến độ hướng tới mốc tiếp theo của banner nếu có, giữ một controller/ID `cart-gifts`, không tạo bản sao ở dưới danh sách. Liên kết quà từ mini-cart vẫn có thể điều hướng về bộ chọn trên trang Cart.
+
+Checkout: lời nhắc nằm ngay sau vùng danh sách đơn; không để sau địa chỉ/ghi chú hoặc chen giữa các dòng tổng tiền. Thay đổi vị trí trên Cart không thay đổi hành trình popup và giữ form ở Checkout.
 
 Lời nhắc và bộ chọn mở rộng là cùng một khu vực. Khi danh sách đơn trên mobile thu gọn, lời nhắc vẫn nhìn thấy ngay sau vùng thu gọn đó; không bắt khách mở danh sách mới biết có quà. Trên desktop giữ cấu trúc checkout hiện có, chỉ điều chỉnh vị trí/điểm gắn của khu vực quà.
 
@@ -151,7 +153,7 @@ Mẫu sắp xếp để duyệt trong spec (không phải ảnh giao diện đã
 |---|---|
 | Mobile checkout, mẫu 390px | Vùng danh sách đơn có thể thu gọn → khối quà luôn thấy, bộ chọn mở ngay bên dưới → các phần checkout còn lại. Thẻ ảnh ngang một cột, phiên bản nằm dưới thẻ đang mở; không lặp lại hàng mua trong khối quà. |
 | Desktop checkout, mẫu 1440px | Giữ form ở cột hiện có; trong cột danh sách đơn: hàng mua/quà trong đơn → khối quà → tổng kết tiền. Nếu cột hẹp, thẻ quà một cột; không ép hai cột hoặc thêm bản sao picker bên form. |
-| Cart | Danh sách hàng mua → khối quà trong cùng cột nội dung; aside chỉ giữ phần tổng kết hiện có. |
+| Cart (cập nhật 2026-10-17) | Khối quà tương tác → thông báo ưu đãi khác nếu có → danh sách hàng mua trong cùng cột nội dung; aside chỉ giữ phần tổng kết. Không có thêm banner đạt quà với nút “Chọn quà” trùng lặp. |
 
 Điều kiện chương trình nằm trong phần phụ có thể mở rộng; quy tắc đang trực tiếp giới hạn thao tác phải hiện cạnh lựa chọn liên quan. Gợi ý mua thêm nằm ở khu vực riêng, không chèn giữa các thẻ quà. Quà có nhãn “Quà tặng”, không dùng cách hiển thị giá khuyến mãi/nút mua làm khách tưởng phải trả thêm tiền. Mỗi vùng đang thao tác chỉ có một hành động nhận quà nổi bật. Khi implementation, đối chiếu ảnh chụp mobile/desktop với bảng này và AC-24/AC-28; không thêm yêu cầu một bộ thiết kế độ chi tiết cao hoặc duyệt từng pixel.
 
@@ -255,7 +257,7 @@ Các abuse case bắt buộc: giả `nonclaimAcknowledged`, đổi giá/count/ca
 | ID | Kịch bản và kết quả bắt buộc |
 |---|---|
 | AC-01 | Hàng đang mua không lặp trong picker; paid segments khác đơn giá vẫn nguyên vẹn; quà đã chọn vẫn kiểm tra được. |
-| AC-02 | Lời nhắc nằm dưới vùng danh sách trên cart và checkout, nhìn thấy khi mobile summary thu gọn; không còn checkbox/khối từ bỏ sau ghi chú. |
+| AC-02 | Cart (cập nhật 2026-10-17): một bộ chọn hoạt động ở trên danh sách hàng mua, không có CTA quà trùng lặp; Checkout: lời nhắc nằm ngay dưới vùng danh sách đơn, nhìn thấy khi mobile summary thu gọn; không còn checkbox/khối từ bỏ sau ghi chú. |
 | AC-03 | Tổng tiền, giảm giá, ship, tier notice cần thiết và nội dung form không bị mất/sửa ngoài phạm vi. |
 | AC-04 | Thẻ ảnh/fallback, nhãn, lựa chọn phiên bản và nhận/bỏ/giảm số quà đúng theo UI-04; không đoán thuộc tính từ chuỗi hoặc ngụ ý đổi nguyên tử. |
 | AC-05 | Không mua thêm hoặc đã dismiss upsell vẫn chọn được mọi quyền nhận hợp lệ, kể cả nhiều campaign. |
@@ -319,7 +321,7 @@ Những vùng dự kiến cần sửa trong implementation, không phải danh s
 | `src/components/brand/cart-gift-picker.tsx`, `purchase-panel.tsx` | Làm lại presentation quà; tham khảo style/chip hiện có, không refactor purchase panel ngoài phạm vi. |
 | `src/components/headless/use-cart-gifts.ts` | Tái sử dụng mutation/pending; phối hợp bỏ/chọn lại và đọc lại khi mất phản hồi, không tạo đường lưu song song. |
 | `src/commerce/cart-gift-selection.ts`, `src/commerce/product-media.ts`, `src/routes/cart-gift-model.ts` | Bổ sung ảnh an toàn và dữ liệu hiển thị, giữ định danh dòng lỗi để bỏ; dùng đúng số khả năng cấp và copy trung tính. Không thêm API swap. |
-| `src/app/cart/page.tsx`, `src/app/checkout/page.tsx` | Đặt khu vực quà dưới danh sách; giữ paid segments, totals và bố cục theo breakpoint; không tháo owner dữ liệu form khi chuyển sang sửa quà. |
+| `src/app/cart/page.tsx`, `src/app/checkout/page.tsx` | Cart đặt khu vực quà trên danh sách hàng mua, ẩn banner đạt quà trùng; checkout giữ khu vực quà ngay dưới danh sách đơn. Giữ paid segments, totals, bố cục theo breakpoint và owner dữ liệu form khi sửa quà. |
 | `src/routes/checkout.ts`, `src/routes/checkout-model.ts` | Đưa toàn bộ dữ liệu picker/count vào checkout độc lập upsell; tách lỗi quà có thể sửa khỏi nhánh unquotable chung, giữ submit khóa nếu chưa có proof hiện hành. |
 | `src/components/commerce/guest-checkout-form.tsx`, `src/components/brand/guest-checkout-form.tsx` | Owner luồng submit/modal và dữ liệu nhận hàng kể cả ghi chú qua ready → sửa quà → ready; không lưu PII vào storage. |
 | `src/components/commerce/checkout-upsell.tsx` | Gỡ coupling/filter picker theo quà mới mở khóa; giữ chức năng mua thêm và busy coordination. |
