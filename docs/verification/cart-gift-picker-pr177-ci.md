@@ -2,9 +2,9 @@
 
 Failing run: https://github.com/nguyentuanson27-netizen/la.na_design_storefront/actions/runs/38995637617
 
-Updated the PR branch with main `7d26440c` before fixing the tests. This includes the owner-approved
-compact checkout upsell from PR #178 and the `/sale` link from PR #180. The repairs change test
-fixtures/expectations; they do not change application policy, checkout authority, timeouts or retries.
+Final comparison base: current main `3cbbbaec`. The final repair changes the cart browser fixture;
+checkout upsell application code and its original browser suite match current main exactly.
+No policy, checkout authority, timeout or retry setting is changed.
 
 ## Cart tier/progress fixture (shard 1)
 
@@ -19,27 +19,27 @@ separate verified test server against the same fixture to assert the tier achiev
 progress at 390px and 1280px. The original single-picker, before-paid-lines, functional-save and
 reload assertions remain, as do all other gift/focus/stock/EX-21 cases.
 
-## Obsolete inline-upsell browser flow (shard 3)
+## Checkout upsell and the moving main branch (shard 3)
 
-The old tests repeatedly waited for a size dropdown and `Thêm 1 chiếc` after PR #178 removed those
-controls. Each failed twice at the 120-second test timeout; the shard eventually hit its job limit.
+The failing run's test merge included PR #178's compact reminder, while the browser suite still
+waited for inline size/add controls. Repeated 120-second timeouts exhausted the 20-minute shard limit.
 
-Browser coverage now follows the shipped compact reminder: campaign text, no inline product inputs,
-keyboard navigation to `/sale`, both dismiss controls, reload/paid-revision/attempt reset, inactive
-campaign removal, manual gift choice after the real milestone, no offer when more than one unit
-short, one form, retained receiving fields/proof, no dismissal mutation, Axe and overflow at
-320/390/1280px. The obsolete lost-inline-add browser simulations are replaced, rather than skipped.
-The unchanged database suites still exercise proof validation, atomic add, stale stock/campaign
-rejection, recovery markers, locking and gift checkout snapshots.
+During verification, main was force-updated from `7d26440c` to `3cbbbaec`, removing PR #178/#180.
+The final PR therefore keeps the current main's inline upsell component and original browser suite,
+rather than bringing those removed application changes back through the PR's earlier main merge.
+All original inline-add, proof-refresh, lost-response recovery, shared-lock and stale-offer browser
+cases are retained and revalidated. The unchanged database suites additionally cover atomic add,
+proof validation, stock/campaign races, recovery markers, locking and gift checkout snapshots.
 
 ## Validation
 
-- Browser: `cart-gift-picker.spec.ts promotion-upsell.spec.ts --workers=1`: **22/22 passed**.
+- Browser: `cart-gift-picker.spec.ts promotion-upsell.spec.ts --workers=1`: **23/23 passed**, including
+  the original inline-upsell cases on the final main-aligned application code.
 - Database: `promotion-upsell`, `benefit-checkout-snapshot`, `gift-quantity-quote`: **78/78 passed**.
 - Domain: `promotion-upsell-policy`, `promotion-upsell-proof-gap`, `cart-promotion-model`: **42/42 passed**.
-- Global lint: 0 errors, 21 existing warnings; changed browser files lint clean.
-- Typecheck and production build passed. Build retains the 3 existing filesystem tracing warnings.
-- Generated Next files restored; `git diff --check` passed.
+- Global lint: 0 errors, 21 existing warnings.
+- Final production build and typecheck passed after aligning with current main. The build retains
+  the 3 existing filesystem tracing warnings. Generated Next files restored; diff check passed.
 - Local Node 24.19.0, pnpm 11.4.0 and pinned Playwright Chromium. CI uses Node 22.
 
 Screenshots `cart-promos-390.png` and `cart-promos-1280.png` were visually inspected: one gift picker
