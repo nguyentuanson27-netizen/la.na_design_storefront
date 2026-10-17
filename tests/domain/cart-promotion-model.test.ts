@@ -55,6 +55,32 @@ function state(o: Overrides = {}): CartGiftState {
 const quantityCampaign = { id: "gift-a", trigger: "QUANTITY", minimumQuantity: 4, minimumSubtotalVnd: null, awardMode: "EVERY_MULTIPLE", options: [] };
 const subtotalCampaign = { id: "gift-b", trigger: "ORDER_SUBTOTAL", minimumQuantity: null, minimumSubtotalVnd: 4_000_000, awardMode: "ONCE", options: [] };
 
+test("an earned gift and the next quantity discount remain visible together", () => {
+  const view = buildCartPromotionView(state({
+    campaigns: [{ ...quantityCampaign, minimumQuantity: 3 }],
+    entitlements: [{ campaignId: "gift-a", entitled: 1, shortfallToNext: { quantity: 2, subtotalVnd: null } }],
+    benefits: { enabled: true, ok: true, groups: [], quantityProgress: [{
+      campaignId: "five", currentQuantity: 4, reachedThresholdQuantity: null, discountedUnits: "ALL_ELIGIBLE_UNITS",
+      next: { thresholdQuantity: 5, unit: "PERCENTAGE", value: 10, shortfallQuantity: 1 },
+    }] },
+  }))!;
+  assert.deepEqual(view.items.map((item) => [item.state, item.kind]), [["achieved", "GIFT"], ["progress", "TIER"]]);
+  assert.equal(view.items[1]!.title, "Mua thêm 1 sản phẩm áp dụng để được giảm 10%");
+  assert.deepEqual(view.items[1]!.progress, { percent: 80, label: "Còn thiếu 1 sản phẩm áp dụng" });
+  assert.equal(view.savingsVnd, 0, "a future benefit is never counted as a discount");
+});
+
+test("quantity progress uses backend thresholds, fixed per-unit values and the reached rung", () => {
+  const view = buildCartPromotionView(state({ benefits: {
+    enabled: true, ok: true, groups: [{ quantity: 3, steps: [tierStep] }],
+    quantityProgress: [{ campaignId: "fixed", currentQuantity: 6, reachedThresholdQuantity: 3, discountedUnits: "FROM_REACHED_THRESHOLD",
+      next: { thresholdQuantity: 8, unit: "FIXED_AMOUNT_PER_UNIT_VND", value: 20_000, shortfallQuantity: 2 } }],
+  } }))!;
+  assert.deepEqual(view.items.map((item) => item.state), ["achieved", "progress"]);
+  assert.equal(view.items[1]!.title, `Mua thêm 2 sản phẩm áp dụng để được giảm ${vnd("20.000")}/sản phẩm được ưu đãi`);
+  assert.equal(view.items[1]!.progress!.percent, 60);
+});
+
 test("only quantity-tier steps count as savings; the flash-sale price is already on the line", () => {
   assert.equal(tierSavingsVnd([{ quantity: 3, steps: [tierStep] }]), (689_000 - 600_000) * 3);
   assert.equal(tierSavingsVnd([{ quantity: 5, steps: [legacyStep] }]), 0, "a legacy step is not a tier saving");

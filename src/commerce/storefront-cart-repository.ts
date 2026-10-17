@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
-import { resolveGiftQuantityQuote, validateQuoteCartItems, type LegacyConsentReader, type QuoteCartLine } from "./gift-quantity-quote.ts";
+import { resolveGiftQuantityQuote, validateQuoteCartItems, type LegacyConsentReader, type QuoteCartLine, type QuantityAddition, type QuantityGiftGuard } from "./gift-quantity-quote.ts";
 import { createLegacyConsentReader } from "./gift-quantity-legacy-consent.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { PromotionPricingResult } from "./promotion-pricing.ts";
@@ -277,7 +277,33 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       products: cartProducts,
       pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onResolved: onPricing }),
     });
-    return { lines, products };
+    const owners = new Map(products.flatMap((product) => product.variants.map((variant) => [variant.id, { product, variant }] as const)));
+    const trialPricing = buildPromotionalStorefrontPricing({ campaignsByVariantId, now });
+    function canAddQuantity(addition: QuantityAddition): boolean {
+      const future = items.map((item) => item.variantId === addition.variantId ? { ...item, quantity: item.quantity + addition.quantity } : item);
+      if (!validateQuoteCartItems(future)) return false;
+      // Match reservation ordering: STANDARD demand consumes shared resources before flexible lines.
+      const ordered = [...future].sort((a, b) => {
+        const aFlexible = resolveSellingPolicy(owners.get(a.variantId)?.product.sellingPolicy).sellingMode !== "STANDARD";
+        const bFlexible = resolveSellingPolicy(owners.get(b.variantId)?.product.sellingPolicy).sellingMode !== "STANDARD";
+        return Number(aFlexible) - Number(bFlexible) || a.variantId.localeCompare(b.variantId);
+      });
+      const pending = new Map(heldByVariantId);
+      for (const item of ordered) {
+        const owner = owners.get(item.variantId);
+        if (!owner) return false;
+        // The same quantity-aware projection handles STANDARD, PREORDER, OVERSELL and composites.
+        // Include earlier paid demand so two combos/a standalone cannot spend the same component twice.
+        const trial = buildStorefrontCartLines({ items: [item], products: [toCartProduct(owner.product, shopId, pending)], pricingRule: trialPricing });
+        if (!trial[0]?.available) return false;
+        const resources = owner.variant.compositeComponents.length
+          ? owner.variant.compositeComponents.map((edge) => ({ id: edge.componentVariantId, quantity: edge.quantity * item.quantity }))
+          : [{ id: item.variantId, quantity: item.quantity }];
+        for (const resource of resources) pending.set(resource.id, (pending.get(resource.id) ?? 0) + resource.quantity);
+      }
+      return true;
+    }
+    return { lines, products, canAddQuantity };
   }
 
   async function getLines({
@@ -314,6 +340,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     env = process.env,
     giftClient = readClient as unknown as GiftQuantityCandidateReadClient,
     readLegacyConsents = createLegacyConsentReader(readClient as unknown as Parameters<typeof createLegacyConsentReader>[0]),
+    preservesQuantityGifts,
   }: {
     shopId: number;
     items: readonly CartItemIdentity[];
@@ -321,6 +348,7 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
     env?: Readonly<Record<string, string | undefined>>;
     giftClient?: GiftQuantityCandidateReadClient;
     readLegacyConsents?: LegacyConsentReader;
+    preservesQuantityGifts?: QuantityGiftGuard;
   }) {
     if (!isGiftQuantityPromotionsEnabled(env)) {
       return { lines: await getLines({ shopId, items, now }), benefits: { enabled: false as const } };
@@ -392,6 +420,8 @@ export function createStorefrontCartRepository(client: PrismaClient | Storefront
       client: giftClient,
       env,
       readLegacyConsents,
+      canAddQuantity: resolved.canAddQuantity,
+      preservesQuantityGifts,
     });
     return { lines: resolved.lines, benefits };
   }

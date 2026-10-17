@@ -45,7 +45,7 @@ import {
   type StackPeer,
   type StackTierParticipant,
 } from "./gift-quantity-stack.ts";
-import type { QuantityTierConfig, TierDiscountUnit } from "./gift-quantity-tier.ts";
+import type { QuantityTierConfig, TierDiscountedUnits, TierDiscountUnit } from "./gift-quantity-tier.ts";
 import type { ApplicablePromotionCampaign } from "./promotion-pricing.ts";
 
 /** A purchasable, priced cart line as the legacy authority resolved it. */
@@ -76,6 +76,26 @@ export type OrderValueProgress = Readonly<{
   next: Readonly<{ thresholdVnd: number; unit: TierDiscountUnit; value: number; shortfallVnd: number }>;
 }>;
 
+/** Display-only progress, counted from paid units in the campaign's actual scope. */
+export type QuantityProgress = Readonly<{
+  campaignId: string;
+  currentQuantity: number;
+  reachedThresholdQuantity: number | null;
+  discountedUnits: TierDiscountedUnits;
+  next: Readonly<{ thresholdQuantity: number; unit: TierDiscountUnit; value: number; shortfallQuantity: number }>;
+}>;
+
+/** Server-only guards from the cart's existing capacity and gift authorities, using one read snapshot. */
+export type QuantityAddition = Readonly<{ variantId: string; quantity: number }>;
+export type QuantityGiftGuard = (trial: Readonly<{
+  before: readonly StackedGroup[];
+  after: readonly StackedGroup[];
+  addition: QuantityAddition;
+}>) => boolean;
+
+/** Display hints may be omitted when the work budget is spent; paid pricing is never truncated. */
+export const MAX_QUANTITY_PROGRESS_TRIALS = 50;
+
 export type GiftQuantityQuote =
   | Readonly<{ enabled: false }>
   | Readonly<{
@@ -91,6 +111,8 @@ export type GiftQuantityQuote =
       campaignNames: ReadonlyMap<string, string>;
       /** Display only: the next rung of each order-value ladder that could still apply. Never part of a proof. */
       orderValueProgress: readonly OrderValueProgress[];
+      /** Next quantity milestones verified by the same pricing/stacking authority; never part of a proof. */
+      quantityProgress: readonly QuantityProgress[];
     }>
   | Readonly<{ enabled: true; ok: false; reason: "LOOKUP_FAILED" | "INPUT_INVALID" }>;
 
@@ -167,6 +189,85 @@ const FORCED_ORDER_LADDER: QuantityTierConfig = {
   tiers: [{ minQuantity: 1, discountValue: 1 }],
 };
 
+function readQuantityProgress({ tiers, stackLines, legacyConsents, result, canAddQuantity, preservesQuantityGifts }: Readonly<{
+  tiers: readonly StackTierParticipant[];
+  stackLines: readonly StackInputLine[];
+  legacyConsents: StackLegacyConsent;
+  result: Extract<ReturnType<typeof priceStack>, { ok: true }>;
+  canAddQuantity: (addition: QuantityAddition) => boolean;
+  preservesQuantityGifts?: QuantityGiftGuard;
+}>): readonly QuantityProgress[] {
+  const dropped = new Set(result.dropped.map((entry) => entry.campaignId));
+  // Explicit drops of an earned tier are conflicts, unlike a legacy price ceiling becoming a no-op.
+  const protectedTiers = new Set(result.groups.flatMap((group) => group.steps.filter((step) => step.source === "QUANTITY_TIER").map((step) => step.campaignId)));
+  const progress: QuantityProgress[] = [];
+  // Campaigns often share a threshold/scope: the same addition must be priced/validated only once.
+  const trials = new Map<string, Readonly<{
+    quote: Extract<ReturnType<typeof priceStack>, { ok: true }>;
+    lines: readonly StackInputLine[];
+    eligibility: Map<string, boolean>;
+  }> | null>();
+  let pricingRuns = 0;
+  for (const tier of [...tiers].sort((a, b) => a.id.localeCompare(b.id))) {
+    const { config, id } = tier;
+    if (config.basis === "ORDER_SUBTOTAL" || dropped.has(id) || !isValidTierConfig(config)) continue;
+    const eligible = stackLines.filter((line) => tier.resolve(line.product)).sort((a, b) => a.lineKey.localeCompare(b.lineKey));
+    const currentQuantity = eligible.reduce((sum, line) => sum + line.quantity, 0);
+    if (currentQuantity === 0) continue;
+    const reached = [...config.tiers].reverse().find((rung) => rung.minQuantity <= currentQuantity);
+    const next = config.tiers.find((rung) => rung.minQuantity > currentQuantity && (!reached || rung.discountValue > reached.discountValue));
+    if (!next) continue;
+    const shortfallQuantity = next.minQuantity - currentQuantity;
+
+    // Idle ladders do not participate in today's conflict checks. Price a hypothetical addition
+    // with the ORIGINAL rules instead: another idle campaign may become active at that milestone,
+    // and fixed discounts/partial-unit rules must also remain valid. No probe changes the paid quote.
+    // Try existing eligible variants, since prices and overlapping scopes can differ by product.
+    const reachable = eligible.some((candidate) => {
+      const key = `${candidate.lineKey}|${shortfallQuantity}`;
+      if (!trials.has(key)) {
+        if (trials.size >= MAX_QUANTITY_PROGRESS_TRIALS || pricingRuns >= MAX_QUANTITY_PROGRESS_TRIALS) return false;
+        trials.set(key, null);
+        const addition = { variantId: candidate.lineKey, quantity: shortfallQuantity };
+        if (!canAddQuantity(addition)) return false;
+        const lines = stackLines.map((line) => line === candidate ? { ...line, quantity: line.quantity + shortfallQuantity } : line);
+        pricingRuns++;
+        const trial = priceStack({ lines, tiers, legacyConsents });
+        if (!trial.ok || trial.dropped.some((entry) => protectedTiers.has(entry.campaignId))
+          || (preservesQuantityGifts && !preservesQuantityGifts({ before: result.groups, after: trial.groups, addition }))) return false;
+        trials.set(key, { quote: trial, lines, eligibility: new Map() });
+      }
+      const trial = trials.get(key);
+      if (!trial) return false;
+      if (trial.eligibility.has(id)) return trial.eligibility.get(id)!;
+      trial.eligibility.set(id, false);
+      if (trial.quote.dropped.some((entry) => entry.campaignId === id)
+        || !trial.quote.groups.some((group) => group.steps.some((step) => step.source === "QUANTITY_TIER" && step.campaignId === id))
+        || pricingRuns >= MAX_QUANTITY_PROGRESS_TRIALS) return false;
+
+      // Compare the SAME future basket through the authority without the new rung. Keep any rung
+      // already earned: its saving is not a new benefit. A ledger entry alone can be erased by a
+      // later FIXED_PRICE ceiling, or that ceiling can itself disappear because the tier priced lower.
+      const previousTiers = tiers.flatMap((participant) => participant.id !== id ? [participant] : reached
+        ? [{ ...participant, config: { ...config, tiers: config.tiers.filter((rung) => rung.minQuantity <= reached.minQuantity) } }] : []);
+      pricingRuns++;
+      const withoutNext = priceStack({ lines: trial.lines, tiers: previousTiers, legacyConsents });
+      const improvesPrice = withoutNext.ok && trial.quote.subtotalVnd < withoutNext.subtotalVnd;
+      trial.eligibility.set(id, improvesPrice);
+      return improvesPrice;
+    });
+    if (!reachable) continue;
+    progress.push(Object.freeze({
+      campaignId: id,
+      currentQuantity,
+      reachedThresholdQuantity: reached?.minQuantity ?? null,
+      discountedUnits: config.discountedUnits,
+      next: Object.freeze({ thresholdQuantity: next.minQuantity, unit: config.unit, value: next.discountValue, shortfallQuantity }),
+    }));
+  }
+  return progress.sort((a, b) => a.campaignId < b.campaignId ? -1 : a.campaignId > b.campaignId ? 1 : 0);
+}
+
 function readOrderValueProgress({
   tierCampaigns,
   tiers,
@@ -223,19 +324,23 @@ export async function resolveGiftQuantityQuote({
   client,
   env = process.env,
   readLegacyConsents = readNoLegacyConsents,
+  canAddQuantity,
+  preservesQuantityGifts,
 }: Readonly<{
   lines: readonly QuoteCartLine[];
   now: Date;
   client?: GiftQuantityCandidateReadClient;
   env?: Readonly<Record<string, string | undefined>>;
   readLegacyConsents?: LegacyConsentReader;
+  canAddQuantity?: (addition: QuantityAddition) => boolean;
+  preservesQuantityGifts?: QuantityGiftGuard;
 }>): Promise<GiftQuantityQuote> {
   // The gate is decided first and alone: OFF reads nothing and computes nothing.
   if (!isGiftQuantityPromotionsEnabled(env)) return { enabled: false };
 
   // A cart with nothing purchasable has no paid lines to price; that is a valid, empty quote.
   if (lines.length === 0) {
-    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map(), orderValueProgress: [] };
+    return { enabled: true, ok: true, groups: [], subtotalVnd: 0, dropped: [], campaignRevisions: new Map(), campaignNames: new Map(), orderValueProgress: [], quantityProgress: [] };
   }
 
   const productIds = [...new Set(lines.map((line) => line.productId))];
@@ -249,6 +354,7 @@ export async function resolveGiftQuantityQuote({
   // calls are covered; the pure computation after them is not, so a programming error there
   // still throws instead of being reported as an outage.
   let tierCampaigns: ActiveGiftQuantityCampaign[];
+  let hasGiftCampaigns = false;
   let facts: readonly ScopeProductFacts[] = [];
   let legacyConsents: StackLegacyConsent = new Map();
   try {
@@ -256,6 +362,7 @@ export async function resolveGiftQuantityQuote({
     if (!lookup.enabled) return { enabled: false };
     // Gift campaigns are read by the same bounded lookup but price nothing here (GQ10).
     tierCampaigns = lookup.campaigns.filter((entry) => entry.campaign.kind === "QUANTITY_TIER");
+    hasGiftCampaigns = lookup.campaigns.some((entry) => entry.campaign.kind === "GIFT_ITEM");
     if (tierCampaigns.length > 0) {
       facts = await readScopeProductFacts({ productIds, client });
       if (legacyIds.length > 0) legacyConsents = await readLegacyConsents(legacyIds);
@@ -298,5 +405,8 @@ export async function resolveGiftQuantityQuote({
     campaignRevisions: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.revision])),
     campaignNames: new Map(tierCampaigns.map((entry) => [entry.campaign.id, entry.campaign.name])),
     orderValueProgress,
+    // A price-only caller cannot establish sellability or preserve gifts: withhold its hints.
+    quantityProgress: canAddQuantity && (!hasGiftCampaigns || preservesQuantityGifts)
+      ? readQuantityProgress({ tiers, stackLines, legacyConsents, result, canAddQuantity, preservesQuantityGifts }) : [],
   };
 }
