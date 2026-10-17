@@ -60,16 +60,31 @@ function render(data: CartViewModel) {
     );
   }
 
+  // The earned-gift banner was a second, anchor-only "Chọn quà" action. The actual picker
+  // now owns that message and action above the paid lines; other promotion progress stays visible.
+  const hasGiftPicker = Boolean(data.gifts && (
+    data.gifts.selections.length > 0 ||
+    data.gifts.campaigns.some((campaign) => campaign.entitled > 0)
+  ));
+  const promotions = hasGiftPicker && data.promotions
+    ? {
+        ...data.promotions,
+        items: data.promotions.items.filter(
+          (item) => !(item.kind === "GIFT" && item.state === "achieved"),
+        ),
+      }
+    : data.promotions;
+
   return (
     <PageShell>
       <PageBreadcrumbs items={CART_BREADCRUMBS} />
       <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" meta={`${data.lineCount} sản phẩm`} />
-      {/* Above the lines, not in the summary column: below `lg` that column is the last thing on the
-          page, and a reached promotion should be the first thing the shopper sees. */}
-      <PromotionBanner className="mt-8" giftHref="#cart-gifts" view={data.promotions} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
-        <div className="divide-y divide-black/15">
-          {data.lines.map((line, index) => (
+        <div className="min-w-0">
+          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
+          <PromotionBanner className="mb-5" view={promotions} />
+          <div className="divide-y divide-black/15">
+            {data.lines.map((line, index) => (
             <article
               className="grid gap-6 py-8 first:pt-0 sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
               key={line.variantId}
@@ -138,8 +153,8 @@ function render(data: CartViewModel) {
                 />
               </div>
             </article>
-          ))}
-          {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
+            ))}
+          </div>
         </div>
         <aside className="h-fit border-t border-black pt-6 lg:sticky lg:top-24">
           <p className="text-xs font-semibold uppercase tracking-[0.14em]">Tóm tắt</p>
