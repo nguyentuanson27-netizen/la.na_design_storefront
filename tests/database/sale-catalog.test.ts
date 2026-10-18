@@ -886,3 +886,48 @@ test("a product the sync takes down while a background read is in flight is read
   assert.deepEqual(later.products, []);
   assert.equal(later.totalCount, 0);
 });
+
+test("the sale projection reads run with JIT off, each in its own transaction, and JIT stays on elsewhere", async () => {
+  const flashProduct = await createProduct("sale-jit-flash-product", 600_000);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[1]!,
+      kind: "FLASH_SALE",
+      name: "JIT flash",
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: new Date(now.getTime() + 3_600_000),
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: flashProduct.id } },
+    },
+  });
+
+  const logged = new PrismaClient({
+    adapter: new PrismaPg({ connectionString }),
+    log: [{ emit: "event", level: "query" }],
+  });
+  const queries: string[] = [];
+  logged.$on("query", (event) => queries.push(event.query));
+  try {
+    const page = await createFlashSaleCatalogRepository(logged).listSalePage({
+      shopId,
+      discovery: parseStorefrontDiscoverySearchParams({}),
+      pageSize: 12,
+      kind: "FLASH_SALE",
+      now,
+    });
+    assert.deepEqual(page.products.map((product) => product.slug), ["sale-jit-flash-product"]);
+
+    const saleReads = queries.filter((query) => query.includes('"sale_variant" AS MATERIALIZED'));
+    assert.equal(saleReads.length, 2, "the count and the page read");
+    assert.equal(queries.filter((query) => query.trim() === "SET LOCAL jit = off").length, 2);
+    assert.equal(queries.filter((query) => query.trim() === "COMMIT").length, 2);
+
+    const [setting] = await logged.$queryRaw<{ jit: string }[]>`SHOW jit`;
+    assert.equal(setting?.jit, "on", "SET LOCAL ends with its transaction");
+  } finally {
+    await logged.$disconnect();
+  }
+});

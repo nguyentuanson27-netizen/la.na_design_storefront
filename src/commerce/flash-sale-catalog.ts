@@ -166,6 +166,12 @@ function toFlashProduct(product: SelectedFlashProduct, componentMedia?: Componen
 /**
  * Sale membership reuses the one sanctioned SQL pricing projection. This layer adds only
  * purchasability and the requirement that the single resolved campaign produces a real discount.
+ *
+ * `sale_variant` is `MATERIALIZED`: the listing reads it once, inside a per-product `LATERAL`, and
+ * PostgreSQL inlines a CTE read once. Inlined, its join was re-planned and re-run for every
+ * product -- on production data the Flash Sale page scanned `sale_variant_eligible` 14,904 times
+ * (about 71M rows, ~8s of a ~9.8s read). Materializing changes only how the rows are produced,
+ * never which rows.
  */
 function buildSaleCte(now: Date) {
   return Prisma.sql`
@@ -208,7 +214,7 @@ function buildSaleCte(now: Date) {
         ) AS "isPurchasable"
       FROM "sale_variant_mapping" svm
     ),
-    "sale_variant" AS (
+    "sale_variant" AS MATERIALIZED (
       SELECT
         sve."id",
         sve."productId",
@@ -413,6 +419,17 @@ export function createFlashSaleCatalogRepository(
     saleIdPageCache?: SaleListingCache<SaleIdPage>;
   }> = {},
 ) {
+  /**
+   * Runs one sale projection read with JIT compilation off, in its own transaction so `SET LOCAL`
+   * ends with it and the count and page reads still run in parallel. The projection's estimated
+   * cost is far above `jit_above_cost`, and on production data compiling it took ~1.45s while the
+   * page read itself ran in ~0.6s; the count read spent ~100ms compiling for ~340ms of work.
+   */
+  async function withoutJit<T>(query: Prisma.PrismaPromise<T>): Promise<T> {
+    const [, rows] = await client.$transaction([client.$executeRaw`SET LOCAL jit = off`, query]);
+    return rows;
+  }
+
   async function hydrateProducts(shopId: number, idRows: readonly Readonly<{ id: string }>[]) {
     const ids = idRows.map((row) => row.id);
     const products = ids.length === 0
@@ -596,7 +613,7 @@ export function createFlashSaleCatalogRepository(
 
     const loadIdPage = async (): Promise<SaleIdPage> => {
       const [countRows, idRows] = await Promise.all([
-        client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
+        withoutJit(client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
           ${cte}
           SELECT COUNT(*)::bigint AS "count"
           FROM "ProductMirror" p
@@ -607,8 +624,8 @@ export function createFlashSaleCatalogRepository(
               SELECT 1 FROM "sale_variant" sv
               WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
             )
-        `),
-        client.$queryRaw<SaleIdRow[]>(Prisma.sql`
+        `)),
+        withoutJit(client.$queryRaw<SaleIdRow[]>(Prisma.sql`
           ${cte}
           SELECT
             p."id",
@@ -645,7 +662,7 @@ export function createFlashSaleCatalogRepository(
           ORDER BY representative."sortPrice" ASC, p."name" ASC, p."id" ASC
           LIMIT ${safePageSize}
           OFFSET ${offset}
-        `),
+        `)),
       ]);
 
       const totalCount = countRows[0] ? Number(countRows[0].count) : 0;
