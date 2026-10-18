@@ -179,7 +179,8 @@ test("Áo lẻ never shows a pants colour", () => {
   assert.notEqual(top.colorDimensionLabel, "Màu quần đi kèm");
   assert.equal(
     resolveMobilePurchasePresentation(top, { kindKey: topKey, color: null, size: null }).actionLabel,
-    "Chọn phân loại / size",
+    // The kind is chosen, so the CTA names only what is left.
+    "Chọn size",
   );
   assert.equal(
     view(projection, { kindKey: topKey, color: null, size: "M" }).selectedVariantId,

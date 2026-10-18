@@ -599,7 +599,19 @@ test("composite activation opens and closes the real child purchase path while p
   });
 
   const addToBag = page.getByRole("button", { name: "Thêm vào giỏ hàng" });
-  await expect(addToBag).toBeDisabled();
+  // Nothing chosen yet: the button stays live and asks for the classification, beside it, rather
+  // than sitting dimmed with no reason given.
+  const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const panelKindGroup = panel.getByRole("group", { name: "Loại", exact: true });
+  await expect(addToBag).toBeEnabled();
+  await addToBag.click();
+  await expect(panel.getByText("Nàng chọn phân loại nhé", { exact: true })).toBeVisible();
+  await expect(panelKindGroup).toBeFocused();
+  expect(await prisma.cartItem.count({ where: { variantId: parentVariantId } })).toBe(0);
+  // A tap on a size that only the classification can unlock asks for the classification too.
+  await panel.getByRole("group", { name: "Kích cỡ" }).locator("label").filter({ hasText: /^M$/ }).click();
+  await expect(panelKindGroup).toBeFocused();
+  await expect(page.getByRole("radio", { name: "M", exact: true }).first()).not.toBeChecked();
 
   const sizeM = page.getByRole("radio", { name: "M", exact: true });
 
@@ -615,7 +627,7 @@ test("composite activation opens and closes the real child purchase path while p
     await expect(sizeM).toBeChecked();
     await expect(addToBag).toBeEnabled();
     await addToBag.click();
-    await expect(page.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+    await expect(panel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
     expect(await prisma.cartItem.count({ where: { variantId } })).toBe(1);
     if (!keepInCart) {
       await prisma.cartItem.deleteMany({ where: { variantId } });
@@ -660,7 +672,8 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(page.getByRole("radio", { name: "QUẦN LẺ" })).toBeEnabled();
   await expect(page.getByRole("radio", { name: "CV LẺ" })).toBeEnabled();
   await expect(page.getByRole("radio", { name: componentName })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeDisabled();
+  // No classification chosen: still live, and pressing it asks for one rather than adding.
+  await expect(page.getByRole("button", { name: "Thêm vào giỏ hàng" })).toBeEnabled();
 
   expect(browserErrors).toEqual([]);
   expect(failedResponses).toEqual([]);
