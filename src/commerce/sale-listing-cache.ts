@@ -16,15 +16,19 @@
  *
  * An entry younger than `SALE_LISTING_CACHE_FRESH_MS` is served as is. Between that and the maximum
  * age it is still served, while one background read replaces it, so a shopper waits for the read only
- * on a cold or expired page. Concurrent misses on one key share a single read.
+ * on a cold or expired page. Concurrent misses on one key share a single read. A failed background
+ * read is not retried for `SALE_LISTING_CACHE_BACKGROUND_RETRY_MS`, so a struggling database is not
+ * handed another heavy read by every stale hit.
  */
 
 export const SALE_LISTING_CACHE_FRESH_MS = 30_000;
 export const SALE_LISTING_CACHE_MAX_AGE_MS = 60_000;
 /** Bounds memory: keys are trusted (validated page numbers, fixed kinds), but pages are many. */
 export const SALE_LISTING_CACHE_MAX_ENTRIES = 256;
+export const SALE_LISTING_CACHE_BACKGROUND_RETRY_MS = 10_000;
 
-type Entry<T> = Readonly<{ value: T; storedAtMs: number }>;
+/** `retryAtMs`: the earliest a stale hit may start another background read after one failed. */
+type Entry<T> = Readonly<{ value: T; storedAtMs: number; retryAtMs: number }>;
 
 type Flight<T> = Readonly<{ token: symbol; forced: boolean; promise: Promise<T> }>;
 
@@ -54,6 +58,7 @@ export function createSaleListingCache<T>({
   freshMs = SALE_LISTING_CACHE_FRESH_MS,
   maxAgeMs = SALE_LISTING_CACHE_MAX_AGE_MS,
   maxEntries = SALE_LISTING_CACHE_MAX_ENTRIES,
+  backgroundRetryMs = SALE_LISTING_CACHE_BACKGROUND_RETRY_MS,
   onBackgroundError = (error: unknown) => {
     console.error("[sale-listing-cache] background refresh failed", error);
   },
@@ -62,11 +67,13 @@ export function createSaleListingCache<T>({
   freshMs?: number;
   maxAgeMs?: number;
   maxEntries?: number;
+  backgroundRetryMs?: number;
   onBackgroundError?: (error: unknown) => void;
 }> = {}): SaleListingCache<T> {
   assertPositiveMs(freshMs, "fresh time");
   assertPositiveMs(maxAgeMs, "maximum age");
   assertPositiveMs(maxEntries, "entry limit");
+  assertPositiveMs(backgroundRetryMs, "background retry delay");
   if (freshMs > maxAgeMs) {
     throw new RangeError("Sale listing cache fresh time cannot exceed its maximum age");
   }
@@ -79,7 +86,7 @@ export function createSaleListingCache<T>({
 
   function store(key: string, value: T, storedAtMs: number) {
     entries.delete(key);
-    entries.set(key, Object.freeze({ value, storedAtMs }));
+    entries.set(key, Object.freeze({ value, storedAtMs, retryAtMs: 0 }));
     while (entries.size > maxEntries) {
       const oldest = entries.keys().next();
       if (oldest.done) break;
@@ -121,13 +128,20 @@ export function createSaleListingCache<T>({
   async function read(key: string, loader: () => Promise<T>): Promise<SaleListingCacheRead<T>> {
     const entry = entries.get(key);
     if (entry) {
-      const ageMs = now() - entry.storedAtMs;
+      const nowMs = now();
+      const ageMs = nowMs - entry.storedAtMs;
       // A clock that stepped backwards proves nothing about the entry's age, so it expires.
       if (ageMs >= 0 && ageMs < maxAgeMs) {
         entries.delete(key);
         entries.set(key, entry);
-        if (ageMs >= freshMs && !inFlight.has(key)) {
-          load(key, loader).catch(onBackgroundError);
+        if (ageMs >= freshMs && nowMs >= entry.retryAtMs && !inFlight.has(key)) {
+          load(key, loader).catch((error: unknown) => {
+            // Only the entry this read was replacing backs off; a newer one has its own life.
+            if (entries.get(key) === entry) {
+              entries.set(key, Object.freeze({ ...entry, retryAtMs: now() + backgroundRetryMs }));
+            }
+            onBackgroundError(error);
+          });
         }
         return Object.freeze({ value: entry.value, cached: true });
       }

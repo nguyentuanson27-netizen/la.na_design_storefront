@@ -168,6 +168,70 @@ describe("Sale listing cache", () => {
     await assert.rejects(cache.read("k", failing), /background failed/);
   });
 
+  it("waits out the retry delay before a stale hit starts another background read", async () => {
+    const time = clock();
+    const errors: unknown[] = [];
+    const cache = createSaleListingCache<string>({
+      now: time.now,
+      freshMs: 30,
+      maxAgeMs: 100,
+      backgroundRetryMs: 10,
+      onBackgroundError: (error) => errors.push(error),
+    });
+    await cache.read("k", async () => "first");
+    time.advance(30);
+
+    let calls = 0;
+    const failing = async (): Promise<string> => {
+      calls += 1;
+      throw new Error("database struggling");
+    };
+    assert.deepEqual(await cache.read("k", failing), { value: "first", cached: true });
+    await settle();
+    assert.equal(calls, 1);
+
+    time.advance(9);
+    assert.deepEqual(await cache.read("k", failing), { value: "first", cached: true });
+    await settle();
+    assert.equal(calls, 1, "stale hits inside the retry delay start no read");
+
+    time.advance(1);
+    assert.deepEqual(await cache.read("k", failing), { value: "first", cached: true });
+    await settle();
+    assert.equal(calls, 2, "the first stale hit after the delay retries");
+    assert.equal(errors.length, 2);
+
+    // A successful retry clears the delay along with the stale entry.
+    time.advance(10);
+    await cache.read("k", async () => "second");
+    await settle();
+    assert.deepEqual(await cache.read("k", failing), { value: "second", cached: true });
+  });
+
+  it("the retry delay holds back only background reads, never a refresh or an expired read", async () => {
+    const time = clock();
+    const cache = createSaleListingCache<string>({
+      now: time.now,
+      freshMs: 30,
+      maxAgeMs: 60,
+      backgroundRetryMs: 1_000,
+      onBackgroundError: () => undefined,
+    });
+    await cache.read("k", async () => "first");
+    time.advance(30);
+    await cache.read("k", async () => {
+      throw new Error("background failed");
+    });
+    await settle();
+
+    assert.equal(await cache.refresh("k", async () => "refreshed"), "refreshed");
+    time.advance(60);
+    assert.deepEqual(await cache.read("k", async () => "expired read"), {
+      value: "expired read",
+      cached: false,
+    });
+  });
+
   it("refresh drops the entry and waits on a new read", async () => {
     const cache = createSaleListingCache<string>();
     await cache.read("k", async () => "outdated");
@@ -241,5 +305,6 @@ describe("Sale listing cache", () => {
     assert.throws(() => createSaleListingCache({ maxAgeMs: 1.5 }), RangeError);
     assert.throws(() => createSaleListingCache({ maxEntries: -1 }), RangeError);
     assert.throws(() => createSaleListingCache({ freshMs: 61, maxAgeMs: 60 }), RangeError);
+    assert.throws(() => createSaleListingCache({ backgroundRetryMs: 0 }), RangeError);
   });
 });
