@@ -123,10 +123,12 @@ export async function listConfiguredManualNewArrivalsPage({
 export async function listConfiguredStorefrontDiscoveryPage({
   discovery,
   pageSize,
+  allowCuratedComponents = false,
   now,
 }: {
   discovery: StorefrontDiscoveryQuery;
   pageSize: number;
+  allowCuratedComponents?: boolean;
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
@@ -134,6 +136,7 @@ export async function listConfiguredStorefrontDiscoveryPage({
     shopId,
     discovery,
     pageSize,
+    allowCuratedComponents,
     now,
   });
 }
@@ -226,9 +229,11 @@ export async function listConfiguredCategoryDiscoveryFacets({
   });
 }
 
-export async function listConfiguredStorefrontDiscoveryFacets() {
+export async function listConfiguredStorefrontDiscoveryFacets({
+  collectionSlug,
+}: { collectionSlug?: string } = {}) {
   const shopId = readPancakeShopId();
-  return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({ shopId });
+  return createStorefrontCatalogRepository(prisma).listDiscoveryFacets({ shopId, collectionSlug });
 }
 
 export async function getConfiguredStorefrontProductBySlug(slug: string, now?: Date) {

@@ -524,19 +524,23 @@ function buildTransitionVariantPredicate(discovery: StorefrontDiscoveryQuery) {
   return filters;
 }
 
-function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQuery) {
+function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQuery, allowCuratedComponents = false) {
   const safeShopId = parseShopId(shopId);
   const filters: Prisma.Sql[] = [
     Prisma.sql`p."pancakeShopId" = ${safeShopId}`,
     Prisma.sql`p."isPresent" = TRUE`,
     Prisma.sql`p."isActive" = TRUE`,
-    Prisma.sql`NOT EXISTS (
+  ];
+
+  // The route, not a user-provided ?collection= filter, opts into curated component visibility.
+  if (!allowCuratedComponents || !discovery.collection) {
+    filters.push(Prisma.sql`NOT EXISTS (
       SELECT 1
       FROM "CompositeComponentMirror" ccm
       JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
       WHERE cv."productId" = p."id"
-    )`,
-  ];
+    )`);
+  }
 
   if (discovery.query) {
     // The mirrored name drops the Pancake product code ("SV605"), so the code and the variant
@@ -578,8 +582,8 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
   return filters;
 }
 
-function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
-  const filters = buildBaseProductFilters(shopId, discovery);
+function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery, allowCuratedComponents = false) {
+  const filters = buildBaseProductFilters(shopId, discovery, allowCuratedComponents);
   const variantFilters = buildVariantPredicate(discovery);
   if (variantFilters.length > 0) {
     filters.push(Prisma.sql`
@@ -598,8 +602,8 @@ function buildProductPredicate(shopId: number, discovery: StorefrontDiscoveryQue
   };
 }
 
-function buildTransitionProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery) {
-  const filters = buildBaseProductFilters(shopId, discovery);
+function buildTransitionProductPredicate(shopId: number, discovery: StorefrontDiscoveryQuery, allowCuratedComponents = false) {
+  const filters = buildBaseProductFilters(shopId, discovery, allowCuratedComponents);
   const variantFilters = buildTransitionVariantPredicate(discovery);
   if (variantFilters.length > 0) {
     filters.push(Prisma.sql`
@@ -894,11 +898,14 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     shopId,
     pageSize,
     discovery,
+    allowCuratedComponents = false,
     now = new Date(),
   }: {
     shopId: number;
     pageSize: number;
     discovery: StorefrontDiscoveryQuery;
+    /** Trusted collection-route opt-in; never derived from URL search parameters. */
+    allowCuratedComponents?: boolean;
     /**
      * One request clock. Count, ordering, hydration and query-wide transition aggregation all use
      * this instant so a window cannot open halfway through one response.
@@ -907,8 +914,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
   }) {
     const safePageSize = parseListLimit(pageSize);
     const offset = parsePageOffset(discovery.page, safePageSize);
-    const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery);
-    const transitionProductPredicate = buildTransitionProductPredicate(shopId, discovery);
+    const { productPredicate, variantFilters } = buildProductPredicate(shopId, discovery, allowCuratedComponents);
+    const transitionProductPredicate = buildTransitionProductPredicate(shopId, discovery, allowCuratedComponents);
     const sortPrice = buildSortPrice(variantFilters);
     const orderBy = buildDiscoveryOrder(discovery.sort, discovery.categoryKey);
     const variantStockCte = buildVariantStockCte(now);
@@ -1014,9 +1021,12 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
   async function listDiscoveryFacets({
     shopId,
     categoryListingKeys,
+    collectionSlug,
   }: {
     shopId: number;
     categoryListingKeys?: readonly string[];
+    /** Scoped facets for /collections/[slug], including its assigned component products. */
+    collectionSlug?: string;
   }) {
     const safeShopId = parseShopId(shopId);
     const categoryClause =
@@ -1030,6 +1040,27 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
         `
         : Prisma.sql``;
 
+    // Collection route facets must include manually assigned components, not the global shop set.
+    const collectionClause = collectionSlug
+      ? Prisma.sql`
+          AND EXISTS (
+            SELECT 1 FROM "ProductContent" curated
+            INNER JOIN "CollectionDefinition" definition
+              ON definition."slug" = ${collectionSlug} AND definition."isPublished" = TRUE
+            WHERE curated."productId" = p."id"
+              AND ${collectionSlug} = ANY(COALESCE(curated."collectionSlugs", ARRAY[]::TEXT[]))
+          )
+        `
+      : Prisma.sql``;
+    const componentExclusion = collectionSlug
+      ? Prisma.sql``
+      : Prisma.sql`
+          AND NOT EXISTS (
+            SELECT 1 FROM "CompositeComponentMirror" ccm
+            WHERE ccm."componentVariantId" = v."id"
+          )
+        `;
+
     const [colorRows, sizeRows, collectionRows] = await Promise.all([
       client.$queryRaw<FacetRow[]>(Prisma.sql`
         SELECT DISTINCT BTRIM(v."color") AS "value"
@@ -1042,11 +1073,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
           AND v."isActive" = TRUE
           AND v."color" IS NOT NULL
           AND BTRIM(v."color") <> ''
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "CompositeComponentMirror" ccm
-            WHERE ccm."componentVariantId" = v."id"
-          )
+          ${componentExclusion}
+          ${collectionClause}
           ${categoryClause}
         ORDER BY "value" ASC
       `),
@@ -1061,11 +1089,8 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
           AND v."isActive" = TRUE
           AND v."size" IS NOT NULL
           AND BTRIM(v."size") <> ''
-          AND NOT EXISTS (
-            SELECT 1
-            FROM "CompositeComponentMirror" ccm
-            WHERE ccm."componentVariantId" = v."id"
-          )
+          ${componentExclusion}
+          ${collectionClause}
           ${categoryClause}
         ORDER BY "value" ASC
       `),

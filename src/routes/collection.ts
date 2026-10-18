@@ -60,9 +60,10 @@ export async function loadCollectionRoute({
       listConfiguredStorefrontDiscoveryPage({
         discovery,
         pageSize: COLLECTION_PAGE_SIZE,
+        allowCuratedComponents: true,
         now: requestNow,
       }),
-      listConfiguredStorefrontDiscoveryFacets(),
+      listConfiguredStorefrontDiscoveryFacets({ collectionSlug: collection.slug }),
     ]);
   } catch (error) {
     if (error instanceof RangeError) notFound();

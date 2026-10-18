@@ -409,6 +409,67 @@ test("discovery facets stay scoped to visible products in the configured shop", 
   assert.deepEqual(facets.collections, ["city-uniform", "essentials"]);
 });
 
+test("curated collection lists its assigned component, but shop filters and search never expose it", async () => {
+  const parent = await seedProduct({
+    id: "curated-composite-parent", name: "Composite Outfit", color: "Black", size: "M", price: 900_000, stock: 2,
+  });
+  const component = await seedProduct({
+    id: "curated-lace-component", name: "Curated Lace Piece", collectionSlugs: ["city-uniform"],
+    color: "Silver", size: "XXL", price: 200_000, stock: 2,
+  });
+  const otherComponent = await seedProduct({
+    id: "unassigned-lace-component", name: "Unassigned Lace Piece", collectionSlugs: ["essentials"],
+    color: "Gold", size: "XXXL", price: 250_000, stock: 2,
+  });
+  const variants = await Promise.all([parent, component, otherComponent].map((product) =>
+    prisma.variantMirror.findFirstOrThrow({ where: { productId: product.id }, select: { id: true } }),
+  ));
+  await prisma.compositeComponentMirror.createMany({ data: [
+    { parentVariantId: variants[0]!.id, componentVariantId: variants[1]!.id, quantity: 1, syncedAt },
+    { parentVariantId: variants[0]!.id, componentVariantId: variants[2]!.id, quantity: 1, syncedAt },
+  ] });
+
+  const city = parseStorefrontDiscoverySearchParams({ collection: "city-uniform" });
+  const shopFiltered = await repository.listDiscoveryPage({ shopId, pageSize: 24, discovery: city });
+  assert.equal(shopFiltered.products.some((product) => product.id === component.id), false);
+  assert.equal(shopFiltered.totalCount, 2);
+
+  const shopSearch = await repository.listDiscoveryPage({
+    shopId, pageSize: 24,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform", q: "Curated Lace" }),
+  });
+  assert.equal(shopSearch.totalCount, 0);
+  const globalSearch = await repository.listDiscoveryPage({
+    shopId, pageSize: 24, discovery: parseStorefrontDiscoverySearchParams({ q: "Curated Lace" }),
+  });
+  assert.equal(globalSearch.totalCount, 0);
+
+  const curated = await repository.listDiscoveryPage({
+    shopId, pageSize: 24, discovery: city, allowCuratedComponents: true,
+  });
+  assert.equal(curated.totalCount, 3);
+  assert.equal(curated.products.some((product) => product.id === component.id), true);
+  assert.equal(curated.products.some((product) => product.id === otherComponent.id), false);
+
+  const filtered = await repository.listDiscoveryPage({
+    shopId, pageSize: 24, allowCuratedComponents: true,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform", size: "XXL" }),
+  });
+  assert.deepEqual(filtered.products.map((product) => product.id), [component.id]);
+  const unrelatedRoute = await repository.listDiscoveryPage({
+    shopId, pageSize: 24, allowCuratedComponents: true,
+    discovery: parseStorefrontDiscoverySearchParams({}),
+  });
+  assert.equal(unrelatedRoute.products.some((product) => product.id === component.id), false);
+
+  const globalFacets = await repository.listDiscoveryFacets({ shopId });
+  assert.equal(globalFacets.sizes.includes("XXL"), false);
+  const collectionFacets = await repository.listDiscoveryFacets({ shopId, collectionSlug: "city-uniform" });
+  assert.equal(collectionFacets.sizes.includes("XXL"), true);
+  assert.equal(collectionFacets.sizes.includes("L"), false);
+  assert.equal(collectionFacets.sizes.includes("XXXL"), false);
+});
+
 test("discovery collection filter requires published CollectionDefinition while preserving draft content membership", async () => {
   await prisma.collectionDefinition.upsert({
     where: { slug: "unpub-col" },
