@@ -5,10 +5,9 @@
  * The cart and checkout learn about these campaigns from the server quote; until now the product
  * page did not mention them at all, so a shopper only discovered "Mua 2 giảm 10%" after adding. This
  * read names the campaigns that cover this product, and nothing more: no amount, no threshold
- * maths, no claim that the shopper qualifies. The quote in the cart stays the only place a benefit
- * is computed, and each line says how its benefit actually arrives -- a tier discount is computed in
- * the cart once the basket qualifies, a gift is *chosen* there by the shopper -- so the copy never
- * promises a gift that lands in the order on its own.
+ * maths, no claim that the shopper qualifies, and no sentence of its own about how the benefit is
+ * applied (owner request 2026-10-18: the campaign's name only). The quote in the cart stays the only
+ * place a benefit is computed.
  *
  * It fails closed on every axis, because a promotion shown and then refused is the false promise
  * UX-03 forbids:
@@ -32,23 +31,12 @@ import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contra
 /** At most this many are named; the page is about the product, not the promotions. */
 export const MAX_PRODUCT_PROMOTION_OFFERS = 2;
 
-/**
- * How each kind of benefit reaches the order, said beside its name. A gift is never "applied": the
- * qualifying basket opens a choice in the cart, which the shopper still has to make.
- */
-export const PRODUCT_PROMOTION_OFFER_NOTES = {
-  TIER: "giảm giá tự tính trong giỏ hàng khi đủ điều kiện",
-  GIFT: "đủ điều kiện sẽ được chọn quà trong giỏ hàng, tùy quà còn hàng",
-} as const;
-
 export type ProductPromotionOffer = Readonly<{
   /** The campaign id; a stable React key. */
   id: string;
   kind: "GIFT" | "TIER";
   /** The campaign's own name, the same words the cart's savings rows use ("Mua 5 giảm 10%"). */
   label: string;
-  /** How this kind of benefit reaches the order (`PRODUCT_PROMOTION_OFFER_NOTES`). */
-  note: string;
 }>;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -113,11 +101,11 @@ export function selectProductPromotionOffers(
     if (label === "") continue;
     if (campaign.kind === "GIFT_ITEM") {
       if (!campaign.giftOptions.some((option) => readyGiftVariantIds.has(option.variantId))) continue;
-      offers.push({ id: campaign.id, kind: "GIFT", label, note: PRODUCT_PROMOTION_OFFER_NOTES.GIFT });
+      offers.push({ id: campaign.id, kind: "GIFT", label });
     } else {
       if (campaign.tierUnit === null || campaign.tierDiscountedUnits === null) continue;
       if (campaign.tiers.length === 0) continue;
-      offers.push({ id: campaign.id, kind: "TIER", label, note: PRODUCT_PROMOTION_OFFER_NOTES.TIER });
+      offers.push({ id: campaign.id, kind: "TIER", label });
     }
     if (offers.length === MAX_PRODUCT_PROMOTION_OFFERS) break;
   }

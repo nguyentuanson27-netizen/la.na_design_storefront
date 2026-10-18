@@ -4,7 +4,6 @@ import test from "node:test";
 import { PrismaPg } from "@prisma/adapter-pg";
 
 import { PrismaClient } from "../../src/generated/prisma/client.ts";
-import { PRODUCT_PROMOTION_OFFER_NOTES } from "../../src/commerce/product-promotion-offers.ts";
 import {
   readProductPromotionOffers,
   type ProductPromotionOffersReadClient,
@@ -13,7 +12,7 @@ import {
 /**
  * The product page's promotion line against real rows: a gift campaign whose gift option exists but
  * cannot be granted (no READY stock, a set, a variant gone inactive) names nothing, exactly as the
- * cart's entitlement would grant nothing; a tier campaign is named with its own, different wording.
+ * cart's entitlement would grant nothing; a tier campaign is named by its own name.
  */
 
 const connectionString = process.env.DATABASE_URL;
@@ -84,7 +83,7 @@ test("a gift campaign whose only gift is out of READY stock is not named; restoc
 
   await prisma.warehouseStock.updateMany({ where: { variantId: gift.variantId }, data: { quantity: 1 } });
   assert.deepEqual(await read(paid.productId), [
-    { id: `${P}-gift`, kind: "GIFT", label: "Mua 2 tặng túi vải", note: PRODUCT_PROMOTION_OFFER_NOTES.GIFT },
+    { id: `${P}-gift`, kind: "GIFT", label: "Mua 2 tặng túi vải" },
   ]);
 
   // An inactive gift variant is not grantable either, whatever its stock.
@@ -92,7 +91,7 @@ test("a gift campaign whose only gift is out of READY stock is not named; restoc
   assert.deepEqual(await read(paid.productId), []);
 });
 
-test("a tier campaign covering the product is named with the tier wording, not the gift one", async () => {
+test("a tier campaign covering the product is named by its own name", async () => {
   const paid = await productWithVariant("tier-paid", 5);
   await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "aoDai" } });
   await prisma.giftQuantityCampaign.create({
@@ -106,7 +105,7 @@ test("a tier campaign covering the product is named with the tier wording, not t
 
   const offers = await read(paid.productId);
   const tier = offers.find((offer) => offer.id === `${P}-tier`);
-  assert.deepEqual(tier, { id: `${P}-tier`, kind: "TIER", label: "Mua 2 giảm 10%", note: PRODUCT_PROMOTION_OFFER_NOTES.TIER });
+  assert.deepEqual(tier, { id: `${P}-tier`, kind: "TIER", label: "Mua 2 giảm 10%" });
 
   // Off unless the shop can take a benefit order.
   assert.deepEqual(

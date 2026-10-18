@@ -196,18 +196,15 @@ function render(data: ProductRouteData) {
     </p>
   );
 
-  // Promotions this product takes part in, named under the price. The cart quote computes them; the
-  // page only says they exist and how each kind reaches the order (a gift is chosen in the cart, not
-  // added on its own), so the line never states an amount or a threshold of its own.
+  // Promotions this product takes part in, named under the price by the campaign's own name and
+  // nothing else (owner request 2026-10-18). The cart quote computes them; the page states no amount,
+  // threshold or explanation of its own.
   const purchaseOffers = data.promotionOffers.length === 0 ? null : (
     <ul aria-label="Ưu đãi áp dụng" className="mt-3 space-y-1.5 text-sm text-[#3B2219]" data-pdp-offers="">
       {data.promotionOffers.map((offer) => (
         <li key={offer.id} className="flex items-start gap-2.5">
           <AssuranceIcon kind={offer.kind === "GIFT" ? "gift" : "tier"} />
-          <span>
-            <span className="font-medium">{offer.label}</span>
-            <span className="text-[#3B2219]/65"> · {offer.note}</span>
-          </span>
+          <span className="font-medium">{offer.label}</span>
         </li>
       ))}
     </ul>

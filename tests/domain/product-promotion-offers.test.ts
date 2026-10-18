@@ -8,7 +8,6 @@ import {
   campaignsCoveringProduct,
   giftOptionVariantIds,
   isReadyGiftOption,
-  PRODUCT_PROMOTION_OFFER_NOTES,
   selectProductPromotionOffers,
 } from "../../src/commerce/product-promotion-offers.ts";
 
@@ -97,8 +96,8 @@ const READY = new Set(["gift-variant"]);
 
 test("names the active campaigns that cover the product, by their own names", () => {
   assert.deepEqual(selectProductPromotionOffers([entry(tierCampaign()), entry(giftCampaign())], facts(), READY), [
-    { id: "tier-1", kind: "TIER", label: "Mua 2 giảm 10%", note: PRODUCT_PROMOTION_OFFER_NOTES.TIER },
-    { id: "gift-1", kind: "GIFT", label: "Tặng túi vải", note: PRODUCT_PROMOTION_OFFER_NOTES.GIFT },
+    { id: "tier-1", kind: "TIER", label: "Mua 2 giảm 10%" },
+    { id: "gift-1", kind: "GIFT", label: "Tặng túi vải" },
   ]);
 });
 
@@ -171,12 +170,6 @@ test("a gift is grantable by the cart's own rule: live, standalone, READY stock 
   assert.equal(isReadyGiftOption({ ...live, composite: true }), false, "a set is never a gift");
 });
 
-test("each kind says how its benefit reaches the order; a gift is chosen, never applied", () => {
-  assert.notEqual(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, PRODUCT_PROMOTION_OFFER_NOTES.TIER);
-  assert.match(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /chọn quà/);
-  assert.doesNotMatch(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /tự áp dụng|tự tính|tự nhận/);
-  assert.match(PRODUCT_PROMOTION_OFFER_NOTES.TIER, /khi đủ điều kiện/);
-});
 
 test("only campaigns covering the product are kept, so their gifts alone are read", () => {
   const covering = entry(giftCampaign({ id: "covering" }), dynamic(["aoDai"]));
