@@ -5,13 +5,12 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { expect, test } from "@playwright/test";
 
-import { PRODUCT_PROMOTION_OFFER_NOTES } from "../../src/commerce/product-promotion-offers.ts";
 import { prisma } from "../../src/db/prisma.ts";
 
 /**
- * The product page names the gift / quantity-tier campaigns covering it under the price, each in
- * the words of how its benefit actually arrives: a tier discount is computed in the cart, a gift is
- * chosen there. A gift campaign whose gifts cannot be granted today is not named at all.
+ * The product page names the gift / quantity-tier campaigns covering it under the price, by the
+ * campaign's own name and nothing else. A gift campaign whose gifts cannot be granted today is not
+ * named at all.
  */
 
 const HOST = "127.0.0.1";
@@ -137,7 +136,7 @@ test.afterAll(async () => {
   await prisma.$disconnect();
 });
 
-test("gift and tier campaigns are named under the price in their own words; a gift that cannot be granted is not", async ({
+test("gift and tier campaigns are named under the price by name only; a gift that cannot be granted is not", async ({
   page,
 }) => {
   await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
@@ -147,12 +146,9 @@ test("gift and tier campaigns are named under the price in their own words; a gi
 
   const items = offers.getByRole("listitem");
   await expect(items).toHaveCount(2);
-  await expect(items.nth(0)).toHaveText(`${tierName} · ${PRODUCT_PROMOTION_OFFER_NOTES.TIER}`);
-  await expect(items.nth(1)).toHaveText(`${giftName} · ${PRODUCT_PROMOTION_OFFER_NOTES.GIFT}`);
-
-  // A gift is chosen in the cart, never applied on its own.
-  await expect(items.nth(1)).not.toContainText("tự áp dụng");
-  await expect(items.nth(1)).not.toContainText("tự tính");
+  // Owner request 2026-10-18: the campaign's name and nothing after it.
+  await expect(items.nth(0)).toHaveText(tierName);
+  await expect(items.nth(1)).toHaveText(giftName);
   // The campaign whose only gift is out of READY stock is left out.
   await expect(panel.getByText(soldOutGiftName)).toHaveCount(0);
 });
