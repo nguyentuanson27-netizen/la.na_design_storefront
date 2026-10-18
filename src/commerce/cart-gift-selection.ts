@@ -24,6 +24,20 @@ export function parseGiftChoice(input: unknown): GiftChoiceInput | null {
   return r as GiftChoiceInput;
 }
 
+function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pancakeImageUrls: unknown): string | null {
+  if (typeof primaryImageUrl === "string" && primaryImageUrl.trim().length > 0) {
+    return primaryImageUrl.trim();
+  }
+  if (Array.isArray(pancakeImageUrls)) {
+    for (const url of pancakeImageUrls) {
+      if (typeof url === "string" && url.trim().length > 0) {
+        return url.trim();
+      }
+    }
+  }
+  return null;
+}
+
 export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
 
 /**
@@ -47,7 +61,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   if (ids.length > 10_000) throw new Error("Options bound exceeded");
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
-    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true,
+    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
       product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
       warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
   });
@@ -108,9 +122,22 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
   const { entitlements, validation, stack } = currentGifts ?? evaluateGifts(quote.benefits.groups);
+  const imageByProductId = new Map<string, string>();
+  for (const v of variants) {
+    const candidate = extractCandidateImageUrl(v.product.primaryImageUrl, v.pancakeImageUrls);
+    if (candidate && !imageByProductId.has(v.productId)) {
+      imageByProductId.set(v.productId, candidate);
+    }
+  }
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
-    labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, imageUrl: v.product.primaryImageUrl, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
+    labels: variants.map((v) => ({
+      variantId: v.id,
+      productId: v.productId,
+      productName: v.product.name,
+      imageUrl: extractCandidateImageUrl(v.product.primaryImageUrl, v.pancakeImageUrls) ?? imageByProductId.get(v.productId) ?? null,
+      optionLabel: [v.color, v.size].filter(Boolean).join(" / "),
+    })) };
 }
 
 export function createCartGiftSelectionService(client: PrismaClient, store: CookieReader, { shopId, env = process.env }: { shopId: number; env?: Readonly<Record<string, string | undefined>> }) {

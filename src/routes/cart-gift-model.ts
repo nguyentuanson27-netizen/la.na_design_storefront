@@ -69,7 +69,11 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       for (const option of campaign.options) {
         const label = labelByVariant.get(option.variantId);
         if (!label || option.composite) continue;
-        const product = products.get(option.productId) ?? { productId: option.productId, name: label.productName, imageUrl: parseTrustedProductImageUrl(label.imageUrl), options: [] };
+        const candidateImage = parseTrustedProductImageUrl(label.imageUrl);
+        const product = products.get(option.productId) ?? { productId: option.productId, name: label.productName, imageUrl: candidateImage, options: [] };
+        if (!product.imageUrl && candidateImage) {
+          product.imageUrl = candidateImage;
+        }
         product.options.push({ variantId: option.variantId, label: label.optionLabel || "Phiên bản tiêu chuẩn", stock: option.readyAvailable });
         products.set(option.productId, product);
       }
