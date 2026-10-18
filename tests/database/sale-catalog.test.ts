@@ -3,8 +3,15 @@ import test from "node:test";
 
 import { PrismaPg } from "@prisma/adapter-pg";
 
-import { createFlashSaleCatalogRepository } from "../../src/commerce/flash-sale-catalog.ts";
+import {
+  createFlashSaleCatalogRepository,
+  type SaleIdPage,
+} from "../../src/commerce/flash-sale-catalog.ts";
 import { readApplicablePromotionCampaignsBatched } from "../../src/commerce/promotion-candidate-batching.ts";
+import {
+  createSaleListingCache,
+  type SaleListingCache,
+} from "../../src/commerce/sale-listing-cache.ts";
 import type { PromotionCandidateReadClient } from "../../src/commerce/promotion-candidate-repository.ts";
 import { parseStorefrontDiscoverySearchParams } from "../../src/commerce/storefront-discovery.ts";
 import { buildStorefrontProductImpressions } from "../../src/commerce/storefront-impressions.ts";
@@ -707,4 +714,175 @@ test("Xả hàng lẻ size never auto-admits a composite from its parent stock; 
     "last-sizes-composite",
     "last-sizes-composite-clearance",
   ]);
+});
+
+function observedSaleCache() {
+  const inner = createSaleListingCache<SaleIdPage>();
+  const reads: boolean[] = [];
+  let refreshes = 0;
+  const cache: SaleListingCache<SaleIdPage> = {
+    read: async (key, load) => {
+      const result = await inner.read(key, load);
+      reads.push(result.cached);
+      return result;
+    },
+    refresh: async (key, load) => {
+      refreshes += 1;
+      return inner.refresh(key, load);
+    },
+  };
+  return { cache, reads, refreshes: () => refreshes };
+}
+
+test("the cached sale read serves what an uncached read does, and reads again on a promotion edit, a campaign boundary or a product leaving the catalog", async () => {
+  const promotionProduct = await createProduct("sale-cache-promotion-product", 500_000);
+  const flashProduct = await createProduct("sale-cache-flash-product", 600_000);
+  const flashEndsAt = new Date(now.getTime() + 3_600_000);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[0]!,
+      kind: "PROMOTION",
+      name: "Cached promotion",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: promotionProduct.id } },
+    },
+  });
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[1]!,
+      kind: "FLASH_SALE",
+      name: "Cached flash",
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: flashEndsAt,
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: flashProduct.id } },
+    },
+  });
+
+  const observed = observedSaleCache();
+  const cachedRepository = createFlashSaleCatalogRepository(prisma, { saleIdPageCache: observed.cache });
+  const discovery = parseStorefrontDiscoverySearchParams({});
+  const args = (kind?: "PROMOTION" | "FLASH_SALE" | "CLEARANCE", at = now) =>
+    ({ shopId, discovery, pageSize: 12, kind, now: at }) as const;
+
+  for (const kind of [undefined, "PROMOTION", "FLASH_SALE", "CLEARANCE"] as const) {
+    const uncached = await repository.listSalePage(args(kind));
+    assert.deepEqual(await cachedRepository.listSalePage(args(kind)), uncached);
+    assert.deepEqual(await cachedRepository.listSalePage(args(kind)), uncached);
+  }
+  assert.deepEqual(observed.reads, [false, true, false, true, false, true, false, true]);
+
+  // A promotion edit advances the durable revision in its own transaction, so the next read misses.
+  observed.reads.length = 0;
+  await prisma.promotionCampaign.update({ where: { id: campaignIds[0]! }, data: { percentageValue: 25 } });
+  await prisma.promotionPricingRevision.update({
+    where: { id: "current" },
+    data: { revision: { increment: 1 } },
+  });
+  const edited = await cachedRepository.listSalePage(args("PROMOTION"));
+  assert.deepEqual(observed.reads, [false]);
+  assert.deepEqual(edited, await repository.listSalePage(args("PROMOTION")));
+  assert.equal(edited.products[0]?.slug, "sale-cache-promotion-product");
+
+  // Crossing a campaign boundary is a different key: the ended Flash Sale is never served from cache.
+  observed.reads.length = 0;
+  await cachedRepository.listSalePage(args("FLASH_SALE"));
+  const ended = await cachedRepository.listSalePage(args("FLASH_SALE", flashEndsAt));
+  assert.deepEqual(observed.reads, [false, false]);
+  assert.deepEqual(ended.products, []);
+
+  // A cached page naming a product the sync has since taken down is read fresh, not failed.
+  observed.reads.length = 0;
+  await prisma.productMirror.update({ where: { id: flashProduct.id }, data: { isActive: false } });
+  const afterTakedown = await cachedRepository.listSalePage(args("FLASH_SALE"));
+  assert.deepEqual(observed.reads, [true]);
+  assert.equal(observed.refreshes(), 1);
+  assert.deepEqual(afterTakedown, await repository.listSalePage(args("FLASH_SALE")));
+  assert.deepEqual(afterTakedown.products, []);
+  assert.equal(afterTakedown.totalCount, 0);
+});
+
+test("a product the sync takes down while a background read is in flight is read fresh, never from that read", async () => {
+  const flashProduct = await createProduct("sale-swr-flash-product", 600_000);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[1]!,
+      kind: "FLASH_SALE",
+      name: "SWR flash",
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: new Date(now.getTime() + 3_600_000),
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: flashProduct.id } },
+    },
+  });
+
+  let clockMs = 0;
+  const inner = createSaleListingCache<SaleIdPage>({
+    now: () => clockMs,
+    freshMs: 30_000,
+    maxAgeMs: 60_000,
+  });
+  // While `hold` is set, the next read loads its page at once and then waits on the gate, standing in
+  // for a background read whose snapshot predates the takedown.
+  let hold: { loaded: () => void; gate: Promise<void> } | null = null;
+  const cache: SaleListingCache<SaleIdPage> = {
+    read: (key, load) => {
+      const held = hold;
+      if (held === null) return inner.read(key, load);
+      hold = null;
+      return inner.read(key, async () => {
+        const page = await load();
+        held.loaded();
+        await held.gate;
+        return page;
+      });
+    },
+    refresh: (key, load) => inner.refresh(key, load),
+  };
+  const cachedRepository = createFlashSaleCatalogRepository(prisma, { saleIdPageCache: cache });
+  const args = {
+    shopId,
+    discovery: parseStorefrontDiscoverySearchParams({}),
+    pageSize: 12,
+    kind: "FLASH_SALE",
+    now,
+  } as const;
+
+  assert.deepEqual(
+    (await cachedRepository.listSalePage(args)).products.map((product) => product.slug),
+    ["sale-swr-flash-product"],
+  );
+
+  clockMs = 30_000;
+  let loaded!: () => void;
+  const backgroundLoaded = new Promise<void>((resolve) => {
+    loaded = resolve;
+  });
+  let openGate!: () => void;
+  hold = { loaded, gate: new Promise<void>((resolve) => { openGate = resolve; }) };
+  // A stale hit: served from the entry while the background read takes its snapshot and waits.
+  assert.equal((await cachedRepository.listSalePage(args)).products.length, 1);
+  await backgroundLoaded;
+
+  await prisma.productMirror.update({ where: { id: flashProduct.id }, data: { isActive: false } });
+  const afterTakedown = await cachedRepository.listSalePage(args);
+  assert.deepEqual(afterTakedown, await repository.listSalePage(args));
+  assert.deepEqual(afterTakedown.products, []);
+  assert.equal(afterTakedown.totalCount, 0);
+
+  // The superseded background read settles with its pre-takedown page and publishes nothing.
+  openGate();
+  await new Promise((resolve) => setImmediate(resolve));
+  const later = await cachedRepository.listSalePage(args);
+  assert.deepEqual(later.products, []);
+  assert.equal(later.totalCount, 0);
 });

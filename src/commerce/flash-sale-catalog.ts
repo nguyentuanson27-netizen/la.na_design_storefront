@@ -17,6 +17,7 @@ import {
   fetchComponentMediaForProducts,
   type ComponentMediaByProduct,
 } from "./storefront-component-media.ts";
+import type { SaleListingCache } from "./sale-listing-cache.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 
 const MAX_FLASH_SALE_PAGE_SIZE = 48;
@@ -40,6 +41,11 @@ type SaleIdRow = Omit<FlashSaleIdRow, "endsAt"> & {
   /** Only on `/sale/xa-hang-le-size`: this product's valid Flash Sale variants, when it was admitted. */
   admittedFlashVariantIds: string[];
 };
+
+/** One page of `listSalePage`'s heavy read: the ranked ids and their projected money, validated. */
+export type SaleIdPage = Readonly<{ totalCount: number; rows: readonly Readonly<SaleIdRow>[] }>;
+
+const PROMOTION_PRICING_REVISION_ID = "current";
 
 const flashProductSelection = {
   id: true,
@@ -398,7 +404,15 @@ function assertProjectedMoney(row: Pick<FlashSaleIdRow, "basePrice" | "sortPrice
   }
 }
 
-export function createFlashSaleCatalogRepository(client: PrismaClient) {
+export function createFlashSaleCatalogRepository(
+  client: PrismaClient,
+  {
+    saleIdPageCache,
+  }: Readonly<{
+    /** Shares `listSalePage`'s heavy read across requests (`sale-listing-cache.ts`). */
+    saleIdPageCache?: SaleListingCache<SaleIdPage>;
+  }> = {},
+) {
   async function hydrateProducts(shopId: number, idRows: readonly Readonly<{ id: string }>[]) {
     const ids = idRows.map((row) => row.id);
     const products = ids.length === 0
@@ -520,6 +534,27 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
   }
 
   /**
+   * What `listSalePage`'s read depends on besides the catalog itself: the durable promotion pricing
+   * revision, which every promotion mutation advances in its own transaction, and the next instant
+   * a campaign window of any kind opens or closes. Window membership is decided against `now`, and
+   * the next boundary is the first instant that decision can change; every kind counts, because a
+   * campaign of another kind changes a variant's candidate count and so its resolved price.
+   */
+  async function readSaleIdPageGeneration(now: Date): Promise<string> {
+    const [revisionRow, boundary] = await Promise.all([
+      client.promotionPricingRevision.findUnique({
+        where: { id: PROMOTION_PRICING_REVISION_ID },
+        select: { revision: true },
+      }),
+      readNextSaleBoundary({ now }),
+    ]);
+    if (revisionRow === null) {
+      throw new Error("Promotion pricing revision row is missing; migrations are not deployed");
+    }
+    return `r${revisionRow.revision}:b${boundary === null ? "none" : boundary.getTime()}`;
+  }
+
+  /**
    * `/sale` and its sub-listings. Without `kind` every active discount is listed; with it, only
    * products whose discount comes from that campaign kind, and the representative price is chosen
    * among that kind's variants so the card shows the discount the listing is about.
@@ -559,69 +594,104 @@ export function createFlashSaleCatalogRepository(client: PrismaClient) {
         )`
       : Prisma.sql`ARRAY[]::text[]`;
 
-    const [countRows, idRows] = await Promise.all([
-      client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
-        ${cte}
-        SELECT COUNT(*)::bigint AS "count"
-        FROM "ProductMirror" p
-        WHERE p."pancakeShopId" = ${safeShopId}
-          AND p."isPresent" = TRUE
-          AND p."isActive" = TRUE
-          AND EXISTS (
-            SELECT 1 FROM "sale_variant" sv
-            WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
-          )
-      `),
-      client.$queryRaw<SaleIdRow[]>(Prisma.sql`
-        ${cte}
-        SELECT
-          p."id",
-          representative."representativeVariantId",
-          representative."basePrice",
-          representative."sortPrice",
-          representative."kind",
-          representative."endsAt",
-          representative."hasCheaperCurrentVariant",
-          ${admittedFlashVariantIds} AS "admittedFlashVariantIds"
-        FROM "ProductMirror" p
-        JOIN LATERAL (
+    const loadIdPage = async (): Promise<SaleIdPage> => {
+      const [countRows, idRows] = await Promise.all([
+        client.$queryRaw<FlashSaleCountRow[]>(Prisma.sql`
+          ${cte}
+          SELECT COUNT(*)::bigint AS "count"
+          FROM "ProductMirror" p
+          WHERE p."pancakeShopId" = ${safeShopId}
+            AND p."isPresent" = TRUE
+            AND p."isActive" = TRUE
+            AND EXISTS (
+              SELECT 1 FROM "sale_variant" sv
+              WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
+            )
+        `),
+        client.$queryRaw<SaleIdRow[]>(Prisma.sql`
+          ${cte}
           SELECT
-            sv."id" AS "representativeVariantId",
-            sv."basePrice",
-            sv."resolvedPrice" AS "sortPrice",
-            sv."kind",
-            sv."endsAt",
-            EXISTS (
-              SELECT 1
-              FROM "sale_variant_eligible" current_variant
-              WHERE current_variant."productId" = p."id"
-                AND current_variant."isPurchasable" = TRUE
-                AND current_variant."resolvedPrice" < sv."resolvedPrice"
-            ) AS "hasCheaperCurrentVariant"
-          FROM "sale_variant" sv
-          WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
-          ORDER BY sv."resolvedPrice" ASC, sv."id" ASC
-          LIMIT 1
-        ) representative ON TRUE
-        WHERE p."pancakeShopId" = ${safeShopId}
-          AND p."isPresent" = TRUE
-          AND p."isActive" = TRUE
-        ORDER BY representative."sortPrice" ASC, p."name" ASC, p."id" ASC
-        LIMIT ${safePageSize}
-        OFFSET ${offset}
-      `),
-    ]);
+            p."id",
+            representative."representativeVariantId",
+            representative."basePrice",
+            representative."sortPrice",
+            representative."kind",
+            representative."endsAt",
+            representative."hasCheaperCurrentVariant",
+            ${admittedFlashVariantIds} AS "admittedFlashVariantIds"
+          FROM "ProductMirror" p
+          JOIN LATERAL (
+            SELECT
+              sv."id" AS "representativeVariantId",
+              sv."basePrice",
+              sv."resolvedPrice" AS "sortPrice",
+              sv."kind",
+              sv."endsAt",
+              EXISTS (
+                SELECT 1
+                FROM "sale_variant_eligible" current_variant
+                WHERE current_variant."productId" = p."id"
+                  AND current_variant."isPurchasable" = TRUE
+                  AND current_variant."resolvedPrice" < sv."resolvedPrice"
+              ) AS "hasCheaperCurrentVariant"
+            FROM "sale_variant" sv
+            WHERE sv."productId" = p."id" ${saleKindFilter("sv", safeKind)}
+            ORDER BY sv."resolvedPrice" ASC, sv."id" ASC
+            LIMIT 1
+          ) representative ON TRUE
+          WHERE p."pancakeShopId" = ${safeShopId}
+            AND p."isPresent" = TRUE
+            AND p."isActive" = TRUE
+          ORDER BY representative."sortPrice" ASC, p."name" ASC, p."id" ASC
+          LIMIT ${safePageSize}
+          OFFSET ${offset}
+        `),
+      ]);
 
-    const totalCount = countRows[0] ? Number(countRows[0].count) : 0;
-    if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
-      throw new Error("Sale result count is outside safe integer bounds");
+      const totalCount = countRows[0] ? Number(countRows[0].count) : 0;
+      if (!Number.isSafeInteger(totalCount) || totalCount < 0) {
+        throw new Error("Sale result count is outside safe integer bounds");
+      }
+      for (const row of idRows) assertProjectedMoney(row);
+      return Object.freeze({ totalCount, rows: Object.freeze(idRows.map((row) => Object.freeze(row))) });
+    };
+
+    const cacheKey = saleIdPageCache
+      ? [
+          "sale",
+          safeShopId,
+          safeKind ?? "ALL",
+          safePageSize,
+          discovery.page,
+          await readSaleIdPageGeneration(now),
+        ].join(":")
+      : null;
+    const firstRead = saleIdPageCache && cacheKey !== null
+      ? await saleIdPageCache.read(cacheKey, loadIdPage)
+      : { value: await loadIdPage(), cached: false };
+    let idPage = firstRead.value;
+
+    let { byId, componentMedia } = await hydrateProducts(safeShopId, idPage.rows);
+    // A cached page can name a product or representative variant the catalog sync has since taken
+    // off sale. Read that page fresh instead of failing it, or rendering a price for a variant
+    // that is gone; only a read this request waited on is trusted to be current.
+    if (
+      saleIdPageCache
+      && cacheKey !== null
+      && firstRead.cached
+      && idPage.rows.some((row) => {
+        const product = byId.get(row.id);
+        return !product || !product.variants.some((variant) => variant.id === row.representativeVariantId);
+      })
+    ) {
+      idPage = await saleIdPageCache.refresh(cacheKey, loadIdPage);
+      ({ byId, componentMedia } = await hydrateProducts(safeShopId, idPage.rows));
     }
-    for (const row of idRows) assertProjectedMoney(row);
+    const { totalCount } = idPage;
 
-    const { byId, componentMedia } = await hydrateProducts(safeShopId, idRows);
     // Cards carry the advisory capacity figure (`capacity-advisory.ts`), the TypeScript side of the
     // projection that just admitted these products.
-    const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idRows.map((row) => {
+    const orderedProducts = await withAdvisorySellableStock(client, safeShopId, idPage.rows.map((row) => {
       const product = byId.get(row.id);
       if (!product) throw new Error("Sale result changed during read");
       const base = row.admittedFlashVariantIds.length > 0
