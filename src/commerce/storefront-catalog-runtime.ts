@@ -1,6 +1,7 @@
 import { prisma } from "../db/prisma.ts";
 import { readPancakeShopId } from "../integrations/pancake/config.ts";
-import { createFlashSaleCatalogRepository } from "./flash-sale-catalog.ts";
+import { createFlashSaleCatalogRepository, type SaleIdPage } from "./flash-sale-catalog.ts";
+import { createSaleListingCache } from "./sale-listing-cache.ts";
 import { createStorefrontCatalogRepository } from "./storefront-catalog.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import { createStorefrontProductDetailRepository } from "./storefront-product-detail.ts";
@@ -159,6 +160,9 @@ export async function listConfiguredFlashSalePage({
   });
 }
 
+/** One per server process: `/sale` and its sub-listings share their heavy page read across requests. */
+const saleIdPageCache = createSaleListingCache<SaleIdPage>();
+
 export async function listConfiguredSalePage({
   discovery,
   pageSize,
@@ -171,7 +175,7 @@ export async function listConfiguredSalePage({
   now?: Date;
 }) {
   const shopId = readPancakeShopId();
-  return createFlashSaleCatalogRepository(prisma).listSalePage({
+  return createFlashSaleCatalogRepository(prisma, { saleIdPageCache }).listSalePage({
     shopId,
     discovery,
     pageSize,
