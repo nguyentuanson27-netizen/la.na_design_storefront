@@ -322,6 +322,38 @@ export function resolveSelectionAfterColorChange(input: {
 }
 
 
+/** A choice the shopper still has to make before the selection names one variant. */
+export type PurchaseOptionDimension = "kind" | "color" | "size";
+
+/**
+ * The choices still missing, in the order the panel draws them (kind, colour, size).
+ *
+ * While a kind-bearing product has no kind, the kind is the only thing asked for: its colours and
+ * sizes are not even resolved yet, so pointing at them would send the shopper to locked chips. Once
+ * the kind is chosen (or the product has none) a colour is missing only where there is a real
+ * choice to make -- a single colour is resolved for the shopper -- and a size wherever sizes exist.
+ */
+export function resolveMissingPurchaseOptions(
+  view: ReturnType<typeof resolveVariantSelectionView>,
+  selection: VariantSelectionState,
+): readonly PurchaseOptionDimension[] {
+  if (view.hasKindOptions && selection.kindKey === null) return Object.freeze(["kind"] as const);
+  const missing: PurchaseOptionDimension[] = [];
+  if (view.hasColorOptions && view.resolvedColor === null) missing.push("color");
+  if (view.sizes.length > 0 && selection.size === null) missing.push("size");
+  return Object.freeze(missing);
+}
+
+/** The sentence that asks for one missing choice, beside the group it belongs to. */
+export function missingPurchaseOptionMessage(
+  dimension: PurchaseOptionDimension,
+  view: ReturnType<typeof resolveVariantSelectionView>,
+): string {
+  if (dimension === "kind") return "Nàng chọn phân loại nhé";
+  if (dimension === "color") return `Nàng chọn ${view.colorDimensionLabel.toLocaleLowerCase("vi")} nhé`;
+  return "Nàng chọn size nhé";
+}
+
 /**
  * Presentation-only state for the below-lg sticky purchase entry point.
  *
@@ -343,11 +375,26 @@ export function resolveMobilePurchasePresentation(
     view.hasKindOptions && selection.kindKey !== null
       ? view.hasColorOptions
       : view.hasColorDimension;
+  const colorLabel = view.colorDimensionLabel.toLowerCase();
   const dimensionLabels = [
     view.hasKindOptions ? "phân loại" : null,
-    asksForColor ? view.colorDimensionLabel.toLowerCase() : null,
+    asksForColor ? colorLabel : null,
     view.hasSizeDimension ? "size" : null,
   ].filter((value): value is string => value !== null);
+
+  /*
+   * The CTA names only what is still to choose. It sits in a bar it shares with the price, so a
+   * label that kept listing choices already made ("Chọn phân loại / màu quần đi kèm / size" after
+   * the kind was picked) grew until it pushed the price out of the bar. Before the kind is chosen
+   * the product shape still speaks, because the kind decides which colours exist at all.
+   */
+  const kindPending = view.hasKindOptions && selection.kindKey === null;
+  const pendingLabels = kindPending
+    ? dimensionLabels
+    : [
+        asksForColor && view.resolvedColor === null ? colorLabel : null,
+        view.hasSizeDimension && selection.size === null ? "size" : null,
+      ].filter((value): value is string => value !== null);
 
   const selectedKind =
     selection.kindKey === null
@@ -372,7 +419,7 @@ export function resolveMobilePurchasePresentation(
       ? view.addToBagLabel
       : selectionComplete && unavailableMessage
         ? unavailableMessage
-        : `Chọn ${dimensionLabels.join(" / ")}`,
+        : `Chọn ${(pendingLabels.length > 0 ? pendingLabels : dimensionLabels).join(" / ")}`,
     summary: selectedValues.join(" · "),
     readyToAdd,
     unavailableMessage,

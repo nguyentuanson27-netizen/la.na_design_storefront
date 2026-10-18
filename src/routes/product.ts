@@ -4,6 +4,8 @@ import { connection } from "next/server";
 import { isApprovedSizeGuideId } from "@/brand";
 import { readProductFeedback } from "@/commerce/feedback-repository";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
+import type { ProductPromotionOffer } from "@/commerce/product-promotion-offers";
+import { readProductPromotionOffers } from "@/commerce/product-promotion-offers-runtime";
 import { createSizeGuideMediaRepository } from "@/commerce/size-guide-media";
 import {
   getConfiguredStorefrontProductBySlug,
@@ -67,6 +69,8 @@ export type ProductRouteData = ProductViewModel &
     purchaseAssurance: readonly PurchaseAssuranceItem[];
     /** Customer photographs: this product's own, else the brand's; `null` renders nothing. */
     feedback: ProductFeedbackSection | null;
+    /** Gift / quantity-tier campaigns covering this product, named under the price; often empty. */
+    promotionOffers: readonly ProductPromotionOffer[];
   }>;
 
 export async function loadProductRoute({
@@ -90,13 +94,14 @@ export async function loadProductRoute({
   // Related selection is membership-driven (ADR 0013 §7), so it does not depend on the request
   // clock; the promotion pass below is what applies `requestNow` to the products it returns.
   const sizeGuideId = product.sizeGuide;
-  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback] = await Promise.all([
+  const [relatedProducts, sizeGuideImageUrl, tryOn, feedback, promotionOffers] = await Promise.all([
     listConfiguredRelatedStorefrontProducts(product),
     isApprovedSizeGuideId(sizeGuideId)
       ? createSizeGuideMediaRepository(prisma).readImageUrl(sizeGuideId)
       : null,
     resolveProductTryOn(product),
     readProductFeedback({ productId: product.id }),
+    readProductPromotionOffers({ productId: product.id, now: requestNow }),
   ]);
   const promotion = await resolveStorefrontPromotionForProducts({
     products: [product, ...relatedProducts],
@@ -148,6 +153,7 @@ export async function loadProductRoute({
       returns: buildReturnsViewModel(),
       purchaseAssurance: buildPurchaseAssuranceViewModel({ policy: shippingPolicy }),
       feedback: buildProductFeedbackSection(feedback, HOMEPAGE_CONFIG.feedback),
+      promotionOffers,
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({

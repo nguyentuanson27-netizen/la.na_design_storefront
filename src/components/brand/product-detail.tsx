@@ -52,6 +52,8 @@ type BrandProductDetailProps = Readonly<{
   sizeHelp?: ReactNode;
   /** Inside the panel, under the purchase buttons: payment, returns and shipping facts. */
   purchaseAssurance?: ReactNode;
+  /** Inside the panel, under the price: promotions this product takes part in. */
+  purchaseOffers?: ReactNode;
 }>;
 
 export function BrandProductDetail({
@@ -66,6 +68,7 @@ export function BrandProductDetail({
   purchaseInformation,
   sizeHelp = null,
   purchaseAssurance = null,
+  purchaseOffers = null,
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
   // Virtual try-on is only a link on the size-guide line and a dialog: it shares no state with the
@@ -157,7 +160,9 @@ export function BrandProductDetail({
           <div className="min-w-0 lg:col-start-2 lg:row-start-1 lg:row-span-2">
             <PurchasePanelView
               controller={controller}
+              productName={productName}
               sizeGuide={sizeGuide}
+              offers={purchaseOffers}
               sizeHelp={sizeHelp}
               assurance={purchaseAssurance}
               mobileNudge={

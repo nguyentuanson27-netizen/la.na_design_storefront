@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  missingPurchaseOptionMessage,
+  resolveMissingPurchaseOptions,
   resolveMobilePurchasePresentation,
   resolveSelectionAfterSizeChange,
   resolveVariantSelectionView,
@@ -698,4 +700,75 @@ test("custom colorDimensionLabel flows into view and mobile incomplete CTA", () 
     size: null,
   });
   assert.equal(mobile.actionLabel, "Chọn màu quần / size");
+});
+
+/* ------------------------------------------------- missing choices: CTA copy and validation */
+
+test("the mobile CTA names only the choices still missing once a kind is chosen", () => {
+  const options = [
+    option({ id: "set-white-m", kindKey: "set", kindLabel: "Nguyên bộ", color: "Trắng", size: "M" }),
+    option({ id: "set-black-m", kindKey: "set", kindLabel: "Nguyên bộ", color: "Đen", size: "M" }),
+    option({ id: "top-m", kindKey: "top", kindLabel: "Áo lẻ", color: null, size: "M" }),
+  ];
+  const ask = (selection: { kindKey: string | null; color: string | null; size: string | null }) =>
+    resolveMobilePurchasePresentation(
+      resolveVariantSelectionView({ options, productLevelOptions: options, selection }),
+      selection,
+    ).actionLabel;
+
+  assert.equal(ask({ kindKey: null, color: null, size: null }), "Chọn phân loại / màu / size");
+  // The kind is answered: it is not asked for again, and colour and size remain.
+  assert.equal(ask({ kindKey: "set", color: null, size: null }), "Chọn màu / size");
+  assert.equal(ask({ kindKey: "set", color: "Đen", size: null }), "Chọn size");
+  assert.equal(ask({ kindKey: "set", color: null, size: "M" }), "Chọn màu");
+  assert.equal(ask({ kindKey: "set", color: "Đen", size: "M" }), "Thêm vào giỏ");
+});
+
+test("missing purchase options ask for the kind alone first, then every open group in panel order", () => {
+  const kindOptions = [
+    option({ id: "set-white-m", kindKey: "set", kindLabel: "Nguyên bộ", color: "Trắng", size: "M" }),
+    option({ id: "set-black-m", kindKey: "set", kindLabel: "Nguyên bộ", color: "Đen", size: "M" }),
+  ];
+  const missing = (
+    options: StorefrontProjectionOption[],
+    selection: { kindKey: string | null; color: string | null; size: string | null },
+  ) =>
+    resolveMissingPurchaseOptions(
+      resolveVariantSelectionView({ options, productLevelOptions: options, selection }),
+      selection,
+    );
+
+  // Colours and sizes are locked until a kind is chosen, so they are not pointed at yet.
+  assert.deepEqual(missing(kindOptions, { kindKey: null, color: null, size: null }), ["kind"]);
+  assert.deepEqual(missing(kindOptions, { kindKey: "set", color: null, size: null }), ["color", "size"]);
+  assert.deepEqual(missing(kindOptions, { kindKey: "set", color: "Đen", size: null }), ["size"]);
+  assert.deepEqual(missing(kindOptions, { kindKey: "set", color: "Đen", size: "M" }), []);
+
+  // A product without kinds: colour then size, and a single resolved colour is never asked for.
+  const colorSize = [
+    option({ id: "black-s", color: "Đen", size: "S" }),
+    option({ id: "white-s", color: "Trắng", size: "S" }),
+  ];
+  assert.deepEqual(missing(colorSize, { kindKey: null, color: null, size: null }), ["color", "size"]);
+  assert.deepEqual(missing(colorSize, { kindKey: null, color: null, size: "S" }), ["color"]);
+  const singleColourSet = [
+    option({ id: "set-black-m", kindKey: "set", kindLabel: "Nguyên bộ", color: "Đen", size: "M" }),
+  ];
+  assert.deepEqual(missing(singleColourSet, { kindKey: "set", color: null, size: null }), ["size"]);
+});
+
+test("each missing group is asked for in its own words", () => {
+  const options = [
+    option({ id: "set-white-m", kindKey: "parent", kindLabel: "Nguyên bộ", color: "Trắng", size: "M" }),
+    option({ id: "set-black-m", kindKey: "parent", kindLabel: "Nguyên bộ", color: "Đen", size: "M" }),
+  ];
+  const view = resolveVariantSelectionView({
+    options,
+    productLevelOptions: options,
+    selection: { kindKey: null, color: null, size: null },
+    colorDimensionLabel: "Màu quần",
+  });
+  assert.equal(missingPurchaseOptionMessage("kind", view), "Nàng chọn phân loại nhé");
+  assert.equal(missingPurchaseOptionMessage("color", view), "Nàng chọn màu quần nhé");
+  assert.equal(missingPurchaseOptionMessage("size", view), "Nàng chọn size nhé");
 });

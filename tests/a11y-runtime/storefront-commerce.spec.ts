@@ -774,6 +774,53 @@ test("the size guide suspends the selection sheet and gives focus back to it", a
   await expect(sheetSizeGuide).toBeFocused();
 });
 
+test("the phone purchase bar keeps the price, steps aside for the panel buttons, and the sheet offers Mua ngay", async ({
+  page,
+}) => {
+  await page.goto(`${BASE_URL}/shop/${productSlug}`, { waitUntil: "networkidle" });
+
+  const stickyBar = page.getByRole("region", { name: "Mua nhanh" });
+  const stickyCta = stickyBar.getByRole("button");
+  const purchasePanel = page.getByRole("region", { name: "Mua sản phẩm" });
+
+  // The CTA never squeezes the price out of the bar, and the bar names the product while the
+  // heading is still below the photograph.
+  await expect(stickyBar).toBeVisible();
+  await expect(stickyBar.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(stickyBar.getByText(productName, { exact: true })).toBeVisible();
+  const priceBox = (await stickyBar.getByText(/890\.000.*₫/).boundingBox())!;
+  const ctaBox = (await stickyCta.boundingBox())!;
+  expect(priceBox.x + priceBox.width, "price ends before the CTA starts").toBeLessThanOrEqual(ctaBox.x);
+  expect(ctaBox.x + ctaBox.width, "CTA stays inside the viewport").toBeLessThanOrEqual(page.viewportSize()!.width);
+
+  // One primary purchase control on screen at a time: with the panel's buttons in view the bar
+  // steps aside, and it comes back once they scroll away.
+  const addToBag = purchasePanel.getByRole("button", { name: "Thêm vào giỏ hàng", exact: true });
+  await addToBag.scrollIntoViewIfNeeded();
+  await expect(stickyBar).toBeHidden();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(stickyBar).toBeVisible();
+
+  // A finished selection in the sheet offers both ways out the panel has.
+  await stickyCta.click();
+  const sheet = page.getByRole("dialog", { name: "Chọn lựa chọn sản phẩm" });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(sheet.getByRole("button", { name: "Mua ngay", exact: true })).toHaveCount(0);
+  await sheet.getByRole("group", { name: "Màu" }).getByText("Black", { exact: true }).click();
+  await sheet.getByRole("group", { name: "Kích cỡ" }).getByText("M", { exact: true }).click();
+  // The price stays in the header next to what was chosen.
+  await expect(sheet.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(sheet.getByText("Black · M", { exact: true })).toBeVisible();
+  const buyNow = sheet.getByRole("button", { name: "Mua ngay", exact: true });
+  await expect(buyNow).toBeEnabled();
+  await buyNow.click();
+  await expect(page).toHaveURL(`${BASE_URL}/checkout`);
+  await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
+
+  await page.context().clearCookies({ name: "la_cart" });
+});
+
 test("size-only product hides Color and becomes purchasable after selecting Size", async ({ page }) => {
   const browserErrors: string[] = [];
   const failedResponses: string[] = [];
@@ -882,15 +929,20 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await expect(buyNow).toHaveText("Mua ngay");
   await expect(buyNow).toBeEnabled();
 
+  // Every missing group is asked for beside itself, and focus goes to the first one in panel order.
+  const colorGroup = purchasePanel.getByRole("group", { name: "Màu" });
   const postCountBeforeValidation = postRequests.length;
   await addToBag.click();
+  await expect(purchasePanel.getByText("Nàng chọn màu nhé", { exact: true })).toBeVisible();
   await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
-  await expect(sizeGroup).toBeFocused();
+  await expect(colorGroup).toHaveAttribute("aria-invalid", "true");
+  await expect(sizeGroup).toHaveAttribute("aria-invalid", "true");
+  await expect(colorGroup).toBeFocused();
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
 
   await buyNow.click();
-  await expect(sizeGroup).toBeFocused();
+  await expect(colorGroup).toBeFocused();
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   await expect(page).toHaveURL(`${BASE_URL}/shop/${productSlug}`);
 
@@ -898,6 +950,11 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await color.focus();
   await page.keyboard.press("Space");
   await expect(color).toBeChecked();
+  // Answering one group settles its prompt and leaves the other's.
+  await expect(purchasePanel.getByText("Nàng chọn màu nhé", { exact: true })).toHaveCount(0);
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
+  // A colour without a size still leaves the buttons live, so the next press asks for the size.
+  await expect(addToBag).toBeEnabled();
   const size = page.getByRole("radio", { name: "M", exact: true });
   await size.focus();
   await page.keyboard.press("Space");
@@ -912,6 +969,9 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await addToBag.click();
   await (await (await addToCartAction).response())?.finished();
   await expect(purchasePanel.getByRole("status")).toContainText("Đã thêm sản phẩm vào giỏ hàng.");
+  // The confirmation offers the next step without opening the drawer on its own.
+  await expect(purchasePanel.getByRole("link", { name: "Xem giỏ hàng", exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
   await assertPageQuality(page);
   expect(browserErrors).toEqual([]);
 });

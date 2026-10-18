@@ -16,13 +16,14 @@ import {
 import {
   useVariantSelection,
   type PurchaseAttemptResult,
+  type PurchaseOptionDimension,
   type UseVariantSelectionInput,
   type VariantSelectionController,
+  ADDED_TO_BAG_MESSAGE,
   OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
-import { useCartSummary } from "@/components/headless/cart-summary-store";
 import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
 import type { ProductMappedSizeGuide } from "@/routes/product-model";
@@ -95,6 +96,28 @@ function RulerIcon() {
     </svg>
   );
 }
+
+function CheckIcon() {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 24 24"
+      width="16"
+      height="16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="shrink-0"
+    >
+      <path d="M5 12.5l4.5 4.5L19 7.5" />
+    </svg>
+  );
+}
+
+/** The `lg` seam the phone purchase bar lives below, as the media query its observer runs under. */
+const BELOW_LG = "(max-width: 1023.98px)";
 
 const UNRESOLVED_SIZE_CHIP =
   "border-dashed border-[#3B2219]/35 bg-[#3B2219]/5 text-[#3B2219]/65";
@@ -273,13 +296,17 @@ function MappedSizeGuideDialog({
 
 export function PurchasePanelView({
   controller,
+  productName = "",
   sizeGuide,
   tryOnTrigger = null,
   mobileNudge = null,
   sizeHelp = null,
   assurance = null,
+  offers = null,
 }: Readonly<{
   controller: VariantSelectionController;
+  /** Named on the phone purchase bar while nothing is chosen yet, since the heading is above the fold. */
+  productName?: string;
   sizeGuide: ProductMappedSizeGuide | null;
   /**
    * Optional entry point that shares the size guide's line (virtual try-on). It opens its own dialog
@@ -292,6 +319,8 @@ export function PurchasePanelView({
   sizeHelp?: ReactNode;
   /** Server-built buying facts (payment, returns, shipping), directly under the purchase buttons. */
   assurance?: ReactNode;
+  /** Server-built promotions this product takes part in, directly under the price. */
+  offers?: ReactNode;
 }>) {
   const {
     view,
@@ -299,18 +328,24 @@ export function PurchasePanelView({
     isPending,
     canAttemptPurchase,
     message,
-    sizeValidationMessage,
+    validation,
     chooseKind,
     chooseColor,
     chooseSize,
     addToBag,
     buyNow,
+    promptForKind,
   } = controller;
   const { priceDisplay, availabilityDateLabel } = view;
   const mobilePresentation = resolveMobilePurchasePresentation(view, selection);
-  const cartSummary = useCartSummary();
+  const justAdded = message === ADDED_TO_BAG_MESSAGE;
 
-  const sizeSelectorRef = useRef<HTMLFieldSetElement | null>(null);
+  // Each option group on each surface, so a purchase attempt can take the shopper to the one missing.
+  const fieldsetRefs = useRef<Record<"panel" | "sheet", Partial<Record<PurchaseOptionDimension, HTMLFieldSetElement | null>>>>({
+    panel: {},
+    sheet: {},
+  });
+  const panelActionsRef = useRef<HTMLDivElement | null>(null);
   const stickyTriggerRef = useRef<HTMLButtonElement | null>(null);
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const sheetCloseRef = useRef<HTMLButtonElement | null>(null);
@@ -324,14 +359,73 @@ export function PurchasePanelView({
   const sheetInitialFocusRef = useRef<"close" | "size-guide">("close");
 
   const [isSheetOpen, setIsSheetOpen] = useState(false);
+  /*
+   * UX-02, the rule the cart and checkout bars already follow: one primary purchase control on
+   * screen at a time. While the panel's own buttons are in view the phone bar steps aside; it comes
+   * back as soon as they scroll away. It starts shown, so the server-rendered page and a browser
+   * without IntersectionObserver keep the bar.
+   */
+  const [panelActionsInView, setPanelActionsInView] = useState(false);
 
   useScrollLock(isSheetOpen);
+
+  useEffect(() => {
+    const actions = panelActionsRef.current;
+    if (actions === null || typeof IntersectionObserver === "undefined") return;
+    const query = window.matchMedia(BELOW_LG);
+    let observer: IntersectionObserver | null = null;
+    const sync = () => {
+      observer?.disconnect();
+      observer = null;
+      if (!query.matches) {
+        setPanelActionsInView(false);
+        return;
+      }
+      observer = new IntersectionObserver(([entry]) => setPanelActionsInView(entry?.isIntersecting ?? false));
+      observer.observe(actions);
+    };
+    sync();
+    query.addEventListener("change", sync);
+    return () => {
+      query.removeEventListener("change", sync);
+      observer?.disconnect();
+    };
+  }, []);
 
   const awaitsKindSelection = view.kindSelectionGuidance !== null;
   const selectedKindLabel =
     selection.kindKey === null
       ? null
       : view.kinds.find((choice) => choice.key === selection.kindKey)?.label ?? null;
+
+  function setFieldsetRef(surface: "panel" | "sheet", dimension: PurchaseOptionDimension) {
+    return (element: HTMLFieldSetElement | null) => {
+      fieldsetRefs.current[surface][dimension] = element;
+    };
+  }
+
+  function focusOptionGroup(surface: "panel" | "sheet", dimension: PurchaseOptionDimension) {
+    const group = fieldsetRefs.current[surface][dimension];
+    group?.scrollIntoView({ block: "center", inline: "nearest" });
+    group?.focus({ preventScroll: true });
+  }
+
+  /** The error line, outline and description a group wears while its choice is being asked for. */
+  function validationFor(dimension: PurchaseOptionDimension, surface: "panel" | "sheet") {
+    const text = validation[dimension];
+    const id = `storefront-${dimension}-error-${surface}`;
+    return {
+      text,
+      id,
+      invalid: text ? ("true" as const) : undefined,
+      outline: text ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : "",
+      line: text ? (
+        <p id={id} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
+          {text}
+        </p>
+      ) : null,
+    };
+  }
 
   function renderSelectorLegend(label: string, selectedValue: string | null) {
     // Sizes are codes ("XL", "2XL") and keep their case; the named axes read as words.
@@ -349,12 +443,11 @@ export function PurchasePanelView({
     );
   }
 
-  function runPurchase(action: () => PurchaseAttemptResult) {
-    if (action() === "missing-size") {
-      const selector = sizeSelectorRef.current;
-      selector?.scrollIntoView({ block: "center", inline: "nearest" });
-      selector?.focus({ preventScroll: true });
-    }
+  function runPurchase(surface: "panel" | "sheet", action: () => PurchaseAttemptResult | null) {
+    const result = action();
+    if (result === "missing-kind") focusOptionGroup(surface, "kind");
+    else if (result === "missing-color") focusOptionGroup(surface, "color");
+    else if (result === "missing-size") focusOptionGroup(surface, "size");
   }
 
   function openSheet() {
@@ -467,7 +560,7 @@ export function PurchasePanelView({
     });
   }
 
-  function handleCartSummaryClick(event: MouseEvent<HTMLAnchorElement>) {
+  function handleViewCartClick(event: MouseEvent<HTMLAnchorElement>) {
     // Leave "open in new tab" and friends to the browser; a plain tap opens the existing drawer.
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
@@ -479,7 +572,7 @@ export function PurchasePanelView({
       openSheet();
       return;
     }
-    runPurchase(() => addToBag(requestStorefrontCartDrawerOpen));
+    runPurchase("panel", () => addToBag(requestStorefrontCartDrawerOpen));
   }
 
   /**
@@ -498,9 +591,16 @@ export function PurchasePanelView({
 
   function renderKindFieldset(surface: "panel" | "sheet") {
     if (!view.hasKindOptions) return null;
+    const check = validationFor("kind", surface);
 
     return (
-      <fieldset className="mt-3.5">
+      <fieldset
+        ref={setFieldsetRef(surface, "kind")}
+        tabIndex={-1}
+        aria-invalid={check.invalid}
+        aria-describedby={check.text ? check.id : undefined}
+        className={`mt-3.5 rounded-sm ${check.outline}`}
+      >
         {renderSelectorLegend("Loại", selectedKindLabel)}
         <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.kinds.map((choice) => (
@@ -518,27 +618,26 @@ export function PurchasePanelView({
             </label>
           ))}
         </div>
+        {check.line}
       </fieldset>
     );
   }
 
   function renderSizeFieldset(surface: "panel" | "sheet") {
-    const sizeErrorId = `storefront-size-error-${surface}`;
+    const check = validationFor("size", surface);
     const kindGuidanceId = `storefront-kind-guidance-${surface}`;
     const sizeDescribedBy =
-      [sizeValidationMessage ? sizeErrorId : null, awaitsKindSelection ? kindGuidanceId : null]
+      [check.text ? check.id : null, awaitsKindSelection ? kindGuidanceId : null]
         .filter((id): id is string => id !== null)
         .join(" ") || undefined;
 
     return (
       <fieldset
-        ref={surface === "panel" ? sizeSelectorRef : undefined}
-        tabIndex={surface === "panel" ? -1 : undefined}
-        aria-invalid={sizeValidationMessage ? "true" : undefined}
+        ref={setFieldsetRef(surface, "size")}
+        tabIndex={-1}
+        aria-invalid={check.invalid}
         aria-describedby={sizeDescribedBy}
-        className={`mt-3.5 rounded-sm ${
-          sizeValidationMessage ? "outline outline-2 outline-offset-4 outline-[#3B2219]" : ""
-        }`}
+        className={`mt-3.5 rounded-sm ${check.outline}`}
       >
         {renderSelectorLegend("Kích cỡ", selection.size)}
         {/*
@@ -554,7 +653,13 @@ export function PurchasePanelView({
         )}
         <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.sizes.map((choice) => (
-            <label key={choice.value} className={choiceTarget(choice.disabled)}>
+            <label
+              key={choice.value}
+              className={choiceTarget(choice.disabled && !awaitsKindSelection)}
+              // A size locked only because no kind is chosen yet answers the tap by asking for the
+              // kind: the disabled radio itself cannot, and a tap that lands on nothing reads as broken.
+              onClick={awaitsKindSelection ? () => runPurchase(surface, promptForKind) : undefined}
+            >
               <input
                 className="peer sr-only"
                 type="radio"
@@ -579,20 +684,23 @@ export function PurchasePanelView({
         {renderSizeGuideTrigger(surface)}
         {/* Wrapped: a server-built slot placed straight among sibling children reads as an unkeyed list item. */}
         {surface === "panel" && sizeHelp !== null ? <div>{sizeHelp}</div> : null}
-        {sizeValidationMessage ? (
-          <p id={sizeErrorId} className="mt-2 text-sm font-medium text-[#8A3A35]" role="alert">
-            {sizeValidationMessage}
-          </p>
-        ) : null}
+        {check.line}
       </fieldset>
     );
   }
 
   function renderColorFieldset(surface: "panel" | "sheet") {
     if (!view.hasColorOptions) return null;
+    const check = validationFor("color", surface);
 
     return (
-      <fieldset className="mt-3.5">
+      <fieldset
+        ref={setFieldsetRef(surface, "color")}
+        tabIndex={-1}
+        aria-invalid={check.invalid}
+        aria-describedby={check.text ? check.id : undefined}
+        className={`mt-3.5 rounded-sm ${check.outline}`}
+      >
         {renderSelectorLegend(view.colorDimensionLabel ?? "Màu", selection.color)}
         <div className="mt-0.5 flex flex-wrap gap-x-2">
           {view.colors.map((choice) => (
@@ -610,6 +718,7 @@ export function PurchasePanelView({
             </label>
           ))}
         </div>
+        {check.line}
       </fieldset>
     );
   }
@@ -621,6 +730,41 @@ export function PurchasePanelView({
       : view.unavailableMessage ||
         (!view.hasPurchasableVariant ? "Không có lựa chọn khả dụng ở thời điểm hiện tại." : ""));
   const mobilePurchaseStatus = message || mobilePresentation.unavailableMessage || purchaseStatus;
+
+  /*
+   * The sale as the phone bar and the sheet header carry it. On a phone the panel's own price sits
+   * below the photograph, so the bar is often the first price a shopper reads: a sale it did not
+   * show would look like the full price.
+   */
+  function renderCompactPrice() {
+    return (
+      <span className="flex min-w-0 items-baseline gap-x-2 whitespace-nowrap">
+        <span className="sr-only">{priceDisplay.compareAtText ? "Giá khuyến mãi " : ""}</span>
+        <span className="font-display text-base font-semibold tabular-nums">{priceDisplay.displayText}</span>
+        {priceDisplay.compareAtText ? (
+          <span className="text-xs font-medium tabular-nums text-[#8A3A35]">-{priceDisplay.discountPercent}%</span>
+        ) : null}
+      </span>
+    );
+  }
+
+  function renderCompactDetail(fallback: string) {
+    const detail = mobilePresentation.summary || fallback;
+    return (
+      <span className="mt-0.5 block truncate text-xs text-black/60">
+        {priceDisplay.compareAtText ? (
+          <>
+            <span className="sr-only">Giá gốc </span>
+            <span className="tabular-nums line-through decoration-black/40">{priceDisplay.compareAtText}</span>
+            {detail ? <span aria-hidden="true">{" · "}</span> : null}
+          </>
+        ) : null}
+        {detail}
+      </span>
+    );
+  }
+
+  const barHidden = panelActionsInView && !isSheetOpen;
 
   return (
     <>
@@ -659,6 +803,8 @@ export function PurchasePanelView({
           )}
         </div>
 
+        {offers === null ? null : <div>{offers}</div>}
+
         {/*
           One order on both surfaces, owner request 2026-09-24: kind, then colour, then size. A
           product without a kind renders no kind fieldset, so it reads colour then size, which is
@@ -669,14 +815,14 @@ export function PurchasePanelView({
         {renderColorFieldset("panel")}
         {renderSizeFieldset("panel")}
 
-        <div className="mt-8 grid grid-cols-2 gap-3">
+        <div ref={panelActionsRef} className="mt-8 grid grid-cols-2 gap-3">
           <button
             className="btn btn--primary w-full px-4"
             type="button"
             aria-label={view.addToBagAccessibleName}
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
-            onClick={() => runPurchase(addToBag)}
+            onClick={() => runPurchase("panel", addToBag)}
           >
             {view.addToBagLabel}
           </button>
@@ -685,15 +831,41 @@ export function PurchasePanelView({
             type="button"
             disabled={!canAttemptPurchase}
             aria-busy={isPending}
-            onClick={() => runPurchase(buyNow)}
+            onClick={() => runPurchase("panel", buyNow)}
           >
             Mua ngay
           </button>
         </div>
 
-        <p className="mt-3 min-h-6 text-sm text-[#3B2219]/70" role="status" aria-live="polite">
-          {purchaseStatus}
+        <p
+          className={`mt-3 min-h-6 text-sm ${justAdded ? "font-medium text-[#24472D]" : "text-[#3B2219]/70"}`}
+          role="status"
+          aria-live="polite"
+        >
+          {justAdded ? (
+            <span className="inline-flex items-center gap-2">
+              <CheckIcon />
+              {message}
+            </span>
+          ) : (
+            purchaseStatus
+          )}
         </p>
+        {/*
+          A confirmed add from the panel says so where the shopper is looking and offers the next
+          step, without taking over the page the way the sheet's hand-off to the drawer does: the
+          shopper chose to stay on the product, so the cart opens only when they ask for it.
+        */}
+        {justAdded ? (
+          <Link
+            href="/cart"
+            data-pdp-view-cart=""
+            className="btn btn--outline mt-2 w-full"
+            onClick={handleViewCartClick}
+          >
+            Xem giỏ hàng
+          </Link>
+        ) : null}
 
         {availabilityDateLabel === null ? null : (
           <p className="mt-1 text-xs text-black/55" role="status" aria-live="polite">
@@ -707,47 +879,29 @@ export function PurchasePanelView({
       <section
         aria-label="Mua nhanh"
         data-mobile-purchase-bar=""
-        className="fixed inset-x-0 bottom-0 z-40 border-t border-black/20 bg-[#FAF7F2] px-4 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] lg:hidden"
+        data-hidden={barHidden ? "true" : "false"}
+        aria-hidden={barHidden ? true : undefined}
+        inert={barHidden}
+        className={`fixed inset-x-0 bottom-0 z-40 border-t border-black/20 bg-[#FAF7F2] px-4 pt-3 shadow-[0_-8px_24px_rgba(0,0,0,0.08)] transition-[transform,visibility] duration-200 motion-reduce:transition-none lg:hidden ${
+          barHidden ? "invisible translate-y-full" : ""
+        }`}
         style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}
       >
         {mobileNudge}
         <div className="mx-auto flex w-full max-w-[42rem] min-w-0 items-center gap-3">
-          {cartSummary.count > 0 ? (
-            /*
-             * The cart is the more useful fact once it has something in it, so it takes the bar's
-             * left half and the price/selection summary steps aside. It is a link rather than a
-             * button -- real `/cart` for a new tab or no script -- so this region keeps the one
-             * button, the add action, that the purchase flow and its tests address.
-             */
-            <Link
-              href="/cart"
-              data-mobile-cart-summary=""
-              className="flex min-h-11 min-w-0 flex-1 items-center gap-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3B2219]"
-              onClick={handleCartSummaryClick}
-            >
-              <span className="min-w-0 flex-1">
-                <span className="block truncate font-display text-base font-semibold">
-                  {`Giỏ hàng (${cartSummary.count})`}
-                </span>
-                <span className="mt-0.5 block truncate text-xs text-black/60">
-                  {cartSummary.totalText}
-                </span>
-              </span>
-              <span className="inline-flex min-h-9 shrink-0 items-center border border-[#3B2219] px-3 text-sm font-semibold text-[#3B2219]">
-                Xem giỏ
-              </span>
-            </Link>
-          ) : (
-            <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-base font-semibold">{priceDisplay.displayText}</p>
-              <p className="mt-0.5 truncate text-xs text-black/60">
-                {mobilePresentation.summary || mobilePresentation.actionLabel}
-              </p>
-            </div>
-          )}
+          {/*
+            The price column never yields to the button: the button may take at most 60% of the bar
+            and wraps onto a second line before it squeezes the price, which is what a long
+            "Chọn ..." label used to do. The cart is not repeated here -- the header carries it, and
+            a takeover of this column hid the price of the product the shopper is looking at.
+          */}
+          <p className="m-0 min-w-0 flex-1">
+            {renderCompactPrice()}
+            {renderCompactDetail(productName || mobilePresentation.actionLabel)}
+          </p>
           <button
             ref={stickyTriggerRef}
-            className="btn btn--primary shrink-0 px-4"
+            className="btn btn--primary min-w-0 max-w-[60%] shrink px-3 text-balance"
             type="button"
             aria-haspopup={mobilePresentation.readyToAdd ? undefined : "dialog"}
             aria-expanded={mobilePresentation.readyToAdd ? undefined : isSheetOpen}
@@ -777,14 +931,14 @@ export function PurchasePanelView({
                 onKeyDown={handleSheetKeyDown}
               >
                 <div className="flex items-center justify-between border-b border-black/15 px-5 py-4">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.12em] text-black/55">
+                  {/* The price stays in the header while choices are made: it moves with the kind. */}
+                  <p className="m-0 min-w-0">
+                    <span className="block text-xs font-semibold uppercase tracking-[0.12em] text-black/55">
                       Lựa chọn sản phẩm
-                    </p>
-                    <p className="mt-1 truncate text-sm font-semibold">
-                      {mobilePresentation.summary || priceDisplay.displayText}
-                    </p>
-                  </div>
+                    </span>
+                    <span className="mt-1 block">{renderCompactPrice()}</span>
+                    {renderCompactDetail("")}
+                  </p>
                   <button
                     ref={sheetCloseRef}
                     type="button"
@@ -796,7 +950,7 @@ export function PurchasePanelView({
                   </button>
                 </div>
 
-                <div className="max-h-[calc(88dvh-9rem)] overflow-y-auto px-5 pb-5">
+                <div className="max-h-[calc(88dvh-10rem)] overflow-y-auto px-5 pb-5">
                   {renderKindFieldset("sheet")}
                   {renderColorFieldset("sheet")}
                   {renderSizeFieldset("sheet")}
@@ -807,17 +961,38 @@ export function PurchasePanelView({
                 </div>
 
                 <div className="border-t border-black/15 bg-[#FAF7F2] p-4">
-                  <button
-                    type="button"
-                    className="btn btn--primary w-full"
-                    disabled={!mobilePresentation.readyToAdd || isPending}
-                    aria-busy={isPending}
-                    onClick={() => runPurchase(() => addToBag(handleSheetAddAccepted))}
-                  >
-                    {view.selectedVariantId !== null && !view.canAdd
-                      ? mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết"
-                      : mobilePresentation.actionLabel}
-                  </button>
+                  {mobilePresentation.readyToAdd ? (
+                    /*
+                     * A finished selection offers both ways out the panel has: into the bag (and the
+                     * drawer), or straight to checkout for the shopper who is buying just this.
+                     */
+                    <div className="grid grid-cols-2 gap-3">
+                      <button
+                        type="button"
+                        className="btn btn--primary w-full px-3"
+                        disabled={isPending}
+                        aria-busy={isPending}
+                        onClick={() => runPurchase("sheet", () => addToBag(handleSheetAddAccepted))}
+                      >
+                        {mobilePresentation.actionLabel}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--outline w-full px-3"
+                        disabled={isPending}
+                        aria-busy={isPending}
+                        onClick={() => runPurchase("sheet", buyNow)}
+                      >
+                        Mua ngay
+                      </button>
+                    </div>
+                  ) : (
+                    <button type="button" className="btn btn--primary w-full" disabled>
+                      {view.selectedVariantId !== null && !view.canAdd
+                        ? mobilePresentation.unavailableMessage || "Lựa chọn này tạm hết"
+                        : mobilePresentation.actionLabel}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>,

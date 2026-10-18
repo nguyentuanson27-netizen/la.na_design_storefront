@@ -4,6 +4,7 @@ import { BRAND, messengerUrlFromFanpage, zaloUrlFromTelephone } from "@/brand";
 import { CommerceEventReporter } from "@/components/brand/commerce-event-reporter";
 import { FeedbackRail } from "@/components/brand/feedback-gallery";
 import { ProductCard, type ProductCardTone } from "@/components/brand/product-card";
+import { PdpClampedContent, PdpDisclosure } from "@/components/brand/pdp-disclosure";
 import { BrandProductDetail } from "@/components/brand/product-detail";
 import type { PurchaseAssuranceItem } from "@/routes/evergreen-model";
 import { createStorefrontRoute } from "@/routes/factory";
@@ -27,7 +28,7 @@ const FEEDBACK_SECTION_ID = "pdp-feedback";
 const PANEL_LINK =
   "underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors hover:decoration-[#3B2219] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219]";
 
-function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] | "photos" }>) {
+function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] | "photos" | "gift" | "tier" }>) {
   const paths: Record<typeof kind, string> = {
     // Banknote.
     cod: "M3 7h18v10H3z M12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5z",
@@ -37,6 +38,10 @@ function AssuranceIcon({ kind }: Readonly<{ kind: PurchaseAssuranceItem["key"] |
     "free-shipping": "M3 6h11v9H3z M14 9h4l3 3v3h-7 M7 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z M17 18a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z",
     // Camera.
     photos: "M4 8h3l2-2h6l2 2h3v11H4z M12 16.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
+    // Wrapped gift.
+    gift: "M3 8h18v5H3z M12 8v13 M5 13v8h14v-8 M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5",
+    // Price tag.
+    tier: "M3 12V4h8l10 10-8 8z M7.5 8.5a1 1 0 1 0 0-.01",
   };
   return (
     <svg
@@ -97,26 +102,26 @@ function render(data: ProductRouteData) {
           <h2 id="pdp-description-title" className="font-display text-xl font-normal tracking-[-0.02em]">
             Mô tả sản phẩm
           </h2>
-          {editorial.description ? (
-            <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">{editorial.description}</p>
-          ) : null}
-          {editorial.craftDetails.length > 0 ? (
-            <ul className="mt-3 max-w-xl list-disc space-y-1 pl-5 text-sm leading-6 text-black/70">
-              {editorial.craftDetails.map((detail) => (
-                <li key={detail}>{detail}</li>
-              ))}
-            </ul>
-          ) : null}
+          {/* Below `lg` the description opens on its first lines; the blocks after it fold. */}
+          <PdpClampedContent>
+            {editorial.description ? (
+              <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">{editorial.description}</p>
+            ) : null}
+            {editorial.craftDetails.length > 0 ? (
+              <ul className="mt-3 max-w-xl list-disc space-y-1 pl-5 text-sm leading-6 text-black/70">
+                {editorial.craftDetails.map((detail) => (
+                  <li key={detail}>{detail}</li>
+                ))}
+              </ul>
+            ) : null}
+          </PdpClampedContent>
         </section>
       ) : null}
 
       {editorial.material ? (
-        <section className="border-b border-black/15 py-6" aria-labelledby="pdp-material-title">
-          <h2 id="pdp-material-title" className="font-display text-xl font-normal tracking-[-0.02em]">
-            Chất liệu
-          </h2>
-          <p className="mt-3 max-w-xl text-sm leading-6 text-black/70">{editorial.material}</p>
-        </section>
+        <PdpDisclosure titleId="pdp-material-title" title="Chất liệu">
+          <p className="max-w-xl text-sm leading-6 text-black/70 lg:mt-3">{editorial.material}</p>
+        </PdpDisclosure>
       ) : null}
 
       {/*
@@ -126,25 +131,19 @@ function render(data: ProductRouteData) {
       */}
 
       {editorial.careInstructions ? (
-        <section className="border-b border-black/15 py-6" aria-labelledby="pdp-care-title">
-          <h2 id="pdp-care-title" className="font-display text-xl font-normal tracking-[-0.02em]">
-            Hướng dẫn bảo quản
-          </h2>
-          <p className="mt-3 max-w-xl whitespace-pre-line text-sm leading-6 text-black/70">
+        <PdpDisclosure titleId="pdp-care-title" title="Hướng dẫn bảo quản">
+          <p className="max-w-xl whitespace-pre-line text-sm leading-6 text-black/70 lg:mt-3">
             {editorial.careInstructions}
           </p>
-        </section>
+        </PdpDisclosure>
       ) : null}
     </section>
   );
 
   const purchaseInformation = (
     <section aria-label="Giao hàng và đổi trả" className="border-t border-black/20">
-      <section className="border-b border-black/15 py-6" aria-labelledby="pdp-shipping-title">
-        <h2 id="pdp-shipping-title" className="font-display text-xl font-normal tracking-[-0.02em]">
-          Giao hàng
-        </h2>
-        <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">
+      <PdpDisclosure titleId="pdp-shipping-title" title="Giao hàng">
+        <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
           <p>{data.shipping.coverage}</p>
           <p>{data.shipping.innerCityLabel}: {data.shipping.innerCityEstimate}</p>
           <p>{data.shipping.otherProvinceLabel}: {data.shipping.otherProvinceEstimate}</p>
@@ -153,20 +152,17 @@ function render(data: ProductRouteData) {
             Xem chính sách vận chuyển
           </Link>
         </div>
-      </section>
+      </PdpDisclosure>
 
-      <section className="border-b border-black/15 py-6" aria-labelledby="pdp-returns-title">
-        <h2 id="pdp-returns-title" className="font-display text-xl font-normal tracking-[-0.02em]">
-          Đổi trả
-        </h2>
-        <div className="mt-3 max-w-xl space-y-1 text-sm leading-6 text-black/70">
+      <PdpDisclosure titleId="pdp-returns-title" title="Đổi trả">
+        <div className="max-w-xl space-y-1 text-sm leading-6 text-black/70 lg:mt-3">
           <p>{data.returns.returnWindow}</p>
           <p>{data.returns.refundWindow}</p>
           <Link className="inline-block underline underline-offset-4" href="/returns">
             Xem chính sách đổi trả
           </Link>
         </div>
-      </section>
+      </PdpDisclosure>
     </section>
   );
 
@@ -198,6 +194,23 @@ function render(data: ProductRouteData) {
         </a>
       )}
     </p>
+  );
+
+  // Promotions this product takes part in, named under the price. The cart quote computes them; the
+  // page only says they exist and how each kind reaches the order (a gift is chosen in the cart, not
+  // added on its own), so the line never states an amount or a threshold of its own.
+  const purchaseOffers = data.promotionOffers.length === 0 ? null : (
+    <ul aria-label="Ưu đãi áp dụng" className="mt-3 space-y-1.5 text-sm text-[#3B2219]" data-pdp-offers="">
+      {data.promotionOffers.map((offer) => (
+        <li key={offer.id} className="flex items-start gap-2.5">
+          <AssuranceIcon kind={offer.kind === "GIFT" ? "gift" : "tier"} />
+          <span>
+            <span className="font-medium">{offer.label}</span>
+            <span className="text-[#3B2219]/65"> · {offer.note}</span>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 
   // The buying facts, repeated where the decision is made; the full policies stay further down.
@@ -253,6 +266,7 @@ function render(data: ProductRouteData) {
         purchaseInformation={purchaseInformation}
         sizeHelp={sizeHelp}
         purchaseAssurance={purchaseAssurance}
+        purchaseOffers={purchaseOffers}
       />
 
       {data.feedback === null ? null : (
