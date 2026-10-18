@@ -424,21 +424,31 @@ export function buildVariantStockCte(now: Date) {
     JOIN "capacity_sellable" cs ON cs."id" = v."id"
     WHERE v."isPresent" = TRUE AND v."isActive" = TRUE
   ),
+  -- A target names exactly one of variantId / productId (PromotionTarget_scope_check), so the two
+  -- branches are disjoint per target row and can each hash-join; one ON ... OR ... join forced a
+  -- nested loop over every variant x target. The GROUP BY still makes a campaign that reaches a
+  -- variant both directly and by product one candidate.
   "variant_campaign" AS (
     SELECT
-      vb."id" AS "variantId",
+      vt."variantId",
       c."id" AS "campaignId",
       c."discountType"::text AS "discountType",
       c."percentageValue" AS "percentageValue",
       c."fixedPriceVnd" AS "fixedPriceVnd"
-    FROM "variant_base" vb
-    JOIN "PromotionTarget" t
-      ON t."variantId" = vb."id" OR t."productId" = vb."productId"
-    JOIN "PromotionCampaign" c ON c."id" = t."campaignId"
+    FROM (
+      SELECT vb."id" AS "variantId", t."campaignId"
+      FROM "variant_base" vb
+      JOIN "PromotionTarget" t ON t."variantId" = vb."id"
+      UNION ALL
+      SELECT vb."id" AS "variantId", t."campaignId"
+      FROM "variant_base" vb
+      JOIN "PromotionTarget" t ON t."productId" = vb."productId"
+    ) vt
+    JOIN "PromotionCampaign" c ON c."id" = vt."campaignId"
     WHERE c."isEnabled" = TRUE
       AND (c."startsAt" IS NULL OR c."startsAt" <= ${now})
       AND (c."endsAt" IS NULL OR c."endsAt" > ${now})
-    GROUP BY vb."id", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
+    GROUP BY vt."variantId", c."id", c."discountType", c."percentageValue", c."fixedPriceVnd"
   ),
   "variant_candidate" AS (
     SELECT
