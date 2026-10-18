@@ -167,6 +167,7 @@ function render(data: CartViewModel) {
                     productName={line.productName}
                     initialQuantity={line.quantity}
                     canUpdate={line.canUpdate}
+                    stockLimit={line.maxQuantity}
                     commerceTrackingEnabled={data.commerceTrackingEnabled}
                     totalText={line.lineTotalText}
                   />

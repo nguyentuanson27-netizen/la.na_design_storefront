@@ -34,6 +34,8 @@ export type UseCartLineInput = Readonly<{
   variantId: string;
   initialQuantity: number;
   canUpdate: boolean;
+  /** The stock limit the server already named for this line (an `INSUFFICIENT_STOCK` line). */
+  stockLimit?: number;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled?: boolean;
 }>;
@@ -42,6 +44,7 @@ export function useCartLine({
   variantId,
   initialQuantity,
   canUpdate,
+  stockLimit: serverStockLimit,
   commerceTrackingEnabled = false,
 }: UseCartLineInput) {
   const inputId = useId();
@@ -51,7 +54,7 @@ export function useCartLine({
   // A refusal reads as a warning beside the stepper; a committed change is a quiet confirmation.
   const [messageIsWarning, setMessageIsWarning] = useState(false);
   // The largest quantity a stock refusal named; "+" is pointless at or above it.
-  const [stockLimit, setStockLimit] = useState<number | null>(null);
+  const [refusedLimit, setRefusedLimit] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // A refresh after a committed change brings the server's quantity; the field follows it.
@@ -106,11 +109,11 @@ export function useCartLine({
         setMessageIsWarning(!result.ok);
         if (result.ok) {
           trackCommittedMetaAddToCart(result.metaEvent);
-          setStockLimit(null);
+          setRefusedLimit(null);
         } else {
           // The server answered no, so the line still holds what it held: show that again.
           setQuantityText(String(initialQuantity));
-          if (result.maxQuantity) setStockLimit(result.maxQuantity);
+          if (result.maxQuantity) setRefusedLimit(result.maxQuantity);
         }
         apply(resolveCartLineUpdateOutcome(result));
       } catch {
@@ -135,6 +138,9 @@ export function useCartLine({
   }
 
   const current = parsed.isValid ? parsed.value : initialQuantity;
+  const stockLimit = refusedLimit ?? serverStockLimit ?? null;
+  // Above a known limit, one step down would only be refused again: go straight to the limit.
+  const decrementTarget = stockLimit !== null && current > stockLimit ? stockLimit : current - 1;
 
   function removeLine() {
     if (isPending) return;
@@ -167,7 +173,10 @@ export function useCartLine({
     setQuantity,
     updateLine,
     commitTypedQuantity,
-    decrement: () => submitQuantity(current - 1),
+    /** Where "−" goes: one down, or straight to a known stock limit the line is above. */
+    decrementTarget,
+    currentQuantity: current,
+    decrement: () => submitQuantity(decrementTarget),
     increment: () => submitQuantity(current + 1),
     removeLine,
   };

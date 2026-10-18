@@ -86,6 +86,36 @@ test("AM-01/A: the compact banner names the proven offer, links to /sale and off
   expect(await prisma.cartItem.count({ where: { cartId } })).toBe(1);
 });
 
+test("Review P2-2: while an order is being placed the banner link cannot take the buyer away", async ({ page }) => {
+  await page.goto(`${BASE}/checkout`);
+  const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });
+  await expect(offer, output).toBeVisible();
+  await page.getByLabel("Họ và tên", { exact: false }).fill("Nàng La.na");
+  await page.getByLabel("Số điện thoại", { exact: false }).fill("0901234567");
+  await page.getByLabel("Tỉnh / Thành phố", { exact: false }).selectOption({ label: "Tỉnh Current" });
+  await page.getByLabel("Phường / Xã", { exact: false }).selectOption({ label: "Phường Current" });
+  await page.getByLabel("Số nhà, tên đường", { exact: false }).fill("12 Nguyễn Trãi");
+
+  // Hold the order submission in flight; it never reaches the server, so no order is created.
+  let held = false;
+  await page.route(`${BASE}/checkout`, async (route) => {
+    if (route.request().method() === "POST" && route.request().headers()["next-action"]) { held = true; return; }
+    await route.continue();
+  });
+  const submit = page.locator("#checkout-submit");
+  await expect(submit).toHaveText("Đặt hàng COD");
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect.poll(() => held).toBe(true);
+  await expect(submit).toHaveText("Đang đặt hàng…");
+  await expect(submit).toBeDisabled();
+  await expect(offer.getByRole("link", { name: "Chọn thêm món" })).toHaveCount(0);
+  const locked = offer.locator("[data-upsell-link-locked]");
+  await expect(locked).toHaveAttribute("aria-disabled", "true");
+  await locked.click();
+  await expect(page).toHaveURL(`${BASE}/checkout`);
+  await page.unrouteAll({ behavior: "ignoreErrors" });
+});
 test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attempt resets it", async ({ page, context }) => {
   await page.goto(`${BASE}/checkout`);
   const offer = page.getByRole("region", { name: "Gợi ý mua thêm" });

@@ -938,6 +938,42 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
 });
 
+test("a line above its stock steps straight down to what is left, in the mini-cart and on /cart", async ({ page }) => {
+  // Review P2-1: 4 in the bag, 2 in stock. One step down (3) would be refused again and again.
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: variantExternalId } });
+  const cart = await prisma.cart.create({
+    data: { expiresAt: new Date(Date.now() + 86_400_000), items: { create: { variantId: variant.id, quantity: 4 } } },
+  });
+  const quantityInCart = async () =>
+    (await prisma.cartItem.findUniqueOrThrow({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } } })).quantity;
+  await page.context().addCookies([{ name: "la_cart", value: cart.id, url: BASE_URL, httpOnly: true, sameSite: "Lax" }]);
+
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^Giỏ hàng/ }).click();
+  const drawer = page.getByRole("dialog", { name: "Giỏ hàng" });
+  await expect(drawer.getByText("Chỉ còn 2 sản phẩm")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Tăng số lượng ${productName}`, exact: true })).toBeDisabled();
+  await drawer.getByRole("button", { name: `Giảm số lượng ${productName} còn 2`, exact: true }).click();
+  await expect.poll(quantityInCart).toBe(2);
+  await expect(drawer.getByText("2", { exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Giảm số lượng ${productName}`, exact: true })).toBeEnabled();
+  await drawer.getByRole("button", { name: "Đóng giỏ hàng", exact: true }).click();
+
+  await prisma.cartItem.update({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } }, data: { quantity: 4 } });
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  const line = page.getByRole("article").filter({ hasText: productName });
+  await expect(line.locator("[data-line-problem]")).toContainText("Chỉ còn 2 sản phẩm");
+  await expect(line.getByRole("button", { name: `Thêm một ${productName}`, exact: true })).toBeDisabled();
+  await line.getByRole("button", { name: `Giảm ${productName} còn 2`, exact: true }).click();
+  await expect.poll(quantityInCart).toBe(2);
+  await expect(line.getByLabel("Số lượng", { exact: true })).toHaveValue("2");
+  await expect(line.locator("[data-line-problem]")).toHaveCount(0);
+  await expect(line.getByRole("button", { name: `Bớt một ${productName}`, exact: true })).toBeEnabled();
+
+  await prisma.cart.delete({ where: { id: cart.id } });
+  await page.context().clearCookies({ name: "la_cart" });
+});
+
 test("standard sold-out variant remains visible, disabled, and says exact Hết hàng", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(

@@ -180,8 +180,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                 <ul className="divide-y divide-[#3B2219]/10">
                   {cart.lines.map((line) => {
                     const notice = lineNotice?.variantId === line.variantId ? lineNotice : null;
-                    // Known stock limit reached: "+" would only be refused again.
-                    const atStockLimit = notice?.maxQuantity !== undefined && line.quantity >= notice.maxQuantity;
+                    // A known stock limit (from a refusal, or named on an INSUFFICIENT_STOCK line):
+                    // "+" at it would only be refused again, and "−" above it goes straight to it.
+                    const stockLimit = notice?.maxQuantity ?? line.maxQuantity;
+                    const atStockLimit = stockLimit !== undefined && line.quantity >= stockLimit;
+                    const decrementTarget = stockLimit !== undefined && line.quantity > stockLimit ? stockLimit : line.quantity - 1;
                     return (
                       <li key={line.variantId} className="flex gap-4 py-5 first:pt-0 last:pb-0">
                         {/* Visual */}
@@ -243,8 +246,8 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                               <button
                                 type="button"
                                 disabled={isPending || line.quantity <= 1}
-                                onClick={() => updateQuantity(line.variantId, line.quantity - 1)}
-                                aria-label={`Giảm số lượng ${line.productName}`}
+                                onClick={() => updateQuantity(line.variantId, decrementTarget)}
+                                aria-label={`Giảm số lượng ${line.productName}${decrementTarget < line.quantity - 1 ? ` còn ${decrementTarget}` : ""}`}
                                 className="inline-flex h-11 w-11 items-center justify-center text-base text-[#3B2219] hover:bg-[#3B2219]/10 disabled:cursor-not-allowed disabled:opacity-40 transition-colors"
                               >
                                 -

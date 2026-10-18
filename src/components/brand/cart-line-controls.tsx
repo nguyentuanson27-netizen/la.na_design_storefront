@@ -25,7 +25,7 @@ export function BrandCartLineControls({
     <div className="mt-3">
       <div className="inline-flex items-center rounded-lg bg-black/[0.05]">
         <button
-          aria-label={`Bớt một ${productName}`}
+          aria-label={line.decrementTarget < line.currentQuantity - 1 ? `Giảm ${productName} còn ${line.decrementTarget}` : `Bớt một ${productName}`}
           className={stepClassName}
           disabled={!line.canDecrement}
           onClick={line.decrement}

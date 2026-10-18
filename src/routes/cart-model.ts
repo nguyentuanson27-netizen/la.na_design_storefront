@@ -49,6 +49,11 @@ export type CartLineView = Readonly<{
    */
   canUpdate: boolean;
   /**
+   * On an `INSUFFICIENT_STOCK` line: the largest quantity that would sell right now, so the editor
+   * can step straight down to it instead of one at a time through refusals.
+   */
+  maxQuantity?: number;
+  /**
    * F8b / §30 — the exact `Đặt trước` word for this line, or `null` for an ordinary line.
    *
    * Per line rather than per basket, because the marker has to survive the trip from the PDP for
@@ -318,6 +323,7 @@ export function buildCartViewModel(
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
+          ...(line.maxQuantity ? { maxQuantity: line.maxQuantity } : {}),
           // The line's own canonical classification. Withheld when the line cannot be bought, for
           // the same reason the cart line withholds it: an unavailable line is not being ordered.
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,

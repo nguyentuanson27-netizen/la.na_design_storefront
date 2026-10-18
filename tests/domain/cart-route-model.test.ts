@@ -102,6 +102,16 @@ test("insufficient stock keeps the quantity field usable, because lowering it is
   assert.equal(model.lines[0]?.canUpdate, true);
 });
 
+test("an insufficient-stock line carries the limit the editor steps down to; a buyable line none", () => {
+  const model = build([
+    line({ available: false, unavailableReason: "INSUFFICIENT_STOCK", quantity: 4, maxQuantity: 2 }),
+    line({ variantId: "b" }),
+  ]);
+
+  assert.equal(model.lines[0]?.maxQuantity, 2);
+  assert.equal("maxQuantity" in model.lines[1]!, false);
+});
+
 test("any other unavailable reason locks the quantity field", () => {
   for (const reason of ["OUT_OF_STOCK", "PRICE_UNRESOLVED", "VARIANT_UNAVAILABLE"] as const) {
     const model = build([line({ available: false, unavailableReason: reason })]);

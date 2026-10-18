@@ -25,7 +25,12 @@ function saveAttempt(value: Attempt) {
   try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* UI-only; never authorizes a write */ }
 }
 
-export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellBanner }>) {
+/**
+ * `locked` while an order is being placed or its outcome is not yet known (PROCESSING /
+ * SYNC_UNKNOWN): leaving then would strand the buyer before they learn whether the order exists.
+ * Before submitting, leaving for `/sale` is free (owner decision: no leave warning).
+ */
+export function CheckoutUpsell({ model, locked = false }: Readonly<{ model: CheckoutUpsellBanner; locked?: boolean }>) {
   const [attempt, setAttempt] = useState<Attempt | null>(null);
   const initialized = useRef(false);
   const mounted = useRef(false);
@@ -80,9 +85,15 @@ export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellBanner
         <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
         <p className="flex flex-wrap items-center gap-x-3 text-xs leading-5 text-black/70">
           <span className="min-w-0">{model.offerName}</span>
-          <Link href="/sale" className="-my-3 inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
-            Chọn thêm món
-          </Link>
+          {locked ? (
+            <span aria-disabled="true" className="-my-3 inline-flex min-h-11 cursor-not-allowed items-center text-sm font-semibold text-black/45" data-upsell-link-locked>
+              Chọn thêm món
+            </span>
+          ) : (
+            <Link href="/sale" className="-my-3 inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
+              Chọn thêm món
+            </Link>
+          )}
         </p>
       </div>
       <button
