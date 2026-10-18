@@ -5,6 +5,7 @@ import type { ActiveGiftQuantityCampaign } from "../../src/commerce/gift-quantit
 import type { ScopeConfig } from "../../src/commerce/gift-quantity-scope.ts";
 import {
   areProductPromotionOffersOpen,
+  campaignsCoveringProduct,
   giftOptionVariantIds,
   isReadyGiftOption,
   PRODUCT_PROMOTION_OFFER_NOTES,
@@ -175,4 +176,16 @@ test("each kind says how its benefit reaches the order; a gift is chosen, never 
   assert.match(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /chọn quà/);
   assert.doesNotMatch(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /tự áp dụng|tự tính|tự nhận/);
   assert.match(PRODUCT_PROMOTION_OFFER_NOTES.TIER, /khi đủ điều kiện/);
+});
+
+test("only campaigns covering the product are kept, so their gifts alone are read", () => {
+  const covering = entry(giftCampaign({ id: "covering" }), dynamic(["aoDai"]));
+  const elsewhere = entry(
+    giftCampaign({ id: "elsewhere", giftOptions: [{ variantId: "other-gift" }] }),
+    dynamic(["aoDaiTet"]),
+  );
+  const kept = campaignsCoveringProduct([covering, elsewhere], facts(["aoDai"]));
+  assert.deepEqual(kept.map(({ campaign }) => campaign.id), ["covering"]);
+  assert.deepEqual(giftOptionVariantIds(kept), ["gift-variant"], "the other campaign's gift is never looked up");
+  assert.deepEqual(campaignsCoveringProduct([elsewhere], facts(["aoDai"])), []);
 });

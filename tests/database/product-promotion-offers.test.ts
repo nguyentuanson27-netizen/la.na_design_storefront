@@ -116,3 +116,35 @@ test("a tier campaign covering the product is named with the tier wording, not t
     [],
   );
 });
+
+test("a product no gift campaign covers reads no gift stock or holds", async () => {
+  const paid = await productWithVariant("uncovered", 5);
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "vayDam" } });
+  const gift = await productWithVariant("uncovered-gift", 3);
+  // In stock and active, but scoped to a category this product is not in.
+  await giftCampaign("uncovered", gift.variantId);
+
+  const reads = { variantMirror: 0, capacityReservationResource: 0 };
+  const counting = {
+    ...client,
+    giftQuantityCampaign: client.giftQuantityCampaign,
+    giftQuantityFrozenProduct: client.giftQuantityFrozenProduct,
+    productCategoryMembership: client.productCategoryMembership,
+    variantMirror: {
+      findMany: (args: unknown) => {
+        reads.variantMirror += 1;
+        return client.variantMirror.findMany(args);
+      },
+    },
+    capacityReservationResource: {
+      findMany: (args: never) => {
+        reads.capacityReservationResource += 1;
+        return client.capacityReservationResource.findMany(args);
+      },
+    },
+  } as unknown as ProductPromotionOffersReadClient;
+
+  const offers = await readProductPromotionOffers({ productId: paid.productId, now: NOW, client: counting, env: ENV });
+  assert.deepEqual(offers.filter((offer) => offer.kind === "GIFT"), []);
+  assert.deepEqual(reads, { variantMirror: 0, capacityReservationResource: 0 });
+});

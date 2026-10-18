@@ -77,6 +77,17 @@ export function isReadyGiftOption(
   return Number.isSafeInteger(ready) && ready >= 1;
 }
 
+/**
+ * The campaigns whose scope resolves this product. The runtime narrows to these before it reads
+ * any gift stock, so a product no gift campaign covers costs no stock or hold query at all.
+ */
+export function campaignsCoveringProduct(
+  campaigns: readonly ActiveGiftQuantityCampaign[],
+  product: ScopeProductFacts,
+): readonly ActiveGiftQuantityCampaign[] {
+  return campaigns.filter(({ scope, frozen }) => buildScopeResolver(scope, frozen)(product));
+}
+
 /** The gift variants a campaign set names, so the runtime reads stock only for those. */
 export function giftOptionVariantIds(campaigns: readonly ActiveGiftQuantityCampaign[]): readonly string[] {
   return [

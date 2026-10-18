@@ -7,6 +7,7 @@ import {
 } from "./gift-quantity-candidate-repository.ts";
 import {
   areProductPromotionOffersOpen,
+  campaignsCoveringProduct,
   giftOptionVariantIds,
   isReadyGiftOption,
   selectProductPromotionOffers,
@@ -85,10 +86,13 @@ export async function readProductPromotionOffers({
     if (!lookup.enabled || lookup.campaigns.length === 0) return [];
     const [facts] = await readScopeProductFacts({ productIds: [productId], client });
     if (facts === undefined) return [];
+    // Only campaigns that cover this product need their gifts' stock read; with none, nothing is.
+    const covering = campaignsCoveringProduct(lookup.campaigns, facts);
+    if (covering.length === 0) return [];
     // `areProductPromotionOffersOpen` has already proved the shop id is a positive integer.
     const shopId = Number(env.PANCAKE_SHOP_ID!.trim());
-    const readyGifts = await readReadyGiftVariantIds(client, giftOptionVariantIds(lookup.campaigns), shopId);
-    return selectProductPromotionOffers(lookup.campaigns, facts, readyGifts);
+    const readyGifts = await readReadyGiftVariantIds(client, giftOptionVariantIds(covering), shopId);
+    return selectProductPromotionOffers(covering, facts, readyGifts);
   } catch {
     // A promotion line is an aid to the decision, never a reason for the product page to fail.
     return [];
