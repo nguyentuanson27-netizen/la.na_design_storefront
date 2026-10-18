@@ -26,6 +26,8 @@ export const SALE_LISTING_CACHE_MAX_ENTRIES = 256;
 
 type Entry<T> = Readonly<{ value: T; storedAtMs: number }>;
 
+type Flight<T> = Readonly<{ token: symbol; forced: boolean; promise: Promise<T> }>;
+
 export type SaleListingCacheRead<T> = Readonly<{
   value: T;
   /** True when the value came from an entry rather than a read this call waited on. */
@@ -34,7 +36,10 @@ export type SaleListingCacheRead<T> = Readonly<{
 
 export type SaleListingCache<T> = Readonly<{
   read: (key: string, load: () => Promise<T>) => Promise<SaleListingCacheRead<T>>;
-  /** Drops the entry and waits on a new read, for a caller that found the cached value outdated. */
+  /**
+   * Drops the entry and waits on a read that starts after this call, for a caller that found the
+   * cached value outdated. It never reuses a background read already in flight.
+   */
   refresh: (key: string, load: () => Promise<T>) => Promise<T>;
 }>;
 
@@ -68,7 +73,9 @@ export function createSaleListingCache<T>({
 
   // Map order is recency order: a hit re-inserts its entry, and eviction takes the first key.
   const entries = new Map<string, Entry<T>>();
-  const inFlight = new Map<string, Promise<T>>();
+  // The one read that may publish into each key. A read superseded by a refresh settles for whoever
+  // awaits it but publishes nothing, so it cannot overwrite the newer result.
+  const inFlight = new Map<string, Flight<T>>();
 
   function store(key: string, value: T, storedAtMs: number) {
     entries.delete(key);
@@ -80,21 +87,34 @@ export function createSaleListingCache<T>({
     }
   }
 
-  function load(key: string, loader: () => Promise<T>): Promise<T> {
+  /**
+   * Joins the key's read in flight, or starts one. A `forced` read joins only another forced read:
+   * its caller already holds a page it found outdated, and a background read that began before it
+   * may have read that same outdated state.
+   */
+  function load(key: string, loader: () => Promise<T>, forced = false): Promise<T> {
     const pending = inFlight.get(key);
-    if (pending) return pending;
+    if (pending && (pending.forced || !forced)) return pending.promise;
     // Age counts from when the read began: its rows reflect the database no later than that.
     const startedAtMs = now();
-    const promise = (async () => {
-      try {
-        const value = await loader();
-        store(key, value, startedAtMs);
+    const token = Symbol("sale-listing-read");
+    const isCurrent = () => inFlight.get(key)?.token === token;
+    // The loader runs a microtask later, so the flight is registered before it can settle, even
+    // when the loader throws instead of returning a rejected promise.
+    const promise = Promise.resolve().then(loader).then(
+      (value) => {
+        if (isCurrent()) {
+          inFlight.delete(key);
+          store(key, value, startedAtMs);
+        }
         return value;
-      } finally {
-        inFlight.delete(key);
-      }
-    })();
-    inFlight.set(key, promise);
+      },
+      (error: unknown) => {
+        if (isCurrent()) inFlight.delete(key);
+        throw error;
+      },
+    );
+    inFlight.set(key, Object.freeze({ token, forced, promise }));
     return promise;
   }
 
@@ -118,7 +138,7 @@ export function createSaleListingCache<T>({
 
   async function refresh(key: string, loader: () => Promise<T>): Promise<T> {
     entries.delete(key);
-    return load(key, loader);
+    return load(key, loader, true);
   }
 
   return Object.freeze({ read, refresh });

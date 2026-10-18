@@ -807,3 +807,82 @@ test("the cached sale read serves what an uncached read does, and reads again on
   assert.deepEqual(afterTakedown.products, []);
   assert.equal(afterTakedown.totalCount, 0);
 });
+
+test("a product the sync takes down while a background read is in flight is read fresh, never from that read", async () => {
+  const flashProduct = await createProduct("sale-swr-flash-product", 600_000);
+  await prisma.promotionCampaign.create({
+    data: {
+      id: campaignIds[1]!,
+      kind: "FLASH_SALE",
+      name: "SWR flash",
+      discountType: "PERCENTAGE",
+      percentageValue: 30,
+      startsAt: new Date(now.getTime() - 60_000),
+      endsAt: new Date(now.getTime() + 3_600_000),
+      isEnabled: true,
+      enabledAt: new Date(now.getTime() - 60_000),
+      targets: { create: { productId: flashProduct.id } },
+    },
+  });
+
+  let clockMs = 0;
+  const inner = createSaleListingCache<SaleIdPage>({
+    now: () => clockMs,
+    freshMs: 30_000,
+    maxAgeMs: 60_000,
+  });
+  // While `hold` is set, the next read loads its page at once and then waits on the gate, standing in
+  // for a background read whose snapshot predates the takedown.
+  let hold: { loaded: () => void; gate: Promise<void> } | null = null;
+  const cache: SaleListingCache<SaleIdPage> = {
+    read: (key, load) => {
+      const held = hold;
+      if (held === null) return inner.read(key, load);
+      hold = null;
+      return inner.read(key, async () => {
+        const page = await load();
+        held.loaded();
+        await held.gate;
+        return page;
+      });
+    },
+    refresh: (key, load) => inner.refresh(key, load),
+  };
+  const cachedRepository = createFlashSaleCatalogRepository(prisma, { saleIdPageCache: cache });
+  const args = {
+    shopId,
+    discovery: parseStorefrontDiscoverySearchParams({}),
+    pageSize: 12,
+    kind: "FLASH_SALE",
+    now,
+  } as const;
+
+  assert.deepEqual(
+    (await cachedRepository.listSalePage(args)).products.map((product) => product.slug),
+    ["sale-swr-flash-product"],
+  );
+
+  clockMs = 30_000;
+  let loaded!: () => void;
+  const backgroundLoaded = new Promise<void>((resolve) => {
+    loaded = resolve;
+  });
+  let openGate!: () => void;
+  hold = { loaded, gate: new Promise<void>((resolve) => { openGate = resolve; }) };
+  // A stale hit: served from the entry while the background read takes its snapshot and waits.
+  assert.equal((await cachedRepository.listSalePage(args)).products.length, 1);
+  await backgroundLoaded;
+
+  await prisma.productMirror.update({ where: { id: flashProduct.id }, data: { isActive: false } });
+  const afterTakedown = await cachedRepository.listSalePage(args);
+  assert.deepEqual(afterTakedown, await repository.listSalePage(args));
+  assert.deepEqual(afterTakedown.products, []);
+  assert.equal(afterTakedown.totalCount, 0);
+
+  // The superseded background read settles with its pre-takedown page and publishes nothing.
+  openGate();
+  await new Promise((resolve) => setImmediate(resolve));
+  const later = await cachedRepository.listSalePage(args);
+  assert.deepEqual(later.products, []);
+  assert.equal(later.totalCount, 0);
+});

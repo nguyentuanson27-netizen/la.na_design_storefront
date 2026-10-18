@@ -175,6 +175,56 @@ describe("Sale listing cache", () => {
     assert.deepEqual(await cache.read("k", async () => "unused"), { value: "current", cached: true });
   });
 
+  it("refresh starts a new read instead of joining a background read already in flight", async () => {
+    const time = clock();
+    const cache = createSaleListingCache<string>({ now: time.now, freshMs: 30, maxAgeMs: 60 });
+    await cache.read("k", async () => "cached");
+    time.advance(30);
+
+    // The background read began before the caller learned the cached page was outdated.
+    const background = deferred<string>();
+    assert.deepEqual(await cache.read("k", () => background.promise), { value: "cached", cached: true });
+
+    let forcedCalls = 0;
+    const forced = cache.refresh("k", async () => {
+      forcedCalls += 1;
+      return "current";
+    });
+    assert.equal(await forced, "current");
+    assert.equal(forcedCalls, 1);
+
+    // The superseded background read settles late and must not overwrite the forced result.
+    background.resolve("outdated");
+    await settle();
+    assert.deepEqual(await cache.read("k", async () => "unused"), { value: "current", cached: true });
+  });
+
+  it("shares one read between concurrent refreshes of a key", async () => {
+    const cache = createSaleListingCache<string>();
+    await cache.read("k", async () => "cached");
+    const pending = deferred<string>();
+    let calls = 0;
+    const load = () => {
+      calls += 1;
+      return pending.promise;
+    };
+
+    const a = cache.refresh("k", load);
+    const b = cache.refresh("k", load);
+    pending.resolve("current");
+    assert.deepEqual(await Promise.all([a, b]), ["current", "current"]);
+    assert.equal(calls, 1);
+  });
+
+  it("a read that throws before it awaits does not wedge its key", async () => {
+    const cache = createSaleListingCache<string>();
+    const throwsNow = (): Promise<string> => {
+      throw new Error("threw synchronously");
+    };
+    await assert.rejects(cache.read("k", throwsNow), /threw synchronously/);
+    assert.deepEqual(await cache.read("k", async () => "recovered"), { value: "recovered", cached: false });
+  });
+
   it("evicts the least recently used entry past the entry limit", async () => {
     const cache = createSaleListingCache<string>({ maxEntries: 2 });
     await cache.read("a", async () => "A");
