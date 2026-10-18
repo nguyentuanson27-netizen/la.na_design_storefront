@@ -5,6 +5,9 @@ import type { ActiveGiftQuantityCampaign } from "../../src/commerce/gift-quantit
 import type { ScopeConfig } from "../../src/commerce/gift-quantity-scope.ts";
 import {
   areProductPromotionOffersOpen,
+  giftOptionVariantIds,
+  isReadyGiftOption,
+  PRODUCT_PROMOTION_OFFER_NOTES,
   selectProductPromotionOffers,
 } from "../../src/commerce/product-promotion-offers.ts";
 
@@ -88,11 +91,13 @@ function dynamic(categoryKeys: string[], excludeProductIds: string[] = []): Scop
 }
 
 const facts = (categoryKeys: string[] = []) => ({ productId: PRODUCT, categoryKeys });
+/** The gift variant `giftCampaign()` names, granted-able unless a test says otherwise. */
+const READY = new Set(["gift-variant"]);
 
 test("names the active campaigns that cover the product, by their own names", () => {
-  assert.deepEqual(selectProductPromotionOffers([entry(tierCampaign()), entry(giftCampaign())], facts()), [
-    { id: "tier-1", kind: "TIER", label: "Mua 2 giảm 10%" },
-    { id: "gift-1", kind: "GIFT", label: "Tặng túi vải" },
+  assert.deepEqual(selectProductPromotionOffers([entry(tierCampaign()), entry(giftCampaign())], facts(), READY), [
+    { id: "tier-1", kind: "TIER", label: "Mua 2 giảm 10%", note: PRODUCT_PROMOTION_OFFER_NOTES.TIER },
+    { id: "gift-1", kind: "GIFT", label: "Tặng túi vải", note: PRODUCT_PROMOTION_OFFER_NOTES.GIFT },
   ]);
 });
 
@@ -132,6 +137,7 @@ test("leaves out campaigns whose scope excludes the product or that cannot be ho
       entry(tierCampaign({ id: "covered", name: "Mua 3 giảm 15%" }), dynamic(["aoDai"])),
     ],
     facts(["aoDai"]),
+    READY,
   );
   assert.deepEqual(offers.map((offer) => offer.id), ["covered"]);
 });
@@ -140,6 +146,33 @@ test("names at most two", () => {
   const many = selectProductPromotionOffers(
     [entry(tierCampaign({ id: "a" })), entry(tierCampaign({ id: "b" })), entry(tierCampaign({ id: "c" }))],
     facts(),
+    READY,
   );
   assert.deepEqual(many.map((offer) => offer.id), ["a", "b"]);
+});
+
+test("a gift campaign is named only while one of its gifts can be granted today", () => {
+  const gift = entry(giftCampaign({ giftOptions: [{ variantId: "sold-out" }, { variantId: "gift-variant" }] }));
+  // One option in stock is enough; the cart offers the shopper that one.
+  assert.deepEqual(selectProductPromotionOffers([gift], facts(), READY).map((offer) => offer.id), ["gift-1"]);
+  // Every option gone: the cart would grant nothing, so the page says nothing.
+  assert.deepEqual(selectProductPromotionOffers([gift], facts(), new Set()), []);
+  assert.deepEqual(giftOptionVariantIds([gift, entry(tierCampaign())]), ["sold-out", "gift-variant"]);
+});
+
+test("a gift is grantable by the cart's own rule: live, standalone, READY stock net of holds", () => {
+  const live = { active: true, composite: false, stock: 2, held: 0 };
+  assert.equal(isReadyGiftOption(live), true);
+  assert.equal(isReadyGiftOption({ ...live, stock: 0 }), false, "out of stock");
+  assert.equal(isReadyGiftOption({ ...live, held: 2 }), false, "every unit held by a reservation");
+  assert.equal(isReadyGiftOption({ ...live, stock: -1 }), false, "oversold");
+  assert.equal(isReadyGiftOption({ ...live, active: false }), false, "inactive or not present");
+  assert.equal(isReadyGiftOption({ ...live, composite: true }), false, "a set is never a gift");
+});
+
+test("each kind says how its benefit reaches the order; a gift is chosen, never applied", () => {
+  assert.notEqual(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, PRODUCT_PROMOTION_OFFER_NOTES.TIER);
+  assert.match(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /chọn quà/);
+  assert.doesNotMatch(PRODUCT_PROMOTION_OFFER_NOTES.GIFT, /tự áp dụng|tự tính|tự nhận/);
+  assert.match(PRODUCT_PROMOTION_OFFER_NOTES.TIER, /khi đủ điều kiện/);
 });

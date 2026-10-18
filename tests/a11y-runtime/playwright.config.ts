@@ -48,6 +48,7 @@ export default defineConfig({
     "pdp-language.spec.ts",
     "pdp-preorder-availability.spec.ts",
     "pdp-promotion.spec.ts",
+    "pdp-promotion-offers.spec.ts",
     "related-products.spec.ts",
     "storefront-commerce.spec.ts",
     "storefront-listing-consistency.spec.ts",

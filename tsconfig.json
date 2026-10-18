@@ -107,6 +107,8 @@
     ".next-test/pdp-preorder-availability/dev/types/**/*.ts",
     ".next-test/pdp-promotion/types/**/*.ts",
     ".next-test/pdp-promotion/dev/types/**/*.ts",
+    ".next-test/pdp-promotion-offers/types/**/*.ts",
+    ".next-test/pdp-promotion-offers/dev/types/**/*.ts",
     ".next-test/related-products/types/**/*.ts",
     ".next-test/related-products/dev/types/**/*.ts",
     ".next-test/storefront-commerce/types/**/*.ts",
