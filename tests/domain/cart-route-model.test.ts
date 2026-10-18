@@ -84,6 +84,11 @@ test("every unavailable reason has shopper wording, and an unknown one still say
   for (const [reason, expected] of cases) {
     assert.equal(cartUnavailableLabel(line({ unavailableReason: reason })), expected, String(reason));
   }
+  // When the count that would sell is known, the shopper is told it.
+  assert.equal(
+    cartUnavailableLabel(line({ unavailableReason: "INSUFFICIENT_STOCK", maxQuantity: 2 })),
+    "Chỉ còn 2 sản phẩm",
+  );
 });
 
 /* ------------------------------------------------------------------ editable rows */
@@ -95,6 +100,16 @@ test("insufficient stock keeps the quantity field usable, because lowering it is
   ]);
 
   assert.equal(model.lines[0]?.canUpdate, true);
+});
+
+test("an insufficient-stock line carries the limit the editor steps down to; a buyable line none", () => {
+  const model = build([
+    line({ available: false, unavailableReason: "INSUFFICIENT_STOCK", quantity: 4, maxQuantity: 2 }),
+    line({ variantId: "b" }),
+  ]);
+
+  assert.equal(model.lines[0]?.maxQuantity, 2);
+  assert.equal("maxQuantity" in model.lines[1]!, false);
 });
 
 test("any other unavailable reason locks the quantity field", () => {
@@ -174,4 +189,40 @@ test("an unavailable line still counts as being in the cart but not toward the t
     count: 3,
     totalText: vnd("100.000"),
   });
+});
+
+/* ----------------------------------------------------------------------- OD-06 shipping estimate */
+
+const policy = { feeVnd: 30_000, freeShippingSubtotalVnd: 1_000_000, freeShippingMinQuantity: 3 };
+
+test("OD-06: a cart without a bill shows the policy's basic shipping fee as an estimate", () => {
+  const model = buildCartViewModel({
+    lines: [line(), line({ variantId: "variant-2", available: false, unavailableReason: "OUT_OF_STOCK" })],
+    commerceTrackingEnabled: false,
+    shippingPolicy: policy,
+  });
+  assert.equal(model.summary, undefined);
+  assert.equal(model.shippingBaseFeeText, vnd("30.000"));
+});
+
+test("OD-06: the estimate follows the free-shipping rule on the buyable lines, not a flat basic fee", () => {
+  const model = buildCartViewModel({
+    lines: [line({ quantity: 3 }), line({ variantId: "variant-2", available: false, unavailableReason: "OUT_OF_STOCK" })],
+    commerceTrackingEnabled: false,
+    shippingPolicy: policy,
+  });
+  assert.equal(model.shippingBaseFeeText, "Miễn phí");
+  const nothingBuyable = buildCartViewModel({
+    lines: [line({ available: false, unavailableReason: "OUT_OF_STOCK" })],
+    commerceTrackingEnabled: false,
+    shippingPolicy: policy,
+  });
+  assert.equal(nothingBuyable.shippingBaseFeeText, undefined);
+});
+
+test("OD-06: the estimate gives way to the full bill, and is absent when the policy cannot be read", () => {
+  const withBill = buildCartViewModel({ lines: [line()], commerceTrackingEnabled: false, shippingPolicy: policy });
+  assert.ok(withBill.summary);
+  assert.equal(withBill.shippingBaseFeeText, undefined);
+  assert.equal(build([line({ available: false, unavailableReason: "OUT_OF_STOCK" })]).shippingBaseFeeText, undefined);
 });

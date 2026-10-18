@@ -93,7 +93,7 @@ const QUICK_ADD_NAMES = {
 export const KIND_SELECTION_GUIDANCE = "Nàng chọn phân loại trước để xem size còn hàng";
 
 /** A complete selection that names no real option -- distinct from a real option that is sold out. */
-export const MISSING_COMBINATION_MESSAGE = "Không có lựa chọn này. Vui lòng chọn lại.";
+export const MISSING_COMBINATION_MESSAGE = "Không có lựa chọn này. Nàng chọn lại nhé.";
 
 const DEFAULT_COLOR_DIMENSION_LABEL = "Màu";
 

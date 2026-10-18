@@ -19,7 +19,7 @@ export const MOBILE_SECOND_DIGITS: readonly string[] = ["3", "5", "7", "8", "9"]
 export const LANDLINE_PREFIXES: readonly string[] = ["02"];
 
 export const VIETNAM_PHONE_ERROR =
-  "Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678.";
+  "Số điện thoại chưa đúng. Nàng nhập số Việt Nam gồm 10 chữ số nhé, ví dụ 0912 345 678.";
 
 const SEPARATORS = /[\s.\-()]/g;
 

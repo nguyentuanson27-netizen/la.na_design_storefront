@@ -71,7 +71,9 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   // or the totals is a second place for them to drift from the view model.
   assert.equal((page.match(/const orderLines = \(/g) ?? []).length, 1);
   assert.equal((page.match(/const totalsBlock = \(/g) ?? []).length, 1);
-  assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 1);
+  // Owner request 2026-10-17: the "estimate" note under the total is gone; the total speaks for itself.
+  assert.equal((page.match(/const estimateNote = \(/g) ?? []).length, 0);
+  assert.doesNotMatch(page, /Đây là số tiền dự kiến/);
   assert.equal((page.match(/const preorderNoticeFor = /g) ?? []).length, 1);
   assert.match(page, /preorderNoticeFor\("mobile"\)/);
   assert.match(page, /preorderNoticeFor\("desktop"\)/);
@@ -84,7 +86,8 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(form, /className="checkout-totals lg:hidden"/);
   assert.match(form, /className="checkout-preorder lg:hidden"/);
   // The heading is the shared page header's, sized once for every page rather than per breakpoint here.
-  assert.match(page, /<PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" \/>/);
+  // Owner request 2026-10-18: no eyebrow or breadcrumb above the checkout title.
+  assert.match(page, /<PageHeader title="Thanh toán" meta="Thanh toán khi nhận hàng" \/>/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
   assert.doesNotMatch(form, /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/);
   assert.doesNotMatch(form, /Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake/);

@@ -1652,9 +1652,11 @@ body:has(.admin-shell) .site-masthead {
   outline-offset: 3px;
 }
 
-/* Below `lg` the PDP pins its purchase bar to the bottom edge; the button rides above it. */
+/* Below `lg` the PDP pins its purchase bar to the bottom edge, and cart/checkout their bottom CTA bar
+   (mobile-sticky-cta.tsx) while it shows; the button rides above either. */
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) .messenger-fab {
+  body:has([data-mobile-purchase-bar]) .messenger-fab,
+  body:has([data-mobile-sticky-cta]) .messenger-fab {
     bottom: calc(6rem + env(safe-area-inset-bottom));
   }
 }
@@ -1701,7 +1703,8 @@ body:has(.admin-shell) .site-masthead {
 }
 
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) .pancake-chat-facade {
+  body:has([data-mobile-purchase-bar]) .pancake-chat-facade,
+  body:has([data-mobile-sticky-cta]) .pancake-chat-facade {
     bottom: calc(5.5rem + env(safe-area-inset-bottom));
   }
 }
@@ -1747,7 +1750,8 @@ body:has(.admin-shell) .pancake-chat-facade {
 }
 
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) #pancake-chat-plugin-root {
+  body:has([data-mobile-purchase-bar]) #pancake-chat-plugin-root,
+  body:has([data-mobile-sticky-cta]) #pancake-chat-plugin-root {
     bottom: calc(5.5rem + env(safe-area-inset-bottom)) !important;
   }
 }
@@ -2932,7 +2936,8 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
 }
 
 @media (max-width: 1023.98px) {
-  body:has([data-mobile-purchase-bar]) .tryon-dock {
+  body:has([data-mobile-purchase-bar]) .tryon-dock,
+  body:has([data-mobile-sticky-cta]) .tryon-dock {
     bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 }

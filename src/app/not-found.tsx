@@ -22,7 +22,7 @@ export default function NotFound() {
           Không tìm thấy trang
         </h1>
         <p className="ui-state__copy">
-          Trang bạn tìm không tồn tại. Đường dẫn có thể đã được nhập sai hoặc không còn được dùng.
+          Trang nàng tìm không tồn tại. Đường dẫn có thể đã được nhập sai hoặc không còn được dùng.
         </p>
         <nav className="mt-8 flex flex-wrap gap-x-8 gap-y-4" aria-label="Điều hướng thay thế">
           {RECOVERY_DESTINATIONS.map((destination) => (

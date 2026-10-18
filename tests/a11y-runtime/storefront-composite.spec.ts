@@ -633,7 +633,7 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(cartLine.getByRole("heading", { name: componentName })).toBeVisible();
   await expect(page.getByRole("link", { name: componentName })).toHaveCount(0);
   await expect(cartLine.getByText("M", { exact: true })).toBeVisible();
-  await expect(cartLine.getByText(/390\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/390\.000.*₫/).first()).toBeVisible();
   await assertPageQuality(page);
 
   const checkoutLink = page.getByRole("link", { name: "Tiến hành đặt hàng" });

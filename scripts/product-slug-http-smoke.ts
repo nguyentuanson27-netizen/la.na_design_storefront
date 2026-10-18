@@ -301,7 +301,7 @@ try {
   );
 
   const recoveryText = visibleText(recoverySection);
-  for (const copy of ["Không tìm thấy trang", "Trang bạn tìm không tồn tại."]) {
+  for (const copy of ["Không tìm thấy trang", "Trang nàng tìm không tồn tại."]) {
     assert.equal(
       recoveryText.includes(copy),
       true,

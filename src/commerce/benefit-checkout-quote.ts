@@ -25,6 +25,7 @@ import { buildBenefitCheckoutQuoteFacts, type BenefitQuoteGift, type BenefitQuot
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { OrderQuoteSnapshotInput, DroppedBenefitInput } from "./order-quote-snapshot.ts";
 import { DROPPED_BENEFIT_REASONS } from "./order-quote-snapshot.ts";
+import { parseTrustedProductImageUrl } from "./product-media.ts";
 import type { QuoteStructure } from "./order-quote-rules.ts";
 import type { StorefrontCartLine } from "./storefront-cart.ts";
 
@@ -60,6 +61,8 @@ export type BenefitCheckoutResolution =
       dropped: readonly DroppedBenefitInput[];
       /** Display only (GQ19): `Sản phẩm — Màu / Cỡ` of every chosen gift, by Pancake variation id. Never part of the proof. */
       giftLabels: ReadonlyMap<string, string>;
+      /** Display only: each chosen gift's trusted product photo (or null), by Pancake variation id. Never part of the proof. */
+      giftImages: ReadonlyMap<string, string | null>;
       /** Display only: the admin-given name of each quantity-tier campaign, by campaign id. Never part of the proof. */
       campaignNames: ReadonlyMap<string, string>;
     }>;
@@ -198,11 +201,13 @@ export async function resolveBenefitCheckoutQuote({
   }
   const labelOf = new Map(state.labels.map((label) => [label.variantId, label]));
   const giftLabels = new Map<string, string>();
+  const giftImages = new Map<string, string | null>();
   for (const gift of gifts) {
     const label = labelOf.get(gift.variantId);
     giftLabels.set(gift.pancakeVariationId, label ? [label.productName, label.optionLabel].filter(Boolean).join(" — ") : "Quà tặng");
+    giftImages.set(gift.pancakeVariationId, parseTrustedProductImageUrl(label?.imageUrl));
   }
-  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50), giftLabels, campaignNames: benefits.campaignNames };
+  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50), giftLabels, giftImages, campaignNames: benefits.campaignNames };
 }
 
 /**

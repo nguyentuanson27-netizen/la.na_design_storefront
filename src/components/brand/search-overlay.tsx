@@ -194,7 +194,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                 {result.error}
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
-                Vui lòng thử lại sau hoặc tìm kiếm với từ khóa khác.
+                Nàng thử lại sau hoặc tìm với từ khóa khác nhé.
               </p>
             </div>
           ) : result.products.length > 0 ? (
@@ -241,7 +241,7 @@ export function SearchOverlay({ isOpen, onClose, triggerRef }: SearchOverlayProp
                 Không tìm thấy sản phẩm nào phù hợp với &ldquo;{query.trim()}&rdquo;
               </p>
               <p className="mt-2 text-xs text-[#70584B]">
-                Vui lòng kiểm tra lại chính tả hoặc thử tìm kiếm với từ khóa khác.
+                Nàng kiểm tra lại chính tả hoặc thử từ khóa khác nhé.
               </p>
             </div>
           ) : null}

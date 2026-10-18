@@ -87,7 +87,7 @@ export function PromotionBanner({ view, variant = "full", giftHref, onNavigate, 
   if (!view || view.items.length === 0) return null;
   return (
     <section
-      aria-label="Ưu đãi của bạn"
+      aria-label="Ưu đãi của nàng"
       aria-live="polite"
       className={`border-y border-[#3B2219]/10 py-3 ${variant === "full" ? "max-w-xl" : ""} ${className}`}
       data-promotion-banner={variant}

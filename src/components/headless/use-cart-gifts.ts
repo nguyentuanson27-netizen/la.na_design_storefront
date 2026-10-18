@@ -26,7 +26,7 @@ export function useCartGifts(onBusyChange?: (pending: boolean) => void, locked =
       }
     } catch { /* Result remains unknown: retry reads only. */ }
     unknown.current = true; setUncertain(true);
-    setMessage("Chưa xác nhận được kết quả lưu quà. Vui lòng kiểm tra lại; không nhận hoặc bỏ quà lần nữa lúc này.");
+    setMessage("Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong giỏ và đừng nhận hoặc bỏ quà lần nữa lúc này nhé.");
   }
   function retryRead() {
     if (pending) return;

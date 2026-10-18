@@ -316,7 +316,14 @@ test.afterEach(async () => {
     await prisma.cartItem.deleteMany({ where: { cartId } });
     await prisma.cart.deleteMany({ where: { id: cartId } });
   }
-
+  // Tests share one variant, and some (P9a) move its price: every test starts from the price the Pancake
+  // fixture accepts, so none is re-quoted because of another test's leftovers.
+  if (testVariantId) {
+    await prisma.variantMirror.update({
+      where: { id: testVariantId },
+      data: { pancakeRetailPrice: 500_000, pancakeRetailPriceAfterDiscount: 500_000 },
+    });
+  }
 });
 
 test.afterAll(async () => {
@@ -337,11 +344,11 @@ test("trusted checkout geo read reaches the limiter before an empty Pancake key 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
 
   await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Thông tin nhận hàng" })).toBeVisible();
   await expect(page.getByLabel("Tỉnh / Thành phố")).toBeVisible();
 
   const geoStatus = page.getByRole("status").filter({
-    hasText: "Chưa tải được danh sách tỉnh/thành. Vui lòng thử lại.",
+    hasText: "Chưa tải được danh sách tỉnh/thành, nàng thử lại nhé.",
   });
   await expect(geoStatus).toBeVisible();
   await expect(page.getByRole("button", { name: "Thử lại" })).toBeVisible();
@@ -386,12 +393,8 @@ for (const { name, viewport } of [
     const submit = page.getByRole("button", { name: "Đặt hàng COD" });
 
     await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
-    await expect(page.getByRole("heading", { level: 2, name: "Giao hàng COD" })).toBeVisible();
-    await expect(
-      page.getByText(
-        "Địa chỉ theo đơn vị hành chính mới: chọn tỉnh/thành phố, phường/xã, rồi nhập số nhà, tên đường.",
-      ),
-    ).toBeVisible();
+    await expect(page.getByRole("heading", { level: 2, name: "Thông tin nhận hàng" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Địa chỉ giao hàng (địa chỉ mới)" })).toBeVisible();
     // The post-2025 address has no district level.
     await expect(page.getByLabel("Quận / Huyện")).toHaveCount(0);
     await expect(page.getByText(/Pancake|máy chủ/i)).toHaveCount(0);
@@ -403,15 +406,15 @@ for (const { name, viewport } of [
     await expect(submit).toBeEnabled();
     await submit.click();
     // One short line by the button; each missing field is flagged in red where it is.
-    const missing = page.getByRole("alert").filter({ hasText: "Vui lòng điền đầy đủ thông tin." });
+    const missing = page.getByRole("alert").filter({ hasText: "Nàng điền nốt các ô còn trống nhé." });
     await expect(missing).toBeVisible();
     await expect(missing.getByRole("listitem")).toHaveCount(0);
     for (const [field, message] of [
-      [name, "Vui lòng nhập họ và tên người nhận."],
-      [phone, "Vui lòng nhập số điện thoại."],
-      [province, "Vui lòng chọn tỉnh/thành phố."],
-      [commune, "Vui lòng chọn phường/xã."],
-      [street, "Vui lòng nhập số nhà, tên đường."],
+      [name, "Nàng nhập họ tên người nhận nhé."],
+      [phone, "Nàng nhập số điện thoại nhé."],
+      [province, "Nàng chọn tỉnh/thành phố nhé."],
+      [commune, "Nàng chọn phường/xã nhé."],
+      [street, "Nàng nhập số nhà, tên đường nhé."],
     ] as const) {
       await expect(field).toHaveAttribute("aria-invalid", "true");
       await expect(page.getByText(message, { exact: true })).toBeVisible();
@@ -435,7 +438,7 @@ for (const { name, viewport } of [
     // A number that is not Vietnamese is named as such, and fixing it clears every warning.
     await phone.fill("12345");
     await expect(
-      page.getByText("Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678."),
+      page.getByText("Số điện thoại chưa đúng. Nàng nhập số Việt Nam gồm 10 chữ số nhé, ví dụ 0912 345 678."),
     ).toBeVisible();
     await expect(phone).toHaveAttribute("aria-invalid", "true");
     await phone.fill("0901 234 567");
@@ -452,7 +455,7 @@ for (const { name, viewport } of [
     await waitForConfirmedOrder();
 
     await expect(page.getByRole("heading", { level: 1, name: "ĐẶT HÀNG THÀNH CÔNG" })).toBeVisible();
-    const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn bạn đã đặt hàng." });
+    const successStatus = page.getByRole("status").filter({ hasText: "Cảm ơn nàng đã đặt hàng." });
     await expect(successStatus).toContainText("Mã đơn LA-");
     expect((await context.cookies(BASE_URL)).some(({ name }) => name === "la_cart")).toBe(false);
 
@@ -535,7 +538,7 @@ for (const { name, viewport } of [
   });
 }
 
-test("empty bag and empty checkout states render accessible empty UI and breadcrumb links", async ({
+test("empty bag and empty checkout states render accessible empty UI", async ({
   page,
   context,
 }) => {
@@ -546,13 +549,13 @@ test("empty bag and empty checkout states render accessible empty UI and breadcr
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "GIỎ HÀNG" })).toBeVisible();
   await expect(page.locator('[data-ui-state="empty"]')).toBeVisible();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await assertCheckoutAccessibility(page);
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "THANH TOÁN" })).toBeVisible();
   await expect(page.locator('[data-ui-state="empty"]')).toBeVisible();
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
   await assertCheckoutAccessibility(page);
 
   expect(browserErrors).toEqual([]);
@@ -649,13 +652,15 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
    * viewport, and unpinned the same scroll takes it off screen.
    *
    * The distance is measured from the summary's own resting position -- far enough that an
-   * unpinned summary would sit 200px above the viewport -- rather than a fixed 800px. A fixed
+   * unpinned summary would sit 120px above the viewport -- rather than a fixed 800px. A fixed
    * distance measured the page head as much as the sticky: when the shared page header replaced
    * the 9rem title, the grid started ~180px higher and a fixed 800px scroll ran past the end of the
    * form, where any sticky element correctly scrolls away with its grid area.
    */
   const restingTop = (await summary.boundingBox())!.y;
-  const scrollDistance = Math.round(restingTop + 200);
+  // +120 rather than +200: the compact floating-label form is shorter, and a longer scroll runs
+  // past the end of its grid area, where any sticky element correctly leaves with it.
+  const scrollDistance = Math.round(restingTop + 120);
   await page.evaluate((distance) => window.scrollBy(0, distance), scrollDistance);
   await page.waitForFunction((distance) => window.scrollY >= distance - 1, scrollDistance);
   const stuckTop = (await summary.boundingBox())!.y;
@@ -699,6 +704,8 @@ test("P9a a price change between render and submit forces an explicit second con
   await submit.click();
 
   await expect(page.getByRole("status")).toContainText("Giá đã thay đổi");
+  // UX-08 / AC-10: both totals are the server's -- the one this render showed, and the refreshed one.
+  await expect(page.getByRole("status")).toContainText(`Tổng thanh toán: ${quotedTotal} → `);
   expect(
     await prisma.orderMirror.count({ where: { sourceCartId: cartId } }),
     "a quote the buyer has not acknowledged must create no order at all",
@@ -726,4 +733,62 @@ test("P9a a price change between render and submit forces an explicit second con
   // than P9a's question of whether the buyer acknowledged the website's price. That the acknowledged
   // proof is accepted and the acknowledged price persisted is covered against the real snapshot
   // transaction in tests/database/guest-checkout-p9a-quote-proof.test.ts.
+});
+
+test("AC-18 the mobile bottom bar stands in for the submit button through the same pipeline", async ({
+  page,
+  context,
+}) => {
+  await cleanupRateLimits();
+  await startServer({ apiKey: TEST_API_KEY, mockPancake: true });
+  await createTestCart();
+  await prepareBrowser(context);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
+
+  const bar = page.locator("[data-mobile-sticky-cta]");
+  const submit = page.getByRole("button", { name: "Đặt hàng COD", exact: true });
+  await expect(bar).toBeVisible();
+  await expect(bar).toContainText("Tổng thanh toán");
+  const total = (await page.locator("dl:visible > div").filter({ hasText: "Tổng thanh toán" }).locator("dd").textContent())?.trim() ?? "";
+  expect(total).not.toEqual("");
+  await expect(bar).toContainText(total);
+
+  // Same validation as the primary button: nothing is sent, the first missing field takes focus,
+  // and the bar steps aside while the buyer types.
+  await bar.getByRole("button", { name: "Đặt hàng", exact: true }).click();
+  await expect(page.getByText("Nàng điền nốt các ô còn trống nhé.")).toBeVisible();
+  await expect(page.getByLabel("Họ và tên")).toBeFocused();
+  await expect(bar).toHaveCount(0);
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(0);
+
+  // With the primary button on screen only one primary action is shown.
+  await page.getByLabel("Họ và tên").blur();
+  await submit.scrollIntoViewIfNeeded();
+  await expect(bar).toHaveCount(0);
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(bar).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  expect((await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze()).violations).toEqual([]);
+
+  // Desktop has no bar at all, even with the submit button scrolled out of view.
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await expect(bar).toHaveCount(0);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => window.scrollTo(0, 0));
+
+  // A valid form ordered from the bar -- tapped twice -- places exactly one order through the one pipeline.
+  await page.getByLabel("Tỉnh / Thành phố").selectOption(PROVINCE_CURRENT);
+  await page.getByLabel("Phường / Xã").selectOption(COMMUNE_CURRENT);
+  await page.getByLabel("Họ và tên").fill("Nguyễn Văn A");
+  await page.getByLabel("Số điện thoại").fill("0901234567");
+  await page.getByLabel("Số nhà, tên đường").fill("12 Đường A");
+  await page.getByLabel("Số nhà, tên đường").blur();
+  await page.evaluate(() => window.scrollTo(0, 0));
+  const barButton = bar.getByRole("button", { name: "Đặt hàng", exact: true });
+  await expect(barButton).toBeEnabled();
+  await barButton.dblclick();
+  await page.waitForURL((url) => url.pathname === "/checkout/success" && Boolean(url.searchParams.get("order")));
+  await waitForConfirmedOrder();
+  expect(await prisma.orderMirror.count({ where: { sourceCartId: cartId } })).toBe(1);
 });

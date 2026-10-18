@@ -119,7 +119,7 @@ export function GuestOrderTrackingForm({
           ) : null}
           {state.order.status === "CHECKING" ? (
             <p className="mt-5 text-sm leading-6 text-black/75">
-              Hệ thống đang kiểm tra lại kết quả đồng bộ. Vui lòng không gửi lại đơn chỉ vì trạng thái này.
+              Hệ thống đang kiểm tra lại kết quả đồng bộ. Nàng đừng gửi lại đơn chỉ vì trạng thái này nhé.
             </p>
           ) : null}
         </section>
@@ -131,7 +131,7 @@ export function GuestOrderTrackingForm({
         >
           {state.reason === "NOT_FOUND"
             ? "Không tìm thấy đơn hàng khớp với thông tin đã nhập."
-            : "Chưa thể tra cứu lúc này. Vui lòng thử lại sau."}
+            : "Chưa tra cứu được lúc này. Nàng thử lại sau nhé."}
         </div>
       ) : null}
     </div>

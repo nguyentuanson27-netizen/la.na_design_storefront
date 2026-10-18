@@ -14,7 +14,7 @@ export const ACCOUNT_AUTH_COPY = Object.freeze({
   checkingSession: "Đang kiểm tra phiên đăng nhập…",
   signedIn: "Đăng nhập thành công.",
   signedUp: "Tài khoản đã được tạo.",
-  signOutFailed: "Không thể đăng xuất lúc này. Vui lòng thử lại.",
+  signOutFailed: "Chưa đăng xuất được. Nàng thử lại nhé.",
 });
 
 export type AccountPendingAction = "sign-in" | "sign-up" | "sign-out" | null;

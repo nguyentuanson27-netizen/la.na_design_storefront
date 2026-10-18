@@ -49,6 +49,11 @@ export type CartLineView = Readonly<{
    */
   canUpdate: boolean;
   /**
+   * On an `INSUFFICIENT_STOCK` line: the largest quantity that would sell right now, so the editor
+   * can step straight down to it instead of one at a time through refusals.
+   */
+  maxQuantity?: number;
+  /**
    * F8b / §30 — the exact `Đặt trước` word for this line, or `null` for an ordinary line.
    *
    * Per line rather than per basket, because the marker has to survive the trip from the PDP for
@@ -57,6 +62,8 @@ export type CartLineView = Readonly<{
    */
   preorderLabel: string | null;
   paidSegments?: readonly string[];
+  /** What this line costs in total (benefit-tier prices included); absent when it is not bought. */
+  lineTotalText?: string;
 }>;
 
 export type CartViewModel = Readonly<{
@@ -84,8 +91,24 @@ export type CartViewModel = Readonly<{
    * buyable, benefits readable), so a cart that cannot be bought never shows a total.
    */
   summary?: OrderSummaryView;
+  /**
+   * OD-06 — shown only where `summary` is not: the shipping the server policy gives the buyable lines, as an
+   * estimate the checkout makes exact. Absent when the policy cannot be read, nothing can be bought, or there
+   * is a summary to show instead.
+   */
+  shippingBaseFeeText?: string;
   benefitsNotice?: string;
+  /**
+   * The list-price total struck through beside what the buyer saves, when something is saved
+   * (per-product sales and benefit-tier prices). Absent when nothing is, or the total is unknown.
+   */
+  savings?: Readonly<{ originalTotalText: string; savingText: string }>;
 }>;
+
+/** What a shopper is told when a quantity outruns stock and the count that would sell is known. */
+export function cartStockLimitText(maxQuantity: number): string {
+  return `Chỉ còn ${maxQuantity} sản phẩm`;
+}
 
 /** Why a line cannot be bought, in the shopper's words. */
 export function cartUnavailableLabel(line: StorefrontCartLine): string {
@@ -93,7 +116,7 @@ export function cartUnavailableLabel(line: StorefrontCartLine): string {
     case "OUT_OF_STOCK":
       return "Tạm hết hàng";
     case "INSUFFICIENT_STOCK":
-      return "Không đủ tồn kho cho số lượng này";
+      return line.maxQuantity ? cartStockLimitText(line.maxQuantity) : "Không đủ tồn kho cho số lượng này";
     case "PRICE_UNRESOLVED":
       return "Giá đang cập nhật";
     case "MAPPING_REQUIRED":
@@ -176,6 +199,58 @@ function summaryEntry(
   return summary === null || (state !== undefined && summary.valueText !== currency.format(subtotal)) ? {} : { summary };
 }
 
+/**
+ * OD-06: where no bill is shown, the shipping the policy would charge on the lines that can be bought, by the
+ * same rule checkout applies (so a basket already past the free-shipping threshold reads "Miễn phí", not the
+ * basic fee). An estimate only: checkout re-quotes it. Withheld when nothing can be bought or the rule fails.
+ */
+function withShippingEstimate(
+  policy: GuestShippingPolicy | undefined,
+  lines: readonly StorefrontCartLine[],
+  goodsSubtotalVnd: number | null,
+  // Without readable benefits the goods total after discounts is unknown ("Chưa thể tính"), so is shipping.
+  benefitsUnavailable: boolean,
+  entry: { summary?: OrderSummaryView },
+): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
+  if (entry.summary || policy === undefined || goodsSubtotalVnd === null || benefitsUnavailable) return entry;
+  const quantity = lines.reduce((sum, line) => sum + (line.available ? line.quantity : 0), 0);
+  if (!Number.isSafeInteger(quantity) || quantity < 1) return entry;
+  try {
+    const feeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: goodsSubtotalVnd, totalQuantity: quantity }, policy);
+    return { shippingBaseFeeText: feeVnd === 0 ? "Miễn phí" : currency.format(feeVnd) };
+  } catch {
+    return entry;
+  }
+}
+
+function lineTotalEntry(
+  line: StorefrontCartLine,
+  groups: readonly { lineKey: string; quantity: number; unitPriceVnd: number }[] | undefined,
+): { lineTotalText?: string } {
+  if (!line.available || line.price === null) return {};
+  const own = groups?.filter((group) => group.lineKey === line.variantId) ?? [];
+  const total = own.length > 0
+    ? own.reduce((sum, group) => sum + group.quantity * group.unitPriceVnd, 0)
+    : line.price * line.quantity;
+  return Number.isSafeInteger(total) ? { lineTotalText: currency.format(total) } : {};
+}
+
+function savingsEntry(
+  lines: readonly StorefrontCartLine[],
+  payableVnd: number | null,
+  benefitsUnavailable: boolean,
+): { savings?: CartViewModel["savings"] } {
+  if (payableVnd === null || benefitsUnavailable) return {};
+  let original = 0;
+  for (const line of lines) {
+    if (!line.available || line.price === null) continue;
+    original += Math.max(line.basePrice ?? line.price, line.price) * line.quantity;
+  }
+  const saving = original - payableVnd;
+  if (!Number.isSafeInteger(original) || !Number.isSafeInteger(saving) || saving <= 0) return {};
+  return { savings: Object.freeze({ originalTotalText: currency.format(original), savingText: currency.format(saving) }) };
+}
+
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
   const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
   if (!discount) return {};
@@ -248,11 +323,13 @@ export function buildCartViewModel(
           available: line.available,
           availabilityLabel: line.available ? "Có thể mua" : cartUnavailableLabel(line),
           canUpdate: line.available || line.unavailableReason === "INSUFFICIENT_STOCK",
+          ...(line.maxQuantity ? { maxQuantity: line.maxQuantity } : {}),
           // The line's own canonical classification. Withheld when the line cannot be bought, for
           // the same reason the cart line withholds it: an unavailable line is not being ordered.
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
           ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
             ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
+          ...lineTotalEntry(line, paidBenefits?.groups),
         }),
       ),
     ),
@@ -263,12 +340,13 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
-    ...summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines),
-    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa thể kiểm tra quyền lợi. Vui lòng thử lại trước khi đặt hàng." : state && !state.validation.ok
-      ? "Quà bạn đã chọn không còn hợp lệ. Hãy chọn lại quà trong giỏ hàng trước khi đặt hàng."
+    ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
+    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
+    ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
+      ? "Quà nàng chọn không còn hợp lệ. Nàng chọn lại quà trong giỏ trước khi đặt hàng nhé."
       : tierPriceInvalid
         ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến."
-        : "Bạn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; vui lòng quay lại sau." } : {}),
+        : "Nàng vẫn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; nàng quay lại sau nhé." } : {}),
   });
 }
 

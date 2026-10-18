@@ -1,5 +1,9 @@
 "use server";
 
+// AM-01 (OD-01 = A, 17/10/2026): no client component imports these actions any more, so Next registers
+// no endpoint for them. Kept on purpose with the service and its DB tests until a separate decision
+// removes the inline add (smart-promotion-upsell-v1.md §8, FR-08 row).
+
 import { cookies } from "next/headers";
 import { refresh } from "next/cache";
 import { readAuthServerConfig } from "../auth/config.ts";

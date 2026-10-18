@@ -12,6 +12,7 @@ import {
   evaluateMultiLineReservation,
   evaluateVariantCapacity,
   isTerminalReservationState,
+  maxAllowedQuantity,
   reservationHoldsCapacity,
   resourceHoldsCapacity,
   resolveSellingPolicy,
@@ -531,4 +532,21 @@ test("I4 a reservation already held moves the boundary", () => {
 
   assert.equal(held(0).sellable, true);
   assert.equal(held(1).sellable, false, "the only unit is already spoken for");
+});
+
+test("the largest allowed quantity is exactly the one the capacity rule accepts", () => {
+  for (const input of [
+    variant({ mirroredStock: 2 }),
+    variant({ mirroredStock: 5, activeReservedQuantity: 2 }),
+    variant({ mirroredStock: 2, sellingMode: "OVERSELL" }),
+    variant({ mirroredStock: -3, sellingMode: "PREORDER", negativeStockLimit: -10 }),
+  ]) {
+    const max = maxAllowedQuantity(input);
+    assert.equal(evaluateVariantCapacity(input, max).allowed, true);
+    assert.equal(evaluateVariantCapacity(input, max + 1).allowed, false);
+  }
+  assert.equal(maxAllowedQuantity(variant({ mirroredStock: 2, sellingMode: "OVERSELL" })), 22);
+  // Nothing sells, or the mirror is unreadable: no count to offer.
+  assert.equal(maxAllowedQuantity(variant({ mirroredStock: 0 })), 0);
+  assert.equal(maxAllowedQuantity(variant({ mirroredStock: 1.5 })), 0);
 });

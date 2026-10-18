@@ -114,7 +114,7 @@ test("gift slots are celebrated, unclaimed ones ask for a choice, and reached it
   }))!;
   assert.deepEqual(view.items.map((item) => [item.state, item.kind]), [["achieved", "GIFT"], ["progress", "GIFT"]]);
   const [reached, next] = view.items;
-  assert.equal(reached!.title, "Bạn nhận được 1 quà tặng");
+  assert.equal(reached!.title, "Nàng nhận được 1 quà tặng");
   assert.equal(reached!.needsGiftChoice, true);
   assert.equal(next!.title, "Mua thêm 3 sản phẩm để nhận thêm quà");
   assert.equal(next!.progress!.percent, 25, "1 of 4 units toward the next slot");

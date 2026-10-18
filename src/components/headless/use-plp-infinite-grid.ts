@@ -89,7 +89,7 @@ export function usePlpInfiniteGrid({
         window.history.replaceState(null, "", result.currentHref);
       }
     } catch {
-      const errorMessage = "Không thể tải thêm sản phẩm. Vui lòng thử lại.";
+      const errorMessage = "Chưa tải thêm được sản phẩm. Nàng thử lại nhé.";
       setError(errorMessage);
       setAnnouncement(errorMessage);
     } finally {

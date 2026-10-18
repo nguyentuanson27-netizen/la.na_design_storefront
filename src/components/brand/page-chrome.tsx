@@ -68,14 +68,19 @@ export function PageBreadcrumbs({
  * display, and weight is what separates that from the 9rem bold sans the account, cart, checkout
  * and content pages each used to shout their titles in. `meta` is the short fact set on the
  * heading's baseline at the far edge ("3 sản phẩm", "Thanh toán khi nhận hàng").
+ *
+ * `align="center"` sets the title centred with no closing hairline, for a page (the cart) whose
+ * breadcrumb sits under the title instead of above it.
  */
 export function PageHeader({
   eyebrow,
   title,
   lead,
   meta,
+  align = "start",
   children,
 }: Readonly<{
+  align?: "start" | "center";
   eyebrow?: string;
   title: string;
   lead?: ReactNode;
@@ -89,7 +94,7 @@ export function PageHeader({
   );
 
   return (
-    <div className="mt-4 border-b border-[#3B2219]/15 pb-4">
+    <div className={align === "center" ? "mt-6 text-center md:mt-10" : "mt-4 border-b border-[#3B2219]/15 pb-4"}>
       {eyebrow ? <p className="eyebrow text-[#70584B]">{eyebrow}</p> : null}
       {meta ? (
         <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">

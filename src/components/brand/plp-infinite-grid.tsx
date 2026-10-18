@@ -47,7 +47,7 @@ export function PlpInfiniteGrid(props: PlpInfiniteGridProps) {
         titleId="category-empty-title"
         eyebrow="Không tìm thấy"
         title="Không tìm thấy sản phẩm phù hợp"
-        copy="Vui lòng thử điều chỉnh bộ lọc hoặc xóa các tùy chọn đã chọn."
+        copy="Nàng thử đổi bộ lọc hoặc bỏ bớt lựa chọn nhé."
         action={{ href: categoryPath, label: "Xóa tất cả bộ lọc" }}
       />
     );

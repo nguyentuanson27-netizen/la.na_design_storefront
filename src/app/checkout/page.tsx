@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
-import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
@@ -14,20 +14,14 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 
 /** Checkout's markup. Every decision behind it is in `@/routes/checkout` and its model. */
 
-const CHECKOUT_BREADCRUMBS = [
-  { label: "Trang chủ", href: "/" },
-  { label: "Giỏ hàng", href: "/cart" },
-  { label: "Thanh toán" },
-] as const;
-
+// No breadcrumb or eyebrow: checkout keeps the buyer on the form, not on the way out.
 function render(data: CheckoutViewModel) {
   if (data.state === "empty") {
     return (
       <PageShell>
-        <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
-        <PageHeader eyebrow="Mua sắm" title="Thanh toán" />
+        <PageHeader title="Thanh toán" />
         <div className="mt-8" data-ui-state="empty">
-          <p className="font-display text-xl md:text-2xl">Giỏ hàng của bạn đang trống.</p>
+          <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
         </div>
       </PageShell>
@@ -93,14 +87,20 @@ function render(data: CheckoutViewModel) {
           <p className="shrink-0 text-sm font-medium">{line.lineTotalText}</p>
         </div>
       ))}
-      {(benefit?.giftLines ?? data.giftPicker?.selections.map((row) => ({ lineKey: `${row.campaignId}/${row.variantId}`, label: row.label, quantity: row.quantity, priceText: "Cần kiểm tra" })) ?? []).map((gift) => (
+      {(benefit?.giftLines ?? data.giftPicker?.selections.map((row) => ({ lineKey: `${row.campaignId}/${row.variantId}`, label: row.label, quantity: row.quantity, priceText: "Cần kiểm tra", imageUrl: row.imageUrl ?? null })) ?? []).map((gift) => (
         <div className="flex items-start gap-4 py-4" data-line-role="gift" key={gift.lineKey}>
-          <div
-            className="flex aspect-[3/4] w-14 shrink-0 items-center justify-center border border-black/10 bg-black/[0.04] text-[9px] font-semibold uppercase tracking-wider text-black/75"
-            aria-hidden="true"
-          >
-            Quà
-          </div>
+          {gift.imageUrl ? (
+            <div className="relative aspect-[3/4] w-14 shrink-0 overflow-hidden border border-black/10 bg-black/[0.04]">
+              <Image alt="" className="h-full w-full object-cover" fill sizes="56px" src={gift.imageUrl} />
+            </div>
+          ) : (
+            <div
+              className="flex aspect-[3/4] w-14 shrink-0 items-center justify-center border border-black/10 bg-black/[0.04] text-[9px] font-semibold uppercase tracking-wider text-black/75"
+              aria-hidden="true"
+            >
+              Quà
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold uppercase tracking-[0.05em]">{gift.label}</p>
             <p className="mt-1 text-xs leading-5 text-black/75">Quà tặng · SL {gift.quantity}</p>
@@ -154,31 +154,21 @@ function render(data: CheckoutViewModel) {
     </>
   );
 
-  const estimateNote = (
-    <p className="text-xs leading-5 text-black/75">
-      Đây là số tiền dự kiến. Giá, tồn kho và phí vận chuyển sẽ được kiểm tra lại khi bạn đặt hàng.
-    </p>
-  );
-
-  const totalsContent = (
-    <div className="space-y-5">
-      {totalsBlock}
-      {estimateNote}
-    </div>
-  );
+  const totalsContent = totalsBlock;
 
   const preorderNoticeFor = (surface: "mobile" | "desktop") => data.preorderNotice === null ? null : <BrandPreorderFulfillmentNotice notice={data.preorderNotice} titleId={`preorder-fulfillment-title-${surface}`} />;
 
   return (
     <PageShell>
-      <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
-      <PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" />
+      <PageHeader title="Thanh toán" meta="Thanh toán khi nhận hàng" />
 
       {/* The form owns one interactive gift area and the responsive order/receiving layout. */}
       <PromotionBanner className="mt-8" view={data.promotions} />
       <div className="mt-8">
         <BrandGuestCheckoutForm
           quoteProof={quoteProof}
+          totalVnd={data.totals?.totalVnd}
+          totalText={data.totals?.totalText}
           giftPicker={data.giftPicker}
           attemptKey={data.attemptKey}
           quoteRenderId={data.quoteRenderId}

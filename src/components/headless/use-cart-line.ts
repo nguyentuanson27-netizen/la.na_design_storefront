@@ -34,6 +34,8 @@ export type UseCartLineInput = Readonly<{
   variantId: string;
   initialQuantity: number;
   canUpdate: boolean;
+  /** The stock limit the server already named for this line (an `INSUFFICIENT_STOCK` line). */
+  stockLimit?: number;
   /** Server-resolved: a deployment that publishes no dataLayer must not have one created here. */
   commerceTrackingEnabled?: boolean;
 }>;
@@ -42,13 +44,25 @@ export function useCartLine({
   variantId,
   initialQuantity,
   canUpdate,
+  stockLimit: serverStockLimit,
   commerceTrackingEnabled = false,
 }: UseCartLineInput) {
   const inputId = useId();
   const router = useRouter();
   const [quantity, setQuantityText] = useState(String(initialQuantity));
   const [message, setMessage] = useState("");
+  // A refusal reads as a warning beside the stepper; a committed change is a quiet confirmation.
+  const [messageIsWarning, setMessageIsWarning] = useState(false);
+  // The largest quantity a stock refusal named; "+" is pointless at or above it.
+  const [refusedLimit, setRefusedLimit] = useState<number | null>(null);
   const [isPending, startTransition] = useTransition();
+
+  // A refresh after a committed change brings the server's quantity; the field follows it.
+  const [committedQuantity, setCommittedQuantity] = useState(initialQuantity);
+  if (committedQuantity !== initialQuantity) {
+    setCommittedQuantity(initialQuantity);
+    setQuantityText(String(initialQuantity));
+  }
 
   const parsed = resolveCartLineQuantity(quantity);
 
@@ -84,20 +98,49 @@ export function useCartLine({
     setMessage("");
   }
 
-  function updateLine() {
-    if (!canUpdate || !parsed.isValid || isPending) return;
+  function submitQuantity(value: number) {
+    if (!canUpdate || isPending || !resolveCartLineQuantity(String(value)).isValid) return;
+    setQuantityText(String(value));
     setMessage("");
 
     startTransition(async () => {
       try {
-        const result = await updateStorefrontCartLine({ variantId, quantity: parsed.value });
-        if (result.ok) trackCommittedMetaAddToCart(result.metaEvent);
+        const result = await updateStorefrontCartLine({ variantId, quantity: value });
+        setMessageIsWarning(!result.ok);
+        if (result.ok) {
+          trackCommittedMetaAddToCart(result.metaEvent);
+          setRefusedLimit(null);
+        } else {
+          // The server answered no, so the line still holds what it held: show that again.
+          setQuantityText(String(initialQuantity));
+          if (result.maxQuantity) setRefusedLimit(result.maxQuantity);
+        }
         apply(resolveCartLineUpdateOutcome(result));
       } catch {
+        setMessageIsWarning(true);
         apply(resolveCartLineThrownOutcome("update"));
       }
     });
   }
+
+  function updateLine() {
+    if (!parsed.isValid) return;
+    submitQuantity(parsed.value);
+  }
+
+  /** Commits a typed quantity (Enter or leaving the field); an unusable one goes back. */
+  function commitTypedQuantity() {
+    if (!parsed.isValid) {
+      setQuantityText(String(initialQuantity));
+      return;
+    }
+    if (parsed.value !== initialQuantity) submitQuantity(parsed.value);
+  }
+
+  const current = parsed.isValid ? parsed.value : initialQuantity;
+  const stockLimit = refusedLimit ?? serverStockLimit ?? null;
+  // Above a known limit, one step down would only be refused again: go straight to the limit.
+  const decrementTarget = stockLimit !== null && current > stockLimit ? stockLimit : current - 1;
 
   function removeLine() {
     if (isPending) return;
@@ -105,8 +148,10 @@ export function useCartLine({
 
     startTransition(async () => {
       try {
+        setMessageIsWarning(true);
         apply(resolveCartLineRemoveOutcome(await removeStorefrontCartLine({ variantId })));
       } catch {
+        setMessageIsWarning(true);
         apply(resolveCartLineThrownOutcome("remove"));
       }
     });
@@ -119,11 +164,20 @@ export function useCartLine({
     maxQuantity: CART_LINE_MAX_QUANTITY,
     isPending,
     message,
+    messageIsWarning,
     canEditQuantity: canUpdate && !isPending,
     canSubmitUpdate: canUpdate && parsed.isValid && !isPending,
+    canDecrement: canUpdate && !isPending && current > 1,
+    canIncrement: canUpdate && !isPending && (stockLimit === null || current < stockLimit),
     canRemove: !isPending,
     setQuantity,
     updateLine,
+    commitTypedQuantity,
+    /** Where "−" goes: one down, or straight to a known stock limit the line is above. */
+    decrementTarget,
+    currentQuantity: current,
+    decrement: () => submitQuantity(decrementTarget),
+    increment: () => submitQuantity(current + 1),
     removeLine,
   };
 }

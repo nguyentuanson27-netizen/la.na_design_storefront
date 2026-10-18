@@ -308,3 +308,10 @@ test("gift repair retains removals without issuing proof or a submit-capable quo
   assert.equal(model.totals, null);
   assert.match(model.unavailableNotice!, /bỏ.*tại đây/i);
 });
+
+test("a gift line in the order carries the gift product's own photo, or none when it has no trusted one", () => {
+  const withPhoto = buildBenefitCheckoutViewModel({ lines: [cartLine], render: render({ giftImages: new Map([["var-g", "https://cdn.example/khan.jpg"]]) }) });
+  assert.equal(withPhoto.benefit!.giftLines[0]!.imageUrl, "https://cdn.example/khan.jpg");
+  const without = buildBenefitCheckoutViewModel({ lines: [cartLine], render: render() });
+  assert.equal(without.benefit!.giftLines[0]!.imageUrl, null);
+});

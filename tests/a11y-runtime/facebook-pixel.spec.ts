@@ -760,13 +760,13 @@ test("cart page and drawer report only positive committed quantity deltas with s
   await expect(page.getByText("Đã thêm sản phẩm vào giỏ hàng.")).toBeVisible();
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
   await page.getByLabel("Số lượng", { exact: true }).fill("3");
-  await page.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await page.getByLabel("Số lượng", { exact: true }).press("Enter");
   const delta = await waitForEvent(page, "AddToCart");
   expect(delta[2]).toMatchObject({ value: UNIT_PRICE * 2, num_items: 2,
     contents: [{ id: productSlug, quantity: 2, item_price: UNIT_PRICE }] });
   await waitForTwin(delta);
   await page.getByLabel("Số lượng", { exact: true }).fill("2");
-  await page.getByRole("button", { name: "Cập nhật", exact: true }).click();
+  await page.getByLabel("Số lượng", { exact: true }).press("Enter");
   await expect(page.getByLabel("Số lượng", { exact: true })).toHaveValue("2");
   await delay(500);
   expect(trackedEventNames(await readCalls(page)).filter((name) => name === "AddToCart")).toHaveLength(1);

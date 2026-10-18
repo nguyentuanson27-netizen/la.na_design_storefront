@@ -219,7 +219,7 @@ export function buildCartPromotionView(
         id: `gift-${entry.campaignId}`,
         state: "achieved",
         kind: "GIFT",
-        title: entry.entitled === 1 ? "Bạn nhận được 1 quà tặng" : `Bạn nhận được ${entry.entitled} quà tặng`,
+        title: entry.entitled === 1 ? "Nàng nhận được 1 quà tặng" : `Nàng nhận được ${entry.entitled} quà tặng`,
         progress: null,
         needsGiftChoice: unclaimed > 0,
       }));

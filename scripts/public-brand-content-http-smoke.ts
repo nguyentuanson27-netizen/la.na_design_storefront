@@ -130,7 +130,7 @@ try {
     "Không cần tài khoản để thanh toán.",
     "Miễn phí vận chuyển",
     "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
-    "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
+    "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi nàng đặt hàng.",
   ]) {
     assert.equal(text.includes(fact), true, `shipping page must expose factual visible text: ${fact}`);
   }
@@ -155,7 +155,7 @@ try {
   assert.notEqual(notFoundSection, "", "unknown route must render the branded 404 section");
 
   const notFoundText = visibleText(notFoundSection);
-  for (const copy of ["Không tìm thấy trang", "Trang bạn tìm không tồn tại."]) {
+  for (const copy of ["Không tìm thấy trang", "Trang nàng tìm không tồn tại."]) {
     assert.equal(notFoundText.includes(copy), true, `branded 404 must state what happened: ${copy}`);
   }
 

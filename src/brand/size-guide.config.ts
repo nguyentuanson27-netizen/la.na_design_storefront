@@ -29,7 +29,7 @@ export const SIZE_GUIDE: SizeGuideConfig = {
   tolerance: null,
   circumferenceSemanticsNote:
     "Ngực, eo và mông là số đo vòng cơ thể, không phải số đo trên sản phẩm.",
-  guidanceNote: `Bảng size chỉ mang tính tham khảo và có thể thay đổi tùy form dáng của từng sản phẩm; vui lòng liên hệ ${NAME} để được tư vấn chọn size.`,
+  guidanceNote: `Bảng size chỉ mang tính tham khảo và có thể thay đổi tùy form dáng của từng sản phẩm; nàng cứ nhắn ${NAME} để được tư vấn chọn size nhé.`,
   charts: [
     {
       id: "ao-dai",

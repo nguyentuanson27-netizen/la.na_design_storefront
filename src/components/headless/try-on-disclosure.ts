@@ -34,10 +34,10 @@ export function resolveTryOnPrivacyDisclosure(
         `${brandName} không ghi ảnh thử đồ vào database hay kho ảnh riêng; ảnh được xử lý qua Google Flow ` +
         "bằng một hồ sơ Chrome được lưu lâu dài, hoặc qua Google Cloud Vertex AI khi Google Flow đang bận hay tạm gián đoạn.",
       detail:
-        `${brandName} dùng file tạm cho ảnh bạn tải lên, ảnh sản phẩm và kết quả; các file tạm này được xóa sau request và không được ghi vào database hay object storage của cửa hàng. ` +
+        `${brandName} dùng file tạm cho ảnh nàng tải lên, ảnh sản phẩm và kết quả; các file tạm này được xóa sau request và không được ghi vào database hay object storage của cửa hàng. ` +
         "Mỗi lần tạo ảnh chỉ dùng một trong hai dịch vụ của Google. " +
         `Thường là Google Flow: ${FLOW_DETAIL} ` +
-        "Khi Google Flow đang bận hoặc tạm gián đoạn, ảnh của bạn và ảnh sản phẩm được gửi tới Google Cloud Vertex AI thay thế; " +
+        "Khi Google Flow đang bận hoặc tạm gián đoạn, ảnh của nàng và ảnh sản phẩm được gửi tới Google Cloud Vertex AI thay thế; " +
         VERTEX_RETENTION,
     };
   }
@@ -47,7 +47,7 @@ export function resolveTryOnPrivacyDisclosure(
       summary:
         `${brandName} không ghi ảnh thử đồ vào database hay kho ảnh riêng; ảnh được xử lý qua Google Flow bằng một hồ sơ Chrome được lưu lâu dài.`,
       detail:
-        `${brandName} dùng file tạm cho ảnh bạn tải lên, ảnh sản phẩm và kết quả; các file tạm này được xóa sau request và không được ghi vào database hay object storage của cửa hàng. ` +
+        `${brandName} dùng file tạm cho ảnh nàng tải lên, ảnh sản phẩm và kết quả; các file tạm này được xóa sau request và không được ghi vào database hay object storage của cửa hàng. ` +
         FLOW_DETAIL,
     };
   }
@@ -56,7 +56,7 @@ export function resolveTryOnPrivacyDisclosure(
     summary:
       `${brandName} không lưu ảnh trong hệ thống của mình; ảnh được gửi tới Google Cloud Vertex AI để tạo kết quả.`,
     detail:
-      `${brandName} không lưu ảnh bạn tải lên hay ảnh được tạo trong hệ thống của chúng tôi. ` +
-      `Ảnh của bạn và ảnh sản phẩm được gửi tới Google Cloud Vertex AI để tạo kết quả; ${VERTEX_RETENTION}`,
+      `${brandName} không lưu ảnh nàng tải lên hay ảnh được tạo trong hệ thống của mình. ` +
+      `Ảnh của nàng và ảnh sản phẩm được gửi tới Google Cloud Vertex AI để tạo kết quả; ${VERTEX_RETENTION}`,
   };
 }

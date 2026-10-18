@@ -12,7 +12,7 @@ export default function ShopError({ reset }: { error: Error & { digest?: string 
           Không thể tải sản phẩm lúc này.
         </h2>
         <p className="mt-4 max-w-xl text-sm leading-6 text-[#3B2219]/70">
-          Vui lòng thử lại. Nếu danh mục vừa được cập nhật, sản phẩm mới sẽ xuất hiện khi kết nối ổn định trở lại.
+          Nàng thử lại nhé. Nếu danh mục vừa được cập nhật, sản phẩm mới sẽ xuất hiện khi kết nối ổn định trở lại.
         </p>
         <button
           className="btn btn--primary mt-6"

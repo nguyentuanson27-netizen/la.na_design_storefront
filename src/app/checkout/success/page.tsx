@@ -25,7 +25,7 @@ function render(data: CheckoutSuccessViewModel) {
       <div className="mt-8 max-w-2xl">
         {data.confirmed && data.orderCode ? (
           <div role="status">
-            <p className="font-display text-xl md:text-2xl">Cảm ơn bạn đã đặt hàng.</p>
+            <p className="font-display text-xl md:text-2xl">Cảm ơn nàng đã đặt hàng.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
               Mã đơn{" "}
               <strong className="whitespace-nowrap text-lg font-semibold tracking-[0.08em] text-black">
@@ -34,14 +34,14 @@ function render(data: CheckoutSuccessViewModel) {
               . {BRAND.identity.name} sẽ liên hệ qua số điện thoại đã cung cấp để xác nhận đơn COD trước khi giao.
             </p>
             <p className="mt-2 text-sm leading-6 text-black/75">
-              Bạn có thể tra cứu đơn bất cứ lúc nào bằng mã đơn này và số điện thoại đặt hàng.
+              Nàng có thể tra cứu đơn bất cứ lúc nào bằng mã đơn này và số điện thoại đặt hàng.
             </p>
           </div>
         ) : (
           <div role="alert" data-ui-state="empty">
             <p className="font-display text-xl md:text-2xl">Không tìm thấy đơn đã xác nhận.</p>
             <p className="mt-4 text-sm leading-6 text-black/75">
-              Mã xác nhận không hợp lệ hoặc đơn chưa ở trạng thái hoàn tất. Nếu bạn vừa đặt hàng và chưa chắc trạng thái, vui lòng không gửi lại đơn ngay.
+              Mã xác nhận không hợp lệ hoặc đơn chưa ở trạng thái hoàn tất. Nếu nàng vừa đặt hàng và chưa chắc trạng thái, nàng đừng gửi lại đơn ngay nhé.
             </p>
           </div>
         )}

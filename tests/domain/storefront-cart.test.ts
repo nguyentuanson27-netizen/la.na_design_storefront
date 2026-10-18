@@ -135,6 +135,8 @@ test("cart line fails closed when its requested quantity exceeds current sellabl
     available: false,
     isPreorderSale: false,
     unavailableReason: "INSUFFICIENT_STOCK",
+    // The owner shows "chỉ còn N" here; the raw stock field itself still stays off the line.
+    maxQuantity: 3,
     media: { primary: null, gallery: [] },
   });
   assert.equal("sellableStock" in line!, false);
@@ -314,6 +316,8 @@ test("I5 the requested quantity is judged by the capacity rule, not by sellableS
   });
   assert.equal(overLimit?.available, false);
   assert.equal(overLimit?.unavailableReason, "INSUFFICIENT_STOCK");
+  // "Chỉ còn N": the count the same rule accepts, floor included (2 − (−20) = 22).
+  assert.equal(overLimit?.maxQuantity, 22);
 
   // Exactly at the floor is allowed — the unit that *lands on* −20 is the last one sold, which is
   // the boundary I4 pinned on the PDP and the same one applies here.
@@ -330,6 +334,9 @@ test("I5 the requested quantity is judged by the capacity rule, not by sellableS
   });
   assert.equal(standardOver?.available, false);
   assert.equal(standardOver?.unavailableReason, "INSUFFICIENT_STOCK");
+  assert.equal(standardOver?.maxQuantity, 2);
+  // Only a stock refusal names a count; a buyable line carries none.
+  assert.equal("maxQuantity" in (atLimit ?? {}), false);
 });
 
 test("I5 composite cart lines use component-aware headroom and ready quantity", () => {

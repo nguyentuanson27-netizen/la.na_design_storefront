@@ -6,7 +6,11 @@ import { useCartGifts } from "@/components/headless/use-cart-gifts";
 import type { CartGiftPickerModel } from "@/routes/cart-gift-model";
 import { GiftProductCard } from "./gift-product-card";
 
-type Draft = { campaignId: string; variantId: string; label: string };
+/**
+ * The version the buyer is looking at. `committed` marks a draft the server has confirmed saving at
+ * least once: removing that gift later is a finished action, not an unsaved choice to warn about.
+ */
+type Draft = { campaignId: string; variantId: string; label: string; committed?: boolean };
 export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLocked, onDraftChange, onReturnToPayment }: Readonly<{
   model: CartGiftPickerModel; onBusyChange?: (pending: boolean) => void; locked?: boolean;
   isLocked?: () => boolean; onDraftChange?: (notice: string | null) => void; onReturnToPayment?: () => void;
@@ -66,20 +70,63 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
   const available = model.campaigns.reduce((sum, row) => sum + (row.selectable ?? 0), 0);
   const complete = !model.invalid && selected >= entitled && entitled > 0;
   const draftSaved = draft && model.selections.some((row) => row.campaignId === draft.campaignId && row.variantId === draft.variantId);
-  const draftNotice = draft && !draftSaved ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
+  // UX-04: the intent ends only on a confirmed (or read-back) model that contains it. A newer chip the
+  // buyer picks replaces the draft object, so it starts uncommitted and keeps its own notice.
+  if (draft && draftSaved && !draft.committed) setDraft({ ...draft, committed: true });
+  const draftNotice = draft && !draftSaved && !draft.committed ? `Phiên bản ${draft.label} chưa được thêm. Đơn chỉ gồm quà đã lưu.` : null;
   useEffect(() => { onDraftChange?.(draftNotice); }, [draftNotice, onDraftChange]);
   const present = entitled > 0 || model.selections.length > 0;
+  // UX-05: arriving on `#cart-gifts` (the mini-cart's "Chọn quà") opens the picker and puts focus on it.
+  // Opening only reveals the choices; nothing is selected or saved on the buyer's behalf. Focus is asked
+  // for through state and applied after the commit that shows the picker, so no effect cleanup can drop it.
+  const [focusRequest, setFocusRequest] = useState(0);
+  useEffect(() => {
+    if (focusRequest === 0) return;
+    giftArea.current?.scrollIntoView({ block: "start" });
+    giftArea.current?.focus({ preventScroll: true });
+  }, [focusRequest]);
+  const arrivalChecked = useRef(false);
+  useEffect(() => {
+    if (!present) return;
+    const page = window.location.pathname;
+    const open = () => { setExpanded(true); setFocusRequest((n) => n + 1); };
+    // Only for this page: a history event that lands on another page's `#cart-gifts` is not ours.
+    const openIfTargeted = () => { if (window.location.pathname === page && window.location.hash === "#cart-gifts") open(); };
+    // Once per mount, on the first render that has a picker: a picker that reappears later while the URL
+    // still carries the hash must not scroll the page or take focus on its own.
+    if (!arrivalChecked.current) {
+      arrivalChecked.current = true;
+      openIfTargeted();
+    }
+    // Next's <Link> commits its URL change later, inside a transition, so the click is judged by the link's
+    // own target rather than by `location`: a plain left click on a same-page `#cart-gifts` link opens now.
+    const linkClicked = (event: MouseEvent) => {
+      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = event.target instanceof Element ? event.target.closest<HTMLAnchorElement>("a[href]") : null;
+      if (!link || (link.target && link.target !== "_self")) return;
+      const url = new URL(link.href, window.location.href);
+      if (url.origin === window.location.origin && url.pathname === page && url.hash === "#cart-gifts") open();
+    };
+    window.addEventListener("hashchange", openIfTargeted);
+    window.addEventListener("popstate", openIfTargeted);
+    document.addEventListener("click", linkClicked);
+    return () => {
+      window.removeEventListener("hashchange", openIfTargeted);
+      window.removeEventListener("popstate", openIfTargeted);
+      document.removeEventListener("click", linkClicked);
+    };
+  }, [present]);
   if (!present && !message) return null;
   const busy = pending || uncertain;
   return <section ref={giftArea} id="cart-gifts" tabIndex={-1} className={present ? "my-6 min-w-0 scroll-mt-32 border border-black/20 bg-[#fcf8f6] p-4 sm:p-5" : "my-4 scroll-mt-32 text-sm"} aria-label="Quà tặng trong giỏ" aria-busy={busy}>
     {present ? <>
-    <h2 className="font-display text-2xl">Quà dành cho bạn</h2>
+    <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
-    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà đã chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Hãy bỏ lựa chọn cũ tại đây rồi chọn lại; chúng tôi không tự thay quà.</p> : <>
-      {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Bạn còn quà chưa chọn. Các chương trình dùng chung lượng quà; hãy chọn từng món để cập nhật quyền nhận." : `Bạn còn có thể chọn ${available} món quà.`}</p> : null}
+    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp với giỏ hàng, chương trình hoặc tồn kho. Nàng bỏ lựa chọn cũ tại đây rồi chọn lại nhé; quà sẽ không tự được thay.</p> : <>
+      {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
-    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà; vui lòng thử lại sau.</p> : null}
+    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà, nàng thử lại sau nhé.</p> : null}
     <button type="button" className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button>
@@ -109,14 +156,14 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           const chosen = model.selections.find((r) => r.campaignId === campaign.campaignId && r.variantId === option?.variantId)?.quantity ?? 0;
           const productChosen = model.selections.some((r) => r.campaignId === campaign.campaignId && product.options.some((o) => o.variantId === r.variantId));
           const stockChosen = model.selections.filter((r) => r.variantId === option?.variantId).reduce((sum, r) => sum + r.quantity, 0);
-          const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Hãy kiểm tra lại quà trong đơn trước khi tiếp tục."
-            : pending ? "Đang cập nhật quà. Vui lòng chờ xác nhận."
-            : locked ? "Giỏ hàng đang được cập nhật hoặc cần kiểm tra lại. Hãy hoàn tất bước kiểm tra trước khi nhận quà."
-            : model.invalid ? "Cần sửa quà đã chọn. Hãy bỏ lựa chọn không còn hợp lệ trước khi nhận thêm."
-            : campaign.selected >= campaign.entitled ? "Đã đủ suất. Bạn vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
+          const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong đơn trước khi tiếp tục nhé."
+            : pending ? "Đang lưu quà, nàng chờ một chút nhé."
+            : locked ? "Giỏ hàng đang được cập nhật hoặc cần xem lại. Nàng hoàn tất bước đó trước khi nhận quà nhé."
+            : model.invalid ? "Quà đã chọn cần sửa. Nàng bỏ lựa chọn không còn phù hợp trước khi nhận thêm nhé."
+            : campaign.selected >= campaign.entitled ? "Đã đủ suất. Nàng vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
             : !option ? "Chọn phiên bản trước khi nhận quà."
-            : !campaign.allowDuplicateGifts && productChosen ? "Bạn đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
-            : option.stock <= stockChosen ? "Phiên bản này không còn số lượng có thể nhận thêm. Hãy chọn phiên bản khác."
+            : !campaign.allowDuplicateGifts && productChosen ? "Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."
+            : option.stock <= stockChosen ? "Phiên bản này không còn đủ hàng để nhận thêm. Nàng chọn phiên bản khác nhé."
             : null;
           const receiveReasonId = `${detailsId}-${index}-${product.productId}-receive-reason`;
           return <GiftProductCard key={product.productId} name={product.name} imageUrl={product.imageUrl} open={card === key} onOpen={() => {
@@ -126,7 +173,12 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
             <div className="flex flex-wrap gap-2" aria-label={`Phiên bản ${product.name}`}>{product.options.map((o) => <button type="button" key={o.variantId} aria-pressed={option?.variantId === o.variantId} className="min-h-11 border border-black/30 px-3 text-sm aria-pressed:bg-[#634936] aria-pressed:text-white" onClick={() => setDraft({campaignId: campaign.campaignId, variantId: o.variantId, label: `${product.name} — ${o.label}`})}>{o.label}</button>)}</div>
             {option ? <p className="mt-3 text-sm">{uncertain ? "Đang chờ kiểm tra kết quả lưu quà…" : pending ? "Đang cập nhật quà…" : chosen > 0 ? "Đã thêm vào đơn" : "Chưa thêm vào đơn"}</p> : <p className="mt-3 text-sm">Chọn phiên bản để xem.</p>}
             {receiveBlockReason ? <p id={receiveReasonId} className="mt-2 text-xs" aria-live="polite">{receiveBlockReason}</p> : null}
-            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => option && change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0)}>Nhận quà này</button>
+            <button type="button" className="btn btn--secondary mt-3 w-full" disabled={receiveBlockReason !== null} aria-describedby={receiveBlockReason ? receiveReasonId : undefined} onClick={() => {
+              if (!option) return;
+              // A new receive is a new intent: until the server confirms it, an earlier save no longer covers it.
+              if (draft?.committed) setDraft({ ...draft, committed: false });
+              change(campaign.campaignId, option.variantId, campaign.revision, chosen + 1, `${product.name} — ${option.label}`, 0);
+            }}>Nhận quà này</button>
           </GiftProductCard>;
         })}</div>
       </div>)}

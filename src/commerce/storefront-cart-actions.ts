@@ -54,7 +54,9 @@ async function createActionRuntime() {
         items: [{ variantId, quantity }],
         now,
       });
-      return line?.available === true;
+      if (line?.available === true) return true;
+      // "Chỉ còn N": the same resolution names the count that would sell, when one would.
+      return line?.maxQuantity ? { allowed: false, maxQuantity: line.maxQuantity } : false;
     },
     async setQuantity({ variantId, quantity }) {
       return mutations.updateExistingItemQuantity({ variantId, quantity, now, resolveLine });

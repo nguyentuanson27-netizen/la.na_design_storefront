@@ -376,7 +376,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   // Increase 1 → 4: one AddToCart for the delta of 3, not for the committed total.
   await page.getByLabel("Số lượng").fill("4");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await page.getByLabel("Số lượng").press("Enter");
   await expect
     .poll(async () => (await readEvents(page, "add_to_cart")).length, { timeout: 15_000 })
     .toBe(1);
@@ -389,7 +389,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   // Decrease 4 → 1: one RemoveFromCart for the delta of 3.
   await page.getByLabel("Số lượng").fill("1");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await page.getByLabel("Số lượng").press("Enter");
   await expect
     .poll(async () => (await readEvents(page, "remove_from_cart")).length, { timeout: 15_000 })
     .toBe(1);
@@ -397,10 +397,10 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
 
-  // Same quantity: a successful write that moved nothing reports no quantity event.
+  // Same quantity: the stepper sends no write at all, so no quantity event can follow.
   await page.getByLabel("Số lượng").fill("1");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
-  await expect(page.getByText("Đã cập nhật số lượng.")).toBeVisible();
+  await page.getByLabel("Số lượng").press("Enter");
+  await page.waitForLoadState("networkidle");
   expect(await readEvents(page, "add_to_cart")).toEqual([]);
   expect(await readEvents(page, "remove_from_cart")).toEqual([]);
 
@@ -414,7 +414,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
   const removed = ecommerceOf((await readEvents(page, "remove_from_cart"))[0]).items?.[0];
   expect(removed?.item_id).toBe(shirt.variationM);
   expect(removed?.quantity).toBe(1);
-  await expect(page.getByText("Giỏ hàng của bạn đang trống.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng của nàng đang trống.")).toBeVisible();
 });
 
 test("U19 an unsafe cart emits no view_cart and no begin_checkout, and checkout still works", async ({
@@ -462,7 +462,15 @@ test("U19 an unsafe cart emits no view_cart and no begin_checkout, and checkout 
 
   await page.goto(`${BASE_URL}/checkout`, { waitUntil: "networkidle" });
   expect(await readEvents(page, "begin_checkout")).toEqual([]);
-  await expect(page.getByText("Giỏ hàng cần được kiểm tra lại.")).toBeVisible();
+  await expect(page.getByText("Giỏ hàng cần xem lại một chút", { exact: true })).toBeVisible();
+  // UX-08 / AC-09: the reason and the fix come before the first field, and the disabled button says why.
+  expect(await page.evaluate(() => {
+    const notice = document.getElementById("checkout-blocking-notice");
+    const firstField = document.getElementById("checkout-name");
+    return Boolean(notice && firstField && notice.compareDocumentPosition(firstField) & Node.DOCUMENT_POSITION_FOLLOWING);
+  })).toBe(true);
+  await expect(page.getByRole("button", { name: "Đặt hàng COD", exact: true })).toBeDisabled();
+  await expect(page.locator("[data-checkout-submit-reason]")).toContainText("xem hướng dẫn ở đầu trang");
 
   await prisma.variantMirror.update({
     where: { id: coatVariantId },

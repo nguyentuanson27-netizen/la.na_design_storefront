@@ -23,7 +23,7 @@ function validationMessage(field: InvalidField): string {
   if (field === "name") return "Họ tên phải có từ 1 đến 100 ký tự.";
   if (field === "email") return "Email không hợp lệ hoặc vượt quá 254 ký tự.";
   if (field === "message") return "Nội dung phải có từ 1 đến 4.000 ký tự.";
-  return "Vui lòng kiểm tra họ tên, email và nội dung trước khi gửi.";
+  return "Nàng kiểm tra lại họ tên, email và nội dung trước khi gửi nhé.";
 }
 
 function messageForResult(result: ContactResult): FormStatus {
@@ -46,14 +46,14 @@ function messageForResult(result: ContactResult): FormStatus {
     return {
       kind: "error",
       field: "form",
-      message: "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.",
+      message: "Nàng đã gửi nhiều yêu cầu quá. Nàng thử lại sau nhé.",
     };
   }
 
   return {
     kind: "error",
     field: "form",
-    message: "Chưa thể gửi tin nhắn lúc này. Vui lòng dùng một trong các kênh liên hệ chính thức bên dưới.",
+    message: "Chưa gửi được tin nhắn lúc này. Nàng nhắn La.na qua một trong các kênh liên hệ bên dưới nhé.",
   };
 }
 
@@ -101,7 +101,7 @@ export function ContactForm() {
       setStatus({
         kind: "error",
         field: "form",
-        message: "Chưa thể gửi tin nhắn lúc này. Vui lòng dùng một trong các kênh liên hệ chính thức bên dưới.",
+        message: "Chưa gửi được tin nhắn lúc này. Nàng nhắn La.na qua một trong các kênh liên hệ bên dưới nhé.",
       });
     } finally {
       setPending(false);

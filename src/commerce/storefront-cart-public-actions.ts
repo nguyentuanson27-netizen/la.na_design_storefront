@@ -34,11 +34,14 @@ type StorefrontCartLineStatus = {
   available: boolean;
 };
 
+type QuantityRefusal = Readonly<{ allowed: false; maxQuantity: number }>;
+
 type CartMutationResult = { ok: true; [key: string]: unknown } | { ok: false; [key: string]: unknown };
 
 type StorefrontCartPublicActionDependencies = {
   getLines(): Promise<readonly StorefrontCartLineStatus[]>;
-  canSetQuantity(input: { variantId: string; quantity: number }): Promise<boolean>;
+  /** `true`, or a refusal -- naming the largest quantity that would sell when there is one. */
+  canSetQuantity(input: { variantId: string; quantity: number }): Promise<boolean | QuantityRefusal>;
   setQuantity(input: { variantId: string; quantity: number }): Promise<CartMutationResult>;
   remove(input: { variantId: string }): Promise<CartMutationResult>;
 };
@@ -58,7 +61,12 @@ export type StorefrontCartUpdateResult =
       analyticsUnavailable?: true;
       metaEvent?: CommittedMetaEvent;
     }>
-  | Readonly<{ ok: false; reason: "INVALID_INPUT" | "LINE_UNAVAILABLE" | "UPDATE_FAILED" }>;
+  | Readonly<{
+      ok: false;
+      reason: "INVALID_INPUT" | "LINE_UNAVAILABLE" | "UPDATE_FAILED";
+      /** On a stock refusal: the largest quantity that would sell right now (advisory). */
+      maxQuantity?: number;
+    }>;
 
 export type StorefrontCartRemoveResult
   = | Readonly<{
@@ -134,8 +142,10 @@ export function createStorefrontCartPublicActions({
       return { ok: false, reason: "LINE_UNAVAILABLE" };
     }
 
-    if (!(await canSetQuantity(parsed))) {
-      return { ok: false, reason: "LINE_UNAVAILABLE" };
+    const check = await canSetQuantity(parsed);
+    if (check !== true) {
+      const maxQuantity = typeof check === "object" && check !== null ? readCommittedQuantity(check.maxQuantity) : null;
+      return maxQuantity ? { ok: false, reason: "LINE_UNAVAILABLE", maxQuantity } : { ok: false, reason: "LINE_UNAVAILABLE" };
     }
 
     const result = await setQuantity(parsed);

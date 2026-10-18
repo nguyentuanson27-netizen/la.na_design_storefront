@@ -558,6 +558,22 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
     }),
   ).toBeVisible();
 
+  // Past stock (2 in the warehouse), "+" says how many are left beside the stepper and the drawer
+  // keeps showing the cart instead of swapping it for an error.
+  const increase = cartDrawer.getByRole("button", { name: `Tăng số lượng ${productName}`, exact: true });
+  const lineNotice = cartDrawer.locator("[data-line-notice]");
+  await increase.click();
+  await expect(cartDrawer.getByText("2", { exact: true })).toBeVisible();
+  await expect(increase).toBeEnabled();
+  await increase.click();
+  await expect(lineNotice).toHaveText("Chỉ còn 2 sản phẩm");
+  await expect(cartDrawer.getByText("Black / M")).toBeVisible();
+  await expect(cartDrawer.getByRole("alert")).toHaveCount(0);
+  await expect(increase).toBeDisabled();
+  await cartDrawer.getByRole("button", { name: `Giảm số lượng ${productName}`, exact: true }).click();
+  await expect(cartDrawer.getByText("1", { exact: true })).toBeVisible();
+  await expect(lineNotice).toBeEmpty();
+
   /*
    * Closing the cart returns focus to a real control. The sheet unmounted before the cart opened,
    * so there was no focused element for the drawer to remember -- without a fallback this lands on
@@ -579,7 +595,7 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("Black / M")).toBeVisible();
-  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
   await assertPageQuality(page);
 
   expect(browserErrors).toEqual([]);
@@ -713,7 +729,7 @@ test("a rejected add keeps the selection sheet open with feedback, and opens no 
   await confirm.click();
 
   await expect(sheet, "the sheet stays open on rejection").toBeVisible();
-  await expect(sheet.getByRole("status")).toContainText("Không thể thêm vào giỏ hàng lúc này");
+  await expect(sheet.getByRole("status")).toContainText("Chưa thêm được vào giỏ hàng");
   await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(1);
 
@@ -787,11 +803,11 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(size).not.toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
   await expect(sizeGroup).toBeFocused();
   await sizeGroup.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
   await assertPageQuality(page);
 
@@ -802,7 +818,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: sizeOnlyProductName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("L", { exact: true })).toBeVisible();
-  await expect(cartLine.getByText(/690\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/690\.000.*₫/).first()).toBeVisible();
   await assertPageQuality(page);
 
   expect(browserErrors).toEqual([]);
@@ -868,7 +884,7 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
 
   const postCountBeforeValidation = postRequests.length;
   await addToBag.click();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
   await expect(sizeGroup).toBeFocused();
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
@@ -886,7 +902,7 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await size.focus();
   await page.keyboard.press("Space");
   await expect(size).toBeChecked();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toHaveCount(0);
   // The status can render before the Server Action's response has finished streaming the
   // revalidated page, whose head swap then blanks the title mid-scan. Waiting for the response body
   // puts that swap before `assertPageQuality`, where the settled-title guard can see it.
@@ -919,7 +935,43 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("Black / M")).toBeVisible();
-  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
+});
+
+test("a line above its stock steps straight down to what is left, in the mini-cart and on /cart", async ({ page }) => {
+  // Review P2-1: 4 in the bag, 2 in stock. One step down (3) would be refused again and again.
+  const variant = await prisma.variantMirror.findUniqueOrThrow({ where: { pancakeVariationId: variantExternalId } });
+  const cart = await prisma.cart.create({
+    data: { expiresAt: new Date(Date.now() + 86_400_000), items: { create: { variantId: variant.id, quantity: 4 } } },
+  });
+  const quantityInCart = async () =>
+    (await prisma.cartItem.findUniqueOrThrow({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } } })).quantity;
+  await page.context().addCookies([{ name: "la_cart", value: cart.id, url: BASE_URL, httpOnly: true, sameSite: "Lax" }]);
+
+  await page.goto(`${BASE_URL}/`, { waitUntil: "networkidle" });
+  await page.getByRole("button", { name: /^Giỏ hàng/ }).click();
+  const drawer = page.getByRole("dialog", { name: "Giỏ hàng" });
+  await expect(drawer.getByText("Chỉ còn 2 sản phẩm")).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Tăng số lượng ${productName}`, exact: true })).toBeDisabled();
+  await drawer.getByRole("button", { name: `Giảm số lượng ${productName} còn 2`, exact: true }).click();
+  await expect.poll(quantityInCart).toBe(2);
+  await expect(drawer.getByText("2", { exact: true })).toBeVisible();
+  await expect(drawer.getByRole("button", { name: `Giảm số lượng ${productName}`, exact: true })).toBeEnabled();
+  await drawer.getByRole("button", { name: "Đóng giỏ hàng", exact: true }).click();
+
+  await prisma.cartItem.update({ where: { cartId_variantId: { cartId: cart.id, variantId: variant.id } }, data: { quantity: 4 } });
+  await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
+  const line = page.getByRole("article").filter({ hasText: productName });
+  await expect(line.locator("[data-line-problem]")).toContainText("Chỉ còn 2 sản phẩm");
+  await expect(line.getByRole("button", { name: `Thêm một ${productName}`, exact: true })).toBeDisabled();
+  await line.getByRole("button", { name: `Giảm ${productName} còn 2`, exact: true }).click();
+  await expect.poll(quantityInCart).toBe(2);
+  await expect(line.getByLabel("Số lượng", { exact: true })).toHaveValue("2");
+  await expect(line.locator("[data-line-problem]")).toHaveCount(0);
+  await expect(line.getByRole("button", { name: `Bớt một ${productName}`, exact: true })).toBeEnabled();
+
+  await prisma.cart.delete({ where: { id: cart.id } });
+  await page.context().clearCookies({ name: "la_cart" });
 });
 
 test("standard sold-out variant remains visible, disabled, and says exact Hết hàng", async ({ page }) => {
