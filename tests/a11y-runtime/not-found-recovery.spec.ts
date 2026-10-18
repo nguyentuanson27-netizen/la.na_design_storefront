@@ -85,7 +85,7 @@ test("U30c branded 404 renders and recovers without accessibility violations", a
 
   const heading = page.getByRole("heading", { level: 1, name: "Không tìm thấy trang" });
   await expect(heading).toBeVisible();
-  await expect(page.getByText("Trang bạn tìm không tồn tại.")).toBeVisible();
+  await expect(page.getByText("Trang nàng tìm không tồn tại.")).toBeVisible();
 
   const recovery = page.getByRole("navigation", { name: "Điều hướng thay thế" });
   for (const [name, href] of [

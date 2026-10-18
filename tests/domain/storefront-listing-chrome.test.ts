@@ -201,6 +201,11 @@ test("every storefront page takes its shell, breadcrumb and heading from the sha
     const source = read(modulePath);
     assert.match(source, /from "@\/components\/brand\/page-chrome"/, `${modulePath} must use the page chrome`);
     for (const primitive of ["PageShell", "PageBreadcrumbs", "PageHeader"]) {
+      // Owner request 2026-10-18: checkout shows no breadcrumb, so the buyer stays on the form.
+      if (primitive === "PageBreadcrumbs" && modulePath === "src/app/checkout/page.tsx") {
+        assert.ok(!source.includes(`<${primitive}`), `${modulePath} must not render ${primitive}`);
+        continue;
+      }
       assert.ok(source.includes(`<${primitive}`), `${modulePath} must render ${primitive}`);
     }
     assert.doesNotMatch(source, /<h1/, `${modulePath} must not draw its own h1 beside the shared one`);

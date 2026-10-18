@@ -126,7 +126,7 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
-    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà; vui lòng thử lại sau.</p> : null}
+    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà chưa được phép kết hợp. Chưa thể cấp quà, nàng thử lại sau nhé.</p> : null}
     <button type="button" className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button>

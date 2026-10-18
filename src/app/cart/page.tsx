@@ -18,7 +18,7 @@ import { buildCartMetadata } from "@/routes/metadata/cart";
 
 /** Markup only. The lines, the subtotal and the `view_cart` event live in `@/routes/cart`. */
 
-const CART_BREADCRUMBS = [{ label: "Trang chủ", href: "/" }, { label: "Giỏ hàng" }] as const;
+const CART_BREADCRUMBS = [{ label: "Trang chủ", href: "/" }, { label: "Giỏ hàng của nàng" }] as const;
 const CHECKOUT_CTA_ID = "cart-checkout-cta";
 const lineAnchor = (line: CartLineView) => `cart-line-${line.variantId}`;
 
@@ -31,7 +31,7 @@ function LineVisual({ line, priority }: Readonly<{ line: CartLineView; priority:
           className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
           fill
           priority={priority}
-          sizes="(max-width: 640px) 144px, 176px"
+          sizes="(max-width: 640px) 120px, 176px"
           src={line.primaryImage.url}
         />
       ) : (
@@ -50,12 +50,12 @@ function render(data: CartViewModel) {
   if (data.isEmpty) {
     return (
       <PageShell>
-        <PageBreadcrumbs items={CART_BREADCRUMBS} />
-        <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" />
+        <PageHeader align="center" title="Giỏ hàng của nàng" />
+        <PageBreadcrumbs className="mt-3 [&_ol]:justify-center" items={CART_BREADCRUMBS} />
         <div className="mt-8" data-ui-state="empty">
           <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
           <p className="mt-4 text-sm leading-6 text-black/75">
-            Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
+            Nàng ghé xem những thiết kế mới nhất của La.na nhé.
           </p>
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
@@ -82,16 +82,28 @@ function render(data: CartViewModel) {
 
   return (
     <PageShell>
-      <PageBreadcrumbs items={CART_BREADCRUMBS} />
-      <PageHeader eyebrow="Mua sắm" title="Giỏ hàng" meta={`${data.lineCount} sản phẩm`} />
+      <PageHeader align="center" title="Giỏ hàng của nàng" />
+      <PageBreadcrumbs className="mt-3 [&_ol]:justify-center" items={CART_BREADCRUMBS} />
       <div className="mt-8 grid gap-12 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.34fr)] lg:gap-16">
         <div className="min-w-0">
+          {data.savings ? (
+            <dl className="mb-6 ml-auto w-full max-w-[17.5rem] space-y-1.5 text-[0.95rem]" data-cart-savings>
+              <div className="flex items-baseline justify-between gap-4 px-3">
+                <dt className="text-black/70">Tổng</dt>
+                <dd className="text-black/60 line-through">{data.savings.originalTotalText}</dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-4 rounded-lg border border-[#1f7a5c] px-3 py-1 font-semibold text-[#1f6b51]">
+                <dt>Tiết kiệm</dt>
+                <dd>{data.savings.savingText}</dd>
+              </div>
+            </dl>
+          ) : null}
           {data.gifts ? <BrandCartGiftPicker model={data.gifts} /> : null}
           <PromotionBanner className="mb-5" view={promotions} />
           <div className="divide-y divide-black/15">
             {data.lines.map((line, index) => (
               <article
-                className="grid scroll-mt-32 gap-6 py-8 outline-offset-4 first:pt-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-black sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
+                className="grid scroll-mt-32 grid-cols-[7.5rem_minmax(0,1fr)] gap-5 py-6 outline-offset-4 first:pt-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-black sm:grid-cols-[9rem_minmax(0,1fr)] md:grid-cols-[11rem_minmax(0,1fr)]"
                 id={lineAnchor(line)}
                 key={line.variantId}
                 tabIndex={line.available ? undefined : -1}
@@ -100,64 +112,63 @@ function render(data: CartViewModel) {
                 <div>
                   {line.productSlug ? (
                     <Link
-                      className="group block overflow-hidden border border-black/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                      className="group block overflow-hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
                       href={`/shop/${encodeURIComponent(line.productSlug)}`}
                       aria-label={`Xem ${line.productName}`}
                     >
                       <LineVisual line={line} priority={index === 0} />
                     </Link>
                   ) : (
-                    <div className="overflow-hidden border border-black/10">
+                    <div className="overflow-hidden">
                       <LineVisual line={line} priority={index === 0} />
                     </div>
                   )}
                 </div>
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      {line.productSlug ? (
-                        <Link
-                          className="text-lg font-semibold uppercase tracking-[0.06em] underline underline-offset-4 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
-                          href={`/shop/${encodeURIComponent(line.productSlug)}`}
-                        >
-                          {line.productName}
-                        </Link>
-                      ) : (
-                        <h2 className="text-lg font-semibold uppercase tracking-[0.06em]">{line.productName}</h2>
-                      )}
-                      <p className="mt-2 text-sm text-black/75">{line.optionLabel}</p>
-                      {line.paidSegments ? <p className="mt-2 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
-                      {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
-                          it belongs to rather than only the basket-level notice below. */}
-                      {line.preorderLabel === null ? null : (
-                        <p
-                          className="mt-2 inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
-                          data-line-state="preorder"
-                        >
-                          {line.preorderLabel}
-                        </p>
-                      )}
-                    </div>
-                    <div className="text-right">
-                      {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
-                          price is the breakdown beside the name, never a replacement for it. */}
-                      <p className="font-medium">
-                        <LinePrice
-                          discountPercent={line.discountPercent}
-                          originalPriceText={line.originalPriceText}
-                          priceText={line.priceText}
-                        />
-                      </p>
-                      <p className={`mt-1 text-xs uppercase tracking-[0.12em] ${line.available ? "text-black/70" : "font-semibold text-black"}`} data-line-problem={line.available ? undefined : ""}>
-                        {line.available ? line.availabilityLabel : `Cần xử lý: ${line.availabilityLabel}`}
-                      </p>
-                    </div>
-                  </div>
+                {/* Positioned: the remove control sits at this column's top-right. */}
+                <div className="relative min-w-0 pr-10">
+                  {line.productSlug ? (
+                    <Link
+                      className="text-base font-medium uppercase tracking-[0.04em] transition hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black"
+                      href={`/shop/${encodeURIComponent(line.productSlug)}`}
+                    >
+                      {line.productName}
+                    </Link>
+                  ) : (
+                    <h2 className="text-base font-medium uppercase tracking-[0.04em]">{line.productName}</h2>
+                  )}
+                  <p className="mt-1 text-sm text-black/65">{line.optionLabel}</p>
+                  {/* §30 — the marker has to survive the trip from the PDP, so it rides the line
+                      it belongs to rather than only the basket-level notice below. */}
+                  {line.preorderLabel === null ? null : (
+                    <p
+                      className="mt-1.5 inline-flex items-center border border-black px-2 py-0.5 text-xs font-semibold uppercase tracking-[0.12em]"
+                      data-line-state="preorder"
+                    >
+                      {line.preorderLabel}
+                    </p>
+                  )}
+                  {/* The per-product sale stays on the line whatever else applies; a quantity or order-value
+                      price is the breakdown below it, never a replacement for it. */}
+                  <p className="mt-1 text-sm text-black/65">
+                    <LinePrice
+                      discountPercent={line.discountPercent}
+                      originalPriceText={line.originalPriceText}
+                      priceText={line.priceText}
+                    />
+                  </p>
+                  {line.paidSegments ? <p className="mt-1 text-sm">Giá sau ưu đãi: {line.paidSegments.join(" + ")}</p> : null}
+                  {line.available ? null : (
+                    <p className="mt-1.5 text-xs font-semibold uppercase tracking-[0.12em]" data-line-problem="">
+                      {`Cần xử lý: ${line.availabilityLabel}`}
+                    </p>
+                  )}
                   <BrandCartLineControls
                     variantId={line.variantId}
+                    productName={line.productName}
                     initialQuantity={line.quantity}
                     canUpdate={line.canUpdate}
                     commerceTrackingEnabled={data.commerceTrackingEnabled}
+                    totalText={line.lineTotalText}
                   />
                 </div>
               </article>

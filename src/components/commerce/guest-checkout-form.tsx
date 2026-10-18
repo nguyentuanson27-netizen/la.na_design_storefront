@@ -83,8 +83,22 @@ function findFieldErrors(values: FieldValues): Partial<Record<RequiredField, str
   return errors;
 }
 
+// Floating labels: the label sits inside the field and moves up once it is focused or filled, so
+// every field is one compact rounded box. `placeholder=" "` is what lets CSS tell "filled" apart.
 const fieldClassName =
-  "mt-1.5 min-h-11 w-full border border-black/25 bg-transparent px-3.5 py-2.5 text-base outline-none transition focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
+  "peer block w-full rounded-xl border border-black/20 bg-white px-3.5 pb-2 pt-6 text-base outline-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
+const floatingLabelClassName =
+  "pointer-events-none absolute left-3.5 right-3.5 top-[1.05rem] truncate text-base text-black/60 transition-all peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs";
+// A select always shows an option, so its label stays raised.
+const raisedLabelClassName = "pointer-events-none absolute left-3.5 right-10 top-2 truncate text-xs text-black/60";
+
+function SelectChevron() {
+  return (
+    <svg aria-hidden="true" className="pointer-events-none absolute right-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-black/60" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
 
 const geoFailures = {
   provinces: {
@@ -491,10 +505,9 @@ export function GuestCheckoutForm({
       {upsell ? <CheckoutUpsell model={upsell} /> : null}
       <h2 className="font-display text-2xl">Thông tin nhận hàng</h2>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2">
         <div>
-          <label className="block text-sm font-medium" htmlFor="checkout-name">
-            Họ và tên <RequiredMark />
+          <div className="relative">
             <input
               autoComplete="name"
               className={fieldClassName}
@@ -502,17 +515,20 @@ export function GuestCheckoutForm({
               maxLength={2048}
               name="name"
               onChange={(event) => setName(event.target.value)}
+              placeholder=" "
               required
               type="text"
               value={name}
               {...fieldA11y("name")}
             />
-          </label>
+            <label className={floatingLabelClassName} htmlFor="checkout-name">
+              Họ và tên <RequiredMark />
+            </label>
+          </div>
           {renderFieldError("name")}
         </div>
         <div>
-          <label className="block text-sm font-medium" htmlFor="checkout-phone">
-            Số điện thoại <RequiredMark />
+          <div className="relative">
             <input
               autoComplete="tel"
               className={fieldClassName}
@@ -522,28 +538,30 @@ export function GuestCheckoutForm({
               name="phone"
               onBlur={() => setPhoneTouched(true)}
               onChange={(event) => setPhone(event.target.value)}
-              placeholder="VD: 0912 345 678"
+              placeholder=" "
               required
               type="tel"
               value={phone}
               {...fieldA11y("phone")}
             />
-          </label>
+            <label className={floatingLabelClassName} htmlFor="checkout-phone">
+              Số điện thoại <RequiredMark />
+            </label>
+          </div>
           {renderFieldError("phone")}
         </div>
       </div>
 
-      <fieldset className="space-y-4" disabled={isSubmitting || lockSubmission}>
+      <fieldset className="space-y-3" disabled={isSubmitting || lockSubmission}>
         <legend className="mb-3 text-sm font-semibold uppercase tracking-[0.12em]">
           Địa chỉ giao hàng <span className="font-normal normal-case tracking-normal text-black/60">(địa chỉ mới)</span>
         </legend>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-2">
           <div>
-            <label className="block text-sm font-medium" htmlFor="checkout-province">
-              Tỉnh / Thành phố <RequiredMark />
+            <div className="relative">
               <select
-                className={fieldClassName}
+                className={`${fieldClassName} appearance-none pr-10`}
                 disabled={provinceLoading || provinces.length === 0}
                 id="checkout-province"
                 name="provinceRef"
@@ -561,15 +579,18 @@ export function GuestCheckoutForm({
                   </option>
                 ))}
               </select>
-            </label>
+              <label className={raisedLabelClassName} htmlFor="checkout-province">
+                Tỉnh / Thành phố <RequiredMark />
+              </label>
+              <SelectChevron />
+            </div>
             {renderFieldError("province")}
           </div>
 
           <div>
-            <label className="block text-sm font-medium" htmlFor="checkout-commune">
-              Phường / Xã <RequiredMark />
+            <div className="relative">
               <select
-                className={fieldClassName}
+                className={`${fieldClassName} appearance-none pr-10`}
                 disabled={!provinceRef || communeLoading || communes.length === 0}
                 id="checkout-commune"
                 name="communeRef"
@@ -594,7 +615,11 @@ export function GuestCheckoutForm({
                   </option>
                 ))}
               </select>
-            </label>
+              <label className={raisedLabelClassName} htmlFor="checkout-commune">
+                Phường / Xã <RequiredMark />
+              </label>
+              <SelectChevron />
+            </div>
             {renderFieldError("commune")}
           </div>
         </div>
@@ -615,9 +640,8 @@ export function GuestCheckoutForm({
           </div>
         ) : null}
 
-        <div className="block">
-          <label className="block text-sm font-medium" htmlFor="checkout-detail">
-            Số nhà, tên đường <RequiredMark />
+        <div>
+          <div className="relative">
             <input
               autoComplete="street-address"
               className={fieldClassName}
@@ -625,28 +649,34 @@ export function GuestCheckoutForm({
               maxLength={2048}
               name="detail"
               onChange={(event) => setDetail(event.target.value)}
-              placeholder="VD: 12 Nguyễn Trãi"
+              placeholder=" "
               required
               type="text"
               value={detail}
               {...fieldA11y("detail")}
             />
-          </label>
+            <label className={floatingLabelClassName} htmlFor="checkout-detail">
+              Số nhà, tên đường <RequiredMark />
+            </label>
+          </div>
           {renderFieldError("detail")}
         </div>
 
-        <label className="block text-sm font-medium" htmlFor="checkout-note">
-          Ghi chú <span className="font-normal text-black/60">(không bắt buộc)</span>
+        <div className="relative">
           <textarea
             className={`${fieldClassName} min-h-16 resize-y`}
             rows={2}
             id="checkout-note"
             maxLength={2048}
             name="note"
+            placeholder=" "
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
-        </label>
+          <label className={floatingLabelClassName} htmlFor="checkout-note">
+            Ghi chú (không bắt buộc)
+          </label>
+        </div>
       </fieldset>
       </div>
 

@@ -159,7 +159,7 @@ export function BrandTryOnDock() {
 
             {job.status === "loading" ? (
               <>
-                <p className="text-sm">Đang tạo ảnh thử đồ cho bạn…</p>
+                <p className="text-sm">Đang tạo ảnh thử đồ cho nàng…</p>
                 <p className="mt-1 text-sm text-black/70">{TRY_ON_WAIT_NOTE}</p>
                 <BrandTryOnWaiting photoUrl={job.photoUrl} startedAt={job.startedAt} />
                 <button type="button" className="btn btn--outline mt-4 w-full px-4" onClick={() => viewerRef.current?.close()}>

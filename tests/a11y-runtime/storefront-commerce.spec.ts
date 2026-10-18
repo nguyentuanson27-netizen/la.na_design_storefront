@@ -595,7 +595,7 @@ test("the mobile sticky CTA opens the selection sheet, and a confirmed add hands
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("Black / M")).toBeVisible();
-  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
   await assertPageQuality(page);
 
   expect(browserErrors).toEqual([]);
@@ -729,7 +729,7 @@ test("a rejected add keeps the selection sheet open with feedback, and opens no 
   await confirm.click();
 
   await expect(sheet, "the sheet stays open on rejection").toBeVisible();
-  await expect(sheet.getByRole("status")).toContainText("Không thể thêm vào giỏ hàng lúc này");
+  await expect(sheet.getByRole("status")).toContainText("Chưa thêm được vào giỏ hàng");
   await expect(page.getByRole("dialog", { name: "Giỏ hàng" })).toHaveCount(0);
   await expect(page.getByRole("dialog")).toHaveCount(1);
 
@@ -803,11 +803,11 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   await expect(size).not.toBeChecked();
   await expect(addToBag).toBeEnabled();
   await addToBag.click();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
   await expect(sizeGroup).toBeFocused();
   await sizeGroup.getByText("L", { exact: true }).click();
   await expect(size).toBeChecked();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toHaveCount(0);
   await expect(addToBag).toBeEnabled();
   await assertPageQuality(page);
 
@@ -818,7 +818,7 @@ test("size-only product hides Color and becomes purchasable after selecting Size
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: sizeOnlyProductName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("L", { exact: true })).toBeVisible();
-  await expect(cartLine.getByText(/690\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/690\.000.*₫/).first()).toBeVisible();
   await assertPageQuality(page);
 
   expect(browserErrors).toEqual([]);
@@ -884,7 +884,7 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
 
   const postCountBeforeValidation = postRequests.length;
   await addToBag.click();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toBeVisible();
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
   await expect(sizeGroup).toBeFocused();
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);
@@ -902,7 +902,7 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await size.focus();
   await page.keyboard.press("Space");
   await expect(size).toBeChecked();
-  await expect(purchasePanel.getByText("Vui lòng chọn size", { exact: true })).toHaveCount(0);
+  await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toHaveCount(0);
   // The status can render before the Server Action's response has finished streaming the
   // revalidated page, whose head swap then blanks the title mid-scan. Waiting for the response body
   // puts that swap before `assertPageQuality`, where the settled-title guard can see it.
@@ -935,7 +935,7 @@ test("Mua ngay reuses canonical cart authority before navigating to checkout", a
   const cartLine = page.getByRole("article");
   await expect(page.getByRole("link", { name: productName, exact: true })).toBeVisible();
   await expect(cartLine.getByText("Black / M")).toBeVisible();
-  await expect(cartLine.getByText(/890\.000.*₫/)).toBeVisible();
+  await expect(cartLine.getByText(/890\.000.*₫/).first()).toBeVisible();
 });
 
 test("standard sold-out variant remains visible, disabled, and says exact Hết hàng", async ({ page }) => {

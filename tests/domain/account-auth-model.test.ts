@@ -135,6 +135,6 @@ test("a missing or non-text field reads as empty rather than as a file or null",
 test("the success copy is the baseline's, verbatim", () => {
   assert.equal(ACCOUNT_AUTH_COPY.signedIn, "Đăng nhập thành công.");
   assert.equal(ACCOUNT_AUTH_COPY.signedUp, "Tài khoản đã được tạo.");
-  assert.equal(ACCOUNT_AUTH_COPY.signOutFailed, "Không thể đăng xuất lúc này. Vui lòng thử lại.");
+  assert.equal(ACCOUNT_AUTH_COPY.signOutFailed, "Chưa đăng xuất được. Nàng thử lại nhé.");
   assert.equal(ACCOUNT_AUTH_COPY.checkingSession, "Đang kiểm tra phiên đăng nhập…");
 });

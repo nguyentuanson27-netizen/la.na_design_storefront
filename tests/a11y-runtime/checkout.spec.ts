@@ -438,7 +438,7 @@ for (const { name, viewport } of [
     // A number that is not Vietnamese is named as such, and fixing it clears every warning.
     await phone.fill("12345");
     await expect(
-      page.getByText("Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678."),
+      page.getByText("Số điện thoại chưa đúng. Nàng nhập số Việt Nam gồm 10 chữ số nhé, ví dụ 0912 345 678."),
     ).toBeVisible();
     await expect(phone).toHaveAttribute("aria-invalid", "true");
     await phone.fill("0901 234 567");
@@ -538,7 +538,7 @@ for (const { name, viewport } of [
   });
 }
 
-test("empty bag and empty checkout states render accessible empty UI and breadcrumb links", async ({
+test("empty bag and empty checkout states render accessible empty UI", async ({
   page,
   context,
 }) => {
@@ -652,13 +652,15 @@ test("1440 checkout keeps its right-column sticky order summary and the mobile s
    * viewport, and unpinned the same scroll takes it off screen.
    *
    * The distance is measured from the summary's own resting position -- far enough that an
-   * unpinned summary would sit 200px above the viewport -- rather than a fixed 800px. A fixed
+   * unpinned summary would sit 120px above the viewport -- rather than a fixed 800px. A fixed
    * distance measured the page head as much as the sticky: when the shared page header replaced
    * the 9rem title, the grid started ~180px higher and a fixed 800px scroll ran past the end of the
    * form, where any sticky element correctly scrolls away with its grid area.
    */
   const restingTop = (await summary.boundingBox())!.y;
-  const scrollDistance = Math.round(restingTop + 200);
+  // +120 rather than +200: the compact floating-label form is shorter, and a longer scroll runs
+  // past the end of its grid area, where any sticky element correctly leaves with it.
+  const scrollDistance = Math.round(restingTop + 120);
   await page.evaluate((distance) => window.scrollBy(0, distance), scrollDistance);
   await page.waitForFunction((distance) => window.scrollY >= distance - 1, scrollDistance);
   const stuckTop = (await summary.boundingBox())!.y;

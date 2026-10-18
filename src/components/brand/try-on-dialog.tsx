@@ -109,7 +109,7 @@ export function BrandTryOnTrigger({
       <span className="underline decoration-[#3B2219]/30 underline-offset-[5px] transition-colors group-hover:decoration-[#3B2219]">
         Thử đồ AI
       </span>
-      <span className="sr-only"> bằng ảnh của bạn, hoàn toàn miễn phí,</span>
+      <span className="sr-only"> bằng ảnh của nàng, hoàn toàn miễn phí,</span>
       <span className="border border-[#3B2219]/50 px-1 text-[9px] font-semibold uppercase leading-[14px] tracking-[0.12em]">
         Beta
       </span>
@@ -143,7 +143,7 @@ export function BrandTryOnNudge({
       >
         <PersonIcon />
         <span>
-          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">Thử đồ bằng ảnh của bạn</span>
+          Chưa chắc hợp? <span className="font-semibold underline underline-offset-4">Thử đồ bằng ảnh của nàng</span>
         </span>
       </button>
       <button
@@ -275,7 +275,7 @@ export function BrandTryOnDialog({
     return (
       <>
         <h3 ref={headingRef} tabIndex={-1} className={headingClass}>
-          Chọn ảnh của bạn
+          Chọn ảnh của nàng
         </h3>
         {phase === "error" && tryOn.errorMessage ? (
           <p role="alert" className={`mb-3 text-sm font-semibold ${ERROR_TEXT}`}>
@@ -291,7 +291,7 @@ export function BrandTryOnDialog({
           type="file"
           accept="image/jpeg,image/png,image/webp"
           className="peer sr-only"
-          aria-label="Ảnh của bạn (JPG, PNG hoặc WebP, tối đa 7 MB)"
+          aria-label="Ảnh của nàng (JPG, PNG hoặc WebP, tối đa 7 MB)"
           aria-describedby={tryOn.fileError ? `${fileHelpId} ${fileErrorId}` : fileHelpId}
           aria-invalid={tryOn.fileError ? "true" : undefined}
           onChange={tryOn.chooseFile}
@@ -305,7 +305,7 @@ export function BrandTryOnDialog({
               {/* eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it. */}
               <img
                 src={tryOn.previewUrl}
-                alt="Ảnh bạn đã chọn"
+                alt="Ảnh nàng đã chọn"
                 className="max-h-44 w-auto max-w-full object-contain"
               />
               <span className="text-sm font-semibold underline underline-offset-4">Đổi ảnh</span>
@@ -393,7 +393,7 @@ export function BrandTryOnDialog({
               // eslint-disable-next-line @next/next/no-img-element -- a local blob preview; next/image cannot optimise it.
               <img
                 src={tryOn.previewUrl}
-                alt="Ảnh bạn đã chọn"
+                alt="Ảnh nàng đã chọn"
                 className="h-10 w-8 shrink-0 rounded-[3px] border border-black/15 object-cover"
               />
             ) : null}
@@ -405,7 +405,7 @@ export function BrandTryOnDialog({
         </div>
 
         <fieldset className="mt-4">
-          <legend className="text-sm font-semibold">Độ tuổi của bạn</legend>
+          <legend className="text-sm font-semibold">Độ tuổi của nàng</legend>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {TRY_ON_AGE_OPTIONS.map((option) => {
               const selected = tryOn.ageState === option.value;
@@ -495,7 +495,7 @@ export function BrandTryOnDialog({
         <div role="status" aria-live="polite" className="min-h-6 text-sm">
           {phase === "loading" ? (
             <>
-              <p>Đang tạo ảnh thử đồ cho bạn…</p>
+              <p>Đang tạo ảnh thử đồ cho nàng…</p>
               <p className="mt-1 text-black/70">{TRY_ON_WAIT_NOTE}</p>
             </>
           ) : null}
@@ -601,7 +601,7 @@ export function BrandTryOnDialog({
           </button>
         </div>
         <p className="mb-3 text-xs leading-5 text-black/60">
-          Xem {productName} trên ảnh của bạn. Kết quả do AI tạo, chỉ mang tính tham khảo.
+          Xem {productName} trên ảnh của nàng. Kết quả do AI tạo, chỉ mang tính tham khảo.
         </p>
         {step === "photo" ? (
           <p className="mb-3 whitespace-pre-line border-l-[3px] border-[#3B2219]/40 bg-[#3B2219]/5 px-3 py-2 text-xs leading-5 text-black/70">

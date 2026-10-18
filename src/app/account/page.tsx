@@ -15,7 +15,7 @@ function render() {
       <PageHeader
         eyebrow="Khách hàng"
         title="Tài khoản"
-        lead="Lưu thông tin cho lần mua sau và theo dõi đơn hàng tại một nơi. Tài khoản không bắt buộc: bạn vẫn có thể đặt hàng và thanh toán COD mà không cần đăng ký."
+        lead="Lưu thông tin cho lần mua sau và theo dõi đơn hàng tại một nơi. Tài khoản không bắt buộc: nàng vẫn có thể đặt hàng và thanh toán COD mà không cần đăng ký."
       />
 
       <BrandAccountAuthPanel />

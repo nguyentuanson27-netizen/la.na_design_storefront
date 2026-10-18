@@ -19,7 +19,7 @@ export function buildPublicBrandFacts(policy: GuestShippingPolicy) {
       detail: "Tra cứu trạng thái đơn COD bằng mã đơn và số điện thoại đã dùng khi đặt hàng.",
     }),
     serverVerification:
-      "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi bạn đặt hàng.",
+      "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi nàng đặt hàng.",
   });
 }
 

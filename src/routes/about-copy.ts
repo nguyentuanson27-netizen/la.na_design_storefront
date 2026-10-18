@@ -21,10 +21,10 @@ export const ABOUT_FAQ: readonly Readonly<{ question: string; answer: string }>[
   },
   {
     question: "Khách hàng có thể đến thử đồ trực tiếp ở đâu?",
-    answer: `Quý khách có thể ghé thăm và trải nghiệm trực tiếp không gian thời trang tại Showroom ${BRAND.identity.name}: ${SHOWROOM} (mở cửa từ ${opens} đến ${closes} hàng ngày).`,
+    answer: `Nàng có thể ghé thăm và trải nghiệm trực tiếp không gian thời trang tại Showroom ${BRAND.identity.name}: ${SHOWROOM} (mở cửa từ ${opens} đến ${closes} hàng ngày).`,
   },
   {
     question: "Tôi mua hàng online từ xa thì làm sao để chọn được size vừa vặn?",
-    answer: `Quý khách có thể trải nghiệm tính năng Thử đồ ảo AI ngay trên website, tham khảo bảng số đo chi tiết (ngực, eo, mông) hoặc nhắn tin trực tiếp qua hotline/Zalo ${BRAND.contact.telephone.replace(/^(\d{4})(\d{3})(\d{3})$/, "$1 $2 $3")} để được chuyên viên tư vấn hỗ trợ chọn size chuẩn xác. La.na cũng áp dụng chính sách đổi size trong 15 ngày để nàng hoàn toàn yên tâm.`,
+    answer: `Nàng có thể trải nghiệm tính năng Thử đồ ảo AI ngay trên website, tham khảo bảng số đo chi tiết (ngực, eo, mông) hoặc nhắn tin trực tiếp qua hotline/Zalo ${BRAND.contact.telephone.replace(/^(\d{4})(\d{3})(\d{3})$/, "$1 $2 $3")} để được chuyên viên tư vấn hỗ trợ chọn size chuẩn xác. La.na cũng áp dụng chính sách đổi size trong 15 ngày để nàng hoàn toàn yên tâm.`,
   },
 ]);

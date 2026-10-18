@@ -86,7 +86,8 @@ test("mobile independent UX: checkout mobile reading order is summary, receiving
   assert.match(form, /className="checkout-totals lg:hidden"/);
   assert.match(form, /className="checkout-preorder lg:hidden"/);
   // The heading is the shared page header's, sized once for every page rather than per breakpoint here.
-  assert.match(page, /<PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" \/>/);
+  // Owner request 2026-10-18: no eyebrow or breadcrumb above the checkout title.
+  assert.match(page, /<PageHeader title="Thanh toán" meta="Thanh toán khi nhận hàng" \/>/);
   assert.doesNotMatch(page, /Đây là số tiền dự kiến\. Máy chủ/);
   assert.doesNotMatch(form, /Danh sách tỉnh\/thành gồm cả dữ liệu địa giới cũ và mới từ Pancake/);
   assert.doesNotMatch(form, /Giá, tồn kho và địa chỉ sẽ được máy chủ kiểm tra lại trước khi tạo đơn trên Pancake/);

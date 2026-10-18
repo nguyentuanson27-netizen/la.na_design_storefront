@@ -98,7 +98,10 @@ test("TG-11: skip survives reload, paid A→B→A resets it, new checkout attemp
   await prisma.cartItem.updateMany({ where: { cartId }, data: { quantity: 2 } });
   await page.reload(); await expect(offer).toBeVisible();
   await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();
-  await page.getByRole("link", { name: "Giỏ hàng", exact: true }).click();
+  // Checkout has no breadcrumb now: leave through the header cart, then come back from the cart page.
+  await page.getByRole("button", { name: /^Giỏ hàng/ }).click();
+  await page.getByRole("dialog", { name: "Giỏ hàng" }).getByRole("link", { name: "Xem chi tiết giỏ hàng" }).click();
+  await page.waitForURL((url) => url.pathname === "/cart");
   await page.getByRole("link", { name: "Tiến hành đặt hàng" }).click();
   await expect(offer).toBeVisible();
   await offer.getByRole("button", { name: "Đóng gợi ý ưu đãi" }).click();

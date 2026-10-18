@@ -153,7 +153,7 @@ export function useVariantSelection({
   ): PurchaseAttemptResult {
     if (isMissingRequiredSize) {
       setMessage("");
-      setSizeValidationMessage("Vui lòng chọn size");
+      setSizeValidationMessage("Nàng chọn size nhé");
       return "missing-size";
     }
     if (!view.canAdd || !view.selectedVariantId || isPending) return "blocked";
@@ -179,9 +179,9 @@ export function useVariantSelection({
           }
           return;
         }
-        setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Vui lòng chọn lại.");
+        setMessage("Lựa chọn này vừa thay đổi hoặc không còn mua được. Nàng chọn lại nhé.");
       } catch {
-        setMessage("Không thể thêm vào giỏ hàng lúc này. Vui lòng thử lại.");
+        setMessage("Chưa thêm được vào giỏ hàng. Nàng thử lại nhé.");
       }
     });
     return "submitted";

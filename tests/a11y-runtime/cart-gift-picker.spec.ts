@@ -183,7 +183,7 @@ test("quantity milestones refresh at 2 → 3 → 4 → 5 alongside the earned gi
     await expect(banner).toContainText("Mua thêm 1 sản phẩm để nhận quà");
     for (const quantity of [3, 4, 5]) {
       await page.getByRole("spinbutton", { name: "Số lượng" }).fill(String(quantity));
-      await page.getByRole("button", { name: "Cập nhật", exact: true }).click();
+      await page.getByRole("spinbutton", { name: "Số lượng" }).press("Enter");
       await expect.poll(async () => (await prisma.cartItem.findUniqueOrThrow({ where: { cartId_variantId: { cartId, variantId: paidId } } })).quantity).toBe(quantity);
       await expect(picker).toContainText("Đã thêm 0/1 quà vào đơn.");
       if (quantity < 5) {

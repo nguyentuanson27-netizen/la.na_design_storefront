@@ -57,6 +57,8 @@ export type CartLineView = Readonly<{
    */
   preorderLabel: string | null;
   paidSegments?: readonly string[];
+  /** What this line costs in total (benefit-tier prices included); absent when it is not bought. */
+  lineTotalText?: string;
 }>;
 
 export type CartViewModel = Readonly<{
@@ -91,6 +93,11 @@ export type CartViewModel = Readonly<{
    */
   shippingBaseFeeText?: string;
   benefitsNotice?: string;
+  /**
+   * The list-price total struck through beside what the buyer saves, when something is saved
+   * (per-product sales and benefit-tier prices). Absent when nothing is, or the total is unknown.
+   */
+  savings?: Readonly<{ originalTotalText: string; savingText: string }>;
 }>;
 
 /** What a shopper is told when a quantity outruns stock and the count that would sell is known. */
@@ -211,6 +218,34 @@ function withShippingEstimate(
   }
 }
 
+function lineTotalEntry(
+  line: StorefrontCartLine,
+  groups: readonly { lineKey: string; quantity: number; unitPriceVnd: number }[] | undefined,
+): { lineTotalText?: string } {
+  if (!line.available || line.price === null) return {};
+  const own = groups?.filter((group) => group.lineKey === line.variantId) ?? [];
+  const total = own.length > 0
+    ? own.reduce((sum, group) => sum + group.quantity * group.unitPriceVnd, 0)
+    : line.price * line.quantity;
+  return Number.isSafeInteger(total) ? { lineTotalText: currency.format(total) } : {};
+}
+
+function savingsEntry(
+  lines: readonly StorefrontCartLine[],
+  payableVnd: number | null,
+  benefitsUnavailable: boolean,
+): { savings?: CartViewModel["savings"] } {
+  if (payableVnd === null || benefitsUnavailable) return {};
+  let original = 0;
+  for (const line of lines) {
+    if (!line.available || line.price === null) continue;
+    original += Math.max(line.basePrice ?? line.price, line.price) * line.quantity;
+  }
+  const saving = original - payableVnd;
+  if (!Number.isSafeInteger(original) || !Number.isSafeInteger(saving) || saving <= 0) return {};
+  return { savings: Object.freeze({ originalTotalText: currency.format(original), savingText: currency.format(saving) }) };
+}
+
 function lineDiscountEntry(line: StorefrontCartLine): { originalPriceText?: string; discountPercent?: number } {
   const discount = line.available ? describeLineDiscount(line.basePrice, line.price) : null;
   if (!discount) return {};
@@ -288,6 +323,7 @@ export function buildCartViewModel(
           preorderLabel: line.available && line.isPreorderSale ? PREORDER_LABEL : null,
           ...(paidBenefits && paidBenefits.groups.some((group) => group.lineKey === line.variantId && group.unitPriceVnd !== line.price)
             ? { paidSegments: paidBenefits.groups.filter((group) => group.lineKey === line.variantId).map((group) => `${group.quantity} × ${currency.format(group.unitPriceVnd)}`) } : {}),
+          ...lineTotalEntry(line, paidBenefits?.groups),
         }),
       ),
     ),
@@ -298,6 +334,7 @@ export function buildCartViewModel(
     preorderNotice: buildPreorderFulfillmentNotice(input.lines),
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
+    ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines)),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
       ? "Quà nàng chọn không còn hợp lệ. Nàng chọn lại quà trong giỏ trước khi đặt hàng nhé."

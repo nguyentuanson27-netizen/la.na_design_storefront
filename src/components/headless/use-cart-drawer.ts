@@ -49,7 +49,7 @@ export function useCartDrawer(isOpen: boolean) {
     try {
       setCart(await getStorefrontCartView());
     } catch {
-      setError("Không thể tải thông tin giỏ hàng. Vui lòng thử lại.");
+      setError("Chưa tải được giỏ hàng. Nàng thử lại nhé.");
     } finally {
       setIsLoading(false);
     }
@@ -66,7 +66,7 @@ export function useCartDrawer(isOpen: boolean) {
         if (isMounted) setCart(view);
       } catch {
         if (isMounted) {
-          setError("Không thể tải thông tin giỏ hàng. Vui lòng thử lại.");
+          setError("Chưa tải được giỏ hàng. Nàng thử lại nhé.");
         }
       } finally {
         if (isMounted) {

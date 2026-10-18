@@ -164,7 +164,7 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                   Giỏ hàng của nàng đang trống
                 </h3>
                 <p className="mt-2 max-w-xs text-xs text-[#70584B] leading-5">
-                  Khám phá các thiết kế mới nhất trong bộ sưu tập của chúng tôi.
+                  Nàng ghé xem những thiết kế mới nhất của La.na nhé.
                 </p>
                 <Link
                   href="/shop"

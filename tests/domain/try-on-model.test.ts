@@ -134,7 +134,7 @@ test("the first-step quota line: a guest is told what an account adds, a member 
   assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 5 })!, /còn 5\/5 lượt thử đồ miễn phí/);
   assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 5 })!, /10 lượt mỗi ngày/);
   assert.match(tryOnQuotaLine({ audience: "guest", limit: 5, remaining: 0 })!, /đã dùng hết/);
-  assert.equal(tryOnQuotaLine({ audience: "member", limit: 10, remaining: 8 }), "Hôm nay bạn còn 8/10 lượt thử đồ.");
+  assert.equal(tryOnQuotaLine({ audience: "member", limit: 10, remaining: 8 }), "Hôm nay nàng còn 8/10 lượt thử đồ.");
 });
 
 test("the sign-in link returns to this product and nowhere else", () => {

@@ -56,7 +56,7 @@ export const TRY_ON_AGE_OPTIONS: readonly TryOnAgeOption[] = [
  * Shown above the teen statement so a short chip is never mistaken for the attestation: choosing it
  * means the shopper is making the full statement beneath.
  */
-export const TRY_ON_TEEN_ATTESTATION_LEAD = "Khi chọn mục này, bạn xác nhận:";
+export const TRY_ON_TEEN_ATTESTATION_LEAD = "Khi chọn mục này, nàng xác nhận:";
 
 /**
  * The wizard's three steps: choose the photo, state age and confirm rights, see the result. Loading,
@@ -92,35 +92,35 @@ export function nextTryOnStep(step: TryOnStep, event: TryOnStepEvent): TryOnStep
 }
 
 export const TRY_ON_TEEN_DISCLOSURE =
-  "Ảnh này do AI tạo ra nên có thể chưa chính xác. Đừng dùng ảnh này để đánh giá cơ thể của bạn hay để chọn size quần áo — hãy xem bảng size của sản phẩm.";
+  "Ảnh này do AI tạo ra nên có thể chưa chính xác. Đừng dùng ảnh này để đánh giá cơ thể của nàng hay để chọn size quần áo — hãy xem bảng size của sản phẩm.";
 
 export const TRY_ON_BLOCKED_AGE_MESSAGE =
-  "Tính năng thử đồ chưa dành cho bạn. Bạn vẫn có thể xem sản phẩm và đặt hàng bình thường.";
+  "Tính năng thử đồ chưa dành cho nàng. Nàng vẫn có thể xem sản phẩm và đặt hàng bình thường.";
 
 /** Shown for every outcome the shopper can see. None carries upstream detail. */
 const FAILURE_COPY: Readonly<Record<TryOnFailureReason, string>> = {
-  UNAVAILABLE: "Thử đồ tạm thời chưa dùng được. Bạn vẫn có thể chọn sản phẩm và đặt hàng bình thường.",
-  INVALID_REQUEST: "Không gửi được yêu cầu. Vui lòng kiểm tra lại ảnh và thử lại.",
-  LIKENESS_REQUIRED: "Vui lòng xác nhận quyền sử dụng hình ảnh trước khi tạo ảnh.",
-  AGE_STATE_INVALID: "Vui lòng chọn độ tuổi của bạn trước khi tạo ảnh.",
-  AGE_BLOCKED: "Tính năng thử đồ chưa dành cho bạn.",
+  UNAVAILABLE: "Thử đồ tạm thời chưa dùng được. Nàng vẫn có thể chọn sản phẩm và đặt hàng bình thường.",
+  INVALID_REQUEST: "Chưa gửi được yêu cầu. Nàng kiểm tra lại ảnh rồi thử lại nhé.",
+  LIKENESS_REQUIRED: "Nàng xác nhận quyền sử dụng hình ảnh trước khi tạo ảnh nhé.",
+  AGE_STATE_INVALID: "Nàng chọn độ tuổi trước khi tạo ảnh nhé.",
+  AGE_BLOCKED: "Tính năng thử đồ chưa dành cho nàng.",
   UNSUPPORTED_IMAGE: "Ảnh phải là tệp JPG, PNG hoặc WebP hợp lệ.",
-  IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.",
+  IMAGE_TOO_LARGE: "Ảnh vượt quá 7 MB. Nàng chọn ảnh nhỏ hơn nhé.",
   NOT_ELIGIBLE: "Sản phẩm này hiện chưa hỗ trợ thử đồ.",
-  PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Vui lòng thử lại sau.",
+  PRODUCT_IMAGE_UNAVAILABLE: "Chưa lấy được ảnh sản phẩm để thử đồ. Nàng thử lại sau nhé.",
   RATE_LIMITED:
-    "Bạn vừa thử xong một lượt rồi. Mỗi lượt thử đồ cách nhau khoảng 1 phút, mời bạn nghỉ một chút rồi thử lại nhé.",
-  LOGIN_REQUIRED: `Bạn đã dùng hết ${TRY_ON_GUEST_QUOTA.perDay} lượt thử đồ miễn phí hôm nay. Tạo tài khoản hoặc đăng nhập để tiếp tục thử đồ cùng chúng mình nhé.`,
-  DAILY_LIMIT_REACHED: `Hôm nay bạn đã dùng hết ${TRY_ON_MEMBER_QUOTA.perDay} lượt thử đồ. Lượt thử sẽ được làm mới sau 24 giờ kể từ lượt đầu tiên, hẹn gặp lại bạn nhé.`,
-  BUSY: "Hiện đang có nhiều bạn thử đồ cùng lúc. Mời bạn thử lại sau ít phút nhé.",
+    "Nàng vừa thử xong một lượt rồi. Mỗi lượt thử đồ cách nhau khoảng 1 phút, nàng nghỉ một chút rồi thử lại nhé.",
+  LOGIN_REQUIRED: `Nàng đã dùng hết ${TRY_ON_GUEST_QUOTA.perDay} lượt thử đồ miễn phí hôm nay. Tạo tài khoản hoặc đăng nhập để tiếp tục thử đồ cùng La.na nhé.`,
+  DAILY_LIMIT_REACHED: `Hôm nay nàng đã dùng hết ${TRY_ON_MEMBER_QUOTA.perDay} lượt thử đồ. Lượt thử sẽ được làm mới sau 24 giờ kể từ lượt đầu tiên, hẹn gặp lại nàng nhé.`,
+  BUSY: "Hiện đang có nhiều nàng thử đồ cùng lúc. Nàng thử lại sau ít phút nhé.",
   SAFETY_BLOCKED:
-    "Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác: chính diện, rõ người, đủ sáng.",
-  AUTH_FAILED: "Thử đồ tạm thời chưa dùng được. Bạn vẫn có thể chọn sản phẩm và đặt hàng bình thường.",
-  TIMEOUT: "Ảnh đang mất nhiều thời gian hơn dự kiến. Bạn thử lại giúp chúng mình nhé.",
-  GENERATION_FAILED: "Chưa tạo được ảnh thử đồ. Vui lòng thử lại.",
+    "Chưa tạo được ảnh từ ảnh này. Nàng chọn một ảnh khác nhé: chính diện, rõ người, đủ sáng.",
+  AUTH_FAILED: "Thử đồ tạm thời chưa dùng được. Nàng vẫn có thể chọn sản phẩm và đặt hàng bình thường.",
+  TIMEOUT: "Ảnh đang mất nhiều thời gian hơn dự kiến. Nàng thử lại giúp La.na nhé.",
+  GENERATION_FAILED: "Chưa tạo được ảnh thử đồ. Nàng thử lại nhé.",
 };
 
-export const TRY_ON_NETWORK_FAILURE_MESSAGE = "Không kết nối được. Vui lòng kiểm tra mạng và thử lại.";
+export const TRY_ON_NETWORK_FAILURE_MESSAGE = "Không kết nối được. Nàng kiểm tra mạng rồi thử lại nhé.";
 
 /** The reason if it is one the server can send, else `null`. */
 export function parseTryOnFailureReason(reason: unknown): TryOnFailureReason | null {
@@ -156,11 +156,11 @@ export function parseTryOnQuota(payload: unknown): TryOnQuotaView | null {
 export function tryOnQuotaLine(quota: TryOnQuotaView | null): string | null {
   if (quota === null) return null;
   if (quota.audience === "member") {
-    return `Hôm nay bạn còn ${quota.remaining}/${quota.limit} lượt thử đồ.`;
+    return `Hôm nay nàng còn ${quota.remaining}/${quota.limit} lượt thử đồ.`;
   }
   return quota.remaining > 0
-    ? `Hôm nay bạn còn ${quota.remaining}/${quota.limit} lượt thử đồ miễn phí. Có tài khoản, bạn được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`
-    : `Hôm nay bạn đã dùng hết lượt thử đồ miễn phí. Có tài khoản, bạn được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`;
+    ? `Hôm nay nàng còn ${quota.remaining}/${quota.limit} lượt thử đồ miễn phí. Có tài khoản, nàng được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`
+    : `Hôm nay nàng đã dùng hết lượt thử đồ miễn phí. Có tài khoản, nàng được ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày.`;
 }
 
 export type TryOnQuotaUpsell = Readonly<{ title: string; body: string }>;
@@ -178,7 +178,7 @@ export function tryOnQuotaUpsell(
   if (reason !== "LOGIN_REQUIRED" && !(reason === "RATE_LIMITED" && audience === "guest")) return null;
   return {
     title: "Tạo tài khoản để thử đồ thoải mái hơn",
-    body: `Khách chưa đăng nhập được thử ${TRY_ON_GUEST_QUOTA.perDay} lượt mỗi ngày, mỗi lượt cách nhau ${TRY_ON_GUEST_QUOTA.perMinute} phút. Với tài khoản miễn phí, bạn có ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày và có thể thử liên tiếp ${TRY_ON_MEMBER_QUOTA.perMinute} lượt mỗi phút.`,
+    body: `Khách chưa đăng nhập được thử ${TRY_ON_GUEST_QUOTA.perDay} lượt mỗi ngày, mỗi lượt cách nhau ${TRY_ON_GUEST_QUOTA.perMinute} phút. Với tài khoản miễn phí, nàng có ${TRY_ON_MEMBER_QUOTA.perDay} lượt mỗi ngày và có thể thử liên tiếp ${TRY_ON_MEMBER_QUOTA.perMinute} lượt mỗi phút.`,
   };
 }
 
@@ -193,7 +193,7 @@ export function tryOnLoginHref(productSlug: string): string {
  * free to go on browsing rather than asked to sit and watch.
  */
 export const TRY_ON_WAIT_NOTE =
-  "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Bạn cứ xem tiếp sản phẩm, chúng mình sẽ báo khi ảnh xong.";
+  "Ảnh thường mất khoảng 30–60 giây để hoàn thành. Nàng cứ xem tiếp sản phẩm, La.na sẽ báo khi ảnh xong.";
 
 /** The usual time to a result, which the waiting bar is paced on (spec: 30–60 s on Flow). */
 export const TRY_ON_EXPECTED_SECONDS = 60;
@@ -227,7 +227,7 @@ export const TRY_ON_DONE_TITLE_PREFIX = "✓ Ảnh thử đồ đã xong · ";
 
 /** Shown on the confirmation step while another product's try-on is still being made. */
 export function tryOnBusyElsewhereMessage(productName: string): string {
-  return `Đang tạo ảnh thử đồ cho ${productName}. Bạn đợi ảnh đó xong rồi thử tiếp món này nhé.`;
+  return `Đang tạo ảnh thử đồ cho ${productName}. Nàng đợi ảnh đó xong rồi thử tiếp món này nhé.`;
 }
 
 /**
@@ -236,11 +236,11 @@ export function tryOnBusyElsewhereMessage(productName: string): string {
  * wait runs past the usual minute. The last stage stays up for as long as the request does.
  */
 export const TRY_ON_WAIT_STAGES = [
-  { fromSeconds: 0, label: "Đang chuẩn bị ảnh của bạn…" },
-  { fromSeconds: 8, label: "Đang thử đồ lên ảnh của bạn…" },
+  { fromSeconds: 0, label: "Đang chuẩn bị ảnh của nàng…" },
+  { fromSeconds: 8, label: "Đang thử đồ lên ảnh của nàng…" },
   { fromSeconds: 22, label: "Đang chỉnh nếp vải và ánh sáng…" },
-  { fromSeconds: 40, label: "Sắp xong rồi, bạn chờ thêm chút nhé…" },
-  { fromSeconds: 70, label: "Lần này lâu hơn thường lệ, hệ thống vẫn đang tạo ảnh cho bạn…" },
+  { fromSeconds: 40, label: "Sắp xong rồi, nàng chờ thêm chút nhé…" },
+  { fromSeconds: 70, label: "Lần này lâu hơn thường lệ, hệ thống vẫn đang tạo ảnh cho nàng…" },
 ] as const;
 
 /** The index into `TRY_ON_WAIT_STAGES` to show after `elapsedSeconds` of waiting. */
@@ -257,7 +257,7 @@ export const TRY_ON_BETA_BADGE = "Đang phát triển";
 
 /** The feature is young; say so plainly and kindly, without promising what it cannot yet do. */
 export const TRY_ON_BETA_NOTE =
-  "Thử đồ bằng AI là tính năng mới, vẫn đang được La.na hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn nàng đã thử cùng La.na.\nMọi ý kiến đóng góp vui lòng nhắn trực tiếp cho La.na qua messenger hoặc zalo";
+  "Thử đồ bằng AI là tính năng mới, vẫn đang được La.na hoàn thiện từng ngày. Ảnh có thể chưa thật sự hoàn hảo, cảm ơn nàng đã thử cùng La.na.\nNàng có góp ý gì cứ nhắn trực tiếp cho La.na qua Messenger hoặc Zalo nhé";
 
 /** What makes a photo work, in the order a shopper decides: what to choose, then what to avoid. */
 export const TRY_ON_PHOTO_DOS: readonly string[] = [

@@ -376,7 +376,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   // Increase 1 → 4: one AddToCart for the delta of 3, not for the committed total.
   await page.getByLabel("Số lượng").fill("4");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await page.getByLabel("Số lượng").press("Enter");
   await expect
     .poll(async () => (await readEvents(page, "add_to_cart")).length, { timeout: 15_000 })
     .toBe(1);
@@ -389,7 +389,7 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   // Decrease 4 → 1: one RemoveFromCart for the delta of 3.
   await page.getByLabel("Số lượng").fill("1");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
+  await page.getByLabel("Số lượng").press("Enter");
   await expect
     .poll(async () => (await readEvents(page, "remove_from_cart")).length, { timeout: 15_000 })
     .toBe(1);
@@ -397,10 +397,10 @@ test("U19 the cart reports a complete view_cart and delta events from committed 
 
   await page.goto(`${BASE_URL}/cart`, { waitUntil: "networkidle" });
 
-  // Same quantity: a successful write that moved nothing reports no quantity event.
+  // Same quantity: the stepper sends no write at all, so no quantity event can follow.
   await page.getByLabel("Số lượng").fill("1");
-  await page.getByRole("button", { name: "Cập nhật" }).click();
-  await expect(page.getByText("Đã cập nhật số lượng.")).toBeVisible();
+  await page.getByLabel("Số lượng").press("Enter");
+  await page.waitForLoadState("networkidle");
   expect(await readEvents(page, "add_to_cart")).toEqual([]);
   expect(await readEvents(page, "remove_from_cart")).toEqual([]);
 

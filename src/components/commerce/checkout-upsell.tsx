@@ -78,10 +78,12 @@ export function CheckoutUpsell({ model }: Readonly<{ model: CheckoutUpsellBanner
     <section className="flex items-start gap-3 border border-[#e7ded7] bg-[#fbf8f5] px-4 py-3" aria-label="Gợi ý mua thêm">
       <div className="min-w-0 flex-1">
         <h2 className="text-sm font-semibold leading-6">Thêm 1 món để nhận ưu đãi</h2>
-        <p className="text-xs leading-5 text-black/70">{model.offerName}</p>
-        <Link href="/sale" className="mt-1 inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">
-          Chọn thêm món
-        </Link>
+        <p className="flex flex-wrap items-center gap-x-3 text-xs leading-5 text-black/70">
+          <span className="min-w-0">{model.offerName}</span>
+          <Link href="/sale" className="-my-3 inline-flex min-h-11 items-center text-sm font-semibold text-black underline underline-offset-4">
+            Chọn thêm món
+          </Link>
+        </p>
       </div>
       <button
         type="button"

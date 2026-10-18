@@ -48,7 +48,7 @@ test("retryable checkout feedback uses Giỏ hàng for cart drift and unavailabl
     {
       tone: "error",
       title: "Số điện thoại chưa đúng",
-      message: "Số điện thoại chưa đúng. Vui lòng nhập số Việt Nam gồm 10 chữ số, ví dụ 0912 345 678.",
+      message: "Số điện thoại chưa đúng. Nàng nhập số Việt Nam gồm 10 chữ số nhé, ví dụ 0912 345 678.",
       mayRetry: true,
     },
   );

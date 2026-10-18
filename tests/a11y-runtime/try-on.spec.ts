@@ -376,9 +376,9 @@ async function openTryOn(page: Page, baseUrl = ENABLED_URL, slug = slugs.eligibl
 function parts(dialog: Locator) {
   return {
     // Step 1
-    photo: dialog.getByLabel(/ảnh của bạn/i),
+    photo: dialog.getByLabel(/ảnh của nàng/i),
     next: dialog.getByRole("button", { name: "Tiếp tục", exact: true }),
-    preview: dialog.getByRole("img", { name: "Ảnh bạn đã chọn" }),
+    preview: dialog.getByRole("img", { name: "Ảnh nàng đã chọn" }),
     // Step 2
     adult: dialog.getByRole("radio", { name: "Từ 18 tuổi" }),
     teen: dialog.getByRole("radio", { name: "13–17 tuổi" }),
@@ -531,7 +531,7 @@ test("the dialog opens, traps keyboard focus, closes with Escape and returns foc
   const closeButton = dialog.getByRole("button", { name: "Đóng", exact: true });
 
   // It is a bottom sheet on a phone and the first step is showing.
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
   await expect(dialog.getByText("Bước 1/3")).toBeVisible();
   await expect(next).toBeDisabled();
   const box = (await dialog.boundingBox())!;
@@ -580,7 +580,7 @@ test("moving between steps moves focus to the new step's heading, and the steps 
   await chooseAge(dialog, "adult");
   await acknowledge.check();
   await changePhoto.click();
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeFocused();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeFocused();
   // Going back keeps the photo; coming forward again keeps the age.
   await expect(preview).toBeVisible();
   await next.click();
@@ -597,7 +597,7 @@ test("closing discards the photo, the choices and the result", async ({ page }) 
   await page.keyboard.press("Escape");
   await triggerOf(page).click();
   // Back at step 1 with nothing carried over.
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
   await expect(preview).toHaveCount(0);
   await expect(result).toHaveCount(0);
   await expect(next).toBeDisabled();
@@ -635,7 +635,7 @@ test("a JPEG, PNG or WebP shows a local preview; unsupported, oversized and non-
     mimeType: "image/jpeg",
     buffer: Buffer.concat([Buffer.from(JPEG_BASE64, "base64"), Buffer.alloc(7 * 1024 * 1024 + 1)]),
   });
-  await expect(alert).toHaveText("Ảnh vượt quá 7 MB. Vui lòng chọn ảnh nhỏ hơn.");
+  await expect(alert).toHaveText("Ảnh vượt quá 7 MB. Nàng chọn ảnh nhỏ hơn nhé.");
   await expect(preview).toHaveCount(0);
   await expect(next).toBeDisabled();
 
@@ -676,7 +676,7 @@ test("the blocked age state cannot generate and sends nothing", async ({ page })
   await acknowledge.check();
   await chooseAge(dialog, "below");
   await expect(generate).toBeDisabled();
-  await expect(alert).toContainText("Tính năng thử đồ chưa dành cho bạn");
+  await expect(alert).toContainText("Tính năng thử đồ chưa dành cho nàng");
   await assertPageQuality(page);
 
   expect(watched.tryOnPosts).toHaveLength(0);
@@ -697,7 +697,7 @@ test("the teen path states the full attestation under a short chip and shows the
   await chooseAge(dialog, "adult");
   await expect(attestation).toHaveCount(0);
   await chooseAge(dialog, "teen");
-  await expect(dialog.getByText("Khi chọn mục này, bạn xác nhận:")).toBeVisible();
+  await expect(dialog.getByText("Khi chọn mục này, nàng xác nhận:")).toBeVisible();
   await expect(attestation).toBeVisible();
   await expect(disclosure).toBeVisible();
   const teenText = await attestation.textContent();
@@ -899,7 +899,7 @@ test("while a generation runs the form is off screen and cannot change, so a lat
   await generate.click();
   await expect(result).toBeVisible();
   await otherPhoto.click();
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeFocused();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeFocused();
   await expect(preview).toBeVisible();
 
   await assertPageQuality(page);
@@ -951,7 +951,7 @@ test("closing while the picture is being made keeps it going: the dock shows the
   await page.keyboard.press("Escape");
   await expect(dock).toHaveCount(0);
   await triggerOf(page).click();
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
   await expect(parts(dialog).result).toHaveCount(0);
 
   expect(predictCalls()).toHaveLength(1);
@@ -996,7 +996,7 @@ test("an unseen result can be discarded from the dock without opening it", async
   await dock.getByRole("button", { name: "Bỏ ảnh thử đồ" }).click();
   await expect(dock).toHaveCount(0);
   await triggerOf(page).click();
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
 });
 
 test("a photo refused while the dialog was closed is not kept: the dock shows no picture, reopening asks for another", async ({
@@ -1019,8 +1019,8 @@ test("a photo refused while the dialog was closed is not kept: the dock shows no
 
   // Reopening lands on choosing another photo, with the safe explanation and no preview.
   await refused.click();
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
-  await expect(parts(dialog).alert.first()).toContainText("Không thể tạo ảnh từ ảnh này");
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
+  await expect(parts(dialog).alert.first()).toContainText("Chưa tạo được ảnh từ ảnh này");
   await expect(parts(dialog).preview).toHaveCount(0);
   await expect(dialog.locator('img[src^="blob:"]')).toHaveCount(0);
   await expect(parts(dialog).next).toBeDisabled();
@@ -1060,7 +1060,7 @@ test("a provider failure shows a safe message, goes back to confirm with nothing
   await generate.click();
 
   await expect(dialog.getByRole("heading", { name: "Chưa tạo được ảnh" })).toBeVisible();
-  await expect(alert).toHaveText("Chưa tạo được ảnh thử đồ. Vui lòng thử lại.");
+  await expect(alert).toHaveText("Chưa tạo được ảnh thử đồ. Nàng thử lại nhé.");
   await expect(alert).not.toContainText(/fixture|upstream|500|projects\//i);
   await assertPageQuality(page);
 
@@ -1094,8 +1094,8 @@ test("a provider safety block fails closed: safe copy on the photo step, the pho
   await generate.click();
 
   // Back at choosing a photo, with the explanation showing and the refused photo gone.
-  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của bạn" })).toBeVisible();
-  await expect(alert).toContainText("Không thể tạo ảnh từ ảnh này. Vui lòng chọn một ảnh khác");
+  await expect(dialog.getByRole("heading", { name: "Chọn ảnh của nàng" })).toBeVisible();
+  await expect(alert).toContainText("Chưa tạo được ảnh từ ảnh này. Nàng chọn một ảnh khác nhé");
   await expect(alert).not.toContainText(/an toàn|safety|rai|filter|00000000/i);
   await expect(preview).toHaveCount(0);
   await expect(next).toBeDisabled();

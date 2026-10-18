@@ -2,7 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 
 import { BrandGuestCheckoutForm } from "@/components/brand/guest-checkout-form";
-import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
+import { PageHeader, PageShell } from "@/components/brand/page-chrome";
 import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner } from "@/components/brand/promotion-banner";
@@ -14,18 +14,12 @@ import { buildCheckoutMetadata } from "@/routes/metadata/checkout";
 
 /** Checkout's markup. Every decision behind it is in `@/routes/checkout` and its model. */
 
-const CHECKOUT_BREADCRUMBS = [
-  { label: "Trang chủ", href: "/" },
-  { label: "Giỏ hàng", href: "/cart" },
-  { label: "Thanh toán" },
-] as const;
-
+// No breadcrumb or eyebrow: checkout keeps the buyer on the form, not on the way out.
 function render(data: CheckoutViewModel) {
   if (data.state === "empty") {
     return (
       <PageShell>
-        <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
-        <PageHeader eyebrow="Mua sắm" title="Thanh toán" />
+        <PageHeader title="Thanh toán" />
         <div className="mt-8" data-ui-state="empty">
           <p className="font-display text-xl md:text-2xl">Giỏ hàng của nàng đang trống.</p>
           <Link className="text-link mt-6 inline-block" href="/shop">Tiếp tục mua sắm ↗</Link>
@@ -166,8 +160,7 @@ function render(data: CheckoutViewModel) {
 
   return (
     <PageShell>
-      <PageBreadcrumbs items={CHECKOUT_BREADCRUMBS} />
-      <PageHeader eyebrow="Mua sắm" title="Thanh toán" meta="Thanh toán khi nhận hàng" />
+      <PageHeader title="Thanh toán" meta="Thanh toán khi nhận hàng" />
 
       {/* The form owns one interactive gift area and the responsive order/receiving layout. */}
       <PromotionBanner className="mt-8" view={data.promotions} />

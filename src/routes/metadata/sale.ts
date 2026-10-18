@@ -12,7 +12,7 @@ export const SALE_DESCRIPTION = "Khám phá các sản phẩm đang có ưu đã
 export const SALE_LISTING_DESCRIPTIONS: Readonly<Record<SaleListingKind, string>> = {
   PROMOTION: "Các sản phẩm đang được giảm giá trong chương trình ưu đãi hiện hành.",
   FLASH_SALE: "Giá tốt nhất trong thời gian giới hạn — nhanh tay trước khi Flash Sale kết thúc.",
-  CLEARANCE: "Những thiết kế chỉ còn lẻ size, số lượng có hạn — giá tốt để chọn ngay size vừa với bạn.",
+  CLEARANCE: "Những thiết kế chỉ còn lẻ size, số lượng có hạn — giá tốt để nàng chọn ngay size vừa với mình.",
 };
 
 export type SaleMetadataProps = Readonly<{
