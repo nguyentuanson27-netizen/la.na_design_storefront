@@ -530,13 +530,16 @@ function buildBaseProductFilters(shopId: number, discovery: StorefrontDiscoveryQ
     Prisma.sql`p."pancakeShopId" = ${safeShopId}`,
     Prisma.sql`p."isPresent" = TRUE`,
     Prisma.sql`p."isActive" = TRUE`,
-    Prisma.sql`NOT EXISTS (
+  ];
+
+  if (!discovery.collection) {
+    filters.push(Prisma.sql`NOT EXISTS (
       SELECT 1
       FROM "CompositeComponentMirror" ccm
       JOIN "VariantMirror" cv ON ccm."componentVariantId" = cv."id"
       WHERE cv."productId" = p."id"
-    )`,
-  ];
+    )`);
+  }
 
   if (discovery.query) {
     // The mirrored name drops the Pancake product code ("SV605"), so the code and the variant
