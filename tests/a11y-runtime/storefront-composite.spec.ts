@@ -609,7 +609,9 @@ test("composite activation opens and closes the real child purchase path while p
   await expect(panelKindGroup).toBeFocused();
   expect(await prisma.cartItem.count({ where: { variantId: parentVariantId } })).toBe(0);
   // A tap on a size that only the classification can unlock asks for the classification too.
-  await panel.getByRole("group", { name: "Kích cỡ" }).locator("label").filter({ hasText: /^M$/ }).click();
+  // `force`: Playwright treats a label as disabled with its disabled radio and would wait forever,
+  // but the browser still delivers the tap to the label, which is exactly what is under test.
+  await panel.getByRole("group", { name: "Kích cỡ" }).locator("label").filter({ hasText: /^M$/ }).click({ force: true });
   await expect(panelKindGroup).toBeFocused();
   await expect(page.getByRole("radio", { name: "M", exact: true }).first()).not.toBeChecked();
 
