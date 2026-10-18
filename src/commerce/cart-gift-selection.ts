@@ -1,6 +1,7 @@
 /** GQ12: cookie-owned choices, serialized with paid cart writes. No reservations or consent. */
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
+import { MAX_MEDIA_CANDIDATES_SCANNED, parseTrustedProductImageUrl } from "./product-media.ts";
 import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection } from "./cart-gift-selection-repository.ts";
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
@@ -25,15 +26,13 @@ export function parseGiftChoice(input: unknown): GiftChoiceInput | null {
 }
 
 function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pancakeImageUrls: unknown): string | null {
-  if (typeof primaryImageUrl === "string" && primaryImageUrl.trim().length > 0) {
-    return primaryImageUrl.trim();
-  }
-  if (Array.isArray(pancakeImageUrls)) {
-    for (const url of pancakeImageUrls) {
-      if (typeof url === "string" && url.trim().length > 0) {
-        return url.trim();
-      }
-    }
+  // A stale or foreign primary must not hide valid Pancake variant photography.
+  const primary = parseTrustedProductImageUrl(primaryImageUrl);
+  if (primary) return primary;
+  if (!Array.isArray(pancakeImageUrls)) return null;
+  for (let index = 0; index < Math.min(pancakeImageUrls.length, MAX_MEDIA_CANDIDATES_SCANNED); index++) {
+    const image = parseTrustedProductImageUrl(pancakeImageUrls[index]);
+    if (image) return image;
   }
   return null;
 }
@@ -61,6 +60,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   if (ids.length > 10_000) throw new Error("Options bound exceeded");
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
+    orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
     select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
       product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
       warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
@@ -122,20 +122,38 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
   const { entitlements, validation, stack } = currentGifts ?? evaluateGifts(quote.benefits.groups);
+  const imageByVariantId = new Map<string, string>();
   const imageByProductId = new Map<string, string>();
   for (const v of variants) {
     const candidate = extractCandidateImageUrl(v.product.primaryImageUrl, v.pancakeImageUrls);
-    if (candidate && !imageByProductId.has(v.productId)) {
-      imageByProductId.set(v.productId, candidate);
+    if (!candidate) continue;
+    imageByVariantId.set(v.id, candidate);
+    if (!imageByProductId.has(v.productId)) imageByProductId.set(v.productId, candidate);
+  }
+
+  // Some Pancake products store their only photo on a sibling variant that is not a gift option.
+  // Read siblings only when no offered variant (or product primary) has a trusted image.
+  const missingProductIds = [...new Set(variants.map((v) => v.productId))].filter((id) => !imageByProductId.has(id));
+  if (missingProductIds.length > 0) {
+    const siblings = await tx.variantMirror.findMany({
+      where: { productId: { in: missingProductIds }, isPresent: true, isActive: true },
+      orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
+      select: { productId: true, pancakeImageUrls: true },
+    });
+    for (const sibling of siblings) {
+      if (imageByProductId.has(sibling.productId)) continue;
+      const candidate = extractCandidateImageUrl(null, sibling.pancakeImageUrls);
+      if (candidate) imageByProductId.set(sibling.productId, candidate);
     }
   }
+
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
     labels: variants.map((v) => ({
       variantId: v.id,
       productId: v.productId,
       productName: v.product.name,
-      imageUrl: extractCandidateImageUrl(v.product.primaryImageUrl, v.pancakeImageUrls) ?? imageByProductId.get(v.productId) ?? null,
+      imageUrl: imageByVariantId.get(v.id) ?? imageByProductId.get(v.productId) ?? null,
       optionLabel: [v.color, v.size].filter(Boolean).join(" / "),
     })) };
 }

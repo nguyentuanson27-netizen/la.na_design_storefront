@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { prisma } from "../../src/db/prisma.ts";
 import { createCartGiftSelectionService } from "../../src/commerce/cart-gift-selection.ts";
+import { buildCartGiftPickerModel } from "../../src/routes/cart-gift-model.ts";
 import { createAnonymousCartService } from "../../src/commerce/anonymous-cart.ts";
 
 const SHOP = 910_120;
@@ -43,6 +44,57 @@ test.beforeEach(async () => {
 });
 test.afterEach(cleanup);
 test.after(async () => prisma.$disconnect());
+test("gift image skips untrusted product and variant URLs before accepting Pancake photo", async () => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: giftId }, select: { productId: true },
+  });
+  const image = "https://content.pancake.vn/images/1/2/3/gift-valid.jpg";
+  await prisma.productMirror.update({
+    where: { id: gift.productId }, data: { primaryImageUrl: "https://evil.example/fake.jpg" },
+  });
+  await prisma.variantMirror.update({
+    where: { id: giftId },
+    data: { pancakeImageUrls: ["https://evil.example/first.jpg", image] },
+  });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.labels.find((row) => row.variantId === giftId)?.imageUrl, image);
+  const model = buildCartGiftPickerModel(result.state);
+  assert.equal(model.campaigns[0]?.products.find((product) => product.productId === gift.productId)?.imageUrl, image);
+  assert.equal(model.selections[0]?.imageUrl, image);
+});
+
+test("gift image falls back to an active sibling variant not offered by the campaign", async () => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: giftId }, select: { productId: true },
+  });
+  const image = "https://content.pancake.vn/images/1/2/3/gift-sibling.jpg";
+  await prisma.variantMirror.update({
+    where: { id: giftId }, data: { pancakeImageUrls: [] },
+  });
+  await prisma.variantMirror.create({
+    data: {
+      productId: gift.productId,
+      pancakeVariationId: `${PREFIX}gift-sibling`,
+      pancakeImageUrls: [image],
+      isPresent: true,
+      isActive: true,
+      syncedAt: NOW,
+      pancakeRetailPrice: 100_000,
+      pancakeRetailPriceAfterDiscount: 100_000,
+    },
+  });
+
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  const result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.labels.find((row) => row.variantId === giftId)?.imageUrl, image);
+  const model = buildCartGiftPickerModel(result.state);
+  assert.equal(model.campaigns[0]?.products.find((product) => product.productId === gift.productId)?.imageUrl, image);
+  assert.equal(model.selections[0]?.imageUrl, image);
+});
+
 test("partial/zero choices are explicit, idempotent, separate from paid items and still require acknowledgement", async () => {
   assert.deepEqual(await service().set(choice()), { ok: true });
   assert.deepEqual(await service().set(choice()), { ok: true });
