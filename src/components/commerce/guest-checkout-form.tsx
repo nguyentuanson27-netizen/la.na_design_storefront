@@ -83,14 +83,15 @@ function findFieldErrors(values: FieldValues): Partial<Record<RequiredField, str
   return errors;
 }
 
-// Floating labels: the label sits inside the field and moves up once it is focused or filled, so
-// every field is one compact rounded box. `placeholder=" "` is what lets CSS tell "filled" apart.
+// In-field labels: the label sits inside the compact rounded box like a placeholder and disappears
+// once the field holds a value (owner request 2026-10-18). It stays the field's real <label>, so the
+// accessible name never depends on it being visible. `placeholder=" "` lets CSS tell "filled" apart.
 const fieldClassName =
-  "peer block w-full rounded-xl border border-black/20 bg-white px-3.5 pb-2 pt-6 text-base outline-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
-const floatingLabelClassName =
-  "pointer-events-none absolute left-3.5 right-3.5 top-[1.05rem] truncate text-base text-black/60 transition-all peer-focus:top-2 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-2 peer-[:not(:placeholder-shown)]:text-xs";
-// A select always shows an option, so its label stays raised.
-const raisedLabelClassName = "pointer-events-none absolute left-3.5 right-10 top-2 truncate text-xs text-black/60";
+  "peer block h-11 w-full rounded-xl border border-black/20 bg-white px-3.5 text-base outline-none transition-colors focus:border-black focus:ring-2 focus:ring-black/10 disabled:cursor-not-allowed disabled:bg-black/[0.04] disabled:text-black/45 aria-invalid:border-[#b42318] aria-invalid:focus:ring-[#b42318]/15";
+const inFieldLabelClassName =
+  "pointer-events-none absolute inset-x-3.5 top-1/2 -translate-y-1/2 truncate text-base text-black/60 peer-[:not(:placeholder-shown)]:opacity-0";
+// A select already shows "Chọn …" while empty, so its label is for assistive technology only.
+const selectLabelClassName = "sr-only";
 
 function SelectChevron() {
   return (
@@ -521,7 +522,7 @@ export function GuestCheckoutForm({
               value={name}
               {...fieldA11y("name")}
             />
-            <label className={floatingLabelClassName} htmlFor="checkout-name">
+            <label className={inFieldLabelClassName} htmlFor="checkout-name">
               Họ và tên <RequiredMark />
             </label>
           </div>
@@ -544,7 +545,7 @@ export function GuestCheckoutForm({
               value={phone}
               {...fieldA11y("phone")}
             />
-            <label className={floatingLabelClassName} htmlFor="checkout-phone">
+            <label className={inFieldLabelClassName} htmlFor="checkout-phone">
               Số điện thoại <RequiredMark />
             </label>
           </div>
@@ -561,7 +562,7 @@ export function GuestCheckoutForm({
           <div>
             <div className="relative">
               <select
-                className={`${fieldClassName} appearance-none pr-10`}
+                className={`${fieldClassName} appearance-none pr-10 [&>option]:text-black ${provinceRef ? "" : "text-black/60"}`}
                 disabled={provinceLoading || provinces.length === 0}
                 id="checkout-province"
                 name="provinceRef"
@@ -579,7 +580,7 @@ export function GuestCheckoutForm({
                   </option>
                 ))}
               </select>
-              <label className={raisedLabelClassName} htmlFor="checkout-province">
+              <label className={selectLabelClassName} htmlFor="checkout-province">
                 Tỉnh / Thành phố <RequiredMark />
               </label>
               <SelectChevron />
@@ -590,7 +591,7 @@ export function GuestCheckoutForm({
           <div>
             <div className="relative">
               <select
-                className={`${fieldClassName} appearance-none pr-10`}
+                className={`${fieldClassName} appearance-none pr-10 [&>option]:text-black ${communeRef ? "" : "text-black/60"}`}
                 disabled={!provinceRef || communeLoading || communes.length === 0}
                 id="checkout-commune"
                 name="communeRef"
@@ -615,7 +616,7 @@ export function GuestCheckoutForm({
                   </option>
                 ))}
               </select>
-              <label className={raisedLabelClassName} htmlFor="checkout-commune">
+              <label className={selectLabelClassName} htmlFor="checkout-commune">
                 Phường / Xã <RequiredMark />
               </label>
               <SelectChevron />
@@ -655,7 +656,7 @@ export function GuestCheckoutForm({
               value={detail}
               {...fieldA11y("detail")}
             />
-            <label className={floatingLabelClassName} htmlFor="checkout-detail">
+            <label className={inFieldLabelClassName} htmlFor="checkout-detail">
               Số nhà, tên đường <RequiredMark />
             </label>
           </div>
@@ -664,7 +665,7 @@ export function GuestCheckoutForm({
 
         <div className="relative">
           <textarea
-            className={`${fieldClassName} min-h-16 resize-y`}
+            className={`${fieldClassName} h-auto min-h-16 resize-y py-2.5`}
             rows={2}
             id="checkout-note"
             maxLength={2048}
@@ -673,7 +674,7 @@ export function GuestCheckoutForm({
             value={note}
             onChange={(event) => setNote(event.target.value)}
           />
-          <label className={floatingLabelClassName} htmlFor="checkout-note">
+          <label className="pointer-events-none absolute inset-x-3.5 top-2.5 truncate text-base text-black/60 peer-[:not(:placeholder-shown)]:opacity-0" htmlFor="checkout-note">
             Ghi chú (không bắt buộc)
           </label>
         </div>
