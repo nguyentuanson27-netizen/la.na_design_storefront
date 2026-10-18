@@ -114,8 +114,9 @@ test("leaves out campaigns whose scope excludes the product or that cannot be ho
       entry(tierCampaign({ id: "elsewhere" }), dynamic(["aoDaiTet"])),
       // Exclude wins over a matching category.
       entry(tierCampaign({ id: "excluded" }), dynamic(["aoDai"], [PRODUCT])),
-      // A ladder that does not validate.
+      // A ladder with no rung, or no unit.
       entry(tierCampaign({ id: "broken-ladder", tiers: [] })),
+      entry(tierCampaign({ id: "no-unit", tierUnit: null })),
       // A gift campaign with nothing to give.
       entry(giftCampaign({ id: "no-gift", giftOptions: [] })),
       // A Fixed scope never frozen matches nothing.

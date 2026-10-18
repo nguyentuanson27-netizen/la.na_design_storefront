@@ -935,6 +935,8 @@ test("desktop purchase panel is not sticky and validates size before add-to-cart
   await addToBag.click();
   await expect(purchasePanel.getByText("Nàng chọn màu nhé", { exact: true })).toBeVisible();
   await expect(purchasePanel.getByText("Nàng chọn size nhé", { exact: true })).toBeVisible();
+  await expect(colorGroup).toHaveAttribute("aria-invalid", "true");
+  await expect(sizeGroup).toHaveAttribute("aria-invalid", "true");
   await expect(colorGroup).toBeFocused();
   expect(postRequests).toHaveLength(postCountBeforeValidation);
   expect((await page.context().cookies()).some(({ name }) => name === "la_cart")).toBe(false);

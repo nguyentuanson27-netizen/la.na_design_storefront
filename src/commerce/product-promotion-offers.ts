@@ -13,7 +13,9 @@
  *   - the gift/quantity feature gate is off, or the POS shop has no line-level pricing evidence
  *     (the same condition under which checkout would refuse a benefit order) -> nothing;
  *   - the campaign's scope does not resolve this product (exclude wins, unfrozen Fixed matches none);
- *   - a tier campaign whose ladder does not validate, or a gift campaign with no gift to give;
+ *   - a tier campaign with no unit or no rung, or a gift campaign with no gift to give (a ladder
+ *     is validated where it is published; this page deliberately never imports the tier engine,
+ *     which only the cart may price with);
  *   - any read error -> nothing, and the page renders as it did before
  *     (`product-promotion-offers-runtime.ts`, which owns the database read).
  */
@@ -21,7 +23,6 @@
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import type { ActiveGiftQuantityCampaign } from "./gift-quantity-candidate-repository.ts";
 import { buildScopeResolver, type ScopeProductFacts } from "./gift-quantity-scope.ts";
-import { validateTierConfig } from "./gift-quantity-tier.ts";
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 
 /** At most this many are named; the page is about the product, not the promotions. */
@@ -63,14 +64,7 @@ export function selectProductPromotionOffers(
       offers.push({ id: campaign.id, kind: "GIFT", label });
     } else {
       if (campaign.tierUnit === null || campaign.tierDiscountedUnits === null) continue;
-      const issues = validateTierConfig({
-        basis: campaign.tierBasis ?? "QUANTITY",
-        unit: campaign.tierUnit,
-        discountedUnits: campaign.tierDiscountedUnits,
-        selectionPriority: campaign.tierSelectionPriority,
-        tiers: campaign.tiers,
-      });
-      if (issues.length > 0) continue;
+      if (campaign.tiers.length === 0) continue;
       offers.push({ id: campaign.id, kind: "TIER", label });
     }
     if (offers.length === MAX_PRODUCT_PROMOTION_OFFERS) break;
