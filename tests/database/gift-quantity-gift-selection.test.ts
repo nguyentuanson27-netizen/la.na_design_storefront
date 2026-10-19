@@ -44,6 +44,62 @@ test.beforeEach(async () => {
 });
 test.afterEach(cleanup);
 test.after(async () => prisma.$disconnect());
+test("selected gift variant image outranks a different trusted product primary", async () => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: giftId }, select: { productId: true },
+  });
+  const primary = "https://content.pancake.vn/images/1/2/3/gift-green.jpg";
+  const variant = "https://content.pancake.vn/images/1/2/3/gift-red.jpg";
+  await prisma.productMirror.update({ where: { id: gift.productId }, data: { primaryImageUrl: primary } });
+  await prisma.variantMirror.update({ where: { id: giftId }, data: { pancakeImageUrls: [variant] } });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  let result = await service().get(NOW);
+  assert.ok("state" in result);
+  assert.equal(result.state.labels.find((label) => label.variantId === giftId)?.imageUrl, variant);
+  let model = buildCartGiftPickerModel(result.state);
+  assert.equal(model.campaigns[0]?.products.find((product) => product.productId === gift.productId)?.imageUrl, variant);
+  assert.equal(model.selections[0]?.imageUrl, variant);
+
+  // If the selected variant has no trusted image, retain the product primary fallback.
+  await prisma.variantMirror.update({ where: { id: giftId }, data: { pancakeImageUrls: ["https://evil.example/wrong.jpg"] } });
+  result = await service().get(NOW);
+  assert.ok("state" in result);
+  model = buildCartGiftPickerModel(result.state);
+  assert.equal(result.state.labels.find((label) => label.variantId === giftId)?.imageUrl, primary);
+  assert.equal(model.selections[0]?.imageUrl, primary);
+});
+
+test("sibling fallback caps total URL candidates and variant rows even with many invalid photos", async () => {
+  const gift = await prisma.variantMirror.findUniqueOrThrow({
+    where: { id: giftId }, select: { productId: true },
+  });
+  const valid = "https://content.pancake.vn/images/1/2/3/gift-bounded.jpg";
+  const idAt = (i: number) => `${PREFIX}gift-sibling-${String(i).padStart(2, "0")}`;
+  await prisma.variantMirror.createMany({
+    data: Array.from({ length: 22 }, (_, i) => ({
+      productId: gift.productId, pancakeVariationId: idAt(i),
+      pancakeImageUrls: i < 5 ? Array.from({ length: 20 }, (__, j) => `https://evil.example/bad-${i}-${j}.jpg`)
+        : i === 5 || i === 21 ? [valid] : [],
+      isPresent: true, isActive: true, syncedAt: NOW,
+      pancakeRetailPrice: 100_000, pancakeRetailPriceAfterDiscount: 100_000,
+    })),
+  });
+  assert.deepEqual(await service().set(choice(), NOW), { ok: true });
+  const imageForGift = async () => {
+    const result = await service().get(NOW);
+    assert.ok("state" in result);
+    return result.state.labels.find((label) => label.variantId === giftId)?.imageUrl ?? null;
+  };
+  // Five siblings consume all 100 untrusted candidate slots: sibling 6 may not be scanned.
+  assert.equal(await imageForGift(), null);
+  await prisma.variantMirror.updateMany({
+    where: { productId: gift.productId, pancakeVariationId: { in: Array.from({ length: 5 }, (_, i) => idAt(i)) } },
+    data: { pancakeImageUrls: [] },
+  });
+  assert.equal(await imageForGift(), valid, "the in-budget sixth sibling supplies the photo");
+  await prisma.variantMirror.updateMany({ where: { productId: gift.productId, pancakeVariationId: idAt(5) }, data: { pancakeImageUrls: [] } });
+  assert.equal(await imageForGift(), null, "sibling 22 stays outside the 20-variant query limit");
+});
 test("gift image skips untrusted product and variant URLs before accepting Pancake photo", async () => {
   const gift = await prisma.variantMirror.findUniqueOrThrow({
     where: { id: giftId }, select: { productId: true },

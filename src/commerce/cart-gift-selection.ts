@@ -25,16 +25,18 @@ export function parseGiftChoice(input: unknown): GiftChoiceInput | null {
   return r as GiftChoiceInput;
 }
 
+// Optional gift photography is best-effort: do not make cart/checkout transactions scan whole catalog families.
+const MAX_GIFT_SIBLING_VARIANTS = 20;
+
 function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pancakeImageUrls: unknown): string | null {
-  // A stale or foreign primary must not hide valid Pancake variant photography.
-  const primary = parseTrustedProductImageUrl(primaryImageUrl);
-  if (primary) return primary;
-  if (!Array.isArray(pancakeImageUrls)) return null;
-  for (let index = 0; index < Math.min(pancakeImageUrls.length, MAX_MEDIA_CANDIDATES_SCANNED); index++) {
-    const image = parseTrustedProductImageUrl(pancakeImageUrls[index]);
-    if (image) return image;
+  // The gift's own variant photo wins; use the product primary only if its variant has none.
+  if (Array.isArray(pancakeImageUrls)) {
+    for (let index = 0; index < Math.min(pancakeImageUrls.length, MAX_MEDIA_CANDIDATES_SCANNED); index++) {
+      const image = parseTrustedProductImageUrl(pancakeImageUrls[index]);
+      if (image) return image;
+    }
   }
-  return null;
+  return parseTrustedProductImageUrl(primaryImageUrl);
 }
 
 export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
@@ -131,19 +133,41 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     if (!imageByProductId.has(v.productId)) imageByProductId.set(v.productId, candidate);
   }
 
-  // Some Pancake products store their only photo on a sibling variant that is not a gift option.
-  // Read siblings only when no offered variant (or product primary) has a trusted image.
+  // Optional sibling fallback only if no offered variant or product primary contains trusted media.
+  // Bound the read *in SQL*: 20 sibling variants and 100 total candidate URL strings per call.
+  // JSON stays in PostgreSQL; the transaction never hydrates entire sibling image arrays.
   const missingProductIds = [...new Set(variants.map((v) => v.productId))].filter((id) => !imageByProductId.has(id));
   if (missingProductIds.length > 0) {
-    const siblings = await tx.variantMirror.findMany({
-      where: { productId: { in: missingProductIds }, isPresent: true, isActive: true },
-      orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
-      select: { productId: true, pancakeImageUrls: true },
-    });
-    for (const sibling of siblings) {
-      if (imageByProductId.has(sibling.productId)) continue;
-      const candidate = extractCandidateImageUrl(null, sibling.pancakeImageUrls);
-      if (candidate) imageByProductId.set(sibling.productId, candidate);
+    const candidates = await tx.$queryRaw<{ productId: string; url: string }[]>`
+      WITH siblings AS (
+        SELECT v."id", v."productId", v."pancakeVariationId", v."pancakeImageUrls"
+        FROM "VariantMirror" v
+        WHERE v."productId" = ANY(${missingProductIds}::text[])
+          AND NOT (v."id" = ANY(${ids}::text[]))
+          AND v."isPresent" = TRUE
+          AND v."isActive" = TRUE
+        ORDER BY v."productId" ASC, v."pancakeVariationId" ASC, v."id" ASC
+        LIMIT ${MAX_GIFT_SIBLING_VARIANTS}
+      )
+      SELECT siblings."productId", siblings."pancakeImageUrls" ->> image."index" AS "url"
+      FROM siblings
+      CROSS JOIN LATERAL generate_series(
+        0,
+        LEAST(
+          CASE WHEN JSONB_TYPEOF(siblings."pancakeImageUrls") = 'array'
+            THEN JSONB_ARRAY_LENGTH(siblings."pancakeImageUrls")
+            ELSE 0 END,
+          ${MAX_MEDIA_CANDIDATES_SCANNED}
+        ) - 1
+      ) AS image("index")
+      WHERE JSONB_TYPEOF(siblings."pancakeImageUrls" -> image."index") = 'string'
+      ORDER BY siblings."productId", siblings."pancakeVariationId", siblings."id", image."index"
+      LIMIT ${MAX_MEDIA_CANDIDATES_SCANNED}
+    `;
+    for (const row of candidates) {
+      if (imageByProductId.has(row.productId)) continue;
+      const image = parseTrustedProductImageUrl(row.url);
+      if (image) imageByProductId.set(row.productId, image);
     }
   }
 
