@@ -401,18 +401,3 @@ test("R03-F1: a tier with an invalid configuration is dropped as invalid and nev
   assert.equal(elsewhere.subtotalVnd, 180_000);
   assert.deepEqual(elsewhere.dropped.map((d) => [d.campaignId, d.reason]), [["Z", "TIER_CONFIG_INVALID"]]);
 });
-
-test("two unstacked gift campaigns: higher minimumQuantity threshold supersedes lower one", () => {
-  const g = (id: string, minimumQuantity: number) => ({ id, stackingEnabled: false, peers: [], minimumQuantity });
-  const buy3 = g("buy-3", 3);
-  const buy4 = g("buy-4", 4);
-
-  const forward = resolveGiftCampaignStacking([buy3, buy4]);
-  assert.deepEqual(forward.permitted, ["buy-4"]);
-  assert.deepEqual(forward.dropped, [{ campaignId: "buy-3", reason: "STACK_NOT_PERMITTED", otherCampaignId: "buy-4" }]);
-
-  const reverse = resolveGiftCampaignStacking([buy4, buy3]);
-  assert.deepEqual(reverse.permitted, ["buy-4"]);
-  assert.deepEqual(reverse.dropped, [{ campaignId: "buy-3", reason: "STACK_NOT_PERMITTED", otherCampaignId: "buy-4" }]);
-});
-

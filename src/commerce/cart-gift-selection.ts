@@ -149,7 +149,6 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
     const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
       id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
-      minimumQuantity: c.minimumQuantity,
     })));
     const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
     const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)

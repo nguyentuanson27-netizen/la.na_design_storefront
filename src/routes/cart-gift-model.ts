@@ -52,7 +52,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
   }
   return {
     invalid: !state.validation.ok,
-    stackConflict: (state.giftStackDropped?.length ?? 0) > 0 && !state.entitlements.some((entry) => entry.entitled > 0),
+    stackConflict: (state.giftStackDropped?.length ?? 0) > 0,
     repairGroups,
     selections: state.selections.map((row) => {
       const label = labelByVariant.get(row.variantId);
