@@ -63,9 +63,26 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
     orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
-    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
+    select: {
+      id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
       product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
-      warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
+      warehouseStocks: { select: { quantity: true } },
+      compositeComponents: {
+        select: {
+          componentVariantId: true,
+          quantity: true,
+          componentVariant: {
+            select: {
+              id: true,
+              isPresent: true,
+              isActive: true,
+              product: { select: { isPresent: true, isActive: true } },
+              warehouseStocks: { select: { quantity: true } },
+            },
+          },
+        },
+      },
+    },
   });
   // Paid composite lines consume component stock, even when the gift is a standalone component.
   const edges = await tx.compositeComponentMirror.findMany({ where: { parentVariantId: { in: cart.items.map((item) => item.variantId) } }, select: { parentVariantId: true, componentVariantId: true, quantity: true } });
@@ -76,13 +93,34 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
       demand.set(resource.id, (demand.get(resource.id) ?? 0) + resource.quantity);
     }
   }
-  const held = await readAdvisoryHeldQuantities(tx, ids);
+  const allVariantIds = [
+    ...new Set([
+      ...ids,
+      ...variants.flatMap((v) => v.compositeComponents.map((c) => c.componentVariantId)),
+    ]),
+  ];
+  const held = await readAdvisoryHeldQuantities(tx, allVariantIds);
   const optionById = new Map(variants.map((v) => {
+    const isComposite = v.compositeComponents.length > 0;
     const active = v.isActive && v.isPresent && v.product.isActive && v.product.isPresent;
-    const stock = v.warehouseStocks.reduce((sum, row) => sum + row.quantity, 0) - (held.get(v.id) ?? 0) - (demand.get(v.id) ?? 0);
+    let stock = 0;
+    if (isComposite) {
+      const compStocks = v.compositeComponents.map((comp) => {
+        const cv = comp.componentVariant;
+        const cActive = cv.isPresent && cv.isActive && cv.product.isPresent && cv.product.isActive;
+        if (!cActive) return 0;
+        const cAvailable = cv.warehouseStocks.reduce((sum, row) => sum + row.quantity, 0)
+          - (held.get(comp.componentVariantId) ?? 0)
+          - (demand.get(comp.componentVariantId) ?? 0);
+        return Math.floor(Math.max(0, cAvailable) / comp.quantity);
+      });
+      stock = compStocks.length > 0 ? Math.min(...compStocks) : 0;
+    } else {
+      stock = v.warehouseStocks.reduce((sum, row) => sum + row.quantity, 0) - (held.get(v.id) ?? 0) - (demand.get(v.id) ?? 0);
+    }
     // Gifts use READY stock only; preorder/oversell capacity cannot authorize a gift.
     const readyAvailable = active && Number.isSafeInteger(stock) ? Math.max(0, stock) : 0;
-    return [v.id, { variantId: v.id, productId: v.productId, composite: v.compositeComponents.length > 0, readyAvailable }] as const;
+    return [v.id, { variantId: v.id, productId: v.productId, composite: isComposite, readyAvailable }] as const;
   }));
   const campaigns: GiftCampaignFacts[] = entries.map(({ campaign: c, scope, frozen }) => ({
     id: c.id, revision: c.revision, trigger: c.giftTrigger!, minimumQuantity: c.minimumQuantity,
@@ -105,6 +143,7 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
     const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
       id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+      minimumQuantity: c.minimumQuantity,
     })));
     const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
     const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)

@@ -504,6 +504,7 @@ export type GiftStackCandidate = Readonly<{
   id: string;
   stackingEnabled: boolean;
   peers: readonly StackPeer[];
+  minimumQuantity?: number | null;
 }>;
 
 export type GiftStackResolution = Readonly<{
@@ -518,9 +519,11 @@ export type GiftStackResolution = Readonly<{
  *
  * A gift never changes a price, so there is no order to resolve; the only question is permission.
  * Two gift campaigns coexist only when **both** have stacking enabled and **each** names the other
- * (by id, or by the `GIFT_ITEM` wildcard). Any refused pair drops **both** campaigns, the same
- * conservative rule as price stacking, and the result does not depend on input order. A single
- * gift campaign always runs: with nothing to combine with, no permission is asked.
+ * (by id, or by the `GIFT_ITEM` wildcard). When stacking is not enabled between two campaigns with
+ * distinct quantity thresholds (e.g. Buy 3 vs Buy 4), the higher threshold campaign supersedes
+ * the lower one so buyers receive the higher tier gift without dropping both. Any other refused pair
+ * drops **both** campaigns, the same conservative rule as price stacking, and the result does not
+ * depend on input order. A single gift campaign always runs: with nothing to combine with, no permission is asked.
  */
 export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandidate[]): GiftStackResolution {
   const sorted = [...campaigns].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
@@ -534,6 +537,18 @@ export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandida
         stackPeersAllow(a.peers, "GIFT_ITEM", b.id) &&
         stackPeersAllow(b.peers, "GIFT_ITEM", a.id);
       if (together) continue;
+
+      const minA = typeof a.minimumQuantity === "number" && Number.isSafeInteger(a.minimumQuantity) && a.minimumQuantity > 0 ? a.minimumQuantity : null;
+      const minB = typeof b.minimumQuantity === "number" && Number.isSafeInteger(b.minimumQuantity) && b.minimumQuantity > 0 ? b.minimumQuantity : null;
+      if (minA !== null && minB !== null && minA !== minB) {
+        const loser = minA > minB ? b : a;
+        const winner = minA > minB ? a : b;
+        if (!dropped.has(loser.id)) {
+          dropped.set(loser.id, { campaignId: loser.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: winner.id });
+        }
+        continue;
+      }
+
       if (!dropped.has(a.id)) dropped.set(a.id, { campaignId: a.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: b.id });
       if (!dropped.has(b.id)) dropped.set(b.id, { campaignId: b.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: a.id });
     }

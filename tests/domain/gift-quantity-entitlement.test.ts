@@ -303,13 +303,13 @@ test("entitlement carries the campaign id and revision; a selection made under a
   assert.equal(!edited.ok && edited.issues[0]!.error, "STALE_CAMPAIGN_REVISION");
 });
 
-test("R-04: composite variants are never selectable even with stock", () => {
+test("R-04: composite variants are selectable when they have ready stock", () => {
   const campaign = qtyCampaign(1, { options: [opt("set", "p", 9, true), opt("simple", "p2", 2)] });
   const result = one(campaign, [paid("x", 3, 100_000)]);
-  assert.deepEqual(result.selectableOptions.map((option) => option.variantId), ["simple"]);
-  assert.equal(result.grantable, 1, "distinct selectable products only");
+  assert.deepEqual(result.selectableOptions.map((option) => option.variantId), ["set", "simple"]);
+  assert.equal(result.grantable, 2, "distinct selectable products");
   const outcome = validateGiftSelections({ entitlements: [result], campaigns: [campaign], selection: [{ campaignId: "gift-q", variantId: "set", quantity: 1, campaignRevision: 3 }] });
-  assert.equal(!outcome.ok && outcome.issues[0]!.error, "VARIANT_NOT_ALLOWED");
+  assert.equal(outcome.ok, true);
 });
 
 test("result and issues do not depend on input order; forged ids are not echoed", () => {

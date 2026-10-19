@@ -122,7 +122,7 @@ function validPaidGroup(group: PaidGroup): boolean {
 
 function selectableOptionsOf(campaign: GiftCampaignFacts): GiftOptionFacts[] {
   return campaign.options
-    .filter((option) => !option.composite && option.readyAvailable >= 1)
+    .filter((option) => option.readyAvailable >= 1)
     .sort((a, b) => compareText(a.variantId, b.variantId));
 }
 
@@ -397,9 +397,9 @@ export function validateGiftSelections(input: Readonly<{
       issues.push({ error: "STALE_CAMPAIGN_REVISION", lineIndex, campaignId: entitlement.campaignId, variantId: null });
       return;
     }
-    // Only a currently selectable option may be chosen: READY, non-composite, stock >= 1 (R-04).
+    // Only a currently selectable option may be chosen: READY, stock >= 1 (R-04).
     const option = campaign.options.find((candidate) => candidate.variantId === line.variantId);
-    if (option === undefined || option.composite) {
+    if (option === undefined) {
       issues.push({ error: "VARIANT_NOT_ALLOWED", lineIndex, campaignId: entitlement.campaignId, variantId: null });
       return;
     }
@@ -440,7 +440,6 @@ export function validateGiftSelections(input: Readonly<{
   const poolByVariant = new Map<string, number>();
   for (const campaign of campaigns) {
     for (const option of campaign.options) {
-      if (option.composite) continue;
       poolByVariant.set(option.variantId, Math.min(poolByVariant.get(option.variantId) ?? Number.MAX_SAFE_INTEGER, option.readyAvailable));
     }
   }
@@ -466,7 +465,6 @@ export function validateGiftSelections(input: Readonly<{
       const chosenProducts = unitsByCampaignProduct.get(entry.campaignId);
       const usable = (campaign?.options ?? []).filter(
         (option) =>
-          !option.composite &&
           (remainingByVariant.get(option.variantId) ?? 0) >= 1 &&
           (campaign!.allowDuplicateGifts || !chosenProducts?.has(option.productId)),
       );
