@@ -603,7 +603,7 @@ export function validateGiftSelections(input: Readonly<{
     });
 
   /** Feasible additional gifts after selections, using both per-variant and physical resource stock. */
-  const capacityFrom = (item: Open, variants: ReadonlyMap<string, number>, resources: ReadonlyMap<string, number>): number =>
+  const capacityFrom = (item: Open, variants: ReadonlyMap<string, number>, resources: ReadonlyMap<string, number>): number | null =>
     item.unclaimed <= 0 || item.campaign === undefined
       ? 0
       : feasibleGiftCapacity(item.usable, item.unclaimed, item.campaign.allowDuplicateGifts, variants, resources);
