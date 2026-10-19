@@ -42,6 +42,21 @@ function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pa
 export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
 
 /**
+ * How a gift variant is named to the shopper. `color` and `size` are the variant's own axes, kept
+ * beside the joined label so the picker can order a product's options (sizes run S → M → L → XL)
+ * instead of showing them in storage order. Optional: a label without them still renders.
+ */
+export type CartGiftLabel = Readonly<{
+  variantId: string;
+  productId: string;
+  productName: string;
+  imageUrl?: string | null;
+  optionLabel: string;
+  color?: string | null;
+  size?: string | null;
+}>;
+
+/**
  * The cart's quote, entitlements and validated gift selection, read inside the caller's transaction.
  * Exported for the checkout DRAFT step (GQ17) so checkout prices a gift cart from the very same
  * facts the cart page showed, not from a second derivation that could drift.
@@ -173,12 +188,14 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
 
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
-    labels: variants.map((v) => ({
+    labels: variants.map((v): CartGiftLabel => ({
       variantId: v.id,
       productId: v.productId,
       productName: v.product.name,
       imageUrl: imageByVariantId.get(v.id) ?? imageByProductId.get(v.productId) ?? null,
       optionLabel: [v.color, v.size].filter(Boolean).join(" / "),
+      color: v.color,
+      size: v.size,
     })) };
 }
 

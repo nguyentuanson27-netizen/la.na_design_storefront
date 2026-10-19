@@ -217,3 +217,28 @@ test("F2: real validator aggregate failures preserve every member of the repair 
     assert.deepEqual(model.repairGroups![0].selectionKeys, selections.map(row => `${row.campaignId}/${row.variantId}`));
   }
 });
+
+test("gift options read S → M → L → XL within a colour, whatever order the campaign stores them in", () => {
+  // The storage order the picker used to show verbatim: L, M, S, XL, with a second colour mixed in.
+  const stored = [
+    ["v-l", "Trắng", "L"], ["v-m", "Trắng", "M"], ["v-s", "Trắng", "S"], ["v-xl", "Trắng", "XL"],
+    ["v-black-xl", "Đen", "XL"], ["v-black-s", "Đen", "S"],
+  ] as const;
+  const s = {
+    ...state(),
+    labels: stored.map(([variantId, color, size]) => ({
+      variantId, productId: "sv124", productName: "Áo SV124", optionLabel: `${color} / ${size}`, color, size,
+    })),
+    campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: stored.map(([variantId]) => ({
+      variantId, productId: "sv124", composite: false, readyAvailable: 3,
+    })) }],
+    selections: [],
+    validation: { ok: true, issues: [], summaries: [] },
+  } as unknown as CartGiftState;
+
+  const [product] = buildCartGiftPickerModel(s).campaigns[0]!.products;
+  assert.deepEqual(
+    product!.options.map((option) => option.label),
+    ["Trắng / S", "Trắng / M", "Trắng / L", "Trắng / XL", "Đen / S", "Đen / XL"],
+  );
+});
