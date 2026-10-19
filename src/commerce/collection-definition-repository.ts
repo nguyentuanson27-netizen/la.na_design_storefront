@@ -132,29 +132,45 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
   }
 
   /**
-   * Published definitions in the `/collections` index order. The page's own exclusions are applied
-   * in the query rather than after it, so `limit` counts collections the caller will actually
-   * show: filtering a capped read would let excluded rows ahead of position `limit` push real ones
-   * off the end. `withStory` keeps the definitions whose own route renders (a published one with no
-   * description 404s); admin saves descriptions trimmed, so "not null and not empty" is that rule.
+   * Published definitions in the `/collections` index order, up to `limit` of them.
+   *
+   * The page's exclusions never use up the cap: filtering one capped read would let excluded rows
+   * ahead of position `limit` push real collections off the end. `excludeSlugs` and an absent or
+   * empty description are excluded in the query. `withStory` means a description with real text,
+   * which a published definition needs for its own route to render; SQL cannot see a
+   * whitespace-only one (admin trims on save, but a legacy or hand-written row may not be), so
+   * those are dropped here and the read continues page by page until `limit` remain or the rows
+   * run out. The order is total (slug is unique), so the pages never overlap or skip a row.
    */
   async function listPublished(
     limit: number,
     options: Readonly<{ excludeSlugs?: readonly string[]; withStory?: boolean }> = {},
   ) {
+    const take = parseCollectionListLimit(limit);
     const { excludeSlugs = [], withStory = false } = options;
-    const definitions = await client.collectionDefinition.findMany({
-      where: {
-        isPublished: true,
-        ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
-        ...(withStory ? { description: { not: null }, NOT: { description: "" } } : {}),
-      },
-      take: parseCollectionListLimit(limit),
-      // The merchandiser's order first; collections with no position follow, alphabetically.
-      orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
-      select: publicCollectionSelect,
-    });
-    return definitions.map(withStorefrontTitle);
+    const readPage = (skip: number) =>
+      client.collectionDefinition.findMany({
+        where: {
+          isPublished: true,
+          ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
+          ...(withStory ? { description: { not: null }, NOT: { description: "" } } : {}),
+        },
+        skip,
+        take,
+        // The merchandiser's order first; collections with no position follow, alphabetically.
+        orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
+        select: publicCollectionSelect,
+      });
+
+    if (!withStory) return (await readPage(0)).map(withStorefrontTitle);
+
+    const listed: Awaited<ReturnType<typeof readPage>> = [];
+    for (let skip = 0; listed.length < take; skip += take) {
+      const page = await readPage(skip);
+      listed.push(...page.filter(({ description }) => Boolean(description?.trim())));
+      if (page.length < take) break;
+    }
+    return listed.slice(0, take).map(withStorefrontTitle);
   }
 
   async function listHomepageMerchandising() {

@@ -20,9 +20,9 @@ export type CollectionFilterPanelProps = {
  *
  * Size is the only filter a collection has, so the chips sit in the page at every width rather
  * than behind a "Bộ lọc" drawer: on a phone the drawer cost two taps and a full-screen sheet to
- * reach four chips. There the row scrolls sideways, bleeding to the screen edges, and every chip,
- * the filter pill's remove control and the sort select are 44px touch targets; from `md` they
- * shrink to the desktop bar.
+ * reach four chips. There the row scrolls sideways under an edge fade, bleeding to the screen
+ * edges, and every chip, the filter pill's remove control and the sort select are 44px touch
+ * targets; from `md` they shrink to the desktop bar.
  */
 export function CollectionFilterPanel({
   totalCount,
@@ -82,7 +82,7 @@ export function CollectionFilterPanel({
 
       {concreteSizes.length > 0 ? (
         <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-3 md:mx-0 md:mt-4">
-          <div className="flex items-center gap-2 overflow-x-auto px-6 text-sm text-[#3B2219] [scrollbar-width:none] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:text-xs">
+          <div className="collection-size-row flex items-center gap-2 overflow-x-auto px-6 text-sm text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:text-xs">
             <span className="mr-1 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
               Size:
             </span>
