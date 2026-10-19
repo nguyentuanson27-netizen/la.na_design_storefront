@@ -163,7 +163,12 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     if (!evaluation.ok) throw new Error("Invalid gift configuration");
     const earning = new Set(evaluation.entitlements.filter((entry) => entry.entitled > 0).map((entry) => entry.campaignId));
     const stack = resolveGiftCampaignStacking(entries.filter((entry) => earning.has(entry.campaign.id)).map(({ campaign: c }) => ({
-      id: c.id, stackingEnabled: c.stackingEnabled, peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+      id: c.id,
+      stackingEnabled: c.stackingEnabled,
+      peers: c.stackPeers.map((peer) => ({ kind: peer.peerKind, campaignId: peer.peerCampaignId })),
+      minimumQuantity: c.minimumQuantity,
+      minimumSubtotalVnd: c.minimumSubtotalVnd,
+      stackPriority: c.stackPriority,
     })));
     const dropped = new Set(stack.dropped.map((entry) => entry.campaignId));
     const entitlements = evaluation.entitlements.map((entry) => dropped.has(entry.campaignId)
@@ -175,10 +180,13 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     preservesQuantityGifts: ({ before, after, addition }) => {
       currentGifts ??= evaluateGifts(before);
       const future = evaluateGifts(after, addition);
-      return future.validation.ok && currentGifts.entitlements.every((entry) => {
-        const next = future.entitlements.find((row) => row.campaignId === entry.campaignId);
-        return next && next.entitled >= entry.entitled && next.grantable >= entry.grantable;
-      });
+      return future.validation.ok && (
+        currentGifts.entitlements.every((entry) => {
+          const next = future.entitlements.find((row) => row.campaignId === entry.campaignId);
+          return next && next.entitled >= entry.entitled && next.grantable >= entry.grantable;
+        }) ||
+        future.entitlements.reduce((sum, e) => sum + e.entitled, 0) >= currentGifts.entitlements.reduce((sum, e) => sum + e.entitled, 0)
+      );
     },
   });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");

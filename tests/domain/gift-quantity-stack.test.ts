@@ -345,6 +345,46 @@ test("F02: a lone gift campaign always runs, a third refused pair drops only its
   assert.deepEqual(forward.dropped.map((entry) => entry.campaignId), ["a", "b", "c"]);
 });
 
+test("F02: higher threshold or priority gift campaign supersedes unstacked lower tier", () => {
+  const g = (id: string, stackingEnabled: boolean, peers: StackPeer[], opts?: { minimumQuantity?: number; minimumSubtotalVnd?: number; stackPriority?: number }) => ({
+    id,
+    stackingEnabled,
+    peers,
+    minimumQuantity: opts?.minimumQuantity,
+    minimumSubtotalVnd: opts?.minimumSubtotalVnd,
+    stackPriority: opts?.stackPriority,
+  });
+
+  // Mua 4 (higher milestone) supersedes Mua 3 (lower milestone) when they cannot stack together
+  const mua3 = g("mua-3", true, [], { minimumQuantity: 3 });
+  const mua4 = g("mua-4", true, [], { minimumQuantity: 4 });
+  const result = resolveGiftCampaignStacking([mua3, mua4]);
+  assert.deepEqual(result.permitted, ["mua-4"]);
+  assert.deepEqual(result.dropped, [
+    { campaignId: "mua-3", reason: "STACK_NOT_PERMITTED", otherCampaignId: "mua-4" },
+  ]);
+
+  // Order invariance
+  const reverseResult = resolveGiftCampaignStacking([mua4, mua3]);
+  assert.deepEqual(reverseResult.permitted, ["mua-4"]);
+  assert.deepEqual(reverseResult.dropped, [
+    { campaignId: "mua-3", reason: "STACK_NOT_PERMITTED", otherCampaignId: "mua-4" },
+  ]);
+
+  // Tied threshold without priority drops both (fail closed)
+  const tieA = g("tie-a", true, [], { minimumQuantity: 3 });
+  const tieB = g("tie-b", true, [], { minimumQuantity: 3 });
+  assert.deepEqual(resolveGiftCampaignStacking([tieA, tieB]).permitted, []);
+
+  // Priority breaks tie or overrides
+  const prioHigh = g("prio-high", true, [], { stackPriority: 100 });
+  const prioLow = g("prio-low", true, [], { stackPriority: 200 });
+  assert.deepEqual(resolveGiftCampaignStacking([prioHigh, prioLow]), {
+    permitted: ["prio-high"],
+    dropped: [{ campaignId: "prio-low", reason: "STACK_NOT_PERMITTED", otherCampaignId: "prio-high" }],
+  });
+});
+
 test("R03: a tier that has not reached its first threshold takes no part in conflicts — it cannot cancel a valid tier's discount", () => {
   const lines = [line("a", 2, 1_000_000)];
   // A reaches (N=1) and has no stacking configuration; B overlaps the same line but needs 5 units

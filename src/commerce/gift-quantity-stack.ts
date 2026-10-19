@@ -504,6 +504,9 @@ export type GiftStackCandidate = Readonly<{
   id: string;
   stackingEnabled: boolean;
   peers: readonly StackPeer[];
+  minimumQuantity?: number | null;
+  minimumSubtotalVnd?: number | bigint | null;
+  stackPriority?: number | null;
 }>;
 
 export type GiftStackResolution = Readonly<{
@@ -514,12 +517,42 @@ export type GiftStackResolution = Readonly<{
 }>;
 
 /**
+ * Compares precedence between two gift campaigns that cannot stack together.
+ * - Explicit stackPriority (lower number wins)
+ * - Higher threshold (higher minimumQuantity or minimumSubtotalVnd represents an upgraded milestone)
+ * - 0 when tied or indeterminate (in which case both fail closed)
+ */
+function compareGiftPrecedence(a: GiftStackCandidate, b: GiftStackCandidate): number {
+  if (
+    typeof a.stackPriority === "number" &&
+    typeof b.stackPriority === "number" &&
+    a.stackPriority !== b.stackPriority
+  ) {
+    return a.stackPriority < b.stackPriority ? 1 : -1;
+  }
+  if (
+    typeof a.minimumQuantity === "number" &&
+    typeof b.minimumQuantity === "number" &&
+    a.minimumQuantity !== b.minimumQuantity
+  ) {
+    return a.minimumQuantity > b.minimumQuantity ? 1 : -1;
+  }
+  const subA = typeof a.minimumSubtotalVnd === "bigint" ? Number(a.minimumSubtotalVnd) : a.minimumSubtotalVnd;
+  const subB = typeof b.minimumSubtotalVnd === "bigint" ? Number(b.minimumSubtotalVnd) : b.minimumSubtotalVnd;
+  if (typeof subA === "number" && typeof subB === "number" && subA !== subB) {
+    return subA > subB ? 1 : -1;
+  }
+  return 0;
+}
+
+/**
  * Which of the gift campaigns that are all earning on one cart may run together (FR-08).
  *
  * A gift never changes a price, so there is no order to resolve; the only question is permission.
  * Two gift campaigns coexist only when **both** have stacking enabled and **each** names the other
- * (by id, or by the `GIFT_ITEM` wildcard). Any refused pair drops **both** campaigns, the same
- * conservative rule as price stacking, and the result does not depend on input order. A single
+ * (by id, or by the `GIFT_ITEM` wildcard). If a refused pair has a clear threshold/priority precedence,
+ * the higher milestone/priority wins while the superseded campaign steps aside. When precedence is
+ * tied or unspecified, any refused pair drops **both** campaigns (conservative fail-closed). A single
  * gift campaign always runs: with nothing to combine with, no permission is asked.
  */
 export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandidate[]): GiftStackResolution {
@@ -534,8 +567,15 @@ export function resolveGiftCampaignStacking(campaigns: readonly GiftStackCandida
         stackPeersAllow(a.peers, "GIFT_ITEM", b.id) &&
         stackPeersAllow(b.peers, "GIFT_ITEM", a.id);
       if (together) continue;
-      if (!dropped.has(a.id)) dropped.set(a.id, { campaignId: a.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: b.id });
-      if (!dropped.has(b.id)) dropped.set(b.id, { campaignId: b.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: a.id });
+      const precedence = compareGiftPrecedence(a, b);
+      if (precedence > 0) {
+        if (!dropped.has(b.id)) dropped.set(b.id, { campaignId: b.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: a.id });
+      } else if (precedence < 0) {
+        if (!dropped.has(a.id)) dropped.set(a.id, { campaignId: a.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: b.id });
+      } else {
+        if (!dropped.has(a.id)) dropped.set(a.id, { campaignId: a.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: b.id });
+        if (!dropped.has(b.id)) dropped.set(b.id, { campaignId: b.id, reason: "STACK_NOT_PERMITTED", otherCampaignId: a.id });
+      }
     }
   }
   return {
