@@ -1,6 +1,7 @@
 /** GQ12: cookie-owned choices, serialized with paid cart writes. No reservations or consent. */
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
+import { MAX_MEDIA_CANDIDATES_SCANNED, parseTrustedProductImageUrl } from "./product-media.ts";
 import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection } from "./cart-gift-selection-repository.ts";
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
@@ -22,6 +23,20 @@ export function parseGiftChoice(input: unknown): GiftChoiceInput | null {
   if (typeof r.quantity !== "number" || !Number.isInteger(r.quantity) || r.quantity < 0 || r.quantity > 100) return null;
   if (typeof r.campaignRevision !== "number" || !Number.isInteger(r.campaignRevision) || r.campaignRevision < 1 || r.campaignRevision > 2_147_483_647) return null;
   return r as GiftChoiceInput;
+}
+
+// Optional gift photography is best-effort: do not make cart/checkout transactions scan whole catalog families.
+const MAX_GIFT_SIBLING_VARIANTS = 20;
+
+function extractCandidateImageUrl(primaryImageUrl: string | null | undefined, pancakeImageUrls: unknown): string | null {
+  // The gift's own variant photo wins; use the product primary only if its variant has none.
+  if (Array.isArray(pancakeImageUrls)) {
+    for (let index = 0; index < Math.min(pancakeImageUrls.length, MAX_MEDIA_CANDIDATES_SCANNED); index++) {
+      const image = parseTrustedProductImageUrl(pancakeImageUrls[index]);
+      if (image) return image;
+    }
+  }
+  return parseTrustedProductImageUrl(primaryImageUrl);
 }
 
 export type CartGiftState = Awaited<ReturnType<typeof readCartGiftState>>;
@@ -47,7 +62,8 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   if (ids.length > 10_000) throw new Error("Options bound exceeded");
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
-    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true,
+    orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
+    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
       product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
       warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
   });
@@ -108,9 +124,62 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   });
   if (!quote.benefits.enabled || !quote.benefits.ok) throw new Error("Quote unavailable");
   const { entitlements, validation, stack } = currentGifts ?? evaluateGifts(quote.benefits.groups);
+  const imageByVariantId = new Map<string, string>();
+  const imageByProductId = new Map<string, string>();
+  for (const v of variants) {
+    const candidate = extractCandidateImageUrl(v.product.primaryImageUrl, v.pancakeImageUrls);
+    if (!candidate) continue;
+    imageByVariantId.set(v.id, candidate);
+    if (!imageByProductId.has(v.productId)) imageByProductId.set(v.productId, candidate);
+  }
+
+  // Optional sibling fallback only if no offered variant or product primary contains trusted media.
+  // Bound the read *in SQL*: 20 sibling variants and 100 total candidate URL strings per call.
+  // JSON stays in PostgreSQL; the transaction never hydrates entire sibling image arrays.
+  const missingProductIds = [...new Set(variants.map((v) => v.productId))].filter((id) => !imageByProductId.has(id));
+  if (missingProductIds.length > 0) {
+    const candidates = await tx.$queryRaw<{ productId: string; url: string }[]>`
+      WITH siblings AS (
+        SELECT v."id", v."productId", v."pancakeVariationId", v."pancakeImageUrls"
+        FROM "VariantMirror" v
+        WHERE v."productId" = ANY(${missingProductIds}::text[])
+          AND NOT (v."id" = ANY(${ids}::text[]))
+          AND v."isPresent" = TRUE
+          AND v."isActive" = TRUE
+        ORDER BY v."productId" ASC, v."pancakeVariationId" ASC, v."id" ASC
+        LIMIT ${MAX_GIFT_SIBLING_VARIANTS}
+      )
+      SELECT siblings."productId", siblings."pancakeImageUrls" ->> image."index" AS "url"
+      FROM siblings
+      CROSS JOIN LATERAL generate_series(
+        0,
+        LEAST(
+          CASE WHEN JSONB_TYPEOF(siblings."pancakeImageUrls") = 'array'
+            THEN JSONB_ARRAY_LENGTH(siblings."pancakeImageUrls")
+            ELSE 0 END,
+          ${MAX_MEDIA_CANDIDATES_SCANNED}
+        ) - 1
+      ) AS image("index")
+      WHERE JSONB_TYPEOF(siblings."pancakeImageUrls" -> image."index") = 'string'
+      ORDER BY siblings."productId", siblings."pancakeVariationId", siblings."id", image."index"
+      LIMIT ${MAX_MEDIA_CANDIDATES_SCANNED}
+    `;
+    for (const row of candidates) {
+      if (imageByProductId.has(row.productId)) continue;
+      const image = parseTrustedProductImageUrl(row.url);
+      if (image) imageByProductId.set(row.productId, image);
+    }
+  }
+
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
-    labels: variants.map((v) => ({ variantId: v.id, productId: v.productId, productName: v.product.name, imageUrl: v.product.primaryImageUrl, optionLabel: [v.color, v.size].filter(Boolean).join(" / ") })) };
+    labels: variants.map((v) => ({
+      variantId: v.id,
+      productId: v.productId,
+      productName: v.product.name,
+      imageUrl: imageByVariantId.get(v.id) ?? imageByProductId.get(v.productId) ?? null,
+      optionLabel: [v.color, v.size].filter(Boolean).join(" / "),
+    })) };
 }
 
 export function createCartGiftSelectionService(client: PrismaClient, store: CookieReader, { shopId, env = process.env }: { shopId: number; env?: Readonly<Record<string, string | undefined>> }) {

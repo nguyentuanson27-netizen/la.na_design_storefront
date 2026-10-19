@@ -121,6 +121,27 @@ test("gift images share the trusted media boundary; missing or foreign URLs fall
   }
 });
 
+test("product receives image from subsequent option if first option has null image", () => {
+  const fixture = state();
+  const stateWithMultipleOptions = {
+    ...fixture,
+    labels: [
+      { variantId: "gift-1", productId: "gift-product", productName: "Khăn", optionLabel: "Đỏ / S", imageUrl: null },
+      { variantId: "gift-2", productId: "gift-product", productName: "Khăn", optionLabel: "Đỏ / M", imageUrl: "https://content.pancake.vn/images/1/2/3/khan.jpg" },
+    ],
+    campaigns: [{
+      id: "campaign",
+      allowDuplicateGifts: false,
+      options: [
+        { variantId: "gift-1", productId: "gift-product", composite: false, readyAvailable: 1 },
+        { variantId: "gift-2", productId: "gift-product", composite: false, readyAvailable: 1 },
+      ],
+    }],
+  } as unknown as CartGiftState;
+  const model = buildCartGiftPickerModel(stateWithMultipleOptions);
+  assert.equal(model.campaigns[0]!.products[0]!.imageUrl, "https://content.pancake.vn/images/1/2/3/khan.jpg");
+});
+
 function repairState(): CartGiftState {
   const campaigns: GiftCampaignFacts[] = [{ id: "campaign", revision: 2, trigger: "ORDER_SUBTOTAL", minimumQuantity: null,
     minimumSubtotalVnd: 100_000, subtotalScope: "ALL_PAID_LINES", awardMode: "REPEAT_PER_THRESHOLD", maxGiftsPerOrder: null,
