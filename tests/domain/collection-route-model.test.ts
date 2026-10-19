@@ -5,6 +5,7 @@ import { buildStorefrontProductImpressions } from "../../src/commerce/storefront
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import {
   buildCollectionViewModel,
+  isDongGiaCollectionSlug,
   orderByFeaturedSlugs,
   resolveCollectionEditorial,
   type CollectionProduct,
@@ -269,3 +270,35 @@ test("the view model is frozen so markup cannot mutate a decision it was handed"
   assert.equal(Object.isFrozen(model), true);
   assert.equal(Object.isFrozen(model.editorial), true);
 });
+
+test("dong-gia collection slugs are correctly identified", () => {
+  assert.equal(isDongGiaCollectionSlug("dong-gia-99k"), true);
+  assert.equal(isDongGiaCollectionSlug("dong-gia-199k"), true);
+  assert.equal(isDongGiaCollectionSlug("ao-dai-dong-gia-1199k"), true);
+  assert.equal(isDongGiaCollectionSlug("diep-hoa-thu"), false);
+  assert.equal(isDongGiaCollectionSlug("xa-hang-chao-thu"), false);
+  assert.equal(isDongGiaCollectionSlug("special-deals"), false);
+});
+
+test("dong-gia collections suppress hero image on detail route while standard collections keep it", () => {
+  const dongGiaModel = buildCollectionViewModel(
+    input({
+      slug: "dong-gia-99k",
+      heroImageUrl: photo(1),
+      heroImageMobileUrl: photo(2),
+    }),
+  );
+  assert.equal(dongGiaModel.editorial.heroImage, null);
+  assert.equal(dongGiaModel.editorial.heroImageMobile, null);
+
+  const standardModel = buildCollectionViewModel(
+    input({
+      slug: "diep-hoa-thu",
+      heroImageUrl: photo(1),
+      heroImageMobileUrl: photo(2),
+    }),
+  );
+  assert.equal(standardModel.editorial.heroImage, photo(1));
+  assert.equal(standardModel.editorial.heroImageMobile, photo(2));
+});
+

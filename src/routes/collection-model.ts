@@ -184,11 +184,24 @@ export function resolveCollectionEditorial(
   });
 }
 
+/**
+ * Promotional pricing collections ("BST Đồng Giá") do not render a full-bleed hero banner
+ * on their detail pages so shoppers immediately see breadcrumbs, title, size filters, and products.
+ * Their 16:9 banner cover remains active on the `/collections` index page.
+ */
+export function isDongGiaCollectionSlug(slug: string): boolean {
+  return slug.includes("dong-gia");
+}
+
 export function buildCollectionViewModel(input: CollectionViewModelInput): CollectionViewModel {
+  const editorialInput = isDongGiaCollectionSlug(input.slug)
+    ? { ...input, heroImageUrl: null, heroImageMobileUrl: null }
+    : input;
+
   return Object.freeze({
     slug: input.slug,
     title: input.title,
-    editorial: resolveCollectionEditorial(input),
+    editorial: resolveCollectionEditorial(editorialInput),
     cards: Object.freeze(
       input.products.map((product) =>
         Object.freeze({
