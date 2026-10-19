@@ -150,9 +150,15 @@ function variantStockOf(options: readonly GiftOptionFacts[]): Map<string, number
   return stock;
 }
 
-/** Count only units that can be assembled together, not each set's independent theoretical stock.
- * Prefer less resource-intensive options; each counted unit is a feasible physical allocation.
- * This stays bounded by the per-order entitlement cap (100) even with many offered variants.
+const MAX_CAPACITY_ALLOCATION_STATES = 20_000;
+
+/**
+ * Find the maximum jointly fulfillable number of gift units, including alternative variants of
+ * one product. Greedy allocation is unsound: choosing P/A first can block the valid P/B + Q/A.
+ *
+ * Each group is one product when duplicates are disallowed, or one variant otherwise. Memoize
+ * remaining shared component stock. The state cap protects interactive cart transactions: null
+ * means "undetermined", never falsely report a definite stock shortage.
  */
 function feasibleGiftCapacity(
   options: readonly GiftOptionFacts[],
@@ -160,40 +166,67 @@ function feasibleGiftCapacity(
   allowDuplicateGifts: boolean,
   variantStock: ReadonlyMap<string, number>,
   resourceStock: ReadonlyMap<string, number>,
-): number {
-  const variants = new Map(variantStock);
-  const resources = new Map(resourceStock);
-  const chosenProducts = new Set<string>();
-  let count = 0;
-  while (count < limit) {
-    let best: GiftOptionFacts | null = null;
-    let bestCost = Infinity;
-    for (const option of options) {
-      if ((variants.get(option.variantId) ?? 0) < 1 || (!allowDuplicateGifts && chosenProducts.has(option.productId))) continue;
-      const needs = resourcesOf(option);
-      let cost = needs.length;
-      for (const need of needs) {
-        const available = resources.get(need.variantId) ?? 0;
-        if (available < need.unitsPerGift) { cost = Infinity; break; }
-        cost += need.unitsPerGift / available;
-      }
-      if (cost < bestCost || (cost === bestCost && best !== null && compareText(option.variantId, best.variantId) < 0)) {
-        best = option;
-        bestCost = cost;
-      }
-    }
-    if (best === null) break;
-    variants.set(best.variantId, variants.get(best.variantId)! - 1);
-    for (const need of resourcesOf(best)) {
-      resources.set(need.variantId, resources.get(need.variantId)! - need.unitsPerGift);
-    }
-    if (!allowDuplicateGifts) chosenProducts.add(best.productId);
-    count += 1;
+): number | null {
+  if (limit < 1 || options.length === 0) return 0;
+  const byGroup = new Map<string, GiftOptionFacts[]>();
+  for (const option of options) {
+    if ((variantStock.get(option.variantId) ?? 0) < 1) continue;
+    if (resourcesOf(option).some((need) => (resourceStock.get(need.variantId) ?? 0) < need.unitsPerGift)) continue;
+    const key = allowDuplicateGifts ? option.variantId : option.productId;
+    const group = byGroup.get(key) ?? [];
+    group.push(option);
+    byGroup.set(key, group);
   }
-  return count;
+  const groups = [...byGroup.values()];
+
+  // Resource IDs only used by one group never influence later groups and need no memo state.
+  const resourceUses = new Map<string, number>();
+  for (const group of groups) {
+    const used = new Set(group.flatMap((option) => resourcesOf(option).map((need) => need.variantId)));
+    for (const id of used) resourceUses.set(id, (resourceUses.get(id) ?? 0) + 1);
+  }
+  const sharedIds = [...resourceUses].filter(([, count]) => count > 1).map(([id]) => id).sort(compareText);
+  const remaining = new Map(resourceStock);
+  const memo = new Map<string, number>();
+  let explored = 0;
+
+  const solve = (index: number, needed: number): number | null => {
+    if (needed === 0 || index === groups.length) return 0;
+    const key = `${index}:${needed}:${sharedIds.map((id) => remaining.get(id) ?? 0).join(",")}`;
+    const cached = memo.get(key);
+    if (cached !== undefined) return cached;
+    if (++explored > MAX_CAPACITY_ALLOCATION_STATES) return null;
+
+    let best = 0;
+    for (const option of groups[index]!) {
+      const needs = resourcesOf(option);
+      const maxQuantity = Math.min(
+        needed,
+        allowDuplicateGifts ? (variantStock.get(option.variantId) ?? 0) : 1,
+        ...needs.map((need) => Math.floor((remaining.get(need.variantId) ?? 0) / need.unitsPerGift)),
+      );
+      for (let quantity = maxQuantity; quantity >= 1; quantity--) {
+        for (const need of needs) remaining.set(need.variantId, remaining.get(need.variantId)! - quantity * need.unitsPerGift);
+        const rest = solve(index + 1, needed - quantity);
+        for (const need of needs) remaining.set(need.variantId, remaining.get(need.variantId)! + quantity * need.unitsPerGift);
+        if (rest === null) return null;
+        best = Math.max(best, quantity + rest);
+        if (best === needed) break;
+      }
+      if (best === needed) break;
+    }
+    if (best < needed) {
+      const skipped = solve(index + 1, needed);
+      if (skipped === null) return null;
+      best = Math.max(best, skipped);
+    }
+    memo.set(key, best);
+    return best;
+  };
+  return solve(0, limit);
 }
 
-function giftCapacity(campaign: GiftCampaignFacts, selectable: readonly GiftOptionFacts[], entitled: number): number {
+function giftCapacity(campaign: GiftCampaignFacts, selectable: readonly GiftOptionFacts[], entitled: number): number | null {
   return feasibleGiftCapacity(
     selectable, entitled, campaign.allowDuplicateGifts,
     variantStockOf(campaign.options), resourceStockOf(campaign.options),
@@ -308,6 +341,7 @@ export function evaluateGiftEntitlements(input: Readonly<{
     const entitled = Math.min(earnedSlots, cap);
     const selectable = selectableOptionsOf(campaign);
     const grantable = giftCapacity(campaign, selectable, entitled);
+    if (grantable === null) return { ok: false, error: "INVALID_INPUT", detail: "gift capacity could not be proven within search budget" };
     entitlements.push({
       campaignId: campaign.id,
       revision: campaign.revision,
@@ -583,11 +617,12 @@ export function validateGiftSelections(input: Readonly<{
         Math.floor((remainingByResource.get(resource.variantId) ?? 0) / resource.unitsPerGift)),
     );
 
-  const summaries: CampaignSelectionSummary[] = open.map((item) => {
+  const summaries = open.map((item): CampaignSelectionSummary | null => {
     // Attribute unclaimed slots from the physical capacity left after all chosen gifts.
     // `alone` is feasible without more choices by other campaigns. For `guaranteed`, reserve
     // their maximum potential resource demand first, so shared stock is never called a skip.
     const alone = capacityFrom(item, remainingByVariant, remainingByResource);
+    if (alone === null) return null;
     let guaranteed = 0;
     if (item.campaign !== undefined && alone > 0) {
       const takenVariants = new Map<string, number>();
@@ -606,7 +641,9 @@ export function validateGiftSelections(input: Readonly<{
         [id, Math.max(0, stock - (takenVariants.get(id) ?? 0))]));
       const reducedResources = new Map([...remainingByResource].map(([id, stock]) =>
         [id, Math.max(0, stock - (takenResources.get(id) ?? 0))]));
-      guaranteed = Math.min(alone, capacityFrom(item, reducedVariants, reducedResources));
+      const available = capacityFrom(item, reducedVariants, reducedResources);
+      if (available === null) return null;
+      guaranteed = Math.min(alone, available);
     }
     return {
       campaignId: item.entry.campaignId,
@@ -620,5 +657,8 @@ export function validateGiftSelections(input: Readonly<{
       requiresAcknowledgement: item.unclaimed > 0,
     };
   });
-  return { ok: true, summaries };
+  if (summaries.some((summary) => summary === null)) {
+    return { ok: false, issues: [{ error: "SELECTION_INVALID", lineIndex: null, campaignId: null, variantId: null }] };
+  }
+  return { ok: true, summaries: summaries.filter((summary): summary is CampaignSelectionSummary => summary !== null) };
 }

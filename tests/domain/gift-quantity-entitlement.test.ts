@@ -121,6 +121,55 @@ test("shared component between separate campaigns is contended before a choice a
   assert.deepEqual([unchosen.skippedWhileAvailable, unchosen.shortForStock, unchosen.contendedForSharedStock], [0, 1, 0]);
 });
 
+test("alternative variants avoid false stock shortage when a greedy first choice blocks a valid allocation", () => {
+  const resourceA = { variantId: "material-A", unitsPerGift: 1, availableUnits: 1 };
+  const resourceB = { variantId: "material-B", unitsPerGift: 1, availableUnits: 1 };
+  const options: GiftOptionFacts[] = [
+    { variantId: "a", productId: "P", composite: true, readyAvailable: 1, resourceNeeds: [resourceA] },
+    { variantId: "b", productId: "P", composite: true, readyAvailable: 1, resourceNeeds: [resourceB] },
+    { variantId: "c", productId: "Q", composite: true, readyAvailable: 1, resourceNeeds: [resourceA] },
+  ];
+  const campaign = qtyCampaign(1, { options, allowDuplicateGifts: false });
+  const entitlement = one(campaign, [paid("cart", 2, 100_000)]);
+  assert.equal(entitlement.entitled, 2);
+  assert.equal(entitlement.grantable, 2, "P/b and Q/c can both be granted");
+  assert.equal(entitlement.unfulfillableForStock, 0);
+  assert.equal(one(qtyCampaign(1, { options: [...options].reverse() }), [paid("cart", 2, 100_000)]).grantable, 2);
+
+  const evaluateChoices = (ids: readonly string[]) => validateGiftSelections({
+    entitlements: [entitlement], campaigns: [campaign],
+    selection: ids.map((variantId) => ({ campaignId: campaign.id, campaignRevision: campaign.revision, variantId, quantity: 1 })),
+  });
+  const noChoice = evaluateChoices([]);
+  assert.equal(noChoice.ok, true);
+  if (!noChoice.ok) return;
+  assert.deepEqual(noChoice.summaries[0], {
+    campaignId: "gift-q", revision: 3, entitled: 2, selected: 0, unclaimed: 2,
+    skippedWhileAvailable: 2, shortForStock: 0, contendedForSharedStock: 0, requiresAcknowledgement: true,
+  });
+
+  const pickedB = evaluateChoices(["b"]);
+  assert.equal(pickedB.ok, true);
+  if (!pickedB.ok) return;
+  assert.deepEqual(pickedB.summaries[0], {
+    campaignId: "gift-q", revision: 3, entitled: 2, selected: 1, unclaimed: 1,
+    skippedWhileAvailable: 1, shortForStock: 0, contendedForSharedStock: 0, requiresAcknowledgement: true,
+  });
+  const both = evaluateChoices(["b", "c"]);
+  assert.equal(both.ok, true, "the genuine maximum allocation is accepted");
+  if (both.ok) assert.equal(both.summaries[0]?.requiresAcknowledgement, false);
+
+  const pickedA = evaluateChoices(["a"]);
+  assert.equal(pickedA.ok, true);
+  if (pickedA.ok) assert.deepEqual(
+    [pickedA.summaries[0]?.skippedWhileAvailable, pickedA.summaries[0]?.shortForStock],
+    [0, 1], "choosing a consumes the A needed by c; the other P variant is forbidden",
+  );
+  const exhausted = evaluateChoices(["a", "c"]);
+  assert.equal(exhausted.ok, false, "real shared-component overconsumption is still rejected");
+  if (!exhausted.ok) assert.equal(exhausted.issues.some((issue) => issue.error === "OUT_OF_STOCK"), true);
+});
+
 test("EX-01: N=2 grants floor(Q/2) slots; boundaries Q=N-1, N, 2N, 2N+1", () => {
   const slots = (q: number) => one(qtyCampaign(2), [paid("a", q, 500_000)]).entitled;
   assert.deepEqual([1, 2, 3, 4, 5, 6].map(slots), [0, 1, 1, 2, 2, 3]);
