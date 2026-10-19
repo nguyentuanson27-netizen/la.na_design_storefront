@@ -91,6 +91,20 @@ test("a gift campaign whose only gift is out of READY stock is not named; restoc
   assert.deepEqual(await read(paid.productId), []);
 });
 
+test("a set-only gift campaign is named when its components have READY stock", async () => {
+  const paid = await productWithVariant("set-paid", 5);
+  await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "aoDai" } });
+  const gift = await productWithVariant("set-parent", 0);
+  const part = await productWithVariant("set-part", 2);
+  await prisma.compositeComponentMirror.create({ data: {
+    parentVariantId: gift.variantId, componentVariantId: part.variantId, quantity: 2, syncedAt,
+  } });
+  await giftCampaign("set-gift", gift.variantId);
+  assert.deepEqual(await read(paid.productId), [{ id: `${P}-set-gift`, kind: "GIFT", label: "Mua 2 tặng túi vải" }]);
+  await prisma.warehouseStock.updateMany({ where: { variantId: part.variantId }, data: { quantity: 0 } });
+  assert.deepEqual(await read(paid.productId), [], "a set without components is not advertised");
+});
+
 test("a tier campaign covering the product is named by its own name", async () => {
   const paid = await productWithVariant("tier-paid", 5);
   await prisma.productCategoryMembership.create({ data: { productId: paid.productId, categoryKey: "aoDai" } });

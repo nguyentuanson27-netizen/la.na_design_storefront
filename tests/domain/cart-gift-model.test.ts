@@ -20,6 +20,23 @@ function state(): CartGiftState {
     validation: { ok: false, issues: [] },
   } as unknown as CartGiftState;
 }
+test("a winning buy-4 set stays visible without a false all-gifts-blocked conflict", () => {
+  const base = state();
+  const model = buildCartGiftPickerModel({
+    ...base,
+    labels: [{ variantId: "set", productId: "set-product", productName: "Set quà", optionLabel: "M", imageUrl: null }],
+    campaigns: [{ id: "buy-4", allowDuplicateGifts: false,
+      options: [{ variantId: "set", productId: "set-product", composite: true, readyAvailable: 2 }] }],
+    entitlements: [{ campaignId: "buy-4", revision: 1, earned: 1, entitled: 1, unfulfillableForStock: 0, shortfallToNext: null }],
+    selections: [],
+    giftStackDropped: [{ campaignId: "buy-3", reason: "STACK_NOT_PERMITTED", otherCampaignId: "buy-4" }],
+    validation: { ok: true, summaries: [] },
+  } as unknown as CartGiftState);
+  assert.equal(model.stackConflict, false);
+  assert.deepEqual(model.campaigns[0]?.products[0]?.options.map((option) => option.variantId), ["set"]);
+  assert.equal(model.campaigns[0]?.products[0]?.options[0]?.stock, 2);
+});
+
 test("cart displays split paid prices and total while gifts never increase paid count", () => {
   const model = buildCartViewModel({ lines: [line], commerceTrackingEnabled: false, giftState: state() });
   assert.match(model.subtotalText, /290.003/);

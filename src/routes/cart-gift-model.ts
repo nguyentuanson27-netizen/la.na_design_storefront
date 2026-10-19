@@ -52,7 +52,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
   }
   return {
     invalid: !state.validation.ok,
-    stackConflict: (state.giftStackDropped?.length ?? 0) > 0,
+    stackConflict: (state.giftStackDropped?.length ?? 0) > 0 && !state.entitlements.some((entry) => entry.entitled > 0),
     repairGroups,
     selections: state.selections.map((row) => {
       const label = labelByVariant.get(row.variantId);
@@ -68,7 +68,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       const products = new Map<string, { productId: string; name: string; imageUrl: string | null; options: { variantId: string; label: string; stock: number }[] }>();
       for (const option of campaign.options) {
         const label = labelByVariant.get(option.variantId);
-        if (!label || option.composite) continue;
+        if (!label) continue;
         const candidateImage = parseTrustedProductImageUrl(label.imageUrl);
         const product = products.get(option.productId) ?? { productId: option.productId, name: label.productName, imageUrl: candidateImage, options: [] };
         if (!product.imageUrl && candidateImage) {
@@ -80,7 +80,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       const shortfall = entry.shortfallToNext;
       // The engine aggregate includes distinct-product limits and shared capacity, not just stock.
       const unavailableSlots = summary?.shortForStock ?? entry.unfulfillableForStock;
-      const shortageText = unavailableSlots === 0 ? null : campaign.options.length > 0 && campaign.options.every((option) => !option.composite && option.readyAvailable === 0)
+      const shortageText = unavailableSlots === 0 ? null : campaign.options.length > 0 && campaign.options.every((option) => option.readyAvailable === 0)
         ? `Thiếu tồn kho cho ${unavailableSlots} suất quà.`
         : `Không đủ lựa chọn quà hợp lệ cho ${unavailableSlots} suất.`;
       return { campaignId: entry.campaignId, revision: entry.revision, earned: entry.earned, entitled: entry.entitled, selected,

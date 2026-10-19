@@ -10,7 +10,7 @@
  * - **Business** (`validateGiftRuleForPublish`): the trigger is chosen, its threshold exists, the
  *   duplicate policy was decided and there is at least one option. A Draft may fail these and still
  *   be saved; publish and Scheduled edits are refused until they hold. Checks that need other rows
- *   (an allowlisted variant exists, can really be given and is not composite) live in
+ *   (an allowlisted variant exists and has proven READY capacity) live in
  *   `giftOptionErrors` and run in the publish / Scheduled-edit transaction.
  *
  * The trigger (`QUANTITY` or `ORDER_SUBTOTAL`) and `subtotalScope` stay on the Draft form values and
@@ -23,6 +23,7 @@
  */
 
 import type { GiftAwardMode, GiftTrigger, PrismaClient } from "../generated/prisma/client.ts";
+import { readyGiftOptionStock } from "./gift-quantity-gift-option-capacity.ts";
 import { MAX_GIFT_CAMPAIGNS, MAX_GIFT_OPTIONS_PER_CAMPAIGN, MAX_GIFTS_PER_ORDER_TECHNICAL_CAP } from "./gift-quantity-entitlement.ts";
 import { isBoundedPromotionIdentifier } from "./promotion-activation.ts";
 import type { Tx } from "./promotion-activation-service.ts";
@@ -301,10 +302,10 @@ export type GiftOptionError =
   | "GIFT_NO_READY_STOCK";
 
 /**
- * Cross-row publish checks for the allowlist (ADR 0016 D-04). A gift is only ever given from READY
- * stock and never from a composite variant (until components can be reserved, GQ17), so:
+ * Cross-row publish checks for the allowlist (ADR 0016 D-04). Gifts use READY stock,
+ * including component-backed FULL SET stock, so:
  * - every option exists, is present and active, and so is its product;
- * - no option is a composite parent;
+ * - composite components must be present, same-shop, and stocked;
  * - at least one option has READY stock now. Stock is not re-checked per option: it moves, and the
  *   cart decides what is selectable on every read; this only refuses a campaign nobody could ever
  *   receive a gift from.
@@ -320,8 +321,15 @@ export async function giftOptionErrors(
       id: true,
       isPresent: true,
       isActive: true,
-      product: { select: { isPresent: true, isActive: true } },
-      compositeComponents: { select: { componentVariantId: true }, take: 1 },
+      product: { select: { pancakeShopId: true, isPresent: true, isActive: true } },
+      compositeComponents: { select: {
+        quantity: true,
+        componentVariant: { select: {
+          id: true, isPresent: true,
+          product: { select: { pancakeShopId: true, isPresent: true } },
+          warehouseStocks: { select: { quantity: true } },
+        } },
+      } },
       warehouseStocks: { select: { quantity: true } },
     },
     take: MAX_GIFT_OPTIONS_PER_CAMPAIGN + 1,
@@ -339,11 +347,7 @@ export async function giftOptionErrors(
       errors.add("GIFT_VARIANT_UNAVAILABLE");
       continue;
     }
-    if (row.compositeComponents.length > 0) {
-      errors.add("GIFT_VARIANT_COMPOSITE");
-      continue;
-    }
-    if (row.warehouseStocks.reduce((sum, stock) => sum + stock.quantity, 0) >= 1) anyReady = true;
+    if (readyGiftOptionStock(row) >= 1) anyReady = true;
   }
   if (errors.size === 0 && !anyReady) errors.add("GIFT_NO_READY_STOCK");
   return [...errors];

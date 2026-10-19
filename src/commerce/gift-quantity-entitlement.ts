@@ -38,10 +38,12 @@ export type GiftOptionFacts = Readonly<{
   variantId: string;
   /** The gift's owning product; duplicate policy is per product (D-03). */
   productId: string;
-  /** Composite variants are not giftable until their components can be reserved (D-04). */
+  /** Set variants are eligible when component-backed READY stock is proven. */
   composite: boolean;
   /** READY units that can really be given right now, net of paid demand and existing holds. */
   readyAvailable: number;
+  /** Physical resources consumed per gift unit. Legacy pure-domain fixtures may omit this field. */
+  resourceNeeds?: readonly Readonly<{ variantId: string; unitsPerGift: number; availableUnits: number }>[];
 }>;
 
 export type GiftCampaignFacts = Readonly<{
@@ -83,7 +85,7 @@ export type GiftEntitlement = Readonly<{
   /** Slots after `maxGiftsPerOrder` and the technical cap. */
   entitled: number;
   cappedByMaximum: boolean;
-  /** Options that can be chosen right now (READY, not composite, stock >= 1), ordered by variant id. */
+  /** Options that can be chosen right now (READY stock >= 1), ordered by variant id. */
   selectableOptions: readonly GiftOptionFacts[];
   /** Slots that stock and the duplicate policy allow right now: `min(entitled, capacity)`. */
   grantable: number;
@@ -172,6 +174,17 @@ function campaignProblem(campaign: GiftCampaignFacts): string | null {
     if (typeof option.productId !== "string" || option.productId.length === 0) return "option product";
     if (typeof option.composite !== "boolean") return "option composite";
     if (typeof option.readyAvailable !== "number" || !Number.isSafeInteger(option.readyAvailable) || option.readyAvailable < 0) return "option stock";
+    if (option.resourceNeeds !== undefined) {
+      if (!Array.isArray(option.resourceNeeds) || option.resourceNeeds.length === 0 || option.resourceNeeds.length > MAX_GIFT_OPTIONS_PER_CAMPAIGN) return "option resources";
+      const resources = new Set<string>();
+      for (const resource of option.resourceNeeds) {
+        if (!resource || typeof resource.variantId !== "string" || !resource.variantId || resources.has(resource.variantId)
+          || !isSafePositive(resource.unitsPerGift) || !Number.isSafeInteger(resource.availableUnits) || resource.availableUnits < 0) {
+          return "option resource";
+        }
+        resources.add(resource.variantId);
+      }
+    }
     variantIds.add(option.variantId);
   }
   return null;
@@ -431,6 +444,33 @@ export function validateGiftSelections(input: Readonly<{
   for (const [variantId, units] of unitsByVariant) {
     if (units > stockByVariant.get(variantId)!) {
       issues.push({ error: "OUT_OF_STOCK", lineIndex: null, campaignId: null, variantId });
+    }
+  }
+  if (issues.length === 0) {
+    // Two distinct set parents (or a standalone child gift) can consume the same physical SKU.
+    const resourcesOf = (option: GiftOptionFacts) => option.resourceNeeds ??
+      [{ variantId: option.variantId, unitsPerGift: 1, availableUnits: option.readyAvailable }];
+    const availableByResource = new Map<string, number>();
+    for (const campaign of campaigns) for (const option of campaign.options) {
+      for (const resource of resourcesOf(option)) {
+        availableByResource.set(resource.variantId, Math.min(
+          availableByResource.get(resource.variantId) ?? Number.MAX_SAFE_INTEGER, resource.availableUnits,
+        ));
+      }
+    }
+    const usedByResource = new Map<string, number>();
+    for (const choice of selection) {
+      const option = campaignById.get(choice.campaignId)!.options.find((candidate) => candidate.variantId === choice.variantId)!;
+      for (const resource of resourcesOf(option)) {
+        usedByResource.set(resource.variantId,
+          (usedByResource.get(resource.variantId) ?? 0) + choice.quantity * resource.unitsPerGift);
+      }
+    }
+    for (const [resourceId, used] of usedByResource) {
+      if (!Number.isSafeInteger(used) || used > (availableByResource.get(resourceId) ?? 0)) {
+        issues.push({ error: "OUT_OF_STOCK", lineIndex: null, campaignId: null, variantId: null });
+        break;
+      }
     }
   }
   if (issues.length > 0) return { ok: false, issues: issues.sort(compareIssues) };

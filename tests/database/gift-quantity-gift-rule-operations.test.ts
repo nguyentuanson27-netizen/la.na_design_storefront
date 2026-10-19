@@ -260,12 +260,22 @@ test("publish: a finished global subtotal gift is accepted, one option with READ
   assert.equal(outcome.ok, true, show(outcome));
 });
 
+test("publish a gift set when its children can assemble a READY set", async () => {
+  await product("set-parent", { stock: 0 });
+  await product("set-part", { stock: 5 });
+  await prisma.compositeComponentMirror.create({ data: {
+    parentVariantId: v["set-parent"]!, componentVariantId: v["set-part"]!, quantity: 2, syncedAt: SYNCED,
+  } });
+  const id = await create("set-publish", quantityRule([v["set-parent"]!]));
+  assert.equal((await publish(id)).ok, true, "a READY composite is valid even if the parent warehouse stock is zero");
+});
+
 test("publish refusals name what is wrong, write nothing and move no revision", async () => {
   await product("inactive", { variantActive: false });
   await product("hidden", { productActive: false });
   await product("dry", { stock: 0 });
   await product("combo");
-  await product("part");
+  await product("part", { stock: 0 });
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: v.combo!, componentVariantId: v.part!, quantity: 1, syncedAt: SYNCED } });
   const cases: Array<[string, GiftRuleInput | null, readonly string[]]> = [
     ["unfinished", quantityRule([], { minimumQuantity: null, allowDuplicateGifts: null }), ["GIFT_MINIMUM_QUANTITY_REQUIRED", "GIFT_DUPLICATE_POLICY_REQUIRED", "GIFT_OPTIONS_EMPTY"]],
@@ -274,7 +284,7 @@ test("publish refusals name what is wrong, write nothing and move no revision", 
     ["no-duplicate-policy", quantityRule([v.g1!], { allowDuplicateGifts: null }), ["GIFT_DUPLICATE_POLICY_REQUIRED"]],
     ["inactive-variant", quantityRule([v.g1!, v.inactive!]), ["GIFT_VARIANT_UNAVAILABLE"]],
     ["inactive-product", quantityRule([v.hidden!]), ["GIFT_VARIANT_UNAVAILABLE"]],
-    ["composite", quantityRule([v.g1!, v.combo!]), ["GIFT_VARIANT_COMPOSITE"]],
+    ["composite-unready", quantityRule([v.combo!]), ["GIFT_NO_READY_STOCK"]],
     ["no-ready-stock", quantityRule([v.dry!]), ["GIFT_NO_READY_STOCK"]],
   ];
   for (const [label, rule, expected] of cases) {
@@ -310,19 +320,21 @@ test("publish: gate OFF refuses before reading anything; a customer session is r
   assert.equal((await stored(id)).isEnabled, false);
 });
 
-test("re-enable re-validates the allowlist: a variant that became composite blocks it, and removing it unblocks", async () => {
-  const id = await create("reenable", quantityRule([v.g1!, v.g2!]));
+test("re-enable checks component stock before accepting a gift set", async () => {
+  const id = await create("reenable", quantityRule([v.g2!]));
   assert.equal((await publish(id)).ok, true);
   const disabled = await disableGiftQuantityCampaign({ campaignId: id, now: NOW, session: ADMIN });
   assert.equal(disabled.ok, true, show(disabled));
-  await product("part2");
+  await product("part2", { stock: 0 });
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: v.g2!, componentVariantId: v.part2!, quantity: 1, syncedAt: SYNCED } });
   const before = await revision();
   const refused = await publish(id, NOW);
-  assert.deepEqual(errorsOf(refused), ["GIFT_VARIANT_COMPOSITE"]);
+  assert.deepEqual(errorsOf(refused), ["GIFT_NO_READY_STOCK"]);
   assert.equal(await revision(), before);
   assert.equal((await stored(id)).isEnabled, false);
-  await prisma.compositeComponentMirror.deleteMany({ where: { parentVariantId: v.g2! } });
+  await prisma.warehouseStock.create({ data: {
+    variantId: v.part2!, pancakeWarehouseId: `${P}-reenable-child`, quantity: 1, syncedAt: SYNCED,
+  } });
   assert.equal((await publish(id, NOW)).ok, true);
 });
 
@@ -397,12 +409,12 @@ test("Scheduled edit: a rule the trigger does not own, malformed input and a tie
 
 test("Scheduled edit: an allowlist that fails publish rules is refused and rolled back whole", async () => {
   await product("combo2");
-  await product("part3");
+  await product("part3", { stock: 0 });
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: v.combo2!, componentVariantId: v.part3!, quantity: 1, syncedAt: SYNCED } });
   const id = await scheduled("sched-rollback", quantityRule([v.g1!, v.g2!]));
   const before = await revision();
-  const outcome = await editScheduledGiftQuantityCampaign(patchFrom(id, quantityRule([v.g3!, v.combo2!], { minimumQuantity: 7 })));
-  assert.deepEqual(errorsOf(outcome), ["GIFT_VARIANT_COMPOSITE"]);
+  const outcome = await editScheduledGiftQuantityCampaign(patchFrom(id, quantityRule([v.combo2!], { minimumQuantity: 7 })));
+  assert.deepEqual(errorsOf(outcome), ["GIFT_NO_READY_STOCK"]);
   assert.equal(await revision(), before);
   const row = await stored(id);
   assert.equal(row.revision, 2);

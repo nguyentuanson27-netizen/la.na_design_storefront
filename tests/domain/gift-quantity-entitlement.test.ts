@@ -45,6 +45,23 @@ function evaluate(campaigns: GiftCampaignFacts[], groups: PaidGroup[]) {
 }
 const one = (campaign: GiftCampaignFacts, groups: PaidGroup[]) => evaluate([campaign], groups)[0]!;
 
+test("different gift sets and a standalone child cannot overconsume a shared resource", () => {
+  const resource = { variantId: "piece", unitsPerGift: 1, availableUnits: 1 };
+  const campaign = qtyCampaign(1, { allowDuplicateGifts: true, options: [
+    { variantId: "set-a", productId: "pa", composite: true, readyAvailable: 1, resourceNeeds: [resource] },
+    { variantId: "set-b", productId: "pb", composite: true, readyAvailable: 1, resourceNeeds: [resource] },
+    { variantId: "piece", productId: "pc", composite: false, readyAvailable: 1, resourceNeeds: [resource] },
+  ] });
+  const entitlements = evaluate([campaign], [paid("paid", 3, 100_000)]);
+  const choice = (variantId: string) => ({ campaignId: "gift-q", variantId, quantity: 1, campaignRevision: 3 });
+  assert.equal(validateGiftSelections({ campaigns: [campaign], entitlements, selection: [choice("set-a")] }).ok, true);
+  for (const other of ["set-b", "piece"]) {
+    const refused = validateGiftSelections({ campaigns: [campaign], entitlements, selection: [choice("set-a"), choice(other)] });
+    assert.equal(refused.ok, false);
+    if (!refused.ok) assert.equal(refused.issues.some((issue) => issue.error === "OUT_OF_STOCK"), true);
+  }
+});
+
 test("EX-01: N=2 grants floor(Q/2) slots; boundaries Q=N-1, N, 2N, 2N+1", () => {
   const slots = (q: number) => one(qtyCampaign(2), [paid("a", q, 500_000)]).entitled;
   assert.deepEqual([1, 2, 3, 4, 5, 6].map(slots), [0, 1, 1, 2, 2, 3]);

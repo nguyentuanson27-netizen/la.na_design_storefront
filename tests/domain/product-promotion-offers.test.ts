@@ -167,7 +167,7 @@ test("a gift is grantable by the cart's own rule: live, standalone, READY stock 
   assert.equal(isReadyGiftOption({ ...live, held: 2 }), false, "every unit held by a reservation");
   assert.equal(isReadyGiftOption({ ...live, stock: -1 }), false, "oversold");
   assert.equal(isReadyGiftOption({ ...live, active: false }), false, "inactive or not present");
-  assert.equal(isReadyGiftOption({ ...live, composite: true }), false, "a set is never a gift");
+  assert.equal(isReadyGiftOption({ ...live, composite: true }), true, "computed component capacity can make a set giftable");
 });
 
 
