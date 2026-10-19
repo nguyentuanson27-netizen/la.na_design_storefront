@@ -31,13 +31,15 @@ export type CollectionsRouteData = Readonly<{
 
 export async function loadCollectionsRoute(): Promise<RouteHandle<CollectionsRouteData>> {
   await connection();
-  const collections = await repository.listPublished(MAX_LISTED_COLLECTIONS);
   // A published collection with no story 404s on its own page, so it gets no card here either:
-  // the card's only action would be a link to that 404.
-  const visibleCollections = collections.filter(
-    (collection) =>
-      !HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS.has(collection.slug) && isCollectionRouteReachable(collection),
-  );
+  // the card's only action would be a link to that 404. Both exclusions run in the query, so the
+  // cap counts cards rather than rows; the reachability check below is the route's own rule,
+  // kept as the last word on what links to `/collections/<slug>`.
+  const collections = await repository.listPublished(MAX_LISTED_COLLECTIONS, {
+    excludeSlugs: [...HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS],
+    withStory: true,
+  });
+  const visibleCollections = collections.filter(isCollectionRouteReachable);
 
   return sealRoute({
     data: {

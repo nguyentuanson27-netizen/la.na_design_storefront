@@ -372,8 +372,13 @@ test("collections stays an aggregate index with an honest empty state", () => {
   );
   assert.match(
     route,
-    /isCollectionRouteReachable\(collection\)/,
-    "a collection whose own page 404s gets no card: the card would only link to that 404",
+    /withStory: true/,
+    "a collection whose own page 404s gets no card, excluded in the query so the cap counts cards",
+  );
+  assert.match(
+    route,
+    /filter\(isCollectionRouteReachable\)/,
+    "the route's own reachability rule has the last word on what the index links to",
   );
   assert.ok(
     !/placeholder|sample|demo|fake/i.test(page),

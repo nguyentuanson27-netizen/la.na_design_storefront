@@ -20,8 +20,9 @@ export type CollectionFilterPanelProps = {
  *
  * Size is the only filter a collection has, so the chips sit in the page at every width rather
  * than behind a "Bộ lọc" drawer: on a phone the drawer cost two taps and a full-screen sheet to
- * reach four chips. There the row scrolls sideways, bleeding to the screen edges, and every chip
- * and the sort select are 44px touch targets; from `md` they shrink to the desktop bar.
+ * reach four chips. There the row scrolls sideways, bleeding to the screen edges, and every chip,
+ * the filter pill's remove control and the sort select are 44px touch targets; from `md` they
+ * shrink to the desktop bar.
  */
 export function CollectionFilterPanel({
   totalCount,
@@ -79,56 +80,57 @@ export function CollectionFilterPanel({
         </nav>
       </div>
 
-      {concreteSizes.length > 0 || filtered ? (
+      {concreteSizes.length > 0 ? (
         <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-3 md:mx-0 md:mt-4">
-          <div className="flex items-center gap-2 overflow-x-auto px-6 text-sm text-[#3B2219] [scrollbar-width:none] md:flex-wrap md:gap-x-6 md:gap-y-3 md:overflow-visible md:px-0 md:text-xs">
-            {concreteSizes.length > 0 ? (
-              <div className="flex shrink-0 items-center gap-2 md:gap-1.5">
-                <span className="mr-1 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
-                  Size:
-                </span>
-                {concreteSizes.map((opt) => (
-                  <Link
-                    key={opt.value}
-                    href={opt.href}
-                    scroll={false}
-                    aria-current={opt.active ? "true" : undefined}
-                    className={`${chipClassName} ${
-                      opt.active
-                        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                        : "border-[#3B2219]/20 hover:border-[#3B2219]"
-                    }`}
-                  >
-                    {opt.label}
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-
-            {/* Clear filter link / All sizes */}
-            {filtered ? (
+          <div className="flex items-center gap-2 overflow-x-auto px-6 text-sm text-[#3B2219] [scrollbar-width:none] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:text-xs">
+            <span className="mr-1 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
+              Size:
+            </span>
+            {/* "All" leads the row and is always there, current when nothing is picked: the way
+                back is never scrolled off the end of the phone row, and picking a size changes
+                which chip is filled rather than inserting one and shifting the rest. */}
+            <Link
+              href={clearFilterHref}
+              scroll={false}
+              aria-label="Tất cả kích cỡ"
+              aria-current={filtered ? undefined : "true"}
+              className={`${chipClassName} ${
+                filtered
+                  ? "border-[#3B2219]/20 hover:border-[#3B2219]"
+                  : "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+              }`}
+            >
+              Tất cả
+            </Link>
+            {concreteSizes.map((opt) => (
               <Link
-                href={clearFilterHref}
+                key={opt.value}
+                href={opt.href}
                 scroll={false}
-                className="inline-flex min-h-11 shrink-0 items-center whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-[#3B2219] underline underline-offset-4 hover:text-[#2A1810] md:ml-auto md:min-h-0"
+                aria-current={opt.active ? "true" : undefined}
+                className={`${chipClassName} ${
+                  opt.active
+                    ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                    : "border-[#3B2219]/20 hover:border-[#3B2219]"
+                }`}
               >
-                Tất cả kích cỡ
+                {opt.label}
               </Link>
-            ) : null}
+            ))}
           </div>
         </nav>
       ) : null}
 
-      {/* Active filter pill */}
+      {/* Active filter pill; its remove control is a 44px target on a phone like the chips. */}
       {filtered && activeSizeOption ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+          <span className="inline-flex items-center gap-1 rounded bg-[#3B2219]/10 py-0 pl-2.5 pr-0 text-xs text-[#2A1810] md:gap-1.5 md:py-1 md:pr-2.5">
             <span>Size: {activeSizeOption.label}</span>
             <Link
               href={clearFilterHref}
               scroll={false}
               aria-label={`Xóa bộ lọc size ${activeSizeOption.label}`}
-              className="hover:text-black"
+              className="inline-flex min-h-11 min-w-11 items-center justify-center hover:text-black md:min-h-0 md:min-w-0"
             >
               ✕
             </Link>

@@ -137,6 +137,58 @@ test("P7 repository rejects malformed definitions before persistence", async () 
   );
 });
 
+test("the /collections index lists by indexPosition, unset ones last, then by slug", async () => {
+  await prisma.collectionDefinition.createMany({
+    data: [
+      { slug: "p7-repo-order-a", title: "A", description: "Story.", isPublished: true, indexPosition: 2 },
+      { slug: "p7-repo-order-b", title: "B", description: "Story.", isPublished: true, indexPosition: 1 },
+      { slug: "p7-repo-order-c", title: "C", description: "Story.", isPublished: true },
+      { slug: "p7-repo-order-d", title: "D", description: "Story.", isPublished: true, indexPosition: 2 },
+      { slug: "p7-repo-order-0", title: "0", description: "Story.", isPublished: true },
+    ],
+  });
+
+  const listed = await repository.listPublished(100);
+  assert.deepEqual(
+    listed.filter(({ slug }) => slug.startsWith("p7-repo-order-")).map(({ slug }) => slug),
+    // Position 1, then the two sharing position 2 by slug, then the unset ones by slug.
+    ["p7-repo-order-b", "p7-repo-order-a", "p7-repo-order-d", "p7-repo-order-0", "p7-repo-order-c"],
+  );
+});
+
+test("the index's exclusions run in the query, so rows they drop never use up the cap", async () => {
+  // More excluded rows than the cap, all ordered ahead of the one card that should show. A read
+  // capped at 50 and filtered afterwards would return 50 excluded rows and lose the real card.
+  await prisma.collectionDefinition.createMany({
+    data: [
+      ...Array.from({ length: 30 }, (_, index) => ({
+        slug: `p7-repo-nostory-${String(index).padStart(2, "0")}`,
+        title: "No story",
+        description: null,
+        isPublished: true,
+        indexPosition: 1,
+      })),
+      ...Array.from({ length: 25 }, (_, index) => ({
+        slug: `p7-repo-blank-${String(index).padStart(2, "0")}`,
+        title: "Blank story",
+        description: "",
+        isPublished: true,
+        indexPosition: 1,
+      })),
+      { slug: "p7-repo-hidden", title: "Hidden", description: "Story.", isPublished: true, indexPosition: 1 },
+      { slug: "p7-repo-shown", title: "Shown", description: "Story.", isPublished: true, indexPosition: 2 },
+    ],
+  });
+
+  const listed = await repository.listPublished(50, {
+    excludeSlugs: ["p7-repo-hidden"],
+    withStory: true,
+  });
+  const ours = listed.filter(({ slug }) => slug.startsWith("p7-repo-")).map(({ slug }) => slug);
+  assert.deepEqual(ours, ["p7-repo-shown"]);
+  assert.ok(listed.every(({ description }) => typeof description === "string" && description.length > 0));
+});
+
 test("P7 public repository reads expose only published allowlisted definition fields", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-draft",
