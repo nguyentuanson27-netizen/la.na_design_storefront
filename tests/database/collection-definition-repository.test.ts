@@ -277,6 +277,49 @@ test("blank stories are excluded in SQL: the index reads the database twice, how
   assert.equal(reads, 2, "one query picks the page's slugs, one reads their fields");
 });
 
+test("the index's story test agrees with the route's trim() on Unicode whitespace", async () => {
+  // Each description is listed exactly when `description.trim()` keeps something, which is the
+  // route's reachability rule. NBSP and BOM are the cases a locale-dependent `\S` got wrong.
+  const samples = {
+    nbsp: "\u00a0",
+    bom: "\ufeff",
+    ideographic: "\u3000",
+    emSpace: "\u2003",
+    lineSeparator: "\u2028",
+    mixed: " \t\n\r\v\f\u00a0\ufeff",
+    zeroWidth: "\u200b",
+    nextLine: "\u0085",
+    text: "Story.",
+    paddedText: "\u00a0Story.\ufeff",
+  };
+  const entries = Object.entries(samples);
+  await prisma.collectionDefinition.createMany({
+    data: entries.map(([name, description]) => ({
+      slug: `p7-repo-unicode-${name.toLowerCase()}`,
+      title: name,
+      description,
+      isPublished: true,
+      indexPosition: 1,
+    })),
+  });
+  const others = await prisma.collectionDefinition.findMany({
+    where: { isPublished: true, NOT: { slug: { startsWith: "p7-repo-unicode-" } } },
+    select: { slug: true },
+  });
+
+  const listed = await repository.listPublished(50, {
+    excludeSlugs: others.map(({ slug }) => slug),
+    withStory: true,
+  });
+  assert.deepEqual(
+    listed.map(({ slug }) => slug).sort(),
+    entries
+      .filter(([, description]) => description.trim().length > 0)
+      .map(([name]) => `p7-repo-unicode-${name.toLowerCase()}`)
+      .sort(),
+  );
+});
+
 test("P7 public repository reads expose only published allowlisted definition fields", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-draft",

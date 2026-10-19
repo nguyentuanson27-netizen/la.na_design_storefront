@@ -10,6 +10,17 @@ import {
 
 const MAX_COLLECTION_LIST = 100;
 
+/**
+ * "Has a character `String.prototype.trim()` would keep", as a PostgreSQL regex: any character
+ * outside ECMAScript's WhiteSpace and LineTerminator set. The route decides reachability with
+ * `description.trim()`, so the index query has to draw the line in the same place. Postgres's own
+ * `\S` does not: it follows the database's locale, and under C.UTF-8 it counts a no-break space
+ * (U+00A0, common in pasted copy) or a byte-order mark (U+FEFF) as text, which `trim()` strips.
+ * Spelling the set out makes the two agree on every locale.
+ */
+const HAS_TEXT_PATTERN =
+  "[^\\t\\n\\v\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
+
 const collectionSelect = {
   slug: true,
   title: true,
@@ -163,12 +174,12 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
       return definitions.map(withStorefrontTitle);
     }
 
-    // The same order as above, in SQL. `~ '\S'` is "has a non-whitespace character"; NULL fails it.
+    // The same order as above, in SQL; NULL fails the story test.
     const page = await client.$queryRaw<{ slug: string }[]>`
       SELECT "slug" FROM "CollectionDefinition"
       WHERE "isPublished" = true
         AND "slug" <> ALL(${[...excludeSlugs]}::text[])
-        AND "description" ~ '\\S'
+        AND "description" ~ ${HAS_TEXT_PATTERN}
       ORDER BY "indexPosition" ASC NULLS LAST, "slug" ASC
       LIMIT ${take}
     `;
