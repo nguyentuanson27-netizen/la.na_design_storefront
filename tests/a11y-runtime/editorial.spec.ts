@@ -1003,7 +1003,7 @@ test("homepage carries only the refreshed composition while retired Lookbook and
   await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
   await expect(page.getByRole("heading", { level: 1, name: "Bộ sưu tập" })).toBeVisible();
   await expect(page.getByRole("heading", { level: 2, name: "Essential Outerwear" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Khám phá: Essential Outerwear", exact: true })).toHaveAttribute(
+  await expect(page.getByRole("link", { name: /^Khám phá\s*: Essential Outerwear$/ })).toHaveAttribute(
     "href",
     "/collections/essential-outerwear",
   );

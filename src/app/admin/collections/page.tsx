@@ -217,7 +217,7 @@ function CollectionForm({ definition, action }: CollectionFormProps) {
             type="number"
           />
           <span className="mt-2 block text-xs leading-5 text-black/55">
-            Số nhỏ đứng trước (1–{COLLECTION_DEFINITION_LIMITS.indexPosition}). Để trống thì xếp sau các collection có số, theo slug.
+            Số nhỏ đứng trước (1–{COLLECTION_DEFINITION_LIMITS.indexPosition}). Để trống thì xếp sau các collection có số, theo thứ tự chữ cái của đường dẫn.
           </span>
         </label>
 
