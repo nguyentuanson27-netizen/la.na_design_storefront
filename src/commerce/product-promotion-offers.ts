@@ -53,14 +53,14 @@ export function areProductPromotionOffersOpen(env: Env = process.env): boolean {
 }
 
 /**
- * Whether one gift variant could be granted today, by the cart's own rule: a live, standalone
- * variant (a set cannot be a gift) with at least one READY unit once advisory holds are taken off.
+ * Whether one gift variant could be granted today. Callers must provide derived READY stock:
+ * for FULL SETs this comes from component capacity, never the parent's warehouse stock.
  * Preorder or oversell capacity never authorizes a gift.
  */
 export function isReadyGiftOption(
   option: Readonly<{ active: boolean; composite: boolean; stock: number; held: number }>,
 ): boolean {
-  if (!option.active || option.composite) return false;
+  if (!option.active) return false;
   const ready = option.stock - option.held;
   return Number.isSafeInteger(ready) && ready >= 1;
 }

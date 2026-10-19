@@ -92,7 +92,8 @@ test("unusable variants are returned with the same reason the publish rules woul
   assert.equal(byId.get(dry)?.unavailable, "NO_STOCK");
   assert.equal(byId.get(inactive)?.unavailable, "INACTIVE");
   assert.equal(byId.get(hidden)?.unavailable, "INACTIVE");
-  assert.equal(byId.get(combo)?.unavailable, "COMPOSITE");
+  assert.equal(byId.get(combo)?.unavailable, null);
+  assert.equal(byId.get(combo)?.stock, 5, "gift set capacity derives from its only child");
   assert.equal(byId.get(part)?.unavailable, null, "a component sold on its own is a normal variant");
 });
 

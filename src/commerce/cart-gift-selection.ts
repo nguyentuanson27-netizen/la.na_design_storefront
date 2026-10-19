@@ -1,6 +1,7 @@
 /** GQ12: cookie-owned choices, serialized with paid cart writes. No reservations or consent. */
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { readAnonymousCartCookie } from "./anonymous-cart-cookie.ts";
+import { readyGiftOptionStock, readyGiftResourceUnits } from "./gift-quantity-gift-option-capacity.ts";
 import { MAX_MEDIA_CANDIDATES_SCANNED, parseTrustedProductImageUrl } from "./product-media.ts";
 import { readAdvisoryHeldQuantities } from "./capacity-advisory.ts";
 import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection } from "./cart-gift-selection-repository.ts";
@@ -78,9 +79,26 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
   const variants = await tx.variantMirror.findMany({
     where: { id: { in: ids }, product: { pancakeShopId: shopId } },
     orderBy: [{ productId: "asc" }, { pancakeVariationId: "asc" }, { id: "asc" }],
-    select: { id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
-      product: { select: { name: true, primaryImageUrl: true, isActive: true, isPresent: true } },
-      warehouseStocks: { select: { quantity: true } }, compositeComponents: { select: { componentVariantId: true } } },
+    select: {
+      id: true, productId: true, color: true, size: true, isPresent: true, isActive: true, pancakeImageUrls: true,
+      product: { select: { name: true, primaryImageUrl: true, pancakeShopId: true, isActive: true, isPresent: true } },
+      warehouseStocks: { select: { quantity: true } },
+      compositeComponents: {
+        select: {
+          componentVariantId: true,
+          quantity: true,
+          componentVariant: {
+            select: {
+              id: true,
+              isPresent: true,
+              isActive: true,
+              product: { select: { pancakeShopId: true, isPresent: true, isActive: true } },
+              warehouseStocks: { select: { quantity: true } },
+            },
+          },
+        },
+      },
+    },
   });
   // Paid composite lines consume component stock, even when the gift is a standalone component.
   const edges = await tx.compositeComponentMirror.findMany({ where: { parentVariantId: { in: cart.items.map((item) => item.variantId) } }, select: { parentVariantId: true, componentVariantId: true, quantity: true } });
@@ -91,13 +109,28 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
       demand.set(resource.id, (demand.get(resource.id) ?? 0) + resource.quantity);
     }
   }
-  const held = await readAdvisoryHeldQuantities(tx, ids);
+  const allVariantIds = [
+    ...new Set([
+      ...ids,
+      ...variants.flatMap((v) => v.compositeComponents.map((c) => c.componentVariantId)),
+    ]),
+  ];
+  const held = await readAdvisoryHeldQuantities(tx, allVariantIds);
+  const unavailable = new Map(held);
+  for (const [variantId, quantity] of demand) unavailable.set(variantId, (unavailable.get(variantId) ?? 0) + quantity);
   const optionById = new Map(variants.map((v) => {
-    const active = v.isActive && v.isPresent && v.product.isActive && v.product.isPresent;
-    const stock = v.warehouseStocks.reduce((sum, row) => sum + row.quantity, 0) - (held.get(v.id) ?? 0) - (demand.get(v.id) ?? 0);
-    // Gifts use READY stock only; preorder/oversell capacity cannot authorize a gift.
-    const readyAvailable = active && Number.isSafeInteger(stock) ? Math.max(0, stock) : 0;
-    return [v.id, { variantId: v.id, productId: v.productId, composite: v.compositeComponents.length > 0, readyAvailable }] as const;
+    const composite = v.compositeComponents.length > 0;
+    const resourceNeeds = composite
+      ? v.compositeComponents.map((edge) => ({
+          variantId: edge.componentVariantId,
+          unitsPerGift: edge.quantity,
+          availableUnits: edge.componentVariant.isPresent && edge.componentVariant.product.isPresent &&
+            edge.componentVariant.product.pancakeShopId === shopId
+            ? readyGiftResourceUnits(edge.componentVariant.warehouseStocks, unavailable.get(edge.componentVariantId) ?? 0) : 0,
+        }))
+      : [{ variantId: v.id, unitsPerGift: 1, availableUnits: readyGiftResourceUnits(v.warehouseStocks, unavailable.get(v.id) ?? 0) }];
+    const readyAvailable = readyGiftOptionStock(v, unavailable);
+    return [v.id, { variantId: v.id, productId: v.productId, composite, readyAvailable, resourceNeeds }] as const;
   }));
   const campaigns: GiftCampaignFacts[] = entries.map(({ campaign: c, scope, frozen }) => ({
     id: c.id, revision: c.revision, trigger: c.giftTrigger!, minimumQuantity: c.minimumQuantity,
@@ -113,7 +146,18 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
       ? components.map((edge) => [edge.componentVariantId, edge.quantity * addition!.quantity] as const)
       : addition ? [[addition.variantId, addition.quantity] as const] : []);
     const futureCampaigns = addition ? campaigns.map((campaign) => ({ ...campaign,
-      options: campaign.options.map((option) => ({ ...option, readyAvailable: Math.max(0, option.readyAvailable - (extraDemand.get(option.variantId) ?? 0)) })),
+      options: campaign.options.map((option) => {
+        const resources = option.resourceNeeds?.map((resource) => ({
+          ...resource, availableUnits: Math.max(0, resource.availableUnits - (extraDemand.get(resource.variantId) ?? 0)),
+        }));
+        return {
+          ...option,
+          ...(resources ? { resourceNeeds: resources } : {}),
+          readyAvailable: resources
+            ? Math.min(option.readyAvailable, ...resources.map((resource) => Math.floor(resource.availableUnits / resource.unitsPerGift)))
+            : Math.max(0, option.readyAvailable - (extraDemand.get(option.variantId) ?? 0)),
+        };
+      }),
     })) : campaigns;
     const evaluation = evaluateGiftEntitlements({ campaigns: futureCampaigns, paidGroups: groups.map((group) => ({ ...group, product: productByVariant.get(group.lineKey)! })) });
     if (!evaluation.ok) throw new Error("Invalid gift configuration");

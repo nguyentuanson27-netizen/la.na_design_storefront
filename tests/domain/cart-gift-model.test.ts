@@ -20,6 +20,23 @@ function state(): CartGiftState {
     validation: { ok: false, issues: [] },
   } as unknown as CartGiftState;
 }
+test("component-backed gift is selectable in the cart picker under a configured campaign", () => {
+  const fixture = state();
+  const model = buildCartGiftPickerModel({
+    ...fixture,
+    labels: [{ variantId: "set", productId: "set-product", productName: "Set quà", optionLabel: "M", imageUrl: null }],
+    campaigns: [{ id: "configured-campaign", allowDuplicateGifts: false,
+      options: [{ variantId: "set", productId: "set-product", composite: true, readyAvailable: 2 }] }],
+    entitlements: [{ campaignId: "configured-campaign", revision: 1, earned: 1, entitled: 1, unfulfillableForStock: 0, shortfallToNext: null }],
+    selections: [],
+    giftStackDropped: [],
+    validation: { ok: true, summaries: [] },
+  } as unknown as CartGiftState);
+  assert.equal(model.stackConflict, false);
+  assert.deepEqual(model.campaigns[0]?.products[0]?.options.map((option) => option.variantId), ["set"]);
+  assert.equal(model.campaigns[0]?.products[0]?.options[0]?.stock, 2);
+});
+
 test("cart displays split paid prices and total while gifts never increase paid count", () => {
   const model = buildCartViewModel({ lines: [line], commerceTrackingEnabled: false, giftState: state() });
   assert.match(model.subtotalText, /290.003/);

@@ -696,11 +696,16 @@ test("GQ13b gift form: threshold, cap, duplicates and allowlist round-trip throu
   const results = page.getByRole("list", { name: "Kết quả tìm quà" });
   await expect(results.getByRole("listitem").filter({ hasText: "ok " + runId })).toContainText("kho 5");
   await expect(results.getByRole("listitem").filter({ hasText: "dry " + runId })).toContainText("hết hàng sẵn sàng");
-  await expect(results.getByRole("listitem").filter({ hasText: "combo " + runId })).toContainText("là combo");
+  await expect(results.getByRole("listitem").filter({ hasText: "combo " + runId })).toContainText("kho 5");
   await expect(results.getByRole("button", { name: /Thêm .*dry/ })).toBeDisabled();
-  await expect(results.getByRole("button", { name: /Thêm .*combo/ })).toBeDisabled();
+  await expect(results.getByRole("button", { name: /Thêm .*combo/ })).toBeEnabled();
   await results.getByRole("button", { name: /Thêm .*ok /i }).click();
   const chosen = page.getByRole("list", { name: "Quà đã chọn" });
+  await expect(chosen.getByRole("listitem")).toHaveCount(1);
+  // A composite with READY components is a real selectable option in the Admin form.
+  await results.getByRole("button", { name: /Thêm .*combo/ }).click();
+  await expect(chosen.getByRole("listitem")).toHaveCount(2);
+  await chosen.getByRole("button", { name: /Bỏ .*combo/ }).click();
   await expect(chosen.getByRole("listitem")).toHaveCount(1);
   await expect(results.getByRole("button", { name: /Đã chọn/ })).toBeDisabled();
 

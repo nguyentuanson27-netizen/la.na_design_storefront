@@ -235,12 +235,34 @@ test("active reservation holds consume gift stock; a released hold does not", as
   await prisma.variantCapacityReservation.update({ where: { id: hold.id }, data: { state: "RELEASED", releasedAt: NOW } });
   assert.deepEqual(await service().set(choice(), NOW), { ok: true });
 });
-test("composite gifts are excluded; paid composite components consume gift capacity", async () => {
+test("gift sets use component stock; paid set demand can deplete the same gift resource", async () => {
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: secondId, componentVariantId: giftId, quantity: 1, syncedAt: NOW } });
-  assert.equal((await service().set(choice(secondId), NOW)).ok, false);
+  assert.deepEqual(await service().set(choice(secondId), NOW), { ok: true });
+  const state = await service().get(NOW);
+  assert.ok("state" in state);
+  assert.equal(state.state.validation.ok, true);
+  assert.equal(state.state.campaigns[0]?.options.find((option) => option.variantId === secondId)?.readyAvailable, 3);
+  assert.deepEqual(await service().set(choice(secondId, 0), NOW), { ok: true });
   await prisma.compositeComponentMirror.deleteMany({ where: { parentVariantId: secondId } });
   await prisma.compositeComponentMirror.create({ data: { parentVariantId: paidId, componentVariantId: giftId, quantity: 1, syncedAt: NOW } });
   assert.equal((await service().set(choice(), NOW)).ok, false);
+});
+
+test("two gift sets with one remaining shared component cannot both be saved", async () => {
+  await prisma.warehouseStock.updateMany({ where: { variantId: paidId }, data: { quantity: 4 } });
+  await prisma.compositeComponentMirror.createMany({ data: [giftId, secondId].map((parentVariantId) => ({
+    parentVariantId, componentVariantId: paidId, quantity: 1, syncedAt: NOW,
+  })) });
+  const before = await service().get(NOW);
+  assert.ok("state" in before);
+  assert.equal(before.state.campaigns[0]?.options.find((option) => option.variantId === giftId)?.readyAvailable, 1);
+  assert.equal(before.state.campaigns[0]?.options.find((option) => option.variantId === secondId)?.readyAvailable, 1);
+  assert.deepEqual(await service().set(choice(giftId), NOW), { ok: true });
+  assert.equal((await service().set(choice(secondId), NOW)).ok, false);
+  const after = await service().get(NOW);
+  assert.ok("state" in after);
+  assert.equal(after.state.validation.ok, true);
+  assert.deepEqual(after.state.selections.map((selection) => selection.variantId), [giftId]);
 });
 test("racing paid reduction and gift write leaves a recomputed invalid choice or a refusal, never auto-repairs", async () => {
   await Promise.all([

@@ -19,7 +19,6 @@ const money = new Intl.NumberFormat("vi-VN");
 
 const UNAVAILABLE_TEXT: Record<GiftOptionUnavailableReason, string> = {
   INACTIVE: "đã ngừng bán",
-  COMPOSITE: "là combo, chưa tặng được",
   NO_STOCK: "hết hàng sẵn sàng",
 };
 
