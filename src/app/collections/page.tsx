@@ -24,6 +24,30 @@ type CollectionsRouteProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>;
 
+type ListedCollection = CollectionsRouteData["collections"][number];
+
+/**
+ * The card's one link, in the homepage banner's vocabulary: an underlined small-caps "Khám phá",
+ * not a filled button. Its hit area is stretched over the whole card (`globals.css`), so the
+ * photograph that zooms on hover is also what a tap opens. The visible label is the same on every
+ * card; the collection's name rides along for screen readers, so a link read out of context --
+ * in a links list -- still says where it goes.
+ */
+function CollectionCardCta({
+  collection,
+  tone = "light",
+}: Readonly<{ collection: ListedCollection; tone?: "light" | "ink" }>) {
+  return (
+    <Link
+      href={`/collections/${collection.slug}`}
+      className={tone === "ink" ? "collection-card-cta collection-card-cta--ink" : "collection-card-cta"}
+    >
+      Khám phá
+      <span className="sr-only">: {collection.title}</span>
+    </Link>
+  );
+}
+
 function render(data: CollectionsRouteData) {
   return (
     <ListingShell>
@@ -36,11 +60,14 @@ function render(data: CollectionsRouteData) {
             collection.heroImageUrl ? (
               <article
                 key={collection.slug}
-                className="group relative aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#FAF7F2] shadow-sm transition-all duration-500 hover:shadow-xl"
+                className="group relative isolate aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#FAF7F2] shadow-sm transition-all duration-500 hover:shadow-xl"
               >
+                {/* Behind the copy (`-z-10` inside the isolated card) rather than the copy lifted
+                    over it, so the card -- not the copy box -- is what the CTA's stretched hit area
+                    covers. */}
                 <div
                   data-collection-card-media=""
-                  className="absolute inset-0"
+                  className="absolute inset-0 -z-10"
                 >
                   <Image
                     src={collection.heroImageUrl}
@@ -51,30 +78,24 @@ function render(data: CollectionsRouteData) {
                   />
                 </div>
 
-                {/* Accessible title for screen readers / WCAG */}
+                {/* The cover photograph carries the collection's name (owner decision), so the title
+                    is for screen readers only and is not printed a second time over it. */}
                 <h2 className="sr-only">{collection.title}</h2>
 
-                {/* Gentle bottom-only vignette to anchor the artistic CTA */}
+                {/* Gentle bottom-only vignette under the light CTA */}
                 <div
                   aria-hidden="true"
-                  className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/35 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/45"
+                  className="absolute inset-x-0 bottom-0 -z-10 h-1/3 bg-gradient-to-t from-black/45 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/55"
                 />
 
-                <div className="relative z-10 flex h-full flex-col justify-end p-5 sm:p-7 lg:p-8">
-                  <div>
-                    <Link
-                      href={`/collections/${collection.slug}`}
-                      className="collection-card-cta"
-                    >
-                      Khám phá bộ sưu tập ↗
-                    </Link>
-                  </div>
+                <div className="flex h-full flex-col items-center justify-end px-5 pb-2 sm:pb-5 lg:pb-6">
+                  <CollectionCardCta collection={collection} />
                 </div>
               </article>
             ) : (
               <article
                 key={collection.slug}
-                className="group relative flex min-h-72 flex-col justify-between overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[var(--paper)] p-8 shadow-sm transition-shadow duration-300 hover:shadow-md md:p-10"
+                className="group relative flex min-h-48 flex-col justify-between overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[var(--paper)] p-6 shadow-sm transition-shadow duration-300 hover:shadow-md md:min-h-72 md:p-10"
               >
                 <div
                   data-collection-card-media=""
@@ -87,13 +108,8 @@ function render(data: CollectionsRouteData) {
                     {collection.title}
                   </h2>
                 </div>
-                <div className="mt-8">
-                  <Link
-                    href={`/collections/${collection.slug}`}
-                    className="collection-card-cta"
-                  >
-                    Khám phá bộ sưu tập ↗
-                  </Link>
+                <div className="mt-6 md:mt-8">
+                  <CollectionCardCta collection={collection} tone="ink" />
                 </div>
               </article>
             ),

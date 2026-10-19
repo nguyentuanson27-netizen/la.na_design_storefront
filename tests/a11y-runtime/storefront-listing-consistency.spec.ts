@@ -740,7 +740,7 @@ test("collection index cards keep a 16:9 media surface without clipping valid lo
       name: LONG_COLLECTION_TITLE,
       exact: true,
     });
-    const cta = fallbackCard.getByRole("link", { name: "Khám phá bộ sưu tập ↗", exact: true });
+    const cta = fallbackCard.getByRole("link", { name: `Khám phá: ${LONG_COLLECTION_TITLE}`, exact: true });
     await expect(longTitle).toBeVisible();
     await expect(cta).toBeVisible();
 
@@ -828,11 +828,14 @@ test("the collection CTA's keyboard focus shows on a dark hero and on the paper 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
 
-    for (const slug of [IMAGE_COLLECTION_SLUG, LONG_COLLECTION_SLUG]) {
+    for (const [slug, title] of [
+      [IMAGE_COLLECTION_SLUG, IMAGE_COLLECTION_TITLE],
+      [LONG_COLLECTION_SLUG, "Listing Paper Collection"],
+    ] as const) {
       const card = page
         .locator("article")
         .filter({ has: page.locator(`a[href="/collections/${slug}"]`) });
-      const cta = card.getByRole("link", { name: "Khám phá bộ sưu tập ↗", exact: true });
+      const cta = card.getByRole("link", { name: `Khám phá: ${title}`, exact: true });
       await cta.scrollIntoViewIfNeeded();
       await expect(card.locator("img")).toHaveCount(slug === IMAGE_COLLECTION_SLUG ? 1 : 0);
 
@@ -908,7 +911,7 @@ test("collections stays an index over real published collections, and lists no p
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`${BASE_URL}/collections`, { waitUntil: "networkidle" });
 
-  await expect(page.getByRole("link", { name: /Khám phá bộ sưu tập/ }).first()).toBeVisible();
+  await expect(page.getByRole("link", { name: /^Khám phá: / }).first()).toBeVisible();
   // An index links to collections; it does not list products.
   await expect(page.locator("main a[href^='/shop/']")).toHaveCount(0);
 

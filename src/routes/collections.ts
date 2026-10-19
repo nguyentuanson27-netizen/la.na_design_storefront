@@ -4,6 +4,7 @@ import { createCollectionDefinitionRepository } from "@/commerce/collection-defi
 import { parseTrustedProductImageUrl } from "@/commerce/product-media";
 import { prisma } from "@/db/prisma";
 
+import { isCollectionRouteReachable } from "./collection-first-page.ts";
 import { sealRoute, type RouteHandle } from "./core.tsx";
 
 /** The collection index's loader. */
@@ -31,8 +32,11 @@ export type CollectionsRouteData = Readonly<{
 export async function loadCollectionsRoute(): Promise<RouteHandle<CollectionsRouteData>> {
   await connection();
   const collections = await repository.listPublished(MAX_LISTED_COLLECTIONS);
+  // A published collection with no story 404s on its own page, so it gets no card here either:
+  // the card's only action would be a link to that 404.
   const visibleCollections = collections.filter(
-    (collection) => !HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS.has(collection.slug),
+    (collection) =>
+      !HIDDEN_FROM_COLLECTIONS_INDEX_SLUGS.has(collection.slug) && isCollectionRouteReachable(collection),
   );
 
   return sealRoute({
