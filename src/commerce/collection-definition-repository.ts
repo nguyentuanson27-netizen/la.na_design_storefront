@@ -135,12 +135,12 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
    * Published definitions in the `/collections` index order, up to `limit` of them.
    *
    * The page's exclusions never use up the cap: filtering one capped read would let excluded rows
-   * ahead of position `limit` push real collections off the end. `excludeSlugs` and an absent or
-   * empty description are excluded in the query. `withStory` means a description with real text,
-   * which a published definition needs for its own route to render; SQL cannot see a
-   * whitespace-only one (admin trims on save, but a legacy or hand-written row may not be), so
-   * those are dropped here and the read continues page by page until `limit` remain or the rows
-   * run out. The order is total (slug is unique), so the pages never overlap or skip a row.
+   * ahead of position `limit` push real collections off the end. `excludeSlugs` are excluded in
+   * the query. `withStory` means a description with a non-whitespace character, which a published
+   * definition needs for its own route to render; Prisma's filters cannot express that (admin
+   * trims on save, but a legacy or hand-written row of spaces may exist), so it is decided in SQL:
+   * one query picks the page's slugs, already ordered and capped, and a second reads their fields.
+   * Two reads however many blank rows there are, and `limit` bounds both.
    */
   async function listPublished(
     limit: number,
@@ -148,29 +148,43 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
   ) {
     const take = parseCollectionListLimit(limit);
     const { excludeSlugs = [], withStory = false } = options;
-    const readPage = (skip: number) =>
-      client.collectionDefinition.findMany({
+
+    if (!withStory) {
+      const definitions = await client.collectionDefinition.findMany({
         where: {
           isPublished: true,
           ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
-          ...(withStory ? { description: { not: null }, NOT: { description: "" } } : {}),
         },
-        skip,
         take,
         // The merchandiser's order first; collections with no position follow, alphabetically.
         orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
         select: publicCollectionSelect,
       });
-
-    if (!withStory) return (await readPage(0)).map(withStorefrontTitle);
-
-    const listed: Awaited<ReturnType<typeof readPage>> = [];
-    for (let skip = 0; listed.length < take; skip += take) {
-      const page = await readPage(skip);
-      listed.push(...page.filter(({ description }) => Boolean(description?.trim())));
-      if (page.length < take) break;
+      return definitions.map(withStorefrontTitle);
     }
-    return listed.slice(0, take).map(withStorefrontTitle);
+
+    // The same order as above, in SQL. `~ '\S'` is "has a non-whitespace character"; NULL fails it.
+    const page = await client.$queryRaw<{ slug: string }[]>`
+      SELECT "slug" FROM "CollectionDefinition"
+      WHERE "isPublished" = true
+        AND "slug" <> ALL(${[...excludeSlugs]}::text[])
+        AND "description" ~ '\\S'
+      ORDER BY "indexPosition" ASC NULLS LAST, "slug" ASC
+      LIMIT ${take}
+    `;
+    if (page.length === 0) return [];
+
+    const slugs = page.map(({ slug }) => slug);
+    const definitions = await client.collectionDefinition.findMany({
+      where: { isPublished: true, slug: { in: slugs } },
+      select: publicCollectionSelect,
+    });
+    const bySlug = new Map(definitions.map((definition) => [definition.slug, definition]));
+    // A row unpublished between the two reads is simply left out.
+    return slugs.flatMap((slug) => {
+      const definition = bySlug.get(slug);
+      return definition ? [withStorefrontTitle(definition)] : [];
+    });
   }
 
   async function listHomepageMerchandising() {

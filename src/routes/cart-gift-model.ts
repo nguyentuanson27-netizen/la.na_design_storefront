@@ -28,22 +28,25 @@ const repairText: Record<GiftSelectionError, string> = {
 };
 
 /**
- * A product's gift options in the order a shopper reads them: colours stay in the order the
- * campaign lists them, and within a colour the sizes run XS → S → M → L → XL → 2XL, the same
- * comparison the product page uses. Storage order (L, M, S, XL) is not an order anyone shops in.
+ * A product's gift options in the order a shopper reads them: grouped by colour, and within a
+ * colour the sizes run XS → S → M → L → XL → 2XL, the same comparison the product page uses.
+ * Storage order (L, M, S, XL) is not an order anyone shops in, and it is not even stable: a
+ * campaign's gift options are read without an order and carry no position, so colours sort by
+ * name (Vietnamese collation) and the variant id breaks any remaining tie. The result depends only
+ * on the options, never on the order the database returned them in.
  */
 function orderGiftOptions<T extends { variantId: string }>(
   options: readonly T[],
   labelByVariant: ReadonlyMap<string, { color?: string | null; size?: string | null }>,
 ): T[] {
-  const colorRank = new Map<string, number>();
-  for (const option of options) {
-    const color = labelByVariant.get(option.variantId)?.color ?? "";
-    if (!colorRank.has(color)) colorRank.set(color, colorRank.size);
-  }
-  const rankOf = (option: T) => colorRank.get(labelByVariant.get(option.variantId)?.color ?? "") ?? 0;
+  const colorOf = (option: T) => labelByVariant.get(option.variantId)?.color ?? "";
   const sizeOf = (option: T) => labelByVariant.get(option.variantId)?.size ?? "";
-  return [...options].sort((a, b) => rankOf(a) - rankOf(b) || compareClothingSizes(sizeOf(a), sizeOf(b)));
+  return [...options].sort(
+    (a, b) =>
+      colorOf(a).localeCompare(colorOf(b), "vi", { sensitivity: "base" }) ||
+      compareClothingSizes(sizeOf(a), sizeOf(b)) ||
+      (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0),
+  );
 }
 
 export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerModel {

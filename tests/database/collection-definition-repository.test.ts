@@ -229,6 +229,54 @@ test("reading past whitespace-only stories still stops at the cap, in index orde
   );
 });
 
+test("blank stories are excluded in SQL: the index reads the database twice, however many there are", async () => {
+  // Every database call the repository makes, counted: the model delegate's methods and raw SQL.
+  let reads = 0;
+  const counting = (target: object) =>
+    new Proxy(target, {
+      get(object, property) {
+        const value = Reflect.get(object, property);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          reads += 1;
+          return Reflect.apply(value, object, args);
+        };
+      },
+    });
+  const countedClient = new Proxy(prisma, {
+    get(client, property) {
+      if (property === "collectionDefinition") return counting(client.collectionDefinition);
+      if (property === "$queryRaw") {
+        return (...args: unknown[]) => {
+          reads += 1;
+          return Reflect.apply(client.$queryRaw, client, args);
+        };
+      }
+      return Reflect.get(client, property);
+    },
+  });
+  const countedRepository = createCollectionDefinitionRepository(countedClient);
+
+  // More than two pages of blank stories, all ordered ahead of the one card that should show.
+  await prisma.collectionDefinition.createMany({
+    data: [
+      ...Array.from({ length: 120 }, (_, index) => ({
+        slug: `p7-repo-reads-${String(index).padStart(3, "0")}`,
+        title: "Blank story",
+        description: [" ", "   ", "\n\t "][index % 3],
+        isPublished: true,
+        indexPosition: 1,
+      })),
+      { slug: "p7-repo-reads-shown", title: "Shown", description: "Story.", isPublished: true, indexPosition: 2 },
+    ],
+  });
+
+  const listed = await countedRepository.listPublished(50, { excludeSlugs: [], withStory: true });
+  assert.ok(listed.some(({ slug }) => slug === "p7-repo-reads-shown"));
+  assert.ok(listed.every(({ slug }) => !/^p7-repo-reads-\d/.test(slug)));
+  assert.equal(reads, 2, "one query picks the page's slugs, one reads their fields");
+});
+
 test("P7 public repository reads expose only published allowlisted definition fields", async () => {
   await repository.saveDefinition({
     slug: "p7-repo-draft",
