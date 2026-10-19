@@ -15,7 +15,7 @@ import { buildCollectionsMetadata } from "@/routes/metadata/collections";
  * Markup only. The published collections live in `@/routes/collections`.
  *
  * This is the aggregate collections landing page, not a product listing: it shares the chrome --
- * shell, breadcrumb, eyebrow, serif H1, empty state -- and deliberately not the product grid,
+ * shell, breadcrumb, display H1, empty state -- and deliberately not the product grid,
  * filters or paging. Master spec §10 keeps it as an index, and there are no approved child
  * collections to pad it with.
  */
@@ -24,23 +24,61 @@ type CollectionsRouteProps = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>;
 
+type ListedCollection = CollectionsRouteData["collections"][number];
+
+/**
+ * Square, flat cards: the product grid, the gallery and the hero are all unrounded and unshadowed,
+ * and a rounded, lifted card read as a different site. An odd last card on the two-column grid is
+ * centred at one column's width instead of leaving the row's other half empty.
+ */
+const CARD_LAYOUT =
+  "md:last:odd:col-span-2 md:last:odd:w-[calc(50%-0.75rem)] md:last:odd:justify-self-center lg:last:odd:w-[calc(50%-1rem)]";
+
+/**
+ * The card's one link, in the homepage banner's vocabulary: an underlined small-caps "Khám phá",
+ * not a filled button. Its hit area is stretched over the whole card (`globals.css`), so the
+ * photograph that zooms on hover is also what a tap opens. The visible label is the same on every
+ * card; the collection's name rides along for screen readers, so a link read out of context --
+ * in a links list -- still says where it goes.
+ */
+function CollectionCardCta({
+  collection,
+  tone = "light",
+}: Readonly<{ collection: ListedCollection; tone?: "light" | "ink" }>) {
+  return (
+    <Link
+      href={`/collections/${collection.slug}`}
+      className={tone === "ink" ? "collection-card-cta collection-card-cta--ink" : "collection-card-cta"}
+    >
+      Khám phá
+      <span className="sr-only">: {collection.title}</span>
+    </Link>
+  );
+}
+
 function render(data: CollectionsRouteData) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Bộ sưu tập" }]} />
-      <ListingHeader eyebrow="Tuyển chọn" title="Bộ sưu tập" />
+      <ListingHeader title="Bộ sưu tập" />
 
       {data.collections.length > 0 ? (
-        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:gap-8">
+        // On a phone the covers run edge to edge with the product grid's 2px seam, the way the
+        // homepage stacks its collection banners; the shell's gutter would cost each 16:9 cover a
+        // seventh of its height. From `md` they sit in the container, two across.
+        <div className="-mx-6 mt-6 grid grid-cols-1 gap-[2px] md:mx-0 md:mt-8 md:grid-cols-2 md:gap-6 lg:gap-8">
           {data.collections.map((collection) =>
             collection.heroImageUrl ? (
               <article
                 key={collection.slug}
-                className="group relative aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#FAF7F2] shadow-sm transition-all duration-500 hover:shadow-xl"
+                className={`group relative isolate aspect-[16/9] overflow-hidden bg-[var(--stone)] ${CARD_LAYOUT}`}
               >
+                {/* Behind the copy (`-z-10` inside the isolated card) rather than the copy lifted
+                    over it, so the card -- not the copy box -- is what the CTA's stretched hit area
+                    covers. */}
                 <div
                   data-collection-card-media=""
-                  className="absolute inset-0"
+                  className="absolute inset-0 -z-10"
                 >
                   <Image
                     src={collection.heroImageUrl}
@@ -51,30 +89,24 @@ function render(data: CollectionsRouteData) {
                   />
                 </div>
 
-                {/* Accessible title for screen readers / WCAG */}
+                {/* The cover photograph carries the collection's name (owner decision), so the title
+                    is for screen readers only and is not printed a second time over it. */}
                 <h2 className="sr-only">{collection.title}</h2>
 
-                {/* Gentle bottom-only vignette to anchor the artistic CTA */}
+                {/* Gentle bottom-only vignette under the light CTA */}
                 <div
                   aria-hidden="true"
-                  className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/35 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/45"
+                  className="absolute inset-x-0 bottom-0 -z-10 h-1/3 bg-gradient-to-t from-black/45 via-black/10 to-transparent transition-opacity duration-300 group-hover:from-black/55"
                 />
 
-                <div className="relative z-10 flex h-full flex-col justify-end p-5 sm:p-7 lg:p-8">
-                  <div>
-                    <Link
-                      href={`/collections/${collection.slug}`}
-                      className="collection-card-cta"
-                    >
-                      Khám phá bộ sưu tập ↗
-                    </Link>
-                  </div>
+                <div className="flex h-full flex-col items-center justify-end px-5 pb-2 sm:pb-5 lg:pb-6">
+                  <CollectionCardCta collection={collection} />
                 </div>
               </article>
             ) : (
               <article
                 key={collection.slug}
-                className="group relative flex min-h-72 flex-col justify-between overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[var(--paper)] p-8 shadow-sm transition-shadow duration-300 hover:shadow-md md:p-10"
+                className={`group relative flex min-h-[56.25vw] flex-col justify-between overflow-hidden border-y border-[#2A1810]/10 bg-[var(--cream)] p-6 transition-colors duration-300 hover:bg-[var(--paper)] md:min-h-72 md:border md:p-10 ${CARD_LAYOUT}`}
               >
                 <div
                   data-collection-card-media=""
@@ -87,13 +119,8 @@ function render(data: CollectionsRouteData) {
                     {collection.title}
                   </h2>
                 </div>
-                <div className="mt-8">
-                  <Link
-                    href={`/collections/${collection.slug}`}
-                    className="collection-card-cta"
-                  >
-                    Khám phá bộ sưu tập ↗
-                  </Link>
+                <div className="mt-6 md:mt-8">
+                  <CollectionCardCta collection={collection} tone="ink" />
                 </div>
               </article>
             ),

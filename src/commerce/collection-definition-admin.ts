@@ -9,8 +9,10 @@ import {
 const MAX_INTEGER_ID = 2_147_483_647;
 const CATEGORY_ID_PATTERN = /^[0-9]+$/;
 const HOMEPAGE_POSITION_PATTERN = /^[1-6]$/;
+const INDEX_POSITION_PATTERN = /^[1-9][0-9]?$/;
 const MAX_CATEGORY_CSV_LENGTH = COLLECTION_DEFINITION_LIMITS.pancakeCategoryCount * 12;
 const INVALID_HOMEPAGE_POSITION = Symbol("invalid-homepage-position");
+const INVALID_INDEX_POSITION = Symbol("invalid-index-position");
 
 type AdminSessionCandidate =
   | {
@@ -67,6 +69,14 @@ function parseHomepagePosition(value: unknown): number | null | typeof INVALID_H
   return Number(value);
 }
 
+function parseIndexPosition(value: unknown): number | null | typeof INVALID_INDEX_POSITION {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== "string") return INVALID_INDEX_POSITION;
+  const trimmed = value.trim();
+  if (trimmed === "") return null;
+  return INDEX_POSITION_PATTERN.test(trimmed) ? Number(trimmed) : INVALID_INDEX_POSITION;
+}
+
 function parseCategoryIdsCsv(value: unknown): number[] | null {
   if (value === undefined || value === null || value === "") return [];
   if (typeof value !== "string" || value.length > MAX_CATEGORY_CSV_LENGTH) return null;
@@ -94,10 +104,12 @@ function parseAdminInput(input: unknown, slugOverride?: SlugOverride): Collectio
   const record = input as Record<string, unknown>;
   const isPublished = parsePublicationCheckbox(record.isPublished);
   const homepagePosition = parseHomepagePosition(record.homepagePosition);
+  const indexPosition = parseIndexPosition(record.indexPosition);
   const pancakeCategoryIds = parseCategoryIdsCsv(record.pancakeCategoryIds);
   if (
     isPublished === null ||
     homepagePosition === INVALID_HOMEPAGE_POSITION ||
+    indexPosition === INVALID_INDEX_POSITION ||
     pancakeCategoryIds === null
   ) {
     return null;
@@ -112,6 +124,7 @@ function parseAdminInput(input: unknown, slugOverride?: SlugOverride): Collectio
       seoDescription: record.seoDescription,
       isPublished,
       homepagePosition,
+      indexPosition,
       pancakeCategoryIds,
     });
   } catch (error) {

@@ -68,6 +68,7 @@ test("collection admin normalizes browser form values and persists through the r
       seoDescription: "Everyday menswear essentials.",
       isPublished: true,
       homepagePosition: 2,
+      indexPosition: null,
       pancakeCategoryIds: [7, 42],
     },
   ]);
@@ -108,6 +109,7 @@ test("collection admin keeps publication and homepage merchandising opt-in by de
       seoDescription: null,
       isPublished: false,
       homepagePosition: null,
+      indexPosition: null,
       pancakeCategoryIds: [],
     },
   ]);
@@ -127,6 +129,10 @@ test("collection admin rejects malformed checkbox, homepage position and categor
     { ...validInput(), homepagePosition: "0" },
     { ...validInput(), homepagePosition: "7" },
     { ...validInput(), homepagePosition: "1.5" },
+    { ...validInput(), indexPosition: "0" },
+    { ...validInput(), indexPosition: "100" },
+    { ...validInput(), indexPosition: "1.5" },
+    { ...validInput(), indexPosition: "-3" },
     { ...validInput(), pancakeCategoryIds: "7,,42" },
     { ...validInput(), pancakeCategoryIds: "7, 7" },
     { ...validInput(), pancakeCategoryIds: "1.5" },
@@ -198,6 +204,7 @@ test("collection admin update treats the target as untrusted and never falls bac
       seoDescription: "Everyday menswear essentials.",
       isPublished: true,
       homepagePosition: 2,
+      indexPosition: null,
       pancakeCategoryIds: [7, 42],
     },
   });
@@ -208,4 +215,22 @@ test("collection admin update treats the target as untrusted and never falls bac
     reason: "INVALID_INPUT",
   });
   assert.deepEqual(creates, []);
+});
+
+test("collection admin takes an optional /collections index position from 1 through 99", async () => {
+  const writes: { indexPosition: number | null }[] = [];
+  const service = createCollectionDefinitionAdminService({
+    async saveDefinition(definition) {
+      writes.push(definition);
+      return definition;
+    },
+  });
+
+  for (const indexPosition of ["1", " 12 ", "99", "", undefined]) {
+    assert.equal((await service.save(adminSession, { ...validInput(), indexPosition })).ok, true);
+  }
+  assert.deepEqual(
+    writes.map((definition) => definition.indexPosition),
+    [1, 12, 99, null, null],
+  );
 });

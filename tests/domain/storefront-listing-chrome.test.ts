@@ -370,6 +370,16 @@ test("collections stays an aggregate index with an honest empty state", () => {
     /special-deals/,
     "special-deals is filtered out from the aggregate collections landing index",
   );
+  assert.match(
+    route,
+    /withStory: true/,
+    "a collection whose own page 404s gets no card, excluded in the query so the cap counts cards",
+  );
+  assert.match(
+    route,
+    /filter\(isCollectionRouteReachable\)/,
+    "the route's own reachability rule has the last word on what the index links to",
+  );
   assert.ok(
     !/placeholder|sample|demo|fake/i.test(page),
     "no placeholder collection may be rendered",

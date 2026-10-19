@@ -88,6 +88,10 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
 
   const loginPath = ["", "login"].join("/");
   const primary = NAVIGATION.primary as readonly HierarchicalNavigationLink[];
+  // The primary item the shopper is in: "page" on its own listing, "true" anywhere beneath it (a
+  // collection under Bộ sưu tập, a subcategory under Áo dài), so the menu says where they are.
+  const currentFor = (href: string): "page" | "true" | undefined =>
+    pathname === href ? "page" : pathname.startsWith(`${href}/`) ? "true" : undefined;
   const mobileUtility = NAVIGATION.mobileUtility;
 
   const closeCartDrawer = () => setCartDrawerOpen(false);
@@ -275,7 +279,8 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                 <div className="flex items-center gap-1">
                   <Link
                     href={item.href}
-                    className={`py-2 transition-colors hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219] ${
+                    aria-current={currentFor(item.href)}
+                    className={`desktop-nav__link py-2 transition-colors hover:text-[#2A1810] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#3B2219] ${
                       isSaleItem ? "text-amber-800 font-semibold" : ""
                     }`}
                   >
@@ -496,6 +501,7 @@ export function SiteHeader({ model }: Readonly<{ model?: SiteHeaderModel }>) {
                       <Link
                         href={item.href}
                         onClick={closeMobileNav}
+                        aria-current={currentFor(item.href)}
                         className="mobile-menu__link"
                       >
                         {item.label}

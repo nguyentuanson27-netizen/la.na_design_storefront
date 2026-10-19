@@ -284,7 +284,7 @@ test("U1b collections listing uses Vietnamese functional copy", async () => {
   // unchanged, and the ban list below is untouched.
   for (const expected of [
     'title="Bộ sưu tập"',
-    "Khám phá bộ sưu tập ↗",
+    "Khám phá\n",
     "Bộ sưu tập hiện tại",
     "Các bộ sưu tập đang được chuẩn bị.",
     "Bộ sưu tập sẽ xuất hiện tại đây khi sẵn sàng.",

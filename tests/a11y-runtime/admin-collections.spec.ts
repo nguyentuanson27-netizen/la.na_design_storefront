@@ -197,6 +197,7 @@ test("admin can maintain canonical collections with accessible success and error
   await page.getByLabel("SEO description").fill("Accessible collection maintenance runtime.");
   await page.getByLabel("Pancake category IDs").fill("42, 7");
   await page.getByLabel("Vị trí trên trang chủ").selectOption("2");
+  await page.getByLabel("Thứ tự trên trang Bộ sưu tập").fill("3");
 
   await page.getByRole("button", { name: "Lưu collection" }).first().click();
   await page.waitForURL(
@@ -212,6 +213,7 @@ test("admin can maintain canonical collections with accessible success and error
       title: true,
       isPublished: true,
       homepagePosition: true,
+      indexPosition: true,
       pancakeCategoryIds: true,
     },
   });
@@ -219,6 +221,7 @@ test("admin can maintain canonical collections with accessible success and error
     title: "City Uniform Runtime",
     isPublished: false,
     homepagePosition: 2,
+    indexPosition: 3,
     pancakeCategoryIds: [7, 42],
   });
 

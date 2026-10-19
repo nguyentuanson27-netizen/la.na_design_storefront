@@ -18,6 +18,7 @@ const collectionSelect = {
   seoDescription: true,
   isPublished: true,
   homepagePosition: true,
+  indexPosition: true,
   pancakeCategoryIds: true,
 } as const;
 
@@ -130,11 +131,27 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     });
   }
 
-  async function listPublished(limit: number) {
+  /**
+   * Published definitions in the `/collections` index order. The page's own exclusions are applied
+   * in the query rather than after it, so `limit` counts collections the caller will actually
+   * show: filtering a capped read would let excluded rows ahead of position `limit` push real ones
+   * off the end. `withStory` keeps the definitions whose own route renders (a published one with no
+   * description 404s); admin saves descriptions trimmed, so "not null and not empty" is that rule.
+   */
+  async function listPublished(
+    limit: number,
+    options: Readonly<{ excludeSlugs?: readonly string[]; withStory?: boolean }> = {},
+  ) {
+    const { excludeSlugs = [], withStory = false } = options;
     const definitions = await client.collectionDefinition.findMany({
-      where: { isPublished: true },
+      where: {
+        isPublished: true,
+        ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
+        ...(withStory ? { description: { not: null }, NOT: { description: "" } } : {}),
+      },
       take: parseCollectionListLimit(limit),
-      orderBy: { slug: "asc" },
+      // The merchandiser's order first; collections with no position follow, alphabetically.
+      orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
       select: publicCollectionSelect,
     });
     return definitions.map(withStorefrontTitle);

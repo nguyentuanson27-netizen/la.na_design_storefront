@@ -26,6 +26,7 @@ test("P7 keeps collection identity and publication state website-owned", () => {
     seoDescription: "Khám phá bộ sưu tập áo sơ mi nam của LA Clothing.",
     isPublished: true,
     homepagePosition: null,
+    indexPosition: null,
     pancakeCategoryIds: [7, 42],
   });
 });
@@ -122,6 +123,26 @@ test("U2 fails closed on homepage merchandising positions outside 1 through 6", 
         }),
       (error: unknown) =>
         error instanceof CollectionDefinitionError && error.reason === "collection-homepage-position",
+    );
+  }
+});
+
+test("the /collections index position is optional, 1 through 99, and may be shared", () => {
+  const base = {
+    slug: "index-position",
+    title: "Index position",
+    description: "Published collection.",
+    isPublished: true,
+  };
+  assert.equal(parseCollectionDefinition(base).indexPosition, null);
+  for (const indexPosition of [1, 50, 99]) {
+    assert.equal(parseCollectionDefinition({ ...base, indexPosition }).indexPosition, indexPosition);
+  }
+  for (const indexPosition of [0, 100, 1.5, "1"]) {
+    assert.throws(
+      () => parseCollectionDefinition({ ...base, indexPosition }),
+      (error: unknown) =>
+        error instanceof CollectionDefinitionError && error.reason === "collection-index-position",
     );
   }
 });
