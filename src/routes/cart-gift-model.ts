@@ -1,3 +1,4 @@
+import { compareClothingSizes } from "../commerce/clothing-size.ts";
 import { parseTrustedProductImageUrl } from "../commerce/product-media.ts";
 import type { CartGiftState } from "../commerce/cart-gift-selection.ts";
 import type { GiftSelectionError } from "../commerce/gift-quantity-entitlement.ts";
@@ -25,6 +26,28 @@ const repairText: Record<GiftSelectionError, string> = {
   DUPLICATE_PRODUCT_NOT_ALLOWED: "Nhóm quà này có mẫu được chọn nhiều lần. Mỗi mẫu chỉ được nhận một lần; hãy giảm hoặc bỏ lựa chọn trùng trong nhóm.",
   OUT_OF_STOCK: "Phiên bản quà này không còn số lượng có thể cấp. Hãy bỏ lựa chọn cũ rồi chọn lại.",
 };
+
+/**
+ * A product's gift options in the order a shopper reads them: grouped by colour, and within a
+ * colour the sizes run XS → S → M → L → XL → 2XL, the same comparison the product page uses.
+ * Storage order (L, M, S, XL) is not an order anyone shops in, and it is not even stable: a
+ * campaign's gift options are read without an order and carry no position, so colours sort by
+ * name (Vietnamese collation) and the variant id breaks any remaining tie. The result depends only
+ * on the options, never on the order the database returned them in.
+ */
+function orderGiftOptions<T extends { variantId: string }>(
+  options: readonly T[],
+  labelByVariant: ReadonlyMap<string, { color?: string | null; size?: string | null }>,
+): T[] {
+  const colorOf = (option: T) => labelByVariant.get(option.variantId)?.color ?? "";
+  const sizeOf = (option: T) => labelByVariant.get(option.variantId)?.size ?? "";
+  return [...options].sort(
+    (a, b) =>
+      colorOf(a).localeCompare(colorOf(b), "vi", { sensitivity: "base" }) ||
+      compareClothingSizes(sizeOf(a), sizeOf(b)) ||
+      (a.variantId < b.variantId ? -1 : a.variantId > b.variantId ? 1 : 0),
+  );
+}
 
 export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerModel {
   const labelByVariant = new Map(state.labels.map((label) => [label.variantId, label]));
@@ -86,7 +109,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
       return { campaignId: entry.campaignId, revision: entry.revision, earned: entry.earned, entitled: entry.entitled, selected,
         unclaimed: Math.max(0, entry.entitled - selected), selectable: summary ? summary.skippedWhileAvailable + summary.contendedForSharedStock : null, contendedSlots: summary?.contendedForSharedStock ?? 0, unavailableSlots, shortageText, allowDuplicateGifts: campaign.allowDuplicateGifts,
         shortfallText: shortfall?.quantity ? `Mua thêm ${shortfall.quantity} sản phẩm phù hợp để đạt mốc quà tiếp theo.` : shortfall?.subtotalVnd ? `Mua thêm ${currency.format(shortfall.subtotalVnd)} để đạt mốc quà tiếp theo.` : null,
-        products: [...products.values()] };
+        products: [...products.values()].map((product) => ({ ...product, options: orderGiftOptions(product.options, labelByVariant) })) };
     }),
   };
 }

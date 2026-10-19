@@ -159,6 +159,7 @@ test("the /collections index lists by indexPosition, unset ones last, then by sl
 test("the index's exclusions run in the query, so rows they drop never use up the cap", async () => {
   // More excluded rows than the cap, all ordered ahead of the one card that should show. A read
   // capped at 50 and filtered afterwards would return 50 excluded rows and lose the real card.
+  // The whitespace-only rows alone span two pages of 50, so the read has to continue past them.
   await prisma.collectionDefinition.createMany({
     data: [
       ...Array.from({ length: 30 }, (_, index) => ({
@@ -175,6 +176,15 @@ test("the index's exclusions run in the query, so rows they drop never use up th
         isPublished: true,
         indexPosition: 1,
       })),
+      // Whitespace-only stories SQL cannot tell from real ones: admin trims, but a legacy or
+      // hand-written row may not have been. More of them than the cap, still ahead of the card.
+      ...Array.from({ length: 55 }, (_, index) => ({
+        slug: `p7-repo-space-${String(index).padStart(2, "0")}`,
+        title: "Whitespace story",
+        description: index % 2 === 0 ? "   " : "\n\t ",
+        isPublished: true,
+        indexPosition: 1,
+      })),
       { slug: "p7-repo-hidden", title: "Hidden", description: "Story.", isPublished: true, indexPosition: 1 },
       { slug: "p7-repo-shown", title: "Shown", description: "Story.", isPublished: true, indexPosition: 2 },
     ],
@@ -186,7 +196,128 @@ test("the index's exclusions run in the query, so rows they drop never use up th
   });
   const ours = listed.filter(({ slug }) => slug.startsWith("p7-repo-")).map(({ slug }) => slug);
   assert.deepEqual(ours, ["p7-repo-shown"]);
-  assert.ok(listed.every(({ description }) => typeof description === "string" && description.length > 0));
+  assert.ok(listed.every(({ description }) => Boolean(description?.trim())));
+});
+
+test("reading past whitespace-only stories still stops at the cap, in index order", async () => {
+  await prisma.collectionDefinition.createMany({
+    data: [
+      { slug: "p7-repo-cap-a", title: "A", description: "Story.", isPublished: true, indexPosition: 3 },
+      { slug: "p7-repo-cap-b", title: "B", description: "  ", isPublished: true, indexPosition: 1 },
+      { slug: "p7-repo-cap-c", title: "C", description: "Story.", isPublished: true, indexPosition: 2 },
+      { slug: "p7-repo-cap-d", title: "D", description: "\t", isPublished: true, indexPosition: 2 },
+      { slug: "p7-repo-cap-e", title: "E", description: "Story.", isPublished: true, indexPosition: 4 },
+    ],
+  });
+
+  // A cap this small counts every published row in a shared database, so everything this test did
+  // not seed is excluded; what is left is exactly the five rows above.
+  const others = await prisma.collectionDefinition.findMany({
+    where: { isPublished: true, NOT: { slug: { startsWith: "p7-repo-cap-" } } },
+    select: { slug: true },
+  });
+
+  // A page of two holds only blanks at first, so the read has to continue, and must then stop at
+  // two cards even though a third valid one follows.
+  const listed = await repository.listPublished(2, {
+    excludeSlugs: others.map(({ slug }) => slug),
+    withStory: true,
+  });
+  assert.deepEqual(
+    listed.map(({ slug }) => slug),
+    ["p7-repo-cap-c", "p7-repo-cap-a"],
+  );
+});
+
+test("blank stories are excluded in SQL: the index reads the database twice, however many there are", async () => {
+  // Every database call the repository makes, counted: the model delegate's methods and raw SQL.
+  let reads = 0;
+  const counting = (target: object) =>
+    new Proxy(target, {
+      get(object, property) {
+        const value = Reflect.get(object, property);
+        if (typeof value !== "function") return value;
+        return (...args: unknown[]) => {
+          reads += 1;
+          return Reflect.apply(value, object, args);
+        };
+      },
+    });
+  const countedClient = new Proxy(prisma, {
+    get(client, property) {
+      if (property === "collectionDefinition") return counting(client.collectionDefinition);
+      if (property === "$queryRaw") {
+        return (...args: unknown[]) => {
+          reads += 1;
+          return Reflect.apply(client.$queryRaw, client, args);
+        };
+      }
+      return Reflect.get(client, property);
+    },
+  });
+  const countedRepository = createCollectionDefinitionRepository(countedClient);
+
+  // More than two pages of blank stories, all ordered ahead of the one card that should show.
+  await prisma.collectionDefinition.createMany({
+    data: [
+      ...Array.from({ length: 120 }, (_, index) => ({
+        slug: `p7-repo-reads-${String(index).padStart(3, "0")}`,
+        title: "Blank story",
+        description: [" ", "   ", "\n\t "][index % 3],
+        isPublished: true,
+        indexPosition: 1,
+      })),
+      { slug: "p7-repo-reads-shown", title: "Shown", description: "Story.", isPublished: true, indexPosition: 2 },
+    ],
+  });
+
+  const listed = await countedRepository.listPublished(50, { excludeSlugs: [], withStory: true });
+  assert.ok(listed.some(({ slug }) => slug === "p7-repo-reads-shown"));
+  assert.ok(listed.every(({ slug }) => !/^p7-repo-reads-\d/.test(slug)));
+  assert.equal(reads, 2, "one query picks the page's slugs, one reads their fields");
+});
+
+test("the index's story test agrees with the route's trim() on Unicode whitespace", async () => {
+  // Each description is listed exactly when `description.trim()` keeps something, which is the
+  // route's reachability rule. NBSP and BOM are the cases a locale-dependent `\S` got wrong.
+  const samples = {
+    nbsp: "\u00a0",
+    bom: "\ufeff",
+    ideographic: "\u3000",
+    emSpace: "\u2003",
+    lineSeparator: "\u2028",
+    mixed: " \t\n\r\v\f\u00a0\ufeff",
+    zeroWidth: "\u200b",
+    nextLine: "\u0085",
+    text: "Story.",
+    paddedText: "\u00a0Story.\ufeff",
+  };
+  const entries = Object.entries(samples);
+  await prisma.collectionDefinition.createMany({
+    data: entries.map(([name, description]) => ({
+      slug: `p7-repo-unicode-${name.toLowerCase()}`,
+      title: name,
+      description,
+      isPublished: true,
+      indexPosition: 1,
+    })),
+  });
+  const others = await prisma.collectionDefinition.findMany({
+    where: { isPublished: true, NOT: { slug: { startsWith: "p7-repo-unicode-" } } },
+    select: { slug: true },
+  });
+
+  const listed = await repository.listPublished(50, {
+    excludeSlugs: others.map(({ slug }) => slug),
+    withStory: true,
+  });
+  assert.deepEqual(
+    listed.map(({ slug }) => slug).sort(),
+    entries
+      .filter(([, description]) => description.trim().length > 0)
+      .map(([name]) => `p7-repo-unicode-${name.toLowerCase()}`)
+      .sort(),
+  );
 });
 
 test("P7 public repository reads expose only published allowlisted definition fields", async () => {

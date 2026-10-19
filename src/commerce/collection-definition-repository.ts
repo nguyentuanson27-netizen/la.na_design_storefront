@@ -10,6 +10,17 @@ import {
 
 const MAX_COLLECTION_LIST = 100;
 
+/**
+ * "Has a character `String.prototype.trim()` would keep", as a PostgreSQL regex: any character
+ * outside ECMAScript's WhiteSpace and LineTerminator set. The route decides reachability with
+ * `description.trim()`, so the index query has to draw the line in the same place. Postgres's own
+ * `\S` does not: it follows the database's locale, and under C.UTF-8 it counts a no-break space
+ * (U+00A0, common in pasted copy) or a byte-order mark (U+FEFF) as text, which `trim()` strips.
+ * Spelling the set out makes the two agree on every locale.
+ */
+const HAS_TEXT_PATTERN =
+  "[^\\t\\n\\v\\f\\r \\u00a0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000\\ufeff]";
+
 const collectionSelect = {
   slug: true,
   title: true,
@@ -132,29 +143,59 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
   }
 
   /**
-   * Published definitions in the `/collections` index order. The page's own exclusions are applied
-   * in the query rather than after it, so `limit` counts collections the caller will actually
-   * show: filtering a capped read would let excluded rows ahead of position `limit` push real ones
-   * off the end. `withStory` keeps the definitions whose own route renders (a published one with no
-   * description 404s); admin saves descriptions trimmed, so "not null and not empty" is that rule.
+   * Published definitions in the `/collections` index order, up to `limit` of them.
+   *
+   * The page's exclusions never use up the cap: filtering one capped read would let excluded rows
+   * ahead of position `limit` push real collections off the end. `excludeSlugs` are excluded in
+   * the query. `withStory` means a description with a non-whitespace character, which a published
+   * definition needs for its own route to render; Prisma's filters cannot express that (admin
+   * trims on save, but a legacy or hand-written row of spaces may exist), so it is decided in SQL:
+   * one query picks the page's slugs, already ordered and capped, and a second reads their fields.
+   * Two reads however many blank rows there are, and `limit` bounds both.
    */
   async function listPublished(
     limit: number,
     options: Readonly<{ excludeSlugs?: readonly string[]; withStory?: boolean }> = {},
   ) {
+    const take = parseCollectionListLimit(limit);
     const { excludeSlugs = [], withStory = false } = options;
+
+    if (!withStory) {
+      const definitions = await client.collectionDefinition.findMany({
+        where: {
+          isPublished: true,
+          ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
+        },
+        take,
+        // The merchandiser's order first; collections with no position follow, alphabetically.
+        orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
+        select: publicCollectionSelect,
+      });
+      return definitions.map(withStorefrontTitle);
+    }
+
+    // The same order as above, in SQL; NULL fails the story test.
+    const page = await client.$queryRaw<{ slug: string }[]>`
+      SELECT "slug" FROM "CollectionDefinition"
+      WHERE "isPublished" = true
+        AND "slug" <> ALL(${[...excludeSlugs]}::text[])
+        AND "description" ~ ${HAS_TEXT_PATTERN}
+      ORDER BY "indexPosition" ASC NULLS LAST, "slug" ASC
+      LIMIT ${take}
+    `;
+    if (page.length === 0) return [];
+
+    const slugs = page.map(({ slug }) => slug);
     const definitions = await client.collectionDefinition.findMany({
-      where: {
-        isPublished: true,
-        ...(excludeSlugs.length > 0 ? { slug: { notIn: [...excludeSlugs] } } : {}),
-        ...(withStory ? { description: { not: null }, NOT: { description: "" } } : {}),
-      },
-      take: parseCollectionListLimit(limit),
-      // The merchandiser's order first; collections with no position follow, alphabetically.
-      orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
+      where: { isPublished: true, slug: { in: slugs } },
       select: publicCollectionSelect,
     });
-    return definitions.map(withStorefrontTitle);
+    const bySlug = new Map(definitions.map((definition) => [definition.slug, definition]));
+    // A row unpublished between the two reads is simply left out.
+    return slugs.flatMap((slug) => {
+      const definition = bySlug.get(slug);
+      return definition ? [withStorefrontTitle(definition)] : [];
+    });
   }
 
   async function listHomepageMerchandising() {

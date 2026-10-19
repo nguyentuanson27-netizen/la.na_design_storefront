@@ -217,3 +217,54 @@ test("F2: real validator aggregate failures preserve every member of the repair 
     assert.deepEqual(model.repairGroups![0].selectionKeys, selections.map(row => `${row.campaignId}/${row.variantId}`));
   }
 });
+
+test("gift options read S → M → L → XL within a colour, whatever order the campaign stores them in", () => {
+  // The storage order the picker used to show verbatim: L, M, S, XL, with a second colour mixed in.
+  const stored = [
+    ["v-l", "Trắng", "L"], ["v-m", "Trắng", "M"], ["v-s", "Trắng", "S"], ["v-xl", "Trắng", "XL"],
+    ["v-black-xl", "Đen", "XL"], ["v-black-s", "Đen", "S"],
+  ] as const;
+  const s = {
+    ...state(),
+    labels: stored.map(([variantId, color, size]) => ({
+      variantId, productId: "sv124", productName: "Áo SV124", optionLabel: `${color} / ${size}`, color, size,
+    })),
+    campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: stored.map(([variantId]) => ({
+      variantId, productId: "sv124", composite: false, readyAvailable: 3,
+    })) }],
+    selections: [],
+    validation: { ok: true, issues: [], summaries: [] },
+  } as unknown as CartGiftState;
+
+  const [product] = buildCartGiftPickerModel(s).campaigns[0]!.products;
+  // Colours by name (Vietnamese collation: Đ after D, before T), sizes in shopping order within each.
+  assert.deepEqual(
+    product!.options.map((option) => option.label),
+    ["Đen / S", "Đen / XL", "Trắng / S", "Trắng / M", "Trắng / L", "Trắng / XL"],
+  );
+});
+
+test("gift option order depends only on the options, not on the order the campaign returns them", () => {
+  // Gift options are read without an ORDER BY, so the same campaign can arrive in any order.
+  const variants = [
+    ["v1", "Trắng", "L"], ["v2", "Be", "M"], ["v3", "Trắng", "S"], ["v4", "Đen", "XL"],
+    ["v5", "Be", "S"], ["v6", "Đen", "M"], ["v7", "Trắng", "M"],
+  ] as const;
+  const modelFor = (order: readonly (typeof variants)[number][]) =>
+    buildCartGiftPickerModel({
+      ...state(),
+      labels: order.map(([variantId, color, size]) => ({
+        variantId, productId: "p", productName: "Áo", optionLabel: `${color} / ${size}`, color, size,
+      })),
+      campaigns: [{ id: "campaign", allowDuplicateGifts: false, options: order.map(([variantId]) => ({
+        variantId, productId: "p", composite: false, readyAvailable: 1,
+      })) }],
+      selections: [],
+      validation: { ok: true, issues: [], summaries: [] },
+    } as unknown as CartGiftState).campaigns[0]!.products[0]!.options.map((option) => option.label);
+
+  const expected = ["Be / S", "Be / M", "Đen / M", "Đen / XL", "Trắng / S", "Trắng / M", "Trắng / L"];
+  assert.deepEqual(modelFor(variants), expected);
+  assert.deepEqual(modelFor([...variants].reverse()), expected);
+  assert.deepEqual(modelFor([variants[3], variants[6], variants[1], variants[0], variants[5], variants[2], variants[4]]), expected);
+});
