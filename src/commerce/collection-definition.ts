@@ -9,6 +9,7 @@ export const COLLECTION_DEFINITION_LIMITS = {
   seoDescription: 2_000,
   pancakeCategoryCount: 100,
   homepagePosition: 6,
+  indexPosition: 99,
 } as const;
 
 export type CollectionDefinitionReason =
@@ -20,6 +21,7 @@ export type CollectionDefinitionReason =
   | "collection-seo-description"
   | "collection-publish-state"
   | "collection-homepage-position"
+  | "collection-index-position"
   | "collection-pos-category";
 
 export class CollectionDefinitionError extends Error {
@@ -40,6 +42,8 @@ export type CollectionDefinition = {
   seoDescription: string | null;
   isPublished: boolean;
   homepagePosition: number | null;
+  /** Place on the `/collections` index, 1 first. Unlike a homepage slot, two may share one. */
+  indexPosition: number | null;
   pancakeCategoryIds: number[];
 };
 
@@ -69,6 +73,18 @@ function parseHomepagePosition(value: unknown): number | null {
     (value as number) > COLLECTION_DEFINITION_LIMITS.homepagePosition
   ) {
     throw new CollectionDefinitionError("collection-homepage-position");
+  }
+  return value as number;
+}
+
+function parseIndexPosition(value: unknown): number | null {
+  if (value === undefined || value === null || value === "") return null;
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < 1 ||
+    (value as number) > COLLECTION_DEFINITION_LIMITS.indexPosition
+  ) {
+    throw new CollectionDefinitionError("collection-index-position");
   }
   return value as number;
 }
@@ -118,6 +134,7 @@ export function parseCollectionDefinition(input: unknown): CollectionDefinition 
     seoDescription,
     isPublished,
     homepagePosition: parseHomepagePosition(record.homepagePosition),
+    indexPosition: parseIndexPosition(record.indexPosition),
     pancakeCategoryIds: parsePancakeCategoryIds(record.pancakeCategoryIds),
   };
 }

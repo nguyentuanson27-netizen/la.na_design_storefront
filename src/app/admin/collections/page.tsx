@@ -41,6 +41,7 @@ function mutableCollectionInput(formData: FormData) {
     seoDescription: formData.get("seoDescription"),
     isPublished: formData.get("isPublished"),
     homepagePosition: formData.get("homepagePosition"),
+    indexPosition: formData.get("indexPosition"),
     pancakeCategoryIds: formData.get("pancakeCategoryIds"),
   };
 }
@@ -198,6 +199,25 @@ function CollectionForm({ definition, action }: CollectionFormProps) {
           </select>
           <span className="mt-2 block text-xs leading-5 text-black/55">
             Chỉ collection đã publish và có vị trí 1–6 mới xuất hiện. Mỗi vị trí chỉ thuộc một collection.
+          </span>
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-semibold uppercase tracking-[0.13em]">
+            Thứ tự trên trang Bộ sưu tập
+          </span>
+          <input
+            className={inputClassName}
+            defaultValue={definition?.indexPosition?.toString() ?? ""}
+            inputMode="numeric"
+            max={COLLECTION_DEFINITION_LIMITS.indexPosition}
+            min={1}
+            name="indexPosition"
+            placeholder="1"
+            type="number"
+          />
+          <span className="mt-2 block text-xs leading-5 text-black/55">
+            Số nhỏ đứng trước (1–{COLLECTION_DEFINITION_LIMITS.indexPosition}). Để trống thì xếp sau các collection có số, theo slug.
           </span>
         </label>
 
@@ -373,6 +393,11 @@ export default async function AdminCollectionsPage({ searchParams }: AdminCollec
                   {definition.homepagePosition !== null ? (
                     <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
                       Trang chủ #{definition.homepagePosition}
+                    </span>
+                  ) : null}
+                  {definition.indexPosition !== null ? (
+                    <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">
+                      Trang Bộ sưu tập #{definition.indexPosition}
                     </span>
                   ) : null}
                   <span className="text-[0.65rem] font-semibold uppercase tracking-[0.14em] text-black/55">

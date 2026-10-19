@@ -18,6 +18,7 @@ const collectionSelect = {
   seoDescription: true,
   isPublished: true,
   homepagePosition: true,
+  indexPosition: true,
   pancakeCategoryIds: true,
 } as const;
 
@@ -134,7 +135,8 @@ export function createCollectionDefinitionRepository(client: PrismaClient) {
     const definitions = await client.collectionDefinition.findMany({
       where: { isPublished: true },
       take: parseCollectionListLimit(limit),
-      orderBy: { slug: "asc" },
+      // The merchandiser's order first; collections with no position follow, alphabetically.
+      orderBy: [{ indexPosition: { sort: "asc", nulls: "last" } }, { slug: "asc" }],
       select: publicCollectionSelect,
     });
     return definitions.map(withStorefrontTitle);

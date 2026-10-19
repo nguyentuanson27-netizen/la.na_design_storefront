@@ -697,6 +697,72 @@ main nav[aria-label="Breadcrumb"] a {
   background: var(--stone);
 }
 
+/* The collection hero's "Xem sản phẩm" cue: the homepage banner's underlined small caps
+   (`.collection-promo__cta`), centred at the foot of the photograph over a short scrim, so a
+   shopper landing on a screen-filling cover can see the page goes on. */
+.collection-page-hero__scrim {
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 1;
+  height: 28%;
+  background: linear-gradient(to top, rgb(0 0 0 / 40%), rgb(0 0 0 / 0%));
+  pointer-events: none;
+}
+
+.collection-page-hero__cue {
+  position: absolute;
+  z-index: 2;
+  bottom: clamp(1.25rem, 5vh, 3rem);
+  left: 50%;
+  display: inline-flex;
+  min-height: var(--control-height);
+  align-items: center;
+  gap: 0.5rem;
+  transform: translateX(-50%);
+  color: var(--white);
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 1px 8px rgb(0 0 0 / 55%);
+  white-space: nowrap;
+}
+
+/* Only the words are underlined; the bobbing arrow beside them is not. */
+.collection-page-hero__cue-label {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.45em;
+}
+
+.collection-page-hero__cue:focus-visible {
+  outline: 2px solid var(--focus-ring-color, var(--ink));
+  outline-offset: 3px;
+  box-shadow: 0 0 0 3px var(--paper);
+}
+
+.collection-page-hero__cue-arrow {
+  display: inline-block;
+  animation: collection-hero-cue 2.4s ease-in-out infinite;
+}
+
+@keyframes collection-hero-cue {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(0.25rem);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collection-page-hero__cue-arrow {
+    animation: none;
+  }
+}
+
 .home-hero__track,
 .home-hero__slide,
 .home-hero__media {
@@ -1899,6 +1965,15 @@ body:has(.admin-shell) #pancake-chat-plugin-root {
   font-size: 1rem;
   font-weight: 500;
   color: var(--black);
+}
+
+/* The primary item the shopper is in (`aria-current`, set by the header from the pathname): the
+   same hairline underline the listing tabs use for their current tab. */
+.desktop-nav__link[aria-current],
+.mobile-menu__link[aria-current] {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.45em;
 }
 
 .mobile-menu__disclosure {

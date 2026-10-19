@@ -56,12 +56,21 @@ function render(data: CollectionViewModel) {
             alt={data.title}
             preload
           />
+          {/* The hero fills the first screen, so on a phone nothing else says the products are
+              below it. A plain in-page link, in the homepage banner's underlined vocabulary, to the
+              same anchor the homepage hero's CTA lands on. */}
+          <div aria-hidden="true" className="collection-page-hero__scrim" />
+          <a className="collection-page-hero__cue" href={`#${COLLECTION_PRODUCTS_ANCHOR}`}>
+            <span className="collection-page-hero__cue-label">Xem sản phẩm</span>
+            <span aria-hidden="true" className="collection-page-hero__cue-arrow">
+              ↓
+            </span>
+          </a>
         </section>
       ) : null}
 
       <ListingShell>
         <ListingBreadcrumbs
-          className="sr-only"
           items={[
             { label: "Trang chủ", href: "/" },
             { label: "Bộ sưu tập", href: "/collections" },

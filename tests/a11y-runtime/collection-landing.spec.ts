@@ -245,6 +245,10 @@ test("collection with configured hero uses the shared full-bleed header overlay 
   expect(Math.round(box?.width ?? 0)).toBe(390);
   expect(Math.round(box?.height ?? 0)).toBeGreaterThanOrEqual(844);
   await expect(page.getByRole("link", { name: "MUA NGAY" })).toHaveCount(0);
+  // The cover fills the first screen, so it carries an in-page cue to the products below it.
+  const cue = hero.getByRole("link", { name: "Xem sản phẩm", exact: true });
+  await expect(cue).toBeInViewport();
+  await expect(cue).toHaveAttribute("href", "#san-pham");
   await expect.poll(() => requestedHeroSources.includes(mobileHero)).toBe(true);
   expect(requestedHeroSources.includes(desktopHero)).toBe(false);
 

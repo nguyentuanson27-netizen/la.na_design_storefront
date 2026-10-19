@@ -15,7 +15,7 @@ import { buildCollectionsMetadata } from "@/routes/metadata/collections";
  * Markup only. The published collections live in `@/routes/collections`.
  *
  * This is the aggregate collections landing page, not a product listing: it shares the chrome --
- * shell, breadcrumb, eyebrow, serif H1, empty state -- and deliberately not the product grid,
+ * shell, breadcrumb, display H1, empty state -- and deliberately not the product grid,
  * filters or paging. Master spec §10 keeps it as an index, and there are no approved child
  * collections to pad it with.
  */
@@ -25,6 +25,14 @@ type CollectionsRouteProps = Readonly<{
 }>;
 
 type ListedCollection = CollectionsRouteData["collections"][number];
+
+/**
+ * Square, flat cards: the product grid, the gallery and the hero are all unrounded and unshadowed,
+ * and a rounded, lifted card read as a different site. An odd last card on the two-column grid is
+ * centred at one column's width instead of leaving the row's other half empty.
+ */
+const CARD_LAYOUT =
+  "md:last:odd:col-span-2 md:last:odd:w-[calc(50%-0.75rem)] md:last:odd:justify-self-center lg:last:odd:w-[calc(50%-1rem)]";
 
 /**
  * The card's one link, in the homepage banner's vocabulary: an underlined small-caps "Khám phá",
@@ -52,15 +60,18 @@ function render(data: CollectionsRouteData) {
   return (
     <ListingShell>
       <ListingBreadcrumbs items={[{ label: "Trang chủ", href: "/" }, { label: "Bộ sưu tập" }]} />
-      <ListingHeader eyebrow="Tuyển chọn" title="Bộ sưu tập" />
+      <ListingHeader title="Bộ sưu tập" />
 
       {data.collections.length > 0 ? (
-        <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2 lg:gap-8">
+        // On a phone the covers run edge to edge with the product grid's 2px seam, the way the
+        // homepage stacks its collection banners; the shell's gutter would cost each 16:9 cover a
+        // seventh of its height. From `md` they sit in the container, two across.
+        <div className="-mx-6 mt-6 grid grid-cols-1 gap-[2px] md:mx-0 md:mt-8 md:grid-cols-2 md:gap-6 lg:gap-8">
           {data.collections.map((collection) =>
             collection.heroImageUrl ? (
               <article
                 key={collection.slug}
-                className="group relative isolate aspect-[16/9] overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[#FAF7F2] shadow-sm transition-all duration-500 hover:shadow-xl"
+                className={`group relative isolate aspect-[16/9] overflow-hidden bg-[var(--stone)] ${CARD_LAYOUT}`}
               >
                 {/* Behind the copy (`-z-10` inside the isolated card) rather than the copy lifted
                     over it, so the card -- not the copy box -- is what the CTA's stretched hit area
@@ -95,7 +106,7 @@ function render(data: CollectionsRouteData) {
             ) : (
               <article
                 key={collection.slug}
-                className="group relative flex min-h-48 flex-col justify-between overflow-hidden rounded-2xl border border-[#2A1810]/10 bg-[var(--paper)] p-6 shadow-sm transition-shadow duration-300 hover:shadow-md md:min-h-72 md:p-10"
+                className={`group relative flex min-h-[56.25vw] flex-col justify-between overflow-hidden border-y border-[#2A1810]/10 bg-[var(--cream)] p-6 transition-colors duration-300 hover:bg-[var(--paper)] md:min-h-72 md:border md:p-10 ${CARD_LAYOUT}`}
               >
                 <div
                   data-collection-card-media=""
