@@ -62,6 +62,65 @@ test("different gift sets and a standalone child cannot overconsume a shared res
   }
 });
 
+test("two set gifts sharing one component offer only one fulfillable slot before and after choosing a set", () => {
+  const shared = { variantId: "material-x", unitsPerGift: 1, availableUnits: 1 };
+  const campaign = qtyCampaign(1, {
+    allowDuplicateGifts: false,
+    options: [
+      { variantId: "set-a", productId: "set-pa", composite: true, readyAvailable: 1, resourceNeeds: [shared] },
+      { variantId: "set-b", productId: "set-pb", composite: true, readyAvailable: 1, resourceNeeds: [shared] },
+    ],
+  });
+  const entitlement = one(campaign, [paid("cart-item", 2, 100_000)]);
+  assert.equal(entitlement.entitled, 2);
+  assert.equal(entitlement.grantable, 1, "one material-x can assemble only one of the two sets");
+  assert.equal(entitlement.unfulfillableForStock, 1);
+
+  const before = validateGiftSelections({ campaigns: [campaign], entitlements: [entitlement], selection: [] });
+  assert.equal(before.ok, true);
+  if (!before.ok) return;
+  assert.deepEqual(before.summaries[0], {
+    campaignId: "gift-q", revision: 3, entitled: 2, selected: 0, unclaimed: 2,
+    skippedWhileAvailable: 1, shortForStock: 1, contendedForSharedStock: 0, requiresAcknowledgement: true,
+  });
+
+  const selected = [{ campaignId: "gift-q", variantId: "set-a", campaignRevision: 3, quantity: 1 }];
+  const after = validateGiftSelections({ campaigns: [campaign], entitlements: [entitlement], selection: selected });
+  assert.equal(after.ok, true);
+  if (!after.ok) return;
+  assert.deepEqual(after.summaries[0], {
+    campaignId: "gift-q", revision: 3, entitled: 2, selected: 1, unclaimed: 1,
+    skippedWhileAvailable: 0, shortForStock: 1, contendedForSharedStock: 0, requiresAcknowledgement: true,
+  });
+});
+
+test("shared component between separate campaigns is contended before a choice and depleted after it", () => {
+  const shared = { variantId: "material-x", unitsPerGift: 1, availableUnits: 1 };
+  const a = qtyCampaign(1, { id: "gift-a", options: [
+    { variantId: "set-a", productId: "set-pa", composite: true, readyAvailable: 1, resourceNeeds: [shared] },
+  ] });
+  const b = qtyCampaign(1, { id: "gift-b", options: [
+    { variantId: "set-b", productId: "set-pb", composite: true, readyAvailable: 1, resourceNeeds: [shared] },
+  ] });
+  const entitlements = evaluate([a, b], [paid("cart-item", 1, 100_000)]);
+  assert.deepEqual(entitlements.map((entry) => entry.grantable), [1, 1], "each is individually grantable");
+  const before = validateGiftSelections({ campaigns: [b, a], entitlements, selection: [] });
+  assert.equal(before.ok, true);
+  if (!before.ok) return;
+  for (const summary of before.summaries) {
+    assert.deepEqual([summary.skippedWhileAvailable, summary.shortForStock, summary.contendedForSharedStock],
+      [0, 0, 1], "a shared resource is contended, not guaranteed or already exhausted");
+  }
+  const after = validateGiftSelections({
+    campaigns: [a, b], entitlements,
+    selection: [{ campaignId: "gift-a", variantId: "set-a", campaignRevision: 3, quantity: 1 }],
+  });
+  assert.equal(after.ok, true);
+  if (!after.ok) return;
+  const unchosen = after.summaries.find((entry) => entry.campaignId === "gift-b")!;
+  assert.deepEqual([unchosen.skippedWhileAvailable, unchosen.shortForStock, unchosen.contendedForSharedStock], [0, 1, 0]);
+});
+
 test("EX-01: N=2 grants floor(Q/2) slots; boundaries Q=N-1, N, 2N, 2N+1", () => {
   const slots = (q: number) => one(qtyCampaign(2), [paid("a", q, 500_000)]).entitled;
   assert.deepEqual([1, 2, 3, 4, 5, 6].map(slots), [0, 1, 1, 2, 2, 3]);
