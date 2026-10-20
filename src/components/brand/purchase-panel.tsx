@@ -360,16 +360,18 @@ export function PurchasePanelView({
   // One clock per server snapshot, ticking only while something is on Flash Sale. The countdown
   // follows the chosen variant's own campaign and disappears for a variant no Flash Sale prices.
   // It also needs a discount on screen: without a struck price there is no Flash price to time.
+  const urgencySelection = {
+    kindKey: selection.kindKey,
+    variantId: view.selectedVariantId,
+    size: selection.size,
+  };
   const elapsedMs = useElapsedMs(urgency.flash);
-  const flashRemainingMs = resolveFlashRemainingMs(urgency, view.selectedVariantId);
+  const flashRemainingMs = resolveFlashRemainingMs(urgency, urgencySelection);
   const flashClock =
     flashRemainingMs === null || priceDisplay.compareAtText === null
       ? null
       : formatFlashClock(flashRemainingMs - elapsedMs);
-  const lowStockLabel = describeLowStock(urgency, {
-    variantId: view.selectedVariantId,
-    size: selection.size,
-  });
+  const lowStockLabel = describeLowStock(urgency, urgencySelection);
   const mobilePresentation = resolveMobilePurchasePresentation(view, selection);
   const justAdded = message === ADDED_TO_BAG_MESSAGE;
 

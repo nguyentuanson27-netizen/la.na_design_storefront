@@ -5,6 +5,8 @@
  * card's rules or invent its own.
  */
 
+import { COMPOSITE_PARENT_KIND_KEY } from "../../commerce/storefront-projection.ts";
+
 export type ProductUrgency = Readonly<{
   /** `null` when no Flash Sale prices a ready-stock variant of this product. */
   flash: Readonly<{
@@ -30,19 +32,39 @@ export const NO_PRODUCT_URGENCY: ProductUrgency = Object.freeze({
   lowStock: Object.freeze({ total: null, byVariantId: Object.freeze({}) }),
 });
 
+/** What the shopper has chosen so far, as the purchase panel's selection reports it. */
+export type ProductUrgencySelection = Readonly<{
+  /** `null` for a standalone product, or a composite with no kind chosen yet. */
+  kindKey: string | null;
+  /** Set only once the choice resolves to one variant. */
+  variantId: string | null;
+  size: string | null;
+}>;
+
+/**
+ * Whether the selection is within the facts `buildProductUrgency` decided: the product's own parent
+ * variants. A composite's other kinds (a sub-set, a single component) quote their own prices and
+ * stock as soon as the kind is chosen, before any size, so the parent's countdown and "Còn x" must
+ * stop speaking then -- not only once a child variant resolves.
+ */
+function selectionSpeaksForParent(selection: ProductUrgencySelection): boolean {
+  return selection.kindKey === null || selection.kindKey === COMPOSITE_PARENT_KIND_KEY;
+}
+
 /**
  * How long the countdown has left for what the shopper is looking at, measured from the server's
- * request, or `null` for no countdown: nothing on Flash Sale, a chosen variant that is not, or no
- * choice yet while the quoted price is another variant's non-Flash one.
+ * request, or `null` for no countdown: nothing on Flash Sale, a kind other than the parent, a chosen
+ * variant that is not on Flash Sale, or no variant yet while the quoted price is another variant's
+ * non-Flash one.
  */
 export function resolveFlashRemainingMs(
   urgency: ProductUrgency,
-  selectedVariantId: string | null,
+  selection: ProductUrgencySelection,
 ): number | null {
   const { flash } = urgency;
-  if (flash === null) return null;
-  if (selectedVariantId === null) return flash.remainingMs;
-  return flash.remainingMsByVariantId[selectedVariantId] ?? null;
+  if (flash === null || !selectionSpeaksForParent(selection)) return null;
+  if (selection.variantId === null) return flash.remainingMs;
+  return flash.remainingMsByVariantId[selection.variantId] ?? null;
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -87,13 +109,14 @@ export function formatFlashClock(remainingMs: number): FlashClock | null {
  * The one "Còn x" line under the sizes.
  *
  * With a variant chosen it speaks for that variant alone, naming its size when it has one; before
- * that it gives the product's total. A chosen variant with enough stock says nothing, rather than
+ * that it gives the product's total. A composite kind other than the parent says nothing. A chosen variant with enough stock says nothing, rather than
  * falling back to a total that no longer describes what the shopper picked.
  */
 export function describeLowStock(
   urgency: ProductUrgency,
-  selection: Readonly<{ variantId: string | null; size: string | null }>,
+  selection: ProductUrgencySelection,
 ): string | null {
+  if (!selectionSpeaksForParent(selection)) return null;
   if (selection.variantId !== null) {
     const pieces = urgency.lowStock.byVariantId[selection.variantId];
     if (pieces === undefined) return null;

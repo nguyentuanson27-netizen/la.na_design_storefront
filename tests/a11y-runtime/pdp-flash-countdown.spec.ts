@@ -1,7 +1,7 @@
 /**
- * PDP Flash Sale countdown in a real browser: it counts down the price on screen and nothing else,
- * and a server refresh restarts its clock from the new snapshot rather than subtracting the time
- * already spent twice.
+ * PDP Flash Sale countdown and "Còn x" in a real browser: they speak only for the price and the
+ * kind on screen, and a server refresh restarts the clock from the new snapshot rather than
+ * subtracting the time already spent twice.
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -26,6 +26,10 @@ const productExternalId = `pdp-flash-product-${runId}`;
 const slug = `pdp-flash-${runId}`;
 const promotionId = `pdp-flash-promotion-${runId}`;
 const flashId = `pdp-flash-campaign-${runId}`;
+const setSlug = `pdp-flash-set-${runId}`;
+const setFlashId = `pdp-flash-set-campaign-${runId}`;
+const topPromotionId = `pdp-flash-top-promotion-${runId}`;
+const campaignIds = [promotionId, flashId, setFlashId, topPromotionId];
 const HOUR = 60 * 60_000;
 
 let server: ChildProcess | undefined;
@@ -66,9 +70,82 @@ async function stopServer() {
 }
 
 async function cleanup() {
-  await prisma.$executeRaw`DELETE FROM "PromotionTarget" WHERE "campaignId" IN (${promotionId}, ${flashId})`;
-  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" IN (${promotionId}, ${flashId})`;
-  await prisma.productMirror.deleteMany({ where: { pancakeProductId: productExternalId } });
+  await prisma.$executeRaw`DELETE FROM "PromotionTarget" WHERE "campaignId" = ANY(${campaignIds})`;
+  await prisma.$executeRaw`DELETE FROM "PromotionCampaign" WHERE "id" = ANY(${campaignIds})`;
+  await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
+}
+
+/**
+ * A FULL SET on Flash Sale whose top is also sold alone ("ÁO LẺ") through an ordinary promotion.
+ * Each size is assembled from its own pieces, so the set's sizes add up: one set of each is left.
+ */
+async function seedCompositeSet(now: Date) {
+  const product = (externalId: string, productSlug: string, name: string, isActive: boolean) =>
+    prisma.productMirror.create({
+      data: {
+        pancakeShopId: SHOP_ID,
+        pancakeProductId: externalId,
+        slug: productSlug,
+        name,
+        isPresent: true,
+        isActive,
+        syncedAt: now,
+      },
+    });
+  const set = await product(`pdp-flash-set-${runId}`, setSlug, `PDP Flash Full Set ${runId}`, true);
+  const top = await product(`pdp-flash-top-${runId}`, `pdp-flash-top-${runId}`, `PDP Top ${runId}`, false);
+  const pants = await product(`pdp-flash-pants-${runId}`, `pdp-flash-pants-${runId}`, `PDP Pants ${runId}`, false);
+
+  const variant = (productId: string, size: string, price: number, sku: string | null, stock: number) =>
+    prisma.variantMirror
+      .create({
+        data: {
+          pancakeVariationId: `pdp-flash-${sku ?? "set"}-${size}-${runId}`,
+          productId,
+          sku,
+          color: null,
+          size,
+          pancakeRetailPrice: price,
+          pancakeRetailPriceAfterDiscount: price,
+          isPresent: true,
+          isActive: true,
+          syncedAt: now,
+        },
+      })
+      .then(async (row) => {
+        await prisma.warehouseStock.create({
+          data: { variantId: row.id, pancakeWarehouseId: `pdp-flash-wh-${row.id}`, quantity: stock, syncedAt: now },
+        });
+        return row;
+      });
+
+  for (const size of ["S", "M"]) {
+    const setVariant = await variant(set.id, size, 300_000, null, 0);
+    const topVariant = await variant(top.id, size, 200_000, `AO-${size}`, 1);
+    const pantsVariant = await variant(pants.id, size, 150_000, `QUAN-${size}`, 5);
+    await prisma.compositeComponentMirror.createMany({
+      data: [topVariant, pantsVariant].map((component) => ({
+        parentVariantId: setVariant.id,
+        componentVariantId: component.id,
+        quantity: 1,
+        syncedAt: now,
+      })),
+    });
+    await prisma.$executeRawUnsafe(
+      `INSERT INTO "PromotionTarget" ("id","campaignId","variantId","createdAt") VALUES ($1,$2,$3,$4)`,
+      `${topPromotionId}-${size}`,
+      topPromotionId,
+      topVariant.id,
+      now,
+    );
+  }
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionTarget" ("id","campaignId","productId","createdAt") VALUES ($1,$2,$3,$4)`,
+    `${setFlashId}-target`,
+    setFlashId,
+    set.id,
+    now,
+  );
 }
 
 function isPdpRscRequest(request: Request) {
@@ -86,8 +163,16 @@ async function countdownSeconds(page: Page): Promise<number> {
 async function chooseSize(page: Page, size: string) {
   await page
     .getByRole("region", { name: "Mua sản phẩm" })
-    .locator("label")
-    .filter({ hasText: new RegExp(`^${size}$`) })
+    .getByRole("group", { name: /^Kích cỡ/ })
+    .getByText(size, { exact: true })
+    .click();
+}
+
+async function chooseKind(page: Page, kind: string) {
+  await page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .getByRole("group", { name: "Loại", exact: true })
+    .getByText(kind, { exact: true })
     .click();
 }
 
@@ -151,6 +236,26 @@ test.beforeAll(async () => {
     new Date(now.getTime() + 2 * HOUR),
     now,
   );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","fixedPriceVnd","isEnabled","enabledAt","createdAt","updatedAt")
+     VALUES ($1,'PROMOTION'::"PromotionCampaignKind",$2,'FIXED_PRICE'::"PromotionDiscountType",30000,true,$3,$3,$3)`,
+    topPromotionId,
+    `PDP top promotion ${runId}`,
+    now,
+  );
+  await prisma.$executeRawUnsafe(
+    `INSERT INTO "PromotionCampaign"
+       ("id","kind","name","discountType","fixedPriceVnd","startsAt","endsAt",
+        "isEnabled","enabledAt","createdAt","updatedAt")
+     VALUES ($1,'FLASH_SALE'::"PromotionCampaignKind",$2,'FIXED_PRICE'::"PromotionDiscountType",49000,$3,$4,true,$5,$5,$5)`,
+    setFlashId,
+    `PDP set flash ${runId}`,
+    new Date(now.getTime() - HOUR),
+    new Date(now.getTime() + 2 * HOUR),
+    now,
+  );
+  await seedCompositeSet(now);
   await prisma.$executeRawUnsafe(
     `INSERT INTO "PromotionTarget" ("id","campaignId","variantId","createdAt")
      VALUES ($1,$2,$3,$5), ($6,$4,$7,$5)`,
@@ -244,4 +349,41 @@ test("a server refresh restarts the countdown from the new snapshot", async ({ p
 
   // Still M: the selection survived the refresh, and so did the countdown it follows.
   await expect(page.getByRole("region", { name: "Mua sản phẩm" }).getByText(/50\.000/)).toBeVisible();
+});
+
+test("a composite's other kinds never carry the set's countdown or stock", async ({ page }) => {
+  await page.goto(`${BASE_URL}/shop/${setSlug}`, { waitUntil: "networkidle" });
+  const panel = page.getByRole("region", { name: "Mua sản phẩm" });
+  const strip = page.locator("[data-pdp-flash]");
+  const lowStock = panel.locator("[data-pdp-low-stock]");
+  // The phone bar is hidden while the panel's buttons are in view, but it is rendered: read its text.
+  const barCountdown = page.locator("[data-mobile-purchase-bar]").getByText(/Còn \d\d:\d\d:\d\d/);
+
+  // No kind yet: the panel quotes the set's Flash price, one set of each size left.
+  await expect(panel.getByText(/49\.000/)).toBeVisible();
+  await expect(strip).toBeVisible();
+  await expect(barCountdown).toHaveCount(1);
+  await expect(lowStock).toHaveText("Chỉ còn 2 sản phẩm");
+
+  // "ÁO LẺ", no size: its own 30.000 ₫ promotion is quoted, and none of the set's facts remain.
+  await chooseKind(page, "ÁO LẺ");
+  await expect(panel.getByText(/30\.000/)).toBeVisible();
+  await expect(strip).toHaveCount(0);
+  await expect(barCountdown).toHaveCount(0);
+  await expect(panel.getByText("Giá Flash Sale", { exact: false })).toHaveCount(0);
+  await expect(lowStock).toHaveCount(0);
+
+  // A size of "ÁO LẺ" is a child variant: still not the set's.
+  await chooseSize(page, "S");
+  await expect(strip).toHaveCount(0);
+  await expect(barCountdown).toHaveCount(0);
+  await expect(lowStock).toHaveCount(0);
+
+  // Back to FULL SET, then a size: the set's countdown and that size's own count return.
+  await chooseKind(page, "FULL SET");
+  await expect(strip).toBeVisible();
+  await chooseSize(page, "M");
+  await expect(strip).toBeVisible();
+  await expect(panel.getByText(/49\.000/)).toBeVisible();
+  await expect(lowStock).toHaveText("Size M chỉ còn 1 sản phẩm");
 });

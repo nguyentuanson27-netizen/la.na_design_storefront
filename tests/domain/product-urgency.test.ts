@@ -13,11 +13,17 @@ import {
   resolveFlashRemainingMs,
   type ProductUrgency,
 } from "../../src/components/headless/product-urgency.ts";
+import { COMPOSITE_PARENT_KIND_KEY } from "../../src/commerce/storefront-projection.ts";
 import { buildProductUrgency } from "../../src/routes/product-model.ts";
 
 /** The product page's Flash Sale countdown and "Còn x", decided from the card's own rules. */
 
 const now = new Date("2026-10-20T03:00:00.000Z");
+
+/** A standalone selection: no kind, and a variant (with its size) once one resolves. */
+function chose(variantId: string | null, size: string | null = null, kindKey: string | null = null) {
+  return { kindKey, variantId, size };
+}
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
@@ -57,10 +63,10 @@ test("the page counts down the representative, then the chosen variant's own cam
     now,
   });
 
-  assert.equal(resolveFlashRemainingMs(urgency, null), 2 * HOUR);
-  assert.equal(resolveFlashRemainingMs(urgency, "v-s"), 20 * HOUR + 38 * MINUTE);
+  assert.equal(resolveFlashRemainingMs(urgency, chose(null)), 2 * HOUR);
+  assert.equal(resolveFlashRemainingMs(urgency, chose("v-s")), 20 * HOUR + 38 * MINUTE);
   // L is not on Flash Sale: choosing it hides the countdown rather than showing someone else's.
-  assert.equal(resolveFlashRemainingMs(urgency, "v-l"), null);
+  assert.equal(resolveFlashRemainingMs(urgency, chose("v-l")), null);
 });
 
 test("no Flash Sale means no countdown and no photograph tag", () => {
@@ -71,7 +77,7 @@ test("no Flash Sale means no countdown and no photograph tag", () => {
     now,
   });
   assert.equal(urgency.flash, null);
-  assert.equal(resolveFlashRemainingMs(urgency, null), null);
+  assert.equal(resolveFlashRemainingMs(urgency, chose(null)), null);
 });
 
 test('"Còn x" gives the total before a choice, then the chosen size\'s own count', () => {
@@ -82,9 +88,9 @@ test('"Còn x" gives the total before a choice, then the chosen size\'s own coun
     now,
   });
 
-  assert.equal(describeLowStock(urgency, { variantId: null, size: null }), "Chỉ còn 3 sản phẩm");
-  assert.equal(describeLowStock(urgency, { variantId: "v-m", size: "M" }), "Size M chỉ còn 2 sản phẩm");
-  assert.equal(describeLowStock(urgency, { variantId: "v-m", size: null }), "Chỉ còn 2 sản phẩm");
+  assert.equal(describeLowStock(urgency, chose(null, null)), "Chỉ còn 3 sản phẩm");
+  assert.equal(describeLowStock(urgency, chose("v-m", "M")), "Size M chỉ còn 2 sản phẩm");
+  assert.equal(describeLowStock(urgency, chose("v-m", null)), "Chỉ còn 2 sản phẩm");
 });
 
 test('a chosen size with enough stock says nothing, even when the total is low elsewhere', () => {
@@ -92,8 +98,8 @@ test('a chosen size with enough stock says nothing, even when the total is low e
     flash: null,
     lowStock: { total: null, byVariantId: { "v-m": 2 } },
   };
-  assert.equal(describeLowStock(urgency, { variantId: "v-l", size: "L" }), null);
-  assert.equal(describeLowStock(urgency, { variantId: null, size: null }), null);
+  assert.equal(describeLowStock(urgency, chose("v-l", "L")), null);
+  assert.equal(describeLowStock(urgency, chose(null, null)), null);
 });
 
 test('"Còn x" follows the card\'s policy rules on the page too', () => {
@@ -131,8 +137,8 @@ test("the clock reads hours, minutes and seconds, and days once there are any", 
 });
 
 test("an empty urgency says nothing", () => {
-  assert.equal(resolveFlashRemainingMs(NO_PRODUCT_URGENCY, null), null);
-  assert.equal(describeLowStock(NO_PRODUCT_URGENCY, { variantId: null, size: null }), null);
+  assert.equal(resolveFlashRemainingMs(NO_PRODUCT_URGENCY, chose(null)), null);
+  assert.equal(describeLowStock(NO_PRODUCT_URGENCY, chose(null, null)), null);
 });
 
 test("a cheaper non-Flash promotion keeps the countdown off until a Flash size is chosen", () => {
@@ -158,7 +164,37 @@ test("a cheaper non-Flash promotion keeps the countdown off until a Flash size i
   // The product is still on Flash Sale (the photograph keeps its tag)...
   assert.notEqual(urgency.flash, null);
   // ...but nothing is counted down before a choice, nor on the non-Flash size.
-  assert.equal(resolveFlashRemainingMs(urgency, null), null);
-  assert.equal(resolveFlashRemainingMs(urgency, "v-s"), null);
-  assert.equal(resolveFlashRemainingMs(urgency, "v-m"), 2 * HOUR);
+  assert.equal(resolveFlashRemainingMs(urgency, chose(null)), null);
+  assert.equal(resolveFlashRemainingMs(urgency, chose("v-s")), null);
+  assert.equal(resolveFlashRemainingMs(urgency, chose("v-m")), 2 * HOUR);
+});
+
+test("a composite's other kinds never carry the parent set's countdown or stock", () => {
+  // The FULL SET's own variants are on Flash Sale and low on stock. "ÁO LẺ" is another kind on the
+  // same page, quoting its own price as soon as it is chosen -- before any size.
+  const urgency = buildProductUrgency({
+    variants: [variant("set-s", "S", 1), variant("set-m", "M", 1)],
+    productCapacity: { ...STANDARD_STANDALONE_CAPACITY, isComposite: true, sharesComponents: false },
+    campaignsByVariantId: new Map([
+      ["set-s", [flash(2 * HOUR)]],
+      ["set-m", [flash(2 * HOUR)]],
+    ]),
+    now,
+  });
+  const parent = COMPOSITE_PARENT_KIND_KEY;
+  const steps = [
+    // No kind chosen yet: the panel quotes the set.
+    { selection: chose(null), flash: 2 * HOUR, stock: "Chỉ còn 2 sản phẩm" },
+    // "ÁO LẺ" chosen, no size: its own price is on screen, so the set's facts stop.
+    { selection: chose(null, null, "ao-le"), flash: null, stock: null },
+    // A size of "ÁO LẺ": a child variant, still not the set's.
+    { selection: chose("ao-le-s", "S", "ao-le"), flash: null, stock: null },
+    // Back to FULL SET, kind only, then a size.
+    { selection: chose(null, null, parent), flash: 2 * HOUR, stock: "Chỉ còn 2 sản phẩm" },
+    { selection: chose("set-m", "M", parent), flash: 2 * HOUR, stock: "Size M chỉ còn 1 sản phẩm" },
+  ];
+  for (const step of steps) {
+    assert.equal(resolveFlashRemainingMs(urgency, step.selection), step.flash, JSON.stringify(step.selection));
+    assert.equal(describeLowStock(urgency, step.selection), step.stock, JSON.stringify(step.selection));
+  }
 });
