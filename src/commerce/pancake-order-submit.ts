@@ -6,7 +6,7 @@ import {
   type PancakeCreateOrderRequest,
 } from "../integrations/pancake/order-create.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
-import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
+import { calculateGuestShippingFeeVnd, readGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type {
   ApplicableCampaignLookup,
@@ -720,6 +720,7 @@ export function createPancakeOrderSubmissionService(
       provenanceDrifted: boolean;
       subtotalVnd: number;
       totalQuantity: number;
+      qualifyingSetQuantity?: number;
       requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
       /**
        * GQ21 -- present for a benefit order: after a definite create, read the order back and confirm it
@@ -754,6 +755,7 @@ export function createPancakeOrderSubmissionService(
       provenanceDrifted,
       subtotalVnd,
       totalQuantity,
+      qualifyingSetQuantity,
       requestLines,
       verifyCreatedOrder,
       contact,
@@ -794,7 +796,10 @@ export function createPancakeOrderSubmissionService(
       return repriceDraft(freshLines);
     }
 
-    const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd, totalQuantity });
+    const shippingFeeVnd = calculateGuestShippingFeeVnd(
+      { subtotalVnd, totalQuantity, qualifyingSetQuantity },
+      readGuestShippingPolicy(options.env),
+    );
     const totalVnd = checkedAddVnd(subtotalVnd, shippingFeeVnd);
     if (
       totalVnd === null ||
@@ -1268,13 +1273,13 @@ export function createPancakeOrderSubmissionService(
       // Scope, entitlement, selection and price are re-derived exactly as the checkout DRAFT derived them
       // and compared with the frozen quote. The order's own stock hold is excluded so that holding the
       // last unit does not make the quote differ from itself.
+      let benefitFresh: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>> | undefined;
       if (!requote) {
         if (order.sourceCartId === null) {
           requote = true;
         } else {
-          let fresh: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>>;
           try {
-            fresh = await client.$transaction((tx) =>
+            benefitFresh = await client.$transaction((tx) =>
               resolveBenefitCheckoutQuote({
                 tx,
                 cartId: order.sourceCartId as string,
@@ -1287,7 +1292,7 @@ export function createPancakeOrderSubmissionService(
           } catch {
             return resetValidation();
           }
-          if (fresh.kind !== "BENEFIT" || !benefitQuoteStillHolds(snapshot, fresh.facts)) requote = true;
+          if (benefitFresh.kind !== "BENEFIT" || !benefitQuoteStillHolds(snapshot, benefitFresh.facts)) requote = true;
         }
       }
 
@@ -1301,6 +1306,7 @@ export function createPancakeOrderSubmissionService(
         provenanceDrifted: false,
         subtotalVnd: Number(snapshot.paidSubtotalVnd),
         totalQuantity: snapshot.paidQuantity,
+        qualifyingSetQuantity: benefitFresh?.kind === "BENEFIT" ? benefitFresh.qualifyingSetQuantity : 0,
         requestLines: projection.lines,
         verifyCreatedOrder: async (pancakeOrderId) => {
           if (!gateway.readOrder) return "UNAVAILABLE";

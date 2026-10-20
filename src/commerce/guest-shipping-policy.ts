@@ -2,12 +2,14 @@ export type GuestShippingPolicy = Readonly<{
   feeVnd: number;
   freeShippingSubtotalVnd: number;
   freeShippingMinQuantity: number;
+  freeShippingMinSetQuantity?: number;
 }>;
 
 export const DEFAULT_GUEST_SHIPPING_POLICY: GuestShippingPolicy = Object.freeze({
   feeVnd: 30_000,
-  freeShippingSubtotalVnd: 1_000_000,
-  freeShippingMinQuantity: 3,
+  freeShippingSubtotalVnd: 0,
+  freeShippingMinQuantity: 0,
+  freeShippingMinSetQuantity: 2,
 });
 
 export const GUEST_SHIPPING_FEE_VND = DEFAULT_GUEST_SHIPPING_POLICY.feeVnd;
@@ -15,6 +17,7 @@ export const GUEST_FREE_SHIPPING_SUBTOTAL_VND =
   DEFAULT_GUEST_SHIPPING_POLICY.freeShippingSubtotalVnd;
 export const GUEST_FREE_SHIPPING_MIN_QUANTITY =
   DEFAULT_GUEST_SHIPPING_POLICY.freeShippingMinQuantity;
+export const GUEST_FREE_SHIPPING_MIN_SET_QUANTITY = 2;
 
 const DECIMAL_INTEGER = /^(?:0|[1-9][0-9]*)$/;
 const currency = new Intl.NumberFormat("vi-VN", {
@@ -63,7 +66,13 @@ export function readGuestShippingPolicy(
       "LA_FREE_SHIPPING_MIN_QUANTITY",
       env.LA_FREE_SHIPPING_MIN_QUANTITY,
       DEFAULT_GUEST_SHIPPING_POLICY.freeShippingMinQuantity,
-      1,
+      0,
+    ),
+    freeShippingMinSetQuantity: parseConfiguredInteger(
+      "LA_FREE_SHIPPING_MIN_SET_QUANTITY",
+      env.LA_FREE_SHIPPING_MIN_SET_QUANTITY,
+      GUEST_FREE_SHIPPING_MIN_SET_QUANTITY,
+      0,
     ),
   });
 }
@@ -81,13 +90,24 @@ export function tryReadGuestShippingPolicy(env: ShippingPolicyEnvironment = proc
   }
 }
 
+function resolveMinSetQuantity(policy: GuestShippingPolicy): number {
+  if (policy.freeShippingMinSetQuantity !== undefined) {
+    return policy.freeShippingMinSetQuantity;
+  }
+  return policy.freeShippingMinQuantity > 0 || policy.freeShippingSubtotalVnd > 0
+    ? 0
+    : GUEST_FREE_SHIPPING_MIN_SET_QUANTITY;
+}
+
 export function calculateGuestShippingFeeVnd(
   {
     subtotalVnd,
     totalQuantity,
+    qualifyingSetQuantity = 0,
   }: {
     subtotalVnd: number;
     totalQuantity: number;
+    qualifyingSetQuantity?: number;
   },
   policy: GuestShippingPolicy = readGuestShippingPolicy(),
 ): number {
@@ -97,21 +117,33 @@ export function calculateGuestShippingFeeVnd(
   if (!Number.isSafeInteger(totalQuantity) || totalQuantity <= 0) {
     throw new RangeError("Guest checkout total quantity must be a positive safe integer");
   }
+  if (!Number.isSafeInteger(qualifyingSetQuantity) || qualifyingSetQuantity < 0) {
+    throw new RangeError("Guest checkout qualifying set quantity must be a non-negative safe integer");
+  }
+  const minSetQuantity = resolveMinSetQuantity(policy);
   if (
     !Number.isSafeInteger(policy.feeVnd) ||
     policy.feeVnd < 0 ||
     !Number.isSafeInteger(policy.freeShippingSubtotalVnd) ||
     policy.freeShippingSubtotalVnd < 0 ||
     !Number.isSafeInteger(policy.freeShippingMinQuantity) ||
-    policy.freeShippingMinQuantity <= 0
+    policy.freeShippingMinQuantity < 0 ||
+    !Number.isSafeInteger(minSetQuantity) ||
+    minSetQuantity < 0
   ) {
     throw new RangeError("Guest shipping policy is invalid");
   }
 
-  if (subtotalVnd > policy.freeShippingSubtotalVnd) {
+  if (
+    minSetQuantity > 0 &&
+    qualifyingSetQuantity >= minSetQuantity
+  ) {
     return 0;
   }
-  if (totalQuantity >= policy.freeShippingMinQuantity) {
+  if (policy.freeShippingSubtotalVnd > 0 && subtotalVnd > policy.freeShippingSubtotalVnd) {
+    return 0;
+  }
+  if (policy.freeShippingMinQuantity > 0 && totalQuantity >= policy.freeShippingMinQuantity) {
     return 0;
   }
 
@@ -144,7 +176,20 @@ function describeCompactVnd(amountVnd: number): string {
  */
 export function describeGuestShippingPromotionHeadline(policy: GuestShippingPolicy): string {
   calculateGuestShippingFeeVnd({ subtotalVnd: 0, totalQuantity: 1 }, policy);
-  return `Free ship từ ${policy.freeShippingMinQuantity} sản phẩm hoặc đơn trên ${describeCompactVnd(policy.freeShippingSubtotalVnd)}`;
+  const minSetQuantity = resolveMinSetQuantity(policy);
+  if (minSetQuantity > 0) {
+    return `Free ship khi mua từ ${minSetQuantity} Set`;
+  }
+  if (policy.freeShippingMinQuantity > 0 && policy.freeShippingSubtotalVnd > 0) {
+    return `Free ship từ ${policy.freeShippingMinQuantity} sản phẩm hoặc đơn trên ${describeCompactVnd(policy.freeShippingSubtotalVnd)}`;
+  }
+  if (policy.freeShippingSubtotalVnd > 0) {
+    return `Free ship cho đơn trên ${describeCompactVnd(policy.freeShippingSubtotalVnd)}`;
+  }
+  if (policy.freeShippingMinQuantity > 0) {
+    return `Free ship từ ${policy.freeShippingMinQuantity} sản phẩm`;
+  }
+  return "Phí ship 30.000 ₫ toàn quốc";
 }
 
 export function describeGuestShippingPromotion(policy: GuestShippingPolicy): {
@@ -152,8 +197,21 @@ export function describeGuestShippingPromotion(policy: GuestShippingPolicy): {
   detail: string;
 } {
   calculateGuestShippingFeeVnd({ subtotalVnd: 0, totalQuantity: 1 }, policy);
+  const minSetQuantity = resolveMinSetQuantity(policy);
+  if (minSetQuantity > 0) {
+    return {
+      title: "Miễn phí vận chuyển",
+      detail: `Miễn phí vận chuyển khi mua từ ${minSetQuantity} Set.`,
+    };
+  }
+  if (policy.freeShippingMinQuantity > 0 && policy.freeShippingSubtotalVnd > 0) {
+    return {
+      title: "Miễn phí vận chuyển",
+      detail: `Đơn trên ${currency.format(policy.freeShippingSubtotalVnd)} hoặc từ ${policy.freeShippingMinQuantity} sản phẩm.`,
+    };
+  }
   return {
-    title: "Miễn phí vận chuyển",
-    detail: `Đơn trên ${currency.format(policy.freeShippingSubtotalVnd)} hoặc từ ${policy.freeShippingMinQuantity} sản phẩm.`,
+    title: "Vận chuyển toàn quốc",
+    detail: `Phí vận chuyển ${currency.format(policy.feeVnd)} trên toàn quốc.`,
   };
 }

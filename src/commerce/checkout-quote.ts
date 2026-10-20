@@ -1,5 +1,9 @@
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
-import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
+import {
+  calculateGuestShippingFeeVnd,
+  readGuestShippingPolicy,
+  type GuestShippingPolicy,
+} from "./guest-shipping-policy.ts";
 import {
   MAX_QUOTE_LINES,
   validateQuoteStructure,
@@ -53,6 +57,7 @@ function checkedAddVnd(left: number, right: number): number | null {
  */
 export function buildRenderedCheckoutQuoteFacts(
   lines: readonly StorefrontCartLine[],
+  options?: Readonly<{ qualifyingSetQuantity?: number; shippingPolicy?: GuestShippingPolicy }>,
 ): RenderedCheckoutQuoteFacts | null {
   if (lines.length === 0 || lines.length > ANONYMOUS_CART_MAX_DISTINCT_ITEMS) return null;
 
@@ -108,10 +113,14 @@ export function buildRenderedCheckoutQuoteFacts(
         : 0,
   );
 
-  const shippingFeeVnd = calculateGuestShippingFeeVnd({
-    subtotalVnd: merchandiseSubtotalVnd,
-    totalQuantity,
-  });
+  const shippingFeeVnd = calculateGuestShippingFeeVnd(
+    {
+      subtotalVnd: merchandiseSubtotalVnd,
+      totalQuantity,
+      qualifyingSetQuantity: options?.qualifyingSetQuantity ?? 0,
+    },
+    options?.shippingPolicy ?? readGuestShippingPolicy(),
+  );
   const totalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
   if (totalVnd === null) return null;
 
@@ -177,10 +186,14 @@ export function buildBenefitCheckoutQuoteFacts({
   paid,
   gifts,
   entitlements,
+  qualifyingSetQuantity = 0,
+  shippingPolicy,
 }: Readonly<{
   paid: readonly BenefitQuotePaidGroup[];
   gifts: readonly BenefitQuoteGift[];
   entitlements: readonly QuoteEntitlementFacts[];
+  qualifyingSetQuantity?: number;
+  shippingPolicy?: GuestShippingPolicy;
 }>): QuoteStructure | null {
   if (!Array.isArray(paid) || !Array.isArray(gifts) || !Array.isArray(entitlements)) return null;
   if (paid.length === 0 || paid.length + gifts.length > MAX_QUOTE_LINES) return null;
@@ -236,7 +249,10 @@ export function buildBenefitCheckoutQuoteFacts({
     }));
   }
 
-  const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd: paidSubtotalVnd, totalQuantity: paidQuantity });
+  const shippingFeeVnd = calculateGuestShippingFeeVnd(
+    { subtotalVnd: paidSubtotalVnd, totalQuantity: paidQuantity, qualifyingSetQuantity },
+    shippingPolicy ?? readGuestShippingPolicy(),
+  );
   const totalVnd = checkedAddVnd(paidSubtotalVnd, shippingFeeVnd);
   if (totalVnd === null) return null;
 

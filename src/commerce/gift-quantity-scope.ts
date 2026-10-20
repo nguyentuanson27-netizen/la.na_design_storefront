@@ -27,6 +27,28 @@ export const MAX_FROZEN_PRODUCTS = 5_000;
 /** Bound on a single product id; `ProductMirror.id` is a cuid. */
 const MAX_ID_LENGTH = 64;
 
+/**
+ * Canonical categories that define "Set" across the store (Áo dài, Set đồ, Váy đầm),
+ * matching campaigns Mua 3, Mua 4, Mua 5 and the Freeship từ 2 Set promotion.
+ */
+export const SET_PROMOTION_CATEGORY_KEYS: readonly string[] = Object.freeze([
+  "aoDai",
+  "setDo",
+  "vayDam",
+]);
+
+export const DEFAULT_SET_PROMOTION_SCOPE: ScopeConfig = Object.freeze({
+  mode: DYNAMIC_CATEGORY,
+  categoryKeys: SET_PROMOTION_CATEGORY_KEYS,
+  includeProductIds: Object.freeze([]),
+  excludeProductIds: Object.freeze([]),
+});
+
+export function isSetPromotionScope(scope: ScopeConfig): boolean {
+  if (scope.mode === GLOBAL_ALL_PAID_LINES) return false;
+  return scope.categoryKeys.some((key) => SET_PROMOTION_CATEGORY_KEYS.includes(key));
+}
+
 /** The configured, editable part of a scope. */
 export type ScopeConfig =
   | Readonly<{ mode: typeof GLOBAL_ALL_PAID_LINES }>

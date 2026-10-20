@@ -23,6 +23,7 @@ import { withoutOrderHolds } from "./capacity-advisory.ts";
 import { readCartGiftState } from "./cart-gift-selection.ts";
 import { buildBenefitCheckoutQuoteFacts, type BenefitQuoteGift, type BenefitQuotePaidGroup } from "./checkout-quote.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { readGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import type { OrderQuoteSnapshotInput, DroppedBenefitInput } from "./order-quote-snapshot.ts";
 import { DROPPED_BENEFIT_REASONS } from "./order-quote-snapshot.ts";
 import { parseTrustedProductImageUrl } from "./product-media.ts";
@@ -59,6 +60,7 @@ export type BenefitCheckoutResolution =
       paid: readonly BenefitPaidRow[];
       gifts: readonly BenefitGiftRow[];
       dropped: readonly DroppedBenefitInput[];
+      qualifyingSetQuantity: number;
       /** Display only (GQ19): `Sản phẩm — Màu / Cỡ` of every chosen gift, by Pancake variation id. Never part of the proof. */
       giftLabels: ReadonlyMap<string, string>;
       /** Display only: each chosen gift's trusted product photo (or null), by Pancake variation id. Never part of the proof. */
@@ -112,7 +114,12 @@ export async function resolveBenefitCheckoutQuote({
   // one, but the buyer was promised that tier at render time, so the quote is still proven and stored
   // in the benefit format: the reason is kept for audit and the buyer reconfirms the new price.
   const droppedForInvalidPrice = benefits.dropped.some((entry) => entry.reason === "TIER_PRICE_INVALID");
-  if (!hasTierSegment && state.selections.length === 0 && !earnsGift && !droppedForInvalidPrice) return { kind: "LEGACY" };
+  const shippingPolicy = readGuestShippingPolicy(env);
+  const minSetQuantity = shippingPolicy.freeShippingMinSetQuantity ?? 2;
+  const earnsFreeShipping =
+    minSetQuantity > 0 &&
+    (state.qualifyingSetQuantity ?? 0) >= minSetQuantity;
+  if (!hasTierSegment && state.selections.length === 0 && !earnsGift && !droppedForInvalidPrice && !earnsFreeShipping) return { kind: "LEGACY" };
 
   // A stored gift choice that no longer validates is never repaired here.
   if (!state.validation.ok) return { kind: "GIFT_SELECTION_INVALID" };
@@ -178,6 +185,8 @@ export async function resolveBenefitCheckoutQuote({
   const facts = buildBenefitCheckoutQuoteFacts({
     paid: paidGroups,
     gifts: quoteGifts,
+    qualifyingSetQuantity: state.qualifyingSetQuantity,
+    shippingPolicy,
     entitlements: state.validation.summaries.map((summary) => ({
       campaignId: summary.campaignId,
       campaignRevision: summary.revision,
@@ -207,7 +216,17 @@ export async function resolveBenefitCheckoutQuote({
     giftLabels.set(gift.pancakeVariationId, label ? [label.productName, label.optionLabel].filter(Boolean).join(" — ") : "Quà tặng");
     giftImages.set(gift.pancakeVariationId, parseTrustedProductImageUrl(label?.imageUrl));
   }
-  return { kind: "BENEFIT", facts, paid, gifts, dropped: droppedAll.slice(0, 50), giftLabels, giftImages, campaignNames: benefits.campaignNames };
+  return {
+    kind: "BENEFIT",
+    facts,
+    paid,
+    gifts,
+    dropped: droppedAll.slice(0, 50),
+    qualifyingSetQuantity: state.qualifyingSetQuantity ?? 0,
+    giftLabels,
+    giftImages,
+    campaignNames: benefits.campaignNames,
+  };
 }
 
 /**

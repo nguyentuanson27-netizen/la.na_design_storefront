@@ -8,6 +8,7 @@ import { listCartGiftSelections, removeCartGiftSelection, setCartGiftSelection }
 import { readActiveGiftQuantityCampaigns, readScopeProductFacts, type GiftQuantityCandidateReadClient } from "./gift-quantity-candidate-repository.ts";
 import { evaluateGiftEntitlements, validateGiftSelections, type GiftCampaignFacts, type GiftSelectionLine } from "./gift-quantity-entitlement.ts";
 import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
+import { buildScopeResolver, DEFAULT_SET_PROMOTION_SCOPE, isSetPromotionScope } from "./gift-quantity-scope.ts";
 import { resolveGiftCampaignStacking, type StackedGroup } from "./gift-quantity-stack.ts";
 import type { QuantityAddition } from "./gift-quantity-quote.ts";
 import { createStorefrontCartRepository, type StorefrontCartReadClient } from "./storefront-cart-repository.ts";
@@ -238,8 +239,16 @@ export async function readCartGiftState(tx: Prisma.TransactionClient, cartId: st
     }
   }
 
+  const setCampaign = lookup.campaigns.find((c) => isSetPromotionScope(c.scope));
+  const setResolver = buildScopeResolver(setCampaign?.scope ?? DEFAULT_SET_PROMOTION_SCOPE, setCampaign?.frozen ?? null);
+  const qualifyingSetQuantity = quote.benefits.groups.reduce((sum, g) => {
+    const fact = productByVariant.get(g.lineKey);
+    return fact && setResolver(fact) ? sum + g.quantity : sum;
+  }, 0);
+
   return { quote, campaigns, entitlements, selections, validation, giftStackDropped: stack.dropped,
     items: cart.items, paidDemand: demand, campaignEntries: lookup.campaigns, productFacts: facts, paidVariants,
+    qualifyingSetQuantity,
     labels: variants.map((v): CartGiftLabel => ({
       variantId: v.id,
       productId: v.productId,
