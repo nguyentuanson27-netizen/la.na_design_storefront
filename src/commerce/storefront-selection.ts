@@ -27,13 +27,18 @@ function uniqueMappedValues(
   return key === "size" ? sortClothingSizes(result) : result;
 }
 
+function sizeMatches(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 function supportsSelection(
   option: StorefrontSelectableOption,
   selection: StorefrontSelection,
 ): boolean {
   if (!option.purchasable) return false;
   if (selection.color !== null && option.color !== selection.color) return false;
-  if (selection.size !== null && option.size !== selection.size) return false;
+  if (selection.size !== null && !sizeMatches(option.size, selection.size)) return false;
   return true;
 }
 
@@ -66,7 +71,7 @@ export function deriveStorefrontSelection(
     selection.size !== null && (!hasColorOptions || selection.color !== null)
       ? options.find(
           (option) =>
-            option.size === selection.size &&
+            sizeMatches(option.size, selection.size) &&
             (hasColorOptions ? option.color === selection.color : option.color === null),
         ) ?? null
       : null;

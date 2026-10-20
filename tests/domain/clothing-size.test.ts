@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { compareClothingSizes, sortClothingSizes } from "../../src/commerce/clothing-size.ts";
+import {
+  canonicalizeClothingSize,
+  compareClothingSizes,
+  sortClothingSizes,
+} from "../../src/commerce/clothing-size.ts";
 
 test("sortClothingSizes sorts standard apparel letter sizes in natural order", () => {
   const input = ["L", "M", "XL", "S", "XXL"];
@@ -19,6 +23,23 @@ test("sortClothingSizes sorts standard apparel letter sizes in natural order", (
     "3XL",
     "Freesize",
   ]);
+});
+
+test("sortClothingSizes deduplicates case-insensitive size duplicates and normalizes letter sizes", () => {
+  const duplicateInput = ["S", "M", "L", "XL", "Xl"];
+  assert.deepEqual(sortClothingSizes(duplicateInput), ["S", "M", "L", "XL"]);
+
+  const lowercaseInput = ["xl", "s", "m", "l"];
+  assert.deepEqual(sortClothingSizes(lowercaseInput), ["S", "M", "L", "XL"]);
+});
+
+test("canonicalizeClothingSize canonicalizes standard letter sizes to uppercase", () => {
+  assert.equal(canonicalizeClothingSize("xl"), "XL");
+  assert.equal(canonicalizeClothingSize("Xl"), "XL");
+  assert.equal(canonicalizeClothingSize("s"), "S");
+  assert.equal(canonicalizeClothingSize("2xl"), "2XL");
+  assert.equal(canonicalizeClothingSize("Freesize"), "Freesize");
+  assert.equal(canonicalizeClothingSize("32"), "32");
 });
 
 test("sortClothingSizes sorts numeric clothing sizes in ascending order", () => {

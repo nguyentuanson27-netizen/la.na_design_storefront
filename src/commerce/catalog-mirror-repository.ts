@@ -18,6 +18,7 @@ import {
   isLegacyOpaqueProductSlug,
   PRODUCT_SLUG_LOCK_NAMESPACE,
 } from "./product-slug.ts";
+import { canonicalizeClothingSize } from "./clothing-size.ts";
 
 const MAX_READ_PRODUCTS = 100;
 const MAX_POSTGRES_INTEGER = 2_147_483_647;
@@ -350,9 +351,10 @@ function mappedFieldValue(fields: readonly PancakeCatalogField[], key: "color" |
 }
 
 function mapVariantOptions(fields: readonly PancakeCatalogField[]): VariantOptionMapping {
+  const rawSize = mappedFieldValue(fields, "size");
   return {
     color: mappedFieldValue(fields, "color"),
-    size: mappedFieldValue(fields, "size"),
+    size: rawSize !== null ? canonicalizeClothingSize(rawSize) : null,
   };
 }
 
