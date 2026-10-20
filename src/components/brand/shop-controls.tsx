@@ -137,7 +137,8 @@ export type ShopMobileDrawerProps = {
   collectionFacets: readonly ShopCollectionFacet[];
   colorFacets: readonly string[];
   sizeFacets: readonly string[];
-  /** The size and colour as the facets spell them, so the selects do not fall back to "all". */
+  /** The chosen values as the facets spell them, so the selects do not fall back to "all". */
+  selectedCollection: string;
   selectedSize: string;
   selectedColor: string;
   activeFilterCount: number;
@@ -149,6 +150,7 @@ export function ShopMobileDrawer({
   collectionFacets,
   colorFacets,
   sizeFacets,
+  selectedCollection,
   selectedSize,
   selectedColor,
   activeFilterCount,
@@ -199,6 +201,9 @@ export function ShopMobileDrawer({
 
   return (
     <>
+      {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
+      {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
+
       {/* The filter fields only exist while the drawer is open. Closed, the form still has to carry
           the applied filters, or searching or re-sorting from the bar would silently drop them. */}
       {!isOpen ? (
@@ -323,7 +328,7 @@ export function ShopMobileDrawer({
                   <select
                     name="collection"
                     aria-label="Bộ sưu tập"
-                    defaultValue={discovery.collection ?? ""}
+                    defaultValue={selectedCollection}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả bộ sưu tập</option>
@@ -493,6 +498,19 @@ export function ShopActiveFilters({
           <Link
             href={buildStorefrontDiscoveryHref({ ...discovery, availability: null, page: 1 })}
             aria-label="Xóa bộ lọc chỉ còn hàng"
+            className="hover:text-black"
+          >
+            ✕
+          </Link>
+        </span>
+      ) : null}
+
+      {discovery.sale ? (
+        <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+          <span>Sale</span>
+          <Link
+            href={buildStorefrontDiscoveryHref({ ...discovery, sale: null, page: 1 })}
+            aria-label="Xóa bộ lọc sale"
             className="hover:text-black"
           >
             ✕

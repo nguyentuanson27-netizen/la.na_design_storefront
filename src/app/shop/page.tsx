@@ -42,6 +42,7 @@ function render(data: ShopViewModel) {
   if (discovery.size) activeFilterCount += 1;
   if (discovery.availability === "in-stock") activeFilterCount += 1;
   if (discovery.minPriceVnd !== null || discovery.maxPriceVnd !== null) activeFilterCount += 1;
+  if (discovery.sale) activeFilterCount += 1;
 
   return (
     <ListingShell>
@@ -105,6 +106,7 @@ function render(data: ShopViewModel) {
                 collectionFacets={data.collectionFacets}
                 colorFacets={data.colorFacets}
                 sizeFacets={data.sizeFacets}
+                selectedCollection={data.selectedCollection}
                 selectedSize={data.selectedSize}
                 selectedColor={data.selectedColor}
                 activeFilterCount={activeFilterCount}
@@ -128,6 +130,8 @@ function render(data: ShopViewModel) {
 
         {/* Desktop keeps the same native GET semantics without rendering mobile duplicate fields. */}
         <form method="get" action="/shop" className="hidden md:block">
+          {/* Sale has no control on /shop, but a link can filter by it: the form must carry it. */}
+          {discovery.sale ? <input type="hidden" name="sale" value="true" /> : null}
           <div className="flex items-center justify-between gap-4">
             <div className="text-xs uppercase tracking-wider text-[#70584B] font-sans">
               <span>{data.totalCount} sản phẩm</span>
@@ -205,7 +209,7 @@ function render(data: ShopViewModel) {
               <ShopFilterSelect
                 name="collection"
                 aria-label="Bộ sưu tập"
-                defaultValue={discovery.collection ?? ""}
+                defaultValue={data.selectedCollection}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>

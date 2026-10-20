@@ -86,6 +86,8 @@ export type ShopViewModel = Readonly<{
   /** The size and colour the controls should show as chosen, in the facets' own spelling; `""` for none. */
   selectedSize: string;
   selectedColor: string;
+  /** The collection the select should show as chosen; `""` for none. Kept even when no longer published. */
+  selectedCollection: string;
   discovery: StorefrontDiscoveryQuery;
   /**
    * The same bounds the loader rejects past, handed to the form so its affordances and the server's
@@ -132,6 +134,7 @@ export function hasActiveShopDiscovery(discovery: StorefrontDiscoveryQuery): boo
     || discovery.minPriceVnd !== null
     || discovery.maxPriceVnd !== null
     || discovery.collection !== null
+    || Boolean(discovery.sale)
     || discovery.sort !== "name-asc"
   );
 }
@@ -139,6 +142,7 @@ export function hasActiveShopDiscovery(discovery: StorefrontDiscoveryQuery): boo
 export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
   const size = resolveSelectedFacet(input.facets.sizes, input.discovery.size);
   const color = resolveSelectedFacet(input.facets.colors, input.discovery.color);
+  const collection = resolveSelectedFacet(input.facets.collections, input.discovery.collection);
 
   return Object.freeze({
     cards: Object.freeze(
@@ -167,11 +171,21 @@ export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
       : null,
     nextHref: input.hasNext ? buildStorefrontDiscoveryHref(input.discovery, input.page + 1) : null,
     filtered: hasActiveShopDiscovery(input.discovery),
+    // A collection in the URL that is no longer published has no facet. It stays selectable, marked
+    // as unavailable, so a shared link keeps showing what it filters by and a sort change does not
+    // quietly drop it.
     collectionFacets: Object.freeze(
-      input.facets.collections.map((value) =>
-        Object.freeze({ value, label: shopCollectionLabel(value) }),
+      collection.options.map((value, index) =>
+        Object.freeze({
+          value,
+          label:
+            index < input.facets.collections.length
+              ? shopCollectionLabel(value)
+              : `${shopCollectionLabel(value)} (không còn khả dụng)`,
+        }),
       ),
     ),
+    selectedCollection: collection.value,
     colorFacets: Object.freeze([...color.options]),
     sizeFacets: Object.freeze([...size.options]),
     selectedSize: size.value,
