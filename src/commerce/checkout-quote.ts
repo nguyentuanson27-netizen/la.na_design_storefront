@@ -1,6 +1,5 @@
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
 import {
-  calculateGuestShippingFeeVnd,
   readGuestShippingPolicy,
   type GuestShippingPolicy,
 } from "./guest-shipping-policy.ts";
@@ -12,6 +11,7 @@ import {
   type QuoteLineFacts,
   type QuoteStructure,
 } from "./order-quote-rules.ts";
+import { shippingFeeFromQuote, type ShippingQuote } from "./shipping-campaign.ts";
 import type { StorefrontCartLine } from "./storefront-cart.ts";
 
 export type RenderedCheckoutQuoteItem = Readonly<{
@@ -57,7 +57,7 @@ function checkedAddVnd(left: number, right: number): number | null {
  */
 export function buildRenderedCheckoutQuoteFacts(
   lines: readonly StorefrontCartLine[],
-  options?: Readonly<{ qualifyingSetQuantity?: number; shippingPolicy?: GuestShippingPolicy }>,
+  options?: Readonly<{ shippingQuote?: ShippingQuote; shippingPolicy?: GuestShippingPolicy }>,
 ): RenderedCheckoutQuoteFacts | null {
   if (lines.length === 0 || lines.length > ANONYMOUS_CART_MAX_DISTINCT_ITEMS) return null;
 
@@ -113,14 +113,7 @@ export function buildRenderedCheckoutQuoteFacts(
         : 0,
   );
 
-  const shippingFeeVnd = calculateGuestShippingFeeVnd(
-    {
-      subtotalVnd: merchandiseSubtotalVnd,
-      totalQuantity,
-      qualifyingSetQuantity: options?.qualifyingSetQuantity ?? 0,
-    },
-    options?.shippingPolicy ?? readGuestShippingPolicy(),
-  );
+  const shippingFeeVnd = shippingFeeFromQuote(options?.shippingQuote, options?.shippingPolicy ?? readGuestShippingPolicy());
   const totalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
   if (totalVnd === null) return null;
 
@@ -178,21 +171,21 @@ function stepsFingerprint(steps: readonly QuoteDiscountStepFacts[]): string {
  * cart id, a customer field or an internal `VariantMirror` id, and is never accepted from a browser.
  *
  * Money rules (FR-10/FR-11): a PAID unit costs a positive whole number of VND, a gift costs 0 and is a
- * line of its own, shipping is decided by the PAID quantity and PAID subtotal only (a gift never moves
- * an order across the free-shipping threshold), and slots the buyer is entitled to but does not take
+ * line of its own, shipping comes from the independent campaign decision over PAID items only (a gift never
+ * earns shipping eligibility), and slots the buyer is entitled to but does not take
  * are carried per campaign, because they change what the buyer must acknowledge.
  */
 export function buildBenefitCheckoutQuoteFacts({
   paid,
   gifts,
   entitlements,
-  qualifyingSetQuantity = 0,
+  shippingQuote,
   shippingPolicy,
 }: Readonly<{
   paid: readonly BenefitQuotePaidGroup[];
   gifts: readonly BenefitQuoteGift[];
   entitlements: readonly QuoteEntitlementFacts[];
-  qualifyingSetQuantity?: number;
+  shippingQuote?: ShippingQuote;
   shippingPolicy?: GuestShippingPolicy;
 }>): QuoteStructure | null {
   if (!Array.isArray(paid) || !Array.isArray(gifts) || !Array.isArray(entitlements)) return null;
@@ -249,10 +242,7 @@ export function buildBenefitCheckoutQuoteFacts({
     }));
   }
 
-  const shippingFeeVnd = calculateGuestShippingFeeVnd(
-    { subtotalVnd: paidSubtotalVnd, totalQuantity: paidQuantity, qualifyingSetQuantity },
-    shippingPolicy ?? readGuestShippingPolicy(),
-  );
+  const shippingFeeVnd = shippingFeeFromQuote(shippingQuote, shippingPolicy ?? readGuestShippingPolicy());
   const totalVnd = checkedAddVnd(paidSubtotalVnd, shippingFeeVnd);
   if (totalVnd === null) return null;
 

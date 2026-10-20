@@ -8,7 +8,7 @@
  * the same quote, and fails closed into a refreshed render when anything moved.
  *
  * Three outcomes, mirroring the resolver:
- *  - `LEGACY`      the gate is OFF or nothing applies: the page renders the ordinary quote, untouched.
+ *  - `LEGACY`      no merchandise benefit applies: ordinary merchandise with an independently resolved shipping fee.
  *  - `UNAVAILABLE` the benefits cannot be offered right now (cannot price, a stored gift choice no
  *                  longer holds, the POS shop has no line-level pricing evidence, or the proof does
  *                  not fit its envelope). Gift-choice errors retain the picker for inline repair; nothing is guessed.
@@ -30,11 +30,13 @@ import {
 import { readLineLevelPricingVerifiedShopIds } from "./pancake-line-level-contract.ts";
 import type { StorefrontCartLine } from "./storefront-cart.ts";
 
+import type { ShippingQuote } from "./shipping-campaign.ts";
+
 type Env = Readonly<Record<string, string | undefined>>;
 
 type GiftDisplay = Readonly<{ giftPicker?: CartGiftPickerModel }>;
 export type BenefitCheckoutRender = GiftDisplay & (
-  | Readonly<{ kind: "LEGACY" }>
+  | Readonly<{ kind: "LEGACY"; shippingQuote: ShippingQuote }>
   | Readonly<{ kind: "UNAVAILABLE"; reason: "BENEFITS_UNAVAILABLE" | "GIFT_SELECTION_INVALID" | "POS_NOT_ACCEPTED" | "PROOF_UNAVAILABLE" }>
   | Readonly<{
       kind: "BENEFIT";
@@ -85,7 +87,7 @@ export async function readBenefitCheckoutRender({
     // submit then refuses. Fail closed instead.
     return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
   }
-  if (resolution.kind === "LEGACY") return giftPicker ? { kind: "LEGACY", giftPicker } : { kind: "LEGACY" };
+  if (resolution.kind === "LEGACY") return { kind: "LEGACY", shippingQuote: resolution.shippingQuote, ...(giftPicker ? { giftPicker } : {}) };
   if (resolution.kind === "UNAVAILABLE") return { kind: "UNAVAILABLE", reason: "BENEFITS_UNAVAILABLE" };
   if (resolution.kind === "GIFT_SELECTION_INVALID") return { kind: "UNAVAILABLE", reason: "GIFT_SELECTION_INVALID", giftPicker: giftPicker ? { ...giftPicker, invalid: true } : undefined };
 

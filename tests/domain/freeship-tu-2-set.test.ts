@@ -1,237 +1,82 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
-import {
-  calculateGuestShippingFeeVnd,
-  describeGuestShippingPromotion,
-  describeGuestShippingPromotionHeadline,
-  readGuestShippingPolicy,
-} from "../../src/commerce/guest-shipping-policy.ts";
-import {
-  buildBenefitCheckoutQuoteFacts,
-  buildRenderedCheckoutQuoteFacts,
-} from "../../src/commerce/checkout-quote.ts";
-import {
-  isSetPromotionScope,
-  SET_PROMOTION_CATEGORY_KEYS,
-  DEFAULT_SET_PROMOTION_SCOPE,
-} from "../../src/commerce/gift-quantity-scope.ts";
+import { buildBenefitCheckoutQuoteFacts, buildRenderedCheckoutQuoteFacts } from "../../src/commerce/checkout-quote.ts";
+import { evaluateShippingCampaigns, shippingFeeFromQuote, type ShippingCampaign, type ShippingQuote } from "../../src/commerce/shipping-campaign.ts";
+import { buildShippingPromotionNotice } from "../../src/components/headless/shipping-promotion-model.ts";
+import { issueRenderedQuoteProof, verifyRenderedQuoteProof, issueBenefitQuoteProof, verifyBenefitQuoteProof } from "../../src/commerce/checkout-quote-proof.ts";
 import type { StorefrontCartLine } from "../../src/commerce/storefront-cart.ts";
 
-function createMockCartLine({
-  variantId,
-  variationId,
-  price,
-  quantity,
-  available = true,
-}: {
-  variantId: string;
-  variationId: string;
-  price: number;
-  quantity: number;
-  available?: boolean;
-}): StorefrontCartLine {
-  return {
-    variantId,
-    pancakeVariationId: variationId,
-    pancakeProductId: `prod-${variantId}`,
-    productSlug: `slug-${variantId}`,
-    productName: `Product ${variantId}`,
-    color: "Red",
-    size: "M",
-    quantity,
-    price,
-    available,
-    unavailableReason: null,
-    isPreorderSale: false,
-    media: { primary: null, gallery: [] },
-  };
-}
-
-test("Scope: SET_PROMOTION_CATEGORY_KEYS includes canonical Set categories aoDai, setDo, vayDam", () => {
-  assert.deepEqual(SET_PROMOTION_CATEGORY_KEYS, ["aoDai", "setDo", "vayDam"]);
-  assert.equal(isSetPromotionScope(DEFAULT_SET_PROMOTION_SCOPE), true);
-  assert.equal(
-    isSetPromotionScope({
-      mode: "DYNAMIC_CATEGORY",
-      categoryKeys: ["aoDai"],
-      includeProductIds: [],
-      excludeProductIds: [],
-    }),
-    true,
-  );
-  assert.equal(
-    isSetPromotionScope({
-      mode: "DYNAMIC_CATEGORY",
-      categoryKeys: ["phuKien"],
-      includeProductIds: [],
-      excludeProductIds: [],
-    }),
-    false,
-  );
-  assert.equal(
-    isSetPromotionScope({
-      mode: "GLOBAL_ALL_PAID_LINES",
-    }),
-    false,
-  );
+const now = new Date("2026-10-20T12:00:00Z");
+const policy = { feeVnd: 30_000 };
+const campaign: ShippingCampaign = {
+  id: "shipping-two", revision: 1, name: "Mua hai Set", isEnabled: true, enabledAt: now, disabledAt: null,
+  startsAt: now, endsAt: new Date(now.getTime() + 60000), minimumQuantity: 2, priority: 0, stackingEnabled: true,
+  scope: { mode: "DYNAMIC_CATEGORY", categoryKeys: ["aoDai", "setDo", "vayDam"], includeProductIds: [], excludeProductIds: [] },
+};
+const line = (quantity: number): StorefrontCartLine => ({
+  variantId: "v-one", pancakeVariationId: "pv-one", pancakeProductId: "p-one", productSlug: "set-one", productName: "Set One",
+  quantity, price: 450000, available: true, unavailableReason: null, color: "Red", size: "M", isPreorderSale: false, media: { primary: null, gallery: [] },
+});
+const shipping = (quantity: number, campaigns: readonly ShippingCampaign[] = [campaign], at = now) => evaluateShippingCampaigns({
+  policy, now: at, campaigns, hasOtherPromotions: true,
+  lines: [{ role: "PAID", product: { productId: "p-one", categoryKeys: ["setQuanAo"] }, quantity }],
 });
 
-test("Policy: default guest shipping policy has freeship from 2 Sets and legacy rules disabled", () => {
-  const policy = readGuestShippingPolicy({});
-  assert.equal(policy.feeVnd, 30_000);
-  assert.equal(policy.freeShippingMinSetQuantity, 2);
-  assert.equal(policy.freeShippingMinQuantity, 0);
-  assert.equal(policy.freeShippingSubtotalVnd, 0);
-
-  assert.equal(describeGuestShippingPromotionHeadline(policy), "Free ship khi mua từ 2 Set");
-  assert.deepEqual(describeGuestShippingPromotion(policy), {
-    title: "Miễn phí vận chuyển",
-    detail: "Miễn phí vận chuyển khi mua từ 2 Set.",
+test("campaign configuration, not an ambient minimum of two, controls all quote totals", () => {
+  for (const quantity of [1, 2, 3, 4, 5]) {
+    const basic = buildRenderedCheckoutQuoteFacts([line(quantity)], { shippingPolicy: policy, shippingQuote: shipping(quantity, []) });
+    const promoted = buildRenderedCheckoutQuoteFacts([line(quantity)], { shippingPolicy: policy, shippingQuote: shipping(quantity) });
+    assert.equal(basic?.shippingFeeVnd, 30000);
+    assert.equal(promoted?.shippingFeeVnd, quantity >= 2 ? 0 : 30000);
+    assert.equal(promoted?.totalVnd, quantity * 450000 + (quantity >= 2 ? 0 : 30000));
+  }
+});
+test("benefit quotes preserve paid discounts and zero-price gifts while accepting the same shipping decision", () => {
+  const facts = buildBenefitCheckoutQuoteFacts({
+    paid: [{ groupKey: "p-one", pancakeVariationId: "pv-one", quantity: 3, unitPriceVnd: 400000, steps: [], fulfillmentState: "READY" }],
+    gifts: [{ campaignId: "gift", campaignRevision: 1, pancakeVariationId: "pv-gift", quantity: 1 }],
+    entitlements: [{ campaignId: "gift", campaignRevision: 1, entitled: 1, selected: 1, skippedWhileAvailable: 0, contendedForSharedStock: 0, shortForStock: 0 }],
+    shippingQuote: shipping(3), shippingPolicy: policy,
   });
+  assert.ok(facts);
+  assert.equal(facts.shippingFeeVnd, 0);
+  assert.equal(facts.totalVnd, 1200000);
+  assert.equal(facts.lines.filter((entry) => entry.role === "GIFT")[0]?.lineTotalVnd, 0);
 });
-
-test("Fee calculation: 1 Set charges 30,000 VND shipping fee", () => {
-  const fee = calculateGuestShippingFeeVnd({
-    subtotalVnd: 450_000,
-    totalQuantity: 1,
-    qualifyingSetQuantity: 1,
-  });
-  assert.equal(fee, 30_000);
+test("expiry and an edited threshold invalidate an old rendered quote instead of silently increasing the bill", () => {
+  const cartId = "0f8d3c2a-4b1e-4d7a-9c6b-2e5f1a8d4c30";
+  const secret = "test-server-secret-at-least-32-characters-long";
+  const before = buildRenderedCheckoutQuoteFacts([line(2)], { shippingPolicy: policy, shippingQuote: shipping(2) })!;
+  const proof = issueRenderedQuoteProof({ quote: before, cartId, secret });
+  assert.ok(proof);
+  for (const changed of [shipping(2, [campaign], campaign.endsAt!), shipping(2, [{ ...campaign, revision: 2, minimumQuantity: 3 }])]) {
+    const after = buildRenderedCheckoutQuoteFacts([line(2)], { shippingPolicy: policy, shippingQuote: changed })!;
+    assert.equal(after.shippingFeeVnd, 30000);
+    const verdict = verifyRenderedQuoteProof({ proof, cartId, currentQuote: after, secret });
+    assert.equal(verdict.ok, false);
+  }
 });
-
-test("Fee calculation: 2 Sets qualify for 0 VND freeship", () => {
-  const fee = calculateGuestShippingFeeVnd({
-    subtotalVnd: 900_000,
-    totalQuantity: 2,
-    qualifyingSetQuantity: 2,
-  });
-  assert.equal(fee, 0);
+test("benefit proof also binds the shipping amount", () => {
+  const paid = [{ groupKey: "p-one", pancakeVariationId: "pv-one", quantity: 2, unitPriceVnd: 400000, steps: [], fulfillmentState: "READY" as const }];
+  const before = buildBenefitCheckoutQuoteFacts({ paid, gifts: [], entitlements: [], shippingPolicy: policy, shippingQuote: shipping(2) })!;
+  const after = buildBenefitCheckoutQuoteFacts({ paid, gifts: [], entitlements: [], shippingPolicy: policy, shippingQuote: shipping(2, []) })!;
+  const cartId = "cart-one", secret = "test-server-secret-at-least-32-characters-long";
+  const proof = issueBenefitQuoteProof({ quote: before, cartId, secret });
+  assert.deepEqual(verifyBenefitQuoteProof({ proof, cartId, currentQuote: after, secret }), { ok: false, reason: "PRICE_CHANGED" });
 });
-
-test("Fee calculation: 3 Sets qualify for 0 VND freeship (stacks with Mua 3)", () => {
-  const fee = calculateGuestShippingFeeVnd({
-    subtotalVnd: 1_350_000,
-    totalQuantity: 3,
-    qualifyingSetQuantity: 3,
-  });
-  assert.equal(fee, 0);
+test("public shipping copy follows campaign state and has no internal scope identities", () => {
+  assert.equal(buildShippingPromotionNotice([], now), null);
+  assert.equal(buildShippingPromotionNotice([{ ...campaign, isEnabled: false }], now), null);
+  assert.equal(buildShippingPromotionNotice([campaign], campaign.endsAt!), null);
+  assert.equal(buildShippingPromotionNotice([{ ...campaign, startsAt: new Date(now.getTime() + 1) }], now), null);
+  const notice = buildShippingPromotionNotice([campaign], now)!;
+  assert.match(notice.headline, /2/);
+  assert.equal(notice.expiresAtMs, campaign.endsAt!.getTime());
+  assert.doesNotMatch(JSON.stringify(notice), /shipping-two|includeProductIds|excludeProductIds/);
+  assert.match(buildShippingPromotionNotice([{ ...campaign, minimumQuantity: 3 }], now)!.headline, /3/);
 });
-
-test("Fee calculation: 4 Sets qualify for 0 VND freeship (stacks with Mua 4)", () => {
-  const fee = calculateGuestShippingFeeVnd({
-    subtotalVnd: 1_800_000,
-    totalQuantity: 4,
-    qualifyingSetQuantity: 4,
-  });
-  assert.equal(fee, 0);
-});
-
-test("Fee calculation: 5 Sets qualify for 0 VND freeship (stacks with Mua 5 -10%)", () => {
-  const fee = calculateGuestShippingFeeVnd({
-    subtotalVnd: 2_025_000,
-    totalQuantity: 5,
-    qualifyingSetQuantity: 5,
-  });
-  assert.equal(fee, 0);
-});
-
-test("Legacy rules stopped: 3 non-set products or subtotal > 1,000,000 VND do NOT get freeship if < 2 Sets", () => {
-  // 3 non-set products, total 600k, 0 Set -> charges 30,000 VND
-  assert.equal(
-    calculateGuestShippingFeeVnd({
-      subtotalVnd: 600_000,
-      totalQuantity: 3,
-      qualifyingSetQuantity: 0,
-    }),
-    30_000,
-  );
-
-  // 1 non-set product, total 1,500,000 VND, 0 Set -> charges 30,000 VND
-  assert.equal(
-    calculateGuestShippingFeeVnd({
-      subtotalVnd: 1_500_000,
-      totalQuantity: 1,
-      qualifyingSetQuantity: 0,
-    }),
-    30_000,
-  );
-
-  // 4 non-set products, total 2,000,000 VND, 1 Set + 3 non-sets -> charges 30,000 VND
-  assert.equal(
-    calculateGuestShippingFeeVnd({
-      subtotalVnd: 2_000_000,
-      totalQuantity: 4,
-      qualifyingSetQuantity: 1,
-    }),
-    30_000,
-  );
-
-  // Mixed: 2 Sets + 1 accessory = 3 items -> qualifies because 2 Sets >= 2
-  assert.equal(
-    calculateGuestShippingFeeVnd({
-      subtotalVnd: 1_100_000,
-      totalQuantity: 3,
-      qualifyingSetQuantity: 2,
-    }),
-    0,
-  );
-});
-
-test("Rendered quote: calculates 0 VND shipping fee when qualifyingSetQuantity >= 2", () => {
-  const lines = [
-    createMockCartLine({ variantId: "var-1", variationId: "p-var-1", price: 450_000, quantity: 1 }),
-    createMockCartLine({ variantId: "var-2", variationId: "p-var-2", price: 500_000, quantity: 1 }),
-  ];
-
-  // Without qualifying set quantity (or < 2)
-  const quoteNormal = buildRenderedCheckoutQuoteFacts(lines, { qualifyingSetQuantity: 1 });
-  assert.equal(quoteNormal?.shippingFeeVnd, 30_000);
-  assert.equal(quoteNormal?.totalVnd, 950_000 + 30_000);
-
-  // With 2 qualifying Sets
-  const quoteFreeship = buildRenderedCheckoutQuoteFacts(lines, { qualifyingSetQuantity: 2 });
-  assert.equal(quoteFreeship?.shippingFeeVnd, 0);
-  assert.equal(quoteFreeship?.totalVnd, 950_000);
-});
-
-test("Benefit quote: calculates 0 VND shipping fee when qualifyingSetQuantity >= 2 and stacks with promotions", () => {
-  const quote = buildBenefitCheckoutQuoteFacts({
-    paid: [
-      {
-        groupKey: "group-1",
-        pancakeVariationId: "pv-1",
-        quantity: 3,
-        unitPriceVnd: 400_000,
-        steps: [],
-        fulfillmentState: "READY",
-      },
-    ],
-    gifts: [
-      {
-        campaignId: "campaign-mua-3-tang-1",
-        campaignRevision: 1,
-        pancakeVariationId: "pv-gift-1",
-        quantity: 1,
-      },
-    ],
-    entitlements: [
-      {
-        campaignId: "campaign-mua-3-tang-1",
-        campaignRevision: 1,
-        entitled: 1,
-        selected: 1,
-        skippedWhileAvailable: 0,
-        contendedForSharedStock: 0,
-        shortForStock: 0,
-      },
-    ],
-    qualifyingSetQuantity: 3,
-  });
-
-  assert.ok(quote);
-  assert.equal(quote.shippingFeeVnd, 0, "Shipping fee must be 0 for 3 Sets");
-  assert.equal(quote.paidSubtotalVnd, 1_200_000);
-  assert.equal(quote.totalVnd, 1_200_000);
-  assert.equal(quote.lines.filter((l) => l.role === "GIFT").length, 1);
+test("a malformed shipping projection cannot manufacture a waiver", () => {
+  for (const malformed of [{ baseFeeVnd: 30000, feeVnd: 0 }, { baseFeeVnd: 30000, feeVnd: 0, campaign: {} }, { ...shipping(2), baseFeeVnd: 1 }, { ...shipping(2), feeVnd: -1 }]) {
+    assert.throws(() => shippingFeeFromQuote(malformed as ShippingQuote, policy), RangeError);
+  }
 });

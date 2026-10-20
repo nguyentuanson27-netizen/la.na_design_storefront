@@ -8,7 +8,7 @@ import {
   resolveCompositeSubSetAuthorityFromRows,
 } from "./composite-subset-authority.ts";
 import { parseGuestCheckoutInput } from "./guest-checkout-input.ts";
-import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
+import { shippingQuoteAudit } from "./shipping-campaign-repository.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type { PromotionCandidateReadClient } from "./promotion-candidate-repository.ts";
 import {
@@ -678,7 +678,7 @@ export function createGuestCheckoutSnapshotService(
 
         // GQ17 -- a cart with gifts or quantity-tier segments is priced from the same derivation the
         // cart page shows, proven in the benefit format, and stored by lineId. Everything else (gate
-        // OFF, or nothing applies) runs the legacy path below exactly as before.
+        // OFF, or nothing applies) uses ordinary merchandise plus its authoritative shipping quote.
         const resolution = await resolveBenefitCheckoutQuote({
           tx,
           cartId,
@@ -856,10 +856,7 @@ export function createGuestCheckoutSnapshotService(
               );
             }
 
-            shippingFeeVnd = calculateGuestShippingFeeVnd({
-              subtotalVnd: merchandiseSubtotalVnd,
-              totalQuantity,
-            });
+            shippingFeeVnd = resolution.shippingQuote.feeVnd;
             const checkedTotalVnd = checkedAddVnd(merchandiseSubtotalVnd, shippingFeeVnd);
             if (checkedTotalVnd === null) {
               return { ok: false, reason: "MONEY_UNSUPPORTED" };
@@ -892,6 +889,7 @@ export function createGuestCheckoutSnapshotService(
         }
 
         const draftFacts = {
+          ...shippingQuoteAudit(resolution.shippingQuote),
           syncErrorCode: null,
           checkoutSnapshottedAt: now,
           guestName: parsedCheckout.value.name,

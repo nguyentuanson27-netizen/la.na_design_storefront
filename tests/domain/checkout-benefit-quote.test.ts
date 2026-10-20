@@ -126,7 +126,7 @@ test("a gift is its own 0d READY line even when its variation is also bought, an
   });
   const giftLine = withGifts.lines.find((line) => line.role === "GIFT")!;
   assert.deepEqual([giftLine.lineId, giftLine.pancakeVariationId, giftLine.unitPriceVnd, giftLine.lineTotalVnd, giftLine.fulfillmentState, giftLine.campaign], ["G:camp-1:var-1", "var-1", 0, 0, "READY", { id: "camp-1", revision: 3 }]);
-  // Five free units do not carry a two-unit order across the 3-unit free-shipping line.
+  // Free units never manufacture a shipping campaign.
   assert.equal(withGifts.shippingFeeVnd, GUEST_SHIPPING_FEE_VND);
   assert.equal(withGifts.paidSubtotalVnd, paidOnly.paidSubtotalVnd);
   assert.equal(withGifts.totalVnd, paidOnly.totalVnd);
@@ -365,30 +365,18 @@ test("the digest identifies the quote: equal facts agree, any difference disagre
   assert.equal(proof(quote).includes(benefitQuoteDigest(quote)), false);
 });
 
-// -- GQ22: shipping stays paid-only and keeps its thresholds ---------------------------------------------
-
-import { GUEST_FREE_SHIPPING_MIN_QUANTITY, GUEST_FREE_SHIPPING_SUBTOTAL_VND } from "../../src/commerce/guest-shipping-policy.ts";
-
-test("GQ22: free shipping is decided by paid quantity (>=) and paid subtotal (>) only, exactly as before", () => {
-  const shipping = (paidGroups: BenefitQuotePaidGroup[], gifts: BenefitQuoteGift[] = [], entitled = 0) =>
-    build({ paid: paidGroups, gifts, entitlements: entitled > 0 ? [slots(entitled, entitled)] : [] }).shippingFeeVnd;
-  // Subtotal threshold is strict: exactly the threshold still pays shipping, one đồng more does not.
-  assert.equal(shipping([paidGroup({ quantity: 2, unitPriceVnd: GUEST_FREE_SHIPPING_SUBTOTAL_VND / 2 })]), GUEST_SHIPPING_FEE_VND);
-  assert.equal(shipping([paidGroup({ quantity: 1, unitPriceVnd: GUEST_FREE_SHIPPING_SUBTOTAL_VND + 1 })]), 0);
-  // Quantity threshold is inclusive on PAID units.
-  assert.equal(shipping([paidGroup({ quantity: GUEST_FREE_SHIPPING_MIN_QUANTITY - 1, unitPriceVnd: 1000 })]), GUEST_SHIPPING_FEE_VND);
-  assert.equal(shipping([paidGroup({ quantity: GUEST_FREE_SHIPPING_MIN_QUANTITY, unitPriceVnd: 1000 })]), 0);
-  // Split price segments of one variation count as the PAID units they are.
-  assert.equal(shipping([paidGroup({ groupKey: "a", quantity: 2, unitPriceVnd: 1000 }), paidGroup({ groupKey: "b", quantity: 1, unitPriceVnd: 900 })]), 0);
+// PR198 replaces the retired quantity/subtotal waiver; gifts still never alter paid merchandise.
+test("shipping without an active campaign stays at the base fee across the retired thresholds", () => {
+  for (const paid of [[paidGroup({ quantity: 2, unitPriceVnd: 500000 })], [paidGroup({ quantity: 1, unitPriceVnd: 1000001 })], [paidGroup({ quantity: 3, unitPriceVnd: 1000 })], [paidGroup({ groupKey: "a", quantity: 2, unitPriceVnd: 1000 }), paidGroup({ groupKey: "b", quantity: 1, unitPriceVnd: 900 })]]) {
+    assert.equal(build({ paid }).shippingFeeVnd, GUEST_SHIPPING_FEE_VND);
+  }
 });
 
-test("GQ22: gift units never carry an order across a shipping threshold, in either direction", () => {
-  const belowQuantity = [paidGroup({ quantity: GUEST_FREE_SHIPPING_MIN_QUANTITY - 1, unitPriceVnd: 1000 })];
-  const withGifts = build({ paid: belowQuantity, gifts: [gift({ quantity: 50 })], entitlements: [slots(50, 50)] });
-  assert.equal(withGifts.shippingFeeVnd, GUEST_SHIPPING_FEE_VND, "50 free units do not earn free shipping");
-  // And the subtotal is untouched by gifts: a 0đ line adds nothing.
-  assert.equal(withGifts.paidSubtotalVnd, build({ paid: belowQuantity }).paidSubtotalVnd);
-  // A discount that brings the PAID subtotal back under the threshold brings shipping back (the discounted money counts).
-  const discounted = build({ paid: [paidGroup({ quantity: 1, unitPriceVnd: GUEST_FREE_SHIPPING_SUBTOTAL_VND, steps: [{ ...tierStep, inputPriceVnd: GUEST_FREE_SHIPPING_SUBTOTAL_VND + 1, outputPriceVnd: GUEST_FREE_SHIPPING_SUBTOTAL_VND }] })] });
+test("gift units cannot produce automatic free shipping or change the paid subtotal", () => {
+  const paid = [paidGroup({ quantity: 2, unitPriceVnd: 1000 })];
+  const withGifts = build({ paid, gifts: [gift({ quantity: 50 })], entitlements: [slots(50, 50)] });
+  assert.equal(withGifts.shippingFeeVnd, GUEST_SHIPPING_FEE_VND);
+  assert.equal(withGifts.paidSubtotalVnd, build({ paid }).paidSubtotalVnd);
+  const discounted = build({ paid: [paidGroup({ quantity: 1, unitPriceVnd: 1000000, steps: [{ ...tierStep, inputPriceVnd: 1000001, outputPriceVnd: 1000000 }] })] });
   assert.equal(discounted.shippingFeeVnd, GUEST_SHIPPING_FEE_VND);
 });

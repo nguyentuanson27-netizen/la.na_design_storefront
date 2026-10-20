@@ -1,9 +1,5 @@
 import { BRAND } from "../../brand/index.ts";
-import {
-  describeGuestShippingPromotion,
-  describeGuestShippingPromotionHeadline,
-  readGuestShippingPolicy,
-} from "../../commerce/guest-shipping-policy.ts";
+import type { ShippingPromotionNotice } from "./shipping-promotion-model.ts";
 import {
   describePublicAddress,
   describePublicSupportHours,
@@ -28,6 +24,7 @@ export type SitePromotionModel = Readonly<{
   /** The landmark's accessible name: short and stable, the headline is what it introduces. */
   label: string;
   headline: string;
+  shipping?: ShippingPromotionNotice | null;
 }>;
 
 export type CategoryMegaMedia = Readonly<{
@@ -60,19 +57,20 @@ export type SiteChromeContent = Readonly<{
   footer: SiteFooterModel;
 }>;
 
-export const DEFAULT_SITE_PROMOTION_HEADLINE = "Freeship từ 2 Set · Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10%";
+export const DEFAULT_SITE_PROMOTION_HEADLINE = "Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10%";
 
 export function buildSiteChromeContent(
   headerMedia: readonly CategoryMegaMedia[] = [],
   env: Readonly<Record<string, string | undefined>> = process.env,
+  shipping: ShippingPromotionNotice | null = null,
 ): SiteChromeContent {
-  const policy = readGuestShippingPolicy(env);
   const headline = env.LA_TOP_PROMOTION_HEADLINE?.trim() || DEFAULT_SITE_PROMOTION_HEADLINE;
 
   return {
     promotion: {
       label: "Chương trình khuyến mại",
       headline,
+      shipping,
     },
     header: {
       megaMedia: headerMedia,

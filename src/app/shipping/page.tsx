@@ -1,3 +1,4 @@
+import { ShippingPromotionNoticeView } from "@/components/brand/shipping-promotion-notice";
 import Link from "next/link";
 
 import { PageBreadcrumbs, PageHeader, PageShell } from "@/components/brand/page-chrome";
@@ -72,6 +73,7 @@ function render(data: ShippingViewModel) {
             {data.shippingPromotionTitle}: {data.shippingPromotionDetail} Phí vận chuyển và điều kiện miễn phí được máy chủ
             áp dụng tại thời điểm đặt hàng.
           </p>
+          <ShippingPromotionNoticeView initial={data.activeShippingPromotion} detailed />
         </section>
 
         <section aria-labelledby="tracking-heading">

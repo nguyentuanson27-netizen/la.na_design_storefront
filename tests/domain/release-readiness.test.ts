@@ -38,8 +38,6 @@ test("release preflight validates required server configuration without returnin
     contactDeliveryConfigured: true,
     shippingPolicy: {
       feeVnd: 30_000,
-      freeShippingSubtotalVnd: 1_000_000,
-      freeShippingMinQuantity: 3,
     },
     identityMirrors: {
       databaseName: PROJECT_CONFIG.databaseName,

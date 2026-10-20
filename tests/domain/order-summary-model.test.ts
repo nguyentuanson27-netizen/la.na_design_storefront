@@ -76,7 +76,7 @@ test("the cart builds the bill when the server supplies the shipping policy, and
   const model = buildCartViewModel({ lines: [line()], commerceTrackingEnabled: false, benefitCheckoutOpen: true, giftState: state(), shippingPolicy: DEFAULT_GUEST_SHIPPING_POLICY });
   assert.deepEqual(
     [model.summary?.valueText, model.summary?.discounts.map((d) => d.label), model.summary?.shippingText, model.summary?.totalText],
-    [vnd("3.445.000"), ["Mua 3 giảm 13%"], "Miễn phí", vnd("3.178.000")],
+    [vnd("3.445.000"), ["Mua 3 giảm 13%"], vnd("30.000"), vnd("3.208.000")],
   );
   // The order value is the lines' own prices, which is what the shopper sees on the page.
   assert.equal(model.summary?.valueText, vnd((5 * 689_000).toLocaleString("vi-VN")));
@@ -92,8 +92,8 @@ test("gate OFF with a policy: the bill is value, shipping, total with no discoun
   assert.deepEqual([model.summary?.valueText, model.summary?.discounts, model.summary?.shippingText, model.summary?.totalText], [vnd("200.000"), [], vnd("30.000"), vnd("230.000")]);
 });
 
-test("free shipping is judged on the goods AFTER discounts, as checkout does", () => {
-  // 2 × 520.000 = 1.040.000 clears the 1.000.000 free-shipping line, but a 5 % discount brings it to 988.000: shipping is charged.
+test("the base shipping fee is added after merchandise discounts when no campaign applies", () => {
+  // A merchandise discount changes the goods, not the independently configured shipping fee.
   const step = { campaignId: "order", source: "QUANTITY_TIER" as const, kind: "QUANTITY_TIER", priority: 1, inputPriceVnd: 520_000, outputPriceVnd: 494_000, appliedQuantity: 2 };
   const l = line({ quantity: 2, price: 520_000 });
   const s = state({ goods: 988_000, groups: [{ groupKey: "paid", lineKey: "paid", quantity: 2, unitPriceVnd: 494_000, steps: [step] }] });
@@ -141,6 +141,6 @@ test("a benefit checkout lists each named discount between the value and the shi
   const model = buildBenefitCheckoutViewModel({ lines: [line()], render });
   assert.deepEqual(
     [model.summary?.valueText, model.summary?.discounts.map((d) => d.label), model.summary?.shippingText, model.summary?.totalText],
-    [vnd("3.445.000"), ["Mua 3 giảm 13%"], "Miễn phí", model.totals?.totalText],
+    [vnd("3.445.000"), ["Mua 3 giảm 13%"], vnd("30.000"), model.totals?.totalText],
   );
 });

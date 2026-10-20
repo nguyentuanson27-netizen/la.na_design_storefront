@@ -120,6 +120,9 @@ export default async function PromotionsAdminPage({ searchParams }: PromotionsPa
           </p>
         </div>
         <div className="flex flex-wrap gap-3">
+          <Link className={`${buttonClassName} inline-flex items-center`} href="/admin/promotions/shipping">
+            {"Khuyến mại vận chuyển"}
+          </Link>
           <Link className={`${buttonClassName} inline-flex items-center`} href="/admin/promotions/gift-quantity">
             Quà tặng &amp; giảm theo số lượng
           </Link>

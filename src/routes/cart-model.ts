@@ -11,7 +11,8 @@ import { buildCartGiftPickerModel, type CartGiftPickerModel } from "./cart-gift-
 import { buildCartPromotionView, type PromotionBannerView } from "./cart-promotion-model.ts";
 import { describeLineDiscount } from "./line-discount-model.ts";
 import { buildOrderSummary, type OrderSummaryView } from "./order-summary-model.ts";
-import { calculateGuestShippingFeeVnd, type GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import type { GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import { shippingFeeFromQuote, type ShippingQuote } from "../commerce/shipping-campaign.ts";
 
 /**
  * Everything the cart route decides, as one pure function.
@@ -172,7 +173,7 @@ function listedUnitPrices(lines: readonly StorefrontCartLine[]): ReadonlyMap<str
 }
 
 function summaryEntry(
-  input: Readonly<{ lines: readonly StorefrontCartLine[]; shippingPolicy?: GuestShippingPolicy; benefitsUnavailable?: boolean }>,
+  input: Readonly<{ lines: readonly StorefrontCartLine[]; shippingPolicy?: GuestShippingPolicy; shippingQuote?: ShippingQuote; benefitsUnavailable?: boolean }>,
   subtotal: number | null,
   benefitSubtotal: number | undefined,
   state: CartGiftState | undefined,
@@ -186,11 +187,7 @@ function summaryEntry(
   let shippingFeeVnd: number;
   try {
     // Same rule checkout applies: on the goods after discounts and the paid quantity.
-    const qualifyingSetQuantity = state?.qualifyingSetQuantity ?? 0;
-    shippingFeeVnd = calculateGuestShippingFeeVnd(
-      { subtotalVnd: goodsAfterDiscounts, totalQuantity: quantity, qualifyingSetQuantity },
-      input.shippingPolicy,
-    );
+    shippingFeeVnd = shippingFeeFromQuote(input.shippingQuote, input.shippingPolicy);
   } catch {
     return {};
   }
@@ -215,16 +212,13 @@ function withShippingEstimate(
   // Without readable benefits the goods total after discounts is unknown ("Chưa thể tính"), so is shipping.
   benefitsUnavailable: boolean,
   entry: { summary?: OrderSummaryView },
-  qualifyingSetQuantity = 0,
+  shippingQuote?: ShippingQuote,
 ): { summary?: OrderSummaryView; shippingBaseFeeText?: string } {
   if (entry.summary || policy === undefined || goodsSubtotalVnd === null || benefitsUnavailable) return entry;
   const quantity = lines.reduce((sum, line) => sum + (line.available ? line.quantity : 0), 0);
   if (!Number.isSafeInteger(quantity) || quantity < 1) return entry;
   try {
-    const feeVnd = calculateGuestShippingFeeVnd(
-      { subtotalVnd: goodsSubtotalVnd, totalQuantity: quantity, qualifyingSetQuantity },
-      policy,
-    );
+    const feeVnd = shippingFeeFromQuote(shippingQuote, policy);
     return { shippingBaseFeeText: feeVnd === 0 ? "Miễn phí" : currency.format(feeVnd) };
   } catch {
     return entry;
@@ -292,7 +286,7 @@ export function buildCartViewModel(
      * The shipping policy, read on the server (it comes from the environment, which a browser bundle cannot
      * see). Without it the model builds no `summary`.
      */
-    shippingPolicy?: GuestShippingPolicy;
+    shippingPolicy?: GuestShippingPolicy; shippingQuote?: ShippingQuote;
   }>,
 ): CartViewModel {
   const subtotal = cartAvailableSubtotal(input.lines);
@@ -349,7 +343,7 @@ export function buildCartViewModel(
     ...(state ? { gifts: buildCartGiftPickerModel(state) } : {}),
     ...promotionsEntry(state, benefitBlocked, input.lines),
     ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
-    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), state?.qualifyingSetQuantity),
+    ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), input.shippingQuote),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
       ? "Quà nàng chọn không còn hợp lệ. Nàng chọn lại quà trong giỏ trước khi đặt hàng nhé."
       : tierPriceInvalid

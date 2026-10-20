@@ -66,7 +66,7 @@ test("TG-02/05/06/07: dynamic explicit INCLUDE, no category; +1 quote and shippi
   const model = await offer();
   assert.equal(model.offer!.products.length, 1);
   assert.equal(model.offer!.products[0]!.productId, candidateProductId);
-  assert.deepEqual(model.offer!.products[0]!.variants.map((v) => v.deltaVnd).sort((a,b) => a-b), [70000, 80000]);
+  assert.deepEqual(model.offer!.products[0]!.variants.map((v) => v.deltaVnd).sort((a,b) => a-b), [100000, 110000]);
   assert.deepEqual(await prisma.cartItem.findMany({ where: { cartId } }), before);
   assert.equal(JSON.stringify(model).includes(cartId), false);
 });
@@ -175,7 +175,7 @@ test("TG-02/03: both quantity and money tier use actual canonical rung +1, inclu
   const paid = await prisma.variantMirror.findUniqueOrThrow({ where: { id: paidId }, select: { productId: true } });
   await prisma.giftQuantityCampaign.create({ data: { id: campaignId, name: "Tier", kind: "QUANTITY_TIER", isEnabled: true, enabledAt: new Date(), scopeMode: "DYNAMIC_CATEGORY", categoryKeys: [], tierBasis: "QUANTITY", tierUnit: "PERCENTAGE", tierDiscountedUnits: "ALL_ELIGIBLE_UNITS", targets: { create: [paid.productId, candidateProductId].map((productId) => ({ productId, role: "INCLUDE" })) }, tiers: { create: { minQuantity: 3, discountValue: 10 } } } });
   const q = await offer();
-  assert.equal(q.offer!.products[0]!.variants[0]!.deltaVnd, 40000);
+  assert.equal(q.offer!.products[0]!.variants[0]!.deltaVnd, 70000);
   await prisma.giftQuantityCampaign.update({ where: { id: campaignId }, data: { scopeMode: "GLOBAL_ALL_PAID_LINES", tierBasis: "ORDER_SUBTOTAL", targets: { deleteMany: {} }, tiers: { deleteMany: {}, create: { minQuantity: 250000, discountValue: 10 } } } });
   assert.ok((await offer()).offer);
   await prisma.variantMirror.updateMany({ where: { productId: candidateProductId }, data: { pancakeRetailPrice: 10000, pancakeRetailPriceAfterDiscount: 10000 } });

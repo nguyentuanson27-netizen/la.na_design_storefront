@@ -223,34 +223,22 @@ jobs:
             exit 1
           fi
 
-          # The masthead carries the campaign headline, independently of shipping thresholds.
-          # /shipping below owns the runtime-vs-build-time shipping policy assertions.
+          # Old threshold env values above are deliberately retained as regression inputs.
+          # They cannot affect base fees or advertise an automatic waiver anymore.
           curl --fail --silent --show-error http://127.0.0.1:3218/ > "$RUNNER_TEMP/storefront.html"
-          if grep -Fq "5 sản phẩm hoặc đơn trên 650 nghìn" "$RUNNER_TEMP/storefront.html"; then
-            echo "Homepage promotion headline rendered the build-time policy instead of the runtime policy"
+          if ! grep -Fq "Mua 3" "$RUNNER_TEMP/storefront.html"; then
+            echo "Homepage promotion did not render the merchandise campaign headline"
             exit 1
           fi
-          if ! grep -Fq "Mua 3 tặng 1 - Mua 5 giảm 10% tổng hóa đơn" "$RUNNER_TEMP/storefront.html"; then
-            echo "Homepage promotion did not render the campaign headline"
+          if ! grep -Fq "25.000" "$RUNNER_TEMP/shipping.html"; then
+            echo "Shipping did not render the runtime base fee"
             exit 1
           fi
-
-          if grep -Fq "750.000" "$RUNNER_TEMP/shipping.html" && grep -Fq "4 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
-            if grep -Fq "650.000" "$RUNNER_TEMP/shipping.html" || grep -Fq "5 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
-              echo "Shipping promotion mixes runtime and build-time policy"
-              exit 1
-            fi
-            echo "Shipping promotion resolved the runtime policy"
-            exit 0
-          fi
-
-          if grep -Fq "650.000" "$RUNNER_TEMP/shipping.html" && grep -Fq "5 sản phẩm" "$RUNNER_TEMP/shipping.html"; then
-            echo "Shipping promotion rendered the build-time policy instead of the runtime policy"
+          if grep -Eq '17\.000|650\.000|750\.000' "$RUNNER_TEMP/shipping.html"; then
+            echo "Shipping mixed build-time fees or retired thresholds into the runtime policy"
             exit 1
           fi
-
-          echo "Shipping promotion rendered an unexpected policy state"
-          exit 1
+          echo "Shipping resolved the runtime base fee and ignored retired threshold variables"
 
       - name: Release environment preflight
         env:

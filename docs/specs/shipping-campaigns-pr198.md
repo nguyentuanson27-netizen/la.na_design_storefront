@@ -1,6 +1,6 @@
 # Shipping campaigns - PR 198
 
-Status: implementation in progress; not a release approval.
+Status: implemented on PR198; release approval requires the verification gates below.
 
 ## Owner decision
 
@@ -65,4 +65,18 @@ Use focused `node --experimental-strip-types --test tests/domain/<file>.test.ts`
 
 ## Verification record
 
-No implementation or runtime verification is claimed by this specification. Actual checks and remaining release gates must be recorded with the implementation.
+Implementation: `ShippingPromotionCampaign`, `/admin/promotions/shipping`, and the independent shipping quote resolver. Campaigns start disabled and no campaign is seeded. v1 supports dynamic category membership plus explicit product inclusions/exclusions; it does not add a second fixed-product-snapshot lifecycle.
+
+Verified locally with Node 22.16 and PostgreSQL 16.15 in an isolated database:
+- Domain suite: 3,100 pass, one pre-existing skip, zero failures.
+- Typecheck: pass. ESLint: zero errors, 19 existing warnings outside the new modules.
+- Prisma schema validation, generation and all migrations (including the additive shipping migration): pass.
+- Shipping / benefit checkout database suites: 66 pass, including actual order persistence, proof invalidation, gift/tier stacking, POS payloads, expiry during the final address read, authorization and concurrent campaign edits.
+- Updated auth / snapshot / upsell database regression suites: 29 pass.
+- Clean full database rerun with the proper test environment: 991 pass, zero failures.
+
+The first broad DB run used incomplete local auth configuration and ran alongside CPU/memory-heavy checks; its seven failures comprised missing test auth configuration, retired-contract assertions, and one timing-budget failure. The affected suites pass after supplying the test environment and updating the intentional contract changes. The clean full rerun subsequently passed all 991 cases; the first run is not represented as green.
+
+Limitations: the first local production build was killed under parallel memory pressure. Local Chromium navigation was refused by environment policy (`ERR_BLOCKED_BY_ADMINISTRATOR`), before any UI assertion ran. Neither is claimed as successful verification. CI build and browser/runtime checks remain required before merge. Local warning suppression (`NODE_NO_WARNINGS=1`) only accommodates Node 22.16 experimental type-strip stderr in existing CLI golden-output tests.
+
+No production database writes, campaign activation, merge or deploy were performed. See `docs/operations/shipping-campaigns.md` for rollout and rollback boundaries.

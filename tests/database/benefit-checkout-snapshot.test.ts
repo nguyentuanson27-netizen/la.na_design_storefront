@@ -79,6 +79,7 @@ async function cleanup() {
   await prisma.cartGiftSelection.deleteMany({ where: { campaignId: { startsWith: `${P}-` } } });
   await prisma.giftQuantityCampaign.deleteMany({ where: { id: { startsWith: `${P}-` } } });
   await prisma.promotionCampaign.deleteMany({ where: { id: { startsWith: `${P}-` } } });
+  await prisma.shippingPromotionCampaign.deleteMany({ where: { pancakeShopId: SHOP } });
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP } });
 }
 
@@ -1129,7 +1130,7 @@ test("GQ24 kill switch: turning the gate OFF stops new quotes using the new rule
   const legacyFacts = await resolveBenefitCheckoutQuote({
     tx: prisma as never, cartId, shopId: SHOP, now: NOW, env: {}, lines: [],
   });
-  assert.deepEqual(legacyFacts, { kind: "LEGACY" });
+  assert.deepEqual(legacyFacts, { kind: "LEGACY", shippingQuote: { baseFeeVnd: 30000, feeVnd: 30000, campaign: null } });
 });
 
 test("GQ24 audit: a stored order names the campaign and revision of every gift and tier step it was priced with, after the campaign moves on", async () => {
@@ -1665,13 +1666,13 @@ test("GQ19: a quote that moves after the page rendered is not redeemable with th
   assert.ok(refreshed.kind === "BENEFIT" && refreshed.digest !== rendered.digest, "the refreshed page carries a new digest, so its box starts unticked");
 });
 
-test("GQ19: gate OFF, or a cart with no benefit, renders the ordinary checkout and reads nothing extra", async () => {
+test("GQ19: gate OFF, or a cart with no benefit, renders ordinary merchandise while independently checking shipping campaigns", async () => {
   await seed();
   await chooseGift(1);
-  assert.deepEqual(await checkoutRender({ LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) }), { kind: "LEGACY" });
+  assert.deepEqual(await checkoutRender({ LA_PANCAKE_LINE_LEVEL_PRICING_VERIFIED_SHOP_IDS: String(SHOP) }), { kind: "LEGACY", shippingQuote: { baseFeeVnd: 30000, feeVnd: 30000, campaign: null } });
   await cleanup();
   await seed({ tier: false, gift: false });
-  assert.deepEqual(await checkoutRender(), { kind: "LEGACY" });
+  assert.deepEqual(await checkoutRender(), { kind: "LEGACY", shippingQuote: { baseFeeVnd: 30000, feeVnd: 30000, campaign: null } });
 });
 
 test("GQ19: a shop without line-level pricing evidence is not offered a benefit checkout the POS would close", async () => {
@@ -1733,4 +1734,27 @@ test("GQ19 review: cart and checkout classify a tier-then-ceiling stack alike, e
   // And the two ends agree on that dead end.
   assert.deepEqual(await checkoutRender(ON), { kind: "UNAVAILABLE", reason: "POS_NOT_ACCEPTED" });
   assert.equal((await checkoutRender()).kind, "BENEFIT");
+});
+
+
+test("shipping campaigns stack with a proven tier and selected gifts without counting free units", async () => {
+  await seed();
+  await chooseGift(2);
+  const campaign = await prisma.shippingPromotionCampaign.create({ data: {
+    pancakeShopId: SHOP, name: "Scoped shipping", minimumQuantity: 4, priority: 0,
+    stackingEnabled: true, categoryKeys: ["vayDam"], isEnabled: true, enabledAt: PAST,
+  } });
+  // Three paid pieces plus two gifts still fail a four-paid-piece shipping minimum.
+  assert.equal((await renderedFacts()).shippingFeeVnd, 30000);
+  await prisma.shippingPromotionCampaign.update({ where: { id: campaign.id }, data: { minimumQuantity: 2, revision: { increment: 1 } } });
+  const facts = await renderedFacts();
+  assert.equal(facts.shippingFeeVnd, 0);
+  const pancake = fakePancake();
+  const live = submission(pancake, issueBenefitQuoteProof({ quote: facts, cartId, secret })!);
+  assert.equal((await live.service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, true);
+  assert.equal(pancake.calls.create[0]?.shipping_fee, 0);
+  const order = await lastOrder();
+  assert.equal(order.shippingPromotionCampaignId, campaign.id);
+  assert.equal(order.shippingPromotionRevision, 2);
+  assert.equal((await readOrderQuoteSnapshot(prisma, order.id))?.shippingFeeVnd, 0);
 });
