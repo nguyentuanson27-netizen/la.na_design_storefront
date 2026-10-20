@@ -607,3 +607,31 @@ test('"Còn x" is never claimed under preorder, overselling, or an unread policy
   }
   assert.equal(buildProductCardModel({ slug: "low", name: "Low", variants }).lowStockLabel, null);
 });
+
+test('a card that says "Còn x" drops "Lẻ size - Chỉ còn ít"', () => {
+  const pricingRule: StorefrontPricingRule = () => ({
+    price: 100_000,
+    basePriceVnd: 200_000,
+    isDiscounted: true,
+  });
+  const sized = (size: string, sellableStock: number) =>
+    variant({ id: `v-${size}`, pancakeVariationId: `pv-${size}`, size, sellableStock });
+  const card = (variants: StorefrontVariantFacts[]) =>
+    buildProductCardModel({
+      slug: "s",
+      name: "n",
+      variants,
+      pricingRule,
+      productCapacity: STANDARD_STANDALONE_CAPACITY,
+      isClearance: true,
+    });
+
+  const few = card([sized("S", 0), sized("M", 3)]);
+  assert.equal(few.lowStockLabel, "Còn 3");
+  assert.equal(few.lastSizesLeft, false);
+
+  // Above the "Còn x" limit the clearance tag still speaks for the scattered sizes.
+  const scattered = card([sized("S", 0), sized("M", 4), sized("L", 4)]);
+  assert.equal(scattered.lowStockLabel, null);
+  assert.equal(scattered.lastSizesLeft, true);
+});

@@ -74,7 +74,8 @@ export type ProductCardModel = Readonly<{
    * Whether to show "Lẻ size - Chỉ còn ít". The copy states two stock facts, so both are proved from
    * the variants' `sellableStock` rather than assumed from the campaign: see `provesLastSizesLeft`.
    * It also needs a real discount from a "Xả hàng lẻ size" (CLEARANCE) campaign, which only a sale
-   * listing knows about; every other surface leaves this false.
+   * listing knows about; every other surface leaves this false. False whenever `lowStockLabel`
+   * shows: the card carries one stock tag, the exact count.
    */
   lastSizesLeft: boolean;
   marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
@@ -355,6 +356,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           discountPercent: null,
         };
 
+  const lowStockLabel = resolveLowStockLabel(capacityOptions, input.productCapacity);
   const availability = resolveAvailability(capacityOptions);
   const isPreorderOnly = resolveIsPreorderOnly(capacityOptions);
 
@@ -382,13 +384,17 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
       : null,
     // Campaign membership alone is not enough: the copy is a stock claim, so stock must prove it,
     // and a clearance tag on a full-price card would promise a sale the price does not show.
+    // "Còn x" states the same thing more precisely, so a card that shows it drops this tag.
     lastSizesLeft:
-      input.isClearance === true && discountPercent > 0 && provesLastSizesLeft(capacityOptions),
+      lowStockLabel === null
+      && input.isClearance === true
+      && discountPercent > 0
+      && provesLastSizesLeft(capacityOptions),
     marketingBadge,
     availability,
     isPreorderOnly,
     availabilityLabel: resolveAvailabilityLabel(capacityOptions),
-    lowStockLabel: resolveLowStockLabel(capacityOptions, input.productCapacity),
+    lowStockLabel,
     selectEvent: input.selectEvent ?? null,
   });
 }
