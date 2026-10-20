@@ -792,6 +792,52 @@ test("GQ20: gift stock is judged as READY stock only, whatever the variant's own
   assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED", "RELEASED"]);
 });
 
+/** Turns the gift into a set of two units of one component, so its stock is the component's (ADR 0016 D-04). */
+async function makeGiftASet(componentStock: number) {
+  const component = await product("giftpart", 25_000, componentStock, null);
+  await prisma.compositeComponentMirror.create({ data: { parentVariantId: giftItem.variantId, componentVariantId: component.variantId, quantity: 2, syncedAt: PAST } });
+  return component;
+}
+
+test("GQ20 D-04: a set chosen as a gift goes out at 1.000đ per set, its components held and judged as READY stock", async () => {
+  await seed();
+  const component = await makeGiftASet(10);
+  await chooseGift(2);
+  const facts = await renderedFacts();
+  const proof = issueBenefitQuoteProof({ quote: facts, cartId, secret })!;
+  const pancake = fakePancake();
+  const { service } = submission(pancake, proof);
+
+  const result = await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW });
+  assert.deepEqual(result, { ok: true, status: "CONFIRMED", orderCode: (await lastOrder()).publicCode });
+  assert.deepEqual(items(pancake.calls.create[0]!).filter(([variationId]) => variationId === giftItem.variationId), [[giftItem.variationId, 2, 1000]]);
+  const order = await lastOrder();
+  const componentHolds = await prisma.capacityReservationResource.findMany({ where: { reservation: { orderId: order.id }, variantId: component.variantId }, select: { quantity: true } });
+  assert.deepEqual(componentHolds.map((hold) => hold.quantity), [4], "two sets hold four component units");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["COMMITTED", "COMMITTED"]);
+});
+
+test("GQ20 D-04: a set gift whose components Pancake can no longer cover as READY stock is refused, with nothing sent", async () => {
+  await seed();
+  const component = await makeGiftASet(10);
+  await chooseGift(2);
+  const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
+  // Two sets need four component units; Pancake reports three, and an OVERSELL policy on the set must not stretch that.
+  await prisma.productSellingPolicy.upsert({
+    where: { productId: giftItem.productId },
+    create: { productId: giftItem.productId, sellingMode: "OVERSELL", negativeStockLimit: -10 },
+    update: { sellingMode: "OVERSELL", negativeStockLimit: -10 },
+  });
+  const pancake = fakePancake({ [component.variationId]: { sellableStock: 3 } });
+  const { service } = submission(pancake, proof);
+
+  assert.equal((await service.submit({ cartId, shopId: SHOP, checkoutInput, now: NOW })).ok, false);
+  assert.deepEqual(pancake.calls.create, []);
+  assert.equal((await lastOrder()).state, "REJECTED");
+  assert.equal((await lastOrder()).syncErrorCode, "STOCK_UNAVAILABLE");
+  assert.deepEqual((await holds()).map((hold) => hold.state), ["RELEASED", "RELEASED"]);
+});
+
 test("GQ20: a tampered or stale frozen projection is never sent", async () => {
   await seed({ gift: false });
   const proof = issueBenefitQuoteProof({ quote: await renderedFacts(), cartId, secret })!;
