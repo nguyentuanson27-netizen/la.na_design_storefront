@@ -516,14 +516,13 @@ test("F8a product card presents availability without duplicating any stock thres
 
 
 
-test("a page request started for one filter is dropped once the grid belongs to another", () => {
+test("the infinite grid routes its page requests through the stale-request guard", () => {
   const hook = readFileSync(
     path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
     "utf8",
   );
-  // The request captures the list identity it started for and checks it again before applying.
-  assert.match(hook, /const startedFor = listIdentityRef\.current/);
-  assert.match(hook, /listIdentityRef\.current !== startedFor/);
+  assert.match(hook, /settleIfCurrent\(guardRef\.current/);
+  assert.match(hook, /guardRef\.current\.setList\(initialProducts\)/);
 });
 
 test("category discovery carries the in-stock filter through URL, toggle and clear", () => {

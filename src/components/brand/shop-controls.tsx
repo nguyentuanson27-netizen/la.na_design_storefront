@@ -13,7 +13,10 @@ import {
 import { buildStorefrontDiscoveryHref } from "../../commerce/storefront-discovery";
 import { formatFilterPriceVnd } from "../headless/plp-filter-model";
 import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
-import { validateShopPriceRange } from "../headless/shop-price-range-model";
+import {
+  normalizeShopPriceInput,
+  validateShopPriceRange,
+} from "../headless/shop-price-range-model";
 import { useScrollLock } from "../headless/use-scroll-lock";
 import type { ShopCollectionFacet, ShopViewModel } from "../../routes/shop-model";
 
@@ -108,7 +111,7 @@ export function ShopPriceRange({
         placeholder="Từ"
         autoComplete="off"
         value={min}
-        onChange={(event) => setMin(event.target.value)}
+        onChange={(event) => setMin(normalizeShopPriceInput(event.target.value))}
         className={inputClassName}
       />
       <span className={separatorClassName}>-</span>
@@ -121,7 +124,7 @@ export function ShopPriceRange({
         placeholder="Đến"
         autoComplete="off"
         value={max}
-        onChange={(event) => setMax(event.target.value)}
+        onChange={(event) => setMax(normalizeShopPriceInput(event.target.value))}
         className={inputClassName}
       />
     </>
@@ -134,6 +137,9 @@ export type ShopMobileDrawerProps = {
   collectionFacets: readonly ShopCollectionFacet[];
   colorFacets: readonly string[];
   sizeFacets: readonly string[];
+  /** The size and colour as the facets spell them, so the selects do not fall back to "all". */
+  selectedSize: string;
+  selectedColor: string;
   activeFilterCount: number;
 };
 
@@ -143,6 +149,8 @@ export function ShopMobileDrawer({
   collectionFacets,
   colorFacets,
   sizeFacets,
+  selectedSize,
+  selectedColor,
   activeFilterCount,
 }: ShopMobileDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -335,7 +343,7 @@ export function ShopMobileDrawer({
                   <select
                     name="size"
                     aria-label="Kích cỡ"
-                    defaultValue={discovery.size ?? ""}
+                    defaultValue={selectedSize}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả kích cỡ</option>
@@ -355,7 +363,7 @@ export function ShopMobileDrawer({
                   <select
                     name="color"
                     aria-label="Màu sắc"
-                    defaultValue={discovery.color ?? ""}
+                    defaultValue={selectedColor}
                     className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
                   >
                     <option value="">Tất cả màu sắc</option>

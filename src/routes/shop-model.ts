@@ -49,6 +49,26 @@ export type ShopFacets = Readonly<{
 
 export type ShopCollectionFacet = Readonly<{ value: string; label: string }>;
 
+/**
+ * The option a `<select>` should show for a value that came from the URL.
+ *
+ * Facets are canonicalised (`Xl` is offered as `XL`) while the URL keeps whatever case it was
+ * written in, and the SQL matches without case. Handing the raw URL value to the select would find
+ * no option, fall back to "Tất cả" and make the next submit drop a filter that is still applied.
+ * So the value is resolved to the facet's own spelling, and one the facets do not contain at all
+ * (a size nothing carries any more) is kept as an extra option rather than silently cleared.
+ */
+export function resolveSelectedFacet(
+  options: readonly string[],
+  selected: string | null,
+): Readonly<{ value: string; options: readonly string[] }> {
+  if (selected === null) return Object.freeze({ value: "", options });
+  const wanted = selected.trim().toLowerCase();
+  const match = options.find((option) => option.trim().toLowerCase() === wanted);
+  if (match !== undefined) return Object.freeze({ value: match, options });
+  return Object.freeze({ value: selected, options: Object.freeze([...options, selected]) });
+}
+
 export type ShopViewModel = Readonly<{
   cards: readonly Readonly<{ id: string; model: ProductCardModel }>[];
   /** Index of the first card on this page, so the tone cycle continues instead of restarting. */
@@ -63,6 +83,9 @@ export type ShopViewModel = Readonly<{
   collectionFacets: readonly ShopCollectionFacet[];
   colorFacets: readonly string[];
   sizeFacets: readonly string[];
+  /** The size and colour the controls should show as chosen, in the facets' own spelling; `""` for none. */
+  selectedSize: string;
+  selectedColor: string;
   discovery: StorefrontDiscoveryQuery;
   /**
    * The same bounds the loader rejects past, handed to the form so its affordances and the server's
@@ -114,6 +137,9 @@ export function hasActiveShopDiscovery(discovery: StorefrontDiscoveryQuery): boo
 }
 
 export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
+  const size = resolveSelectedFacet(input.facets.sizes, input.discovery.size);
+  const color = resolveSelectedFacet(input.facets.colors, input.discovery.color);
+
   return Object.freeze({
     cards: Object.freeze(
       input.products.map((product) =>
@@ -146,8 +172,10 @@ export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
         Object.freeze({ value, label: shopCollectionLabel(value) }),
       ),
     ),
-    colorFacets: Object.freeze([...input.facets.colors]),
-    sizeFacets: Object.freeze([...input.facets.sizes]),
+    colorFacets: Object.freeze([...color.options]),
+    sizeFacets: Object.freeze([...size.options]),
+    selectedSize: size.value,
+    selectedColor: color.value,
     discovery: input.discovery,
     limits: Object.freeze({
       query: STOREFRONT_DISCOVERY_LIMITS.query,

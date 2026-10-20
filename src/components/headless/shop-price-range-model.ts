@@ -9,6 +9,17 @@
 
 const PLAIN_INTEGER = /^(0|[1-9][0-9]*)$/;
 
+/**
+ * The text a price box actually holds and the form actually sends.
+ *
+ * Whitespace is dropped as it is typed or pasted (` 300 000 ` becomes `300000`), so the value that
+ * is validated is byte for byte the value the GET form submits. Validating a trimmed copy while the
+ * form sent the raw box was how a padded price passed here and still 404'd in the loader.
+ */
+export function normalizeShopPriceInput(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
 export type ShopPriceRangeIssue = Readonly<{
   field: "min" | "max";
   message: string;
@@ -19,8 +30,9 @@ export function validateShopPriceRange({
   max,
   limitVnd,
 }: Readonly<{ min: string; max: string; limitVnd: number }>): ShopPriceRangeIssue | null {
-  const minText = min.trim();
-  const maxText = max.trim();
+  // No trimming here: the loader tests the raw query value, so this must test the raw box value.
+  const minText = min;
+  const maxText = max;
 
   for (const [field, text, label] of [
     ["min", minText, "tối thiểu"],

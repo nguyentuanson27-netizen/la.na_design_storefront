@@ -9,6 +9,7 @@ import type { StorefrontVariantFacts } from "../../src/commerce/storefront-produ
 import {
   buildShopViewModel,
   hasActiveShopDiscovery,
+  resolveSelectedFacet,
   shopCollectionLabel,
   type ShopProduct,
   type ShopViewModelInput,
@@ -131,6 +132,37 @@ test("collection facets carry both the value the form submits and the label it s
   assert.deepEqual(model.collectionFacets, [{ value: "ao-so-mi", label: "Ao So Mi" }]);
   assert.deepEqual(model.colorFacets, ["Đen"]);
   assert.deepEqual(model.sizeFacets, ["M"]);
+});
+
+test("a size or colour from an older URL is shown in the facet's spelling, not dropped to 'all'", () => {
+  // `/shop?size=Xl` was a real URL when catalog data mixed `XL` and `Xl`. The facets now offer `XL`;
+  // the select must still show it chosen, or the next submit sends `size=""` and drops the filter.
+  const model = buildShopViewModel(
+    input({
+      discovery: discovery({ size: "Xl", color: "đen" }),
+      facets: { collections: [], colors: ["Đen"], sizes: ["M", "XL"] },
+    }),
+  );
+
+  assert.equal(model.selectedSize, "XL");
+  assert.deepEqual(model.sizeFacets, ["M", "XL"]);
+  // Colour compares without case too (`đ` and `Đ` are one letter to the SQL filter).
+  assert.equal(model.selectedColor, "Đen");
+
+  const none = buildShopViewModel(input({ facets: { collections: [], colors: ["Đen"], sizes: ["M"] } }));
+  assert.equal(none.selectedSize, "");
+  assert.equal(none.selectedColor, "");
+});
+
+test("a chosen value no facet carries is kept as an option instead of being cleared", () => {
+  const resolved = resolveSelectedFacet(["S", "M"], "XXL");
+  assert.equal(resolved.value, "XXL");
+  assert.deepEqual(resolved.options, ["S", "M", "XXL"]);
+
+  // Already present: the options are not duplicated.
+  assert.deepEqual(resolveSelectedFacet(["S", "M"], "m").options, ["S", "M"]);
+  assert.equal(resolveSelectedFacet(["S", "M"], " m ").value, "M");
+  assert.deepEqual(resolveSelectedFacet([], null), { value: "", options: [] });
 });
 
 /* -------------------------------------------------------------------- pagination */

@@ -105,6 +105,8 @@ function render(data: ShopViewModel) {
                 collectionFacets={data.collectionFacets}
                 colorFacets={data.colorFacets}
                 sizeFacets={data.sizeFacets}
+                selectedSize={data.selectedSize}
+                selectedColor={data.selectedColor}
                 activeFilterCount={activeFilterCount}
               />
 
@@ -220,7 +222,7 @@ function render(data: ShopViewModel) {
               <ShopFilterSelect
                 name="size"
                 aria-label="Kích cỡ"
-                defaultValue={discovery.size ?? ""}
+                defaultValue={data.selectedSize}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
@@ -237,7 +239,7 @@ function render(data: ShopViewModel) {
               <ShopFilterSelect
                 name="color"
                 aria-label="Màu"
-                defaultValue={discovery.color ?? ""}
+                defaultValue={data.selectedColor}
                 className="rounded border border-[#3B2219]/20 bg-transparent px-2.5 py-1 text-xs text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219]"
               >
                 <option value="">Tất cả</option>
