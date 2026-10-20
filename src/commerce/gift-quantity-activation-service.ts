@@ -21,7 +21,7 @@
  * - **Rule validation seam.** Rule economics are validated by an injected `RuleValidator`. The
  *   production default validates quantity-tier rules (GQ09a) and gift rules (GQ13a). Checks that
  *   need other rows (unique stack priority, EX-21 catalog prices, gift options that exist, are
- *   active, non-composite and in stock) run in the same transaction under the revision lock. A
+ *   active and in stock, a set through its components) run in the same transaction under the revision lock. A
  *   refused publish / edit rolls back: no revision moves.
  * - **Gift admission.** The cart's entitlement engine refuses more than `MAX_GIFT_CAMPAIGNS` gift
  *   campaigns at once, which would fail the gift lookup of every cart. Publish, re-enable and a
