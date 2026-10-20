@@ -47,6 +47,8 @@ type BrandProductMediaStageProps = Readonly<{
   productName: string;
   selectedVariantId: string | null;
   galleryIndexByVariantId: Readonly<Record<string, number>>;
+  /** The product is on Flash Sale: the photograph carries the tag its card carries. */
+  flashSale?: boolean;
 }>;
 
 export function BrandProductMediaStage({
@@ -54,6 +56,7 @@ export function BrandProductMediaStage({
   productName,
   selectedVariantId,
   galleryIndexByVariantId,
+  flashSale = false,
 }: BrandProductMediaStageProps) {
   const images = media.gallery;
   const slides = buildDesktopProductGallerySlides(images.length);
@@ -400,6 +403,20 @@ export function BrandProductMediaStage({
           ) : null}
         </div>
       </dialog>
+
+      {/*
+        The card's FLASH SALE tag, so the shopper recognises the product they tapped. Only that
+        tag: the discount and "Còn x" are said once, in the purchase panel. Bottom left, because the
+        header overlays the top of the photograph and the counter holds the bottom right.
+      */}
+      {flashSale ? (
+        <span className="product-tag product-tag--flash pdp-flash-tag">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path d="M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.8L13.5 2Z" />
+          </svg>
+          FLASH SALE
+        </span>
+      ) : null}
     </section>
   );
 }

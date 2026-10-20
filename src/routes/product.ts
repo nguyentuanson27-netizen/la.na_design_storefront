@@ -12,6 +12,7 @@ import {
   listConfiguredRelatedStorefrontProducts,
   resolveStorefrontPromotionForProducts,
 } from "@/commerce/storefront-catalog-runtime";
+import { withListingFlashSale } from "@/commerce/storefront-listing-flash-sale";
 import { selectStorefrontProductLevelOptions } from "@/commerce/storefront-projection";
 import { getStorefrontResolvedPriceRange } from "@/commerce/storefront-product";
 import { resolveProductTryOn } from "@/commerce/try-on-runtime";
@@ -27,6 +28,8 @@ import { buildProductPageViewEvent } from "@/components/analytics/product-page-t
 import { readSearchExposure } from "@/seo/search-exposure";
 import { buildStorefrontProductStructuredData } from "@/seo/storefront-product-structured-data";
 
+import type { ProductUrgency } from "@/components/headless/product-urgency";
+
 import { sealRoute, type RouteHandle } from "./core.tsx";
 import {
   buildPurchaseAssuranceViewModel,
@@ -38,6 +41,7 @@ import {
 } from "./evergreen-model.ts";
 import {
   buildProductFeedbackSection,
+  buildProductUrgency,
   buildProductViewModel,
   type ProductFeedbackSection,
   type ProductViewModel,
@@ -71,6 +75,8 @@ export type ProductRouteData = ProductViewModel &
     feedback: ProductFeedbackSection | null;
     /** Gift / quantity-tier campaigns covering this product, named under the price; often empty. */
     promotionOffers: readonly ProductPromotionOffer[];
+    /** The Flash Sale countdown and "Còn x" facts; see `buildProductUrgency`. */
+    urgency: ProductUrgency;
   }>;
 
 export async function loadProductRoute({
@@ -107,8 +113,20 @@ export async function loadProductRoute({
     products: [product, ...relatedProducts],
     now: requestNow,
   });
+  // Related cards carry the Flash presentation every other listing gives them.
+  const relatedWithFlash = withListingFlashSale(
+    relatedProducts,
+    promotion.campaignsByVariantId,
+    requestNow,
+  );
+  const urgency = buildProductUrgency({
+    variants: product.variants,
+    productCapacity: product.productCapacity,
+    campaignsByVariantId: promotion.campaignsByVariantId,
+    now: requestNow,
+  });
   const relatedTracking = buildProductListTracking({
-    products: relatedProducts,
+    products: relatedWithFlash,
     // The list id is the analytics series and stays put; the name is what the surface is called,
     // and the refinement spec renamed it because the generic related source cannot prove the items
     // complete an outfit.
@@ -142,7 +160,7 @@ export async function loadProductRoute({
         colorDimensionLabel: product.projection.colorDimensionLabel,
         deepLinkedSelection,
         galleryIndexByVariantId: product.galleryIndexByVariantId,
-        relatedProducts,
+        relatedProducts: relatedWithFlash,
         relatedPricingRule: promotion.pricingRule,
         relatedSelectEventBySlug: relatedTracking.selectEventBySlug,
       }),
@@ -154,6 +172,7 @@ export async function loadProductRoute({
       purchaseAssurance: buildPurchaseAssuranceViewModel({ policy: shippingPolicy }),
       feedback: buildProductFeedbackSection(feedback, HOMEPAGE_CONFIG.feedback),
       promotionOffers,
+      urgency,
     },
     refreshAfterMs: promotion.refreshAfterMs,
     trackingEvent: buildProductPageViewEvent({

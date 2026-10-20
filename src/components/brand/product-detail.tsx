@@ -9,6 +9,7 @@ import { BrandProductMediaStage } from "@/components/brand/product-media-stage";
 import { PurchasePanelView } from "@/components/brand/purchase-panel";
 import { BrandTryOnDialog, BrandTryOnNudge, BrandTryOnTrigger } from "@/components/brand/try-on-dialog";
 import { useTryOnSession } from "@/components/headless/try-on-session";
+import type { ProductUrgency } from "@/components/headless/product-urgency";
 import {
   useVariantSelection,
   type UseVariantSelectionInput,
@@ -54,6 +55,8 @@ type BrandProductDetailProps = Readonly<{
   purchaseAssurance?: ReactNode;
   /** Inside the panel, under the price: promotions this product takes part in. */
   purchaseOffers?: ReactNode;
+  /** Server-decided Flash Sale countdown and "Còn x" facts. */
+  urgency: ProductUrgency;
 }>;
 
 export function BrandProductDetail({
@@ -69,6 +72,7 @@ export function BrandProductDetail({
   sizeHelp = null,
   purchaseAssurance = null,
   purchaseOffers = null,
+  urgency,
 }: BrandProductDetailProps) {
   const controller = useVariantSelection(selection);
   // Virtual try-on is only a link on the size-guide line and a dialog: it shares no state with the
@@ -132,6 +136,7 @@ export function BrandProductDetail({
         productName={productName}
         selectedVariantId={controller.view.selectedVariantId}
         galleryIndexByVariantId={galleryIndexByVariantId}
+        flashSale={urgency.flash !== null}
       />
 
       <div className="mx-auto max-w-[1600px] px-6 pb-10 pt-5 md:pb-16 md:pt-7 lg:py-16">
@@ -163,6 +168,7 @@ export function BrandProductDetail({
               productName={productName}
               sizeGuide={sizeGuide}
               offers={purchaseOffers}
+              urgency={urgency}
               sizeHelp={sizeHelp}
               assurance={purchaseAssurance}
               mobileNudge={

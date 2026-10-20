@@ -26,17 +26,17 @@ export type StorefrontListingFlashSale = Readonly<{
   remainingMs: number;
 }>;
 
-export function resolveStorefrontListingFlashSale({
-  variants,
-  productCapacity,
-  campaignsByVariantId,
-  now,
-}: Readonly<{
+type FlashSaleInput = Readonly<{
   variants: readonly StorefrontVariantFacts[];
   productCapacity?: StorefrontProductCapacity;
   campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
   now: Date;
-}>): StorefrontListingFlashSale | undefined {
+}>;
+
+type FlashCandidate = Readonly<{ id: string; base: number; effective: number; endsAt: Date }>;
+
+/** Every ready-stock option a Flash Sale prices, plus the options for sale it is compared against. */
+function collectFlashCandidates({ variants, productCapacity, campaignsByVariantId, now }: FlashSaleInput) {
   const pricingByVariantId = new Map<string, PromotionPricingResult>();
   const pricingRule = buildPromotionalStorefrontPricing({
     campaignsByVariantId,
@@ -51,8 +51,7 @@ export function resolveStorefrontListingFlashSale({
     (option) => option.purchasable && !option.isPreorderSale && option.sellableStock > 0,
   );
 
-  let representative: Readonly<{ id: string; base: number; effective: number; endsAt: Date }> | null =
-    null;
+  const candidates: FlashCandidate[] = [];
   for (const option of forSale) {
     const pricing = pricingByVariantId.get(option.id);
     const promotion = pricing?.promotion;
@@ -68,12 +67,23 @@ export function resolveStorefrontListingFlashSale({
     ) {
       continue;
     }
-    const candidate = {
+    candidates.push({
       id: option.id,
       base: pricing.basePriceVnd,
       effective: pricing.effectivePriceVnd,
       endsAt: promotion.endsAt,
-    };
+    });
+  }
+  return { forSale, candidates };
+}
+
+export function resolveStorefrontListingFlashSale(
+  input: FlashSaleInput,
+): StorefrontListingFlashSale | undefined {
+  const { forSale, candidates } = collectFlashCandidates(input);
+
+  let representative: FlashCandidate | null = null;
+  for (const candidate of candidates) {
     if (
       representative === null
       || candidate.effective < representative.effective
@@ -92,8 +102,27 @@ export function resolveStorefrontListingFlashSale({
     hasCheaperCurrentVariant: forSale.some(
       (option) => option.price !== null && option.price < cheapest,
     ),
-    remainingMs: Math.max(0, representative.endsAt.getTime() - now.getTime()),
+    remainingMs: Math.max(0, representative.endsAt.getTime() - input.now.getTime()),
   });
+}
+
+/**
+ * How long each Flash-priced variant's own campaign has left, keyed by variant id; a variant no
+ * Flash Sale prices is absent. The product page counts down the variant the shopper chose, which may
+ * belong to a different Flash campaign than the card's representative.
+ */
+export function resolveStorefrontFlashSaleRemainingByVariantId(
+  input: FlashSaleInput,
+): Readonly<Record<string, number>> {
+  const { candidates } = collectFlashCandidates(input);
+  return Object.freeze(
+    Object.fromEntries(
+      candidates.map((candidate) => [
+        candidate.id,
+        Math.max(0, candidate.endsAt.getTime() - input.now.getTime()),
+      ]),
+    ),
+  );
 }
 
 /** Attaches each product's Flash presentation, read against the campaigns its listing already holds. */

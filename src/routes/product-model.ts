@@ -5,17 +5,30 @@ import {
 import type { SizeChart } from "../brand/schema.ts";
 import type { ProductFeedback, ProductFeedbackImage } from "../commerce/feedback-repository.ts";
 import type { StorefrontProductMedia } from "../commerce/product-media.ts";
+import type { ApplicablePromotionCampaign } from "../commerce/promotion-pricing.ts";
+import {
+  resolveStorefrontFlashSaleRemainingByVariantId,
+  resolveStorefrontListingFlashSale,
+} from "../commerce/storefront-listing-flash-sale.ts";
+import {
+  resolveLowStockByVariantId,
+  resolveLowStockTotal,
+} from "../commerce/storefront-low-stock.ts";
+import { buildPromotionalStorefrontPricing } from "../commerce/storefront-promotion-projection.ts";
 import type { StorefrontProjectionOption } from "../commerce/storefront-projection.ts";
-import type {
-  StorefrontPricingRule,
-  StorefrontVariantFacts,
-  StorefrontProductCapacity,
+import {
+  buildStorefrontVariantOptions,
+  type StorefrontPricingRule,
+  type StorefrontVariantFacts,
+  type StorefrontProductCapacity,
 } from "../commerce/storefront-product.ts";
 import type { DeepLinkedVariantSelection } from "../commerce/storefront-variant-deep-link.ts";
 import {
   buildProductCardModel,
   type ProductCardModel,
+  type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
+import type { ProductUrgency } from "../components/headless/product-urgency.ts";
 import { FEEDBACK_PATH, parseConfiguredCopy } from "../content/homepage-content.ts";
 import type { HomepageConfig } from "../content/homepage.config.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
@@ -61,6 +74,8 @@ export type RelatedProduct = Readonly<{
    * STANDARD default, which is what this surface assumed before F8a.
    */
   productCapacity?: StorefrontProductCapacity;
+  /** Present when a Flash Sale prices this product; the card then renders as on the Flash listing. */
+  flashSale?: StorefrontFlashSalePresentation;
 }>;
 
 export type ProductViewModel = Readonly<{
@@ -174,12 +189,49 @@ export function buildProductViewModel(input: ProductViewModelInput): ProductView
             media: related.media,
             variants: related.variants,
             productCapacity: related.productCapacity,
+            flashSale: related.flashSale,
             pricingRule: input.relatedPricingRule,
             selectEvent: input.relatedSelectEventBySlug.get(related.slug) ?? null,
           }),
         }),
       ),
     ),
+  });
+}
+
+/**
+ * The facts behind the page's Flash Sale countdown and "Còn x", from the product's own parent
+ * variants -- the same rows its card is decided from, so the page and the card agree.
+ *
+ * Other kinds a composite page offers (a sub-set, a single component) are left out: they can belong
+ * to sibling products with their own policies and campaigns, and choosing one simply shows neither.
+ */
+export function buildProductUrgency(
+  input: Readonly<{
+    variants: readonly StorefrontVariantFacts[];
+    productCapacity: StorefrontProductCapacity;
+    campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
+    now: Date;
+  }>,
+): ProductUrgency {
+  const flashSale = resolveStorefrontListingFlashSale(input);
+  const options = buildStorefrontVariantOptions(
+    input.variants,
+    buildPromotionalStorefrontPricing({ campaignsByVariantId: input.campaignsByVariantId, now: input.now }),
+    input.productCapacity,
+  );
+
+  return Object.freeze({
+    flash: flashSale
+      ? Object.freeze({
+          remainingMs: flashSale.remainingMs,
+          remainingMsByVariantId: resolveStorefrontFlashSaleRemainingByVariantId(input),
+        })
+      : null,
+    lowStock: Object.freeze({
+      total: resolveLowStockTotal(options, input.productCapacity),
+      byVariantId: resolveLowStockByVariantId(options, input.productCapacity),
+    }),
   });
 }
 

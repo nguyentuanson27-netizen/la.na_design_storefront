@@ -4,6 +4,7 @@ import {
 } from "../../commerce/preorder-fulfillment-presentation.ts";
 import type { StorefrontProductMedia, TrustedProductImage } from "../../commerce/product-media.ts";
 import { resolveStorefrontDiscountPresentation } from "../../commerce/storefront-discount-presentation.ts";
+import { LOW_STOCK_LIMIT, resolveLowStockTotal } from "../../commerce/storefront-low-stock.ts";
 import {
   buildStorefrontVariantOptions,
   getStorefrontResolvedPriceRange,
@@ -216,35 +217,15 @@ function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): 
   return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
 }
 
-/** A card says "Còn x" below this many ready pieces. */
-export const LOW_STOCK_LIMIT = 5;
+// "Còn x" is decided once, for the card and the product page alike: see `storefront-low-stock.ts`.
+export { LOW_STOCK_LIMIT };
 
-/**
- * "Còn x", counted from the same canonical per-variant answer as `Hết hàng`: the ready pieces of
- * every option still for sale, floored at zero.
- *
- * Under `PREORDER` or `OVERSELL` the count is not a ceiling on what the shopper can buy, so stating
- * it would be false; the claim is reserved for `STANDARD`, and a composite (FULL SET) makes it only
- * when its sizes share no component, so their figures do not overlap. A caller that did not read the product's
- * policy gets the STANDARD default for availability, but that default is not proof the product
- * cannot oversell, so it says nothing here.
- */
 function resolveLowStockLabel(
   options: readonly StorefrontVariantOption[],
   productCapacity: StorefrontProductCapacity | undefined,
 ): string | null {
-  if (productCapacity?.sellingMode !== "STANDARD") return null;
-  // A FULL SET's per-variant figure is derived from its components. When no component is shared
-  // between its sizes those figures are independent and add up; when one is (or the read did not
-  // say), summing would count the same pieces twice, so the card says nothing.
-  if (productCapacity.isComposite && productCapacity.sharesComponents !== false) return null;
-  const forSale = options.filter((option) => option.purchasable && !option.isPreorderSale);
-  const piecesLeft = forSale.reduce(
-    (total, option) =>
-      total + (Number.isSafeInteger(option.sellableStock) ? Math.max(0, option.sellableStock) : 0),
-    0,
-  );
-  return piecesLeft > 0 && piecesLeft < LOW_STOCK_LIMIT ? `Còn ${piecesLeft}` : null;
+  const total = resolveLowStockTotal(options, productCapacity);
+  return total === null ? null : `Còn ${total}`;
 }
 
 // Defined beside the variant facts so the `/sale/xa-hang-le-size` read proves the same threshold.
