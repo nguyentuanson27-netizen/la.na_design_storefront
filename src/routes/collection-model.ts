@@ -11,6 +11,7 @@ import type {
 import {
   buildProductCardModel,
   type ProductCardModel,
+  type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 
@@ -44,6 +45,8 @@ export type CollectionProduct = Readonly<{
    * STANDARD default, which is what this surface assumed before F8a.
    */
   productCapacity?: StorefrontProductCapacity;
+  /** Present when a Flash Sale prices this product; the card then renders as on the Flash listing. */
+  flashSale?: StorefrontFlashSalePresentation;
 }>;
 
 export type CollectionVideo = Readonly<{ src: string; poster: string | null }>;
@@ -212,6 +215,7 @@ export function buildCollectionViewModel(input: CollectionViewModelInput): Colle
             media: product.media,
             variants: product.variants,
             productCapacity: product.productCapacity,
+            flashSale: product.flashSale,
             pricingRule: input.pricingRule,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
           }),

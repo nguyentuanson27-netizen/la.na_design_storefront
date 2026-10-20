@@ -4,10 +4,13 @@ import test from "node:test";
 import {
   buildProductCardModel,
   LAST_SIZES_TOTAL_STOCK_LIMIT,
+  LOW_STOCK_LIMIT,
 } from "../../src/components/headless/build-product-card-model.ts";
 import {
+  compositeComponentsAreShared,
   STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
+  type StorefrontProductCapacity,
   type StorefrontVariantFacts,
 } from "../../src/commerce/storefront-product.ts";
 import type { StorefrontProductMedia } from "../../src/commerce/product-media.ts";
@@ -567,4 +570,100 @@ test("Lẻ size - Chỉ còn ít decides sold out per size, not per colour × si
 
   // Size labels compare trimmed and case-insensitive, so " s " is still size S.
   assert.equal(card([option("Đen", "S", 0), option("Trắng", " s ", 3), option("Đen", "M", 4)]).lastSizesLeft, false);
+});
+
+test('"Còn x" counts the ready pieces of a STANDARD product below the limit', () => {
+  const card = (variants: StorefrontVariantFacts[]) =>
+    buildProductCardModel({
+      slug: "low",
+      name: "Low",
+      variants,
+      productCapacity: STANDARD_STANDALONE_CAPACITY,
+    }).lowStockLabel;
+
+  assert.equal(LOW_STOCK_LIMIT, 5);
+  assert.equal(
+    card([
+      variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 1 }),
+      variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 3 }),
+      variant({ id: "l", pancakeVariationId: "p-l", size: "L", sellableStock: 0 }),
+    ]),
+    "Còn 4",
+  );
+  assert.equal(card([variant({ sellableStock: 5 })]), null);
+  assert.equal(card([variant({ sellableStock: 0 })]), null);
+});
+
+test('"Còn x" is never claimed under preorder, overselling, or an unread policy', () => {
+  const variants = [variant({ sellableStock: 2 })];
+  for (const sellingMode of ["PREORDER", "OVERSELL"] as const) {
+    assert.equal(
+      buildProductCardModel({
+        slug: "low",
+        name: "Low",
+        variants,
+        productCapacity: { ...STANDARD_STANDALONE_CAPACITY, sellingMode },
+      }).lowStockLabel,
+      null,
+    );
+  }
+  assert.equal(buildProductCardModel({ slug: "low", name: "Low", variants }).lowStockLabel, null);
+});
+
+test('a card that says "Còn x" drops "Lẻ size - Chỉ còn ít"', () => {
+  const pricingRule: StorefrontPricingRule = () => ({
+    price: 100_000,
+    basePriceVnd: 200_000,
+    isDiscounted: true,
+  });
+  const sized = (size: string, sellableStock: number) =>
+    variant({ id: `v-${size}`, pancakeVariationId: `pv-${size}`, size, sellableStock });
+  const card = (variants: StorefrontVariantFacts[]) =>
+    buildProductCardModel({
+      slug: "s",
+      name: "n",
+      variants,
+      pricingRule,
+      productCapacity: STANDARD_STANDALONE_CAPACITY,
+      isClearance: true,
+    });
+
+  const few = card([sized("S", 0), sized("M", 3)]);
+  assert.equal(few.lowStockLabel, "Còn 3");
+  assert.equal(few.lastSizesLeft, false);
+
+  // Above the "Còn x" limit the clearance tag still speaks for the scattered sizes.
+  const scattered = card([sized("S", 0), sized("M", 4), sized("L", 4)]);
+  assert.equal(scattered.lowStockLabel, null);
+  assert.equal(scattered.lastSizesLeft, true);
+});
+
+test('"Còn x" counts a FULL SET whose sizes share no component, and not one whose sizes do', () => {
+  const card = (capacity: StorefrontProductCapacity) =>
+    buildProductCardModel({
+      slug: "set",
+      name: "Set",
+      variants: [
+        variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 2 }),
+        variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 2 }),
+      ],
+      productCapacity: capacity,
+    }).lowStockLabel;
+  const composite = { ...STANDARD_STANDALONE_CAPACITY, isComposite: true };
+
+  // Each size assembled from its own components: the sets are independent, 2 + 2 left.
+  assert.equal(card({ ...composite, sharesComponents: false }), "Còn 4");
+  // Both sizes drawing on one component with 2 pieces left can only sell 2 sets: a summed
+  // "Còn 4" would be false, so nothing is said. Nor when the read did not check.
+  assert.equal(card({ ...composite, sharesComponents: true }), null);
+  assert.equal(card(composite), null);
+});
+
+test("components are shared only when two parent variants use the same one", () => {
+  const parent = (...ids: string[]) => ({
+    compositeComponents: ids.map((componentVariantId) => ({ componentVariantId })),
+  });
+  assert.equal(compositeComponentsAreShared([parent("top-s", "skirt-s"), parent("top-m", "skirt-m")]), false);
+  assert.equal(compositeComponentsAreShared([parent("top-s", "belt"), parent("top-m", "belt")]), true);
+  assert.equal(compositeComponentsAreShared([parent("top-s", "top-s"), parent()]), false);
 });

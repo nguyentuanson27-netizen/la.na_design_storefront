@@ -74,7 +74,8 @@ export type ProductCardModel = Readonly<{
    * Whether to show "Lẻ size - Chỉ còn ít". The copy states two stock facts, so both are proved from
    * the variants' `sellableStock` rather than assumed from the campaign: see `provesLastSizesLeft`.
    * It also needs a real discount from a "Xả hàng lẻ size" (CLEARANCE) campaign, which only a sale
-   * listing knows about; every other surface leaves this false.
+   * listing knows about; every other surface leaves this false. False whenever `lowStockLabel`
+   * shows: the card carries one stock tag, the exact count.
    */
   lastSizesLeft: boolean;
   marketingBadge: Readonly<{ type: "sale" | "new" | "bestseller"; label: string }> | null;
@@ -99,6 +100,12 @@ export type ProductCardModel = Readonly<{
    * strings master spec §29/§30 fixes, and cannot invent a third.
    */
   availabilityLabel: string | null;
+  /**
+   * "Còn x" when fewer than `LOW_STOCK_LIMIT` ready pieces are left, or `null`. Only a product that
+   * sells strictly from stock (`STANDARD`: no preorder, no overselling) makes the claim, and only
+   * when the caller supplied that policy: see `resolveLowStockLabel`.
+   */
+  lowStockLabel: string | null;
   selectEvent: TrackingEvent | null;
 }>;
 
@@ -207,6 +214,37 @@ function resolveAvailabilityLabel(options: readonly StorefrontVariantOption[]): 
   const blockedByCapacity =
     options.length > 0 && options.every((option) => option.unavailableReason === "OUT_OF_STOCK");
   return blockedByCapacity ? OUT_OF_STOCK_LABEL : null;
+}
+
+/** A card says "Còn x" below this many ready pieces. */
+export const LOW_STOCK_LIMIT = 5;
+
+/**
+ * "Còn x", counted from the same canonical per-variant answer as `Hết hàng`: the ready pieces of
+ * every option still for sale, floored at zero.
+ *
+ * Under `PREORDER` or `OVERSELL` the count is not a ceiling on what the shopper can buy, so stating
+ * it would be false; the claim is reserved for `STANDARD`, and a composite (FULL SET) makes it only
+ * when its sizes share no component, so their figures do not overlap. A caller that did not read the product's
+ * policy gets the STANDARD default for availability, but that default is not proof the product
+ * cannot oversell, so it says nothing here.
+ */
+function resolveLowStockLabel(
+  options: readonly StorefrontVariantOption[],
+  productCapacity: StorefrontProductCapacity | undefined,
+): string | null {
+  if (productCapacity?.sellingMode !== "STANDARD") return null;
+  // A FULL SET's per-variant figure is derived from its components. When no component is shared
+  // between its sizes those figures are independent and add up; when one is (or the read did not
+  // say), summing would count the same pieces twice, so the card says nothing.
+  if (productCapacity.isComposite && productCapacity.sharesComponents !== false) return null;
+  const forSale = options.filter((option) => option.purchasable && !option.isPreorderSale);
+  const piecesLeft = forSale.reduce(
+    (total, option) =>
+      total + (Number.isSafeInteger(option.sellableStock) ? Math.max(0, option.sellableStock) : 0),
+    0,
+  );
+  return piecesLeft > 0 && piecesLeft < LOW_STOCK_LIMIT ? `Còn ${piecesLeft}` : null;
 }
 
 // Defined beside the variant facts so the `/sale/xa-hang-le-size` read proves the same threshold.
@@ -323,6 +361,7 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
           discountPercent: null,
         };
 
+  const lowStockLabel = resolveLowStockLabel(capacityOptions, input.productCapacity);
   const availability = resolveAvailability(capacityOptions);
   const isPreorderOnly = resolveIsPreorderOnly(capacityOptions);
 
@@ -350,12 +389,17 @@ export function buildProductCardModel(input: ProductCardModelInput): ProductCard
       : null,
     // Campaign membership alone is not enough: the copy is a stock claim, so stock must prove it,
     // and a clearance tag on a full-price card would promise a sale the price does not show.
+    // "Còn x" states the same thing more precisely, so a card that shows it drops this tag.
     lastSizesLeft:
-      input.isClearance === true && discountPercent > 0 && provesLastSizesLeft(capacityOptions),
+      lowStockLabel === null
+      && input.isClearance === true
+      && discountPercent > 0
+      && provesLastSizesLeft(capacityOptions),
     marketingBadge,
     availability,
     isPreorderOnly,
     availabilityLabel: resolveAvailabilityLabel(capacityOptions),
+    lowStockLabel,
     selectEvent: input.selectEvent ?? null,
   });
 }

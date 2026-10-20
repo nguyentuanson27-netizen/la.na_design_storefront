@@ -16,10 +16,11 @@ import {
   TOP_LEVEL_CATEGORY_KEYS,
   type CategoryKey,
 } from "./category-taxonomy.ts";
+import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
 import { createStorefrontProductSlugResolver } from "./storefront-product-slug-resolution.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefreshFromCampaigns } from "./storefront-promotion-freshness.ts";
-import type { PromotionCampaignKind } from "./promotion-pricing.ts";
+import type { ApplicablePromotionCampaign, PromotionCampaignKind } from "./promotion-pricing.ts";
 import {
   buildPromotionalStorefrontPricing,
   type StorefrontCampaignKindScope,
@@ -40,7 +41,14 @@ export async function resolveStorefrontPromotionForProducts({
   now?: Date;
   /** Scopes the displayed discounts to one campaign kind; see `buildPromotionalStorefrontPricing`. */
   onlyKind?: StorefrontCampaignKindScope;
-}): Promise<Readonly<{ pricingRule: StorefrontPricingRule; refreshAfterMs: number }>> {
+}): Promise<
+  Readonly<{
+    pricingRule: StorefrontPricingRule;
+    refreshAfterMs: number;
+    /** The campaigns the rule priced from, for a listing that also resolves Flash presentation. */
+    campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>;
+  }>
+> {
   const variantIds = products.flatMap((product) =>
     (product.projection?.options ?? product.variants).map((variant) => variant.id),
   );
@@ -48,6 +56,7 @@ export async function resolveStorefrontPromotionForProducts({
     return Object.freeze({
       pricingRule: defaultStorefrontPricingRule,
       refreshAfterMs: resolveStorefrontPromotionRefreshFromCampaigns({ now, campaigns: [] }).refreshAfterMs,
+      campaignsByVariantId: new Map(),
     });
   }
   const { campaignsByVariantId } = await readApplicablePromotionCampaignsBatched({
@@ -57,6 +66,7 @@ export async function resolveStorefrontPromotionForProducts({
   return Object.freeze({
     pricingRule: buildPromotionalStorefrontPricing({ campaignsByVariantId, now, onlyKind }),
     refreshAfterMs: resolveStorefrontPromotionRefreshFromCampaigns({ now, campaigns }).refreshAfterMs,
+    campaignsByVariantId,
   });
 }
 
@@ -114,11 +124,15 @@ export async function listConfiguredManualNewArrivalsPage({
     shopId,
     ids: selected.ids,
   });
-  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
-    products,
-    now,
-  });
-  return { ...selected, products, pricingRule, refreshAfterMs };
+  const at = now ?? new Date();
+  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
+    await resolveStorefrontPromotionForProducts({ products, now: at });
+  return {
+    ...selected,
+    products: withListingFlashSale(products, campaignsByVariantId, at),
+    pricingRule,
+    refreshAfterMs,
+  };
 }
 
 export async function listConfiguredStorefrontDiscoveryPage({
@@ -345,11 +359,14 @@ export async function listConfiguredHomepageNewArrivals(limit: number, now?: Dat
  */
 export async function listConfiguredHomepageFeaturedWithPricing(now?: Date) {
   const products = await listConfiguredHomepageFeaturedProducts();
-  const { pricingRule, refreshAfterMs } = await resolveStorefrontPromotionForProducts({
-    products,
-    now,
-  });
-  return { products, pricingRule, refreshAfterMs };
+  const at = now ?? new Date();
+  const { pricingRule, refreshAfterMs, campaignsByVariantId } =
+    await resolveStorefrontPromotionForProducts({ products, now: at });
+  return {
+    products: withListingFlashSale(products, campaignsByVariantId, at),
+    pricingRule,
+    refreshAfterMs,
+  };
 }
 
 export async function resolveConfiguredStorefrontProductSlug(slug: string) {

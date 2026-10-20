@@ -1,12 +1,14 @@
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
+import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import {
+  compositeComponentsAreShared,
   resolveVariantAvailabilityFromWarehouseStocks,
   type StorefrontVariantFacts,
 } from "./storefront-product.ts";
@@ -242,6 +244,7 @@ export function toStorefrontProduct(
     productCapacity: {
       ...resolveSellingPolicy(product.sellingPolicy),
       isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
+      sharesComponents: compositeComponentsAreShared(product.variants),
     },
     // Server-only, and kept off the variant facts for the same reason `galleryIndexByVariantId` is:
     // the purchase panel has no use for it, and widening the client option contract would ship a
@@ -1014,7 +1017,9 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     });
 
     return {
-      products: orderedProducts,
+      // A product running a Flash Sale carries the same presentation the Flash listing gives it, so
+      // a collection or category card shows the tag, the countdown and the Flash price too.
+      products: withListingFlashSale(orderedProducts, campaignsByVariantId, now),
       page: discovery.page,
       pageSize: safePageSize,
       totalCount,

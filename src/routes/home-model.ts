@@ -10,6 +10,7 @@ import type {
 import {
   buildProductCardModel,
   type ProductCardModel,
+  type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
 import {
   FEEDBACK_PATH,
@@ -58,6 +59,8 @@ export type HomeProduct = Readonly<{
    * STANDARD default, which is what this surface assumed before F8a.
    */
   productCapacity?: StorefrontProductCapacity;
+  /** Present when a Flash Sale prices this product; the card then renders as on the Flash listing. */
+  flashSale?: StorefrontFlashSalePresentation;
 }>;
 
 export type HomeCard = Readonly<{ id: string; model: ProductCardModel }>;
@@ -106,6 +109,7 @@ export function buildHomeCards({
           media: product.media,
           variants: product.variants,
           productCapacity: product.productCapacity,
+          flashSale: product.flashSale,
           pricingRule,
           selectEvent: selectEventBySlug.get(product.slug) ?? null,
         }),

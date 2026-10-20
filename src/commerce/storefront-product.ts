@@ -249,7 +249,28 @@ export type StorefrontProductCapacity = Readonly<{
   sellingMode: SellingMode;
   negativeStockLimit: number;
   isComposite: boolean;
+  /**
+   * Whether two of this composite's variants draw on the same component variant, so their derived
+   * figures overlap and cannot be summed. Absent means the read did not check, which a total must
+   * treat as shared; see `compositeComponentsAreShared`.
+   */
+  sharesComponents?: boolean;
 }>;
+
+/** Whether any component variant is used by more than one of these parent variants. */
+export function compositeComponentsAreShared(
+  variants: readonly Readonly<{ compositeComponents: readonly Readonly<{ componentVariantId: string }>[] }>[],
+): boolean {
+  const seen = new Set<string>();
+  for (const variant of variants) {
+    const components = new Set(variant.compositeComponents.map((edge) => edge.componentVariantId));
+    for (const componentId of components) {
+      if (seen.has(componentId)) return true;
+      seen.add(componentId);
+    }
+  }
+  return false;
+}
 
 export const STANDARD_STANDALONE_CAPACITY: StorefrontProductCapacity = Object.freeze({
   sellingMode: "STANDARD",

@@ -12,6 +12,7 @@ import type {
 import {
   buildProductCardModel,
   type ProductCardModel,
+  type StorefrontFlashSalePresentation,
 } from "../components/headless/build-product-card-model.ts";
 import type { TrackingEvent } from "../tracking/commerce-events.ts";
 
@@ -36,6 +37,8 @@ export type ShopProduct = Readonly<{
    * STANDARD default, which is what this surface assumed before F8a.
    */
   productCapacity?: StorefrontProductCapacity;
+  /** Present when a Flash Sale prices this product; the card then renders as on the Flash listing. */
+  flashSale?: StorefrontFlashSalePresentation;
 }>;
 
 export type ShopFacets = Readonly<{
@@ -122,6 +125,7 @@ export function buildShopViewModel(input: ShopViewModelInput): ShopViewModel {
             media: product.media,
             variants: product.variants,
             productCapacity: product.productCapacity,
+            flashSale: product.flashSale,
             pricingRule: input.pricingRule,
             selectEvent: input.selectEventBySlug.get(product.slug) ?? null,
           }),
