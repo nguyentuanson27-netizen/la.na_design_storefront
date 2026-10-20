@@ -1,0 +1,117 @@
+name: PR198 prepare reviewed commit
+
+# Temporary: creates Git objects only, never updates a branch or deploys.
+# The prepared tree removes this workflow and both verification workspaces.
+on:
+  push:
+    branches: [feat/freeship-tu-2-set]
+    paths: [.github/workflows/pr198-publish.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    if: github.repository == 'nguyentuanson27-netizen/la.na_design_storefront'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: Validate exact tested bytes and prepare an unreferenced commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          repo = 'nguyentuanson27-netizen/la.na_design_storefront'
+          api_root = 'https://api.github.com/repos/' + repo
+          expected_tree = 'ebed938b20fc3980991f63c02ef0aeee2d50ddbd'
+          compressed_sha = 'e4df9bb9a01c9390c955ab80e0c277a24250da5ec88b2484dcdea50de776badc'
+          parts = [
+              '24300fb78c6a327134e63e6b8c3d71cb8efabb73',
+              '3a3f6b32c6d56dc04930759ae64023606b4a1257',
+              'dc4dd3fd67f68313aeae791ae0244913f120cf3b',
+              'eecc3ede35ade11d120243058cefbd9743d26a30',
+              '9173372b087b0cec52f8202389ac9d0557b46558',
+              '218d96cc824b308fe457258734e3476b081e57c1',
+              'ad52758336ac4b538e5f7e7c56d9008e18310257',
+          ]
+          def api(path, body=None):
+              request = urllib.request.Request(api_root + path,
+                  data=None if body is None else json.dumps(body).encode(),
+                  headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                           'Accept': 'application/vnd.github+json',
+                           'X-GitHub-Api-Version': '2022-11-28',
+                           'Content-Type': 'application/json'},
+                  method='GET' if body is None else 'POST')
+              with urllib.request.urlopen(request, timeout=45) as response:
+                  return json.load(response)
+          def blob(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          def git(*args):
+              return subprocess.check_output(['git', *args])
+          chunks = []
+          for sha in parts:
+              record = api('/git/blobs/' + sha)
+              chunk = base64.b64decode(record['content'])
+              assert blob(chunk) == sha, 'Transfer blob mismatch'
+              chunks.append(chunk)
+          encoded = b''.join(chunks)
+          assert len(encoded) == 42188, 'Unexpected payload length'
+          compressed = base64.b64decode(encoded, validate=True)
+          assert hashlib.sha256(compressed).hexdigest() == compressed_sha, 'Payload checksum mismatch'
+          decoder = lzma.LZMADecompressor(memlimit=256 * 1024 * 1024)
+          raw = decoder.decompress(compressed, max_length=2 * 1024 * 1024)
+          assert decoder.eof and not decoder.unused_data and len(raw) == 128403, 'Invalid payload envelope'
+          payload = json.loads(raw)
+          assert payload['baseTree'] == '8fdee52a682e3fd8d2b21d2520677a3c32840228'
+          assert payload['expectedTree'] == expected_tree
+          assert len(payload['files']) == 63
+          for entry in payload['files']:
+              path = pathlib.PurePosixPath(entry['path'])
+              assert not path.is_absolute() and not any(p in ('..', '.git') for p in path.parts)
+              target = pathlib.Path(path)
+              assert not target.is_symlink() and not any(p.is_symlink() for p in target.parents)
+              old = target.read_bytes() if target.exists() else None
+              assert (None if old is None else blob(old)) == entry['before'], 'Source changed: ' + str(path)
+              if entry['after'] is None:
+                  target.unlink()
+              else:
+                  lines = (old or b'').decode('utf-8').splitlines(keepends=True)
+                  for start, end, replacement in reversed(entry['edits']):
+                      assert 0 <= start <= end <= len(lines)
+                      lines[start:end] = [replacement]
+                  new = ''.join(lines).encode('utf-8')
+                  assert blob(new) == entry['after'], 'Edit mismatch: ' + str(path)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(new)
+          for path in ('.github/workflows/pr198-db-workspace.yml', '.github/workflows/pr198-publish.yml'):
+              pathlib.Path(path).unlink()
+          git('add', '-A')
+          git('diff', '--cached', '--check')
+          assert git('write-tree').decode().strip() == expected_tree, 'The prepared tree differs from the tested tree'
+          parent = os.environ['SOURCE_SHA']
+          assert git('rev-parse', 'HEAD').decode().strip() == parent
+          parent_tree = api('/git/commits/' + parent)['tree']['sha']
+          entries = []
+          for name in git('diff', '--cached', '--name-only', '--no-renames', '-z').decode().strip('\0').split('\0'):
+              target = pathlib.Path(name)
+              item = {'path': name, 'mode': '100644', 'type': 'blob'}
+              if target.exists():
+                  item['content'] = target.read_text(encoding='utf-8')
+              else:
+                  item['sha'] = None
+              entries.append(item)
+          tree = api('/git/trees', {'base_tree': parent_tree, 'tree': entries})
+          assert tree['sha'] == expected_tree, 'GitHub tree differs from the tested tree'
+          commit = api('/git/commits', {
+              'message': 'feat(shipping): replace permanent freeship with admin-managed campaigns',
+              'tree': expected_tree, 'parents': [parent]})
+          print('PREPARED_PARENT=' + parent)
+          print('PREPARED_TREE=' + expected_tree)
+          print('PREPARED_COMMIT=' + commit['sha'])
+          print('No branch ref updated. No deployment or campaign activation performed.')
+          PY
