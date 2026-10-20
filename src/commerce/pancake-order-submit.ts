@@ -1240,7 +1240,6 @@ export function createPancakeOrderSubmissionService(
         const units = demand.paid + demand.gift;
         const resources: Array<{ pancakeVariationId: string; units: number; floor: number; heldElsewhere?: number }> = [];
         if (meta.isComposite) {
-          if (demand.gift > 0) return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
           for (const component of meta.components) {
             const componentUnits = units * component.requiredQuantity;
             const liveComponent = liveByVariationId.get(component.pancakeVariationId);
