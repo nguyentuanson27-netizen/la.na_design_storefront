@@ -1,0 +1,59 @@
+name: PR198 verification workspace
+
+# Temporary, branch-scoped verification aid; remove before merging PR198.
+# No production environment, secrets, deployment, or repository-write permission.
+on:
+  push:
+    branches: [feat/freeship-tu-2-set]
+    paths: [.github/workflows/pr198-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'nguyentuanson27-netizen/la.na_design_storefront'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/pr198_verification
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+        with:
+          node-version: 22
+      - name: Prepare the pinned dependencies without lifecycle scripts
+        run: |
+          corepack enable
+          pnpm --version
+          pnpm install --frozen-lockfile --ignore-scripts
+          pnpm prisma:generate
+      - name: Package tracked source and isolated dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pr198-source"
+          git archive HEAD | tar -x -C "$RUNNER_TEMP/pr198-source"
+          git rev-parse HEAD > "$RUNNER_TEMP/pr198-source/WORKSPACE_SOURCE_SHA"
+          tar -czf "$RUNNER_TEMP/pr198-source.tar.gz" -C "$RUNNER_TEMP/pr198-source" .
+          tar -czf "$RUNNER_TEMP/pr198-dependencies.tar.gz" node_modules src/generated/prisma
+          sha256sum "$RUNNER_TEMP/pr198-source.tar.gz" "$RUNNER_TEMP/pr198-dependencies.tar.gz"
+      - name: Save the tracked source snapshot
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr198-source
+          path: ${{ runner.temp }}/pr198-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+      - name: Save the isolated dependency workspace
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr198-dependencies
+          path: ${{ runner.temp }}/pr198-dependencies.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
