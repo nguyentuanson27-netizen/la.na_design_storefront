@@ -45,6 +45,7 @@ export default defineConfig({
     "not-found-recovery.spec.ts",
     "pancake-chat-admin-isolation.spec.ts",
     "pdp-feedback.spec.ts",
+    "pdp-flash-countdown.spec.ts",
     "pdp-language.spec.ts",
     "pdp-preorder-availability.spec.ts",
     "pdp-promotion.spec.ts",

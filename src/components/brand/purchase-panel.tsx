@@ -23,6 +23,15 @@ import {
   OUT_OF_STOCK_LABEL,
 } from "@/components/headless/use-variant-selection";
 import { handleDrawerFocusTrap } from "@/components/headless/cart-drawer-model";
+import {
+  describeLowStock,
+  formatFlashClock,
+  NO_PRODUCT_URGENCY,
+  resolveFlashRemainingMs,
+  type FlashClock,
+  type ProductUrgency,
+} from "@/components/headless/product-urgency";
+import { useElapsedMs } from "@/components/headless/use-elapsed-ms";
 import { requestStorefrontCartDrawerOpen } from "@/components/headless/cart-drawer-events";
 import { resolveMobilePurchasePresentation } from "@/components/headless/variant-selection-model";
 import { useScrollLock } from "@/components/headless/use-scroll-lock";
@@ -75,6 +84,14 @@ function choiceTarget(disabled: boolean) {
 
 function chipClass(disabled: boolean) {
   return `${SELECTABLE_CHIP} ${disabled ? UNAVAILABLE_CHIP : DISABLED_CHIP}`;
+}
+
+function BoltIcon({ className }: Readonly<{ className?: string }>) {
+  return (
+    <svg aria-hidden="true" focusable={false} className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M13.5 2 4 13.5h6.5L9.5 22 20 9.5h-6.8L13.5 2Z" />
+    </svg>
+  );
 }
 
 function RulerIcon() {
@@ -303,6 +320,7 @@ export function PurchasePanelView({
   sizeHelp = null,
   assurance = null,
   offers = null,
+  urgency = NO_PRODUCT_URGENCY,
 }: Readonly<{
   controller: VariantSelectionController;
   /** Named on the phone purchase bar while nothing is chosen yet, since the heading is above the fold. */
@@ -321,6 +339,8 @@ export function PurchasePanelView({
   assurance?: ReactNode;
   /** Server-built promotions this product takes part in, directly under the price. */
   offers?: ReactNode;
+  /** Server-decided Flash Sale countdown and "Còn x" facts; none by default. */
+  urgency?: ProductUrgency;
 }>) {
   const {
     view,
@@ -337,6 +357,21 @@ export function PurchasePanelView({
     promptForKind,
   } = controller;
   const { priceDisplay, availabilityDateLabel } = view;
+  // One clock per server snapshot, ticking only while something is on Flash Sale. The countdown
+  // follows the chosen variant's own campaign and disappears for a variant no Flash Sale prices.
+  // It also needs a discount on screen: without a struck price there is no Flash price to time.
+  const urgencySelection = {
+    kindKey: selection.kindKey,
+    variantId: view.selectedVariantId,
+    size: selection.size,
+  };
+  const elapsedMs = useElapsedMs(urgency.flash);
+  const flashRemainingMs = resolveFlashRemainingMs(urgency, urgencySelection);
+  const flashClock =
+    flashRemainingMs === null || priceDisplay.compareAtText === null
+      ? null
+      : formatFlashClock(flashRemainingMs - elapsedMs);
+  const lowStockLabel = describeLowStock(urgency, urgencySelection);
   const mobilePresentation = resolveMobilePurchasePresentation(view, selection);
   const justAdded = message === ADDED_TO_BAG_MESSAGE;
 
@@ -736,15 +771,50 @@ export function PurchasePanelView({
    * below the photograph, so the bar is often the first price a shopper reads: a sale it did not
    * show would look like the full price.
    */
-  function renderCompactPrice() {
+  function renderCompactPrice(clock: FlashClock | null = null) {
+    // During a Flash Sale the bar's second line is the countdown, so the struck price moves up
+    // beside the Flash price and the percentage stays in the panel, where it is said once.
     return (
       <span className="flex min-w-0 items-baseline gap-x-2 whitespace-nowrap">
         <span className="sr-only">{priceDisplay.compareAtText ? "Giá khuyến mãi " : ""}</span>
-        <span className="font-display text-base font-semibold tabular-nums">{priceDisplay.displayText}</span>
-        {priceDisplay.compareAtText ? (
+        <span
+          className={`font-display text-base font-semibold tabular-nums ${clock ? "text-[#9A3324]" : ""}`}
+        >
+          {priceDisplay.displayText}
+        </span>
+        {priceDisplay.compareAtText && clock ? (
+          <>
+            <span className="sr-only">Giá gốc </span>
+            <span className="text-xs tabular-nums text-black/55 line-through decoration-black/40">
+              {priceDisplay.compareAtText}
+            </span>
+          </>
+        ) : priceDisplay.compareAtText ? (
           <span className="text-xs font-medium tabular-nums text-[#8A3A35]">-{priceDisplay.discountPercent}%</span>
         ) : null}
       </span>
+    );
+  }
+
+  function renderFlashCompact(clock: FlashClock) {
+    return (
+      <span className="mt-0.5 flex items-center gap-1 text-xs font-bold tabular-nums text-[#D6262F]">
+        <BoltIcon className="h-3 w-3 shrink-0" />
+        <span aria-hidden="true">Còn {clock.text}</span>
+        <span className="sr-only">{clock.spoken}</span>
+      </span>
+    );
+  }
+
+  function renderLowStock(surface: "panel" | "sheet") {
+    if (lowStockLabel === null) return null;
+    return (
+      <p
+        className={`text-sm font-semibold text-[#9A3324] ${surface === "panel" ? "mt-2.5" : "mt-3"}`}
+        data-pdp-low-stock=""
+      >
+        {lowStockLabel}
+      </p>
     );
   }
 
@@ -772,7 +842,30 @@ export function PurchasePanelView({
         aria-label="Mua sản phẩm"
         className="mt-1 border-t border-[#3B2219]/15 pt-6 lg:mt-0 lg:border-t-0 lg:pt-0"
       >
-        <div className="flex items-baseline justify-between gap-6">
+        {flashClock === null ? null : (
+          <div className="pdp-flash-strip" data-pdp-flash="">
+            <span className="pdp-flash-strip__label">
+              <BoltIcon className="pdp-flash-strip__bolt" />
+              FLASH SALE
+            </span>
+            {/* The digits tick every second, so they are hidden from assistive technology; the
+                sentence beside them changes once a minute and is not a live region. */}
+            <span className="pdp-flash-strip__clock">
+              <span>Kết thúc sau</span>
+              <span className="pdp-flash-strip__digits" aria-hidden="true">
+                {flashClock.days > 0 ? (
+                  <>
+                    <b>{flashClock.days}</b>
+                    <span className="pdp-flash-strip__unit">ngày</span>
+                  </>
+                ) : null}
+                <b>{flashClock.hours}</b>:<b>{flashClock.minutes}</b>:<b>{flashClock.seconds}</b>
+              </span>
+              <span className="sr-only">{flashClock.spoken}</span>
+            </span>
+          </div>
+        )}
+        <div className={`flex items-baseline justify-between gap-6 ${flashClock === null ? "" : "mt-4"}`}>
           <p className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-display text-[1.75rem] leading-tight font-normal tabular-nums tracking-[0.01em] text-[#2A1810]">
             {priceDisplay.compareAtText ? (
               <>
@@ -780,8 +873,9 @@ export function PurchasePanelView({
                 <span className="align-baseline text-lg text-[#3B2219]/70 line-through decoration-[#3B2219]/40">
                   {priceDisplay.compareAtText}
                 </span>
-                <span className="sr-only">Giá khuyến mãi </span>
-                <span>{priceDisplay.displayText}</span>
+                <span className="sr-only">{flashClock === null ? "Giá khuyến mãi " : "Giá Flash Sale "}</span>
+                {/* Red only for a Flash price, the one sale the page shouts about. */}
+                <span className={flashClock === null ? undefined : "text-[#9A3324]"}>{priceDisplay.displayText}</span>
                 <span className="inline-flex items-center self-center border border-[#3B2219]/30 px-2 py-0.5 text-xs font-medium tracking-[0.08em] text-[#3B2219]">
                   -{priceDisplay.discountPercent}%
                 </span>
@@ -814,6 +908,7 @@ export function PurchasePanelView({
         {renderKindFieldset("panel")}
         {renderColorFieldset("panel")}
         {renderSizeFieldset("panel")}
+        {renderLowStock("panel")}
 
         <div ref={panelActionsRef} className="mt-8 grid grid-cols-2 gap-3">
           <button
@@ -896,8 +991,10 @@ export function PurchasePanelView({
             a takeover of this column hid the price of the product the shopper is looking at.
           */}
           <p className="m-0 min-w-0 flex-1">
-            {renderCompactPrice()}
-            {renderCompactDetail(productName || mobilePresentation.actionLabel)}
+            {renderCompactPrice(flashClock)}
+            {flashClock === null
+              ? renderCompactDetail(productName || mobilePresentation.actionLabel)
+              : renderFlashCompact(flashClock)}
           </p>
           <button
             ref={stickyTriggerRef}
@@ -954,6 +1051,7 @@ export function PurchasePanelView({
                   {renderKindFieldset("sheet")}
                   {renderColorFieldset("sheet")}
                   {renderSizeFieldset("sheet")}
+                  {renderLowStock("sheet")}
 
                   <p className="mt-4 min-h-6 text-sm text-black/65" role="status" aria-live="polite">
                     {mobilePurchaseStatus}

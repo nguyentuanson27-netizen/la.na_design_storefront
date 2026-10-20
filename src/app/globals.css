@@ -1401,6 +1401,91 @@ main nav[aria-label="Breadcrumb"] a {
   }
 }
 
+/*
+ * Product page Flash Sale. The photograph wears the card's tag at its bottom left (the header
+ * overlays the top, the counter holds the bottom right); the purchase panel opens on one strip with
+ * the countdown, the page's single loud element. Same gradient and bolt as the card's tag.
+ */
+.pdp-flash-tag {
+  position: absolute;
+  z-index: 3;
+  left: 1rem;
+  bottom: 1rem;
+  pointer-events: none;
+}
+
+@media (min-width: 64rem) {
+  .pdp-flash-tag {
+    left: var(--shell-gutter);
+    bottom: 1.5rem;
+  }
+}
+
+.pdp-flash-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  min-height: 2.875rem;
+  padding: 0.375rem 0.625rem 0.375rem 0.75rem;
+  border-radius: 0.5rem;
+  background: linear-gradient(110deg, #ffb238 0%, #ff6a1a 30%, #e5282f 70%, #b8123f 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(184, 18, 63, 0.25);
+}
+
+.pdp-flash-strip__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-shadow: 0 1px 1px rgba(122, 16, 20, 0.45);
+}
+
+.pdp-flash-strip__bolt {
+  width: 1rem;
+  height: 1rem;
+  color: #fff27a;
+  filter: drop-shadow(0 0 2px rgba(255, 230, 90, 0.8));
+}
+
+.pdp-flash-strip__clock {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.pdp-flash-strip__digits {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1875rem;
+  font-weight: 800;
+}
+
+.pdp-flash-strip__digits b {
+  min-width: 1.7rem;
+  height: 1.7rem;
+  padding: 0 0.25rem;
+  border-radius: 0.3rem;
+  background: #ffffff;
+  color: #b8123f;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.7rem;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.pdp-flash-strip__unit {
+  margin-right: 0.25rem;
+  font-weight: 700;
+}
+
 /* Xả hàng lẻ size: a warm sand tag with an espresso outline, so it reads as "last pieces" without
  * competing with the red discount beside it. Sentence case, because the label is a phrase. */
 .product-tag--clearance {

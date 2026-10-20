@@ -264,6 +264,7 @@ function render(data: ProductRouteData) {
         sizeHelp={sizeHelp}
         purchaseAssurance={purchaseAssurance}
         purchaseOffers={purchaseOffers}
+        urgency={data.urgency}
       />
 
       {data.feedback === null ? null : (
