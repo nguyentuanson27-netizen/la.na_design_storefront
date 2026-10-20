@@ -224,7 +224,10 @@ export function buildProductUrgency(
   return Object.freeze({
     flash: flashSale
       ? Object.freeze({
-          remainingMs: flashSale.remainingMs,
+          // Before a choice the panel quotes the cheapest ready variant. When that is not the Flash
+          // representative, its price is some other promotion's (or none), and must not be counted
+          // down as a Flash price.
+          remainingMs: flashSale.hasCheaperCurrentVariant ? null : flashSale.remainingMs,
           remainingMsByVariantId: resolveStorefrontFlashSaleRemainingByVariantId(input),
         })
       : null,

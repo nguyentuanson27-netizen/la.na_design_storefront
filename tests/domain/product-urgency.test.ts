@@ -134,3 +134,31 @@ test("an empty urgency says nothing", () => {
   assert.equal(resolveFlashRemainingMs(NO_PRODUCT_URGENCY, null), null);
   assert.equal(describeLowStock(NO_PRODUCT_URGENCY, { variantId: null, size: null }), null);
 });
+
+test("a cheaper non-Flash promotion keeps the countdown off until a Flash size is chosen", () => {
+  // S is cheaper through an ordinary promotion; only M is on Flash Sale. Before a choice the panel
+  // quotes S's price, which must not be counted down as a Flash price.
+  const promotion: ApplicablePromotionCampaign = {
+    ...flash(2 * HOUR, "promo-1"),
+    kind: "PROMOTION",
+    fixedPriceVnd: BigInt(30_000),
+    startsAt: null,
+    endsAt: null,
+  };
+  const urgency = buildProductUrgency({
+    variants: [variant("v-s", "S", 5), variant("v-m", "M", 5)],
+    productCapacity: STANDARD_STANDALONE_CAPACITY,
+    campaignsByVariantId: new Map([
+      ["v-s", [promotion]],
+      ["v-m", [flash(2 * HOUR)]],
+    ]),
+    now,
+  });
+
+  // The product is still on Flash Sale (the photograph keeps its tag)...
+  assert.notEqual(urgency.flash, null);
+  // ...but nothing is counted down before a choice, nor on the non-Flash size.
+  assert.equal(resolveFlashRemainingMs(urgency, null), null);
+  assert.equal(resolveFlashRemainingMs(urgency, "v-s"), null);
+  assert.equal(resolveFlashRemainingMs(urgency, "v-m"), 2 * HOUR);
+});

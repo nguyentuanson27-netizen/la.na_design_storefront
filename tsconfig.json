@@ -128,7 +128,9 @@
     ".next-test/variant-deep-link/types/**/*.ts",
     ".next-test/variant-deep-link/dev/types/**/*.ts",
     ".next-test/zalo-ads-pixel/types/**/*.ts",
-    ".next-test/zalo-ads-pixel/dev/types/**/*.ts"
+    ".next-test/zalo-ads-pixel/dev/types/**/*.ts",
+    ".next-test/pdp-flash-countdown/types/**/*.ts",
+    ".next-test/pdp-flash-countdown/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",

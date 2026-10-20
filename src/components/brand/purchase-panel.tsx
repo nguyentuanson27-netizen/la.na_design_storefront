@@ -357,11 +357,15 @@ export function PurchasePanelView({
     promptForKind,
   } = controller;
   const { priceDisplay, availabilityDateLabel } = view;
-  // One clock for the page, ticking only while something is on Flash Sale. The countdown follows the
-  // chosen variant's own campaign, and disappears for a variant no Flash Sale prices.
-  const elapsedMs = useElapsedMs(urgency.flash !== null);
+  // One clock per server snapshot, ticking only while something is on Flash Sale. The countdown
+  // follows the chosen variant's own campaign and disappears for a variant no Flash Sale prices.
+  // It also needs a discount on screen: without a struck price there is no Flash price to time.
+  const elapsedMs = useElapsedMs(urgency.flash);
   const flashRemainingMs = resolveFlashRemainingMs(urgency, view.selectedVariantId);
-  const flashClock = flashRemainingMs === null ? null : formatFlashClock(flashRemainingMs - elapsedMs);
+  const flashClock =
+    flashRemainingMs === null || priceDisplay.compareAtText === null
+      ? null
+      : formatFlashClock(flashRemainingMs - elapsedMs);
   const lowStockLabel = describeLowStock(urgency, {
     variantId: view.selectedVariantId,
     size: selection.size,

@@ -8,8 +8,12 @@
 export type ProductUrgency = Readonly<{
   /** `null` when no Flash Sale prices a ready-stock variant of this product. */
   flash: Readonly<{
-    /** The card's representative: what the page counts down before a variant is chosen. */
-    remainingMs: number;
+    /**
+     * What the page counts down before a variant is chosen: the card's representative, or `null`
+     * when a cheaper variant outside the Flash Sale sets the price quoted before a choice. Counting
+     * down then would call that other promotion's price a Flash price.
+     */
+    remainingMs: number | null;
     /** Each Flash-priced variant's own campaign; a variant absent here is not on Flash Sale. */
     remainingMsByVariantId: Readonly<Record<string, number>>;
   }> | null;
@@ -28,7 +32,8 @@ export const NO_PRODUCT_URGENCY: ProductUrgency = Object.freeze({
 
 /**
  * How long the countdown has left for what the shopper is looking at, measured from the server's
- * request, or `null` for no countdown: nothing on Flash Sale, or a chosen variant that is not.
+ * request, or `null` for no countdown: nothing on Flash Sale, a chosen variant that is not, or no
+ * choice yet while the quoted price is another variant's non-Flash one.
  */
 export function resolveFlashRemainingMs(
   urgency: ProductUrgency,
