@@ -7,8 +7,10 @@ import {
   LOW_STOCK_LIMIT,
 } from "../../src/components/headless/build-product-card-model.ts";
 import {
+  compositeComponentsAreShared,
   STANDARD_STANDALONE_CAPACITY,
   type StorefrontPricingRule,
+  type StorefrontProductCapacity,
   type StorefrontVariantFacts,
 } from "../../src/commerce/storefront-product.ts";
 import type { StorefrontProductMedia } from "../../src/commerce/product-media.ts";
@@ -636,18 +638,32 @@ test('a card that says "Còn x" drops "Lẻ size - Chỉ còn ít"', () => {
   assert.equal(scattered.lastSizesLeft, true);
 });
 
-test('"Còn x" is not claimed for a FULL SET whose sizes share components', () => {
-  // Two sizes each assembled from the same component with 2 pieces left: each reports 2, but
-  // together they can only sell 2 sets, so a summed "Còn 4" would be false.
-  const model = buildProductCardModel({
-    slug: "set",
-    name: "Set",
-    variants: [
-      variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 2 }),
-      variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 2 }),
-    ],
-    productCapacity: { ...STANDARD_STANDALONE_CAPACITY, isComposite: true },
-  });
+test('"Còn x" counts a FULL SET whose sizes share no component, and not one whose sizes do', () => {
+  const card = (capacity: StorefrontProductCapacity) =>
+    buildProductCardModel({
+      slug: "set",
+      name: "Set",
+      variants: [
+        variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 2 }),
+        variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 2 }),
+      ],
+      productCapacity: capacity,
+    }).lowStockLabel;
+  const composite = { ...STANDARD_STANDALONE_CAPACITY, isComposite: true };
 
-  assert.equal(model.lowStockLabel, null);
+  // Each size assembled from its own components: the sets are independent, 2 + 2 left.
+  assert.equal(card({ ...composite, sharesComponents: false }), "Còn 4");
+  // Both sizes drawing on one component with 2 pieces left can only sell 2 sets: a summed
+  // "Còn 4" would be false, so nothing is said. Nor when the read did not check.
+  assert.equal(card({ ...composite, sharesComponents: true }), null);
+  assert.equal(card(composite), null);
+});
+
+test("components are shared only when two parent variants use the same one", () => {
+  const parent = (...ids: string[]) => ({
+    compositeComponents: ids.map((componentVariantId) => ({ componentVariantId })),
+  });
+  assert.equal(compositeComponentsAreShared([parent("top-s", "skirt-s"), parent("top-m", "skirt-m")]), false);
+  assert.equal(compositeComponentsAreShared([parent("top-s", "belt"), parent("top-m", "belt")]), true);
+  assert.equal(compositeComponentsAreShared([parent("top-s", "top-s"), parent()]), false);
 });

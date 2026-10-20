@@ -6,7 +6,7 @@ import {
 import { buildVariantStockCte } from "./storefront-catalog.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
 import { resolveSellingPolicy } from "./capacity-policy.ts";
-import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
+import { compositeComponentsAreShared, LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
   resolveStorefrontProductMedia,
@@ -167,6 +167,7 @@ function toFlashProduct(product: SelectedFlashProduct, componentMedia?: Componen
     productCapacity: {
       ...resolveSellingPolicy(product.sellingPolicy),
       isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
+      sharesComponents: compositeComponentsAreShared(product.variants),
     },
   };
 }

@@ -224,8 +224,8 @@ export const LOW_STOCK_LIMIT = 5;
  * every option still for sale, floored at zero.
  *
  * Under `PREORDER` or `OVERSELL` the count is not a ceiling on what the shopper can buy, so stating
- * it would be false; the claim is reserved for `STANDARD`, and for a product that is not a
- * composite (FULL SET), whose variants' figures overlap. A caller that did not read the product's
+ * it would be false; the claim is reserved for `STANDARD`, and a composite (FULL SET) makes it only
+ * when its sizes share no component, so their figures do not overlap. A caller that did not read the product's
  * policy gets the STANDARD default for availability, but that default is not proof the product
  * cannot oversell, so it says nothing here.
  */
@@ -234,9 +234,10 @@ function resolveLowStockLabel(
   productCapacity: StorefrontProductCapacity | undefined,
 ): string | null {
   if (productCapacity?.sellingMode !== "STANDARD") return null;
-  // A FULL SET's per-variant figure is derived from components its sizes may share, so summing
-  // them can count the same pieces twice. Fail closed until the total reads the shared resource.
-  if (productCapacity.isComposite) return null;
+  // A FULL SET's per-variant figure is derived from its components. When no component is shared
+  // between its sizes those figures are independent and add up; when one is (or the read did not
+  // say), summing would count the same pieces twice, so the card says nothing.
+  if (productCapacity.isComposite && productCapacity.sharesComponents !== false) return null;
   const forSale = options.filter((option) => option.purchasable && !option.isPreorderSale);
   const piecesLeft = forSale.reduce(
     (total, option) =>
