@@ -14,6 +14,9 @@ import { handleDrawerFocusTrap } from "../../src/components/headless/cart-drawer
 import {
   buildClearPriceHref,
   buildToggleAvailabilityHref,
+  buildToggleColorHref,
+  buildToggleSizeHref,
+  isSameFacetValue,
   countActivePlpFilters,
   hasActivePlpFilters,
 } from "../../src/components/headless/plp-filter-model.ts";
@@ -555,4 +558,51 @@ test("category discovery carries the in-stock filter through URL, toggle and cle
   );
   assert.equal(hasActivePlpFilters({ ...state, size: null, availability: "in-stock" }), true);
   assert.equal(countActivePlpFilters({ ...state, size: null, availability: "in-stock" }), 1);
+});
+
+test("clicking the chosen size chip clears it in one click, whatever case the URL used", () => {
+  const base = {
+    color: null,
+    availability: "in-stock" as const,
+    minPriceVnd: null,
+    maxPriceVnd: null,
+    sale: null,
+    sort: "price-asc" as const,
+  };
+
+  // The chip is offered as `XL` (canonical); the URL may carry `Xl` or `xl` from older data or links.
+  for (const inUrl of ["XL", "Xl", "xl", " xL "]) {
+    assert.equal(isSameFacetValue(inUrl, "XL"), true, `${JSON.stringify(inUrl)} selects the XL chip`);
+    assert.equal(
+      buildToggleSizeHref("/ao-dai", { ...base, size: inUrl }, "XL"),
+      "/ao-dai?availability=in-stock&sort=price-asc",
+      `one click on XL must clear ?size=${inUrl} and keep the other filters`,
+    );
+  }
+
+  // A different size still switches to it, and nothing selected selects it.
+  assert.equal(
+    buildToggleSizeHref("/ao-dai", { ...base, size: "Xl" }, "M"),
+    "/ao-dai?size=M&availability=in-stock&sort=price-asc",
+  );
+  assert.equal(
+    buildToggleSizeHref("/ao-dai", { ...base, size: null }, "XL"),
+    "/ao-dai?size=XL&availability=in-stock&sort=price-asc",
+  );
+  assert.equal(isSameFacetValue(null, "XL"), false);
+  assert.equal(isSameFacetValue("L", "XL"), false);
+});
+
+test("the colour toggle follows the same case-insensitive rule as the size toggle", () => {
+  const state = {
+    size: null,
+    color: "đen",
+    availability: null,
+    minPriceVnd: null,
+    maxPriceVnd: null,
+    sale: null,
+    sort: "default" as const,
+  };
+  assert.equal(buildToggleColorHref("/ao-dai", state, "Đen"), "/ao-dai");
+  assert.match(buildToggleColorHref("/ao-dai", state, "Trắng"), /color=Tr/);
 });

@@ -21,6 +21,7 @@ import {
   buildToggleSizeHref,
   formatFilterPriceVnd,
   hasActivePlpFilters,
+  isSameFacetValue,
   type PlpFilterState,
 } from "../headless/plp-filter-model";
 
@@ -302,7 +303,7 @@ export function PlpFilterPanel({
             <span className="font-semibold uppercase tracking-wider text-[#70584B] mr-1">Size:</span>
             {availableSizes.map((size) => {
               const sizeHref = buildToggleSizeHref(categoryPath, activeFilters, size);
-              const isSelected = activeFilters.size?.toLowerCase() === size.toLowerCase();
+              const isSelected = isSameFacetValue(activeFilters.size, size);
               return (
                 <Link
                   key={size}
@@ -544,7 +545,7 @@ export function PlpFilterPanel({
                   <div className="flex flex-wrap gap-2">
                     {availableSizes.map((size) => {
                       const sizeHref = buildToggleSizeHref(categoryPath, activeFilters, size);
-                      const isSelected = activeFilters.size?.toLowerCase() === size.toLowerCase();
+                      const isSelected = isSameFacetValue(activeFilters.size, size);
                       return (
                         <Link
                           key={size}
