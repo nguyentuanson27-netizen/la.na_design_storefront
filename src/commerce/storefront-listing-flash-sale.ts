@@ -91,3 +91,25 @@ export function resolveStorefrontListingFlashSale({
     remainingMs: Math.max(0, representative.endsAt.getTime() - now.getTime()),
   });
 }
+
+/** Attaches each product's Flash presentation, read against the campaigns its listing already holds. */
+export function withListingFlashSale<
+  P extends Readonly<{
+    variants: readonly StorefrontVariantFacts[];
+    productCapacity?: StorefrontProductCapacity;
+  }>,
+>(
+  products: readonly P[],
+  campaignsByVariantId: ReadonlyMap<string, readonly ApplicablePromotionCampaign[]>,
+  now: Date,
+): (P & { flashSale: StorefrontListingFlashSale | undefined })[] {
+  return products.map((product) => ({
+    ...product,
+    flashSale: resolveStorefrontListingFlashSale({
+      variants: product.variants,
+      productCapacity: product.productCapacity,
+      campaignsByVariantId,
+      now,
+    }),
+  }));
+}

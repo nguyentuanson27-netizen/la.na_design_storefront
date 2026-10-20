@@ -32,8 +32,16 @@ export function ProductCard({
   /** The card sits in a listing's first row; see `PRODUCT_CARD_EAGER_COUNT`. */
   eager?: boolean;
 }) {
-  const { price, primaryImage, hoverImage, flashSale, lastSizesLeft, marketingBadge, availabilityLabel } =
-    model;
+  const {
+    price,
+    primaryImage,
+    hoverImage,
+    flashSale,
+    lastSizesLeft,
+    marketingBadge,
+    availabilityLabel,
+    lowStockLabel,
+  } = model;
 
   return (
     <article className="group">
@@ -47,7 +55,7 @@ export function ProductCard({
           className={`product-visual product-visual--${tone} relative aspect-[2/3] overflow-hidden`}
           aria-hidden={primaryImage ? undefined : "true"}
         >
-          {flashSale || lastSizesLeft || marketingBadge ? (
+          {flashSale || lastSizesLeft || marketingBadge || lowStockLabel ? (
             // One top-right stack that sizes to its tags; the styling lives in `globals.css`.
             <div className="product-tags">
               {flashSale ? (
@@ -65,6 +73,9 @@ export function ProductCard({
                 <span className={`product-tag product-tag--${marketingBadge.type}`}>
                   {marketingBadge.label}
                 </span>
+              ) : null}
+              {lowStockLabel ? (
+                <span className="product-tag product-tag--low-stock">{lowStockLabel}</span>
               ) : null}
             </div>
           ) : null}

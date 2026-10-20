@@ -1,7 +1,7 @@
 import { buildPromotionalStorefrontPricing } from "./storefront-promotion-projection.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import { resolveStorefrontPromotionRefresh } from "./storefront-promotion-freshness.ts";
-import { resolveStorefrontListingFlashSale } from "./storefront-listing-flash-sale.ts";
+import { withListingFlashSale } from "./storefront-listing-flash-sale.ts";
 import { Prisma, type PrismaClient } from "../generated/prisma/client.ts";
 import { sortClothingSizes } from "./clothing-size.ts";
 import { toStorefrontCollectionTitle } from "./collection-definition.ts";
@@ -1017,15 +1017,7 @@ export function createStorefrontCatalogRepository(client: PrismaClient | Prisma.
     return {
       // A product running a Flash Sale carries the same presentation the Flash listing gives it, so
       // a collection or category card shows the tag, the countdown and the Flash price too.
-      products: orderedProducts.map((product) => ({
-        ...product,
-        flashSale: resolveStorefrontListingFlashSale({
-          variants: product.variants,
-          productCapacity: product.productCapacity,
-          campaignsByVariantId,
-          now,
-        }),
-      })),
+      products: withListingFlashSale(orderedProducts, campaignsByVariantId, now),
       page: discovery.page,
       pageSize: safePageSize,
       totalCount,

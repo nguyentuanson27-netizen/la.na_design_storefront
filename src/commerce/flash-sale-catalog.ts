@@ -5,6 +5,7 @@ import {
 } from "./promotion-pricing.ts";
 import { buildVariantStockCte } from "./storefront-catalog.ts";
 import { withAdvisorySellableStock } from "./capacity-advisory.ts";
+import { resolveSellingPolicy } from "./capacity-policy.ts";
 import { LAST_SIZES_TOTAL_STOCK_LIMIT } from "./storefront-product.ts";
 import type { StorefrontDiscoveryQuery } from "./storefront-discovery.ts";
 import {
@@ -53,6 +54,7 @@ const flashProductSelection = {
   slug: true,
   name: true,
   primaryImageUrl: true,
+  sellingPolicy: { select: { sellingMode: true, negativeStockLimit: true } },
   variants: {
     where: { isPresent: true, isActive: true },
     orderBy: [{ pancakeVariationId: "asc" }],
@@ -160,6 +162,12 @@ function toFlashProduct(product: SelectedFlashProduct, componentMedia?: Componen
       retailPriceAfterDiscount: variant.pancakeRetailPriceAfterDiscount,
       sellableStock: sumWarehouseStocks(variant.warehouseStocks),
     })),
+    // The same product-level capacity `toStorefrontProduct` resolves, so a sale card judges stock
+    // (availability, "Còn x") by the product's real policy rather than the STANDARD default.
+    productCapacity: {
+      ...resolveSellingPolicy(product.sellingPolicy),
+      isComposite: product.variants.some((variant) => variant.compositeComponents.length > 0),
+    },
   };
 }
 

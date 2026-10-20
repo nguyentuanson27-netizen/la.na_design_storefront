@@ -2,14 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { ApplicablePromotionCampaign } from "../../src/commerce/promotion-pricing.ts";
-import { resolveStorefrontListingFlashSale } from "../../src/commerce/storefront-listing-flash-sale.ts";
+import {
+  resolveStorefrontListingFlashSale,
+  withListingFlashSale,
+} from "../../src/commerce/storefront-listing-flash-sale.ts";
 import type { StorefrontVariantFacts } from "../../src/commerce/storefront-product.ts";
 import { parseCategoryDiscoverySearchParams } from "../../src/commerce/category-discovery-url.ts";
 import { buildCategoryViewModel } from "../../src/routes/category-model.ts";
+import { buildHomeCards } from "../../src/routes/home-model.ts";
 import { CATEGORY_DESTINATIONS } from "../../src/routes/category-destinations.ts";
 import type { TrackingEvent } from "../../src/tracking/commerce-events.ts";
 
-/** Ordinary listings (collection, category, `/shop`) resolve the Flash card the Flash listing shows. */
+/** Ordinary listings (collection, category, `/shop`, the homepage) resolve the Flash card the Flash listing shows. */
 
 const now = new Date("2026-10-20T03:00:00.000Z");
 const HOUR = 60 * 60 * 1000;
@@ -141,4 +145,17 @@ test("a category card built from a Flash product shows the tag, the countdown an
   assert.equal(card.marketingBadge?.label, "-89%");
   assert.match(card.price.compareAtText ?? "", /429\.000/);
   assert.match(card.price.displayText, /49\.000/);
+});
+
+test("homepage cards carry the Flash presentation through", () => {
+  const variants = [variant("v-s", "S")];
+  const [product] = withListingFlashSale(
+    [{ id: "p-1", slug: "quan-sq5255", name: "QUẦN SQ5255", variants }],
+    new Map([["v-s", [campaign()]]]),
+    now,
+  );
+  const [card] = buildHomeCards({ products: [product!], selectEventBySlug: new Map() });
+
+  assert.equal(card!.model.flashSale?.countdownText, "Còn 20 giờ 38 phút");
+  assert.equal(card!.model.marketingBadge?.label, "-89%");
 });

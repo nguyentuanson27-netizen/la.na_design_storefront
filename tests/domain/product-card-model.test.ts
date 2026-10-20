@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   buildProductCardModel,
   LAST_SIZES_TOTAL_STOCK_LIMIT,
+  LOW_STOCK_LIMIT,
 } from "../../src/components/headless/build-product-card-model.ts";
 import {
   STANDARD_STANDALONE_CAPACITY,
@@ -567,4 +568,42 @@ test("Lẻ size - Chỉ còn ít decides sold out per size, not per colour × si
 
   // Size labels compare trimmed and case-insensitive, so " s " is still size S.
   assert.equal(card([option("Đen", "S", 0), option("Trắng", " s ", 3), option("Đen", "M", 4)]).lastSizesLeft, false);
+});
+
+test('"Còn x" counts the ready pieces of a STANDARD product below the limit', () => {
+  const card = (variants: StorefrontVariantFacts[]) =>
+    buildProductCardModel({
+      slug: "low",
+      name: "Low",
+      variants,
+      productCapacity: STANDARD_STANDALONE_CAPACITY,
+    }).lowStockLabel;
+
+  assert.equal(LOW_STOCK_LIMIT, 5);
+  assert.equal(
+    card([
+      variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 1 }),
+      variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 3 }),
+      variant({ id: "l", pancakeVariationId: "p-l", size: "L", sellableStock: 0 }),
+    ]),
+    "Còn 4",
+  );
+  assert.equal(card([variant({ sellableStock: 5 })]), null);
+  assert.equal(card([variant({ sellableStock: 0 })]), null);
+});
+
+test('"Còn x" is never claimed under preorder, overselling, or an unread policy', () => {
+  const variants = [variant({ sellableStock: 2 })];
+  for (const sellingMode of ["PREORDER", "OVERSELL"] as const) {
+    assert.equal(
+      buildProductCardModel({
+        slug: "low",
+        name: "Low",
+        variants,
+        productCapacity: { ...STANDARD_STANDALONE_CAPACITY, sellingMode },
+      }).lowStockLabel,
+      null,
+    );
+  }
+  assert.equal(buildProductCardModel({ slug: "low", name: "Low", variants }).lowStockLabel, null);
 });
