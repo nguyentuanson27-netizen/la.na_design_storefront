@@ -96,7 +96,7 @@ export async function loadCategoryRoute(
         pageSize: CATEGORY_PAGE_SIZE,
         now: requestNow,
       }),
-      listConfiguredCategoryDiscoveryFacets({ categoryKey }),
+      listConfiguredCategoryDiscoveryFacets({ categoryKey, discovery, now: requestNow }),
     ]);
   } catch (error) {
     if (error instanceof RangeError) notFound();
@@ -191,7 +191,7 @@ export function renderCategoryRoute(data: CategoryViewModel) {
           categoryPath={destination.href}
           totalCount={totalCount}
           availableSizes={facets.sizes}
-          availableColors={facets.colors}
+          saleAvailable={facets.saleAvailable !== false}
           activeFilters={activeFilters}
         />
       </div>

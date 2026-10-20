@@ -128,8 +128,7 @@ function render(data: CollectionViewModel) {
             totalCount={data.totalCount}
             sortOptions={data.sortOptions}
             sizeOptions={data.sizeOptions}
-            clearFilterHref={data.clearFilterHref}
-            filtered={data.filtered}
+            availabilityOption={data.availabilityOption}
           />
         </section>
 
@@ -140,12 +139,12 @@ function render(data: CollectionViewModel) {
             title={data.filtered ? "Không có sản phẩm phù hợp." : "Bộ sưu tập này chưa có sản phẩm."}
             copy={
               data.filtered
-                ? "Thử chọn kích cỡ khác hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
+                ? "Thử bỏ bớt bộ lọc hoặc xem lại tất cả sản phẩm trong bộ sưu tập."
                 : "Sản phẩm sẽ xuất hiện tại đây khi được thêm vào bộ sưu tập."
             }
             action={
               data.filtered
-                ? { href: data.clearFilterHref, label: "Xem tất cả kích cỡ" }
+                ? { href: data.clearFilterHref, label: "Xóa bộ lọc" }
                 : undefined
             }
           />

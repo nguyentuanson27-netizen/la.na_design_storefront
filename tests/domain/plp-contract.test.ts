@@ -11,7 +11,12 @@ import {
   parseCategoryDiscoverySearchParams,
 } from "../../src/commerce/category-discovery-url.ts";
 import { handleDrawerFocusTrap } from "../../src/components/headless/cart-drawer-model.ts";
-import { buildClearPriceHref } from "../../src/components/headless/plp-filter-model.ts";
+import {
+  buildClearPriceHref,
+  buildToggleAvailabilityHref,
+  countActivePlpFilters,
+  hasActivePlpFilters,
+} from "../../src/components/headless/plp-filter-model.ts";
 import { buildCatalogListingMetadata } from "../../src/seo/catalog-listing-metadata.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -188,7 +193,7 @@ test("F4a base category route self-canonicalizes while query states withhold can
   assert.equal(queryStateFiltered.alternates?.canonical, undefined);
 });
 
-test("F4b infinite-scroll URL contract updates to loaded page (not nextHref) and reconstructs on refresh", () => {
+test("F4b a ?page=N deep link still reconstructs page N, and the grid never writes it into the address bar", () => {
   const categoryPath = "/danh-muc/dam";
   const discovery = parseCategoryDiscoverySearchParams("dam", {
     color: "Trắng",
@@ -196,16 +201,23 @@ test("F4b infinite-scroll URL contract updates to loaded page (not nextHref) and
     page: "2",
   });
 
-  // When page 2 is loaded, browser URL must reflect page 2 (currentHref), preserving filters
-  const currentHref = buildCategoryDiscoveryHref(categoryPath, discovery, 2);
-  assert.equal(currentHref, "/danh-muc/dam?color=Tr%E1%BA%AFng&sort=price-asc&page=2");
+  // Crawlers and the no-JS fallback follow ?page=N links, so the contract keeps parsing them.
+  const pageHref = buildCategoryDiscoveryHref(categoryPath, discovery, 2);
+  assert.equal(pageHref, "/danh-muc/dam?color=Tr%E1%BA%AFng&sort=price-asc&page=2");
 
-  // While nextHref continues to point to page 3 for crawler / load-next contract
   const nextHref = buildCategoryDiscoveryHref(categoryPath, discovery, 3);
   assert.equal(nextHref, "/danh-muc/dam?color=Tr%E1%BA%AFng&sort=price-asc&page=3");
 
-  // When browser refreshes with currentHref, discovery contract reconstructs page 2
-  const refreshedUrl = new URL(currentHref, "https://lanadesign.vn");
+  // The server renders only page N for such a URL. Writing it into the address bar while the grid
+  // appends pages would make a reload or a Back from a product drop every page above N, so the
+  // infinite grid leaves the URL on the page the shopper arrived at.
+  const hook = readFileSync(
+    path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
+    "utf8",
+  );
+  assert.doesNotMatch(hook, /history\.(replace|push)State/);
+
+  const refreshedUrl = new URL(pageHref, "https://lanadesign.vn");
   const reconstructed = parseCategoryDiscoverySearchParams(
     "dam",
     Object.fromEntries(refreshedUrl.searchParams.entries()),
@@ -316,6 +328,7 @@ test("F4b price filter contract: buildClearPriceHref clears only price bounds, p
   const state = {
     color: "Trắng",
     size: "M",
+    availability: null,
     minPriceVnd: 200000,
     maxPriceVnd: 800000,
     sale: true,
@@ -502,3 +515,45 @@ test("F8a product card presents availability without duplicating any stock thres
 
 
 
+
+test("a page request started for one filter is dropped once the grid belongs to another", () => {
+  const hook = readFileSync(
+    path.join(REPO_ROOT, "src/components/headless/use-plp-infinite-grid.ts"),
+    "utf8",
+  );
+  // The request captures the list identity it started for and checks it again before applying.
+  assert.match(hook, /const startedFor = listIdentityRef\.current/);
+  assert.match(hook, /listIdentityRef\.current !== startedFor/);
+});
+
+test("category discovery carries the in-stock filter through URL, toggle and clear", () => {
+  const parsed = parseCategoryDiscoverySearchParams("aoDai", { availability: "in-stock", size: "M" });
+  assert.equal(parsed.availability, "in-stock");
+
+  assert.throws(
+    () => parseCategoryDiscoverySearchParams("aoDai", { availability: "sold-out" }),
+    /invalid/i,
+  );
+  assert.throws(
+    () => parseCategoryDiscoverySearchParams("aoDai", { availability: ["in-stock", "in-stock"] }),
+    /invalid/i,
+  );
+
+  const state = {
+    color: null,
+    size: "M",
+    availability: null,
+    minPriceVnd: null,
+    maxPriceVnd: null,
+    sale: null,
+    sort: "default" as const,
+  };
+  const on = buildToggleAvailabilityHref("/ao-dai", state);
+  assert.equal(on, "/ao-dai?size=M&availability=in-stock");
+  assert.equal(
+    buildToggleAvailabilityHref("/ao-dai", { ...state, availability: "in-stock" }),
+    "/ao-dai?size=M",
+  );
+  assert.equal(hasActivePlpFilters({ ...state, size: null, availability: "in-stock" }), true);
+  assert.equal(countActivePlpFilters({ ...state, size: null, availability: "in-stock" }), 1);
+});

@@ -545,3 +545,116 @@ test("discovery collection filter requires published CollectionDefinition while 
   assert.equal(essentialsFiltered.totalCount, 1);
   assert.deepEqual(essentialsFiltered.products.map(({ name }) => name), ["Stone Trouser"]);
 });
+
+test("scoped facets offer only sizes the grid could still list, and keep the one picked", async () => {
+  await seedProduct({
+    id: "scoped-sold-out",
+    name: "Scoped Sold Out",
+    collectionSlugs: ["city-uniform"],
+    color: "Black",
+    size: "L",
+    price: 500_000,
+    stock: 0,
+  });
+
+  const facetsFor = async (params: Record<string, string>) =>
+    (
+      await repository.listScopedDiscoveryFacets({
+        shopId,
+        discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform", ...params }),
+        allowCuratedComponents: true,
+      })
+    ).sizes;
+
+  assert.deepEqual(await facetsFor({}), ["M", "L"]);
+  // Stock narrows the list: L exists only on a sold-out variant.
+  assert.deepEqual(await facetsFor({ availability: "in-stock" }), ["M"]);
+  // Colour narrows it too, on the same variant.
+  assert.deepEqual(await facetsFor({ color: "Black" }), ["M", "L"]);
+  assert.deepEqual(await facetsFor({ color: "Olive" }), ["M"]);
+  assert.deepEqual(await facetsFor({ color: "Olive", availability: "in-stock" }), ["M"]);
+
+  // The size filter never narrows its own list, so the chips stay switchable.
+  assert.deepEqual(await facetsFor({ size: "M" }), ["M", "L"]);
+  // A size nothing matches under the other filters stays listed (any case) so it can be turned off.
+  assert.deepEqual(await facetsFor({ size: "L", availability: "in-stock" }), ["M", "L"]);
+  assert.deepEqual(await facetsFor({ size: "xl", availability: "in-stock" }), ["M", "XL"]);
+});
+
+test("the Sale facet is true only when the other filters leave a discounted product", async () => {
+  const linen = await prisma.productMirror.findFirstOrThrow({ where: { slug: "t13-linen-overshirt" } });
+  const campaign = await prisma.promotionCampaign.create({
+    data: {
+      kind: "PROMOTION",
+      name: "Scoped sale",
+      discountType: "PERCENTAGE",
+      percentageValue: 20,
+      isEnabled: true,
+      targets: { create: { productId: linen.id } },
+    },
+  });
+
+  try {
+    const saleFor = async (params: Record<string, string>) =>
+      (
+        await repository.listScopedDiscoveryFacets({
+          shopId,
+          discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform", ...params }),
+          allowCuratedComponents: true,
+        })
+      ).saleAvailable;
+
+    assert.equal(await saleFor({}), true);
+    // Linen is 480,000 after 20% off; Olive is not discounted.
+    assert.equal(await saleFor({ maxPrice: "500000" }), true);
+    assert.equal(await saleFor({ minPrice: "600000" }), false);
+    assert.equal(await saleFor({ color: "Olive" }), false);
+    // The Sale filter never narrows its own toggle, so an active toggle stays available.
+    assert.equal(await saleFor({ sale: "true" }), true);
+
+    const withoutSale = await repository.listScopedDiscoveryFacets({
+      shopId,
+      discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform" }),
+      allowCuratedComponents: true,
+      withSale: false,
+    });
+    assert.equal(withoutSale.saleAvailable, undefined);
+  } finally {
+    await prisma.promotionCampaign.delete({ where: { id: campaign.id } });
+  }
+
+  const noCampaign = await repository.listScopedDiscoveryFacets({
+    shopId,
+    discovery: parseStorefrontDiscoverySearchParams({ collection: "city-uniform" }),
+    allowCuratedComponents: true,
+  });
+  assert.equal(noCampaign.saleAvailable, false);
+});
+
+test("global facets drop a product with any composite component variant, as the listing does", async () => {
+  const parent = await seedProduct({
+    id: "facet-composite-parent", name: "Facet Composite", color: "Black", size: "M", price: 900_000, stock: 2,
+  });
+  const mixed = await seedProduct({
+    id: "facet-mixed-component", name: "Facet Mixed Piece", color: "Silver", size: "XXL", price: 200_000, stock: 2,
+  });
+  await seedVariant({ productId: mixed.id, id: "facet-mixed-plain", color: "Silver", size: "XS", price: 200_000, stock: 2 });
+
+  const parentVariant = await prisma.variantMirror.findFirstOrThrow({ where: { productId: parent.id } });
+  const componentVariant = await prisma.variantMirror.findFirstOrThrow({
+    where: { productId: mixed.id, size: "XXL" },
+  });
+  await prisma.compositeComponentMirror.create({
+    data: { parentVariantId: parentVariant.id, componentVariantId: componentVariant.id, quantity: 1, syncedAt },
+  });
+
+  // The product is not listed (`curated collection...` above), so neither of its sizes is offered:
+  // XS belongs to a plain variant of the same product, yet no product in the grid carries it.
+  const listed = await repository.listDiscoveryPage({
+    shopId, pageSize: 24, discovery: parseStorefrontDiscoverySearchParams({ size: "XS" }),
+  });
+  assert.equal(listed.totalCount, 0);
+  const facets = await repository.listDiscoveryFacets({ shopId });
+  assert.equal(facets.sizes.includes("XS"), false);
+  assert.equal(facets.sizes.includes("XXL"), false);
+});

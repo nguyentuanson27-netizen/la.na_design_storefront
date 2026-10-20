@@ -39,6 +39,13 @@ export function usePlpInfiniteGrid({
   const [error, setError] = useState<string | null>(null);
 
   const sentinelRef = useRef<HTMLDivElement>(null);
+  // The product list the grid currently belongs to. A page request started for one list must not
+  // land on another: changing size, sort or price while a page is loading would otherwise append
+  // the old filter's products to the new filter's grid.
+  const listIdentityRef = useRef(initialProducts);
+  useEffect(() => {
+    listIdentityRef.current = initialProducts;
+  }, [initialProducts]);
 
   // Sync state if initialProducts change from server (e.g. filter navigation)
   const [prevInitialProducts, setPrevInitialProducts] = useState(initialProducts);
@@ -56,6 +63,8 @@ export function usePlpInfiniteGrid({
   const loadMore = useCallback(async () => {
     if (isLoadingMore || !hasNextPage) return;
 
+    const startedFor = listIdentityRef.current;
+    let stale = false;
     setIsLoadingMore(true);
     setError(null);
     setAnnouncement("");
@@ -68,11 +77,18 @@ export function usePlpInfiniteGrid({
         page: cursor ? undefined : currentPage + 1,
         color: activeFilters.color,
         size: activeFilters.size,
+        availability: activeFilters.availability,
         minPriceVnd: activeFilters.minPriceVnd,
         maxPriceVnd: activeFilters.maxPriceVnd,
         sale: activeFilters.sale,
         sort: activeFilters.sort,
       });
+
+      if (listIdentityRef.current !== startedFor) {
+        // The shopper moved to another filter; the grid was already reset for it.
+        stale = true;
+        return;
+      }
 
       setProducts((prev) => [...prev, ...result.products]);
       setCurrentPage(result.page);
@@ -84,16 +100,16 @@ export function usePlpInfiniteGrid({
       setAnnouncement(
         `Đã tải thêm ${result.products.length} sản phẩm. Tổng cộng ${totalLoaded} trên ${totalCount} sản phẩm.`,
       );
-
-      if (result.currentHref && typeof window !== "undefined") {
-        window.history.replaceState(null, "", result.currentHref);
-      }
     } catch {
+      if (listIdentityRef.current !== startedFor) {
+        stale = true;
+        return;
+      }
       const errorMessage = "Chưa tải thêm được sản phẩm. Nàng thử lại nhé.";
       setError(errorMessage);
       setAnnouncement(errorMessage);
     } finally {
-      setIsLoadingMore(false);
+      if (!stale) setIsLoadingMore(false);
     }
   }, [
     activeFilters,

@@ -21,6 +21,7 @@ export type CategoryNextPageActionInput = {
   cursor?: string | null;
   color?: string | null;
   size?: string | null;
+  availability?: "in-stock" | null;
   minPriceVnd?: number | null;
   maxPriceVnd?: number | null;
   sale?: boolean | null;
@@ -35,7 +36,6 @@ export type CategoryNextPageActionResult = {
   hasNext: boolean;
   nextCursor: string | null;
   nextHref: string | null;
-  currentHref: string;
 };
 
 export async function loadCategoryNextPageAction(
@@ -44,6 +44,7 @@ export async function loadCategoryNextPageAction(
   const discovery = parseCategoryDiscoverySearchParams(input.categoryKey, {
     color: input.color ?? undefined,
     size: input.size ?? undefined,
+    availability: input.availability ?? undefined,
     minPrice: input.minPriceVnd !== null && input.minPriceVnd !== undefined ? String(input.minPriceVnd) : undefined,
     maxPrice: input.maxPriceVnd !== null && input.maxPriceVnd !== undefined ? String(input.maxPriceVnd) : undefined,
     sale: input.sale ? "true" : undefined,
@@ -75,7 +76,6 @@ export async function loadCategoryNextPageAction(
 
   const hasNext = pageResult.hasNext;
   const nextPage = discovery.page + 1;
-  const currentHref = buildCategoryDiscoveryHref(input.categoryPath, discovery, pageResult.page);
 
   return {
     products: cards,
@@ -85,6 +85,5 @@ export async function loadCategoryNextPageAction(
     hasNext,
     nextCursor: hasNext ? encodeCategoryCursor(nextPage) : null,
     nextHref: hasNext ? buildCategoryDiscoveryHref(input.categoryPath, discovery, nextPage) : null,
-    currentHref,
   };
 }

@@ -6,6 +6,7 @@ import {
 export type PlpFilterState = {
   size: string | null;
   color: string | null;
+  availability: "in-stock" | null;
   minPriceVnd: number | null;
   maxPriceVnd: number | null;
   sale: boolean | null;
@@ -16,6 +17,7 @@ export function hasActivePlpFilters(state: PlpFilterState): boolean {
   return (
     state.size !== null ||
     state.color !== null ||
+    state.availability !== null ||
     state.minPriceVnd !== null ||
     state.maxPriceVnd !== null ||
     Boolean(state.sale) ||
@@ -27,6 +29,7 @@ export function countActivePlpFilters(state: PlpFilterState): number {
   let count = 0;
   if (state.size !== null) count += 1;
   if (state.color !== null) count += 1;
+  if (state.availability !== null) count += 1;
   if (state.minPriceVnd !== null || state.maxPriceVnd !== null) count += 1;
   if (state.sale) count += 1;
   if (state.sort !== "default") count += 1;
@@ -75,6 +78,17 @@ export function buildToggleSaleHref(
   return buildCategoryDiscoveryHref(basePath, {
     ...state,
     sale: nextSale,
+    page: 1,
+  }, 1);
+}
+
+export function buildToggleAvailabilityHref(
+  basePath: string,
+  state: PlpFilterState,
+): string {
+  return buildCategoryDiscoveryHref(basePath, {
+    ...state,
+    availability: state.availability === null ? "in-stock" : null,
     page: 1,
   }, 1);
 }

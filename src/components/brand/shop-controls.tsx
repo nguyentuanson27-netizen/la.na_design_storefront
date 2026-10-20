@@ -1,13 +1,132 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ComponentPropsWithoutRef,
+} from "react";
 
 import { buildStorefrontDiscoveryHref } from "../../commerce/storefront-discovery";
 import { formatFilterPriceVnd } from "../headless/plp-filter-model";
 import { handleDrawerFocusTrap } from "../headless/cart-drawer-model";
+import { validateShopPriceRange } from "../headless/shop-price-range-model";
 import { useScrollLock } from "../headless/use-scroll-lock";
 import type { ShopCollectionFacet, ShopViewModel } from "../../routes/shop-model";
+
+/**
+ * A `/shop` control that applies itself.
+ *
+ * The page is one native GET form, so a filter only took effect after the shopper found the
+ * "Áp dụng" button. These submit the form the moment the value changes -- through
+ * `requestSubmit`, so the price fields' validity still gets its say -- and the page resets to its
+ * first page because the form carries no `page`.
+ */
+export function ShopFilterSelect({
+  onChange,
+  ...props
+}: ComponentPropsWithoutRef<"select">) {
+  return (
+    <select
+      {...props}
+      onChange={(event: ChangeEvent<HTMLSelectElement>) => {
+        onChange?.(event);
+        event.currentTarget.form?.requestSubmit();
+      }}
+    />
+  );
+}
+
+export function ShopFilterCheckbox({
+  onChange,
+  ...props
+}: Omit<ComponentPropsWithoutRef<"input">, "type">) {
+  return (
+    <input
+      {...props}
+      type="checkbox"
+      onChange={(event: ChangeEvent<HTMLInputElement>) => {
+        onChange?.(event);
+        event.currentTarget.form?.requestSubmit();
+      }}
+    />
+  );
+}
+
+export type ShopPriceRangeProps = {
+  limitVnd: number;
+  minPriceVnd: number | null;
+  maxPriceVnd: number | null;
+  inputClassName: string;
+  separatorClassName?: string;
+};
+
+/**
+ * The two price boxes of a `/shop` form.
+ *
+ * Plain text with a numeric keypad rather than `type="number"`: a number input accepts `1e5` and
+ * rounds to its `step`, and either way the loader answered with a 404. The browser's own validation
+ * bubble carries the message, so it works at every width and without further markup.
+ */
+export function ShopPriceRange({
+  limitVnd,
+  minPriceVnd,
+  maxPriceVnd,
+  inputClassName,
+  separatorClassName,
+}: ShopPriceRangeProps) {
+  const [min, setMin] = useState(minPriceVnd !== null ? String(minPriceVnd) : "");
+  const [max, setMax] = useState(maxPriceVnd !== null ? String(maxPriceVnd) : "");
+  const minRef = useRef<HTMLInputElement>(null);
+  const maxRef = useRef<HTMLInputElement>(null);
+
+  // Applied URL changes (a pill's remove link, "Xóa bộ lọc") must reach the boxes.
+  const [applied, setApplied] = useState({ minPriceVnd, maxPriceVnd });
+  if (applied.minPriceVnd !== minPriceVnd || applied.maxPriceVnd !== maxPriceVnd) {
+    setApplied({ minPriceVnd, maxPriceVnd });
+    setMin(minPriceVnd !== null ? String(minPriceVnd) : "");
+    setMax(maxPriceVnd !== null ? String(maxPriceVnd) : "");
+  }
+
+  useEffect(() => {
+    const issue = validateShopPriceRange({ min, max, limitVnd });
+    minRef.current?.setCustomValidity(issue?.field === "min" ? issue.message : "");
+    maxRef.current?.setCustomValidity(issue?.field === "max" ? issue.message : "");
+  }, [min, max, limitVnd]);
+
+  return (
+    <>
+      <input
+        ref={minRef}
+        type="text"
+        inputMode="numeric"
+        name="minPrice"
+        aria-label="Giá tối thiểu"
+        placeholder="Từ"
+        autoComplete="off"
+        value={min}
+        onChange={(event) => setMin(event.target.value)}
+        className={inputClassName}
+      />
+      <span className={separatorClassName}>-</span>
+      <input
+        ref={maxRef}
+        type="text"
+        inputMode="numeric"
+        name="maxPrice"
+        aria-label="Giá tối đa"
+        placeholder="Đến"
+        autoComplete="off"
+        value={max}
+        onChange={(event) => setMax(event.target.value)}
+        className={inputClassName}
+      />
+    </>
+  );
+}
 
 export type ShopMobileDrawerProps = {
   limits: ShopViewModel["limits"];
@@ -72,6 +191,27 @@ export function ShopMobileDrawer({
 
   return (
     <>
+      {/* The filter fields only exist while the drawer is open. Closed, the form still has to carry
+          the applied filters, or searching or re-sorting from the bar would silently drop them. */}
+      {!isOpen ? (
+        <>
+          {discovery.collection ? (
+            <input type="hidden" name="collection" value={discovery.collection} />
+          ) : null}
+          {discovery.size ? <input type="hidden" name="size" value={discovery.size} /> : null}
+          {discovery.color ? <input type="hidden" name="color" value={discovery.color} /> : null}
+          {discovery.availability ? (
+            <input type="hidden" name="availability" value={discovery.availability} />
+          ) : null}
+          {discovery.minPriceVnd !== null ? (
+            <input type="hidden" name="minPrice" value={discovery.minPriceVnd} />
+          ) : null}
+          {discovery.maxPriceVnd !== null ? (
+            <input type="hidden" name="maxPrice" value={discovery.maxPriceVnd} />
+          ) : null}
+        </>
+      ) : null}
+
       {/* Mobile Drawer Trigger Button (visible only on mobile) */}
       <button
         type="button"
@@ -233,28 +373,12 @@ export function ShopMobileDrawer({
                     Khoảng giá (₫)
                   </span>
                   <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      name="minPrice"
-                      aria-label="Giá tối thiểu"
-                      placeholder="Từ"
-                      min={0}
-                      max={limits.priceVnd}
-                      step={1000}
-                      defaultValue={discovery.minPriceVnd ?? ""}
-                      className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
-                    />
-                    <span className="text-xs text-[#70584B]">-</span>
-                    <input
-                      type="number"
-                      name="maxPrice"
-                      aria-label="Giá tối đa"
-                      placeholder="Đến"
-                      min={0}
-                      max={limits.priceVnd}
-                      step={1000}
-                      defaultValue={discovery.maxPriceVnd ?? ""}
-                      className="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                    <ShopPriceRange
+                      limitVnd={limits.priceVnd}
+                      minPriceVnd={discovery.minPriceVnd}
+                      maxPriceVnd={discovery.maxPriceVnd}
+                      inputClassName="w-full rounded border border-[#3B2219]/20 bg-transparent px-3 py-2 text-xs text-[#2A1810]"
+                      separatorClassName="text-xs text-[#70584B]"
                     />
                   </div>
                 </div>

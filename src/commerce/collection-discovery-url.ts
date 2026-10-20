@@ -8,7 +8,8 @@ import {
 export type CollectionDiscoveryUrlState = Pick<
   StorefrontDiscoveryQuery,
   "size" | "sort" | "page"
->;
+> &
+  Partial<Pick<StorefrontDiscoveryQuery, "availability">>;
 
 const COLLECTION_DEFAULT_SORTS: Readonly<Record<string, StorefrontDiscoverySort>> = {
   "xa-hang-chao-thu": "price-asc",
@@ -16,6 +17,19 @@ const COLLECTION_DEFAULT_SORTS: Readonly<Record<string, StorefrontDiscoverySort>
 
 export function resolveCollectionDefaultSort(routeSlug: string): StorefrontDiscoverySort {
   return COLLECTION_DEFAULT_SORTS[routeSlug] ?? "name-asc";
+}
+
+/**
+ * Whether the shopper is looking at the collection in the order its merchandiser set.
+ *
+ * Pinned products lead only then. Once someone picks another order (price, name) the pins would
+ * sit above a list that claims to be sorted, so the route stops applying them.
+ */
+export function isCollectionDefaultSort(
+  routeSlug: string,
+  sort: StorefrontDiscoverySort,
+): boolean {
+  return sort === resolveCollectionDefaultSort(routeSlug);
 }
 
 export function parseCollectionDiscoverySearchParams(
@@ -32,6 +46,7 @@ export function parseCollectionDiscoverySearchParams(
   return parseStorefrontDiscoverySearchParams({
     collection: routeSlug,
     size: searchParams.size,
+    availability: searchParams.availability,
     sort: sortParam,
     page: searchParams.page,
   });
@@ -45,6 +60,7 @@ export function buildCollectionDiscoveryHref(
   const parsed = parseStorefrontDiscoverySearchParams({
     collection: routeSlug,
     size: state.size ?? undefined,
+    availability: state.availability ?? undefined,
     sort: state.sort,
     page: String(state.page),
   });
@@ -55,6 +71,7 @@ export function buildCollectionDiscoveryHref(
 
   const params = new URLSearchParams();
   if (parsed.size) params.set("size", parsed.size);
+  if (parsed.availability) params.set("availability", parsed.availability);
   if (parsed.sort !== defaultSort) params.set("sort", parsed.sort);
   if (parsed.page !== 1) params.set("page", String(parsed.page));
 

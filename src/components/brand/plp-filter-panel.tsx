@@ -15,6 +15,7 @@ import {
   buildClearAllFiltersHref,
   buildClearPriceHref,
   buildSortChangeHref,
+  buildToggleAvailabilityHref,
   buildToggleColorHref,
   buildToggleSaleHref,
   buildToggleSizeHref,
@@ -27,7 +28,8 @@ export type PlpFilterPanelProps = {
   categoryPath: string;
   totalCount: number;
   availableSizes: readonly string[];
-  availableColors?: readonly string[];
+  /** Whether the other active filters leave any discounted product to find. */
+  saleAvailable?: boolean;
   activeFilters: PlpFilterState;
 };
 
@@ -43,7 +45,7 @@ export function PlpFilterPanel({
   categoryPath,
   totalCount,
   availableSizes,
-  availableColors: _availableColors,
+  saleAvailable = true,
   activeFilters,
 }: PlpFilterPanelProps) {
   const router = useRouter();
@@ -190,6 +192,11 @@ export function PlpFilterPanel({
   };
 
   const clearHref = buildClearAllFiltersHref(categoryPath);
+  // Offered only where it can find something; an already-active toggle always stays so it can be
+  // switched off.
+  const showSaleToggle = saleAvailable || Boolean(activeFilters.sale);
+  const isInStockActive = activeFilters.availability !== null;
+  const inStockHref = buildToggleAvailabilityHref(categoryPath, activeFilters);
 
   return (
     <div className="border-b border-[#3B2219]/15 pb-4">
@@ -253,26 +260,40 @@ export function PlpFilterPanel({
 
       {/* Desktop Filter Bar */}
       <div className="mt-4 hidden md:flex md:flex-wrap md:items-center md:gap-x-6 md:gap-y-3 text-xs text-[#3B2219]">
-        {/* Sale toggle */}
-        <div>
-          {(() => {
-            const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
-            const isSaleActive = Boolean(activeFilters.sale);
-            return (
-              <Link
-                href={saleHref}
-                scroll={false}
-                aria-current={isSaleActive ? "true" : undefined}
-                className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
-                  isSaleActive
-                    ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                    : "border-[#3B2219]/20 hover:border-[#3B2219]"
-                }`}
-              >
-                Sale
-              </Link>
-            );
-          })()}
+        {/* Availability + Sale toggles */}
+        <div className="flex items-center gap-1.5">
+          <Link
+            href={inStockHref}
+            scroll={false}
+            aria-current={isInStockActive ? "true" : undefined}
+            className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
+              isInStockActive
+                ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                : "border-[#3B2219]/20 hover:border-[#3B2219]"
+            }`}
+          >
+            Còn hàng
+          </Link>
+          {showSaleToggle
+            ? (() => {
+                const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
+                const isSaleActive = Boolean(activeFilters.sale);
+                return (
+                  <Link
+                    href={saleHref}
+                    scroll={false}
+                    aria-current={isSaleActive ? "true" : undefined}
+                    className={`inline-flex items-center rounded-md border px-3 py-1.5 font-medium transition ${
+                      isSaleActive
+                        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                        : "border-[#3B2219]/20 hover:border-[#3B2219]"
+                    }`}
+                  >
+                    Sale
+                  </Link>
+                );
+              })()
+            : null}
         </div>
 
         {/* Sizes */}
@@ -362,6 +383,15 @@ export function PlpFilterPanel({
       {/* Active Filter Pills (Desktop & Mobile) */}
       {hasFilters ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
+          {isInStockActive ? (
+            <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
+              <span>Còn hàng</span>
+              <Link href={inStockHref} scroll={false} aria-label="Xóa bộ lọc còn hàng" className="hover:text-black">
+                ✕
+              </Link>
+            </span>
+          ) : null}
+
           {activeFilters.sale ? (
             <span className="inline-flex items-center gap-1.5 rounded bg-[#3B2219]/10 px-2.5 py-1 text-xs text-[#2A1810]">
               <span>Sale</span>
@@ -464,29 +494,45 @@ export function PlpFilterPanel({
 
             {/* Filter controls */}
             <div className="flex-1 space-y-6 overflow-y-auto px-6 py-6">
-              {/* Sale */}
+              {/* Availability + Sale */}
               <div>
                 <span className="block text-xs font-semibold uppercase tracking-wider text-[#3B2219]/70 mb-3">
                   Ưu đãi
                 </span>
-                {(() => {
-                  const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
-                  const isSaleActive = Boolean(activeFilters.sale);
-                  return (
-                    <Link
-                      href={saleHref}
-                      scroll={false}
-                      aria-current={isSaleActive ? "true" : undefined}
-                      className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
-                        isSaleActive
-                          ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                          : "border-[#3B2219]/25 text-[#3B2219]"
-                      }`}
-                    >
-                      Chỉ xem sản phẩm Sale
-                    </Link>
-                  );
-                })()}
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={inStockHref}
+                    scroll={false}
+                    aria-current={isInStockActive ? "true" : undefined}
+                    className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
+                      isInStockActive
+                        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                        : "border-[#3B2219]/25 text-[#3B2219]"
+                    }`}
+                  >
+                    Chỉ xem sản phẩm còn hàng
+                  </Link>
+                  {showSaleToggle
+                    ? (() => {
+                        const saleHref = buildToggleSaleHref(categoryPath, activeFilters);
+                        const isSaleActive = Boolean(activeFilters.sale);
+                        return (
+                          <Link
+                            href={saleHref}
+                            scroll={false}
+                            aria-current={isSaleActive ? "true" : undefined}
+                            className={`inline-flex items-center rounded-md border px-4 py-2 text-xs font-medium uppercase tracking-wider transition ${
+                              isSaleActive
+                                ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+                                : "border-[#3B2219]/25 text-[#3B2219]"
+                            }`}
+                          >
+                            Chỉ xem sản phẩm Sale
+                          </Link>
+                        );
+                      })()
+                    : null}
+                </div>
               </div>
 
               {/* Sizes */}

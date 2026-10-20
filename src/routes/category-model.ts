@@ -35,8 +35,12 @@ export type CategoryProduct = Readonly<{
 }>;
 
 export type CategoryFacets = Readonly<{
-  colors: readonly string[];
   sizes: readonly string[];
+  /**
+   * Whether any product under the other active filters is discounted, so the Sale toggle is only
+   * offered where it can find something. Absent keeps it offered, as it was before facets knew.
+   */
+  saleAvailable?: boolean;
 }>;
 
 /** One tab in the row under a category heading. `fullLabel` is its accessible name. */
@@ -131,6 +135,7 @@ export function buildCategoryViewModel(input: CategoryViewModelInput): CategoryV
   const activeFilters: PlpFilterState = {
     size: discovery.size,
     color: discovery.color,
+    availability: discovery.availability,
     minPriceVnd: discovery.minPriceVnd,
     maxPriceVnd: discovery.maxPriceVnd,
     sale: discovery.sale,
