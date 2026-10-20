@@ -67,6 +67,7 @@ export async function loadCategoryNextPageAction(
       media: product.media,
       variants: product.variants,
       productCapacity: product.productCapacity,
+      flashSale: product.flashSale,
       pricingRule: pageResult.pricingRule,
       selectEvent: null,
     }),
