@@ -1,0 +1,43 @@
+name: PR198 database verification workspace
+
+# Temporary test tooling only; removed before PR198 handoff.
+on:
+  push:
+    branches: [feat/freeship-tu-2-set]
+    paths: [.github/workflows/pr198-db-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Package isolated PostgreSQL 16 test runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -x /usr/lib/postgresql/16/bin/postgres ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y postgresql-16 postgresql-contrib-16
+          fi
+          PG="$RUNNER_TEMP/pr198-postgres"
+          mkdir -p "$PG/lib" "$PG/share" "$PG/deps"
+          cp -a /usr/lib/postgresql/16/. "$PG/lib/"
+          cp -a /usr/share/postgresql/16/. "$PG/share/"
+          ldd "$PG/lib/bin/postgres" "$PG/lib/bin/initdb" "$PG/lib/bin/pg_ctl" "$PG/lib/bin/psql" "$PG/lib/lib/"*.so | awk '/=> \// {print $3}' | sort -u > "$PG/libraries.txt"
+          while IFS= read -r library; do
+            case "$(basename "$library")" in
+              libc.so.*|libm.so.*|libpthread.so.*|libdl.so.*|librt.so.*|ld-linux*) continue ;;
+            esac
+            cp -L "$library" "$PG/deps/"
+          done < "$PG/libraries.txt"
+          /usr/lib/postgresql/16/bin/postgres --version > "$PG/VERSION"
+          tar -czf "$RUNNER_TEMP/pr198-postgres.tar.gz" -C "$PG" .
+          sha256sum "$RUNNER_TEMP/pr198-postgres.tar.gz"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr198-postgres
+          path: ${{ runner.temp }}/pr198-postgres.tar.gz
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
