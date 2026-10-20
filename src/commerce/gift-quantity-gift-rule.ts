@@ -298,6 +298,7 @@ export async function unknownGiftVariantIds(
 export type GiftOptionError =
   | "GIFT_VARIANT_UNKNOWN"
   | "GIFT_VARIANT_UNAVAILABLE"
+  /** No longer produced: sets are allowed as gifts (ADR 0016 D-04). Kept so an older Admin redirect still reads. */
   | "GIFT_VARIANT_COMPOSITE"
   | "GIFT_NO_READY_STOCK";
 

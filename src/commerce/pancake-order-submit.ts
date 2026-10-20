@@ -1235,12 +1235,12 @@ export function createPancakeOrderSubmissionService(
         }
 
         // A variant that also carries a gift is judged as READY stock only (ADR 0016 D-04): the paid
-        // units may be flexible, the free ones may not. Otherwise the variant keeps its own policy.
+        // units may be flexible, the free ones may not. Otherwise the variant keeps its own policy. A set
+        // given as a gift is judged the same way, component by component, against the fresh Pancake stock.
         const floor = demand.gift > 0 ? 0 : capacityFloorForMode(meta.policy.sellingMode, meta.policy.negativeStockLimit);
         const units = demand.paid + demand.gift;
         const resources: Array<{ pancakeVariationId: string; units: number; floor: number; heldElsewhere?: number }> = [];
         if (meta.isComposite) {
-          if (demand.gift > 0) return reject("COMPOSITE_SELLING_MODE_UNSUPPORTED");
           for (const component of meta.components) {
             const componentUnits = units * component.requiredQuantity;
             const liveComponent = liveByVariationId.get(component.pancakeVariationId);

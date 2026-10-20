@@ -115,7 +115,7 @@ export function GiftQuantityGiftFields({
       <legend className={labelClass}>Mốc nhận quà và danh sách quà</legend>
       <input name="giftRuleForm" type="hidden" value="on" />
       <p className="mt-2 text-sm leading-6 text-neutral-700">
-        Nháp chưa đủ thông tin vẫn lưu được; khi bật, máy chủ kiểm tra lại toàn bộ (mốc, quà còn hàng, không phải combo, giới hạn
+        Nháp chưa đủ thông tin vẫn lưu được; khi bật, máy chủ kiểm tra lại toàn bộ (mốc, quà còn hàng — với set là đủ hàng mọi thành phần, giới hạn
         số chiến dịch quà cùng lúc).
       </p>
 
@@ -168,7 +168,7 @@ export function GiftQuantityGiftFields({
       <div className="mt-8 border-t border-black/10 pt-6">
         <h3 className={labelClass}>Danh sách quà ({options.length}/{MAX_GIFT_OPTIONS_PER_CAMPAIGN})</h3>
         <p className="mt-2 text-xs text-neutral-700">
-          Chỉ quà còn hàng sẵn sàng, không phải combo và đang bán mới tặng được; khách chọn trong danh sách này.
+          Chỉ quà đang bán và còn hàng sẵn sàng mới tặng được; quà dạng set cần mọi thành phần còn hàng. Khách chọn trong danh sách này.
         </p>
         {options.map((option) => <input key={option.id} name="giftVariantId" type="hidden" value={option.id} />)}
         <div className="mt-4 flex flex-wrap items-end gap-3">
