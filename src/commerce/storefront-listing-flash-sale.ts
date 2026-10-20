@@ -44,8 +44,12 @@ export function resolveStorefrontListingFlashSale({
     onResolved: (variantId, pricing) => pricingByVariantId.set(variantId, pricing),
   });
   const options = buildStorefrontVariantOptions(variants, pricingRule, productCapacity);
-  // Ready stock only: the Flash listing admits a variant on stock it can ship today.
-  const forSale = options.filter((option) => option.purchasable && !option.isPreorderSale);
+  // Ready stock only, as the Flash listing's `isPurchasable` requires (`sellableStock > 0`): an
+  // `OVERSELL` variant at zero or below is still purchasable, but that listing would not admit it,
+  // so it can neither badge the card nor represent its price.
+  const forSale = options.filter(
+    (option) => option.purchasable && !option.isPreorderSale && option.sellableStock > 0,
+  );
 
   let representative: Readonly<{ id: string; base: number; effective: number; endsAt: Date }> | null =
     null;

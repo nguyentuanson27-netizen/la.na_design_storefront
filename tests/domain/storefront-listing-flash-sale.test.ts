@@ -159,3 +159,37 @@ test("homepage cards carry the Flash presentation through", () => {
   assert.equal(card!.model.flashSale?.countdownText, "Còn 20 giờ 38 phút");
   assert.equal(card!.model.marketingBadge?.label, "-89%");
 });
+
+test("an OVERSELL variant at zero or below neither badges nor represents the card", () => {
+  const oversell = { sellingMode: "OVERSELL", negativeStockLimit: -20, isComposite: false } as const;
+  const cheaperFlash = campaign({ id: "flash-cheap", fixedPriceVnd: BigInt(39_000) });
+
+  for (const stock of [0, -3]) {
+    const variants = [
+      variant("v-s", "S", { sellableStock: stock }),
+      variant("v-m", "M", { sellableStock: 2 }),
+    ];
+    // The zero-stock variant is still purchasable under OVERSELL; the Flash listing would not admit it.
+    const flashSale = resolveStorefrontListingFlashSale({
+      variants,
+      productCapacity: oversell,
+      campaignsByVariantId: new Map([
+        ["v-s", [cheaperFlash]],
+        ["v-m", [campaign()]],
+      ]),
+      now,
+    });
+    assert.equal(flashSale?.representativeVariantId, "v-m");
+    assert.equal(flashSale?.effectivePriceVnd, 49_000);
+
+    assert.equal(
+      resolveStorefrontListingFlashSale({
+        variants: [variant("v-s", "S", { sellableStock: stock })],
+        productCapacity: oversell,
+        campaignsByVariantId: new Map([["v-s", [cheaperFlash]]]),
+        now,
+      }),
+      undefined,
+    );
+  }
+});

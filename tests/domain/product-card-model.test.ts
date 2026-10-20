@@ -635,3 +635,19 @@ test('a card that says "Còn x" drops "Lẻ size - Chỉ còn ít"', () => {
   assert.equal(scattered.lowStockLabel, null);
   assert.equal(scattered.lastSizesLeft, true);
 });
+
+test('"Còn x" is not claimed for a FULL SET whose sizes share components', () => {
+  // Two sizes each assembled from the same component with 2 pieces left: each reports 2, but
+  // together they can only sell 2 sets, so a summed "Còn 4" would be false.
+  const model = buildProductCardModel({
+    slug: "set",
+    name: "Set",
+    variants: [
+      variant({ id: "s", pancakeVariationId: "p-s", size: "S", sellableStock: 2 }),
+      variant({ id: "m", pancakeVariationId: "p-m", size: "M", sellableStock: 2 }),
+    ],
+    productCapacity: { ...STANDARD_STANDALONE_CAPACITY, isComposite: true },
+  });
+
+  assert.equal(model.lowStockLabel, null);
+});
