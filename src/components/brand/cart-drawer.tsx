@@ -10,6 +10,7 @@ import { LinePrice } from "@/components/brand/line-price";
 import { OrderSummary } from "@/components/brand/order-summary";
 import { PromotionBanner, PromotionSavings } from "@/components/brand/promotion-banner";
 import {
+  checkoutBlockedMessages,
   handleDrawerFocusTrap,
   isMeaningfulReturnFocusTarget,
 } from "@/components/headless/cart-drawer-model";
@@ -320,9 +321,11 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     Tiến hành đặt hàng
                   </Link>
                 ) : (
-                  <p className="text-center text-xs text-amber-800">
-                    Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé.
-                  </p>
+                  <div className="space-y-1 text-center text-xs leading-relaxed text-amber-800" role="status">
+                    {checkoutBlockedMessages(cart).map((message) => (
+                      <p key={message}>{message}</p>
+                    ))}
+                  </div>
                 )}
 
                 <Link

@@ -2,6 +2,17 @@
  * Pure models and helpers for the storefront cart drawer.
  */
 
+/** Why the drawer cannot offer checkout, one sentence per reason, in the order a shopper fixes them. */
+export function checkoutBlockedMessages(
+  cart: Readonly<{ hasUnavailableLines: boolean; benefitsNotice?: string }>,
+): readonly string[] {
+  const messages: string[] = [];
+  if (cart.hasUnavailableLines) messages.push("Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé.");
+  if (cart.benefitsNotice) messages.push(cart.benefitsNotice);
+  // Blocked for a reason neither names: still say something rather than leave a dead end.
+  return messages.length > 0 ? messages : ["Nàng xem lại giỏ hàng trước khi đặt hàng nhé."];
+}
+
 export type CartDrawerFocusable = {
   first: HTMLElement | null;
   last: HTMLElement | null;
