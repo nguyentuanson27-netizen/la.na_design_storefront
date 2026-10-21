@@ -286,7 +286,7 @@ test("F2: one invalid gift is identified; removing it preserves the valid gift, 
   await picker.getByRole("button", { name: "Kiểm tra quà đã chọn", exact: true }).click();
   const bad = picker.locator(`[data-gift-selection="${campaignId}/${giftVariantId}"]`);
   const good = picker.locator(`[data-gift-selection="${campaignId}/${validId}"]`);
-  await expect(bad.locator("[data-gift-problem]")).toContainText("không còn số lượng");
+  await expect(bad.locator("[data-gift-problem]")).toContainText("tạm hết hàng");
   await expect(good.locator("[data-gift-problem]")).toHaveCount(0);
   await bad.getByRole("button", { name: /^Bỏ quà để chọn lại/ }).click();
   await expect(page.locator('input[name="quoteProof"]')).not.toHaveValue("");
