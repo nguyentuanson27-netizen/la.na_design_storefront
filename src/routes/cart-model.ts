@@ -345,7 +345,7 @@ export function buildCartViewModel(
     ...savingsEntry(input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true),
     ...withShippingEstimate(input.shippingPolicy, input.lines, paidBenefits?.subtotalVnd ?? subtotal, input.benefitsUnavailable === true, summaryEntry(input, subtotal, paidBenefits?.subtotalVnd, state, Boolean(benefitBlocked), hasUnavailableLines), input.shippingQuote),
     ...(checkoutPending ? { benefitsNotice: input.benefitsUnavailable ? "Chưa kiểm tra được ưu đãi của giỏ hàng. Nàng thử lại trước khi đặt hàng nhé." : state && !state.validation.ok
-      ? "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà chuyển sang quà khác. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé."
+      ? "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà đã đổi, hoặc quà đã hết hàng. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé."
       : tierPriceInvalid
         ? "Chương trình giảm giá theo số lượng không còn áp dụng vì mức giảm so với giá hiện tại không hợp lệ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến."
         : "Nàng vẫn có thể chọn hoặc bỏ quà trong giỏ. Đơn có quà tặng hoặc ưu đãi theo số lượng hiện chưa thể đặt trực tuyến; nàng quay lại sau nhé." } : {}),

@@ -133,7 +133,7 @@ test("F2d cart drawer focus trap: safely handles null container", () => {
 
 test("F2d cart drawer: a blocked cart lists every reason, not only the first", () => {
   const unavailable = "Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé.";
-  const giftNotice = "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà chuyển sang quà khác. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé.";
+  const giftNotice = "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà đã đổi, hoặc quà đã hết hàng. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé.";
 
   // (e) an unavailable line and an invalid gift at once: both are said, as the cart page does.
   assert.deepEqual(checkoutBlockedMessages({ hasUnavailableLines: true, benefitsNotice: giftNotice }), [unavailable, giftNotice]);

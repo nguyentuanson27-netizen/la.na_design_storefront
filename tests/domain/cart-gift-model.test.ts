@@ -180,7 +180,7 @@ test("F2: repair projects OUT_OF_STOCK onto the validated line while keeping the
   const model = buildCartGiftPickerModel(s);
   assert.equal(model.invalid, true);
   assert.deepEqual(model.selections[0].problems, []);
-  assert.match(model.selections[1].problems!.join(" "), /không còn số lượng.*bỏ.*chọn lại/i);
+  assert.match(model.selections[1].problems!.join(" "), /hết hàng.*Bỏ quà để chọn lại/i);
   assert.deepEqual(model.selections.map(({ campaignId, variantId, quantity }) => ({ campaignId, variantId, quantity })), s.selections.map(({ campaignId, variantId, quantity }) => ({ campaignId, variantId, quantity })));
 });
 
