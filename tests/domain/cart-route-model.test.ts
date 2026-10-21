@@ -205,13 +205,13 @@ test("OD-06: a cart without a bill shows the policy's basic shipping fee as an e
   assert.equal(model.shippingBaseFeeText, vnd("30.000"));
 });
 
-test("OD-06: the estimate follows the free-shipping rule on the buyable lines, not a flat basic fee", () => {
+test("OD-06: buyable quantity never manufactures a shipping promotion", () => {
   const model = buildCartViewModel({
     lines: [line({ quantity: 3 }), line({ variantId: "variant-2", available: false, unavailableReason: "OUT_OF_STOCK" })],
     commerceTrackingEnabled: false,
     shippingPolicy: policy,
   });
-  assert.equal(model.shippingBaseFeeText, "Miễn phí");
+  assert.equal(model.shippingBaseFeeText, vnd("30.000"));
   const nothingBuyable = buildCartViewModel({
     lines: [line({ available: false, unavailableReason: "OUT_OF_STOCK" })],
     commerceTrackingEnabled: false,

@@ -11,7 +11,6 @@ import { createCartLineAuthorityResolver } from "./cart-line-authority.ts";
 import { createStorefrontCartPublicActions } from "./storefront-cart-public-actions.ts";
 import { createStorefrontCartRepository } from "./storefront-cart-repository.ts";
 import { scheduleMetaAddToCartSafely } from "./meta-request-context.ts";
-import { isGiftQuantityPromotionsEnabled } from "./gift-quantity-gate.ts";
 import { tryReadGuestShippingPolicy } from "./guest-shipping-policy.ts";
 import { getCurrentStorefrontCartBenefits } from "./storefront-cart-runtime.ts";
 import { buildCartViewModel, type CartViewModel } from "../routes/cart-model.ts";
@@ -85,9 +84,6 @@ export async function getStorefrontCartLines() {
  * ids the drawer has no reason to receive.
  */
 export async function getStorefrontCartView(): Promise<CartViewModel> {
-  if (!isGiftQuantityPromotionsEnabled()) {
-    return buildCartViewModel({ lines: await getStorefrontCartLines(), commerceTrackingEnabled: false, shippingPolicy: tryReadGuestShippingPolicy() });
-  }
   const model = buildCartViewModel({
     ...(await getCurrentStorefrontCartBenefits(new Date())),
     commerceTrackingEnabled: false,

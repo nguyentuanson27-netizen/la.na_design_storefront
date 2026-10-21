@@ -148,6 +148,15 @@ async function seedCompositeSet(now: Date) {
   );
 }
 
+// Locate the product price through its existing original-price label, never by an amount
+// across the whole panel: the shipping notice can legitimately display the same 30,000 VND.
+function productPrice(page: Page) {
+  return page
+    .getByRole("region", { name: "Mua sản phẩm" })
+    .locator("p")
+    .filter({ hasText: "Giá gốc" });
+}
+
 function isPdpRscRequest(request: Request) {
   const url = new URL(request.url());
   return url.pathname === `/shop/${slug}` && (url.searchParams.has("_rsc") || request.headers()["rsc"] === "1");
@@ -275,6 +284,7 @@ test.beforeAll(async () => {
       NEXT_DIST_DIR: ".next-test/pdp-flash-countdown",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
+      LA_SHIPPING_FEE_VND: "30000", // Keep the amount collision covered by this fixture.
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -296,16 +306,17 @@ test("the countdown speaks only for a Flash price on screen", async ({ page }) =
   const strip = page.locator("[data-pdp-flash]");
 
   // Before a choice the panel quotes S's 30.000 ₫ ordinary promotion: no Flash countdown, no Flash copy.
-  await expect(panel.getByText(/30\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/30\.000/)).toBeVisible();
   await expect(strip).toHaveCount(0);
   await expect(panel.getByText("Giá Flash Sale", { exact: false })).toHaveCount(0);
 
   await chooseSize(page, "M");
   await expect(strip).toBeVisible();
-  await expect(panel.getByText(/50\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/50\.000/)).toBeVisible();
   await expect(panel.getByText("Giá Flash Sale", { exact: false })).toHaveCount(1);
 
   await chooseSize(page, "S");
+  await expect(productPrice(page).getByText(/30\.000/)).toBeVisible();
   await expect(strip).toHaveCount(0);
   await expect(panel.getByText("Giá Flash Sale", { exact: false })).toHaveCount(0);
 
@@ -348,7 +359,7 @@ test("a server refresh restarts the countdown from the new snapshot", async ({ p
     .toBeLessThan(30);
 
   // Still M: the selection survived the refresh, and so did the countdown it follows.
-  await expect(page.getByRole("region", { name: "Mua sản phẩm" }).getByText(/50\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/50\.000/)).toBeVisible();
 });
 
 test("a composite's other kinds never carry the set's countdown or stock", async ({ page }) => {
@@ -360,14 +371,14 @@ test("a composite's other kinds never carry the set's countdown or stock", async
   const barCountdown = page.locator("[data-mobile-purchase-bar]").getByText(/Còn \d\d:\d\d:\d\d/);
 
   // No kind yet: the panel quotes the set's Flash price, one set of each size left.
-  await expect(panel.getByText(/49\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/49\.000/)).toBeVisible();
   await expect(strip).toBeVisible();
   await expect(barCountdown).toHaveCount(1);
   await expect(lowStock).toHaveText("Chỉ còn 2 sản phẩm");
 
   // "ÁO LẺ", no size: its own 30.000 ₫ promotion is quoted, and none of the set's facts remain.
   await chooseKind(page, "ÁO LẺ");
-  await expect(panel.getByText(/30\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/30\.000/)).toBeVisible();
   await expect(strip).toHaveCount(0);
   await expect(barCountdown).toHaveCount(0);
   await expect(panel.getByText("Giá Flash Sale", { exact: false })).toHaveCount(0);
@@ -375,6 +386,7 @@ test("a composite's other kinds never carry the set's countdown or stock", async
 
   // A size of "ÁO LẺ" is a child variant: still not the set's.
   await chooseSize(page, "S");
+  await expect(productPrice(page).getByText(/30\.000/)).toBeVisible();
   await expect(strip).toHaveCount(0);
   await expect(barCountdown).toHaveCount(0);
   await expect(lowStock).toHaveCount(0);
@@ -384,6 +396,6 @@ test("a composite's other kinds never carry the set's countdown or stock", async
   await expect(strip).toBeVisible();
   await chooseSize(page, "M");
   await expect(strip).toBeVisible();
-  await expect(panel.getByText(/49\.000/)).toBeVisible();
+  await expect(productPrice(page).getByText(/49\.000/)).toBeVisible();
   await expect(lowStock).toHaveText("Size M chỉ còn 1 sản phẩm");
 });

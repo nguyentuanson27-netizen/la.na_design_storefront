@@ -1,3 +1,5 @@
+import { connection } from "next/server";
+import { readStorefrontShippingPromotion } from "@/commerce/storefront-shipping-promotion";
 import { readGuestShippingPolicy } from "@/commerce/guest-shipping-policy";
 
 import { buildShippingViewModel, type ShippingViewModel } from "./evergreen-model.ts";
@@ -16,8 +18,10 @@ export type ShippingRouteProps = Readonly<{
 }>;
 
 export async function loadShippingRoute(): Promise<RouteHandle<ShippingViewModel>> {
+  await connection();
+  const activeShippingPromotion = await readStorefrontShippingPromotion();
   return sealRoute({
-    data: buildShippingViewModel({ policy: readGuestShippingPolicy() }),
+    data: buildShippingViewModel({ policy: readGuestShippingPolicy(), activeShippingPromotion }),
     // Nothing here is promotion-priced, so it re-reads on the shared default cadence.
     refreshAfterMs: 60_000,
     trackingEvent: null,

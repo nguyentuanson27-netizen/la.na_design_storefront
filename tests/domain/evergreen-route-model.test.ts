@@ -138,10 +138,10 @@ test("Shipping's fee wording tracks a changed policy rather than a captured one"
   // Guards the guard above: if the model read the ambient policy instead of its argument, both
   // would still agree and the previous test would pass.
   const low = buildShippingViewModel({
-    policy: { ...readGuestShippingPolicy(), freeShippingSubtotalVnd: 300_000 },
+    policy: { ...readGuestShippingPolicy(), feeVnd: 17000 },
   });
   const high = buildShippingViewModel({
-    policy: { ...readGuestShippingPolicy(), freeShippingSubtotalVnd: 900_000 },
+    policy: { ...readGuestShippingPolicy(), feeVnd: 25000 },
   });
 
   assert.notEqual(low.shippingPromotionDetail, high.shippingPromotionDetail);

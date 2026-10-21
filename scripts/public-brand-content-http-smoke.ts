@@ -98,6 +98,11 @@ try {
         APP_DOMAIN: "shop.example.com",
         SEARCH_INDEXING_ENABLED: "true",
         NEXT_TELEMETRY_DISABLED: "1",
+        // No shop/campaign is configured. Retired thresholds must not alter base-fee copy.
+        LA_SHIPPING_FEE_VND: "25000",
+        LA_FREE_SHIPPING_SUBTOTAL_VND: "1000000",
+        LA_FREE_SHIPPING_MIN_QUANTITY: "3",
+        LA_FREE_SHIPPING_MIN_SET_QUANTITY: "2",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -128,11 +133,21 @@ try {
   for (const fact of [
     "Thanh toán khi nhận hàng (COD).",
     "Không cần tài khoản để thanh toán.",
-    "Miễn phí vận chuyển",
-    "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
+    "Vận chuyển toàn quốc",
+    "Phí vận chuyển cơ bản 25.000 ₫.",
     "Giá, tồn kho và phí vận chuyển được máy chủ kiểm tra lại khi nàng đặt hàng.",
   ]) {
     assert.equal(text.includes(fact), true, `shipping page must expose factual visible text: ${fact}`);
+  }
+
+  // No campaign means no permanent freeship claim, even with stale VPS configuration.
+  for (const retiredClaim of [
+    "Miễn phí vận chuyển",
+    "Đơn trên 1.000.000 ₫ hoặc từ 3 sản phẩm.",
+    "Freeship từ 2 Set",
+    "Free ship khi mua từ 2 Set",
+  ]) {
+    assert.equal(text.includes(retiredClaim), false, `shipping page must not promise an absent campaign: ${retiredClaim}`);
   }
 
   // U30c / W14a: an unmatched route must recover the visitor, not dead-end them. Next already

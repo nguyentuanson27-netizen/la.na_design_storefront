@@ -65,7 +65,7 @@ function toVietnamLocal(date: Date | null | undefined): string {
   return `${v.getUTCFullYear()}-${p(v.getUTCMonth() + 1)}-${p(v.getUTCDate())}T${p(v.getUTCHours())}:${p(v.getUTCMinutes())}`;
 }
 
-function ProductPicker({
+export function ProductPicker({
   legend,
   hint,
   fieldName,

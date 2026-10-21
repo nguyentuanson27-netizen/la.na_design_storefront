@@ -262,7 +262,7 @@ test("F8a the submit path judges a line by the stored selling policy, not by STA
   }
 });
 
-test("checkout snapshot grants freeship when total quantity reaches three products", async () => {
+test("checkout snapshot keeps base shipping for three products without an explicit campaign", async () => {
   const key = "quantity-freeship";
   await cleanup(key);
   const { cart } = await createCartProduct({
@@ -288,8 +288,8 @@ test("checkout snapshot grants freeship when total quantity reaches three produc
   assert.equal(result.ok, true);
   if (result.ok) {
     assert.equal(result.order.merchandiseSubtotalVnd, BigInt(600_000));
-    assert.equal(result.order.shippingFeeVnd, BigInt(0));
-    assert.equal(result.order.totalVnd, BigInt(600_000));
+    assert.equal(result.order.shippingFeeVnd, BigInt(30_000));
+    assert.equal(result.order.totalVnd, BigInt(630_000));
   }
 
   await cleanup(key);

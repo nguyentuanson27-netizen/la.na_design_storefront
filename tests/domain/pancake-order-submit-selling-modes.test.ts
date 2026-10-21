@@ -126,6 +126,9 @@ function buildMockPrisma({
   }
 
   const client = {
+    $executeRaw: async () => 0,
+    // Shipping is independent of the selling-mode scenarios; no shipping campaign is active.
+    shippingPromotionCampaign: { findMany: async () => [] },
     orderMirror: {
       async updateMany({
         where,

@@ -1,3 +1,4 @@
+import type { ShippingPromotionNotice } from "../components/headless/shipping-promotion-model.ts";
 import { FULFILLMENT } from "../brand/index.ts";
 import { POLICY_CONTENT, type PolicyContentSection } from "../brand/policy.config.ts";
 import type { SizeChart } from "../brand/schema.ts";
@@ -111,6 +112,7 @@ export function buildContactViewModel(): ContactViewModel {
 /* --------------------------------------------------------------------------- shipping */
 
 export type ShippingViewModel = Readonly<{
+  activeShippingPromotion: ShippingPromotionNotice | null;
   coverage: string;
   carriersText: string;
   /** Which carrier handles an order is the shop's choice; §12 says so and the page must too. */
@@ -143,13 +145,14 @@ export type ShippingViewModel = Readonly<{
  * pure, so it is decided here where it can be tested.
  */
 export function buildShippingViewModel(
-  input: Readonly<{ policy: GuestShippingPolicy }>,
+  input: Readonly<{ policy: GuestShippingPolicy; activeShippingPromotion?: ShippingPromotionNotice | null }>,
 ): ShippingViewModel {
   const brandFacts = buildPublicBrandFacts(input.policy);
   const promotion = describeGuestShippingPromotion(input.policy);
   const delivery = PUBLIC_DELIVERY_FACTS;
 
   return Object.freeze({
+    activeShippingPromotion: input.activeShippingPromotion ?? null,
     coverage: delivery.coverage,
     carriersText: delivery.carriers.join(" · "),
     carrierSelectionNote: delivery.carrierSelectionNote,

@@ -53,7 +53,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
           now: new Date(),
           secret: readAuthServerConfig().secret,
         })
-      : ({ kind: "LEGACY", giftPicker: undefined } as const);
+      : ({ kind: "LEGACY", giftPicker: undefined, shippingQuote: undefined } as const);
   if (benefitRender.kind !== "LEGACY") {
     const data =
       benefitRender.kind === "BENEFIT"
@@ -71,7 +71,7 @@ export async function loadCheckoutRoute(): Promise<RouteHandle<CheckoutViewModel
     });
   }
 
-  const totals = lines.length > 0 ? buildRenderedCheckoutQuoteFacts(lines) : null;
+  const totals = lines.length > 0 ? buildRenderedCheckoutQuoteFacts(lines, { shippingQuote: benefitRender.shippingQuote }) : null;
   // Issued over exactly the facts the page renders, bound to the cart the cookie names. Submission
   // recomputes this quote server-side and refuses to create a submit-capable DRAFT unless this
   // token still describes it, so what the buyer sees is what they can be charged.

@@ -71,8 +71,8 @@ test("split paid prices are separate lines, gifts are 0đ and outside the subtot
   assert.equal(new Set(model.lines.map((l) => l.lineKey)).size, 2, "one variation twice must not collide on a React key");
   assert.deepEqual(model.benefit!.giftLines.map((g) => [g.label, g.quantity, g.priceText]), [["Khăn lụa — Trắng / M", 1, vnd("0")]]);
   assert.equal(model.totals!.subtotalText, vnd("290.003"), "the gift adds nothing to what is paid");
-  assert.equal(model.totals!.shippingText, "Miễn phí", "3 paid items ship free under the server policy; the gift is not counted");
-  assert.equal(model.totals!.totalText, vnd("290.003"));
+  assert.equal(model.totals!.shippingText, vnd("30.000"), "Without a shipping campaign, neither three paid units nor gifts waive the fee");
+  assert.equal(model.totals!.totalText, vnd("320.003"));
   assert.equal(model.quoteProof, render().proof);
 });
 

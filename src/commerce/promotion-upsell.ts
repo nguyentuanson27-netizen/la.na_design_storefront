@@ -1,3 +1,4 @@
+import { readGuestShippingPolicy } from "./guest-shipping-policy.ts";
 /** Checkout-only +1 recommendations. Canonical cart, entitlement, shipping and COD quote authority. */
 import type { Prisma, PrismaClient } from "../generated/prisma/client.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
@@ -44,7 +45,7 @@ async function snapshot(tx: Prisma.TransactionClient, cartId: string, shopId: nu
   const resolution = await resolveBenefitCheckoutQuote({ tx, cartId, shopId, now, env, giftState: state });
   if (resolution.kind === "BENEFIT") return { state, quote: { kind: "BENEFIT", facts: resolution.facts }, totalVnd: resolution.facts.totalVnd };
   if (resolution.kind !== "LEGACY") throw new UpsellQuoteUnavailable("Quote unavailable");
-  const facts = buildRenderedCheckoutQuoteFacts(state.quote.lines);
+  const facts = buildRenderedCheckoutQuoteFacts(state.quote.lines, { shippingQuote: resolution.shippingQuote, shippingPolicy: readGuestShippingPolicy(env) });
   if (!facts) throw new UpsellQuoteUnavailable("Quote unavailable");
   return { state, quote: { kind: "LEGACY", facts }, totalVnd: facts.totalVnd };
 }

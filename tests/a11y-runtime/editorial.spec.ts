@@ -340,6 +340,7 @@ test.beforeAll(async () => {
       NEXT_DIST_DIR: ".next-test/editorial",
       PANCAKE_SHOP_ID: String(SHOP_ID),
       BETTER_AUTH_URL: BASE_URL,
+      LA_TOP_PROMOTION_HEADLINE: "", // Exercise the default headline, not a host override.
       LA_SHIPPING_FEE_VND: "25000",
       LA_FREE_SHIPPING_SUBTOTAL_VND: "750000",
       LA_FREE_SHIPPING_MIN_QUANTITY: "4",
@@ -599,7 +600,9 @@ test("P8 storefront shell exposes cutover navigation, shared tokens, focus treat
   const promotion = page.locator(".promotion-shell");
   await expect(promotion).toBeHidden();
   await expect(promotion).toHaveClass(/promotion-shell/);
-  await expect(promotion).toHaveText("Mua 3 tặng 1 - Mua 5 giảm 10% tổng hóa đơn");
+  // Shipping is campaign-owned: the default strip must not promise permanent freeship.
+  await expect(promotion).toHaveText("Mua 3 tặng 1 · Mua 4 tặng 1 Set · Mua 5 giảm 10%");
+  await expect(promotion).not.toContainText(/freeship|miễn phí vận chuyển/i);
   expect(await promotion.evaluate((element) => element.getBoundingClientRect().height)).toBe(0);
   await page.evaluate(() => window.scrollTo({ top: 1200, behavior: "instant" }));
   await expect.poll(() => page.evaluate(() => Math.round(window.scrollY))).toBeGreaterThan(400);

@@ -25,8 +25,6 @@ import {
 test("P16A public brand facts expose only approved identity and commerce facts", () => {
   const policy = {
     feeVnd: 25_000,
-    freeShippingSubtotalVnd: 750_000,
-    freeShippingMinQuantity: 4,
   } as const;
 
   const facts = buildPublicBrandFacts(policy);
@@ -322,8 +320,6 @@ test("U33b payment facts stay with the builder that already owned them", () => {
   // rather than adding a second representation of the same public facts.
   const facts = buildPublicBrandFacts({
     feeVnd: 25_000,
-    freeShippingSubtotalVnd: 750_000,
-    freeShippingMinQuantity: 4,
   }) as Record<string, unknown>;
   assert.equal(facts.paymentMethod, "Thanh toán khi nhận hàng (COD).");
   assert.equal(facts.checkoutAccount, "Không cần tài khoản để thanh toán.");

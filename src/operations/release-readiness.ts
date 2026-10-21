@@ -1,5 +1,5 @@
 import { readAuthServerConfig } from "../auth/config.ts";
-import { readGuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
+import { readGuestShippingPolicy, type GuestShippingPolicy } from "../commerce/guest-shipping-policy.ts";
 import { resolveMerchantMarketFromEnvironment } from "../commerce/merchant-offer-mapper.ts";
 import { LEGACY_TEMPORARY_STOREFRONT_HOST } from "../commerce/storefront-origin.ts";
 import { readProjectConfig } from "../config/project-config.ts";
@@ -23,11 +23,7 @@ export type ReleaseReadinessSummary = Readonly<{
   pancakeConfigured: true;
   pancakeShopId: number;
   contactDeliveryConfigured: true;
-  shippingPolicy: Readonly<{
-    feeVnd: number;
-    freeShippingSubtotalVnd: number;
-    freeShippingMinQuantity: number;
-  }>;
+  shippingPolicy: GuestShippingPolicy;
   identityMirrors: IdentityMirrorSummary;
 }>;
 

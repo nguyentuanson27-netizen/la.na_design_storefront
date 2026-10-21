@@ -778,6 +778,10 @@ model OrderMirror {
   note                   String?
   merchandiseSubtotalVnd BigInt?
   shippingFeeVnd         BigInt?
+  // Immutable decision provenance on committed orders; no FK to mutable campaign configuration.
+  shippingBaseFeeVnd             BigInt?
+  shippingPromotionCampaignId    String?
+  shippingPromotionRevision      Int?
   totalVnd               BigInt?
   createdAt              DateTime            @default(now())
   updatedAt              DateTime            @updatedAt
@@ -1195,4 +1199,28 @@ model VariantAvailabilityCycle {
   variant VariantMirror @relation(fields: [variantId], references: [id], onDelete: Cascade)
 
   @@index([availabilityDate])
+}
+
+// Shipping is an independent, editable campaign; it never changes paid-line pricing or gift rules.
+// A new row is disabled. No campaign is automatically seeded or activated by deployment.
+model ShippingPromotionCampaign {
+  id                String    @id @default(cuid())
+  pancakeShopId     Int
+  name              String
+  isEnabled         Boolean   @default(false)
+  enabledAt         DateTime? @db.Timestamptz(3)
+  disabledAt        DateTime? @db.Timestamptz(3)
+  startsAt          DateTime? @db.Timestamptz(3)
+  endsAt            DateTime? @db.Timestamptz(3)
+  revision          Int       @default(1)
+  minimumQuantity   Int
+  priority          Int       @default(0)
+  stackingEnabled   Boolean   @default(false)
+  categoryKeys      String[]  @default([])
+  includeProductIds String[]  @default([])
+  excludeProductIds String[]  @default([])
+  createdAt         DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @db.Timestamptz(3)
+
+  @@index([pancakeShopId, isEnabled, priority, id])
 }

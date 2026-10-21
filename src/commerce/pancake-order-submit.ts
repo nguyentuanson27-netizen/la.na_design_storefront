@@ -6,7 +6,9 @@ import {
   type PancakeCreateOrderRequest,
 } from "../integrations/pancake/order-create.ts";
 import { ANONYMOUS_CART_MAX_DISTINCT_ITEMS } from "./anonymous-cart.ts";
-import { calculateGuestShippingFeeVnd } from "./guest-shipping-policy.ts";
+import { readGuestShippingPolicy } from "./guest-shipping-policy.ts";
+import { readShippingQuote, shippingQuoteAudit } from "./shipping-campaign-repository.ts";
+import type { ShippingQuote } from "./shipping-campaign.ts";
 import { readApplicablePromotionCampaignsBatched } from "./promotion-candidate-batching.ts";
 import type {
   ApplicableCampaignLookup,
@@ -479,6 +481,7 @@ export function createPancakeOrderSubmissionService(
         freshAfterDiscountVnd: number;
         pricing: ReturnType<typeof resolvePromotionPricing>;
       }>,
+      shippingNow = readNow(),
     ): Promise<PancakeOrderSubmissionResult> {
       let refreshedSubtotalVnd = 0;
       let refreshedQuantity = 0;
@@ -527,10 +530,15 @@ export function createPancakeOrderSubmissionService(
         });
       }
 
-      const refreshedShippingVnd = calculateGuestShippingFeeVnd({
-        subtotalVnd: refreshedSubtotalVnd,
-        totalQuantity: refreshedQuantity,
-      });
+      let refreshedShipping: ShippingQuote;
+      try {
+        refreshedShipping = await client.$transaction((tx) => readShippingQuote({
+          client: tx, shopId: safeShopId, now: shippingNow, paidItems: refreshed,
+          hasOtherPromotions: refreshed.some((line) => line.pricing.isDiscounted),
+          policy: readGuestShippingPolicy(options.env),
+        }));
+      } catch { return resetValidation(); }
+      const refreshedShippingVnd = refreshedShipping.feeVnd;
       const refreshedTotalVnd = checkedAddVnd(refreshedSubtotalVnd, refreshedShippingVnd);
       if (refreshedTotalVnd === null) return reject("LOCAL_ORDER_INVALID");
 
@@ -542,6 +550,7 @@ export function createPancakeOrderSubmissionService(
             syncErrorCode: "PRICE_CHANGED",
             merchandiseSubtotalVnd: BigInt(refreshedSubtotalVnd),
             shippingFeeVnd: BigInt(refreshedShippingVnd),
+            ...shippingQuoteAudit(refreshedShipping),
             totalVnd: BigInt(refreshedTotalVnd),
           },
         });
@@ -720,6 +729,10 @@ export function createPancakeOrderSubmissionService(
       provenanceDrifted: boolean;
       subtotalVnd: number;
       totalQuantity: number;
+      shippingQuote?: ShippingQuote;
+      shippingPaidItems?: readonly { variantId: string; quantity: number }[];
+      shippingHasOtherPromotions?: boolean;
+      requoteShipping?: () => Promise<PancakeOrderSubmissionResult>;
       requestLines: ReadonlyArray<{ pancakeVariationId: string; quantity: number; unitPriceVnd: number }>;
       /**
        * GQ21 -- present for a benefit order: after a definite create, read the order back and confirm it
@@ -754,6 +767,10 @@ export function createPancakeOrderSubmissionService(
       provenanceDrifted,
       subtotalVnd,
       totalQuantity,
+      shippingQuote: providedShippingQuote,
+      shippingPaidItems = freshLines,
+      shippingHasOtherPromotions = freshLines.some((line) => line.pricing.isDiscounted),
+      requoteShipping,
       requestLines,
       verifyCreatedOrder,
       contact,
@@ -794,7 +811,20 @@ export function createPancakeOrderSubmissionService(
       return repriceDraft(freshLines);
     }
 
-    const shippingFeeVnd = calculateGuestShippingFeeVnd({ subtotalVnd, totalQuantity });
+    let shippingQuote: ShippingQuote;
+    try {
+      shippingQuote = providedShippingQuote ?? await client.$transaction((tx) => readShippingQuote({
+        client: tx, shopId: contact.persistedShopId, now, paidItems: freshLines,
+        hasOtherPromotions: freshLines.some((line) => line.pricing.isDiscounted),
+        policy: readGuestShippingPolicy(options.env),
+      }));
+    } catch { return resetValidation(); }
+    const shippingFeeVnd = shippingQuote.feeVnd;
+    // A campaign ending or changing is a legitimate quote change, not a corrupt order.
+    // The benefit path has already compared its complete fresh quote above; legacy needs this check.
+    if (providedShippingQuote === undefined && order.shippingFeeVnd !== BigInt(shippingFeeVnd)) {
+      return repriceDraft(freshLines);
+    }
     const totalVnd = checkedAddVnd(subtotalVnd, shippingFeeVnd);
     if (
       totalVnd === null ||
@@ -859,14 +889,25 @@ export function createPancakeOrderSubmissionService(
     // The write boundary itself. The request above is pure, so nothing is committed to yet; the
     // update below is what declares a write may be in flight. A caller that cannot claim its
     // resource here gets the same answer as any other pre-write bailout — DRAFT, nothing sent.
-    if (beforeExternalWrite && !(await beforeExternalWrite())) {
-      return resetValidation();
-    }
-
-    const submitting = await client.orderMirror.updateMany({
-      where: { id: order.id, state: "VALIDATING" },
-      data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow() },
-    });
+    let submitting: { count: number } | "SHIPPING_CHANGED" | "CAPACITY_REFUSED";
+    try {
+      submitting = await client.$transaction(async (tx) => {
+        // Recheck at the actual outbound claim, after slow geo/stock reads. The shared shop lock
+        // prevents an admin edit/activation from slipping between this decision and its audit write.
+        const currentShipping = await readShippingQuote({
+          client: tx, shopId: contact.persistedShopId, now: readNow(), paidItems: shippingPaidItems,
+          hasOtherPromotions: shippingHasOtherPromotions, policy: readGuestShippingPolicy(options.env),
+        });
+        if (currentShipping.feeVnd !== shippingFeeVnd) return "SHIPPING_CHANGED" as const;
+        if (beforeExternalWrite && !(await beforeExternalWrite())) return "CAPACITY_REFUSED" as const;
+        return tx.orderMirror.updateMany({
+          where: { id: order.id, state: "VALIDATING" },
+          data: { state: "POS_SUBMITTING", syncErrorCode: null, purchaseOccurredAt: readNow(), ...shippingQuoteAudit(currentShipping) },
+        });
+      });
+    } catch { return resetValidation(); }
+    if (submitting === "SHIPPING_CHANGED") return requoteShipping ? requoteShipping() : repriceDraft(freshLines);
+    if (submitting === "CAPACITY_REFUSED") return resetValidation();
     if (submitting.count !== 1) {
       const current = await client.orderMirror.findUniqueOrThrow({
         where: { id: order.id },
@@ -1268,13 +1309,13 @@ export function createPancakeOrderSubmissionService(
       // Scope, entitlement, selection and price are re-derived exactly as the checkout DRAFT derived them
       // and compared with the frozen quote. The order's own stock hold is excluded so that holding the
       // last unit does not make the quote differ from itself.
+      let benefitFresh: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>> | undefined;
       if (!requote) {
         if (order.sourceCartId === null) {
           requote = true;
         } else {
-          let fresh: Awaited<ReturnType<typeof resolveBenefitCheckoutQuote>>;
           try {
-            fresh = await client.$transaction((tx) =>
+            benefitFresh = await client.$transaction((tx) =>
               resolveBenefitCheckoutQuote({
                 tx,
                 cartId: order.sourceCartId as string,
@@ -1287,7 +1328,8 @@ export function createPancakeOrderSubmissionService(
           } catch {
             return resetValidation();
           }
-          if (fresh.kind !== "BENEFIT" || !benefitQuoteStillHolds(snapshot, fresh.facts)) requote = true;
+          if (benefitFresh.kind === "UNAVAILABLE") return resetValidation();
+          if (benefitFresh.kind !== "BENEFIT" || !benefitQuoteStillHolds(snapshot, benefitFresh.facts)) requote = true;
         }
       }
 
@@ -1301,6 +1343,10 @@ export function createPancakeOrderSubmissionService(
         provenanceDrifted: false,
         subtotalVnd: Number(snapshot.paidSubtotalVnd),
         totalQuantity: snapshot.paidQuantity,
+        shippingQuote: benefitFresh?.kind === "BENEFIT" ? benefitFresh.shippingQuote : undefined,
+        shippingPaidItems: benefitFresh?.kind === "BENEFIT" ? benefitFresh.paid : [],
+        shippingHasOtherPromotions: benefitFresh?.kind === "BENEFIT" && (benefitFresh.gifts.length > 0 || benefitFresh.facts.lines.some((line) => line.discountSteps.some((step) => step.outputPriceVnd < step.inputPriceVnd))),
+        requoteShipping: () => requoteBenefitOrder(mirrorRefresh),
         requestLines: projection.lines,
         verifyCreatedOrder: async (pancakeOrderId) => {
           if (!gateway.readOrder) return "UNAVAILABLE";
