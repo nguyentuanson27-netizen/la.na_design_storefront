@@ -130,3 +130,15 @@ test("F2d cart drawer focus trap: safely handles null container", () => {
   const event = { key: "Tab", shiftKey: false, preventDefault() {} } as unknown as KeyboardEvent;
   assert.doesNotThrow(() => handleDrawerFocusTrap(event, null));
 });
+
+test("F2d cart drawer component: a blocked cart says why, not only that a product is unavailable", () => {
+  const source = readFileSync(
+    path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"),
+    "utf8",
+  );
+
+  // The "unavailable product" sentence is only true when a line is unavailable; a gift or benefit
+  // block must show the cart model's own notice instead.
+  assert.match(source, /cart\.hasUnavailableLines/);
+  assert.match(source, /cart\.benefitsNotice/);
+});

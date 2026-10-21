@@ -320,8 +320,10 @@ export function CartDrawer({ isOpen, onClose, triggerRef }: CartDrawerProps) {
                     Tiến hành đặt hàng
                   </Link>
                 ) : (
-                  <p className="text-center text-xs text-amber-800">
-                    Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé.
+                  <p className="text-center text-xs leading-relaxed text-amber-800" role="status">
+                    {cart.hasUnavailableLines
+                      ? "Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé."
+                      : (cart.benefitsNotice ?? "Nàng xem lại giỏ hàng trước khi đặt hàng nhé.")}
                   </p>
                 )}
 
