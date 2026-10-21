@@ -86,3 +86,54 @@ test("returning to an earlier list does not revive a request begun for the same 
 
   assert.deepEqual(await settledA, { stale: true });
 });
+
+test("returning to the very same list object still drops a request begun on the earlier visit", async () => {
+  // A -> B -> A with the original array: the router can hand back a cached reference, so telling
+  // "same list as when the request began" is not enough -- the grid was reset twice in between.
+  const guard = createPageRequestGuard(listA);
+  const requestA = deferred<string>();
+  const settledA = settleIfCurrent(guard, () => requestA.promise);
+
+  guard.setList(listB);
+  guard.setList(listA);
+  requestA.resolve("page-2-of-first-visit-to-A");
+
+  assert.deepEqual(await settledA, { stale: true });
+});
+
+test("a failure from the earlier visit to the same list object is swallowed too", async () => {
+  const guard = createPageRequestGuard(listA);
+  const requestA = deferred<string>();
+  const settledA = settleIfCurrent(guard, () => requestA.promise);
+
+  guard.setList(listB);
+  guard.setList(listA);
+  requestA.reject(new Error("timeout from the first visit"));
+
+  assert.deepEqual(await settledA, { stale: true });
+});
+
+test("a request begun after returning to the same list object is current", async () => {
+  const guard = createPageRequestGuard(listA);
+  guard.setList(listB);
+  guard.setList(listA);
+
+  const request = deferred<string>();
+  const settled = settleIfCurrent(guard, () => request.promise);
+  request.resolve("page-2-of-second-visit-to-A");
+
+  assert.deepEqual(await settled, { stale: false, value: "page-2-of-second-visit-to-A" });
+});
+
+test("setting the list that is already showing does not drop a request in flight", async () => {
+  // A re-render hands the guard the same array again; that is not the shopper changing filters.
+  const guard = createPageRequestGuard(listA);
+  const request = deferred<string>();
+  const settled = settleIfCurrent(guard, () => request.promise);
+
+  guard.setList(listA);
+  guard.setList(listA);
+  request.resolve("page-2-of-A");
+
+  assert.deepEqual(await settled, { stale: false, value: "page-2-of-A" });
+});
