@@ -78,8 +78,10 @@ test.beforeAll(async () => {
       APP_DOMAIN: `${HOST}:${PORT}`,
       BETTER_AUTH_URL: BASE_URL,
       LA_SHIPPING_FEE_VND: "25000",
+      // Retired settings deliberately remain in this fixture: they must not affect public policy.
       LA_FREE_SHIPPING_SUBTOTAL_VND: "750000",
       LA_FREE_SHIPPING_MIN_QUANTITY: "4",
+      LA_FREE_SHIPPING_MIN_SET_QUANTITY: "2",
       NEXT_TELEMETRY_DISABLED: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -430,8 +432,6 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
   // one the footer renders, so the page and the footer cannot describe different payment terms.
   const brandFacts = buildPublicBrandFacts({
     feeVnd: 25_000,
-    freeShippingSubtotalVnd: 750_000,
-    freeShippingMinQuantity: 4,
   });
   await expect(main).toContainText(brandFacts.paymentMethod);
   await expect(main).toContainText(brandFacts.checkoutAccount);
@@ -441,9 +441,14 @@ test("U33b the Shipping page states estimates as estimates and only the supporte
     await expect(main).not.toContainText(unsupported);
   }
 
-  // The shipping price comes from the server-owned policy this spec's server was started with.
-  await expect(main).toContainText("750.000");
-  await expect(main).toContainText("4 sản phẩm");
+  // The base fee is runtime-configured; retired thresholds must not become public promises.
+  await expect(main).toContainText("Phí vận chuyển cơ bản 25.000");
+  await expect(main).toContainText(
+    "Ưu đãi vận chuyển, nếu có, được kiểm tra theo chiến dịch đang hiệu lực khi đặt hàng.",
+  );
+  for (const retired of [/750\.000/, /4 sản phẩm/, /1\.000\.000/, /3 sản phẩm/, /freeship từ 2 set/i]) {
+    await expect(main).not.toContainText(retired);
+  }
 
   const accessibilityScan = await new AxeBuilder({ page }).withTags(BUYER_AXE_TAGS).analyze();
   expect(accessibilityScan.violations).toEqual([]);
