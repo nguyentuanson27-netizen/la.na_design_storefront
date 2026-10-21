@@ -34,7 +34,7 @@ export function checkoutSubmitFeedback(
   }
 
   if (result.status === "RETRYABLE" && result.giftRepairRequired) {
-    return { tone: "warning", title: "Kiểm tra lại quà đã chọn", message: "Quà nàng chọn không còn phù hợp. Nàng bỏ lựa chọn cũ ngay tại đây rồi chọn lại nhé; thông tin nhận hàng vẫn được giữ nguyên.", mayRetry: true };
+    return { tone: "warning", title: "Kiểm tra lại quà đã chọn", message: "Quà tặng nàng chọn vừa có thay đổi về tồn kho hoặc chương trình. Nàng chỉ cần bỏ quà cũ bên dưới và chọn lại; thông tin nhận hàng vẫn được giữ nguyên.", mayRetry: true };
   }
 
   // The buyer is being asked to accept a price they have not seen yet, so this is the one failure

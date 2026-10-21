@@ -17,14 +17,14 @@ export type CartGiftPickerModel = Readonly<{
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const repairText: Record<GiftSelectionError, string> = {
-  SELECTION_INVALID: "Lựa chọn quà không còn hợp lệ. Hãy bỏ lựa chọn cũ rồi chọn lại.",
-  SELECTION_REVISION_INVALID: "Chưa xác nhận được phiên bản chương trình của quà này. Hãy bỏ lựa chọn cũ rồi chọn lại.",
-  CAMPAIGN_NOT_ENTITLED: "Quà này không còn thuộc quyền nhận của giỏ hàng hiện tại. Hãy bỏ lựa chọn cũ rồi chọn lại.",
-  STALE_CAMPAIGN_REVISION: "Chương trình quà đã thay đổi. Hãy bỏ lựa chọn cũ rồi chọn lại theo quyền nhận hiện tại.",
-  VARIANT_NOT_ALLOWED: "Phiên bản quà này không còn được áp dụng. Hãy bỏ lựa chọn cũ rồi chọn lại.",
-  OVER_ENTITLEMENT: "Nhóm quà này vượt số suất được nhận. Hãy giảm hoặc bỏ lựa chọn trong nhóm.",
-  DUPLICATE_PRODUCT_NOT_ALLOWED: "Nhóm quà này có mẫu được chọn nhiều lần. Mỗi mẫu chỉ được nhận một lần; hãy giảm hoặc bỏ lựa chọn trùng trong nhóm.",
-  OUT_OF_STOCK: "Phiên bản quà này không còn số lượng có thể cấp. Hãy bỏ lựa chọn cũ rồi chọn lại.",
+  SELECTION_INVALID: "Món quà đã chọn không còn khả dụng. Nàng bấm “Bỏ quà” bên dưới để chọn món thay thế nhé.",
+  SELECTION_REVISION_INVALID: "Chương trình quà tặng vừa có cập nhật mới. Nàng bấm “Bỏ quà” để làm mới danh sách nhé.",
+  CAMPAIGN_NOT_ENTITLED: "Đơn hàng chưa đủ điều kiện nhận món quà này (do giỏ hàng vừa thay đổi số lượng). Nàng bấm “Bỏ quà” bên dưới hoặc thêm sản phẩm để tiếp tục nhé.",
+  STALE_CAMPAIGN_REVISION: "Chương trình quà tặng vừa có cập nhật mới. Nàng bấm “Bỏ quà” để làm mới danh sách quà tặng phù hợp nhất nhé.",
+  VARIANT_NOT_ALLOWED: "Mẫu quà tặng này hiện đã dừng áp dụng. Nàng bấm “Bỏ quà” bên dưới để chọn món quà mới nhé.",
+  OVER_ENTITLEMENT: "Số lượng quà đã chọn vượt quá số suất của đơn. Nàng bấm giảm bớt hoặc bỏ bớt quà để tiếp tục đặt hàng nhé.",
+  DUPLICATE_PRODUCT_NOT_ALLOWED: "Mỗi mẫu quà tặng chỉ được chọn 1 lần (kể cả khác màu hoặc kích cỡ). Nàng bấm bỏ bớt quà trùng và chọn sang mẫu khác nhé.",
+  OUT_OF_STOCK: "Món quà này tạm thời không còn số lượng có thể cấp. Nàng bấm “Bỏ quà” bên dưới rồi chọn lại món khác nhé.",
 };
 
 /**
@@ -67,7 +67,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
         (issue.variantId === null || row.variantId === issue.variantId));
       repairGroups.push({
         message: issue.error === "OUT_OF_STOCK"
-          ? "Tổng số quà trong nhóm vượt lượng có thể cấp dùng chung. Hãy giảm hoặc bỏ lựa chọn trong nhóm."
+          ? "Kho quà tặng không còn đủ số lượng cho các món nàng đã chọn. Nàng bấm giảm bớt hoặc chọn sang món khác nhé."
           : repairText[issue.error],
         selectionKeys: affected.map(selectionKey),
       });
