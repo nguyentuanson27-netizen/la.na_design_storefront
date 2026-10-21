@@ -177,6 +177,29 @@ function view(items: readonly PromotionBannerItem[], savings: readonly Promotion
   });
 }
 
+/**
+ * What the next gift slot would hand over, in the shopper's words: the gift products a campaign offers,
+ * each named once however many colours or sizes it comes in. Options with no stock are left out while
+ * any other is available, so the nudge never advertises a gift nobody could receive. Empty when no
+ * option has a readable name, and the title then falls back to the plain "quà".
+ */
+const GIFT_NAMES_SHOWN = 2;
+
+function giftNamesText(campaign: CartGiftState["campaigns"][number], labels: CartGiftState["labels"]): string {
+  const nameByVariant = new Map(labels.map((label) => [label.variantId, label.productName?.trim()]));
+  const inStock = campaign.options.filter((option) => option.readyAvailable > 0);
+  const names = new Set<string>();
+  for (const option of inStock.length > 0 ? inStock : campaign.options) {
+    const name = nameByVariant.get(option.variantId);
+    if (name) names.add(name);
+  }
+  const list = [...names];
+  if (list.length === 0) return "";
+  if (list.length === 1) return list[0]!;
+  if (list.length <= GIFT_NAMES_SHOWN) return list.join(" hoặc ");
+  return `${list.slice(0, GIFT_NAMES_SHOWN).join(", ")} và ${list.length - GIFT_NAMES_SHOWN} quà khác`;
+}
+
 /** `percent` of the way from the last slot to the next, never 0 on a partial step or 100 before it is earned. */
 function progressPercent(shortfall: number, target: number): number {
   if (!(target > 0) || !(shortfall >= 0)) return 0;
@@ -227,13 +250,15 @@ export function buildCartPromotionView(
 
     const shortfall = entry.shortfallToNext;
     if (!shortfall || !campaign) return;
-    const more = entry.entitled > 0 ? "thêm " : "";
+    // "để nhận quà tặng Váy lụa": naming the gift is what makes the extra purchase worth it.
+    const giftNames = giftNamesText(campaign, state.labels);
+    const reward = `${entry.entitled > 0 ? "thêm " : ""}${giftNames ? `quà tặng ${giftNames}` : "quà"}`;
     if (campaign.trigger === "QUANTITY" && shortfall.quantity && campaign.minimumQuantity) {
       items.push(Object.freeze({
         id: `gift-next-${entry.campaignId || index}`,
         state: "progress",
         kind: "GIFT",
-        title: `Mua thêm ${shortfall.quantity} sản phẩm để nhận ${more}quà`,
+        title: `Mua thêm ${shortfall.quantity} sản phẩm để nhận ${reward}`,
         progress: Object.freeze({
           percent: progressPercent(shortfall.quantity, campaign.minimumQuantity),
           label: `Còn thiếu ${shortfall.quantity} sản phẩm`,
@@ -245,7 +270,7 @@ export function buildCartPromotionView(
         id: `gift-next-${entry.campaignId || index}`,
         state: "progress",
         kind: "GIFT",
-        title: `Mua thêm ${currency.format(shortfall.subtotalVnd)} để nhận ${more}quà`,
+        title: `Mua thêm ${currency.format(shortfall.subtotalVnd)} để nhận ${reward}`,
         progress: Object.freeze({
           percent: progressPercent(shortfall.subtotalVnd, Number(campaign.minimumSubtotalVnd)),
           label: `Còn thiếu ${currency.format(shortfall.subtotalVnd)}`,

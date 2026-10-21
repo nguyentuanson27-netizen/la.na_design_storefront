@@ -121,6 +121,40 @@ test("gift slots are celebrated, unclaimed ones ask for a choice, and reached it
   assert.deepEqual(view.savings, [], "gifts are not a money saving");
 });
 
+test("the next gift is named, once per product, preferring what is in stock", () => {
+  const campaign = {
+    ...quantityCampaign,
+    options: [
+      { variantId: "g1", productId: "p1", readyAvailable: 3 },
+      { variantId: "g2", productId: "p1", readyAvailable: 2 },
+      { variantId: "g3", productId: "p2", readyAvailable: 0 },
+    ],
+  };
+  const labels = [
+    { variantId: "g1", productName: "Khăn lụa" },
+    { variantId: "g2", productName: "Khăn lụa" },
+    { variantId: "g3", productName: "Quạt cầm tay" },
+  ];
+  const titleFor = (entitled: number, extra: Partial<typeof campaign> = {}, names = labels) => {
+    const view = buildCartPromotionView({ ...state({
+      campaigns: [{ ...campaign, ...extra }],
+      entitlements: [{ campaignId: "gift-a", revision: 1, eligibleQuantity: 3, earned: entitled, entitled, shortfallToNext: { quantity: 1, subtotalVnd: null } }],
+    }), labels: names } as unknown as CartGiftState)!;
+    return view.items[view.items.length - 1]!.title;
+  };
+  assert.equal(titleFor(0), "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa", "the sold-out gift is not advertised");
+  assert.equal(titleFor(1), "Mua thêm 1 sản phẩm để nhận thêm quà tặng Khăn lụa");
+  assert.equal(
+    titleFor(0, { options: campaign.options.map((option) => ({ ...option, readyAvailable: 1 })) }),
+    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa hoặc Quạt cầm tay",
+  );
+  assert.equal(
+    titleFor(0, { options: [...campaign.options.map((option) => ({ ...option, readyAvailable: 1 })), { variantId: "g4", productId: "p3", readyAvailable: 1 }] }, [...labels, { variantId: "g4", productName: "Túi" }]),
+    "Mua thêm 1 sản phẩm để nhận quà tặng Khăn lụa, Quạt cầm tay và 1 quà khác",
+  );
+  assert.equal(titleFor(0, {}, []), "Mua thêm 1 sản phẩm để nhận quà", "no readable name keeps the plain wording");
+});
+
 test("a chosen gift reads as done, not as a task", () => {
   const view = buildCartPromotionView(state({
     campaigns: [quantityCampaign],
