@@ -49,7 +49,6 @@ export type SiteChromeModel = Readonly<{
   content: SiteChromeContent;
 }>;
 
-import { readStorefrontShippingPromotion } from "@/commerce/storefront-shipping-promotion";
 import { readConfiguredCategoryMegaMedia } from "@/commerce/storefront-catalog-runtime";
 import {
   LEGACY_TEMPORARY_STOREFRONT_HOST,
@@ -69,15 +68,14 @@ const PANCAKE_CHAT_HOSTS = [OFFICIAL_PRODUCTION_STOREFRONT_HOST, LEGACY_TEMPORAR
  */
 export async function loadSiteChrome(): Promise<SiteChromeModel> {
   await connection();
-  const [exposure, megaMedia, shipping] = await Promise.all([
+  const [exposure, megaMedia] = await Promise.all([
     Promise.resolve(readSearchExposure()),
     readConfiguredCategoryMegaMedia(),
-    readStorefrontShippingPromotion(),
   ]);
 
   return {
     structuredData: [buildSiteStructuredData({ origin: exposure.origin })],
-    content: buildSiteChromeContent(megaMedia, process.env, shipping),
+    content: buildSiteChromeContent(megaMedia, process.env),
   };
 }
 

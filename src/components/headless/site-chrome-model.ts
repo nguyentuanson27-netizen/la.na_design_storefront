@@ -1,5 +1,4 @@
 import { BRAND } from "../../brand/index.ts";
-import type { ShippingPromotionNotice } from "./shipping-promotion-model.ts";
 import {
   describePublicAddress,
   describePublicSupportHours,
@@ -24,7 +23,6 @@ export type SitePromotionModel = Readonly<{
   /** The landmark's accessible name: short and stable, the headline is what it introduces. */
   label: string;
   headline: string;
-  shipping?: ShippingPromotionNotice | null;
 }>;
 
 export type CategoryMegaMedia = Readonly<{
@@ -62,7 +60,6 @@ export const DEFAULT_SITE_PROMOTION_HEADLINE = "Mua 3 tặng 1 · Mua 4 tặng 1
 export function buildSiteChromeContent(
   headerMedia: readonly CategoryMegaMedia[] = [],
   env: Readonly<Record<string, string | undefined>> = process.env,
-  shipping: ShippingPromotionNotice | null = null,
 ): SiteChromeContent {
   const headline = env.LA_TOP_PROMOTION_HEADLINE?.trim() || DEFAULT_SITE_PROMOTION_HEADLINE;
 
@@ -70,7 +67,6 @@ export function buildSiteChromeContent(
     promotion: {
       label: "Chương trình khuyến mại",
       headline,
-      shipping,
     },
     header: {
       megaMedia: headerMedia,

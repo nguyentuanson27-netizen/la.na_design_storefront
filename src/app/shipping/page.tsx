@@ -73,7 +73,7 @@ function render(data: ShippingViewModel) {
             {data.shippingPromotionTitle}: {data.shippingPromotionDetail} Phí vận chuyển và điều kiện miễn phí được máy chủ
             áp dụng tại thời điểm đặt hàng.
           </p>
-          <ShippingPromotionNoticeView initial={data.activeShippingPromotion} detailed />
+          <ShippingPromotionNoticeView initial={data.activeShippingPromotion} />
         </section>
 
         <section aria-labelledby="tracking-heading">
