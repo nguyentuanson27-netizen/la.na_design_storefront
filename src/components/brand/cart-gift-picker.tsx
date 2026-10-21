@@ -122,11 +122,11 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
     {present ? <>
     <h2 className="font-display text-2xl">Quà dành cho nàng</h2>
     <p className="mt-2 text-sm" data-gift-progress>{model.invalid ? `Đã lưu ${selected} quà · Cần kiểm tra` : `Đã thêm ${selected}/${entitled} quà vào đơn.`}</p>
-    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp với giỏ hàng hoặc tồn kho đã đổi. Nàng vui lòng bỏ quà cũ tại đây rồi chọn lại nhé; hệ thống không tự đổi quà thay nàng.</p> : <>
+    {model.invalid ? <p role="alert" className="mt-3 text-sm">Quà nàng chọn không còn phù hợp vì giỏ hàng đã thay đổi (số lượng, sản phẩm), quà đã hết hàng hoặc chương trình đã đổi. Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn rồi chọn món mới nhé; hệ thống không tự đổi quà thay nàng.</p> : <>
       {!complete && available > 0 ? <p className="mt-2 text-sm">{shared ? "Nàng còn quà chưa chọn. Các chương trình dùng chung lượng quà, nàng chọn từng món để cập nhật nhé." : `Nàng còn có thể chọn ${available} món quà.`}</p> : null}
       {unavailable > 0 ? <p className="mt-2 text-sm">Hiện chưa có lựa chọn phù hợp cho {unavailable} suất quà còn lại.</p> : null}
     </>}
-    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Các chương trình quà tặng hiện chưa thể áp dụng cùng nhau trên đơn này. Nàng điều chỉnh lại giỏ hàng hoặc thử lại sau nhé.</p> : null}
+    {model.stackConflict ? <p role="alert" className="mt-3 text-sm">Giỏ hàng của nàng đủ điều kiện nhận quà từ nhiều chương trình, nhưng các chương trình này không được dùng cùng lúc nên một số quà chưa được tặng. Nàng điều chỉnh lại giỏ hàng hoặc liên hệ shop để được hỗ trợ nhé.</p> : null}
     <button type="button" className="mt-3 min-h-11 text-left text-sm font-semibold underline underline-offset-4" aria-expanded={expanded} aria-controls={detailsId} onClick={() => setExpanded((value) => !value)}>
       {expanded ? "Thu gọn quà tặng" : model.invalid ? "Kiểm tra quà đã chọn" : complete ? "Xem quà đã chọn" : available > 0 ? "Chọn quà ngay" : "Xem lựa chọn quà"}
     </button>
@@ -158,8 +158,8 @@ export function BrandCartGiftPicker({ model, onBusyChange, locked = false, isLoc
           const stockChosen = model.selections.filter((r) => r.variantId === option?.variantId).reduce((sum, r) => sum + r.quantity, 0);
           const receiveBlockReason = uncertain ? "Chưa xác nhận được kết quả lưu quà. Nàng kiểm tra lại quà trong đơn trước khi tiếp tục nhé."
             : pending ? "Đang thêm quà vào đơn hàng, nàng đợi một chút nhé…"
-            : locked ? "Hệ thống đang kiểm tra đơn hàng và quà tặng của nàng, vui lòng chờ trong giây lát nhé…"
-            : model.invalid ? "Nàng cần bỏ món quà cũ không còn phù hợp ở danh sách bên trên trước khi chọn món mới nhé."
+            : locked ? "Nàng chưa chọn quà được lúc này vì đơn hàng đang được xử lý hoặc cần nàng xem lại. Nàng đợi vài giây cho hệ thống cập nhật xong; nếu vẫn chưa chọn được, nàng đọc thông báo ở đầu trang thanh toán và làm theo hướng dẫn nhé."
+            : model.invalid ? "Nàng bấm “Bỏ quà để chọn lại” ở danh sách quà đã chọn để bỏ món không còn phù hợp, rồi mới chọn món mới được nhé."
             : campaign.selected >= campaign.entitled ? "Đã đủ suất. Nàng vẫn có thể xem mẫu khác; bỏ quà cũ trước khi nhận lại."
             : !option ? "Chọn phiên bản trước khi nhận quà."
             : !campaign.allowDuplicateGifts && productChosen ? "Nàng đã chọn mẫu này. Mỗi mẫu chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ."

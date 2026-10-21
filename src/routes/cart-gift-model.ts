@@ -17,14 +17,14 @@ export type CartGiftPickerModel = Readonly<{
 
 const currency = new Intl.NumberFormat("vi-VN", { style: "currency", currency: "VND", maximumFractionDigits: 0 });
 const repairText: Record<GiftSelectionError, string> = {
-  SELECTION_INVALID: "Món quà đã chọn không còn khả dụng. Nàng bấm “Bỏ quà” bên dưới để chọn món thay thế nhé.",
-  SELECTION_REVISION_INVALID: "Chương trình quà tặng vừa có cập nhật mới. Nàng bấm “Bỏ quà” để làm mới danh sách nhé.",
-  CAMPAIGN_NOT_ENTITLED: "Đơn hàng chưa đủ điều kiện nhận món quà này (do giỏ hàng vừa thay đổi số lượng). Nàng bấm “Bỏ quà” bên dưới hoặc thêm sản phẩm để tiếp tục nhé.",
-  STALE_CAMPAIGN_REVISION: "Chương trình quà tặng vừa có cập nhật mới. Nàng bấm “Bỏ quà” để làm mới danh sách quà tặng phù hợp nhất nhé.",
-  VARIANT_NOT_ALLOWED: "Mẫu quà tặng này hiện đã dừng áp dụng. Nàng bấm “Bỏ quà” bên dưới để chọn món quà mới nhé.",
-  OVER_ENTITLEMENT: "Số lượng quà đã chọn vượt quá số suất của đơn. Nàng bấm giảm bớt hoặc bỏ bớt quà để tiếp tục đặt hàng nhé.",
-  DUPLICATE_PRODUCT_NOT_ALLOWED: "Mỗi mẫu quà tặng chỉ được chọn 1 lần (kể cả khác màu hoặc kích cỡ). Nàng bấm bỏ bớt quà trùng và chọn sang mẫu khác nhé.",
-  OUT_OF_STOCK: "Món quà này tạm thời không còn số lượng có thể cấp. Nàng bấm “Bỏ quà” bên dưới rồi chọn lại món khác nhé.",
+  SELECTION_INVALID: "Món quà đã chọn không còn nhận được nữa. Nàng bấm “Bỏ quà để chọn lại” rồi chọn món khác nhé.",
+  SELECTION_REVISION_INVALID: "Mẫu quà này không còn nằm trong danh sách quà của chương trình. Nàng bấm “Bỏ quà để chọn lại” rồi chọn một mẫu khác trong danh sách nhé.",
+  CAMPAIGN_NOT_ENTITLED: "Đơn hàng hiện chưa đủ điều kiện nhận món quà này (ví dụ nàng vừa giảm số lượng hoặc đổi sản phẩm). Nàng thêm sản phẩm cho đủ điều kiện, hoặc bấm “Bỏ quà để chọn lại” nhé.",
+  STALE_CAMPAIGN_REVISION: "Chương trình quà tặng đã được cập nhật. Nàng bấm “Bỏ quà để chọn lại” để chọn theo ưu đãi mới nhé.",
+  VARIANT_NOT_ALLOWED: "Mẫu quà (màu hoặc size) này không còn nằm trong danh sách quà của chương trình. Nàng bấm “Bỏ quà để chọn lại” rồi chọn một mẫu khác trong danh sách nhé.",
+  OVER_ENTITLEMENT: "Số quà đã chọn nhiều hơn số suất của đơn. Nàng bỏ bớt quà trong nhóm này nhé.",
+  DUPLICATE_PRODUCT_NOT_ALLOWED: "Mỗi mẫu quà chỉ được nhận một lần, kể cả khác màu hoặc kích cỡ. Nàng bỏ bớt quà trùng và chọn mẫu khác nhé.",
+  OUT_OF_STOCK: "Món quà này tạm hết hàng. Nàng bấm “Bỏ quà để chọn lại” rồi chọn món khác nhé.",
 };
 
 /**
@@ -67,7 +67,7 @@ export function buildCartGiftPickerModel(state: CartGiftState): CartGiftPickerMo
         (issue.variantId === null || row.variantId === issue.variantId));
       repairGroups.push({
         message: issue.error === "OUT_OF_STOCK"
-          ? "Kho quà tặng không còn đủ số lượng cho các món nàng đã chọn. Nàng bấm giảm bớt hoặc chọn sang món khác nhé."
+          ? "Quà tặng trong nhóm này không còn đủ số lượng cho các món nàng đã chọn. Nàng bỏ bớt hoặc chọn sang món khác nhé."
           : repairText[issue.error],
         selectionKeys: affected.map(selectionKey),
       });

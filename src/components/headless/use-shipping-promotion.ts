@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getStorefrontShippingPromotion } from "../../commerce/storefront-shipping-promotion-actions";
 import type { ShippingPromotionNotice } from "./shipping-promotion-model";
 
-/** Root layouts persist across navigation: refresh advertising and drop expired copy without waiting for navigation. */
+/** Keeps the /shipping notice live: refresh it while the tab is visible and drop expired copy without waiting for navigation. */
 export function useShippingPromotion(initial: ShippingPromotionNotice | null) {
   const [notice, setNotice] = useState(initial);
   useEffect(() => {

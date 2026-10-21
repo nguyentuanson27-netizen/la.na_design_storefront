@@ -4,7 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { handleDrawerFocusTrap, isMeaningfulReturnFocusTarget } from "../../src/components/headless/cart-drawer-model.ts";
+import { checkoutBlockedMessages, handleDrawerFocusTrap, isMeaningfulReturnFocusTarget } from "../../src/components/headless/cart-drawer-model.ts";
 import { buildCartViewModel } from "../../src/routes/cart-model.ts";
 
 const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
@@ -129,4 +129,34 @@ test("F2d cart drawer return focus: a real opener wins, an empty one defers to t
 test("F2d cart drawer focus trap: safely handles null container", () => {
   const event = { key: "Tab", shiftKey: false, preventDefault() {} } as unknown as KeyboardEvent;
   assert.doesNotThrow(() => handleDrawerFocusTrap(event, null));
+});
+
+test("F2d cart drawer: a blocked cart lists every reason, not only the first", () => {
+  const unavailable = "Nàng điều chỉnh sản phẩm không khả dụng trước khi đặt hàng nhé.";
+  const giftNotice = "Quà nàng chọn không còn hợp lệ, có thể do số lượng sản phẩm vừa thay đổi nên chương trình tặng quà đã đổi, hoặc quà đã hết hàng. Nàng chọn lại quà trong giỏ hàng trước khi đặt hàng nhé.";
+
+  // (e) an unavailable line and an invalid gift at once: both are said, as the cart page does.
+  assert.deepEqual(checkoutBlockedMessages({ hasUnavailableLines: true, benefitsNotice: giftNotice }), [unavailable, giftNotice]);
+  assert.deepEqual(checkoutBlockedMessages({ hasUnavailableLines: true }), [unavailable]);
+  assert.deepEqual(checkoutBlockedMessages({ hasUnavailableLines: false, benefitsNotice: giftNotice }), [giftNotice]);
+  assert.deepEqual(checkoutBlockedMessages({ hasUnavailableLines: false }), ["Nàng xem lại giỏ hàng trước khi đặt hàng nhé."]);
+
+  // The sentences are the cart model's own: an unavailable line never claims the gift is fine, and a
+  // real cart view model that is blocked for both reasons hands the drawer both.
+  const line = (available: boolean) => ({
+    variantId: available ? "v1" : "v2", pancakeVariationId: "pv", pancakeProductId: "pp", productSlug: "ao", productName: "Áo",
+    color: "Đỏ", size: "M", quantity: 1, price: 450_000, available, isPreorderSale: false,
+    unavailableReason: available ? null : "OUT_OF_STOCK", media: { primary: null, gallery: [] },
+  }) as never;
+  const view = buildCartViewModel({
+    lines: [line(true), line(false)], commerceTrackingEnabled: false,
+    giftState: { quote: { lines: [], benefits: { enabled: false } }, labels: [], campaigns: [], entitlements: [], selections: [], validation: { ok: false, issues: [] } } as never,
+  });
+  assert.equal(view.canCheckout, false);
+  assert.deepEqual(checkoutBlockedMessages(view), [unavailable, giftNotice]);
+});
+
+test("F2d cart drawer component: renders the blocked-checkout reasons through the model", () => {
+  const source = readFileSync(path.join(REPO_ROOT, "src/components/brand/cart-drawer.tsx"), "utf8");
+  assert.match(source, /checkoutBlockedMessages\(cart\)\.map/);
 });
