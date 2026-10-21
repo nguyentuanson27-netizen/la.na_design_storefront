@@ -82,23 +82,28 @@ body {
  * row reads as navigation and stays one line tall. On a phone the row scrolls sideways without a
  * scrollbar and fades at its edges to say there is more; from `md` it wraps and needs neither.
  * A collection's size chips (`.collection-size-row`) are the same kind of row and take the same
- * treatment, so a long run of sizes does not look like the three that happen to fit.
+ * treatment, so a long run of sizes does not look like the three that happen to fit. So is the
+ * row of collection badges under a product's name (`.pdp-collection-row`), which stays one line
+ * however many collections the product sits in.
  */
 .listing-subnav,
-.collection-size-row {
+.collection-size-row,
+.pdp-collection-row {
   scrollbar-width: none;
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
   mask-image: linear-gradient(to right, transparent 0, #000 1.5rem, #000 calc(100% - 2.5rem), transparent 100%);
 }
 
 .listing-subnav::-webkit-scrollbar,
-.collection-size-row::-webkit-scrollbar {
+.collection-size-row::-webkit-scrollbar,
+.pdp-collection-row::-webkit-scrollbar {
   display: none;
 }
 
 @media (min-width: 48rem) {
   .listing-subnav,
-  .collection-size-row {
+  .collection-size-row,
+  .pdp-collection-row {
     -webkit-mask-image: none;
     mask-image: none;
   }

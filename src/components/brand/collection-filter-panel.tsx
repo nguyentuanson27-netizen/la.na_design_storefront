@@ -55,7 +55,7 @@ export function CollectionFilterPanel({
   const sizeFiltered = !(allSizesOption?.active ?? true);
 
   const chipClassName =
-    "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2.5 text-xs font-medium uppercase transition after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] md:h-auto md:min-w-7 md:px-2 md:py-1 md:after:hidden";
+    "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2 text-[11px] md:text-xs font-medium uppercase transition after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] md:h-auto md:min-w-7 md:px-2 md:py-1 md:after:hidden";
 
   const toggleClassName = (active: boolean) =>
     `${chipClassName} ${
@@ -107,8 +107,8 @@ export function CollectionFilterPanel({
 
       {concreteSizes.length > 0 ? (
         <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-1 md:mx-0 md:mt-4">
-          <div className="collection-size-row flex items-center gap-1.5 overflow-x-auto px-6 py-1.5 text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:py-0">
-            <span className="mr-0.5 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
+          <div className="collection-size-row flex items-center gap-1 overflow-x-auto px-6 py-1.5 text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:py-0">
+            <span className="mr-0.5 shrink-0 text-[11px] font-semibold md:text-xs uppercase tracking-wider text-[#70584B]">
               Size:
             </span>
             {/* "All" leads the row and is always there, current when nothing is picked: the way
@@ -134,7 +134,7 @@ export function CollectionFilterPanel({
                 {opt.label}
               </Link>
             ))}
-            <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-[#3B2219]/20" />
+            <span aria-hidden="true" className="mx-0.5 h-4 w-px shrink-0 bg-[#3B2219]/20" />
             {availabilityLink}
           </div>
         </nav>
