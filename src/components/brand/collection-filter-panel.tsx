@@ -23,9 +23,10 @@ export type CollectionFilterPanelProps = {
  *
  * Size and stock are the only filters a collection has, so they sit in the page at every width
  * rather than behind a "Bộ lọc" drawer: on a phone the drawer cost two taps and a full-screen sheet
- * to reach four chips. There the row scrolls sideways under an edge fade, bleeding to the screen
- * edges, and every chip, the filter pill's remove control and the sort select are 44px touch
- * targets; from `md` they shrink to the desktop bar.
+ * to reach four chips. There the size chips and the "còn hàng" toggle share one row that scrolls
+ * sideways under an edge fade, bleeding to the screen edges. The chips draw 32px tall, and an
+ * invisible `after:` layer inside the row's padding brings each one to a 44px touch target without
+ * the block towering over the products; from `md` they shrink to the desktop bar.
  */
 export function CollectionFilterPanel({
   totalCount,
@@ -54,10 +55,28 @@ export function CollectionFilterPanel({
   const sizeFiltered = !(allSizesOption?.active ?? true);
 
   const chipClassName =
-    "inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border px-3 font-medium uppercase transition md:min-h-0 md:min-w-7 md:px-2 md:py-1";
+    "relative inline-flex h-8 min-w-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2.5 text-xs font-medium uppercase transition after:absolute after:inset-x-0 after:-inset-y-1.5 after:content-[''] md:h-auto md:min-w-7 md:px-2 md:py-1 md:after:hidden";
+
+  const toggleClassName = (active: boolean) =>
+    `${chipClassName} ${
+      active
+        ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
+        : "border-[#3B2219]/20 hover:border-[#3B2219]"
+    }`;
+
+  const availabilityLink = (
+    <Link
+      href={availabilityOption.href}
+      scroll={false}
+      aria-current={availabilityOption.active ? "true" : undefined}
+      className={toggleClassName(availabilityOption.active)}
+    >
+      Còn hàng
+    </Link>
+  );
 
   return (
-    <div className="border-b border-[#3B2219]/15 pb-4">
+    <div className="border-b border-[#3B2219]/15 pb-3 md:pb-4">
       {/* Top action row: count, sort */}
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <ListingResultCount>{totalCount} sản phẩm</ListingResultCount>
@@ -75,7 +94,7 @@ export function CollectionFilterPanel({
             aria-label="Sắp xếp sản phẩm"
             value={activeSortHref}
             onChange={handleSortChange}
-            className="min-h-11 rounded border border-[#3B2219]/20 bg-transparent px-3 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:min-h-0 md:py-1.5 md:text-xs"
+            className="h-9 rounded border border-[#3B2219]/20 bg-transparent px-2 text-base text-[#2A1810] focus-visible:outline-2 focus-visible:outline-[#3B2219] md:h-auto md:py-1.5 md:text-xs"
           >
             {sortOptions.map((opt) => (
               <option key={opt.value} value={opt.href}>
@@ -87,9 +106,9 @@ export function CollectionFilterPanel({
       </div>
 
       {concreteSizes.length > 0 ? (
-        <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-3 md:mx-0 md:mt-4">
-          <div className="collection-size-row flex items-center gap-2 overflow-x-auto px-6 text-sm text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:text-xs">
-            <span className="mr-1 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
+        <nav aria-label="Lọc theo kích cỡ" className="-mx-6 mt-1 md:mx-0 md:mt-4">
+          <div className="collection-size-row flex items-center gap-1.5 overflow-x-auto px-6 py-1.5 text-[#3B2219] md:flex-wrap md:gap-1.5 md:overflow-visible md:px-0 md:py-0">
+            <span className="mr-0.5 shrink-0 text-xs font-semibold uppercase tracking-wider text-[#70584B]">
               Size:
             </span>
             {/* "All" leads the row and is always there, current when nothing is picked: the way
@@ -100,11 +119,7 @@ export function CollectionFilterPanel({
               scroll={false}
               aria-label="Tất cả kích cỡ"
               aria-current={sizeFiltered ? undefined : "true"}
-              className={`${chipClassName} ${
-                sizeFiltered
-                  ? "border-[#3B2219]/20 hover:border-[#3B2219]"
-                  : "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-              }`}
+              className={toggleClassName(!sizeFiltered)}
             >
               Tất cả
             </Link>
@@ -114,37 +129,22 @@ export function CollectionFilterPanel({
                 href={opt.href}
                 scroll={false}
                 aria-current={opt.active ? "true" : undefined}
-                className={`${chipClassName} ${
-                  opt.active
-                    ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-                    : "border-[#3B2219]/20 hover:border-[#3B2219]"
-                }`}
+                className={toggleClassName(opt.active)}
               >
                 {opt.label}
               </Link>
             ))}
+            <span aria-hidden="true" className="mx-1 h-4 w-px shrink-0 bg-[#3B2219]/20" />
+            {availabilityLink}
           </div>
         </nav>
-      ) : null}
-
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <Link
-          href={availabilityOption.href}
-          scroll={false}
-          aria-current={availabilityOption.active ? "true" : undefined}
-          className={`${chipClassName} text-sm md:text-xs ${
-            availabilityOption.active
-              ? "border-[#3B2219] bg-[#3B2219] text-[#FAF7F2]"
-              : "border-[#3B2219]/20 hover:border-[#3B2219]"
-          }`}
-        >
-          Còn hàng
-        </Link>
-      </div>
+      ) : (
+        <div className="mt-2 flex">{availabilityLink}</div>
+      )}
 
       {/* Active filter pills; each remove control is a 44px target on a phone like the chips. */}
       {sizeFiltered && activeSizeOption ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2">
+        <div className="mt-1 flex flex-wrap items-center gap-2 md:mt-3">
           <span className="inline-flex items-center gap-1 rounded bg-[#3B2219]/10 py-0 pl-2.5 pr-0 text-xs text-[#2A1810] md:gap-1.5 md:py-1 md:pr-2.5">
             <span>Size: {activeSizeOption.label}</span>
             <Link
