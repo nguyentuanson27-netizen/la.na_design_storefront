@@ -121,7 +121,7 @@ function render(data: CollectionViewModel) {
 
         <section
           id={productsAnchorOnTitle ? undefined : COLLECTION_PRODUCTS_ANCHOR}
-          className={productsAnchorOnTitle ? "mt-12" : "collection-products-anchor mt-12"}
+          className={productsAnchorOnTitle ? "mt-6 md:mt-12" : "collection-products-anchor mt-6 md:mt-12"}
           aria-label="Điều khiển bộ sưu tập"
         >
           <CollectionFilterPanel

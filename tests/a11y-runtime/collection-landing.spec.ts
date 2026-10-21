@@ -24,6 +24,8 @@ const draftSlug = `runtime-draft-${suffix}`;
 const emptySlug = `runtime-empty-${suffix}`;
 const heroSlug = `runtime-hero-${suffix}`;
 const bstSlug = `runtime-bst-${suffix}`;
+const badgeSlugs = ["a", "b", "c", "d", "e"].map((key) => `runtime-badge-${key}-${suffix}`);
+const badgeProductSlug = `collection-badges-${suffix}`;
 const operationalCategoryId = 987_654_321;
 
 let server: ChildProcess | undefined;
@@ -68,7 +70,7 @@ async function stopServer() {
 async function cleanup() {
   await prisma.productMirror.deleteMany({ where: { pancakeShopId: SHOP_ID } });
   await prisma.collectionDefinition.deleteMany({
-    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug, bstSlug] } },
+    where: { slug: { in: [publishedSlug, pagedSlug, draftSlug, emptySlug, heroSlug, bstSlug, ...badgeSlugs] } },
   });
 }
 
@@ -166,6 +168,16 @@ test.beforeAll(async () => {
       },
     ],
   });
+  // Enough long collection names that the badge row under the product name cannot fit at any width.
+  await prisma.collectionDefinition.createMany({
+    data: badgeSlugs.map((slug, index) => ({
+      slug,
+      title: `Runtime Badge Collection Number ${index + 1}`,
+      description: "Collection that only exists to give a product many badges.",
+      isPublished: true,
+    })),
+  });
+  await seedProduct("badges", `Badge Runtime Dress ${suffix}`, badgeSlugs, "M");
   await seedProduct("zulu", `Zulu Runtime Jacket ${suffix}`, [publishedSlug], "M");
   await seedProduct("alpha", `Alpha Runtime Shirt ${suffix}`, [publishedSlug], "S");
   await seedProduct("outsider", `Outsider Runtime Trouser ${suffix}`, [], "XL");
@@ -584,4 +596,87 @@ test("a stored BST-prefixed title is shown without the prefix on the collection 
     .locator("main article")
     .filter({ has: page.locator(`a[href="/collections/${bstSlug}"]`) });
   await expect(card.getByRole("heading", { level: 2 })).toHaveText("Runtime Diệp Họa");
+});
+
+test("collection controls keep a 44px touch target in both directions without overlapping hit areas", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(sizes).toBeVisible();
+
+  // The chip draws 32px tall; its `::after` layer is the touch target, so measure that, not the box.
+  const targets = await sizes.getByRole("link").evaluateAll((links) =>
+    links.map((link) => {
+      const box = link.getBoundingClientRect();
+      const after = getComputedStyle(link, "::after");
+      const left = box.left + parseFloat(after.left);
+      const top = box.top + parseFloat(after.top);
+      return {
+        name: link.textContent,
+        visibleHeight: box.height,
+        left,
+        right: left + parseFloat(after.width),
+        width: parseFloat(after.width),
+        height: parseFloat(after.height),
+        top,
+      };
+    }),
+  );
+  expect(targets.length).toBeGreaterThanOrEqual(3);
+  for (const target of targets) {
+    expect(target.visibleHeight, `${target.name} draws compact`).toBeLessThanOrEqual(32.5);
+    expect(target.width, `${target.name} touch width`).toBeGreaterThanOrEqual(43.5);
+    expect(target.height, `${target.name} touch height`).toBeGreaterThanOrEqual(43.5);
+  }
+  for (let index = 1; index < targets.length; index += 1) {
+    expect(targets[index - 1].right, `${targets[index - 1].name} / ${targets[index].name} hit areas`).toBeLessThanOrEqual(
+      targets[index].left + 0.5,
+    );
+  }
+});
+
+test("Còn hàng rides the size row on a phone and keeps its own row from md", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`${BASE_URL}/collections/${publishedSlug}`, { waitUntil: "networkidle" });
+  const sizes = page.getByRole("navigation", { name: "Lọc theo kích cỡ" });
+  await expect(sizes.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(1);
+
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await expect(sizes.getByRole("link", { name: "Còn hàng", exact: true })).toHaveCount(0);
+  const availability = page.getByRole("link", { name: "Còn hàng", exact: true });
+  await expect(availability).toHaveCount(1);
+  const [sizeBox, availabilityBox] = await Promise.all([sizes.boundingBox(), availability.boundingBox()]);
+  expect(availabilityBox!.y).toBeGreaterThanOrEqual(sizeBox!.y + sizeBox!.height - 1);
+});
+
+test("the product page's collection badges stay on one line and fade only while they scroll", async ({ page }) => {
+  for (const width of [390, 640, 768, 1023]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(`${BASE_URL}/shop/${badgeProductSlug}`, { waitUntil: "networkidle" });
+    const row = page.locator(".pdp-collection-row");
+    await expect(row.getByRole("link")).toHaveCount(badgeSlugs.length);
+    const facts = await row.evaluate((element) => {
+      const tops = [...element.querySelectorAll("a")].map((link) => Math.round(link.getBoundingClientRect().top));
+      return {
+        oneLine: new Set(tops).size === 1,
+        scrolls: element.scrollWidth > element.clientWidth,
+        masked: getComputedStyle(element).maskImage !== "none",
+        paddingLeft: parseFloat(getComputedStyle(element).paddingLeft),
+      };
+    });
+    expect(facts.oneLine, `${width}px keeps one line`).toBe(true);
+    expect(facts.scrolls, `${width}px scrolls`).toBe(true);
+    expect(facts.masked, `${width}px shows the fade while it scrolls`).toBe(true);
+    // The fade covers the first 24px, which the row's own padding must hold clear of the first badge.
+    expect(facts.paddingLeft, `${width}px clears the fade`).toBeGreaterThanOrEqual(24);
+  }
+
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(`${BASE_URL}/shop/${badgeProductSlug}`, { waitUntil: "networkidle" });
+  const wide = await page.locator(".pdp-collection-row").evaluate((element) => ({
+    masked: getComputedStyle(element).maskImage !== "none",
+    wraps: getComputedStyle(element).flexWrap === "wrap",
+  }));
+  expect(wide).toEqual({ masked: false, wraps: true });
 });
